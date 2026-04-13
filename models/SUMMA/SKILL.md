@@ -115,13 +115,30 @@ Unlike VIC/CaMa-Flood/SWAT+ which have fixed physics, SUMMA lets you choose. 35 
 
 For **Chinese basins**: Use `MODIFIED_IGBP_MODIS_NOAH` — IGBP class 12 (Cropland) and 14 (Cropland/Natural Mosaic) directly represent the dominant land uses. The USGS table has no rice paddy type and the crosswalk is imprecise.
 
-### 2b. vGn_alpha -- NEGATIVE Sign Convention
+### 2b. Soil Parameter Estimation — ROSETTA van Genuchten (RECOMMENDED)
 
-SUMMA uses **negative** values for `vGn_alpha` (van Genuchten alpha). This is because SUMMA's matric head convention uses negative values for unsaturated conditions. From `localParamInfo.txt`: range is **[-1.0, -0.01]**, default **-0.84**.
+SUMMA uses the **van Genuchten-Mualem** equations. All soil parameters must be self-consistent from ONE framework. Use `--from_hwsd`:
 
-Reference values from SOILPARM.TBL: Sand=-3.524, Loamy Sand=-3.475, Loam=-1.112, Clay Loam=-1.581, Clay=-1.496.
+```bash
+python tools/s4_parameters/set_trial_parameters.py \
+  --attributes_nc settings/attributes.nc \
+  --output_nc settings/trialParams.nc \
+  --from_hwsd
+```
 
-**Positive values cause NaN** in the Richards equation solver (`soil_utils.f90:volFracLiq`).
+**Pipeline**: HWSD raster → sand/clay% → USDA texture class → ROSETTA lookup table (Schaap 2001) → 5 core vGn parameters + derived FC/WP from the vGn curve:
+
+| Parameter | Source | Method |
+|---|---|---|
+| theta_res, theta_sat, alpha, n, Ksat | ROSETTA table | Per texture class |
+| fieldCapacity | vGn curve | θ(ψ = -3.36 m = -33 kPa) |
+| critSoilWilting | vGn curve | θ(ψ = -152.9 m = -1500 kPa) |
+| critSoilTranspire | Derived | Midpoint(WP, FC) |
+| heightCanopyTop/Bottom | VEGPARM.TBL | ZTOPV/ZBOTV per vegTypeIndex |
+
+**DO NOT mix Saxton-Rawls with ROSETTA** — they give inconsistent theta_res vs wilting point, causing SUMMA paramCheck failures (dt_026).
+
+**vGn_alpha sign**: SUMMA uses **negative** alpha (matric head convention). ROSETTA table already has negative values. Sand=-3.524, Loam=-1.112, Clay=-1.496. Positive values cause NaN.
 
 ### 3. CRITICAL: Output Mixed Units (dt_025 — cost 2 days to find)
 

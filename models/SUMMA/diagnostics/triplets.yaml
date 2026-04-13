@@ -688,6 +688,36 @@ triplets:
     severity: "silent"
     cross_references: ["dt_003", "cm_001"]
 
+  - id: dt_026
+    stage: "s4_parameters"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "SUMMA crashes with 'critSoilWilting parameter is out of range' or 'critSoilTranspire out of range' even though values look reasonable."
+      error_pattern: "critSoilWilting.*out of range|critSoilTranspire.*out of range|fieldCapacity.*out of range"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "Soil parameters from different pedotransfer functions (Saxton-Rawls vs ROSETTA) are inconsistent."
+      explanation: >
+        SUMMA requires theta_res < critSoilWilting < critSoilTranspire < fieldCapacity < theta_sat.
+        Saxton-Rawls gives wilting_point=0.025 for sandy soil, but ROSETTA gives theta_res=0.068 for
+        the same soil — wilting point is BELOW residual moisture, which is physically impossible.
+        This happens because Saxton-Rawls and ROSETTA use different calibration datasets and definitions.
+        The fix: use ONE framework for ALL soil parameters. ROSETTA provides self-consistent
+        theta_res/theta_sat/alpha/n/Ksat, and FC/WP can be derived from the vGn curve at
+        standard pressure heads (-33 kPa for FC, -1500 kPa for WP).
+      affected_components:
+        - "set_trial_parameters.py"
+        - "Any script that mixes Saxton-Rawls hydraulics with ROSETTA vGn parameters"
+    remedy:
+      action: "Use set_trial_parameters.py --from_hwsd which derives ALL parameters from ROSETTA consistently."
+      tool_to_run: "python tools/s4_parameters/set_trial_parameters.py --from_hwsd --attributes_nc ... --output_nc ..."
+      manual_steps:
+        - "Do NOT mix saxton_rawls() with ROSETTA_VGN table"
+        - "FC = vgn_theta(psi=-3.36m), WP = vgn_theta(psi=-152.9m) from same alpha/n"
+      prevention: "--from_hwsd mode ensures self-consistency. Manual mode (--parameters) bypasses this."
+    severity: "fatal"
+    cross_references: ["dt_019"]
+
   - id: dt_025
     stage: "s6_execution"
     failure_domain: "unit_conversion"

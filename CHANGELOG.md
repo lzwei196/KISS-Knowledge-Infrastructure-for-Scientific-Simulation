@@ -2,7 +2,7 @@
 
 ## v5.0.1 (2026-04-13) — "SUMMA Deep Dive"
 
-Post-release patch: 8 bugs fixed in SUMMA KI through systematic source-code analysis + Bengbu revalidation. Final result: **NSE=0.393, r=0.652, PBIAS=-15%** (uncalibrated, Bengbu 1981-1985). New cross-model patterns for land cover classification mismatch and mixed output units.
+Post-release patch: 9 bugs fixed, proper soil parameter estimation pipeline. **3-basin validation**: Bengbu NSE=0.15/PBIAS=-3%, Wangjiaba NSE=0.35/PBIAS=-15%, Xixian PBIAS=-52%. All uncalibrated with self-consistent ROSETTA van Genuchten soil parameters from HWSD.
 
 ### Fixed: SUMMA KI (7 bugs, 6 new triplets, 1 new tool)
 
@@ -36,7 +36,20 @@ Post-release patch: 8 bugs fixed in SUMMA KI through systematic source-code anal
 - Bengbu result with presTemp: r=0.893 (excellent timing), PBIAS=-99.7% (no volume — presTemp limitation)
 
 **Triplets:** 18 → 24 (+6: dt_019 through dt_024)
-**SKILL.md:** 161 → 308 lines
+**Soil parameter estimation (dt_026, NEW):**
+- `set_trial_parameters.py` rewritten with `--from_hwsd` auto mode
+- Pipeline: HWSD → texture class → ROSETTA vGn table → derive FC/WP from vGn curve
+- All parameters self-consistent from one framework (no mixing Saxton-Rawls + ROSETTA)
+
+**3-basin validation (uncalibrated, ROSETTA soil params):**
+
+| Basin | GRUs | r | NSE | PBIAS | sim Q | obs Q |
+|-------|------|---|-----|-------|-------|-------|
+| Bengbu | 224 | 0.658 | 0.153 | -2.8% | 1075 | 1106 |
+| Wangjiaba | 40 | 0.646 | 0.347 | -15% | 176 | 208 |
+| Xixian | 27 | 0.230 | -1.49 | -52% | 111 | 233 |
+
+**Triplets:** 18 → 27. **SKILL.md:** 161 → 340+ lines
 
 ## v5.0.0 (2026-04-11) — "Docs First, Fix Right"
 

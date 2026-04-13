@@ -1,0 +1,770 @@
+# ============================================================================
+# Knowledge Infrastructure — SUMMA (Structure for Unifying Multiple Modeling
+#                                    Alternatives)
+# ============================================================================
+# Dissected by HydroCraft / Jianyun Zhang Research Group
+# Methodology: Zhang et al., "Knowledge infrastructure enables autonomous AI
+#   operation of process-based Earth system models" (Nature, under review)
+# ============================================================================
+
+package:
+  name: "hydrocraft-summa"
+  version: "1.0.0"
+  description: >
+    Knowledge infrastructure for SUMMA — a flexible multi-physics hydrologic
+    modeling framework that enables systematic comparison of alternative model
+    conceptualizations for snow, soil, vegetation, and runoff processes.
+  target_model: "SUMMA (CH-Earth/summa, Fortran 90)"
+  domain: "multi-physics distributed hydrology"
+  authors:
+    - "Jianyun Zhang Research Group, Hohai University"
+  license: "MIT"
+
+# --- Pipeline definition ---
+pipeline:
+  stages:
+    - id: "s1_domain_setup"
+      name: "Domain setup (GRU/HRU definition)"
+      description: >
+        Define Grouped Response Units (GRUs) and Hydrologic Response Units (HRUs)
+        from basin shapefile, DEM, land cover, and soil data. Each HRU has uniform
+        soil type, vegetation class, slope, and aspect. GRUs are contiguous spatial
+        groups of HRUs.
+      order: 1
+      depends_on: []
+      skill_document: "docs/s1_domain_setup_skill.md"
+      tools:
+        - "create_gru_hru"
+        - "create_local_attributes"
+      milestones:
+        - id: "m1_attributes_created"
+          description: "Local attributes NetCDF file created with gruId, hruId, latitude, longitude, elevation, HRUarea, contourLength, tan_slope, mHeight, vegTypeIndex, soilTypeIndex"
+          verification: "ncdump -h <attributes.nc> | grep hru"
+
+    - id: "s2_forcing_prep"
+      name: "Forcing data preparation"
+      description: >
+        Convert meteorological forcing data (from VIC/CMFD/MSWX/ERA5 sources)
+        into SUMMA NetCDF forcing format. SUMMA requires 7 variables: pptrate
+        (kg/m2/s), airtemp (K), SWRadAtm (W/m2), LWRadAtm (W/m2), windspd (m/s),
+        airpres (Pa), spechum (g/g).
+      order: 2
+      depends_on: ["s1_domain_setup"]
+      skill_document: "docs/s2_forcing_prep_skill.md"
+      tools:
+        - "convert_vic_forcing_to_summa"
+      milestones:
+        - id: "m2_forcing_created"
+          description: "SUMMA forcing NetCDF files created with correct dimensions (time, hru) and all 7 variables"
+          verification: "ncdump -h <forcing.nc> | grep -c 'pptrate\\|airtemp\\|SWRadAtm\\|LWRadAtm\\|windspd\\|airpres\\|spechum' should return 7"
+
+    - id: "s3_decisions"
+      name: "Model decisions configuration"
+      description: >
+        Configure SUMMA model decisions — the unique feature that distinguishes
+        SUMMA from other hydrologic models. Each decision selects one physics
+        option from a set of alternatives (e.g., snow layering: Jordan 1991 vs
+        CLM 2010; stomatal resistance: Ball-Berry vs Jarvis). There are 30+
+        decision categories covering snow, soil, vegetation, radiation, and
+        numerical methods.
+      order: 3
+      depends_on: []
+      skill_document: "docs/s3_decisions_skill.md"
+      tools:
+        - "configure_decisions"
+      milestones:
+        - id: "m3_decisions_configured"
+          description: "Decisions file created with valid option selected for each category"
+          verification: "Validate each decision keyword has a valid option value"
+
+    - id: "s4_parameters"
+      name: "Parameter configuration"
+      description: >
+        Set trial parameters, local (HRU-level) parameters, and basin (GRU-level)
+        parameters. The trial parameters file overrides defaults from parameter
+        tables (VEGPARM.TBL, SOILPARM.TBL, GENPARM.TBL, MPTABLE.TBL). This is
+        where site-specific calibration values are applied.
+      order: 4
+      depends_on: ["s1_domain_setup", "s3_decisions"]
+      skill_document: "docs/s4_parameters_skill.md"
+      tools:
+        - "set_trial_parameters"
+      milestones:
+        - id: "m4_params_set"
+          description: "Trial parameter NetCDF file created with parameters matching decision selections"
+          verification: "ncdump -h <trialParams.nc> | grep hru"
+
+    - id: "s5_initial_conditions"
+      name: "Initial conditions"
+      description: >
+        Generate cold start (or warm restart) initial condition NetCDF files.
+        Cold start requires initial values for snow (SWE, depth, albedo, layers),
+        soil (temperature, moisture, matric head per layer), canopy (temperature,
+        ice, liquid), and aquifer storage. Proper initialization avoids multi-year
+        spinup artifacts.
+      order: 5
+      depends_on: ["s1_domain_setup", "s4_parameters"]
+      skill_document: "docs/s5_initial_conditions_skill.md"
+      tools:
+        - "create_initial_conditions"
+      milestones:
+        - id: "m5_coldstate_created"
+          description: "Initial conditions NetCDF file created with all required state variables"
+          verification: "ncdump -h <coldState.nc> | grep -c 'mLayerTemp\\|mLayerVolFracLiq' should return 2"
+
+    - id: "s6_execution"
+      name: "SUMMA execution"
+      description: >
+        Generate the fileManager.txt master configuration file and run SUMMA.
+        fileManager.txt points to all other config files (decisions, attributes,
+        forcing, parameters, initial conditions, output control). Monitor for
+        convergence failures, time step adaptation, and NaN outputs.
+      order: 6
+      depends_on: ["s1_domain_setup", "s2_forcing_prep", "s3_decisions", "s4_parameters", "s5_initial_conditions"]
+      skill_document: "docs/s6_execution_skill.md"
+      tools:
+        - "create_file_manager"
+        - "validate_file_manager"
+        - "run_summa"
+        - "parse_summa_output"
+      milestones:
+        - id: "m6_summa_ran"
+          description: "SUMMA completed without fatal errors, output NetCDF created"
+          verification: "Check exit code 0 and output file has time dimension > 0"
+
+    - id: "s7_physics_comparison"
+      name: "Multi-physics comparison"
+      description: >
+        SUMMA's unique strength: run the same basin with different decision
+        combinations and compare results. This allows systematic evaluation of
+        model structural uncertainty. Compare snow parameterizations, soil
+        hydraulics, stomatal resistance models, etc.
+      order: 7
+      depends_on: ["s6_execution"]
+      skill_document: "docs/s7_physics_comparison_skill.md"
+      tools:
+        - "compare_physics"
+        - "plot_summa_results"
+      milestones:
+        - id: "m7_comparison_complete"
+          description: "Multiple SUMMA runs completed, comparison plots generated"
+          verification: "Comparison CSV and plots exist in output directory"
+
+# --- Layer 1: Validated Tools ---
+tools:
+  - id: "create_gru_hru"
+    name: "Create GRU/HRU structure"
+    description: "Define GRU and HRU structure from basin shapefile, DEM, land cover, and soil type rasters. Each unique combination of soil type and vegetation class within a GRU becomes an HRU."
+    stage: "s1_domain_setup"
+    script_path: "tools/s1_domain_setup/create_gru_hru.py"
+    language: "python"
+    inputs:
+      - name: "BASIN_SHP"
+        type: "file"
+        description: "Basin boundary shapefile (.shp)"
+        required: true
+        example: "data/shp/basin/basin.shp"
+      - name: "DEM_FILE"
+        type: "file"
+        description: "DEM raster (GeoTIFF)"
+        required: true
+        example: "data/dem/dem.tif"
+      - name: "LANDCOVER_FILE"
+        type: "file"
+        description: "Land cover raster (MODIS IGBP or USGS)"
+        required: true
+        example: "data/landcover/landcover.tif"
+      - name: "SOILTYPE_FILE"
+        type: "file"
+        description: "Soil type raster"
+        required: true
+        example: "data/soil/soiltype.tif"
+      - name: "OUTPUT_DIR"
+        type: "directory"
+        description: "Output directory for GRU/HRU definition files"
+        required: true
+        example: "outputs/summa_run/domain/"
+    outputs:
+      - name: "gru_hru_mapping"
+        type: "file"
+        description: "CSV mapping of GRU IDs to HRU IDs with attributes"
+        path_pattern: "{OUTPUT_DIR}/gru_hru_mapping.csv"
+    preconditions:
+      - "Basin shapefile exists and has valid geometry"
+      - "DEM covers the basin extent"
+      - "Land cover and soil type rasters cover the basin extent"
+    postconditions:
+      - "GRU/HRU mapping CSV created"
+      - "Each HRU has unique combination of soil type and vegetation class within its GRU"
+
+  - id: "create_local_attributes"
+    name: "Create local attributes NetCDF"
+    description: "Generate the SUMMA local attributes NetCDF file from GRU/HRU definitions. Contains gruId, hruId, latitude, longitude, elevation, HRUarea, contourLength, tan_slope, mHeight, vegTypeIndex, soilTypeIndex, slopeTypeIndex, downHRUindex."
+    stage: "s1_domain_setup"
+    script_path: "tools/s1_domain_setup/create_local_attributes.py"
+    language: "python"
+    inputs:
+      - name: "GRU_HRU_CSV"
+        type: "file"
+        description: "GRU/HRU mapping CSV from create_gru_hru"
+        required: true
+        example: "outputs/summa_run/domain/gru_hru_mapping.csv"
+      - name: "DEM_FILE"
+        type: "file"
+        description: "DEM raster for elevation and slope"
+        required: true
+        example: "data/dem/dem.tif"
+      - name: "OUTPUT_NC"
+        type: "file"
+        description: "Output NetCDF attributes file"
+        required: true
+        example: "outputs/summa_run/settings/attributes.nc"
+    outputs:
+      - name: "attributes_nc"
+        type: "file"
+        description: "SUMMA local attributes NetCDF"
+        path_pattern: "{OUTPUT_NC}"
+    preconditions:
+      - "GRU/HRU mapping CSV exists from create_gru_hru"
+    postconditions:
+      - "NetCDF file has dimensions: hru, gru"
+      - "All required variables present: gruId, hruId, latitude, longitude, elevation, HRUarea, contourLength, tan_slope, mHeight, vegTypeIndex, soilTypeIndex"
+
+  - id: "convert_vic_forcing_to_summa"
+    name: "Convert VIC forcing to SUMMA format"
+    description: "Convert VIC ASCII forcing files (or CMFD/MSWX NetCDF) to SUMMA NetCDF forcing format. Handles unit conversions: VIC precip (mm/timestep) -> SUMMA pptrate (kg/m2/s), VIC temp (C) -> SUMMA airtemp (K), VIC pressure (kPa) -> SUMMA airpres (Pa), VIC specific humidity (kg/kg) -> SUMMA spechum (g/g)."
+    stage: "s2_forcing_prep"
+    script_path: "tools/s2_forcing_prep/convert_vic_forcing_to_summa.py"
+    language: "python"
+    inputs:
+      - name: "VIC_FORCING_DIR"
+        type: "directory"
+        description: "Directory containing VIC forcing files"
+        required: true
+        example: "outputs/vic_run/vic_temp/forcing/forcing_final/"
+      - name: "ATTRIBUTES_NC"
+        type: "file"
+        description: "SUMMA local attributes NetCDF (for HRU mapping)"
+        required: true
+        example: "outputs/summa_run/settings/attributes.nc"
+      - name: "OUTPUT_DIR"
+        type: "directory"
+        description: "Output directory for SUMMA forcing files"
+        required: true
+        example: "outputs/summa_run/forcing/"
+      - name: "START_YEAR"
+        type: "number"
+        description: "Start year of forcing data"
+        required: true
+        example: "2000"
+      - name: "END_YEAR"
+        type: "number"
+        description: "End year of forcing data"
+        required: true
+        example: "2010"
+      - name: "DATA_STEP"
+        type: "number"
+        description: "Forcing time step in seconds (10800 for 3-hourly, 3600 for hourly)"
+        required: false
+        example: "10800"
+    outputs:
+      - name: "forcing_nc"
+        type: "file"
+        description: "SUMMA forcing NetCDF file(s)"
+        path_pattern: "{OUTPUT_DIR}/forcing_YYYY.nc"
+    preconditions:
+      - "VIC forcing files exist in the specified directory"
+      - "SUMMA local attributes NetCDF exists with hruId variable"
+    postconditions:
+      - "Forcing NetCDF has dimensions: time, hru"
+      - "All 7 variables present: pptrate, airtemp, SWRadAtm, LWRadAtm, windspd, airpres, spechum"
+      - "Units are correct: kg/m2/s, K, W/m2, W/m2, m/s, Pa, g/g"
+
+  - id: "configure_decisions"
+    name: "Configure model decisions"
+    description: "Generate the SUMMA model decisions file. Sets physics options for 30+ categories including snow layering, stomatal resistance, soil hydraulics, radiation transfer, groundwater, and routing. Validates that selected options are compatible."
+    stage: "s3_decisions"
+    script_path: "tools/s3_decisions/configure_decisions.py"
+    language: "python"
+    inputs:
+      - name: "DECISIONS"
+        type: "config"
+        description: "Dictionary of decision_name -> option_value"
+        required: true
+        example: "{'snowLayers': 'CLM_2010', 'stomResist': 'BallBerry'}"
+      - name: "OUTPUT_FILE"
+        type: "file"
+        description: "Output decisions file path"
+        required: true
+        example: "outputs/summa_run/settings/decisions.txt"
+    outputs:
+      - name: "decisions_file"
+        type: "file"
+        description: "SUMMA decisions file"
+        path_pattern: "{OUTPUT_FILE}"
+    preconditions: []
+    postconditions:
+      - "Decisions file exists with one keyword-option pair per line"
+      - "All keywords have valid options"
+
+  - id: "set_trial_parameters"
+    name: "Set trial parameters"
+    description: "Generate the SUMMA trial parameters NetCDF file. Overrides default parameter values from lookup tables with site-specific or calibrated values. Parameters include soil hydraulic properties, vegetation parameters, snow parameters, etc."
+    stage: "s4_parameters"
+    script_path: "tools/s4_parameters/set_trial_parameters.py"
+    language: "python"
+    inputs:
+      - name: "ATTRIBUTES_NC"
+        type: "file"
+        description: "SUMMA local attributes NetCDF (for HRU/GRU structure)"
+        required: true
+        example: "outputs/summa_run/settings/attributes.nc"
+      - name: "PARAMETERS"
+        type: "config"
+        description: "Dictionary of parameter_name -> value (or array of per-HRU values)"
+        required: true
+        example: "{'k_soil': 0.001, 'theta_sat': 0.45}"
+      - name: "OUTPUT_NC"
+        type: "file"
+        description: "Output trial parameters NetCDF"
+        required: true
+        example: "outputs/summa_run/settings/trialParams.nc"
+    outputs:
+      - name: "trial_params_nc"
+        type: "file"
+        description: "SUMMA trial parameters NetCDF"
+        path_pattern: "{OUTPUT_NC}"
+    preconditions:
+      - "Local attributes NetCDF exists"
+    postconditions:
+      - "NetCDF has hru dimension matching attributes file"
+
+  - id: "create_initial_conditions"
+    name: "Create initial conditions"
+    description: "Generate cold start initial conditions NetCDF for SUMMA. Sets initial snow state (SWE=0, nSnow=0), soil state (temperature from mean annual T, moisture at field capacity, matric head at equilibrium), canopy state (no ice/liquid), and aquifer storage."
+    stage: "s5_initial_conditions"
+    script_path: "tools/s5_initial_conditions/create_initial_conditions.py"
+    language: "python"
+    inputs:
+      - name: "ATTRIBUTES_NC"
+        type: "file"
+        description: "SUMMA local attributes NetCDF"
+        required: true
+        example: "outputs/summa_run/settings/attributes.nc"
+      - name: "N_SOIL_LAYERS"
+        type: "number"
+        description: "Number of soil layers (typically 8)"
+        required: false
+        example: "8"
+      - name: "SOIL_LAYER_DEPTHS"
+        type: "config"
+        description: "Array of soil layer thicknesses in meters"
+        required: false
+        example: "[0.025, 0.075, 0.15, 0.25, 0.50, 0.50, 1.0, 1.5]"
+      - name: "INIT_SOIL_TEMP"
+        type: "number"
+        description: "Initial soil temperature (K), default 283.16 (10 C)"
+        required: false
+        example: "283.16"
+      - name: "INIT_SOIL_MOISTURE"
+        type: "number"
+        description: "Initial volumetric soil moisture (fraction), default 0.30"
+        required: false
+        example: "0.30"
+      - name: "OUTPUT_NC"
+        type: "file"
+        description: "Output initial conditions NetCDF"
+        required: true
+        example: "outputs/summa_run/settings/coldState.nc"
+    outputs:
+      - name: "coldstate_nc"
+        type: "file"
+        description: "SUMMA initial conditions NetCDF"
+        path_pattern: "{OUTPUT_NC}"
+    preconditions:
+      - "Local attributes NetCDF exists"
+    postconditions:
+      - "NetCDF has all required state variables"
+      - "Dimensions include: hru, scalarv, midSoil, midToto, ifcSoil, ifcToto"
+
+  - id: "create_file_manager"
+    name: "Create fileManager.txt"
+    description: "Generate the SUMMA master configuration file (fileManager.txt) that points to all other config files. Uses ABSOLUTE paths to avoid Fortran path resolution issues. Validates controlVersion is 'SUMMA_FILE_MANAGER_V3.0.0'."
+    stage: "s6_execution"
+    script_path: "tools/s6_execution/create_file_manager.py"
+    language: "python"
+    inputs:
+      - name: "SETTINGS_PATH"
+        type: "directory"
+        description: "Base directory for settings files"
+        required: true
+        example: "outputs/summa_run/settings/"
+      - name: "FORCING_PATH"
+        type: "directory"
+        description: "Base directory for forcing files"
+        required: true
+        example: "outputs/summa_run/forcing/"
+      - name: "OUTPUT_PATH"
+        type: "directory"
+        description: "Base directory for output files"
+        required: true
+        example: "outputs/summa_run/output/"
+      - name: "SIM_START"
+        type: "string"
+        description: "Simulation start time (YYYY-MM-DD hh:mm)"
+        required: true
+        example: "2000-01-01 00:00"
+      - name: "SIM_END"
+        type: "string"
+        description: "Simulation end time (YYYY-MM-DD hh:mm)"
+        required: true
+        example: "2010-12-31 23:00"
+      - name: "OUTPUT_FILE"
+        type: "file"
+        description: "Output fileManager.txt path"
+        required: true
+        example: "outputs/summa_run/fileManager.txt"
+    outputs:
+      - name: "file_manager"
+        type: "file"
+        description: "SUMMA master configuration file"
+        path_pattern: "{OUTPUT_FILE}"
+    preconditions:
+      - "All referenced config files exist in SETTINGS_PATH"
+      - "Forcing files exist in FORCING_PATH"
+    postconditions:
+      - "fileManager.txt has controlVersion = SUMMA_FILE_MANAGER_V3.0.0"
+      - "All referenced paths are absolute and exist"
+
+  - id: "validate_file_manager"
+    name: "Validate fileManager.txt"
+    description: "Check that all paths referenced in fileManager.txt exist and are accessible. Verifies version string, time format, and file dimensions consistency. Catches the #1 SUMMA runtime error: missing referenced files."
+    stage: "s6_execution"
+    script_path: "tools/s6_execution/validate_file_manager.py"
+    language: "python"
+    inputs:
+      - name: "FILE_MANAGER_PATH"
+        type: "file"
+        description: "Path to fileManager.txt"
+        required: true
+        example: "outputs/summa_run/fileManager.txt"
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON report of validation results"
+        path_pattern: "stdout"
+    preconditions:
+      - "fileManager.txt exists"
+    postconditions:
+      - "All referenced files exist"
+      - "All NetCDF files have consistent hru dimension"
+
+  - id: "run_summa"
+    name: "Run SUMMA"
+    description: "Execute SUMMA with progress monitoring. Captures stdout/stderr, monitors for convergence failures (STOP codes), and checks output file creation."
+    stage: "s6_execution"
+    script_path: "tools/s6_execution/run_summa.py"
+    language: "python"
+    inputs:
+      - name: "SUMMA_EXE"
+        type: "file"
+        description: "Path to summa.exe executable"
+        required: true
+        example: "model/summa/bin/summa.exe"
+      - name: "FILE_MANAGER"
+        type: "file"
+        description: "Path to fileManager.txt"
+        required: true
+        example: "outputs/summa_run/fileManager.txt"
+      - name: "OUTPUT_SUFFIX"
+        type: "string"
+        description: "Output file suffix (optional)"
+        required: false
+        example: "run1"
+    outputs:
+      - name: "output_nc"
+        type: "file"
+        description: "SUMMA output NetCDF files"
+        path_pattern: "{OUTPUT_PATH}/<prefix>_output_*.nc"
+    preconditions:
+      - "summa.exe exists and is executable"
+      - "fileManager.txt validated"
+    postconditions:
+      - "SUMMA exit code is 0"
+      - "Output NetCDF file exists with time dimension > 0"
+
+  - id: "parse_summa_output"
+    name: "Parse SUMMA output"
+    description: "Read SUMMA output NetCDF files and extract key variables (runoff, ET, SWE, soil moisture, energy fluxes) into analysis-ready DataFrames. Handles multi-layer soil and snow outputs."
+    stage: "s6_execution"
+    script_path: "tools/s6_execution/parse_summa_output.py"
+    language: "python"
+    inputs:
+      - name: "OUTPUT_NC"
+        type: "file"
+        description: "SUMMA output NetCDF file"
+        required: true
+        example: "outputs/summa_run/output/summa_output.nc"
+      - name: "VARIABLES"
+        type: "config"
+        description: "List of variable names to extract"
+        required: false
+        example: "['scalarTotalRunoff', 'scalarTotalET', 'scalarSWE']"
+    outputs:
+      - name: "parsed_csv"
+        type: "file"
+        description: "Extracted variables as CSV"
+        path_pattern: "{OUTPUT_NC}.parsed.csv"
+    preconditions:
+      - "SUMMA output NetCDF exists"
+    postconditions:
+      - "CSV has datetime index and requested variables"
+
+  - id: "compare_physics"
+    name: "Compare physics options"
+    description: "Run SUMMA multiple times with different decision combinations and compare outputs. Generates a comparison matrix showing the effect of each physics option on key outputs (runoff, ET, SWE, soil moisture)."
+    stage: "s7_physics_comparison"
+    script_path: "tools/s7_physics_comparison/compare_physics.py"
+    language: "python"
+    inputs:
+      - name: "BASE_FILE_MANAGER"
+        type: "file"
+        description: "Base fileManager.txt to modify for each run"
+        required: true
+        example: "outputs/summa_run/fileManager.txt"
+      - name: "DECISION_VARIATIONS"
+        type: "config"
+        description: "Dictionary of decision_name -> [option1, option2, ...] to compare"
+        required: true
+        example: "{'snowLayers': ['jrdn1991', 'CLM_2010'], 'stomResist': ['BallBerry', 'Jarvis']}"
+      - name: "OUTPUT_DIR"
+        type: "directory"
+        description: "Directory for comparison results"
+        required: true
+        example: "outputs/summa_run/comparison/"
+    outputs:
+      - name: "comparison_csv"
+        type: "file"
+        description: "Comparison matrix CSV"
+        path_pattern: "{OUTPUT_DIR}/physics_comparison.csv"
+    preconditions:
+      - "Base SUMMA run completed successfully"
+    postconditions:
+      - "All variation runs completed"
+      - "Comparison CSV contains statistics for each variation"
+
+  - id: "plot_summa_results"
+    name: "Plot SUMMA results"
+    description: "Generate publication-quality plots of SUMMA outputs: time series of runoff, ET, SWE; vertical soil moisture profiles; energy balance components; multi-physics comparison panels."
+    stage: "s7_physics_comparison"
+    script_path: "tools/s7_physics_comparison/plot_summa_results.py"
+    language: "python"
+    inputs:
+      - name: "OUTPUT_NC"
+        type: "file"
+        description: "SUMMA output NetCDF file (or list of files for comparison)"
+        required: true
+        example: "outputs/summa_run/output/summa_output.nc"
+      - name: "PLOT_TYPE"
+        type: "string"
+        description: "Plot type: timeseries, soil_profile, energy_balance, comparison"
+        required: true
+        example: "timeseries"
+      - name: "OUTPUT_PNG"
+        type: "file"
+        description: "Output plot file"
+        required: true
+        example: "outputs/summa_run/summa_results.png"
+    outputs:
+      - name: "plot"
+        type: "file"
+        description: "Plot image file"
+        path_pattern: "{OUTPUT_PNG}"
+    preconditions:
+      - "SUMMA output NetCDF exists"
+    postconditions:
+      - "Plot file created with size > 0"
+
+# --- Layer 2: Skill Documents ---
+skill_documents:
+  - id: "sd_s1"
+    name: "Domain Setup (GRU/HRU)"
+    stage: "s1_domain_setup"
+    path: "docs/s1_domain_setup_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 734
+
+  - id: "sd_s2"
+    name: "Forcing Data Preparation"
+    stage: "s2_forcing_prep"
+    path: "docs/s2_forcing_prep_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 777
+
+  - id: "sd_s3"
+    name: "Model Decisions Configuration"
+    stage: "s3_decisions"
+    path: "docs/s3_decisions_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 807
+
+  - id: "sd_s4"
+    name: "Parameter Configuration"
+    stage: "s4_parameters"
+    path: "docs/s4_parameters_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 630
+
+  - id: "sd_s5"
+    name: "Initial Conditions"
+    stage: "s5_initial_conditions"
+    path: "docs/s5_initial_conditions_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 618
+
+  - id: "sd_s6"
+    name: "SUMMA Execution"
+    stage: "s6_execution"
+    path: "docs/s6_execution_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 953
+
+  - id: "sd_s7"
+    name: "Multi-Physics Comparison"
+    stage: "s7_physics_comparison"
+    path: "docs/s7_physics_comparison_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 639
+
+# --- Layer 3: Diagnostic Triplets ---
+# See diagnostics/triplets.yaml for full definitions
+diagnostic_triplets:
+  - id: "dt_001"
+    stage: "s6_execution"
+    failure_domain: "path_resolution"
+  - id: "dt_002"
+    stage: "s6_execution"
+    failure_domain: "path_resolution"
+  - id: "dt_003"
+    stage: "s2_forcing_prep"
+    failure_domain: "unit_conversion"
+  - id: "dt_004"
+    stage: "s2_forcing_prep"
+    failure_domain: "unit_conversion"
+  - id: "dt_005"
+    stage: "s2_forcing_prep"
+    failure_domain: "dependency_mismatch"
+  - id: "dt_006"
+    stage: "s5_initial_conditions"
+    failure_domain: "parameter_format"
+  - id: "dt_007"
+    stage: "s6_execution"
+    failure_domain: "runtime"
+  - id: "dt_008"
+    stage: "s6_execution"
+    failure_domain: "runtime"
+  - id: "dt_009"
+    stage: "s3_decisions"
+    failure_domain: "parameter_format"
+  - id: "dt_010"
+    stage: "s1_domain_setup"
+    failure_domain: "dependency_mismatch"
+  - id: "dt_011"
+    stage: "s6_execution"
+    failure_domain: "silent_error"
+  - id: "dt_012"
+    stage: "s2_forcing_prep"
+    failure_domain: "silent_error"
+  - id: "dt_013"
+    stage: "s6_execution"
+    failure_domain: "runtime"
+  - id: "dt_014"
+    stage: "s4_parameters"
+    failure_domain: "parameter_format"
+  - id: "dt_015"
+    stage: "s5_initial_conditions"
+    failure_domain: "silent_error"
+  - id: "dt_016"
+    stage: "s6_execution"
+    failure_domain: "environment"
+  - id: "dt_017"
+    stage: "s7_physics_comparison"
+    failure_domain: "dependency_mismatch"
+  - id: "dt_018"
+    stage: "s1_domain_setup"
+    failure_domain: "silent_error"
+
+# --- Summary statistics ---
+summary:
+  total_tools: 12
+  total_tool_lines: 2826
+  total_skill_documents: 7
+  total_skill_words: 5158
+  total_diagnostic_triplets: 18
+  failure_domains:
+    - "path_resolution"
+    - "unit_conversion"
+    - "dependency_mismatch"
+    - "parameter_format"
+    - "runtime"
+    - "silent_error"
+    - "environment"
+  pipeline_stages: 7
+  pipeline_milestones: 7
+  missing_tools: []

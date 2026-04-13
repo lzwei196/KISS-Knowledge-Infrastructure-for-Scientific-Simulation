@@ -1,0 +1,156 @@
+model:
+  name: "PySWMM"
+  version: "2.1.0"
+  domain: "urban hydrology / stormwater management"
+  engine: "EPA SWMM 5.1.14–5.2.4 via swmm-toolkit"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PySWMM/venv/bin/python"
+  language: "Python 3.10–3.12"
+  input_format: "SWMM .inp (section-based plain-text)"
+  output_format: "binary .out + plain-text .rpt"
+
+inputs:
+  forcing:
+    - name: "rainfall"
+      unit: "mm/hr (SI) or in/hr (US)"
+      valid_range: [0.0, 300.0]
+      description: "Rainfall intensity timeseries — MUST be intensity, not cumulative depth"
+    - name: "evaporation"
+      unit: "mm/day (SI) or in/day (US)"
+      valid_range: [0.0, 15.0]
+      description: "Daily evaporation rate"
+    - name: "temperature"
+      unit: "°C or °F"
+      valid_range: [-40.0, 50.0]
+      description: "Air temperature for snowmelt calculations (optional)"
+
+  parameters:
+    critical:
+      - name: "subcatch_width"
+        section: "[SUBCATCHMENTS]"
+        valid_range: [1.0, 50000.0]
+        unit: "ft (US) or m (SI)"
+        description: "Overland flow width — controls hydrograph peak timing. Width = Area / longest overland flow path"
+      - name: "pct_imperv"
+        section: "[SUBCATCHMENTS]"
+        valid_range: [0.0, 100.0]
+        unit: "percent"
+        description: "Percent impervious area — primary control on runoff volume"
+      - name: "n_imperv"
+        section: "[SUBAREAS]"
+        valid_range: [0.01, 0.03]
+        unit: "dimensionless"
+        description: "Manning's n for impervious surfaces"
+      - name: "s_imperv"
+        section: "[SUBAREAS]"
+        valid_range: [0.02, 0.10]
+        unit: "inches (US) or mm (SI)"
+        description: "Depression storage on impervious area"
+      - name: "infil_maxrate"
+        section: "[INFILTRATION]"
+        valid_range: [1.0, 5.0]
+        unit: "in/hr (US) or mm/hr (SI)"
+        description: "Peak infiltration rate (Horton model)"
+      - name: "infil_minrate"
+        section: "[INFILTRATION]"
+        valid_range: [0.1, 1.0]
+        unit: "in/hr (US) or mm/hr (SI)"
+        description: "Steady-state infiltration rate"
+      - name: "infil_decay"
+        section: "[INFILTRATION]"
+        valid_range: [2.0, 7.0]
+        unit: "hr⁻¹"
+        description: "Horton decay constant"
+      - name: "mannings_n_pipe"
+        section: "[CONDUITS]"
+        valid_range: [0.01, 0.03]
+        unit: "dimensionless"
+        description: "Pipe roughness coefficient"
+      - name: "n_perv"
+        section: "[SUBAREAS]"
+        valid_range: [0.05, 0.80]
+        unit: "dimensionless"
+        description: "Manning's n for pervious surfaces"
+
+    simulation:
+      - name: "flow_units"
+        section: "[OPTIONS]"
+        valid_values: ["CFS", "GPM", "MGD", "CMS", "LPS", "MLD"]
+        description: "Flow unit system — determines all other units"
+      - name: "infiltration_model"
+        section: "[OPTIONS]"
+        valid_values: ["HORTON", "MODIFIED_HORTON", "GREEN_AMPT", "MODIFIED_GREEN_AMPT", "CURVE_NUMBER"]
+        description: "Infiltration calculation method"
+      - name: "routing_model"
+        section: "[OPTIONS]"
+        valid_values: ["DYNWAVE", "KINWAVE", "STEADY"]
+        description: "Flow routing method — DYNWAVE is most accurate but requires small timesteps"
+      - name: "routing_step"
+        section: "[OPTIONS]"
+        valid_range: [1, 300]
+        unit: "seconds"
+        description: "Routing computation timestep — must satisfy Courant condition for DYNWAVE"
+
+outputs:
+  primary:
+    - name: "subcatch_runoff"
+      unit: "CFS (US) or CMS (SI)"
+      valid_range: [0.0, 10000.0]
+      description: "Subcatchment surface runoff rate"
+    - name: "node_depth"
+      unit: "ft (US) or m (SI)"
+      valid_range: [0.0, 100.0]
+      description: "Water depth at junction/storage nodes"
+    - name: "node_total_inflow"
+      unit: "CFS (US) or CMS (SI)"
+      valid_range: [0.0, 10000.0]
+      description: "Total inflow to a node"
+    - name: "node_flooding"
+      unit: "CFS (US) or CMS (SI)"
+      valid_range: [0.0, 10000.0]
+      description: "Flooding (surcharge) at nodes"
+    - name: "link_flow"
+      unit: "CFS (US) or CMS (SI)"
+      valid_range: [-10000.0, 10000.0]
+      description: "Flow rate in conduits/links (negative = reverse flow)"
+    - name: "link_velocity"
+      unit: "ft/s (US) or m/s (SI)"
+      valid_range: [0.0, 30.0]
+      description: "Flow velocity in conduits"
+    - name: "link_depth"
+      unit: "ft (US) or m (SI)"
+      valid_range: [0.0, 50.0]
+      description: "Water depth in conduits"
+    - name: "system_rainfall"
+      unit: "in/hr (US) or mm/hr (SI)"
+      valid_range: [0.0, 300.0]
+      description: "System-wide average rainfall intensity"
+    - name: "system_runoff"
+      unit: "CFS (US) or CMS (SI)"
+      valid_range: [0.0, 100000.0]
+      description: "Total system runoff"
+    - name: "system_outflow"
+      unit: "CFS (US) or CMS (SI)"
+      valid_range: [0.0, 100000.0]
+      description: "Total outfall discharge"
+
+  diagnostics:
+    - name: "runoff_continuity_error"
+      unit: "percent"
+      valid_range: [-1.0, 1.0]
+      description: "Runoff mass balance error — should be < 1%"
+    - name: "routing_continuity_error"
+      unit: "percent"
+      valid_range: [-1.0, 1.0]
+      description: "Routing mass balance error — should be < 1%"
+
+known_issues:
+  - id: "UT-001"
+    description: "Rainfall must be intensity (mm/hr), not cumulative depth — produces 10-1000x error"
+  - id: "UT-005"
+    description: "Slope must be percent (e.g. 0.5), not fraction (0.005) — produces 100x error"
+  - id: "UT-013"
+    description: "Weir discharge coefficients differ US (~3.33) vs SI (~1.84) — produces 1.8x flow error"
+  - id: "ENGINE-001"
+    description: "Only ONE Simulation object can exist at a time per process (non-reentrant engine)"
+  - id: "DYNWAVE-001"
+    description: "DYNWAVE routing with large timesteps silently produces incorrect results"

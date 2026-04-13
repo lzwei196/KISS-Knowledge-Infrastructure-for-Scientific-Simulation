@@ -1,0 +1,131 @@
+model:
+  name: "RAPID"
+  full_name: "Routing Application for Parallel computatIon of Discharge"
+  domain: "river_network_routing"
+  language: "Fortran 90 + PETSc"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/RAPID/source/repo/src/rapid"
+  execution: "mpiexec -n <nproc> ./rapid -nl <namelist_file>"
+
+inputs:
+  forcing:
+    - name: "Vlat"
+      format: "NetCDF"
+      variable: "Vlat"
+      dimensions: "(time, rivid)"
+      unit: "m³ (volume per routing period, NOT rate)"
+      valid_range: [0.0, 1.0e9]
+      description: "Lateral inflow volume accumulated over ZS_TauR seconds"
+      trap: "If Vlat is in m³/s instead of m³, discharge will be ~10800x too small"
+
+  static_inputs:
+    - name: "rapid_connect"
+      format: "CSV (space-delimited)"
+      description: "River network connectivity: reach_id downstream_id num_upstream upstream_id_1 ..."
+    - name: "riv_bas_id"
+      format: "CSV"
+      description: "Ordered list of reach IDs in the simulation domain"
+    - name: "Qobs"
+      format: "CSV or NetCDF"
+      variable: "Qobs"
+      unit: "m³/s"
+      description: "Observed discharge at gage locations (for optimization/validation)"
+    - name: "Qinit"
+      format: "NetCDF"
+      variable: "Qout"
+      unit: "m³/s"
+      description: "Initial discharge conditions (optional, default zero)"
+
+  parameters:
+    critical:
+      - name: "k"
+        format: "CSV"
+        unit: "seconds"
+        valid_range: [900, 360000]
+        description: "Muskingum travel time parameter per reach"
+        trap: "Must be in seconds, not hours. If < 60, likely in hours — multiply by 3600"
+      - name: "x"
+        format: "CSV"
+        unit: "dimensionless"
+        valid_range: [0.0, 0.5]
+        description: "Muskingum attenuation weighting parameter"
+        trap: "Must be 0–0.5, not percentage 0–50"
+      - name: "kfac"
+        format: "CSV"
+        unit: "dimensionless"
+        valid_range: [0.1, 10.0]
+        description: "k multiplier for calibration"
+      - name: "xfac"
+        format: "CSV"
+        unit: "dimensionless"
+        valid_range: [0.1, 5.0]
+        description: "x multiplier for calibration"
+
+    temporal:
+      - name: "ZS_TauM"
+        unit: "seconds"
+        description: "Total simulation duration"
+        typical: 2592000
+      - name: "ZS_dtM"
+        unit: "seconds"
+        description: "Main output time step"
+        typical: 86400
+      - name: "ZS_TauR"
+        unit: "seconds"
+        description: "Routing procedure period (must match Vlat temporal resolution)"
+        typical: 10800
+      - name: "ZS_dtR"
+        unit: "seconds"
+        description: "Routing sub-step"
+        typical: 900
+        constraint: "k*x <= dtR/2 <= k*(1-x) for Muskingum stability"
+
+    integer:
+      - name: "IS_riv_tot"
+        description: "Total number of reaches in connectivity"
+      - name: "IS_riv_bas"
+        description: "Number of reaches in simulation domain"
+      - name: "IS_max_up"
+        description: "Maximum upstream reach count in connectivity"
+      - name: "IS_opt_routing"
+        valid_values: [1, 2, 3, 4]
+        description: "1=matrix Muskingum, 2=traditional, 3=transboundary, 4=operator"
+      - name: "IS_opt_run"
+        valid_values: [1, 2]
+        description: "1=simulation, 2=parameter optimization (requires obs data)"
+
+outputs:
+  primary:
+    - name: "Qout"
+      format: "NetCDF"
+      variable: "Qout"
+      dimensions: "(time, rivid)"
+      unit: "m³/s"
+      valid_range: [0.0, 100000.0]
+      description: "Routed discharge at each reach per output time step"
+    - name: "V"
+      format: "NetCDF"
+      variable: "V"
+      dimensions: "(time, rivid)"
+      unit: "m³"
+      valid_range: [0.0, 1.0e12]
+      description: "Water storage volume per reach (optional, requires BS_opt_V=.true.)"
+    - name: "Qfinal"
+      format: "NetCDF"
+      variable: "Qout"
+      dimensions: "(time=1, rivid)"
+      unit: "m³/s"
+      description: "Final discharge state for restart (requires BS_opt_Qfinal=.true.)"
+
+consistency_checks:
+  - "ZS_TauM must be divisible by ZS_dtM"
+  - "ZS_TauR must be divisible by ZS_dtR"
+  - "ZS_TauM must be divisible by ZS_TauR"
+  - "Number of Vlat time steps = ZS_TauM / ZS_TauR"
+  - "Reach order in riv_bas_id must match rivid dimension in Vlat.nc"
+  - "All IDs in riv_bas_id must exist in rapid_connect"
+  - "IS_max_up must equal max upstream count in rapid_connect"
+
+known_issues:
+  - "PETSc processor count causes < 1e-10 relative difference in results (normal)"
+  - "Cold start (no Qinit) requires spinup period of days to weeks for large basins"
+  - "Muskingum instability if k*x > dt/2 — produces NaN or KSP_DIVERGED"

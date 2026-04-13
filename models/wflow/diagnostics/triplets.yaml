@@ -1,0 +1,1022 @@
+# ============================================================================
+# Diagnostic Triplets — hydrocraft-wflow v1.1.0
+# ============================================================================
+# wflow (Deltares) distributed hydrological model with sediment transport
+# 30 triplets across 7 failure domains
+# Updated: 2026-03-22 (Bengbu production validation)
+# ============================================================================
+
+triplets:
+
+  # ========================================================================
+  # Unit Conversion (5 triplets)
+  # ========================================================================
+
+  - id: dt_w001
+    stage: "s2_forcing"
+    failure_domain: "unit_conversion"
+    symptom:
+      description: "Runoff is much too high (10x-100x expected) or much too low"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Precipitation is in mm/s or mm/3hr instead of mm/timestep (mm/day for daily wflow)"
+      explanation: >
+        wflow expects precipitation in mm per timestep. For daily runs (timestepsecs=86400),
+        that is mm/day. CMFD provides mm/3hr (8 values per day). If these are summed to daily
+        without adjusting the total, or if mm/s values are used directly, runoff will be
+        wildly wrong. The model runs without error because precipitation is just a number —
+        there is no unit check.
+      affected_components:
+        - "convert_forcing_to_wflow.py"
+        - "forcing.nc"
+    remedy:
+      action: "Verify precipitation conversion. For CMFD 3-hourly: sum 8 values per day. For mm/s: multiply by 86400."
+      tool_to_run: "convert_forcing_to_wflow"
+      manual_steps:
+        - "Check forcing.nc: ncdump -v precip forcing.nc | tail -5"
+        - "Mean daily precip should be 1-10 mm/day for most basins"
+        - "If mean is <0.01 or >100, units are wrong"
+      prevention: "Always validate mean precipitation after conversion. Expected: 1-10 mm/day."
+    severity: "silent"
+    cross_references: ["dt_w002"]
+
+  - id: dt_w002
+    stage: "s2_forcing"
+    failure_domain: "unit_conversion"
+    symptom:
+      description: "Extremely high or zero actual ET throughout simulation"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Temperature is in Kelvin instead of Celsius"
+      explanation: >
+        wflow expects temperature in degrees Celsius. CMFD and MSWX provide Kelvin.
+        If temperature is not converted (subtract 273.15), the snow module will never
+        activate (everything above 0K is rain), and PET calculations will be wrong.
+        The model produces results without error.
+      affected_components:
+        - "convert_forcing_to_wflow.py"
+        - "forcing.nc"
+        - "Snow module"
+        - "PET calculation"
+    remedy:
+      action: "Convert temperature from Kelvin to Celsius: T_C = T_K - 273.15"
+      tool_to_run: "convert_forcing_to_wflow"
+      manual_steps:
+        - "Check forcing.nc temperature: ncdump -v temp forcing.nc | head -20"
+        - "If mean temperature is >200, it is in Kelvin"
+        - "Subtract 273.15"
+      prevention: "The convert_forcing_to_wflow.py tool auto-detects Kelvin and converts."
+    severity: "silent"
+    cross_references: ["dt_w001"]
+
+  - id: dt_w003
+    stage: "s2_forcing"
+    failure_domain: "unit_conversion"
+    symptom:
+      description: "Zero PET everywhere, or PET is 10x too high"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "PET variable missing, has wrong units, or was not calculated"
+      explanation: >
+        wflow_sbm requires potential evapotranspiration (PET) as forcing input (unless
+        configured to compute it internally from individual met variables). If PET is
+        missing or zero, actual ET will be zero and all precipitation becomes runoff.
+        If PET is in mm/s instead of mm/day, ET will be extreme.
+      affected_components:
+        - "calculate_pet.py"
+        - "forcing.nc"
+    remedy:
+      action: "Calculate PET using calculate_pet.py tool (Hargreaves or Penman-Monteith method)"
+      tool_to_run: "calculate_pet"
+      manual_steps:
+        - "Check forcing.nc for 'pet' variable: ncdump -h forcing.nc | grep pet"
+        - "If missing, run calculate_pet.py"
+        - "Expected mean PET: 1-8 mm/day depending on climate"
+      prevention: "Always include PET calculation in forcing pipeline."
+    severity: "silent"
+    cross_references: ["dt_w001"]
+
+  - id: dt_w004
+    stage: "s2_forcing"
+    failure_domain: "unit_conversion"
+    symptom:
+      description: "Snow accumulates in tropical basins where it should never snow"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Temperature offset not applied — values still in Kelvin make snow threshold meaningless"
+      explanation: >
+        The wflow snow module uses temperature threshold 'tt' (default 0 degC) to
+        partition precipitation into rain and snow. If temperature is in Kelvin
+        (~280-310), ALL precipitation falls as rain (>0), which is correct behavior
+        for the wrong reason. But the degree-day melt factor still operates on K values,
+        producing unrealistic melt amounts. In cold regions, if T is in Kelvin,
+        snow never accumulates because T >> tt.
+      affected_components:
+        - "Temperature forcing"
+        - "Snow module (tt, cfmax parameters)"
+    remedy:
+      action: "Ensure temperature is in Celsius. If Kelvin detected, subtract 273.15."
+      tool_to_run: ""
+      manual_steps:
+        - "Check minimum temperature in forcing: should be < 0 for cold basins"
+        - "If min temp > 200, data is in Kelvin"
+      prevention: "Use convert_forcing_to_wflow.py which auto-detects Kelvin."
+    severity: "silent"
+    cross_references: ["dt_w002"]
+
+  - id: dt_w005
+    stage: "s6_sediment"
+    failure_domain: "unit_conversion"
+    symptom:
+      description: "Sediment yield is 1000x too high or too low"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "USLE K factor is in US customary units instead of SI, or C factor lookup uses wrong land cover classification"
+      explanation: >
+        USLE K factor has different units in US customary (t*acre*h/(100*ft-tonf*acre*in))
+        and SI (t*ha*h/(ha*MJ*mm)). The conversion factor is approximately 0.1317.
+        If US values are used directly, erosion will be ~7.6x too high.
+        Similarly, C factor depends on land cover class — mismatched classification
+        schemes produce entirely wrong values.
+      affected_components:
+        - "build_sediment_model.py"
+        - "USLE_K in staticmaps_sediment.nc"
+    remedy:
+      action: "Verify USLE K units. SI range: 0.001-0.1. US range: 0.01-0.7."
+      tool_to_run: ""
+      manual_steps:
+        - "Check mean K value: should be 0.01-0.06 in SI for most soils"
+        - "If K > 0.1, likely US units — multiply by 0.1317"
+      prevention: "build_sediment_model.py uses SI units by default."
+    severity: "silent"
+    cross_references: []
+
+  # ========================================================================
+  # Runtime (5 triplets)
+  # ========================================================================
+
+  - id: dt_w006
+    stage: "s4_execution"
+    failure_domain: "runtime"
+    symptom:
+      description: "Julia throws MethodError on startup when loading Wflow"
+      error_pattern: "MethodError: no method matching"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "Wflow.jl version does not match the TOML format used"
+      explanation: >
+        wflow v1.0 introduced breaking changes to the TOML configuration format,
+        using CSDMS standard names. TOMLs generated for pre-v1.0 will cause
+        MethodError or KeyError when loaded by v1.0+. Similarly, v1.0+ TOMLs
+        will fail on older Wflow versions.
+      affected_components:
+        - "wflow_sbm.toml"
+        - "Wflow.jl version"
+    remedy:
+      action: "Check Wflow.jl version and regenerate TOML for the installed version"
+      tool_to_run: "generate_wflow_toml"
+      manual_steps:
+        - "Check version: julia -e 'using Pkg; Pkg.status(\"Wflow\")'"
+        - "If v1.0+, use generate_wflow_toml.py (generates v1.0 format)"
+        - "If pre-v1.0, use --legacy flag"
+      prevention: "Always use generate_wflow_toml.py to match installed Wflow version."
+    severity: "fatal"
+    cross_references: ["dt_w022"]
+
+  - id: dt_w007
+    stage: "s4_execution"
+    failure_domain: "runtime"
+    symptom:
+      description: "Julia OutOfMemoryError during wflow execution"
+      error_pattern: "OutOfMemoryError"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "Domain too large for available RAM — wflow loads entire spatial grid into memory"
+      explanation: >
+        Unlike VIC which processes cells sequentially, wflow loads the entire
+        staticmaps.nc and forcing.nc into memory. For large basins (>100,000 km2)
+        at fine resolution (0.1 deg), memory requirements can exceed 16 GB.
+        A 1000x1000 grid with 10 years of daily forcing is ~3 GB for forcing
+        alone, plus ~2 GB for static maps and state variables.
+      affected_components:
+        - "staticmaps.nc"
+        - "forcing.nc"
+        - "Julia memory management"
+    remedy:
+      action: "Reduce domain size or resolution. 0.25 deg uses ~6x less memory than 0.1 deg."
+      tool_to_run: ""
+      manual_steps:
+        - "Check grid size: ncdump -h staticmaps.nc | grep 'x = '"
+        - "If grid > 500x500, consider using 0.25 deg resolution"
+        - "Or split simulation into shorter periods"
+        - "Monitor memory: julia --threads=1 to reduce memory overhead"
+      prevention: "For basins > 100,000 km2, default to 0.25 deg. Monitor memory."
+    severity: "fatal"
+    cross_references: []
+
+  - id: dt_w008
+    stage: "s4_execution"
+    failure_domain: "runtime"
+    symptom:
+      description: "DimensionMismatch error during wflow execution"
+      error_pattern: "DimensionMismatch"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "staticmaps.nc and forcing.nc have different spatial dimensions"
+      explanation: >
+        wflow requires the forcing grid to match the staticmaps grid exactly —
+        same number of rows (y) and columns (x), same coordinate values.
+        If they were generated separately (e.g., staticmaps from HydroMT,
+        forcing from convert_forcing_to_wflow.py), the grids may not align.
+      affected_components:
+        - "staticmaps.nc"
+        - "forcing.nc"
+    remedy:
+      action: "Ensure staticmaps.nc and forcing.nc have identical y and x dimensions"
+      tool_to_run: ""
+      manual_steps:
+        - "ncdump -h staticmaps.nc | grep -E 'y|x'"
+        - "ncdump -h forcing.nc | grep -E 'y|x'"
+        - "Compare coordinate values: must be identical"
+        - "If different, regenerate forcing using staticmaps.nc as grid reference"
+      prevention: "Use --staticmaps_nc option in convert_forcing_to_wflow.py."
+    severity: "fatal"
+    cross_references: []
+
+  - id: dt_w009
+    stage: "s4_execution"
+    failure_domain: "runtime"
+    symptom:
+      description: "wflow takes 30-60 seconds before any output appears, then runs normally"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Julia JIT compilation on first run — this is normal behavior, not an error"
+      explanation: >
+        Julia compiles code just-in-time on first execution. Loading Wflow.jl
+        triggers compilation of thousands of methods. This takes 30-60 seconds
+        on first run, ~5 seconds on subsequent runs in the same Julia session.
+        This is a fundamental Julia characteristic, not a bug.
+      affected_components:
+        - "Julia runtime"
+        - "Wflow.jl package"
+    remedy:
+      action: "Wait patiently. This is normal Julia behavior."
+      tool_to_run: ""
+      manual_steps:
+        - "First run: expect 30-60s delay before progress output"
+        - "Subsequent runs: ~5s startup"
+        - "For production: use PackageCompiler.jl to create sysimage (~2s startup)"
+      prevention: "Use PackageCompiler sysimage for production deployments."
+    severity: "degraded"
+    cross_references: []
+
+  - id: dt_w010
+    stage: "s4_execution"
+    failure_domain: "runtime"
+    symptom:
+      description: "KeyError or 'variable not found' when wflow reads TOML config"
+      error_pattern: "KeyError|variable not found|Unknown key"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "TOML references variable names not present in staticmaps.nc, or uses old naming convention"
+      explanation: >
+        wflow v1.0 uses CSDMS standard names for variables. If the TOML references
+        'ksat' but staticmaps.nc has 'KsatVer', or vice versa, wflow will fail
+        with KeyError. Most online tutorials and examples use pre-v1.0 names.
+      affected_components:
+        - "wflow_sbm.toml"
+        - "staticmaps.nc variable names"
+    remedy:
+      action: "Check variable names in staticmaps.nc match TOML references"
+      tool_to_run: ""
+      manual_steps:
+        - "List variables: ncdump -h staticmaps.nc"
+        - "Compare with TOML [input.static] section"
+        - "Use generate_wflow_toml.py to regenerate TOML"
+      prevention: "Always generate TOML and staticmaps together or verify name consistency."
+    severity: "fatal"
+    cross_references: ["dt_w006", "dt_w022"]
+
+  # ========================================================================
+  # Parameter Format (4 triplets)
+  # ========================================================================
+
+  - id: dt_w011
+    stage: "s3_parameters"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "TOML parse error on wflow startup"
+      error_pattern: "TOML Parser Error|expected.*got"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "Invalid TOML syntax — missing quotes, wrong brackets, or malformed values"
+      explanation: >
+        TOML is strict about syntax: string values need quotes, arrays use brackets,
+        nested sections use dotted keys or [[double brackets]] for arrays of tables.
+        A common mistake is using = without quotes for string values, or mixing
+        TOML table syntax incorrectly.
+      affected_components:
+        - "wflow_sbm.toml"
+    remedy:
+      action: "Validate TOML syntax with a linter before running wflow"
+      tool_to_run: ""
+      manual_steps:
+        - "python -c \"import tomllib; tomllib.load(open('wflow_sbm.toml','rb'))\""
+        - "Fix reported syntax errors"
+        - "Or regenerate TOML using generate_wflow_toml.py"
+      prevention: "Always use generate_wflow_toml.py which produces valid TOML."
+    severity: "fatal"
+    cross_references: []
+
+  - id: dt_w012
+    stage: "s3_parameters"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "All cells have identical parameter values despite spatial parameter map"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "TOML scale=0 or offset dominates — the spatial variation is overridden"
+      explanation: >
+        If the TOML sets scale=0 for a parameter, all values become 0 regardless of
+        the NetCDF map. If offset is set to a large value with scale=0, all cells
+        get the offset value uniformly. This is a calibration mistake, not a code error.
+      affected_components:
+        - "wflow_sbm.toml scale/offset"
+        - "Parameter calibration"
+    remedy:
+      action: "Check TOML scale/offset values. scale=0 zeroes the parameter. Default should be scale=1, offset=0."
+      tool_to_run: "adjust_parameters"
+      manual_steps:
+        - "grep 'scale' wflow_sbm.toml"
+        - "Verify no scale=0 entries"
+        - "Use adjust_parameters.py --list_params to see valid ranges"
+      prevention: "Review parameter adjustments before running."
+    severity: "silent"
+    cross_references: []
+
+  - id: dt_w013
+    stage: "s1_hydromt"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "River routing produces zero flow everywhere"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "River network not properly defined in staticmaps.nc — wflow_river mask is all zeros"
+      explanation: >
+        The kinematic wave routing requires a river network defined in staticmaps.nc
+        (wflow_river variable). If this is all zeros or all ones, routing will fail
+        silently. The manual build uses a placeholder that marks all cells as river,
+        which produces too-fast routing. HydroMT builds the proper network from DEM.
+      affected_components:
+        - "staticmaps.nc wflow_river"
+        - "River routing"
+    remedy:
+      action: "Verify wflow_river in staticmaps.nc has a proper channel network pattern"
+      tool_to_run: ""
+      manual_steps:
+        - "python -c \"import xarray; ds=xarray.open_dataset('staticmaps.nc'); print(ds.wflow_river.sum())\""
+        - "River cells should be a small fraction of total cells (5-20%)"
+        - "If all 0 or all 1, rebuild using HydroMT or compute from DEM"
+      prevention: "Use HydroMT for model building, or compute river network from flow accumulation."
+    severity: "silent"
+    cross_references: []
+
+  - id: dt_w014
+    stage: "s1_hydromt"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "BoundsError or phantom cycles — boundary cells route outside active domain"
+      error_pattern: "BoundsError|cycles detected"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "Boundary cells must be pits in BOTH numpy-space AND wflow's transformed space"
+      explanation: >
+        wflow reads NetCDF (y,x), transposes to Julia (x,y), reverses y to ascending.
+        A cell at numpy (j, i) becomes wflow (x=i, y=ny-1-j) for descending-y grids.
+        PCR_DIR offsets apply in wflow-space: e.g. LDD 8 (North) = CartesianIndex(0,+1)
+        = y+1 in ascending space. If the target cell is inactive in wflow-space but
+        active in numpy-space (or vice versa), wflow's searchsortedfirst() returns
+        a wrong node, creating phantom cycles or BoundsErrors.
+
+        This was the hardest bug to find because Python cycle checks pass (correct in
+        numpy-space) but wflow still detects cycles (broken in wflow-space).
+
+        Key source files:
+        - wflow/src/utils.jl: PCR_DIR constant defines (dx, dy) offsets
+        - wflow/src/io.jl: read_y_axis() sorts ascending, read_standardized() reverses
+        - wflow/src/routing/routing_process.jl: flowgraph() uses searchsortedfirst()
+      affected_components:
+        - "staticmaps.nc wflow_ldd boundary cells"
+        - "run_hydromt_build.py dual-space boundary check"
+    remedy:
+      action: "Check boundary conditions in BOTH coordinate spaces"
+      tool_to_run: "run_hydromt_build.py (fixed 2026-04-10)"
+      manual_steps:
+        - "For each active cell with LDD != 5:"
+        - "  Check 1 (numpy): target (j+dj, i+di) must be active in the raw mask"
+        - "  Check 2 (wflow): target (i+dx, ny-1-j+dy) must be active in wf_mask[x, y_asc]"
+        - "  If either check fails, set LDD = 5 (pit)"
+        - "Use Julia debug script to verify: build graph with searchsortedfirst, check is_cyclic()"
+      prevention: "The S1 tool handles this automatically. If writing custom LDD code, ALWAYS verify with wflow's own flowgraph logic in Julia."
+    severity: "fatal"
+    verified: "2026-04-10 (Bengbu 0 cycles, Xixian 0 cycles)"
+    cross_references: ["dt_w027"]
+
+  # ========================================================================
+  # Silent Errors (6 triplets)
+  # ========================================================================
+
+  - id: dt_w015
+    stage: "s5_postprocess"
+    failure_domain: "silent_error"
+    symptom:
+      description: "Discharge timing is correct but magnitude is 2-3x off"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Wrong upstream area in staticmaps.nc or wrong river width/slope parameters"
+      explanation: >
+        wflow discharge depends on the upstream area and river geometry stored in
+        staticmaps.nc. If these are placeholder values (from manual build) instead
+        of DEM-derived values, the discharge magnitude will be systematically wrong
+        while timing/peaks remain correct (driven by forcing).
+      affected_components:
+        - "staticmaps.nc RiverWidth, RiverSlope, upstream area"
+    remedy:
+      action: "Use DEM-derived river geometry. Rebuild with HydroMT for proper values."
+      tool_to_run: "run_hydromt_build"
+      manual_steps:
+        - "Check RiverWidth values: should vary from 5m (headwater) to 100+m (main river)"
+        - "Check RiverSlope: should vary from 0.001 (flat) to 0.1 (steep)"
+        - "If uniform values, rebuild from DEM"
+      prevention: "Use HydroMT build for river geometry, or compute from DEM."
+    severity: "silent"
+    cross_references: []
+
+  - id: dt_w016
+    stage: "s4_execution"
+    failure_domain: "silent_error"
+    symptom:
+      description: "Glacier melt absent despite glacier flag enabled in TOML"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Glacier fraction map is all zeros because the dataset does not cover the region"
+      explanation: >
+        Setting glacier=true in the TOML activates the glacier module, but it needs
+        a 'GlacierFrac' variable in staticmaps.nc with glacier coverage > 0.
+        If the glacier dataset (RGI) was not properly clipped to the basin, or the
+        basin is outside glacier coverage, GlacierFrac will be zero everywhere.
+        The model runs fine but produces zero glacier melt contribution.
+      affected_components:
+        - "staticmaps.nc GlacierFrac"
+        - "Glacier module"
+    remedy:
+      action: "Check GlacierFrac in staticmaps.nc. If all zeros, disable glacier flag or provide glacier data."
+      tool_to_run: ""
+      manual_steps:
+        - "python -c \"import xarray; ds=xarray.open_dataset('staticmaps.nc'); print(ds.GlacierFrac.max())\""
+        - "If max is 0, no glacier data exists for this basin"
+        - "Either download RGI data or disable glacier=false in TOML"
+      prevention: "Only enable glacier flag for basins with known glaciers."
+    severity: "silent"
+    cross_references: []
+
+  - id: dt_w017
+    stage: "s3_parameters"
+    failure_domain: "silent_error"
+    symptom:
+      description: "Baseflow dominates, no peak flows, hydrograph is flat"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Parameter f (exponential Ksat decay) is too low — Ksat does not decay with depth, all water percolates"
+      explanation: >
+        The parameter 'f' controls how quickly vertical hydraulic conductivity
+        decays with depth: Ksat(z) = KsatVer * exp(-f*z). If f is too low (e.g., 0.0001),
+        Ksat remains high throughout the soil profile, and almost all infiltrated
+        water becomes deep percolation/baseflow rather than lateral subsurface flow.
+        The result is a very flat hydrograph with high baseflow and no peaks.
+      affected_components:
+        - "SBM soil module"
+        - "Parameter f in staticmaps.nc"
+    remedy:
+      action: "Increase f parameter. Typical range: 0.001-0.005 (1/mm)."
+      tool_to_run: "adjust_parameters"
+      manual_steps:
+        - "Check f value: python -c \"import xarray; print(xarray.open_dataset('staticmaps.nc').f.mean())\""
+        - "If f < 0.0005, increase to 0.001-0.003"
+        - "python adjust_parameters.py --staticmaps staticmaps.nc --param f --multiply 3"
+      prevention: "Use literature-informed f values. Semi-arid: 0.001-0.002. Humid: 0.002-0.005."
+    severity: "silent"
+    cross_references: []
+
+  - id: dt_w018
+    stage: "s8_sediment_post"
+    failure_domain: "silent_error"
+    symptom:
+      description: "Sediment model produces zero erosion everywhere"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "USLE C factor is 0 for all cells — typically because default forest C factor is near-zero"
+      explanation: >
+        If the land cover classification assigns most cells to forest (C~0.003)
+        or water (C=0), total erosion will be near-zero. This is physically
+        correct for dense forests but may indicate the wrong land cover dataset
+        was used, or the C factor lookup table doesn't match the classification.
+      affected_components:
+        - "USLE_C in staticmaps_sediment.nc"
+        - "Land cover classification"
+    remedy:
+      action: "Check C factor distribution. If all near-zero, verify land cover classification."
+      tool_to_run: ""
+      manual_steps:
+        - "python -c \"import xarray; ds=xarray.open_dataset('staticmaps_sediment.nc'); print(ds.USLE_C.where(ds.USLE_C>0).mean())\""
+        - "Expected: 0.01-0.3 depending on land use mix"
+        - "If < 0.005, check land cover classification"
+      prevention: "Verify C factor map after sediment model build."
+    severity: "silent"
+    cross_references: ["dt_w005"]
+
+  - id: dt_w019
+    stage: "s6_sediment"
+    failure_domain: "silent_error"
+    symptom:
+      description: "Grain size fractions do not sum to 1.0 — sediment budget not closed"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Grain size class fractions (clay+silt+sand+sagg+lagg) do not sum to 100% per cell"
+      explanation: >
+        wflow_sediment distributes eroded soil into 5 grain classes. The fractions
+        must sum to 1.0 for mass conservation. If they don't (e.g., due to rounding
+        or missing a class), the sediment budget will not close, and total sediment
+        yield will be wrong.
+      affected_components:
+        - "staticmaps_sediment.nc grain fractions"
+    remedy:
+      action: "Normalize grain fractions to sum to 1.0 per cell"
+      tool_to_run: ""
+      manual_steps:
+        - "Check sum: python -c \"import xarray; ds=xarray.open_dataset('staticmaps_sediment.nc'); print((ds.ClayFrac+ds.SiltFrac+ds.SandFrac+ds.SAggFrac+ds.LAggFrac).mean())\""
+        - "If not ~1.0, normalize by dividing each fraction by the total"
+      prevention: "build_sediment_model.py validates fraction sums."
+    severity: "silent"
+    cross_references: ["dt_w005"]
+
+  - id: dt_w020
+    stage: "s5_postprocess"
+    failure_domain: "silent_error"
+    symptom:
+      description: "wflow and VIC discharge differ by 3-5x for the same basin and forcing"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Different infiltration physics, PET methods, and routing — this is expected model structural uncertainty"
+      explanation: >
+        wflow_sbm and VIC use fundamentally different soil physics (exponential Ksat
+        decay vs 3-layer variable infiltration capacity), different snow models
+        (degree-day vs energy balance), and potentially different PET methods.
+        Discharge differences of 30-50% are normal for uncalibrated runs with
+        different models. This is NOT a bug — it is model structural uncertainty.
+      affected_components:
+        - "wflow_sbm soil module"
+        - "VIC soil module"
+        - "PET calculation"
+    remedy:
+      action: "This is expected behavior. Report as model intercomparison, not validation failure."
+      tool_to_run: "compare_with_vic"
+      manual_steps:
+        - "Verify both models use identical forcing (same CMFD/MSWX source)"
+        - "Compare PET methods and values"
+        - "Report correlation and timing agreement separately from magnitude"
+      prevention: "Calibrate both models independently before intercomparison."
+    severity: "silent"
+    cross_references: []
+
+  # ========================================================================
+  # Environment / Julia (3 triplets)
+  # ========================================================================
+
+  - id: dt_w021
+    stage: "s4_execution"
+    failure_domain: "environment"
+    symptom:
+      description: "Package Wflow not found in Julia environment"
+      error_pattern: "Package Wflow .* not found|ERROR: LoadError.*Wflow"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "Julia environment not activated or Wflow.jl not installed"
+      explanation: >
+        Julia uses project-specific environments (like Python virtualenvs).
+        If --project is not specified or points to wrong directory, Julia
+        will not find Wflow.jl even if installed elsewhere.
+      affected_components:
+        - "Julia environment"
+        - "run_wflow.py --julia_env"
+    remedy:
+      action: "Install Wflow.jl or point to correct Julia environment"
+      tool_to_run: ""
+      manual_steps:
+        - "Install: julia -e 'using Pkg; Pkg.add(\"Wflow\")'"
+        - "Verify: julia -e 'using Wflow; println(\"OK\")'"
+        - "Check --julia_env path points to directory with Project.toml"
+      prevention: "Install Wflow.jl once and record the environment path."
+    severity: "fatal"
+    cross_references: []
+
+  - id: dt_w022
+    stage: "s3_parameters"
+    failure_domain: "environment"
+    symptom:
+      description: "TOML config works on one machine but fails on another with 'Unknown key' errors"
+      error_pattern: "Unknown key|unexpected key"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "Different Wflow.jl versions — v1.0 uses CSDMS standard names, pre-v1.0 uses short names"
+      explanation: >
+        wflow v1.0 (Dec 2024) was a breaking release that changed the TOML
+        configuration format. Variable names, section structure, and some
+        parameter names changed to follow CSDMS standard naming. A TOML file
+        generated for v1.0 will not work with pre-v1.0, and vice versa.
+        Most online examples and tutorials use the OLD format.
+      affected_components:
+        - "wflow_sbm.toml"
+        - "Wflow.jl version"
+    remedy:
+      action: "Check Wflow.jl version and use matching TOML format"
+      tool_to_run: "generate_wflow_toml"
+      manual_steps:
+        - "Check version: julia -e 'using Pkg; println(Pkg.status(\"Wflow\"))'"
+        - "v1.0+: use CSDMS standard names (generate_wflow_toml.py default)"
+        - "pre-v1.0: use generate_wflow_toml.py --legacy"
+      prevention: "Pin Wflow.jl version in Project.toml. Always use generate_wflow_toml.py."
+    severity: "fatal"
+    cross_references: ["dt_w006", "dt_w010"]
+
+  - id: dt_w023
+    stage: "s4_execution"
+    failure_domain: "environment"
+    symptom:
+      description: "LoadError during Wflow precompilation — NetCDF library conflict"
+      error_pattern: "LoadError.*precompil|NetCDF.*error|libnetcdf"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "Julia's NetCDF library conflicts with system NetCDF or Python's NetCDF4"
+      explanation: >
+        Julia installs its own copies of shared libraries (NetCDF, HDF5) via
+        BinaryBuilder. If LD_LIBRARY_PATH is set (e.g., by conda or the Python
+        venv), Julia may pick up the wrong libnetcdf.so, causing precompilation
+        to fail. This is a Julia ecosystem challenge.
+      affected_components:
+        - "Julia shared libraries"
+        - "LD_LIBRARY_PATH"
+    remedy:
+      action: "Unset LD_LIBRARY_PATH before running Julia, or use a clean shell"
+      tool_to_run: ""
+      manual_steps:
+        - "unset LD_LIBRARY_PATH"
+        - "julia -e 'using Wflow'"
+        - "If that works, add 'unset LD_LIBRARY_PATH' to the wflow wrapper script"
+      prevention: "run_wflow.py should sanitize LD_LIBRARY_PATH before calling Julia."
+    severity: "fatal"
+    cross_references: ["dt_w021"]
+
+  # ========================================================================
+  # Dependency Mismatch (2 triplets)
+  # ========================================================================
+
+  - id: dt_w024
+    stage: "s1_hydromt"
+    failure_domain: "dependency_mismatch"
+    symptom:
+      description: "HydroMT-wflow generates TOML that causes errors in Wflow.jl"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "HydroMT-wflow version does not match installed Wflow.jl version"
+      explanation: >
+        HydroMT-wflow generates TOML configurations and staticmaps for a specific
+        Wflow.jl version. If hydromt_wflow v0.5 generates a TOML for wflow v0.7,
+        but Wflow.jl v1.0 is installed, the TOML format will be incompatible.
+        Always check version compatibility.
+      affected_components:
+        - "hydromt_wflow version"
+        - "Wflow.jl version"
+    remedy:
+      action: "Ensure hydromt_wflow version matches Wflow.jl version"
+      tool_to_run: ""
+      manual_steps:
+        - "pip show hydromt_wflow"
+        - "julia -e 'using Pkg; Pkg.status(\"Wflow\")'"
+        - "Check compatibility table in HydroMT-wflow docs"
+      prevention: "Pin both versions and test compatibility before deployment."
+    severity: "degraded"
+    cross_references: ["dt_w006", "dt_w022"]
+
+  - id: dt_w025
+    stage: "s9_coupling"
+    failure_domain: "dependency_mismatch"
+    symptom:
+      description: "wflow + CaMa-Flood produces discharge 2x too high with correct timing"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Double-counting routing — wflow already routes internally, CaMa-Flood re-routes"
+      explanation: >
+        wflow performs internal river routing (kinematic wave or local inertial).
+        If routed discharge (q_river) is passed to CaMa-Flood, the flow is
+        routed TWICE, producing systematically higher discharge with artificially
+        delayed peaks. The correct approach is to extract UNROUTED runoff components
+        (overland flow + subsurface lateral flow) from wflow output.
+      affected_components:
+        - "wflow_to_cama.py"
+        - "wflow output variable selection"
+    remedy:
+      action: "Use unrouted runoff (not q_river) as CaMa-Flood input"
+      tool_to_run: "wflow_to_cama"
+      manual_steps:
+        - "Use 'runoff' variable instead of 'q_river' in wflow_to_cama.py"
+        - "Or run wflow without routing (land-only mode) and let CaMa-Flood handle all routing"
+      prevention: "wflow_to_cama.py warns if q_river is used. Always use unrouted runoff."
+    severity: "silent"
+    cross_references: ["dt_w020"]
+
+  - id: dt_w026
+    stage: "s3_parameters"
+    failure_domain: "dependency_mismatch"
+    symptom:
+      description: "Cross-model parameter transfer produces wrong results (e.g., VIC Ksat to wflow KsatVer)"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Unit mismatch: VIC Ksat is mm/s, wflow KsatVer is mm/day, MODFLOW K is m/day"
+      explanation: >
+        Hydraulic conductivity units differ across models:
+        - VIC: mm/s (multiply by 86400 for mm/day)
+        - wflow: mm/day
+        - MODFLOW: m/day (divide by 1000 for mm/day)
+        - ParFlow: m/hr
+        Using VIC Ksat (mm/s) directly as wflow KsatVer (mm/day) makes the soil
+        86400x too permeable. This is the #1 cross-model silent error.
+      affected_components:
+        - "KsatVer in staticmaps.nc"
+        - "Cross-model parameter transfer"
+    remedy:
+      action: "Always apply unit conversion when transferring Ksat between models"
+      tool_to_run: ""
+      manual_steps:
+        - "VIC -> wflow: multiply Ksat by 86400 (mm/s -> mm/day)"
+        - "MODFLOW -> wflow: multiply K by 1000 (m/day -> mm/day)"
+        - "Check resulting KsatVer is in range 10-10000 mm/day"
+      prevention: "Use adjust_parameters.py which validates parameter ranges."
+    severity: "silent"
+    cross_references: ["dt_w005"]
+
+  # ========================================================================
+  # New triplets from Bengbu production validation (2026-03-22)
+  # ========================================================================
+
+  - id: dt_w027
+    stage: "s1_hydromt"
+    failure_domain: "runtime"
+    symptom:
+      description: "wflow crashes with 'One or more cycles detected in flow graph'"
+      error_pattern: "cycles detected in flow graph"
+      detection_method: "error_message"
+    diagnosis:
+      root_cause: "LDD has cycles from THREE interacting causes (all must be fixed)"
+      explanation: >
+        Three problems interact to create LDD cycles. Fixing only one leaves the others:
+
+        CAUSE 1 — Naive D8 creates cycles on coarse grids: Flat areas at 0.25° produce
+        ties where cell A→B and B→A. Fix: use WhiteboxTools breach_depressions + d8_pointer.
+
+        CAUSE 2 — DEM masking creates artificial barriers: Setting cells outside the basin
+        to -9999/nodata makes WhiteboxTools route INTO the nodata area, producing wrong flow
+        directions. Fix: sample the FULL DEM for ALL cells (including outside basin), fill
+        remaining gaps with nearest-neighbor interpolation (NOT basin mean — that creates flats).
+
+        CAUSE 3 — wflow's coordinate transformation breaks boundary cells: wflow reads the
+        NetCDF (y,x) array, transposes to Julia (x,y) column-major, and reverses y to ascending
+        via read_standardized(). Its flowgraph() uses searchsortedfirst() to find neighbor nodes.
+        If a cell's LDD target is outside the active domain in this TRANSFORMED space,
+        searchsortedfirst returns a WRONG node — creating phantom cycles even though the LDD
+        looks correct in numpy space. Fix: check boundary conditions in BOTH numpy-space
+        (for the raw array) AND wflow-space (for the transposed+reversed array).
+
+        Source: wflow/src/utils.jl (PCR_DIR constant), wflow/src/io.jl (read_standardized,
+        read_y_axis sorts to ascending, reverse_data!). Discovered 2026-04-10 revalidation.
+      affected_components:
+        - "staticmaps.nc wflow_ldd"
+        - "run_hydromt_build.py LDD generation"
+        - "wflow/src/routing/routing_process.jl flowgraph()"
+    remedy:
+      action: "Use the fixed run_hydromt_build.py which handles all three causes"
+      tool_to_run: "run_hydromt_build.py"
+      manual_steps:
+        - "1. Sample FULL DEM (all cells, not just basin mask)"
+        - "2. Run WhiteboxTools: breach_depressions then d8_pointer"
+        - "3. Convert WBT encoding to PCRaster LDD (wbt_to_ldd map)"
+        - "4. Mark boundary cells as pits in BOTH numpy-space AND wflow-space"
+        - "5. wflow-space check: for each cell, compute (x=col, y=ny-1-row if y_desc) and verify target (x+dx, y+dy) is active"
+        - "6. Verify: the Brooks-Corey 'c' variable must have a layer dimension (layer, y, x)"
+      prevention: "The S1 tool run_hydromt_build.py handles all this automatically since 2026-04-10"
+    severity: "fatal"
+    verified: "2026-04-10 (Bengbu + Xixian)"
+    cross_references: ["dt_w014"]
+
+  - id: dt_w031
+    stage: "s1_hydromt"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "type InputEntries has no field soil_layer_water__brooks_corey_exponent"
+      error_pattern: "has no field soil_layer_water__brooks_corey"
+      detection_method: "error_message"
+    diagnosis:
+      root_cause: "Brooks-Corey exponent 'c' in staticmaps.nc missing the layer dimension"
+      explanation: >
+        wflow expects the Brooks-Corey exponent 'c' as a 3D variable with shape
+        (layer, y, x) where layer matches soil_layer__thickness in the TOML.
+        If 'c' is stored as 2D (y, x), wflow errors when trying to read it as a
+        layered parameter. The error message is misleading — it says "has no field"
+        but the real issue is dimension mismatch.
+      affected_components:
+        - "staticmaps.nc variable 'c'"
+    remedy:
+      action: "Add layer dimension to 'c': stack the 2D array N times along a new layer axis"
+      tool_to_run: ""
+      manual_steps:
+        - "c_3d = np.stack([c_2d] * n_layers, axis=0)  # n_layers from TOML soil_layer__thickness"
+        - "ds['c'] = xr.DataArray(c_3d, dims=['layer', 'y', 'x'])"
+      prevention: "run_hydromt_build.py should always create 'c' with layer dimension"
+    severity: "fatal"
+    verified: "2026-04-10 (Xixian)"
+    cross_references: ["dt_w027"]
+
+  - id: dt_w028
+    stage: "s2_forcing"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "0 forcing files found or coordinates misparsed"
+      error_pattern: "Found 0 forcing files"
+      detection_method: "output_check"
+    diagnosis:
+      root_cause: "VIC forcing file naming pattern {basin}_{res}deg_{lat}_{lon} not recognized"
+      explanation: >
+        HydroCraft VIC forcing uses bengbu_0.25deg_31.1250_115.6250 pattern.
+        Fixed in v1.1.0 by adding *_*deg_* glob and parsing parts[2]/parts[3].
+      affected_components:
+        - "convert_forcing_to_wflow.py"
+    remedy:
+      action: "Use updated convert_forcing_to_wflow.py"
+      tool_to_run: "convert_forcing_to_wflow.py"
+      manual_steps: []
+      prevention: "Updated tool handles all known HydroCraft naming patterns."
+    severity: "fatal"
+    cross_references: []
+
+  - id: dt_w029
+    stage: "s1_hydromt"
+    failure_domain: "silent_error"
+    symptom:
+      description: "Inactive cells have zero instead of NaN, wrong runoff"
+      error_pattern: ""
+      detection_method: "spatial_check"
+    diagnosis:
+      root_cause: "Inactive cells set to 0 instead of NaN in staticmaps.nc"
+      explanation: >
+        wflow uses NaN to identify inactive cells. Zeros are treated as active with
+        zero parameter values, silently corrupting the simulation.
+      affected_components:
+        - "All variables in staticmaps.nc"
+    remedy:
+      action: "Initialize arrays with np.full(..., np.nan), only fill active cells"
+      tool_to_run: ""
+      manual_steps: []
+      prevention: "Always use NaN for inactive cells in all wflow NetCDF files."
+    severity: "silent"
+    cross_references: []
+
+  - id: dt_w030
+    stage: "s3_parameters"
+    failure_domain: "runtime"
+    symptom:
+      description: "Cold start crash: state variable not found"
+      error_pattern: "KeyError|variable not found"
+      detection_method: "error_message"
+    diagnosis:
+      root_cause: "Missing state variable mappings in TOML for cold start"
+      explanation: >
+        All 11 state variables must be in [state.variables] even with cold_start__flag=true.
+        wflow needs names for writing output state file.
+      affected_components:
+        - "wflow_sbm.toml [state.variables]"
+    remedy:
+      action: "Use generate_wflow_toml.py which includes all 11 state variables"
+      tool_to_run: "generate_wflow_toml.py"
+      manual_steps: []
+      prevention: "Always use generate_wflow_toml.py, never hand-write TOML."
+    severity: "fatal"
+    cross_references: ["dt_w006"]
+
+  # ========================================================================
+  # Reservoir Module (3 triplets, added 2026-04-03)
+  # ========================================================================
+
+  - id: dt_w031
+    stage: "s10_reservoir"
+    failure_domain: "unit_conversion"
+    symptom:
+      description: "Reservoir overflows immediately, releasing all inflow uncontrolled"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Reservoir maxstorage is in MCM instead of m^3 -- 1e6 too small"
+      explanation: >
+        GRanD reports capacity in MCM (million cubic meters). wflow maxstorage
+        expects m^3. If MCM values are used directly, the reservoir appears 1e6
+        too small. Storage immediately exceeds maxstorage, and all inflow is
+        released as overflow. The model runs without error but reservoir has
+        no regulatory effect. lookup_dams.py converts automatically.
+      affected_components:
+        - "ResMaxVolume in staticmaps.nc"
+        - "GRanD CAP_MCM unit"
+    remedy:
+      action: "Multiply GRanD CAP_MCM by 1e6 to get m^3"
+      tool_to_run: "lookup_dams"
+      manual_steps:
+        - "Check: python -c \"import xarray; ds=xarray.open_dataset('staticmaps.nc'); print(ds.ResMaxVolume.max())\""
+        - "If max is < 1e6, values are likely still in MCM"
+        - "Expected range: 1e7 to 1e11 m^3 for large reservoirs"
+      prevention: "Always use lookup_dams.py which converts MCM to m^3 automatically."
+    severity: "silent"
+    cross_references: ["dt_w001", "dt_w026"]
+
+  - id: dt_w032
+    stage: "s10_reservoir"
+    failure_domain: "silent_error"
+    symptom:
+      description: "Reservoir flag is true but discharge is identical to no-reservoir run"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Reservoir location not on a river cell -- wflow silently ignores it"
+      explanation: >
+        wflow only activates reservoirs at cells where wflow_reservoirlocs > 0 AND
+        the cell is on the river network (wflow_river = 1). If the reservoir
+        location falls on a non-river cell (e.g., due to coordinate rounding
+        on a coarse grid), the reservoir has zero effect on discharge.
+        configure_reservoirs.py snaps to nearest river cell, but manual
+        placement may miss this requirement.
+      affected_components:
+        - "wflow_reservoirlocs in staticmaps.nc"
+        - "wflow_river in staticmaps.nc"
+    remedy:
+      action: "Verify reservoir locations overlap with river cells"
+      tool_to_run: "configure_reservoirs"
+      manual_steps:
+        - "python -c \"import xarray as xr; ds=xr.open_dataset('staticmaps.nc'); locs=ds.wflow_reservoirlocs; riv=ds.wflow_river; print('Res on river:', int((locs.where(riv==1)>0).sum()))\""
+        - "If 0, rerun configure_reservoirs.py which snaps to river"
+      prevention: "Always use configure_reservoirs.py to place reservoirs."
+    severity: "silent"
+    cross_references: ["dt_w013"]
+
+  - id: dt_w033
+    stage: "s10_reservoir"
+    failure_domain: "silent_error"
+    symptom:
+      description: "Reservoir evaporation is wrong or reservoir area much larger than grid cell"
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Reservoir area in km^2 instead of m^2 -- 1e6 too small"
+      explanation: >
+        GRanD area_ori is in km^2. wflow reservoir_area expects m^2. If km^2
+        values are used directly, the reservoir area is 1e6 too small,
+        causing evaporation to be negligible and the linear storage curve
+        (S = A*H) to produce unrealistic water levels. Also, on coarse grids
+        (0.25 deg ~ 625 km^2 per cell), very large reservoirs (>1000 km^2)
+        are represented as a single point, which underestimates evaporation.
+      affected_components:
+        - "reservoir_area in staticmaps.nc"
+        - "GRanD area_ori unit"
+    remedy:
+      action: "Multiply GRanD area (km^2) by 1e6 to get m^2"
+      tool_to_run: "lookup_dams"
+      manual_steps:
+        - "Check: python -c \"import xarray; print(xarray.open_dataset('staticmaps.nc').reservoir_area.max())\""
+        - "Expected range: 1e6 to 1e11 m^2 for typical reservoirs"
+        - "If max < 1e5, values are likely in km^2"
+      prevention: "Always use lookup_dams.py which converts km^2 to m^2 automatically."
+    severity: "silent"
+    cross_references: ["dt_w031"]

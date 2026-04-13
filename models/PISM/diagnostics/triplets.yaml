@@ -1,0 +1,507 @@
+# PISM Diagnostic Triplets
+# Symptom → Diagnosis → Remedy for common PISM failures
+# Focus on unit conversion traps and silent errors
+
+- id: dt_001
+  stage: s2_input_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Precipitation field is 1000× too low — ice sheet receives almost no accumulation"
+    error_pattern: "ice_volume_glacierized decreasing rapidly"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation in m w.e./year instead of kg m^-2 year^-1"
+    explanation: >
+      PISM expects precipitation in kg m^-2 year^-1. SeaRISE and many reanalysis datasets
+      provide precipitation in m water equivalent per year. Since water density is 1000 kg/m³,
+      the conversion factor is ×1000. Without this conversion, the ice sheet receives 1/1000
+      of the intended precipitation, causing rapid mass loss.
+    affected_components: [surface_mass_balance, ice_volume]
+  remedy:
+    action: "Multiply precipitation by 1000.0 (water density)"
+    tool_to_run: convert_climate_forcing.py
+    manual_steps:
+      - "ncap2 -O -s 'precipitation=precipitation*1000.0' input.nc input.nc"
+      - "ncatted -O -a units,precipitation,m,c,'kg m^-2 year^-1' input.nc"
+    prevention: "The convert_climate_forcing.py tool handles this automatically with --precip-units m_we/year"
+  severity: fatal
+  cross_references: [dt_005]
+
+- id: dt_002
+  stage: s3_climate_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "PISM crashes with negative kelvin temperature or no ice forms"
+    error_pattern: "temperature.*below zero|no ice"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Temperature provided in °C but PISM expects kelvin"
+    explanation: >
+      PISM's internal temperature calculations use kelvin. If Celsius temperatures
+      (e.g., -30°C) are provided, PISM interprets them as -30 K, which is physically
+      impossible. For ice_surface_temp in bootstrap mode, PISM accepts degree_Celsius
+      if the units attribute is set correctly. For air_temp in forcing files, kelvin
+      is required.
+    affected_components: [energy_model, surface_model, ice_dynamics]
+  remedy:
+    action: "Add 273.15 to convert °C to kelvin"
+    tool_to_run: convert_climate_forcing.py
+    manual_steps:
+      - "ncap2 -O -s 'air_temp=air_temp+273.15' forcing.nc forcing.nc"
+      - "ncatted -O -a units,air_temp,m,c,'kelvin' forcing.nc"
+    prevention: "Use --temp-units celsius flag in convert_climate_forcing.py"
+  severity: fatal
+  cross_references: [dt_007]
+
+- id: dt_003
+  stage: s2_input_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Basal temperatures everywhere at pressure melting point, excessive basal melt"
+    error_pattern: "bmelt.*unrealistically high"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Geothermal heat flux in mW/m² instead of W/m²"
+    explanation: >
+      Shapiro & Ritzwoller (2004) and most geothermal datasets provide heat flux in
+      mW/m² (typical values 40–100 mW/m²). PISM expects W/m². Without dividing by
+      1000, a typical value of 50 mW/m² becomes 50 W/m² — roughly 1000× the actual
+      flux, producing unrealistic basal melting everywhere.
+    affected_components: [energy_model, basal_melt, ice_temperature]
+  remedy:
+    action: "Divide heat flux by 1000 (mW → W)"
+    tool_to_run: convert_geometry.py
+    manual_steps:
+      - "ncap2 -O -s 'bheatflx=bheatflx*0.001' input.nc input.nc"
+      - "ncatted -O -a units,bheatflx,m,c,'W m-2' input.nc"
+    prevention: "Use --bheatflx-units mW/m2 in convert_geometry.py"
+  severity: silent
+  cross_references: []
+
+- id: dt_004
+  stage: s1_domain_setup
+  failure_domain: parameter_format
+  symptom:
+    description: "Ice sheet geometry appears shifted or distorted relative to observations"
+    error_pattern: "longitude.*latitude.*incorrect"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Missing or incorrect projection metadata in input file"
+    explanation: >
+      PISM needs the map projection (PROJ string) to correctly interpret x,y coordinates
+      and compute longitude/latitude. Without the proj global attribute, PISM cannot
+      recompute coordinates, and any visualization with lon/lat will be incorrect.
+    affected_components: [grid, coordinates, visualization]
+  remedy:
+    action: "Add proj global attribute to NetCDF file"
+    tool_to_run: convert_geometry.py
+    manual_steps:
+      - "ncatted -O -a proj,global,c,c,'+proj=stere +lat_0=90 ...' input.nc"
+    prevention: "Always include --projection flag in convert_geometry.py"
+  severity: degraded
+  cross_references: [dt_015]
+
+- id: dt_005
+  stage: s2_input_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Surface mass balance 1000× too small — rapid ice loss despite cold climate"
+    error_pattern: "climatic_mass_balance.*very small"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "SMB in m w.e./year instead of kg m^-2 year^-1"
+    explanation: >
+      Same as precipitation: PISM expects climatic_mass_balance in kg m^-2 year^-1.
+      RACMO and MAR typically output SMB in m water equivalent/year. The conversion
+      factor is ×1000 (water density). This error causes the ice sheet to lose mass
+      even when it should be in equilibrium.
+    affected_components: [surface_mass_balance, ice_volume, ice_geometry]
+  remedy:
+    action: "Multiply SMB by 1000.0"
+    tool_to_run: convert_geometry.py
+    manual_steps:
+      - "ncap2 -O -s 'climatic_mass_balance=climatic_mass_balance*1000.0' input.nc input.nc"
+      - "ncatted -O -a units,climatic_mass_balance,m,c,'kg m^-2 year^-1' input.nc"
+    prevention: "Use --smb-units m_we/year in convert_geometry.py"
+  severity: fatal
+  cross_references: [dt_001]
+
+- id: dt_006
+  stage: s6_spinup
+  failure_domain: runtime
+  symptom:
+    description: "Time step shrinks to seconds, simulation effectively halts"
+    error_pattern: "dt.*very small|CFL"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "CFL violation due to extremely high velocities or thin ice on steep bed"
+    explanation: >
+      PISM's adaptive time stepping is governed by the CFL condition. If ice velocities
+      become very large (often due to incorrect input data or extreme forcing), the
+      required time step can shrink to seconds, making the simulation impractical.
+      Common causes: ice thickness in wrong units (km instead of m), unrealistic
+      basal sliding parameters, or extremely steep bed topography.
+    affected_components: [time_stepping, stress_balance, ice_dynamics]
+  remedy:
+    action: "Check input data units; increase -skip_max; coarsen grid; check physics parameters"
+    tool_to_run: run_pism.py
+    manual_steps:
+      - "Check thk units (should be meters, max ~4000 for Greenland)"
+      - "Increase -skip_max to 50 or 100"
+      - "Try coarser resolution first"
+      - "Verify stress balance parameters are reasonable"
+    prevention: "Always validate input ranges with convert_geometry.py before running"
+  severity: fatal
+  cross_references: [dt_015]
+
+- id: dt_007
+  stage: s6_spinup
+  failure_domain: silent_error
+  symptom:
+    description: "No ice forms in simulation — ice volume stays at zero"
+    error_pattern: "ice_volume_glacierized.*= 0"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature too warm (wrong units) or precipitation too low (wrong units)"
+    explanation: >
+      If temperatures are in °C and interpreted as kelvin, values like -20°C become
+      -20K (impossible) or 20°C becomes 20K (extremely cold but not glaciating if
+      combined with wrong precipitation). More commonly, precipitation in m/yr rather
+      than kg/m²/yr means 1000× too little snow accumulation.
+    affected_components: [surface_mass_balance, ice_geometry]
+  remedy:
+    action: "Verify temperature and precipitation units and value ranges"
+    tool_to_run: convert_climate_forcing.py
+    manual_steps:
+      - "ncdump -v air_temp input.nc | head -20  # Should be 220-280 K for ice sheets"
+      - "ncdump -v precipitation input.nc | head -20  # Should be 0-5000 kg m^-2 yr^-1"
+    prevention: "Run convert_climate_forcing.py with explicit unit flags"
+  severity: silent
+  cross_references: [dt_001, dt_002]
+
+- id: dt_008
+  stage: s5_configuration
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "PISM crashes at startup with PETSc version error"
+    error_pattern: "PETSc.*version|incompatible"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "PISM compiled against different PETSc version than currently loaded"
+    explanation: >
+      PISM links dynamically against PETSc. If the PETSc library at runtime differs
+      from the one used at compile time (e.g., module system loaded wrong version),
+      PISM may crash immediately or produce subtle numerical errors.
+    affected_components: [build, runtime, linear_solvers]
+  remedy:
+    action: "Ensure PETSC_DIR and PETSC_ARCH match the version used at build time"
+    tool_to_run: null
+    manual_steps:
+      - "echo $PETSC_DIR $PETSC_ARCH"
+      - "Rebuild PISM if PETSc was updated"
+      - "module load petsc/X.Y.Z matching build"
+    prevention: "Document PETSC_DIR and PETSC_ARCH in build notes"
+  severity: fatal
+  cross_references: [dt_017]
+
+- id: dt_009
+  stage: s3_climate_forcing
+  failure_domain: parameter_format
+  symptom:
+    description: "Seasonal cycle missing or shifted — summer forcing applied in winter"
+    error_pattern: "temperature.*wrong season"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Calendar mismatch between forcing file and PISM configuration"
+    explanation: >
+      PISM supports multiple calendars (365_day, 360_day, standard, etc.). If the
+      forcing file uses a different calendar than PISM expects, monthly data may be
+      shifted. A file with 'standard' calendar read by PISM configured for '365_day'
+      will have slight time offsets that accumulate over long simulations.
+    affected_components: [atmosphere, time_axis, surface_mass_balance]
+  remedy:
+    action: "Set calendar in forcing file to match PISM's -calendar flag"
+    tool_to_run: convert_climate_forcing.py
+    manual_steps:
+      - "ncatted -O -a calendar,time,m,c,'365_day' forcing.nc"
+      - "Verify: ncdump -v time forcing.nc | head"
+    prevention: "Always set --calendar explicitly in convert_climate_forcing.py"
+  severity: silent
+  cross_references: []
+
+- id: dt_010
+  stage: s7_transient_run
+  failure_domain: runtime
+  symptom:
+    description: "SSA solver fails to converge — SNES/KSP diverged error"
+    error_pattern: "SNESDiverged|KSPDiverged|DIVERGED"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Extreme velocity gradients, usually at ice shelf front or grounding line"
+    explanation: >
+      The SSA (Shallow Shelf Approximation) uses an iterative nonlinear solver (SNES
+      from PETSc). Convergence failures occur when velocity gradients are extreme,
+      typically at calving fronts, narrow fjords, or where ice goes afloat on a steep bed.
+    affected_components: [stress_balance, ssa_solver, ice_dynamics]
+  remedy:
+    action: "Adjust SSA solver parameters or coarsen grid near problem areas"
+    tool_to_run: run_pism.py
+    manual_steps:
+      - "Try -ssafd_ksp_rtol 1e-4 (relax tolerance)"
+      - "Try -ssafd_picard_maxi 300 (more iterations)"
+      - "Try -stress_balance.ssa.fd.brutal_sliding (emergency option)"
+      - "Check for zero-thickness ice shelves that should be removed"
+    prevention: "Enable calving to remove thin ice shelves; use -pik"
+  severity: fatal
+  cross_references: [dt_006]
+
+- id: dt_011
+  stage: s4_ocean_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "All ice shelves disappear within a few time steps"
+    error_pattern: "ice_area_glacierized.*rapid decrease"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Ocean melt rate in m/day instead of m/year"
+    explanation: >
+      PISM's -ocean.constant.melt_rate expects m/year. If melt rate data is in m/day
+      (e.g., from an ocean model), the value is 365× too high. A melt rate of 0.01 m/day
+      (reasonable) becomes 0.01 m/year (also reasonable) but 3.65 m/year is what was
+      intended, so the ice is melted 100× too slowly — or worse, if the input value
+      was already in m/year and treated as m/day.
+    affected_components: [ocean_model, ice_shelves, grounding_line]
+  remedy:
+    action: "Verify melt rate units; convert m/day to m/year if needed (×365.25)"
+    tool_to_run: null
+    manual_steps:
+      - "Check -ocean.constant.melt_rate value"
+      - "Typical values: 0.1–50 m/year for Antarctic ice shelves"
+    prevention: "Document expected melt rate range in run configuration"
+  severity: silent
+  cross_references: []
+
+- id: dt_012
+  stage: s5_configuration
+  failure_domain: silent_error
+  symptom:
+    description: "Ice sheet in equilibrium but bed elevation never changes"
+    error_pattern: "topg.*constant"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Bed deformation model not enabled (-bed_def lc not set)"
+    explanation: >
+      Glacial isostatic adjustment (GIA) causes the bed to deform under ice load. Without
+      -bed_def lc, the bed is fixed, which is unrealistic for simulations >1000 years.
+      The Lingle-Clark model is computationally cheap and should be enabled for all
+      ice sheet simulations.
+    affected_components: [bed_deformation, geometry, ice_volume]
+  remedy:
+    action: "Add -bed_def lc to the command line"
+    tool_to_run: run_pism.py
+    manual_steps:
+      - "Add '-bed_def lc' to PISM command line"
+      - "Ensure Lbz and Mbz are set (e.g., -Lbz 2000 -Mbz 11)"
+    prevention: "run_pism.py warns if bed_def is not set for runs >1000 years"
+  severity: silent
+  cross_references: []
+
+- id: dt_013
+  stage: s1_domain_setup
+  failure_domain: parameter_format
+  symptom:
+    description: "Ice geometry shifted by half a grid cell — boundaries slightly off"
+    error_pattern: "half-cell offset"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Grid registration mismatch (corner vs center)"
+    explanation: >
+      PISM supports both 'corner' and 'center' grid registration. If the input data
+      uses one convention and PISM is configured for the other, all fields will be
+      offset by half a grid cell. The default for bootstrap is 'corner'.
+    affected_components: [grid, geometry, all_spatial_fields]
+  remedy:
+    action: "Set -grid.registration to match input data convention"
+    tool_to_run: null
+    manual_steps:
+      - "Check input data documentation for grid registration"
+      - "Set -grid.registration corner (or center)"
+    prevention: "Always specify -grid.registration explicitly"
+  severity: degraded
+  cross_references: [dt_004]
+
+- id: dt_014
+  stage: s6_spinup
+  failure_domain: runtime
+  symptom:
+    description: "PISM killed by OS — out of memory"
+    error_pattern: "Killed|OOM|out of memory|SIGKILL"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Grid too large for available memory"
+    explanation: >
+      PISM's memory usage scales as Mx × My × Mz × n_fields × 8 bytes. A 5km
+      Greenland grid (301×551×201) requires ~8 GB per process. If insufficient
+      memory is available per MPI rank, the OS kills the process.
+    affected_components: [memory, grid, parallel_decomposition]
+  remedy:
+    action: "Reduce grid size, increase MPI processes, or use more nodes"
+    tool_to_run: null
+    manual_steps:
+      - "Estimate memory: Mx*My*Mz*20*8 bytes / nprocs"
+      - "Reduce Mz or coarsen horizontal grid"
+      - "Increase number of MPI processes (more memory total)"
+    prevention: "Check memory requirements before running"
+  severity: fatal
+  cross_references: []
+
+- id: dt_015
+  stage: s2_input_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Grid coordinates appear wrong — domain tiny or enormous"
+    error_pattern: "Lx.*unexpected|domain.*size"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Coordinate variables in km instead of m"
+    explanation: >
+      PISM expects projection coordinates (x, y) in meters. Many datasets provide
+      coordinates in km. If x ranges from -750 to 750 (km), PISM interprets this as
+      -750 to 750 meters — a 1.5 km domain instead of 1500 km. This causes the
+      entire ice sheet to fit in a few grid cells.
+    affected_components: [grid, domain, all_spatial_fields]
+  remedy:
+    action: "Multiply x and y coordinates by 1000"
+    tool_to_run: convert_geometry.py
+    manual_steps:
+      - "ncap2 -O -s 'x=x*1000.0;y=y*1000.0' input.nc input.nc"
+      - "ncatted -O -a units,x,m,c,'m' input.nc"
+      - "ncatted -O -a units,y,m,c,'m' input.nc"
+    prevention: "convert_geometry.py auto-detects and converts km to m"
+  severity: fatal
+  cross_references: [dt_004]
+
+- id: dt_016
+  stage: s2_input_preparation
+  failure_domain: silent_error
+  symptom:
+    description: "Spurious ice growth in currently ice-free areas"
+    error_pattern: "ice_area.*increasing unexpectedly"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Surface mass balance = 0 in ice-free regions instead of negative"
+    explanation: >
+      Many SMB datasets set the value to 0 or missing where there is no ice. PISM
+      interprets 0 SMB as zero mass balance, which allows any transported ice to
+      accumulate. In reality, ablation in ice-free areas should be negative. The
+      std-greenland preprocess.sh sets -1000 kg/m²/yr in ice-free areas.
+    affected_components: [surface_mass_balance, ice_extent, ice_volume]
+  remedy:
+    action: "Set negative SMB in ice-free areas"
+    tool_to_run: null
+    manual_steps:
+      - "ncap2 -O -s 'where(thk<=0.0){climatic_mass_balance=-1000.0;}' input.nc input.nc"
+    prevention: "Always handle ice-free SMB in preprocessing"
+  severity: silent
+  cross_references: [dt_001, dt_005]
+
+- id: dt_017
+  stage: s5_configuration
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "NetCDF read error — cannot open input file"
+    error_pattern: "NetCDF.*error|HDF5.*error|cannot open"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "NetCDF library version mismatch or file format incompatibility"
+    explanation: >
+      PISM is compiled against a specific NetCDF version. If the runtime NetCDF
+      library differs, or if the input file was created with NetCDF features not
+      supported by PISM's build (e.g., NetCDF-4 compression when built with
+      NetCDF-3 only), file reading will fail.
+    affected_components: [io, netcdf, file_reading]
+  remedy:
+    action: "Check NetCDF version compatibility; rewrite file if needed"
+    tool_to_run: null
+    manual_steps:
+      - "ncdump -k input.nc  # Check file format"
+      - "ncks -O --fl_fmt=netcdf4 input.nc input.nc  # Convert format"
+      - "Rebuild PISM with matching NetCDF version"
+    prevention: "Verify ncdump can read the file before passing to PISM"
+  severity: fatal
+  cross_references: [dt_008]
+
+- id: dt_018
+  stage: s3_climate_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "delta_T anomaly applied twice — temperature offset doubled"
+    error_pattern: "temperature.*offset.*too large"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "delta_T already in kelvin but converted from °C again"
+    explanation: >
+      Temperature anomalies (delta_T) are relative values. A -10 K anomaly means
+      10 K colder than present. Since it's a difference, °C and K are equivalent for
+      anomalies (Δ1°C = Δ1K). Converting delta_T from °C to K by adding 273.15
+      would make the anomaly ~273 K warmer — completely wrong.
+    affected_components: [atmosphere, paleo_climate, temperature]
+  remedy:
+    action: "Do NOT convert delta_T — it's already a relative offset"
+    tool_to_run: null
+    manual_steps:
+      - "Verify delta_T values are reasonable offsets (-20 to +10 K typically)"
+      - "Units should be 'kelvin' but values should be small offsets, not absolute temps"
+    prevention: "Document that delta_T needs no conversion in SKILL.md"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_019
+  stage: s6_spinup
+  failure_domain: silent_error
+  symptom:
+    description: "Ice sheet volume drifts continuously even after long spinup"
+    error_pattern: "ice_volume.*trend"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Spinup too short for the grid resolution and physics"
+    explanation: >
+      Thermal equilibrium takes 10,000+ years for ice sheets. At high resolution
+      with hybrid dynamics, even 200,000 years may not be enough. If volume still
+      has a trend >0.1% per millennium at spinup end, the initial state is not
+      equilibrated and transient runs will contain spurious drift.
+    affected_components: [spinup, initial_state, transient_results]
+  remedy:
+    action: "Extend spinup duration or use grid sequencing"
+    tool_to_run: run_pism.py
+    manual_steps:
+      - "Check volume trend in scalar output"
+      - "Use grid sequencing: 40km→20km→10km with regridding"
+      - "For paleo runs, simulate at least one full glacial cycle"
+    prevention: "Always check spinup stationarity before transient runs"
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_020
+  stage: s2_input_preparation
+  failure_domain: parameter_format
+  symptom:
+    description: "PISM cannot find expected input variables"
+    error_pattern: "variable.*not found|cannot read"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Variable names don't match PISM conventions"
+    explanation: >
+      PISM expects specific variable names: topg (not bed, bedrock), thk (not thickness,
+      ice_thickness), precipitation (not precip, pr), ice_surface_temp or air_temp.
+      If variable names don't match, PISM either uses defaults or crashes.
+    affected_components: [input, bootstrap, initialization]
+  remedy:
+    action: "Rename variables to PISM conventions"
+    tool_to_run: convert_geometry.py
+    manual_steps:
+      - "ncrename -v bed,topg -v thickness,thk input.nc"
+      - "Refer to SKILL.md input variable table for correct names"
+    prevention: "Use convert_geometry.py or convert_climate_forcing.py which handle renaming"
+  severity: fatal
+  cross_references: []

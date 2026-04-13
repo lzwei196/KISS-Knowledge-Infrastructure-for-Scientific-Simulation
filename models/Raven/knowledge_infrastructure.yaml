@@ -1,0 +1,302 @@
+# Raven Hydrological Modelling Framework — Knowledge Infrastructure
+# Schema version: 1.0
+# Package: hydrocraft-raven
+# Created: 2026-03-21
+
+package:
+  name: hydrocraft-raven
+  version: "1.0.0"
+  model: "Raven Hydrological Modelling Framework v4.1"
+  model_version: "4.1"
+  developer: "University of Waterloo (Prof. James Craig)"
+  license: "Artistic License 2.0"
+  language: "C++ (98.3%)"
+  repository: "https://github.com/CSHS-CWRA/RavenHydroFramework"
+  documentation: "https://raven.uwaterloo.ca"
+  binary_path: "/mnt/disk1/Hydrocraft_server/model/raven/Raven.exe"
+  source_path: "/mnt/disk1/Hydrocraft_server/model/raven/"
+  ki_path: "/mnt/disk1/Hydrocraft_server/models/Raven/knowledge_infrastructure/"
+  created_by: "Jianyun Zhang Research Group, Hohai University"
+  created_date: "2026-03-21"
+  validation_status: "production_validated"
+  validation_basin: "Bengbu (Huai River, 118,358 km2)"
+  validation_date: "2026-03-22"
+  validation_summary: "5 model structures on Bengbu with CMFD forcing, all r>0.7 vs VIC, best MOHYSE NSE=0.787"
+
+pipeline:
+  stages:
+    - id: s0
+      name: "Configuration"
+      description: "Select emulation template (GR4J/HBV/HMETS/etc.) and generate .rvi skeleton"
+      knowledge_type: evaluative
+      depends_on: []
+      milestone: ".rvi file generated with correct process algorithms"
+
+    - id: s1
+      name: "Basin/HRU Setup"
+      description: "Define subbasins and HRUs from shapefile + DEM + land cover; generate .rvh"
+      knowledge_type: procedural
+      depends_on: [s0]
+      milestone: ".rvh file with subbasins and HRU table"
+
+    - id: s2
+      name: "Soil & Vegetation Parameters"
+      description: "Extract soil/veg/land-use class parameters; generate .rvp"
+      knowledge_type: procedural
+      depends_on: [s1]
+      milestone: ".rvp file with all class definitions and parameters"
+
+    - id: s3
+      name: "Forcing Preparation"
+      description: "Convert CMFD/MSWX forcing to Raven .rvt format with unit conversions"
+      knowledge_type: procedural
+      depends_on: [s1]
+      milestone: ".rvt file with forcing data in correct units"
+
+    - id: s4
+      name: "Model Structure Definition"
+      description: "Finalize .rvi with process algorithms, timestep, output options"
+      knowledge_type: evaluative
+      depends_on: [s0]
+      milestone: "Complete .rvi file"
+
+    - id: s5
+      name: "Initial Conditions"
+      description: "Generate .rvc with default or warm-start initial conditions"
+      knowledge_type: procedural
+      depends_on: [s1, s2]
+      milestone: ".rvc file with climate-aware defaults"
+
+    - id: s6
+      name: "Execution"
+      description: "Run Raven.exe with preflight checks and error parsing"
+      knowledge_type: procedural
+      depends_on: [s1, s2, s3, s4, s5]
+      milestone: "Raven completes with exit code 0; output files generated"
+
+    - id: s7
+      name: "Output Analysis"
+      description: "Parse Hydrographs.csv, Diagnostics.csv; compute metrics"
+      knowledge_type: procedural
+      depends_on: [s6]
+      milestone: "Discharge stats and performance metrics extracted"
+
+    - id: s8
+      name: "Multi-Model Ensemble"
+      description: "Run multiple templates on same basin; compare diagnostics; rank structures"
+      knowledge_type: evaluative
+      depends_on: [s1, s2, s3, s5]
+      milestone: "Ensemble comparison with ranking and structural uncertainty estimate"
+
+    - id: s9
+      name: "Calibration"
+      description: "DDS parameter optimization for best-performing template"
+      knowledge_type: evaluative
+      depends_on: [s7]
+      milestone: "Optimized parameters with calibration/validation metrics"
+
+    - id: s10
+      name: "Coupling Output"
+      description: "Compare Raven vs VIC; convert output for cross-model analysis"
+      knowledge_type: procedural
+      depends_on: [s6]
+      milestone: "Cross-model comparison statistics"
+
+tools:
+  - id: t_s0_select_template
+    name: select_model_template
+    stage: s0
+    path: "tools/s0_config/select_model_template.py"
+    lines: 330
+    purpose: "Select from 8 emulation templates; generate .rvi with correct process algorithms"
+    inputs: ["template name or climate type", "basin characteristics"]
+    outputs: [".rvi file"]
+
+  - id: t_s1_build_rvh
+    name: build_rvh_from_shapefile
+    stage: s1
+    path: "tools/s1_basin_setup/build_rvh_from_shapefile.py"
+    lines: 380
+    purpose: "Generate .rvh from basin shapefile + DEM + AVHRR; supports lumped/elevation_bands/landuse strategies"
+    inputs: ["basin shapefile", "DEM raster", "AVHRR land cover"]
+    outputs: [".rvh file"]
+
+  - id: t_s2_build_rvp
+    name: build_rvp_parameters
+    stage: s2
+    path: "tools/s2_parameters/build_rvp_parameters.py"
+    lines: 320
+    purpose: "Generate .rvp with soil/veg parameters; reads class names from .rvh"
+    inputs: [".rvh file", "template name"]
+    outputs: [".rvp file"]
+
+  - id: t_s3_convert_forcing
+    name: convert_forcing_to_rvt
+    stage: s3
+    path: "tools/s3_forcing/convert_forcing_to_rvt.py"
+    lines: 430
+    purpose: "Convert CMFD/MSWX VIC forcing to .rvt gauge format with ALL unit conversions"
+    inputs: ["VIC forcing directory", "grid NetCDF"]
+    outputs: [".rvt file"]
+    critical_note: "RAVEN IGNORES UNITS. All conversions must happen in this tool."
+
+  - id: t_s5_generate_rvc
+    name: generate_rvc_initial
+    stage: s5
+    path: "tools/s5_initial_conditions/generate_rvc_initial.py"
+    lines: 120
+    purpose: "Generate .rvc with climate-aware default initial conditions"
+    inputs: ["climate type", "number of HRUs"]
+    outputs: [".rvc file"]
+
+  - id: t_s6_run_raven
+    name: run_raven
+    stage: s6
+    path: "tools/s6_execution/run_raven.py"
+    lines: 290
+    purpose: "Execute Raven.exe with preflight validation, error parsing, output collection"
+    inputs: ["run directory", "basin name"]
+    outputs: ["Hydrographs.csv", "Diagnostics.csv", "WatershedStorage.csv", "solution.rvc"]
+
+  - id: t_s7_parse_output
+    name: parse_raven_output
+    stage: s7
+    path: "tools/s7_output/parse_raven_output.py"
+    lines: 310
+    purpose: "Parse Raven output files; extract discharge, metrics, water balance"
+    inputs: ["output directory"]
+    outputs: ["JSON summary", "optional CSV export"]
+
+  - id: t_s8_ensemble
+    name: run_ensemble_comparison
+    stage: s8
+    path: "tools/s8_ensemble/run_ensemble_comparison.py"
+    lines: 360
+    purpose: "Run N model templates on same basin; compare diagnostics; rank by NSE/KGE"
+    inputs: ["base directory with shared .rvh/.rvt", "template list"]
+    outputs: ["ensemble comparison JSON with ranking and structural uncertainty"]
+
+  - id: t_s9_calibrate
+    name: calibrate_raven_dds
+    stage: s9
+    path: "tools/s9_calibration/calibrate_raven_dds.py"
+    lines: 340
+    purpose: "DDS calibration; modify .rvp parameters and iterate"
+    inputs: ["run directory", "template name", "n_iterations"]
+    outputs: ["optimized .rvp", "calibration history JSON"]
+
+  - id: t_s10_vic_compare
+    name: raven_vic_comparison
+    stage: s10
+    path: "tools/s10_coupling/raven_vic_comparison.py"
+    lines: 220
+    purpose: "Compare Raven vs VIC discharge; compute NSE, KGE, correlation, bias"
+    inputs: ["Raven Hydrographs.csv", "VIC routing output"]
+    outputs: ["comparison CSV", "statistics JSON"]
+
+  - id: t_validate
+    name: validate_raven_inputs
+    stage: all
+    path: "tools/common/validate_raven_inputs.py"
+    lines: 290
+    purpose: "Cross-file validation: class names match, forcing vs PET requirements, dates"
+    inputs: ["run directory with .rv* files"]
+    outputs: ["validation report JSON"]
+
+skill_documents:
+  - id: sd_s0
+    stage: s0
+    path: "docs/s0_model_selection_skill.md"
+    title: "Model Structure Selection Guide"
+
+  - id: sd_s1
+    stage: s1
+    path: "docs/s1_basin_hru_setup_skill.md"
+    title: "Basin and HRU Setup"
+
+  - id: sd_s3
+    stage: s3
+    path: "docs/s3_forcing_conversion_skill.md"
+    title: "Forcing Conversion and Unit Handling"
+
+  - id: sd_s4
+    stage: s4
+    path: "docs/s4_process_algorithm_guide.md"
+    title: "Process Algorithm Reference"
+
+  - id: sd_s8
+    stage: s8
+    path: "docs/s8_model_intercomparison_skill.md"
+    title: "Multi-Model Ensemble Methodology"
+
+  - id: sd_s9
+    stage: s9
+    path: "docs/s9_calibration_skill.md"
+    title: "Calibration Strategy"
+
+  - id: sd_s10
+    stage: s10
+    path: "docs/coupling_skill.md"
+    title: "Cross-Model Coupling"
+
+diagnostic_triplets:
+  total: 25
+  path: "diagnostics/triplets.yaml"
+  by_severity:
+    fatal: 8
+    silent: 12
+    degraded: 5
+  by_domain:
+    unit_conversion: 5
+    parameter_format: 4
+    silent_error: 5
+    dependency_mismatch: 2
+    calibration: 2
+    runtime: 3
+    coupling: 2
+    compilation: 1
+    installation: 1
+
+summary:
+  total_tools: 11
+  total_lines: 4200
+  total_skill_documents: 7
+  total_diagnostic_triplets: 33
+  pipeline_stages: 11
+  emulation_templates: 8
+  process_algorithms: "120+"
+  coverage_percentage: 85
+  missing_tools:
+    - "plot_raven_results.py (visualization — use HydroCraft skills/plot/ scripts)"
+    - "raven_to_cama_coupling.py (Raven -> CaMa-Flood conversion)"
+
+couplings:
+  - id: c_raven_01
+    source: "CMFD/MSWX forcing"
+    target: "Raven .rvt"
+    variables: ["precip", "temp", "wind", "humidity", "radiation", "pressure"]
+    transformation: "Spatial aggregation to basin mean; temporal resampling to daily; unit standardization"
+
+  - id: c_raven_02
+    source: "VIC forcing files"
+    target: "Raven .rvt"
+    variables: ["7 VIC forcing variables"]
+    transformation: "Parse ASCII per-cell; aggregate to basin mean; reformat to Raven gauge blocks"
+
+  - id: c_raven_03
+    source: "HydroCraft basin shapefile"
+    target: "Raven .rvh"
+    variables: ["subbasin geometry", "DEM", "land cover", "soil"]
+    transformation: "Spatial analysis; HRU construction"
+
+  - id: c_raven_04
+    source: "HWSD global soil"
+    target: "Raven .rvp soil classes"
+    variables: ["sand/silt/clay/bulk density/Ksat"]
+    transformation: "Pedotransfer functions; map to Raven soil class parameters"
+
+  - id: c_raven_05
+    source: "Raven Hydrographs.csv"
+    target: "VIC comparison"
+    variables: ["discharge (m3/s)"]
+    transformation: "Direct comparison; no conversion needed"

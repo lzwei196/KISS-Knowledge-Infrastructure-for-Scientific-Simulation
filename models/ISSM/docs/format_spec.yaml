@@ -1,0 +1,145 @@
+model:
+  name: "ISSM"
+  full_name: "Ice-sheet and Sea-level System Model"
+  version: "2026.1"
+  domain: "cryosphere"
+  developer: "NASA JPL / UC Irvine"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ISSM/source/repo/bin/issm.exe"
+  binary_slc_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ISSM/source/repo/bin/issm_slc.exe"
+  ld_library_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ISSM/source/repo/externalpackages/triangle/install/lib"
+  mesh_type: "unstructured triangular/prismatic finite-element"
+
+inputs:
+  domain:
+    - name: "domain_outline"
+      format: ".exp (Argus contour)"
+      description: "Polygon boundary of ice sheet domain in projected coordinates"
+      unit: "m"
+
+  geometry:
+    - name: "surface"
+      unit: "m"
+      valid_range: [-500, 5000]
+      description: "Ice surface elevation"
+    - name: "base"
+      unit: "m"
+      valid_range: [-5000, 5000]
+      description: "Ice base elevation"
+    - name: "thickness"
+      unit: "m"
+      valid_range: [0, 5000]
+      description: "Ice thickness (= surface - base)"
+    - name: "bed"
+      unit: "m"
+      valid_range: [-5000, 5000]
+      description: "Bedrock elevation"
+
+  forcing:
+    - name: "smb"
+      unit: "m/yr ice equivalent"
+      valid_range: [-50, 50]
+      description: "Surface mass balance"
+    - name: "geothermal_flux"
+      unit: "W/m^2"
+      valid_range: [0.0, 0.3]
+      description: "Geothermal heat flux at ice base"
+    - name: "surface_temperature"
+      unit: "K"
+      valid_range: [200, 280]
+      description: "Surface temperature forcing"
+
+  parameters:
+    critical:
+      - name: "rheology_B"
+        unit: "Pa s^(1/n)"
+        valid_range: [1.0e7, 5.0e8]
+        description: "Ice viscosity parameter (Glen's flow law, B convention). Use paterson(T_kelvin) to compute."
+      - name: "rheology_n"
+        unit: "-"
+        valid_range: [1, 5]
+        description: "Flow law exponent (typically 3)"
+      - name: "friction_coefficient"
+        unit: "(Pa m^-1 s)^(1/2)"
+        valid_range: [0, 500]
+        description: "Basal friction coefficient. Must be 0 on floating ice."
+      - name: "rho_ice"
+        unit: "kg/m^3"
+        valid_range: [910, 920]
+        description: "Ice density (default 917)"
+      - name: "rho_water"
+        unit: "kg/m^3"
+        valid_range: [1020, 1030]
+        description: "Ocean water density (default 1023)"
+
+  boundary_conditions:
+    - name: "spcvx"
+      unit: "m/yr"
+      description: "Prescribed x-velocity (NaN = free node)"
+    - name: "spcvy"
+      unit: "m/yr"
+      description: "Prescribed y-velocity (NaN = free node)"
+    - name: "spctemperature"
+      unit: "K"
+      description: "Prescribed temperature (NaN = free node)"
+
+outputs:
+  primary:
+    - name: "Vel"
+      unit: "m/yr"
+      valid_range: [0, 15000]
+      description: "Ice velocity magnitude"
+    - name: "Vx"
+      unit: "m/yr"
+      valid_range: [-15000, 15000]
+      description: "X-component of ice velocity"
+    - name: "Vy"
+      unit: "m/yr"
+      valid_range: [-15000, 15000]
+      description: "Y-component of ice velocity"
+    - name: "Pressure"
+      unit: "Pa"
+      valid_range: [0, 5.0e7]
+      description: "Ice pressure"
+    - name: "Thickness"
+      unit: "m"
+      valid_range: [0, 5000]
+      description: "Ice thickness (from transient/masstransport)"
+    - name: "Temperature"
+      unit: "K"
+      valid_range: [200, 273.15]
+      description: "Ice temperature (from thermal solution)"
+
+  solution_types:
+    - "Stressbalance"
+    - "Masstransport"
+    - "Thermal"
+    - "Transient"
+    - "Balancethickness"
+    - "Hydrology"
+    - "DamageEvolution"
+    - "Steadystate"
+
+  flow_equations:
+    - code: "SSA"
+      name: "Shallow Shelf Approximation"
+      dimensions: "2D"
+    - code: "SIA"
+      name: "Shallow Ice Approximation"
+      dimensions: "2D"
+    - code: "HO"
+      name: "Higher-Order (Blatter-Pattyn)"
+      dimensions: "3D"
+    - code: "FS"
+      name: "Full Stokes"
+      dimensions: "3D"
+    - code: "L1L2"
+      name: "L1L2 hybrid"
+      dimensions: "2D"
+    - code: "MOLHO"
+      name: "Modular higher-order"
+      dimensions: "2D+3D"
+
+known_issues:
+  - "Binary requires LD_LIBRARY_PATH set for libtriangle.so from externalpackages"
+  - "Validation metrics poor on SquareIceShelf benchmark (R2=-2.0, PBIAS=-99.82%) — likely parameterization issue in benchmark run, not a model defect"
+  - "13/20 diagnostic triplets are silent errors — ISSM tolerates physically unreasonable inputs without warning"

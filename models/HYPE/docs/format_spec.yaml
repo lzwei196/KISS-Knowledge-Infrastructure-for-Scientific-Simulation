@@ -1,0 +1,577 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["hydrology"] and ["water_quality"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "HYPE v5.35.0"
+  domain: "hydrology"
+  secondary_domains: ["water_quality"]
+  binary: "hype"
+  binary_path: "/mnt/disk1/Hydrocraft_server/model/hype/hype"
+  language: "Fortran 90"
+  working_directory: "./"  # run from directory containing info.txt; argument MUST end with /
+  dependencies: "None (pure Fortran 90)"
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "precipitation"
+      file: "Pobs.txt"
+      unit: "mm/day"
+      valid_range: [0.0, 500.0]      # debug_framework: precipitation_mm (0, 1000)
+      format: "tab-separated; line 1 = DATE + SUBID columns; line 2+ = data"
+      missing_value: -9999
+      conversion_from_cmfd: "kg/m2/s -> mm/3hr files; SUM 8 timesteps per day"
+      notes: "Must NOT have !! comment lines. Header row must be line 1."
+
+    - name: "temperature"
+      file: "Tobs.txt"
+      unit: "degC"
+      valid_range: [-60.0, 60.0]     # debug_framework: temperature_K bounds ~(-93, +67) in C
+      format: "tab-separated; line 1 = DATE + SUBID columns; line 2+ = data"
+      missing_value: -9999
+      conversion_from_cmfd: "K -> degC: MEAN 8 timesteps, then subtract 273.15"
+      notes: "Must NOT have !! comment lines."
+
+    - name: "solar_radiation"
+      file: "SWobs.txt"
+      unit: "MJ/m2/day"
+      valid_range: [0.0, 35.0]
+      format: "tab-separated"
+      missing_value: -9999
+      conversion_from_cmfd: "W/m2 -> MJ/m2/day: MEAN 8 timesteps, then multiply by 0.0864"
+      notes: "Only required for petmodel 5 (Penman-Monteith)"
+
+    - name: "wind_speed"
+      file: "Uobs.txt"
+      unit: "m/s"
+      valid_range: [0.0, 80.0]
+      format: "tab-separated"
+      missing_value: -9999
+      notes: "Only required for petmodel 5"
+
+    - name: "relative_humidity"
+      file: "RHobs.txt"
+      unit: "fraction"
+      valid_range: [0.0, 1.0]
+      format: "tab-separated"
+      missing_value: -9999
+      notes: "Only required for petmodel 5"
+
+  parameters:
+    critical:  # Parameters that cause silent errors when wrong
+      - name: "SLC fractions"
+        file: "GeoData.txt"
+        description: "SLC fraction columns per subbasin"
+        valid_range: "each >= 0; sum per subbasin must equal 1.0"
+        unit: "fraction"
+        bug_history: >
+          SLC fractions not summing to 1.0 produces NO warning from HYPE
+          but silently corrupts the water balance. This is the single most
+          common setup error found during testing.
+
+      - name: "directory trailing slash"
+        file: "info.txt"
+        description: "resultdir, modeldir, forcingdir, logdir paths"
+        valid_range: "string ending with /"
+        bug_history: >
+          Missing trailing slash on directory paths in info.txt causes
+          silent file-not-found. HYPE concatenates path + filename without
+          adding a separator.
+
+      - name: "special (GeoClass)"
+        file: "GeoClass.txt"
+        description: "SLC special class flag (2 = outlet lake)"
+        valid_range: [0, 2]
+        default: 0
+        bug_history: >
+          Setting special=2 without providing LakeData.txt creates a
+          zero-volume lake that traps ALL water. Discharge drops to zero
+          with no error message.
+
+      - name: "streamdepth (GeoClass)"
+        file: "GeoClass.txt"
+        description: "Stream depth for river SLC classes"
+        valid_range: [0.0, 20.0]
+        unit: "meters"
+        bug_history: >
+          streamdepth=0 for all SLC classes causes zero discharge output.
+          At least one SLC must have non-zero streamdepth for flow routing.
+          Found during Bengbu validation (dt_s08).
+
+    general:  # General parameters (1 value in par.txt)
+      - name: "lp"
+        file: "par.txt"
+        description: "Limit for PET reduction"
+        valid_range: [0.1, 1.0]
+        default: 0.8
+        sensitivity: "high"
+
+      - name: "rivvel"
+        file: "par.txt"
+        description: "River velocity"
+        valid_range: [0.1, 5.0]
+        default: 1.0
+        unit: "m/s"
+        sensitivity: "moderate"
+
+      - name: "damp"
+        file: "par.txt"
+        description: "Damping coefficient for river routing"
+        valid_range: [0.0, 1.0]
+        default: 0.5
+        sensitivity: "moderate"
+
+      - name: "cevpam"
+        file: "par.txt"
+        description: "Amplitude of PET seasonal cycle"
+        valid_range: [0.0, 1.0]
+        default: 0.3
+        sensitivity: "high"
+
+      - name: "cevpph"
+        file: "par.txt"
+        description: "Phase shift of PET seasonal variation"
+        valid_range: [0, 365]
+        default: 30
+        unit: "days"
+        sensitivity: "low"
+
+      - name: "rrcs3"
+        file: "par.txt"
+        description: "Deep groundwater recession coefficient"
+        valid_range: [0.0, 0.1]
+        default: 0.001
+        sensitivity: "moderate"
+
+    landuse_dependent:  # N values per line in par.txt (N = max landuse ID in GeoClass)
+      - name: "ttmp"
+        file: "par.txt"
+        description: "Threshold temperature for snowmelt"
+        valid_range: [-3.0, 3.0]
+        default: 0.0
+        unit: "degC"
+        sensitivity: "moderate"
+
+      - name: "cmlt"
+        file: "par.txt"
+        description: "Degree-day snowmelt factor"
+        valid_range: [1.0, 10.0]
+        default: 3.5
+        unit: "mm/degC/day"
+        sensitivity: "high (snow-affected basins)"
+
+      - name: "cevp"
+        file: "par.txt"
+        description: "PET coefficient per land use"
+        valid_range: [0.05, 0.5]
+        default: 0.15
+        sensitivity: "high"
+
+      - name: "srrcs"
+        file: "par.txt"
+        description: "Surface runoff recession coefficient"
+        valid_range: [0.0, 1.0]
+        default: 0.1
+        sensitivity: "moderate"
+
+    soil_dependent:  # N values per line in par.txt (N = max soil ID in GeoClass)
+      - name: "wcfc"
+        file: "par.txt"
+        description: "Field capacity"
+        valid_range: [0.05, 0.5]
+        default: 0.15
+        unit: "fraction"
+        sensitivity: "high"
+
+      - name: "wcwp"
+        file: "par.txt"
+        description: "Wilting point"
+        valid_range: [0.01, 0.3]
+        default: 0.05
+        unit: "fraction"
+        sensitivity: "high"
+
+      - name: "wcep"
+        file: "par.txt"
+        description: "Effective porosity"
+        valid_range: [0.1, 0.7]
+        default: 0.35
+        unit: "fraction"
+        sensitivity: "high"
+
+      - name: "rrcs1"
+        file: "par.txt"
+        description: "Upper soil recession coefficient"
+        valid_range: [0.0, 1.0]
+        default: 0.1
+        sensitivity: "high"
+
+      - name: "rrcs2"
+        file: "par.txt"
+        description: "Lower soil recession coefficient"
+        valid_range: [0.0, 0.5]
+        default: 0.01
+        sensitivity: "moderate"
+
+    npc_parameters:  # Water quality (N/P/C) parameters
+      - name: "fastn0"
+        file: "par.txt"
+        type: "genpar"
+        description: "Initial fast N pool"
+        valid_range: [1, 100]
+        unit: "kg/km2"
+        sensitivity: "medium"
+
+      - name: "fastp0"
+        file: "par.txt"
+        type: "genpar"
+        description: "Initial fast P pool"
+        valid_range: [0.1, 50]
+        unit: "kg/km2"
+        sensitivity: "medium"
+
+      - name: "humusn0"
+        file: "par.txt"
+        type: "landpar"
+        description: "Humus N pool per soil depth"
+        valid_range: [50, 500]
+        unit: "kg/km2/m"
+        sensitivity: "high"
+
+      - name: "humusp0"
+        file: "par.txt"
+        type: "landpar"
+        description: "Humus P pool per soil depth"
+        valid_range: [5, 50]
+        unit: "kg/km2/m"
+        sensitivity: "high"
+
+      - name: "denitrlu"
+        file: "par.txt"
+        type: "landpar"
+        description: "Land denitrification rate"
+        valid_range: [0.0001, 0.001]
+        unit: "kg/m2/day"
+        sensitivity: "high"
+
+      - name: "denitwr"
+        file: "par.txt"
+        type: "genpar"
+        description: "River denitrification rate"
+        valid_range: [0.001, 0.01]
+        unit: "kg/m2/day"
+        sensitivity: "medium"
+
+      - name: "denitwl"
+        file: "par.txt"
+        type: "genpar"
+        description: "Lake denitrification rate"
+        valid_range: [0.0005, 0.005]
+        unit: "kg/m2/day"
+        sensitivity: "medium"
+
+      - name: "minerfn"
+        file: "par.txt"
+        type: "landpar"
+        description: "Fast N mineralization rate"
+        valid_range: [0.001, 0.005]
+        unit: "1/day"
+        sensitivity: "medium"
+
+      - name: "soilcoh"
+        file: "par.txt"
+        type: "soilpar"
+        description: "Soil cohesion for erosion"
+        valid_range: [5, 15]
+        unit: "kPa"
+        sensitivity: "P only"
+
+      - name: "soilerod"
+        file: "par.txt"
+        type: "soilpar"
+        description: "Soil erodibility factor"
+        valid_range: [0.5, 2.0]
+        unit: "dimensionless"
+        sensitivity: "P only"
+
+  files:
+    required:
+      - name: "info.txt"
+        description: "Main configuration file (simulation period, paths, model options)"
+        format: "key-value pairs; !! comment lines allowed"
+        notes: "All directory paths MUST end with /. bdate/edate in YYYY-MM-DD."
+
+      - name: "GeoData.txt"
+        description: "Subbasin properties and SLC fractions"
+        format: "tab-separated; header row with column names"
+        key_columns: ["SUBID", "MAINDOWN", "AREA", "SLC_1..N", "RIVLEN", "LATITUDE", "LONGITUDE"]
+        notes: "MAINDOWN=0 marks outlet. AREA in m2. SLC fractions must sum to 1.0."
+
+      - name: "GeoClass.txt"
+        description: "SLC class definitions (landuse, soil, crop, layer depths)"
+        format: "tab-separated; !! comment header"
+        key_columns: ["SLC_ID", "landuse", "soil", "numlayers", "soildepth1..N"]
+        notes: "numlayers determines how many soildepth columns follow (1-3)"
+
+      - name: "par.txt"
+        description: "All model parameters (land-use, soil-type, general, NPC)"
+        format: "parameter_name followed by N values; !! comment lines"
+        notes: >
+          Land-use params: exactly max(landuse IDs) values per line.
+          Soil params: exactly max(soil IDs) values per line.
+          General params: exactly 1 value per line.
+          Too few values = fatal error. Too many = warning, ignored.
+
+      - name: "Pobs.txt"
+        description: "Precipitation observations (daily)"
+        format: "tab-separated; DATE + SUBID columns as header (NO !! comments)"
+        unit: "mm/day"
+
+      - name: "Tobs.txt"
+        description: "Temperature observations (daily)"
+        format: "tab-separated; DATE + SUBID columns as header (NO !! comments)"
+        unit: "degC"
+
+      - name: "ForcKey.txt"
+        description: "Forcing-to-subbasin mapping"
+        format: "tab-separated; SUBID + FROSESSION columns"
+        notes: "MUST be in forcingdir/, not modeldir/"
+
+    optional:
+      - name: "Qobs.txt"
+        description: "Observed discharge for calibration/validation"
+        unit: "m3/s"
+
+      - name: "LakeData.txt"
+        description: "Lake properties (area, depth, rating curve, regulation)"
+        location: "modeldir/"
+        notes: "Required only if any GeoClass SLC has special=2"
+
+      - name: "DamData.txt"
+        description: "Regulated dam properties"
+        location: "modeldir/"
+
+      - name: "CropData.txt"
+        description: "Crop-specific fertilizer and management data for NPC"
+        notes: "Required for NPC simulation. Generate with tools/s9_water_quality/generate_cropdata.py"
+
+      - name: "optpar.txt"
+        description: "Calibration parameter bounds and method settings"
+        location: "modeldir/"
+        notes: "Presence + calibration=Y in info.txt activates built-in optimization"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "discharge"
+      file: "timeCOUT.txt"
+      unit: "m3/s"
+      valid_range: [0, null]          # debug_framework: discharge_m3s (0, None)
+      format: "tab-separated; DATE + SUBID columns"
+      notes: "Simulated discharge at each subbasin outlet"
+
+    - name: "observed_discharge"
+      file: "timeROUT.txt"
+      unit: "m3/s"
+      notes: "Echoes Qobs.txt values; -9999 = missing"
+
+    - name: "evapotranspiration"
+      file: "timeEVAP.txt"
+      unit: "mm/day"
+      valid_range: [0, 20.0]         # debug_framework: et_mm (0, 20)
+
+    - name: "snow_water_equivalent"
+      file: "timeSNOW.txt"
+      unit: "mm"
+      valid_range: [0, 5000]         # debug_framework: snow_swe_mm (0, 5000)
+
+    - name: "corrected_precipitation"
+      file: "timeCPRC.txt"
+      unit: "mm/day"
+
+    - name: "spatial_map"
+      file: "mapCOUT.txt"
+      description: "Periodic spatial averages across all subbasins"
+
+  water_quality:
+    - name: "total_nitrogen_concentration"
+      file: "timeC1TN.txt"
+      unit: "ug/L"
+      valid_range: [0, 50000]        # 50 mg/L = high but possible
+      notes: "Use c1TN (computed main flow). Do NOT use reTN (requires xobs)."
+
+    - name: "total_phosphorus_concentration"
+      file: "timeC1TP.txt"
+      unit: "ug/L"
+      valid_range: [0, 5000]
+
+    - name: "inorganic_nitrogen"
+      file: "timeC1IN.txt"
+      unit: "ug/L"
+      valid_range: [0, 30000]
+      notes: "IN accumulates unrealistically in single-subbasin (lumped) setups"
+
+    - name: "organic_nitrogen"
+      file: "timeC1ON.txt"
+      unit: "ug/L"
+      valid_range: [0, 20000]
+      notes: "ON is reliable even in lumped setups"
+
+    - name: "soluble_phosphorus"
+      file: "timeC1SP.txt"
+      unit: "ug/L"
+      valid_range: [0, 2000]
+      notes: "SP accumulates unrealistically in single-subbasin (lumped) setups"
+
+    - name: "particulate_phosphorus"
+      file: "timeC1PP.txt"
+      unit: "ug/L"
+      valid_range: [0, 3000]
+      notes: "PP is reliable even in lumped setups"
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "slc_sum_not_one"
+    triplet: "dt_s01"
+    description: "SLC fractions per subbasin do not sum to 1.0"
+    affected_output: "All outputs — water balance is wrong"
+    detection: "Sum SLC columns per row in GeoData.txt; check abs(sum - 1.0) < 0.001"
+    severity: "silent — HYPE produces NO warning"
+
+  - id: "streamdepth_zero"
+    triplet: "dt_s08"
+    description: "All GeoClass SLC classes have streamdepth=0"
+    affected_output: "timeCOUT.txt — discharge is zero"
+    detection: "All COUT values are 0.0 despite non-zero precipitation"
+    fix: "Set streamdepth > 0 (e.g., 0.8) for at least one non-water SLC class"
+
+  - id: "cmfd_precip_unit"
+    triplet: "dt_u03"
+    description: "CMFD precipitation in kg/m2/s fed directly without conversion"
+    affected_output: "All hydrological outputs — massive underestimation"
+    detection: "Pobs.txt values are ~1e-5 instead of ~1-10 mm/day"
+    fix: "Multiply CMFD 3-hourly precip by 10800 (3600*3) then sum 8 steps"
+
+  - id: "npc_lumped_accumulation"
+    description: "Single-subbasin (lumped) NPC setup produces unrealistic IN/SP concentrations"
+    affected_output: "timeC1IN.txt, timeC1SP.txt — dissolved inorganics accumulate"
+    detection: "IN or SP concentration monotonically increases over time"
+    fix: "Use multi-subbasin setup (3+ subbasins) for NPC simulation"
+    notes: "Organic/particulate forms (ON, PP) are unaffected in lumped setups"
+
+  - id: "special2_no_lakedata"
+    description: "GeoClass special=2 set without LakeData.txt"
+    affected_output: "timeCOUT.txt — discharge drops to zero"
+    detection: "Zero discharge with non-zero precipitation and no errors"
+    fix: "Either provide LakeData.txt or set special=0 for water SLC classes"
+
+  - id: "pobs_comment_lines"
+    description: "!! comment lines in Pobs.txt or Tobs.txt"
+    affected_output: "Silent data misparse — wrong forcing fed to model"
+    detection: "Simulated discharge has no seasonal pattern or is constant"
+    fix: "Remove all !! lines from forcing files; header must be line 1"
+
+  - id: "forckey_wrong_dir"
+    description: "ForcKey.txt placed in modeldir instead of forcingdir"
+    affected_output: "Fatal error or silent forcing mismatch"
+    detection: "HYPE log shows forcing station mismatch"
+    fix: "Move ForcKey.txt to forcingdir/ path specified in info.txt"
+
+  - id: "missing_trailing_slash"
+    description: "Directory paths in info.txt missing trailing /"
+    affected_output: "Fatal error — file not found"
+    detection: "HYPE crashes at startup with cryptic file-not-found"
+    fix: "Ensure all dir paths end with / (resultdir, modeldir, forcingdir, logdir)"
+
+  - id: "par_value_count_mismatch"
+    description: "Wrong number of values for land-use or soil parameters in par.txt"
+    affected_output: "Fatal error"
+    detection: "HYPE crashes at startup"
+    fix: "Land-use params need max(landuse_id) values; soil params need max(soil_id) values"
+
+# =========================================================================
+# EXPECTED RANGES (Huai River reference from testing)
+# =========================================================================
+expected_ranges:
+  bengbu_huai_river:
+    basin_area_km2: 121330
+    setup: "lumped (1 subbasin), 3 SLC classes"
+    period: "1980-1990 (1980 warmup)"
+    forcing: "CMFD 0.1deg 3-hourly aggregated to daily"
+
+    hydrology_validated:
+      nse: 0.678
+      kge: 0.740
+      r2: 0.712
+      pbias_pct: 19.8
+      mean_obs_q_m3s: 900
+      mean_sim_q_m3s: 1080
+
+    water_quality_reference:
+      tn_load_kg_ha_yr: [5, 20]
+      tp_load_kg_ha_yr: [0.5, 3.0]
+      notes: "NPC validated at multi-subbasin level only; lumped IN/SP unreliable"
+
+# =========================================================================
+# CALIBRATION REFERENCE
+# =========================================================================
+calibration_reference:
+  built_in_methods: ["MC", "DEMC", "SM", "BN", "Q2"]
+  recommended_method: "MC for exploration (500 runs), then DEMC for posterior"
+  recommended_criterion: "MKG (Mean Kling-Gupta Efficiency)"
+
+  recommended_sequence:
+    - "lp (PET reduction limit)"
+    - "cevpam (PET amplitude)"
+    - "wcfc, wcwp, wcep (soil water properties)"
+    - "rrcs1, rrcs2 (recession coefficients)"
+    - "cmlt (snowmelt, if applicable)"
+
+  npc_calibration_sequence:
+    - "humusn0, humusp0 (nutrient pools)"
+    - "denitrlu (land denitrification)"
+    - "soilcoh, soilerod (erosion/P)"
+    - "denitwr, denitwl (river/lake denitrification)"
+
+  target_metrics:
+    - "NSE > 0.5"
+    - "KGE > 0.5"
+    - "PBIAS < 25%"
+
+  warmup_requirement: "nyskip >= 2 for hydrology; >= 3 for NPC (nutrient pools need 3-5 years)"
+
+# =========================================================================
+# UNIT CONVERSION TABLE (for debug_framework Level 1 input validation)
+# =========================================================================
+unit_conversions:
+  - variable: "precipitation"
+    source: "CMFD (mm/3hr or kg/m2/s)"
+    target: "HYPE Pobs.txt (mm/day)"
+    operation: "SUM 8 timesteps per day (not average)"
+    trap_if_wrong: "86400x too high (kg/m2/s fed directly) or 8x too low (single timestep)"
+
+  - variable: "temperature"
+    source: "CMFD (K, 3-hourly)"
+    target: "HYPE Tobs.txt (degC, daily)"
+    operation: "MEAN 8 timesteps, then subtract 273.15"
+    trap_if_wrong: "Values ~300 = still in Kelvin; no snowmelt, wrong PET"
+
+  - variable: "solar_radiation"
+    source: "CMFD (W/m2, 3-hourly)"
+    target: "HYPE SWobs.txt (MJ/m2/day)"
+    operation: "MEAN 8 timesteps, then multiply by 0.0864"
+    notes: "Only needed for petmodel 5 (Penman-Monteith)"

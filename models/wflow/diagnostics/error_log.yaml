@@ -1,0 +1,48 @@
+# ============================================================================
+# Error Log — hydrocraft-wflow v1.1.0
+# ============================================================================
+# Candidate triplets from real model runs. Promote to triplets.yaml after review.
+# Updated: 2026-03-22 (Bengbu production validation)
+# ============================================================================
+
+errors:
+
+  - id: err_w001
+    date: "2026-03-22"
+    basin: "Bengbu (Huai River)"
+    stage: "s4_execution"
+    error: "One or more cycles detected in flow graph"
+    cause: "Naive D8 LDD on 0.25 deg coarse grid created cycles in flat Huai River plain"
+    fix: "Rebuilt LDD using priority-flood algorithm from correct outlet"
+    promoted_to: "dt_w027"
+    notes: "Priority-flood guarantees cycle-free tree structure by construction"
+
+  - id: err_w002
+    date: "2026-03-22"
+    basin: "Bengbu (Huai River)"
+    stage: "s5_postprocess"
+    error: "Q at outlet cell is all NaN in output_grid.nc"
+    cause: "Outlet cell was not marked as river cell (wflow_river=0)"
+    fix: "Set wflow_river=1 at outlet cell"
+    promoted_to: ""
+    notes: "The CSV 'maximum' reducer still captures correct Q from max-flow cell"
+
+  - id: err_w003
+    date: "2026-03-22"
+    basin: "Bengbu (Huai River)"
+    stage: "s5_postprocess"
+    error: "Correlation with VIC only r=0.404"
+    cause: "VIC Q is raw unrouted runoff sum, wflow Q is kinematic-wave routed"
+    fix: "Account for routing lag: at lag=-3 days, r=0.621"
+    promoted_to: ""
+    notes: "3-day lag is physically expected for 121k km2 basin with kinematic wave routing"
+
+  - id: err_w004
+    date: "2026-03-21"
+    basin: "Chaohe"
+    stage: "s4_execution"
+    error: "Q only 6.7 m3/s with placeholder soil parameters"
+    cause: "Used constant placeholder values instead of real HWSD soil data"
+    fix: "For Bengbu, used real VIC soil params (HWSD-derived). Q matched VIC within 38%."
+    promoted_to: ""
+    notes: "Placeholder params are useful for testing pipeline but not for validation"

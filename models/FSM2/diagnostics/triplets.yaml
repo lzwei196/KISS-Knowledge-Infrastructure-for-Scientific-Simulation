@@ -1,0 +1,95 @@
+# FSM2 Diagnostic Triplets
+# Format: symptom → diagnosis → remedy
+# Each entry targets a specific failure mode encountered when running FSM2
+
+triplets:
+
+  - id: T01
+    symptom: "No snow accumulates despite snowfall in forcing data"
+    diagnosis: "Air temperature in °C instead of K — FSM2 partitions precipitation internally but if temperature appears sub-zero in °C (e.g., -5), it is read as 268 K by the model only if correctly in K. If passed as -5, it is wildly wrong."
+    remedy: "Convert temperature to Kelvin: Ta_K = Ta_C + 273.15. Verify that Ta values in met file are in range 200-330."
+
+  - id: T02
+    symptom: "Specific humidity is near zero, latent heat flux negligible"
+    diagnosis: "Surface pressure in hPa or kPa instead of Pa. FSM2 computes Qa = (RH/100)*eps*es/Ps. If Ps is 880 instead of 88000, Qa becomes ~100× too large or the ratio breaks."
+    remedy: "Convert pressure to Pa: Ps_Pa = Ps_hPa * 100 or Ps_Pa = Ps_kPa * 1000. Valid range: 40000-110000 Pa."
+
+  - id: T03
+    symptom: "Atmosphere appears extremely dry, unrealistic evaporation"
+    diagnosis: "Relative humidity provided as fraction (0-1) instead of percent (0-100). FSM2 expects RH in percent."
+    remedy: "Multiply RH by 100 if max(RH) ≤ 1. Verify RH range is 0-100 in met file."
+
+  - id: T04
+    symptom: "Snow depth grows to unrealistic values (>10 m) within days"
+    diagnosis: "Precipitation rate in mm/h or mm/day instead of kg/m²/s. Factor of 3600 or 86400 error."
+    remedy: "Convert: Sf_kgm2s = Sf_mmh / 3600.0 or Sf_kgm2s = Sf_mmday / 86400.0. Typical hourly snowfall rate < 0.001 kg/m²/s."
+
+  - id: T05
+    symptom: "Fortran runtime error on first timestep: 'end of file' or parse error"
+    diagnosis: "Met file has a header row. FSM2 reads the first line expecting year/month/day/hour integers."
+    remedy: "Remove any header row from the met forcing file. First line must be data."
+
+  - id: T06
+    symptom: "Namelist read error: 'invalid input for namelist'"
+    diagnosis: "Namelist blocks are in wrong order or a block is missing. FSM2 reads namelists sequentially from stdin in fixed order."
+    remedy: "Ensure all 6 blocks are present in order: &params, &gridpnts, &gridlevs, &drive, &veg, &initial, &outputs. Empty blocks still needed: `&gridlevs /`"
+
+  - id: T07
+    symptom: "Array bounds error or segfault during run"
+    diagnosis: "Npnts in &gridpnts doesn't match the number of values in &veg arrays (alb0, vegh, VAI)."
+    remedy: "Provide exactly Npnts values for each variable in &veg. E.g., Npnts=2 requires `alb0 = 0.15, 0.15`."
+
+  - id: T08
+    symptom: "No canopy effects despite setting vegh > 0"
+    diagnosis: "VAI (vegetation area index) is set to 0. FSM2 uses VAI to determine canopy presence — vegh alone is not sufficient."
+    remedy: "Set VAI > 0 for forested points. Typical values: conifer 3-6, deciduous 2-5."
+
+  - id: T09
+    symptom: "Solar radiation partitioning wrong — all SW is diffuse"
+    diagnosis: "Compiled with SWPART=0 (default), which assigns all incoming SW as diffuse and sets solar elevation to 0."
+    remedy: "Recompile with SWPART=1 to enable solar position calculation and diffuse/direct partitioning. Set lat correctly in &drive."
+
+  - id: T10
+    symptom: "Snow density stays constant, no compaction"
+    diagnosis: "Compiled with DENSTY=0 (fixed density). Snow density remains at rfix (default 300 kg/m³)."
+    remedy: "Recompile with DENSTY=1 (age-dependent) or DENSTY=2 (overburden compaction) for more physical density evolution."
+
+  - id: T11
+    symptom: "Compilation error: 'undefined reference to nf90_create'"
+    diagnosis: "Compiled with PROFNC=1 (NetCDF output) but NetCDF-Fortran library not linked."
+    remedy: "Install libnetcdff-dev and use compil_nc.sh, or set PROFNC=0 for ASCII output."
+
+  - id: T12
+    symptom: "Runtime error: 'NetCDF output only available for Npnts = 1'"
+    diagnosis: "Compiled with PROFNC=1 but namelist sets Npnts > 1. NetCDF mode only supports single-point runs."
+    remedy: "Set Npnts=1 in &gridpnts, or recompile with PROFNC=0 for multi-point ASCII output."
+
+  - id: T13
+    symptom: "Surface temperature exceeds 273.15 K when snow is present"
+    diagnosis: "This can happen briefly during melt but sustained values above Tm indicate excessive incoming energy or a bug in the energy balance solver."
+    remedy: "Check incoming radiation values (SW, LW). Verify albedo parameters (asmn, asmx). Ensure dt matches forcing interval."
+
+  - id: T14
+    symptom: "Snow disappears too early compared to observations"
+    diagnosis: "Multiple possible causes: (1) fresh snow density too high (rhof), (2) albedo decays too fast (tmlt too small), (3) positive temperature bias in forcing."
+    remedy: "Check: rhof (default 100 kg/m³), tmlt (default 100*3600 s), asmn (default 0.5). Compare forcing Ta against station data. Consider if Tadd offset is needed."
+
+  - id: T15
+    symptom: "Model output files are empty (0 bytes)"
+    diagnosis: "Model ran but produced no output. Likely the met file was empty or had only the header, causing immediate EOF."
+    remedy: "Check that met file has data rows. Verify the path in &drive met_file points to the correct file relative to the working directory."
+
+  - id: T16
+    symptom: "Latitude in namelist causes wrong sunrise/sunset times"
+    diagnosis: "Latitude entered in radians instead of degrees in the namelist. FSM2 converts degrees to radians internally (lat = pi/180 * lat_deg)."
+    remedy: "Enter latitude in degrees in the namelist &drive block. E.g., lat = 47.05 for Alptal, Switzerland."
+
+  - id: T17
+    symptom: "Stale .mod files cause type mismatch on recompilation"
+    diagnosis: "Old compiled module files from a previous build with different options conflict with new source."
+    remedy: "Delete all .mod files in src/ before recompiling: `rm src/*.mod`. The build script does this automatically."
+
+  - id: T18
+    symptom: "Snow SWE is negative"
+    diagnosis: "Sublimation or transport removing more mass than available. Can occur with very high wind speeds or extreme sublimation rates."
+    remedy: "Check wind speed values (should be m/s, not km/h — divide by 3.6 if needed). Verify Ua is reasonable (typical < 20 m/s)."

@@ -1,0 +1,527 @@
+# ============================================================================
+# ELMFIRE Diagnostic Triplets
+# ============================================================================
+# 20 diagnostic triplets covering 5 failure domains.
+# Generated during ELMFIRE knowledge dissection.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s2_weather_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Fire does not spread or spreads extremely slowly despite high winds in source data"
+    error_pattern: "Area(acres) remains near 0"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wind speed in m/s instead of mph — approximately 2.2x too low"
+    explanation: >
+      ELMFIRE expects wind speed in miles per hour (mph) at 20 feet above vegetation.
+      Many weather datasets (ERA5, HRRR, station data) provide wind in m/s at 10 m height.
+      Using m/s directly gives ~2.2x too low wind speed, and 10 m vs 20 ft adds another
+      factor. Combined, the effective wind forcing can be 2-3x too low.
+    affected_components: [convert_weather_to_elmfire, WS_FILENAME raster]
+  remedy:
+    action: "Convert m/s to mph (×2.237) and adjust 10m to 20ft height (×1.15 log profile)"
+    tool_to_run: convert_weather_to_elmfire
+    manual_steps:
+      - "Check max wind speed in ws.tif — typical fires have 10-30 mph"
+      - "If max ws < 15 in gusty conditions, values are likely m/s — multiply by 2.237"
+      - "If WS_AT_10M = .TRUE., ELMFIRE auto-converts 10m to 20ft; otherwise do it manually"
+    prevention: "validate_outputs() checks for unreasonably low wind speed values"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_002
+  stage: s2_weather_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Fire spreads in the opposite direction from observed wind"
+    error_pattern: "time_of_arrival pattern is mirror-image of expected"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Wind direction uses mathematical convention (TO) instead of meteorological (FROM)"
+    explanation: >
+      ELMFIRE uses meteorological convention where wind direction is the compass bearing
+      FROM which the wind blows (0=N means wind blows from north to south). If the source
+      data uses mathematical convention (direction wind blows TO), or flow-vector azimuth,
+      the fire will spread 180 degrees opposite to reality.
+    affected_components: [convert_weather_to_elmfire, WD_FILENAME raster]
+  remedy:
+    action: "Add 180 degrees (mod 360) if source uses 'blowing to' convention"
+    tool_to_run: convert_weather_to_elmfire
+    manual_steps:
+      - "Check wind direction convention in source data documentation"
+      - "Compare first few values against a known weather station or reanalysis"
+      - "If fire ellipse points wrong way, add 180 to all WD values"
+    prevention: "Document source convention in metadata; validate against known fire"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s2_weather_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "No fire spread at all — fire extinguishes immediately after ignition"
+    error_pattern: "spread_rate = 0 everywhere"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Dead fuel moisture as fraction (0.03) instead of percent (3.0)"
+    explanation: >
+      ELMFIRE expects fuel moisture as percent when DEAD_MC_IN_PERCENT = .TRUE. (default).
+      A value of 0.03 is interpreted as 0.03% moisture — impossibly dry — but the
+      Rothermel model still calculates near-zero spread because the moisture is below
+      the model's valid range and internal clamping may apply. More commonly, if the
+      fraction is larger (e.g., 0.20 = 0.20%), the fire may not start at all because
+      moisture of extinction thresholds are compared incorrectly.
+    affected_components: [convert_weather_to_elmfire, M1/M10/M100_FILENAME rasters]
+  remedy:
+    action: "Multiply moisture values by 100 if they are in 0-1 fraction range"
+    tool_to_run: convert_weather_to_elmfire
+    manual_steps:
+      - "Check max M1 value in m1.tif — typical values are 2-25%"
+      - "If max M1 < 1.0, values are fractions — multiply by 100"
+    prevention: "validate_outputs() checks M1 range and warns if < 1.0"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_004
+  stage: s2_weather_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Crown fire everywhere even in light fuels — unrealistic fire behavior"
+    error_pattern: "crown_fire = 1 across entire domain"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Live fuel moisture as fraction (0.60) instead of percent (60.0)"
+    explanation: >
+      ELMFIRE expects live fuel moisture in percent. If MLH=0.60 is interpreted as 0.60%
+      (essentially zero moisture), every pixel with canopy will crown because the foliar
+      moisture content threshold is easily exceeded. Real live herbaceous moisture ranges
+      from 30-300% depending on phenology.
+    affected_components: [convert_weather_to_elmfire, LH_MOISTURE_CONTENT, LW_MOISTURE_CONTENT]
+  remedy:
+    action: "Set LH_MOISTURE_CONTENT and LW_MOISTURE_CONTENT to percent values (30-300)"
+    tool_to_run: convert_weather_to_elmfire
+    manual_steps:
+      - "Check LH_MOISTURE_CONTENT in namelist — should be 30-300"
+      - "If < 1.0, values are fractions — multiply by 100"
+    prevention: "Validate live moisture is in 10-500 range"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_005
+  stage: s1_landscape
+  failure_domain: unit_conversion
+  symptom:
+    description: "Extreme spread rates on steep terrain — fire moves unrealistically fast uphill"
+    error_pattern: "spread_rate > 1000 ft/min on moderate slopes"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Slope in percent rise instead of degrees"
+    explanation: >
+      ELMFIRE expects slope in degrees (0-90). A 45% slope = ~24 degrees. If 45 is
+      provided and interpreted as 45 degrees (100% rise), the tangent-squared slope
+      factor in Rothermel becomes enormous. A 100% slope value interpreted as 100
+      degrees is invalid and causes numerical instability.
+    affected_components: [convert_landscape_to_elmfire, SLP_FILENAME raster]
+  remedy:
+    action: "Convert percent slope to degrees: degrees = atan(percent/100) × 180/π"
+    tool_to_run: convert_landscape_to_elmfire
+    manual_steps:
+      - "Check max slope value — should be 0-60 degrees for most terrain"
+      - "If max slope > 60, values may be in percent — convert to degrees"
+    prevention: "validate_landscape() checks slope range"
+  severity: silent
+  cross_references: []
+
+- id: dt_006
+  stage: s1_landscape
+  failure_domain: unit_conversion
+  symptom:
+    description: "Canopy bulk density values nonsensical — crown fire thresholds completely wrong"
+    error_pattern: "CBD raster max value < 1 or > 100"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "CBD not multiplied by 100 for integer storage when CBD_TIMES_100 = .TRUE."
+    explanation: >
+      ELMFIRE can store canopy bulk density as integers (CBD × 100) to save space. If
+      CBD_TIMES_100 = .TRUE. but values are not pre-multiplied (e.g., 0.15 kg/m³ stored
+      as 0.15 instead of 15), crown fire calculations use 0.0015 kg/m³ — far too low
+      to trigger crown fire even in dense forest.
+    affected_components: [convert_landscape_to_elmfire, CBD_FILENAME raster]
+  remedy:
+    action: "Multiply CBD by 100 before writing raster, or set CBD_TIMES_100 = .FALSE."
+    tool_to_run: convert_landscape_to_elmfire
+    manual_steps:
+      - "Check if CBD_TIMES_100 = .TRUE. in namelist"
+      - "If yes, ensure raster values are 0-99 (representing 0-0.99 kg/m³)"
+      - "If raw kg/m³ values, either multiply by 100 or set flag to .FALSE."
+    prevention: "Check CBD range matches flag setting"
+  severity: silent
+  cross_references: [dt_007]
+
+- id: dt_007
+  stage: s1_landscape
+  failure_domain: unit_conversion
+  symptom:
+    description: "Crown fire never initiates even in dense forest with high winds"
+    error_pattern: "crown_fire = 0 everywhere despite high fireline intensity"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Canopy base height not multiplied by 10 when CBH_TIMES_10 = .TRUE."
+    explanation: >
+      ELMFIRE stores CBH as integers (CBH × 10 meters). If CBH_TIMES_10 = .TRUE. but
+      values are in raw meters (e.g., 3.0 instead of 30), ELMFIRE reads 3.0 as 0.3 m CBH.
+      Counter-intuitively, lower CBH makes crown fire EASIER to initiate, so this error
+      might cause the opposite: crown fire too readily. If values are too large (30 m
+      interpreted as 3.0 m), crown fire threshold is too high.
+    affected_components: [convert_landscape_to_elmfire, CBH_FILENAME raster]
+  remedy:
+    action: "Multiply CBH by 10 when CBH_TIMES_10 = .TRUE., or set flag to .FALSE."
+    tool_to_run: convert_landscape_to_elmfire
+    manual_steps:
+      - "Check CBH_TIMES_10 flag in namelist"
+      - "Verify raster values: if max CBH = 3-30, these are raw meters — multiply by 10"
+      - "Expected range when ×10: 0-300 (representing 0-30 m)"
+    prevention: "Cross-check CBH against fuel model canopy expectations"
+  severity: silent
+  cross_references: [dt_006]
+
+# --- Spatial / CRS Errors ---
+
+- id: dt_008
+  stage: s1_landscape
+  failure_domain: spatial
+  symptom:
+    description: "Fire ignites but domain is tiny or enormous — incorrect spatial scale"
+    error_pattern: "Domain size is 0.00X degrees or millions of meters"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Rasters in lat/lon (EPSG:4326) but domain expects UTM meters"
+    explanation: >
+      ELMFIRE operates in projected coordinates (UTM meters). If rasters are in
+      geographic coordinates (degrees), a 0.01 degree cell is interpreted as 0.01 meters,
+      creating a microscopic domain. Conversely, UTM coordinates used with degree-based
+      A_SRS create enormous domains.
+    affected_components: [convert_landscape_to_elmfire, A_SRS, all rasters]
+  remedy:
+    action: "Reproject all rasters to the correct UTM zone using gdalwarp"
+    tool_to_run: convert_landscape_to_elmfire
+    manual_steps:
+      - "Run gdalinfo on any input raster — check the CRS"
+      - "Determine correct UTM zone for the fire location"
+      - "gdalwarp -t_srs EPSG:326XX input.tif output.tif"
+      - "Update A_SRS in namelist to match"
+    prevention: "validate_landscape() checks CRS consistency across all rasters"
+  severity: error
+  cross_references: []
+
+- id: dt_009
+  stage: s1_landscape
+  failure_domain: spatial
+  symptom:
+    description: "Fire ignites at wrong location or outside domain"
+    error_pattern: "Warning: ignition point is outside computational domain"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Ignition coordinates (X_IGN, Y_IGN) not in same CRS as domain"
+    explanation: >
+      X_IGN and Y_IGN must be in the same projected coordinate system as the
+      computational domain (UTM meters). If lat/lon coordinates are provided
+      (e.g., X_IGN = -120.5), these are interpreted as UTM meters and will be
+      completely wrong.
+    affected_components: [namelist SIMULATOR block, X_IGN, Y_IGN]
+  remedy:
+    action: "Convert ignition lat/lon to UTM easting/northing using pyproj or gdaltransform"
+    tool_to_run: convert_weather_to_elmfire
+    manual_steps:
+      - "echo '-120.5 38.5' | gdaltransform -s_srs EPSG:4326 -t_srs EPSG:32610"
+      - "Use the output UTM easting/northing for X_IGN/Y_IGN"
+    prevention: "Always convert coordinates before writing namelist"
+  severity: error
+  cross_references: [dt_008]
+
+# --- Configuration Errors ---
+
+- id: dt_010
+  stage: s4_namelist
+  failure_domain: configuration
+  symptom:
+    description: "Simulation produces no output files"
+    error_pattern: "outputs directory is empty after run"
+    detection_method: file_check
+  diagnosis:
+    root_cause: "OUTPUTS_DIRECTORY path does not exist or is not writable"
+    explanation: >
+      ELMFIRE does not create the output directory automatically. If the path
+      specified in OUTPUTS_DIRECTORY does not exist, the model may run but
+      silently fail to write any outputs.
+    affected_components: [namelist OUTPUTS block, OUTPUTS_DIRECTORY]
+  remedy:
+    action: "Create the output directory before running: mkdir -p ./outputs"
+    tool_to_run: run_elmfire
+    manual_steps:
+      - "Check OUTPUTS_DIRECTORY path in namelist"
+      - "mkdir -p <path>"
+      - "Verify write permissions"
+    prevention: "run_elmfire.py creates directory in preflight checks"
+  severity: error
+  cross_references: []
+
+- id: dt_011
+  stage: s4_namelist
+  failure_domain: configuration
+  symptom:
+    description: "Model crashes with file not found for fuel/topo rasters"
+    error_pattern: "Error opening file"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Raster filenames in namelist don't match actual files (extension mismatch)"
+    explanation: >
+      ELMFIRE namelist specifies raster names WITHOUT extension. It first tries .tif,
+      then .bil. If files have different extensions or are in a subdirectory, the model
+      cannot find them. The FUELS_AND_TOPOGRAPHY_DIRECTORY must also be correct.
+    affected_components: [namelist INPUTS block, all *_FILENAME variables]
+  remedy:
+    action: "Verify all raster files exist in FUELS_AND_TOPOGRAPHY_DIRECTORY with correct names"
+    tool_to_run: run_elmfire
+    manual_steps:
+      - "ls ./inputs/ — check that asp.tif, slp.tif, etc. exist"
+      - "Ensure filenames in namelist match (case-sensitive, no extension)"
+    prevention: "run_elmfire.py validates file existence in preflight"
+  severity: error
+  cross_references: []
+
+- id: dt_012
+  stage: s4_namelist
+  failure_domain: configuration
+  symptom:
+    description: "Fire ignites on non-burnable pixel and nothing happens"
+    error_pattern: "fire_size_stats shows 0 acres at all timesteps"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Ignition point falls on non-burnable fuel model (water, urban, barren)"
+    explanation: >
+      Fuel model codes 91 (urban), 92 (snow/ice), 93 (agriculture), 98 (water),
+      99 (barren) are non-burnable. If the ignition point lands on one of these
+      pixels, ELMFIRE ignites but the fire cannot spread.
+    affected_components: [namelist SIMULATOR block, FBFM_FILENAME]
+  remedy:
+    action: "Check fuel model at ignition location; move ignition to burnable pixel"
+    tool_to_run: run_elmfire
+    manual_steps:
+      - "Use gdallocationinfo fbfm40.tif X_IGN Y_IGN to check fuel code"
+      - "If 91/92/93/98/99, move ignition to nearest burnable pixel"
+      - "Or set ALLOW_NONBURNABLE_PIXEL_IGNITION = .FALSE. and ELMFIRE auto-adjusts"
+    prevention: "validate_ignition() in run_elmfire.py checks fuel at ignition location"
+  severity: warning
+  cross_references: []
+
+# --- Runtime Errors ---
+
+- id: dt_013
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "MPI error or segmentation fault during execution"
+    error_pattern: "mpirun noticed that process rank 0 exited on signal 11"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Raster dimensions inconsistent — different extents or resolutions across inputs"
+    explanation: >
+      All input rasters must have identical spatial extent and resolution. If one raster
+      (e.g., wind speed) has different dimensions than the fuel model raster, array
+      indexing goes out of bounds causing a segfault. This commonly happens when weather
+      rasters come from a different source than landscape rasters.
+    affected_components: [all input rasters]
+  remedy:
+    action: "Resample all rasters to identical extent and resolution using gdalwarp"
+    tool_to_run: convert_landscape_to_elmfire
+    manual_steps:
+      - "Run gdalinfo on each raster — compare Size, Origin, Pixel Size"
+      - "Use gdalwarp -tr CELLSIZE CELLSIZE -te XMIN YMIN XMAX YMAX to harmonize"
+    prevention: "validate_landscape() ensures all rasters match"
+  severity: crash
+  cross_references: [dt_008]
+
+- id: dt_014
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "Simulation hangs or takes extremely long"
+    error_pattern: "No progress for > 10 minutes"
+    detection_method: timeout
+  diagnosis:
+    root_cause: "CFL condition forces extremely small time steps due to high wind or steep slope"
+    explanation: >
+      ELMFIRE uses adaptive time stepping controlled by TARGET_CFL. With very high wind
+      speeds (>50 mph) or steep slopes combined with fine resolution (<10 m), the CFL
+      condition may require sub-second time steps, making the simulation extremely slow.
+    affected_components: [TIME_CONTROL, wind speed, slope, cell size]
+  remedy:
+    action: "Increase COMPUTATIONAL_DOMAIN_CELLSIZE, reduce wind speed, or increase TARGET_CFL (max ~0.8)"
+    tool_to_run: run_elmfire
+    manual_steps:
+      - "Check SIMULATION_DT in namelist — if < 1.0 second, CFL is limiting"
+      - "Try TARGET_CFL = 0.8 (less conservative)"
+      - "Or increase cell size from 30 m to 60-90 m"
+    prevention: "Monitor time step in diagnostic output"
+  severity: warning
+  cross_references: []
+
+- id: dt_015
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "elmfire binary not found"
+    error_pattern: "bash: elmfire_2025.1002: command not found"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "ELMFIRE binary not in PATH or not compiled"
+    explanation: >
+      The ELMFIRE binary (elmfire_2025.1002) must be either in PATH or referenced by
+      full path. When using Docker, it's in /elmfire/build/linux/bin/. When compiled
+      locally, it's in build/linux/bin/.
+    affected_components: [ELMFIRE_INSTALL_DIR, PATH]
+  remedy:
+    action: "Add ELMFIRE bin directory to PATH or use full path to binary"
+    tool_to_run: run_elmfire
+    manual_steps:
+      - "export PATH=$ELMFIRE_BASE_DIR/build/linux/bin:$PATH"
+      - "Or use: /full/path/to/elmfire_2025.1002 ./inputs/elmfire.data"
+    prevention: "run_elmfire.py resolves binary path automatically"
+  severity: error
+  cross_references: []
+
+# --- Output Interpretation ---
+
+- id: dt_016
+  stage: s7_output_analysis
+  failure_domain: output_interpretation
+  symptom:
+    description: "Spread rate values seem extremely high when compared to literature"
+    error_pattern: "spread_rate > 500 ft/min in grassland"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Spread rate is in ft/min — must convert to m/s or chains/hr for comparison"
+    explanation: >
+      ELMFIRE outputs spread rate in feet per minute (ft/min), following US fire behavior
+      convention. Literature values are often in m/s (metric) or chains/hr (US forestry).
+      Conversion: 1 ft/min = 0.00508 m/s = 0.3636 chains/hr. A value of 200 ft/min
+      = 1.016 m/s = 72.7 chains/hr — this is fast but realistic for grassland.
+    affected_components: [parse_elmfire_output, spread_rate outputs]
+  remedy:
+    action: "Convert ft/min to desired units before comparison"
+    tool_to_run: parse_elmfire_output
+    manual_steps:
+      - "ft/min → m/s: multiply by 0.00508"
+      - "ft/min → chains/hr: multiply by 0.3636"
+      - "ft/min → km/hr: multiply by 0.01829"
+    prevention: "parse_elmfire_output includes unit conversion options"
+  severity: silent
+  cross_references: [dt_017]
+
+- id: dt_017
+  stage: s7_output_analysis
+  failure_domain: output_interpretation
+  symptom:
+    description: "Flame length values don't match suppression difficulty thresholds"
+    error_pattern: "flame_length seems too high or too low vs. NWCG thresholds"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Flame length output is in feet — NWCG thresholds also in feet but metric users need conversion"
+    explanation: >
+      ELMFIRE outputs flame length in feet. NWCG fire suppression difficulty:
+      <4 ft: hand crews effective, 4-8 ft: equipment needed, 8-11 ft: serious difficulty,
+      >11 ft: extreme — crowning/spotting likely. If comparing to metric thresholds,
+      convert: 1 ft = 0.3048 m.
+    affected_components: [parse_elmfire_output, flame_length outputs]
+  remedy:
+    action: "Keep in feet for NWCG comparisons; convert ×0.3048 for metric"
+    tool_to_run: parse_elmfire_output
+    manual_steps:
+      - "ft → m: multiply by 0.3048"
+    prevention: "parse_elmfire_output labels units in CSV headers"
+  severity: silent
+  cross_references: [dt_016]
+
+- id: dt_018
+  stage: s7_output_analysis
+  failure_domain: output_interpretation
+  symptom:
+    description: "Fireline intensity much higher than expected from literature"
+    error_pattern: "FLIN > 10000 kW/m in moderate fuels"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "ELMFIRE outputs FLIN in kW/m — compare to correct thresholds"
+    explanation: >
+      Fireline intensity (FLIN) in ELMFIRE is in kW/m (Byram's fireline intensity).
+      Crown fire initiation typically requires FLIN > 2000-3000 kW/m. Values > 10000
+      kW/m indicate extreme fire behavior. Some literature reports in BTU/ft/s:
+      1 kW/m = 0.289 BTU/ft/s.
+    affected_components: [parse_elmfire_output, FLIN outputs]
+  remedy:
+    action: "Verify units match when comparing to literature values"
+    tool_to_run: parse_elmfire_output
+    manual_steps:
+      - "kW/m → BTU/ft/s: multiply by 0.289"
+      - "Cross-reference with crown fire type: < 2000 surface, 2000-4000 passive, > 4000 active"
+    prevention: "parse_elmfire_output annotates fire type thresholds"
+  severity: silent
+  cross_references: [dt_016, dt_017]
+
+# --- Data Preparation ---
+
+- id: dt_019
+  stage: s1_landscape
+  failure_domain: data_preparation
+  symptom:
+    description: "NODATA gaps in output — fire stops at certain boundaries"
+    error_pattern: "time_of_arrival shows -9999 bands or rectangular gaps"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Input raster has NODATA (-9999) pixels within domain"
+    explanation: >
+      ELMFIRE treats -9999 pixels as non-burnable barriers. If the fuel model raster
+      has NODATA gaps (common at tile boundaries in LANDFIRE), fire cannot cross these
+      pixels. This creates artificial fire breaks.
+    affected_components: [convert_landscape_to_elmfire, all rasters]
+  remedy:
+    action: "Fill NODATA gaps using gdal_fillnodata.py or merge overlapping tiles"
+    tool_to_run: convert_landscape_to_elmfire
+    manual_steps:
+      - "gdalinfo fbfm40.tif — check for NODATA pixels"
+      - "gdal_fillnodata.py fbfm40.tif fbfm40_filled.tif"
+      - "Or merge tiles: gdal_merge.py -o merged.tif tile1.tif tile2.tif"
+    prevention: "validate_landscape() warns about NODATA within domain interior"
+  severity: warning
+  cross_references: []
+
+- id: dt_020
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "GDAL errors during output conversion to GeoTIFF"
+    error_pattern: "ERROR 1: .bil does not appear to have a corresponding .hdr"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "CONVERT_TO_GEOTIFF = .TRUE. but GDAL not in PATH or SCRATCH not writable"
+    explanation: >
+      When CONVERT_TO_GEOTIFF is enabled, ELMFIRE calls gdal_translate to convert
+      BIL outputs to GeoTIFF. If PATH_TO_GDAL is wrong or the SCRATCH directory
+      doesn't exist, this conversion fails. The simulation itself may have completed
+      successfully — check for .bil files.
+    affected_components: [namelist MISCELLANEOUS, PATH_TO_GDAL, SCRATCH]
+  remedy:
+    action: "Set PATH_TO_GDAL correctly and ensure SCRATCH directory exists"
+    tool_to_run: run_elmfire
+    manual_steps:
+      - "which gdal_translate — verify GDAL location"
+      - "Set PATH_TO_GDAL = '/usr/bin' (or correct path)"
+      - "mkdir -p ./scratch"
+      - "Or set CONVERT_TO_GEOTIFF = .FALSE. and convert manually after"
+    prevention: "run_elmfire.py checks GDAL availability in preflight"
+  severity: error
+  cross_references: []

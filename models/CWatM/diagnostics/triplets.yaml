@@ -1,0 +1,457 @@
+# ============================================================================
+# CWatM Diagnostic Triplets
+# ============================================================================
+# 18 diagnostic triplets covering 5 failure domains.
+# Generated during CWatM knowledge dissection.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Extreme flooding or unrealistically high discharge. River discharge 100-1000× too high."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "precipitation_coversion factor wrong — input precip units don't match conversion factor"
+    explanation: >
+      CWatM multiplies precipitation input by precipitation_coversion to get m/day.
+      Default is 86.4 which converts kg/m²/s to m/day (= 86400 s/day ÷ 1000 mm/m).
+      If input is already in mm/day and conversion is 86.4, precipitation is 86.4× too high.
+      If input is in m/day and conversion is 86.4, precipitation is 86.4× too high.
+    affected_components: [readmeteo, settings.ini]
+  remedy:
+    action: "Match precipitation_coversion to actual input units"
+    tool_to_run: convert_forcing_to_cwatm
+    manual_steps:
+      - "Check actual units in forcing NetCDF: ncdump -h precipitation.nc"
+      - "kg/m²/s: use 86.4 (default)"
+      - "m/day: use 1.0"
+      - "mm/day: use 0.001"
+      - "mm/hr: use 0.024"
+    prevention: "validate_converted_data() checks precipitation magnitude"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_002
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Zero or near-zero discharge. No runoff generated despite precipitation."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation too low — conversion factor divides instead of multiplying, or wrong scale"
+    explanation: >
+      If precipitation_coversion = 1.0 but input is in kg/m²/s, the internal precipitation
+      is ~0.00001 m/day instead of ~0.001 m/day. All water evaporates or infiltrates,
+      generating no runoff. No error message is raised.
+    affected_components: [readmeteo, settings.ini]
+  remedy:
+    action: "Check precipitation internal values: should be ~0.001-0.01 m/day for most climates"
+    tool_to_run: convert_forcing_to_cwatm
+    manual_steps:
+      - "Add temporary output: OUT_MAP_Daily = precipitation"
+      - "Check output: daily precipitation should be 0-0.1 m/day (0-100 mm/day)"
+    prevention: "Output precipitation map for first month and check magnitude"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Snow never melts, or all precipitation is snow/rain regardless of season. Wrong snowpack dynamics."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "TemperatureInKelvin flag doesn't match input data units"
+    explanation: >
+      If TemperatureInKelvin = True but input is in Celsius (e.g., 20°C), CWatM treats
+      20 as 20 K = -253°C. All precipitation becomes snow, nothing melts.
+      Conversely, if flag = False but input is Kelvin (293 K), CWatM adds 273.15,
+      making temperature 566°C — everything melts instantly, extreme ET.
+    affected_components: [readmeteo, snow_frost, evaporationPot]
+  remedy:
+    action: "Check temperature values in forcing NetCDF and set flag correctly"
+    tool_to_run: convert_forcing_to_cwatm
+    manual_steps:
+      - "ncdump -v tavg precipitation.nc | head -20"
+      - "If values > 200: data is Kelvin, set TemperatureInKelvin = True"
+      - "If values < 100: data is Celsius, set TemperatureInKelvin = False"
+    prevention: "validate_converted_data() checks temperature range"
+  severity: silent
+  cross_references: []
+
+- id: dt_004
+  stage: s2_static_data
+  failure_domain: unit_conversion
+  symptom:
+    description: "All water drains instantly or soil stays waterlogged. Unrealistic soil moisture dynamics."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "KSat units wrong — CWatM expects cm/day, input may be mm/hr or m/s"
+    explanation: >
+      CWatM reads KSat in cm/day. SoilGrids provides mm/hr (factor 2.4 to cm/day).
+      Some datasets provide m/s (factor 8,640,000 to cm/day). Using mm/hr values
+      directly (without ×2.4) makes KSat ~2.4× too low. Using m/s values without
+      conversion makes KSat millions of times wrong.
+    affected_components: [soil, convert_soil_to_cwatm]
+  remedy:
+    action: "Convert KSat to cm/day before use"
+    tool_to_run: convert_soil_to_cwatm
+    manual_steps:
+      - "HWSD: already cm/day (no conversion)"
+      - "SoilGrids: cm/day = mm/hr × 2.4"
+      - "m/s: cm/day = m/s × 8640000"
+      - "Typical range: Sand 100-700, Loam 5-50, Clay 0.5-5 cm/day"
+    prevention: "validate_outputs() checks KSat range"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_005
+  stage: s2_static_data
+  failure_domain: unit_conversion
+  symptom:
+    description: "Soil water retention curve is wrong. Field capacity or wilting point unrealistic."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "van Genuchten alpha in wrong units — 1/m instead of 1/cm"
+    explanation: >
+      CWatM expects alpha in 1/cm. Some databases provide 1/m or 1/kPa.
+      Using 1/m directly makes alpha 100× too large, dramatically changing the
+      soil water retention curve. The soil will appear much sandier than it is.
+    affected_components: [soil, convert_soil_to_cwatm]
+  remedy:
+    action: "Ensure alpha is in 1/cm"
+    tool_to_run: convert_soil_to_cwatm
+    manual_steps:
+      - "If source is 1/m: divide by 100"
+      - "Typical range: 0.001-0.5 1/cm"
+      - "Sand: ~0.145, Loam: ~0.036, Clay: ~0.008"
+    prevention: "validate_outputs() checks alpha range"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_006
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "ET is extremely high or near zero. Penman-Monteith produces unrealistic values."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Surface pressure in hPa instead of Pa, or radiation in wrong units"
+    explanation: >
+      Penman-Monteith requires pressure in Pa and radiation in W/m². If pressure is
+      provided in hPa (1013 instead of 101300), the psychrometric constant is 100× wrong.
+      If radiation is in MJ/m²/day instead of W/m², it's ~11.6× wrong.
+    affected_components: [evaporationPot, readmeteo]
+  remedy:
+    action: "Check units of all Penman-Monteith inputs"
+    manual_steps:
+      - "Pressure: should be 50000-110000 Pa (not 500-1100 hPa)"
+      - "Shortwave: should be 0-500 W/m² (not 0-40 MJ/m²/day)"
+      - "Wind: should be 0-20 m/s (not 0-70 km/hr)"
+    prevention: "validate_converted_data() checks all variable ranges"
+  severity: silent
+  cross_references: [dt_003]
+
+# --- Configuration Errors ---
+
+- id: dt_007
+  stage: s0_configuration
+  failure_domain: configuration
+  symptom:
+    description: "CWatM crashes at startup with 'option not found' or 'key not found' error."
+    error_pattern: "CWATMError"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Settings file section or key name typo, or missing required section"
+    explanation: >
+      CWatM's ExtParser is case-sensitive for keys. A typo in a key name (e.g.,
+      'PrecipitationMap' instead of 'PrecipitationMaps') causes a missing key error.
+      The error message includes a 'closest match' suggestion using difflib.
+    affected_components: [configuration.py]
+  remedy:
+    action: "Check the error message for suggested closest match"
+    manual_steps:
+      - "Compare your settings file against the template"
+      - "Check for typos in section names and key names"
+      - "Ensure all required sections exist"
+    prevention: "Use the template settings file as a starting point"
+  severity: fatal
+  cross_references: []
+
+- id: dt_008
+  stage: s0_configuration
+  failure_domain: configuration
+  symptom:
+    description: "Date parsing error or 'StepEnd before StepStart' error."
+    error_pattern: "date"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Date format wrong — CWatM expects DD/MM/YYYY, not YYYY-MM-DD"
+    explanation: >
+      CWatM date parsing expects DD/MM/YYYY format. Using ISO format (YYYY-MM-DD)
+      or US format (MM/DD/YYYY) causes either a parse error or a silently wrong date.
+      For example, 2010-01-31 is interpreted as DD=2010, which fails.
+    affected_components: [timestep.py, configuration.py]
+  remedy:
+    action: "Use DD/MM/YYYY format for all dates"
+    manual_steps:
+      - "StepStart = 01/01/1990  (not 1990-01-01)"
+      - "SpinUp = 01/01/1995"
+      - "StepEnd = 31/12/2010"
+    prevention: "Always use DD/MM/YYYY format"
+  severity: fatal
+  cross_references: []
+
+- id: dt_009
+  stage: s0_configuration
+  failure_domain: configuration
+  symptom:
+    description: "precipitation_coversion spelled as 'precipitation_conversion' — silently ignored."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "CWatM code has a typo in the key name: 'precipitation_coversion' (missing 'n')"
+    explanation: >
+      The settings key is 'precipitation_coversion' (sic), not 'precipitation_conversion'.
+      If you use the correct English spelling, CWatM won't find the key and will use
+      the default value (86.4), which may be wrong for your input data. No error is raised.
+    affected_components: [readmeteo, configuration.py]
+  remedy:
+    action: "Use the misspelled key: precipitation_coversion (without the 'n')"
+    manual_steps:
+      - "Search settings file for 'conversion' and replace with 'coversion'"
+    prevention: "Copy the key name exactly from the template"
+  severity: silent
+  cross_references: [dt_001, dt_002]
+
+# --- Spatial Data Errors ---
+
+- id: dt_010
+  stage: s2_static_data
+  failure_domain: spatial_data
+  symptom:
+    description: "Water accumulates in random cells. Discharge at outlet is near zero. Disconnected drainage."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "LDD coding convention wrong — ArcGIS D8 instead of PCRaster convention"
+    explanation: >
+      CWatM uses PCRaster LDD coding (1=SW, 2=S, 3=SE, ..., 9=NE, 5=pit).
+      ArcGIS D8 uses power-of-2 encoding (1=E, 2=SE, 4=S, ..., 128=NE).
+      Using ArcGIS LDD without conversion creates a completely wrong drainage network.
+    affected_components: [routing_kinematic, routing_sub]
+  remedy:
+    action: "Convert ArcGIS D8 to PCRaster LDD convention"
+    manual_steps:
+      - "ArcGIS mapping: 1→6, 2→3, 4→2, 8→1, 16→4, 32→7, 64→8, 128→9"
+      - "Or use HydroSHEDS flow direction with proper conversion"
+      - "Verify: pit cells (value=5) should be at basin outlet only"
+    prevention: "Validate LDD with upstream area calculation"
+  severity: fatal
+  cross_references: []
+
+- id: dt_011
+  stage: s2_static_data
+  failure_domain: spatial_data
+  symptom:
+    description: "Division by zero error in routing. Model crashes during kinematic wave computation."
+    error_pattern: "division by zero"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Channel gradient contains zero values"
+    explanation: >
+      The kinematic wave equation requires non-zero channel gradient. Flat areas
+      (gradient=0) cause division by zero in the routing solver. CWatM expects
+      a minimum gradient of chanGradMin (default 0.0001).
+    affected_components: [routing_kinematic, t5.cpp]
+  remedy:
+    action: "Enforce minimum channel gradient"
+    manual_steps:
+      - "chanGrad = max(chanGrad, 0.0001)"
+      - "Or set chanGradMin = 0.0001 in settings [ROUTING] section"
+    prevention: "Always clip gradient to minimum value"
+  severity: fatal
+  cross_references: []
+
+- id: dt_012
+  stage: s2_static_data
+  failure_domain: spatial_data
+  symptom:
+    description: "Grid resolution mismatch error. Meteo data doesn't overlay correctly on maps."
+    error_pattern: "shape mismatch"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Meteorological forcing grid doesn't match model grid resolution"
+    explanation: >
+      CWatM can handle mismatched resolutions using interpolation (set
+      meteomapsscale = False in code), but the grids must share the same
+      coordinate reference system. A mismatch in array shapes causes errors.
+    affected_components: [readmeteo, data_handling]
+  remedy:
+    action: "Ensure forcing data covers the model domain, let CWatM interpolate"
+    manual_steps:
+      - "Check both grids use the same CRS (WGS84)"
+      - "Forcing grid should be same resolution or coarser"
+      - "If different resolution, CWatM interpolates automatically"
+    prevention: "Pre-process forcing to match model grid"
+  severity: fatal
+  cross_references: []
+
+# --- Runtime Errors ---
+
+- id: dt_013
+  stage: s3_execution
+  failure_domain: runtime
+  symptom:
+    description: "Routing is extremely slow. Model takes hours for a small basin."
+    error_pattern: ""
+    detection_method: performance
+  diagnosis:
+    root_cause: "C++ shared library (t5_linux.so) failed to load — falling back to Python routing"
+    explanation: >
+      CWatM's kinematic wave routing can use a C++ library for ~100× speedup.
+      If the library fails to load (missing dependencies, wrong architecture),
+      CWatM silently falls back to pure Python, which is dramatically slower.
+    affected_components: [routing_kinematic, t5.cpp]
+  remedy:
+    action: "Check C++ library loading"
+    manual_steps:
+      - "python -c \"import ctypes; ctypes.cdll.LoadLibrary('t5_linux.so')\""
+      - "If error: recompile from t5.cpp with g++ -shared -fPIC -O2 -o t5_linux.so t5.cpp"
+      - "Check: ldd t5_linux.so for missing dependencies"
+    prevention: "Test library loading before model run"
+  severity: degraded
+  cross_references: []
+
+- id: dt_014
+  stage: s3_execution
+  failure_domain: runtime
+  symptom:
+    description: "Out of memory error. Model crashes during initialization or first timestep."
+    error_pattern: "MemoryError"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Domain too large for available RAM"
+    explanation: >
+      CWatM loads all static data and several timesteps of forcing into memory.
+      A 5-arcmin global domain requires ~100+ GB RAM. Even 30-arcmin global
+      needs 8-16 GB.
+    affected_components: [data_handling, readmeteo]
+  remedy:
+    action: "Reduce domain size or increase RAM"
+    manual_steps:
+      - "Use a smaller MaskMap (basin-level instead of global)"
+      - "Use 30-arcmin instead of 5-arcmin resolution"
+      - "Increase available RAM or use a machine with more memory"
+    prevention: "Estimate memory: ~500 bytes per cell per variable"
+  severity: fatal
+  cross_references: []
+
+- id: dt_015
+  stage: s3_execution
+  failure_domain: runtime
+  symptom:
+    description: "NaN values propagate through all outputs. Discharge is NaN everywhere."
+    error_pattern: "nan"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "NaN in input forcing data or soil parameters"
+    explanation: >
+      CWatM does not automatically handle missing values in input data. A single
+      NaN in forcing (e.g., one missing precipitation value) propagates through
+      all calculations, eventually making all outputs NaN.
+    affected_components: [readmeteo, data_handling]
+  remedy:
+    action: "Pre-fill or interpolate missing values in all input data"
+    manual_steps:
+      - "Check for NaN: python -c \"import netCDF4; ds=netCDF4.Dataset('file.nc'); print(np.isnan(ds.variables['var'][:]).sum())\""
+      - "Fill gaps with temporal interpolation or climatological means"
+      - "For soil: fill with nearest-neighbor or regional defaults"
+    prevention: "Always check for NaN before running CWatM"
+  severity: silent
+  cross_references: []
+
+# --- Output Interpretation ---
+
+- id: dt_016
+  stage: s4_output_analysis
+  failure_domain: output_interpretation
+  symptom:
+    description: "Discharge unrealistically high for first few years, then stabilizes."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Insufficient spinup period. Initial conditions not equilibrated."
+    explanation: >
+      CWatM starts with default initial conditions (all storage = 0 or default values).
+      The model needs 3-5 years to equilibrate groundwater and soil moisture storage.
+      During spinup, discharge may be too high (if starting dry) or too low (if starting wet).
+    affected_components: [initcondition, groundwater]
+  remedy:
+    action: "Increase spinup period to 3-5 years"
+    manual_steps:
+      - "Set SpinUp date at least 3 years after StepStart"
+      - "Or use saved initial conditions from a previous long run"
+      - "Exclude spinup period from all metric calculations"
+    prevention: "Always use ≥ 3 year spinup, ≥ 5 for arid regions"
+  severity: degraded
+  cross_references: []
+
+- id: dt_017
+  stage: s4_output_analysis
+  failure_domain: output_interpretation
+  symptom:
+    description: "Discharge timing is correct but magnitude is systematically too high or low (PBIAS > 30%)."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "ET calibration parameter (crop_correct) needs adjustment"
+    explanation: >
+      crop_correct scales potential evapotranspiration. If too low, too little water
+      evaporates and too much becomes runoff (positive PBIAS). If too high, too much
+      evaporates and too little reaches the river (negative PBIAS).
+    affected_components: [evaporationPot, calibration]
+  remedy:
+    action: "Adjust crop_correct parameter"
+    manual_steps:
+      - "PBIAS > 0 (too much discharge): increase crop_correct"
+      - "PBIAS < 0 (too little discharge): decrease crop_correct"
+      - "Typical range: 0.8 to 1.5"
+      - "Also check soildepth_factor if crop_correct alone is insufficient"
+    prevention: "Calibrate crop_correct first in any calibration sequence"
+  severity: degraded
+  cross_references: [dt_018]
+
+- id: dt_018
+  stage: s4_output_analysis
+  failure_domain: output_interpretation
+  symptom:
+    description: "Hydrograph peaks are too sharp or too flat. Recession limb is wrong."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Runoff partitioning or groundwater recession parameters need calibration"
+    explanation: >
+      arnoBeta_add controls the fraction of precipitation becoming direct runoff
+      (higher = more surface runoff = sharper peaks). recessionCoeff_factor controls
+      how fast groundwater releases water (higher = slower release = flatter recession).
+    affected_components: [soil, groundwater, calibration]
+  remedy:
+    action: "Adjust arnoBeta_add and recessionCoeff_factor"
+    manual_steps:
+      - "Peaks too sharp: decrease arnoBeta_add, increase recessionCoeff_factor"
+      - "Peaks too flat: increase arnoBeta_add, decrease recessionCoeff_factor"
+      - "arnoBeta_add range: 0.01 to 1.0"
+      - "recessionCoeff_factor range: 1.0 to 10.0"
+    prevention: "Calibrate after crop_correct and soildepth_factor are set"
+  severity: degraded
+  cross_references: [dt_017]

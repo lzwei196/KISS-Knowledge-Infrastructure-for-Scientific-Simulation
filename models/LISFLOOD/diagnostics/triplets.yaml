@@ -1,0 +1,485 @@
+# ============================================================================
+# LISFLOOD Diagnostic Triplets
+# ============================================================================
+# 18 diagnostic triplets covering 5 failure domains.
+# Generated during LISFLOOD knowledge dissection.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Basin floods constantly or dries out completely. Discharge is 1000x too high or too low."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation units wrong — mm/day vs m/day"
+    explanation: >
+      LISFLOOD expects precipitation in mm/day. ERA5 provides total precipitation
+      in meters per timestep. If the ×1000 conversion (m → mm) is omitted, the basin
+      receives 1000× too little rain. Conversely, if CMFD mm/3hr is summed to daily
+      but then multiplied by 1000 again, it receives 1000× too much.
+    affected_components: [convert_forcing, readmeteo]
+  remedy:
+    action: "Verify max daily precipitation is reasonable (typically < 200 mm/day for most climates)"
+    tool_to_run: convert_forcing
+    manual_steps:
+      - "Check source data units in ncdump -h"
+      - "ERA5 tp: multiply by 1000 (m → mm)"
+      - "CMFD prec: sum 8 steps of mm/3hr to get mm/day"
+      - "Validate: max precip < 500 mm/day"
+    prevention: "convert_forcing.py validates output ranges"
+  severity: silent
+  cross_references: [dt_008]
+
+- id: dt_002
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Snow never forms even in cold climates, or snow never melts even in summer."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature Kelvin/Celsius flag mismatch — TemperatureInKelvin option doesn't match input"
+    explanation: >
+      If TemperatureInKelvin=0 (default, expects °C) but input temperature is in
+      Kelvin (~280 K), LISFLOOD interprets it as 280°C. The snow threshold TempSnow
+      (typically 1°C) is never reached, and snowmelt coefficient produces insane
+      melt rates. Conversely, if TemperatureInKelvin=1 but input is °C, temperatures
+      of 20°C are interpreted as 20 K = -253°C, and everything becomes snow.
+    affected_components: [convert_forcing, readmeteo, snow]
+  remedy:
+    action: "Match TemperatureInKelvin flag to actual input units"
+    tool_to_run: convert_forcing
+    manual_steps:
+      - "Check temperature range in forcing NetCDF"
+      - "If values 230-320: input is Kelvin → set TemperatureInKelvin=1 or convert"
+      - "If values -40 to 50: input is Celsius → set TemperatureInKelvin=0"
+    prevention: "convert_forcing.py checks temperature range and warns"
+  severity: silent
+  cross_references: [dt_014]
+
+- id: dt_003
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Evapotranspiration is systematically too low (30-50% below expected). Soil stays too wet."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "ET0 provided as actual ET instead of potential ET"
+    explanation: >
+      LISFLOOD expects et0 as POTENTIAL evapotranspiration — the maximum ET rate
+      under unlimited water supply. LISFLOOD internally reduces this to actual ET
+      using soil moisture stress functions. If actual ET (already reduced by water
+      stress) is provided as et0, the model double-reduces evaporation.
+    affected_components: [convert_forcing, readmeteo, soil]
+  remedy:
+    action: "Ensure et0 is potential (reference) ET, not actual ET"
+    tool_to_run: convert_forcing
+    manual_steps:
+      - "Verify ET0 method: Penman-Monteith reference, Hargreaves, or similar potential method"
+      - "Check typical values: potential ET0 = 2-8 mm/day in summer, 0-2 in winter"
+      - "If values are 0.5-3 mm/day year-round, likely actual ET — use reference ET instead"
+    prevention: "convert_forcing.py estimates Hargreaves ET0 if not provided"
+  severity: silent
+  cross_references: []
+
+- id: dt_004
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Model produces correct mean discharge but wrong timing. Peaks arrive early or late by one timestep."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Forcing timestep doesn't match DtSec — accumulated vs instantaneous mismatch"
+    explanation: >
+      LISFLOOD's DtSec defines the model timestep (e.g., 86400 = daily, 21600 = 6-hourly).
+      If daily forcing is provided but DtSec=21600, LISFLOOD reads the same daily value
+      for each 6-hour step, effectively multiplying precipitation by 4. The internal
+      PrScaling factor should handle this, but misalignment between time axis and DtSec
+      can produce off-by-one timestep errors.
+    affected_components: [readmeteo, settings]
+  remedy:
+    action: "Ensure forcing time axis aligns with CalendarDayStart and DtSec"
+    tool_to_run: ""
+    manual_steps:
+      - "Match forcing timestep to DtSec in settings"
+      - "Or let LISFLOOD interpolate (it handles daily → sub-daily internally)"
+      - "Check CalendarDayStart matches first forcing timestamp"
+    prevention: "Verify time axis alignment before running"
+  severity: silent
+  cross_references: [dt_010]
+
+- id: dt_005
+  stage: s2_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Field capacity and wilting point are wrong. Soil either saturates immediately or never drains."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Van Genuchten alpha (GenuAlpha) in wrong units: 1/m instead of 1/cm"
+    explanation: >
+      LISFLOOD expects GenuAlpha in 1/cm. Some soil databases (e.g., SoilGrids) provide
+      alpha in 1/m, which is 100× larger. If 1/m values are used directly, the
+      water retention curve is shifted, producing wrong field capacity, wilting point,
+      and available water capacity. Typical values: 0.01-0.1 in 1/cm.
+    affected_components: [convert_soil_params, soil, soilloop]
+  remedy:
+    action: "Divide alpha by 100 if source is in 1/m"
+    tool_to_run: convert_soil_params
+    manual_steps:
+      - "Check GenuAlpha range: should be 0.001-0.5 in 1/cm"
+      - "If values are 0.1-50, they are in 1/m — divide by 100"
+    prevention: "convert_soil_params.py validates GenuAlpha range"
+  severity: silent
+  cross_references: [dt_007, dt_008]
+
+# --- Parameter Format ---
+
+- id: dt_006
+  stage: s3_domain_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: "LISFLOOD crashes at startup with LDD error, or water routes in wrong directions."
+    error_pattern: "ldd"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "LDD uses ArcGIS D8 encoding (1,2,4,8,16,32,64,128) instead of PCRaster (1-9)"
+    explanation: >
+      PCRaster LDD encoding uses values 1-9, where each value represents a
+      direction (7=NW, 8=N, 9=NE, 4=W, 5=pit, 6=E, 1=SW, 2=S, 3=SE).
+      ArcGIS D8 uses powers of 2 (1=E, 2=SE, 4=S, 8=SW, 16=W, 32=NW, 64=N, 128=NE).
+      Using ArcGIS encoding in PCRaster causes water to flow in wrong directions
+      or crashes if values >9 are encountered.
+    affected_components: [routing, surface_routing]
+  remedy:
+    action: "Convert LDD from ArcGIS D8 to PCRaster encoding"
+    tool_to_run: ""
+    manual_steps:
+      - "Check unique values in LDD: if {1,2,4,8,16,32,64,128} → ArcGIS format"
+      - "If {1,2,3,4,5,6,7,8,9} → PCRaster format (correct)"
+      - "Use lddcreate in PCRaster to generate from DEM directly"
+    prevention: "Always generate LDD using PCRaster tools, not ArcGIS"
+  severity: fatal
+  cross_references: []
+
+- id: dt_007
+  stage: s2_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Soil saturates in minutes or never saturates. Soil water storage capacity is 1000x wrong."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "SoilDepth in meters instead of millimeters — 1000x error"
+    explanation: >
+      LISFLOOD expects SoilDepth1, SoilDepth2, SoilDepth3 in millimeters.
+      Typical values: 50-300 mm (layer 1a), 300-1500 mm (layers 1b, 2).
+      If values are 0.05-1.5 (meters), soil water storage capacity is 1000x too small.
+      The model saturates almost immediately, producing extreme surface runoff.
+    affected_components: [convert_soil_params, soil, soilloop]
+  remedy:
+    action: "Multiply SoilDepth by 1000 if values are in meters"
+    tool_to_run: convert_soil_params
+    manual_steps:
+      - "Check SoilDepth values: if <10, they are likely in meters"
+      - "Typical mm values: SoilDepth1=200, SoilDepth2=800, SoilDepth3=1200"
+    prevention: "convert_soil_params.py warns if SoilDepth < 10"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_008
+  stage: s2_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Infiltration is unrealistic — either everything infiltrates or nothing does."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "KSat (saturated hydraulic conductivity) in wrong units: cm/day or m/s instead of mm/day"
+    explanation: >
+      LISFLOOD expects KSat in mm/day. HWSD provides KSat in cm/day (×10 to get mm/day).
+      SoilGrids may provide in m/s (×86400000 to get mm/day). Using cm/day values
+      directly gives 10x too low KSat; using m/s values gives extreme infiltration.
+    affected_components: [convert_soil_params, soil, soilloop]
+  remedy:
+    action: "Convert KSat to mm/day"
+    tool_to_run: convert_soil_params
+    manual_steps:
+      - "HWSD cm/day → mm/day: multiply by 10"
+      - "SoilGrids m/s → mm/day: multiply by 86400 × 1000"
+      - "Typical range: 1-1000 mm/day (sand ~1000, clay ~1)"
+    prevention: "convert_soil_params.py validates KSat range"
+  severity: silent
+  cross_references: [dt_005, dt_007]
+
+- id: dt_009
+  stage: s3_domain_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: "Water moves through channels unrealistically fast (or slow). Flood peaks arrive days early."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "CalChanMan set to Manning's n value (0.03-0.05) instead of MULTIPLIER on n (0.5-2.0)"
+    explanation: >
+      CalChanMan is a calibration MULTIPLIER applied to the Manning's n map (ChanManMaps).
+      Effective n = ChanManMaps × CalChanMan. If CalChanMan is set to 0.04 (thinking
+      it's the Manning's n value), the effective n becomes ~0.001 (0.025 × 0.04),
+      making channel flow unrealistically fast. Similarly, ChanGrad must be in m/m
+      (not percent), and ChanLength must be in meters (not km).
+    affected_components: [routing, settings]
+  remedy:
+    action: "Set CalChanMan as a multiplier (typical: 0.5-2.0, default 1.0)"
+    tool_to_run: ""
+    manual_steps:
+      - "If CalChanMan < 0.1: likely being used as n directly — change to 1.0"
+      - "If ChanGrad values are 0.1-10: likely in percent — divide by 100"
+      - "If ChanLength values are 0.1-10: likely in km — multiply by 1000"
+    prevention: "run_lisflood.py preflight warns if CalChanMan < 0.1"
+  severity: silent
+  cross_references: []
+
+- id: dt_010
+  stage: s3_domain_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: "LISFLOOD runs for wrong period or crashes at startup with time parsing error."
+    error_pattern: "calendar"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "StepStart/StepEnd format doesn't match CalendarDayStart convention"
+    explanation: >
+      StepStart and StepEnd can be either calendar dates (format matching CalendarDayStart,
+      e.g., '02/01/1990 06:00' for DD/MM/YYYY HH:MM) or integer step numbers. Mixing
+      formats, or using a date format different from CalendarDayStart, causes wrong
+      simulation period or parse errors.
+    affected_components: [settings, main]
+  remedy:
+    action: "Use consistent date format in CalendarDayStart, StepStart, StepEnd"
+    tool_to_run: ""
+    manual_steps:
+      - "Ensure all three use the same DD/MM/YYYY HH:MM format"
+      - "Or use integer step numbers for StepStart/StepEnd"
+    prevention: "run_lisflood.py preflight validates time settings"
+  severity: fatal
+  cross_references: [dt_004]
+
+# --- Path Resolution ---
+
+- id: dt_011
+  stage: s4_model_execution
+  failure_domain: path_resolution
+  symptom:
+    description: "LISFLOOD crashes immediately: 'Could not find/open file' for MaskMap or other static maps."
+    error_pattern: "Could not find"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "MaskMap or other map path not found — $(PathRoot) variable resolves incorrectly"
+    explanation: >
+      LISFLOOD resolves paths using $(Variable) substitution in the settings XML.
+      If PathRoot is wrong, or the directory structure doesn't match expectations,
+      map files cannot be found. This affects MaskMap, Ldd, soil maps, and all
+      other static inputs.
+    affected_components: [settings, main]
+  remedy:
+    action: "Verify all $(PathRoot)-relative paths resolve to existing files"
+    tool_to_run: run_lisflood
+    manual_steps:
+      - "Run: python tools/run_lisflood.py --settings settings.xml --check_only"
+      - "Check all PathRoot, PathMaps, PathMeteo, PathInit, PathOut"
+      - "Ensure MaskMap file exists (with or without .nc/.map extension)"
+    prevention: "run_lisflood.py preflight validates all critical paths"
+  severity: fatal
+  cross_references: [dt_012]
+
+- id: dt_012
+  stage: s4_model_execution
+  failure_domain: path_resolution
+  symptom:
+    description: "LISFLOOD crashes when trying to read forcing data. 'Unable to open' or 'No such file'."
+    error_pattern: "Unable to open"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Forcing file path or naming convention mismatch"
+    explanation: >
+      Forcing files must follow LISFLOOD's naming convention: either a single NetCDF
+      file with time dimension (if readNetcdfStack=1), or numbered PCRaster maps
+      (prefix + step number, e.g., pr00001.map). The prefix in lfbinding must
+      exactly match the file names. Path resolution uses $(PathMeteo).
+    affected_components: [readmeteo, settings]
+  remedy:
+    action: "Verify forcing file naming matches lfbinding prefix and path"
+    tool_to_run: run_lisflood
+    manual_steps:
+      - "Check <lfbinding> entries for PrecipitationMaps, TavgMaps, etc."
+      - "Verify files exist at the resolved paths"
+      - "If using NetCDF stacks, ensure readNetcdfStack=1"
+    prevention: "run_lisflood.py preflight validates forcing file paths"
+  severity: fatal
+  cross_references: [dt_011]
+
+# --- Runtime Errors ---
+
+- id: dt_013
+  stage: s4_model_execution
+  failure_domain: runtime
+  symptom:
+    description: "NaN in output or crash mid-simulation. Lake/reservoir routing fails."
+    error_pattern: "NaN"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Lake or reservoir ID in spatial map has no entry in lookup tables"
+    explanation: >
+      When simulateLakes=1 or simulateReservoirs=1, every unique ID in the lake/reservoir
+      map must have corresponding entries in ALL lookup tables (TabLakeArea, TabTotStorage,
+      TabNormalStorageLimit, outflow tables, etc.). A missing ID causes the model to
+      read uninitialized or NaN values for that water body's parameters.
+    affected_components: [lakes, reservoir, settings]
+  remedy:
+    action: "Ensure all lake/reservoir IDs have lookup table entries"
+    tool_to_run: ""
+    manual_steps:
+      - "List unique IDs in lake/reservoir spatial maps"
+      - "Check each lookup table (Tab*) for missing IDs"
+      - "Add entries or remove water bodies not in tables"
+    prevention: "Pre-run check: compare map IDs with table entries"
+  severity: fatal
+  cross_references: []
+
+# --- Silent Errors (Model Runs, Results Wrong) ---
+
+- id: dt_014
+  stage: s5_output_analysis
+  failure_domain: silent_error
+  symptom:
+    description: "No snow accumulation even in cold/mountainous basins. All precipitation becomes rain."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "SnowMeltCoef too high or TempSnow threshold wrong"
+    explanation: >
+      If SnowMeltCoef is very high (>8 mm/°C/day), snow melts almost as fast as it
+      accumulates. If temperature input is wrong (dt_002), snow thresholds don't work.
+      Also check TempSnow (temperature below which precip is snow, default ~1°C)
+      and TempMelt (temperature above which snowmelt begins, default ~1°C).
+    affected_components: [snow, readmeteo]
+  remedy:
+    action: "Check SnowMeltCoef (typical: 3-6 mm/°C/day) and temperature units"
+    tool_to_run: ""
+    manual_steps:
+      - "Verify snowcov output is non-zero in winter months"
+      - "Check SnowMeltCoef range: 2.8-5.8 typical for European basins"
+      - "Ensure temperature units match TemperatureInKelvin flag"
+    prevention: "Compare snow dynamics to regional observations"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_015
+  stage: s5_output_analysis
+  failure_domain: silent_error
+  symptom:
+    description: "Baseflow drops to zero during dry periods. No sustained low flow."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "GwLoss drains all groundwater to deep aquifer before baseflow can sustain stream"
+    explanation: >
+      GwLoss [mm/day] represents water lost from the lower zone to deep aquifers
+      or lateral groundwater outflow. If GwLoss > GwPercValue (percolation input
+      to lower zone), the lower zone storage depletes to zero, killing baseflow.
+      This is realistic for karst or deep alluvial systems but wrong for most basins.
+    affected_components: [groundwater, settings]
+  remedy:
+    action: "Reduce GwLoss (typical: 0-1 mm/day, default 0)"
+    tool_to_run: ""
+    manual_steps:
+      - "Check lz.nc output: if lower zone goes to zero, GwLoss is too high"
+      - "Set GwLoss=0 initially, increase only if independent evidence of deep losses"
+      - "Check LZThreshold: baseflow stops when LZ < LZThreshold"
+    prevention: "Compare simulated baseflow recession to observed"
+  severity: silent
+  cross_references: [dt_016]
+
+- id: dt_016
+  stage: s5_output_analysis
+  failure_domain: silent_error
+  symptom:
+    description: "Hydrograph is extremely flashy — no baseflow component. All water runs off immediately."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "b_Xinanjiang parameter near zero — saturation fraction always ~1.0"
+    explanation: >
+      b_Xinanjiang controls the shape of the saturation excess distribution.
+      SatFraction = 1 - (1-RelSat)^b_Xinanjiang. When b → 0, SatFraction → 1
+      for any soil moisture, meaning ALL rain becomes surface runoff. No water
+      enters the soil for groundwater recharge. Typical values: 0.1-0.5.
+    affected_components: [soil, soilloop, settings]
+  remedy:
+    action: "Set b_Xinanjiang to typical range (0.1-0.5)"
+    tool_to_run: ""
+    manual_steps:
+      - "If b_Xinanjiang < 0.05: increase to at least 0.1"
+      - "Compare surface runoff (surfr.nc) vs groundwater recharge (gwperc.nc)"
+      - "A healthy ratio is 30-70% surface vs 30-70% subsurface (basin-dependent)"
+    prevention: "Calibrate b_Xinanjiang against observed flow duration curve"
+  severity: silent
+  cross_references: [dt_015]
+
+- id: dt_017
+  stage: s4_model_execution
+  failure_domain: runtime
+  symptom:
+    description: "LISFLOOD runs extremely slowly. Soil loop takes minutes per timestep."
+    error_pattern: "numba"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Numba JIT compilation failure — falls back to slow pure-Python soil loop"
+    explanation: >
+      LISFLOOD uses Numba to JIT-compile the computationally intensive soilloop
+      and routing calculations. If Numba or LLVM is not properly installed, or
+      there's a version incompatibility, the compilation silently fails and falls
+      back to pure Python, which is 10-100× slower.
+    affected_components: [soilloop, routing]
+  remedy:
+    action: "Fix Numba installation or set numCPUs_parallelNumba=1"
+    tool_to_run: ""
+    manual_steps:
+      - "Test: python -c 'import numba; print(numba.__version__)'"
+      - "Ensure llvmlite version matches numba version"
+      - "Set numCPUs_parallelNumba = 0 for auto-detection"
+    prevention: "Verify Numba works before production runs"
+  severity: degraded
+  cross_references: []
+
+- id: dt_018
+  stage: s5_output_analysis
+  failure_domain: silent_error
+  symptom:
+    description: "No spatial output files (*.nc) in output directory. Only TSS files exist."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Both writeNetcdfStack and writeNetcdf options are set to 0"
+    explanation: >
+      LISFLOOD has two output writing options: writeNetcdfStack (writes time-varying
+      maps at each timestep) and writeNetcdf (writes aggregated maps). If both are
+      disabled, only TSS (time series) files at gauge points are written. This can
+      mislead users into thinking the model didn't run or produced no spatial output.
+    affected_components: [output, settings]
+  remedy:
+    action: "Enable writeNetcdfStack=1 in settings XML"
+    tool_to_run: ""
+    manual_steps:
+      - "Set <setoption name='writeNetcdfStack' choice='1'/>"
+      - "Also enable specific report maps in lfoptions"
+      - "Ensure PathOut directory exists and is writable"
+    prevention: "run_lisflood.py preflight warns if both options are off"
+  severity: silent
+  cross_references: []

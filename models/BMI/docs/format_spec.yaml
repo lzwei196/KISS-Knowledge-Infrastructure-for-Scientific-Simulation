@@ -1,0 +1,73 @@
+model:
+  name: "BMI"
+  full_name: "Basic Model Interface v2.0"
+  domain: "geoscience_interface"
+  type: "interface_specification"
+  description: >
+    Language-agnostic interface specification (31 functions in 7 categories)
+    for coupling geoscience models. Reference implementation is a 2D heat
+    diffusion model (bmi-example-python / bmi-heat).
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/BMI/venv/bin/python"
+  package: "bmi-heat 2.1.3.dev0"
+  import_path: "heat.bmi_heat.BmiHeat"
+  config_format: "YAML"
+  config_example: "heat.yaml"
+
+inputs:
+  forcing:
+    - name: "plate_surface__temperature"
+      unit: "K"
+      valid_range: [0.0, 1000.0]
+      description: "Temperature field on 2D plate (also an output; bidirectional exchange item)"
+  parameters:
+    critical:
+      - name: "alpha"
+        valid_range: [0.0, 100.0]
+        default: 1.0
+        unit: "m2 s-1"
+        description: "Thermal diffusivity coefficient"
+      - name: "shape"
+        valid_range: [[2, 2], [1000, 1000]]
+        default: [10, 20]
+        description: "Grid dimensions [ny, nx] in ij-order"
+      - name: "spacing"
+        valid_range: [[0.01, 0.01], [1000.0, 1000.0]]
+        default: [1.0, 1.0]
+        unit: "m"
+        description: "Grid cell spacing [dy, dx] in ij-order"
+      - name: "origin"
+        default: [0.0, 0.0]
+        description: "Grid origin [y0, x0] in ij-order"
+
+outputs:
+  primary:
+    - name: "plate_surface__temperature"
+      unit: "K"
+      valid_range: [0.0, 1000.0]
+      description: "Temperature distribution on 2D plate after heat diffusion"
+      grid_type: "uniform_rectilinear"
+      array_layout: "1D flattened (row-major, ij-order)"
+
+time:
+  units: "s"
+  step: 0.25
+  start: 0.0
+  end: "1.7976931348623157e+308 (effectively infinite)"
+
+grid:
+  type: "uniform_rectilinear"
+  rank: 2
+  indexing: "ij-order (row-major)"
+  default_shape: [10, 20]
+  default_spacing: [1.0, 1.0]
+
+compliance:
+  total_functions: 42
+  implemented: 41
+  compliance_pct: 97.6
+
+known_issues:
+  - "heat package is a namespace package (missing __init__.py); import via heat.bmi_heat.BmiHeat, not heat.BmiHeat"
+  - "end_time returns float max (~1.8e308) rather than a meaningful simulation end time"
+  - "Arrays are always 1D flattened; caller must reshape using get_grid_shape"
+  - "BMI does not auto-convert units between coupled models; caller must check get_var_units()"

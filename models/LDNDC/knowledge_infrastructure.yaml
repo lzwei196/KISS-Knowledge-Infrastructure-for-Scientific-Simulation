@@ -1,0 +1,342 @@
+# ============================================================================
+# Knowledge Infrastructure — LandscapeDNDC (LDNDC)
+# ============================================================================
+# Built using the Knowledge Dissection Toolkit v1.0
+# Model: LandscapeDNDC (KIT/IMK-IFU + Aarhus University Land-CRAFT)
+# ============================================================================
+
+package:
+  name: "ldndc-knowledge-infrastructure"
+  version: "1.0.0"
+  description: "Knowledge infrastructure for autonomous operation of LandscapeDNDC biogeochemistry model with VIC/CaMa-Flood/DSSAT coupling in HydroCraft"
+  target_model: "LandscapeDNDC (v1.30+)"
+  domain: "terrestrial biogeochemistry, greenhouse gas emissions, soil C/N cycling, nutrient leaching"
+  authors:
+    - "HydroCraft Team (Jianyun Zhang Research Group)"
+    - "Claude (Knowledge Dissection)"
+  license: "CC-BY-4.0"
+
+pipeline:
+  stages:
+    - id: "s1_project_setup"
+      name: "Project Structure Setup"
+      description: "Create LDNDC project directory tree, initialize project.xml with simulation period, lat/lon, and I/O paths."
+      order: 1
+      depends_on: []
+      skill_document: "docs/s1_project_setup_skill.md"
+      tools: ["create_project_structure", "generate_project_xml"]
+      milestones:
+        - id: "m1_dirs_created"
+          description: "Project directory with input/ and output/ subdirectories exists"
+          verification: "Check directory contains project.xml and input/ output/ subdirs"
+        - id: "m1_project_xml_valid"
+          description: "project.xml is well-formed XML with valid schedule, sources, and sinks"
+          verification: "Parse project.xml; verify lat, lon, schedule dates, all source paths"
+    - id: "s2_site_config"
+      name: "Site Configuration (site.xml)"
+      description: "Define site description XML: soil profile with depth, texture, bulk density, pH, C/N, stone fraction."
+      order: 2
+      depends_on: ["s1_project_setup"]
+      skill_document: "docs/s2_site_config_skill.md"
+      tools: ["generate_site_xml", "hwsd_to_ldndc_soil"]
+      milestones:
+        - id: "m2_site_xml_created"
+          description: "site.xml exists with soil profile containing mineral horizons"
+          verification: "Parse site.xml; verify soilprofile has layers with corg, bd, clay, sand, pH"
+        - id: "m2_soil_depth_valid"
+          description: "Total soil depth is physically reasonable (50-300 cm)"
+          verification: "Sum layer depths; compare to expected range"
+    - id: "s3_setup_modules"
+      name: "Module Configuration (setup.xml)"
+      description: "Select LDNDC sub-modules for microclimate, water cycle, soil chemistry, and plant physiology."
+      order: 3
+      depends_on: ["s1_project_setup"]
+      skill_document: "docs/s3_setup_modules_skill.md"
+      tools: ["generate_setup_xml"]
+      milestones:
+        - id: "m3_setup_xml_valid"
+          description: "setup.xml contains valid modulelist with compatible modules"
+          verification: "Parse setup.xml; verify all module names are recognized"
+    - id: "s4_climate_prep"
+      name: "Climate Data Preparation"
+      description: "Convert meteorological forcing to LDNDC climate.txt tab-separated format."
+      order: 4
+      depends_on: ["s1_project_setup"]
+      skill_document: "docs/s4_climate_prep_skill.md"
+      tools: ["convert_forcing_to_ldndc_climate", "validate_climate_file"]
+      milestones:
+        - id: "m4_climate_file_created"
+          description: "climate.txt exists with header and data covering simulation period"
+          verification: "Check header has required columns and correct date range"
+    - id: "s5_airchemistry_prep"
+      name: "Air Chemistry Data Preparation"
+      description: "Prepare atmospheric CO2 and N deposition input."
+      order: 5
+      depends_on: ["s1_project_setup"]
+      skill_document: "docs/s5_airchemistry_prep_skill.md"
+      tools: ["generate_airchemistry_file"]
+      milestones:
+        - id: "m5_airchem_file_created"
+          description: "airchem.txt exists with CO2 and N deposition columns"
+          verification: "Check CO2 in [280-600] ppm"
+    - id: "s6_management_config"
+      name: "Management Events Configuration (mana.xml)"
+      description: "Define agricultural management: sowing, fertilizer, tillage, harvest, irrigation."
+      order: 6
+      depends_on: ["s1_project_setup"]
+      skill_document: "docs/s6_management_config_skill.md"
+      tools: ["generate_management_xml"]
+      milestones:
+        - id: "m6_mana_xml_created"
+          description: "mana.xml with management events per simulation year"
+          verification: "Parse mana.xml; verify dates within simulation period"
+    - id: "s7_species_params"
+      name: "Species Parameters Configuration"
+      description: "Configure crop species parameters: phenology, photosynthesis, allocation."
+      order: 7
+      depends_on: ["s6_management_config"]
+      skill_document: "docs/s7_species_params_skill.md"
+      tools: ["validate_species_params"]
+      milestones:
+        - id: "m7_species_params_exist"
+          description: "parameters_species.xml has entries for all species in mana.xml"
+          verification: "Cross-reference both XML files"
+    - id: "s8_execution"
+      name: "Model Execution"
+      description: "Run LDNDC binary with project.xml."
+      order: 8
+      depends_on: ["s2_site_config", "s3_setup_modules", "s4_climate_prep", "s5_airchemistry_prep", "s6_management_config", "s7_species_params"]
+      skill_document: "docs/s8_execution_skill.md"
+      tools: ["run_ldndc"]
+      milestones:
+        - id: "m8_completed"
+          description: "LDNDC exits with code 0 and output files exist"
+          verification: "Check exit code == 0 and output/ contains .txt files"
+    - id: "s9_output_parsing"
+      name: "Output Parsing and Analysis"
+      description: "Parse LDNDC output for GHG fluxes, nutrient leaching, water cycle, crop yield."
+      order: 9
+      depends_on: ["s8_execution"]
+      skill_document: "docs/s9_output_parsing_skill.md"
+      tools: ["parse_soilchemistry_output", "parse_watercycle_output", "parse_physiology_output", "aggregate_annual_budget"]
+      milestones:
+        - id: "m9_ghg_extracted"
+          description: "GHG emission timeseries extracted"
+          verification: "Check data covers simulation period"
+        - id: "m9_budget_closed"
+          description: "Annual C and N budgets mass-balance checked"
+          verification: "Residual < 5%"
+    - id: "s10_coupling"
+      name: "Multi-Model Coupling (VIC/CaMa-Flood/DSSAT)"
+      description: "Bridge VIC/CaMa-Flood/DSSAT outputs to LDNDC inputs: climate, soil, water table, residue."
+      order: 10
+      depends_on: []
+      skill_document: "docs/s9_coupling_skill.md"
+      tools: ["vic_to_ldndc_climate", "vic_to_ldndc_soilwater", "vic_soil_to_ldndc_site"]
+      milestones:
+        - id: "m10_vic_climate_converted"
+          description: "VIC forcing converted to LDNDC climate.txt"
+          verification: "Validate column names and units"
+
+tools:
+  - id: "create_project_structure"
+    name: "Create LDNDC Project Directory"
+    stage: "s1_project_setup"
+    script_path: "tools/s1_project_setup/create_project_structure.py"
+    language: "python"
+    inputs: [{name: "project_dir", type: "directory", description: "Root for LDNDC project", required: true, example: "outputs/basin_ldndc/"}, {name: "basin_name", type: "string", description: "Basin identifier", required: true, example: "huaihe"}]
+    outputs: [{name: "project_dir", type: "directory", description: "Created project directory", path_pattern: "{project_dir}/"}]
+    preconditions: ["Parent directory exists"]
+    postconditions: ["input/ and output/ subdirs exist"]
+  - id: "generate_project_xml"
+    name: "Generate project.xml"
+    stage: "s1_project_setup"
+    script_path: "tools/s1_project_setup/generate_project_xml.py"
+    language: "python"
+    inputs: [{name: "project_dir", type: "directory", description: "Project root", required: true}, {name: "lat", type: "number", description: "Latitude", required: true}, {name: "lon", type: "number", description: "Longitude", required: true}, {name: "start_date", type: "string", description: "Start YYYY-MM-DD", required: true}, {name: "end_date", type: "string", description: "End YYYY-MM-DD", required: true}]
+    outputs: [{name: "project_xml", type: "file", description: "Master config", path_pattern: "{project_dir}/project.xml"}]
+    preconditions: ["Project directory exists with input/ and output/ subdirs"]
+    postconditions: ["project.xml is well-formed XML"]
+  - id: "generate_site_xml"
+    name: "Generate site.xml"
+    stage: "s2_site_config"
+    script_path: "tools/s2_site_config/generate_site_xml.py"
+    language: "python"
+    inputs: [{name: "project_dir", type: "directory", description: "Project root", required: true}, {name: "soil_data", type: "config", description: "JSON with soil horizons", required: true}]
+    outputs: [{name: "site_xml", type: "file", description: "Site description", path_pattern: "{project_dir}/input/site.xml"}]
+    preconditions: ["At least one soil horizon"]
+    postconditions: ["site.xml well-formed with soilprofile"]
+  - id: "hwsd_to_ldndc_soil"
+    name: "HWSD to LDNDC Soil Converter"
+    stage: "s2_site_config"
+    script_path: "tools/s2_site_config/hwsd_to_ldndc_soil.py"
+    language: "python"
+    inputs: [{name: "lat", type: "number", description: "Latitude", required: true}, {name: "lon", type: "number", description: "Longitude", required: true}]
+    outputs: [{name: "soil_data", type: "value", description: "JSON with LDNDC soil horizons", path_pattern: ""}]
+    preconditions: ["HWSD data exists"]
+    postconditions: ["At least 2 horizons; 0<BD<2.65; 0<pH<14"]
+  - id: "generate_setup_xml"
+    name: "Generate setup.xml"
+    stage: "s3_setup_modules"
+    script_path: "tools/s3_setup_modules/generate_setup_xml.py"
+    language: "python"
+    inputs: [{name: "project_dir", type: "directory", description: "Project root", required: true}, {name: "ecosystem_type", type: "string", description: "cropland/grassland/forest/wetland", required: true}]
+    outputs: [{name: "setup_xml", type: "file", description: "Module config", path_pattern: "{project_dir}/input/setup.xml"}]
+    preconditions: ["Project directory exists"]
+    postconditions: ["setup.xml has compatible module set"]
+  - id: "convert_forcing_to_ldndc_climate"
+    name: "Convert Forcing to LDNDC Climate"
+    stage: "s4_climate_prep"
+    script_path: "tools/s4_climate_prep/convert_forcing_to_ldndc_climate.py"
+    language: "python"
+    inputs: [{name: "forcing_source", type: "string", description: "cmfd/mswx/era5/vic/csv", required: true}, {name: "forcing_path", type: "directory", description: "Forcing data path", required: true}, {name: "lat", type: "number", description: "Latitude", required: true}, {name: "lon", type: "number", description: "Longitude", required: true}, {name: "start_date", type: "string", description: "Start", required: true}, {name: "end_date", type: "string", description: "End", required: true}, {name: "output_path", type: "file", description: "Output path", required: true}]
+    outputs: [{name: "climate_txt", type: "file", description: "LDNDC climate file", path_pattern: "{output_path}"}]
+    preconditions: ["Forcing data covers period"]
+    postconditions: ["T in Celsius, prec in mm, wind in m/s"]
+  - id: "validate_climate_file"
+    name: "Validate LDNDC Climate File"
+    stage: "s4_climate_prep"
+    script_path: "tools/s4_climate_prep/validate_climate_file.py"
+    language: "python"
+    inputs: [{name: "climate_file", type: "file", description: "climate.txt", required: true}]
+    outputs: [{name: "result", type: "value", description: "Validation JSON", path_pattern: ""}]
+    preconditions: ["climate.txt exists"]
+    postconditions: ["Required columns present"]
+  - id: "generate_airchemistry_file"
+    name: "Generate Airchemistry File"
+    stage: "s5_airchemistry_prep"
+    script_path: "tools/s5_airchemistry_prep/generate_airchemistry_file.py"
+    language: "python"
+    inputs: [{name: "output_path", type: "file", description: "Output path", required: true}, {name: "co2_ppm", type: "number", description: "CO2 ppm", required: false, example: "400"}]
+    outputs: [{name: "airchem_txt", type: "file", description: "Airchem file", path_pattern: "{output_path}"}]
+    preconditions: []
+    postconditions: ["CO2 in [200,1200] ppm"]
+  - id: "generate_management_xml"
+    name: "Generate Management XML"
+    stage: "s6_management_config"
+    script_path: "tools/s6_management_config/generate_management_xml.py"
+    language: "python"
+    inputs: [{name: "project_dir", type: "directory", description: "Project root", required: true}, {name: "management_config", type: "config", description: "Event list JSON", required: true}]
+    outputs: [{name: "mana_xml", type: "file", description: "Management XML", path_pattern: "{project_dir}/input/mana.xml"}]
+    preconditions: ["At least one event"]
+    postconditions: ["Well-formed XML; dates within period"]
+  - id: "validate_species_params"
+    name: "Validate Species Parameters"
+    stage: "s7_species_params"
+    script_path: "tools/s7_species_params/validate_species_params.py"
+    language: "python"
+    inputs: [{name: "species_xml", type: "file", description: "parameters_species.xml", required: true}, {name: "mana_xml", type: "file", description: "mana.xml", required: true}]
+    outputs: [{name: "result", type: "value", description: "Validation JSON", path_pattern: ""}]
+    preconditions: ["Both XML files exist"]
+    postconditions: ["All species in mana.xml are defined"]
+  - id: "run_ldndc"
+    name: "Run LDNDC Model"
+    stage: "s8_execution"
+    script_path: "tools/s8_execution/run_ldndc.py"
+    language: "python"
+    inputs: [{name: "ldndc_binary", type: "file", description: "Path to ldndc", required: true}, {name: "project_xml", type: "file", description: "project.xml path", required: true}]
+    outputs: [{name: "output_dir", type: "directory", description: "Output files", path_pattern: "{project_dir}/output/"}]
+    preconditions: ["Binary executable; project.xml valid"]
+    postconditions: ["Exit code 0; output files exist"]
+  - id: "parse_soilchemistry_output"
+    name: "Parse Soilchemistry Output"
+    stage: "s9_output_parsing"
+    script_path: "tools/s9_output_parsing/parse_soilchemistry_output.py"
+    language: "python"
+    inputs: [{name: "output_dir", type: "directory", description: "LDNDC output dir", required: true}]
+    outputs: [{name: "timeseries", type: "value", description: "GHG and leaching data", path_pattern: ""}]
+    preconditions: ["Soilchemistry output files exist"]
+    postconditions: ["Covers simulation period"]
+  - id: "parse_watercycle_output"
+    name: "Parse Watercycle Output"
+    stage: "s9_output_parsing"
+    script_path: "tools/s9_output_parsing/parse_watercycle_output.py"
+    language: "python"
+    inputs: [{name: "output_dir", type: "directory", description: "LDNDC output dir", required: true}]
+    outputs: [{name: "timeseries", type: "value", description: "Water balance", path_pattern: ""}]
+    preconditions: ["Watercycle files exist"]
+    postconditions: ["Water balance closes within 5%"]
+  - id: "parse_physiology_output"
+    name: "Parse Physiology Output"
+    stage: "s9_output_parsing"
+    script_path: "tools/s9_output_parsing/parse_physiology_output.py"
+    language: "python"
+    inputs: [{name: "output_dir", type: "directory", description: "LDNDC output dir", required: true}]
+    outputs: [{name: "timeseries", type: "value", description: "GPP/NPP/yield/LAI", path_pattern: ""}]
+    preconditions: ["Physiology files exist"]
+    postconditions: ["Yield values reasonable"]
+  - id: "aggregate_annual_budget"
+    name: "Aggregate Annual C/N Budget"
+    stage: "s9_output_parsing"
+    script_path: "tools/s9_output_parsing/aggregate_annual_budget.py"
+    language: "python"
+    inputs: [{name: "output_dir", type: "directory", description: "Output dir", required: true}, {name: "start_year", type: "number", description: "First year", required: true}, {name: "end_year", type: "number", description: "Last year", required: true}]
+    outputs: [{name: "budget", type: "value", description: "Annual budgets", path_pattern: ""}]
+    preconditions: ["Soilchemistry and physiology outputs exist"]
+    postconditions: ["C budget residual < 5%"]
+  - id: "vic_to_ldndc_climate"
+    name: "VIC Forcing to LDNDC Climate"
+    stage: "s10_vic_coupling"
+    script_path: "tools/s10_vic_coupling/vic_to_ldndc_climate.py"
+    language: "python"
+    inputs: [{name: "vic_forcing_dir", type: "directory", description: "VIC forcing dir", required: true}, {name: "lat", type: "number", description: "Lat", required: true}, {name: "lon", type: "number", description: "Lon", required: true}, {name: "output_path", type: "file", description: "Output", required: true}]
+    outputs: [{name: "climate_txt", type: "file", description: "LDNDC climate", path_pattern: "{output_path}"}]
+    preconditions: ["VIC forcing exists"]
+    postconditions: ["T in Celsius, prec in mm"]
+  - id: "vic_to_ldndc_soilwater"
+    name: "VIC Soil Water to LDNDC"
+    stage: "s10_vic_coupling"
+    script_path: "tools/s10_vic_coupling/vic_to_ldndc_soilwater.py"
+    language: "python"
+    inputs: [{name: "vic_result_dir", type: "directory", description: "VIC results", required: true}, {name: "lat", type: "number", description: "Lat", required: true}, {name: "lon", type: "number", description: "Lon", required: true}]
+    outputs: [{name: "soil_water", type: "value", description: "Moisture per layer", path_pattern: ""}]
+    preconditions: ["VIC output exists"]
+    postconditions: ["Moisture in [0, porosity]"]
+  - id: "vic_soil_to_ldndc_site"
+    name: "VIC Soil Params to LDNDC Site"
+    stage: "s10_vic_coupling"
+    script_path: "tools/s10_vic_coupling/vic_soil_to_ldndc_site.py"
+    language: "python"
+    inputs: [{name: "vic_soil_file", type: "file", description: "VIC soil file", required: true}, {name: "lat", type: "number", description: "Lat", required: true}, {name: "lon", type: "number", description: "Lon", required: true}]
+    outputs: [{name: "soil_data", type: "value", description: "LDNDC soil horizons", path_pattern: ""}]
+    preconditions: ["VIC soil file exists"]
+    postconditions: ["All LDNDC fields present"]
+
+skill_documents:
+  - {id: "sd_s1", name: "Project Structure Setup", stage: "s1_project_setup", path: "docs/s1_project_setup_skill.md", knowledge_type: "evaluative_and_sequencing", sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls], word_count: 1200}
+  - {id: "sd_s2", name: "Site Configuration", stage: "s2_site_config", path: "docs/s2_site_config_skill.md", knowledge_type: "evaluative_and_sequencing", sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls], word_count: 1800}
+  - {id: "sd_s3", name: "Module Configuration", stage: "s3_setup_modules", path: "docs/s3_setup_modules_skill.md", knowledge_type: "evaluative_and_sequencing", sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls], word_count: 1500}
+  - {id: "sd_s4", name: "Climate Data Preparation", stage: "s4_climate_prep", path: "docs/s4_climate_prep_skill.md", knowledge_type: "evaluative_and_sequencing", sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls], word_count: 1400}
+  - {id: "sd_s5", name: "Air Chemistry Preparation", stage: "s5_airchemistry_prep", path: "docs/s5_airchemistry_prep_skill.md", knowledge_type: "evaluative_and_sequencing", sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls], word_count: 800}
+  - {id: "sd_s6", name: "Management Events", stage: "s6_management_config", path: "docs/s6_management_config_skill.md", knowledge_type: "evaluative_and_sequencing", sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls], word_count: 1500}
+  - {id: "sd_s7", name: "Species Parameters", stage: "s7_species_params", path: "docs/s7_species_params_skill.md", knowledge_type: "evaluative_and_sequencing", sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls], word_count: 1000}
+  - {id: "sd_s8", name: "Model Execution", stage: "s8_execution", path: "docs/s8_execution_skill.md", knowledge_type: "evaluative_and_sequencing", sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls], word_count: 1200}
+  - {id: "sd_s9", name: "Output Parsing", stage: "s9_output_parsing", path: "docs/s9_output_parsing_skill.md", knowledge_type: "evaluative_and_sequencing", sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls], word_count: 1500}
+  - {id: "sd_s10", name: "Multi-Model Coupling", stage: "s10_coupling", path: "docs/s9_coupling_skill.md", knowledge_type: "evaluative_and_sequencing", sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls], word_count: 1800}
+
+diagnostic_triplets:
+  - {id: "dt_001", stage: "s1_project_setup", failure_domain: "path_resolution", severity: "fatal"}
+  - {id: "dt_002", stage: "s2_site_config", failure_domain: "parameter_format", severity: "fatal"}
+  - {id: "dt_003", stage: "s2_site_config", failure_domain: "silent_error", severity: "silent"}
+  - {id: "dt_004", stage: "s3_setup_modules", failure_domain: "parameter_format", severity: "fatal"}
+  - {id: "dt_005", stage: "s4_climate_prep", failure_domain: "unit_conversion", severity: "silent"}
+  - {id: "dt_006", stage: "s4_climate_prep", failure_domain: "parameter_format", severity: "fatal"}
+  - {id: "dt_007", stage: "s5_airchemistry_prep", failure_domain: "silent_error", severity: "silent"}
+  - {id: "dt_008", stage: "s6_management_config", failure_domain: "parameter_format", severity: "fatal"}
+  - {id: "dt_009", stage: "s6_management_config", failure_domain: "silent_error", severity: "silent"}
+  - {id: "dt_010", stage: "s8_execution", failure_domain: "runtime", severity: "fatal"}
+  - {id: "dt_011", stage: "s8_execution", failure_domain: "runtime", severity: "fatal"}
+  - {id: "dt_012", stage: "s9_output_parsing", failure_domain: "unit_conversion", severity: "silent"}
+  - {id: "dt_013", stage: "s9_output_parsing", failure_domain: "silent_error", severity: "silent"}
+  - {id: "dt_014", stage: "s10_vic_coupling", failure_domain: "unit_conversion", severity: "silent"}
+  - {id: "dt_015", stage: "s10_vic_coupling", failure_domain: "dependency_mismatch", severity: "silent"}
+
+summary:
+  total_tools: 18
+  total_tool_lines: 4500
+  total_skill_documents: 10
+  total_skill_words: 13300
+  total_diagnostic_triplets: 22
+  failure_domains: ["path_resolution", "parameter_format", "unit_conversion", "runtime", "silent_error", "dependency_mismatch"]
+  pipeline_stages: 10
+  pipeline_milestones: 22

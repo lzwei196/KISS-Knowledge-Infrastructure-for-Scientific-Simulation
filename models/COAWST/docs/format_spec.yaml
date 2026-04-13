@@ -1,0 +1,240 @@
+model:
+  name: "COAWST"
+  version: "3.8"
+  full_name: "Coupled-Ocean-Atmosphere-Wave-Sediment Transport"
+  domain: "coastal_ocean"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/COAWST/source/repo/coawstM"
+  build_system: "GNU Make / CMake with MPI"
+  language: "Fortran 90+"
+  coupling_framework: "MCT or ESMF/NUOPC"
+
+inputs:
+  config_files:
+    - name: "ocean_*.in"
+      format: "KEYWORD = value"
+      description: "ROMS parameters (grid dims, timestep, physics, I/O paths)"
+    - name: "coupling_*.in"
+      format: "KEYWORD = value"
+      description: "MCT coupling intervals, processor allocation, SCRIP weights"
+    - name: "swan_*.in"
+      format: "SWAN command syntax"
+      description: "SWAN spectral parameters, physics switches"
+    - name: "namelist.input"
+      format: "Fortran namelist"
+      description: "WRF atmospheric configuration"
+
+  forcing:
+    - name: "Uwind"
+      unit: "m/s"
+      valid_range: [-50, 50]
+      description: "Eastward wind component at 10m"
+    - name: "Vwind"
+      unit: "m/s"
+      valid_range: [-50, 50]
+      description: "Northward wind component at 10m"
+    - name: "Tair"
+      unit: "Celsius"
+      valid_range: [-60, 50]
+      description: "Air temperature at 2m"
+    - name: "Pair"
+      unit: "mb"
+      valid_range: [870, 1084]
+      description: "Surface air pressure"
+    - name: "Qair"
+      unit: "kg/kg"
+      valid_range: [0, 0.04]
+      description: "Specific humidity"
+    - name: "rain"
+      unit: "m/s"
+      valid_range: [0, 0.001]
+      description: "Rain fall rate"
+    - name: "swrad"
+      unit: "W/m2"
+      valid_range: [0, 1400]
+      description: "Shortwave radiation"
+    - name: "lwrad"
+      unit: "W/m2"
+      valid_range: [0, 500]
+      description: "Longwave radiation"
+
+  grid:
+    - name: "lon_rho"
+      unit: "degrees_east"
+      valid_range: [-180, 360]
+    - name: "lat_rho"
+      unit: "degrees_north"
+      valid_range: [-90, 90]
+    - name: "h"
+      unit: "m"
+      valid_range: [0, 11000]
+      description: "Bathymetry at RHO-points (positive down)"
+    - name: "mask_rho"
+      unit: "dimensionless"
+      valid_range: [0, 1]
+      description: "Land/sea mask (0=land, 1=sea)"
+    - name: "angle"
+      unit: "radians"
+      valid_range: [-3.15, 3.15]
+      description: "Angle between xi-axis and east"
+
+  initial_conditions:
+    - name: "temp"
+      unit: "Celsius"
+      valid_range: [-2, 40]
+      description: "Initial potential temperature"
+    - name: "salt"
+      unit: "PSU"
+      valid_range: [0, 42]
+      description: "Initial salinity"
+    - name: "zeta"
+      unit: "m"
+      valid_range: [-10, 10]
+      description: "Initial free-surface elevation"
+
+  parameters:
+    critical:
+      - name: "DT"
+        valid_range: [1, 300]
+        unit: "seconds"
+        description: "Baroclinic timestep"
+      - name: "NDTFAST"
+        valid_range: [10, 60]
+        unit: "dimensionless"
+        description: "Barotropic:baroclinic timestep ratio"
+      - name: "theta_s"
+        valid_range: [0.1, 10.0]
+        unit: "dimensionless"
+        description: "Surface S-coordinate stretching parameter"
+      - name: "theta_b"
+        valid_range: [0.0, 4.0]
+        unit: "dimensionless"
+        description: "Bottom S-coordinate stretching parameter"
+      - name: "Tcline"
+        valid_range: [10, 300]
+        unit: "m"
+        description: "Thermocline depth for S-coordinate stretching"
+      - name: "Vtransform"
+        valid_range: [1, 2]
+        unit: "dimensionless"
+        description: "S-coordinate transformation type"
+      - name: "Vstretching"
+        valid_range: [1, 5]
+        unit: "dimensionless"
+        description: "S-coordinate stretching function"
+      - name: "rdrg2"
+        valid_range: [0.0001, 0.01]
+        unit: "dimensionless"
+        description: "Quadratic bottom drag coefficient"
+      - name: "VISC2"
+        valid_range: [1, 100]
+        unit: "m2/s"
+        description: "Horizontal Laplacian viscosity"
+      - name: "TNU2"
+        valid_range: [0, 50]
+        unit: "m2/s"
+        description: "Horizontal tracer diffusion"
+      - name: "NtileI"
+        valid_range: [1, 256]
+        unit: "dimensionless"
+        description: "Number of tiles in XI-direction (NtileI*NtileJ = nprocs)"
+      - name: "NtileJ"
+        valid_range: [1, 256]
+        unit: "dimensionless"
+        description: "Number of tiles in ETA-direction"
+
+outputs:
+  primary:
+    - name: "zeta"
+      unit: "m"
+      valid_range: [-10, 10]
+      description: "Free-surface elevation"
+    - name: "temp"
+      unit: "Celsius"
+      valid_range: [-2, 40]
+      description: "Potential temperature"
+    - name: "salt"
+      unit: "PSU"
+      valid_range: [0, 42]
+      description: "Salinity"
+    - name: "u"
+      unit: "m/s"
+      valid_range: [-5, 5]
+      description: "Eastward velocity component"
+    - name: "v"
+      unit: "m/s"
+      valid_range: [-5, 5]
+      description: "Northward velocity component"
+    - name: "w"
+      unit: "m/s"
+      valid_range: [-1, 1]
+      description: "Vertical velocity component"
+    - name: "ubar"
+      unit: "m/s"
+      valid_range: [-5, 5]
+      description: "Vertically integrated u-momentum"
+    - name: "vbar"
+      unit: "m/s"
+      valid_range: [-5, 5]
+      description: "Vertically integrated v-momentum"
+    - name: "Hsig"
+      unit: "m"
+      valid_range: [0, 30]
+      description: "Significant wave height (coupled mode)"
+    - name: "bed_thickness"
+      unit: "m"
+      valid_range: [0, 100]
+      description: "Sediment bed thickness"
+
+  file_types:
+    - pattern: "*_his_*.nc"
+      description: "History snapshots (full 3D state)"
+    - pattern: "*_avg_*.nc"
+      description: "Time-averaged fields"
+    - pattern: "*_rst_*.nc"
+      description: "Restart/checkpoint files"
+    - pattern: "*_dia_*.nc"
+      description: "Diagnostic terms (momentum/tracer budgets)"
+    - pattern: "*_sta_*.nc"
+      description: "Station time series"
+    - pattern: "*_flt_*.nc"
+      description: "Lagrangian float trajectories"
+
+  format: "NetCDF-4 with CF-1.6 conventions"
+
+unit_traps:
+  - id: "ut_001"
+    variable: "Temperature"
+    external_unit: "K"
+    internal_unit: "Celsius"
+    factor: "-273.15"
+    failure: "Unrealistic SST, density blowup"
+  - id: "ut_002"
+    variable: "Wind stress"
+    external_unit: "Pa"
+    internal_unit: "m2/s2"
+    factor: "divide by rho0 (1025)"
+    failure: "Currents 1000x too strong"
+  - id: "ut_005"
+    variable: "Precipitation"
+    external_unit: "mm/day"
+    internal_unit: "m/s"
+    factor: "divide by 86400000"
+    failure: "Freshwater flux 1000x too high"
+  - id: "ut_007"
+    variable: "Wave direction"
+    external_unit: "degrees (met conv)"
+    internal_unit: "radians (math conv)"
+    factor: "multiply pi/180 + rotation"
+    failure: "Wave-current stress in wrong direction"
+  - id: "ut_012"
+    variable: "Bathymetry"
+    external_unit: "positive up"
+    internal_unit: "positive down (h>0)"
+    factor: "multiply -1"
+    failure: "Grid above water, instant crash"
+
+known_issues:
+  - "NtileI*NtileJ must exactly equal MPI processor count or deadlock occurs"
+  - "Coupling intervals must be integer multiples of both ocean and wave timesteps"
+  - "BULK_FLUXES flag determines whether raw atmospheric or pre-computed fluxes are expected"
+  - "Bathymetry must be positive-down; positive-up causes instant crash"

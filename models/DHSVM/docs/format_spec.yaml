@@ -1,0 +1,164 @@
+model:
+  name: "DHSVM"
+  version: "3.2"
+  domain: "Distributed watershed hydrology"
+  language: "C"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DHSVM/source/repo/build/DHSVM/sourcecode/DHSVM"
+  description: >
+    Physically-based, spatially distributed hydrological model for mountainous
+    watersheds. Simulates energy and water balance at each grid cell including
+    snow accumulation/melt, multi-layer soil moisture, channel routing, and
+    subsurface lateral flow.
+
+inputs:
+  forcing:
+    - name: "Temperature"
+      unit: "deg C"
+      valid_range: [-50, 50]
+      dhsvm_column: 2
+    - name: "Wind Speed"
+      unit: "m/s"
+      valid_range: [0, 50]
+      dhsvm_column: 3
+    - name: "Relative Humidity"
+      unit: "% (0-100)"
+      valid_range: [0, 100]
+      dhsvm_column: 4
+    - name: "Shortwave Radiation"
+      unit: "W/m2"
+      valid_range: [0, 1400]
+      dhsvm_column: 5
+    - name: "Longwave Radiation"
+      unit: "W/m2"
+      valid_range: [50, 600]
+      dhsvm_column: 6
+    - name: "Precipitation"
+      unit: "m/timestep"
+      valid_range: [0, 0.1]
+      dhsvm_column: 7
+
+  config:
+    format: "INI-style text with bracketed sections"
+    date_format: "MM/DD/YYYY-HH"
+    key_sections:
+      - "[OPTIONS]"
+      - "[AREA]"
+      - "[TIME]"
+      - "[CONSTANTS]"
+      - "[SOILS]"
+      - "[VEGETATION]"
+
+  binary_maps:
+    format: "Flat binary, row-major, 32-bit"
+    types:
+      - name: "DEM"
+        dtype: "float32"
+        unit: "m"
+      - name: "Mask"
+        dtype: "int32"
+        values: "1=inside basin, 0=outside"
+      - name: "Soil type"
+        dtype: "int32"
+        values: "index into soil parameter table"
+      - name: "Vegetation type"
+        dtype: "int32"
+        values: "index into vegetation parameter table"
+
+  parameters:
+    critical:
+      - name: "Lateral Conductivity"
+        section: "[SOILS]"
+        unit: "m/s"
+        valid_range: [1.0e-6, 1.0e-2]
+        sensitivity: "High"
+        description: "Controls baseflow magnitude"
+      - name: "Exponential Decrease"
+        section: "[SOILS]"
+        valid_range: [0.5, 5.0]
+        sensitivity: "High"
+        description: "Controls baseflow recession rate"
+      - name: "Soil Depth"
+        section: "[SOILS]"
+        unit: "m"
+        valid_range: [0.5, 5.0]
+        sensitivity: "High"
+        description: "Total soil column depth"
+      - name: "Temperature Lapse Rate"
+        section: "[CONSTANTS]"
+        unit: "C/m"
+        valid_range: [-0.010, -0.003]
+        sensitivity: "High"
+        description: "Temperature change per meter elevation"
+      - name: "Precipitation Lapse Rate"
+        section: "[CONSTANTS]"
+        unit: "m/m"
+        valid_range: [0, 1.0e-4]
+        sensitivity: "High"
+        description: "Orographic precipitation enhancement"
+      - name: "Rain Threshold"
+        section: "[CONSTANTS]"
+        unit: "deg C"
+        valid_range: [-2.0, 1.0]
+        sensitivity: "Medium"
+        description: "Temperature below which precip is mixed rain/snow"
+      - name: "Snow Threshold"
+        section: "[CONSTANTS]"
+        unit: "deg C"
+        valid_range: [-1.0, 3.0]
+        sensitivity: "Medium"
+        description: "Temperature below which precip is all snow"
+      - name: "Porosity"
+        section: "[SOILS]"
+        unit: "fraction (0-1)"
+        valid_range: [0.3, 0.6]
+        sensitivity: "Medium"
+        description: "Soil water holding capacity"
+      - name: "Maximum Infiltration"
+        section: "[SOILS]"
+        unit: "m/s"
+        valid_range: [1.0e-6, 1.0e-3]
+        sensitivity: "Medium"
+        description: "Maximum rate water enters the soil"
+
+outputs:
+  primary:
+    - name: "Streamflow"
+      file: "Stream.Flow"
+      unit: "m3/s"
+      valid_range: [0, 10000]
+      format: "Tab-separated: timestamp, segment_id, flow, ..."
+    - name: "Aggregated Values"
+      file: "Aggregated.Values"
+      unit: "various (mm, m)"
+      format: "Space-separated basin-averaged time series"
+      key_columns:
+        - "Precip(m)"
+        - "Snow(m)"
+        - "Swq (snow water equivalent)"
+        - "TotalET"
+        - "SoilMoist1-4"
+        - "SatFlow"
+        - "TableDepth"
+    - name: "Mass Balance"
+      file: "Mass.Balance"
+      unit: "mm"
+      format: "Running water balance check"
+    - name: "Mass Final Balance"
+      file: "Mass.Final.Balance"
+      unit: "mm"
+      format: "End-of-simulation summary: inflow, outflow, storage change, mass error"
+
+  validation_metrics:
+    - "NSE (Nash-Sutcliffe Efficiency)"
+    - "KGE (Kling-Gupta Efficiency)"
+    - "PBIAS (Percent Bias)"
+
+known_issues:
+  - id: "dt_016"
+    description: "Forcing file dates must use MM/DD/YYYY-HH format; ISO or DD/MM causes silent misparse"
+  - id: "dt_012"
+    description: "Met file names must match grid coordinates with exact decimal places (GRID_DECIMAL)"
+  - id: "dt_013"
+    description: "Binary maps must be exactly nrows*ncols*4 bytes; extra/missing bytes shift all pixels"
+  - id: "dt_001"
+    description: "Precipitation must be m/timestep not mm — 1000x silent error if wrong"

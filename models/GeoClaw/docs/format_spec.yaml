@@ -1,0 +1,108 @@
+model:
+  name: "GeoClaw"
+  domain: "Ocean / Coastal / Tsunami / Storm Surge"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GeoClaw/bowl-slosh-test/xgeoclaw"
+  description: >
+    Finite-volume solver for 2D shallow water equations with adaptive mesh
+    refinement (AMR) for geophysical flows including tsunamis, storm surges,
+    and dam-break floods. Part of the Clawpack suite.
+  equation_system: "2D shallow water equations (mass + x-momentum + y-momentum)"
+
+inputs:
+  forcing:
+    - name: "topography"
+      unit: "m (elevation relative to datum; negative = below sea level)"
+      format: "Type 1 (xyz ASCII), Type 2 (header+grid), Type 3 (ESRI ASCII), Type 4 (NetCDF)"
+      valid_range: [-11000, 9000]
+    - name: "dtopo (dynamic topography)"
+      unit: "m (seafloor displacement)"
+      format: "time-dependent (t, x, y, dz) files"
+      valid_range: [-50, 50]
+    - name: "wind_speed (storm surge)"
+      unit: "m/s"
+      valid_range: [0, 100]
+    - name: "pressure (storm surge)"
+      unit: "Pa"
+      valid_range: [85000, 105000]
+  parameters:
+    critical:
+      - name: "manning_coefficient"
+        valid_range: [0.01, 0.06]
+        description: "Manning roughness for bottom friction (s/m^{1/3})"
+      - name: "sea_level"
+        unit: "m"
+        valid_range: [-20, 20]
+        description: "Initial water surface elevation relative to datum"
+      - name: "coordinate_system"
+        valid_range: [1, 2]
+        description: "1=Cartesian (meters), 2=lat-lon (degrees). Must be consistent across all inputs."
+      - name: "amr_levels_max"
+        valid_range: [1, 6]
+        description: "Maximum AMR refinement levels"
+      - name: "cfl_desired"
+        valid_range: [0.5, 0.9]
+        description: "Target CFL number for time stepping (must be < 1.0)"
+      - name: "dry_tolerance"
+        unit: "m"
+        valid_range: [0.0001, 0.01]
+        description: "Minimum depth to consider a cell wet"
+      - name: "gravity"
+        unit: "m/s^2"
+        valid_range: [9.78, 9.83]
+        description: "Gravitational acceleration"
+      - name: "earth_radius"
+        unit: "m"
+        valid_range: [6367000, 6368000]
+        description: "Earth radius for lat-lon metric terms"
+    secondary:
+      - name: "wave_tolerance"
+        valid_range: [0.001, 0.1]
+        description: "Threshold for AMR wave flagging"
+      - name: "friction_depth"
+        unit: "m"
+        valid_range: [20, 1000000]
+        description: "Depth limit for Manning friction application"
+      - name: "speed_limit"
+        unit: "m/s"
+        valid_range: [20, 100]
+        description: "Maximum allowable velocity (caps unrealistic values)"
+
+outputs:
+  primary:
+    - name: "h (water depth)"
+      unit: "m"
+      valid_range: [0, 1000]
+      file: "fort.qNNNN"
+    - name: "hu (x-momentum)"
+      unit: "m^2/s"
+      valid_range: [-10000, 10000]
+      file: "fort.qNNNN"
+    - name: "hv (y-momentum)"
+      unit: "m^2/s"
+      valid_range: [-10000, 10000]
+      file: "fort.qNNNN"
+  derived:
+    - name: "eta (surface elevation)"
+      unit: "m"
+      formula: "h + B"
+      description: "Water surface elevation = depth + bathymetry"
+    - name: "speed"
+      unit: "m/s"
+      formula: "sqrt((hu/h)^2 + (hv/h)^2)"
+  gauge_output:
+    - name: "fort.gauge"
+      columns: ["level", "time", "h", "hu", "hv", "eta", "aux0"]
+  fgmax:
+    - name: "max_depth"
+      unit: "m"
+    - name: "max_speed"
+      unit: "m/s"
+    - name: "arrival_time"
+      unit: "s"
+
+known_issues:
+  - "Bathymetry sign convention (positive-up) must be enforced; many sources use positive-down"
+  - "Coordinate system (meters vs degrees) must be consistent across ALL spatial inputs"
+  - "AMR refinement ratios must be positive integers; array length = amr_levels_max - 1"
+  - "Topography must cover entire computational domain to avoid artificial walls"
+  - "Fault slip must be in meters (not cm) for Okada source; 100x error is silent"

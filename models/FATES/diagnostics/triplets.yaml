@@ -1,0 +1,525 @@
+# FATES Diagnostic Triplets
+# 18 symptom → diagnosis → remedy entries
+# Focus on unit conversion traps and silent failures
+
+- id: dt_001
+  stage: s5_output_analysis
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Biomass values are orders of magnitude too large or too small when comparing FATES output to literature"
+    error_pattern: "VEGC.*[0-9]{4,}"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "FATES tracks organ masses as kgC per individual plant, but output variables like FATES_VEGC are already area-normalized (kgC/m²). Confusion arises when users multiply already-normalized output by stem density again, or when comparing per-individual internal variables to per-area published values."
+    explanation: >
+      Internal FATES variables (cohort-level) store biomass as kgC/individual.
+      History output variables (FATES_VEGC, FATES_LEAFC, etc.) are already scaled
+      by stem density and patch area to produce kgC/m². Do not multiply output
+      values by stem density — this double-counts the scaling.
+    affected_components: [parse_fates_output, FatesHistoryInterfaceMod]
+
+  remedy:
+    action: "Use FATES_VEGC directly as kgC/m². Do not re-multiply by FATES_NPLANT."
+    tool_to_run: parse_fates_output
+    manual_steps:
+      - "Check FATES_VEGC range — typical tropical forest: 10-25 kgC/m²"
+      - "If values are ~0.001-0.01, you may be looking at per-individual values"
+      - "If values are >1000, you likely multiplied by stems/ha (10000x error)"
+    prevention: "validate_outputs() in parse_fates_output checks for unrealistic magnitude"
+
+  severity: silent
+  cross_references: [dt_002, dt_004]
+
+- id: dt_002
+  stage: s2_surface_data
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Stem density appears unrealistically high (millions of stems) or unrealistically low (fraction of a stem)"
+    error_pattern: "NPLANT.*[0-9]{5,}"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Confusion between stems/m² (FATES internal) and stems/ha (forestry convention). FATES uses stems/m², where 0.05 stems/m² = 500 stems/ha."
+    explanation: >
+      FATES_NPLANT output is in stems/m². Forestry literature reports stems/ha.
+      The conversion factor is 10,000 (1 ha = 10,000 m²). A typical tropical
+      forest has 400-600 stems/ha = 0.04-0.06 stems/m².
+    affected_components: [convert_surface_data, parse_fates_output]
+
+  remedy:
+    action: "Multiply FATES_NPLANT by 10,000 to get stems/ha for comparison with field data"
+    tool_to_run: parse_fates_output
+    manual_steps:
+      - "Check FATES_NPLANT range — should be 0.01-0.1 stems/m² for forests"
+      - "Multiply by 10,000 for stems/ha comparison"
+    prevention: "parse_fates_output warns if NPLANT > 5 stems/m²"
+
+  severity: silent
+  cross_references: [dt_001, dt_003]
+
+- id: dt_003
+  stage: s2_surface_data
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Patch-level calculations produce values that are exactly 10,000x too large or too small"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "The FATES notional patch area is 10,000 m² (1 ha). Calculations that assume 1 m² patch area produce 10,000x errors."
+    explanation: >
+      In EDTypesMod.F90, the notional patch area is defined as:
+        area = 10000.0_r8  ! m²
+        area_inv = 1.0e-4_r8
+      All patch-level densities and fluxes are normalized to this 1-ha area.
+    affected_components: [EDTypesMod, convert_surface_data]
+
+  remedy:
+    action: "Remember that FATES patch area = 10,000 m² = 1 ha for all density calculations"
+    tool_to_run: null
+    manual_steps:
+      - "When computing total values, use area = 10,000 m²"
+      - "When converting to per-ha, values are already per-ha"
+
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_004
+  stage: s5_output_analysis
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "GPP values are 1000x too small or 86400x too small when compared to published daily values"
+    error_pattern: "GPP.*0\\.00[0-9]"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "FATES outputs GPP in kgC/m²/s. Most published GPP data is in gC/m²/day. The full conversion requires multiplying by 1000 (kg→g) AND 86400 (s→day)."
+    explanation: >
+      FATES_GPP is in kgC/m²/s. A typical tropical forest GPP of ~10 gC/m²/day
+      appears as ~1.16e-7 kgC/m²/s in FATES output. Missing either the ×1000
+      (kg→g) or ×86400 (s→day) factor produces systematically wrong comparisons.
+    affected_components: [parse_fates_output, FatesHistoryInterfaceMod]
+
+  remedy:
+    action: "Apply full conversion: FATES_GPP × 1000 × 86400 = gC/m²/day"
+    tool_to_run: parse_fates_output
+    manual_steps:
+      - "FATES_GPP (kgC/m²/s) × 1000 = gC/m²/s"
+      - "gC/m²/s × 86400 = gC/m²/day"
+      - "Tropical forest GPP should be ~5-15 gC/m²/day"
+      - "If you get 0.005-0.015, you forgot ×1000"
+      - "If you get ~500-1500, you applied an extra factor"
+    prevention: "parse_fates_output applies conversion automatically with --convert-units"
+
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_005
+  stage: s3_forcing_data
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "FATES produces near-zero GPP or crashes with temperature-related errors"
+    error_pattern: "temp.*below.*absolute"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Air temperature provided in °C instead of Kelvin. Values of 20-30 are interpreted as 20-30 K (-253 to -243°C), which kills all plant processes."
+    explanation: >
+      CLM/DATM expects temperature in Kelvin (K). A temperature of 25°C must
+      be entered as 298.15 K. If °C values are passed directly, FATES sees
+      near-absolute-zero temperatures and all photosynthesis ceases.
+    affected_components: [DATM, forcing_data]
+
+  remedy:
+    action: "Add 273.15 to all temperature values before passing to DATM"
+    tool_to_run: null
+    manual_steps:
+      - "Check temperature range in forcing file: should be 220-320 K"
+      - "If values are -40 to 50, they are in °C — add 273.15"
+    prevention: "Check TBOT variable range before case submission"
+
+  severity: silent
+  cross_references: [dt_006, dt_007]
+
+- id: dt_006
+  stage: s3_forcing_data
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Unrealistic water balance — either extreme flooding or extreme drought in simulation"
+    error_pattern: "water.*balance|precip.*exceed"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Precipitation provided in mm/day instead of mm/s. DATM expects mm/s. A value of 10 mm/day entered as 10 mm/s = 864,000 mm/day = 864 m/day of rain."
+    explanation: >
+      CLM/DATM expects precipitation as PRECTmms in mm/s.
+      Conversion: mm/day ÷ 86400 = mm/s.
+      A typical rainfall of 5 mm/day = 5.79e-5 mm/s.
+      If mm/day values are used directly, the model receives 86,400x too much rain.
+    affected_components: [DATM, forcing_data]
+
+  remedy:
+    action: "Divide precipitation by 86400 to convert mm/day to mm/s"
+    tool_to_run: null
+    manual_steps:
+      - "Check PRECTmms range: should be 0 to ~0.05 mm/s for most climates"
+      - "If max > 1.0, values are likely in mm/day or mm/hr"
+      - "mm/day ÷ 86400 = mm/s"
+      - "mm/hr ÷ 3600 = mm/s"
+    prevention: "Validate max precip before submission: >0.1 mm/s is extremely rare"
+
+  severity: silent
+  cross_references: [dt_005, dt_007]
+
+- id: dt_007
+  stage: s3_forcing_data
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Plant growth unrealistically slow (radiation in MJ/m²/day) or photosynthesis saturated (radiation too high)"
+    error_pattern: "radiation|FSDS"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Shortwave radiation in MJ/m²/day instead of W/m². DATM expects W/m². Values of 15-25 MJ/m²/day should be 175-290 W/m²."
+    explanation: >
+      CLM/DATM expects FSDS in W/m² (instantaneous).
+      Conversion: MJ/m²/day × 1e6 / 86400 = W/m².
+      If MJ values are used directly, FATES receives ~86,400x too little radiation.
+    affected_components: [DATM, forcing_data]
+
+  remedy:
+    action: "Convert MJ/m²/day to W/m²: multiply by 1,000,000 / 86,400 = 11.574"
+    tool_to_run: null
+    manual_steps:
+      - "Check FSDS range: should be 0 to ~1200 W/m² (peak noon)"
+      - "If max < 50, values are likely in MJ/m²/day"
+      - "MJ/m²/day × 11.574 = W/m² (mean daily)"
+    prevention: "Flag FSDS max < 100 or > 1400 as suspicious"
+
+  severity: silent
+  cross_references: [dt_005, dt_006]
+
+- id: dt_008
+  stage: s1_parameter_setup
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Allometric calculations produce trees with unrealistic dimensions (too tall, too short, or impossible crown areas)"
+    error_pattern: "allom.*height|dbh.*exceed"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "DBH provided in mm or m instead of cm. FATES allometry uses DBH in cm. A 30 cm tree entered as 30 mm (3 cm) or 0.3 m (30 cm units confusion)."
+    explanation: >
+      All FATES allometric equations use DBH in centimeters (cm).
+      FatesAllometryMod.F90 functions: h_allom(dbh_cm), bagw_allom(dbh_cm), etc.
+      Inventory data often uses mm (Southeast Asia) or m (rarely).
+    affected_components: [FatesAllometryMod, FatesInventoryInitMod]
+
+  remedy:
+    action: "Ensure all DBH values are in centimeters before passing to FATES"
+    tool_to_run: convert_fates_params
+    manual_steps:
+      - "Check DBH range: typical trees 1-200 cm"
+      - "If values are 10-2000, they may be in mm (÷10)"
+      - "If values are 0.01-2.0, they may be in m (×100)"
+    prevention: "Validate fates_allom_dbh_maxheight range in parameter file"
+
+  severity: silent
+  cross_references: [dt_009]
+
+- id: dt_009
+  stage: s1_parameter_setup
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Tree heights in FATES output do not match field observations by a factor of 100 or 0.3048"
+    error_pattern: "height.*mismatch"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Height parameters or inventory data in cm or feet instead of meters."
+    explanation: >
+      FATES height is in meters (m). Common errors:
+      - Field data in cm: divide by 100
+      - Field data in feet: multiply by 0.3048
+      - Allometric height parameters are PFT-specific in the JSON file
+    affected_components: [FatesAllometryMod, FatesInventoryInitMod]
+
+  remedy:
+    action: "Convert heights to meters: cm÷100, ft×0.3048"
+    tool_to_run: null
+    manual_steps:
+      - "Check fates_allom_d2h1 parameter units"
+      - "Verify max height makes sense: tropical trees up to 50-60 m"
+
+  severity: silent
+  cross_references: [dt_008]
+
+- id: dt_010
+  stage: s5_output_analysis
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Crown area fractions exceed 1.0 or are near zero when they should not be"
+    error_pattern: "crown.*area.*exceed|canopy.*fraction"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Confusion between crown area in m² (per individual) and canopy area fraction (m²/m², 0-1). FATES_CANOPY_AREA is already a fraction."
+    explanation: >
+      FATES outputs FATES_CANOPY_AREA as a fraction (0 to 1, can exceed 1 with
+      understory). Individual crown areas are in m². The crown area allometry
+      (carea_allom) returns m² per individual.
+    affected_components: [FatesAllometryMod, parse_fates_output]
+
+  remedy:
+    action: "Use FATES_CANOPY_AREA directly as fraction. For per-tree crown area, use carea_allom."
+    tool_to_run: parse_fates_output
+    manual_steps:
+      - "FATES_CANOPY_AREA should be 0-1 for single canopy layer"
+      - "Values >1 indicate multi-layer canopy (not an error)"
+
+  severity: silent
+  cross_references: [dt_001, dt_003]
+
+- id: dt_011
+  stage: s2_surface_data
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Soil moisture stress is permanently on or permanently off regardless of precipitation"
+    error_pattern: "btran|soil.*stress"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Soil volumetric water content provided as percentage (0-100) instead of fraction (0-1). CLM soil moisture is in m³/m³ (fraction)."
+    explanation: >
+      CLM soil layers store volumetric water content as m³/m³ (0 to porosity).
+      If percentage values (0-100) are used, CLM interprets them as volumetric
+      fractions, meaning soil is impossibly saturated at 40x porosity.
+    affected_components: [convert_surface_data, EDBtranMod]
+
+  remedy:
+    action: "Divide soil water percentage by 100 to get m³/m³ fraction"
+    tool_to_run: convert_surface_data
+    manual_steps:
+      - "Soil water should be 0.0 to ~0.5 m³/m²"
+      - "If values are 10-50, they are percentages — divide by 100"
+
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_012
+  stage: s3_forcing_data
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "CO₂ fertilization effect is absent or vegetation grows as if in pre-industrial conditions"
+    error_pattern: "co2.*ppmv|co2_type"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "CO₂ concentration specified in mol/mol instead of ppmv. A value of 0.0004 mol/mol should be 400 ppmv."
+    explanation: >
+      CLM expects co2_ppmv in parts per million by volume (ppmv).
+      400 ppmv = 0.0004 mol/mol = 0.04%.
+      If mol/mol is used, FATES sees effectively zero CO₂ concentration.
+    affected_components: [user_nl_clm, FatesPlantRespPhotosynthMod]
+
+  remedy:
+    action: "Use ppmv directly: co2_ppmv = 400.0 (not 0.0004)"
+    tool_to_run: null
+    manual_steps:
+      - "Check co2_ppmv value in user_nl_clm"
+      - "Should be 280-420 for modern/historical simulations"
+
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_013
+  stage: s1_parameter_setup
+  failure_domain: parameter_format
+
+  symptom:
+    description: "FATES crashes with parameter file read error or 'no such variable' messages"
+    error_pattern: "json.*parse|parameter.*not found|CDL"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "Using legacy CDL/netCDF parameter file format instead of modern JSON format. FATES switched to JSON parameters around 2023."
+    explanation: >
+      Older FATES documentation and tutorials reference .cdl or .nc parameter files.
+      Modern FATES exclusively uses JSON. The tools/modify_fates_paramfile.py script
+      only works with JSON files.
+    affected_components: [FatesParametersInterface, JSONParameterUtilsMod]
+
+  remedy:
+    action: "Use fates_params_default.json from the parameter_files/ directory"
+    tool_to_run: convert_fates_params
+    manual_steps:
+      - "Check parameter file extension: must be .json"
+      - "Use tools/cdl_to_xml.py if you have legacy CDL files"
+      - "Start fresh from fates_params_default.json for new simulations"
+
+  severity: degraded
+  cross_references: [dt_014]
+
+- id: dt_014
+  stage: s1_parameter_setup
+  failure_domain: parameter_format
+
+  symptom:
+    description: "Parameter modification affects the wrong PFT — results correct for one vegetation type but wrong for the target"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Off-by-one error between Fortran 1-based PFT indices and JSON 0-based array indices. PFT 1 in Fortran documentation maps to index 0 in JSON."
+    explanation: >
+      FATES Fortran code uses 1-based PFT indices (PFT 1 = tropical broadleaf
+      evergreen). JSON arrays are 0-based (index 0 = first PFT). When FATES
+      documentation says 'PFT 1', modify JSON index 0.
+    affected_components: [convert_fates_params, modify_fates_paramfile]
+
+  remedy:
+    action: "Subtract 1 from Fortran PFT number to get JSON index: Fortran PFT N = JSON index N-1"
+    tool_to_run: convert_fates_params
+    manual_steps:
+      - "PFT 1 (Fortran) = index 0 (JSON) = broadleaf_evergreen_tropical"
+      - "PFT 2 (Fortran) = index 1 (JSON) = needleleaf_evergreen_extratropical"
+      - "Use --operation query to verify which PFT each index corresponds to"
+    prevention: "convert_fates_params.py prints PFT names alongside index values"
+
+  severity: silent
+  cross_references: [dt_013]
+
+- id: dt_015
+  stage: s1_parameter_setup
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "PARTEH allocation produces unrealistic organ masses or growth rates"
+    error_pattern: "prt.*mass|allocation.*fail"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "PARTEH mass units are kg (not gC or tC). The module explicitly declares mass_unit = 'kg' and mass_rate_unit = 'kg/day'."
+    explanation: >
+      PRTGenericMod.F90 defines: mass_unit = 'kg', mass_rate_unit = 'kg/day'.
+      Minimum allowed value: 1.0e-15 kg. If parameters are entered in gC, masses
+      are 1000x too small. If in tC, masses are 1000x too large.
+    affected_components: [PRTGenericMod, PRTAllometricCarbonMod]
+
+  remedy:
+    action: "Ensure all PARTEH mass parameters are in kg (kgC for carbon)"
+    tool_to_run: convert_fates_params
+    manual_steps:
+      - "Leaf biomass: typical range 0.01-5 kgC per individual"
+      - "If values are 10-5000, they may be in gC (÷1000)"
+      - "If values are 0.00001-0.005, they may be in tC (×1000)"
+
+  severity: silent
+  cross_references: [dt_001, dt_008]
+
+- id: dt_016
+  stage: s4_case_creation
+  failure_domain: configuration
+
+  symptom:
+    description: "Zero fire disturbance and zero fire mortality despite flammable vegetation and dry conditions"
+    error_pattern: "FIRE_INTENSITY.*0\\.0|AREA_BURNT.*0\\.0"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "SPITFIRE fire model is disabled by default (fates_spitfire_mode = 0). Must be explicitly enabled."
+    explanation: >
+      FATES defaults to no fire simulation. The fire module is controlled by
+      fates_spitfire_mode in user_nl_clm:
+        0 = no fire (default)
+        1 = scalar lightning (uses fates_fire_nignitions)
+        2 = use lightning from data stream
+        3 = use lightning from atmosphere model
+        4 = use external ignition data
+    affected_components: [SFMainMod, user_nl_clm]
+
+  remedy:
+    action: "Set fates_spitfire_mode = 1 (or 2-4) in user_nl_clm to enable fire"
+    tool_to_run: run_fates_case
+    manual_steps:
+      - "Add to user_nl_clm: fates_spitfire_mode = 1"
+      - "Optionally adjust fates_fire_nignitions in parameter file"
+      - "Verify FATES_FIRE_INTENSITY > 0 in output"
+    prevention: "run_fates_case.py includes fire mode in configuration summary"
+
+  severity: degraded
+  cross_references: [dt_017]
+
+- id: dt_017
+  stage: s4_case_creation
+  failure_domain: configuration
+
+  symptom:
+    description: "Model crashes with hydraulic failure or unrealistic plant water potentials"
+    error_pattern: "hydro.*fail|water.*potential|planthydro"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "Plant hydraulics module (use_fates_planthydro) is experimental and unstable. It can cause crashes with certain parameter combinations or extreme climates."
+    explanation: >
+      The FATES plant hydraulics model (Christoffersen et al. 2016) is still under
+      active development. FatesPlantHydraulicsMod.F90 contains explicit warnings
+      that the code is 'STILL UNDERGOING TESTING'. Multiple solver methods exist
+      (Taylor, Picard, Newton-Raphson) with varying stability.
+    affected_components: [FatesPlantHydraulicsMod, FatesHydroWTFMod]
+
+  remedy:
+    action: "Disable plant hydraulics unless specifically needed: use_fates_planthydro = .false."
+    tool_to_run: run_fates_case
+    manual_steps:
+      - "Set use_fates_planthydro = .false. in user_nl_clm"
+      - "If hydraulics are needed, use the default solver settings"
+      - "Cite Christoffersen et al. (2016) if publishing with hydraulics"
+    prevention: "Default configuration has hydraulics disabled"
+
+  severity: degraded
+  cross_references: [dt_016]
+
+- id: dt_018
+  stage: s4_case_creation
+  failure_domain: runtime
+
+  symptom:
+    description: "Model crashes on restart with 'dimension mismatch' or 'variable not found' errors in restart file"
+    error_pattern: "restart.*dimension|restart.*variable.*not found|NetCDF.*error"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "FATES restart files are not backward-compatible across major versions. FatesRestartInterfaceMod.F90 (221 KB, largest module) defines all restart variable indices. Any code change that adds, removes, or reorders restart variables breaks compatibility."
+    explanation: >
+      FATES restart files contain hundreds of state variables indexed by
+      ir_* naming convention. When FATES code is updated, new restart variables
+      may be added or existing ones restructured. Using a restart file from
+      an older FATES version with newer code causes dimension mismatches.
+    affected_components: [FatesRestartInterfaceMod]
+
+  remedy:
+    action: "Start a fresh (cold start) simulation when upgrading FATES versions"
+    tool_to_run: null
+    manual_steps:
+      - "Check FATES version in restart file metadata"
+      - "If version mismatch, set CLM_FORCE_COLDSTART=on"
+      - "Allow 50-100 years of spinup from bare ground"
+      - "Or use inventory initialization to skip spinup"
+    prevention: "Always record FATES commit hash with restart files"
+
+  severity: fatal
+  cross_references: [dt_013]

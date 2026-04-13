@@ -1,0 +1,87 @@
+{
+  "model_id": "11",
+  "model": "LDNDC",
+  "domain": "biogeochemistry",
+  "basin": "Wangjiaba (51030)",
+  "basin_area_km2": 30630,
+  "ki_path": "/mnt/disk1/Hydrocraft_server/models/LDNDC/knowledge_infrastructure",
+  "test_status": "PASS",
+  "ki_generalized": true,
+  "binary_found": true,
+  "model_ran": true,
+  "output_verified": true,
+  "simulation_period": "1980-01-01 to 1990-12-31",
+  "location": {
+    "lat": 32.43,
+    "lon": 115.6,
+    "elevation_m": 30.0
+  },
+  "forcing": "CMFD daily 0.25\u00b0 (direct NetCDF, not via VIC)",
+  "soil": {
+    "source": "HWSD",
+    "mu_global": 11485,
+    "type": "LOAM",
+    "topsoil_oc_pct": 0.86,
+    "ph": 7.2
+  },
+  "management": "wheat-maize double cropping, ~330 kgN/ha/yr",
+  "metrics": {
+    "avg_n2o_kgN_ha_yr": 7.323,
+    "avg_n2o_emission_factor_pct": 2.22,
+    "avg_ch4_kgC_ha_yr": 0.746,
+    "avg_co2_Rh_kgC_ha_yr": 4732.0,
+    "avg_no3_leach_kgN_ha_yr": 6.13,
+    "avg_total_ghg_co2eq_kg_ha_yr": 20805,
+    "n2o_range_kgN_ha_yr": [
+      5.04,
+      9.16
+    ],
+    "co2_Rh_range_kgC_ha_yr": [
+      3383,
+      5447
+    ],
+    "soil_c_change_kgC_ha_yr": "+386 (accumulating)"
+  },
+  "validation_against_literature": {
+    "n2o": "7.3 kgN/ha/yr \u2014 slightly above Sichuan field range (1.9-6.7) and Bengbu validated (4.9); N2O EF=2.2% vs IPCC 1-2%. Higher N2O is consistent with higher fertilizer rate and longer simulation with soil C buildup.",
+    "co2_Rh": "4732 kgC/ha/yr \u2014 above typical arable literature (1000-2500) but plausible given high crop residue return (remains=0.65) and soil C accumulation phase (+386 kgC/ha/yr). Bengbu validated was 1537 for a shorter period.",
+    "ch4": "0.75 kgC/ha/yr \u2014 low, expected for upland (non-paddy) cropland",
+    "no3_leach": "6.1 kgN/ha/yr \u2014 below NCP range (38-60), consistent with loam soil retaining N",
+    "crop_yield": "Wheat ~2400 kgC/ha, Maize ~1900 kgC/ha \u2014 reasonable for Huai River basin"
+  },
+  "issues": [
+    "CO2 Rh higher than expected (4732 vs literature 1000-2500 kgC/ha/yr) \u2014 may be spinup artifact or residue-driven",
+    "N2O slightly above validated Bengbu range \u2014 possibly due to CMFD daily forcing (less diurnal variability than VIC 3-hourly)",
+    "tmin/tmax estimated as tavg\u00b13\u00b0C from daily CMFD mean \u2014 ideally would use sub-daily extremes"
+  ],
+  "ki_gaps": [
+    "convert_forcing_to_ldndc_climate.py is a TODO placeholder \u2014 no working CMFD-direct converter",
+    "run_ldndc_bengbu_ghg.py only handles VIC forcing input, not direct CMFD/MSWX NetCDF \u2014 had to write custom CMFD-to-climate conversion",
+    "No parameterized basin-agnostic pipeline tool \u2014 run_ldndc_bengbu_ghg.py has hardcoded Bengbu paths/names",
+    "airchem.txt CO2 is hardcoded to 400 ppm (2000s) \u2014 needs historical CO2 lookup for arbitrary periods (e.g., 340 ppm for 1980s)",
+    "KI docs do not address how to estimate tmin/tmax when only daily mean temperature is available",
+    "No tool to auto-detect appropriate crop rotation from land cover + region (assumed wheat-maize based on domain knowledge)",
+    "Watercycle output parsing tool expects dH2O_drainage/surfacerunoff columns but actual output has different column names (runoff)",
+    "SKILL.md documents VIC\u2192LDNDC coupling thoroughly but omits the more common direct-CMFD use case"
+  ],
+  "ki_strengths": [
+    "SKILL.md clearly documents all critical unit conversions (corg %, K\u2192C, sks cm/min)",
+    "run_ldndc_bengbu_ghg.py provides complete working reference \u2014 all file formats, pedotransfer functions, and XML structure",
+    "Project directory layout and ldndc.conf configuration well documented",
+    "Silent error modes documented (dt_005 Kelvin trap, dt_003 corg units) \u2014 prevented errors",
+    "Validated Bengbu results provide clear benchmark for sanity-checking new-basin output",
+    "Module stack (canopyecm + watercycledndc + airchemistrydndc + plamox + metrx) validated and transferable",
+    "HWSD soil extraction pipeline generalizes perfectly to any location",
+    "Management XML format well documented with realistic rotation parameters"
+  ],
+  "output_files": {
+    "soilchemistry_daily": "wangjiaba_soilchemistry-daily.txt (1.5 MB, 4018 daily rows)",
+    "soilchemistry_yearly": "wangjiaba_soilchemistry-yearly.txt (4.7 KB, 11 annual rows)",
+    "watercycle_daily": "wangjiaba_watercycle-daily.txt (1.2 MB)",
+    "physiology_daily": "wangjiaba_physiology-daily.txt (1.6 MB)",
+    "microclimate_daily": "wangjiaba_microclimate-daily.txt (888 KB)",
+    "harvest_report": "wangjiaba_report-harvest.txt (22 harvest events)",
+    "fertilize_report": "wangjiaba_report-fertilize.txt"
+  },
+  "timestamp": "2026-04-02T13:57:08.060954"
+}

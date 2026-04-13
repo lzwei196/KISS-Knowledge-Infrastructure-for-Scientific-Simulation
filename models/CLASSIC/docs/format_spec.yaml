@@ -1,0 +1,201 @@
+model:
+  name: "CLASSIC"
+  full_name: "Canadian Land Surface Scheme Including Biogeochemical Cycles"
+  version: "CLASS v3.6.2 + CTEM v2.0"
+  domain: "land_surface_biogeochemistry"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/CLASSIC/source/repo/bin/CLASSIC_serial"
+  execution_pattern: "bin/CLASSIC_serial <job_options_file> <longitude>/<latitude>"
+
+inputs:
+  forcing:
+    format: "netCDF-4 (one variable per file)"
+    time_encoding: "day as %Y%m%d.%f (absolute date, NOT CF days-since)"
+    variables:
+      - name: "FSS"
+        file_convention: "dswrf*.nc"
+        unit: "W m-2"
+        valid_range: [0.0, 1400.0]
+        description: "Downwelling shortwave radiation"
+      - name: "FDL"
+        file_convention: "dlwrf*.nc"
+        unit: "W m-2"
+        valid_range: [50.0, 600.0]
+        description: "Downwelling longwave radiation"
+      - name: "PRE"
+        file_convention: "pre*.nc"
+        unit: "kg m-2 s-1"
+        valid_range: [0.0, 0.1]
+        description: "Precipitation rate"
+      - name: "TA"
+        file_convention: "tmp*.nc"
+        unit: "deg C"
+        valid_range: [-80.0, 60.0]
+        description: "Air temperature at reference height (CRITICAL: must be Celsius)"
+      - name: "QA"
+        file_convention: "spfh*.nc"
+        unit: "kg kg-1"
+        valid_range: [0.0, 0.04]
+        description: "Specific humidity at reference height"
+      - name: "VMOD"
+        file_convention: "wind*.nc"
+        unit: "m s-1"
+        valid_range: [0.0, 75.0]
+        description: "Wind speed at reference height"
+      - name: "PRES"
+        file_convention: "pres*.nc"
+        unit: "Pa"
+        valid_range: [30000.0, 110000.0]
+        description: "Surface air pressure"
+
+  parameters:
+    critical:
+      - name: "SAND"
+        unit: "percent"
+        valid_range: [0, 100]
+        description: "Soil sand fraction per layer (special flags: -2=peat, -3=bedrock, -4=ice)"
+      - name: "CLAY"
+        unit: "percent"
+        valid_range: [0, 100]
+        description: "Soil clay fraction per layer"
+      - name: "ORGM"
+        unit: "percent"
+        valid_range: [0, 100]
+        description: "Soil organic matter fraction per layer"
+      - name: "SDEP"
+        unit: "m"
+        valid_range: [0.1, 100.0]
+        description: "Soil permeable depth (depth to bedrock)"
+      - name: "FCAN"
+        unit: "fraction"
+        valid_range: [0.0, 1.0]
+        description: "CLASS PFT fractional coverage"
+      - name: "fcancmx"
+        unit: "fraction"
+        valid_range: [0.0, 1.0]
+        description: "CTEM PFT fractional coverage"
+      - name: "DELZ"
+        unit: "m"
+        valid_range: [0.01, 10.0]
+        description: "Soil layer thickness"
+      - name: "TBAR"
+        unit: "K"
+        valid_range: [200.0, 350.0]
+        description: "Initial soil temperature per layer"
+      - name: "THLQ"
+        unit: "m3 m-3"
+        valid_range: [0.0, 1.0]
+        description: "Initial liquid soil moisture per layer"
+      - name: "gleafmas"
+        unit: "kgC m-2"
+        valid_range: [0.0, 5.0]
+        description: "Green leaf biomass carbon per PFT"
+      - name: "soilcmas"
+        unit: "kgC m-2"
+        valid_range: [0.0, 200.0]
+        description: "Soil carbon mass per pool"
+
+  ghg:
+    - name: "CO2"
+      unit: "ppmv"
+      valid_range: [200.0, 1500.0]
+      description: "Atmospheric CO2 concentration (annual)"
+    - name: "CH4"
+      unit: "ppmv"
+      valid_range: [0.5, 5.0]
+      description: "Atmospheric CH4 concentration (annual)"
+
+outputs:
+  primary:
+    - name: "gpp"
+      unit: "kgC m-2 s-1"
+      valid_range: [0.0, 1.2e-7]
+      description: "Gross primary productivity"
+    - name: "npp"
+      unit: "kgC m-2 s-1"
+      valid_range: [-5.0e-9, 8.5e-8]
+      description: "Net primary productivity"
+    - name: "nep"
+      unit: "kgC m-2 s-1"
+      valid_range: [-1.0e-8, 7.1e-8]
+      description: "Net ecosystem productivity"
+    - name: "nbp"
+      unit: "kgC m-2 s-1"
+      valid_range: [-1.2e-8, 6.7e-8]
+      description: "Net biome productivity"
+    - name: "rh"
+      unit: "kgC m-2 s-1"
+      valid_range: [0.0, 2.0e-8]
+      description: "Heterotrophic respiration"
+    - name: "ra"
+      unit: "kgC m-2 s-1"
+      valid_range: [0.0, 3.5e-8]
+      description: "Autotrophic respiration"
+    - name: "hfss"
+      unit: "W m-2"
+      valid_range: [-55.0, 95.0]
+      description: "Sensible heat flux"
+    - name: "hfls"
+      unit: "W m-2"
+      valid_range: [0.0, 135.0]
+      description: "Latent heat flux"
+    - name: "rss"
+      unit: "W m-2"
+      valid_range: [0.0, 265.0]
+      description: "Net shortwave radiation"
+    - name: "rls"
+      unit: "W m-2"
+      valid_range: [-110.0, 20.0]
+      description: "Net longwave radiation"
+    - name: "mrro"
+      unit: "kg m-2 s-1"
+      valid_range: [0.0, 4.5e-5]
+      description: "Total runoff"
+    - name: "evspsbl"
+      unit: "kg m-2 s-1"
+      valid_range: [0.0, 3.2e-5]
+      description: "Evapotranspiration"
+    - name: "snw"
+      unit: "kg m-2"
+      valid_range: [0.0, 500.0]
+      description: "Snow water equivalent"
+    - name: "lai"
+      unit: "m2 m-2"
+      valid_range: [0.0, 12.0]
+      description: "Leaf area index"
+    - name: "cLand"
+      unit: "kgC m-2"
+      valid_range: [0.0, 100.0]
+      description: "Total land carbon stock"
+    - name: "cVeg"
+      unit: "kgC m-2"
+      valid_range: [0.0, 50.0]
+      description: "Vegetation carbon stock"
+    - name: "cSoil"
+      unit: "kgC m-2"
+      valid_range: [0.0, 100.0]
+      description: "Soil carbon stock"
+    - name: "tas"
+      unit: "K"
+      valid_range: [200.0, 330.0]
+      description: "Near-surface air temperature"
+    - name: "tsl"
+      unit: "K"
+      valid_range: [250.0, 320.0]
+      description: "Soil temperature"
+
+  temporal_resolution:
+    - "annual (always produced)"
+    - "monthly (domonthoutput switch)"
+    - "daily (dodayoutput switch)"
+    - "half-hourly (dohhoutput switch)"
+
+  format: "netCDF-4"
+
+known_issues:
+  - "Temperature forcing MUST be Celsius, not Kelvin — model crashes or produces wrong energy balance"
+  - "Precipitation MUST be kg/m2/s, not mm/day — 86400x error in water balance"
+  - "Time encoding uses absolute date format (day as %Y%m%d.%f), NOT CF-convention days-since"
+  - "Specific humidity must be kg/kg, not g/kg — huge evaporation error if wrong"
+  - "Pressure must be Pa, not hPa or kPa"
+  - "Iteration methods ITC/ITCG/ITG must be 1 (bisection), NOT 2 (Newton-Raphson)"
+  - "fVegLitter and fLitterSoil output units appear anomalous (values >>1 for flux rates)"

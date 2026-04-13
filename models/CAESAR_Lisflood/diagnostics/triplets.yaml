@@ -1,0 +1,114 @@
+# HAIL-CAESAR Diagnostic Triplets
+# symptom -> diagnosis -> remedy
+# Each entry helps troubleshoot common issues
+
+triplets:
+  # === BUILD & STARTUP ===
+
+  - id: T001
+    symptom: "Compilation error: 'omp.h' not found"
+    diagnosis: "OpenMP headers not installed or compiler does not support OpenMP"
+    remedy: "Install libgomp-dev (Ubuntu: apt install libgomp-dev) or use a compiler with OpenMP support. Alternatively, remove -fopenmp and -DOMP_COMPILE_FOR_PARALLEL from Makefile for serial build."
+
+  - id: T002
+    symptom: "'No parameter file supplied' message and model exits"
+    diagnosis: "Wrong number of command-line arguments. Model requires exactly 2: path and param filename."
+    remedy: "Run as: ./HAIL-CAESAR.exe /path/to/data/ param_file.params -- ensure there is a trailing slash on the path."
+
+  - id: T003
+    symptom: "'No terrain DEM found' error on startup"
+    diagnosis: "DEM file not found at the path constructed from read_path + read_fname + dem_read_extension."
+    remedy: "Check: (1) read_fname should NOT include the .asc extension, (2) read_path should be relative to where the binary is run or absolute, (3) file actually exists at that location."
+
+  # === UNIT CONVERSION TRAPS ===
+
+  - id: T004
+    symptom: "Entire catchment floods immediately, unrealistic water depths within first few timesteps"
+    diagnosis: "Rainfall data is in wrong units -- likely mm/day being read as mm/hr (24x overestimate) or m/s being read as mm/hr."
+    remedy: "Convert rainfall to mm/hr. Common conversions: mm/day / 24 = mm/hr; m/s * 3,600,000 = mm/hr; kg/m2/s * 3600 = mm/hr. Use convert_rainfall_to_caesar.py with --source_units flag."
+
+  - id: T005
+    symptom: "No water in catchment, zero discharge throughout simulation"
+    diagnosis: "Rainfall values are too small (possibly in m/hr instead of mm/hr) or rain_data_time_step does not match the actual file timestep."
+    remedy: "Check units: 1 m/hr = 1000 mm/hr. Verify rain_data_time_step in params matches actual temporal resolution of rainfall file."
+
+  - id: T006
+    symptom: "DEM elevation values are very large (>10000) or negative"
+    diagnosis: "DEM may be in centimetres or feet instead of metres, or NODATA value is being read as elevation."
+    remedy: "Convert DEM to metres (feet * 0.3048, cm / 100). Ensure NODATA_value in header matches actual nodata values in the grid."
+
+  - id: T007
+    symptom: "TOPMODEL m value giving wrong hydrograph shape -- too flashy or too flat"
+    diagnosis: "topmodel_m_value is in wrong units (mm instead of m) or not calibrated for the catchment."
+    remedy: "HAIL-CAESAR expects m in metres. Typical range: 0.002 (very flashy) to 0.02 (slow response). If using values from literature in mm, divide by 1000."
+
+  - id: T008
+    symptom: "Simulation duration is 1 hour shorter than expected"
+    diagnosis: "max_run_duration must be set to T-1 hours (model quirk). Setting to 72 gives only 72 hours, but the loop condition uses < not <=."
+    remedy: "For a 72-hour simulation, set max_run_duration: 71. For 48 hours, set to 47. This is a known quirk of the cycle/60 < maxcycle loop condition."
+
+  # === NUMERICAL ISSUES ===
+
+  - id: T009
+    symptom: "Checkerboard pattern in water depths, alternating wet/dry cells"
+    diagnosis: "Froude number limit too high or courant number too large for the DEM resolution."
+    remedy: "Reduce froude_num_limit to 0.7 and courant_number to 0.3. For DEMs < 2m resolution, courant must be 0.3."
+
+  - id: T010
+    symptom: "Model runs extremely slowly, barely progressing"
+    diagnosis: "Timestep is very small, possibly due to low courant_number, fine DEM, or steep slopes."
+    remedy: "Increase courant_number (max 0.7 for coarse DEMs), increase hflow_threshold, or use a coarser DEM. Check max_time_step is not set too low."
+
+  - id: T011
+    symptom: "Segmentation fault during simulation"
+    diagnosis: "Memory allocation failure for large DEMs, or array index out of bounds."
+    remedy: "For large DEMs: increase stack size with 'ulimit -s unlimited'. Consider reducing DEM resolution. Check DEM header (ncols/nrows) matches actual data dimensions."
+
+  - id: T012
+    symptom: "NaN values in output timeseries or rasters"
+    diagnosis: "Numerical instability, often from too-large timestep or extreme slope gradients."
+    remedy: "Reduce max_time_step (try 60 or 30 seconds), reduce courant_number to 0.3, check DEM for unrealistic elevation spikes."
+
+  # === OUTPUT ISSUES ===
+
+  - id: T013
+    symptom: "Timeseries file is empty or has only a few rows"
+    diagnosis: "Simulation ended early (crash or max_run_duration too small) or timeseries_save_interval is larger than simulation duration."
+    remedy: "Check STDERR for errors, increase max_run_duration, or decrease timeseries_save_interval. Expected rows = duration_minutes / save_interval."
+
+  - id: T014
+    symptom: "No raster output files created despite write_waterdepth_file: yes"
+    diagnosis: "Output directory (write_path) does not exist, or raster_output_interval is larger than simulation duration."
+    remedy: "Create the output directory with mkdir -p before running. Check raster_output_interval is in model minutes and smaller than total simulation minutes."
+
+  - id: T015
+    symptom: "Sediment output columns are all zero despite erosion being enabled"
+    diagnosis: "hydro_model_only is set to yes, or water_depth_erosion_threshold is too high, or simulation is too short for erosion to occur."
+    remedy: "Set hydro_model_only: no. Check water_depth_erosion_threshold (default 0.01m). For short simulations, erosion may be genuinely small -- check erode_limit and active_layer_thickness."
+
+  - id: T016
+    symptom: "Discharge values from model are much higher than observed"
+    diagnosis: "Model reports total discharge from ALL edge cells, not just the intended outlet. Or Manning's n is too low (smoother surface = faster flow)."
+    remedy: "Be aware that Q is summed over all boundary cells. If your DEM has multiple low points on edges, water exits from multiple locations. Increase mannings_n to slow flow. Consider masking the DEM so only one edge has the outlet."
+
+  # === DEM & SETUP ISSUES ===
+
+  - id: T017
+    symptom: "Water pools in the interior and never reaches outlet"
+    diagnosis: "DEM has internal depressions that trap water, or outlet point does not connect to DEM edge through non-NODATA cells."
+    remedy: "Fill DEM sinks (pit-fill) or ensure a continuous path of valid elevation from the lowest point to the DEM edge. Check that outlet cell is NOT surrounded by NODATA."
+
+  - id: T018
+    symptom: "Model reports only 1 thread despite multi-core system"
+    diagnosis: "OMP_NUM_THREADS environment variable is not set."
+    remedy: "Set with: export OMP_NUM_THREADS=4 (or number of cores). On some systems also try: set OMP_NUM_THREADS=4."
+
+  - id: T019
+    symptom: "Rainfall is applied uniformly when spatial variation was expected"
+    diagnosis: "spatial_var_rain set to no, or hydroindex file not specified, or num_unique_rain_cells = 1."
+    remedy: "Set spatial_var_rain: yes, provide hydroindex_file with integer zone raster, set num_unique_rain_cells to match number of zones, and ensure rainfall file has matching number of columns."
+
+  - id: T020
+    symptom: "Model reads grain data incorrectly or uses default distribution"
+    diagnosis: "read_in_graindata_from_file is set to no, or grain_data_file path is wrong."
+    remedy: "Set read_in_graindata_from_file: yes and provide correct grain_data_file path. The grain file format is: index x y [9 surface fractions] [9 subsurface fractions]."

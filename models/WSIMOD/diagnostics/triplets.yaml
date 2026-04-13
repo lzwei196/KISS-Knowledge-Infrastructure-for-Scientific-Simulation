@@ -1,0 +1,515 @@
+# WSIMOD Diagnostic Triplets
+# 18 symptom → diagnosis → remedy patterns for common WSIMOD failures
+
+- id: dt_001
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  severity: silent
+
+  symptom:
+    description: "All nodes flood, river overflows, storage tanks overflow every timestep."
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Precipitation in mm/day instead of m/day — 1000× too much rainfall."
+    explanation: >
+      WSIMOD expects precipitation in meters per timestep. Most weather datasets
+      provide mm/day. If MM_TO_M (1e-3) conversion is not applied, the model
+      receives 1000× too much rain. The model runs without error.
+    affected_components: [data_input_dict, Land.run, constants.MM_TO_M]
+
+  remedy:
+    action: "Multiply precipitation values by constants.MM_TO_M (1e-3)"
+    tool_to_run: convert_forcing_data
+    manual_steps:
+      - "Check max(precipitation) — should be < 0.5 m/d for most climates"
+      - "If max > 1.0 m/d, divide by 1000"
+    prevention: "validate_outputs() in convert_forcing_data.py checks for unrealistic values"
+
+  cross_references: [dt_015, dt_007]
+
+- id: dt_002
+  stage: s4_parameters
+  failure_domain: unit_conversion
+  severity: silent
+
+  symptom:
+    description: "Mass balance violations in storage nodes. Volume numbers 1000× too large or small."
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Mixing ML (megalitres) and m³ units — ML_TO_M3 = 1000."
+    explanation: >
+      WSIMOD's default simulation volume is ML (megalitres). Some node parameters
+      like sewer capacity use m³. Mixing units causes 1000× errors in water routing.
+      MM_M2_TO_SIM_VOLUME converts precipitation × area to ML.
+    affected_components: [constants.ML_TO_M3, constants.MM_M2_TO_SIM_VOLUME]
+
+  remedy:
+    action: "Verify all volume parameters use consistent units — ML for storage, m³/d for sewer"
+    tool_to_run: convert_parameters
+    manual_steps:
+      - "Check node capacity units in the model documentation"
+      - "Sewer capacity is m³/d; Groundwater/Reservoir capacity may be m³ or ML"
+    prevention: "Use convert_parameters.py which handles conversions automatically"
+
+  cross_references: [dt_006]
+
+- id: dt_003
+  stage: s6_output
+  failure_domain: unit_conversion
+  severity: silent
+
+  symptom:
+    description: "Pollutant concentrations double when two flows merge at a junction node."
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Non-additive pollutant (DO, temperature, pH) treated as additive — masses summed instead of volume-weighted average."
+    explanation: >
+      WSIMOD has two pollutant types: additive (kg, mass sums) and non-additive
+      (mg/L, volume-weighted average). If a custom pollutant is placed in the wrong
+      list, mixing produces incorrect concentrations. This is configured in constants.py.
+    affected_components: [constants.ADDITIVE_POLLUTANTS, constants.NON_ADDITIVE_POLLUTANTS, WSIObj.blend_vqip]
+
+  remedy:
+    action: "Ensure custom pollutants are in the correct list in constants.py"
+    tool_to_run: null
+    manual_steps:
+      - "Check if pollutant is mass-based (additive) or concentration-based (non-additive)"
+      - "Move to correct list in POLLUTANTS/ADDITIVE_POLLUTANTS/NON_ADDITIVE_POLLUTANTS"
+    prevention: "Review constants.py before adding custom pollutants"
+
+  cross_references: [dt_010]
+
+- id: dt_004
+  stage: s3_forcing
+  failure_domain: parameter_format
+  severity: fatal
+
+  symptom:
+    description: "KeyError during model.run() — model cannot find forcing data for any timestep."
+    error_pattern: "KeyError"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "data_input_dict keys use string dates instead of Timestamp/to_datetime objects."
+    explanation: >
+      WSIMOD looks up forcing data using (variable, model_date) where model_date
+      is a to_datetime or pandas Timestamp. If keys are plain strings like
+      '2009-01-01', the lookup fails with KeyError because str != Timestamp.
+    affected_components: [data_input_dict, Land.run, Catchment.route]
+
+  remedy:
+    action: "Ensure dates are converted to Timestamps before building data_input_dict"
+    tool_to_run: convert_forcing_data
+    manual_steps:
+      - "data.date = pd.to_datetime(data.date) before set_index().to_dict()"
+      - "Or use YAML data loading which handles this automatically"
+    prevention: "Always pd.to_datetime() date columns before building dicts"
+
+  cross_references: [dt_013]
+
+- id: dt_005
+  stage: s0_config
+  failure_domain: parameter_format
+  severity: fatal
+
+  symptom:
+    description: "KeyError when calling model.add_arcs() — node name not found."
+    error_pattern: "KeyError"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "Arc in_port or out_port name does not match any defined node name (case-sensitive)."
+    explanation: >
+      WSIMOD looks up nodes by exact name match. 'My_River' != 'my_river'.
+      The error occurs at model construction, not during simulation.
+    affected_components: [Model.add_arcs, arcs.Arc.__init__]
+
+  remedy:
+    action: "Verify all arc in_port/out_port values match node names exactly"
+    tool_to_run: run_wsimod
+    manual_steps:
+      - "List all node names: [n['name'] for n in nodes]"
+      - "Check each arc's in_port and out_port against that list"
+    prevention: "run_wsimod.py preflight checks validate arc→node references"
+
+  cross_references: []
+
+- id: dt_006
+  stage: s4_parameters
+  failure_domain: unit_conversion
+  severity: silent
+
+  symptom:
+    description: "No combined sewer overflow (CSO) events even during heavy rainfall."
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Sewer capacity specified in ML/d instead of m³/d — 1000× too high."
+    explanation: >
+      Sewer capacity parameter is in m³/d. If the user provides ML/d values
+      (e.g., capacity=10 meaning 10 ML/d = 10,000 m³/d), the sewer never
+      overflows. The model runs silently with no CSO events.
+    affected_components: [Sewer.__init__, Sewer.make_discharge]
+
+  remedy:
+    action: "Use m³/d for sewer capacity. If you have ML/d, multiply by ML_TO_M3 (1000)"
+    tool_to_run: convert_parameters
+    manual_steps:
+      - "Check sewer capacity: typical urban = 0.001 × contributing_area_m²"
+      - "For a 1 km² urban area, capacity ≈ 1000 m³/d"
+    prevention: "convert_parameters.py calculates sewer capacity from area automatically"
+
+  cross_references: [dt_002]
+
+- id: dt_007
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  severity: silent
+
+  symptom:
+    description: "Pollutant decay rates are wildly wrong — too fast or too slow."
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Temperature not in °C — decay rate adjusts exponentially using T-20."
+    explanation: >
+      WSIMOD's DecayObj uses k(T) = k_ref × (coeff ^ (T - 20)). If temperature
+      is in Kelvin (e.g., 293 instead of 20), the exponent is 273 — producing
+      astronomically wrong decay rates. The model runs without error.
+    affected_components: [DecayObj.decay_pool, constants.DECAY_REFERENCE_TEMPERATURE]
+
+  remedy:
+    action: "Ensure temperature input is in °C, not Kelvin or Fahrenheit"
+    tool_to_run: convert_forcing_data
+    manual_steps:
+      - "Check temperature range: should be -30 to +45°C for most locations"
+      - "If > 200, likely Kelvin — subtract 273.15"
+    prevention: "convert_forcing_data.py validates temperature range"
+
+  cross_references: [dt_001]
+
+- id: dt_008
+  stage: s4_parameters
+  failure_domain: unit_conversion
+  severity: silent
+
+  symptom:
+    description: "Runoff volume 1e6× too high or too low compared to expected."
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Land surface area in km² instead of m² — missing KM2_TO_M2 conversion."
+    explanation: >
+      WSIMOD expects surface area in m². If area is given as 50 (meaning 50 km²)
+      but interpreted as 50 m², the runoff volume is 1e6× too small.
+      Conversely, if m² value is used where km² is expected, volume is 1e6× too large.
+    affected_components: [Land.__init__, ImperviousSurface, PerviousSurface, GrowingSurface]
+
+  remedy:
+    action: "Multiply km² by KM2_TO_M2 (1e6) before passing to surface area parameter"
+    tool_to_run: convert_parameters
+    manual_steps:
+      - "Verify: area in m² for a 50 km² catchment = 50e6 m²"
+      - "If runoff is unrealistic, check area units first"
+    prevention: "convert_parameters.py auto-converts area based on --area-unit flag"
+
+  cross_references: [dt_012]
+
+- id: dt_009
+  stage: s5_run
+  failure_domain: parameter_format
+  severity: silent
+
+  symptom:
+    description: "Mass balance violations occur but are not reported — errors silently masked."
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "FLOAT_ACCURACY = 1e-11 tolerance masks small but accumulating errors."
+    explanation: >
+      WSIMOD checks mass balance at each node with tolerance 1e-11. Floating-point
+      arithmetic can accumulate errors over many timesteps, especially with custom
+      node implementations. Small violations pass the check but accumulate.
+    affected_components: [Node.mass_balance, constants.FLOAT_ACCURACY]
+
+  remedy:
+    action: "Monitor cumulative mass balance over the full simulation period"
+    tool_to_run: parse_wsimod_output
+    manual_steps:
+      - "Compare total inflow vs total outflow + storage change"
+      - "If cumulative imbalance > 1% of total flow, investigate"
+    prevention: "Add cumulative mass balance check in post-processing"
+
+  cross_references: [dt_017]
+
+- id: dt_010
+  stage: s4_parameters
+  failure_domain: parameter_format
+  severity: degraded
+
+  symptom:
+    description: "A pollutant appears in VQIP but with constant zero value throughout simulation."
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Pollutant defined in POLLUTANTS list but not initialized in any node's VQIP or pollutant_load."
+    explanation: >
+      If a pollutant is in the global POLLUTANTS list but no node generates it
+      (via pollutant_load, data_input_dict, or initial conditions), it remains
+      zero throughout the simulation. This is technically correct but may indicate
+      a configuration oversight.
+    affected_components: [constants.POLLUTANTS, Land.surfaces.pollutant_load]
+
+  remedy:
+    action: "Add pollutant loads to relevant surfaces or use set_simple_pollutants()"
+    tool_to_run: null
+    manual_steps:
+      - "Check which pollutants you need to track"
+      - "Set pollutant_load in each surface that generates that pollutant"
+      - "Or use set_simple_pollutants() for phosphate + temperature only"
+    prevention: "Review pollutant configuration before running"
+
+  cross_references: [dt_003]
+
+- id: dt_011
+  stage: s4_parameters
+  failure_domain: unit_conversion
+  severity: silent
+
+  symptom:
+    description: "Soil saturates instantly after first rain event, or never saturates."
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Soil depth in mm instead of m — depth=500 interpreted as 500 m, not 0.5 m."
+    explanation: >
+      PerviousSurface depth parameter is in meters. If soil depth from HWSD
+      (typically in mm, e.g., 500 mm) is passed directly as 500, the soil
+      tank has 500 m depth — effectively infinite. Soil never saturates.
+      If depth from a dataset already in m (e.g., 0.5) is multiplied by
+      MM_TO_M, you get 0.0005 m — soil overflows immediately.
+    affected_components: [PerviousSurface.__init__, GrowingSurface]
+
+  remedy:
+    action: "Convert depth from mm to m using MM_TO_M (1e-3) only if source is in mm"
+    tool_to_run: convert_parameters
+    manual_steps:
+      - "Check source units: HWSD typically gives mm"
+      - "depth_m = depth_mm * 1e-3"
+      - "Typical range: 0.1 to 2.0 m"
+    prevention: "convert_parameters.py handles --depth-unit flag"
+
+  cross_references: [dt_001, dt_008]
+
+- id: dt_012
+  stage: s4_parameters
+  failure_domain: unit_conversion
+  severity: silent
+
+  symptom:
+    description: "Nutrient export from land surfaces is 1000× too high or too low."
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Pollutant load in wrong units — g/m² vs kg/km² vs kg/m²."
+    explanation: >
+      Surface pollutant_load is in kg per timestep per unit. Literature values
+      may be in g/m²/yr, kg/km²/yr, or mg/L concentration. Converting incorrectly
+      gives wrong nutrient export. G_M2_TO_KG_KM2 = 1e3.
+    affected_components: [PerviousSurface.pollutant_load, ImperviousSurface.pollutant_load]
+
+  remedy:
+    action: "Convert literature values to kg/timestep using appropriate constants"
+    tool_to_run: convert_parameters
+    manual_steps:
+      - "Typical phosphate load: 1e-8 to 1e-6 kg/timestep for 100 m² surface"
+      - "Check model output against expected nutrient export"
+    prevention: "Cross-check with published nutrient export coefficients"
+
+  cross_references: [dt_008]
+
+- id: dt_013
+  stage: s5_run
+  failure_domain: runtime
+  severity: fatal
+
+  symptom:
+    description: "KeyError during simulation — model cannot find data for a specific date."
+    error_pattern: "KeyError"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "data_input_dict does not cover the full simulation date range."
+    explanation: >
+      If model.dates includes dates not present in data_input_dict, a KeyError
+      occurs when the model tries to look up forcing for that date. This can
+      happen when the CSV data has gaps or doesn't cover the full period.
+    affected_components: [Land.run, Catchment.route, data_input_dict]
+
+  remedy:
+    action: "Ensure data_input_dict covers all dates in model.dates"
+    tool_to_run: convert_forcing_data
+    manual_steps:
+      - "Compare date ranges: min/max of data vs min/max of model.dates"
+      - "Fill gaps with interpolation or reduce simulation period"
+    prevention: "convert_forcing_data.py reports date range coverage"
+
+  cross_references: [dt_004]
+
+- id: dt_014
+  stage: s5_run
+  failure_domain: runtime
+  severity: degraded
+
+  symptom:
+    description: "Same model produces different results when orchestration order is changed."
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "WSIMOD's orchestration sequence determines when each node processes water."
+    explanation: >
+      The order in which nodes are called each timestep matters. If a Land node
+      runs before Demand, the land receives all precipitation. If Demand runs
+      first, it may abstract water before land processes it. The default order
+      is designed for typical urban-rural systems.
+    affected_components: [Model.orchestration, Model.run]
+
+  remedy:
+    action: "Use the default orchestration order unless you have a specific reason to change"
+    tool_to_run: null
+    manual_steps:
+      - "Check model.orchestration to see the current order"
+      - "Only customize if your system requires non-standard routing"
+    prevention: "Document any custom orchestration with rationale"
+
+  cross_references: []
+
+- id: dt_015
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  severity: silent
+
+  symptom:
+    description: "Evapotranspiration dries out all storage in a few days, or has no effect."
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "ET₀ in mm/day instead of m/day — 1000× too high or too low."
+    explanation: >
+      Like precipitation, ET₀ must be in m/timestep. If ET₀ is 5 mm/d and
+      not converted, it's interpreted as 5 m/d — drying everything instantly.
+      Conversely, if already in m and multiplied by 1e-3 again, ET₀ becomes
+      negligible.
+    affected_components: [Land.run, PerviousSurface, GrowingSurface]
+
+  remedy:
+    action: "Apply MM_TO_M conversion to ET₀ only if source is in mm/day"
+    tool_to_run: convert_forcing_data
+    manual_steps:
+      - "Typical ET₀: 0.001 to 0.008 m/d (1-8 mm/d)"
+      - "If ET₀ > 0.02 m/d, likely still in mm"
+    prevention: "validate_outputs() checks ET₀ range"
+
+  cross_references: [dt_001]
+
+- id: dt_016
+  stage: s5_run
+  failure_domain: dependency_mismatch
+  severity: fatal
+
+  symptom:
+    description: "ImportError when importing wsimod or running CLI."
+    error_pattern: "ImportError|ModuleNotFoundError"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "Missing Python dependency — PyYAML, pandas, dill, or tqdm not installed."
+    explanation: >
+      WSIMOD requires PyYAML, pandas, dill, and tqdm. If any is missing, import
+      fails. This is common in fresh virtual environments or when installing
+      from source without dependencies.
+    affected_components: [wsimod.__init__, wsimod.orchestration.model]
+
+  remedy:
+    action: "Install WSIMOD with all dependencies: pip install wsimod"
+    tool_to_run: null
+    manual_steps:
+      - "pip install PyYAML pandas dill tqdm"
+      - "Or pip install wsimod (installs all automatically)"
+    prevention: "Use pip install wsimod rather than manual dependency management"
+
+  cross_references: []
+
+- id: dt_017
+  stage: s6_output
+  failure_domain: silent_error
+  severity: degraded
+
+  symptom:
+    description: "Cumulative water balance drifts over long simulations (>5 years)."
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Floating-point precision in VQIP operations accumulates over many timesteps."
+    explanation: >
+      Each VQIP operation (blend, dilute, extract) involves floating-point
+      arithmetic. Over thousands of timesteps, small rounding errors accumulate.
+      Individual errors are below FLOAT_ACCURACY (1e-11) but cumulative drift
+      can reach ~1e-6 to 1e-4 of total flow.
+    affected_components: [WSIObj.blend_vqip, WSIObj.v_change_vqip, Node.mass_balance]
+
+  remedy:
+    action: "Monitor cumulative mass balance and report drift as percentage of total flow"
+    tool_to_run: parse_wsimod_output
+    manual_steps:
+      - "Sum all inflows and outflows over the full simulation"
+      - "Compare: |total_in - total_out - delta_storage| / total_in"
+      - "If > 0.1%, investigate node-by-node"
+    prevention: "Run shorter simulations and verify mass balance before extending"
+
+  cross_references: [dt_009]
+
+- id: dt_018
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  severity: silent
+
+  symptom:
+    description: "River flow values are 86400× too high or too low."
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Flow rate in m³/s not converted to m³/d — missing × M3_S_TO_M3_DT (86400)."
+    explanation: >
+      If flow data is in m³/s and used directly as m³/timestep (where timestep
+      is 1 day), the flow is 86400× too small. Conversely, if m³/d data is
+      multiplied by 86400, it's 86400× too large. The constant M3_S_TO_M3_DT
+      converts m³/s to m³/day.
+    affected_components: [data_input_dict, Catchment.route, constants.M3_S_TO_M3_DT]
+
+  remedy:
+    action: "Apply M3_S_TO_M3_DT (86400) conversion only if source is in m³/s"
+    tool_to_run: convert_forcing_data
+    manual_steps:
+      - "Check source flow units: m³/s, m³/d, ML/d?"
+      - "m³/s × 86400 = m³/d; m³/s × 86.4 = ML/d"
+    prevention: "convert_forcing_data.py handles --flow-unit flag"
+
+  cross_references: [dt_002, dt_003]

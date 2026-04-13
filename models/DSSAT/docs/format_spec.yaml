@@ -1,0 +1,278 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["crop"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "DSSAT-CSM v4.8.5 Build 41"
+  domain: "crop"
+  secondary_domains: ["soil_nitrogen", "soil_water"]
+  binary: "dscsm048"
+  binary_path: "/home/server/DSSAT/build/bin/dscsm048"
+  language: "Fortran 90"
+  working_directory: "created by dssat_workdir_setup.py (short paths required, <72 chars)"
+  execution: "cd <workdir> && dscsm048 B DSSBatch.v48"
+  setup_tool: "tools/dssat_workdir_setup.py"
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "precipitation"
+      file: "*.WTH"
+      unit: "mm/day"
+      valid_range: [0.0, 500.0]
+      format: "fixed-width columns in DSSAT .WTH format (station header + daily rows)"
+      missing_value: -99.0
+      conversion_from_cmfd: "kg/m2/s -> mm/day: multiply by 86400; or mm/3hr -> mm/day: sum 8 timesteps"
+
+    - name: "solar_radiation"
+      file: "*.WTH"
+      column: "SRAD"
+      unit: "MJ/m2/day"
+      valid_range: [0.0, 35.0]
+      format: "fixed-width column in .WTH"
+      missing_value: -99.0
+      conversion_from_cmfd: "W/m2 -> MJ/m2/day: multiply by 0.0864"
+      silent_error: "If W/m2 is used directly (values 50-400), crop gets zero or excessive radiation. Zero yield or abnormal growth."
+
+    - name: "temperature_max"
+      file: "*.WTH"
+      column: "TMAX"
+      unit: "degC"
+      valid_range: [-50.0, 60.0]
+      format: "fixed-width column in .WTH"
+      missing_value: -99.0
+      conversion_from_cmfd: "K -> degC: subtract 273.15"
+      silent_error: "Temperature in Kelvin causes crop never to mature (phenology requires degC)"
+
+    - name: "temperature_min"
+      file: "*.WTH"
+      column: "TMIN"
+      unit: "degC"
+      valid_range: [-60.0, 50.0]
+      format: "fixed-width column in .WTH"
+      missing_value: -99.0
+      conversion_from_cmfd: "K -> degC: subtract 273.15"
+
+    - name: "wind_speed"
+      file: "*.WTH"
+      column: "WIND"
+      unit: "km/day"
+      valid_range: [0.0, 900.0]
+      conversion_from_cmfd: "m/s -> km/day: multiply by 86.4"
+
+  parameters:
+    critical:
+      - name: "cultivar_selection"
+        file: "FileX experiment file (*.<crop>X)"
+        description: "Cultivar code and genotype coefficients"
+        notes: >
+          Must match an entry in the corresponding .CUL file. Chinese cultivar library
+          at /home/server/DSSAT/Data/Genotype/China/ has 42 calibrated varieties
+          (17 wheat, 12 maize, 11 rice, 7 soybean). Wrong cultivar silently produces
+          wrong phenology and yield.
+
+      - name: "soil_profile"
+        file: "SOIL.SOL"
+        description: "Multi-layer soil profile with texture, water holding capacity, organic C"
+        format: "fixed-width multi-line records"
+        notes: "Use hwsd_to_dssat.py for automated conversion from HWSD global soil database"
+
+      - name: "planting_date"
+        file: "FileX experiment file"
+        description: "Planting date in YYDDD format or YYYY-MM-DD"
+        notes: >
+          Wrong planting date can cause crop failure with no error message.
+          Use crop calendar reference (China: NE >40N maize May, Yangtze rice Apr-May,
+          Huang-Huai wheat Oct).
+
+      - name: "weather_station_code"
+        file: "FileX + .WTH filename"
+        description: "4-character station code linking FileX to weather file"
+        notes: >
+          Mismatch between FileX WSTA field and .WTH filename causes simulation to
+          use wrong weather data with no error. dssat_workdir_setup.py handles this automatically.
+
+    experiment_file:
+      - name: "FileX"
+        file: "*.<crop>X (e.g., UFGA8201.MZX for maize)"
+        description: "Master experiment file containing all treatment definitions"
+        format: "fixed-width column format — whitespace errors cause silent failures"
+        notes: >
+          NEVER hand-edit FileX. Use dssat_workdir_setup.py which handles exact column
+          positions for all 9 sections (general, treatments, cultivars, fields, initial
+          conditions, planting, irrigation, fertilizer, simulation controls).
+
+  files:
+    required:
+      - name: "DSSBatch.v48"
+        description: "Batch control file specifying which experiments to run"
+
+      - name: "DSSATPRO.L48"
+        description: "Path configuration file for DSSAT directories"
+        notes: "Must point to correct workdir paths. dssat_workdir_setup.py regenerates this."
+
+      - name: "*.CDE files"
+        description: "Code definition files required by Fortran runtime"
+        notes: "Missing CDE files cause MODEL.ERR crash. dssat_workdir_setup.py symlinks from DSSAT/Data/"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "grain_yield"
+      file: "Summary.OUT"
+      column: "HWAM"
+      unit: "kg/ha"
+      valid_range: [0, 20000]
+      notes: "Harvested weight at maturity. Main output for yield assessment."
+
+    - name: "total_biomass"
+      file: "Summary.OUT"
+      column: "CWAM"
+      unit: "kg/ha"
+      valid_range: [0, 40000]
+
+    - name: "harvest_index"
+      file: "Summary.OUT"
+      column: "HIAM"
+      unit: "fraction"
+      valid_range: [0.0, 0.7]
+      notes: "Ratio of grain to total biomass. Typical: wheat 0.35-0.50, maize 0.40-0.55, rice 0.40-0.55."
+
+    - name: "anthesis_date"
+      file: "Summary.OUT"
+      column: "APTS"
+      unit: "YYDDD"
+      notes: "Date of flowering. If missing or very late, check temperature units or cultivar params."
+
+    - name: "maturity_date"
+      file: "Summary.OUT"
+      column: "MPTS"
+      unit: "YYDDD"
+      notes: "If crop never matures, Summary.OUT shows -99. Check temperature units and cultivar."
+
+  daily:
+    - name: "daily_crop_growth"
+      file: "PlantGro.OUT"
+      key_columns: ["LAID", "CWAD", "HWAD", "RSTD"]
+      unit: "various (m2/m2 for LAI, kg/ha for biomass)"
+      notes: "Detailed daily growth trajectory. Use for diagnosing growth problems."
+
+    - name: "daily_soil_water"
+      file: "SoilWat.OUT"
+      key_columns: ["SWC1", "SWC2", "SWC3"]
+      unit: "cm3/cm3"
+
+    - name: "daily_et"
+      file: "ET.OUT"
+      key_columns: ["ETAC"]
+      unit: "mm/day"
+
+  ghg:
+    - name: "n2o_emission"
+      file: "N2O.OUT"
+      unit: "kgN/ha/day"
+      notes: "Available with CERES-N2O module enabled"
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "solar_unit_wrong"
+    description: "Solar radiation in W/m2 instead of MJ/m2/day causes zero yield"
+    affected_output: "Summary.OUT HWAM = 0 or near-zero"
+    detection: "SRAD values > 35 in .WTH file"
+    fix: "Multiply by 0.0864"
+    triplet: "dt_002"
+
+  - id: "temp_in_kelvin"
+    description: "Temperature in Kelvin instead of degC causes crop never to mature"
+    affected_output: "Summary.OUT MPTS = -99 (crop did not mature)"
+    detection: "TMAX or TMIN values > 200 in .WTH file"
+    fix: "Subtract 273.15"
+    triplet: "dt_003"
+
+  - id: "fortran_path_truncation"
+    description: "Paths longer than 72 characters cause FOTEFX runtime error"
+    affected_output: "Binary crashes with FOTEFX or file-not-found"
+    detection: "FOTEFX in stdout/stderr"
+    fix: "Use dssat_workdir_setup.py which creates short /tmp/ paths"
+    triplet: "dt_004"
+
+  - id: "missing_cde_files"
+    description: "Missing .CDE code definition files cause MODEL.ERR crash"
+    affected_output: "Binary fails to start"
+    detection: "MODEL.ERR file created or immediate crash"
+    fix: "Symlink all CDE+SDA files from /home/server/DSSAT/Data/"
+    triplet: "dt_001"
+
+  - id: "filex_too_many_treatments"
+    description: "FileX with >500 treatments causes NL exceeded error"
+    affected_output: "Binary crashes"
+    detection: "'NL exceeded' in stdout"
+    fix: "Split into multiple experiment files"
+    triplet: "dt_005"
+
+  - id: "rice_cultivar_china_only"
+    description: >
+      setup_rice_experiment.py originally selected China-only cultivars (CN02xx)
+      for non-China locations (e.g., Bangladesh). Now fixed: auto-selects IR 72
+      or region-appropriate cultivars for non-China locations.
+    affected_output: "Low yield for tropical/subtropical rice outside China"
+    detection: "Rice yield <2000 kg/ha for irrigated tropical location"
+    fix: "Use IB0118 (IR 72) or other IRRI cultivar for South/SE Asia"
+    scorecard: "test_dssat_rice_bangladesh.json (PASS with IR 72, yield 4781 kg/ha)"
+
+  - id: "boro_aman_detection"
+    description: >
+      Bangladesh rice cropping (boro Dec-Apr, aman Jun-Nov) requires season-specific
+      cultivar and planting date. Default single-season logic may pick wrong season.
+    affected_output: "Incorrect yield due to wrong planting window"
+    detection: "Yield outside 3000-6000 kg/ha for Bangladesh"
+    fix: "Explicitly set planting DOY for target season (boro ~335, aman ~180)"
+
+# =========================================================================
+# EXPECTED RANGES (from validated results)
+# =========================================================================
+expected_ranges:
+  bengbu_maize:
+    yield_kgha: [4500, 6500]
+    reference: "SPAM 2020 (-2.3%)"
+  bengbu_wheat:
+    yield_kgha: [4000, 5500]
+    reference: "SPAM 2020 (+1.8%)"
+  bangladesh_rice_boro:
+    yield_kgha: [3000, 6000]
+    reference: "National average ~4800 kg/ha"
+    scorecard: "test_dssat_rice_bangladesh.json"
+
+# =========================================================================
+# CALIBRATION REFERENCE
+# =========================================================================
+calibration_reference:
+  approach: "Cultivar coefficient calibration (P1, P2, P5, G2, G3 for CERES models)"
+  chinese_cultivar_library:
+    location: "/home/server/DSSAT/Data/Genotype/China/"
+    crops: ["wheat (17)", "maize (12)", "rice (11)", "soybean (7)"]
+    notes: >
+      Pre-calibrated cultivar coefficients for major Chinese production regions.
+      Use these before attempting manual calibration.
+  key_parameters:
+    - name: "P1"
+      description: "Thermal time from emergence to end of juvenile phase"
+    - name: "P5"
+      description: "Thermal time from silking to maturity (maize) or grain filling duration"
+    - name: "G2"
+      description: "Maximum kernel number (maize) or grain weight potential"
+    - name: "G3"
+      description: "Kernel filling rate or tiller factor"

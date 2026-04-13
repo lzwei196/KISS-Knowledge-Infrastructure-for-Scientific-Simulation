@@ -1,0 +1,155 @@
+model:
+  name: "APSIM"
+  full_name: "Agricultural Production Systems sIMulator (Next Generation)"
+  domain: "crop"
+  language: "C# (.NET 8.0)"
+  build_system: "dotnet (MSBuild, ApsimX.sln)"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/APSIM/source/repo/bin/Release/net8.0/apsim"
+  timestep: "daily"
+  spatial_scale: "point/field (zone-based, area in ha)"
+  repository: "https://github.com/APSIMInitiative/ApsimX"
+
+inputs:
+  forcing:
+    - name: "radn"
+      unit: "MJ/m^2/day"
+      valid_range: [0, 50]
+      description: "Daily solar radiation"
+    - name: "maxt"
+      unit: "degC"
+      valid_range: [-50, 60]
+      description: "Daily maximum air temperature"
+    - name: "mint"
+      unit: "degC"
+      valid_range: [-60, 50]
+      description: "Daily minimum air temperature"
+    - name: "rain"
+      unit: "mm/day"
+      valid_range: [0, 500]
+      description: "Daily rainfall"
+    - name: "vp"
+      unit: "hPa"
+      valid_range: [0, 100]
+      description: "Vapor pressure (optional)"
+    - name: "wind"
+      unit: "m/s"
+      valid_range: [0, 50]
+      description: "Wind speed (optional)"
+    - name: "co2"
+      unit: "ppm"
+      valid_range: [200, 1000]
+      description: "Atmospheric CO2 concentration (optional)"
+  forcing_format: "APSIM .met text file with [weather.met.weather] header"
+  forcing_metadata:
+    - name: "tav"
+      unit: "degC"
+      description: "Annual average ambient temperature (REQUIRED)"
+    - name: "amp"
+      unit: "degC"
+      description: "Annual amplitude in mean monthly temperature (REQUIRED)"
+
+  parameters:
+    critical:
+      - name: "Thickness"
+        unit: "mm"
+        valid_range: [50, 1000]
+        description: "Soil layer thickness (array by layer)"
+      - name: "BD"
+        unit: "g/cm3"
+        valid_range: [0.8, 2.0]
+        description: "Bulk density"
+      - name: "LL15"
+        unit: "mm/mm"
+        valid_range: [0.01, 0.40]
+        description: "Lower limit (wilting point) - volumetric"
+      - name: "DUL"
+        unit: "mm/mm"
+        valid_range: [0.10, 0.55]
+        description: "Drained upper limit (field capacity) - volumetric"
+      - name: "SAT"
+        unit: "mm/mm"
+        valid_range: [0.20, 0.60]
+        description: "Saturation - volumetric"
+      - name: "KS"
+        unit: "mm/day"
+        valid_range: [0.1, 1000]
+        description: "Saturated hydraulic conductivity"
+      - name: "CN2Bare"
+        unit: "dimensionless"
+        valid_range: [30, 100]
+        description: "SCS curve number for bare soil"
+    constraints:
+      - "AirDry <= LL15 <= DUL <= SAT (per layer)"
+      - "Crop LL >= LL15 (per layer)"
+      - "All layer arrays must have same length"
+
+    crop_sowing:
+      - name: "Population"
+        unit: "plants/m2"
+        valid_range: [1, 1000]
+        description: "Plant population density (NOT per hectare)"
+      - name: "Cultivar"
+        unit: "string"
+        description: "Cultivar name - must match available list exactly"
+      - name: "RowSpacing"
+        unit: "mm"
+        valid_range: [50, 2000]
+        description: "Row spacing"
+      - name: "Depth"
+        unit: "mm"
+        valid_range: [10, 200]
+        description: "Sowing depth"
+
+  simulation_file:
+    format: "JSON (.apsimx)"
+    description: "Nested JSON tree with $type, Name, Children nodes"
+
+outputs:
+  format: "SQLite (.db)"
+  primary:
+    - name: "Yield"
+      unit: "kg/ha"
+      valid_range: [0, 20000]
+      description: "Grain yield (auto-computed as Grain.Wt * 10)"
+    - name: "Wheat.AboveGround.Wt"
+      unit: "g/m2"
+      valid_range: [0, 5000]
+      description: "Above-ground biomass"
+    - name: "Wheat.Grain.Total.Wt"
+      unit: "g/m2"
+      valid_range: [0, 2000]
+      description: "Grain dry weight"
+    - name: "Wheat.LAI"
+      unit: "m2/m2"
+      valid_range: [0, 12]
+      description: "Leaf area index"
+    - name: "Wheat.Phenology.Zadok.Stage"
+      unit: "code"
+      valid_range: [0, 100]
+      description: "Zadoks phenological stage"
+    - name: "Wheat.Grain.Protein"
+      unit: "%"
+      valid_range: [5, 25]
+      description: "Grain protein percentage"
+    - name: "Wheat.Grain.Size"
+      unit: "g"
+      valid_range: [0.01, 0.08]
+      description: "Individual grain mass"
+
+known_issues:
+  - id: "runtime_missing"
+    description: ".NET 8.0 runtime not installed on server; binary cannot execute"
+    severity: "BLOCKING"
+    workaround: "Install dotnet-runtime-8.0 or use existing output databases"
+  - id: "unit_trap_radiation"
+    description: "Radiation W/m2 vs MJ/m2/day - factor ~11.6 error causes biomass explosion"
+    severity: "FATAL"
+    triplet: "dt_001"
+  - id: "unit_trap_population"
+    description: "Population plants/m2 vs plants/ha - factor 10000 error"
+    severity: "FATAL"
+    triplet: "dt_005"
+  - id: "missing_tav_amp"
+    description: "Missing tav/amp in .met header causes silent soil temperature failure"
+    severity: "FATAL"
+    triplet: "dt_002"

@@ -1,0 +1,481 @@
+# ============================================================================
+# OpenGeoSys 6 Diagnostic Triplets
+# ============================================================================
+# 18 diagnostic triplets covering 5 failure domains.
+# Generated during OpenGeoSys knowledge dissection.
+# All OGS-specific unit conversion traps are documented here.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s2_forcing_input
+  failure_domain: unit_conversion
+  symptom:
+    description: "Pressure values are ~1000× too low. Hydraulic head drops unrealistically. Flow rates negligible."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Pressure supplied in kPa instead of Pa"
+    explanation: >
+      OGS expects all pressure values in Pascals (Pa). Common external sources
+      provide data in kPa (e.g., atmospheric pressure ~101.3 kPa). If kPa values
+      are used directly, the pressure field is 1000× too low, producing negligible
+      flow and unrealistic head distributions. No error message is generated.
+    affected_components: [convert_forcing_to_ogs, media_block, boundary_conditions]
+  remedy:
+    action: "Multiply all pressure values by 1000 to convert kPa to Pa"
+    tool_to_run: convert_forcing_to_ogs
+    manual_steps:
+      - "Check pressure BC values — should be order 1e4 to 1e7 Pa for typical aquifers"
+      - "If max pressure < 1000, likely still in kPa — multiply by 1000"
+    prevention: "validate_outputs() checks for pressures below expected range"
+  severity: silent
+  cross_references: [dt_003, dt_004]
+
+- id: dt_002
+  stage: s2_forcing_input
+  failure_domain: unit_conversion
+  symptom:
+    description: "Temperature ~20 instead of ~293. Density and viscosity calculations produce nonsensical results. Thermal expansion wrong."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature supplied in degrees Celsius instead of Kelvin"
+    explanation: >
+      OGS expects temperature in Kelvin. The Celsius-zero constant is 273.15 K
+      (defined in PhysicalConstant.h). Supplying 20 (°C) instead of 293.15 K
+      causes water density to be calculated at ~20 K (near absolute zero), producing
+      completely wrong fluid properties. The model runs without error.
+    affected_components: [convert_forcing_to_ogs, media_block, initial_conditions]
+  remedy:
+    action: "Add 273.15 to all temperature values"
+    tool_to_run: convert_forcing_to_ogs
+    manual_steps:
+      - "Check temperature values — should be 273-373 K for typical groundwater"
+      - "If temperatures are 0-100, they are in °C — add 273.15"
+    prevention: "validate_outputs() checks for temperatures below 200 K"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s4_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Flow velocity 7-10 orders of magnitude too high. Simulation may become unstable or produce unrealistic pressure distributions."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Intrinsic permeability supplied in Darcy or hydraulic conductivity (m/s) instead of m²"
+    explanation: >
+      OGS uses intrinsic permeability κ in m². The conversion from hydraulic
+      conductivity K (m/s) is: κ = K × μ / (ρ × g) ≈ K × 1.02e-7 at 20°C.
+      1 Darcy = 9.869e-13 m². Supplying K=1e-5 m/s (typical sand) directly as
+      κ=1e-5 m² makes the medium 10,000,000× too permeable. The simulation runs
+      but produces physically impossible velocities.
+    affected_components: [convert_soil_to_ogs, media_block]
+  remedy:
+    action: "Convert hydraulic conductivity to intrinsic permeability: κ = K × 1.02e-7"
+    tool_to_run: convert_soil_to_ogs
+    manual_steps:
+      - "Check permeability value — should be 1e-18 to 1e-8 m² for natural media"
+      - "If value > 1e-6, it is likely K (m/s) not κ (m²) — multiply by 1.02e-7"
+      - "If value > 1e-2, it is likely K (cm/s) — multiply by 1.02e-9"
+    prevention: "convert_soil_to_ogs.py always outputs intrinsic permeability"
+  severity: silent
+  cross_references: [dt_011]
+
+- id: dt_004
+  stage: s2_forcing_input
+  failure_domain: unit_conversion
+  symptom:
+    description: "Simulation completes in seconds of wall time. Only initial condition and one or two timesteps in output. t_end appears to be reached instantly."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Time values in days or years instead of seconds"
+    explanation: >
+      OGS uses seconds for all time quantities: t_initial, t_end, delta_t.
+      Setting t_end=365 (intending 365 days) actually runs for 365 seconds
+      (~6 minutes of simulation time). Setting t_end=10 (intending 10 years)
+      runs for 10 seconds. The simulation completes successfully but covers
+      a negligible time period.
+    affected_components: [time_loop, run_ogs]
+  remedy:
+    action: "Multiply time values: days × 86400, years × 31536000"
+    tool_to_run: run_ogs
+    manual_steps:
+      - "Check t_end in .prj — for 1-year simulation should be ~31536000"
+      - "Check delta_t — for daily steps should be 86400"
+      - "If t_end < 1000 for multi-year simulation, likely in days"
+    prevention: "run_ogs.py warns when t_end < 3600 for non-trivial simulations"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_007
+  stage: s4_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Richards flow shows wrong capillary pressure curve. Saturation transitions at wrong suctions. Entry pressure wildly off from expected."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "van Genuchten α in 1/cm not converted to entry pressure in Pa"
+    explanation: >
+      Literature typically reports van Genuchten α in units of 1/cm. OGS uses
+      entry pressure p_b in Pa. The conversion requires two steps:
+      1) Convert α from 1/cm to 1/m: α_m = α_cm × 100
+      2) Convert to pressure: p_b = ρ×g / α_m
+      Skipping step 1 gives p_b that is 100× too high (too high entry pressure
+      means the soil desaturates at much higher suctions than reality).
+    affected_components: [convert_soil_to_ogs, media_block]
+  remedy:
+    action: "Convert α: p_b = ρ×g / (α_cm × 100) where ρ×g ≈ 9792 Pa/m"
+    tool_to_run: convert_soil_to_ogs
+    manual_steps:
+      - "Check entry pressure p_b — typical range 500 to 50000 Pa"
+      - "For sand (α=0.145 /cm): p_b = 9792 / (0.145×100) ≈ 675 Pa"
+      - "If p_b > 100000, likely missing the ×100 conversion"
+    prevention: "convert_soil_to_ogs.py handles the full α→p_b conversion"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_013
+  stage: s2_forcing_input
+  failure_domain: unit_conversion
+  symptom:
+    description: "Recharge causes extreme pressure buildup. Domain floods. Pressure rises orders of magnitude above hydrostatic."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Recharge in mm/day used directly as m/s (86.4 million × too high)"
+    explanation: >
+      Converting mm/day to m/s requires dividing by 86,400,000 (= 1000 × 86400).
+      If only /1000 is applied (mm→m but not day→s), the flux is 86400× too high.
+      If no conversion at all, it is 86,400,000× too high. A typical recharge of
+      1 mm/day = 1.157e-8 m/s. Applying 1 directly as m/s is catastrophic.
+    affected_components: [convert_forcing_to_ogs, boundary_conditions]
+  remedy:
+    action: "Divide mm/day by 86400000 to get m/s"
+    tool_to_run: convert_forcing_to_ogs
+    manual_steps:
+      - "Check Neumann BC flux values — should be < 1e-6 m/s for recharge"
+      - "Typical recharge range: 1e-9 to 1e-7 m/s"
+    prevention: "convert_forcing_to_ogs validates output flux range"
+  severity: silent
+  cross_references: [dt_015]
+
+- id: dt_015
+  stage: s2_forcing_input
+  failure_domain: unit_conversion
+  symptom:
+    description: "Recharge 86400× too high. Partial conversion applied (mm→m done but day→s missing)."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation/recharge converted from mm to m but not from per-day to per-second"
+    explanation: >
+      The full conversion from mm/day to m/s is: value / (1000 × 86400).
+      A common error is to only divide by 1000 (converting mm to m) but
+      forgetting that the time unit also changes from day to second. This gives
+      a flux in m/day, which is 86400× too high for OGS (which expects m/s).
+    affected_components: [convert_forcing_to_ogs]
+  remedy:
+    action: "Ensure full conversion: mm/day ÷ 86400000 = m/s"
+    tool_to_run: convert_forcing_to_ogs
+    manual_steps:
+      - "If recharge ~1e-3 to 1e-5, likely in m/day not m/s"
+      - "Divide by additional 86400 to get m/s"
+    prevention: "Use convert_forcing_to_ogs.py with explicit --source_unit and --target_unit"
+  severity: silent
+  cross_references: [dt_013]
+
+- id: dt_011
+  stage: s4_parameters
+  failure_domain: silent_error
+  symptom:
+    description: "Darcy velocity unrealistically high. Pressure equilibrates almost instantly. Effective permeability 1e7× too large."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Hydraulic conductivity K (m/s) entered as intrinsic permeability κ (m²)"
+    explanation: >
+      Hydraulic conductivity K [m/s] and intrinsic permeability κ [m²] differ by
+      a factor of μ/(ρg) ≈ 1.02e-7. Sand with K=1e-4 m/s has κ≈1e-11 m².
+      Entering K=1e-4 directly as κ gives a material 10 million times too
+      permeable. The simulation runs normally but the flow field is nonsensical.
+      This is the most common OGS parameterization error.
+    affected_components: [media_block, permeability]
+  remedy:
+    action: "Multiply K by μ/(ρg) ≈ 1.02e-7 to get κ"
+    tool_to_run: convert_soil_to_ogs
+    manual_steps:
+      - "Verify: typical sand κ ≈ 1e-11 m², clay κ ≈ 1e-17 m²"
+      - "If your value looks like a K (1e-3 to 1e-8), convert it"
+    prevention: "Always use convert_soil_to_ogs.py which outputs κ directly"
+  severity: silent
+  cross_references: [dt_003]
+
+# --- Mesh / Format Errors (Fatal) ---
+
+- id: dt_005
+  stage: s1_domain_setup
+  failure_domain: mesh_format
+  symptom:
+    description: "OGS crashes at startup with 'Could not find mesh' or 'boundary condition mesh not found' error."
+    error_pattern: "Could not find mesh|boundary.*not found"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Boundary submesh VTU files missing for boundary condition application"
+    explanation: >
+      OGS-6 applies boundary conditions on separate submesh files, not on
+      geometry-mesh intersections like OGS-5. Each Dirichlet/Neumann BC needs
+      a matching boundary submesh VTU file listed in the <meshes> section.
+      This is a fundamental architectural difference from OGS-5 and many other
+      FEM codes.
+    affected_components: [mesh_setup, boundary_conditions]
+  remedy:
+    action: "Extract boundary submeshes from bulk mesh using ExtractBoundary or Gmsh physical groups"
+    tool_to_run: ""
+    manual_steps:
+      - "For each BC, create a VTU file containing only the boundary faces/edges"
+      - "List all submeshes in <meshes> section of .prj file"
+      - "Verify submesh nodes are subset of bulk mesh nodes"
+    prevention: "Always generate submeshes during mesh creation stage"
+  severity: fatal
+  cross_references: [dt_010]
+
+- id: dt_006
+  stage: s4_execution
+  failure_domain: parameter_format
+  symptom:
+    description: "OGS crashes with 'wrong number of components' or gravity applied in wrong direction."
+    error_pattern: "wrong number of components|assertion.*failed"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Body force vector dimension does not match mesh dimension"
+    explanation: >
+      The <specific_body_force> element must have exactly as many components as
+      the mesh spatial dimension. A 2D mesh requires '0 -9.81' (two values),
+      a 3D mesh requires '0 0 -9.81' (three values). If a 3D body force is
+      applied to a 2D mesh, OGS may crash or silently misinterpret the gravity
+      vector.
+    affected_components: [process_definition]
+  remedy:
+    action: "Match body force components to mesh dimension: 2D='0 -9.81', 3D='0 0 -9.81'"
+    tool_to_run: ""
+    manual_steps:
+      - "Count components in <specific_body_force>"
+      - "Verify mesh dimension (check .vtu for 2D vs 3D elements)"
+    prevention: "run_ogs.py checks body force dimension vs mesh dimension"
+  severity: fatal
+  cross_references: []
+
+- id: dt_010
+  stage: s4_execution
+  failure_domain: path_resolution
+  symptom:
+    description: "OGS crashes with 'file not found' error for mesh or geometry files."
+    error_pattern: "not found|No such file|cannot open"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Mesh file paths are relative but OGS working directory differs from .prj location"
+    explanation: >
+      OGS resolves mesh file paths relative to the working directory, not the
+      .prj file location. If you run 'ogs path/to/project.prj' from a different
+      directory, relative mesh paths in the .prj file won't resolve correctly.
+      Use the -m flag to specify mesh directory.
+    affected_components: [mesh_loading, file_io]
+  remedy:
+    action: "Use -m flag to specify mesh directory, or run OGS from .prj directory"
+    tool_to_run: run_ogs
+    manual_steps:
+      - "Run OGS with: ogs project.prj -m /path/to/meshes/ -o /path/to/output/"
+      - "Or cd to project directory first"
+    prevention: "run_ogs.py resolves all paths to absolute before execution"
+  severity: fatal
+  cross_references: [dt_005]
+
+- id: dt_014
+  stage: s4_execution
+  failure_domain: parameter_format
+  symptom:
+    description: "OGS crashes with 'could not find' or 'unknown tag' error. No output produced."
+    error_pattern: "unknown tag|could not find|not a valid"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "XML tag name misspelled — OGS XML tags are case-sensitive"
+    explanation: >
+      OGS project file tags are case-sensitive. Common errors:
+      <Permeability> vs <permeability>, <BackwardEuler> vs <Backwardeuler>.
+      The XML parser finds the tag but OGS doesn't recognize the misspelled
+      variant, causing a 'could not find required' error.
+    affected_components: [project_file_parsing]
+  remedy:
+    action: "Check tag spelling against OGS documentation or working example files"
+    tool_to_run: ""
+    manual_steps:
+      - "Compare .prj tags case-by-case against a known working example"
+      - "Common corrections: BackwardEuler, FixedTimeStepping, SparseLU"
+    prevention: "Use templates from Tests/Data/ as starting point"
+  severity: fatal
+  cross_references: []
+
+# --- Solver Configuration (Degraded) ---
+
+- id: dt_008
+  stage: s4_execution
+  failure_domain: solver_config
+  symptom:
+    description: "Non-convergence despite reasonable setup. Iteration count hits max_iter every timestep. Timestep repeatedly halved."
+    error_pattern: "not converged|max.*iterations"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Convergence criterion type or tolerance poorly matched to problem"
+    explanation: >
+      DeltaX checks the solution increment norm, Residual checks the residual norm.
+      Using DeltaX with a tolerance meant for Residual (or vice versa) causes
+      either false convergence (too loose) or infinite iterations (too tight).
+      Typical: DeltaX abstol=1e-6 for pressure (Pa), abstol=1e-10 for displacement (m).
+    affected_components: [nonlinear_solver, convergence_criterion]
+  remedy:
+    action: "Match criterion type and tolerance to variable magnitude"
+    tool_to_run: ""
+    manual_steps:
+      - "For pressure (Pa): DeltaX, abstol=1e-6"
+      - "For displacement (m): DeltaX, abstol=1e-10"
+      - "For temperature (K): DeltaX, abstol=1e-4"
+      - "Or use Residual with relative tolerance reltol=1e-8"
+    prevention: "Test with 2-3 timesteps before full simulation"
+  severity: degraded
+  cross_references: [dt_012]
+
+- id: dt_009
+  stage: s4_parameters
+  failure_domain: parameter_format
+  symptom:
+    description: "Pressure field does not change between timesteps. Output at all times is identical to initial condition."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Storage coefficient set to zero in transient simulation"
+    explanation: >
+      For transient LiquidFlow, the time derivative term is S_s × ∂p/∂t where
+      S_s is the specific storage (1/Pa). If S_s=0, the mass matrix M=0 and
+      the transient equation degenerates to a steady-state equation at every
+      timestep. The pressure instantly reaches equilibrium and never changes.
+      OGS doesn't warn about this.
+    affected_components: [media_block, storage_property]
+  remedy:
+    action: "Set storage to physically reasonable value: ~1e-9 to 1e-6 1/Pa"
+    tool_to_run: ""
+    manual_steps:
+      - "Check <property><name>storage</name><value>...</value>"
+      - "If 0.0, set to 1e-9 for confined aquifer, 1e-6 for unconfined"
+    prevention: "run_ogs.py warns when storage=0 for transient simulations"
+  severity: silent
+  cross_references: [dt_017]
+
+- id: dt_012
+  stage: s4_execution
+  failure_domain: solver_config
+  symptom:
+    description: "Newton solver diverges immediately on first timestep. NaN or Inf in solution vector."
+    error_pattern: "diverge|NaN|Inf"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Newton solver requires good initial guess; initial condition too far from solution"
+    explanation: >
+      Newton's method has limited convergence radius. If the initial condition
+      is far from the solution (e.g., zero pressure in a pressurized system),
+      the Jacobian may be singular or produce huge updates. Picard (fixed-point)
+      is more robust for initial convergence.
+    affected_components: [nonlinear_solver]
+  remedy:
+    action: "Switch to Picard solver for initial timesteps, or use Picard globally"
+    tool_to_run: ""
+    manual_steps:
+      - "Change <type>Newton</type> to <type>Picard</type>"
+      - "Or improve initial condition to be closer to expected solution"
+      - "Or reduce first timestep by 100×"
+    prevention: "Start with Picard; switch to Newton after verification"
+  severity: degraded
+  cross_references: [dt_008]
+
+- id: dt_016
+  stage: s1_domain_setup
+  failure_domain: mesh_format
+  symptom:
+    description: "OGS crashes or produces wrong results with quadratic elements. Shape function evaluation fails."
+    error_pattern: "assertion|shape function|element order"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Mesh element order does not match FE order specified in process_variables"
+    explanation: >
+      If the mesh contains linear elements (triangles with 3 nodes) but the
+      process variable <order> is set to 2, OGS expects quadratic elements
+      (triangles with 6 nodes). The mismatch causes shape function evaluation
+      to fail or produce wrong results.
+    affected_components: [mesh, process_variables]
+  remedy:
+    action: "Match <order> to mesh element order: linear mesh → order=1, quadratic → order=2"
+    tool_to_run: ""
+    manual_steps:
+      - "Check mesh: linear elements have corner nodes only (tri=3, quad=4, tet=4)"
+      - "Quadratic elements have mid-edge nodes (tri=6, quad=8, tet=10)"
+      - "Set <order> accordingly in <process_variables>"
+    prevention: "Always verify mesh element type before setting FE order"
+  severity: degraded
+  cross_references: []
+
+- id: dt_017
+  stage: s4_parameters
+  failure_domain: silent_error
+  symptom:
+    description: "No transient behavior in output. Pressure reaches steady state in first timestep."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Porosity set to zero, eliminating storage capacity"
+    explanation: >
+      Porosity enters the storage term. With porosity=0 and no explicit storage
+      term, the porous medium has zero storage capacity. This is similar to
+      dt_009 (storage=0) but originates from the porosity value. The simulation
+      runs but the transient response is absent.
+    affected_components: [media_block, porosity]
+  remedy:
+    action: "Set porosity to physically reasonable value: 0.01 to 0.6"
+    tool_to_run: convert_soil_to_ogs
+    manual_steps:
+      - "Check <property><name>porosity</name><value>"
+      - "If 0.0 or missing, set to appropriate value for soil type"
+    prevention: "convert_soil_to_ogs always outputs non-zero porosity"
+  severity: silent
+  cross_references: [dt_009]
+
+- id: dt_018
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "OGS crashes with NaN or floating-point exception. Simulation aborts mid-run."
+    error_pattern: "NaN|floating.*point|FPE|inf"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Division by zero from zero viscosity, zero density, or zero permeability"
+    explanation: >
+      Darcy's law involves κ/(μ) where μ is viscosity and κ is permeability.
+      If either viscosity=0 or density=0 is specified (or results from a
+      temperature-dependent model at extreme T), division by zero produces NaN
+      which propagates through the solution. The --enable-fpe flag makes this
+      a hard crash; without it, NaN silently corrupts results.
+    affected_components: [media_block, fluid_properties]
+  remedy:
+    action: "Verify all fluid properties are positive: density > 0, viscosity > 0"
+    tool_to_run: ""
+    manual_steps:
+      - "Check density and viscosity values in <media> section"
+      - "For water at 20°C: density=998.2 kg/m³, viscosity=1.002e-3 Pa·s"
+      - "If using temperature-dependent properties, check T range is valid"
+    prevention: "run_ogs.py validates all material properties > 0"
+  severity: fatal
+  cross_references: [dt_002]

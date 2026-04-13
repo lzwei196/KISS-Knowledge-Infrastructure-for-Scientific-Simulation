@@ -1,0 +1,29 @@
+entries:
+- id: err_001
+  timestamp: '2026-03-21T05:16:28Z'
+  recorded_by: server
+  run_context:
+    basin: bengbu
+    model: ''
+    run_name: bengbu_wrfhydro_025deg_2000_2005
+  stage: s9_namelists
+  failure_domain: dependency_mismatch
+  symptom:
+    description: 'CHRTOUT_DOMAIN reverts to 0 after pipeline wrapper regenerates namelists. No CHRTOUT output files produced
+      despite manual fix. User: ''CHRTOUT_DOMAIN = 0 this requires a permanent fix'''
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: run_wrfhydro_full_pipeline.py calls generate_namelists.py which overwrites the hydro.namelist with default
+      CHRTOUT_DOMAIN=0 after user manually set it to 1. sed-based fixes were applied before the pipeline wrapper regenerated
+      the file.
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Apply CHRTOUT_DOMAIN=1 fix AFTER pipeline completion using Python str.replace() on the generated file. Also fixed
+      generate_namelists.py to default CHRTOUT_DOMAIN=1.
+    files_changed: []
+    prevention: ''
+  severity: silent
+  promoted: false
+  promoted_as: ''

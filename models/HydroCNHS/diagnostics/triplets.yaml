@@ -1,0 +1,428 @@
+# HydroCNHS Diagnostic Triplets
+# 18 symptom → diagnosis → remedy entries organized by failure domain
+# Last updated: 2026-03-25
+
+- id: dt_001
+  stage: s1_climate_data
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Simulated discharge is exactly 10× higher than observed"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation data is in mm/day instead of cm/day"
+    explanation: >
+      HydroCNHS internally expects precipitation in cm/day. Most global datasets
+      (ERA5, station data) provide mm/day. The model runs without error but
+      generates 10× too much runoff because it interprets 5 mm as 5 cm.
+    affected_components: [rainfall_runoff, Q_routed]
+  remedy:
+    action: "Divide all precipitation values by 10 before passing to model.run()"
+    tool_to_run: convert_climate_inputs
+    manual_steps:
+      - "prec_cm = {k: [v/10 for v in vals] for k, vals in prec_mm.items()}"
+    prevention: "convert_climate_inputs.py validates mean precipitation is < 5 cm/day"
+  cross_references: [dt_002]
+
+- id: dt_002
+  stage: s1_climate_data
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Simulated discharge is orders of magnitude wrong (100× or more)"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "CMIP precipitation in kg/m²/s not converted to cm/day"
+    explanation: >
+      CMIP6 precipitation flux is in kg/m²/s. Converting to cm/day requires
+      multiplying by 86400 (seconds/day) and dividing by 10 (mm→cm).
+      Forgetting either step produces extreme discharge values.
+    affected_components: [rainfall_runoff, Q_routed]
+  remedy:
+    action: "prec_cm = prec_kgm2s * 86400.0 / 10.0"
+    tool_to_run: convert_climate_inputs
+    manual_steps:
+      - "prec_cmday = prec_kgm2s * 86400 / 10"
+    prevention: "convert_climate_inputs.py accepts --prec-unit kg/m2/s"
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s1_climate_data
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "PET calculation returns unrealistic values; seasonal cycle is muted"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature data is in Kelvin instead of Celsius"
+    explanation: >
+      The Hamon PET method uses exp(temp/16). When temp is ~293 K instead of
+      ~20°C, the exponential term becomes enormous and PET saturates,
+      eliminating the seasonal signal. The model runs but evaporation
+      dominates all seasons.
+    affected_components: [pet_hamon, rainfall_runoff]
+  remedy:
+    action: "Subtract 273.15 from all temperature values"
+    tool_to_run: convert_climate_inputs
+    manual_steps:
+      - "temp_C = {k: [v - 273.15 for v in vals] for k, vals in temp_K.items()}"
+    prevention: "convert_climate_inputs.py validates mean temp < 100°C"
+  cross_references: []
+
+- id: dt_004
+  stage: s1_climate_data
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Discharge consistently too low; evaporation excessive"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "PET provided in mm/day instead of cm/day"
+    explanation: >
+      If PET is provided (not auto-calculated), it must be in cm/day.
+      Passing mm/day makes evaporation 10× too high, leaving too little
+      water for runoff. This only affects runs where user provides PET.
+    affected_components: [rainfall_runoff]
+  remedy:
+    action: "Divide PET values by 10"
+    tool_to_run: convert_climate_inputs
+    manual_steps:
+      - "pet_cm = {k: [v/10 for v in vals] for k, vals in pet_mm.items()}"
+    prevention: "convert_climate_inputs.py applies same unit logic to PET"
+  cross_references: [dt_001]
+
+- id: dt_005
+  stage: s2_parameter_estimation
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Simulated discharge is exactly 100× lower than observed"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Subbasin area specified in km² instead of hectares (ha)"
+    explanation: >
+      HydroCNHS converts runoff depth (cm) to discharge (cms) using
+      area in hectares. 1 km² = 100 ha. If area is in km², discharge
+      is 100× too low. The model runs without error.
+    affected_components: [rainfall_runoff, Q_routed]
+  remedy:
+    action: "Multiply all area values by 100 (km² → ha)"
+    tool_to_run: build_model_config
+    manual_steps:
+      - "area_ha = area_km2 * 100"
+    prevention: "build_model_config.py warns if area < 0.01 ha"
+  cross_references: [dt_006]
+
+- id: dt_006
+  stage: s2_parameter_estimation
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Simulated discharge far too high (10000× or more)"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Subbasin area specified in m² instead of hectares"
+    explanation: >
+      1 ha = 10000 m². Passing m² makes area 10000× too large,
+      proportionally inflating discharge.
+    affected_components: [rainfall_runoff, Q_routed]
+  remedy:
+    action: "Divide area by 10000 (m² → ha)"
+    tool_to_run: build_model_config
+    manual_steps:
+      - "area_ha = area_m2 / 10000"
+    prevention: "build_model_config.py warns if area > 1e6 ha"
+  cross_references: [dt_005]
+
+- id: dt_007
+  stage: s3_model_configuration
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Routing delays are 1000× too short; hydrograph has no attenuation"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "FlowLength specified in km instead of meters"
+    explanation: >
+      Lohmann routing uses FlowLength in meters to compute travel time.
+      If km is passed, the flow appears to travel 1000× faster, producing
+      almost instantaneous routing with no attenuation.
+    affected_components: [routing, Q_routed]
+  remedy:
+    action: "Multiply FlowLength by 1000 (km → m)"
+    tool_to_run: build_model_config
+    manual_steps:
+      - "flow_m = flow_km * 1000"
+    prevention: "build_model_config.py accepts --flow-lengths in meters"
+  cross_references: []
+
+- id: dt_008
+  stage: s3_model_configuration
+  failure_domain: parameter_format
+  severity: silent
+  symptom:
+    description: "Model fails to parse dates correctly; simulation period is wrong"
+    error_pattern: ""
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Date format uses hyphens instead of slashes"
+    explanation: >
+      HydroCNHS expects dates as 'YYYY/M/D' (e.g., '1981/1/1'), not
+      'YYYY-MM-DD'. Using the wrong separator causes silent parsing errors
+      where the date is misinterpreted or defaults to an unexpected value.
+    affected_components: [WaterSystem, model initialization]
+  remedy:
+    action: "Change date separators from '-' to '/'"
+    tool_to_run: ""
+    manual_steps:
+      - "Replace '1981-01-01' with '1981/1/1' in model.yaml"
+    prevention: "build_model_config.py validates date format"
+  cross_references: [dt_013]
+
+- id: dt_009
+  stage: s2_parameter_estimation
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Unsaturated zone never fills; runoff generation is suppressed"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Ur (soil water capacity) specified in mm instead of cm"
+    explanation: >
+      Ur is available water capacity in cm. If mm values are passed
+      (e.g., 80 instead of 8), the soil zone appears enormous and never
+      saturates, suppressing surface runoff. Baseflow may still occur
+      but total discharge will be too low.
+    affected_components: [gwlf, Q_runoff]
+  remedy:
+    action: "Divide Ur by 10 (mm → cm)"
+    tool_to_run: convert_parameters
+    manual_steps:
+      - "Ur_cm = Ur_mm / 10"
+    prevention: "GWLF range cap: Ur max is 15 cm"
+  cross_references: [dt_010]
+
+- id: dt_010
+  stage: s2_parameter_estimation
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Snow melts too fast; spring freshet is exaggerated"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Df (snowmelt coefficient) in mm/°C instead of cm/°C"
+    explanation: >
+      Df controls degree-day snowmelt rate. In mm/°C it would be 3-5;
+      in cm/°C the range is 0.3-0.5. If mm values are used, snow melts
+      10× too fast, causing an unrealistic spring flood and premature
+      snowpack depletion.
+    affected_components: [gwlf, snow module]
+  remedy:
+    action: "Divide Df by 10 (mm/°C → cm/°C)"
+    tool_to_run: convert_parameters
+    manual_steps:
+      - "Df_cm = Df_mm / 10"
+    prevention: "GWLF range cap: Df max is 1 cm/°C"
+  cross_references: [dt_009]
+
+- id: dt_011
+  stage: s3_model_configuration
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Routing wave travels too fast; downstream hydrograph peaks too early"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Velo (wave velocity) in km/h instead of m/s"
+    explanation: >
+      Lohmann routing expects Velo in m/s. If km/h is used (e.g., 100 km/h
+      instead of 27.8 m/s), wave travel time is distorted, causing
+      premature peak arrival at downstream outlets.
+    affected_components: [routing]
+  remedy:
+    action: "Convert: Velo_ms = Velo_kmh * 1000 / 3600"
+    tool_to_run: ""
+    manual_steps:
+      - "Velo_ms = Velo_kmh * 1000 / 3600"
+    prevention: "Routing range cap: Velo max is 55 m/s"
+  cross_references: [dt_007]
+
+- id: dt_012
+  stage: s8_calibration
+  failure_domain: calibration
+  severity: degraded
+  symptom:
+    description: "GA produces unrealistic parameter values near bound extremes"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Default parameter bounds are too wide for the basin"
+    explanation: >
+      gen_default_bounds() returns physically possible ranges, not
+      basin-appropriate ranges. For example, CN2 range [25,100] is valid
+      globally but [50,85] might be appropriate for a specific forested
+      basin. Wide bounds slow convergence and allow unrealistic combinations.
+    affected_components: [calibration, all parameters]
+  remedy:
+    action: "Tighten bounds based on basin soil/land-use/climate"
+    tool_to_run: ""
+    manual_steps:
+      - "df_bounds.loc[df_bounds['Parameter']=='CN2', 'Upper'] = 85"
+      - "Review all bounds against basin characteristics"
+    prevention: "Run convert_parameters.py first to establish reasonable center values"
+  cross_references: [dt_014]
+
+- id: dt_013
+  stage: s3_model_configuration
+  failure_domain: parameter_format
+  severity: fatal
+  symptom:
+    description: "IndexError or array length mismatch during simulation"
+    error_pattern: "IndexError: list index out of range"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "DataLength in YAML does not match actual date range"
+    explanation: >
+      DataLength must equal (end_date - start_date).days + 1. If it's wrong,
+      the model pre-allocates arrays of the wrong size, causing index errors
+      during simulation or silent truncation of results.
+    affected_components: [model initialization, all arrays]
+  remedy:
+    action: "Recompute DataLength from start and end dates"
+    tool_to_run: build_model_config
+    manual_steps:
+      - "from datetime import datetime"
+      - "dl = (datetime(2013,12,31) - datetime(1981,1,1)).days + 1  # 12053"
+    prevention: "build_model_config.py auto-computes DataLength"
+  cross_references: [dt_008]
+
+- id: dt_014
+  stage: s5_execution
+  failure_domain: runtime
+  severity: fatal
+  symptom:
+    description: "NaN or zero values in discharge output"
+    error_pattern: "RuntimeWarning: invalid value encountered"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Parameters still set to -99 sentinel value"
+    explanation: >
+      Parameters set to -99 are calibration placeholders. Running the model
+      directly with -99 values produces undefined behavior: negative soil
+      moisture, NaN in exponentials, or zero runoff.
+    affected_components: [rainfall_runoff, routing]
+  remedy:
+    action: "Set actual parameter values or run calibration first"
+    tool_to_run: run_hydrocnhs
+    manual_steps:
+      - "Check model.yaml for any remaining -99 values"
+      - "Replace with reasonable estimates or run calibration"
+    prevention: "run_hydrocnhs.py checks for -99 values before simulation"
+  cross_references: [dt_012]
+
+- id: dt_015
+  stage: s5_execution
+  failure_domain: runtime
+  severity: fatal
+  symptom:
+    description: "ImportError when running model with ABM agents"
+    error_pattern: "ModuleNotFoundError: No module named"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "ABM module file not found in Path.Modules directory"
+    explanation: >
+      When ABM is configured, HydroCNHS tries to import the module file
+      (e.g., TRB_ABM.py) from the directory specified in Path.Modules.
+      If the path is wrong or the file is missing, import fails.
+    affected_components: [ABM initialization]
+  remedy:
+    action: "Verify Path.Modules in model.yaml points to the correct directory"
+    tool_to_run: ""
+    manual_steps:
+      - "Check that the .py file exists at the Modules path"
+      - "Verify the module name in ABM.Modules matches the filename"
+    prevention: "Check file existence before running"
+  cross_references: [dt_016]
+
+- id: dt_016
+  stage: s5_execution
+  failure_domain: silent_error
+  severity: silent
+  symptom:
+    description: "Dam releases happen after diversions; water balance incorrect"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "ABM agent Priority values are set incorrectly"
+    explanation: >
+      Agents execute in priority order (lower number first). If a diversion
+      agent has higher priority (lower number) than a dam agent upstream,
+      it diverts water before the dam releases it, creating a water balance
+      violation. The model runs without error but flow is inconsistent.
+    affected_components: [ABM agent execution order]
+  remedy:
+    action: "Set dam agents to lower priority numbers than downstream agents"
+    tool_to_run: ""
+    manual_steps:
+      - "Set upstream dam Priority: 1"
+      - "Set downstream diversion Priority: 2"
+    prevention: "Review priority order matches physical upstream-downstream sequence"
+  cross_references: [dt_015]
+
+- id: dt_017
+  stage: s7_output_analysis
+  failure_domain: silent_error
+  severity: degraded
+  symptom:
+    description: "Evaluation metrics are worse than expected despite good parameters"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Warmup period not excluded from metric calculation"
+    explanation: >
+      The first 1-2 years of simulation have poor performance because
+      initial conditions (S0, U0, SnowS) are arbitrary. Including this
+      period in metric calculations artificially lowers NSE/KGE.
+    affected_components: [evaluation metrics]
+  remedy:
+    action: "Skip the first 1-2 years (365-730 days) when computing metrics"
+    tool_to_run: parse_output
+    manual_steps:
+      - "obs = obs[warmup_days:]"
+      - "sim = sim[warmup_days:]"
+    prevention: "parse_output.py --warmup-years 2"
+  cross_references: []
+
+- id: dt_018
+  stage: s7_output_analysis
+  failure_domain: silent_error
+  severity: silent
+  symptom:
+    description: "Correlation is very low despite visually similar hydrographs"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Simulated and observed date indices are not aligned"
+    explanation: >
+      If observed data starts on a different date than the simulation, or
+      has gaps, simple array indexing produces misaligned comparisons.
+      Even a 1-day offset can destroy correlation for flashy basins.
+    affected_components: [evaluation metrics]
+  remedy:
+    action: "Align on date index, not array position"
+    tool_to_run: parse_output
+    manual_steps:
+      - "common_dates = sim_df.index.intersection(obs_df.index)"
+      - "Compare only on common dates"
+    prevention: "parse_output.py aligns on pandas DatetimeIndex"
+  cross_references: [dt_017]

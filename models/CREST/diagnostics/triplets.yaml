@@ -1,0 +1,164 @@
+# CREST/EF5 Diagnostic Triplets
+# Symptom → Diagnosis → Remedy
+# For troubleshooting common issues in CREST model runs
+
+triplets:
+
+  # ── Unit Conversion Traps ─────────────────────────────────────────────────
+
+  - id: T001
+    symptom: "Simulated discharge is 24x too high compared to observations"
+    diagnosis: "Precipitation UNIT in config is set to mm/h but actual forcing files contain mm/day values"
+    remedy: |
+      Change the PrecipForcing UNIT from 'mm/h' to 'mm/d' in control.txt.
+      EF5 converts internally: mm/d → mm/h by dividing by 24.
+      Always verify forcing file units independently before setting config UNIT.
+
+  - id: T002
+    symptom: "Simulated discharge is 24x too low; hydrograph is nearly flat"
+    diagnosis: "Precipitation UNIT in config is set to mm/d but actual forcing files contain mm/h values"
+    remedy: |
+      Change the PrecipForcing UNIT from 'mm/d' to 'mm/h' in control.txt.
+      Open a sample forcing grid and check: if max values during a storm are 10-100,
+      the unit is likely mm/h. If max values are 50-300, it may be mm/d.
+
+  - id: T003
+    symptom: "Enormous PET values causing all precipitation to evaporate; zero or near-zero discharge"
+    diagnosis: "PET forcing is in Kelvin (K) but UNIT is set to 'C' for temperature-based PET"
+    remedy: |
+      Convert temperature from Kelvin to Celsius before writing grids:
+        T_celsius = T_kelvin - 273.15
+      Or pre-process the NetCDF: ncap2 -s 'temp=temp-273.15' input.nc output.nc
+
+  - id: T004
+    symptom: "IM parameter has no effect; impervious area fraction is essentially zero"
+    diagnosis: "IM value is specified as fraction (0-1) instead of percent (0-100) when no im_grid is provided"
+    remedy: |
+      When no im_grid is used, EF5 divides the scalar IM by 100 internally.
+      So im=0.05 becomes 0.0005 (nearly zero). Set im=5 for 5% impervious area.
+      When im_grid IS provided, the scalar acts as a direct multiplier.
+
+  - id: T005
+    symptom: "FC (Ksat) parameter causes all rainfall to become interflow; no overland flow"
+    diagnosis: "FC is specified in mm/day instead of mm/hr, making infiltration capacity 24x too high"
+    remedy: |
+      Divide FC values by 24 to convert from mm/day to mm/hr.
+      Typical Ksat for loam: ~13 mm/hr. If your values are 100-300, they are likely in mm/day.
+
+  - id: T006
+    symptom: "WM parameter causes soil to fill instantly; constant saturation excess"
+    diagnosis: "WM grid is in meters instead of millimeters, giving WM values of 0.1-0.5 instead of 100-500"
+    remedy: |
+      Multiply WM grid values by 1000 to convert m to mm.
+      EF5 expects WM in mm. Typical range: 50-500 mm.
+
+  # ── Grid and Configuration Traps ─────────────────────────────────────────
+
+  - id: T007
+    symptom: "Water routes in wrong direction; downstream gauge has less flow than upstream"
+    diagnosis: "ESRIDDM flag does not match the DDM encoding used"
+    remedy: |
+      Check DDM source:
+      - TauDEM: uses 1-8 encoding → set ESRIDDM=false
+      - ArcGIS/ESRI: uses 1,2,4,8,16,32,64,128 → set ESRIDDM=true
+      Open DDM and check max value: if max <= 8, it's TauDEM; if max = 128, it's ESRI.
+
+  - id: T008
+    symptom: "EF5 crashes at startup with grid reading errors"
+    diagnosis: "DEM, DDM, and FAM grids have mismatched extents, resolutions, or projections"
+    remedy: |
+      All three basic grids must have identical:
+      - Number of rows and columns
+      - Cell size
+      - Bounding box (xllcorner, yllcorner)
+      - Projection
+      Use gdalinfo on each to verify. Re-clip all grids from the same source.
+
+  - id: T009
+    symptom: "Gauge does not snap to expected river cell; BASINAREA warning in output"
+    diagnosis: "Gauge coordinates are in a different projection than the grid, or BASINAREA is wrong"
+    remedy: |
+      Gauge LON/LAT must be in unprojected WGS84 degrees regardless of grid PROJ setting.
+      EF5 reprojects internally. Also set BASINAREA (km²) to help EF5 find the right cell
+      by searching nearby cells for matching flow accumulation.
+
+  - id: T010
+    symptom: "'File not found' errors for forcing at specific timesteps"
+    diagnosis: "NAME template date tokens don't match actual file naming convention"
+    remedy: |
+      Check that YYYY, MM, DD, HH, UU, SS tokens in NAME= match the actual filename format.
+      Example: if files are named 'precip_2001010100.asc', use NAME=precip_YYYYMMDDHH.asc
+      (note: no UU token if filenames don't include minutes).
+
+  # ── Runtime and Numerical Issues ─────────────────────────────────────────
+
+  - id: T011
+    symptom: "Discharge output shows wild oscillations or numerical spikes"
+    diagnosis: "Model time step is too large for the grid resolution, causing Courant instability in routing"
+    remedy: |
+      Reduce TIMESTEP in the task section. For kinematic wave routing:
+        Δt < Δx / max_wave_speed
+      Try TIMESTEP=5u (5 minutes) for high-resolution grids (~100m).
+      Linear reservoir routing is more stable and may allow larger steps.
+
+  - id: T012
+    symptom: "Zero discharge everywhere; model produces no runoff"
+    diagnosis: "Multiple possible causes: forcing directory empty, precipitation files not matching time window, or WM set extremely high"
+    remedy: |
+      Check in order:
+      1. ls the PRECIP LOC directory — are there files covering TIME_BEGIN to TIME_END?
+      2. Check NAME template matches actual filenames
+      3. Check UNIT — is precipitation being converted to near-zero?
+      4. Check WM — if WM > 1000mm, soil never saturates
+      5. Check KE — if KE > 2, all precip goes to ET
+
+  - id: T013
+    symptom: "Output directory is empty after apparently successful run"
+    diagnosis: "ROUTING is not specified in task; only water balance runs without discharge computation"
+    remedy: |
+      Add ROUTING=LR or ROUTING=KW to the task section, and add the corresponding
+      ROUTING_PARAM_SET. Without routing, CREST computes excess water but does not
+      generate discharge output.
+
+  - id: T014
+    symptom: "Model runs but output time series has only zeros after warm-up period"
+    diagnosis: "Forcing frequency (FREQ) is higher than file availability, causing EF5 to use the last available file repeatedly"
+    remedy: |
+      Match FREQ to actual file temporal resolution. If you have daily files,
+      set FREQ=d, not FREQ=1h. EF5 reads the most recently available file at each
+      time step, so mismatched FREQ causes stale forcing data.
+
+  - id: T015
+    symptom: "NSE is extremely negative (< -10) despite reasonable hydrograph shape"
+    diagnosis: "Observation file discharge is in different units (e.g., cfs instead of m³/s, or mm/day instead of m³/s)"
+    remedy: |
+      EF5 outputs discharge in m³/s (cms). Ensure observation file uses the same units:
+      - cfs to m³/s: multiply by 0.02832
+      - mm/day to m³/s: multiply by basin_area_km² / 86.4
+      - L/s to m³/s: divide by 1000
+
+  - id: T016
+    symptom: "Calibration (CALI_DREAM) runs indefinitely without convergence"
+    diagnosis: "Parameter search ranges are too wide, or objective function is flat due to underlying configuration errors"
+    remedy: |
+      1. First ensure a manual simulation with reasonable parameters produces non-zero output
+      2. Narrow calibration parameter ranges based on literature or soil data
+      3. Increase the number of chains (default is often too few for >6 parameters)
+      4. Check that OBS file has data overlapping with simulation period
+
+  - id: T017
+    symptom: "Soil moisture always at 100% or always at 0%"
+    diagnosis: "WM parameter is too small (soil fills instantly) or IWU is set to 0/100 with no warm-up"
+    remedy: |
+      For WM: typical range is 50-500 mm. Values < 10 mm cause instant saturation.
+      For IWU: set to ~50% and use TIME_WARMEND to allow spin-up.
+      Check parameter grids for extreme values or nodata cells being read as valid.
+
+  - id: T018
+    symptom: "Build fails: 'xtiffio.h not found'"
+    diagnosis: "libgeotiff development headers are not installed or are in a non-standard location"
+    remedy: |
+      Install: sudo apt install libgeotiff-dev
+      If headers are in a non-standard path, configure may need:
+        CPPFLAGS="-I/usr/include/geotiff" ./configure
+      Check configure.ac for the three possible header locations it checks.

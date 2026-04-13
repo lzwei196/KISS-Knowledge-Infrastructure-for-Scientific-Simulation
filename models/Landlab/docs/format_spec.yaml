@@ -1,0 +1,133 @@
+model:
+  name: "Landlab"
+  version: "2.10.1"
+  domain: "geomorphology, hydrology, stratigraphy, glaciology"
+  type: "Python component-based framework"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Landlab/venv/bin/python"
+  execution: "Python API — simulations are Python scripts, not CLI binaries"
+
+inputs:
+  forcing:
+    - name: "water__unit_flux_in"
+      unit: "m/s"
+      valid_range: [0.0, 1.0e-4]
+      description: "Rainfall rate (depth per time), typical 2.8e-7 to 2.8e-5 m/s"
+    - name: "topographic__elevation"
+      unit: "m"
+      valid_range: [-500.0, 9000.0]
+      description: "Land surface elevation at nodes"
+    - name: "rainfall__daily_depth"
+      unit: "mm"
+      valid_range: [0.0, 500.0]
+      description: "Daily precipitation depth"
+
+  parameters:
+    critical:
+      - name: "K_sp"
+        valid_range: [1.0e-8, 1.0e-2]
+        description: "Stream power erodibility coefficient; units depend on m_sp and n_sp exponents"
+      - name: "m_sp"
+        valid_range: [0.2, 1.0]
+        description: "Drainage area exponent in stream power law"
+      - name: "n_sp"
+        valid_range: [0.5, 2.0]
+        description: "Slope exponent in stream power law"
+      - name: "linear_diffusivity"
+        valid_range: [1.0e-4, 10.0]
+        unit: "m^2/yr"
+        description: "Hillslope diffusion coefficient; must share time units with dt"
+      - name: "xy_spacing"
+        valid_range: [1.0, 100000.0]
+        unit: "m"
+        description: "Grid cell spacing; must be in meters (not degrees or km)"
+      - name: "dt"
+        valid_range: [0.1, 100000.0]
+        unit: "yr"
+        description: "Timestep; must be consistent with K_sp and diffusivity units"
+      - name: "uplift_rate"
+        valid_range: [0.0, 0.1]
+        unit: "m/yr"
+        description: "Tectonic uplift rate"
+
+  grid:
+    types:
+      - "RasterModelGrid"
+      - "HexModelGrid"
+      - "VoronoiDelaunayGrid"
+      - "FramedVoronoiGrid"
+      - "RadialModelGrid"
+      - "NetworkModelGrid"
+      - "IcosphereGlobalGrid"
+    field_locations: ["node", "link", "patch", "cell", "corner", "face", "grid"]
+
+outputs:
+  primary:
+    - name: "topographic__elevation"
+      unit: "m"
+      valid_range: [-500.0, 9000.0]
+      description: "Evolved land surface elevation"
+    - name: "drainage_area"
+      unit: "m^2"
+      valid_range: [0.0, 1.0e12]
+      description: "Contributing upstream drainage area"
+    - name: "surface_water__discharge"
+      unit: "m^3/s"
+      valid_range: [0.0, 1.0e6]
+      description: "Volumetric water discharge"
+    - name: "topographic__steepest_slope"
+      unit: "-"
+      valid_range: [0.0, 10.0]
+      description: "Maximum downhill gradient at each node"
+    - name: "soil__depth"
+      unit: "m"
+      valid_range: [0.0, 100.0]
+      description: "Regolith/soil thickness"
+    - name: "sediment__influx"
+      unit: "m^3/s"
+      valid_range: [0.0, 1.0e4]
+      description: "Incoming sediment transport rate"
+    - name: "sediment__outflux"
+      unit: "m^3/s"
+      valid_range: [0.0, 1.0e4]
+      description: "Outgoing sediment transport rate"
+
+  formats:
+    - type: "ESRI ASCII"
+      extension: ".asc"
+    - type: "NetCDF"
+      extension: ".nc"
+    - type: "VTK Legacy"
+      extension: ".vtk"
+    - type: "NumPy compressed"
+      extension: ".npz"
+
+  validation_metrics:
+    - name: "slope_area_r2"
+      description: "R-squared of log-log slope-area regression"
+      expected_range: [0.95, 1.0]
+    - name: "concavity_index"
+      description: "Concavity (theta) from slope-area scaling"
+      expected_range: [0.3, 0.7]
+    - name: "relief"
+      unit: "m"
+      description: "Total topographic relief"
+
+known_issues:
+  - id: "dt_001"
+    description: "Rainfall in mm/hr instead of m/s causes discharge 3.6M× too high"
+    severity: "silent"
+  - id: "dt_002"
+    description: "Diffusivity in m^2/s with dt in years flattens hillslopes instantly"
+    severity: "silent"
+  - id: "dt_003"
+    description: "K_sp copied from paper with different m/n exponents gives wrong erosion"
+    severity: "silent"
+  - id: "dt_004"
+    description: "Grid spacing in degrees instead of meters makes slopes wrong"
+    severity: "silent"
+  - id: "dt_010"
+    description: "DEM nodata=0 or NaN causes flow routing into nodata cells"
+    severity: "silent"
+  - id: "dt_011"
+    description: "All boundaries closed = zero drainage area everywhere"
+    severity: "fatal"

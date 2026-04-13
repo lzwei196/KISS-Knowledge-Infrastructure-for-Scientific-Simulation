@@ -1,0 +1,523 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["hydrology"] and ["water_quality"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "SWAT+ Rev 60.5"
+  domain: "hydrology"
+  secondary_domains: ["water_quality"]
+  binary: "swatplus_rev59"
+  binary_path: "/mnt/disk1/Hydrocraft_server/model/swatplus/swatplus_rev59"
+  language: "Fortran 90"
+  working_directory: "TxtInOut"  # binary MUST be run from inside TxtInOut
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "precipitation"
+      file: "pcp.cli"
+      unit: "mm/day"
+      valid_range: [0.0, 500.0]      # debug_framework: precipitation_mm (0, 1000)
+      format: "space-delimited, 3-line header (title, columns, station metadata)"
+      missing_value: -99.0
+      conversion_from_cmfd: "kg/m2/s -> mm/day: multiply by 86400"
+
+    - name: "temperature_max"
+      file: "tmp.cli"
+      unit: "degC"
+      valid_range: [-50.0, 60.0]
+      format: "space-delimited, 3-line header"
+      missing_value: -99.0
+      conversion_from_cmfd: "K -> degC: subtract 273.15; split daily mean: Tmax = Tmean + 5"
+
+    - name: "temperature_min"
+      file: "tmp.cli"
+      unit: "degC"
+      valid_range: [-60.0, 50.0]
+      format: "space-delimited, 3-line header"
+      missing_value: -99.0
+      conversion_from_cmfd: "K -> degC: subtract 273.15; split daily mean: Tmin = Tmean - 5"
+
+    - name: "solar_radiation"
+      file: "slr.cli"
+      unit: "MJ/m2/day"
+      valid_range: [0.0, 35.0]       # debug_framework: sw_radiation_W (0, 1400) in W/m2
+      format: "space-delimited, 3-line header"
+      missing_value: -99.0
+      conversion_from_cmfd: "W/m2 -> MJ/m2/day: multiply by 0.0864"
+
+    - name: "relative_humidity"
+      file: "hmd.cli"
+      unit: "fraction"
+      valid_range: [0.0, 1.0]
+      format: "space-delimited, 3-line header"
+      missing_value: -99.0
+
+    - name: "wind_speed"
+      file: "wnd.cli"
+      unit: "m/s"
+      valid_range: [0.0, 80.0]       # debug_framework: wind_ms (0, 80)
+      format: "space-delimited, 3-line header"
+      missing_value: -99.0
+
+  parameters:
+    critical:  # Parameters that cause silent errors when wrong
+      - name: "n_perc"
+        file: "parameters.bsn"
+        description: "Nitrogen percolation coefficient (NPERCO)"
+        valid_range: [0.0, 1.0]
+        default: 0.2
+        unit: "fraction"
+        bug_history: >
+          Found at 20.0 during Wangjiaba testing -- caused TN 6x overestimate
+          (35 kgN/ha/yr vs expected 5-20 kgN/ha/yr). Value was copy-pasted from
+          SWAT2012 documentation which lists range as 0-1 but some templates
+          ship with erroneous values. Triplet dt_wq_006 now catches this.
+
+      - name: "p_perc"
+        file: "parameters.bsn"
+        description: "Phosphorus percolation coefficient (PPERCO)"
+        valid_range: [10.0, 17.5]
+        default: 10.0
+        unit: "m3/Mg"
+        bug_history: "Less prone to silent error than NPERCO but out-of-range values still distort P export."
+
+      - name: "rtu_wq"
+        file: "codes.bsn"
+        description: "Routing unit water quality transfer flag"
+        valid_range: [0, 1]
+        default: 0
+        unit: "flag"
+        bug_history: >
+          rtu_wq=0 disables all WQ routing between landscape and channel.
+          All TP columns become zero when P fertilizer is applied.
+          Must be 0 for Rev 59.3 due to QUAL2E instability.
+
+      - name: "wq_cha"
+        file: "codes.bsn"
+        description: "Channel QUAL2E water quality processing flag"
+        valid_range: [0, 1]
+        default: 0
+        unit: "flag"
+        bug_history: >
+          wq_cha=1 enables QUAL2E in-stream routing which has numerical
+          instability at high flows (>10x bankfull). Produces 1e9+ mg/L NO3.
+          Keep at 0 and use HRU-level outputs instead (basin_ls_day.txt).
+
+      - name: "cn3_swf"
+        file: "codes.bsn"
+        description: "CN3 adjustment factor for soil water"
+        valid_range: [0.0, 1.0]
+        default: 0.0
+        unit: "fraction"
+        bug_history: "Non-zero values inflate runoff in humid basins. Set to 0.0 for Huai River."
+
+    calibration:  # Parameters commonly calibrated
+      - name: "cn2"
+        file: "cntable.lum"
+        description: "Curve Number for moisture condition II"
+        valid_range: [25, 98]
+        typical_adjustment: "-20% to -50% pctchg for Chinese agriculture"
+        change_type: "pctchg"
+        sensitivity: "very high"
+        notes: "Use pctchg to preserve spatial heterogeneity across HRUs"
+
+      - name: "esco"
+        file: "hru-data.hru"
+        description: "Soil evaporation compensation factor"
+        valid_range: [0.0, 1.0]
+        default: 0.95
+        typical_value: 0.15
+        change_type: "absval"
+        sensitivity: "high"
+        notes: "Lower values allow deeper soil layers to satisfy ET demand"
+
+      - name: "perco"
+        file: "hru-data.hru"
+        description: "Percolation coefficient"
+        valid_range: [0.0, 1.0]
+        default: 0.5
+        typical_value: 0.75
+        change_type: "absval"
+        sensitivity: "high"
+
+      - name: "alpha_bf"
+        file: "aqu.aqu"
+        description: "Baseflow recession constant"
+        valid_range: [0.0, 1.0]
+        default: 0.048
+        change_type: "absval"
+        sensitivity: "high"
+        notes: "Controls groundwater contribution timing; higher = faster response"
+
+      - name: "gw_delay"
+        file: "aqu.aqu"
+        description: "Groundwater delay time"
+        valid_range: [0, 500]
+        default: 31
+        unit: "days"
+        change_type: "absval"
+        sensitivity: "moderate"
+
+      - name: "awc"
+        file: "soils.sol"
+        description: "Available water capacity"
+        valid_range: [-50, 50]
+        unit: "percent change"
+        change_type: "pctchg"
+        sensitivity: "moderate"
+        notes: "Use pctchg to preserve layer-by-layer variation"
+
+      - name: "surlag"
+        file: "bsn_prm.bsn"
+        description: "Surface runoff lag coefficient"
+        valid_range: [0.05, 24.0]
+        default: 4.0
+        change_type: "absval"
+        sensitivity: "moderate"
+
+      - name: "lat_ttime"
+        file: "hru-data.hru"
+        description: "Lateral flow travel time"
+        valid_range: [0, 180]
+        unit: "days"
+        change_type: "absval"
+        sensitivity: "moderate"
+
+      - name: "canmx"
+        file: "hru-data.hru"
+        description: "Maximum canopy storage"
+        valid_range: [0, 100]
+        unit: "mm"
+        change_type: "absval"
+        sensitivity: "low"
+
+      - name: "epco"
+        file: "hru-data.hru"
+        description: "Plant uptake compensation factor"
+        valid_range: [0.0, 1.0]
+        default: 1.0
+        change_type: "absval"
+        sensitivity: "low"
+
+      - name: "revap_co"
+        file: "aqu.aqu"
+        description: "Groundwater revap coefficient"
+        valid_range: [0.02, 0.2]
+        default: 0.02
+        change_type: "absval"
+        sensitivity: "moderate"
+
+      - name: "flo_min"
+        file: "aqu.aqu"
+        description: "Minimum flow to shallow aquifer"
+        valid_range: [0, 5000]
+        unit: "mm"
+        change_type: "absval"
+        sensitivity: "low"
+
+    water_quality:  # WQ-specific parameters
+      - name: "cdn"
+        file: "codes.bsn"
+        description: "Denitrification exponential rate coefficient"
+        valid_range: [0.0, 3.0]
+        default: 1.4
+        sensitivity: "high"
+
+      - name: "sdnco"
+        file: "codes.bsn"
+        description: "Denitrification threshold water content"
+        valid_range: [0.0, 1.0]
+        default: 1.1
+        sensitivity: "moderate"
+
+      - name: "usle_p"
+        file: "hru-data.hru"
+        description: "USLE support practice factor"
+        valid_range: [0.0, 1.0]
+        default: 1.0
+        sensitivity: "moderate for sediment"
+
+      - name: "filterw"
+        file: "filterstrip.str"
+        description: "Filter strip width"
+        valid_range: [0, 100]
+        unit: "meters"
+        sensitivity: "moderate for P"
+
+  files:
+    required:
+      - name: "file.cio"
+        description: "Master control file listing all input files by category"
+        format: "text, category-ordered key-value; category order is strict"
+        notes: "Use 'null' for unused categories; do not delete lines"
+
+      - name: "time.sim"
+        description: "Simulation time period and warmup"
+        format: "text; contains jday_start, yrc_start, jday_end, yrc_end, nyskip"
+        notes: "nyskip >= 2 for hydrology, >= 3 for water quality warmup"
+
+      - name: "print.prt"
+        description: "Output printing configuration"
+        format: "text; lists which output files to generate"
+
+      - name: "codes.bsn"
+        description: "Basin-level code switches and WQ parameters"
+        format: "text; position-dependent flags"
+
+      - name: "parameters.bsn"
+        description: "Basin-level continuous parameters (NPERCO, PPERCO, etc.)"
+        format: "text; named parameter-value pairs"
+
+      - name: "weather-sta.cli"
+        description: "Weather station listing with file references"
+        format: "text; station metadata + pointers to .pcp/.tmp/.slr/.hmd/.wnd"
+
+      - name: "soils.sol"
+        description: "Soil profile database (multi-line records)"
+        format: "text; line 1 = profile header, lines 2-N = per-layer properties"
+        notes: "Number of layer lines must match number of soil layers. Mismatch causes silent wrong results."
+
+      - name: "cntable.lum"
+        description: "CN lookup table by land use and hydrologic soil group"
+
+      - name: "hru-data.hru"
+        description: "HRU-level properties (ESCO, EPCO, PERCO, etc.)"
+
+    optional:
+      - name: "calibration.cal"
+        description: "Calibration parameter adjustment file"
+        format: "text; columns: cal_parm, chg_typ (absval/abschg/pctchg), chg_val, obj_typ"
+        notes: "absval replaces value; abschg adds; pctchg multiplies by (1+val/100)"
+
+      - name: "om_water.ini"
+        description: "Channel initial nutrient concentrations"
+        notes: "Set ALL values to 0 to avoid mass generation from channel storage"
+
+      - name: "recall.rec"
+        description: "Point source nutrient inputs"
+        format: "text; daily or monthly time series of flow + nutrient loads"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "discharge"
+      file: "channel_sd_day.txt"
+      unit: "m3/s"
+      valid_range: [0, null]          # debug_framework: discharge_m3s (0, None)
+      key_columns: ["flo_out"]
+      notes: "Channel flow routing is reliable in Rev 59.3. Use for hydrology."
+
+  water_quality_reliable:  # HRU-level outputs -- RECOMMENDED for WQ
+    - name: "total_nitrogen_export"
+      file: "basin_ls_day.txt"
+      unit: "kgN/ha/day"
+      valid_range: [0, 0.5]
+      key_columns: ["sedorgn", "surqno3", "sedmin"]
+      aggregation: "TN_load (kg/yr) = basin_area_ha * sum(sedorgn + surqno3 + sedmin)"
+      notes: "HRU-level export; avoids QUAL2E channel routing bugs"
+
+    - name: "total_phosphorus_export"
+      file: "basin_ls_day.txt"
+      unit: "kgP/ha/day"
+      valid_range: [0, 0.05]
+      key_columns: ["sedorgp", "surqsolp", "sedminp"]
+      aggregation: "TP_load (kg/yr) = basin_area_ha * sum(sedorgp + surqsolp + sedminp)"
+
+    - name: "sediment_yield"
+      file: "basin_ls_day.txt"
+      unit: "t/ha/day"
+      valid_range: [0, 5.0]
+      key_columns: ["sedyld"]
+      aggregation: "Annual sediment = sum(sedyld) * area_ha"
+
+    - name: "nitrogen_budget"
+      file: "basin_nb_yr.txt"
+      unit: "kgN/ha/yr"
+      valid_range: [0, null]
+      key_columns: ["fertn", "denit", "act_nit_n"]
+      notes: "Annual N mass balance components"
+
+    - name: "hru_nutrient_detail"
+      file: "hru_nb_yr.txt"
+      unit: "kgN/ha/yr, kgP/ha/yr"
+      valid_range: [0, null]
+      notes: "Most spatially detailed nutrient output"
+
+  water_quality_unreliable:  # Channel WQ outputs -- DO NOT USE for Rev 59.3
+    - name: "channel_no3"
+      file: "channel_day.txt"
+      key_columns: ["no3_out", "orgn_out"]
+      status: "UNRELIABLE"
+      reason: "QUAL2E numerical instability at high flows; produces 1e9+ kgN values"
+
+    - name: "channel_solp"
+      file: "channel_day.txt"
+      key_columns: ["solp_out"]
+      status: "UNRELIABLE"
+      reason: "Division by zero in P routing produces NaN"
+
+  diagnostics:
+    - name: "water_balance"
+      file: "basin_wb_yr.txt"
+      check: "precip approx_eq et + surq + latq + perc + delta_SW"
+      tolerance_mm: 10
+      notes: "Verify mass balance closure each year; imbalance > 10 mm indicates config error"
+
+    - name: "annual_tn_sanity"
+      check: "TN from basin_ls_day < 50 kgN/ha/yr"
+      reference: "debug_framework DOMAIN_CHECKS water_quality.tn_kg_ha_yr (0, 50)"
+      trigger_if_exceeded: "Check NPERCO in parameters.bsn, fertilizer rates"
+
+    - name: "annual_tp_sanity"
+      check: "TP from basin_ls_day < 10 kgP/ha/yr"
+      reference: "debug_framework DOMAIN_CHECKS water_quality.tp_kg_ha_yr (0, 10)"
+
+    - name: "annual_sediment_sanity"
+      check: "Sediment < 100 t/ha/yr"
+      reference: "debug_framework DOMAIN_CHECKS water_quality.sediment_t_ha_yr (0, 100)"
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "nperco_silent"
+    triplet: "dt_wq_006"
+    description: "NPERCO > 1.0 silently inflates N export by 5-20x"
+    affected_output: "basin_ls_day.txt sedorgn, surqno3"
+    detection: "TN > 50 kgN/ha/yr"
+    fix: "Set n_perc to 0.2 in parameters.bsn"
+
+  - id: "rtu_wq_disabled"
+    description: "rtu_wq=0 in codes.bsn disables WQ routing between landscape and channel"
+    affected_output: "All TP columns zero in channel output when P fertilizer applied"
+    detection: "TP == 0.0 in channel output despite non-zero fertilizer"
+    notes: "This is actually the recommended setting for Rev 59.3"
+
+  - id: "qual2e_blowup"
+    description: "QUAL2E in-stream routing has numerical instability at extreme flows"
+    affected_output: "channel_day.txt no3_out, orgn_out, solp_out"
+    detection: "Any nutrient concentration > 1e6 mg/L or NaN values"
+    fix: "Set wq_cha=0 in codes.bsn; use basin_ls_day HRU-level outputs"
+
+  - id: "om_water_ini_defaults"
+    description: "Default om_water.ini ships with extreme initial concentrations (90 mg/L orgn)"
+    affected_output: "Channel nutrient outputs massively inflated at simulation start"
+    detection: "First-year channel nutrients >> HRU exports"
+    fix: "Set all nutrient initial concentrations to 0.0 in om_water.ini"
+
+  - id: "cn3_swf_runoff_bias"
+    description: "cn3_swf > 0 inflates runoff in humid subtropical basins"
+    affected_output: "channel_sd_day.txt flo_out"
+    detection: "PBIAS > +100% in humid basins"
+    fix: "Set cn3_swf = 0.0 in codes.bsn for Huai River and similar climates"
+
+  - id: "tmax_lt_tmin"
+    triplet: "dt_003"
+    description: "Tmax < Tmin in weather files causes silent ET and snowmelt errors"
+    affected_output: "All ET-dependent outputs"
+    detection: "Any day where Tmax < Tmin in tmp.cli"
+    fix: "Regenerate weather files with correct CMFD aggregation"
+
+  - id: "solar_unit_wrong"
+    triplet: "dt_012"
+    description: "Solar radiation in W/m2 instead of MJ/m2/day"
+    affected_output: "ET, crop growth, all water balance components"
+    detection: "SRAD values > 35 MJ/m2/day (debug_framework sw_radiation_W check)"
+    fix: "Multiply by 0.0864"
+
+# =========================================================================
+# EXPECTED RANGES (Huai River reference from testing)
+# =========================================================================
+expected_ranges:
+  huai_river:
+    basin_area_km2: 121330
+    mean_annual_precip_mm: 800-1000
+    mean_discharge_m3s: 800-1100
+
+    hydrology:
+      nse_calibrated: ">0.5"
+      kge_calibrated: ">0.5"
+      pbias_calibrated: "<25%"
+      nse_uncalibrated: "-1 to 0.3 typical"
+      pbias_uncalibrated: "+100% to +300% (massive overestimation without calibration)"
+
+    water_quality:
+      tn_load_kg_ha_yr: [5, 20]
+      tp_load_kg_ha_yr: [0.5, 3.0]
+      sediment_t_ha_yr: [5, 50]
+
+    fertilizer_rates:
+      winter_wheat_total_n_kg_ha: 225
+      summer_maize_total_n_kg_ha: 180
+      rotation_total_n_kg_ha: 405
+      p_application_kg_ha: 75
+
+# =========================================================================
+# CALIBRATION REFERENCE
+# =========================================================================
+calibration_reference:
+  recommended_sequence:
+    - "cn2 (pctchg -20 to -50%)"
+    - "esco (absval 0.10-0.30)"
+    - "awc (pctchg -30 to +30%)"
+    - "perco (absval 0.5-0.9)"
+    - "alpha_bf (absval 0.01-0.5)"
+    - "gw_delay (absval 10-200)"
+    - "surlag (absval 0.5-12)"
+
+  preset_humid_subtropical:
+    description: "Starting point for Huai River and similar humid Chinese basins"
+    cn2: "pctchg -50"
+    esco: "absval 0.15"
+    cn3_swf: "absval 0.0"
+    perco: "absval 0.75"
+
+  preset_semiarid:
+    cn2: "pctchg -20"
+    esco: "absval 0.50"
+    perco: "absval 0.30"
+
+  target_metrics:
+    - "NSE > 0.5"
+    - "KGE > 0.5"
+    - "PBIAS < 25%"
+    - "For WQ: TN PBIAS < 50%"
+
+  reference: "See SKILL.md Section 'Key Calibration Parameters (Hydrology)' and docs/s6_calibration_parameters_skill.md"
+
+# =========================================================================
+# UNIT CONVERSION TABLE (for debug_framework Level 1 input validation)
+# =========================================================================
+unit_conversions:
+  - variable: "precipitation"
+    source: "CMFD (kg/m2/s)"
+    target: "SWAT+ (mm/day)"
+    factor: 86400
+    operation: "multiply"
+    trap_if_wrong: "Runoff 86400x too high or near zero"
+
+  - variable: "temperature"
+    source: "CMFD (K)"
+    target: "SWAT+ (degC)"
+    offset: -273.15
+    operation: "subtract"
+    trap_if_wrong: "Crops never grow; perpetual snow"
+
+  - variable: "solar_radiation"
+    source: "CMFD (W/m2)"
+    target: "SWAT+ (MJ/m2/day)"
+    factor: 0.0864
+    operation: "multiply"
+    trap_if_wrong: "Zero or excess growth; wrong ET"

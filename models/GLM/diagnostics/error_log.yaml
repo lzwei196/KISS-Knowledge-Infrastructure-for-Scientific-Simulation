@@ -1,0 +1,198 @@
+entries:
+- id: err_001
+  timestamp: '2026-03-21T07:32:43Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s9_output_analysis
+  failure_domain: parameter_format
+  symptom:
+    description: GLM lake.csv timestamps use 24:00:00 which pandas cannot parse — crashes parse_glm_output.py
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: GLM uses ISO 8601 24:00:00 convention for end-of-day midnight
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Added fix_hour24() to convert 24:00:00 to next day 00:00:00
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_002
+  timestamp: '2026-03-21T07:32:49Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s9_output_analysis
+  failure_domain: parameter_format
+  symptom:
+    description: Multiple lake.csv columns match ice+thick pattern causing DataFrame instead of Series
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: 'Column mapping too broad: Blue Ice Thickness, White Ice Thickness, Snow Thickness all mapped to ice_thickness'
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Separated mappings to blue_ice_thickness, white_ice_thickness, snow_thickness
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_003
+  timestamp: '2026-03-22T05:25:24Z'
+  recorded_by: server
+  run_context:
+    basin: Miyun
+    model: GLM
+    run_name: miyun_glm_test
+  stage: s8_execution
+  failure_domain: silent_error
+  symptom:
+    description: 'GLM v3.3.3 ice model fails on deep lakes (>50m) with daily forcing: surface T asymptotes to 0.002 C but
+      never crosses 0 C. Tested with lw_factor from 0.5-1.0, coef_wind_stir 0.18-0.40, wind_factor 0.7-1.0 — min surface T
+      always 0.002134 C. Even with extreme lw_factor=0.50 (unrealistic), ice never forms.'
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: GLM ice formation requires surface layer temperature to drop below 0 C. For very deep reservoirs (~60m depth,
+      ~188 km2, ~4.5 billion m3 volume), the enormous thermal inertia prevents the surface from crossing the freezing threshold
+      at daily timestep resolution. The 0.002 C floor appears to be a numerical artifact in the surface energy balance solver.
+    explanation: ''
+    affected_components:
+    - snowice_block
+    - glm_surface
+    - mixing_block
+  resolution:
+    action: Document as known limitation. Ice simulation on deep reservoirs requires either (1) subdaily forcing with correct
+      parsing, or (2) a future GLM patch to handle ice nucleation at near-zero temperatures. The thermal simulation (stratification,
+      seasonal cycle) is accurate without ice.
+    files_changed: []
+    prevention: For deep reservoirs at high latitudes, verify ice formation against published data. Consider GLM-AED with
+      subdaily forcing if ice is critical.
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_004
+  timestamp: '2026-03-22T05:25:36Z'
+  recorded_by: server
+  run_context:
+    basin: Miyun
+    model: GLM
+    run_name: miyun_glm_test
+  stage: s2_met_forcing
+  failure_domain: silent_error
+  symptom:
+    description: CMFD met forcing converted to GLM has zero precipitation (Rain=0, Snow=0 for all timesteps). Miyun receives
+      ~480mm/yr but the met file has none. Lake water balance is inflow-dominated only.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: The CMFD-to-GLM conversion pipeline (convert_met_to_glm.py) does not include precipitation from CMFD prec
+      variable. The VIC forcing files used as source may also have precipitation in a different column format not mapped to
+      GLM Rain/Snow columns.
+    explanation: ''
+    affected_components:
+    - convert_met_to_glm
+  resolution:
+    action: Add precipitation extraction to convert_met_to_glm.py. For CMFD, use the prec variable (mm/3hr) and convert to
+      m/day. Split into rain vs snow based on air temperature threshold (0 C).
+    files_changed: []
+    prevention: Validate that Rain column in met CSV has non-zero values. Annual sum should be approximately basin annual
+      precipitation in meters.
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_005
+  timestamp: '2026-03-22T05:25:46Z'
+  recorded_by: server
+  run_context:
+    basin: Miyun
+    model: GLM
+    run_name: miyun_glm_test
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: 3-hourly met forcing with subdaily=.true. produces unrealistic summer surface temp (max 4.5 C instead of
+      28+ C). Met file has correct summer air temps (~30 C) but GLM output shows no seasonal cycle.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: When subdaily=.true. with timefmt=2, GLM reads 3-hourly datetime timestamps but may not interpolate correctly
+      between entries, or may apply the forcing at wrong times. The daily forcing with subdaily=.false. works correctly.
+    explanation: ''
+    affected_components:
+    - meteorology_block
+    - convert_met_to_glm
+  resolution:
+    action: Use daily forcing with subdaily=.false. for CMFD data. The 3-hourly forcing requires further investigation of
+      timestamp alignment and potential timezone issues between CMFD UTC+8 and GLM timezone parameter.
+    files_changed: []
+    prevention: When using subdaily forcing, validate first 7 days of output against expected seasonal pattern before running
+      full simulation.
+  severity: degraded
+  promoted: false
+  promoted_as: ''
+- id: err_006
+  timestamp: '2026-03-22T05:26:00Z'
+  recorded_by: server
+  run_context:
+    basin: Miyun
+    model: GLM
+    run_name: miyun_glm_test
+  stage: s6_namelist
+  failure_domain: parameter_format
+  symptom:
+    description: timefmt=3 in generated namelist causes crash with datetime strings. GLM expects timefmt=2 for YYYY-MM-DD
+      HH:MM:SS format.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: generate_glm_nml.py hardcodes timefmt=3 but start/stop are datetime strings
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Set timefmt=2 when start contains dashes
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_007
+  timestamp: '2026-03-22T05:33:07Z'
+  recorded_by: server
+  run_context:
+    basin: Miyun
+    model: GLM
+    run_name: miyun_glm_test
+  stage: s6_namelist
+  failure_domain: silent_error
+  symptom:
+    description: Missing dt_iceon_avg and min_ice_thickness params in snowice block causes zero ice formation. GLM ice model
+      silently disabled without these params.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: The snowice block requires dt_iceon_avg (ice onset averaging period in days) and min_ice_thickness to function.
+      Without dt_iceon_avg, GLM never triggers ice formation even when surface T approaches 0 C. The parameter is not documented
+      in most GLM examples.
+    explanation: ''
+    affected_components:
+    - snowice_block
+    - generate_glm_nml
+  resolution:
+    action: 'Added dt_iceon_avg=0.02 and min_ice_thickness=0.001 to snowice block. Ice forms correctly: 71 days/yr with max
+      0.28m blue ice on Miyun Reservoir.'
+    files_changed: []
+    prevention: Always include dt_iceon_avg=0.02 and min_ice_thickness=0.001 in snowice block for temperate/boreal lakes
+  severity: silent
+  promoted: false
+  promoted_as: ''

@@ -1,0 +1,194 @@
+# ============================================================================
+# Model Couplings — Pywr <-> HydroCraft Components
+# ============================================================================
+# Documents data flows between Pywr and other HydroCraft models:
+#   VIC, CaMa-Flood, DSSAT, DLBreach
+#
+# Each coupling specifies:
+#   source_model, source_variable -> transformation -> target_model, target_input
+#   with validation rules and scientific justification.
+# ============================================================================
+
+couplings:
+
+  # --- Coupling 1: VIC runoff+baseflow -> Pywr inflow ---
+  - id: "coupling_vic_to_pywr_inflow"
+    name: "VIC Runoff and Baseflow to Pywr Reservoir Inflow"
+    direction: "VIC -> Pywr"
+    scientific_justification: >
+      VIC computes daily surface runoff and baseflow for each grid cell. The sum
+      of runoff and baseflow from all cells upstream of a dam represents the total
+      natural (unregulated) inflow to the reservoir. This is the primary driving
+      input for Pywr reservoir operations simulation.
+    source:
+      model: "VIC 5.1.0"
+      variable: "OUT_RUNOFF + OUT_BASEFLOW"
+      output_file: "outputs/{run}/vic_result/fluxes_{lat}_{lon}.txt"
+      units: "mm/day per grid cell"
+      spatial_resolution: "VIC grid (0.1 or 0.25 degree)"
+      temporal_resolution: "daily"
+    target:
+      model: "Pywr 1.30"
+      node_type: "catchment"
+      input_variable: "flow"
+      units: "m3/s (volumetric flow rate)"
+      temporal_resolution: "daily"
+    transformation:
+      steps:
+        - "1. Identify VIC grid cells upstream of dam (all/upstream_lat/nearest method)"
+        - "2. For each cell: read runoff_mm and baseflow_mm from VIC flux file"
+        - "3. Compute cell area: A_m2 = R^2 * dlon * (sin(lat+dlat/2) - sin(lat-dlat/2))"
+        - "4. Convert: Q_cell = (runoff_mm + baseflow_mm) * A_m2 / (1000 * 86400) m3/s"
+        - "5. Sum Q_cell over all upstream cells -> total inflow_m3s"
+        - "6. Write daily timeseries to CSV"
+      unit_conversion: "(mm/day * m2) / (1000 * 86400) = m3/s"
+      spatial_method: "Sum of upstream cells (area-weighted by cell size)"
+      temporal_method: "daily values, no aggregation needed"
+    validation:
+      - "Inflow values should be non-negative"
+      - "Mean inflow should match expected basin yield (literature comparison)"
+      - "Annual volume: Q_mean * 86400 * 365.25 should be reasonable for basin area"
+      - "Runoff ratio: annual_volume / (annual_precip * area) should be 0.1-0.8"
+    silent_failure_modes:
+      - "Wrong upstream cells -> inflow too small (partial catchment) or too large (extra cells)"
+      - "Missing /1000 in mm->m conversion -> inflow 1000x too high"
+      - "Missing /86400 in day->second conversion -> inflow 86400x too high"
+      - "VIC flux files not found (filename format mismatch) -> zero inflow"
+    tool: "convert_vic_to_inflow"
+
+  # --- Coupling 2: Pywr regulated release -> CaMa-Flood ---
+  - id: "coupling_pywr_to_cama"
+    name: "Pywr Regulated Release to CaMa-Flood Runoff Input"
+    direction: "Pywr -> CaMa-Flood"
+    scientific_justification: >
+      Reservoir operations fundamentally alter the downstream flow regime. Without
+      representing reservoir regulation, CaMa-Flood routes natural (unregulated)
+      flow, which overestimates flood peaks and underestimates baseflow during dry
+      periods. Injecting Pywr-regulated releases into CaMa-Flood input produces
+      more realistic downstream hydrographs.
+    source:
+      model: "Pywr 1.30"
+      variable: "release flow (from release link node)"
+      output_file: "results/release_timeseries.csv"
+      units: "m3/s"
+      temporal_resolution: "daily"
+    target:
+      model: "CaMa-Flood v4.20"
+      package: "Runoff input NetCDF"
+      input_variable: "runoff at dam grid cell"
+      units: "mm/day"
+      spatial_resolution: "VIC grid (mapped to CaMa input matrix)"
+      temporal_resolution: "daily"
+    transformation:
+      steps:
+        - "1. Load Pywr release timeseries (m3/s)"
+        - "2. Open CaMa runoff NetCDF (contains VIC natural runoff per cell)"
+        - "3. Find dam grid cell (nearest to dam lat/lon)"
+        - "4. Convert release: Q_mm = Q_m3s * 86400 / cell_area_m2 * 1000"
+        - "5. Replace VIC runoff at dam cell with regulated release"
+        - "6. Write modified NetCDF for CaMa-Flood re-run"
+      unit_conversion: "(m3/s * 86400 / m2 * 1000) = mm/day"
+      spatial_method: "Point replacement at dam grid cell"
+    validation:
+      - "Regulated runoff should be non-negative at all times"
+      - "Mean regulated runoff should be similar to mean natural runoff (conservation)"
+      - "During flood season: regulated < natural (flood retention)"
+      - "During dry season: regulated >= natural (sustained release)"
+    silent_failure_modes:
+      - "Wrong cell area -> conversion off by orders of magnitude"
+      - "Wrong dam cell -> modifying wrong location"
+      - "Forgetting to clamp to >= 0 -> negative runoff crashes CaMa"
+    tool: "inject_releases_to_cama"
+
+  # --- Coupling 3: CaMa-Flood downstream level -> Pywr feedback ---
+  - id: "coupling_cama_to_pywr_feedback"
+    name: "CaMa-Flood Downstream Water Level Feedback to Pywr"
+    direction: "CaMa-Flood -> Pywr (future coupling)"
+    scientific_justification: >
+      In some river systems, downstream water levels can affect reservoir operations
+      through backwater effects or operational constraints (e.g., cannot release more
+      when downstream is already flooding). CaMa-Flood computes downstream surface
+      water elevation (sfcelv) which could constrain Pywr release decisions.
+    source:
+      model: "CaMa-Flood v4.20"
+      variable: "sfcelv (surface water elevation)"
+      output_file: "out/{run}/sfcelv_YYYYMMDD.nc"
+      units: "meters above datum"
+    target:
+      model: "Pywr 1.30"
+      node_type: "link (release)"
+      input_variable: "max_flow constraint"
+      units: "m3/s"
+    transformation:
+      steps:
+        - "1. Read CaMa sfcelv at downstream monitoring point"
+        - "2. If downstream level > flood threshold: reduce max_release"
+        - "3. Apply as dynamic max_flow constraint on release link"
+      note: "This coupling requires iterative execution (Pywr->CaMa->Pywr) and is not yet automated."
+    status: "planned"
+    complexity: "high — requires iterative coupling framework"
+
+  # --- Coupling 4: DSSAT crop model -> Pywr irrigation demand ---
+  - id: "coupling_dssat_to_pywr_irrigation"
+    name: "DSSAT Crop Model Irrigation Demand to Pywr"
+    direction: "DSSAT -> Pywr"
+    scientific_justification: >
+      DSSAT (Decision Support System for Agrotechnology Transfer) simulates crop
+      growth and computes actual irrigation water needs based on soil moisture deficit,
+      crop stage, and weather. Using DSSAT-derived irrigation demands in Pywr is more
+      accurate than the generic crop water need estimates used in create_demand_nodes.py.
+    source:
+      model: "DSSAT"
+      variable: "IRRD (irrigation depth per event)"
+      output_file: "outputs/{run}/dssat_output/Summary.OUT or PlantGro.OUT"
+      units: "mm per irrigation event"
+    target:
+      model: "Pywr 1.30"
+      node_type: "output (irrigation_demand)"
+      input_variable: "max_flow"
+      units: "m3/s"
+    transformation:
+      steps:
+        - "1. Extract DSSAT IRRD values per day (mm/event)"
+        - "2. Multiply by irrigated area (m2): volume_m3 = IRRD * area / 1000"
+        - "3. Convert to flow: Q_m3s = volume_m3 / 86400"
+        - "4. Divide by irrigation efficiency (0.55 for surface, 0.85 for drip)"
+        - "5. Set as daily max_flow for irrigation demand node"
+      unit_conversion: "(mm * m2 / 1000 / 86400) = m3/s"
+    validation:
+      - "DSSAT irrigation demand should have seasonal pattern matching crop calendar"
+      - "Total DSSAT demand typically 20-40% higher than generic ET-based estimate"
+    tool: "create_demand_nodes (using --type irrigation with DSSAT override)"
+    status: "planned"
+
+  # --- Coupling 5: Pywr overtopping -> DLBreach dam-break ---
+  - id: "coupling_pywr_to_dlbreach"
+    name: "Pywr Overtopping Events to DLBreach Dam-Break Simulation"
+    direction: "Pywr -> DLBreach"
+    scientific_justification: >
+      When reservoir storage exceeds the maximum capacity (overtopping), the dam
+      is at risk of failure. The DLBreach model simulates dam-break breach formation
+      and downstream flood wave propagation. Pywr overtopping events provide the
+      initial conditions (water level, excess volume) for DLBreach simulations.
+    source:
+      model: "Pywr 1.30"
+      variable: "storage volume exceeding max_volume"
+      output_file: "results/overtopping_report.json"
+      units: "m3 (excess volume), dates"
+    target:
+      model: "DLBreach"
+      input_variable: "initial water level, inflow hydrograph"
+      units: "m (water level above dam crest), m3/s (inflow)"
+    transformation:
+      steps:
+        - "1. check_overtopping.py identifies overtopping events"
+        - "2. Extract peak excess volume and inflow at overtopping dates"
+        - "3. Convert excess volume to water level above crest using area-volume curve"
+        - "4. Extract inflow hydrograph for the overtopping period (+/- 3 days)"
+        - "5. Provide dam geometry (height, crest width, material) from GRanD"
+        - "6. Run DLBreach with these initial conditions"
+    validation:
+      - "Only trigger DLBreach for significant overtopping (excess > 1% of capacity)"
+      - "Dam geometry must be realistic (height matches GRanD DAM_HGT_M)"
+    tool: "check_overtopping"
+    status: "ready — check_overtopping provides trigger; DLBreach setup is separate"

@@ -1,0 +1,97 @@
+# Model Couplings for OGGM Knowledge Infrastructure
+# Defines the data exchange interfaces between OGGM and other HydroCraft models
+
+couplings:
+
+  # Coupling 1: Basin boundary -> OGGM glacier selection
+  - id: "coupling_basin_to_oggm"
+    name: "Basin Shapefile to OGGM RGI Intersection"
+    source_model: "HydroCraft Basin Delineation"
+    target_model: "OGGM"
+    direction: "one-way"
+    description: >
+      The basin boundary shapefile from HydroCraft's delineation step
+      (WhiteboxTools DEM processing) is used to spatially select glaciers
+      from the Randolph Glacier Inventory. This determines which glaciers
+      are simulated by OGGM for the target basin.
+    data_exchanged:
+      - name: "basin_boundary"
+        format: "shapefile (.shp)"
+        source_path: "data/shp/{basin}_shp/{basin}_boundary.shp"
+        target_use: "Spatial intersection with RGI outlines"
+        units: "WGS84 (EPSG:4326)"
+    critical_issues:
+      - "CRS must be EPSG:4326 or reprojected before intersection"
+      - "Basin must overlap with a glacierized RGI region"
+    coupling_stage: "s1_glacier_inventory"
+    tool: "find_glaciers_in_basin"
+
+  # Coupling 2: OGGM glacier melt -> VIC runoff (THE KEY COUPLING)
+  - id: "coupling_oggm_to_vic"
+    name: "OGGM Glacier Melt to VIC Runoff Injection"
+    source_model: "OGGM"
+    target_model: "VIC + Routing (Lohmann/CaMa-Flood)"
+    direction: "one-way"
+    description: >
+      OGGM's monthly glacier melt runoff is converted to VIC grid cell
+      format and injected into the routing stage (either Lohmann or
+      CaMa-Flood). This is the primary coupling that adds glacier
+      contribution to basin discharge. Requires spatial mapping of
+      glaciers to VIC cells, unit conversion (mm w.e./month to m3/s),
+      temporal alignment (hydrological year to calendar year), and
+      double-counting avoidance (VIC also simulates snowmelt on glacier cells).
+    data_exchanged:
+      - name: "glacier_melt_runoff"
+        format: "NetCDF"
+        source_path: "outputs/oggm/compiled/compiled_output_{suffix}.nc"
+        target_use: "Additional runoff at glacier VIC cells for routing"
+        units: "mm w.e./month -> m3/s (conversion in oggm_to_vic_runoff.py)"
+      - name: "vic_grid_definition"
+        format: "NetCDF"
+        source_path: "outputs/{run}/vic_temp/grid/basin_grid.nc"
+        target_use: "Spatial reference for glacier-to-cell mapping"
+        units: "degrees (lat/lon)"
+      - name: "vic_snowmelt"
+        format: "ASCII (VIC flux files)"
+        source_path: "outputs/{run}/vic_result/"
+        target_use: "Double-counting correction: subtract VIC snowmelt on glacier cells"
+        units: "mm/day"
+    critical_issues:
+      - "Double-counting: VIC snowmelt on glacier cells must be subtracted from OGGM melt"
+      - "Unit conversion: mm w.e./month * glacier_area_m2 / (1000 * seconds_per_month) = m3/s"
+      - "Hydrological year (Oct-Sep) vs calendar year (Jan-Dec) offset"
+      - "Glacier area evolves over time — use time-varying area for long simulations"
+    coupling_stage: "s6_vic_coupling"
+    tool: "oggm_to_vic_runoff"
+
+  # Coupling 3: CMIP6 climate -> OGGM glacier projections
+  - id: "coupling_cmip6_to_oggm"
+    name: "CMIP6 Climate Projections to OGGM Future Scenarios"
+    source_model: "CMIP6 GCMs"
+    target_model: "OGGM"
+    direction: "one-way"
+    description: >
+      CMIP6 GCM temperature and precipitation projections are bias-corrected
+      using the delta method and used to drive OGGM glacier simulations
+      under future climate scenarios. This coupling enables assessment
+      of glacier contribution changes, peak water timing, and long-term
+      water resource impacts in glacierized basins. Can use the same
+      CMIP6 data as HydroCraft's climate-projection skill for consistency.
+    data_exchanged:
+      - name: "cmip6_temperature"
+        format: "NetCDF"
+        source_path: "/mnt/disk3/CMIP_China/ or OGGM shop download"
+        target_use: "Monthly temperature anomaly for delta method"
+        units: "Celsius (CRITICAL: convert from Kelvin if needed)"
+      - name: "cmip6_precipitation"
+        format: "NetCDF"
+        source_path: "/mnt/disk3/CMIP_China/ or OGGM shop download"
+        target_use: "Monthly precipitation ratio for delta method"
+        units: "kg/m2/month"
+    critical_issues:
+      - "Temperature MUST be in Celsius — Kelvin produces silent catastrophic error"
+      - "Delta method: T_future = T_baseline + (T_gcm_future - T_gcm_hist)"
+      - "Delta method: P_future = P_baseline * (P_gcm_future / P_gcm_hist)"
+      - "GCM spatial resolution (1-2 deg) is much coarser than glacier scale"
+    coupling_stage: "s3_climate_input"
+    tool: "process_cmip6_projections"

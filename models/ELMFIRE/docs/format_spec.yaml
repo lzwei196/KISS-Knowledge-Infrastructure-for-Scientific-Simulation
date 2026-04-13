@@ -1,0 +1,167 @@
+model:
+  name: "ELMFIRE"
+  full_name: "Eulerian Level Set Model of FIRE Spread"
+  version: "2025.1002"
+  domain: "wildfire"
+  subdomain: "fire spread simulation"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ELMFIRE/source/repo/build/linux/bin/elmfire_block"
+  binary_type: "ELF 64-bit, MPI-parallel Fortran"
+  source_repo: "github.com/lautenberger/elmfire"
+
+inputs:
+  forcing:
+    - name: "ws"
+      description: "Wind speed at 20 ft above vegetation"
+      unit: "mph"
+      valid_range: [0, 100]
+      common_trap: "Source data often in m/s at 10m; multiply by 2.237 for m/s->mph, 1.15 for 10m->20ft"
+    - name: "wd"
+      description: "Wind direction, meteorological convention (direction FROM)"
+      unit: "degrees"
+      valid_range: [0, 360]
+      common_trap: "Add 180 if source uses 'blowing to' convention"
+    - name: "m1"
+      description: "1-hour dead fuel moisture"
+      unit: "percent"
+      valid_range: [1, 40]
+      common_trap: "Must be percent (e.g. 5.0), not fraction (0.05)"
+    - name: "m10"
+      description: "10-hour dead fuel moisture"
+      unit: "percent"
+      valid_range: [2, 40]
+    - name: "m100"
+      description: "100-hour dead fuel moisture"
+      unit: "percent"
+      valid_range: [3, 40]
+    - name: "mlh"
+      description: "Live herbaceous fuel moisture"
+      unit: "percent"
+      valid_range: [30, 250]
+    - name: "mlw"
+      description: "Live woody fuel moisture"
+      unit: "percent"
+      valid_range: [30, 200]
+
+  landscape:
+    - name: "fbfm40"
+      description: "Fuel model code (FBFM40)"
+      unit: "categorical"
+      valid_range: [0, 303]
+    - name: "slp"
+      description: "Slope"
+      unit: "degrees"
+      valid_range: [0, 90]
+    - name: "asp"
+      description: "Aspect (0=North, 90=East)"
+      unit: "degrees"
+      valid_range: [0, 360]
+    - name: "dem"
+      description: "Elevation"
+      unit: "meters"
+      valid_range: [-500, 9000]
+    - name: "cc"
+      description: "Canopy cover"
+      unit: "percent"
+      valid_range: [0, 100]
+    - name: "cbh"
+      description: "Canopy base height (stored as 10x meters when CBH_TIMES_10=.TRUE.)"
+      unit: "meters x10"
+      valid_range: [0, 500]
+    - name: "cbd"
+      description: "Canopy bulk density (stored as 100x kg/m3 when CBD_TIMES_100=.TRUE.)"
+      unit: "kg/m3 x100"
+      valid_range: [0, 100]
+    - name: "ch"
+      description: "Canopy height (stored as 10x meters when CH_TIMES_10=.TRUE.)"
+      unit: "meters x10"
+      valid_range: [0, 1000]
+    - name: "adj"
+      description: "Spread rate adjustment factor"
+      unit: "dimensionless"
+      valid_range: [0, 10]
+    - name: "phi"
+      description: "Level set initial field (1.0 = unburned)"
+      unit: "dimensionless"
+      valid_range: [-1, 1]
+
+  raster_format:
+    type: "GeoTIFF or ENVI BIL"
+    nodata: -9999
+    crs: "UTM (must match A_SRS in namelist)"
+
+  parameters:
+    critical:
+      - name: "SIMULATION_TSTOP"
+        unit: "seconds"
+        valid_range: [60, 604800]
+        description: "Total simulation duration"
+      - name: "DTDUMP"
+        unit: "seconds"
+        valid_range: [60, 86400]
+        description: "Output interval"
+      - name: "COMPUTATIONAL_DOMAIN_CELLSIZE"
+        unit: "meters"
+        valid_range: [10, 1000]
+        description: "Grid cell size"
+      - name: "TARGET_CFL"
+        unit: "dimensionless"
+        valid_range: [0.2, 0.8]
+        description: "CFL stability number for adaptive time stepping"
+      - name: "SIMULATION_DT"
+        unit: "seconds"
+        valid_range: [1, 600]
+        description: "Initial time step (adaptive)"
+      - name: "SIMULATION_DTMAX"
+        unit: "seconds"
+        valid_range: [30, 3600]
+        description: "Maximum allowed time step"
+      - name: "DT_METEOROLOGY"
+        unit: "seconds"
+        valid_range: [60, 86400]
+        description: "Weather update interval"
+
+outputs:
+  primary:
+    - name: "time_of_arrival"
+      description: "Fire arrival time at each pixel"
+      unit: "seconds"
+      valid_range: [0, 604800]
+      format: "GeoTIFF (Float32)"
+    - name: "spread_rate"
+      description: "Rate of spread"
+      unit: "ft/min"
+      valid_range: [0, 500]
+      format: "GeoTIFF (Float32)"
+    - name: "flin"
+      description: "Fireline intensity"
+      unit: "kW/m"
+      valid_range: [0, 100000]
+      format: "GeoTIFF (Float32)"
+    - name: "flame_length"
+      description: "Flame length"
+      unit: "feet"
+      valid_range: [0, 200]
+      format: "GeoTIFF (Float32)"
+    - name: "crown_fire"
+      description: "Crown fire flag"
+      unit: "binary"
+      valid_range: [0, 1]
+      format: "GeoTIFF (Int16)"
+    - name: "fire_size_stats"
+      description: "Cumulative area and perimeter time series"
+      unit: "acres, hectares, feet, meters"
+      format: "CSV"
+  postprocessing:
+    - name: "burn_probability"
+      description: "Fraction of ensemble members that burned each pixel"
+      unit: "fraction"
+      valid_range: [0, 1]
+      format: "GeoTIFF (Float32)"
+
+known_issues:
+  - "All unit conversions are silent — wrong units produce plausible but incorrect results with no error"
+  - "Wind speed must be mph at 20ft, not m/s at 10m (most common source of error)"
+  - "Fuel moisture must be percent, not fraction"
+  - "Canopy variables have integer multiplier flags (CBH_TIMES_10, CBD_TIMES_100, CH_TIMES_10)"
+  - "Domain coordinates must be UTM meters, not lat/lon"
+  - "Binary requires MPI (mpirun) even for single-process runs"

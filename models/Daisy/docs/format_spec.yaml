@@ -1,0 +1,154 @@
+model:
+  name: "Daisy"
+  version: "7.1.4"
+  domain: "soil-crop-water"
+  description: "1D mechanistic simulation of agricultural field processes (water, nitrogen, carbon, crop growth)"
+  origin: "Agrohydrology Group, University of Copenhagen"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Daisy/source/repo/build/linux-gcc-portable/daisy"
+  config_language: "Lisp-like (.dai files)"
+
+inputs:
+  forcing:
+    - name: "GlobRad"
+      unit: "W/m^2"
+      description: "Global radiation (daily mean)"
+      valid_range: [0, 500]
+      source_conversion: "MJ/m^2/d ÷ 0.0864"
+    - name: "AirTemp"
+      unit: "dgC"
+      description: "Air temperature"
+      valid_range: [-60, 60]
+      source_conversion: "K − 273.15"
+    - name: "Precip"
+      unit: "mm/d"
+      description: "Precipitation"
+      valid_range: [0, 500]
+      source_conversion: "kg/m^2/s × 86400"
+    - name: "RefEvap"
+      unit: "mm/d"
+      description: "Reference evapotranspiration (optional)"
+      valid_range: [0, 20]
+    - name: "Wind"
+      unit: "m/s"
+      description: "Wind speed (optional)"
+      valid_range: [0, 50]
+    - name: "RelHum"
+      unit: "%"
+      description: "Relative humidity (optional)"
+      valid_range: [0, 100]
+  forcing_format:
+    type: "DWF"
+    extension: ".dwf"
+    separator: "tab"
+    header: "keyword: value pairs"
+    required_header_fields: ["Station", "Elevation", "Longitude", "Latitude", "Begin", "End", "Timestep"]
+
+  soil:
+    - name: "clay"
+      unit: "fraction (0-1)"
+      valid_range: [0, 1]
+      description: "Clay fraction"
+    - name: "silt"
+      unit: "fraction (0-1)"
+      valid_range: [0, 1]
+      description: "Silt fraction"
+    - name: "sand"
+      unit: "fraction (0-1)"
+      valid_range: [0, 1]
+      description: "Sand fraction"
+    - name: "humus"
+      unit: "fraction (0-1)"
+      valid_range: [0, 0.3]
+      description: "Humus fraction"
+    - name: "dry_bulk_density"
+      unit: "g/cm^3"
+      valid_range: [0.5, 2.2]
+      description: "Dry bulk density"
+
+  parameters:
+    critical:
+      - name: "K_sat"
+        unit: "cm/h"
+        valid_range: [0.001, 100]
+        description: "Saturated hydraulic conductivity"
+      - name: "alpha"
+        unit: "cm^-1"
+        valid_range: [0.005, 0.2]
+        description: "van Genuchten alpha parameter"
+      - name: "n"
+        unit: "dimensionless"
+        valid_range: [1.05, 5.0]
+        description: "van Genuchten n parameter"
+      - name: "Theta_sat"
+        unit: "dimensionless"
+        valid_range: [0.2, 0.7]
+        description: "Saturated water content"
+      - name: "Theta_res"
+        unit: "dimensionless"
+        valid_range: [0.0, 0.2]
+        description: "Residual water content"
+      - name: "MaxRootingDepth"
+        unit: "cm"
+        valid_range: [10, 300]
+        description: "Maximum rooting depth"
+
+outputs:
+  primary:
+    - name: "stem_DM"
+      unit: "Mg DM/ha"
+      valid_range: [0, 30]
+      description: "Harvested stem dry matter"
+      file: "harvest.dlf"
+    - name: "sorg_DM"
+      unit: "Mg DM/ha"
+      valid_range: [0, 15]
+      description: "Harvested grain (storage organ) dry matter"
+      file: "harvest.dlf"
+    - name: "sorg_N"
+      unit: "kg N/ha"
+      valid_range: [0, 300]
+      description: "Nitrogen in harvested grain"
+      file: "harvest.dlf"
+    - name: "harvest_index"
+      unit: "dimensionless"
+      valid_range: [0, 0.6]
+      description: "Ratio of grain to total aboveground DM"
+      file: "harvest.dlf"
+  water_balance:
+    - name: "Precipitation"
+      unit: "mm"
+      file: "field_water.dlf"
+    - name: "Evapotranspiration"
+      unit: "mm"
+      file: "field_water.dlf"
+    - name: "Drain"
+      unit: "mm"
+      file: "field_water.dlf"
+    - name: "Percolation"
+      unit: "mm"
+      file: "field_water.dlf"
+  nitrogen_balance:
+    - name: "Fertilizer"
+      unit: "kg N/ha"
+      file: "field_nitrogen.dlf"
+    - name: "Leaching"
+      unit: "kg N/ha"
+      file: "field_nitrogen.dlf"
+    - name: "Denitrification"
+      unit: "kg N/ha"
+      file: "field_nitrogen.dlf"
+    - name: "Harvest_N"
+      unit: "kg N/ha"
+      file: "field_nitrogen.dlf"
+  output_format:
+    type: "DLF"
+    extension: ".dlf"
+    separator: "tab"
+    header: "metadata + column names + units"
+
+known_issues:
+  - "Binary requires libboost_filesystem.so.1.83.0 — symlink from 1.85 works"
+  - "1D only — no lateral flow between fields"
+  - "Crop models calibrated primarily for Northern European conditions"
+  - "No built-in calibration — requires external optimization tools"
+  - "Previous validation MARGINAL: negative NSE for soil moisture at RISMA ON2"

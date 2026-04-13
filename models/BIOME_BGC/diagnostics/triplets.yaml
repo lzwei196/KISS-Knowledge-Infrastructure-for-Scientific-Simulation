@@ -1,0 +1,499 @@
+# BIOME-BGC Diagnostic Triplets
+# 25 triplets across 6 failure domains
+
+triplets:
+
+  # =========================================================================
+  # COMPILATION & SETUP (dt_001 - dt_003)
+  # =========================================================================
+
+  - id: dt_001
+    symptom:
+      description: "make fails with 'implicit declaration of function' warnings treated as errors"
+      error_pattern: "implicit declaration of function"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "C99/C11 strict mode flags conflict with ANSI C89 code"
+      explanation: "BIOME-BGC 4.2 is written in ANSI C89 style with implicit function declarations. Modern GCC with -Werror or -std=c11 rejects these."
+      affected_components: [compilation]
+    remedy:
+      action: "Add -std=gnu89 or -Wno-implicit-function-declaration to CFLAGS in makefile"
+      manual_steps:
+        - "Edit src/makefile, find CFLAGS line"
+        - "Add -std=gnu89 -Wno-implicit-function-declaration"
+        - "Run make clean && make"
+      prevention: "Use the pre-compiled binary at model/biome-bgc/bgc-src/bgc"
+    severity: fatal
+    failure_domain: compilation
+
+  - id: dt_002
+    symptom:
+      description: "Model runs but immediately exits with no output files created"
+      error_pattern: "Error opening"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "File path in .ini points to nonexistent .epc, .met, or restart file"
+      explanation: "BIOME-BGC reads file paths from the .ini and opens them immediately. A wrong path causes immediate exit. Paths are relative to the working directory, not the .ini file location."
+      affected_components: [s1_site_definition]
+    remedy:
+      action: "Verify all file paths in .ini are correct relative to the working directory"
+      tool_to_run: "Check: met file (MET_INPUT), epc file (EPC_FILE), restart files (RESTART)"
+      manual_steps:
+        - "cd to the intended working directory"
+        - "Verify met file exists: ls <met_path>"
+        - "Verify epc file exists: ls <epc_path>"
+        - "If reading restart, verify restart file exists"
+      prevention: "Use absolute paths in .ini or always run from the bgc-src directory"
+    severity: fatal
+    failure_domain: config_format
+
+  - id: dt_003
+    symptom:
+      description: "Segmentation fault on startup"
+      error_pattern: "Segmentation fault"
+      detection_method: exit_code
+    diagnosis:
+      root_cause: "Soil texture sand+silt+clay does not sum to 100, or negative value in .ini causes bad memory allocation"
+      explanation: "BIOME-BGC computes soil water holding capacity from texture percentages. Invalid values lead to negative array sizes or division by zero."
+      affected_components: [s1_site_definition]
+    remedy:
+      action: "Validate sand+silt+clay = 100 exactly in the SITE section of .ini"
+      tool_to_run: generate_site_ini
+      manual_steps:
+        - "Check SITE section: sand + silt + clay must equal 100.0"
+        - "Check soil depth > 0"
+        - "Use generate_site_ini.py which validates automatically"
+      prevention: "Always generate .ini with the validated tool, never edit manually"
+    severity: fatal
+    failure_domain: config_format
+
+  # =========================================================================
+  # INI FILE FORMAT (dt_004 - dt_006)
+  # =========================================================================
+
+  - id: dt_004
+    symptom:
+      description: "Model reads, runs to completion, but all fluxes are wrong magnitude or sign"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "INI file has extra blank line or missing keyword, shifting all subsequent parameters by one line"
+      explanation: "BIOME-BGC parses .ini by keyword scanning then sequential scan_value() calls. An extra or missing line after a keyword causes every parameter in that section to be read from the wrong line. The model will NOT crash -- it silently reads wrong values."
+      affected_components: [s1_site_definition]
+    remedy:
+      action: "Regenerate .ini with generate_site_ini.py; never hand-edit"
+      tool_to_run: generate_site_ini
+      manual_steps:
+        - "Compare your .ini with the template line by line"
+        - "Count that each section keyword is followed by the exact number of value lines"
+        - "Remove any extra blank lines within sections"
+      prevention: "ALWAYS use generate_site_ini.py. NEVER edit .ini files manually."
+    severity: silent
+    failure_domain: config_format
+
+  - id: dt_005
+    symptom:
+      description: "Very high or very low GPP but model completes normally"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "CO2 value in .ini has wrong units -- fraction instead of ppm, or ppm*1e6"
+      explanation: "BIOME-BGC CO2_CONTROL expects ppm (e.g., 380.0). A value of 0.000380 (fraction) gives near-zero photosynthesis. A value of 380000 gives massive GPP."
+      affected_components: [s4_co2_concentration]
+    remedy:
+      action: "Verify CO2 value is in ppm, typically 280-600 for historical"
+      manual_steps:
+        - "Check CO2_CONTROL section in .ini"
+        - "The ppm line should read ~280 (pre-industrial) to ~420 (2024)"
+        - "NOT 0.000380 (mole fraction) or 380000 (ppb)"
+      prevention: "generate_site_ini.py validates CO2 range [100, 1500] ppm"
+    severity: silent
+    failure_domain: unit_conversion
+
+  - id: dt_006
+    symptom:
+      description: "Extremely high transpiration, soil dries instantly in first days"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Soil depth in .ini is in cm instead of m (100x too shallow)"
+      explanation: "BIOME-BGC SITE section expects soil depth in meters. A value of 100 (meaning 100 cm = 1 m) is interpreted as 100 meters. A value of 1.0 (meaning 1 cm) gives essentially no water storage."
+      affected_components: [s1_site_definition]
+    remedy:
+      action: "Verify soil depth is in meters (typically 0.5-3.0 m)"
+      manual_steps:
+        - "Check SITE section soil depth line"
+        - "Value should be 0.5-3.0 for most ecosystems"
+        - "NOT 50-300 (that would be cm misinterpreted as m)"
+      prevention: "generate_site_ini.py validates soil_depth range (0, 10] meters"
+    severity: silent
+    failure_domain: unit_conversion
+
+  # =========================================================================
+  # METEOROLOGICAL FORCING (dt_007 - dt_011)
+  # =========================================================================
+
+  - id: dt_007
+    symptom:
+      description: "GPP and NPP approximately 10x higher than expected for the biome"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Precipitation provided in mm/day instead of cm/day"
+      explanation: "BIOME-BGC expects precipitation in CM per day. CMFD/MSWX and VIC provide mm. Forgetting to divide by 10 gives 10x too much water, inflating GPP/NPP. The model runs without any error."
+      affected_components: [s3_meteorological_forcing]
+    remedy:
+      action: "Divide precipitation by 10 when converting from mm to cm"
+      tool_to_run: convert_forcing_to_bgc
+      manual_steps:
+        - "In the met file, column 6 (prcp) must be in cm"
+        - "Check: typical daily values should be 0.0-3.0 cm (0-30 mm)"
+        - "If values are 0-30+, they are likely still in mm"
+      prevention: "Use convert_forcing_to_bgc.py which applies mm_to_cm() automatically"
+    severity: silent
+    failure_domain: unit_conversion
+    cross_references: [dt_008]
+
+  - id: dt_008
+    symptom:
+      description: "Stomata always fully open, transpiration unrealistically high (>10 mm/day)"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "VPD provided in kPa instead of Pa (1000x too low)"
+      explanation: "BIOME-BGC expects VPD in Pascals. Typical daytime VPD is 500-3000 Pa. If provided in kPa (0.5-3.0), the model sees extremely low atmospheric demand and keeps stomata wide open."
+      affected_components: [s3_meteorological_forcing]
+    remedy:
+      action: "Multiply VPD by 1000 to convert kPa to Pa"
+      tool_to_run: convert_forcing_to_bgc
+      manual_steps:
+        - "In the met file, column 7 (VPD) must be in Pa"
+        - "Typical values: 200-4000 Pa"
+        - "If values are 0.2-4.0, they are in kPa and must be multiplied by 1000"
+      prevention: "Use convert_forcing_to_bgc.py which computes VPD in Pa from temperature and humidity"
+    severity: silent
+    failure_domain: unit_conversion
+    cross_references: [dt_007]
+
+  - id: dt_009
+    symptom:
+      description: "No photosynthesis (GPP=0 every day) but LAI grows normally from initial conditions"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Day length column is 0, missing, or extremely small"
+      explanation: "BIOME-BGC uses day length (seconds) to partition day/night processes. If dayl=0, all shortwave is assigned to zero-length day, PAR=0, and photosynthesis cannot occur. LAI may still grow from storage pools."
+      affected_components: [s3_meteorological_forcing]
+    remedy:
+      action: "Compute day length from latitude and day-of-year using astronomical formula"
+      tool_to_run: convert_forcing_to_bgc
+      manual_steps:
+        - "Day length is NOT available from CMFD/MSWX -- it must be computed"
+        - "Use bgc_utils.compute_daylength(lat, yday)"
+        - "Typical values: 28000-60000 seconds (8-17 hours)"
+      prevention: "convert_forcing_to_bgc.py always computes day length from latitude"
+    severity: silent
+    failure_domain: unit_conversion
+
+  - id: dt_010
+    symptom:
+      description: "Temperature-dependent processes all wrong: phenology timing off, respiration too high or low"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Temperature in Kelvin instead of Celsius"
+      explanation: "BIOME-BGC expects Celsius. CMFD provides Kelvin. If Kelvin is passed directly, Tmax~300 K is interpreted as 300 C, causing extremely high respiration and wrong phenology."
+      affected_components: [s3_meteorological_forcing]
+    remedy:
+      action: "Subtract 273.15 from all temperature fields"
+      tool_to_run: convert_forcing_to_bgc
+      manual_steps:
+        - "Met file columns 3-5 (Tmax, Tmin, Tday) must be in Celsius"
+        - "If values are >100, they are likely Kelvin"
+        - "Subtract 273.15 from each"
+      prevention: "convert_forcing_to_bgc.py auto-detects Kelvin (>100) and converts"
+    severity: silent
+    failure_domain: unit_conversion
+
+  - id: dt_011
+    symptom:
+      description: "Met file parsing error or model reads wrong number of days"
+      error_pattern: "Error reading met file"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Wrong number of header lines specified in .ini, or file has tabs/inconsistent whitespace"
+      explanation: "BIOME-BGC skips N header lines (set in MET_INPUT section), then reads 9 columns per day using fscanf. Wrong header count or mixed delimiters cause parse failure."
+      affected_components: [s1_site_definition, s3_meteorological_forcing]
+    remedy:
+      action: "Verify header_lines count in .ini matches actual met file headers"
+      manual_steps:
+        - "Count header lines in met file (lines before data starts)"
+        - "Set that count in the MET_INPUT section of .ini"
+        - "Default is 4 for MTCLIM format"
+        - "Ensure data is space-separated (not tab-only)"
+      prevention: "generate_site_ini.py sets header_lines=4 matching the convert_forcing_to_bgc.py output"
+    severity: fatal
+    failure_domain: config_format
+
+  # =========================================================================
+  # SPINUP (dt_012 - dt_016)
+  # =========================================================================
+
+  - id: dt_012
+    symptom:
+      description: "Spinup never converges -- SOC keeps increasing after 6000 model years"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "N deposition set to modern (high) value instead of pre-industrial for spinup"
+      explanation: "Pre-industrial N deposition was ~0.0001-0.0002 kgN/m2/yr. Modern values (0.001-0.01) provide excess N that continuously fertilizes the ecosystem, preventing C pool equilibrium."
+      affected_components: [s5_spinup]
+    remedy:
+      action: "Use pre-industrial N deposition (0.0001-0.0002 kgN/m2/yr) for spinup"
+      manual_steps:
+        - "Set ndep to 0.0001 in spinup .ini SITE section"
+        - "Use modern values only for the normal run"
+        - "Consider ramped N deposition (RAMP_NDEP section)"
+      prevention: "generate_site_ini.py defaults to 0.0001 kgN/m2/yr"
+    severity: degraded
+    failure_domain: spinup_convergence
+
+  - id: dt_013
+    symptom:
+      description: "Spinup converges but soil mineral N pool goes negative"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "N immobilization exceeds total N input over centuries"
+      explanation: "High C:N ratio litter (woody debris) requires N immobilization from soil mineral pool during decomposition. If N fixation + N deposition cannot keep up, sminn goes negative."
+      affected_components: [s5_spinup]
+    remedy:
+      action: "Increase N fixation parameter or decrease litter C:N ratios"
+      manual_steps:
+        - "Increase nfix from 0.0004 to 0.0008 kgN/m2/yr in SITE section"
+        - "Or reduce deadwood_cn in .epc (e.g., from 729 to 500)"
+        - "This is common for high-latitude/boreal forests"
+      prevention: "Monitor sminn in annual output during test runs"
+    severity: degraded
+    failure_domain: spinup_convergence
+
+  - id: dt_014
+    symptom:
+      description: "NEE strongly positive (source) for first 50+ years of normal run after spinup"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Spinup used different CO2 than normal run start year, causing C pool adjustment"
+      explanation: "If spinup uses 280 ppm (pre-industrial) but normal run starts at 370 ppm, the higher CO2 stimulates growth, requiring N that depletes from soil pools, temporarily making the ecosystem a source."
+      affected_components: [s5_spinup, s6_normal_execution]
+    remedy:
+      action: "Use the same CO2 for the last spinup cycle as the first year of normal run"
+      manual_steps:
+        - "Option A: Set CO2 in spinup .ini to match normal run start (~370 ppm for year 2000)"
+        - "Option B: Run a 50-year transition period and discard as warmup"
+        - "Option C: Use ramped CO2 in normal run (co2_flag=1)"
+      prevention: "Always plan the CO2 transition between spinup and normal run"
+    severity: degraded
+    failure_domain: spinup_convergence
+
+  - id: dt_015
+    symptom:
+      description: "Restart file read error or garbage values in normal run"
+      error_pattern: "Error reading restart"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Restart file from incompatible BIOME-BGC version or corrupted file"
+      explanation: "The restart (.endpoint) file is a binary dump of all state variables. Different BIOME-BGC versions may have different struct layouts, making the file unreadable."
+      affected_components: [s5_spinup, s6_normal_execution]
+    remedy:
+      action: "Ensure the same binary produced the restart file and reads it"
+      manual_steps:
+        - "Re-run spinup with the exact same binary"
+        - "Check restart file size (should be >1 KB for a valid state)"
+        - "Do not transfer restart files between different BIOME-BGC versions"
+      prevention: "Keep spinup and normal run using the same compiled binary"
+    severity: fatal
+    failure_domain: runtime
+
+  - id: dt_016
+    symptom:
+      description: "Spinup SOC oscillates up and down without converging"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Met data has extreme drought/wet years that alternately build/deplete pools"
+      explanation: "Short met records (5-10 years) with high interannual variability cause soil C to oscillate when recycled. The cycle length matches the met record length."
+      affected_components: [s5_spinup]
+    remedy:
+      action: "Use longer met record (20+ years) for spinup cycling"
+      manual_steps:
+        - "Increase the met record to 20+ years if possible"
+        - "Or smooth extreme precipitation years"
+        - "Or increase max_spinup_years to allow more cycles"
+      prevention: "Always use at least 10-year met records for spinup"
+    severity: degraded
+    failure_domain: spinup_convergence
+
+  # =========================================================================
+  # ECOPHYSIOLOGY & PHENOLOGY (dt_017 - dt_019)
+  # =========================================================================
+
+  - id: dt_017
+    symptom:
+      description: "Deciduous forest has no leaf-off period (evergreen behavior)"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Using temperate DBF .epc with model phenology in tropical climate"
+      explanation: "BIOME-BGC model phenology uses soil temperature for deciduous onset/offset. In tropical climates, soil T never drops below the threshold, so the model never triggers leaf-off."
+      affected_components: [s2_ecophysiology]
+    remedy:
+      action: "Use EBF PFT for tropical forests, or set phenology_flag=0 with explicit onday/offday"
+      tool_to_run: select_ecophysiology
+      manual_steps:
+        - "For tropical sites (|lat| < 23.5), use EBF instead of DBF"
+        - "Or set phenology_flag=0 in .epc and specify onday/offday manually"
+      prevention: "select_ecophysiology.py with --avhrr_class handles this via AVHRR mapping"
+    severity: silent
+    failure_domain: parameter_selection
+
+  - id: dt_018
+    symptom:
+      description: "GPP much higher than FLUXNET observations for same biome and climate"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "SLA (specific leaf area) too high for the PFT"
+      explanation: "Higher SLA means more leaf area per unit carbon, increasing light interception and GPP. Default SLA values are averages -- specific ecosystems may need lower values."
+      affected_components: [s2_ecophysiology]
+    remedy:
+      action: "Reduce SLA in .epc file (typical ranges: ENF=8-12, DBF=20-35, grass=25-45 m2/kgC)"
+      tool_to_run: select_ecophysiology
+      manual_steps:
+        - "Check SLA value in .epc (line 35)"
+        - "Compare with published values for the specific species"
+        - "Use --override sla=<value> with select_ecophysiology.py"
+      prevention: "Calibrate SLA against MODIS LAI or FLUXNET GPP"
+    severity: silent
+    failure_domain: parameter_selection
+
+  - id: dt_019
+    symptom:
+      description: "Unrealistic allocation: all carbon goes to wood, no leaf growth"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Allocation ratio parameters in .epc are transposed or wrong"
+      explanation: "The allocation ratios (froot:leaf, stem:leaf, livewood:wood, croot:stem) control carbon partitioning. Wrong values cause all carbon to go to one pool."
+      affected_components: [s2_ecophysiology]
+    remedy:
+      action: "Verify allocation ratios in .epc against reference values"
+      manual_steps:
+        - "froot_leaf (line 14): typically 1.0-2.0"
+        - "stem_leaf (line 15): typically 0.0 (grass) to 2.2 (forest)"
+        - "livewood_wood (line 16): typically 0.0-0.22"
+        - "croot_stem (line 17): typically 0.0-0.3"
+      prevention: "Use select_ecophysiology.py which provides validated defaults"
+    severity: silent
+    failure_domain: parameter_selection
+
+  # =========================================================================
+  # COUPLING (dt_020 - dt_025)
+  # =========================================================================
+
+  - id: dt_020
+    symptom:
+      description: "Basin ET much higher than VIC ET when BIOME-BGC results are added"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Double-counting: both VIC and BIOME-BGC compute ET from same forcing"
+      explanation: "VIC computes ET for the water balance. BIOME-BGC independently computes ET for carbon processes. Adding both inflates basin ET by ~2x."
+      affected_components: [s8_vic_coupling]
+    remedy:
+      action: "Use VIC ET for water balance; BIOME-BGC ET is diagnostic only"
+      manual_steps:
+        - "Do NOT add BIOME-BGC ET to VIC discharge calculations"
+        - "BIOME-BGC ET can be compared with VIC ET for consistency"
+        - "For the basin water budget, use VIC output exclusively"
+      prevention: "Document clearly: BIOME-BGC is run diagnostically for carbon fluxes"
+    severity: silent
+    failure_domain: coupling
+
+  - id: dt_021
+    symptom:
+      description: "BIOME-BGC returns unrealistic results for some grid cells"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Running BIOME-BGC on cropland cells (should use LDNDC or DSSAT)"
+      explanation: "BIOME-BGC has no crop module. Running it on AVHRR classes 11-13 (cropland, bare, urban) produces nonsensical results."
+      affected_components: [s8_vic_coupling]
+    remedy:
+      action: "Filter cells by AVHRR land cover: BIOME-BGC for classes 1-10 only"
+      tool_to_run: select_ecophysiology
+      manual_steps:
+        - "Before gridded runs, classify each cell by AVHRR land cover"
+        - "Classes 1-10: BIOME-BGC"
+        - "Class 11 (cropland): LDNDC or DSSAT"
+        - "Classes 12-14: skip (bare, urban, water)"
+      prevention: "select_ecophysiology.py returns None for non-vegetation classes"
+    severity: degraded
+    failure_domain: coupling
+
+  - id: dt_022
+    symptom:
+      description: "Basin total C budget has spatial gaps (some cells unaccounted)"
+      detection_method: file_check
+    diagnosis:
+      root_cause: "Partition logic did not assign every land cell to BIOME-BGC or LDNDC"
+      explanation: "Mixed forest/cropland cells, or cells with AVHRR class 6-7 (woodland/wooded grassland) may fall between the assignment rules."
+      affected_components: [s8_vic_coupling]
+    remedy:
+      action: "Ensure every non-water, non-urban cell is assigned to exactly one model"
+      manual_steps:
+        - "Check that AVHRR classes 6 and 7 are mapped (to SHRUB and C3GRASS)"
+        - "Count total assigned cells vs total land cells"
+        - "Fill gaps with the dominant surrounding PFT"
+      prevention: "bgc_utils.avhrr_to_pft() maps classes 1-10; verify coverage after partitioning"
+    severity: degraded
+    failure_domain: coupling
+
+  - id: dt_023
+    symptom:
+      description: "MODIS GPP much higher than BIOME-BGC in tropical forests"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Default ENF/DBF EPC parameters are from temperate studies, not tropical"
+      explanation: "Tropical forests have higher SLA, no cold limitation, longer growing season. Using temperate parameters underestimates tropical GPP by 30-50%."
+      affected_components: [s2_ecophysiology]
+    remedy:
+      action: "Use EBF PFT with tropical-specific parameters"
+      tool_to_run: select_ecophysiology
+      manual_steps:
+        - "Use --pft EBF (not DBF) for tropical forests"
+        - "Consider overrides: --override sla=14 --override leaf_cn=35"
+        - "Validate against FLUXNET tropical sites (e.g., Xishuangbanna)"
+      prevention: "select_ecophysiology.py uses AVHRR class 2 -> EBF for tropical"
+    severity: degraded
+    failure_domain: parameter_selection
+
+  - id: dt_024
+    symptom:
+      description: "Soil water content differs greatly between VIC and BIOME-BGC for same cell"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "VIC uses 3-layer variable infiltration; BIOME-BGC uses single-bucket model"
+      explanation: "The two models have fundamentally different soil water representations. VIC tracks water in 3 layers with saturation excess; BIOME-BGC uses a single bucket with Clapp-Hornberger hydraulics."
+      affected_components: [s8_vic_coupling]
+    remedy:
+      action: "Accept the difference; use VIC for hydrology, BIOME-BGC for carbon only"
+      manual_steps:
+        - "VIC soil water -> routing/discharge (authoritative)"
+        - "BIOME-BGC soil water -> internal carbon process control only"
+        - "Do NOT replace VIC soil water with BIOME-BGC values"
+      prevention: "Document the coupling as one-way: VIC forcing -> BIOME-BGC (diagnostic)"
+    severity: degraded
+    failure_domain: coupling
+
+  - id: dt_025
+    symptom:
+      description: "BIOME-BGC runs on a water body cell, producing near-zero but nonzero fluxes"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Water body cell (AVHRR class 14) was not filtered before grid assignment"
+      explanation: "BIOME-BGC can technically run on any cell (it just reads soil/met), but results for water bodies are physically meaningless."
+      affected_components: [s8_vic_coupling]
+    remedy:
+      action: "Skip water/urban/bare cells (AVHRR classes 12-14) in gridded runs"
+      tool_to_run: select_ecophysiology
+      manual_steps:
+        - "Pre-filter cells before BIOME-BGC execution"
+        - "select_ecophysiology.py returns None for these classes"
+      prevention: "Always check avhrr_to_pft() return value before running BGC"
+    severity: degraded
+    failure_domain: coupling

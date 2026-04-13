@@ -1,0 +1,171 @@
+model:
+  name: "Cell2Fire W (C2F-W)"
+  domain: "wildfire spread simulation"
+  version: "v0.0.0 (fire2a/C2F-W)"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Cell2Fire/source/repo/Cell2Fire/Cell2Fire"
+  fire_models:
+    - "S: Scott & Burgan (40 US NFDRS fuel models)"
+    - "C: Canadian FBP (16 fuel types)"
+    - "K: Kitral (Chilean)"
+    - "P: Portugal (experimental)"
+
+inputs:
+  forcing:
+    - name: "WS"
+      description: "Wind speed at 10m height"
+      unit: "km/h"
+      valid_range: [0, 200]
+      trap: "CRITICAL - most global datasets provide m/s; multiply by 3.6"
+    - name: "WD"
+      description: "Wind direction (meteorological convention, direction wind comes FROM)"
+      unit: "degrees"
+      valid_range: [0, 360]
+      trap: "HIGH - math convention (TO) requires (value + 180) % 360"
+    - name: "FireScenario"
+      description: "Fire weather severity index (S&B model)"
+      unit: "integer"
+      valid_range: [1, 3]
+    - name: "FFMC"
+      description: "Fine Fuel Moisture Code (FBP model)"
+      unit: "dimensionless"
+      valid_range: [0, 101]
+    - name: "DMC"
+      description: "Duff Moisture Code (FBP model)"
+      unit: "dimensionless"
+      valid_range: [0, 500]
+    - name: "DC"
+      description: "Drought Code (FBP model)"
+      unit: "dimensionless"
+      valid_range: [0, 1000]
+    - name: "ISI"
+      description: "Initial Spread Index (FBP model)"
+      unit: "dimensionless"
+      valid_range: [0, 100]
+    - name: "BUI"
+      description: "Buildup Index (FBP model)"
+      unit: "dimensionless"
+      valid_range: [0, 300]
+    - name: "FWI"
+      description: "Fire Weather Index (FBP model)"
+      unit: "dimensionless"
+      valid_range: [0, 150]
+    - name: "TMP"
+      description: "Air temperature (FBP model)"
+      unit: "degC"
+      valid_range: [-40, 50]
+    - name: "RH"
+      description: "Relative humidity (FBP model)"
+      unit: "percent"
+      valid_range: [0, 100]
+      trap: "CRITICAL - fraction (0-1) vs percent (0-100)"
+    - name: "APCP"
+      description: "Accumulated precipitation (FBP model)"
+      unit: "mm"
+      valid_range: [0, 200]
+
+  landscape:
+    - name: "fuels"
+      description: "Fuel type grid (integer codes)"
+      format: "ASC or TIF raster"
+      required: true
+    - name: "elevation"
+      description: "Elevation grid"
+      unit: "meters ASL"
+      format: "ASC or TIF raster"
+      required: true
+    - name: "slope"
+      description: "Slope grid"
+      unit: "degrees (0-90)"
+      format: "ASC or TIF raster"
+      required: false
+    - name: "saz"
+      description: "Slope aspect grid (compass, north=0)"
+      unit: "degrees (0-360)"
+      format: "ASC or TIF raster"
+      required: false
+    - name: "cbh"
+      description: "Crown base height"
+      unit: "meters"
+      format: "ASC or TIF raster"
+      required: false
+    - name: "cbd"
+      description: "Crown bulk density"
+      unit: "kg/m3"
+      format: "ASC or TIF raster"
+      required: false
+
+  parameters:
+    critical:
+      - name: "--sim"
+        valid_range: ["S", "C", "K", "P"]
+        description: "Fire behavior model selection"
+      - name: "--nsims"
+        valid_range: [1, 10000]
+        description: "Number of Monte Carlo simulations"
+      - name: "--fmc"
+        valid_range: [0, 300]
+        description: "Foliar moisture content (%) for S&B"
+      - name: "--scenario"
+        valid_range: [1, 3]
+        description: "S&B fire weather severity (1=low, 2=moderate, 3=extreme)"
+      - name: "--Fire-Period-Length"
+        valid_range: [0.1, 60]
+        description: "Fire time step in minutes"
+      - name: "--Weather-Period-Length"
+        valid_range: [1, 1440]
+        description: "Minutes per weather observation period"
+      - name: "--ROS-Threshold"
+        valid_range: [0.0, 10.0]
+        description: "Minimum ROS to propagate fire (m/min)"
+      - name: "--seed"
+        valid_range: [0, 2147483647]
+        description: "Random seed for reproducibility"
+      - name: "--cros"
+        description: "Enable crown fire spread (flag)"
+      - name: "--nthreads"
+        valid_range: [1, 128]
+        description: "OpenMP threads for parallel simulations"
+
+outputs:
+  primary:
+    - name: "FinalGrid"
+      description: "Final burned/unburned state per cell (0=available, 1=burned)"
+      format: "CSV grid (ncols x nrows)"
+      unit: "binary"
+      valid_range: [0, 1]
+    - name: "Messages"
+      description: "Fire spread messages (sender, receiver, time, ROS)"
+      format: "CSV (i, j, time, ros)"
+      unit: "cell_id, cell_id, fire_period, m/min"
+    - name: "RateOfSpread"
+      description: "Rate of spread per cell"
+      format: "ASC raster"
+      unit: "m/min"
+      valid_range: [0, 200]
+    - name: "SurfaceIntensity"
+      description: "Fireline intensity per cell"
+      format: "ASC raster"
+      unit: "kW/m"
+      valid_range: [0, 100000]
+    - name: "SurfaceFlameLength"
+      description: "Flame length per cell"
+      format: "ASC raster"
+      unit: "m"
+      valid_range: [0, 50]
+    - name: "ForestGrid"
+      description: "Grid snapshots at each fire period (with --grids)"
+      format: "CSV grid"
+      unit: "binary"
+  derived:
+    - name: "BurnProbability"
+      description: "Fraction of simulations in which each cell burned"
+      unit: "fraction"
+      valid_range: [0, 1]
+
+known_issues:
+  - "Output folder must exist AND be empty before each run"
+  - "All rasters must share identical ncols, nrows, cellsize, and corner coordinates"
+  - "Fire-Period-Length is silently clamped to Weather-Period-Length if larger"
+  - "Cell IDs in Ignitions.csv are 1-based, row-major from top-left"
+  - "Wind speed unit trap: expects km/h, most datasets provide m/s"
+  - "Wind direction convention: meteorological (FROM), not math (TO)"

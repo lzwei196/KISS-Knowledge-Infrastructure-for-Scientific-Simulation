@@ -1,0 +1,141 @@
+model:
+  name: "FloPy"
+  version: "3.11.0"
+  domain: "groundwater flow and transport modeling"
+  description: "Python interface to MODFLOW 6, MODFLOW-2005, MODFLOW-NWT, MODFLOW-USG, MT3DMS, SEAWAT, MODPATH"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/FloPy/venv/bin/python"
+  solver_binary: "/home/server/.local/share/flopy/bin/mf6"
+  unit_system: "user-defined (unit-agnostic — all inputs must be self-consistent)"
+  common_units:
+    length: "meters (LENUNI=2)"
+    time: "days (ITMUNI=4)"
+
+inputs:
+  forcing:
+    - name: "recharge"
+      unit: "m/day"
+      valid_range: [0.0, 0.01]
+      description: "Areal recharge rate (RCHA package). Source data often in mm/day — divide by 1000."
+      trap: "dt_002"
+    - name: "well_pumping_rate"
+      unit: "m3/day"
+      valid_range: [-50000.0, 0.0]
+      description: "Volumetric pumping rate (WEL package). Negative = extraction. Source data often in L/s — multiply by 86.4."
+      trap: "dt_003"
+    - name: "river_stage"
+      unit: "m"
+      valid_range: [-100.0, 5000.0]
+      description: "River water surface elevation (RIV package). Must match grid datum."
+      trap: "dt_006"
+    - name: "evapotranspiration"
+      unit: "m/day"
+      valid_range: [0.0, 0.015]
+      description: "ET rate (EVT package). Source data often in mm/day — divide by 1000."
+      trap: "dt_008"
+    - name: "constant_head"
+      unit: "m"
+      valid_range: [-100.0, 5000.0]
+      description: "Fixed head boundary value (CHD package). Must be between top and bottom of cell."
+      trap: "dt_006"
+
+  parameters:
+    critical:
+      - name: "hydraulic_conductivity"
+        unit: "m/day"
+        valid_range: [1.0e-7, 1000.0]
+        description: "Horizontal hydraulic conductivity (NPF/LPF package). Must match length/time units."
+        trap: "dt_001"
+      - name: "specific_storage"
+        unit: "1/m"
+        valid_range: [1.0e-6, 1.0e-2]
+        description: "Specific storage for confined layers (STO package). Only active in transient stress periods."
+        trap: "dt_004"
+      - name: "specific_yield"
+        unit: "dimensionless"
+        valid_range: [0.01, 0.45]
+        description: "Specific yield for unconfined layers (STO package). Fraction of pore volume that drains by gravity."
+      - name: "river_conductance"
+        unit: "m2/day"
+        valid_range: [0.01, 100000.0]
+        description: "River-aquifer conductance = K_bed * length * width / bed_thickness (RIV package)."
+        trap: "dt_005"
+
+    grid:
+      - name: "nlay"
+        valid_range: [1, 100]
+        description: "Number of model layers"
+      - name: "nrow"
+        valid_range: [1, 10000]
+        description: "Number of grid rows (structured grid)"
+      - name: "ncol"
+        valid_range: [1, 10000]
+        description: "Number of grid columns (structured grid)"
+      - name: "delr"
+        unit: "m"
+        valid_range: [1.0, 100000.0]
+        description: "Column width (cell size in row direction)"
+      - name: "delc"
+        unit: "m"
+        valid_range: [1.0, 100000.0]
+        description: "Row height (cell size in column direction)"
+      - name: "top"
+        unit: "m"
+        valid_range: [-500.0, 9000.0]
+        description: "Top elevation of model grid"
+      - name: "botm"
+        unit: "m"
+        valid_range: [-5000.0, 9000.0]
+        description: "Bottom elevation of each layer"
+
+outputs:
+  primary:
+    - name: "head"
+      unit: "m"
+      valid_range: [-500.0, 9000.0]
+      file: "*.hds"
+      format: "binary (float32 or float64)"
+      description: "Hydraulic head per cell per time step. HDRY sentinel = -1e30 for dry cells."
+    - name: "cell_budget"
+      unit: "m3/day"
+      valid_range: [-1.0e8, 1.0e8]
+      file: "*.bud / *.cbc"
+      format: "binary (structured records)"
+      description: "Cell-by-cell flow budget for each package (recharge, wells, rivers, etc.)"
+    - name: "drawdown"
+      unit: "m"
+      valid_range: [-1000.0, 1000.0]
+      file: "*.ddn"
+      format: "binary"
+      description: "Head change from initial conditions"
+    - name: "specific_discharge"
+      unit: "m/day"
+      valid_range: [-100.0, 100.0]
+      file: "within *.bud (DATA-SPDIS record)"
+      format: "binary structured"
+      description: "Darcy velocity components (qx, qy, qz) per cell. Requires save_specific_discharge=True in NPF."
+  secondary:
+    - name: "listing_file"
+      file: "*.lst"
+      format: "text"
+      description: "Solver convergence log and volumetric water balance summary"
+    - name: "concentration"
+      unit: "mg/L or user-defined"
+      file: "*.ucn"
+      format: "binary"
+      description: "Solute concentration per cell (MT3DMS/MT3D-USGS transport)"
+    - name: "pathlines"
+      file: "*.mp7.pathline"
+      format: "binary"
+      description: "Particle tracking pathlines (MODPATH 6/7)"
+
+known_issues:
+  - id: "dt_002"
+    description: "Recharge unit mismatch: source data in mm/day entered as m/day gives 1000x too much water"
+  - id: "dt_003"
+    description: "Well rate unit mismatch: source data in L/s entered as m3/day gives 86.4x wrong rate"
+  - id: "dt_009"
+    description: "Zero-based indexing: FloPy uses 0-based, MODFLOW docs use 1-based — off-by-one errors"
+  - id: "dt_012"
+    description: "Dry cell sentinel HDRY (-1e30) corrupts statistics if not filtered"
+  - id: "dt_013"
+    description: "Binary precision mismatch (single vs double) produces garbage data silently"

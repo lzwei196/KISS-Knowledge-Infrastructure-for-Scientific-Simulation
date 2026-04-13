@@ -1,0 +1,173 @@
+model:
+  name: "OpenHydroQual"
+  version: "2.0.4"
+  domain: "water_quality"
+  subdomain: "environmental_simulation"
+  engine: "Aquifolium"
+  binary_name: "OHQLibTest"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenHydroQual/source/repo/OHQLibTest/OHQLibTest"
+  language: "C++14"
+  dependencies:
+    - "Qt6 Core"
+    - "Armadillo"
+    - "LAPACK/BLAS"
+    - "GSL"
+    - "OpenMP"
+  ld_library_path: "/snap/gnome-46-2404/153/usr/lib:/home/server/miniconda3/envs/ohq/lib:/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenHydroQual/source/repo/OHQLib/build"
+
+inputs:
+  primary:
+    - name: "ohq_script"
+      format: "text"
+      extension: ".ohq"
+      description: "Semicolon-separated command script defining blocks, links, sources, constituents, reactions"
+  templates:
+    path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenHydroQual/source/repo/resources/"
+    key_files:
+      - "main_components.json"
+      - "river_processes.json"
+      - "mass_transfer.json"
+      - "evapotranspiration_models.json"
+      - "settings.json"
+  forcing:
+    - name: "Temperature"
+      unit: "Celsius"
+      format: "CSV (time_days, value)"
+      valid_range: [-40, 50]
+    - name: "Wind_speed"
+      unit: "m/s"
+      format: "CSV (time_days, value)"
+      valid_range: [0, 50]
+    - name: "Solar_radiation"
+      unit: "W/m^2"
+      format: "CSV (time_days, value)"
+      valid_range: [0, 1400]
+    - name: "Relative_humidity"
+      unit: "fraction (0-1)"
+      format: "CSV (time_days, value)"
+      valid_range: [0, 1]
+    - name: "Inflow"
+      unit: "m^3/day"
+      format: "CSV (time_days, value)"
+      valid_range: [0, 1.0e+8]
+  parameters:
+    critical:
+      - name: "ManningCoeff"
+        valid_range: [0.01, 0.15]
+        description: "Manning's roughness coefficient for flow resistance"
+      - name: "hydraulic_conductivity"
+        unit: "m/day"
+        valid_range: [0.001, 100]
+        description: "Hydraulic conductivity for GW-SW exchange"
+      - name: "mu_H"
+        unit: "1/day"
+        valid_range: [1, 10]
+        description: "Max heterotrophic growth rate"
+      - name: "K_s"
+        unit: "g/m^3"
+        valid_range: [5, 40]
+        description: "Substrate half-saturation constant"
+      - name: "mu_N"
+        unit: "1/day"
+        valid_range: [0.1, 2.0]
+        description: "Max nitrifier growth rate"
+      - name: "K_o"
+        unit: "g/m^3"
+        valid_range: [0.1, 0.5]
+        description: "O2 half-saturation for heterotrophs"
+    solver:
+      - name: "c_n_weight"
+        valid_range: [0, 1]
+        default: 1
+        description: "Crank-Nicholson weight (0=explicit, 1=implicit)"
+      - name: "nr_tolerance"
+        valid_range: [1.0e-6, 0.01]
+        default: 0.001
+        description: "Newton-Raphson convergence tolerance"
+      - name: "initial_time_step"
+        unit: "days"
+        valid_range: [1.0e-6, 0.1]
+        default: 0.001
+        description: "Starting timestep"
+      - name: "minimum_timestep"
+        unit: "days"
+        valid_range: [1.0e-10, 0.001]
+        default: 1.0e-6
+        description: "Smallest allowed timestep"
+
+outputs:
+  primary:
+    - name: "DOM_concentration"
+      unit: "g/m^3"
+      valid_range: [0, 1000]
+      description: "Dissolved organic matter concentration"
+    - name: "O2_concentration"
+      unit: "g/m^3"
+      valid_range: [0, 15]
+      description: "Dissolved oxygen concentration"
+    - name: "NH3_concentration"
+      unit: "g/m^3"
+      valid_range: [0, 100]
+      description: "Ammonia concentration"
+    - name: "NOx_concentration"
+      unit: "g/m^3"
+      valid_range: [0, 100]
+      description: "Nitrate+nitrite concentration"
+    - name: "Storage"
+      unit: "m^3"
+      valid_range: [0, 1.0e+8]
+      description: "Water storage volume"
+    - name: "head"
+      unit: "m"
+      valid_range: [-100, 10000]
+      description: "Water surface elevation"
+    - name: "inflow"
+      unit: "m^3/day"
+      valid_range: [-1.0e+6, 1.0e+6]
+      description: "Flow rate into block"
+  format:
+    file: "output.txt"
+    type: "CSV"
+    delimiter: ","
+    time_column: "t (days)"
+    header: true
+    observation_file: "observedoutput.txt"
+
+unit_system:
+  time: "days"
+  length: "m"
+  volume: "m^3"
+  concentration: "g/m^3"
+  flow: "m^3/day"
+  conductivity: "m/day"
+  rate: "1/day"
+  temperature: "Celsius"
+
+known_issues:
+  - id: "dt_001"
+    severity: "fatal"
+    description: "Template path resolution fails if binary moved from build location"
+  - id: "dt_002"
+    severity: "fatal"
+    description: "Empty output when input .ohq path is relative instead of absolute"
+  - id: "dt_003"
+    severity: "silent"
+    description: "Missing unit brackets [unit] on values causes wrong interpretation"
+  - id: "dt_004"
+    severity: "silent"
+    description: "Semicolon/comma delimiter confusion causes silent parameter drop"
+  - id: "dt_005"
+    severity: "silent"
+    description: "Time values not in days causes 24x or 3600x error"
+  - id: "dt_006"
+    severity: "silent"
+    description: "Concentration not in g/m^3 causes 1000x error"
+  - id: "dt_007"
+    severity: "degraded"
+    description: "Fixed head blocks need large Storage (>100000 m^3) to act as boundaries"
+  - id: "dt_008"
+    severity: "degraded"
+    description: "c_n_weight=0 (explicit) can oscillate; default 1 is safe"
+  - id: "dt_009"
+    severity: "fatal"
+    description: "NR tolerance too tight with large minimum_timestep causes solver deadlock"

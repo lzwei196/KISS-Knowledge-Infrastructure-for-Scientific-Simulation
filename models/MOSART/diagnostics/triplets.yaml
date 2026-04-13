@@ -1,0 +1,181 @@
+# MOSART-WM (mosartwmpy) Diagnostic Triplets
+# Format: symptom → diagnosis → remedy
+# Each entry captures a known failure mode with its root cause and fix
+
+- id: T001
+  symptom: "Discharge is approximately 86400x higher than expected values"
+  diagnosis: "Runoff input units are mm/day but config assumes mm/s (no conversion applied)"
+  remedy: |
+    Convert runoff to mm/s before use:
+      Q_mm_s = Q_mm_day / 86400.0
+    Or use convert_runoff_forcing.py with --source-units mm/day
+
+- id: T002
+  symptom: "Discharge is approximately 1000x higher than expected"
+  diagnosis: "Runoff units are m/s but mosartwmpy expects mm/s"
+  remedy: |
+    Convert m/s to mm/s:
+      Q_mm_s = Q_m_s * 1000.0
+    Or use convert_runoff_forcing.py with --source-units m/s
+
+- id: T003
+  symptom: "All output variables are zero or NaN"
+  diagnosis: "Grid mosart_mask excludes all cells, or runoff file has zero values at grid locations"
+  remedy: |
+    Check mosart_mask: ds = xr.open_dataset(grid_path); print((ds['fdir'].values > 0).sum())
+    Check runoff has data: ds = xr.open_dataset(runoff_path); print(ds['QOVER'].values.max())
+    Verify lat/lon coordinates match exactly between grid and forcing files
+
+- id: T004
+  symptom: "ValueError: Current simulation date not within time bounds of runoff input file"
+  diagnosis: "Simulation period extends beyond the temporal coverage of the runoff forcing file"
+  remedy: |
+    Ensure start_date and end_date in config.yaml fall within runoff file time range.
+    For multi-file input, ensure all {Y}/{M}/{D} file combinations exist on disk.
+    Check: ds = xr.open_dataset(runoff_path); print(ds.time.values[[0,-1]])
+
+- id: T005
+  symptom: "Model appears frozen for 30-60 seconds at the start of first run"
+  diagnosis: "Numba JIT compilation of routing kernels on first invocation (cached afterward)"
+  remedy: |
+    This is normal behavior. Numba compiles to native code on first call.
+    Subsequent runs use cached .nbi files and start immediately.
+    Do not kill the process during this initial compilation phase.
+
+- id: T006
+  symptom: "MemoryError during model initialization on full CONUS grid"
+  diagnosis: "Full CONUS NLDAS grid has ~100k cells; each cell stores ~50 float64 state arrays"
+  remedy: |
+    Use grid.subdomain in config.yaml to limit to basins of interest:
+      grid:
+        subdomain:
+          - 45.52,-122.68
+    This dramatically reduces memory and runtime.
+
+- id: T007
+  symptom: "Reservoir storage becomes negative"
+  diagnosis: "Reservoir evaporation exceeds inflow + storage in regulation() function"
+  remedy: |
+    The regulation() function includes floor logic: reservoir_storage = max(0, ...).
+    If negative values persist, check reservoir_potential_evaporation units.
+    Evaporation uses: 1e6 * mm/s * dt * area_km2 — verify area is in km² not m².
+
+- id: T008
+  symptom: "NaN values propagate through discharge after several timesteps"
+  diagnosis: "Division by zero in Manning's equation when slope or hydraulic radius is zero"
+  remedy: |
+    Verify grid file has no zero slopes (model replaces 0 with minimums but NaN bypasses this).
+    Check for NaN in grid: for v in ['hslp','tslp','rslp']: print(v, np.isnan(ds[v].values).sum())
+    Replace NaN slopes with minimum values (0.005 hillslope, 0.0001 channel).
+
+- id: T009
+  symptom: "Reservoir capacity (CAP_MCM) in reservoir.nc seems too small — all reservoirs overflow"
+  diagnosis: "Reservoir storage capacity is in million m³ in the input file, loaded and converted internally"
+  remedy: |
+    Verify input values: CAP_MCM=1.0 means 1 million m³ = 1e6 m³.
+    If values appear to be already in m³ (very large), they will be multiplied again.
+    Check: ds = xr.open_dataset(reservoir_path); print(ds['CAP_MCM'].values[:5])
+    Grand Coulee ~11,795 MCM; Hoover Dam ~36,703 MCM — these are correct in CAP_MCM.
+
+- id: T010
+  symptom: "Water demand is fully met but discharge at gauge is much lower than observed"
+  diagnosis: "Irrigation extraction removes too much water from channel; extraction fraction too high"
+  remedy: |
+    Check irrigation_extraction_maximum_fraction in Parameters (default 0.5).
+    Consider reducing water_management demand values or using subdomain to isolate issues.
+    Compare with water_management.enabled: false to see natural vs regulated flow.
+
+- id: T011
+  symptom: "TypeError or AttributeError with numpy 2.0"
+  diagnosis: "mosartwmpy requires numpy<2.0 due to numba API compatibility"
+  remedy: |
+    Downgrade numpy:
+      pip install "numpy>=1.20,<2.0"
+    Or create a fresh virtual environment:
+      python -m venv venv && source venv/bin/activate
+      pip install mosartwmpy
+
+- id: T012
+  symptom: "Simulation runs but output NetCDF has only one timestep per file"
+  diagnosis: "output_file_frequency set to 'daily' instead of 'monthly'"
+  remedy: |
+    Set in config.yaml:
+      simulation:
+        output_file_frequency: monthly   # or yearly
+    Daily frequency creates one file per day with one timestep each.
+
+- id: T013
+  symptom: "Restart file date does not match expected simulation end date"
+  diagnosis: "Restart file date parsed from filename pattern YYYY_MM_DD which may differ from end_date"
+  remedy: |
+    Restart files are named {name}_restart_{year}_{month}_{day}.nc.
+    The date reflects the simulation state at that point, which is the day AFTER
+    the last completed output day (because time advances before writing).
+    This is expected behavior.
+
+- id: T014
+  symptom: "Runoff spikes unrealistically at monthly boundaries"
+  diagnosis: "Multi-file runoff switching causes discontinuity; method='pad' selects closest past time"
+  remedy: |
+    Ensure runoff files overlap or have continuous time coverage.
+    The 'pad' selection method means the last available timestep in the current file
+    is used until a new file provides a closer timestamp.
+    Consider using single continuous runoff files spanning the full simulation period.
+
+- id: T015
+  symptom: "Subdomain simulation produces empty output (all NaN)"
+  diagnosis: "Subdomain coordinates don't fall within any active basin in the grid"
+  remedy: |
+    Verify coordinates are within the grid extent:
+      ds = xr.open_dataset(grid_path)
+      print(f"Lat: {ds.lat.values.min()} to {ds.lat.values.max()}")
+      print(f"Lon: {ds.lon.values.min()} to {ds.lon.values.max()}")
+    Ensure coordinates are in (lat, lon) order, not (lon, lat).
+    Check that the nearest grid cell has mosart_mask > 0 (is land, not ocean).
+
+- id: T016
+  symptom: "BMI set_value for runoff has no effect on simulation"
+  diagnosis: "When runoff.read_from_file is true, file values overwrite BMI-set values each timestep"
+  remedy: |
+    Set in config.yaml:
+      runoff:
+        read_from_file: false
+    Then provide runoff via BMI before each update():
+      model.set_value('surface_runoff_flux', runoff_array)  # mm/s
+      model.update()
+
+- id: T017
+  symptom: "Reservoir surface area (AREA_SKM) appears to be in m² — reservoirs evaporate entire storage"
+  diagnosis: "Reservoir evaporation formula uses 1e6 * evap * dt * AREA_SKM, assuming km²"
+  remedy: |
+    If AREA_SKM is already in m², the 1e6 multiplier causes 1 million × too much evaporation.
+    Convert to km² in input file: AREA_SKM = area_m2 / 1e6
+    Grand Coulee area is ~324 km² — check your values are in this range.
+
+- id: T018
+  symptom: "Channel depth grows without bound in flat terrain"
+  diagnosis: "Very small channel slope (approaching zero) causes very slow outflow via Manning's equation"
+  remedy: |
+    The model replaces zero slopes with minimum values (0.0001 for channels).
+    If NaN slopes exist in grid file, they bypass this replacement.
+    Fix: ensure no NaN values in rslp variable of grid file.
+    Consider increasing channel_slope_minimum if terrain is extremely flat.
+
+- id: T019
+  symptom: "Farmer ABM demand calculation fails silently, falls back to file-based demand"
+  diagnosis: "FarmerABM requires specific input files (land_water_constraints, crop_prices, etc.)"
+  remedy: |
+    Check log for: "Water demand calculation for farmer ABM failed. Defaulting to precalculated values."
+    Ensure all ABM input files exist at configured paths.
+    If not using ABM, set water_management.demand.farmer_abm.enabled: false.
+
+- id: T020
+  symptom: "output_resolution: 43200 causes Exception at initialization"
+  diagnosis: "output_resolution must be >= timestep and evenly divisible by timestep"
+  remedy: |
+    With default timestep=10800:
+      Valid: 10800, 21600, 32400, 43200(?), 86400
+      43200 / 10800 = 4.0 — this IS valid.
+    The error may instead be that output_resolution < timestep.
+    Check: output_resolution=3600 with timestep=10800 will fail.
+    Use output_resolution: 86400 for standard daily output.

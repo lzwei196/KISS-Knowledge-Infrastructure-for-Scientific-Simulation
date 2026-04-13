@@ -1,0 +1,278 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["crop"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "WOFOST 7.2 via PCSE 6.0"
+  domain: "crop"
+  secondary_domains: ["soil_water"]
+  binary: null
+  package: "pcse (pip install pcse)"
+  language: "Python"
+  execution: "engine = Wofost72_WLP_FD(params, weather, agro); engine.run_till_terminate()"
+  notes: >
+    Pure-Python crop model. No compiled binary. All inputs are Python objects
+    and YAML configuration. Outputs are pandas DataFrames.
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "irradiance"
+      variable: "IRRAD"
+      unit: "J/m2/day"
+      valid_range: [100000, 40000000]
+      format: "Python float or CSV column"
+      conversion_from_cmfd: "W/m2 -> J/m2/day: multiply by 86400"
+      silent_error: >
+        CRITICAL: IRRAD must be in JOULES/m2/day, NOT kJ or MJ. The PCSE documentation
+        says 'kJ' but internal DB stores JOULES. Spain example: IRRAD=15,657,000 J/m2/d
+        = 15.7 MJ. If IRRAD < 100,000, it is 1000x too low and yield will be ZERO.
+        This is the #1 cause of WOFOST zero-yield bugs (dt_v005).
+
+    - name: "temperature_max"
+      variable: "TMAX"
+      unit: "degC"
+      valid_range: [-50.0, 60.0]
+      format: "Python float or CSV column"
+      conversion_from_cmfd: "K -> degC: subtract 273.15"
+
+    - name: "temperature_min"
+      variable: "TMIN"
+      unit: "degC"
+      valid_range: [-60.0, 50.0]
+      format: "Python float or CSV column"
+      conversion_from_cmfd: "K -> degC: subtract 273.15"
+
+    - name: "precipitation"
+      variable: "RAIN"
+      unit: "cm/day"
+      valid_range: [0.0, 50.0]
+      format: "Python float or CSV column"
+      conversion_from_cmfd: "mm/day -> cm/day: divide by 10"
+      silent_error: >
+        RAIN is cm/day, NOT mm/day. If you pass mm values (e.g., 5.0 mm as 5.0 cm),
+        precipitation is 10x too high. The model runs fine but soil is permanently waterlogged.
+
+    - name: "vapor_pressure"
+      variable: "VAP"
+      unit: "kPa"
+      valid_range: [0.0, 10.0]
+      format: "Python float or CSV column"
+      silent_error: "VAP must be kPa, NOT hPa or mbar (1 kPa = 10 hPa)"
+
+    - name: "wind_speed"
+      variable: "WIND"
+      unit: "m/s"
+      valid_range: [0.0, 80.0]
+      format: "Python float or CSV column"
+
+    - name: "reference_et"
+      variable: "E0, ES0, ET0"
+      unit: "cm/day"
+      valid_range: [0.0, 1.5]
+      format: "Python float or CSV column"
+      silent_error: >
+        E0/ES0/ET0 are cm/day, NOT mm/day. Spain DB values: ET0=0.08-0.88 cm/d.
+        If Hargreaves gives mm/day, divide by 10. Values >1.5 cm/d cause extreme
+        water stress (dt_v006).
+
+  parameters:
+    critical:
+      - name: "crop_name"
+        description: "PCSE built-in crop name (case-sensitive)"
+        valid_values: ["wheat", "maize", "barley", "potato", "sugarbeet", "rapeseed", "sunflower", "soybean", "grain_maize"]
+        silent_error: >
+          Case-sensitive: 'Wheat' fails, 'wheat' works. 'winter_wheat_101' fails,
+          'Winter_wheat_101' works. Mismatch produces KeyError.
+
+      - name: "variety_name"
+        description: "Crop variety identifier within PCSE database"
+        notes: "Case-sensitive. Must match exactly (e.g., 'Winter_wheat_101')."
+
+      - name: "TSUM1"
+        description: "Temperature sum from emergence to anthesis"
+        unit: "degC days"
+        notes: "Too high for the climate means DVS never reaches 1.0 (no anthesis)."
+
+      - name: "TSUM2"
+        description: "Temperature sum from anthesis to maturity"
+        unit: "degC days"
+        notes: "Too high means DVS never reaches 2.0 (no maturity, zero yield)."
+
+      - name: "vernalization_params"
+        description: "VERNSAT, VERNBASE, VERNDVS for winter crops"
+        notes: >
+          Winter wheat/barley REQUIRE vernalization. If VERNSAT too high and winter
+          is mild, DVS stuck before anthesis - crop never matures, yield is zero,
+          NO error message. VERNDVS is safety cutoff (~0.30).
+
+    soil:
+      - name: "SMW"
+        description: "Wilting point"
+        unit: "cm3/cm3"
+        valid_range: [0.01, 0.30]
+
+      - name: "SMFCF"
+        description: "Field capacity"
+        unit: "cm3/cm3"
+        valid_range: [0.10, 0.50]
+
+      - name: "SM0"
+        description: "Saturation"
+        unit: "cm3/cm3"
+        valid_range: [0.30, 0.60]
+        notes: "Ordering constraint: SMW < SMFCF < SM0 must hold."
+
+      - name: "RDMSOL"
+        description: "Maximum rootable depth"
+        unit: "cm"
+        valid_range: [10, 300]
+
+    agromanagement:
+      - name: "crop_start_date"
+        format: "YYYY-MM-DD in YAML"
+        notes: >
+          For winter crops sown in autumn, the campaign start date must precede
+          the sowing date (e.g., campaign starts Oct 1, sowing Oct 15).
+
+      - name: "crop_start_type"
+        valid_values: ["sowing", "emergence"]
+
+  files:
+    required:
+      - name: "YAML agromanagement"
+        description: "Agromanagement schedule (crop calendar, timed events, state events)"
+        format: "YAML list of campaign dicts"
+        notes: "Generated programmatically or from template. Indentation-sensitive."
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "grain_yield"
+      method: "engine.get_output() -> DataFrame['TWSO']"
+      unit: "kg/ha (dry matter)"
+      valid_range: [0, 15000]
+      notes: "Total weight of storage organs at maturity. Main yield output."
+
+    - name: "total_above_ground_biomass"
+      method: "engine.get_output() -> DataFrame['TAGP']"
+      unit: "kg/ha"
+      valid_range: [0, 30000]
+
+    - name: "leaf_area_index"
+      method: "engine.get_output() -> DataFrame['LAI']"
+      unit: "m2/m2"
+      valid_range: [0, 12]
+
+    - name: "development_stage"
+      method: "engine.get_output() -> DataFrame['DVS']"
+      unit: "dimensionless"
+      valid_range: [0, 2.0]
+      notes: "0=emergence, 1=anthesis, 2=maturity. If DVS < 2.0, crop did not mature."
+
+  summary:
+    - name: "summary_output"
+      method: "engine.get_summary_output()"
+      notes: "Returns list of dicts with DOE (date of emergence), DOA (anthesis), DOM (maturity), TWSO, TAGP, LAIMAX, etc."
+
+  simulation_modes:
+    - name: "Wofost72_PP"
+      description: "Potential Production — no water stress, no soil"
+      notes: "Use for theoretical maximum yield only. Silent error if used for real-world simulations."
+
+    - name: "Wofost72_WLP_FD"
+      description: "Water-Limited Production, Free Drainage — includes water balance"
+      notes: "Most common for real-world simulations."
+
+    - name: "Wofost72_WLP_CWB"
+      description: "Water-Limited, Classic Water Balance — includes groundwater"
+      notes: "Use when groundwater table is shallow."
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "irrad_unit_silent_error"
+    triplet: "dt_v005"
+    description: >
+      IRRAD in kJ/m2/d or MJ/m2/d instead of J/m2/d causes zero yield with no error.
+      This is the #1 cause of WOFOST zero-yield bugs. VERIFIED 2026-03-19.
+    affected_output: "TWSO = 0 or near-zero"
+    detection: "IRRAD values < 100,000 J/m2/d in weather data"
+    fix: "Ensure IRRAD = SW_W_m2 * 86400 (gives J/m2/d). If IRRAD < 100,000, it is 1000x too low."
+
+  - id: "rain_unit_mm_not_cm"
+    description: "RAIN in mm/day instead of cm/day causes 10x over-precipitation"
+    affected_output: "Soil permanently waterlogged, unrealistic water balance"
+    detection: "RAIN values > 5 cm/day for non-extreme events"
+    fix: "Divide mm/day by 10 to get cm/day"
+
+  - id: "et0_unit_mm_not_cm"
+    triplet: "dt_v006"
+    description: "E0/ES0/ET0 in mm/day instead of cm/day causes extreme water stress"
+    affected_output: "Severe water stress, low yield despite adequate rainfall"
+    detection: "ET0 values > 1.5 cm/d"
+    fix: "Divide Hargreaves mm/day output by 10"
+
+  - id: "vap_unit_hpa_not_kpa"
+    description: "VAP in hPa instead of kPa causes transpiration errors"
+    affected_output: "Incorrect stomatal response and transpiration"
+    detection: "VAP values > 10"
+    fix: "Divide hPa by 10 to get kPa"
+
+  - id: "vernalization_stuck"
+    description: >
+      Winter wheat/barley with high VERNSAT in mild climate: DVS permanently stuck
+      before anthesis. Yield = 0, NO error message.
+    affected_output: "DVS never reaches 1.0, TWSO = 0"
+    detection: "Final DVS < 1.0 for winter crop"
+    fix: "Reduce VERNSAT or increase VERNDVS safety cutoff"
+
+  - id: "simulation_mode_wrong"
+    description: "Using Wofost72_PP (potential production) when water-limited is intended"
+    affected_output: "Unrealistically high yield (no water stress applied)"
+    detection: "Yield > literature maximum for the region"
+    fix: "Use Wofost72_WLP_FD for real-world simulations"
+
+  - id: "afgen_non_monotonic"
+    description: "AFGEN interpolation tables with non-monotonic x values"
+    affected_output: "Silent interpolation errors or runtime exception"
+    detection: "Check that x values in AMAXTB, SLATB, FOTB, etc. are strictly increasing"
+    fix: "Sort x values in ascending order"
+
+# =========================================================================
+# EXPECTED RANGES (from validated results)
+# =========================================================================
+expected_ranges:
+  bengbu_wheat:
+    yield_kgha: [3000, 4500]
+    reference: "3543 kg/ha (DB crop params, VIC forcing)"
+  bengbu_maize:
+    yield_kgha: [5000, 7000]
+    reference: "6102 kg/ha (DB crop params, VIC forcing)"
+    scorecard: "wofost_maize_bengbu.json (PASS, PBIAS +12%)"
+
+# =========================================================================
+# CALIBRATION REFERENCE
+# =========================================================================
+calibration_reference:
+  approach: "Crop parameter adjustment (TSUM1, TSUM2, SPAN, CVO, CVL)"
+  notes: >
+    WOFOST uses built-in PCSE crop parameter database. Calibration involves adjusting
+    TSUM1/TSUM2 (phenology), AMAXTB (max assimilation rate), SLATB (specific leaf area),
+    and allocation fractions (CVO, CVL, CVS, CVR).
+  cross_model_validation: >
+    WOFOST and DSSAT should agree within 15% for the same location and crop.
+    Bengbu validation: WOFOST wheat 3543 vs DSSAT 3217 (+10%),
+    WOFOST maize 6102 vs DSSAT 5780 (+6%).

@@ -1,0 +1,152 @@
+model:
+  name: "DuMux"
+  version: "3.11-dev"
+  domain: "Groundwater flow and transport in porous media"
+  framework: "DUNE (Distributed and Unified Numerics Environment)"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DuMux/dumux_real_run/example_1ptracer"
+  binary_type: "ELF 64-bit, C++20, dynamically linked"
+  models_supported:
+    - "1p (single-phase Darcy flow)"
+    - "1ptracer (single-phase + tracer transport)"
+    - "2p (two-phase flow)"
+    - "Richards (variably saturated)"
+    - "Non-isothermal coupling"
+
+inputs:
+  config_format: "INI-style .input files with [Section] headers"
+  cli_pattern: "./executable params.input [-Section.Key value]"
+
+  forcing:
+    - name: "recharge"
+      unit: "kg/(m²·s)"
+      description: "Neumann BC mass flux for recharge"
+      valid_range: [0.0, 1.0e-4]
+      note: "Convert from mm/day: q = R_mm * 1000 / (86400 * 1000)"
+
+  parameters:
+    critical:
+      - name: "Permeability"
+        section: "SpatialParams"
+        unit: "m²"
+        valid_range: [1.0e-20, 1.0e-8]
+        description: "Intrinsic permeability of aquifer matrix"
+        trap: "Must be m², NOT darcy or hydraulic conductivity"
+      - name: "PermeabilityLens"
+        section: "SpatialParams"
+        unit: "m²"
+        valid_range: [1.0e-20, 1.0e-8]
+        description: "Permeability of embedded lens feature"
+      - name: "Porosity"
+        section: "SpatialParams"
+        unit: "-"
+        valid_range: [0.01, 0.60]
+        description: "Pore volume fraction"
+
+    grid:
+      - name: "UpperRight"
+        section: "Grid"
+        unit: "m"
+        description: "Domain upper-right corner coordinates"
+      - name: "Cells"
+        section: "Grid"
+        unit: "-"
+        description: "Grid resolution (nx ny [nz])"
+      - name: "LensLowerLeft"
+        section: "SpatialParams"
+        unit: "m"
+        description: "Lower-left corner of lens region"
+      - name: "LensUpperRight"
+        section: "SpatialParams"
+        unit: "m"
+        description: "Upper-right corner of lens region"
+
+    temporal:
+      - name: "DtInitial"
+        section: "TimeLoop"
+        unit: "s"
+        valid_range: [0.001, 86400]
+        description: "Initial time step size"
+        trap: "All times in SECONDS"
+      - name: "TEnd"
+        section: "TimeLoop"
+        unit: "s"
+        valid_range: [1, 3.1536e+10]
+        description: "Simulation end time"
+      - name: "MaxTimeStepSize"
+        section: "TimeLoop"
+        unit: "s"
+        valid_range: [0.001, 86400]
+        description: "Maximum allowed time step"
+
+outputs:
+  format: "VTK (.vtu unstructured grid, .pvd time series collection)"
+  viewer: "ParaView, or Python with meshio/vtk library"
+
+  primary:
+    - name: "p"
+      unit: "Pa"
+      valid_range: [1.0e4, 1.0e8]
+      description: "Fluid pressure field (absolute, not gauge)"
+      model: "1p"
+    - name: "x^tracer_0"
+      unit: "-"
+      valid_range: [0.0, 1.0]
+      description: "Tracer mole fraction"
+      model: "1ptracer"
+    - name: "X^tracer_0"
+      unit: "-"
+      valid_range: [0.0, 1.0]
+      description: "Tracer mass fraction"
+      model: "1ptracer"
+    - name: "velocity_Groundwater (m/s)"
+      unit: "m/s"
+      valid_range: [0.0, 1.0e-2]
+      description: "Darcy velocity vector (requires AddVelocity=true)"
+    - name: "rho"
+      unit: "kg/m³"
+      valid_range: [990, 1100]
+      description: "Fluid density"
+    - name: "permeability"
+      unit: "m²"
+      valid_range: [1.0e-20, 1.0e-8]
+      description: "Intrinsic permeability field"
+      model: "1p"
+
+  grid_info:
+    - name: "points"
+      description: "Node coordinates (n_points × 3)"
+    - name: "cells"
+      description: "Cell connectivity"
+
+known_issues:
+  - id: "dt_001"
+    description: "Permeability must be in m², not darcy or hydraulic conductivity"
+    severity: "critical"
+    impact: "Values ~1e7 too large cause unrealistic flow velocities"
+  - id: "dt_002"
+    description: "All temporal parameters are in seconds, not days/years"
+    severity: "critical"
+    impact: "TEnd=365 means 6 minutes, not 1 year"
+  - id: "dt_003"
+    description: "Pressure is absolute (not gauge) — surface ≈ 101325 Pa"
+    severity: "high"
+  - id: "dt_004"
+    description: "van Genuchten α must be in 1/Pa, not 1/cm H₂O"
+    severity: "high"
+    impact: "Conversion: α_Pa = α_cm / 98.0665"
+  - id: "dt_005"
+    description: "Recharge is mass flux kg/(m²·s), not mm/day"
+    severity: "high"
+
+validated_run:
+  binary: "example_1ptracer"
+  params: "params.input"
+  grid: "50×50 structured, 1m×1m domain"
+  permeability: 1.0e-13
+  permeability_lens: 7.943282e-15
+  tend: 5000
+  n_timesteps: 11
+  output_pressure_range: [100980, 109902]
+  output_density: 1000
+  output_velocity_max: 7.29e-8
+  output_n_cells: 2500

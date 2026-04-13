@@ -1,0 +1,872 @@
+entries:
+- id: err_001
+  timestamp: '2026-03-19T22:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: WRF-Hydro
+    run_name: chaohe_wrf_test
+  stage: s4_fulldom
+  failure_domain: parameter_format
+  symptom:
+    description: Boundary cells in Fulldom_hires.nc have non-zero FLOWDIRECTION values pointing outside the grid, causing
+      WRF-Hydro to crash with 'Apparent error in network topology' during routing initialization
+    error_pattern: Apparent error in network topology
+    detection_method: log_match
+  diagnosis:
+    root_cause: WhiteboxTools D8 pointer assigns flow directions to all cells including boundary cells, but WRF-Hydro requires
+      boundary cells to have FLOWDIRECTION=0
+    explanation: When boundary cells have flow directions pointing outside the grid (e.g., a cell on the eastern edge pointing
+      east), the routing module follows the flow path to a nonexistent cell index, triggering a topology check failure. The
+      fix is to set all boundary cells to FLOWDIRECTION=0 after D8 computation.
+    affected_components:
+    - Fulldom_hires.nc
+    - module_HYDRO_routing.F
+  resolution:
+    action: Set FLOWDIRECTION=0 for all boundary cells (row 0, row ny-1, col 0, col nx-1) in Fulldom_hires.nc after WhiteboxTools
+      processing
+    files_changed:
+    - tools/s4_fulldom/build_fulldom_hires.py
+    prevention: build_fulldom_hires.py automatically zeros boundary flow directions
+  severity: fatal
+  promoted: true
+  promoted_as: dt_001
+- id: err_002
+  timestamp: '2026-03-19T22:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: WRF-Hydro
+    run_name: chaohe_wrf_test
+  stage: s7_spatial_metadata
+  failure_domain: parameter_format
+  symptom:
+    description: WRF-Hydro crashes at startup with 'Unable to get x resolution in LAND spatial metadata file' when reading
+      GEOGRID_LDASOUT_Spatial_Metadata.nc
+    error_pattern: Unable to get x resolution in LAND spatial metadata file
+    detection_method: log_match
+  diagnosis:
+    root_cause: The x and/or y coordinate variables in GEOGRID_LDASOUT_Spatial_Metadata.nc are missing the 'resolution' attribute
+      that WRF-Hydro requires
+    explanation: WRF-Hydro reads grid spacing from the 'resolution' attribute of x and y coordinate variables. Standard NetCDF
+      conventions do not require this attribute, so many tools omit it. The attribute must be a float equal to the grid spacing
+      in metres. This is a WRF-Hydro-specific requirement not documented in CF conventions.
+    affected_components:
+    - GEOGRID_LDASOUT_Spatial_Metadata.nc
+    - module_RT_data.F
+  resolution:
+    action: Add 'resolution' attribute to x and y coordinate variables in Spatial_Metadata.nc and Fulldom_hires.nc
+    files_changed:
+    - tools/s6_groundwater/build_groundwater.py
+    prevention: Always add resolution attribute when creating x/y coordinate variables in NetCDF files for WRF-Hydro
+  severity: fatal
+  promoted: true
+  promoted_as: dt_002
+- id: err_003
+  timestamp: '2026-03-19T22:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: WRF-Hydro
+    run_name: chaohe_wrf_test
+  stage: s4_fulldom
+  failure_domain: parameter_format
+  symptom:
+    description: WRF-Hydro crashes at startup with 'Unable to find x coordinate in FullDom file' when reading Fulldom_hires.nc
+    error_pattern: Unable to find x coordinate in FullDom file
+    detection_method: log_match
+  diagnosis:
+    root_cause: Fulldom_hires.nc is missing the x and/or y 1D coordinate variables, or the variables exist but lack the 'resolution'
+      attribute
+    explanation: WRF-Hydro searches for 1D coordinate variables named 'x' and 'y' in Fulldom_hires.nc with a 'resolution'
+      attribute. If the file was created with only 2D LATITUDE/LONGITUDE but no 1D projected coordinate arrays, WRF-Hydro
+      cannot determine the routing grid geometry.
+    affected_components:
+    - Fulldom_hires.nc
+    - module_RT_data.F
+  resolution:
+    action: Ensure Fulldom_hires.nc has 1D x(x) and y(y) coordinate variables with 'resolution' attribute set to routing grid
+      spacing
+    files_changed:
+    - tools/s4_fulldom/build_fulldom_hires.py
+    prevention: build_fulldom_hires.py creates proper 1D coordinate variables with resolution attribute
+  severity: fatal
+  promoted: true
+  promoted_as: dt_003
+- id: err_004
+  timestamp: '2026-03-19T22:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: WRF-Hydro
+    run_name: chaohe_wrf_test
+  stage: s8_forcing
+  failure_domain: path_resolution
+  symptom:
+    description: WRF-Hydro reports 'no forcing data found' when simulation period extends beyond the last available LDASIN_DOMAIN1
+      file in the FORCING/ directory
+    error_pattern: no forcing data found
+    detection_method: log_match
+  diagnosis:
+    root_cause: The simulation end date (KHOUR) extends beyond the last available LDASIN_DOMAIN1 file timestamp
+    explanation: LDASIN files follow YYYYMMDDHH.LDASIN_DOMAIN1 naming. WRF-Hydro reads them sequentially. If KHOUR requires
+      timesteps past the last file, the model crashes. This commonly happens when KHOUR includes the full last day but the
+      last LDASIN file is at 23:00 of end_date rather than 00:00 of end_date+1.
+    affected_components:
+    - FORCING/ directory
+    - namelist.hrldas KHOUR
+    - hrldas_drv_HYDRO.F
+  resolution:
+    action: Ensure LDASIN files cover the full simulation period, or reduce KHOUR to match available forcing
+    files_changed: []
+    prevention: generate_namelists.py checks FORCING file count against KHOUR
+  severity: fatal
+  promoted: true
+  promoted_as: dt_005
+- id: err_005
+  timestamp: '2026-03-19T16:06:35Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: WRF-Hydro
+    run_name: ''
+  stage: s4_fulldom
+  failure_domain: parameter_format
+  symptom:
+    description: Apparent error in network topology at domain edge
+    error_pattern: Apparent error in network topology
+    detection_method: log_match
+  diagnosis:
+    root_cause: Boundary cells have flow direction pointing outside domain
+    explanation: Duplicate of err_001.
+    affected_components: []
+  resolution:
+    action: Set all edge cell flow directions to 0
+    files_changed: []
+    prevention: build_fulldom_hires.py zeros edge cells
+  severity: fatal
+  promoted: true
+  promoted_as: dt_001
+- id: err_006
+  timestamp: '2026-03-19T16:06:35Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: WRF-Hydro
+    run_name: ''
+  stage: s7_spatial_metadata
+  failure_domain: parameter_format
+  symptom:
+    description: Unable to get x resolution in LAND spatial metadata file
+    error_pattern: Unable to get x resolution
+    detection_method: log_match
+  diagnosis:
+    root_cause: x/y coordinate variables missing resolution attribute
+    explanation: Duplicate of err_002.
+    affected_components: []
+  resolution:
+    action: Add resolution=DX float attribute to x and y variables
+    files_changed: []
+    prevention: build_groundwater.py adds resolution attr
+  severity: fatal
+  promoted: true
+  promoted_as: dt_002
+- id: err_007
+  timestamp: '2026-03-19T16:06:35Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: WRF-Hydro
+    run_name: ''
+  stage: s4_fulldom
+  failure_domain: parameter_format
+  symptom:
+    description: Unable to find x coordinate in FullDom file
+    error_pattern: Unable to find x coordinate in FullDom
+    detection_method: log_match
+  diagnosis:
+    root_cause: Fulldom_hires.nc has y/x as dimensions only, not coordinate variables
+    explanation: Duplicate of err_003.
+    affected_components: []
+  resolution:
+    action: Add x/y as both dimension AND coordinate variable with resolution attribute
+    files_changed: []
+    prevention: build_fulldom_hires.py creates x/y coords
+  severity: fatal
+  promoted: true
+  promoted_as: dt_003
+- id: err_008
+  timestamp: '2026-03-19T16:06:36Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: WRF-Hydro
+    run_name: ''
+  stage: s8_forcing
+  failure_domain: dependency_mismatch
+  symptom:
+    description: no forcing data found for next timestep after simulation end
+    error_pattern: no forcing data found
+    detection_method: log_match
+  diagnosis:
+    root_cause: Need 1 extra hour of forcing beyond simulation end time
+    explanation: Duplicate of err_004.
+    affected_components: []
+  resolution:
+    action: Generate LDASIN files through end_date + 1 hour
+    files_changed: []
+    prevention: convert_forcing adds 1 extra hour
+  severity: fatal
+  promoted: true
+  promoted_as: dt_005
+- id: err_009
+  timestamp: '2026-03-20T08:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: WRF-Hydro
+    run_name: chaohe_wrf_test
+  stage: s10_execution
+  failure_domain: parameter_format
+  symptom:
+    description: RESTART_FREQUENCY_HOURS=0 causes WRF-Hydro to not write LDASOUT, GWOUT, or RESTART files. Model
+      runs to completion but produces no output files.
+    error_pattern: no LDASOUT files
+    detection_method: missing_output
+  diagnosis:
+    root_cause: RESTART_FREQUENCY_HOURS must be >0 in namelist.hrldas for LDASOUT and GWOUT files to be written.
+      Default value 0 means never write.
+    explanation: WRF-Hydro uses RESTART_FREQUENCY_HOURS to control both restart file and diagnostic output frequency.
+      When set to 0, the model interprets this as never write. Set to -9999 to write at every OUTPUT_TIMESTEP,
+      or to a positive integer for periodic output.
+    affected_components:
+    - namelist.hrldas
+    - LDASOUT
+    - GWOUT
+  resolution:
+    action: Set RESTART_FREQUENCY_HOURS=-9999 in namelist.hrldas (write at every output step) or to a positive
+      value matching desired output interval
+    files_changed:
+    - tools/s9_namelists/generate_namelists.py
+    prevention: generate_namelists.py sets RESTART_FREQUENCY_HOURS=-9999 by default
+  severity: silent
+  promoted: true
+  promoted_as: dt_015
+- id: err_010
+  timestamp: '2026-03-20T12:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WRF-Hydro
+    run_name: bengbu_wrfhydro_2000_2005
+  stage: s4_fulldom
+  failure_domain: silent_error
+  symptom:
+    description: 50% uphill flows and 39K circular 2-cell cycles in routing — WhiteboxTools D8 encoding documentation
+      is WRONG. 8 of 9 directions were misassigned, causing 95% of cells to be disconnected from outlet.
+    error_pattern: topology|uphill|circular
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: WhiteboxTools D8 encoding docs wrong. Actual WBT output verified by empirical 5x5 DEM test is
+      1=NE, 2=E, 4=SE, 8=S, 16=SW, 32=W, 64=NW, 128=N — NOT the documented 1=E, 2=NE, 4=N, 8=NW, 16=W, 32=SW,
+      64=S, 128=SE. Old mapping had only 1 of 9 directions correct.
+    explanation: ArcGIS/WRF-Hydro uses 1=E, 2=SE, 4=S, 8=SW, 16=W, 32=NW, 64=N, 128=NE. Correct WBT-to-ArcGIS
+      mapping is {0:0, 1:128, 2:1, 4:2, 8:4, 16:8, 32:16, 64:32, 128:64}. The old (wrong) mapping produced 50%
+      uphill flows, 39K circular 2-cell cycles, and 95% cells disconnected from the outlet. This is a SILENT error —
+      the model runs but produces physically meaningless routing.
+    affected_components:
+    - build_fulldom_hires.py
+    - Fulldom_hires.nc
+    - FLOWDIRECTION
+  resolution:
+    action: Corrected WBT_TO_ARCGIS mapping table in build_fulldom_hires.py, verified by empirical test with
+      known-slope DEM
+    files_changed:
+    - tools/s4_fulldom/build_fulldom_hires.py
+    prevention: Always verify D8 encoding empirically with small known-slope DEM — never trust documentation
+  severity: silent
+  promoted: true
+  promoted_as: dt_v007
+- id: err_011
+  timestamp: '2026-03-20T12:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WRF-Hydro
+    run_name: bengbu_wrfhydro_2000_2005
+  stage: s8_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: SWDOWN extrapolated to 1026 W/m2 at grid edges by scipy.griddata — exceeds physical maximum
+      (solar constant = 1361 W/m2). Combined with 3-hour step-function temporal interpolation, caused sustained
+      overheating in Noah-MP energy balance.
+    error_pattern: SWDOWN.*1[0-9]{3}
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: scipy.griddata extrapolates beyond input range at domain edges where VIC grid does not fully cover
+      the WRF-Hydro LCC domain
+    explanation: Combined with 3-hour step-function temporal interpolation (constant 3hr blocks vs truly hourly data),
+      sustained overheating caused Noah-MP energy balance instability. Physical max is 1361 W/m2 (solar constant).
+    affected_components:
+    - convert_forcing_to_ldasin.py
+    - LDASIN_DOMAIN1
+    - SWDOWN
+  resolution:
+    action: Cap SWDOWN at 1361 W/m2 (solar constant) after spatial interpolation in convert_forcing_to_ldasin.py
+    files_changed:
+    - tools/s8_forcing/convert_forcing_to_ldasin.py
+    prevention: convert_forcing_to_ldasin.py now clips SWDOWN to solar constant after griddata interpolation
+  severity: degraded
+  promoted: true
+  promoted_as: dt_v022
+- id: err_012
+  timestamp: '2026-03-20T12:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WRF-Hydro
+    run_name: bengbu_wrfhydro_2000_2005
+  stage: s8_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: Mountain cells receive sea-level PSFC (101 kPa at 1955m elevation) and T2D 10.7C too warm — no
+      elevation correction applied during spatial interpolation from VIC 0.25deg to WRF-Hydro 1km grid
+    error_pattern: emitted longwave.*<0|Noah-MP
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: No elevation correction applied to PSFC and T2D during spatial interpolation from VIC 0.25deg grid
+      to WRF-Hydro 1km LCC grid
+    explanation: VIC forcing is at 0.25deg (~25km) resolution. When interpolated to 1km WRF-Hydro grid, mountain
+      cells at 1955m received PSFC from low-elevation VIC cells (~101 kPa vs correct ~80 kPa — 20% error). T2D was
+      ~10.7C too warm at mountaintops (no lapse rate correction). Combined with Bugs 1 and 2, caused Noah-MP
+      emitted longwave <0 crash.
+    affected_components:
+    - convert_forcing_to_ldasin.py
+    - LDASIN_DOMAIN1
+    - PSFC
+    - T2D
+  resolution:
+    action: Apply T2D -= 0.0065 * dz (lapse rate) and PSFC *= exp(-g*dz/(R*Tv)) (barometric formula) after griddata
+      in convert_forcing_to_ldasin.py
+    files_changed:
+    - tools/s8_forcing/convert_forcing_to_ldasin.py
+    prevention: convert_forcing_to_ldasin.py now applies elevation correction using DEM difference between VIC
+      source and WRF-Hydro target grid
+  severity: silent
+  promoted: true
+  promoted_as: dt_v008
+- id: err_013
+  timestamp: '2026-03-20T12:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WRF-Hydro
+    run_name: bengbu_wrfhydro_2000_2005
+  stage: s3_wrfinput
+  failure_domain: dependency_mismatch
+  symptom:
+    description: SMCRT fully depleted upon disaggregation — Noah-MP crash during January cold start with fully
+      frozen soil (SMC=SICE, no liquid water)
+    error_pattern: SMCRT fully depleted
+    detection_method: log_match
+  diagnosis:
+    root_cause: January cold start has fully frozen soil (SMC=SICE, no liquid water) causing SMCRT depletion during
+      vertical disaggregation
+    explanation: In cold-start mode, soil moisture is initialized uniformly. In January for continental basins, all
+      soil moisture freezes (SICE=SMC). When Noah-MP disaggregates the 4 soil layers, liquid water (SMCRT) reaches
+      zero causing a fatal assertion failure. Starting in a warmer month (Apr-Jul) avoids this.
+    affected_components:
+    - wrfinput_d01.nc
+    - Noah-MP
+    - SMCRT
+  resolution:
+    action: Start simulation in warmer month (Apr-Jul) for cold-start, or use restart file from winter spinup
+    files_changed: []
+    prevention: Start cold-start simulations in summer months; for winter starts, first run a 6-month spinup from
+      summer
+  severity: fatal
+  promoted: true
+  promoted_as: dt_v023
+- id: err_014
+  timestamp: '2026-03-20T12:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WRF-Hydro
+    run_name: bengbu_wrfhydro_2000_2005
+  stage: s10_execution
+  failure_domain: dependency_mismatch
+  symptom:
+    description: Cold-start produces 237 mm/d surface runoff on first days — unrealistic spinup artifact from uniform
+      soil moisture/temperature initialization
+    error_pattern: SFCRNOFF.*[0-9]{3}
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Uniform soil moisture/temperature initialization needs months to equilibrate with forcing — first
+      days produce massive unrealistic runoff
+    explanation: Cold-start initializes soil moisture at saturation and soil temperature uniformly. The first rainfall
+      events generate extreme surface runoff (237 mm/d) because infiltration capacity is misrepresented. After 6-12
+      months of spinup, soil state equilibrates and results become physical.
+    affected_components:
+    - wrfinput_d01.nc
+    - LDASOUT_DOMAIN1
+    - SFCRNOFF
+  resolution:
+    action: Run 6-12 month spinup before analysis period; discard first 6 months of cold-start output
+    files_changed: []
+    prevention: Always discard first 6 months of cold-start run as spinup; document expected spinup duration
+  severity: degraded
+  promoted: true
+  promoted_as: dt_v014
+- id: err_015
+  timestamp: '2026-03-20T16:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WRF-Hydro
+    run_name: bengbu_wrfhydro_025deg_2000_2005
+  stage: s4_fulldom
+  failure_domain: parameter_format
+  symptom:
+    description: CHANNELGRID built with 0/1 encoding (0=non-channel, 1=channel) but WRF-Hydro expects -9999/0
+      (-9999=non-channel, 0=channel). Value semantics inverted — channels not recognized, discharge=0.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: build_fulldom_hires.py originally wrote CHANNELGRID=1 for channel cells and CHANNELGRID=0
+      for non-channel cells. WRF-Hydro convention is CHANNELGRID=0 for channel and CHANNELGRID=-9999 for
+      non-channel. The 0/1 encoding made all channels invisible to routing.
+    explanation: WRF-Hydro's routing module checks for CHANNELGRID==0 to identify channel cells. With
+      the builder's 0/1 encoding, ALL non-channel cells had CHANNELGRID=0 and were incorrectly treated
+      as channels, while actual channel cells with CHANNELGRID=1 were ignored. Silent error — model runs
+      but routing is nonsensical.
+    affected_components:
+    - build_fulldom_hires.py
+    - Fulldom_hires.nc CHANNELGRID
+  resolution:
+    action: Changed CHANNELGRID encoding to WRF-Hydro convention (channel=0, non-channel=-9999)
+    files_changed:
+    - tools/s4_fulldom/build_fulldom_hires.py
+    prevention: build_fulldom_hires.py now uses correct -9999/0 encoding
+  severity: silent
+  promoted: true
+  promoted_as: dt_v010
+- id: err_016
+  timestamp: '2026-03-20T16:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WRF-Hydro
+    run_name: bengbu_wrfhydro_025deg_2000_2005
+  stage: s11_output
+  failure_domain: silent_error
+  symptom:
+    description: Basin-mean SFCRNOFF+UGDRNOFF gives 2.4x higher discharge than VIC or observations.
+      Headwater Q/P=0.35-0.38 but channel cells Q/P=0.96 due to upstream flow accumulation.
+    error_pattern: runoff ratio > 0.8
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: LDASOUT SFCRNOFF/UGDRNOFF accumulators include routed upstream flow, not just local
+      runoff. With OVRTSWCRT=1 and SUBRTSWCRT=1, basin-averaging double/triple counts the same water.
+    explanation: The correct way to get outlet discharge is from CHRTOUT (channel routing output),
+      not from LDASOUT SFCRNOFF basin averaging. CHRTOUT gives true routed streamflow at each
+      channel cell.
+    affected_components:
+    - LDASOUT_DOMAIN1 SFCRNOFF/UGDRNOFF
+    - CHRTOUT_DOMAIN1
+  resolution:
+    action: Use CHRTOUT_DOMAIN=1 in hydro.namelist. Read outlet discharge from CHRTOUT files.
+    files_changed: []
+    prevention: Always use CHRTOUT for discharge comparison, not LDASOUT SFCRNOFF averaging
+  severity: silent
+  promoted: true
+  promoted_as: dt_v009
+- id: err_017
+  timestamp: '2026-03-20T16:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WRF-Hydro
+    run_name: bengbu_wrfhydro_025deg_2000_2005
+  stage: s8_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: CMFD precip units documentation misleading — raw CMFD is kg/m2/s (=mm/s), NOT mm/3hr.
+      VIC pipeline multiplies by 10800 for its own use, creating false impression of native units.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: CMFD precipitation is stored as rate kg/m2/s. VIC pipeline multiplies by 10800 to
+      produce mm/3hr accumulation. Converting to WRF-Hydro LDASIN requires dividing VIC mm/3hr back
+      by 10800 to recover mm/s for RAINRATE.
+    explanation: Confusion arises because VIC pipeline makes CMFD look like it stores mm/3hr. Without
+      understanding this chain, one might skip the /10800 division and pass mm/3hr as mm/s, giving
+      10800x too much rain.
+    affected_components:
+    - convert_forcing_to_ldasin.py
+    - cmfd_to_ldasin.py
+    - LDASIN RAINRATE
+  resolution:
+    action: Document clearly that CMFD precip is kg/m2/s rate. VIC converts to mm/3hr. For LDASIN
+      RAINRATE, divide VIC mm/3hr by 10800 to recover mm/s.
+    files_changed: []
+    prevention: Both forcing converters handle the /10800 conversion
+  severity: silent
+  promoted: true
+  promoted_as: dt_v011
+- id: err_018
+  timestamp: '2026-03-20T16:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WRF-Hydro
+    run_name: bengbu_wrfhydro_025deg_2000_2005
+  stage: s2_geo_em
+  failure_domain: parameter_format
+  symptom:
+    description: 4 cells have ISLTYP=14 (water soil type) but LU_INDEX=land vegetation. Noah-MP
+      skips these cells, writing -9999 to output. Not a crash but missing data.
+    error_pattern: '-9999'
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: HWSD soil raster has water/nodata for cells that land cover classifies as land.
+      Soil/landuse inconsistency causes Noah-MP to treat cells as neither land nor water.
+    explanation: ISLTYP=14 (water) with XLAND=1 (land) — SOILPARM.TBL water entry has zeros for
+      all hydraulic params, effectively disabling the cell.
+    affected_components:
+    - geo_em.d01.nc ISLTYP
+    - HWSD raster
+  resolution:
+    action: Replace ISLTYP=14 on land cells with most common surrounding soil type or default
+      ISLTYP=4 (silt loam)
+    files_changed:
+    - tools/s2_geo_em/build_geo_em.py
+    prevention: build_geo_em.py post-processes to ensure no land cell has water soil type
+  severity: degraded
+  promoted: true
+  promoted_as: dt_v012
+- id: err_019
+  timestamp: '2026-03-20T16:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WRF-Hydro
+    run_name: bengbu_wrfhydro_025deg_2000_2005
+  stage: s6_groundwater
+  failure_domain: parameter_format
+  symptom:
+    description: GW bucket perpetually full — Zmax=50m too shallow. Bucket fills instantly,
+      pure pass-through, no meaningful groundwater storage dynamics.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Default GWBUCKPARM.nc Zmax=50m is too shallow for large basins. Bucket fills
+      within first few days, all recharge passes through as baseflow with zero delay.
+    explanation: With Zmax=50m, bucket equilibrium is near surface. Incoming recharge immediately
+      becomes baseflow — no damping, no storage. For meaningful GW dynamics, Zmax should be
+      100-500m depending on aquifer depth.
+    affected_components:
+    - GWBUCKPARM.nc Zmax
+    - build_groundwater.py
+    - GW_DOMAIN1
+  resolution:
+    action: Increase Zmax to 200-500m for deep aquifer basins, or calibrate against observed
+      baseflow recession.
+    files_changed: []
+    prevention: Document Zmax should be calibrated; default 50m gives minimal GW storage
+  severity: degraded
+  promoted: true
+  promoted_as: dt_v013
+- id: err_020
+  timestamp: '2026-03-20T20:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: WRF-Hydro
+    run_name: chaohe_wrfhydro_010deg_2000
+  stage: s4_fulldom
+  failure_domain: silent_error
+  symptom:
+    description: Zero channel cells when stream_threshold exceeds max FLOWACC — channel threshold
+      doesn't scale with basin size at coarse grids
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Stream threshold hardcoded too high for small/coarse basins. When threshold > max(FLOWACC),
+      zero cells qualify as channels, routing produces zero discharge.
+    explanation: At coarse resolution (0.1-0.25deg), the max flow accumulation value is much smaller
+      than at 1km. A threshold that works at 1km resolution may exceed the maximum FLOWACC at coarser
+      grids, resulting in zero channel cells and zero routed discharge.
+    affected_components:
+    - build_fulldom_hires.py
+    - Fulldom_hires.nc CHANNELGRID
+  resolution:
+    action: Use USGS flow-based threshold or scale-aware formula max(5, basin_cells*0.03). Test with
+      multiple thresholds.
+    files_changed: []
+    prevention: Always check that stream_threshold < max(FLOWACC) before running
+  severity: silent
+  promoted: true
+  promoted_as: dt_v016
+- id: err_021
+  timestamp: '2026-03-20T20:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: WRF-Hydro
+    run_name: chaohe_wrfhydro_010deg_2000
+  stage: s10_execution
+  failure_domain: silent_error
+  symptom:
+    description: Winter Q > Summer Q in monsoon basin — inverted seasonal cycle when GW bucket dominates
+      due to broken channel network
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Broken channel network forces all flow through GW bucket. GW bucket has Coeff/Expon/Zmax
+      that produce baseflow-dominated hydrograph with wrong seasonal timing.
+    explanation: When the channel network has zero or very few cells (due to threshold issues), surface
+      runoff cannot be routed through channels. All water enters the groundwater bucket and exits as
+      baseflow with GW-controlled timing, producing an inverted seasonal cycle in monsoon basins.
+    affected_components:
+    - Fulldom_hires.nc CHANNELGRID
+    - GWBUCKPARM.nc
+  resolution:
+    action: Fix channel network first (correct threshold + D8 encoding), then tune GW Coeff/Expon/Zmax
+      for baseflow recession
+    files_changed: []
+    prevention: Always verify channel network before interpreting discharge results
+  severity: silent
+  promoted: true
+  promoted_as: dt_v017
+- id: err_022
+  timestamp: '2026-03-20T20:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: WRF-Hydro
+    run_name: chaohe_wrfhydro_010deg_2000
+  stage: s9_namelists
+  failure_domain: silent_error
+  symptom:
+    description: Noah-MP Schaake produces 24x less surface runoff than VIC — infxsrt=0.158mm from
+      23.8mm rain while VIC gives 3.78mm
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: REFKDT=3.0 (default in MPTABLE.TBL) is too high for mountain basins. High REFKDT means
+      high infiltration rate, sending all rain into soil instead of surface runoff.
+    explanation: The Schaake96 runoff scheme (opt_run=1) uses REFKDT to control the balance between
+      infiltration and surface runoff. REFKDT=3.0 allows very high infiltration rates, so nearly all
+      precipitation enters soil layers. In mountain basins with thin soils, this is physically unrealistic.
+      VIC's variable infiltration capacity produces much more surface runoff from the same rain event.
+    affected_components:
+    - soil_properties.nc REFKDT
+    - MPTABLE.TBL
+  resolution:
+    action: Tune REFKDT from 3.0 to 0.5-1.0 in soil_properties.nc for mountain/semi-arid basins to
+      increase surface runoff and storm peaks
+    files_changed: []
+    prevention: Calibrate REFKDT for each basin — default 3.0 only appropriate for flat, deep-soil basins
+  severity: silent
+  promoted: true
+  promoted_as: dt_v018
+- id: err_023
+  timestamp: '2026-03-20T20:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: WRF-Hydro
+    run_name: chaohe_wrfhydro_010deg_2000
+  stage: s9_namelists
+  failure_domain: runtime
+  symptom:
+    description: RUNOFF_OPTION=5 crashes with 'Problem opening wrfinput file for read_mmf_runoff' —
+      requires MMF_RUNOFF_FILE which is not provided
+    error_pattern: Problem opening wrfinput file for read_mmf_runoff
+    detection_method: log_match
+  diagnosis:
+    root_cause: RUNOFF_OPTION=5 (MMF) expects an external runoff field file (MMF_RUNOFF_FILE) that is
+      not generated by the standard pipeline. Option 1 (TOPMODEL) and option 3 (Schaake96) work without
+      extra files.
+    explanation: ''
+    affected_components:
+    - namelist.hrldas
+    - Noah-MP RUNOFF_OPTION
+  resolution:
+    action: Use RUNOFF_OPTION=1 (TOPMODEL) or RUNOFF_OPTION=3 (Schaake96) instead of RUNOFF_OPTION=5
+      (MMF)
+    files_changed: []
+    prevention: Only use RUNOFF_OPTION=1 or 3 unless MMF_RUNOFF_FILE is explicitly provided
+  severity: fatal
+  promoted: true
+  promoted_as: dt_v019
+- id: err_024
+  timestamp: '2026-03-20T20:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: WRF-Hydro
+    run_name: chaohe_wrfhydro_010deg_2000
+  stage: s1_domain
+  failure_domain: silent_error
+  symptom:
+    description: 0.1deg gives 3x more Q than 0.25deg (17.8 vs 5.8 m3/s) but correlation r remains
+      near 0 for both — resolution affects volume but not event timing
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Finer resolution captures more rainfall heterogeneity and terrain detail, increasing
+      total runoff volume. But timing is controlled by land surface physics (Noah-MP infiltration/runoff
+      partitioning), not grid resolution.
+    explanation: At 0.1deg, more grid cells capture local terrain and precipitation gradients, producing
+      higher total runoff. However, the correlation with observed discharge remains near zero because
+      storm peak timing depends on the Noah-MP runoff generation scheme (REFKDT, infiltration excess
+      partitioning), which is resolution-independent.
+    affected_components:
+    - domain_def.json
+    - geo_em.d01.nc
+  resolution:
+    action: Use 0.1deg for better volume estimation. For storm peak timing, tune REFKDT (infiltration)
+      rather than changing resolution.
+    files_changed: []
+    prevention: Understand that resolution and physics tuning address different performance metrics
+  severity: silent
+  promoted: true
+  promoted_as: dt_v020
+- id: err_025
+  timestamp: '2026-03-20T20:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: WRF-Hydro
+    run_name: chaohe_wrfhydro_010deg_2000
+  stage: s4_fulldom
+  failure_domain: silent_error
+  symptom:
+    description: Channel threshold sensitivity test — 5 values (5,10,20,50,170) all give same Q
+      (4-6 m3/s). Channel network configuration has no impact on discharge.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Bottleneck is Noah-MP land surface runoff generation, not routing. Noah-MP Schaake with
+      REFKDT=3.0 absorbs nearly all rain into soil, producing only 0.158mm surface runoff from 23.8mm
+      rain. No amount of channel reconfiguration can fix a land-surface physics bottleneck.
+    explanation: When Noah-MP produces very little surface runoff, the routing network (channels, flow
+      accumulation) has almost nothing to route. Varying the channel threshold from 5 to 170 changes
+      the spatial distribution of channels but the total discharge remains 4-6 m3/s because the LSM
+      bottleneck controls the water volume entering the routing system.
+    affected_components:
+    - build_fulldom_hires.py stream_threshold
+    - soil_properties.nc REFKDT
+  resolution:
+    action: Focus calibration on Noah-MP params (REFKDT, SLOPE, CZIL) before tuning channel/routing
+      parameters
+    files_changed: []
+    prevention: Always verify LSM runoff generation magnitude before investigating routing issues
+  severity: silent
+  promoted: true
+  promoted_as: dt_v021
+# --- NEW ERRORS added 2026-03-21 (audit) ---
+- id: err_026
+  timestamp: '2026-03-20T10:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WRF-Hydro
+    run_name: bengbu_wrfhydro_1km_2001
+  stage: s3_wrfinput
+  failure_domain: silent_error
+  symptom:
+    description: "Noah-MP FATAL ERROR: emitted longwave <0 — ground temperature explodes to 630K+ on cells
+      with SHDFAC=0 and VAI=0 (water/barren cells in summer cold start). TG at cell (126,428) reached 9272K."
+    error_pattern: "emitted longwave <0|FATAL ERROR.*STOP in Noah-MP|TG=.*[5-9][0-9][0-9]"
+    detection_method: log_match
+  diagnosis:
+    root_cause: Water/barren cells have SHDFAC=0 and VAI=0 in cold start. With no canopy shading,
+      unrestricted solar absorption causes runaway ground heating. Most severe in summer (high SWDOWN).
+    explanation: In cold-start mode, cells with zero vegetation (IVGTYP=water/barren) get SHDFAC=0
+      and VAI=0. Noah-MP's energy balance computes unrestricted solar absorption at these cells.
+      Ground temperature (TG) rises unconstrained until longwave emission exceeds floating-point limits.
+      This is most severe for summer starts with high solar radiation. The Chaohe 7-day January test
+      did not hit this because SWDOWN was low.
+    affected_components:
+    - wrfinput_d01.nc SHDFAC/VAI
+    - Noah-MP energy balance
+  resolution:
+    action: Set minimum SHDFAC=0.01 and VAI=0.01 for all land cells in build_wrfinput.py. For water
+      cells, set XLAND=2 for proper water surface treatment.
+    files_changed:
+    - tools/s3_wrfinput/build_wrfinput.py
+    prevention: build_wrfinput.py sets minimum non-zero SHDFAC/LAI for all land cells
+  severity: fatal
+  promoted: true
+  promoted_as: dt_v005
+- id: err_027
+  timestamp: '2026-03-20T11:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WRF-Hydro
+    run_name: bengbu_wrfhydro_1km_2001
+  stage: s10_execution
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "OOM killed (exit code 9) when running WRF-Hydro on Bengbu 1km domain (535x442 LSM,
+      2140x1768 routing = 3.8M cells) with 8 MPI processes."
+    error_pattern: "EXIT CODE: 9|signal 9|Killed"
+    detection_method: exit_code
+  diagnosis:
+    root_cause: Each MPI process holds a full copy of several routing grid arrays in memory. 8 processes
+      with 3.8M routing cells exceeds available system memory (~16 GB needed).
+    explanation: WRF-Hydro's domain decomposition for routing keeps full-domain arrays on each rank for
+      global communication. With 3.8M cells x 4 bytes x ~20 arrays x 8 ranks, total memory approaches
+      16 GB. System OOM killer terminates the process with signal 9. No error message in WRF-Hydro logs.
+    affected_components:
+    - WRF-Hydro MPI routing
+    - System memory
+  resolution:
+    action: Reduce MPI processes from 8 to 2-4 for large domains, or increase AGGFACTRT from 4 to 8
+      (coarser routing grid = fewer cells)
+    files_changed: []
+    prevention: run_wrfhydro.py auto-detects memory and recommends nproc; document memory limits
+  severity: fatal
+  promoted: true
+  promoted_as: dt_v006
+- id: err_028
+  timestamp: '2026-03-20T18:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WRF-Hydro
+    run_name: bengbu_wrfhydro_025deg_2000_2005
+  stage: s9_namelists
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "CHRTOUT_DOMAIN reverts to 0 after pipeline wrapper (run_wrfhydro_full_pipeline.py)
+      regenerates namelists. No CHRTOUT output files produced despite manual sed fix. User explicitly
+      reported: 'CHRTOUT_DOMAIN = 0 this requires a permanent fix'."
+    error_pattern: "CHRTOUT_DOMAIN.*=.*0"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: run_wrfhydro_full_pipeline.py calls generate_namelists.py which overwrites hydro.namelist
+      with default CHRTOUT_DOMAIN=0 AFTER user manually set it to 1. Sed-based fixes applied before
+      the pipeline wrapper regenerated the file were lost.
+    explanation: The pipeline wrapper regenerates namelists as its second-to-last step. Any manual edits
+      to hydro.namelist made before running the pipeline are overwritten. The fix must either (a) modify
+      generate_namelists.py to default to CHRTOUT_DOMAIN=1, or (b) apply the fix AFTER pipeline
+      completion using Python str.replace().
+    affected_components:
+    - run_wrfhydro_full_pipeline.py
+    - tools/s9_namelists/generate_namelists.py
+    - hydro.namelist
+  resolution:
+    action: Fixed generate_namelists.py to default CHRTOUT_DOMAIN=1. Also apply post-pipeline fix
+      using Python content.replace() on the generated hydro.namelist.
+    files_changed:
+    - tools/s9_namelists/generate_namelists.py
+    - tools/run_wrfhydro_full_pipeline.py
+    prevention: generate_namelists.py now defaults CHRTOUT_DOMAIN=1; pipeline wrapper verifies after generation
+  severity: silent
+  promoted: true
+  promoted_as: dt_v024

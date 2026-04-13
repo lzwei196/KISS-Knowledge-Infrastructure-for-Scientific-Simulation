@@ -1,0 +1,244 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["urban"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "EPA SWMM 5.2"
+  domain: "urban"
+  secondary_domains: ["stormwater", "water_quality"]
+  binary: "pyswmm (C library via Python)"
+  binary_path: "pip install pyswmm"
+  language: "C (engine) / Python (API)"
+  working_directory: "directory containing INP file"
+  notes: "No separate binary needed. pyswmm bundles the SWMM 5.2 C engine."
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "rainfall"
+      file: "[TIMESERIES] section in INP file"
+      unit: "mm/hr (INTENSITY) or mm/interval (VOLUME)"
+      valid_range: [0.0, 300.0]
+      format: "INP text: date/time value pairs in [TIMESERIES] section"
+      conversion_from_cmfd: "CMFD mm/3hr -> depends on FORMAT in [RAINGAGES]"
+      notes: "FORMAT must match data type. INTENSITY=rate, VOLUME=depth per interval. Mismatch causes 12x error for 5-min data."
+
+    - name: "evaporation"
+      file: "[EVAPORATION] section in INP file"
+      unit: "mm/day"
+      valid_range: [0.0, 15.0]
+      format: "INP text: constant or monthly or timeseries"
+
+  parameters:
+    critical:
+      - name: "flow_units"
+        file: "INP [OPTIONS] FLOW_UNITS"
+        description: "Unit system selector — determines ALL input/output units"
+        valid_range: ["CFS", "GPM", "MGD", "CMS", "LPS", "MLD"]
+        default: "CMS"
+        unit: "selector"
+        bug_history: >
+          FLOW_UNITS determines the ENTIRE unit system. CMS = metric (m, ha, mm, m3/s).
+          CFS = US customary (ft, acres, in, ft3/s). If FLOW_UNITS=CMS but pipe diameters
+          entered in mm instead of m, SWMM treats 600mm as 600 meters diameter.
+          NO warning. Triplet dt_004.
+
+      - name: "routing_model"
+        file: "INP [OPTIONS] ROUTING_MODEL"
+        description: "Hydraulic routing method"
+        valid_range: ["DYNWAVE", "KINWAVE", "STEADY"]
+        default: "DYNWAVE"
+        notes: "DYNWAVE for backwater/surcharging. KINWAVE for simple steep systems."
+
+      - name: "routing_step"
+        file: "INP [OPTIONS] ROUTING_STEP"
+        description: "Routing timestep"
+        valid_range: ["00:00:05", "00:01:00"]
+        default: "00:00:15"
+        unit: "HH:MM:SS"
+        bug_history: >
+          For DYNWAVE, must satisfy Courant: dt <= dx / sqrt(g * h_max).
+          100m conduit, 3m depth: dt_max = 18.4s. Start with 15s, reduce to 5-10s
+          if continuity error > 1%. Triplet dt_001.
+
+      - name: "percent_imperv"
+        file: "INP [SUBCATCHMENTS]"
+        description: "Percent impervious area per subcatchment"
+        valid_range: [0.0, 100.0]
+        unit: "percent"
+        notes: "Major driver of runoff volume. Urban: 50-95%. Suburban: 20-50%. Rural: 0-10%."
+
+      - name: "subcatchment_width"
+        file: "INP [SUBCATCHMENTS]"
+        description: "Characteristic overland flow width"
+        valid_range: [10, 10000]
+        unit: "m (for CMS units)"
+        bug_history: >
+          Width = Area / longest_overland_flow_path. Too large = too-peaked hydrograph.
+          Too small = too-attenuated. NOT arbitrary. Triplet dt_016.
+
+      - name: "conduit_roughness"
+        file: "INP [CONDUITS]"
+        description: "Manning's n for pipes/channels"
+        valid_range: [0.010, 0.030]
+        default: 0.013
+        unit: "s/m^(1/3)"
+        notes: "0.013 for concrete, 0.015 for corrugated metal, 0.025 for natural channels."
+
+      - name: "infiltration_method"
+        file: "INP [OPTIONS] INFILTRATION"
+        description: "Infiltration calculation method"
+        valid_range: ["HORTON", "GREEN_AMPT", "CURVE_NUMBER"]
+        default: "HORTON"
+
+      - name: "allow_ponding"
+        file: "INP [OPTIONS] ALLOW_PONDING"
+        description: "Allow surface ponding at flooded nodes"
+        valid_range: ["YES", "NO"]
+        default: "NO"
+        bug_history: >
+          Default NO causes water loss when nodes flood — excess water disappears.
+          Always set YES for continuous simulations. Triplet dt_003.
+
+      - name: "rainfall_format"
+        file: "INP [RAINGAGES] FORMAT"
+        description: "Rainfall data format: INTENSITY or VOLUME"
+        valid_range: ["INTENSITY", "VOLUME"]
+        bug_history: >
+          If FORMAT=INTENSITY but data is mm/interval, runoff is multiplied by
+          intervals/hour. For 5-min data: 12x error. SILENT — SWMM runs fine
+          but peak flows are wildly wrong. Triplet dt_009.
+
+  files:
+    required:
+      - name: "model.inp"
+        description: "Master input file with all sections"
+        format: "Text, bracketed section headers [TITLE], [OPTIONS], etc."
+
+    optional:
+      - name: "External rain files"
+        description: "Rain gage data files (referenced by [RAINGAGES])"
+
+      - name: "Hotstart files"
+        description: "Saved model state for continuous simulations"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "outfall_discharge"
+      file: "model.out (binary) / model.rpt (text summary)"
+      unit: "m3/s (for CMS units)"
+      valid_range: [0.0, null]
+      format: "Binary OUT file (read with pyswmm) or text RPT file"
+      notes: "Runoff coefficient = total_runoff_volume / total_rainfall_volume."
+
+    - name: "node_flooding"
+      file: "model.out / model.rpt"
+      unit: "m3"
+      valid_range: [0.0, null]
+      notes: "Volume of flooding at each node."
+
+    - name: "node_depth"
+      file: "model.out"
+      unit: "m (for CMS units)"
+      valid_range: [0.0, null]
+
+    - name: "conduit_flow"
+      file: "model.out"
+      unit: "m3/s (for CMS units)"
+      valid_range: null
+
+  diagnostics:
+    - name: "runoff_continuity_error"
+      file: "model.rpt"
+      check: "Runoff continuity error < 5%"
+      tolerance_pct: 5.0
+      notes: "Error > 5% indicates infiltration parameter issues or timestep problems."
+
+    - name: "routing_continuity_error"
+      file: "model.rpt"
+      check: "Routing continuity error < 5%"
+      tolerance_pct: 5.0
+      notes: "Error > 1% for DYNWAVE: reduce routing timestep. Triplet dt_001."
+
+    - name: "runoff_coefficient"
+      check: "Runoff volume / rainfall volume = 0.4-0.9 for urban areas"
+      notes: "< 0.3 suggests too much infiltration. > 0.95 suggests wrong impervious fraction."
+
+    - name: "node_surcharging"
+      check: "Surcharge duration as fraction of total simulation"
+      notes: "Extensive surcharging may indicate undersized pipes or wrong invert elevations."
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "high_continuity_error"
+    triplet: "dt_001"
+    description: "Routing continuity error > 5% — timestep too large for DYNWAVE"
+    affected_output: "All flow routing results"
+    detection: "Check model.rpt for % routing continuity error"
+    fix: "Reduce ROUTING_STEP to 5-10 seconds"
+
+  - id: "unstable_oscillation"
+    triplet: "dt_002"
+    description: "Unstable oscillating flow in conduits with adverse slopes"
+    affected_output: "Conduit flow oscillates wildly"
+    detection: "Flow values alternate sign or oscillate"
+    fix: "Use KINWAVE for systems with adverse slopes, or fix slopes"
+
+  - id: "water_loss_no_ponding"
+    triplet: "dt_003"
+    description: "ALLOW_PONDING=NO causes permanent water loss at flooded nodes"
+    affected_output: "Negative routing continuity error"
+    detection: "Routing error negative (water leaving system)"
+    fix: "Set ALLOW_PONDING=YES with non-zero Aponded"
+
+  - id: "unit_system_mismatch"
+    triplet: "dt_004"
+    description: "FLOW_UNITS vs input dimensions mismatch — silent wrong results"
+    affected_output: "All results wrong by orders of magnitude"
+    detection: "Results off by ~3 (ft/m) or ~10 (acres/ha)"
+    fix: "Verify ALL dimensions match FLOW_UNITS system"
+
+  - id: "rainfall_format_mismatch"
+    triplet: "dt_009"
+    description: "INTENSITY vs VOLUME format mismatch — 12x error for 5-min data"
+    affected_output: "Peak flows wildly wrong"
+    detection: "Runoff coefficient > 1.0 or unrealistic peak flows"
+    fix: "Match FORMAT to actual data type in RAINGAGES"
+
+  - id: "vic_inflow_conversion"
+    triplet: "dt_010"
+    description: "VIC mm/day to m3/s conversion error — missing /1000 or /86400"
+    affected_output: "External inflows 1000x or 86400x wrong"
+    detection: "Inflow magnitude unrealistic"
+    fix: "Q (m3/s) = runoff (mm/day) * area (m2) / 86400000"
+
+  - id: "subcatchment_width_wrong"
+    triplet: "dt_016"
+    description: "Subcatchment width too large produces too-peaked hydrograph"
+    affected_output: "Hydrograph shape (timing and peak)"
+    detection: "Runoff response much faster than expected"
+    fix: "Width = Area / longest_overland_flow_path"
+
+# =========================================================================
+# EXPECTED RANGES (typical urban drainage)
+# =========================================================================
+expected_ranges:
+  typical_urban:
+    runoff_coefficient: [0.4, 0.9]
+    continuity_error_pct: "<5"
+    peak_flow_note: "Scale with catchment area and design storm intensity"
+    notes: "Runoff coefficient increases with impervious fraction"

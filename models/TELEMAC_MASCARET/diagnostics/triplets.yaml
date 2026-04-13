@@ -1,0 +1,458 @@
+# TELEMAC-MASCARET Diagnostic Triplets
+# 18 symptom -> diagnosis -> remedy entries
+# Covers unit conversion traps, format errors, and runtime failures
+
+- id: dt_001
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Gravity acceleration appears as 981 in TELEMAC output or produces unrealistically fast wave propagation"
+    error_pattern: "gravity|GRAV|wave speed"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Gravity set in CGS (cm/s^2) instead of SI (m/s^2)"
+    explanation: >
+      TELEMAC expects GRAVITY ACCELERATION in m/s^2 (default 9.81).
+      Using CGS value 981 cm/s^2 amplifies all gravity-driven flow by 100x,
+      producing extreme velocities and immediate CFL violation.
+    affected_components: [telemac2d, telemac3d, tomawac]
+  remedy:
+    action: "Set GRAVITY ACCELERATION = 9.81 in steering file"
+    tool_to_run: ""
+    manual_steps:
+      - "Check .cas file for GRAVITY ACCELERATION keyword"
+      - "Ensure value is 9.81 (m/s^2), not 981 (cm/s^2)"
+    prevention: "Always use SI units for all TELEMAC parameters"
+  severity: fatal
+  cross_references: []
+
+- id: dt_002
+  stage: s4_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Extreme water levels or model crash. Manning n (0.025) used where Strickler K (40) expected, or vice versa"
+    error_pattern: "friction|CHESTR|negative depth|divergence"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Manning-Strickler friction coefficient confusion"
+    explanation: >
+      LAW OF BOTTOM FRICTION = 3 (Strickler) expects K in m^(1/3)/s (typical 10-90).
+      LAW OF BOTTOM FRICTION = 4 (Manning) expects n in s/m^(1/3) (typical 0.01-0.10).
+      Using Manning n=0.025 with Strickler law produces near-zero friction (K=0.025),
+      while using Strickler K=40 with Manning law produces extreme friction (n=40).
+    affected_components: [telemac2d, telemac3d, gaia]
+  remedy:
+    action: "Match FRICTION COEFFICIENT to LAW OF BOTTOM FRICTION"
+    tool_to_run: ""
+    manual_steps:
+      - "If LAW=3 (Strickler): coefficient should be 10-90 (K = 1/n)"
+      - "If LAW=4 (Manning): coefficient should be 0.01-0.10"
+      - "Conversion: K_strickler = 1 / n_manning"
+    prevention: "run_telemac.py validates friction law vs coefficient range"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Wind-driven currents approximately 2x too strong"
+    error_pattern: "wind|velocity|current"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wind speed in knots instead of m/s"
+    explanation: >
+      TELEMAC expects wind speed in m/s. If source data is in knots,
+      the wind stress (proportional to wind speed squared) is overestimated
+      by a factor of ~3.8 (1/0.5144^2).
+    affected_components: [telemac2d, telemac3d, tomawac]
+  remedy:
+    action: "Convert wind speed: knots x 0.5144 = m/s"
+    tool_to_run: "convert_forcing.py --wind-unit knots"
+    manual_steps:
+      - "Check wind data source for units"
+      - "Apply conversion factor 0.5144 if in knots"
+    prevention: "convert_forcing.py applies conversion when --wind-unit knots specified"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_004
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Atmospheric pressure gradient forces negligible; storm surge response absent"
+    error_pattern: "pressure|PATMOS|surge"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Atmospheric pressure in hPa/mbar instead of Pa"
+    explanation: >
+      TELEMAC expects atmospheric pressure in Pa. Using hPa (typical 1013)
+      instead of Pa (101300) underestimates pressure by 100x. The inverse
+      barometer effect and pressure gradient force become negligible.
+    affected_components: [telemac2d, telemac3d]
+  remedy:
+    action: "Convert pressure: hPa x 100 = Pa"
+    tool_to_run: "convert_forcing.py --pressure-unit hPa"
+    manual_steps:
+      - "Verify pressure values: should be ~101325 Pa, not ~1013"
+      - "Multiply by 100 if values are ~1000"
+    prevention: "convert_forcing.py applies conversion when --pressure-unit hPa specified"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_005
+  stage: s4_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Density-driven flow completely absent in baroclinic simulations"
+    error_pattern: "density|ROEAU|stratification"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Water density in g/cm^3 (1.0) instead of kg/m^3 (1000)"
+    explanation: >
+      The keyword WATER DENSITY expects kg/m^3 (default 1000).
+      Using CGS density 1.0 g/cm^3 reduces buoyancy forces by 1000x.
+    affected_components: [telemac3d]
+  remedy:
+    action: "Set WATER DENSITY = 1000 (kg/m^3)"
+    tool_to_run: ""
+    manual_steps:
+      - "Check WATER DENSITY keyword in .cas file"
+      - "Ensure value is ~1000, not ~1.0"
+    prevention: "Validate density range in steering file checks"
+  severity: silent
+  cross_references: []
+
+- id: dt_006
+  stage: s1_domain
+  failure_domain: unit_conversion
+  symptom:
+    description: "Domain is approximately 1m x 1m; CFL violation on first timestep"
+    error_pattern: "CFL|Courant|STOP|negative depth"
+    detection_method: structural_check
+  diagnosis:
+    root_cause: "Mesh coordinates in WGS84 degrees instead of metric projection"
+    explanation: >
+      TELEMAC requires metric coordinates (meters). If WGS84 longitude/latitude
+      (degrees) are used directly, the domain spans ~1 degree ≈ 111 km in reality
+      but only ~1 unit in the mesh. Element sizes become ~0.001 units, requiring
+      sub-millisecond time steps. The simulation crashes immediately.
+    affected_components: [telemac2d, telemac3d, tomawac, gaia]
+  remedy:
+    action: "Project mesh coordinates to a metric CRS (UTM, Lambert) before meshing"
+    tool_to_run: ""
+    manual_steps:
+      - "Check mesh coordinate ranges: should be thousands, not single digits"
+      - "Re-project using ogr2ogr or pyproj"
+      - "Regenerate mesh in the projected CRS"
+    prevention: "convert_bathymetry.py validates coordinate ranges"
+  severity: fatal
+  cross_references: [dt_007]
+
+- id: dt_007
+  stage: s2_data
+  failure_domain: unit_conversion
+  symptom:
+    description: "Water flows uphill; mountains appear where valleys should be"
+    error_pattern: "bottom|FOND|elevation|bathymetry"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Bathymetry sign convention inverted (depth vs elevation)"
+    explanation: >
+      TELEMAC uses bottom ELEVATION (positive upward from datum).
+      Nautical charts and many data sources provide DEPTH (positive downward).
+      Failing to negate produces inverted topography where deep channels
+      become ridges and shallow areas become depressions.
+    affected_components: [telemac2d, telemac3d, gaia]
+  remedy:
+    action: "Negate depth values to get elevation: Z_bottom = -depth"
+    tool_to_run: "convert_bathymetry.py --negate"
+    manual_steps:
+      - "Check if source data provides depth (positive downward) or elevation"
+      - "Use --negate flag in convert_bathymetry.py"
+      - "Verify: deep channels should have negative or small Z values"
+    prevention: "convert_bathymetry.py warns if bottom elevation range seems inverted"
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_008
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "River inflow has negligible effect on simulation despite large real discharge"
+    error_pattern: "discharge|DEBIT|inflow|boundary"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Discharge in L/s instead of m^3/s"
+    explanation: >
+      TELEMAC expects PRESCRIBED FLOWRATES in m^3/s. Using L/s (1000x smaller)
+      makes river inflows negligible. A 150 L/s river appears as 150 m^3/s
+      if units are accidentally correct, or as 0.15 m^3/s if L/s is treated as m^3/s.
+    affected_components: [telemac2d, telemac3d]
+  remedy:
+    action: "Convert discharge: L/s x 0.001 = m^3/s"
+    tool_to_run: ""
+    manual_steps:
+      - "Verify discharge magnitudes against known river flows"
+      - "Convert from L/s to m^3/s if needed"
+    prevention: "convert_forcing.py logs the expected unit for each variable"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_009
+  stage: s4_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Simulation finishes instantly (too few effective timesteps) or takes forever"
+    error_pattern: "TIME STEP|duration|number of time steps"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Time step in minutes or hours instead of seconds"
+    explanation: >
+      TIME STEP keyword is in seconds. Setting dt=1.0 when intending 1 minute
+      produces 60x more timesteps than expected (or 60x shorter simulation
+      if NUMBER OF TIME STEPS is fixed). Setting dt=60 when intending 60 seconds
+      may violate CFL if the mesh is fine.
+    affected_components: [telemac2d, telemac3d, tomawac, artemis]
+  remedy:
+    action: "Ensure TIME STEP value is in seconds"
+    tool_to_run: ""
+    manual_steps:
+      - "Check TIME STEP value: typical range 0.01-100 seconds"
+      - "Calculate total simulation time: dt x NUMBER OF TIME STEPS"
+      - "Verify CFL: dt < dx_min / (sqrt(g*h_max) + U_max)"
+    prevention: "run_telemac.py warns if TIME STEP > 3600s"
+  severity: degraded
+  cross_references: [dt_015]
+
+- id: dt_010
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Tidal range 100x too large or too small at open boundaries"
+    error_pattern: "tidal|harmonic|amplitude|elevation"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Tidal amplitudes in cm instead of m, or phases in radians instead of degrees"
+    explanation: >
+      TELEMAC expects tidal amplitudes in meters and phases in degrees.
+      Using cm amplitudes (e.g., 120 cm instead of 1.2 m) produces 100x
+      overestimation. Using radian phases shifts tidal timing incorrectly.
+    affected_components: [telemac2d, telemac3d]
+  remedy:
+    action: "Convert amplitudes: cm / 100 = m. Convert phases: radians x 180/pi = degrees"
+    tool_to_run: ""
+    manual_steps:
+      - "Check tidal database documentation for units"
+      - "Amplitudes should be O(1) meters for typical tides"
+      - "Phases should be 0-360 degrees"
+    prevention: "Validate amplitude range against expected tidal regime"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_011
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Extreme flooding from rainfall; water depth rises by meters per hour"
+    error_pattern: "rain|precipitation|depth|flooding"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Rainfall intensity in mm/hr instead of mm/s"
+    explanation: >
+      TELEMAC expects rainfall in mm/s (or m/s depending on the keyword).
+      Providing mm/hr values directly (e.g., 10 mm/hr as 10 mm/s) overestimates
+      rainfall by 3600x. A moderate 10 mm/hr rain becomes a catastrophic
+      36000 mm/hr = 36 m/hr deluge.
+    affected_components: [telemac2d]
+  remedy:
+    action: "Convert rainfall: mm/hr / 3600 = mm/s"
+    tool_to_run: "convert_forcing.py --rain-unit mmhr"
+    manual_steps:
+      - "Check rain data units: typical intensities are 0-50 mm/hr"
+      - "Divide by 3600 to get mm/s"
+    prevention: "convert_forcing.py applies conversion when --rain-unit mmhr"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_012
+  stage: s4_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Turbulent diffusion is negligible; unrealistic sharp gradients in tracer fields"
+    error_pattern: "diffusivity|viscosity|tracer|gradient"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Velocity diffusivity in cm^2/s instead of m^2/s"
+    explanation: >
+      VELOCITY DIFFUSIVITY expects m^2/s. Using CGS cm^2/s (e.g., 100 cm^2/s
+      instead of 0.01 m^2/s) underestimates diffusion by 10000x if entered as
+      0.01, or overestimates by 100x if entered as 100.
+    affected_components: [telemac2d, telemac3d, waqtel]
+  remedy:
+    action: "Ensure VELOCITY DIFFUSIVITY is in m^2/s (typical 0.01-10.0)"
+    tool_to_run: ""
+    manual_steps:
+      - "Check value: should be O(0.01-10) for rivers, O(1-100) for coastal"
+      - "Convert: cm^2/s x 0.0001 = m^2/s"
+    prevention: "Validate diffusivity range in steering file checks"
+  severity: degraded
+  cross_references: []
+
+- id: dt_013
+  stage: s6_output
+  failure_domain: parameter_format
+  symptom:
+    description: "SELAFIN file appears corrupt; all values are NaN or extremely large numbers"
+    error_pattern: "NaN|inf|corrupt|unreadable"
+    detection_method: structural_check
+  diagnosis:
+    root_cause: "Byte order mismatch reading big-endian SELAFIN on little-endian system"
+    explanation: >
+      TELEMAC writes SELAFIN files in big-endian format by default
+      (-fconvert=big-endian compiler flag). Custom parsers on little-endian
+      systems (most modern x86) that do not byte-swap will interpret all
+      floating-point values incorrectly, producing NaN or garbage.
+    affected_components: [hermes, post-processing]
+  remedy:
+    action: "Use big-endian byte order ('>') when reading SELAFIN with struct"
+    tool_to_run: "parse_selafin.py"
+    manual_steps:
+      - "Use struct.unpack('>f', ...) not struct.unpack('f', ...)"
+      - "Or use the provided parse_selafin.py which handles endianness"
+      - "The HERMES Python wrapper also handles this correctly"
+    prevention: "parse_selafin.py defaults to big-endian"
+  severity: fatal
+  cross_references: []
+
+- id: dt_014
+  stage: s5_run
+  failure_domain: runtime
+  symptom:
+    description: "Negative water depths in listing; simulation may crash or produce unrealistic results in intertidal zones"
+    error_pattern: "NEGATIVE DEPTH|negative|wetting|drying|tidal flat"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "TIDAL FLATS not enabled for simulation with wetting/drying"
+    explanation: >
+      When water recedes and cells go dry, TELEMAC needs the TIDAL FLATS = YES
+      keyword to handle wetting/drying correctly. Without it, water depth can
+      go negative, velocities become undefined, and the solver may diverge.
+      This is essential for any simulation with significant water level changes
+      relative to bathymetry (coastal, estuarine, floodplain).
+    affected_components: [telemac2d, telemac3d]
+  remedy:
+    action: "Add TIDAL FLATS = YES to steering file"
+    tool_to_run: ""
+    manual_steps:
+      - "Add: TIDAL FLATS = YES"
+      - "Also set: TREATMENT OF NEGATIVE DEPTHS = 2 (conservative)"
+      - "Consider: OPTION FOR THE TREATMENT OF TIDAL FLATS = 1"
+    prevention: "run_telemac.py warns if tidal simulation lacks TIDAL FLATS"
+  severity: degraded
+  cross_references: [dt_015]
+
+- id: dt_015
+  stage: s5_run
+  failure_domain: runtime
+  symptom:
+    description: "Simulation crashes with STOP or produces NaN; Courant number exceeds 1"
+    error_pattern: "STOP|CFL|Courant|NaN|diverge|blow up"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Time step too large for mesh resolution (CFL violation)"
+    explanation: >
+      The CFL condition requires: dt < dx / (sqrt(g*h) + |U|).
+      For a mesh with minimum element size dx=10m and water depth h=5m,
+      the maximum stable dt ~ 10 / (sqrt(9.81*5) + 1) ≈ 1.2 seconds.
+      Exceeding this causes exponential growth in errors and crash.
+    affected_components: [telemac2d, telemac3d]
+  remedy:
+    action: "Reduce TIME STEP or enable VARIABLE TIME-STEP = YES"
+    tool_to_run: ""
+    manual_steps:
+      - "Calculate CFL: dt_max = dx_min / (sqrt(g * h_max) + U_max)"
+      - "Set TIME STEP < dt_max"
+      - "Or add: VARIABLE TIME-STEP = YES and DESIRED COURANT NUMBER = 0.9"
+    prevention: "run_telemac.py estimates CFL from mesh and parameters"
+  severity: fatal
+  cross_references: [dt_009, dt_014]
+
+- id: dt_016
+  stage: s5_run
+  failure_domain: runtime
+  symptom:
+    description: "Parallel simulation hangs indefinitely or crashes with segfault"
+    error_pattern: "hang|segfault|MPI|decomposition|METIS"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "MPI process count does not match METIS domain decomposition"
+    explanation: >
+      When running with --ncsize N, TELEMAC decomposes the mesh into N
+      subdomains using METIS. If the MPI launch creates a different number
+      of processes, the simulation hangs waiting for communication that
+      never arrives, or crashes with memory access violations.
+    affected_components: [parallel, partel, gretel]
+  remedy:
+    action: "Ensure --ncsize matches the number of MPI processes"
+    tool_to_run: ""
+    manual_steps:
+      - "Check: --ncsize value must equal mpiexec -n value"
+      - "Delete old decomposition files if changing ncsize"
+      - "Verify METIS is installed and linked correctly"
+    prevention: "run_telemac.py validates parallel configuration"
+  severity: fatal
+  cross_references: [dt_017]
+
+- id: dt_017
+  stage: s5_run
+  failure_domain: runtime
+  symptom:
+    description: "User Fortran compilation fails with 'undefined reference' or 'symbol not found'"
+    error_pattern: "undefined reference|symbol not found|link error|user_fortran"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "User Fortran compiled with different compiler than main TELEMAC build"
+    explanation: >
+      User Fortran files must be compiled with the exact same Fortran compiler
+      and flags used to build the main TELEMAC libraries. Mixing gfortran with
+      ifort (or different versions of the same compiler) produces incompatible
+      object files with unresolved symbols at link time.
+    affected_components: [telemac2d, telemac3d, all modules]
+  remedy:
+    action: "Recompile user Fortran with the same compiler used for TELEMAC"
+    tool_to_run: ""
+    manual_steps:
+      - "Check build_commands.json for the correct compiler and flags"
+      - "Ensure FORTRAN FILE in .cas points to source directory, not pre-compiled objects"
+      - "Rebuild TELEMAC if compiler version changed"
+    prevention: "TELEMAC build system auto-compiles user Fortran with correct flags"
+  severity: fatal
+  cross_references: []
+
+- id: dt_018
+  stage: s6_output
+  failure_domain: parameter_format
+  symptom:
+    description: "Post-processing reads wrong variable; column labelled 'H' contains velocity data"
+    error_pattern: "variable order|mismatch|wrong column|unexpected values"
+    detection_method: structural_check
+  diagnosis:
+    root_cause: "SELAFIN variable order does not match post-processing assumptions"
+    explanation: >
+      The SELAFIN file stores variables in the order specified by
+      VARIABLES FOR GRAPHIC PRINTOUTS. If a post-processing script assumes
+      a fixed order (e.g., U,V,H) but the .cas specifies (H,U,V), the
+      extracted data will be misaligned. Custom variables (tracers) are
+      appended after standard variables.
+    affected_components: [post-processing, parse_selafin.py]
+  remedy:
+    action: "Always read variable names from the SELAFIN header, never assume order"
+    tool_to_run: "parse_selafin.py --info"
+    manual_steps:
+      - "Run: python parse_selafin.py results.slf --info"
+      - "Check variable names and order in output"
+      - "Use variable names (not indices) when extracting data"
+    prevention: "parse_selafin.py uses header variable names for CSV columns"
+  severity: degraded
+  cross_references: [dt_013]

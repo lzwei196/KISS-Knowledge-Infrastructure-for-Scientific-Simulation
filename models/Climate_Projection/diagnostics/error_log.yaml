@@ -1,0 +1,32 @@
+entries:
+- id: err_001
+  timestamp: '2026-03-16T10:30:44Z'
+  recorded_by: claude-code
+  run_context:
+    basin: nuxia
+    model: VIC 5.1.0
+    run_name: nuxia_1990_2000_025deg
+  stage: s3_apply_deltas
+  failure_domain: missing_tool
+  symptom:
+    description: No dedicated tool for converting projected forcing NC to VIC ASCII format; agent tried process_forcing.py
+      which requires manual config editing and hit xr.open_mfdataset time coordinate errors
+    error_pattern: combine='by_coords'
+    detection_method: missing_output
+  diagnosis:
+    root_cause: apply_deltas_forcing.py outputs monthly NC but the NC-to-ASCII step was undocumented and had no reusable tool
+    explanation: The knowledge infrastructure documented S3a (apply deltas) but not S3b (NC to ASCII). The workaround for
+      Bengbu was ad-hoc scripts with hardcoded paths. When a new basin (Nuxia) was attempted, the agent could not reuse them.
+    affected_components:
+    - apply_deltas_forcing.py
+    - process_forcing.py
+  resolution:
+    action: Created convert_projected_forcing.py as a dedicated CLI tool with all parameters as arguments
+    files_changed:
+    - tools/s3_apply_deltas/convert_projected_forcing.py
+    - docs/s3_apply_deltas_skill.md
+    - knowledge_infrastructure.yaml
+    prevention: Tool now registered in YAML and documented in skill doc Step 3
+  severity: fatal
+  promoted: true
+  promoted_as: dt_cc_010

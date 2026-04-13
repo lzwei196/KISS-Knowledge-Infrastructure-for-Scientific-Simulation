@@ -1,0 +1,338 @@
+entries:
+- id: err_001
+  timestamp: '2026-03-24T11:57:56Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s6_execution
+  failure_domain: parameter_format
+  symptom:
+    description: 'SHAW reads .inp filename from stdin interactively. Must pipe: printf ''file.inp\n\n'' | ./shaw. The second
+      newline answers ''overwrite?'' prompt.'
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: Fortran READ(*,*) reads from stdin unit 5. No command-line argument parsing. Interactive prompts for file
+      overwrite confirmation.
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Use printf pipe, or echo. The run_shaw.py tool handles this automatically.
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_002
+  timestamp: '2026-03-24T11:57:56Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s1_site_setup
+  failure_domain: path_and_filesystem
+  symptom:
+    description: Distribution .inp files have Windows backslash paths. Linux Fortran interprets backslash as escape character
+      or literal, not path separator. Files not found.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: Shaw303.zip was packaged on Windows. All .inp path references use backslash. Linux requires forward slash.
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: 'Replace all backslashes with forward slashes in .inp files: sed -i ''s|\\|/|g'' *.inp'
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_003
+  timestamp: '2026-03-24T12:35:56Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s1_site_setup
+  failure_domain: parameter_format
+  symptom:
+    description: SHAW crashes reading .sit file with 'unexpected data' when MCANFLG=0 but root distribution line is present.
+      Fortran READ reads the root fractions even though canopy flag says no canopy.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: When MCANFLG=0 (no canopy), SHAW skips canopy parameter reads but the file cursor must also skip the root
+      distribution line. If the line is present, subsequent soil reads are shifted, causing crash or garbage values.
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: When MCANFLG=0, do NOT include the root distribution line (RTDP values) in .sit file. Only include it when MCANFLG>=1.
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_004
+  timestamp: '2026-03-24T12:35:56Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s1_site_setup
+  failure_domain: parameter_format
+  symptom:
+    description: SHAW crashes when NSALT=0 but soil lines include ASALT and DISPER columns. Extra columns shift the Fortran
+      fixed-format READ.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: 'SHAW .sit soil lines have variable column count depending on NSALT flag. If NSALT=0 (no solute), each soil
+      line must have exactly: depth, sand%, silt%, clay%, organic%, rock%, bulk_density, Ksat, b_or_alpha, psi_e. Adding ASALT/DISPER
+      columns causes misread.'
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Match column count to NSALT. If NSALT=0, omit ASALT and DISPER from soil lines.
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_005
+  timestamp: '2026-03-24T12:35:56Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s2_weather_prep
+  failure_domain: parameter_format
+  symptom:
+    description: SHAW crashes with EOF error at end of simulation year. Weather file has exactly 8760 hourly records but SHAW
+      reads one extra record for boundary condition.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: SHAW reads ahead by one timestep for interpolation. If weather file has exactly N_hours records, SHAW hits
+      EOF at the last timestep. Need N_hours+24 records (one extra day padding).
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Pad weather file with 24 extra hours of repeated last-day values. The convert_forcing_to_shaw.py tool handles
+      this automatically.
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_006
+  timestamp: '2026-03-24T12:35:56Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s6_execution
+  failure_domain: calibration
+  symptom:
+    description: 'VALIDATION SUCCESS: SHAW JackPine (OJP BERMS) 1999, R2=0.91-0.96 for soil T at 6 depths (2-100cm), bias
+      +0.01 to +0.31C, RMSE 1.5-4.3C. Uncalibrated with default sandy soil params. Annual P=466mm (lit ~430mm). This is NOT
+      an error — recording validation result.'
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: Model physics correctly captures freeze-thaw cycle, snow accumulation/melt, and heat conduction in boreal
+      sandy soil. Near-surface RMSE higher (4.3C) due to diurnal amplitude; deep layers excellent (1.5C at 50cm).
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: 'No fix needed — recording as validation baseline. Calibration targets: Ksat, b-parameter, thermal conductivity.'
+    files_changed: []
+    prevention: ''
+  severity: degraded
+  promoted: false
+  promoted_as: ''
+- id: err_007
+  timestamp: '2026-03-24T13:30:16Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s1_site_setup
+  failure_domain: parameter_format
+  symptom:
+    description: SHAW .sit file has extremely rigid Fortran format with LINE B through LINE J designations. Our simplified
+      site file generator produces wrong format — simulation dates must be in LINE B, site geometry in LINE C, control flags
+      in LINE D, canopy in LINE F, snow in LINE G, residue in LINE H, soil in LINE J. Each line has specific column positions
+      and interdependent flags.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: The SHAW .sit file format evolved over 30+ years of Fortran 77 development. It is NOT a simple key-value config
+      — it is a position-dependent, flag-dependent multi-section file where the presence of certain lines depends on flag
+      values in earlier lines (e.g., MCANFLG determines if LINE F exists, NSALT determines extra columns in LINE J).
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: 'Use the Trial.30.sit as a STRICT template. The create_site_file.py tool must generate LINE-by-LINE matching the
+      manual (ShawUsers.303.pdf Section 3). For Manitoba prairie: LINE D needs MCANFLG=0, NRESSION=0; LINE G for snow; LINE
+      H=0 (no residue) or LINE H with residue params; LINE J for soil with exact column format.'
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_008
+  timestamp: '2026-03-24T22:56:00Z'
+  recorded_by: server
+  run_context:
+    basin: Manitoba Station 544
+    model: SHAW 3.03
+    run_name: shaw_manitoba_544
+  stage: s4_initial_conditions
+  failure_domain: parameter_format
+  symptom:
+    description: 'SHAW requires minimum 2 temperature profiles in .tem file (start + end of simulation period) for interpolation.
+      Single-profile .tem causes EOF error.
+
+      '
+    error_pattern: End of file
+    detection_method: exit_code
+  diagnosis:
+    root_cause: '.tem file had only 1 profile line. SHAW reads ahead for interpolation and hits EOF when only one profile
+      exists.
+
+      '
+    explanation: 'The temperature profile data file requires initial profile plus additional profiles for interpolation when
+      ITMPBC=0 (per manual page 12).
+
+      '
+    affected_components:
+    - .tem file
+    - .moi file (same requirement)
+  resolution:
+    action: 'Provide at least 2 profiles in .tem and .moi covering the full simulation period. Recommend 4-6 seasonal profiles
+      for a full-year simulation.
+
+      '
+    files_changed:
+    - manitoba544.tem
+    - manitoba544.moi
+    prevention: 'setup_shaw_from_template.py generates 6 seasonal profiles automatically.
+
+      '
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_009
+  timestamp: '2026-03-24T23:00:00Z'
+  recorded_by: server
+  run_context:
+    basin: Manitoba Station 544
+    model: SHAW 3.03
+    run_name: shaw_manitoba_544
+  stage: s1_site_setup
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Solar noon (HRNOON) in .sit Line C set to 0.01 instead of ~12.3.
+      Caused entire diurnal cycle to be shifted, making precipitation
+      assignment to wrong hour and zero effective water input.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: HRNOON was set as a placeholder (0.01) instead of computed from longitude.
+    explanation: HRNOON = 12.0 + (standard_meridian - longitude) / 15.0
+    affected_components: ['.sit Line C', 'DAY2HR subroutine']
+  resolution:
+    action: Compute HRNOON from longitude. For 100.37W with Central meridian (105W), HRNOON=12.3
+    files_changed: ['manitoba544.sit']
+    prevention: setup_shaw_from_template.py should compute HRNOON from --lon argument
+  severity: silent
+  promoted: true
+  promoted_as: shaw_028
+- id: err_010
+  timestamp: '2026-03-24T23:00:00Z'
+  recorded_by: server
+  run_context:
+    basin: Manitoba Station 544
+    model: SHAW 3.03
+    run_name: shaw_manitoba_544
+  stage: s2_weather_prep
+  failure_domain: unit_and_conversion
+  symptom:
+    description: >
+      Solar radiation from Manitoba MAWP in MJ/m2/day (TotRS_MJ) used directly
+      as W/m2 in .wea file. Values were 11.6x too low (3.08 instead of 35.6 W/m2).
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Station data reports daily total MJ/m2/day, SHAW expects average W/m2
+    explanation: 'Conversion: W/m2 = MJ/m2/day * 1e6 / 86400 = * 11.574'
+    affected_components: ['.wea SOLAR column', 'prepare_shaw_inputs.py']
+  resolution:
+    action: Multiply MJ/m2/day by 11.574 to get W/m2
+    files_changed: ['manitoba544.wea']
+    prevention: 'Validate: daily average solar should be 30-300 W/m2'
+  severity: silent
+  promoted: true
+  promoted_as: shaw_029
+- id: err_011
+  timestamp: '2026-03-24T23:00:00Z'
+  recorded_by: server
+  run_context:
+    basin: Manitoba Station 544
+    model: SHAW 3.03
+    run_name: shaw_manitoba_544
+  stage: s2_weather_prep
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Weather file had columns in YR DOY order (19 305) instead of DOY YR (305 19).
+      SHAW reads JD first then JYR — swapped columns cause wrong date parsing.
+    error_pattern: ''
+    detection_method: file_check
+  diagnosis:
+    root_cause: prepare_shaw_inputs.py wrote columns as YR DOY, but SHAW expects DOY YR
+    explanation: 'Fortran READ: JDAY,JYR,TMAX,TMIN,TDEW,WIND,PREC,SOLAR — JD first'
+    affected_components: ['.wea column order']
+  resolution:
+    action: Swap columns 1 and 2 in .wea file so DOY comes first
+    files_changed: ['manitoba544.wea']
+    prevention: Always verify .wea starts with DOY (1-366) not year (19, 20, etc.)
+  severity: silent
+  promoted: true
+  promoted_as: shaw_027
+- id: err_012
+  timestamp: '2026-03-24T23:00:00Z'
+  recorded_by: server
+  run_context:
+    basin: Manitoba Station 544
+    model: SHAW 3.03
+    run_name: shaw_manitoba_544
+  stage: s6_execution
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      JSTART in .sit must be 1 day AFTER first .wea line. DAY2HR needs previous
+      day TMAX/TMIN for interpolation. Setting JSTART=305 with .wea starting at
+      305 left no previous-day data.
+    error_pattern: CANNOT FIND SOIL TEMPERATURE DATA
+    detection_method: log_match
+  diagnosis:
+    root_cause: DAY2HR reads current day + next day, needs previous day from file positioning
+    explanation: See Shaw303.for lines 3388-3398
+    affected_components: ['.sit Line B JSTART', '.wea first line DOY']
+  resolution:
+    action: Set JSTART = first_wea_doy + 1. Also align .tem/.moi first profile to JSTART.
+    files_changed: ['manitoba544.sit', 'manitoba544.tem', 'manitoba544.moi']
+    prevention: setup_shaw_from_template.py should enforce this alignment
+  severity: fatal
+  promoted: true
+  promoted_as: shaw_030

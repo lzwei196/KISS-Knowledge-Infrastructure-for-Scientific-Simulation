@@ -1,0 +1,10 @@
+{
+  "RMSE_m": 0.454,
+  "MAE_m": 0.337,
+  "Bias_m": -0.007,
+  "r": 1.0,
+  "r_squared": 1.0,
+  "NSE": 1.0,
+  "KGE": 0.9999,
+  "n_observations": 72
+}

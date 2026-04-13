@@ -428,7 +428,9 @@ def _generate_filex(
     # Planting details
     lines.append("*PLANTING DETAILS")
     lines.append("@P PDATE EDATE  PPOP  PPOE  PLME  PLDS  PLRS  PLRD  PLDP  PLWT  PAGE  PENV  PLPH  SPRL                        PLNAME")
-    lines.append(f" 1 {planting_yyddd:>5d}   -99  {ppop:>4.1f}  {ppop:>4.1f}     S     R   {plrs:>3d}     0   {pldp:>3d}   -99   -99   -99   -99     0                        -99")
+    # Format PPOP: use integer if >=100 (wheat=350), decimal if <100 (maize=7.2)
+    ppop_str = f"{ppop:>5.0f}" if ppop >= 100 else f"{ppop:>5.1f}"
+    lines.append(f" 1 {planting_yyddd:>5d}   -99 {ppop_str} {ppop_str}     S     R   {plrs:>3d}     0   {pldp:>3d}   -99   -99   -99   -99     0                        -99")
     lines.append("")
 
     # Irrigation — rainfed (no events)
@@ -458,7 +460,12 @@ def _generate_filex(
     lines.append("@N OPTIONS     WATER NITRO SYMBI PHOSP POTAS DISES  CHEM  TILL   CO2")
     lines.append(f" 1 OP              Y     Y     {symbi}     N     N     N     N     Y     M")
     lines.append("@N METHODS     WTHER INCON LIGHT EVAPO INFIL PHOTO HYDRO NSWIT MESOM MESEV MESOL")
-    lines.append(" 1 ME              M     M     E     R     S     R     R     1     G     R     2")
+    # CROPGRO-based crops (soybean, peanut, dry bean, cotton, etc.) require
+    # PHOTO=L (leaf-level photosynthesis). CERES-based crops use PHOTO=R
+    # (radiation-use efficiency). Using PHOTO=R for CROPGRO causes near-zero
+    # biomass accumulation and crop death.
+    photo_method = "L" if crop_info[1] == "CRGRO048" else "R"
+    lines.append(f" 1 ME              M     M     E     R     S     {photo_method}     R     1     G     R     2")
     lines.append("@N MANAGEMENT  PLANT IRRIG FERTI RESID HARVS")
     lines.append(" 1 MA              R     N     R     N     M")
     lines.append("@N OUTPUTS     FNAME OVVEW SUMRY FROPT GROUT CAOUT WAOUT NIOUT MIOUT DIOUT VBOSE CHOUT OPOUT FMOPT")
@@ -750,6 +757,14 @@ def create_workdir(
         # Copy weather file to workdir root AND Weather/
         shutil.copy2(weather_file, os.path.join(workdir, wth_basename))
         shutil.copy2(weather_file, os.path.join(workdir, "Weather", wth_basename))
+
+        # Also create a copy with the expected DSSAT name (WSTA+YY+01.WTH)
+        # DSSAT searches for weather files matching this pattern
+        expected_name = f"{wsta}{start_year % 100:02d}01.WTH"
+        if expected_name != wth_basename:
+            shutil.copy2(weather_file, os.path.join(workdir, expected_name))
+            shutil.copy2(weather_file, os.path.join(workdir, "Weather", expected_name))
+            logger.info(f"Weather file also copied as {expected_name} (DSSAT naming convention)")
     else:
         wsta = "SITE"
         if weather_file:

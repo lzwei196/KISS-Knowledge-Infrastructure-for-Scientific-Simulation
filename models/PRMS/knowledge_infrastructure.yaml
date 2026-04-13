@@ -1,0 +1,184 @@
+package:
+  name: hydrocraft-prms-hydrology
+  version: "1.0.0"
+  created: "2026-03-25"
+  domain: hydrology
+  target_model: "PRMS v5.1.0"
+  binary_path: "prms/prms_hpc"
+  source_language: "C + Fortran 90"
+  build_system: make
+  authors:
+    - "Jianyun Zhang Research Group, Hohai University"
+  description: >
+    Knowledge infrastructure for the USGS Precipitation-Runoff Modeling System (PRMS).
+    Distributed-parameter watershed model using Hydrologic Response Units (HRUs).
+    Simulates precipitation distribution, snow processes, surface runoff, soil zone,
+    groundwater, and streamflow routing at daily timestep.
+
+pipeline:
+  stages:
+    - id: s0_config
+      name: Configuration
+      description: Set basin name, simulation period, module selection, file paths
+      knowledge_type: procedural
+      depends_on: []
+      tools: []
+      milestones:
+        - id: m_s0_config
+          description: Control file created with valid paths and module selections
+          verification: "Control file exists and contains required variables"
+
+    - id: s1_domain
+      name: Domain / HRU Setup
+      description: Define HRUs from DEM and basin shapefile; compute areas, elevations, centroids
+      knowledge_type: procedural
+      depends_on: []
+      tools: []
+      milestones:
+        - id: m_s1_domain
+          description: HRU and segment dimensions defined; spatial attributes computed
+          verification: "nhru, nsegment dimensions set; hru_area, hru_elev values populated"
+
+    - id: s2_soil
+      name: Soil Parameters
+      description: Derive soil hydraulic properties from HWSD or SoilGrids for each HRU
+      knowledge_type: procedural
+      depends_on:
+        - s1_domain
+      tools:
+        - id: convert_soil_to_prms
+          script: tools/s2_soil/convert_soil_to_prms.py
+          purpose: "Convert HWSD/SoilGrids soil texture to PRMS parameters (soil_type, soil_moist_max, etc.)"
+      milestones:
+        - id: m_s2_soil
+          description: Soil parameters generated for all HRUs
+          verification: "JSON output contains soil_type, soil_moist_max, soil_rechr_max for nhru HRUs"
+
+    - id: s3_vegetation
+      name: Vegetation / Land Cover
+      description: Classify HRU vegetation from AVHRR/MODIS; set cover type, density, interception
+      knowledge_type: procedural
+      depends_on:
+        - s1_domain
+      tools: []
+      milestones:
+        - id: m_s3_vegetation
+          description: Vegetation parameters set for all HRUs
+          verification: "cov_type, covden_sum, covden_win populated"
+
+    - id: s4_forcing
+      name: Meteorological Forcing
+      description: Convert CMFD/MSWX/NASA POWER to PRMS data file format with unit conversions
+      knowledge_type: procedural
+      depends_on:
+        - s1_domain
+      tools:
+        - id: convert_forcing_to_prms
+          script: tools/s4_forcing/convert_forcing_to_prms.py
+          purpose: "Convert gridded forcing to PRMS data file (K→°F, mm→inches, W/m²→Langleys)"
+      milestones:
+        - id: m_s4_forcing
+          description: PRMS data file created with correct units
+          verification: "Data file has #### delimiters, correct variable count, physical value ranges"
+
+    - id: s5_parameters
+      name: Model Parameters
+      description: Assemble complete PRMS parameter file from soil, vegetation, and domain data
+      knowledge_type: procedural
+      depends_on:
+        - s2_soil
+        - s3_vegetation
+      tools:
+        - id: generate_prms_params
+          script: tools/s5_parameters/generate_prms_params.py
+          purpose: "Generate PRMS parameter file with all dimensions, types, and values"
+      milestones:
+        - id: m_s5_parameters
+          description: Complete parameter file with all required dimensions and parameters
+          verification: "Parameter file has ** Dimensions ** and ** Parameters ** sections; type codes correct"
+
+    - id: s6_run
+      name: Model Execution
+      description: Compile PRMS (if needed) and execute with the control file
+      knowledge_type: procedural
+      depends_on:
+        - s4_forcing
+        - s5_parameters
+      tools:
+        - id: run_prms
+          script: tools/s6_run/run_prms.py
+          purpose: "Build and run PRMS binary with preflight checks and output validation"
+      milestones:
+        - id: m_s6_run
+          description: PRMS completes without error; output files created
+          verification: "Return code 0; CSV output file exists and is non-empty"
+
+    - id: s7_postprocess
+      name: Output Parsing
+      description: Extract discharge, soil moisture, ET, SWE from PRMS output to standard CSV
+      knowledge_type: procedural
+      depends_on:
+        - s6_run
+      tools:
+        - id: parse_prms_output
+          script: tools/s7_postprocess/parse_prms_output.py
+          purpose: "Parse PRMS CSV/statvar output to standard format with annual summaries"
+      milestones:
+        - id: m_s7_postprocess
+          description: Parsed CSV with date, discharge, ET, SWE columns
+          verification: "Output CSV has headers; row count matches simulation days"
+
+    - id: s8_validation
+      name: Validation
+      description: Compare simulated discharge with observed; compute NSE, KGE, PBIAS
+      knowledge_type: procedural
+      depends_on:
+        - s7_postprocess
+      tools: []
+      milestones:
+        - id: m_s8_validation
+          description: Validation metrics computed and validation figure generated
+          verification: "Metrics JSON contains NSE, KGE, PBIAS, r values"
+
+skill_documents:
+  - id: sd_s0_config
+    path: docs/s0_configuration_skill.md
+    stage: s0_config
+  - id: sd_s1_domain
+    path: docs/s1_domain_setup_skill.md
+    stage: s1_domain
+  - id: sd_s2_soil
+    path: docs/s2_soil_parameters_skill.md
+    stage: s2_soil
+  - id: sd_s4_forcing
+    path: docs/s4_forcing_skill.md
+    stage: s4_forcing
+  - id: sd_s5_params
+    path: docs/s5_parameters_skill.md
+    stage: s5_parameters
+  - id: sd_s6_run
+    path: docs/s6_execution_skill.md
+    stage: s6_run
+  - id: sd_s7_post
+    path: docs/s7_postprocess_skill.md
+    stage: s7_postprocess
+
+diagnostics:
+  path: diagnostics/triplets.yaml
+  count: 30
+  failure_domains:
+    - unit_conversion
+    - parameter_format
+    - path_resolution
+    - compilation
+    - runtime
+    - silent_error
+    - dependency_mismatch
+
+summary:
+  tools: 5
+  tool_lines: 1818
+  skill_documents: 7
+  diagnostic_triplets: 30
+  silent_errors: 18
+  failure_domains: 7

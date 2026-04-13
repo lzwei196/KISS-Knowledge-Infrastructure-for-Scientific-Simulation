@@ -1,0 +1,634 @@
+# ============================================================================
+# CE-QUAL-W2 Diagnostic Triplets
+# 25 triplets across 6 failure domains
+# Silent errors: 14/25 (56%)
+# ============================================================================
+
+- id: dt_001
+  stage: s3_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Water temperature systematically 3-5 C too warm year-round"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Cloud cover provided as fraction (0-1) instead of tenths (0-10)"
+    explanation: >
+      CE-QUAL-W2 expects cloud cover in TENTHS (0-10). If cloud cover is passed as
+      fraction (0-1), the model interprets all values as near-clear sky (cloud = 0.0-1.0
+      out of 10). This allows excessive shortwave radiation to reach the water surface,
+      warming the lake by 3-5 C. No error is produced.
+    affected_components: [convert_met_to_w2, w2_con.npt]
+  remedy:
+    action: "Multiply cloud cover by 10 if source data is in fraction (0-1)"
+    tool_to_run: convert_met_to_w2
+    manual_steps:
+      - "Check cloud cover values in met_wb*.npt: max should be ~8-10, not 0.8-1.0"
+      - "If max cloud < 2.0, data is likely in fraction — multiply by 10"
+    prevention: "convert_met_to_w2.py auto-derives cloud from SW radiation in tenths"
+  severity: silent
+  cross_references: [dt_002, dt_005]
+
+- id: dt_002
+  stage: s3_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Dewpoint temperature always near -40 C or unreasonable values"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Vapor pressure units wrong in dewpoint conversion (Pa vs kPa vs hPa)"
+    explanation: >
+      The VP-to-TDEW formula TDEW = (237.3*ln(VP/0.6108))/(17.27-ln(VP/0.6108))
+      requires VP in kPa. CMFD gives kPa directly. ERA5 gives Pa (divide by 1000).
+      MSWX gives kPa. If VP is in Pa (e.g., 800 Pa instead of 0.8 kPa), the formula
+      produces extreme negative dewpoints (approximately -40 C), which causes excessive
+      evaporation and thermal errors.
+    affected_components: [convert_met_to_w2]
+  remedy:
+    action: "Ensure VP is in kPa before dewpoint conversion"
+    tool_to_run: convert_met_to_w2
+    manual_steps:
+      - "Check VP values: should be 0.1-5.0 kPa (not 100-5000 Pa)"
+      - "If VP > 10, divide by 1000 (Pa to kPa) or by 10 (hPa to kPa)"
+    prevention: "convert_met_to_w2.py clips VP to [0.001, 10] kPa and warns if values are suspicious"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s4_inflow
+  failure_domain: unit_conversion
+  symptom:
+    description: "Inflow discharge 1000x too large or too small, reservoir fills/drains unrealistically"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "CaMa-Flood mm/day grid-cell runoff not converted to m^3/s point discharge"
+    explanation: >
+      CaMa-Flood output may be in mm/day over a grid cell area. CE-QUAL-W2 expects
+      m^3/s at a specific point. Conversion: Q_m3s = Q_mm_day * cell_area_m2 / (86400 * 1000).
+      Omitting this conversion results in discharge that is off by 5-6 orders of magnitude.
+    affected_components: [convert_inflow_to_w2]
+  remedy:
+    action: "Apply unit conversion with --convert_mm_to_m3s flag"
+    tool_to_run: convert_inflow_to_w2
+    manual_steps:
+      - "Check mean inflow: should be comparable to published annual mean discharge"
+      - "If mean Q < 0.01 m3/s for a large reservoir, units are likely wrong"
+      - "Use --convert_mm_to_m3s --cell_area_km2 <area>"
+    prevention: "convert_inflow_to_w2.py warns if mean discharge is suspiciously small or large"
+  severity: silent
+  cross_references: [dt_019]
+
+- id: dt_004
+  stage: s3_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Circulation pattern wrong, surface temperatures asymmetric"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wind direction in degrees but model version expects radians (or vice versa)"
+    explanation: >
+      CE-QUAL-W2 v4.x typically uses wind direction in degrees (0-360). Some v3.x
+      versions use radians (0-2*pi). Providing degrees when radians are expected (or
+      vice versa) causes the wind-driven circulation to be in the wrong direction,
+      affecting surface mixing and temperature patterns.
+    affected_components: [convert_met_to_w2, w2_con.npt]
+  remedy:
+    action: "Check WDIC card in w2_con.npt; v4.x uses degrees, v3.x may use radians"
+    tool_to_run: ""
+    manual_steps:
+      - "Check model version documentation for wind direction units"
+      - "If wind direction values are all 0-6.28, model expects degrees — multiply by 180/pi"
+    prevention: "Default to 270 degrees (westerly) when wind direction is not available"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_005
+  stage: s3_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Forcing data misaligned by hours or days, seasonal cycle shifted"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Julian day computed as integer instead of decimal (1 instead of 1.5 for noon)"
+    explanation: >
+      CE-QUAL-W2 uses decimal Julian day (JDAY) where 1.0 = midnight Jan 1, 1.5 = noon
+      Jan 1. If JDAY is computed as integer day number, all sub-daily timing is lost and
+      the diurnal cycle is shifted. This affects shortwave radiation phasing and surface
+      heat flux, causing systematic temperature errors.
+    affected_components: [convert_met_to_w2]
+  remedy:
+    action: "Use JDAY = DOY + hour/24 + minute/1440"
+    tool_to_run: convert_met_to_w2
+    manual_steps:
+      - "Check met file: JDAY values should have 3 decimal places (e.g., 1.000, 1.125)"
+      - "If all JDAY are integers (1.000, 2.000, ...), forcing is daily only"
+    prevention: "convert_met_to_w2.py computes decimal JDAY from datetime"
+  severity: silent
+  cross_references: [dt_001, dt_002]
+
+- id: dt_006
+  stage: s9_control_file
+  failure_domain: parameter_format
+  symptom:
+    description: "Model reads wrong parameter values, bizarre behavior (e.g., 100 branches, negative layers)"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Column misalignment in w2_con.npt — 8-char fixed-width fields shifted by 1+ characters"
+    explanation: >
+      Fortran reads w2_con.npt by COLUMN POSITION (FORMAT statements), not by delimiter.
+      If a value takes 9 characters instead of 8, everything after it shifts right,
+      and the model reads garbage values for all subsequent parameters on that line.
+      This is the most dangerous CE-QUAL-W2 error because it produces NO error message.
+    affected_components: [generate_w2_control]
+  remedy:
+    action: "Verify every field in w2_con.npt is exactly 8 characters, right-justified for numbers"
+    tool_to_run: generate_w2_control
+    manual_steps:
+      - "Open w2_con.npt in a fixed-width editor or use cut -c to check column positions"
+      - "Each numeric field: exactly 8 chars, right-justified"
+      - "Use format string '{:>8.2f}' in Python"
+    prevention: "generate_w2_control.py uses strict fmt_int/fmt_float functions with width enforcement"
+  severity: silent
+  cross_references: [dt_007, dt_008]
+
+- id: dt_007
+  stage: s1_bathymetry
+  failure_domain: parameter_format
+  symptom:
+    description: "Bathymetry file rejected, or widths read as wrong values at runtime"
+    error_pattern: "READ.*ERROR|FORMAT"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "bth_wb*.npt column widths do not match Fortran FORMAT statement"
+    explanation: >
+      The bathymetry file has strict column-width requirements defined by the
+      Fortran FORMAT statement in the source code. Typically 8 characters per segment
+      width. If the values overflow the field width, values are misread.
+    affected_components: [build_reservoir_grid, generate_bathymetry]
+  remedy:
+    action: "Ensure each width value in bth_wb*.npt is exactly 8 characters"
+    tool_to_run: build_reservoir_grid
+    manual_steps:
+      - "Check that width values do not exceed 8 characters (e.g., 99999.9 is 7 chars = OK)"
+      - "For very wide reservoirs (>9999 m), use fewer decimal places"
+    prevention: "build_reservoir_grid.py formats widths as {:8.1f}"
+  severity: fatal
+  cross_references: [dt_006]
+
+- id: dt_008
+  stage: s9_control_file
+  failure_domain: path_resolution
+  symptom:
+    description: "File not found error for input files despite files existing"
+    error_pattern: "OPEN.*ERROR|file not found"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "File path exceeds Fortran CHARACTER*72 limit — path truncated silently"
+    explanation: >
+      CE-QUAL-W2 Fortran source declares file path variables as CHARACTER*72 (or similar).
+      Paths longer than this limit are silently truncated, causing file-not-found errors
+      even when the files exist at the full path. The error message shows the TRUNCATED
+      path, which makes debugging difficult.
+    affected_components: [generate_w2_control, run_w2]
+  remedy:
+    action: "Use relative paths or symlinks to keep all file paths under 72 characters"
+    tool_to_run: ""
+    manual_steps:
+      - "Copy/symlink all input files to the run directory"
+      - "Use only filenames (no path) in w2_con.npt since model reads from CWD"
+      - 'Check: grep -o ''.\{73,\}'' w2_con.npt should return nothing'
+    prevention: "generate_w2_control.py uses os.path.basename() for file references"
+  severity: fatal
+  cross_references: [dt_006]
+
+- id: dt_009
+  stage: s9_control_file
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "Model reads past end of met/inflow file, crashes or produces partial results"
+    error_pattern: "END.OF.FILE|EOF|JDAY.*exceed"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Met or inflow file has fewer timesteps than the simulation period (TMSTRT to TMEND)"
+    explanation: >
+      All time-series input files (met, qin, tin, qot) must cover the FULL simulation
+      period defined by TMSTRT and TMEND in w2_con.npt. If the met file ends at JDAY 300
+      but TMEND is 365, the model crashes when it tries to read JDAY 301.
+    affected_components: [convert_met_to_w2, convert_inflow_to_w2, generate_w2_control]
+  remedy:
+    action: "Ensure all time-series files cover TMSTRT to TMEND Julian days"
+    tool_to_run: ""
+    manual_steps:
+      - "Check last JDAY in each input file: tail -1 met_wb1.npt"
+      - "Must be >= TMEND in w2_con.npt"
+      - "Extend input files if needed (repeat last value)"
+    prevention: "generate_w2_control.py validates JDAY coverage of all input files"
+  severity: fatal
+  cross_references: []
+
+- id: dt_010
+  stage: s1_bathymetry
+  failure_domain: grid_geometry
+  symptom:
+    description: "Model crashes with 'layer error' or 'zero thickness' at startup"
+    error_pattern: "LAYER.*ERROR|ZERO.*THICK|NEGATIVE.*THICK"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Active segment has zero width at all layers — no water column"
+    explanation: >
+      Every active segment (between boundary segments) must have at least one layer with
+      non-zero width. A segment with all-zero widths represents dry land and cannot
+      participate in the hydrodynamic calculation. This typically happens when the DEM-based
+      grid includes cells outside the reservoir water body.
+    affected_components: [build_reservoir_grid]
+  remedy:
+    action: "Remove segments with no water column, or set minimum width for at least one layer"
+    tool_to_run: build_reservoir_grid
+    manual_steps:
+      - "Check bth_wb*.npt: every active segment column should have at least one non-zero value"
+      - "Remove or merge segments that are entirely zero"
+    prevention: "build_reservoir_grid.py validates that all active segments have non-zero widths"
+  severity: fatal
+  cross_references: [dt_011, dt_013]
+
+- id: dt_011
+  stage: s1_bathymetry
+  failure_domain: grid_geometry
+  symptom:
+    description: "Unrealistic velocities, numerical instability, NaN in output"
+    error_pattern: "NaN|Infinity|INSTAB"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Segment length too short relative to layer thickness — CFL violation"
+    explanation: >
+      The CFL (Courant-Friedrichs-Lewy) condition requires that the timestep be small
+      enough for information to propagate no more than one cell per step. If segments are
+      very short but layers are thick, the CFL condition forces extremely small timesteps
+      (< 1 second), and numerical errors accumulate.
+    affected_components: [build_reservoir_grid]
+  remedy:
+    action: "Increase segment length or decrease layer thickness to maintain CFL < 1"
+    tool_to_run: build_reservoir_grid
+    manual_steps:
+      - "Rule of thumb: segment_length >= 2 * layer_thickness * sqrt(g * max_depth)"
+      - "Merge short segments"
+      - "Increase --segment_length parameter"
+    prevention: "Check w2l.opt for minimum timestep — if dt < 1s, grid needs coarsening"
+  severity: fatal
+  cross_references: [dt_010, dt_022]
+
+- id: dt_012
+  stage: s2_branch_topology
+  failure_domain: grid_geometry
+  symptom:
+    description: "Model crashes at branch junction with segment reference error"
+    error_pattern: "BRANCH.*ERROR|SEGMENT.*RANGE|DHS.*INVALID"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Branch DHS (downstream head segment) points to non-existent or wrong segment"
+    explanation: >
+      In multi-branch configurations, DHS specifies which segment in the receiving branch
+      the current branch connects to. If DHS references a segment that does not exist or
+      is not in the receiving branch, the model crashes at the junction.
+    affected_components: [build_branch_topology]
+  remedy:
+    action: "Verify DHS references valid segments in the receiving branch"
+    tool_to_run: build_branch_topology
+    manual_steps:
+      - "For each branch, check that DHS is within [US, DS] of the receiving branch"
+      - "DHS=0 means external boundary (no receiving branch)"
+      - "Main stem DHS should be 0 (or negative for the dam boundary)"
+    prevention: "build_branch_topology.py validates all DHS references"
+  severity: fatal
+  cross_references: []
+
+- id: dt_013
+  stage: s1_bathymetry
+  failure_domain: grid_geometry
+  symptom:
+    description: "Water flows upstream in some segments, unrealistic longitudinal patterns"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Bottom elevation increases in the downstream direction at some segments"
+    explanation: >
+      CE-QUAL-W2 assumes gravity-driven flow from upstream to downstream. If the bottom
+      elevation at a downstream segment is HIGHER than an upstream segment, a local
+      depression is created that traps water and disrupts the natural flow pattern.
+      The model may still run but produces physically unrealistic results.
+    affected_components: [build_reservoir_grid]
+  remedy:
+    action: "Ensure bottom elevations are monotonically non-increasing downstream"
+    tool_to_run: build_reservoir_grid
+    manual_steps:
+      - "Sort segments by distance and check: ELBOT[i] >= ELBOT[i+1]"
+      - "Smooth any uphill jumps by interpolating between neighbors"
+    prevention: "build_reservoir_grid.py enforces monotonic bottom elevations"
+  severity: silent
+  cross_references: [dt_010]
+
+- id: dt_014
+  stage: s6_init_conditions
+  failure_domain: grid_geometry
+  symptom:
+    description: "Model crashes immediately with 'initial water surface below bottom' error"
+    error_pattern: "ELWS.*ELBOT|WATER.*SURFACE.*BELOW"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Initial water surface elevation (ELWS) is below the bottom elevation at upstream segments"
+    explanation: >
+      If the reservoir is not at full pool, upstream segments with higher bottom
+      elevations may be above the initial water surface. CE-QUAL-W2 cannot start with
+      dry upstream segments unless specific wetting/drying options are enabled.
+    affected_components: [build_init_conditions, generate_w2_control]
+  remedy:
+    action: "Set ELWS >= max(ELBOT) for all active segments, or handle dry cells"
+    tool_to_run: build_init_conditions
+    manual_steps:
+      - "Check: ELWS in w2_con.npt must be >= highest bottom elevation of any active segment"
+      - "If reservoir is at partial pool, only include segments below ELWS"
+    prevention: "build_init_conditions.py validates ELWS against all segment bottom elevations"
+  severity: fatal
+  cross_references: [dt_013]
+
+- id: dt_015
+  stage: s8_wq_config
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "Constituent concentration always zero despite non-zero inflow concentrations"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Constituent flag OFF in w2_con.npt but concentration data provided in cin_br*.npt"
+    explanation: >
+      The CONSTITU card in w2_con.npt has ON/OFF flags for each water quality constituent.
+      If a constituent is OFF, its concentration in cin_br*.npt is ignored. Conversely, if
+      a constituent is ON but its column is missing from cin_br*.npt, the model reads the
+      wrong column for all subsequent constituents (column shift — same problem as dt_006).
+    affected_components: [configure_wq, generate_w2_control]
+  remedy:
+    action: "Ensure constituent ON/OFF flags exactly match cin_br*.npt column count and order"
+    tool_to_run: configure_wq
+    manual_steps:
+      - "Count ON flags in CONSTITU card"
+      - "Count data columns (excluding JDAY) in cin_br*.npt"
+      - "They must be equal, and in the same order"
+    prevention: "generate_w2_control.py cross-validates constituent flags with inflow file columns"
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_016
+  stage: s8_wq_config
+  failure_domain: silent_error
+  symptom:
+    description: "Dissolved oxygen drops to zero immediately (full anoxia everywhere)"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "SOD (sediment oxygen demand) set too high for the reservoir"
+    explanation: >
+      A SOD value of 5 g/m^2/day (high for a clean reservoir) can deplete all DO in the
+      hypolimnion within days. For most reservoirs, SOD should start at 0.3-0.5 g/m^2/day
+      and be calibrated against observed DO profiles. High SOD without sufficient reaeration
+      produces unrealistic anoxia.
+    affected_components: [configure_wq]
+  remedy:
+    action: "Start with SOD = 0.5 g/m^2/day; calibrate against observed DO"
+    tool_to_run: configure_wq
+    manual_steps:
+      - "Check SOD in w2_con.npt: typical range 0.1-2.0 g/m^2/day"
+      - "Clean oligotrophic reservoirs: SOD < 0.5"
+      - "Eutrophic reservoirs: SOD 1.0-3.0"
+    prevention: "configure_wq.py sets SOD = 0.5 as default"
+  severity: silent
+  cross_references: [dt_017]
+
+- id: dt_017
+  stage: s8_wq_config
+  failure_domain: silent_error
+  symptom:
+    description: "Algae bloom unrealistically (chlorophyll > 1000 ug/L)"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Algal growth rate too high and/or nutrient loading unconstrained"
+    explanation: >
+      Maximum algal growth rates above 2.5/day can cause exponential bloom growth
+      that is not nutrient-limited if inflow nutrient concentrations are also high.
+      The result is unrealistic algal biomass that dominates the WQ simulation.
+    affected_components: [configure_wq]
+  remedy:
+    action: "Cap algal growth rate at 2.0/day; verify nutrient inflow concentrations"
+    tool_to_run: configure_wq
+    manual_steps:
+      - "Check ALG1 growth rate in w2_con.npt: max should be ~2.0/day"
+      - "Check nutrient loading from cin_br*.npt files"
+      - "Reduce if algal biomass exceeds 200 ug/L chlorophyll"
+    prevention: "configure_wq.py caps growth rate at 2.0/day by default"
+  severity: silent
+  cross_references: [dt_016]
+
+- id: dt_018
+  stage: s5_outflow
+  failure_domain: unit_conversion
+  symptom:
+    description: "Dam release temperature wrong — too warm in winter or too cold in summer"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Outlet elevation in wrong reference frame (depth from surface vs m ASL)"
+    explanation: >
+      CE-QUAL-W2 outlet elevations must be in meters above sea level (m ASL), matching
+      the bathymetry elevation datum. If the outlet elevation is specified as depth from
+      surface (e.g., 20 m depth), the model places the outlet at the wrong absolute
+      elevation, drawing water from the wrong thermal layer.
+    affected_components: [configure_w2_outflow, generate_w2_control]
+  remedy:
+    action: "Convert outlet elevation to m ASL: E_outlet = E_surface - depth"
+    tool_to_run: configure_w2_outflow
+    manual_steps:
+      - "Check outlet elevation: should be between min(ELBOT) and ELWS"
+      - "If E_outlet > ELWS, it's wrong (outlet above water surface)"
+      - "If E_outlet < min(ELBOT), it's below the reservoir bottom"
+    prevention: "configure_w2_outflow.py validates outlet elevation against bathymetry range"
+  severity: silent
+  cross_references: [dt_019]
+
+- id: dt_019
+  stage: s5_outflow
+  failure_domain: unit_conversion
+  symptom:
+    description: "Reservoir drains unrealistically fast or water level stuck at crest"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Outflow units wrong (L/s instead of m^3/s) or negative values"
+    explanation: >
+      CE-QUAL-W2 expects outflow in m^3/s. If outflow is in L/s (1000x too large),
+      the reservoir drains in days. If outflow is in m^3/day (divide by 86400),
+      the outflow is negligible and the reservoir fills continuously.
+    affected_components: [configure_w2_outflow]
+  remedy:
+    action: "Verify outflow is in m^3/s; check against published dam release records"
+    tool_to_run: ""
+    manual_steps:
+      - "Mean outflow should be comparable to mean inflow for steady-state"
+      - "If outflow << inflow, water level rises continuously — check units"
+      - "If outflow >> inflow, reservoir drains — check units"
+    prevention: "configure_w2_outflow.py logs mean outflow for quick sanity check"
+  severity: silent
+  cross_references: [dt_003, dt_018]
+
+- id: dt_020
+  stage: s13_coupling
+  failure_domain: coupling
+  symptom:
+    description: "CaMa-Flood inflow arrives at wrong segment, inflow effect displaced spatially"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Spatial mismatch between CaMa grid cell and W2 inflow segment"
+    explanation: >
+      The CaMa-Flood outlet cell for the upstream catchment must map to the correct
+      W2 branch inflow segment. If the CaMa cell is at a different location than the
+      W2 upstream boundary, the inflow enters at the wrong point along the reservoir.
+    affected_components: [convert_inflow_to_w2, w2_to_cama_coupling]
+  remedy:
+    action: "Verify CaMa outlet cell coordinates match W2 inflow segment location"
+    tool_to_run: ""
+    manual_steps:
+      - "Plot CaMa outlet cell and W2 upstream segment on the same map"
+      - "They should be within 1 CaMa grid cell of each other"
+    prevention: "convert_inflow_to_w2.py accepts --inflow_lat/lon for spatial indexing"
+  severity: silent
+  cross_references: [dt_021]
+
+- id: dt_021
+  stage: s13_coupling
+  failure_domain: coupling
+  symptom:
+    description: "Total reservoir inflow 1.5-2x expected; water budget does not close"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Double-counting: VIC distributed tributary inflow overlaps with CaMa-routed main inflow"
+    explanation: >
+      If VIC provides local runoff for the entire reservoir catchment as distributed
+      tributary flow, AND CaMa-Flood also routes the same runoff as main channel inflow,
+      the reservoir receives double the water. The distributed tributary tool must subtract
+      the main inflow contributing area from the total catchment area.
+    affected_components: [generate_distributed_inflow, convert_inflow_to_w2]
+  remedy:
+    action: "Subtract CaMa-routed contributing area from distributed tributary area"
+    tool_to_run: generate_distributed_inflow
+    manual_steps:
+      - "Total local area = reservoir_catchment_area - main_inflow_catchment_area"
+      - "Use --contributing_area_km2 and --main_inflow_area_km2 correctly"
+    prevention: "generate_distributed_inflow.py requires both area parameters explicitly"
+  severity: silent
+  cross_references: [dt_020]
+
+- id: dt_022
+  stage: s10_execution
+  failure_domain: runtime
+  symptom:
+    description: "Model runs extremely slowly (hours for small reservoir)"
+    error_pattern: "DLT.*minimum|timestep.*0\\.0"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Adaptive timestep drops below 1 second due to CFL violation in narrow segments"
+    explanation: >
+      CE-QUAL-W2's adaptive timestepping reduces dt to maintain CFL stability. Very narrow
+      segments or sharp bathymetry transitions force dt to sub-second values, making the
+      simulation extremely slow. Check w2l.opt for minimum timestep warnings.
+    affected_components: [build_reservoir_grid, run_w2]
+  remedy:
+    action: "Increase minimum segment width, merge narrow segments, smooth bathymetry"
+    tool_to_run: build_reservoir_grid
+    manual_steps:
+      - "Check w2l.opt for timestep warnings"
+      - "Identify the segment(s) causing small timesteps"
+      - "Widen narrow segments or increase --segment_length"
+    prevention: "Ensure minimum segment width >= 10m and segment_length >= 250m"
+  severity: degraded
+  cross_references: [dt_011, dt_023]
+
+- id: dt_023
+  stage: s10_execution
+  failure_domain: runtime
+  symptom:
+    description: "NaN values in output, model crashes mid-simulation"
+    error_pattern: "NaN|Infinity|INSTAB|NEGATIVE.*THICK"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Numerical instability from sharp bathymetry gradients or extreme forcing"
+    explanation: >
+      Sharp width transitions between adjacent segments (e.g., 500m to 50m) create strong
+      velocity gradients that destabilize the numerical scheme. Also triggered by extreme
+      meteorological forcing values (e.g., wind > 30 m/s).
+    affected_components: [build_reservoir_grid, convert_met_to_w2]
+  remedy:
+    action: "Smooth bathymetry transitions; clip extreme forcing values"
+    tool_to_run: build_reservoir_grid
+    manual_steps:
+      - "Ensure adjacent segment widths differ by < 50%"
+      - "Clip wind speed to 25 m/s"
+      - "Reduce DLT MAX if instability persists"
+    prevention: "Check width matrix for sharp transitions; smooth if ratio > 2:1"
+  severity: fatal
+  cross_references: [dt_011, dt_022]
+
+- id: dt_024
+  stage: s10_execution
+  failure_domain: runtime
+  symptom:
+    description: "Model stops with NEGATIVE THICKNESS during reservoir drawdown"
+    error_pattern: "NEGATIVE.*THICK|LAYER.*THICKNESS.*NEGATIVE"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Water surface drops below a layer boundary during drawdown simulation"
+    explanation: >
+      When the reservoir water level drops significantly (drawdown for flood control or
+      power generation), surface layers may become thinner than the minimum allowed.
+      If wetting/drying is not enabled, this crashes the model.
+    affected_components: [generate_w2_control, configure_w2_outflow]
+  remedy:
+    action: "Increase minimum layer thickness; reduce outflow during drawdown periods"
+    tool_to_run: ""
+    manual_steps:
+      - "Check DLT CON for minimum layer thickness setting"
+      - "Reduce outflow to prevent surface dropping below layer boundaries"
+      - "Consider enabling wetting/drying if model version supports it"
+    prevention: "Monitor water level output; warn if level drops > 50% of max depth"
+  severity: fatal
+  cross_references: [dt_019]
+
+- id: dt_025
+  stage: s10_execution
+  failure_domain: silent_error
+  symptom:
+    description: "Model completes but no output files are generated"
+    error_pattern: ""
+    detection_method: missing_output
+  diagnosis:
+    root_cause: "Output card groups missing in w2_con.npt or output intervals set to zero"
+    explanation: >
+      CE-QUAL-W2 can run to completion without writing any output if the SNP FREQ, TSR FREQ,
+      or SPR FILE cards are missing, disabled, or have zero output intervals. The model exits
+      normally (exit code 0) but produces empty or nonexistent output files.
+    affected_components: [generate_w2_control]
+  remedy:
+    action: "Add SNP FREQ, TSR FREQ, and SPR FILE cards with non-zero intervals to w2_con.npt"
+    tool_to_run: generate_w2_control
+    manual_steps:
+      - "Check w2_con.npt for output control cards"
+      - "SNP FREQ should have NSNP >= 1 and SNPD > 0"
+      - "TSR FREQ should have NTSR >= 1 and TSRD > 0"
+    prevention: "generate_w2_control.py always includes output cards with sensible defaults"
+  severity: silent
+  cross_references: []

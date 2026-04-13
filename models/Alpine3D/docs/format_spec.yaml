@@ -1,0 +1,156 @@
+model:
+  name: "Alpine3D"
+  domain: "Cryosphere — spatially distributed snow, energy balance, and runoff in mountainous terrain"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Alpine3D/source/repo/Source/alpine3d/bin/alpine3d"
+  version: "20260328.609d2ea"
+  components:
+    - MeteoIO (data I/O, quality filtering, spatial/temporal interpolation)
+    - SNOWPACK (multi-layer snow and soil physics, energy + mass balance)
+    - EnergyBalance (terrain-aware radiation transfer)
+    - SnowDrift (wind-driven snow erosion/deposition, optional)
+    - Runoff (surface/soil runoff from snowmelt and rainfall)
+
+inputs:
+  forcing:
+    - name: "TA"
+      description: "Air temperature"
+      unit: "K"
+      valid_range: [220.0, 330.0]
+    - name: "RH"
+      description: "Relative humidity"
+      unit: "fraction (0-1)"
+      valid_range: [0.0, 1.0]
+    - name: "VW"
+      description: "Wind speed"
+      unit: "m/s"
+      valid_range: [0.0, 60.0]
+    - name: "DW"
+      description: "Wind direction"
+      unit: "degrees from N (0-360)"
+      valid_range: [0.0, 360.0]
+    - name: "ISWR"
+      description: "Incoming shortwave radiation"
+      unit: "W/m2"
+      valid_range: [0.0, 1400.0]
+    - name: "ILWR"
+      description: "Incoming longwave radiation"
+      unit: "W/m2"
+      valid_range: [50.0, 500.0]
+    - name: "PSUM"
+      description: "Precipitation sum"
+      unit: "kg/m2 (mm water equivalent)"
+      valid_range: [0.0, 100.0]
+    - name: "P"
+      description: "Atmospheric pressure"
+      unit: "Pa"
+      valid_range: [50000.0, 110000.0]
+    - name: "HS"
+      description: "Snow height (optional observation)"
+      unit: "m"
+      valid_range: [0.0, 20.0]
+
+  spatial:
+    - name: "DEM"
+      format: "ESRI ARC/INFO ASCII grid"
+      description: "Digital elevation model"
+    - name: "LANDUSE"
+      format: "ESRI ARC/INFO ASCII grid"
+      description: "Land use classification grid (must be co-registered with DEM)"
+    - name: "SNO"
+      format: "SMET 1.1 ASCII"
+      description: "Initial snow/soil profile per grid cell"
+
+  parameters:
+    critical:
+      - name: "ROUGHNESS_LENGTH"
+        section: "Snowpack"
+        valid_range: [0.001, 0.01]
+        unit: "m"
+        description: "Surface roughness length controlling turbulent exchange"
+      - name: "THRESH_RAIN"
+        section: "SnowpackAdvanced"
+        valid_range: [0.5, 2.5]
+        unit: "K"
+        description: "Rain/snow temperature threshold (K above freezing)"
+      - name: "GEO_HEAT"
+        section: "Snowpack"
+        valid_range: [0.0, 0.1]
+        unit: "W/m2"
+        description: "Geothermal heat flux at base"
+      - name: "CALCULATION_STEP_LENGTH"
+        section: "Snowpack"
+        valid_range: [5, 60]
+        unit: "minutes"
+        description: "Model calculation timestep"
+      - name: "ATMOSPHERIC_STABILITY"
+        section: "Snowpack"
+        valid_range: null
+        description: "Stability correction scheme (MO_MICHLMAYR, NEUTRAL, etc.)"
+      - name: "TERRAIN_RADIATION_METHOD"
+        section: "EBalance"
+        valid_range: null
+        description: "Terrain radiation algorithm (SIMPLE, COMPLEX, HELBIG)"
+      - name: "ALPINE3D"
+        section: "SnowpackAdvanced"
+        valid_range: null
+        description: "MUST be TRUE for Alpine3D distributed mode"
+
+outputs:
+  primary:
+    - name: "HS"
+      description: "Snow depth"
+      unit: "m"
+      valid_range: [0.0, 20.0]
+    - name: "SWE"
+      description: "Snow water equivalent"
+      unit: "kg/m2"
+      valid_range: [0.0, 3000.0]
+    - name: "TA"
+      description: "Air temperature (interpolated grid)"
+      unit: "K"
+      valid_range: [220.0, 330.0]
+    - name: "TSS"
+      description: "Snow surface temperature"
+      unit: "K"
+      valid_range: [220.0, 273.15]
+    - name: "ISWR"
+      description: "Incoming shortwave radiation (terrain-corrected)"
+      unit: "W/m2"
+      valid_range: [0.0, 1400.0]
+    - name: "ILWR"
+      description: "Incoming longwave radiation (interpolated)"
+      unit: "W/m2"
+      valid_range: [50.0, 500.0]
+    - name: "MS_SNOWPACK_RUNOFF"
+      description: "Surface runoff from snowmelt"
+      unit: "kg/m2"
+      valid_range: [0.0, 200.0]
+    - name: "MS_SOIL_RUNOFF"
+      description: "Bottom runoff through soil"
+      unit: "kg/m2"
+      valid_range: [0.0, 200.0]
+    - name: "RSNO"
+      description: "Mean snow density"
+      unit: "kg/m3"
+      valid_range: [50.0, 700.0]
+    - name: "ET"
+      description: "Evapotranspiration"
+      unit: "kg/m2"
+      valid_range: [0.0, 50.0]
+
+  formats:
+    gridded: "ARC ASCII grid, filename pattern YYYYMMDDHHMI_PARAM.asc"
+    timeseries: "SMET .met files at POI locations"
+    profiles: ".pro files with full snow stratigraphy at POIs"
+
+known_issues:
+  - id: "dt_001"
+    description: "Temperature in Celsius instead of Kelvin causes crash or nonsense output"
+  - id: "dt_002"
+    description: "RH in percent instead of fraction causes permanent saturation"
+  - id: "dt_016"
+    description: "ALPINE3D=FALSE in SnowpackAdvanced produces incorrect spatial results"
+  - id: "dt_017"
+    description: "DEM/landuse grid dimension mismatch causes segfault"
+  - id: "dt_018"
+    description: "Coordinate system mismatch silently corrupts spatial interpolation"

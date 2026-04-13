@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+"""
+build_reservoir_properties.py — Compute reservoir properties for Pywr model.
+
+Takes GRanD dam data (or user-specified properties) and computes:
+- max_volume, min_volume (dead storage), initial_volume
+- area-volume curve using Liebe et al. (2005): A = 0.0002 * V^0.667
+- level-volume-area table for Pywr storage node
+
+Usage:
+    # From find_dams_in_basin.py output:
+    python build_reservoir_properties.py --dam_json dams.json --dam_index 0
+
+    # Manual specification:
+    python build_reservoir_properties.py \
+        --name "Meishan" --capacity_mcm 2275 --dam_height_m 88 \
+        --dead_storage_frac 0.10 --initial_frac 0.50
+
+    # With custom area-volume table:
+    python build_reservoir_properties.py \
+        --name "MyDam" --capacity_mcm 500 \
+        --area_volume_csv area_volume.csv
+
+Output:
+    JSON reservoir configuration ready for Pywr assembly.
+    Exit codes: 0 = success, 2 = input error, 3 = runtime error
+"""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+
+
+def liebe_area_volume(volume_m3):
+    """
+    Estimate reservoir surface area from volume using Liebe et al. (2005).
+    A = 0.0002 * V^0.667
+    where V is in m3 and A is in m2.
+    Widely used empirical relationship for reservoirs in data-scarce regions.
+    """
+    if volume_m3 <= 0:
+        return 0.0
+    return 0.0002 * (volume_m3 ** 0.667)
+
+
+def build_level_volume_area_table(max_volume_m3, dam_height_m, n_points=20,
+                                  dead_storage_frac=0.10):
+    """
+    Build a level-volume-area table for Pywr.
+
+    Assumes a simplified geometry:
+    - Level 0 = reservoir bottom
+    - Level = dam_height at full supply level
+    - Volume increases with level^2 (cone-shaped reservoir approximation)
+    - Area from Liebe relationship at each volume
+
+    Returns list of dicts: [{level_m, volume_m3, area_m2}, ...]
+    """
+    levels = np.linspace(0, dam_height_m, n_points)
+    table = []
+
+    for level in levels:
+        # Volume ~ (level / max_level)^2 * max_volume (parabolic bowl)
+        frac = (level / dam_height_m) ** 2 if dam_height_m > 0 else 0
+        vol = frac * max_volume_m3
+        area = liebe_area_volume(vol)
+        table.append({
+            "level_m": round(float(level), 2),
+            "volume_m3": round(float(vol), 0),
+            "volume_mcm": round(float(vol / 1e6), 3),
+            "area_m2": round(float(area), 0),
+            "area_km2": round(float(area / 1e6), 3),
+        })
+
+    return table
+
+
+def build_from_dam_info(dam_info, dead_storage_frac=0.10, initial_frac=0.50):
+    """Build reservoir properties from a single dam info dict."""
+    name = dam_info.get("name", "unnamed_reservoir")
+    cap_mcm = dam_info.get("capacity_mcm")
+    height_m = dam_info.get("dam_height_m")
+
+    if cap_mcm is None or cap_mcm <= 0:
+        raise ValueError(f"Dam '{name}' has no valid capacity (CAP_MCM={cap_mcm})")
+
+    max_volume_m3 = cap_mcm * 1e6  # MCM -> m3
+    min_volume_m3 = max_volume_m3 * dead_storage_frac
+    initial_volume_m3 = max_volume_m3 * initial_frac
+
+    # Estimate dam height if missing
+    if height_m is None or height_m <= 0 or height_m == -99:
+        # Rough estimate: h ~ 4.5 * V^0.2 (Lehner et al.)
+        height_m = 4.5 * (cap_mcm ** 0.2)
+
+    # Surface area at full supply
+    max_area_m2 = liebe_area_volume(max_volume_m3)
+
+    # Level-volume-area table
+    lva_table = build_level_volume_area_table(
+        max_volume_m3, height_m, n_points=20,
+        dead_storage_frac=dead_storage_frac
+    )
+
+    props = {
+        "name": name,
+        "grand_id": dam_info.get("grand_id"),
+        "lat": dam_info.get("lat"),
+        "lon": dam_info.get("lon"),
+        "river_name": dam_info.get("river_name"),
+        "year_completed": dam_info.get("year_completed"),
+        "upstream_area_km2": dam_info.get("upstream_area_km2"),
+        "storage": {
+            "max_volume_m3": max_volume_m3,
+            "max_volume_mcm": cap_mcm,
+            "min_volume_m3": min_volume_m3,
+            "min_volume_mcm": round(min_volume_m3 / 1e6, 3),
+            "initial_volume_m3": initial_volume_m3,
+            "initial_volume_mcm": round(initial_volume_m3 / 1e6, 3),
+            "dead_storage_fraction": dead_storage_frac,
+            "initial_fraction": initial_frac,
+        },
+        "geometry": {
+            "dam_height_m": round(float(height_m), 1),
+            "elevation_masl": dam_info.get("elevation_masl"),
+            "max_area_m2": round(max_area_m2, 0),
+            "max_area_km2": round(max_area_m2 / 1e6, 3),
+            "area_volume_method": "Liebe_et_al_2005",
+        },
+        "level_volume_area_table": lva_table,
+        "pywr_node": {
+            "type": "Storage",
+            "name": name.replace(" ", "_"),
+            "max_volume": max_volume_m3,
+            "min_volume": min_volume_m3,
+            "initial_volume": initial_volume_m3,
+            "cost": -500,  # Large negative cost to prefer filling
+            "comment": "Generated by build_reservoir_properties.py"
+        },
+    }
+
+    return props
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Build reservoir properties for Pywr model"
+    )
+
+    # Source: dam JSON from find_dams_in_basin.py
+    parser.add_argument("--dam_json", type=str,
+                        help="JSON file from find_dams_in_basin.py")
+    parser.add_argument("--dam_index", type=int, default=0,
+                        help="Index of dam in JSON array (default: 0, largest)")
+    parser.add_argument("--dam_name", type=str, default=None,
+                        help="Select dam by name substring (case-insensitive)")
+
+    # Source: manual specification
+    parser.add_argument("--name", type=str, default=None,
+                        help="Dam name (manual mode)")
+    parser.add_argument("--capacity_mcm", type=float, default=None,
+                        help="Reservoir capacity in MCM (manual mode)")
+    parser.add_argument("--dam_height_m", type=float, default=None,
+                        help="Dam height in meters (manual mode)")
+    parser.add_argument("--lat", type=float, default=None,
+                        help="Dam latitude (manual mode)")
+    parser.add_argument("--lon", type=float, default=None,
+                        help="Dam longitude (manual mode)")
+
+    # Parameters
+    parser.add_argument("--dead_storage_frac", type=float, default=0.10,
+                        help="Dead storage fraction (default: 0.10)")
+    parser.add_argument("--initial_frac", type=float, default=0.50,
+                        help="Initial volume fraction (default: 0.50)")
+    parser.add_argument("--area_volume_csv", type=str, default=None,
+                        help="Custom area-volume CSV (columns: volume_m3, area_m2)")
+
+    parser.add_argument("--output", type=str, default=None,
+                        help="Output JSON file path (default: stdout)")
+    args = parser.parse_args()
+
+    try:
+        if args.dam_json:
+            # Load from find_dams_in_basin.py output
+            with open(args.dam_json, "r") as f:
+                data = json.load(f)
+
+            dams = data.get("dams", data if isinstance(data, list) else [data])
+            if not dams:
+                print(json.dumps({"error": "No dams in input JSON"}))
+                sys.exit(2)
+
+            if args.dam_name:
+                # Find by name
+                matches = [d for d in dams
+                           if args.dam_name.lower() in d["name"].lower()]
+                if not matches:
+                    print(json.dumps({
+                        "error": f"No dam matching '{args.dam_name}'",
+                        "available": [d["name"] for d in dams]
+                    }))
+                    sys.exit(2)
+                dam_info = matches[0]
+            else:
+                if args.dam_index >= len(dams):
+                    print(json.dumps({
+                        "error": f"Dam index {args.dam_index} out of range (0-{len(dams)-1})"
+                    }))
+                    sys.exit(2)
+                dam_info = dams[args.dam_index]
+
+        elif args.capacity_mcm:
+            # Manual specification
+            dam_info = {
+                "name": args.name or "manual_reservoir",
+                "capacity_mcm": args.capacity_mcm,
+                "dam_height_m": args.dam_height_m,
+                "lat": args.lat,
+                "lon": args.lon,
+                "grand_id": None,
+                "river_name": None,
+                "year_completed": None,
+                "elevation_masl": None,
+                "upstream_area_km2": None,
+            }
+        else:
+            print(json.dumps({"error": "Provide --dam_json or --capacity_mcm"}))
+            sys.exit(2)
+
+        # Build properties
+        result = build_from_dam_info(
+            dam_info,
+            dead_storage_frac=args.dead_storage_frac,
+            initial_frac=args.initial_frac,
+        )
+
+        # Custom area-volume table overrides
+        if args.area_volume_csv:
+            import pandas as pd
+            av = pd.read_csv(args.area_volume_csv)
+            result["level_volume_area_table"] = av.to_dict("records")
+            result["geometry"]["area_volume_method"] = "user_provided"
+
+        result["status"] = "OK"
+        output_str = json.dumps(result, indent=2, ensure_ascii=False)
+
+        if args.output:
+            Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+            with open(args.output, "w") as f:
+                f.write(output_str)
+            print(f"Wrote reservoir properties to {args.output}")
+        else:
+            print(output_str)
+
+        sys.exit(0)
+
+    except Exception as e:
+        print(json.dumps({"error": str(e), "status": "FAIL"}))
+        sys.exit(3)
+
+
+if __name__ == "__main__":
+    main()

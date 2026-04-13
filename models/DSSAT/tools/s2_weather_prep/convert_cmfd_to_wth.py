@@ -7,8 +7,7 @@ Output: DSSAT weather file (.WTH) with columns:
     @DATE  SRAD  TMAX  TMIN  RAIN  WIND
 
 UNIT CONVERSIONS (CRITICAL):
-    - CMFD precip: kg/m²/s (mm/s) → mm/day (×86400, then sum 8 steps ÷ 8 × 24 for 3-hourly)
-      Actually CMFD 3-hourly precip is already mm/3hr → sum 8 steps = mm/day
+    - CMFD precip: kg/m²/s → mm/day (each 3-hourly value × 10800, then sum 8 steps)
     - CMFD temperature: K → °C (-273.15), compute daily Tmax/Tmin from 8 steps
     - CMFD solar: W/m² → MJ/m²/day (×0.0864)
     - CMFD wind: m/s → km/day (×86.4)
@@ -73,8 +72,8 @@ def read_cmfd_point(forcing_dir, lat, lon, start_year, end_year):
                 s, e = d * 8, (d + 1) * 8
                 date = datetime(year, month, 1) + timedelta(days=d)
 
-                # Precipitation: sum 3-hourly steps → mm/day
-                rain = float(np.sum(month_data['prec'][s:e]))
+                # Precipitation: CMFD stores kg/m²/s — multiply by 10800 (3hr in seconds) then sum
+                rain = float(np.sum(month_data['prec'][s:e] * 10800))
 
                 # Temperature: K → °C, compute Tmax/Tmin
                 if 'temp' in month_data:

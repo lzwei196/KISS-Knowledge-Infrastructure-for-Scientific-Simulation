@@ -1,0 +1,144 @@
+model:
+  name: "ForeFire"
+  version: "2.2.1"
+  domain: "wildfire_propagation"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ForeFire/source/repo/bin/forefire"
+  developer: "CNRS / Universite de Corse Pascal Paoli"
+  language: "C++"
+  propagation_models:
+    - "Rothermel"
+    - "Balbi2020"
+    - "RothermelAndrews2018"
+    - "Farsite"
+    - "Isotropic"
+
+inputs:
+  forcing:
+    - name: "altitude"
+      unit: "m"
+      valid_range: [-500, 9000]
+      description: "Digital elevation model (UTM meters)"
+      format: "NetCDF variable in data.nc, dims (t,z,y,x)"
+    - name: "fuel"
+      unit: "index (0-N)"
+      valid_range: [0, 255]
+      description: "Fuel type index referencing fuels.csv"
+      format: "NetCDF variable in data.nc, dims (t,z,y,x)"
+    - name: "windU"
+      unit: "m/s"
+      valid_range: [-50, 50]
+      description: "U-component (eastward) of wind"
+      format: "NetCDF variable in data.nc, dims (t,z,y,x)"
+    - name: "windV"
+      unit: "m/s"
+      valid_range: [-50, 50]
+      description: "V-component (northward) of wind"
+      format: "NetCDF variable in data.nc, dims (t,z,y,x)"
+    - name: "moisture"
+      unit: "fraction"
+      valid_range: [0.0, 1.0]
+      description: "Fuel moisture content (optional)"
+      format: "NetCDF variable in data.nc, dims (t,z,y,x)"
+    - name: "temperature"
+      unit: "K"
+      valid_range: [200, 400]
+      description: "Air temperature (optional, required for Balbi model)"
+      format: "NetCDF variable in data.nc, dims (t,z,y,x)"
+
+  parameters:
+    critical:
+      - name: "propagationModel"
+        valid_range: ["Rothermel", "Balbi2020", "RothermelAndrews2018", "Farsite", "Iso"]
+        description: "Rate of Spread model selection"
+      - name: "fuelsTableFile"
+        valid_range: null
+        description: "Path to fuel properties CSV (semicolon-delimited)"
+      - name: "propagationSpeedAdjustmentFactor"
+        valid_range: [0.0, 10.0]
+        description: "Global ROS multiplier"
+        default: 1.0
+      - name: "windReductionFactor"
+        valid_range: [0.0, 1.0]
+        description: "Wind speed reduction factor"
+        default: 1.0
+    tuning:
+      - name: "spatialIncrement"
+        valid_range: [0.1, 100]
+        description: "Spatial resolution for front nodes (m)"
+        default: 3
+      - name: "perimeterResolution"
+        valid_range: [1, 1000]
+        description: "Perimeter node spacing (m)"
+        default: 10
+      - name: "minSpeed"
+        valid_range: [0.0, 1.0]
+        description: "Minimum propagation speed (m/s)"
+        default: 0.009
+      - name: "relax"
+        valid_range: [0.0, 1.0]
+        description: "Relaxation factor for front smoothing"
+        default: 0.5
+      - name: "minimalPropagativeFrontDepth"
+        valid_range: [1, 1000]
+        description: "Minimum front depth for propagation (m)"
+        default: 20
+
+  fuel_parameters_rothermel:
+    format: "CSV (semicolon-delimited)"
+    columns:
+      - { name: "Index", unit: "-", description: "Fuel type index" }
+      - { name: "Rhod", unit: "kg/m³", description: "Dead fuel particle density" }
+      - { name: "Rhol", unit: "kg/m³", description: "Live fuel particle density" }
+      - { name: "Md", unit: "fraction", description: "Dead fuel moisture content" }
+      - { name: "Ml", unit: "fraction", description: "Live fuel moisture content" }
+      - { name: "sd", unit: "1/m", description: "Dead fuel SAV ratio" }
+      - { name: "sl", unit: "1/m", description: "Live fuel SAV ratio" }
+      - { name: "e", unit: "m", description: "Fuel bed depth" }
+      - { name: "Sigmad", unit: "kg/m²", description: "Dead fuel load" }
+      - { name: "Sigmal", unit: "kg/m²", description: "Live fuel load" }
+      - { name: "stoch", unit: "-", description: "Stochiometric coefficient" }
+      - { name: "RhoA", unit: "kg/m³", description: "Air density" }
+      - { name: "Ta", unit: "K", description: "Ambient temperature" }
+      - { name: "Tau0", unit: "s", description: "Flame residence time" }
+      - { name: "Deltah", unit: "J/kg", description: "Heat of vaporization of water" }
+      - { name: "DeltaH", unit: "J/kg", description: "Heat of combustion" }
+      - { name: "Cp", unit: "J/(kg·K)", description: "Fuel specific heat" }
+      - { name: "Cpa", unit: "J/(kg·K)", description: "Air specific heat" }
+      - { name: "Ti", unit: "K", description: "Ignition temperature" }
+      - { name: "X0", unit: "-", description: "Radiant fraction" }
+      - { name: "r00", unit: "m", description: "Flame base radiation length" }
+      - { name: "Blai", unit: "m²/m²", description: "Leaf area index" }
+      - { name: "me", unit: "fraction", description: "Moisture of extinction" }
+
+outputs:
+  primary:
+    - name: "fire_perimeter"
+      unit: "coordinates (UTM m)"
+      valid_range: null
+      description: "Fire front polygon vertices at each timestep"
+      formats: ["GeoJSON", "KML", "ForeFire .ff", "NetCDF"]
+    - name: "rate_of_spread"
+      unit: "m/s"
+      valid_range: [0.0, 10.0]
+      description: "Fire front propagation velocity per node"
+    - name: "burning_map"
+      unit: "seconds (arrival time)"
+      valid_range: [0, null]
+      description: "Grid of fire arrival times (NetCDF output)"
+
+  output_modes:
+    - { mode: "geojson", command: "print[output.geojson]" }
+    - { mode: "kml", command: "print[output.kml]" }
+    - { mode: "ff", command: "print[output.ff]" }
+    - { mode: "netcdf", command: "save[filename=out.nc]" }
+
+coordinate_system: "UTM (meters)"
+time_unit: "seconds from domain start"
+
+known_issues:
+  - "Binary requires LD_LIBRARY_PATH=/home/server/.local/lib for libnetcdf-cxx4.so.1"
+  - "Wind speed must be in m/s; km/h or mph input causes silent ROS errors (2-3x off)"
+  - "Coordinates must be UTM meters; lon/lat degrees cause domain mismatch"
+  - "Rothermel model internally converts SI to Imperial and back; fuels.csv must be SI"
+  - "RothermelAndrews2018 expects Imperial units directly in fuel table"
+  - "Core dump when running without fuel properties file (even with Isotropic model)"

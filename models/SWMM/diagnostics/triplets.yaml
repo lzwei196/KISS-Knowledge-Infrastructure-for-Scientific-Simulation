@@ -1,0 +1,734 @@
+# ============================================================================
+# Diagnostic Triplets — EPA SWMM 5.2 Knowledge Infrastructure
+# ============================================================================
+# Each triplet encodes one piece of operational debugging knowledge:
+#   symptom  -> what the agent observes
+#   diagnosis -> why it happened
+#   remedy   -> what to do about it
+#
+# Failure domains: runtime, parameter_format, silent_error,
+#   dependency_mismatch, unit_conversion
+#
+# Severity: fatal, degraded, warning, silent
+# ============================================================================
+
+triplets:
+
+  # --- dt_001: HIGH ROUTING CONTINUITY ERROR ---
+
+  - id: dt_001
+    stage: "s6_execution"
+    failure_domain: "runtime"
+    symptom:
+      description: "SWMM simulation completes but the routing continuity error reported in the RPT file exceeds 5%. Results are numerically unreliable."
+      error_pattern: "Routing Continuity Error.*[5-9]\\.[0-9]|Routing Continuity Error.*[1-9][0-9]"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "The routing timestep is too large for the dynamic wave solver to resolve flow transitions in the pipe network."
+      explanation: >
+        Dynamic wave routing solves the full Saint-Venant equations using an explicit
+        finite difference scheme. The Courant condition requires dt <= dx / sqrt(g * h),
+        where dx is the shortest conduit length and h is the maximum depth. When the
+        timestep exceeds this limit, numerical oscillations cause mass balance errors.
+        Short conduits, deep flows, or rapidly varying inflows all tighten the Courant
+        constraint.
+      affected_components:
+        - "[OPTIONS] ROUTING_STEP / WET_STEP"
+        - "Short conduits in [CONDUITS]"
+    remedy:
+      action: "Reduce ROUTING_STEP and WET_STEP in [OPTIONS]. Start with 15s, then try 10s, then 5s. Each reduction approximately halves the continuity error at the cost of doubling runtime."
+      tool_to_run: "configure_simulation_options"
+      manual_steps:
+        - "Check RPT file for routing continuity error percentage"
+        - "Identify shortest conduit: sort [CONDUITS] by Length ascending"
+        - "Compute Courant limit: dt_max = min_length / sqrt(9.81 * max_depth)"
+        - "Set ROUTING_STEP and WET_STEP to <= dt_max in [OPTIONS]"
+        - "Re-run simulation and verify error < 1%"
+      prevention: "Always check Courant condition against shortest conduit before first run. Use VARIABLE_STEP 0.75 to enable adaptive timestep."
+    severity: "degraded"
+    cross_references: ["dt_002", "dt_017"]
+
+  # --- dt_002: UNSTABLE OSCILLATING FLOW ---
+
+  - id: dt_002
+    stage: "s6_execution"
+    failure_domain: "runtime"
+    symptom:
+      description: "Dynamic wave routing produces oscillating flow directions in some conduits. Link flow alternates between positive and negative values every timestep. Continuity error may be very high (>20%). Simulation may crash with NaN values."
+      error_pattern: "NaN|Inf|Continuity Error.*[2-9][0-9]"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "One or more conduits have adverse slopes (outlet invert higher than inlet invert), causing the dynamic wave solver to oscillate between forward and reverse flow."
+      explanation: >
+        An adverse slope means water must flow uphill. The dynamic wave solver can
+        handle pressurized flow (surcharging), but adverse slopes create an unstable
+        equilibrium where the solver alternates between forward gravitational flow
+        and reverse pressure-driven flow. Each oscillation adds numerical error.
+        Kinematic wave cannot handle adverse slopes at all and simply drops the flow.
+      affected_components:
+        - "[CONDUITS] — conduits with adverse slopes"
+        - "[JUNCTIONS] — invert elevations"
+    remedy:
+      action: "Identify conduits with adverse slopes and correct invert elevations. Use the validate_network_connectivity tool to find all adverse slopes."
+      tool_to_run: "validate_network_connectivity"
+      manual_steps:
+        - "For each conduit, compute slope: (from_invert + in_offset - to_invert - out_offset) / length"
+        - "Flag conduits with negative slope"
+        - "Adjust junction invert elevations to ensure monotonic decrease toward outfall"
+        - "If adverse slope is intentional (force main), ensure it is a pressurized pipe with correct pump/pressure head"
+      prevention: "Run validate_network_connectivity before simulation. Warn on any adverse slopes."
+    severity: "fatal"
+    cross_references: ["dt_001", "dt_017"]
+
+  # --- dt_003: NODE FLOODING WITH WATER LOSS ---
+
+  - id: dt_003
+    stage: "s6_execution"
+    failure_domain: "runtime"
+    symptom:
+      description: "RPT file shows nodes flooding with non-zero flood volumes, but routing continuity error is negative (water leaving the system). No physical flooding is modeled — water simply disappears at the flooded nodes."
+      error_pattern: "Node Flooding Summary.*[1-9]|Routing Continuity Error.*-"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "ALLOW_PONDING is set to NO (default) or Aponded is 0 for flooded junctions. When a node's water depth exceeds max_depth, excess water is removed from the system."
+      explanation: >
+        SWMM's default behavior at flooded nodes is to lose the excess water. This
+        is a mass balance sink — water enters the system as rainfall but exits through
+        flooding without being tracked. For event simulations this may be acceptable
+        (if you only care about the pipe system). For continuous simulations, water
+        loss accumulates over time, making discharge results increasingly wrong.
+        Setting ALLOW_PONDING=YES with a ponded area lets water accumulate on the
+        surface and re-enter the drainage when capacity becomes available.
+      affected_components:
+        - "[OPTIONS] ALLOW_PONDING"
+        - "[JUNCTIONS] Aponded column"
+    remedy:
+      action: "Set ALLOW_PONDING=YES in [OPTIONS] and set Aponded > 0 for all junctions that may flood. Typical ponded area: 500-2000 m2 for urban manholes, 5000-50000 m2 for major intersections."
+      tool_to_run: "configure_simulation_options"
+      manual_steps:
+        - "Set ALLOW_PONDING YES in [OPTIONS]"
+        - "For each junction in [JUNCTIONS], set Aponded to estimated surface ponding area"
+        - "For junctions unlikely to flood, Aponded = 0 is acceptable"
+        - "Re-run simulation and verify routing continuity error improves"
+      prevention: "Always set ALLOW_PONDING=YES for continuous simulations. Even for event simulations, it improves numerical stability."
+    severity: "degraded"
+    cross_references: ["dt_001"]
+
+  # --- dt_004: FLOW_UNITS MISMATCH (SILENT ERROR) ---
+
+  - id: dt_004
+    stage: "s5_model_assembly"
+    failure_domain: "silent_error"
+    symptom:
+      description: "SWMM simulation runs to completion without errors, but flow magnitudes, velocities, or water depths are wrong by orders of magnitude. Pipe capacities seem impossibly large or small. No error messages in RPT."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "FLOW_UNITS setting (CFS vs CMS) does not match the units used for pipe dimensions, subcatchment areas, rainfall depths, or invert elevations."
+      explanation: >
+        FLOW_UNITS=CMS means ALL dimensions in meters, areas in hectares, rainfall
+        in mm, flow in m3/s. FLOW_UNITS=CFS means feet, acres, inches, ft3/s.
+        If FLOW_UNITS=CMS but a pipe diameter is entered as 600 (meaning 600mm),
+        SWMM interprets it as 600 meters in diameter — an impossibly large pipe.
+        The simulation runs perfectly because SWMM trusts the input numbers. There
+        is NO validation, NO warning, NO error. The only symptom is results that
+        don't make physical sense.
+      affected_components:
+        - "[OPTIONS] FLOW_UNITS"
+        - "[XSECTIONS] Geom1 (pipe dimensions)"
+        - "[SUBCATCHMENTS] Area, Width"
+        - "[JUNCTIONS] Elevation, Max_Depth"
+        - "[RAINGAGES] rainfall depth"
+    remedy:
+      action: "Verify every dimensional input matches the FLOW_UNITS convention. Check pipe diameters (m for CMS), areas (ha for CMS), elevations (m for CMS), rainfall (mm for CMS)."
+      tool_to_run: "validate_inp_file"
+      manual_steps:
+        - "Check [OPTIONS] FLOW_UNITS"
+        - "If CMS: verify all pipe Geom1 values are in meters (0.15 - 5.0 typical)"
+        - "If CMS: verify subcatchment areas are in hectares (0.1 - 100 typical)"
+        - "If CMS: verify junction elevations are in meters"
+        - "If CMS: verify rainfall values are in mm"
+        - "If CFS: verify pipe Geom1 in feet, areas in acres, elevations in feet, rainfall in inches"
+      prevention: "Use CMS consistently for HydroCraft integration. Always validate dimensional ranges before running."
+    severity: "silent"
+    cross_references: ["dt_009", "dt_010"]
+
+  # --- dt_005: SUBCATCHMENT NOT DRAINING ---
+
+  - id: dt_005
+    stage: "s1_subcatchment_delineation"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "SWMM reports an error at startup: 'ERROR 142: node/link/subcatchment [name] refers to undefined object [outlet_name]'. Simulation does not start."
+      error_pattern: "ERROR 142|refers to undefined"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "A subcatchment's outlet references a junction, outfall, or subcatchment ID that does not exist in the model."
+      explanation: >
+        Each subcatchment in [SUBCATCHMENTS] has an Outlet column that must match
+        an existing node ID (in [JUNCTIONS], [OUTFALLS], [STORAGE], or [DIVIDERS])
+        or another subcatchment ID. If the referenced ID does not exist — due to
+        a typo, missing node definition, or copy-paste error — SWMM refuses to start.
+        This is a hard error (SWMM stops), not a silent error.
+      affected_components:
+        - "[SUBCATCHMENTS] Outlet column"
+        - "[JUNCTIONS] or [OUTFALLS] — missing node"
+    remedy:
+      action: "Check the outlet ID referenced in the error message. Either create the missing node or correct the outlet reference in [SUBCATCHMENTS]."
+      tool_to_run: "validate_subcatchments"
+      manual_steps:
+        - "Find the subcatchment referenced in the error message"
+        - "Check its Outlet value in [SUBCATCHMENTS]"
+        - "Verify the outlet ID exists in [JUNCTIONS], [OUTFALLS], [STORAGE], or [DIVIDERS]"
+        - "If missing: add the node definition, or change the outlet to an existing node"
+        - "If typo: correct the Outlet value"
+      prevention: "Run validate_subcatchments and validate_inp_file before every simulation."
+    severity: "fatal"
+    cross_references: ["dt_008"]
+
+  # --- dt_006: INFILTRATION PARAMS WRONG FOR METHOD ---
+
+  - id: dt_006
+    stage: "s1_subcatchment_delineation"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "Simulation runs but infiltration behavior is wrong — either excessive infiltration in clay soils or no infiltration in sandy soils. Runoff volumes do not match expectations. No error message."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "The [INFILTRATION] parameters do not match the infiltration method set in [OPTIONS]. SWMM reads different columns depending on the method."
+      explanation: >
+        If [OPTIONS] INFILTRATION=HORTON, SWMM reads 5 columns: MaxRate, MinRate,
+        Decay, DryTime, MaxInfil. If INFILTRATION=GREEN_AMPT, it reads 3 columns:
+        Suction, Ksat, IMD. If INFILTRATION=CURVE_NUMBER, it reads CN, Ksat, DryTime.
+        If the method is HORTON but the data was entered for GREEN_AMPT, SWMM
+        interprets Suction (110 mm) as MaxRate (110 mm/hr) — physically wrong but
+        SWMM has no way to know. The simulation runs, but infiltration rates are wrong.
+      affected_components:
+        - "[OPTIONS] INFILTRATION"
+        - "[INFILTRATION] parameter columns"
+    remedy:
+      action: "Verify that [INFILTRATION] parameters match the method in [OPTIONS]. Check column meanings for the chosen method."
+      tool_to_run: "validate_subcatchments"
+      manual_steps:
+        - "Check [OPTIONS] INFILTRATION method"
+        - "Verify [INFILTRATION] has correct number of columns for the method"
+        - "For HORTON: MaxRate > MinRate (both in mm/hr for CMS, in/hr for CFS)"
+        - "For GREEN_AMPT: Suction in mm (CMS), Ksat in mm/hr (CMS), IMD fraction"
+        - "For CURVE_NUMBER: CN in [25, 98]"
+      prevention: "Use classify_land_use tool which generates infiltration params for the specified method."
+    severity: "degraded"
+    cross_references: ["dt_004"]
+
+  # --- dt_007: ZERO-LENGTH CONDUIT ---
+
+  - id: dt_007
+    stage: "s2_drainage_network"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "SWMM crashes during simulation with a division by zero or produces NaN flow values. The RPT file may show 'ERROR 141: conduit [name] has zero length' or the simulation produces NaN/Inf in results."
+      error_pattern: "zero length|NaN|division by zero|ERROR 141"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "A conduit has length = 0, which causes division by zero when computing conduit slope, velocity, or friction losses."
+      explanation: >
+        Conduit hydraulic computations require dividing by length (slope = dz/L,
+        travel time = L/v). A zero-length conduit makes these divisions undefined.
+        This typically happens when two junction nodes are at the exact same
+        coordinates and a pipe connects them, or when GIS data has degenerate
+        line features with zero length.
+      affected_components:
+        - "[CONDUITS] Length column"
+        - "[JUNCTIONS] — nodes at same location"
+    remedy:
+      action: "Find and fix zero-length conduits. Either merge the connected junctions into one, remove the conduit, or assign a minimum length (1 meter)."
+      tool_to_run: "validate_network_connectivity"
+      manual_steps:
+        - "Search [CONDUITS] for Length = 0 or Length < 0.1"
+        - "For each: check if From_Node and To_Node are at the same coordinates"
+        - "Option 1: Merge the two nodes into one (update all references)"
+        - "Option 2: Set Length to a minimum value (1.0 m)"
+        - "Option 3: Remove the conduit if it is redundant"
+      prevention: "Validate all conduit lengths > 0 after network import. Use validate_network_connectivity."
+    severity: "fatal"
+    cross_references: ["dt_002"]
+
+  # --- dt_008: NO OUTFALL DEFINED ---
+
+  - id: dt_008
+    stage: "s2_drainage_network"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "SWMM reports 'ERROR 143: no outfall node defined' or simulation runs but all nodes flood because water has no exit from the system."
+      error_pattern: "ERROR 143|no outfall"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "The [OUTFALLS] section is missing or empty. Without an outfall, water entering the drainage system has nowhere to exit."
+      explanation: >
+        Every SWMM model must have at least one outfall node that serves as the
+        boundary where water exits the model domain. Without an outfall, all water
+        that enters (from rainfall and external inflows) accumulates in the pipe
+        system, causing every node to flood. SWMM may detect this at startup
+        (ERROR 143) or may run but produce meaningless results with 100% flooding.
+      affected_components:
+        - "[OUTFALLS] section"
+        - "Network connectivity"
+    remedy:
+      action: "Add at least one outfall node to the [OUTFALLS] section. Connect it to the downstream end of the drainage network via a conduit."
+      tool_to_run: "create_drainage_network"
+      manual_steps:
+        - "Identify the downstream end of the drainage network (lowest-elevation junction)"
+        - "Add an outfall node downstream: e.g., OF1 with elevation below the lowest junction invert"
+        - "Add a conduit connecting the lowest junction to the outfall"
+        - "Set outfall type: FREE (default), NORMAL, FIXED, or TIMESERIES"
+      prevention: "Always include at least one outfall when defining the network."
+    severity: "fatal"
+    cross_references: ["dt_005"]
+
+  # --- dt_009: RAINFALL FORMAT MISMATCH (SILENT ERROR) ---
+
+  - id: dt_009
+    stage: "s3_rainfall_forcing"
+    failure_domain: "silent_error"
+    symptom:
+      description: "SWMM simulation runs successfully but runoff volumes are wrong by a factor equal to the number of intervals per hour. For 5-minute data, runoff is 12x too high (FORMAT=INTENSITY with VOLUME data) or 12x too low (FORMAT=VOLUME with INTENSITY data). No error message."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "The RAINGAGE FORMAT field (INTENSITY or VOLUME) does not match how the rainfall data values are encoded."
+      explanation: >
+        If data records depth per interval (e.g., 2.5 mm fell in this 5 minutes)
+        and FORMAT=INTENSITY, SWMM treats 2.5 as a rate of 2.5 mm/hr. The actual
+        rate was 2.5 mm / (5/60 hr) = 30 mm/hr. So SWMM uses 2.5 instead of 30,
+        underestimating by 12x. Conversely, if data is intensity (30 mm/hr) but
+        FORMAT=VOLUME, SWMM treats 30 as 30 mm in 5 minutes = 360 mm/hr rate,
+        overestimating by 12x. This error produces NO warning because both
+        INTENSITY and VOLUME are valid interpretations — only the user knows which
+        one the data actually represents.
+      affected_components:
+        - "[RAINGAGES] FORMAT field"
+        - "[TIMESERIES] — rainfall data values"
+    remedy:
+      action: "Verify the data convention by checking the original data source documentation. Most automated gauges record VOLUME (depth per interval). Most gridded model forcing provides INTENSITY (rate)."
+      tool_to_run: "validate_rainfall_input"
+      manual_steps:
+        - "Check the raw data source documentation for format convention"
+        - "Look at a heavy rainfall event: if 5-min value is 2-5, it's likely VOLUME (mm/5min); if 30-60, it's likely INTENSITY (mm/hr)"
+        - "Compute total event depth both ways and compare with known storm totals"
+        - "Update [RAINGAGES] FORMAT to match actual data convention"
+      prevention: "Always verify FORMAT matches data convention. Use validate_rainfall_input tool. Include a comment in the INP file noting the data convention."
+    severity: "silent"
+    cross_references: ["dt_004", "dt_010"]
+
+  # --- dt_010: VIC-TO-SWMM UNIT CONVERSION ERROR (SILENT) ---
+
+  - id: dt_010
+    stage: "s7_model_coupling"
+    failure_domain: "silent_error"
+    symptom:
+      description: "VIC runoff is successfully converted to SWMM inflow, but the flow magnitude is wrong by 3-5 orders of magnitude. Either flooding occurs immediately at all boundary nodes, or external inflow is negligible compared to direct rainfall. No error message."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "The unit conversion from VIC runoff (mm/day per grid cell) to SWMM flow (m3/s) has a missing or wrong conversion factor."
+      explanation: >
+        The correct conversion is Q(m3/s) = runoff(mm/day) * area(m2) / 86400000.
+        Three common errors: (1) Forgetting /1000 to convert mm to m — flow is
+        1000x too large. (2) Forgetting /86400 to convert day to seconds — flow
+        is 86400x too large. (3) Using area in km2 instead of m2 — flow is
+        1,000,000x too small. Any of these produces flow values that are physically
+        implausible but SWMM accepts them without complaint.
+      affected_components:
+        - "convert_vic_runoff_to_swmm_inflow tool"
+        - "[INFLOWS] time series values"
+    remedy:
+      action: "Validate the conversion by computing the expected flow independently. For a 0.25-degree cell at 30N with 5 mm/day runoff: Q = 5 * 6.25e8 / 86400000 = 36.2 m3/s. Compare with the tool output."
+      tool_to_run: "validate_coupling_water_balance"
+      manual_steps:
+        - "Compute cell area in m2: for lat/lon grid, area = dlon * dlat * cos(lat) * (111320)^2"
+        - "Pick a day with known VIC runoff (e.g., 5 mm/day)"
+        - "Expected Q = 5 * area_m2 / 86400000"
+        - "Compare with the value in the SWMM inflow time series"
+        - "If mismatch, check the conversion formula in the script"
+      prevention: "Always use convert_vic_runoff_to_swmm_inflow tool (which has validated conversion). Never hand-code the conversion."
+    severity: "silent"
+    cross_references: ["dt_004", "dt_009"]
+
+  # --- dt_011: LID SOIL PARAMS VIOLATE WP < FC < POROSITY ---
+
+  - id: dt_011
+    stage: "s4_lid_setup"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "LID controls appear to have no soil water retention. Bioretention cells produce runoff immediately without storing water in the soil layer. Or soil never drains — stays permanently saturated."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "LID soil layer parameters violate the physical constraint: Wilting Point < Field Capacity < Porosity."
+      explanation: >
+        Available water capacity = Field Capacity - Wilting Point. If WP >= FC,
+        there is no available water — the soil cannot retain any water between
+        drainage and permanent wilting. If FC >= Porosity, the soil is always
+        at or above field capacity — it never drains. SWMM does not validate
+        these relationships. The model runs, but the soil layer behaves as
+        either a sieve (no retention) or a sponge (no drainage), depending
+        on which constraint is violated.
+      affected_components:
+        - "[LID_CONTROLS] Soil layer parameters"
+    remedy:
+      action: "Verify soil parameters satisfy WP < FC < Porosity. Typical values: WP=0.10, FC=0.20, Porosity=0.50."
+      tool_to_run: "validate_lid_params"
+      manual_steps:
+        - "For each LID control with a Soil layer, check: Wilting_Point < Field_Capacity < Porosity"
+        - "If WP >= FC: reduce WP or increase FC"
+        - "If FC >= Porosity: reduce FC or increase Porosity"
+        - "Typical engineered bioretention media: Porosity=0.45-0.55, FC=0.15-0.25, WP=0.05-0.12"
+      prevention: "Use validate_lid_params tool which checks this constraint automatically."
+    severity: "degraded"
+    cross_references: ["dt_019"]
+
+  # --- dt_012: MISSING DRY WEATHER FLOW ---
+
+  - id: dt_012
+    stage: "s5_model_assembly"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "Combined sewer model shows zero flow during dry weather periods. Pipes that should carry sanitary flow are empty. Overflow frequency at CSO structures is underestimated."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "The [DWF] (Dry Weather Flow) section is missing or empty for a combined sewer system model."
+      explanation: >
+        Combined sewers carry both stormwater and sanitary wastewater. During dry
+        weather, only sanitary flow exists. If [DWF] is not defined, SWMM assumes
+        zero base flow in all pipes. This underestimates total flow volume,
+        underestimates CSO frequency (combined sewer overflow occurs when sanitary
+        + storm flow exceeds capacity), and misrepresents pipe utilization during
+        dry periods.
+      affected_components:
+        - "[DWF] section"
+        - "[JUNCTIONS] — nodes receiving sanitary inflow"
+    remedy:
+      action: "Add [DWF] entries for junctions receiving sanitary flow. Specify average dry weather flow rate and optional time patterns (hourly, daily, monthly variation)."
+      tool_to_run: ""
+      manual_steps:
+        - "Estimate average sanitary flow per junction from population served and per-capita wastewater generation (200-400 L/person/day typical)"
+        - "Add [DWF] section with entries: Node FLOW <average_flow> <pattern>"
+        - "Add [PATTERNS] for hourly/daily variation if needed"
+        - "Verify total DWF matches known treatment plant dry-weather inflow"
+      prevention: "For combined sewer models, always define DWF. For separate storm sewer models, DWF is not needed."
+    severity: "degraded"
+    cross_references: ["dt_004"]
+
+  # --- dt_013: INP FILE ENCODING ISSUES ---
+
+  - id: dt_013
+    stage: "s5_model_assembly"
+    failure_domain: "runtime"
+    symptom:
+      description: "SWMM fails to parse the INP file with cryptic errors about unexpected characters, wrong format, or file structure. Errors may reference specific line numbers but the lines look correct when viewed in a text editor."
+      error_pattern: "ERROR.*cannot|parse error|unexpected|invalid character"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "The INP file contains non-ASCII characters, BOM (Byte Order Mark), tabs mixed with spaces, or encoding that the SWMM C engine cannot parse."
+      explanation: >
+        The SWMM C engine expects plain ASCII text. UTF-8 BOM (3 bytes at file
+        start: EF BB BF) is invisible in most editors but causes SWMM to
+        misinterpret the first line. Non-ASCII characters in comments (Chinese,
+        accented characters) may cause parse failures. Some editors insert tab
+        characters that SWMM interprets differently from spaces, misaligning
+        column parsing.
+      affected_components:
+        - "INP file encoding"
+        - "Text editor settings"
+    remedy:
+      action: "Re-encode the INP file as plain ASCII without BOM. Replace tabs with spaces. Remove non-ASCII characters from comments."
+      tool_to_run: ""
+      manual_steps:
+        - "Check for BOM: hexdump -C model.inp | head -1 (look for ef bb bf)"
+        - "Remove BOM: sed -i '1s/^\\xEF\\xBB\\xBF//' model.inp"
+        - "Replace tabs: sed -i 's/\\t/  /g' model.inp"
+        - "Remove non-ASCII: iconv -f utf-8 -t ascii//TRANSLIT model.inp > model_clean.inp"
+      prevention: "Use the assemble_inp_file tool which writes clean ASCII. If editing manually, use a text editor configured for ASCII encoding without BOM."
+    severity: "fatal"
+    cross_references: []
+
+  # --- dt_014: MANNING'S ROUGHNESS WRONG ---
+
+  - id: dt_014
+    stage: "s2_drainage_network"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "Simulated velocities are unreasonably fast or slow. Flow reaches the outfall much faster or slower than expected. Peak flow timing is off but magnitude may be reasonable."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Manning's roughness coefficient (n) is wrong — too low (smooth, fast) or too high (rough, slow) for the pipe material and condition."
+      explanation: >
+        Manning's equation relates flow velocity to slope, hydraulic radius, and
+        roughness: V = (1/n) * R^(2/3) * S^(1/2). Velocity is inversely proportional
+        to n. If n=0.001 instead of 0.013 (a common typo — missing a zero), velocity
+        is 13x too fast and flow arrives at the outfall much too early. If n=0.13
+        instead of 0.013, velocity is 10x too slow. SWMM accepts any positive n
+        value without range checking.
+      affected_components:
+        - "[CONDUITS] Roughness column"
+    remedy:
+      action: "Verify Manning's n values against standard tables for the pipe material. Typical range for pipes: 0.009-0.025."
+      tool_to_run: "validate_network_connectivity"
+      manual_steps:
+        - "Review all Manning's n values in [CONDUITS]"
+        - "Flag values outside [0.008, 0.060] for pipes and [0.015, 0.100] for channels"
+        - "Cross-reference with pipe material: PVC=0.010, concrete=0.013, corrugated metal=0.024"
+        - "Correct any obvious typos (0.13, 0.0013, etc.)"
+      prevention: "Use material-based roughness lookup in import_network_from_gis tool."
+    severity: "degraded"
+    cross_references: ["dt_004"]
+
+  # --- dt_015: CAMA-SWMM DATUM MISMATCH (SILENT) ---
+
+  - id: dt_015
+    stage: "s7_model_coupling"
+    failure_domain: "silent_error"
+    symptom:
+      description: "CaMa-Flood boundary condition is applied to SWMM outfall, but backwater effects occur at the wrong river stage. Urban flooding is triggered too early (datum offset too low) or too late (offset too high). No error message."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "The elevation datum used in SWMM does not match CaMa-Flood's global MSL datum. The datum_offset_m parameter is missing, wrong, or has wrong sign."
+      explanation: >
+        CaMa-Flood reports water surface elevation (sfcelv) in meters above mean
+        sea level. SWMM may use a local datum (arbitrary benchmark, project datum,
+        or MSL). If the SWMM datum is 5 meters above MSL, then CaMa sfcelv=10m
+        should be entered as SWMM stage=5m. Without this offset, SWMM sees the
+        river at 10m which is 5m higher than reality, causing premature backwater
+        flooding. The model runs perfectly — the results are just shifted vertically.
+      affected_components:
+        - "convert_cama_stage_to_outfall_bc tool — datum_offset_m parameter"
+        - "[OUTFALLS] boundary condition time series"
+    remedy:
+      action: "Determine the correct datum offset by comparing the DEM elevation at the outfall with the SWMM outfall invert elevation."
+      tool_to_run: "convert_cama_stage_to_outfall_bc"
+      manual_steps:
+        - "Get CaMa-Flood DEM elevation at the outfall grid cell"
+        - "Get SWMM outfall invert elevation from [OUTFALLS]"
+        - "datum_offset = CaMa_DEM_elev - SWMM_outfall_elev (approximately)"
+        - "Verify by comparing CaMa dry-weather stage with known low-water conditions"
+        - "Re-run with corrected datum_offset_m"
+      prevention: "Document the vertical datum used in SWMM model. Always verify datum_offset against independent measurements (survey, DEM, tidal gauges)."
+    severity: "silent"
+    cross_references: ["dt_010"]
+
+  # --- dt_016: SUBCATCHMENT WIDTH TOO LARGE (SILENT) ---
+
+  - id: dt_016
+    stage: "s1_subcatchment_delineation"
+    failure_domain: "silent_error"
+    symptom:
+      description: "Runoff hydrograph is too peaked and too fast — time to peak is much shorter than expected. Total volume may be correct but the hydrograph shape is wrong. No error message."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Subcatchment width is too large, causing overland flow to reach the outlet too quickly."
+      explanation: >
+        SWMM models subcatchment runoff using the nonlinear reservoir equation
+        with Manning's equation for overland flow. The characteristic width
+        determines the overland flow path length (L = Area / Width). A larger
+        width means a shorter flow path, which means faster concentration time.
+        Width = sqrt(Area) is a common but incorrect shortcut that overestimates
+        width for most subcatchment shapes. Width should be Area / longest_flow_path.
+        For a 1-hectare rectangular lot (100m x 100m) draining along the long axis,
+        Width = 10000/100 = 100m, not sqrt(10000) = 100m (coincidentally equal
+        for squares, but wrong for rectangles and irregular shapes).
+      affected_components:
+        - "[SUBCATCHMENTS] Width column"
+    remedy:
+      action: "Recompute width as Area / longest_overland_flow_path for each subcatchment."
+      tool_to_run: "compute_subcatchment_params"
+      manual_steps:
+        - "For each subcatchment, estimate the longest flow path from the hydraulically most remote point to the outlet"
+        - "Width = Area / longest_flow_path"
+        - "For irregular shapes, the longest flow path is NOT the diagonal — it follows the actual drainage direction"
+        - "Update [SUBCATCHMENTS] Width column"
+      prevention: "Always use compute_subcatchment_params which computes width from DEM flow paths, not geometric shortcuts."
+    severity: "silent"
+    cross_references: ["dt_006"]
+
+  # --- dt_017: DYNAMIC WAVE SURCHARGING OSCILLATION ---
+
+  - id: dt_017
+    stage: "s6_execution"
+    failure_domain: "runtime"
+    symptom:
+      description: "Multiple conduits alternate between free-surface and pressurized flow every few timesteps. Continuity error gradually increases. Simulation may become progressively slower due to adaptive timestep reduction."
+      error_pattern: "Conduit Surcharging Summary|many conduits surcharged"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "The transition between open-channel flow and pressurized (surcharged) flow is numerically unstable, especially when many conduits are near capacity simultaneously."
+      explanation: >
+        Dynamic wave routing handles both free-surface and pressurized flow, but
+        the transition between them involves a discontinuity in the governing
+        equations (from Saint-Venant to pressurized pipe flow). When flow oscillates
+        near the transition point, the solver switches formulations every timestep,
+        introducing numerical noise. This is especially common during the rising
+        limb of large storms when many pipes fill nearly simultaneously.
+      affected_components:
+        - "[CONDUITS] — conduits near capacity"
+        - "[OPTIONS] ROUTING_STEP"
+    remedy:
+      action: "Reduce routing timestep or enable VARIABLE_STEP to allow adaptive timestep control. Consider increasing pipe sizes if persistent surcharging indicates an undersized system."
+      tool_to_run: "configure_simulation_options"
+      manual_steps:
+        - "Reduce ROUTING_STEP to 5-10 seconds"
+        - "Add VARIABLE_STEP 0.75 to [OPTIONS] for adaptive timestep"
+        - "Check RPT surcharging summary — if many conduits are surcharged for >50% of wet-weather time, the system may be undersized"
+        - "Consider using FORCE_MAIN_EQUATION H-W or D-W for pressurized segments"
+      prevention: "Use VARIABLE_STEP for all dynamic wave simulations. Size pipes to avoid persistent surcharging."
+    severity: "degraded"
+    cross_references: ["dt_001", "dt_002"]
+
+  # --- dt_018: PYSWMM VERSION INCOMPATIBILITY ---
+
+  - id: dt_018
+    stage: "s6_execution"
+    failure_domain: "dependency_mismatch"
+    symptom:
+      description: "pyswmm throws an ImportError, AttributeError, or crashes with a segmentation fault when running the simulation. The INP file is valid and works in other SWMM interfaces."
+      error_pattern: "ImportError|AttributeError|Segmentation fault|SIGSEGV"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "The installed pyswmm version bundles a SWMM engine version that is incompatible with the INP file format or the Python API calls being made."
+      explanation: >
+        Different pyswmm versions bundle different SWMM C engine versions:
+        pyswmm 0.x bundled SWMM 5.1.x, pyswmm 1.x bundles SWMM 5.2.x.
+        The SWMM 5.2 INP format has minor differences from 5.1 (new sections,
+        changed defaults). Also, the pyswmm Python API changed significantly
+        between 0.x and 1.x (class names, method signatures). Using pyswmm 0.x
+        code with pyswmm 1.x installed (or vice versa) causes AttributeError
+        or different behavior.
+      affected_components:
+        - "pyswmm package version"
+        - "swmm-toolkit version"
+    remedy:
+      action: "Check pyswmm version and ensure compatibility. For SWMM 5.2 INP files, use pyswmm >= 1.0."
+      tool_to_run: ""
+      manual_steps:
+        - "python -c 'import pyswmm; print(pyswmm.__version__)'"
+        - "For pyswmm 1.x: from pyswmm import Simulation (no Output class changes)"
+        - "For pyswmm 0.x: upgrade with pip install --upgrade pyswmm"
+        - "Ensure swmm-toolkit version matches: pip install swmm-toolkit==0.15.* for pyswmm 1.x"
+      prevention: "Pin pyswmm version in requirements.txt: pyswmm>=1.0,<2.0"
+    severity: "fatal"
+    cross_references: []
+
+  # --- dt_019: LID AREA EXCEEDS SUBCATCHMENT AREA ---
+
+  - id: dt_019
+    stage: "s4_lid_setup"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "SWMM warns or silently clips LID area. Reported LID performance (volume captured, runoff reduced) is lower than expected for the specified LID area. Or the remaining non-LID subcatchment area becomes negative."
+      error_pattern: "WARNING.*LID|area exceeds"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "The total LID area assigned to a subcatchment (Number * Area across all LID types) exceeds the subcatchment's total area."
+      explanation: >
+        In [LID_USAGE], each entry specifies Number (replicate units) * Area (per unit).
+        If a subcatchment has 10,000 m2 and two LID assignments of 4,000 m2 and 7,000 m2
+        (total 11,000 m2), the LID area exceeds the subcatchment. SWMM may issue a
+        warning and clip the excess, but this is version-dependent. Some versions
+        silently reduce the LID area. The result is that LID performance is lower
+        than designed because less area is actually used.
+      affected_components:
+        - "[LID_USAGE] — area assignments"
+        - "[SUBCATCHMENTS] — total area"
+    remedy:
+      action: "Verify total LID area per subcatchment does not exceed subcatchment area. Reduce LID Number or Area if needed."
+      tool_to_run: "validate_lid_params"
+      manual_steps:
+        - "For each subcatchment, sum (Number * Area) across all LID_USAGE entries"
+        - "Compare with subcatchment total area from [SUBCATCHMENTS]"
+        - "If LID_total > subcatchment_area: reduce Number or Area"
+        - "Also check that from_imperv percentages sum to <= 100%"
+      prevention: "Use validate_lid_params tool which checks this constraint automatically."
+    severity: "fatal"
+    cross_references: ["dt_011"]
+
+  # --- dt_020: OUTFALL BOUNDARY TIME SERIES MISSING ---
+
+  - id: dt_020
+    stage: "s5_model_assembly"
+    failure_domain: "runtime"
+    symptom:
+      description: "SWMM crashes at startup with 'ERROR: undefined time series [name]' or runs but uses a constant boundary condition instead of the time-varying series. Outfall stage does not change during the simulation."
+      error_pattern: "ERROR.*undefined time series|undefined timeseries"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "An outfall with type TIMESERIES references a time series name that is not defined in the [TIMESERIES] section, or the time series does not cover the simulation period."
+      explanation: >
+        When an outfall has Type=TIMESERIES, SWMM looks up the referenced time series
+        name in [TIMESERIES]. If the name does not exist (typo, missing definition),
+        SWMM reports a fatal error. If the time series exists but does not cover the
+        full simulation period, SWMM uses the last known value for the remainder —
+        which may be zero or an early-period value, causing wrong boundary conditions
+        for the uncovered period.
+      affected_components:
+        - "[OUTFALLS] — TIMESERIES type with data reference"
+        - "[TIMESERIES] — time series definitions"
+    remedy:
+      action: "Verify the time series name in [OUTFALLS] matches exactly (case-sensitive) a name in [TIMESERIES]. Verify the time series covers the simulation period."
+      tool_to_run: "validate_inp_file"
+      manual_steps:
+        - "Find the outfall with Type=TIMESERIES in [OUTFALLS]"
+        - "Get the Data field (time series name)"
+        - "Search [TIMESERIES] for that exact name (case-sensitive)"
+        - "If missing: add the time series definition or fix the name"
+        - "Verify time series covers simulation period: first entry <= START_DATE, last entry >= END_DATE"
+      prevention: "Run validate_inp_file which checks all TIMESERIES references."
+    severity: "fatal"
+    cross_references: ["dt_005", "dt_015"]
+
+  # ============================================================================
+  # VALIDATED TRIPLETS — Real bugs encountered during HydroCraft testing
+  # These are MORE valuable than the theoretical triplets above because they
+  # were hit in practice and have verified fixes.
+  # ============================================================================
+
+  # --- dt_021: PYSWMM V2 API ATTRIBUTE REMOVAL ---
+  # Test data used:
+  #   - data/swmm/shunqing/shunqing.inp (Shunqing, Sichuan, 106 subcatchments, CMS)
+  #   - data/swmm/chaohu/chaohu.inp (Chaohu, Anhui, 31 subcatchments, LPS)
+  #   Source: https://github.com/Zhiyu014/GNN-UDS
+
+  - id: dt_021
+    stage: "s6_execution"
+    failure_domain: "environment"
+    symptom:
+      description: "After SWMM simulation completes successfully via pyswmm, accessing Simulation.routing_error or Simulation.runoff_error raises AttributeError. The simulation itself ran fine — only post-processing of continuity errors fails."
+      error_pattern: "AttributeError.*Simulation.*object has no attribute.*routing_error"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "pyswmm v2.1.0 removed the .routing_error and .runoff_error attributes from the Simulation object. These were available in pyswmm 1.x but silently dropped in the v2 API refactor."
+      explanation: >
+        In pyswmm 1.x, Simulation objects exposed .routing_error and .runoff_error
+        as float attributes after the simulation finished. pyswmm 2.x removed these
+        attributes without a deprecation warning. The continuity error information is
+        still available — it is written to the .rpt (report) file that SWMM generates
+        alongside the .out binary output. The fix is to parse the .rpt file instead
+        of relying on the Python API attributes.
+      affected_components:
+        - "pyswmm Simulation object API"
+        - "Post-simulation continuity error checking"
+    remedy:
+      action: "Parse the .rpt file for continuity errors instead of accessing Simulation attributes. Use check_continuity_errors.py or manually grep the RPT file for 'Continuity Error'."
+      tool_to_run: "check_continuity_errors"
+      manual_steps:
+        - "Run simulation normally — it completes successfully"
+        - "Open the .rpt file (same name as .inp but with .rpt extension)"
+        - "Search for 'Runoff Quantity Continuity' and 'Flow Routing Continuity' sections"
+        - "Extract the percentage error from the last line of each section"
+        - "Alternatively: use regex on RPT: r'Continuity Error.*?([\\d.]+)\\s*%'"
+      prevention: "Do not rely on pyswmm Simulation object attributes for error reporting. Always parse the .rpt file, which is stable across pyswmm versions."
+    severity: "degraded"
+    verified: "2026-03-20, Shunqing model (pyswmm 2.1.0)"
+    cross_references: ["dt_018"]

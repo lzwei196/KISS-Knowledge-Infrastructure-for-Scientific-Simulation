@@ -1,0 +1,122 @@
+model:
+  name: "pyGIMLi"
+  domain: "geophysics"
+  subdomain: "Electrical Resistivity Tomography, Seismic Refraction, Induced Polarization, Electromagnetics"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyGIMLi/venv/bin/python"
+  version: "1.5.5"
+  language: "python"
+  license: "Apache 2.0"
+
+inputs:
+  forcing:
+    - name: "rhoa"
+      unit: "ohm-m"
+      description: "Apparent resistivity (ERT)"
+      valid_range: [0.1, 100000]
+    - name: "t"
+      unit: "s"
+      description: "Travel time (SRT)"
+      valid_range: [0.0, 1.0]
+    - name: "ipa"
+      unit: "mrad"
+      description: "Apparent IP phase (SIP)"
+      valid_range: [-1000, 0]
+    - name: "electrode_positions"
+      unit: "m"
+      description: "Electrode/sensor x,y,z coordinates"
+      valid_range: [-100000, 100000]
+
+  parameters:
+    critical:
+      - name: "lambda"
+        valid_range: [1, 100]
+        description: "Regularization strength; controls smoothness vs data fit trade-off"
+      - name: "relativeError"
+        valid_range: [0.01, 0.10]
+        description: "Relative data error estimate (fraction)"
+      - name: "absoluteError"
+        valid_range: [0.0, 1.0]
+        description: "Absolute data error (method-dependent units)"
+      - name: "maxIter"
+        valid_range: [5, 20]
+        description: "Maximum Gauss-Newton iterations"
+      - name: "zWeight"
+        valid_range: [0.2, 1.0]
+        description: "Vertical vs horizontal smoothing weight"
+    secondary:
+      - name: "quality"
+        valid_range: [30, 34]
+        description: "Minimum triangle angle for mesh generation"
+      - name: "paraMaxCellSize"
+        valid_range: [0.1, 1000]
+        description: "Maximum cell area in parameter domain (site-dependent)"
+      - name: "paraDX"
+        valid_range: [0.3, 1.0]
+        description: "Horizontal cell refinement factor"
+      - name: "paraDepth"
+        valid_range: [1, 500]
+        description: "Investigation depth (0.3-0.5 x array spread)"
+      - name: "robustData"
+        valid_range: [0, 1]
+        description: "L1 (True) vs L2 (False) data misfit norm"
+
+outputs:
+  primary:
+    - name: "resistivity"
+      unit: "ohm-m"
+      description: "Inverted resistivity model per mesh cell (ERT)"
+      valid_range: [0.1, 100000]
+    - name: "velocity"
+      unit: "m/s"
+      description: "Inverted velocity model per mesh cell (SRT, as 1/slowness)"
+      valid_range: [100, 10000]
+    - name: "chi2"
+      unit: "dimensionless"
+      description: "Data misfit normalized by estimated error"
+      valid_range: [0.5, 2.0]
+    - name: "rms"
+      unit: "percent"
+      description: "Relative root mean square misfit"
+      valid_range: [0, 20]
+    - name: "coverage"
+      unit: "dimensionless"
+      description: "Cumulative sensitivity per cell (Jacobian column sum)"
+      valid_range: [0, 1]
+
+  secondary:
+    - name: "mesh"
+      unit: "m"
+      description: "Unstructured FEM mesh (.bms, .vtk, .msh)"
+    - name: "jacobian"
+      unit: "mixed"
+      description: "Sensitivity/Jacobian matrix in CSR sparse format"
+    - name: "response"
+      unit: "same as input data"
+      description: "Predicted data from final model"
+
+file_formats:
+  input:
+    - extension: ".dat"
+      description: "BERT/GIMLI or Res2DInv ERT data"
+    - extension: ".ohm"
+      description: "ABEM Terrameter export"
+    - extension: ".sgt"
+      description: "GIMLI native travel time format"
+    - extension: ".sg2"
+      description: "SEG-2 seismograph records"
+  output:
+    - extension: ".vtk"
+      description: "VTK mesh + model for ParaView"
+    - extension: ".bms"
+      description: "pyGIMLi native binary mesh"
+    - extension: ".csv"
+      description: "Extracted model values"
+    - extension: ".png"
+      description: "Matplotlib figures"
+
+known_issues:
+  - "Geometric factor must be numerical (not analytical) when electrodes have topography or are in boreholes"
+  - "Slowness/velocity confusion: inversion operates in slowness space, display is in velocity"
+  - "IP phase sign convention: pyGIMLi expects negative phase values (phase lag)"
+  - "Error estimates as fractions (0-1), not percent (0-100)"
+  - "Chi2 << 1 indicates overfitting; Chi2 >> 1 indicates underfitting or wrong error model"

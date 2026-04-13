@@ -1,0 +1,290 @@
+# ============================================================================
+# Model Couplings Registry -- AquaCrop-OSPy
+# ============================================================================
+# Documents data flows between AquaCrop-OSPy and other models in the
+# HydroCraft multi-model framework.
+#
+# Each coupling defines:
+#   - source model and variable
+#   - transformation required
+#   - target model and input
+#   - validation criteria
+#   - scientific justification
+# ============================================================================
+
+couplings:
+
+  # -------------------------------------------------------------------------
+  # C1: VIC Weather Forcing -> AquaCrop Weather DataFrame
+  # -------------------------------------------------------------------------
+  - id: "c1_vic_weather_to_aquacrop"
+    name: "VIC Weather Forcing to AquaCrop DataFrame"
+    source:
+      model: "VIC 5.1.0"
+      variables:
+        - name: "AIR_TEMP (min)"
+          unit: "deg C"
+          file_pattern: "forcing_*"
+        - name: "AIR_TEMP (max)"
+          unit: "deg C"
+          file_pattern: "forcing_*"
+        - name: "PREC"
+          unit: "mm/timestep (3-hourly)"
+          file_pattern: "forcing_*"
+        - name: "SHORTWAVE"
+          unit: "W/m2"
+          file_pattern: "forcing_*"
+        - name: "LONGWAVE"
+          unit: "W/m2"
+          file_pattern: "forcing_*"
+        - name: "WIND"
+          unit: "m/s"
+          file_pattern: "forcing_*"
+        - name: "PRESSURE"
+          unit: "kPa"
+          file_pattern: "forcing_*"
+        - name: "VP"
+          unit: "kPa"
+          file_pattern: "forcing_*"
+    transformation:
+      steps:
+        - "Resample 3-hourly forcing to daily: Tmin = daily min(AIR_TEMP), Tmax = daily max(AIR_TEMP)"
+        - "Sum precipitation to daily: Precip_daily = sum(PREC per day)"
+        - "Average radiation to daily: SWrad_daily = mean(SHORTWAVE) * 0.0864 to get MJ/m2/day"
+        - "Average wind to daily: Wind_daily = mean(WIND)"
+        - "Compute actual vapor pressure from VP and PRESSURE"
+        - "Compute ET0 using FAO-56 Penman-Monteith (requires lat, elevation, DOY)"
+        - "Rename columns to AquaCrop format: MinTemp, MaxTemp, Precipitation, ReferenceET, Date"
+      unit_conversions:
+        - variable: "SHORTWAVE"
+          from: "W/m2"
+          to: "MJ/m2/day"
+          factor: "0.0864 (W/m2 * 86400 s/day / 1e6)"
+        - variable: "PREC"
+          from: "mm/3hr"
+          to: "mm/day"
+          factor: "sum 8 timesteps"
+      silent_failure_modes:
+        - "Using instantaneous radiation instead of daily average produces wrong ET0"
+        - "Using mm/timestep as mm/day gives 8x too much precipitation"
+        - "Missing ET0 computation causes ValueError at model construction"
+    target:
+      model: "AquaCrop-OSPy"
+      input: "weather_df (pandas DataFrame)"
+      columns: "MinTemp, MaxTemp, Precipitation, ReferenceET, Date"
+    validation:
+      - "Check ReferenceET > 0 for all days"
+      - "Check Precipitation >= 0"
+      - "Check MaxTemp > MinTemp"
+      - "Check no missing days"
+    scientific_justification: >
+      VIC and AquaCrop operate at the same daily timestep for crop-relevant
+      variables. VIC's meteorological forcing provides all variables needed for
+      FAO-56 Penman-Monteith ET0 computation. This coupling enables running
+      AquaCrop on the same weather data as VIC, ensuring consistent
+      hydro-agricultural analysis across the basin.
+
+  # -------------------------------------------------------------------------
+  # C2: VIC Soil Moisture -> AquaCrop InitialWaterContent
+  # -------------------------------------------------------------------------
+  - id: "c2_vic_soilmoisture_to_iwc"
+    name: "VIC Soil Moisture to AquaCrop Initial Water Content"
+    source:
+      model: "VIC 5.1.0"
+      variables:
+        - name: "OUT_SOIL_MOIST"
+          unit: "mm (total water in each VIC soil layer)"
+          file_pattern: "vic_result/fluxes_*"
+    transformation:
+      steps:
+        - "Extract VIC soil moisture for the target date (start of AquaCrop simulation)"
+        - "Convert VIC soil moisture from mm to volumetric (m3/m3): theta = SM_mm / (layer_depth_mm)"
+        - "Map VIC 3-layer soil to AquaCrop soil layers (may need depth interpolation)"
+        - "Create InitialWaterContent with wc_type='Num', method='Layer', values in m3/m3"
+      unit_conversions:
+        - variable: "OUT_SOIL_MOIST"
+          from: "mm (total in layer)"
+          to: "m3/m3 (volumetric)"
+          factor: "divide by layer thickness in mm"
+      silent_failure_modes:
+        - "VIC soil layers (3) may not match AquaCrop soil layers (1-N). Must interpolate."
+        - "VIC soil moisture includes ice content in frozen soils. AquaCrop expects liquid only."
+    target:
+      model: "AquaCrop-OSPy"
+      input: "InitialWaterContent"
+      format: "InitialWaterContent(wc_type='Num', method='Layer', depth_layer=[...], value=[...])"
+    validation:
+      - "Volumetric water content between th_wp and th_s for each AquaCrop layer"
+      - "Values physically reasonable (0.05-0.55 m3/m3)"
+    scientific_justification: >
+      Using VIC soil moisture as initial conditions for AquaCrop provides
+      physically consistent initial states when coupling hydrology and crop
+      models. This is especially important for drought analysis where initial
+      soil moisture determines early-season crop stress.
+
+  # -------------------------------------------------------------------------
+  # C3: HWSD -> AquaCrop Soil Profile
+  # -------------------------------------------------------------------------
+  - id: "c3_hwsd_to_aquacrop_soil"
+    name: "HWSD Soil Data to AquaCrop Soil Profile"
+    source:
+      model: "HWSD Database"
+      variables:
+        - name: "T_SAND / S_SAND"
+          unit: "percent"
+          file_pattern: "data/soil/HWSD_RASTER/hwsd.bil + HWSD.mdb"
+        - name: "T_CLAY / S_CLAY"
+          unit: "percent"
+          file_pattern: "data/soil/HWSD_RASTER/hwsd.bil + HWSD.mdb"
+        - name: "T_OC / S_OC"
+          unit: "percent"
+          file_pattern: "data/soil/HWSD_RASTER/hwsd.bil + HWSD.mdb"
+    transformation:
+      steps:
+        - "Extract HWSD mapping unit (MU_GLOBAL) from raster at grid cell location"
+        - "Query MDB for topsoil (T_*) and subsoil (S_*) properties"
+        - "Create 2-layer AquaCrop soil using add_layer_from_texture()"
+        - "Topsoil (0-0.3m): Sand=T_SAND, Clay=T_CLAY, OrgMat=T_OC*1.724"
+        - "Subsoil (0.3-1.2m): Sand=S_SAND, Clay=S_CLAY, OrgMat=S_OC*1.724"
+      unit_conversions:
+        - variable: "T_OC / S_OC"
+          from: "% organic carbon"
+          to: "% organic matter"
+          factor: "multiply by 1.724 (Van Bemmelen factor)"
+      silent_failure_modes:
+        - "HWSD MU_GLOBAL = 0 (water body) returns no soil data"
+        - "Some HWSD entries have T_SAND + T_CLAY > 100, which breaks pedotransfer"
+        - "Organic carbon to organic matter conversion factor varies (1.724 is standard)"
+    target:
+      model: "AquaCrop-OSPy"
+      input: "Soil('custom') with add_layer_from_texture()"
+      format: "soil.add_layer_from_texture(thickness, Sand, Clay, OrgMat, penetrability)"
+    validation:
+      - "Sand + Clay <= 100 for each layer"
+      - "OrgMat >= 0"
+      - "Resulting thWP < thFC < thS"
+    scientific_justification: >
+      HWSD provides globally consistent soil texture data at 30 arc-second
+      resolution. The Saxton-Rawls pedotransfer function (built into AquaCrop's
+      add_layer_from_texture) converts texture to hydraulic properties. This
+      enables AquaCrop simulations anywhere with HWSD coverage without requiring
+      local soil measurements. Same HWSD data source used for VIC and DSSAT soil
+      setup, ensuring soil consistency across all coupled models.
+
+  # -------------------------------------------------------------------------
+  # C4: CaMa-Flood -> AquaCrop Waterlogging Stress
+  # -------------------------------------------------------------------------
+  - id: "c4_cama_flood_to_waterlogging"
+    name: "CaMa-Flood Inundation to AquaCrop Waterlogging"
+    source:
+      model: "CaMa-Flood v4.20"
+      variables:
+        - name: "fldfrc"
+          unit: "fraction (0-1)"
+          file_pattern: "out/*/fldfrc*.nc"
+        - name: "flddph"
+          unit: "m"
+          file_pattern: "out/*/flddph*.nc"
+    transformation:
+      steps:
+        - "Extract floodplain fraction and depth for the target grid cell"
+        - "Identify flooded periods: fldfrc > 0.1 and flddph > 0.05m"
+        - "For flooded periods, set AquaCrop GroundWater table to surface level"
+        - "Or: increase surface_storage via bund management to simulate ponding"
+        - "Post-hoc: compare AquaCrop yield with/without flood penalty"
+      silent_failure_modes:
+        - "CaMa-Flood resolution (15 min) may not match AquaCrop grid"
+        - "AquaCrop aeration stress module uses a fixed Aer parameter; real flood dynamics are more complex"
+    target:
+      model: "AquaCrop-OSPy"
+      input: "GroundWater object or FieldMngt bund water"
+      format: "GroundWater(water_table_method, dates, values) or FieldMngt(bunds=True, bund_water=depth_mm)"
+    validation:
+      - "Flood duration matches CaMa-Flood output"
+      - "Yield reduction correlates with flood intensity"
+    scientific_justification: >
+      CaMa-Flood simulates floodplain inundation dynamics that directly affect
+      crop growth through waterlogging. Coupling CaMa-Flood output with AquaCrop's
+      aeration stress module enables assessment of flood damage to crops, which is
+      critical for flood-prone agricultural regions and climate adaptation planning.
+
+  # -------------------------------------------------------------------------
+  # C5: AquaCrop <-> DSSAT <-> WOFOST Triple Ensemble
+  # -------------------------------------------------------------------------
+  - id: "c5_triple_ensemble"
+    name: "AquaCrop-DSSAT-WOFOST Triple Crop Model Ensemble"
+    source:
+      model: "AquaCrop-OSPy + DSSAT-CSM + WOFOST"
+      variables:
+        - name: "Dry yield"
+          unit: "tonne/ha"
+        - name: "ET"
+          unit: "mm/season"
+        - name: "Phenology dates"
+          unit: "DOY"
+    transformation:
+      steps:
+        - "Run all three models with same weather, soil (mapped), and management inputs"
+        - "AquaCrop: Dry yield (tonne/ha), ET = Es + Tr, CWP = Yield/ET"
+        - "DSSAT: HWAH (kg/ha) / 1000, ETCM (mm), Anthesis/Maturity dates"
+        - "WOFOST: TWSO (kg/ha) / 1000, EVST + TRAT (mm)"
+        - "Compute ensemble mean, spread, and model agreement"
+        - "Use DSSAT for N-stress analysis, AquaCrop for water analysis, WOFOST for radiation analysis"
+      silent_failure_modes:
+        - "Different soil parameterizations between models can dominate yield differences"
+        - "Different ET computation methods create systematic bias"
+        - "Planting date interpretation may differ between models"
+    target:
+      model: "Ensemble comparison"
+      input: "Standardized output table"
+      format: "CSV with columns: Model, Yield_tha, ET_mm, CWP_kg_m3, ADAT_DOY, MDAT_DOY"
+    validation:
+      - "All three models produce positive yield"
+      - "Yield spread < 50% of mean (models should broadly agree)"
+      - "ET values within 20% across models"
+    scientific_justification: >
+      Multi-model ensembles reduce structural uncertainty in crop yield projections.
+      Each model has different strengths: AquaCrop for water productivity, DSSAT for
+      nutrient management and genotype response, WOFOST for radiation-driven growth.
+      The ensemble mean typically outperforms any single model for regional yield
+      estimation (Bassu et al., 2014; Martre et al., 2015).
+
+  # -------------------------------------------------------------------------
+  # C6: AquaCrop Irrigation Optimization -> Water Management Policy
+  # -------------------------------------------------------------------------
+  - id: "c6_irrigation_optimization"
+    name: "AquaCrop Deficit Irrigation Optimization for Water Management"
+    source:
+      model: "AquaCrop-OSPy"
+      variables:
+        - name: "Yield vs Irrigation curve"
+          unit: "tonne/ha vs mm"
+        - name: "CWP at each SMT level"
+          unit: "kg/m3"
+        - name: "Marginal water productivity"
+          unit: "kg/m3/mm"
+    transformation:
+      steps:
+        - "Run AquaCrop with SMT sweep: 0, 5, 10, ..., 100 (21 scenarios)"
+        - "Extract yield, ET, irrigation, CWP for each scenario"
+        - "Compute marginal water productivity: dYield/dIrrigation"
+        - "Identify optimal operating point(s) based on objective function"
+        - "Generate policy recommendations: 'Apply X mm when soil moisture drops to Y% TAW'"
+      silent_failure_modes:
+        - "Single-year optimization may not represent multi-year variability"
+        - "Optimal SMT depends on soil type, crop, and climate -- not transferable"
+    target:
+      model: "Water management decision support"
+      input: "Optimization results table and yield-water frontier"
+      format: "CSV + plot showing yield vs irrigation with optimal points marked"
+    validation:
+      - "Yield increases monotonically with irrigation (or plateaus)"
+      - "CWP has a clear maximum (convex relationship)"
+      - "Marginal WP decreases with increasing irrigation"
+    scientific_justification: >
+      Deficit irrigation aims to maximize crop water productivity rather than yield.
+      By running AquaCrop across a range of soil moisture targets, the yield-water
+      production function can be mapped, and the economically or agronomically
+      optimal irrigation strategy can be identified. This is the primary application
+      that motivated the development of AquaCrop by FAO (Steduto et al., 2009;
+      Raes et al., 2009).

@@ -1,0 +1,106 @@
+package:
+  created: '2026-03-25T04:04:00.988520'
+  domain: framework
+  name: ESMF
+  version: auto-generated
+pipeline:
+  stages:
+  - depends_on: []
+    description: Set basin, period, resolution, paths
+    id: s0_config
+    knowledge_type: procedural
+    milestones:
+    - description: Stage Configuration completed successfully
+      id: m_s0_config
+      verification: Output files exist and pass validation
+    name: Configuration
+    tools: []
+  - depends_on: []
+    description: Define computational grid or HRUs from DEM and basin shapefile
+    id: s1_domain
+    knowledge_type: procedural
+    milestones:
+    - description: Stage Domain / Grid Setup completed successfully
+      id: m_s1_domain
+      verification: Output files exist and pass validation
+    name: Domain / Grid Setup
+    tools: []
+  - depends_on:
+    - s1_domain
+    description: Derive soil hydraulic properties from HWSD or SoilGrids
+    id: s2_soil
+    knowledge_type: procedural
+    milestones:
+    - description: Stage Soil Parameters completed successfully
+      id: m_s2_soil
+      verification: Output files exist and pass validation
+    name: Soil Parameters
+    tools: []
+  - depends_on:
+    - s1_domain
+    description: Classify land cover from AVHRR into model vegetation classes
+    id: s3_vegetation
+    knowledge_type: procedural
+    milestones:
+    - description: Stage Vegetation / Land Cover completed successfully
+      id: m_s3_vegetation
+      verification: Output files exist and pass validation
+    name: Vegetation / Land Cover
+    tools: []
+  - depends_on:
+    - s1_domain
+    description: Convert CMFD/MSWX/NASA POWER to model forcing format
+    id: s4_forcing
+    knowledge_type: procedural
+    milestones:
+    - description: Stage Meteorological Forcing completed successfully
+      id: m_s4_forcing
+      verification: Output files exist and pass validation
+    name: Meteorological Forcing
+    tools: []
+  - depends_on:
+    - s2_soil
+    - s3_vegetation
+    description: Set calibration parameters or defaults
+    id: s5_parameters
+    knowledge_type: procedural
+    milestones:
+    - description: Stage Model Parameters completed successfully
+      id: m_s5_parameters
+      verification: Output files exist and pass validation
+    name: Model Parameters
+    tools: []
+  - depends_on:
+    - s4_forcing
+    - s5_parameters
+    description: Run the model binary
+    id: s6_run
+    knowledge_type: procedural
+    milestones:
+    - description: Stage Model Execution completed successfully
+      id: m_s6_run
+      verification: Output files exist and pass validation
+    name: Model Execution
+    tools: []
+  - depends_on:
+    - s6_run
+    description: Extract discharge, soil moisture, ET from model output
+    id: s7_postprocess
+    knowledge_type: procedural
+    milestones:
+    - description: Stage Output Parsing completed successfully
+      id: m_s7_postprocess
+      verification: Output files exist and pass validation
+    name: Output Parsing
+    tools: []
+  - depends_on:
+    - s7_postprocess
+    description: Route runoff through river network if model doesn't include routing
+    id: s8_routing
+    knowledge_type: procedural
+    milestones:
+    - description: Stage River Routing (optional) completed successfully
+      id: m_s8_routing
+      verification: Output files exist and pass validation
+    name: River Routing (optional)
+    tools: []

@@ -1,0 +1,272 @@
+# PySWMM Diagnostic Triplets
+# Format: symptom → diagnosis → remedy
+# Severity: CRITICAL, HIGH, MEDIUM, LOW
+
+triplets:
+
+  # ── Unit Conversion Traps ──────────────────────────────────────────
+
+  - id: dt_001
+    domain: unit_conversion
+    severity: CRITICAL
+    symptom: |
+      Runoff is 24x lower than expected. Subcatchment runoff volumes are
+      near zero despite significant rainfall in input data.
+    diagnosis: |
+      Rainfall provided as depth per day (mm/day) but SWMM expects intensity
+      (mm/hr). The model receives 1/24th of the actual rain rate.
+    remedy: |
+      Convert rainfall from mm/day to mm/hr by dividing by 24. Verify that
+      [RAINGAGES] Type is INTENSITY and values are in per-hour units.
+      Use convert_forcing_to_inp.py with --input-units mm/day.
+
+  - id: dt_002
+    domain: unit_conversion
+    severity: CRITICAL
+    symptom: |
+      Subcatchment areas appear correct but total runoff volume is 100-1,000,000x
+      wrong. Model runs without errors but mass balance is wildly off.
+    diagnosis: |
+      Subcatchment area provided in m² or km² instead of acres (US) or
+      hectares (SI). SWMM interprets the number as-is in its unit system.
+    remedy: |
+      Convert areas: 1 km² = 247.1 acres = 100 hectares.
+      1 m² = 0.000247 acres. Check [SUBCATCHMENTS] area column matches
+      FLOW_UNITS system.
+
+  - id: dt_003
+    domain: unit_conversion
+    severity: HIGH
+    symptom: |
+      Pipe flow velocities are ~3x too fast or too slow. Timing of
+      hydrograph peaks at downstream nodes is significantly off.
+    diagnosis: |
+      Elevations and/or pipe lengths specified in wrong unit system.
+      Feet used when meters expected (or vice versa). The 3.28 factor
+      propagates through slope calculations.
+    remedy: |
+      Verify all [JUNCTIONS] elevations and [CONDUITS] lengths are in
+      feet (US) or meters (SI) matching FLOW_UNITS. Convert: 1 ft = 0.3048 m.
+
+  - id: dt_004
+    domain: unit_conversion
+    severity: HIGH
+    symptom: |
+      Weir or orifice flows are approximately 1.8x too high or too low
+      compared to hand calculations or observations.
+    diagnosis: |
+      Weir discharge coefficient uses wrong unit system convention.
+      US Cd ≈ 3.33 (includes √(2g) in ft), SI Cd ≈ 1.84 (includes √(2g) in m).
+    remedy: |
+      Check [WEIRS] discharge coefficient. US standard rectangular weir
+      Cd = 3.33, SI Cd = 1.84. Do NOT simply convert between systems —
+      the coefficients already embed the unit system.
+
+  - id: dt_005
+    domain: unit_conversion
+    severity: HIGH
+    symptom: |
+      Subcatchment slope appears correct but runoff timing is wildly wrong.
+      Peak runoff occurs too early or too late.
+    diagnosis: |
+      Slope entered as decimal fraction (0.005) instead of percent (0.5).
+      SWMM [SUBCATCHMENTS] expects slope as PERCENT, not fraction.
+    remedy: |
+      Multiply decimal slope by 100 to get percent. Slope of 0.5% should
+      be entered as 0.5, not 0.005.
+
+  # ── Parameter Format Errors ────────────────────────────────────────
+
+  - id: dt_006
+    domain: parameter_format
+    severity: CRITICAL
+    symptom: |
+      Simulation crashes immediately with "ERROR 211" or similar error
+      code. No output files are generated.
+    diagnosis: |
+      Malformed .inp file: missing required sections, incorrect column
+      count, or tab/space formatting issues. SWMM's parser is strict
+      about section structure.
+    remedy: |
+      Validate .inp file structure. Each section must have correct number
+      of columns. Use SWMM GUI to open and re-save the file, or check
+      against template .inp files in pyswmm/tests/data/.
+
+  - id: dt_007
+    domain: parameter_format
+    severity: HIGH
+    symptom: |
+      Rain gage shows no rainfall during simulation. Subcatchments
+      connected to the gage produce zero runoff.
+    diagnosis: |
+      Rain gage INTERVAL does not match timeseries resolution. If gage
+      interval is 0:15 but timeseries has hourly data, SWMM may miss
+      data points between interpolation steps.
+    remedy: |
+      Ensure [RAINGAGES] Interval matches [TIMESERIES] time resolution
+      exactly. For 15-min data use 0:15, for hourly use 1:00.
+
+  - id: dt_008
+    domain: parameter_format
+    severity: HIGH
+    symptom: |
+      Conduit shows zero flow despite upstream nodes receiving inflow.
+      No error messages in report.
+    diagnosis: |
+      Conduit inlet/outlet node names in [CONDUITS] do not match names
+      in [JUNCTIONS] or [OUTFALLS]. SWMM node IDs are case-sensitive.
+    remedy: |
+      Verify all node references in [CONDUITS], [WEIRS], [PUMPS], etc.
+      match exactly (including case) with [JUNCTIONS], [OUTFALLS],
+      [STORAGE] definitions.
+
+  - id: dt_009
+    domain: parameter_format
+    severity: MEDIUM
+    symptom: |
+      Subcatchment routes flow to wrong destination. Runoff appears at
+      unexpected nodes in the network.
+    diagnosis: |
+      [SUBCATCHMENTS] Outlet column points to wrong node or another
+      subcatchment. SWMM allows cascading subcatchment routing.
+    remedy: |
+      Check [SUBCATCHMENTS] Outlet column. Should reference a node ID
+      for direct connection or another subcatchment ID for cascading.
+
+  # ── Runtime Errors ─────────────────────────────────────────────────
+
+  - id: dt_010
+    domain: runtime
+    severity: CRITICAL
+    symptom: |
+      Python raises MultiSimulationError when creating a new Simulation
+      object. Previous simulation may have crashed without cleanup.
+    diagnosis: |
+      EPA SWMM engine uses global state. Only ONE Simulation instance
+      can exist per Python process. A previous instance was not properly
+      closed (missing context manager or exception during cleanup).
+    remedy: |
+      Always use `with Simulation(...) as sim:` context manager. If
+      error persists, restart the Python process. For parallel runs,
+      use multiprocessing (separate processes), not threading.
+
+  - id: dt_011
+    domain: runtime
+    severity: HIGH
+    symptom: |
+      Routing continuity error > 10%. Flow balance is severely wrong.
+      Flooding or negative depths may appear in results.
+    diagnosis: |
+      DYNWAVE routing timestep is too large for the network geometry.
+      The Courant condition (Δt ≤ Δx / √(gD)) is violated, causing
+      numerical instability.
+    remedy: |
+      Reduce ROUTING_STEP in [OPTIONS]. Start with 1 second for
+      small networks. Enable VARIABLE_STEP (0.5–0.75) to let SWMM
+      adapt timestep automatically. Consider INERTIAL_DAMPING PARTIAL.
+
+  - id: dt_012
+    domain: runtime
+    severity: HIGH
+    symptom: |
+      Simulation runs but callbacks (add_before_step, add_after_step)
+      never fire. Real-time control logic has no effect on model behavior.
+    diagnosis: |
+      Using sim.execute() instead of stepping. The execute() method
+      runs the entire simulation without returning control to Python
+      between steps, so callbacks are never invoked.
+    remedy: |
+      Use `for step in sim:` iteration pattern, NOT sim.execute(),
+      when callbacks are needed. Callbacks fire on each step during
+      iteration.
+
+  # ── Silent Errors ──────────────────────────────────────────────────
+
+  - id: dt_013
+    domain: silent_error
+    severity: CRITICAL
+    symptom: |
+      All subcatchments produce zero runoff despite valid rainfall.
+      No error or warning messages. Mass balance shows 100% infiltration.
+    diagnosis: |
+      Infiltration MaxRate is extremely high (wrong units), consuming
+      all rainfall. Likely infiltration rate given in mm/hr when SWMM
+      expects in/hr for US system, making it 25x too permeable.
+    remedy: |
+      Check [INFILTRATION] values. For Horton in US: MaxRate typically
+      0.5–5.0 in/hr. If values are 10–100+, they're likely in mm/hr.
+      Divide by 25.4 to convert mm/hr → in/hr.
+
+  - id: dt_014
+    domain: silent_error
+    severity: HIGH
+    symptom: |
+      Pipe network shows no surcharging despite clearly undersized
+      pipes. Water depth never exceeds pipe diameter.
+    diagnosis: |
+      Using KINWAVE routing which cannot simulate surcharging,
+      backwater, or pressurized flow. Only DYNWAVE handles these
+      conditions.
+    remedy: |
+      Change FLOW_ROUTING to DYNWAVE in [OPTIONS] for systems where
+      surcharging, backwater, or reverse flow may occur. KINWAVE is
+      only appropriate for steep, gravity-flow dominant systems.
+
+  - id: dt_015
+    domain: silent_error
+    severity: HIGH
+    symptom: |
+      Depression storage values seem reasonable but impervious areas
+      produce excessive runoff from small storms.
+    diagnosis: |
+      Depression storage (S-Imperv, S-Perv) entered in wrong units.
+      US expects inches, SI expects mm. Using mm values in US system
+      makes depression storage ~25x too large (or vice versa).
+    remedy: |
+      Check [SUBAREAS] S-Imperv and S-Perv values. US typical:
+      S-Imperv = 0.02–0.10 inches, S-Perv = 0.10–0.30 inches.
+      SI typical: S-Imperv = 0.5–2.5 mm, S-Perv = 2.5–7.5 mm.
+
+  - id: dt_016
+    domain: silent_error
+    severity: MEDIUM
+    symptom: |
+      Pipe cross-section geometry appears correct but flows are wrong
+      by a large factor. Conduit capacity seems off.
+    diagnosis: |
+      [XSECTIONS] Geom1 (diameter/height) specified in inches or mm
+      instead of feet (US) or meters (SI). SWMM expects the same
+      length unit as the elevation system.
+    remedy: |
+      Convert pipe dimensions: 12-inch pipe = 1.0 ft (US) or
+      0.3048 m (SI). Check [XSECTIONS] Geom1 values match the
+      system length unit.
+
+  - id: dt_017
+    domain: silent_error
+    severity: MEDIUM
+    symptom: |
+      Evaporation losses are suspiciously high, consuming most of
+      the water in storage nodes or subcatchments.
+    diagnosis: |
+      Evaporation rate specified in in/hr or mm/hr instead of
+      in/day or mm/day. The model applies 24x the intended
+      evaporation rate.
+    remedy: |
+      Check [EVAPORATION] values. Typical rates: 0.1–0.3 in/day (US)
+      or 2–8 mm/day (SI). If values are > 1 in/day or > 25 mm/day,
+      they may be in per-hour units.
+
+  - id: dt_018
+    domain: silent_error
+    severity: LOW
+    symptom: |
+      Output timeseries extracted from .out file has fewer timesteps
+      than expected. Some time periods are missing.
+    diagnosis: |
+      REPORT_START is later than START_DATE. SWMM only writes output
+      from REPORT_START onward. Early simulation period is computed
+      but not saved to output file.
+    remedy: |
+      Check [OPTIONS] REPORT_START_DATE and REPORT_START_TIME. Set
+      equal to START_DATE/START_TIME to capture full simulation.

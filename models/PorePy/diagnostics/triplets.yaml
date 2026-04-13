@@ -1,0 +1,442 @@
+# PorePy Diagnostic Triplets
+# Symptom → Diagnosis → Remedy for common PorePy failures
+# 18 entries covering unit conversions, solver failures, and mesh issues
+
+- id: dt_001
+  stage: s2_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Flow rates are orders of magnitude too high; domain floods instantly."
+    error_pattern: "pressure exceeds physical bounds"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Permeability specified in Darcy instead of m². 1 Darcy = 9.869e-13 m²."
+    explanation: >
+      PorePy expects permeability in m² (SI). Literature often reports values in
+      Darcy or millidarcy. Using 1.0 (Darcy) instead of 9.869e-13 (m²) causes
+      permeability to be ~1e12 times too high.
+    affected_components: [SolidConstants, DarcysLaw]
+  remedy:
+    action: "Multiply Darcy values by 9.869e-13 to convert to m²."
+    tool_to_run: convert_material_params
+    manual_steps:
+      - "Check permeability value: should be 1e-20 to 1e-10 m² for natural rock"
+      - "If value > 1e-8, likely in Darcy — multiply by 9.869e-13"
+    prevention: "Use convert_material_params.py with --input specifying unit='darcy'"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_002
+  stage: s2_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Pressure field values are ~1e6 times too small. Displacement unrealistically large."
+    error_pattern: "max pressure << expected"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Pressure boundary conditions specified in MPa instead of Pa."
+    explanation: >
+      PorePy uses Pa internally. Specifying 10 (meaning 10 MPa) as a BC value
+      results in 10 Pa — six orders of magnitude too small. All stress-dependent
+      behavior will be wrong.
+    affected_components: [BoundaryConditionMixin, bc_values_pressure]
+  remedy:
+    action: "Multiply MPa values by 1e6 to convert to Pa."
+    tool_to_run: convert_forcing_data
+    manual_steps:
+      - "Check BC pressure values: typical subsurface is 1e5 to 1e8 Pa"
+      - "If max pressure < 1e3, likely in MPa or bar — convert to Pa"
+    prevention: "Always use units.convert_units(val, 'Pa') for boundary values"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_003
+  stage: s3_materials
+  failure_domain: unit_conversion
+  symptom:
+    description: "Darcy velocity is 1000× too fast or too slow."
+    error_pattern: "flux magnitude unrealistic"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Viscosity in centipoise (cP) instead of Pa·s. 1 cP = 1e-3 Pa·s."
+    explanation: >
+      Water viscosity is ~1 cP = 1e-3 Pa·s. Using 1.0 (cP value) as Pa·s
+      makes viscosity 1000× too high, reducing Darcy velocity by 1000×.
+      Conversely, using 1e-3 when it should be 1.0 increases velocity 1000×.
+    affected_components: [FluidComponent, FluidMobility]
+  remedy:
+    action: "Ensure viscosity is in Pa·s. For water at 20°C: 1.002e-3 Pa·s."
+    tool_to_run: convert_material_params
+    manual_steps:
+      - "Check viscosity: water ≈ 1e-3 Pa·s, oil ≈ 1e-2 to 1 Pa·s"
+      - "If value is ~1.0 for water, it's in cP — divide by 1000"
+    prevention: "Use validate_outputs() in convert_material_params.py"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_004
+  stage: s3_materials
+  failure_domain: unit_conversion
+  symptom:
+    description: "Gravity-driven flow absent or reversed. Buoyancy effects wrong."
+    error_pattern: "density < 100 kg/m3"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Density in g/cm³ instead of kg/m³. 1 g/cm³ = 1000 kg/m³."
+    explanation: >
+      Water density is 998.2 kg/m³ = 0.998 g/cm³. Using 0.998 as kg/m³
+      makes the fluid 1000× lighter, essentially eliminating gravity effects.
+    affected_components: [FluidComponent, FluidDensityFromPressure]
+  remedy:
+    action: "Multiply g/cm³ values by 1000 to get kg/m³."
+    tool_to_run: convert_material_params
+    manual_steps:
+      - "Rock density should be 1000-3500 kg/m³"
+      - "Fluid density should be 800-1200 kg/m³"
+      - "If values are 0.8-3.5, they're in g/cm³"
+    prevention: "Check density range in validate_outputs()"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_005
+  stage: s3_materials
+  failure_domain: unit_conversion
+  symptom:
+    description: "Displacement is ~1e9 times too large. Structure appears to collapse."
+    error_pattern: "displacement exceeds domain size"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Young's modulus or Lame parameters in GPa instead of Pa."
+    explanation: >
+      Granite shear modulus is ~15 GPa = 1.5e10 Pa. Using 15 (GPa value)
+      as Pa makes the rock 1e9× softer, causing enormous displacements.
+    affected_components: [SolidConstants, LinearElasticMechanicalStress]
+  remedy:
+    action: "Multiply GPa values by 1e9 to convert to Pa."
+    tool_to_run: convert_material_params
+    manual_steps:
+      - "Shear modulus for rock: 1e9 to 1e11 Pa"
+      - "If modulus < 1e6, likely in GPa — multiply by 1e9"
+    prevention: "Always specify elastic moduli in Pa"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_006
+  stage: s3_materials
+  failure_domain: unit_conversion
+  symptom:
+    description: "Mass balance error of ~100×. Pore volume wildly wrong."
+    error_pattern: "porosity > 1.0"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Porosity given as percentage (e.g., 13) instead of fraction (0.13)."
+    explanation: >
+      PorePy expects porosity as a dimensionless fraction (0 to 1).
+      Using 13 (meaning 13%) creates a porosity of 13, which is
+      physically meaningless and causes 100× error in pore volume.
+    affected_components: [SolidConstants, FluidMassBalanceEquations]
+  remedy:
+    action: "Divide percentage values by 100 to get fraction."
+    tool_to_run: convert_material_params
+    manual_steps:
+      - "Porosity must be between 0 and 1"
+      - "If porosity > 1, divide by 100"
+      - "Typical range: 0.001 (granite) to 0.40 (sand)"
+    prevention: "validate_outputs() checks for porosity > 1.0"
+  severity: silent
+  cross_references: [dt_009]
+
+- id: dt_007
+  stage: s6_execution
+  failure_domain: unit_conversion
+  symptom:
+    description: "Simulation completes but results represent wrong time period."
+    error_pattern: "time series shape unexpected"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Time step or schedule in hours/days instead of seconds."
+    explanation: >
+      PorePy TimeManager expects all times in seconds. Using 24 (hours)
+      instead of 86400 (seconds) for a 1-day step means the simulation
+      covers 24 seconds instead of 1 day.
+    affected_components: [TimeManager, run_time_dependent_model]
+  remedy:
+    action: "Convert all time values to seconds: hours×3600, days×86400, years×3.156e7."
+    tool_to_run: convert_forcing_data
+    manual_steps:
+      - "Check TimeManager schedule values are in seconds"
+      - "1 hour = 3600 s, 1 day = 86400 s, 1 year = 3.156e7 s"
+    prevention: "Use convert_forcing_data.py with --time-unit flag"
+  severity: silent
+  cross_references: [dt_011]
+
+- id: dt_008
+  stage: s4_mesh
+  failure_domain: parameter_format
+  symptom:
+    description: "Mesh has too few or too many cells. Flow field under/over-resolved."
+    error_pattern: "num_cells << expected or num_cells >> expected"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Cell size does not match domain scale (e.g., 0.1 m cells in a 100 km domain)."
+    explanation: >
+      cell_size is in meters. For a domain of 1000 m, cell_size=0.1 creates
+      ~10 million cells (1000/0.1)^2 in 2D. Conversely, cell_size=100
+      for a 1 m domain creates only 1 cell.
+    affected_components: [meshing_arguments, create_mdg]
+  remedy:
+    action: "Set cell_size to approximately domain_length/20 to domain_length/100."
+    tool_to_run: null
+    manual_steps:
+      - "Check domain extent in meters"
+      - "Set cell_size to ~1/50 of smallest domain dimension"
+      - "For fractures: cell_size_fracture should be ~1/10 of fracture length"
+    prevention: "Validate cell count after mdg creation"
+  severity: degraded
+  cross_references: [dt_014]
+
+- id: dt_009
+  stage: s3_materials
+  failure_domain: parameter_format
+  symptom:
+    description: "Newton solver diverges immediately. Negative effective stress."
+    error_pattern: "NaN|divergence|biot"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Biot coefficient > 1.0 or < 0. Must be in (0, 1]."
+    explanation: >
+      The Biot coefficient α couples fluid pressure to solid stress.
+      Values > 1 cause negative effective stress under positive pore pressure,
+      leading to immediate Newton divergence.
+    affected_components: [SolidConstants, Poromechanics]
+  remedy:
+    action: "Set Biot coefficient to a value in (0, 1]. Typical: 0.4-0.9."
+    tool_to_run: convert_material_params
+    manual_steps:
+      - "Check biot_coefficient is between 0 and 1"
+      - "Granite: ~0.47, Sandstone: ~0.79, Soft clay: ~1.0"
+    prevention: "validate_outputs() in convert_material_params.py"
+  severity: fatal
+  cross_references: [dt_006]
+
+- id: dt_010
+  stage: s3_materials
+  failure_domain: unit_conversion
+  symptom:
+    description: "Heat transfer rate wrong by orders of magnitude."
+    error_pattern: "temperature field unrealistic"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Thermal conductivity in cal/(cm·s·°C) instead of W/(m·K)."
+    explanation: >
+      PorePy expects W/(m·K). The CGS unit cal/(cm·s·°C) is 418.68× larger.
+      Granite thermal conductivity is ~2.5 W/(m·K).
+    affected_components: [SolidConstants, FluidComponent, TotalEnergyBalanceEquations]
+  remedy:
+    action: "Use W/(m·K) values directly. Granite: ~2.5, Water: ~0.6."
+    tool_to_run: convert_material_params
+    manual_steps:
+      - "Thermal conductivity for rock: 1-5 W/(m·K)"
+      - "Thermal conductivity for water: ~0.6 W/(m·K)"
+    prevention: "Check values are in expected range"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_011
+  stage: s6_execution
+  failure_domain: runtime
+  symptom:
+    description: "NotImplementedError raised during model initialization."
+    error_pattern: "NotImplementedError.*time scaling"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "pp.Units(s=...) set to value other than 1."
+    explanation: >
+      PorePy's Units class does not support non-unitary time scaling.
+      Setting pp.Units(s=3600) to work in hours raises NotImplementedError
+      at initialization. This is explicitly checked in Units.__init__().
+    affected_components: [Units, SolutionStrategy.prepare_simulation]
+  remedy:
+    action: "Always use pp.Units(s=1) or omit the s parameter. Convert time externally."
+    tool_to_run: null
+    manual_steps:
+      - "Remove s= parameter from pp.Units() call"
+      - "Convert all time values to seconds before passing to PorePy"
+    prevention: "Never set s= in pp.Units()"
+  severity: fatal
+  cross_references: [dt_007]
+
+- id: dt_012
+  stage: s3_materials
+  failure_domain: unit_conversion
+  symptom:
+    description: "Fracture transmissivity ~1e9× too high. Flow short-circuits through fractures."
+    error_pattern: "fracture flux >> matrix flux"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Fracture aperture in mm instead of m. Transmissivity ∝ aperture³."
+    explanation: >
+      Fracture transmissivity T = a³/(12μ). If aperture a is given as 1 (mm)
+      instead of 1e-3 (m), T is 1e9× too large because of the cubic dependence.
+    affected_components: [SolidConstants, fracture_permeability]
+  remedy:
+    action: "Ensure aperture is in meters. 1 mm = 1e-3 m."
+    tool_to_run: convert_material_params
+    manual_steps:
+      - "Typical fracture aperture: 1e-5 to 1e-2 m (0.01 mm to 10 mm)"
+      - "If aperture > 0.1, likely in mm — divide by 1000"
+    prevention: "Validate aperture range"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_013
+  stage: s6_execution
+  failure_domain: runtime
+  symptom:
+    description: "Simulation crashes with NaN in solution vector."
+    error_pattern: "NaN|nan|diverge"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Newton solver diverges due to ill-conditioned system or extreme parameters."
+    explanation: >
+      Common causes: (1) time step too large for nonlinear coupling,
+      (2) extreme material property contrast, (3) poor initial conditions,
+      (4) boundary conditions creating singular matrix.
+    affected_components: [NewtonSolver, EquationSystem]
+  remedy:
+    action: "Reduce time step by 10×. Check material properties and BCs."
+    tool_to_run: null
+    manual_steps:
+      - "Reduce dt_init by factor of 10"
+      - "Increase nl_max_iterations to 25"
+      - "Check all material properties are in SI units"
+      - "Verify at least one Dirichlet BC for each primary variable"
+    prevention: "Start with small time steps and increase gradually"
+  severity: fatal
+  cross_references: [dt_015]
+
+- id: dt_014
+  stage: s4_mesh
+  failure_domain: runtime
+  symptom:
+    description: "Gmsh crashes or hangs during mesh generation."
+    error_pattern: "gmsh|GmshError|meshing failed"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Degenerate fracture geometry (zero-area polygon, self-intersecting edges)."
+    explanation: >
+      Gmsh requires valid fracture geometries. Zero-area fractures (all points
+      collinear), self-intersecting polygons, or fractures extending outside
+      the domain cause Gmsh to fail.
+    affected_components: [create_mdg, FractureNetwork, gmsh]
+  remedy:
+    action: "Validate fracture geometry before meshing."
+    tool_to_run: null
+    manual_steps:
+      - "Check all fracture points are not collinear"
+      - "Verify fractures lie within domain bounds"
+      - "Check for very small angles between fracture edges (< 1°)"
+      - "Try increasing cell_size_min to relax Gmsh constraints"
+    prevention: "Validate fracture network before calling create_mdg()"
+  severity: fatal
+  cross_references: [dt_018]
+
+- id: dt_015
+  stage: s6_execution
+  failure_domain: runtime
+  symptom:
+    description: "Linear solver fails with 'singular matrix' error."
+    error_pattern: "singular|Singular|LinAlgError"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "System has no unique solution — typically pure Neumann BCs for pressure."
+    explanation: >
+      Pressure is defined up to a constant with pure Neumann (flux) BCs.
+      The resulting matrix is singular. At least one Dirichlet (pressure) BC
+      is required to anchor the solution.
+    affected_components: [LinearSolver, BoundaryConditionMixin]
+  remedy:
+    action: "Add at least one Dirichlet BC for each primary variable."
+    tool_to_run: null
+    manual_steps:
+      - "Check bc_type_darcy_flux returns at least one is_dir=True face"
+      - "For mechanics, check displacement BCs prevent rigid body motion"
+      - "Try switching to iterative solver with regularization"
+    prevention: "Always include at least one Dirichlet BC per variable"
+  severity: fatal
+  cross_references: [dt_013, dt_017]
+
+- id: dt_016
+  stage: s7_output
+  failure_domain: parameter_format
+  symptom:
+    description: "VTU output file exists but is missing expected variable columns."
+    error_pattern: "KeyError|variable not found"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Variable not registered for export or wrong export timing."
+    explanation: >
+      PorePy only exports variables that are registered with the Exporter.
+      Secondary variables (flux, stress) may require explicit registration.
+      Also, some variables only exist on specific subdomain dimensions.
+    affected_components: [Exporter, DataSavingMixin]
+  remedy:
+    action: "Register variables for export in the model class."
+    tool_to_run: parse_porepy_output
+    manual_steps:
+      - "Check model.data_to_export() includes desired variables"
+      - "Verify variable exists on the target subdomain dimension"
+      - "For fluxes, check interface vs. subdomain export"
+    prevention: "List expected variables before running and verify after"
+  severity: degraded
+  cross_references: []
+
+- id: dt_017
+  stage: s6_execution
+  failure_domain: silent_error
+  symptom:
+    description: "Flow is in the wrong direction or has wrong magnitude, but no errors."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Dirichlet and Neumann boundary condition types swapped."
+    explanation: >
+      Specifying a pressure value on a face marked as Neumann means the value
+      is interpreted as a flux — and vice versa. The model runs without error
+      but the flow field is completely wrong.
+    affected_components: [BoundaryCondition, bc_type_darcy_flux, bc_values_pressure]
+  remedy:
+    action: "Verify bc_type and bc_values are consistent."
+    tool_to_run: null
+    manual_steps:
+      - "Check that faces with is_dir=True have pressure values"
+      - "Check that faces with is_neu=True have flux values"
+      - "Print BC types and values for all boundary faces"
+    prevention: "Cross-check BC type and value assignments"
+  severity: silent
+  cross_references: [dt_015]
+
+- id: dt_018
+  stage: s4_mesh
+  failure_domain: runtime
+  symptom:
+    description: "Gmsh error or unexpected mesh topology. Missing fracture subdomains."
+    error_pattern: "gmsh|topology|outside domain"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "One or more fractures extend outside the simulation domain."
+    explanation: >
+      PorePy clips fractures to the domain, but extreme cases (fracture
+      entirely outside, or barely touching boundary) can cause Gmsh failures
+      or produce meshes with unexpected topology.
+    affected_components: [FractureNetwork, create_mdg, gmsh]
+  remedy:
+    action: "Ensure all fracture points lie within domain bounds."
+    tool_to_run: null
+    manual_steps:
+      - "For each fracture, check all corner points are inside domain"
+      - "Add small buffer: fracture extent < 0.95 × domain extent"
+      - "Visualize fracture network before meshing"
+    prevention: "Validate fracture bounds against domain before create_mdg()"
+  severity: fatal
+  cross_references: [dt_014]

@@ -1,0 +1,253 @@
+#!/usr/bin/env python3
+"""
+Convert VIC model runoff output to SWMM external inflow timeseries.
+
+Takes VIC daily runoff (mm/day per grid cell) and converts it to a SWMM
+external inflow (m^3/s) at a specified junction. This enables one-way
+coupling where VIC provides the upstream hydrology and SWMM handles
+the urban drainage routing.
+
+Conversion formula:
+  Q (m^3/s) = runoff_mm * cell_area_m2 / 1000 / 86400
+
+For sub-daily resolution, daily VIC runoff is distributed using a
+simple temporal disaggregation (uniform or triangular).
+
+Inputs:
+  - VIC result directory (daily flux files)
+  - Cell area in m^2
+  - Target SWMM junction ID
+  - Date range
+
+Outputs:
+  - SWMM INFLOWS-compatible timeseries file
+"""
+
+import argparse
+import csv
+import os
+import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import numpy as np
+
+
+def read_vic_flux_files(result_dir, start_date, end_date, prefix="fluxes_"):
+    """
+    Read VIC daily output flux files.
+
+    VIC classic driver output format (7 columns after preprocessing):
+      0: OUT_PREC
+      1: OUT_EVAP
+      2: OUT_RUNOFF
+      3: OUT_BASEFLOW
+      4: OUT_SOIL_MOIST_1
+      5: OUT_SOIL_MOIST_2
+      6: OUT_SOIL_MOIST_3
+
+    Returns dict: {date: total_runoff_mm} aggregated across all cells.
+    """
+    result_dir = Path(result_dir)
+    daily_runoff = {}
+
+    # Find all flux files
+    flux_files = sorted(result_dir.glob(f"{prefix}*"))
+    if not flux_files:
+        flux_files = sorted(result_dir.glob("*fluxes*"))
+    if not flux_files:
+        flux_files = sorted(result_dir.glob("*.txt"))
+
+    if not flux_files:
+        print(f"ERROR: No flux files found in {result_dir}", file=sys.stderr)
+        return daily_runoff
+
+    print(f"  Found {len(flux_files)} flux file(s)")
+
+    n_days = (end_date - start_date).days + 1
+    all_runoff = np.zeros(n_days)
+    n_cells = 0
+
+    for fpath in flux_files:
+        try:
+            data = np.loadtxt(fpath)
+        except Exception as e:
+            print(f"  WARNING: Cannot read {fpath.name}: {e}", file=sys.stderr)
+            continue
+
+        if data.ndim == 1:
+            data = data.reshape(1, -1)
+
+        if data.shape[0] < n_days:
+            print(f"  WARNING: {fpath.name} has {data.shape[0]} rows, expected {n_days}",
+                  file=sys.stderr)
+            continue
+
+        # Column 2 = runoff, Column 3 = baseflow (both in mm/day)
+        runoff_col = 2 if data.shape[1] > 2 else 0
+        baseflow_col = 3 if data.shape[1] > 3 else None
+
+        cell_runoff = data[:n_days, runoff_col]
+        if baseflow_col is not None:
+            cell_runoff = cell_runoff + data[:n_days, baseflow_col]
+
+        all_runoff += cell_runoff
+        n_cells += 1
+
+    if n_cells == 0:
+        print("ERROR: No valid flux data read", file=sys.stderr)
+        return daily_runoff
+
+    # Average across cells
+    all_runoff /= n_cells
+    print(f"  Averaged runoff from {n_cells} cell(s)")
+
+    current_date = start_date
+    for i in range(n_days):
+        daily_runoff[current_date] = float(all_runoff[i])
+        current_date += timedelta(days=1)
+
+    return daily_runoff
+
+
+def runoff_to_discharge(runoff_mm, cell_area_m2):
+    """Convert runoff depth (mm/day) to discharge (m^3/s)."""
+    return runoff_mm * cell_area_m2 / 1000.0 / 86400.0
+
+
+def disaggregate_daily(daily_q, method="uniform", steps_per_day=24):
+    """
+    Disaggregate daily discharge to sub-daily timesteps.
+
+    Methods:
+      - uniform: constant rate throughout day
+      - triangular: peak in the middle of the day
+    """
+    sub_daily = []
+
+    for date, q_daily in sorted(daily_q.items()):
+        if method == "uniform":
+            for step in range(steps_per_day):
+                dt = date + timedelta(hours=step * 24.0 / steps_per_day)
+                sub_daily.append((dt, q_daily))
+        elif method == "triangular":
+            peak_step = steps_per_day // 2
+            weights = np.zeros(steps_per_day)
+            for s in range(steps_per_day):
+                if s <= peak_step:
+                    weights[s] = s / peak_step
+                else:
+                    weights[s] = 1.0 - (s - peak_step) / (steps_per_day - peak_step)
+            weights = weights / weights.sum() * steps_per_day  # normalize to preserve daily total
+            for step in range(steps_per_day):
+                dt = date + timedelta(hours=step * 24.0 / steps_per_day)
+                sub_daily.append((dt, q_daily * weights[step]))
+
+    return sub_daily
+
+
+def write_swmm_inflows(timeseries, junction_id, output_path):
+    """
+    Write SWMM INFLOWS section format.
+
+    Format:
+    [INFLOWS]
+    ;;Node           Constituent      Time Series      Type     Mfactor  Sfactor  Baseline Pattern
+    junction_id      FLOW             TS_name          FLOW     1.0      1.0
+    """
+    ts_name = f"VIC_{junction_id}"
+
+    with open(output_path, "w") as f:
+        # Write timeseries
+        f.write(f";;VIC runoff converted to SWMM inflow at {junction_id}\n")
+        f.write(f";;Generated by convert_vic_runoff_to_swmm_inflow.py\n")
+        f.write(";;\n")
+        f.write(f"\n[TIMESERIES]\n")
+        f.write(f";;Name           Date       Time       Value\n")
+        for dt, q in timeseries:
+            if q >= 0:
+                date_str = dt.strftime("%m/%d/%Y")
+                time_str = dt.strftime("%H:%M:%S")
+                f.write(f"{ts_name}\t{date_str}\t{time_str}\t{q:.6f}\n")
+
+        # Write inflows section
+        f.write(f"\n[INFLOWS]\n")
+        f.write(f";;Node           Constituent      Time Series      Type     "
+                f"Mfactor  Sfactor  Baseline Pattern\n")
+        f.write(f"{junction_id:<17}FLOW             {ts_name:<17}FLOW     "
+                f"1.0      1.0\n")
+
+    return len(timeseries)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Convert VIC runoff to SWMM external inflow timeseries"
+    )
+    parser.add_argument("--vic_result_dir", required=True,
+                        help="VIC result directory (flux files)")
+    parser.add_argument("--cell_area_m2", type=float, required=True,
+                        help="Grid cell area in m^2")
+    parser.add_argument("--target_junction", required=True,
+                        help="SWMM junction ID to receive inflow")
+    parser.add_argument("--start", required=True,
+                        help="Start date (YYYY-MM-DD)")
+    parser.add_argument("--end", required=True,
+                        help="End date (YYYY-MM-DD)")
+    parser.add_argument("--output", required=True,
+                        help="Output SWMM inflows file")
+    parser.add_argument("--disaggregation", default="uniform",
+                        choices=["uniform", "triangular", "daily"],
+                        help="Temporal disaggregation method (default: uniform)")
+    parser.add_argument("--flux_prefix", default="fluxes_",
+                        help="VIC flux file prefix (default: fluxes_)")
+    args = parser.parse_args()
+
+    if not os.path.isdir(args.vic_result_dir):
+        print(f"ERROR: Directory not found: {args.vic_result_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    start_date = datetime.strptime(args.start, "%Y-%m-%d")
+    end_date = datetime.strptime(args.end, "%Y-%m-%d")
+
+    print(f"Converting VIC runoff to SWMM inflow")
+    print(f"  VIC result dir: {args.vic_result_dir}")
+    print(f"  Cell area: {args.cell_area_m2:.0f} m^2")
+    print(f"  Target junction: {args.target_junction}")
+    print(f"  Period: {args.start} to {args.end}")
+
+    # Read VIC runoff
+    daily_runoff = read_vic_flux_files(args.vic_result_dir, start_date, end_date,
+                                       args.flux_prefix)
+    if not daily_runoff:
+        print("ERROR: No runoff data extracted", file=sys.stderr)
+        sys.exit(1)
+
+    # Convert mm/day to m^3/s
+    daily_q = {}
+    for date, runoff_mm in daily_runoff.items():
+        daily_q[date] = runoff_to_discharge(runoff_mm, args.cell_area_m2)
+
+    q_values = list(daily_q.values())
+    print(f"\n  Daily discharge statistics:")
+    print(f"    Mean: {np.mean(q_values):.4f} m^3/s")
+    print(f"    Max:  {np.max(q_values):.4f} m^3/s")
+    print(f"    Min:  {np.min(q_values):.4f} m^3/s")
+
+    # Disaggregate to sub-daily if requested
+    if args.disaggregation == "daily":
+        timeseries = [(date, q) for date, q in sorted(daily_q.items())]
+    else:
+        timeseries = disaggregate_daily(daily_q, method=args.disaggregation)
+
+    # Write output
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    n_written = write_swmm_inflows(timeseries, args.target_junction, output_path)
+
+    print(f"\nOutput written: {output_path}")
+    print(f"  {n_written} timesteps written")
+
+
+if __name__ == "__main__":
+    main()

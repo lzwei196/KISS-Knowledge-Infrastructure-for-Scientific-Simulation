@@ -1,0 +1,120 @@
+model:
+  name: "Amanzi_ATS"
+  domain: "Groundwater flow, reactive transport, integrated surface-subsurface hydrology"
+  binary_path: null  # No compiled binary found on system; requires building from source
+  source_repo: "https://github.com/amanzi/amanzi"
+  input_format: "XML ParameterList (v1.x or v2.x amanzi_input)"
+  output_format: "HDF5/XDMF visualization, HDF5 checkpoints, ASCII/HDF5 observations"
+  mesh_format: "Exodus II (.exo) or internal generated mesh"
+  unit_system: "SI (m, s, kg, Pa, K, mol/L)"
+
+inputs:
+  forcing:
+    - name: "recharge_flux"
+      unit: "kg/m2/s"
+      valid_range: [0.0, 0.01]
+      description: "Recharge mass flux at surface boundary (converted from mm/yr)"
+    - name: "pressure_bc"
+      unit: "Pa"
+      valid_range: [0.0, 1.0e8]
+      description: "Pressure boundary condition (atmospheric ~101325 Pa)"
+    - name: "concentration_bc"
+      unit: "mol/L"
+      valid_range: [0.0, 10.0]
+      description: "Solute concentration boundary condition"
+    - name: "temperature_bc"
+      unit: "K"
+      valid_range: [200.0, 400.0]
+      description: "Temperature boundary condition (ATS energy equation)"
+
+  parameters:
+    critical:
+      - name: "permeability"
+        unit: "m2"
+        valid_range: [1.0e-16, 1.0e-9]
+        description: "Intrinsic permeability (NOT hydraulic conductivity). k = K * mu/(rho*g)"
+      - name: "van_genuchten_alpha"
+        unit: "1/Pa"
+        valid_range: [1.0e-5, 1.0e-2]
+        description: "van Genuchten capillary pressure parameter (literature often in 1/cm)"
+      - name: "van_genuchten_n"
+        unit: "dimensionless"
+        valid_range: [1.1, 3.0]
+        description: "van Genuchten retention curve shape parameter"
+      - name: "porosity"
+        unit: "dimensionless"
+        valid_range: [0.01, 0.6]
+        description: "Material porosity"
+      - name: "residual_saturation"
+        unit: "dimensionless"
+        valid_range: [0.01, 0.3]
+        description: "Minimum water saturation (must be < 1.0)"
+    optional:
+      - name: "dispersivity"
+        unit: "m"
+        valid_range: [0.1, 100.0]
+        description: "Longitudinal dispersivity for transport"
+      - name: "Kd"
+        unit: "m3/kg"
+        valid_range: [0.0, 1.0]
+        description: "Sorption distribution coefficient (literature often in mL/g; 1 mL/g = 0.001 m3/kg)"
+
+outputs:
+  primary:
+    - name: "aqueous_pressure"
+      unit: "Pa"
+      valid_range: [0.0, 1.0e8]
+      description: "Aqueous phase pressure field"
+    - name: "saturation"
+      unit: "dimensionless"
+      valid_range: [0.0, 1.0]
+      description: "Water saturation field"
+    - name: "hydraulic_head"
+      unit: "m"
+      valid_range: [-1000.0, 10000.0]
+      description: "Hydraulic head at observation points"
+    - name: "darcy_velocity"
+      unit: "m/s"
+      valid_range: [0.0, 1.0e-3]
+      description: "Darcy flux velocity vector"
+    - name: "aqueous_concentration"
+      unit: "mol/L"
+      valid_range: [0.0, 100.0]
+      description: "Solute concentration in aqueous phase"
+    - name: "volumetric_flux"
+      unit: "m3/s"
+      valid_range: [0.0, 1.0e6]
+      description: "Volumetric water flux through observation regions"
+
+known_issues:
+  - "No compiled binary on system — requires building Amanzi/ATS from source with MPI, Trilinos, Hypre, MSTK, HDF5"
+  - "10 of 18 diagnostic triplets are SILENT errors (56%) — dominated by unit conversion traps"
+  - "model.tf3 in work dir is a mesh data file (ASCII), not an executable binary"
+  - "Permeability vs hydraulic conductivity confusion causes 7 orders of magnitude error (dt_001)"
+  - "van Genuchten alpha units (1/cm vs 1/Pa) cause instant drainage if unconverted (dt_004)"
+
+unit_traps:
+  - source: "mm/hr"
+    target: "m/s"
+    factor: "divide by 3.6e6"
+    variable: "precipitation"
+  - source: "m/s (K_sat)"
+    target: "m2 (permeability)"
+    factor: "multiply by 1.02e-7"
+    variable: "hydraulic_conductivity_to_permeability"
+  - source: "C"
+    target: "K"
+    factor: "add 273.15"
+    variable: "temperature"
+  - source: "m (head)"
+    target: "Pa"
+    factor: "multiply by 9806.65 + 101325"
+    variable: "pressure_head_to_pressure"
+  - source: "1/cm"
+    target: "1/Pa"
+    factor: "divide by 980665"
+    variable: "van_genuchten_alpha"
+  - source: "mL/g"
+    target: "m3/kg"
+    factor: "multiply by 0.001"
+    variable: "Kd_sorption"

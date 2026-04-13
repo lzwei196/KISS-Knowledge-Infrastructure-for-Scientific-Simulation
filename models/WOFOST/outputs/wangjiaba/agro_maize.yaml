@@ -1,0 +1,121 @@
+- 1980-06-01:
+    CropCalendar:
+        crop_name: maize
+        variety_name: Grain_maize_201
+        crop_start_date: 1980-06-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 200
+    TimedEvents: null
+    StateEvents: null
+- 1981-06-01:
+    CropCalendar:
+        crop_name: maize
+        variety_name: Grain_maize_201
+        crop_start_date: 1981-06-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 200
+    TimedEvents: null
+    StateEvents: null
+- 1982-06-01:
+    CropCalendar:
+        crop_name: maize
+        variety_name: Grain_maize_201
+        crop_start_date: 1982-06-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 200
+    TimedEvents: null
+    StateEvents: null
+- 1983-06-01:
+    CropCalendar:
+        crop_name: maize
+        variety_name: Grain_maize_201
+        crop_start_date: 1983-06-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 200
+    TimedEvents: null
+    StateEvents: null
+- 1984-06-01:
+    CropCalendar:
+        crop_name: maize
+        variety_name: Grain_maize_201
+        crop_start_date: 1984-06-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 200
+    TimedEvents: null
+    StateEvents: null
+- 1985-06-01:
+    CropCalendar:
+        crop_name: maize
+        variety_name: Grain_maize_201
+        crop_start_date: 1985-06-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 200
+    TimedEvents: null
+    StateEvents: null
+- 1986-06-01:
+    CropCalendar:
+        crop_name: maize
+        variety_name: Grain_maize_201
+        crop_start_date: 1986-06-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 200
+    TimedEvents: null
+    StateEvents: null
+- 1987-06-01:
+    CropCalendar:
+        crop_name: maize
+        variety_name: Grain_maize_201
+        crop_start_date: 1987-06-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 200
+    TimedEvents: null
+    StateEvents: null
+- 1988-06-01:
+    CropCalendar:
+        crop_name: maize
+        variety_name: Grain_maize_201
+        crop_start_date: 1988-06-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 200
+    TimedEvents: null
+    StateEvents: null
+- 1989-06-01:
+    CropCalendar:
+        crop_name: maize
+        variety_name: Grain_maize_201
+        crop_start_date: 1989-06-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 200
+    TimedEvents: null
+    StateEvents: null
+- 1990-06-01:
+    CropCalendar:
+        crop_name: maize
+        variety_name: Grain_maize_201
+        crop_start_date: 1990-06-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 200
+    TimedEvents: null
+    StateEvents: null

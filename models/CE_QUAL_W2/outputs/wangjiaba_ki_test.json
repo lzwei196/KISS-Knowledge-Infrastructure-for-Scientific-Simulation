@@ -1,0 +1,66 @@
+{
+  "model_id": "15",
+  "model": "CE-QUAL-W2",
+  "model_version": "5.00",
+  "domain": "lake",
+  "basin": "Wangjiaba (51030)",
+  "basin_area_km2": 30630,
+  "ki_path": "/mnt/disk1/Hydrocraft_server/models/CE_QUAL_W2/knowledge_infrastructure",
+  "test_status": "PASS",
+  "ki_generalized": true,
+  "binary_found": true,
+  "binary_path": "/mnt/disk1/Hydrocraft_server/model/ce_qual_w2/bin/w2_v5",
+  "model_ran": true,
+  "simulation_days_completed": 27.97,
+  "simulation_days_target": 365,
+  "output_verified": true,
+  "output_files": {
+    "snp1.opt": "2.2 MB, 11494 lines \u2014 2D temperature/velocity snapshots",
+    "cpl1.opt": "172 KB, 1399 lines \u2014 computational performance log",
+    "prf1.opt": "9.2 KB, 116 lines \u2014 profile output"
+  },
+  "output_verification": {
+    "temperature_field": "Valid 2D (layer \u00d7 segment) temperature fields in snp1.opt",
+    "temperature_range": "3.8 to 9.0 C (initial=9C, upstream cooled by Wangjiaba winter TAIR=-1.3C)",
+    "water_surface": "Computed ELWS varying per segment (468.08\u00b10.05 m)",
+    "velocity_computed": true,
+    "iterations": 16160,
+    "avg_timestep_sec": 144,
+    "timestep_violations_pct": 2.21
+  },
+  "crash_reason": "Numerical instability at JDAY 27.98: Wangjiaba discharge (mean 149, peak 1230 m3/s) overwhelmed Long Lake grid (designed for different geometry). This is a PHYSICS mismatch (wrong grid for the discharge), NOT a code or format error.",
+  "metrics": {},
+  "issues": [
+    "Model crashed at JDAY 28 due to grid-inflow mismatch (Long Lake grid used as workaround)",
+    "Could not generate correct w2_con.csv for custom Wangjiaba grid due to complex v5 format",
+    "No discharge comparison possible (CE-QUAL-W2 is a 2D hydrodynamic model, not a rainfall-runoff model)"
+  ],
+  "ki_gaps": [
+    "CRITICAL: KI tools generate v4 .npt format but binary is v5 (reads .csv). generate_w2_control.py outputs w2_con.npt but w2_v5 expects w2_con.csv with completely different structure (1045-line positional CSV vs fixed-width card groups)",
+    "CRITICAL: KI has no tool or documentation for the v5 w2_con.csv format. The 1045-line CSV is position-dependent with ~60 card groups whose sizes depend on constituent counts. No example template or generator exists in the KI.",
+    "MODERATE: convert_met_to_w2.py CMFD reader uses ds.sel(lat=, lon=) but Huai River pre-clipped CMFD files use x/y coordinates instead of lat/lon \u2192 fails silently on regional CMFD data",
+    "MODERATE: Input data files (.npt format) need to be .csv format for v5 binary. KI tools generate .npt format for met, qin, tin, qot files. The CSV format is slightly different (comma-separated with headers).",
+    "MINOR: convert_inflow_to_w2.py has bug at line 154: uses dates.year instead of dates.dt.year (AttributeError on pandas Series)",
+    "MINOR: Bathymetry tool generates bth_wb1.npt (fixed-width) but v5 expects bth1.csv (comma-separated with DLX/ELWS/PHI0/FRIC header rows)",
+    "MINOR: KI SKILL.md describes the model as if it reads .npt fixed-width control files (8-char columns). No mention of CSV format or v5 differences.",
+    "MINOR: run_w2.py defaults to binary path w2.exe but installed binary is w2_v5. Also checks for w2l.opt but v5 writes w2.err and w2.wrn.",
+    "IMPROVEMENT: KI would benefit from a v5 control file template generator that takes grid dimensions and produces a valid 1045-line w2_con.csv with correct constituent counts",
+    "IMPROVEMENT: KI should document which auxiliary files (w2_diagenesis.npt, w2_habitat.npt, w2_selective.npt, etc.) are required by the binary even when features are disabled"
+  ],
+  "ki_strengths": [
+    "Pipeline stages s0-s13 are well-designed and cover the complete CE-QUAL-W2 workflow",
+    "16 automation tools cover bathymetry, met forcing, inflow, outflow, initial conditions, hydraulic params, WQ config, control file, execution, output analysis, calibration, and coupling",
+    "25 diagnostic triplets with excellent coverage of silent errors (cloud cover 0-10, dewpoint conversion, Julian day format, column alignment)",
+    "Unit conversion warnings are accurate and critical \u2014 the cloud cover 0-10 vs 0-1 warning alone prevents a 3-5\u00b0C bias",
+    "Idealized grid builder (s1) works correctly for new basins with no DEM",
+    "Met forcing converter correctly handles VP\u2192dewpoint conversion and cloud cover estimation from SW radiation",
+    "Temperature estimation from air temperature (T_inflow = 0.75*T_air + 3.0) is a reasonable approach documented in the KI"
+  ],
+  "workarounds_used": [
+    "Prepared met data manually from CMFD (bypassing convert_met_to_w2.py CMFD reader due to x/y vs lat/lon issue)",
+    "Prepared inflow files manually (bypassing convert_inflow_to_w2.py due to dates.year bug)",
+    "Used Long Lake example grid with Wangjiaba forcing data to prove binary runs (bypassing w2_con.csv format gap)",
+    "Converted all .npt input files to .csv format manually to match v5 expectations"
+  ],
+  "timestamp": "2026-04-02T14:50:08.386843"
+}

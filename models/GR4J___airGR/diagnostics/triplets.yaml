@@ -1,0 +1,459 @@
+# ============================================================================
+# GR4J (airGR) Diagnostic Triplets
+# ============================================================================
+# 18 diagnostic triplets covering 5 failure domains.
+# Generated during GR4J knowledge dissection for HydroCraft platform.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "PE values extremely high (>50 mm/day). All precipitation evaporates. Qsim near zero."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature in Kelvin instead of Celsius when computing PE_Oudin"
+    explanation: >
+      PE_Oudin expects temperature in degrees Celsius. CMFD and ERA5 provide temperature
+      in Kelvin. If 273.15 is not subtracted, PE_Oudin computes with T=293 instead of T=20,
+      yielding PE ~300 mm/day instead of ~5 mm/day. The production store drains instantly
+      and all precipitation evaporates before reaching runoff.
+    affected_components: [convert_forcing_to_gr4j, pe_oudin]
+  remedy:
+    action: "Subtract 273.15 from temperature before calling PE_Oudin"
+    tool_to_run: convert_forcing_to_gr4j
+    manual_steps:
+      - "Check mean temperature in forcing CSV — should be -10 to +35 degC"
+      - "If mean temperature > 200, values are in Kelvin — subtract 273.15"
+    prevention: "convert_forcing_to_gr4j auto-detects and converts if mean > 200"
+  severity: silent
+  cross_references: [dt_007]
+
+- id: dt_002
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Mean precipitation < 0.01 mm/day. Model produces near-zero runoff despite wet climate."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation in m/day instead of mm/day — 1000x too small"
+    explanation: >
+      GR4J expects precipitation in mm/day. If precipitation is provided in m/day
+      (e.g., from some reanalysis products), values are 1000x too small. A normal
+      rainy day of 10 mm appears as 0.01 m, and the production store barely fills.
+    affected_components: [convert_forcing_to_gr4j]
+  remedy:
+    action: "Multiply precipitation by 1000 to convert m/day to mm/day"
+    tool_to_run: convert_forcing_to_gr4j
+    manual_steps:
+      - "Check max daily precipitation — should be 1-200 mm/day for most climates"
+      - "If max precip < 0.5, values are likely in m/day — multiply by 1000"
+    prevention: "validate_outputs() checks for mean precip < 0.01"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_003
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Total annual precipitation about 1/8 of expected. Runoff much too low."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Sub-daily precipitation averaged instead of summed to daily"
+    explanation: >
+      When aggregating 3-hourly CMFD precipitation to daily, the 8 timesteps per day
+      must be SUMMED, not averaged. Averaging gives 1/8 of the correct daily total.
+      For example, a day with 8 x 2.5 mm/3hr = 20 mm/day total, but averaging gives
+      only 2.5 mm/day.
+    affected_components: [convert_forcing_to_gr4j]
+  remedy:
+    action: "Use sum() instead of mean() when aggregating sub-daily precipitation"
+    tool_to_run: convert_forcing_to_gr4j
+    manual_steps:
+      - "Check annual precipitation total — should match climate atlas values"
+      - "If annual P is ~1/8 of expected, sub-daily values were averaged not summed"
+    prevention: "convert_forcing_to_gr4j always uses .sum() for precipitation"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_004
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "NSE = -infinity or very large negative. Calibration fails to converge."
+    error_pattern: "NSE"
+    detection_method: criterion_check
+  diagnosis:
+    root_cause: "Observed discharge in m3/s or l/s not converted to mm/day"
+    explanation: >
+      GR4J outputs discharge in mm/day. Observed discharge for calibration must also
+      be in mm/day. If Qobs is provided in m3/s (typical gauge unit), the values are
+      orders of magnitude larger than simulated Qsim, giving NSE approaching -infinity.
+      Conversion: Qmm = Q_m3s * 86.4 / area_km2.
+    affected_components: [convert_forcing_to_gr4j, calibration]
+  remedy:
+    action: "Convert observed discharge to mm/day using catchment area"
+    tool_to_run: convert_forcing_to_gr4j
+    manual_steps:
+      - "Check if Qobs values are in same range as Qsim (typically 0-20 mm/d)"
+      - "If Qobs values are 100-10000, they are likely in m3/s or l/s"
+      - "Apply: Qmm = Q_m3s * 86.4 / area_km2"
+    prevention: "convert_forcing_to_gr4j auto-converts if Q_m3s or Q_ls columns detected"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_005
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Qobs values 1000x larger than Qsim. Calibration produces extreme parameter values."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Observed discharge in l/s not converted to mm/day"
+    explanation: >
+      Similar to dt_004 but with l/s unit. l/s values are 1000x larger than m3/s.
+      Conversion: Qmm = Q_ls * 0.0864 / area_km2.
+    affected_components: [convert_forcing_to_gr4j]
+  remedy:
+    action: "Convert l/s to mm/day: Qmm = Q_ls / 1000 * 86.4 / area_km2"
+    tool_to_run: convert_forcing_to_gr4j
+    manual_steps:
+      - "Check Qobs column header for unit hint (Qls, Q_ls, etc.)"
+      - "Divide by 1000 to get m3/s, then apply m3/s-to-mm/day conversion"
+    prevention: "Column naming convention (Q_ls) triggers auto-conversion"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_006
+  stage: s3_model_execution
+  failure_domain: initialization
+  symptom:
+    description: "First 6-12 months of simulation have unrealistic discharge pattern. Sharp transient at start."
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "No warmup period or warmup too short"
+    explanation: >
+      GR4J has two stores and 60 unit hydrograph states. Default initialization sets
+      production store to 30% of X1 and routing store to 50% of X3. These may be far
+      from equilibrium. Without a warmup period (at least 1 year), the first months
+      show unrealistic transient behavior as stores equilibrate.
+    affected_components: [run_gr4j, CreateRunOptions]
+  remedy:
+    action: "Ensure at least 1 year of warmup before the run period"
+    tool_to_run: run_gr4j
+    manual_steps:
+      - "Set IndPeriod_WarmUp to cover at least 365 days before IndPeriod_Run"
+      - "Or use NULL for IndPeriod_WarmUp to let airGR auto-select 1 year"
+      - "For arid catchments, consider 2-3 years of warmup"
+    prevention: "run_gr4j defaults to warmup_years=1"
+  severity: semi_silent
+  cross_references: []
+
+- id: dt_007
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "PE values extremely high (>100 mm/day). Production store empty. Very low runoff."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "PE in mm/month instead of mm/day"
+    explanation: >
+      Some PE datasets (e.g., CRU, MODIS) provide monthly PE totals. If these are
+      used directly as daily values, PE is ~30x too high. A monthly PE of 150 mm
+      becomes 150 mm/day instead of ~5 mm/day.
+    affected_components: [convert_forcing_to_gr4j]
+  remedy:
+    action: "Divide monthly PE by number of days in month"
+    tool_to_run: convert_forcing_to_gr4j
+    manual_steps:
+      - "Check PE range: daily PE should be 0-15 mm/day for most climates"
+      - "If PE > 50 mm/day, values may be monthly totals"
+    prevention: "validate_outputs() warns if max PE > 30 mm/d"
+  severity: silent
+  cross_references: [dt_001]
+
+# --- Data Quality ---
+
+- id: dt_008
+  stage: s3_model_execution
+  failure_domain: data_quality
+  symptom:
+    description: "R error: stop() with message about NA values in Precip or PotEvap."
+    error_pattern: "NA values detected"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Missing values (NA) in precipitation or PE time series"
+    explanation: >
+      airGR does not allow any NA values in Precip or PotEvap. Even a single NA
+      causes an error. This often happens at the edges of reanalysis coverage or
+      during data merging when dates don't align perfectly.
+    affected_components: [CreateInputsModel]
+  remedy:
+    action: "Gap-fill NA values before creating InputsModel"
+    tool_to_run: convert_forcing_to_gr4j
+    manual_steps:
+      - "Find NA values: which(is.na(Precip)) in R"
+      - "Fill with interpolation, zero (for precip), or nearest value"
+      - "Or truncate time series to remove leading/trailing NAs"
+    prevention: "convert_forcing_to_gr4j fills NAs with interpolation"
+  severity: error
+  cross_references: []
+
+- id: dt_009
+  stage: s3_model_execution
+  failure_domain: data_quality
+  symptom:
+    description: "R error: IndPeriod_Run should be of type integer."
+    error_pattern: "type integer"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Run period indices are numeric (double) instead of integer"
+    explanation: >
+      R's seq() function creates numeric vectors by default. airGR requires integer
+      vectors for IndPeriod_Run and IndPeriod_WarmUp. This is a common R gotcha.
+    affected_components: [CreateRunOptions]
+  remedy:
+    action: "Wrap with as.integer(): Ind_Run <- as.integer(seq(start, end))"
+    tool_to_run: run_gr4j
+    manual_steps:
+      - "Use seq.int() instead of seq() for integer sequences"
+      - "Or wrap: Ind_Run <- as.integer(Ind_Run)"
+    prevention: "run_gr4j R script uses as.integer() by default"
+  severity: error
+  cross_references: []
+
+# --- Parameter Issues ---
+
+- id: dt_010
+  stage: s4_calibration
+  failure_domain: parameter
+  symptom:
+    description: "Calibrated X1 at upper bound (>1500 mm). Model absorbs all rain."
+    error_pattern: ""
+    detection_method: parameter_check
+  diagnosis:
+    root_cause: "Search range too narrow, or precipitation systematically too high"
+    explanation: >
+      If X1 hits the upper bound of the calibration search range, it means the model
+      needs an unrealistically large production store to match observations. This usually
+      indicates precipitation is too high (wrong unit or wrong catchment average).
+    affected_components: [calibration, convert_forcing_to_gr4j]
+  remedy:
+    action: "Check precipitation values and unit conversions first"
+    tool_to_run: convert_forcing_to_gr4j
+    manual_steps:
+      - "Compare forcing annual precip with climate atlas values"
+      - "If precip is correct, widen CalibOptions search range for X1"
+    prevention: "validate_outputs() checks for boundary-hitting parameters"
+  severity: semi_silent
+  cross_references: [dt_002, dt_003]
+
+- id: dt_011
+  stage: s3_model_execution
+  failure_domain: parameter
+  symptom:
+    description: "Warning: Param[4] (X4: unit hydrograph time constant [d]) < 0.50. X4 set to 0.50."
+    error_pattern: "X4.*set to"
+    detection_method: warning_message
+  diagnosis:
+    root_cause: "X4 below minimum threshold of 0.5 days"
+    explanation: >
+      X4 controls the unit hydrograph time base. Values below 0.5 days are physically
+      meaningless for a daily model (response faster than timestep). airGR clips X4 to
+      0.5 with a warning. This usually means the catchment responds very fast, which may
+      indicate the catchment is very small or heavily urbanized.
+    affected_components: [RunModel_GR4J]
+  remedy:
+    action: "Accept the clipping if catchment is small/fast-responding"
+    tool_to_run: run_gr4j
+    manual_steps:
+      - "If catchment is very small (<10 km2), consider hourly GR4H model instead"
+      - "Otherwise, check if parameters are reasonable"
+    prevention: "Calibration transform ensures X4 >= 0.5"
+  severity: warning
+  cross_references: []
+
+- id: dt_012
+  stage: s4_calibration
+  failure_domain: parameter
+  symptom:
+    description: "X2 is large negative (-5 to -10). Model loses water to deep groundwater."
+    error_pattern: ""
+    detection_method: parameter_check
+  diagnosis:
+    root_cause: "Catchment has significant groundwater loss (karst, fractured rock)"
+    explanation: >
+      X2 represents inter-catchment groundwater exchange. Negative X2 means the catchment
+      exports water underground. This is physically real in karst areas but may also indicate
+      poor forcing data (precipitation too high, causing model to compensate by losing water).
+    affected_components: [calibration]
+  remedy:
+    action: "Verify forcing data quality first; if correct, negative X2 is valid"
+    tool_to_run: convert_forcing_to_gr4j
+    manual_steps:
+      - "Check if catchment is in karst geology"
+      - "Compare long-term mean P vs mean(AE + Q) — difference = exchange"
+      - "If P is correct and geology supports GW loss, accept negative X2"
+    prevention: "Document known GW loss for the catchment"
+  severity: informational
+  cross_references: []
+
+# --- Execution Issues ---
+
+- id: dt_013
+  stage: s3_model_execution
+  failure_domain: execution
+  symptom:
+    description: "R error: could not find function RunModel_GR4J. Package not loaded."
+    error_pattern: "could not find function"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "airGR package not installed or not loaded"
+    explanation: >
+      The R script must call library(airGR) before using any airGR functions.
+      If airGR is not installed, R cannot find RunModel_GR4J.
+    affected_components: [run_gr4j]
+  remedy:
+    action: "Install airGR: install.packages('airGR')"
+    tool_to_run: run_gr4j
+    manual_steps:
+      - "In R: install.packages('airGR')"
+      - "Verify: library(airGR); ?RunModel_GR4J"
+    prevention: "run_gr4j R script includes library(airGR)"
+  severity: error
+  cross_references: []
+
+- id: dt_014
+  stage: s3_model_execution
+  failure_domain: execution
+  symptom:
+    description: "Simulated discharge Qsim contains -999.999 values."
+    error_pattern: "-999"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Fortran output array not properly populated"
+    explanation: >
+      The Fortran code initializes output arrays to -999.999 (done in R side).
+      If certain outputs are not requested or if the model encounters numerical
+      issues, some cells may retain the initialization value.
+    affected_components: [RunModel_GR4J, frun_GR4J.f90]
+  remedy:
+    action: "Check Outputs_Sim setting in RunOptions; use 'all' for complete output"
+    tool_to_run: run_gr4j
+    manual_steps:
+      - "Set Outputs_Sim = 'all' in CreateRunOptions"
+      - "Check if the issue is only in the warmup period (which is normal)"
+    prevention: "run_gr4j uses Outputs_Sim='all' by default"
+  severity: warning
+  cross_references: []
+
+# --- Output Interpretation ---
+
+- id: dt_015
+  stage: s5_output_analysis
+  failure_domain: interpretation
+  symptom:
+    description: "PBIAS > 50%. Model systematically over- or under-estimates flow."
+    error_pattern: ""
+    detection_method: criterion_check
+  diagnosis:
+    root_cause: "Systematic bias in forcing data or discharge conversion"
+    explanation: >
+      Large PBIAS indicates a systematic mismatch between simulated and observed
+      volumes. Positive PBIAS = overestimation (too much rain or too little PE).
+      Negative PBIAS = underestimation (too little rain or too much PE).
+    affected_components: [convert_forcing_to_gr4j, calibration]
+  remedy:
+    action: "Check water balance: annual P, PE, Qobs should be consistent"
+    tool_to_run: parse_gr4j_output
+    manual_steps:
+      - "Compute annual P - PE: should roughly equal annual Q"
+      - "If P - PE << Q, precipitation is too low"
+      - "If P - PE >> Q, precipitation is too high or PE too low"
+    prevention: "validate_outputs() warns if PBIAS > 50%"
+  severity: semi_silent
+  cross_references: [dt_002, dt_003, dt_004]
+
+- id: dt_016
+  stage: s5_output_analysis
+  failure_domain: interpretation
+  symptom:
+    description: "Good NSE but poor KGE. Model captures dynamics but has bias/variability issues."
+    error_pattern: ""
+    detection_method: criterion_check
+  diagnosis:
+    root_cause: "NSE is insensitive to bias and variability errors"
+    explanation: >
+      NSE focuses on the sum of squared errors, which is dominated by peak flows.
+      KGE separately evaluates correlation (r), variability ratio (alpha), and
+      bias ratio (beta). A model can have good NSE but poor alpha (wrong variability)
+      or beta (volume bias).
+    affected_components: [parse_gr4j_output]
+  remedy:
+    action: "Examine KGE components: r, alpha, beta separately"
+    tool_to_run: parse_gr4j_output
+    manual_steps:
+      - "If alpha < 0.8: model underestimates variability (peaks too low)"
+      - "If beta < 0.8: model underestimates volume (systematic low bias)"
+      - "Consider calibrating with KGE instead of NSE"
+    prevention: "Always report both NSE and KGE"
+  severity: informational
+  cross_references: []
+
+- id: dt_017
+  stage: s2_catchment_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Discharge conversion factor off by 1e6. Qobs_mm values impossibly large or small."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Catchment area in m2 instead of km2 in conversion formula"
+    explanation: >
+      The discharge conversion formula Qmm = Q_m3s * 86.4 / area_km2 expects area
+      in km2. If area is provided in m2 (e.g., 1.21e11 for Bengbu instead of 121330),
+      the conversion factor is off by 1e6, giving Qmm values ~1e-6 of correct.
+    affected_components: [convert_catchment_params, convert_forcing_to_gr4j]
+  remedy:
+    action: "Ensure catchment area is in km2"
+    tool_to_run: convert_catchment_params
+    manual_steps:
+      - "Check area value: should be 1-1,000,000 km2"
+      - "If area > 1e6, it may be in m2 — divide by 1e6"
+    prevention: "convert_catchment_params warns if area < 1 or > 100,000 km2"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_018
+  stage: s4_calibration
+  failure_domain: parameter
+  symptom:
+    description: "Calibration does not improve from initial screening. 'No progress achieved' message."
+    error_pattern: "No progress achieved"
+    detection_method: log_message
+  diagnosis:
+    root_cause: "Objective function flat near optimum, or data quality issue"
+    explanation: >
+      Calibration_Michel's steepest descent finds no improvement from the grid screening
+      result. This can happen when: (1) observed data has too many NAs, (2) the criterion
+      landscape is flat (e.g., very noisy observations), or (3) the grid screening already
+      found a good solution.
+    affected_components: [Calibration_Michel]
+  remedy:
+    action: "Check data quality; try different criterion; increase grid resolution"
+    tool_to_run: run_gr4j
+    manual_steps:
+      - "Check fraction of NA in Qobs (should be < 50%)"
+      - "Try KGE instead of NSE, or vice versa"
+      - "Provide custom StartParamList with broader coverage"
+    prevention: "Ensure sufficient non-NA observations (> 365 days)"
+  severity: warning
+  cross_references: []

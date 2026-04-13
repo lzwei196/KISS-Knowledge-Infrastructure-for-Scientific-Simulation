@@ -1,0 +1,575 @@
+# MM-PIHM Diagnostic Triplets
+# Each entry: symptom → diagnosis → remedy
+# Severity: silent (no error, wrong result), degraded (works but poor), fatal (crash)
+
+- id: dt_001
+  stage: s3_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Immediate flooding across all elements within first timestep.
+      Surface water depths reach meters within hours. CVODE may crash
+      with convergence failure or produce runoff 1000x observed.
+    error_pattern: "CV_TOO_MUCH_WORK"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation passed in mm/hr instead of kg/m2/s"
+    explanation: >
+      PIHM expects precipitation as mass flux in kg/m2/s. Since water
+      density is 1000 kg/m3, 1 kg/m2/s = 1 mm/s = 3600 mm/hr. Passing
+      mm/hr values directly means rainfall is 3600x too high. A 5 mm/hr
+      storm becomes 5 kg/m2/s = 18000 mm/hr.
+    affected_components: [forcing, hydrol, ode]
+  remedy:
+    action: "Convert precipitation: P_pihm = P_mmhr / 3600.0 / 1000.0"
+    tool_to_run: forcing_converter.py
+    manual_steps:
+      - "Check input units in source dataset documentation"
+      - "Divide mm/hr by 3600000 to get kg/m2/s"
+      - "Divide mm/day by 86400000 to get kg/m2/s"
+      - "Verify max PRCP ~ 0.01 kg/m2/s (= 36 mm/hr, heavy rain)"
+    prevention: "forcing_converter.py validates max PRCP < 0.1 kg/m2/s"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_002
+  stage: s3_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Snow accumulates year-round even in summer. ET is extremely low.
+      Soil temperatures remain near freezing. All water stored as snow/ice.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature passed in Celsius instead of Kelvin"
+    explanation: >
+      PIHM uses Kelvin for all temperature fields (SFCTMP). Passing 20°C
+      as 20 K means the model sees -253°C. All precipitation becomes snow,
+      ET shuts down, and the water balance becomes snowpack-dominated.
+      This is a silent error — no crash occurs.
+    affected_components: [forcing, is_sm_et, noah]
+  remedy:
+    action: "Add 273.15 to all Celsius temperature values"
+    tool_to_run: forcing_converter.py
+    manual_steps:
+      - "Convert: T_K = T_C + 273.15"
+      - "Verify SFCTMP values are in range 230-330 K"
+      - "Check that seasonal cycle is visible in converted data"
+    prevention: "forcing_converter.py adds 273.15 and validates range"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_003
+  stage: s3_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      ET is unrealistically low or high. Vapor pressure deficit calculations
+      produce extreme values. Penman-Monteith ET is wrong by order of magnitude.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Surface pressure in hPa/mbar instead of Pa"
+    explanation: >
+      PIHM expects surface pressure in Pascals (e.g., 101325 Pa). Many
+      datasets provide pressure in hPa or mbar (e.g., 1013.25). Passing
+      hPa directly means pressure is 100x too low, which affects vapor
+      pressure, air density, and all energy balance calculations.
+    affected_components: [forcing, noah, is_sm_et]
+  remedy:
+    action: "Multiply hPa/mbar by 100 to get Pa"
+    tool_to_run: forcing_converter.py
+    manual_steps:
+      - "Convert: P_Pa = P_hPa * 100.0"
+      - "Verify PRES values ~ 80000-105000 Pa"
+    prevention: "forcing_converter.py multiplies by 100 when source is hPa"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_004
+  stage: s3_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      ET is systematically too high or too low. Dew point calculations
+      are incorrect. Canopy interception/evaporation ratios are unrealistic.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Humidity variable type mismatch (specific humidity vs RH)"
+    explanation: >
+      PIHM expects relative humidity as a percentage (0-100%). Some
+      datasets provide specific humidity (kg/kg, values ~0.001-0.025) or
+      RH as fraction (0-1). Passing specific humidity directly makes
+      the model see near-zero RH, producing excessive ET demand.
+    affected_components: [forcing, is_sm_et]
+  remedy:
+    action: "Convert specific humidity to RH using Clausius-Clapeyron"
+    tool_to_run: forcing_converter.py
+    manual_steps:
+      - "Calculate saturation vapor pressure: es = 611.2 * exp(17.67*(T-273.15)/(T-29.65))"
+      - "Calculate actual vapor pressure from specific humidity: e = q*P/(0.622+0.378*q)"
+      - "RH = 100 * e / es"
+      - "Verify RH in range 5-100%"
+    prevention: "forcing_converter.py detects humidity type and converts"
+  severity: degraded
+  cross_references: [dt_001]
+
+- id: dt_005
+  stage: s3_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      ET is extremely low. Snow never melts. Energy balance is dominated
+      by longwave. Surface temperature is too cold despite correct air temperature.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Radiation in MJ/m2/day instead of W/m2"
+    explanation: >
+      PIHM expects instantaneous radiation flux in W/m2. Some datasets
+      provide daily accumulated radiation in MJ/m2/day. A typical clear-sky
+      solar value is ~25 MJ/m2/day = ~290 W/m2 (average). Passing 25 as
+      W/m2 means solar input is ~12x too low.
+    affected_components: [forcing, noah, is_sm_et]
+  remedy:
+    action: "Convert: W/m2 = MJ/m2/day / 0.0864"
+    tool_to_run: forcing_converter.py
+    manual_steps:
+      - "For daily totals: divide by 86400 to get W/m2 average, then distribute"
+      - "For instantaneous: should already be in W/m2"
+      - "Verify peak solar radiation ~ 800-1200 W/m2"
+      - "Verify longwave radiation ~ 200-450 W/m2"
+    prevention: "forcing_converter.py checks radiation magnitude and converts"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_006
+  stage: s3_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Aerodynamic resistance is too low. ET is moderately too high.
+      Snow redistribution is overestimated. Surface roughness effects amplified.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wind speed in km/hr instead of m/s"
+    explanation: >
+      PIHM expects wind speed in m/s. Wind at 18 km/hr passed as 18 m/s
+      means wind is 3.6x too fast. This reduces aerodynamic resistance,
+      increases ET, and affects snow sublimation calculations.
+    affected_components: [forcing, is_sm_et, noah]
+  remedy:
+    action: "Divide km/hr by 3.6 to get m/s"
+    tool_to_run: forcing_converter.py
+    manual_steps:
+      - "Convert: wind_ms = wind_kmhr / 3.6"
+      - "Verify typical wind ~ 0.5-15 m/s"
+    prevention: "forcing_converter.py validates wind speed range"
+  severity: degraded
+  cross_references: []
+
+- id: dt_007
+  stage: s4_soil_parameterization
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Soil drains instantly. Groundwater response is too fast. Baseflow
+      recession is too steep. Water table drops below soil bottom.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Hydraulic conductivity in cm/hr instead of m/s"
+    explanation: >
+      PIHM expects Ksat in m/s. HWSD and many soil databases provide
+      Ksat in cm/hr. A typical Ksat of 5 cm/hr = 1.39e-5 m/s. Passing
+      5 directly as m/s makes soil 360,000x more permeable.
+    affected_components: [soil, hydrol, lat_flow, vert_flow]
+  remedy:
+    action: "Convert: Ksat_ms = Ksat_cmhr / 360000"
+    tool_to_run: soil_converter.py
+    manual_steps:
+      - "Ksat (m/s) = Ksat (cm/hr) / 100 / 3600"
+      - "Verify Ksat range: sand ~1e-4, clay ~1e-7 m/s"
+    prevention: "soil_converter.py auto-converts from cm/hr and validates range"
+  severity: silent
+  cross_references: [dt_008]
+
+- id: dt_008
+  stage: s4_soil_parameterization
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Soil water retention curve is wrong. Water drains too quickly from
+      unsaturated zone. Wilting point is reached too fast after rain.
+      Soil appears overly sandy regardless of texture class.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "van Genuchten alpha in 1/cm instead of 1/m"
+    explanation: >
+      PIHM expects alpha in 1/m. Rosetta and most PTF databases report
+      alpha in 1/cm. A clay loam with alpha=0.019 1/cm should be 1.9 1/m.
+      Passing 0.019 as 1/m makes the air-entry value 100x too high,
+      meaning the soil drains at much lower suctions than reality.
+    affected_components: [soil, vert_flow, is_sm_et]
+  remedy:
+    action: "Multiply alpha by 100 to convert from 1/cm to 1/m"
+    tool_to_run: soil_converter.py
+    manual_steps:
+      - "alpha_per_m = alpha_per_cm * 100"
+      - "Verify: sand alpha ~ 14.5 1/m, clay ~ 0.8 1/m"
+    prevention: "soil_converter.py multiplies by 100 and validates range"
+  severity: silent
+  cross_references: [dt_007]
+
+- id: dt_009
+  stage: s4_soil_parameterization
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Soil depths are unrealistically thin or thick. Elements have
+      near-zero or massive storage capacity. Mesh looks vertically compressed.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Elevation or depth values in cm or feet instead of meters"
+    explanation: >
+      All elevations (ZMIN, ZMAX) and depths (DMAC, DINF) in PIHM are in
+      meters. Using cm makes everything 100x too thin; using feet makes
+      everything ~3x too thick.
+    affected_components: [mesh, soil, init_topo]
+  remedy:
+    action: "Convert cm to m (÷100) or feet to m (÷3.281)"
+    tool_to_run: soil_converter.py
+    manual_steps:
+      - "Check ZMAX-ZMIN for each element (should be 1-50 m typically)"
+      - "DMAC should be 0.1-2.0 m"
+    prevention: "soil_converter.py validates depth ranges"
+  severity: degraded
+  cross_references: []
+
+- id: dt_010
+  stage: s4_soil_parameterization
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Porosity calculations are wrong. Soil heat capacity is unrealistic.
+      Thermal conductivity estimates are off by orders of magnitude.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Bulk density in kg/m3 instead of g/cm3"
+    explanation: >
+      PIHM expects bulk density in g/cm3 (typical range 1.0-1.8).
+      Passing kg/m3 values (1000-1800) makes density appear 1000x too high,
+      which corrupts all derived thermal and physical soil properties.
+    affected_components: [soil, noah]
+  remedy:
+    action: "Divide kg/m3 by 1000 to get g/cm3"
+    tool_to_run: soil_converter.py
+    manual_steps:
+      - "BD_gcm3 = BD_kgm3 / 1000.0"
+      - "Verify BD range: 0.8-1.9 g/cm3"
+    prevention: "soil_converter.py detects unit and converts"
+  severity: silent
+  cross_references: []
+
+- id: dt_011
+  stage: s5_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Extremely low or high flow. Ksat appears zero or enormous despite
+      reasonable values in .soil file. Calibration has no effect when
+      values are changed.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Calibration file contains absolute values instead of multipliers"
+    explanation: >
+      The .calib file uses multipliers (default 1.0). Setting KSATH=1e-5
+      thinking it's the actual Ksat value instead means the base Ksat is
+      multiplied by 1e-5, making conductivity essentially zero. Similarly,
+      PRCP is a multiplier (1.0 = no change), not an absolute precipitation.
+    affected_components: [read_calib, init_soil, init_river]
+  remedy:
+    action: "Set all .calib values as multipliers (1.0 = no change)"
+    tool_to_run: ""
+    manual_steps:
+      - "Review .calib file — all values should be near 1.0 for initial run"
+      - "KSATH=2.0 means double the base Ksat, not set to 2.0 m/s"
+      - "SFCTMP is an additive offset in K (0.0 = no change)"
+      - "PRCP is multiplicative (1.0 = no change)"
+    prevention: "Document clearly in parameter configuration docs"
+  severity: silent
+  cross_references: []
+
+- id: dt_012
+  stage: s6_initial_conditions
+  failure_domain: initialization
+  symptom:
+    description: >
+      Baseflow is zero or unrealistically low for first 1-5 years.
+      Water table is at soil bottom. Streamflow has no recession curve.
+      Model output improves dramatically after several simulated years.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Simulation started without spin-up, using default initial conditions"
+    explanation: >
+      PIHM's default IC (INIT_MODE=0) uses a relaxation scheme that starts
+      from approximate conditions. Groundwater in particular requires years
+      to reach dynamic equilibrium. Without spin-up, early simulation years
+      are unreliable — the model spends time filling/draining the subsurface.
+    affected_components: [initialize, spinup, ode]
+  remedy:
+    action: "Run spin-up simulation first, then use output IC for production run"
+    tool_to_run: run_pihm.py
+    manual_steps:
+      - "Set SIMULATION_MODE=1 in .para file"
+      - "Run: ./pihm -o spinup ShaleHills"
+      - "Copy output IC: cp output/spinup/*.ic input/ShaleHills/"
+      - "Set SIMULATION_MODE=0, INIT_MODE=1 in .para"
+      - "Run production: ./pihm -o production ShaleHills"
+    prevention: "run_pihm.py warns if INIT_MODE=0 and no spin-up detected"
+  severity: degraded
+  cross_references: [dt_013]
+
+- id: dt_013
+  stage: s7_model_execution
+  failure_domain: solver_config
+  symptom:
+    description: >
+      Mass balance error grows over time. Total water in system drifts.
+      Water balance check shows non-trivial residual. Results look
+      reasonable but conservation is violated.
+    error_pattern: "water balance"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "CVODE absolute tolerance set too loose"
+    explanation: >
+      ABSTOL controls how precisely the ODE solver conserves mass. Values
+      above 0.01 m allow each element to have up to 1 cm of unaccounted
+      water per step. Over thousands of steps, this accumulates to
+      significant mass balance errors.
+    affected_components: [ode, cvode]
+  remedy:
+    action: "Set ABSTOL to 1e-4 m (default) or tighter"
+    tool_to_run: ""
+    manual_steps:
+      - "In .para file, set ABSTOL = 1.0E-04"
+      - "RELTOL = 1.0E-03 is usually adequate"
+      - "If solver is too slow, try ABSTOL = 1.0E-03"
+    prevention: "run_pihm.py checks tolerance values before execution"
+  severity: degraded
+  cross_references: [dt_015]
+
+- id: dt_014
+  stage: s5_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Output files are enormous (GB) or missing entirely. Disk fills up
+      during simulation. No output for a desired variable.
+    error_pattern: "disk full"
+    detection_method: file_missing
+  diagnosis:
+    root_cause: "Output interval codes confused (negative codes vs seconds)"
+    explanation: >
+      In the .para file, output intervals use special negative codes:
+      -1=yearly, -2=monthly, -3=daily, -4=hourly, 0=off. Positive values
+      are seconds. Setting GW to 3 (intending daily) actually outputs
+      every 3 seconds, creating massive files. Setting to -4 gives hourly.
+    affected_components: [read_para, map_output, print]
+  remedy:
+    action: "Use correct codes: -3 for daily, -4 for hourly, 0 for off"
+    tool_to_run: ""
+    manual_steps:
+      - "Review .para output section"
+      - "-1 = yearly, -2 = monthly, -3 = daily, -4 = hourly"
+      - "3600 = every 3600 seconds (= hourly, same as -4)"
+      - "0 = off (no output for this variable)"
+    prevention: "Document output codes clearly"
+  severity: degraded
+  cross_references: []
+
+- id: dt_015
+  stage: s7_model_execution
+  failure_domain: runtime
+  symptom:
+    description: >
+      Simulation crashes with CVODE error: CV_TOO_MUCH_WORK or
+      CV_CONV_FAILURE. Solver cannot advance past a specific time.
+      Error occurs repeatedly at same simulation time.
+    error_pattern: "CV_TOO_MUCH_WORK"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "CVODE solver cannot converge due to stiff system or bad input"
+    explanation: >
+      The implicit ODE solver fails when the system is too stiff (sharp
+      gradients), input data has discontinuities, or numerical values are
+      extreme. Common causes: precipitation spike, bad mesh element
+      (degenerate triangle), extreme hydraulic conductivity contrast.
+    affected_components: [ode, cvode]
+  remedy:
+    action: "Check input data quality and mesh, then adjust solver params"
+    tool_to_run: ""
+    manual_steps:
+      - "Enable debug mode: ./pihm -d ShaleHills"
+      - "Check CVODE log for the failing time step"
+      - "Look at forcing data at that time for spikes/discontinuities"
+      - "Check mesh quality for degenerate triangles"
+      - "Try increasing MAX_NONLIN_ITER to 5"
+      - "Try reducing MODEL_STEPSIZE to 30 seconds"
+    prevention: "run_pihm.py pre-checks forcing continuity"
+  severity: fatal
+  cross_references: [dt_001, dt_013, dt_016]
+
+- id: dt_016
+  stage: s1_mesh_generation
+  failure_domain: mesh_quality
+  symptom:
+    description: >
+      CVODE convergence failures at specific elements. Oscillating
+      water table at certain locations. Unrealistic ponding at isolated
+      elements. Simulation slows dramatically.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Degenerate or low-quality triangles in TIN mesh"
+    explanation: >
+      PIHMgis can produce triangles with very small angles (<10°) or
+      very large aspect ratios. These elements have poor numerical
+      properties — small changes in head create large flux imbalances.
+      The solver must take tiny steps to handle them.
+    affected_components: [mesh, ode, lat_flow]
+  remedy:
+    action: "Improve mesh quality in PIHMgis with minimum angle constraint"
+    tool_to_run: ""
+    manual_steps:
+      - "Check minimum angle of all triangles (should be >15°)"
+      - "Check element area ratios (adjacent elements should be similar size)"
+      - "Regenerate mesh with stricter quality constraints"
+      - "Use -c flag to enable elevation correction for sinks"
+    prevention: "Check mesh quality metrics before simulation"
+  severity: degraded
+  cross_references: [dt_015]
+
+- id: dt_017
+  stage: s3_forcing_preparation
+  failure_domain: data_gap
+  symptom:
+    description: >
+      Model produces flat-line output during specific periods. Forcing
+      values jump between reasonable and extreme. ET or precipitation
+      has periodic dropouts to zero.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Missing timesteps or gaps in meteorological forcing"
+    explanation: >
+      PIHM interpolates between forcing timesteps. If a gap spans days/weeks,
+      the model interpolates across the gap, producing incorrect intermediate
+      values. Missing data coded as -999 is interpolated as if it were a real
+      extreme value.
+    affected_components: [forcing, read_forc]
+  remedy:
+    action: "Fill gaps and remove -999 sentinel values before running"
+    tool_to_run: forcing_converter.py
+    manual_steps:
+      - "Check for -999 or NaN in forcing files"
+      - "Fill gaps using interpolation or nearby station data"
+      - "Verify temporal continuity (no missing hours)"
+    prevention: "forcing_converter.py checks for gaps and -999 values"
+  severity: degraded
+  cross_references: [dt_001]
+
+- id: dt_018
+  stage: s4_soil_parameterization
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Some elements have wrong soil properties. Spatial pattern of soil
+      moisture or infiltration doesn't match expected soil map. Clay-like
+      behavior in sandy areas.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Soil type index in .att file doesn't match .soil file indices"
+    explanation: >
+      The .att file assigns a soil type index to each element. If these
+      indices don't match the order in the .soil file, elements get the
+      wrong soil properties. This is silent — the model runs fine but with
+      shuffled soil assignments.
+    affected_components: [read_att, read_soil, init_soil]
+  remedy:
+    action: "Verify soil type indices match between .att and .soil files"
+    tool_to_run: ""
+    manual_steps:
+      - "Count soil types in .soil (NUMSOIL)"
+      - "Check all SOIL values in .att are between 1 and NUMSOIL"
+      - "Map a few elements and verify soil type matches GIS soil map"
+    prevention: "Cross-check indices during preprocessing"
+  severity: silent
+  cross_references: []
+
+- id: dt_019
+  stage: s8_output_analysis
+  failure_domain: output_format
+  symptom:
+    description: >
+      Parsed output values are garbage (very large or very small numbers).
+      Binary file reads produce different results on different machines.
+      Values look like byte-swapped floating point.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Binary output endianness mismatch between write and read platforms"
+    explanation: >
+      PIHM writes output as raw binary doubles. If the file is read on a
+      platform with different endianness (rare but possible with network
+      file systems or cross-platform transfers), values will be corrupted.
+    affected_components: [print, output_parser]
+  remedy:
+    action: "Use PIHM-utils Python package or output_parser.py with correct settings"
+    tool_to_run: output_parser.py
+    manual_steps:
+      - "Check if values are reasonable after parsing"
+      - "Try reading with opposite endianness"
+      - "Use ASCII output mode (set ASCII_OUTPUT=1 in .para)"
+    prevention: "output_parser.py auto-detects endianness"
+  severity: degraded
+  cross_references: []
+
+- id: dt_020
+  stage: s7_model_execution
+  failure_domain: runtime
+  symptom:
+    description: >
+      Simulation crashes with floating point exception (FPE). Error
+      at specific timestep with negative state variable. SIGFPE signal.
+    error_pattern: "Floating point exception"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "State variable became negative, causing sqrt or log of negative number"
+    explanation: >
+      Water depths and storage must be non-negative. Under extreme
+      conditions (very permeable soil + intense rainfall, or bad IC),
+      the ODE solver may produce a negative trial value. Taking log or
+      sqrt of this value causes FPE crash.
+    affected_components: [ode, vert_flow, lat_flow]
+  remedy:
+    action: "Check IC and forcing for extreme values; tighten solver tolerance"
+    tool_to_run: ""
+    manual_steps:
+      - "Check .ic file for negative values"
+      - "Reduce ABSTOL to 1e-5"
+      - "Reduce MODEL_STEPSIZE to 30 seconds"
+      - "Check for extreme Ksat values in .soil"
+      - "Run with -d flag to identify failing element"
+    prevention: "Pre-validate IC and soil parameters before execution"
+  severity: fatal
+  cross_references: [dt_015, dt_007]

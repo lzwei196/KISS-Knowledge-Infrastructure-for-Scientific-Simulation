@@ -1,0 +1,448 @@
+# ============================================================================
+# DuMux Diagnostic Triplets
+# ============================================================================
+# 18 diagnostic triplets covering 5 failure domains.
+# Generated during DuMux knowledge dissection for HydroCraft platform.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s3_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Flow velocities are enormous (~m/s instead of ~mm/day). Newton solver diverges on first time step. Pressure explodes to extreme values."
+    error_pattern: "Newton convergence failed|NaN"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Hydraulic conductivity K_h [m/s] used as intrinsic permeability [m²] — off by factor ~1e7"
+    explanation: >
+      DuMux uses intrinsic permeability K in m². Soil databases and pump tests give
+      hydraulic conductivity K_h in m/s. The conversion is K = K_h × μ/(ρg) ≈ K_h × 1e-7.
+      Using K_h = 1e-4 m/s directly gives K = 1e-4 m² (absurdly permeable — more than
+      open air). Correct value: K = 1e-11 m².
+    affected_components: [convert_soil_to_dumux, SpatialParams]
+  remedy:
+    action: "Apply conversion: K [m²] = K_h [m/s] × 1.0214e-7"
+    tool_to_run: convert_soil_to_dumux
+    manual_steps:
+      - "Check permeability value — should be 1e-15 to 1e-8 m² for typical aquifers"
+      - "If value > 1e-7, it's likely K_h not K — apply conversion"
+    prevention: "convert_soil_to_dumux.py validates permeability range and warns"
+  severity: critical
+  cross_references: [dt_002, dt_004]
+
+- id: dt_002
+  stage: s2_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Water table rises unrealistically fast. Recharge appears 86,400× too high."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Recharge in mm/day used directly as DuMux flux — must convert to kg/(m²·s)"
+    explanation: >
+      DuMux Neumann boundary conditions use mass flux in kg/(m²·s). Recharge of 1 mm/day
+      = 1.157e-5 kg/(m²·s). Using the mm/day value directly (e.g., 2.0) as the BC value
+      gives 2.0 kg/(m²·s), which is equivalent to 173,000 mm/day — flooding the domain.
+    affected_components: [convert_forcing_to_dumux, Problem.neumann]
+  remedy:
+    action: "Convert: R [kg/(m²·s)] = R [mm/day] × 1000 / (86400 × 1000) = R [mm/day] / 86400"
+    tool_to_run: convert_forcing_to_dumux
+    manual_steps:
+      - "Check recharge flux value — should be < 1e-4 kg/(m²·s) for most climates"
+      - "If value > 1, it's likely still in mm/day — divide by 86400"
+    prevention: "convert_forcing_to_dumux.py automatically converts and validates"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_003
+  stage: s2_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Recharge enters domain but water table drops instead of rises."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Neumann BC sign is positive (outflow) instead of negative (inflow)"
+    explanation: >
+      In DuMux, positive Neumann flux means outward (leaving the domain). Recharge
+      enters from the top, so it must be negative. Using positive recharge values
+      effectively converts recharge into extraction.
+    affected_components: [convert_forcing_to_dumux, Problem.neumann]
+  remedy:
+    action: "Negate recharge values: neumann_flux = -abs(recharge_rate)"
+    manual_steps:
+      - "Check sign of Neumann values in Problem class or forcing file"
+      - "Recharge (inflow) must be negative"
+      - "Extraction/pumping (outflow) must be positive"
+    prevention: "convert_forcing_to_dumux.py applies negative sign automatically"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_004
+  stage: s3_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Capillary pressure curve is completely wrong. Unsaturated zone holds too much or too little water. Two-phase simulation gives incorrect saturations."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "van Genuchten α in 1/cm H₂O used directly — DuMux needs 1/Pa (off by ~100×)"
+    explanation: >
+      ROSETTA and most soil databases give van Genuchten α in 1/cm of water head.
+      DuMux expects α in 1/Pa. The conversion: α_Pa = α_cm / 98.0665.
+      Using α_cm directly (e.g., 0.075) instead of α_Pa (0.000765) shifts the
+      air entry pressure by ~100×.
+    affected_components: [convert_soil_to_dumux, SpatialParams.VanGenuchtenAlpha]
+  remedy:
+    action: "Divide α by 98.0665: α [1/Pa] = α [1/cm] / 98.0665"
+    tool_to_run: convert_soil_to_dumux
+    manual_steps:
+      - "Check α value — in 1/Pa should be 1e-5 to 0.01"
+      - "If α > 0.01, likely in 1/cm — divide by 98.07"
+    prevention: "convert_soil_to_dumux.py validates α range and flags values > 0.01"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_005
+  stage: s3_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Absolute pressure in domain is ~10 m (101325 Pa) below expected hydraulic head. Flow directions may be reversed."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Gauge pressure (p=0 at surface) used instead of absolute pressure"
+    explanation: >
+      DuMux uses absolute pressure. At the water table surface, p ≈ 101325 Pa (1 atm).
+      At depth d, p = 101325 + ρgd. Using gauge pressure (p=0 at surface) shifts all
+      pressures by 1 atm, equivalent to ~10.3 m of head error. This can reverse
+      regional flow gradients if the head difference is < 10 m.
+    affected_components: [Problem.dirichlet, Problem.initial]
+  remedy:
+    action: "Add atmospheric pressure: p = 101325 + ρ×g×(h - z)"
+    manual_steps:
+      - "Check Dirichlet BC values — should be > 100000 Pa for near-surface conditions"
+      - "Check initial conditions — should follow hydrostatic from surface"
+    prevention: "Use head_to_pressure() helper in convert_forcing_to_dumux.py"
+  severity: silent
+  cross_references: []
+
+- id: dt_006
+  stage: s1_grid
+  failure_domain: unit_conversion
+  symptom:
+    description: "Domain is 1000× too small or too large. Flow velocities don't match expected values."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Grid coordinates in km or cm instead of meters"
+    explanation: >
+      DuMux Grid section expects coordinates in meters. Using km (UpperRight = 1 1
+      for a 1km domain) creates a 1m × 1m domain. Using cm creates a domain 100× too large.
+    affected_components: [Grid.UpperRight, Grid.LowerLeft]
+  remedy:
+    action: "Ensure all Grid coordinates are in meters"
+    manual_steps:
+      - "Verify domain extent: UpperRight - LowerLeft should match expected size in meters"
+  severity: silent
+  cross_references: []
+
+# --- Time Configuration ---
+
+- id: dt_007
+  stage: s4_execution
+  failure_domain: time_configuration
+  symptom:
+    description: "Simulation completes almost instantly. TEnd appears to be only a few seconds instead of years."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "TEnd specified in days or years instead of seconds"
+    explanation: >
+      All DuMux time parameters are in seconds. TEnd = 365 means 365 seconds (~6 minutes),
+      not 1 year. For a 1-year simulation: TEnd = 31536000. For 10 years: TEnd = 315360000.
+    affected_components: [TimeLoop.TEnd, TimeLoop.DtInitial, TimeLoop.MaxTimeStepSize]
+  remedy:
+    action: "Convert all time values to seconds: 1 day = 86400 s, 1 year = 31536000 s"
+    manual_steps:
+      - "Check TEnd value — for groundwater: 86400 (1 day) to 3.15e8 (10 years)"
+      - "Check DtInitial — start with 1–100 s for daily forcing, 86400 s for steady-state"
+    prevention: "Validate TEnd > 86400 for multi-day simulations"
+  severity: silent
+  cross_references: [dt_009]
+
+# --- Solver Configuration ---
+
+- id: dt_008
+  stage: s4_execution
+  failure_domain: solver
+  symptom:
+    description: "Newton solver fails to converge on the very first time step. Error: 'Newton: convergence failed'."
+    error_pattern: "Newton.*convergence.*fail"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Initial conditions incompatible with boundary conditions, or extreme parameter values"
+    explanation: >
+      The Newton solver requires a reasonable initial guess. If initial pressure
+      differs wildly from boundary pressures, or if permeability is extremely
+      high/low, the first Newton step produces extreme updates that prevent convergence.
+    affected_components: [Problem.initial, Problem.dirichlet, SpatialParams]
+  remedy:
+    action: "Ensure initial conditions are physically consistent with BCs"
+    manual_steps:
+      - "Set initial conditions to match Dirichlet BCs (e.g., hydrostatic pressure)"
+      - "Start with uniform permeability, add heterogeneity gradually"
+      - "Reduce DtInitial to 1 s and increase gradually"
+      - "Check that permeability is in m² (not m/s)"
+    prevention: "Start with a steady-state solve, then use result as initial condition for transient"
+  severity: explicit
+  cross_references: [dt_001, dt_005]
+
+- id: dt_009
+  stage: s4_execution
+  failure_domain: solver
+  symptom:
+    description: "Simulation appears to run but time step shrinks to microseconds. Progress is near-zero. Simulation will never reach TEnd."
+    error_pattern: "dt = [0-9.e-]*[0-9]"
+    detection_method: log_pattern
+  diagnosis:
+    root_cause: "Newton solver repeatedly fails, adaptive time stepping reduces dt indefinitely"
+    explanation: >
+      DuMux reduces the time step on Newton failure. If the underlying problem persists
+      (bad parameters, sharp fronts, ill-conditioned system), dt keeps shrinking without
+      ever recovering. The simulation appears to run but makes no progress.
+    affected_components: [TimeLoop, NonlinearSolver]
+  remedy:
+    action: "Investigate why Newton fails — usually bad parameters or mesh"
+    manual_steps:
+      - "Check terminal output for pattern of Newton iterations per time step"
+      - "If Newton always takes 15+ iterations, the problem is ill-conditioned"
+      - "Refine mesh near sharp contrasts (permeability jumps, boundary layers)"
+      - "Reduce permeability contrast between zones"
+      - "Use MPFA instead of TPFA for non-orthogonal grids or anisotropic K"
+    prevention: "Set minimum dt and maximum Newton iterations in .input file"
+  severity: silent
+  cross_references: [dt_008]
+
+- id: dt_010
+  stage: s4_execution
+  failure_domain: solver
+  symptom:
+    description: "Linear solver diverges. Error: 'ISTLError: solver did not converge' or 'AMG setup failed'."
+    error_pattern: "ISTL.*not converge|AMG.*fail"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Ill-conditioned linear system from extreme permeability contrast or bad mesh"
+    explanation: >
+      The ISTL linear solver (AMG-CG or ILU-BiCGSTAB) struggles with condition numbers
+      > 1e10. High permeability contrast (e.g., 1e-10 vs 1e-15 m²) or distorted mesh
+      elements create ill-conditioned systems.
+    affected_components: [LinearSolver, SpatialParams.Permeability]
+  remedy:
+    action: "Improve linear solver settings or reduce problem stiffness"
+    manual_steps:
+      - "Increase MaxIterations in [LinearSolver] (try 50000)"
+      - "Tighten Tolerance (try 1e-14)"
+      - "Reduce permeability contrast between adjacent cells"
+      - "Refine mesh near high-contrast boundaries"
+      - "Switch from TPFA to Box scheme"
+    prevention: "Keep permeability contrast < 1e6 between adjacent cells"
+  severity: explicit
+  cross_references: [dt_001]
+
+# --- Grid/Mesh Issues ---
+
+- id: dt_011
+  stage: s1_grid
+  failure_domain: grid
+  symptom:
+    description: "Error at startup: 'DGFException' or 'Error reading grid file'."
+    error_pattern: "DGFException|Error reading grid"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Malformed DGF grid file — incorrect node/element counts or format errors"
+    explanation: >
+      DGF (Dune Grid Format) files have strict formatting requirements. Common issues:
+      wrong node count, missing header, incorrect vertex numbering (0-based vs 1-based),
+      or trailing whitespace.
+    affected_components: [Grid.File]
+  remedy:
+    action: "Verify DGF file format or use structured grid instead"
+    manual_steps:
+      - "Check node count matches actual number of vertices"
+      - "Verify element connectivity uses correct vertex indices"
+      - "Use a structured grid ([Grid] UpperRight/Cells) to bypass DGF issues"
+    prevention: "Use Gmsh with .msh export for complex unstructured grids"
+  severity: explicit
+  cross_references: []
+
+- id: dt_012
+  stage: s1_grid
+  failure_domain: grid
+  symptom:
+    description: "2D plan-view model produces wrong pressure gradients. Hydrostatic pressure appears in a horizontal domain."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Gravity enabled in a plan-view 2D model — gravity acts in -y direction"
+    explanation: >
+      For 2D grids, DuMux applies gravity in the -y direction (second coordinate).
+      In a plan-view model (x-y horizontal), this incorrectly adds a vertical pressure
+      gradient across what should be a horizontal plane. The 'north' side of the domain
+      gets lower pressure than the 'south' side.
+    affected_components: [Problem.EnableGravity, Grid]
+  remedy:
+    action: "Set EnableGravity = false for plan-view 2D models"
+    manual_steps:
+      - "Add 'EnableGravity = false' to [Problem] section"
+      - "For vertical cross-sections, keep gravity enabled"
+    prevention: "Document grid orientation in parameter file comments"
+  severity: silent
+  cross_references: []
+
+# --- Output Issues ---
+
+- id: dt_013
+  stage: s5_output
+  failure_domain: output
+  symptom:
+    description: "No VTK output files created despite simulation completing successfully."
+    error_pattern: ""
+    detection_method: file_check
+  diagnosis:
+    root_cause: "VTK writer not configured or Problem.Name mismatch"
+    explanation: >
+      VTK output requires explicit setup in the C++ main. If the VtkOutputModule is not
+      created or write() is never called, no output is generated. Also, output files are
+      named after Problem.Name — searching for wrong prefix finds nothing.
+    affected_components: [Vtk, Problem.Name]
+  remedy:
+    action: "Check Problem.Name and verify VTK writer is configured in C++ source"
+    manual_steps:
+      - "List all files in the working directory: ls *.vtu *.vtk"
+      - "Check Problem.Name in .input file — output files use this prefix"
+      - "Verify C++ source contains VtkOutputModule and write() calls"
+  severity: silent
+  cross_references: []
+
+- id: dt_014
+  stage: s5_output
+  failure_domain: output
+  symptom:
+    description: "VTK files exist but have no velocity field data."
+    error_pattern: "velocity.*not found"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "AddVelocity = true not set in [Vtk] section"
+    explanation: >
+      DuMux does not output velocity by default. The Vtk.AddVelocity flag must be
+      explicitly set to true. Without it, only primary variables (pressure) are written.
+    affected_components: [Vtk.AddVelocity]
+  remedy:
+    action: "Add 'AddVelocity = true' to [Vtk] section in .input file"
+    manual_steps:
+      - "Add to params.input: [Vtk] / AddVelocity = true"
+      - "Re-run simulation"
+  severity: silent
+  cross_references: []
+
+# --- Build Issues ---
+
+- id: dt_015
+  stage: s4_build
+  failure_domain: build
+  symptom:
+    description: "CMake error: 'Could NOT find dune-common' or similar for other DUNE modules."
+    error_pattern: "Could NOT find dune"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "DUNE modules not installed or not in CMake search path"
+    explanation: >
+      DuMux requires DUNE modules (dune-common, dune-geometry, dune-grid,
+      dune-localfunctions, dune-istl) at version >= 2.10. If not installed or
+      installed in a non-standard location, CMake cannot find them.
+    affected_components: [CMakeLists.txt, CMAKE_PREFIX_PATH]
+  remedy:
+    action: "Install DUNE modules and set CMAKE_PREFIX_PATH"
+    manual_steps:
+      - "Install DUNE: ./bin/installexternal.py dul"
+      - "Or: apt install libdune-common-dev libdune-grid-dev ..."
+      - "Set: cmake .. -DCMAKE_PREFIX_PATH=/path/to/dune/install"
+    prevention: "Use DuMux install script to handle DUNE dependencies"
+  severity: explicit
+  cross_references: []
+
+- id: dt_016
+  stage: s4_build
+  failure_domain: build
+  symptom:
+    description: "Compilation fails with template errors about concepts, ranges, or C++20 features."
+    error_pattern: "concepts|ranges|requires|C\\+\\+20"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Compiler does not support C++20 (GCC < 11 or Clang < 14)"
+    explanation: >
+      DuMux 3.x requires C++20 features including concepts, ranges, and structured
+      bindings. GCC < 11 and Clang < 14 do not fully support these features.
+    affected_components: [CMakeLists.txt, compiler]
+  remedy:
+    action: "Upgrade compiler to GCC >= 11 or Clang >= 14"
+    manual_steps:
+      - "Check: g++ --version (need >= 11)"
+      - "Install: apt install g++-11 or g++-13"
+      - "Set: cmake .. -DCMAKE_CXX_COMPILER=g++-13"
+  severity: explicit
+  cross_references: []
+
+# --- Parameter File Issues ---
+
+- id: dt_017
+  stage: s4_execution
+  failure_domain: parameter
+  symptom:
+    description: "Runtime error: 'Key SomeSection.SomeKey not found in the parameter tree'."
+    error_pattern: "Key.*not found.*parameter tree"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Required parameter missing from .input file"
+    explanation: >
+      DuMux parameters without defaults cause a ParameterException if not found in
+      the .input file or command-line overrides. The error message gives the exact
+      key name that's missing.
+    affected_components: [params.input]
+  remedy:
+    action: "Add the missing parameter to the correct [Section] in .input file"
+    manual_steps:
+      - "Read the error message for the exact key name (e.g., 'SpatialParams.Permeability')"
+      - "Add it to the .input file under the correct [Section]"
+      - "Check the example .input files for typical values"
+  severity: explicit
+  cross_references: []
+
+- id: dt_018
+  stage: s4_execution
+  failure_domain: parameter
+  symptom:
+    description: "Simulation produces NaN values. Pressure field contains NaN. Output files have NaN entries."
+    error_pattern: "NaN|nan|inf"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Zero porosity, extreme permeability, or division by zero in material law"
+    explanation: >
+      NaN typically appears when: (1) porosity = 0 causes division by zero in storage term,
+      (2) permeability is so extreme that pressure values overflow Float64,
+      (3) van Genuchten n <= 1 makes the material law undefined, or
+      (4) negative saturation from bad initial conditions.
+    affected_components: [SpatialParams, Problem.initial]
+  remedy:
+    action: "Check all spatial parameters for zero/extreme values"
+    manual_steps:
+      - "Verify porosity > 0 everywhere (minimum 0.001)"
+      - "Verify permeability > 0 and < 1e-5 m²"
+      - "Verify van Genuchten n > 1.0"
+      - "Check initial conditions are positive absolute pressure"
+    prevention: "validate_params() in convert_soil_to_dumux.py catches these"
+  severity: critical
+  cross_references: [dt_001, dt_004, dt_005]

@@ -1,0 +1,421 @@
+# ============================================================================
+# Landlab Diagnostic Triplets
+# ============================================================================
+# Symptom → Diagnosis → Remedy entries for common failures in Landlab
+# landscape evolution modeling workflows.
+#
+# Severity levels:
+#   silent   — Model runs without error but produces wrong results
+#   degraded — Model runs but results are qualitatively wrong
+#   fatal    — Model crashes or raises an exception
+
+# --- UNIT CONVERSION ERRORS (silent) ---
+
+- id: dt_001
+  stage: s2_input
+  failure_domain: unit_conversion
+  symptom:
+    description: "Discharge values are millions of m³/s for a small catchment; channels erode to bedrock in a few timesteps"
+    error_pattern: "surface_water__discharge > 1e6"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Rainfall rate (water__unit_flux_in) passed in mm/hr or mm/day instead of m/s"
+    explanation: >
+      Landlab expects water__unit_flux_in in m/s. Passing mm/hr directly gives
+      values 3,600,000× too large (1 mm/hr = 2.78e-7 m/s). FlowAccumulator
+      multiplies this by drainage area to get discharge. With discharge millions
+      of times too high, stream power is extreme and the landscape erodes
+      unrealistically fast. The model does not check units.
+    affected_components: [FlowAccumulator, StreamPowerEroder, ErosionDeposition, Space]
+  remedy:
+    action: "Convert rainfall to m/s before adding to grid"
+    tool_to_run: "convert_dem_to_grid.py"
+    manual_steps:
+      - "If mm/hr: divide by 3,600,000 (1000 mm/m × 3600 s/hr)"
+      - "If mm/day: divide by 86,400,000"
+      - "If m/yr: divide by 31,557,600"
+      - "Verify: typical rainfall 1–100 mm/hr → 2.8e-7 to 2.8e-5 m/s"
+    prevention: "validate_outputs checks water__unit_flux_in range"
+  severity: silent
+  cross_references: [dt_005, dt_008]
+
+- id: dt_002
+  stage: s3_params
+  failure_domain: unit_conversion
+  symptom:
+    description: "Hillslopes become perfectly flat within a single timestep; all topographic detail erased"
+    error_pattern: "topographic__elevation range < 0.01 after 1 step"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Linear diffusivity given in m²/s when timestep is in years"
+    explanation: >
+      LinearDiffuser diffusivity D and timestep dt must share time units.
+      If D=0.01 m²/s and dt=500 yr, the effective diffusion per step is
+      D×dt = 0.01 × 500×3.15e7 = 1.58e8 m² — the entire landscape diffuses
+      flat instantly. Typical D is 0.001–1.0 m²/yr when dt is in years.
+    affected_components: [LinearDiffuser]
+  remedy:
+    action: "Ensure D and dt share time units (both in years or both in seconds)"
+    tool_to_run: "convert_soil_params.py"
+    manual_steps:
+      - "If D is from literature in m²/s, convert to m²/yr: multiply by 3.156e7"
+      - "Or convert dt to seconds"
+      - "Check: D×dt/dx² should be << 1 for stability"
+    prevention: "LinearDiffuser has internal CFL sub-stepping, but the effective diffusion is still huge"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_003
+  stage: s3_params
+  failure_domain: unit_conversion
+  symptom:
+    description: "Erosion rate is orders of magnitude too high or too low despite 'correct' K value from literature"
+    error_pattern: "relief > 50000 m OR relief < 1 m after expected steady-state time"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "K_sp value copied from paper with different m_sp/n_sp exponents"
+    explanation: >
+      In the stream power law E = K A^m S^n, the units of K depend on m and n.
+      For m=0.5, n=1.0, K has units 1/time. For m=0.3, n=0.7, K has different
+      units. Copying K=1e-5 from a paper using m=0.5 and applying it with m=0.3
+      changes the erosion rate by orders of magnitude. The dimensional analysis
+      is: [K] = [length^(1-2m) / time].
+    affected_components: [StreamPowerEroder, ErosionDeposition, Space]
+  remedy:
+    action: "Recalculate K for your specific m and n exponents"
+    tool_to_run: "convert_soil_params.py"
+    manual_steps:
+      - "Identify the m, n used in the source paper"
+      - "If m differs, convert: K_new = K_old × A_ref^(m_old - m_new)"
+      - "Calibrate K independently if exponents differ significantly"
+    prevention: "Always document m, n alongside K in parameter files"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_004
+  stage: s1_grid
+  failure_domain: unit_conversion
+  symptom:
+    description: "Slopes are ~100,000 instead of ~0.01; erosion is extreme; landscape flattens immediately"
+    error_pattern: "topographic__steepest_slope > 1000"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Grid spacing (xy_spacing) is in degrees instead of meters"
+    explanation: >
+      If a DEM in geographic coordinates (WGS84) is loaded without reprojection,
+      xy_spacing will be ~0.0003 degrees (~30m). Slope = dz/dx, so if dx is
+      0.0003 instead of 30, slopes are 100,000× too steep. All downstream
+      calculations (stream power, diffusion) are proportionally wrong.
+      Landlab has no way to detect this because it is unit-agnostic.
+    affected_components: [FlowDirector, StreamPowerEroder, LinearDiffuser]
+  remedy:
+    action: "Reproject DEM to a metric CRS (e.g., UTM) before loading"
+    tool_to_run: "convert_dem_to_grid.py"
+    manual_steps:
+      - "Use gdalwarp -t_srs EPSG:32650 input.tif output_utm.tif"
+      - "Or override spacing: RasterModelGrid(shape, xy_spacing=30.0)"
+      - "Verify: slopes should be 0.001–1.0 for typical terrain"
+    prevention: "convert_dem_to_grid.py warns if spacing < 1.0"
+  severity: silent
+  cross_references: [dt_007]
+
+- id: dt_005
+  stage: s5_run
+  failure_domain: unit_conversion
+  symptom:
+    description: "All rates (erosion, diffusion, uplift) are wrong by factor of ~3.15e7"
+    error_pattern: "relief grows or shrinks 10^7× faster than expected"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Timestep dt in seconds but parameters (K, D, uplift) in /yr"
+    explanation: >
+      Landlab is unit-agnostic. If uplift_rate=1e-3 m/yr and dt=500 (intended
+      as years), but K_sp is calibrated for seconds, the uplift adds 0.5 m/step
+      while erosion removes a completely different amount. All parameters and dt
+      must use the SAME time unit. There is no internal check for this.
+    affected_components: [all]
+  remedy:
+    action: "Verify all parameters and dt share the same time unit"
+    tool_to_run: "run_landlab.py"
+    manual_steps:
+      - "List all time-dependent parameters: K_sp, D, uplift, v_s, dt"
+      - "Confirm they all use the same unit (years recommended)"
+      - "If mixing sources, convert explicitly"
+    prevention: "Document time unit in config YAML header"
+  severity: silent
+  cross_references: [dt_001, dt_002, dt_003]
+
+- id: dt_006
+  stage: s3_params
+  failure_domain: unit_conversion
+  symptom:
+    description: "ExponentialWeatherer produces negligible soil production (< 1e-20 m/yr)"
+    error_pattern: "soil_production__rate ≈ 0 everywhere"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Soil depth passed in cm instead of m"
+    explanation: >
+      HWSD reports T_REF_DEPTH in centimeters. If depth=150 (cm) is used
+      directly as meters, soil__depth=150 m. ExponentialWeatherer computes
+      P = P0 × exp(-H/H*) = 1e-4 × exp(-150/0.5) ≈ 0. With essentially
+      zero soil production, the soil layer never changes and SPACE cannot
+      erode bedrock through the alluvial cover.
+    affected_components: [ExponentialWeatherer, Space, DepthDependentDiffuser]
+  remedy:
+    action: "Divide HWSD depth by 100 to convert cm → m"
+    tool_to_run: "convert_soil_params.py"
+    manual_steps:
+      - "depth_m = depth_cm / 100.0"
+      - "Verify: typical soil depth 0.1–5 m; >10 m is suspicious"
+    prevention: "convert_soil_params.py applies conversion automatically from HWSD"
+  severity: silent
+  cross_references: [dt_008]
+
+- id: dt_007
+  stage: s2_input
+  failure_domain: unit_conversion
+  symptom:
+    description: "Slopes are ~3× too steep; erosion rate ~3× too high"
+    error_pattern: "topographic__steepest_slope systematically 3× expected"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Elevation in feet instead of meters"
+    explanation: >
+      US-sourced DEMs sometimes report elevation in feet. Since slope = dz/dx,
+      and Landlab computes dx in meters (from xy_spacing), foot-elevation with
+      meter-spacing yields slopes 3.28× too steep. Stream power E = K A^m S^n
+      with n=1 gives erosion 3.28× too fast. The effect compounds over time.
+    affected_components: [FlowDirector, StreamPowerEroder, LinearDiffuser]
+  remedy:
+    action: "Convert elevation from feet to meters (× 0.3048)"
+    tool_to_run: "convert_dem_to_grid.py --feet-to-meters"
+    manual_steps:
+      - "z *= 0.3048"
+      - "Check DEM metadata for vertical units"
+      - "USGS NED DEMs are typically in meters; some older formats use feet"
+    prevention: "convert_dem_to_grid.py --feet-to-meters flag"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_008
+  stage: s3_params
+  failure_domain: unit_conversion
+  symptom:
+    description: "SoilMoisture component shows perpetual saturation or soil_moisture__saturation_fraction always 1.0"
+    error_pattern: "soil_moisture__saturation_fraction == 1.0 at all nodes"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Rainfall in m instead of mm for SoilMoisture component"
+    explanation: >
+      SoilMoisture expects rainfall__daily_depth in mm (at cell level). If
+      rainfall is provided in meters (e.g., 0.01 m = 10 mm), it reads as
+      0.01 mm which is negligible — OR if converted incorrectly in the other
+      direction, 1000 mm/day floods the soil. Check the _info dict: the field
+      has units "mm" at "cell" location.
+    affected_components: [SoilMoisture, VegetationDynamics]
+  remedy:
+    action: "Ensure rainfall__daily_depth is in mm at cell location"
+    tool_to_run: "convert_soil_params.py"
+    manual_steps:
+      - "If source is in m: multiply by 1000 to get mm"
+      - "If source is in m/s: multiply by 86400000 to get mm/day"
+      - "Verify: 0.1–50 mm/day is typical"
+    prevention: "Check component _info dict for expected units"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_009
+  stage: s3_params
+  failure_domain: parameter_format
+  symptom:
+    description: "Overland flow velocity is inverted — slow where it should be fast"
+    error_pattern: "water__velocity pattern is spatially inverted"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Manning roughness n confused with Chezy C (or 1/n)"
+    explanation: >
+      KinwaveOverlandFlowModel uses Manning equation: v = (1/n) h^(2/3) S^(1/2).
+      If the user passes Chezy C (which is already 1/n-like), velocity is
+      proportional to C instead of 1/C. Manning n for channels is 0.01–0.1;
+      Chezy C is 10–100. Passing C=50 as Manning n gives velocity 500–5000×
+      too slow.
+    affected_components: [KinwaveOverlandFlowModel, OverlandFlow]
+  remedy:
+    action: "Use Manning roughness n (0.01–0.1 s/m^1/3), not Chezy C"
+    tool_to_run: null
+    manual_steps:
+      - "Typical Manning n: smooth concrete=0.012, natural channel=0.03–0.05, floodplain=0.05–0.15"
+      - "If you have Chezy C, convert: n ≈ h^(1/6) / C"
+    prevention: "Validate that roughness is in range 0.005–0.2"
+  severity: silent
+  cross_references: []
+
+# --- INPUT FORMAT ERRORS ---
+
+- id: dt_010
+  stage: s2_input
+  failure_domain: input_format
+  symptom:
+    description: "Flow routes through nodata regions; artificial channels appear at DEM edges"
+    error_pattern: "drainage paths crossing -9999 elevation cells"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "DEM nodata values not identified and masked as closed boundary"
+    explanation: >
+      If nodata cells (typically -9999) are not masked, Landlab treats them as
+      extremely low elevation. D8 flow routing directs all flow toward these
+      -9999 cells, creating artificial drainage that converges at nodata regions.
+      The landscape develops unrealistic erosion patterns at the DEM boundary.
+    affected_components: [FlowDirector, FlowAccumulator]
+  remedy:
+    action: "Identify nodata values and set those nodes to BC_NODE_IS_CLOSED"
+    tool_to_run: "convert_dem_to_grid.py"
+    manual_steps:
+      - "nodata_mask = np.isclose(z, -9999, atol=0.1)"
+      - "z[nodata_mask] = np.nan"
+      - "mg.status_at_node[nodata_mask] = mg.BC_NODE_IS_CLOSED"
+    prevention: "convert_dem_to_grid.py handles --nodata flag"
+  severity: degraded
+  cross_references: [dt_011]
+
+# --- BOUNDARY CONDITION ERRORS ---
+
+- id: dt_011
+  stage: s1_grid
+  failure_domain: boundary_condition
+  symptom:
+    description: "drainage_area is zero everywhere; erosion does not occur"
+    error_pattern: "drainage_area == 0 at all nodes"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "All grid boundaries are closed — no outlet for flow"
+    explanation: >
+      FlowAccumulator routes water downhill to fixed-value boundary nodes.
+      If all boundary nodes are closed (BC_NODE_IS_CLOSED), water has nowhere
+      to exit. Drainage area remains zero because no flow path reaches an
+      outlet. Without drainage area, StreamPowerEroder computes zero erosion.
+      The landscape simply uplifts uniformly.
+    affected_components: [FlowAccumulator, StreamPowerEroder, ErosionDeposition, Space]
+  remedy:
+    action: "Set at least one boundary node to BC_NODE_IS_FIXED_VALUE"
+    tool_to_run: null
+    manual_steps:
+      - "mg.set_closed_boundaries_at_grid_edges(True, False, True, True)  # open south"
+      - "Or: mg.status_at_node[outlet_id] = mg.BC_NODE_IS_FIXED_VALUE"
+      - "Verify: np.sum(mg.status_at_node == 1) > 0"
+    prevention: "validate_outputs checks for open boundary nodes"
+  severity: fatal
+  cross_references: [dt_010, dt_014]
+
+# --- COMPONENT ORDERING ERRORS ---
+
+- id: dt_012
+  stage: s4_assembly
+  failure_domain: missing_component
+  symptom:
+    description: "Flat plateaus develop in landscape interior; channels stop at pits"
+    error_pattern: "Large areas with drainage_area < expected; flat local minima"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "No depression routing (DepressionFinder or PriorityFlood) on a DEM with pits"
+    explanation: >
+      Real DEMs contain numerous small pits (artifact or real depressions).
+      D8 flow routing stops at these pits — flow accumulates but cannot
+      continue downstream. This creates artificial local drainage basins with
+      zero erosion downstream of each pit. Over time, the landscape develops
+      flat plateaus where pits block channel incision.
+    affected_components: [FlowAccumulator, StreamPowerEroder]
+  remedy:
+    action: "Add DepressionFinderAndRouter or use PriorityFloodFlowRouter"
+    tool_to_run: null
+    manual_steps:
+      - "fa = FlowAccumulator(mg, depression_finder='DepressionFinderAndRouter')"
+      - "Or: pfr = PriorityFloodFlowRouter(mg, flow_metric='D8')"
+      - "PriorityFlood is faster for large grids (>200×200)"
+    prevention: "Always use depression routing with real DEMs"
+  severity: degraded
+  cross_references: [dt_014]
+
+- id: dt_013
+  stage: s5_run
+  failure_domain: numerical_stability
+  symptom:
+    description: "Elevation oscillates wildly or develops checkerboard pattern"
+    error_pattern: "NaN in topographic__elevation OR alternating high/low cells"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "CFL condition violated in explicit diffusion scheme"
+    explanation: >
+      LinearDiffuser uses explicit time-stepping with internal sub-stepping
+      to maintain CFL stability (alpha = D×dt/dx² < 0.15). However, if the
+      user wraps the component in their own sub-stepping loop with a smaller
+      dt than intended, or if diffusivity is spatially variable and very high
+      in some cells, numerical instability can develop. The internal CFL guard
+      uses the maximum diffusivity value.
+    affected_components: [LinearDiffuser, DepthDependentDiffuser]
+  remedy:
+    action: "Let LinearDiffuser handle its own sub-stepping; reduce D if needed"
+    tool_to_run: null
+    manual_steps:
+      - "Do not sub-step LinearDiffuser externally"
+      - "If D is spatially variable, check max(D)×dt/dx² < 0.15"
+      - "Reduce D or increase dx if oscillations occur"
+    prevention: "Monitor elevation range each step; NaN = stop immediately"
+  severity: degraded
+  cross_references: [dt_002]
+
+- id: dt_014
+  stage: s4_assembly
+  failure_domain: component_order
+  symptom:
+    description: "StreamPowerEroder produces zero erosion; drainage_area is all zeros"
+    error_pattern: "drainage_area == 0 before StreamPowerEroder.run_one_step()"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Erosion component called before FlowAccumulator in time loop"
+    explanation: >
+      StreamPowerEroder, ErosionDeposition, and Space all require drainage_area,
+      flow__receiver_node, and flow__upstream_node_order to be populated. These
+      fields are computed by FlowAccumulator.run_one_step(). If erosion runs
+      first, these fields are all zeros (initialized but not computed), producing
+      zero stream power and zero erosion.
+    affected_components: [StreamPowerEroder, ErosionDeposition, Space]
+  remedy:
+    action: "Call FlowAccumulator.run_one_step() BEFORE erosion each timestep"
+    tool_to_run: "run_landlab.py"
+    manual_steps:
+      - "Correct loop order: fa.run_one_step() → sp.run_one_step(dt) → ld.run_one_step(dt)"
+      - "FlowAccumulator must also re-run after erosion changes topography"
+    prevention: "run_landlab.py validates component order in config"
+  severity: fatal
+  cross_references: [dt_011]
+
+# --- FIELD LOCATION ERRORS ---
+
+- id: dt_015
+  stage: s4_assembly
+  failure_domain: field_location
+  symptom:
+    description: "Component raises FieldError or silently reads an all-zero field"
+    error_pattern: "FieldError: field 'X' not found at 'node'"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "Field added at wrong grid element location (e.g., at_cell instead of at_node)"
+    explanation: >
+      Each Landlab variable has a specific location defined in the component's
+      _info dictionary (node, link, cell, etc.). Adding topographic__elevation
+      at 'cell' instead of 'node' means FlowDirector cannot find it at 'node'
+      and raises FieldError. If a different field with the same name exists at
+      the wrong location, the component may silently read zeros.
+    affected_components: [all]
+  remedy:
+    action: "Check component._info[field_name]['mapping'] for correct location"
+    tool_to_run: null
+    manual_steps:
+      - "Most fields are at 'node' (elevation, area, soil depth)"
+      - "Flux fields are often at 'link' (sediment flux, gradient)"
+      - "SoilMoisture fields are at 'cell'"
+      - "Use mg.add_field(name, data, at='node') with correct 'at' argument"
+    prevention: "Components validate field locations on __init__"
+  severity: fatal
+  cross_references: [dt_008]

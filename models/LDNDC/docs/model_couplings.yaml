@@ -1,0 +1,180 @@
+# ============================================================================
+# Model-to-Model Coupling Registry — LandscapeDNDC
+# ============================================================================
+# Documents data flows between LDNDC and other HydroCraft models.
+# ============================================================================
+
+couplings:
+
+  - id: "c_vic_ldndc_climate"
+    name: "VIC Forcing to LDNDC Climate"
+    source:
+      model: "VIC 5.1.0"
+      output_variable: "forcing files (7-col ASCII: Tmin, Tmax, Prec, SWrad, LWrad, VP, Wind)"
+      output_file_pattern: "{prefix}_{lat}_{lon}"
+      output_format: "ASCII_subdaily"
+      output_units: "K, mm/timestep, W/m2, Pa, m/s"
+      temporal_resolution: "3-hourly (8 per day)"
+      spatial_resolution: "0.25 or 0.1 degree"
+    target:
+      model: "LandscapeDNDC v1.30+"
+      input_variable: "tavg, tmin, tmax, prec, wind, rh, glob, lrad"
+      input_section: "climate.txt"
+      input_file: "climate.txt"
+      input_units: "C, mm/day, m/s, %, W/m2"
+      injection_timing: "daily"
+    transformation:
+      description: "Aggregate VIC sub-daily forcing to daily LDNDC climate; convert units"
+      formula: "T_C = T_K - 273.15; prec_daily = sum(prec_subdaily); RH = 100*VP/VP_sat(T)"
+      unit_conversion: "K->C: subtract 273.15; VP->RH: compute saturation VP from temperature; mm/timestep->mm/day: sum all 8 timesteps"
+      spatial_mapping: "1:1 grid cell match"
+      temporal_mapping: "8 sub-daily records -> 1 daily record (precip=sum, temp=min/max/mean, others=mean)"
+      layer_mapping: "N/A (atmospheric data)"
+    tool:
+      script_path: "tools/s10_vic_coupling/vic_to_ldndc_climate.py"
+      inputs: ["vic_forcing_dir", "lat", "lon"]
+      outputs: ["climate.txt"]
+      validation: "Check: tavg in [-60,60]C; daily precip = sum of 8 sub-daily; no NaN"
+    rationale: "Using the same forcing data ensures water and energy balance consistency between VIC hydrology and LDNDC biogeochemistry"
+    impact: "LDNDC temperature drives decomposition rates, nitrification/denitrification, and phenology; precipitation drives soil moisture and leaching"
+    limitation: "VIC forcing lacks some variables LDNDC can use (PAR, diffuse radiation). These are computed internally by LDNDC from global radiation."
+    references:
+      - "Haas et al. (2013) LandscapeDNDC: a process model. Landscape Ecology 28:615-636"
+
+  - id: "c_vic_ldndc_soil"
+    name: "VIC Soil Parameters to LDNDC Site"
+    source:
+      model: "VIC 5.1.0"
+      output_variable: "SOIL_PARAM_COMPLETE.txt (53+ columns: texture, Ksat, porosity, bulk density per 3 layers)"
+      output_file_pattern: "SOIL_PARAM_COMPLETE.txt"
+      output_format: "ASCII_tabular"
+      output_units: "sand/clay as fraction, BD as kg/m3, depth as m, Ksat as mm/day"
+      temporal_resolution: "static"
+      spatial_resolution: "0.25 or 0.1 degree"
+    target:
+      model: "LandscapeDNDC v1.30+"
+      input_variable: "clay, sand, silt, bd, depth, corg, pH"
+      input_section: "site.xml soilprofile"
+      input_file: "site.xml"
+      input_units: "fractions, g/cm3, m, mass fraction, dimensionless"
+      injection_timing: "static (initial conditions)"
+    transformation:
+      description: "Map VIC 3-layer soil params to LDNDC multi-layer profile"
+      formula: "bd_gcm3 = bd_kgm3 / 1000; clay/sand direct; corg from HWSD; pH from HWSD"
+      unit_conversion: "BD: kg/m3 -> g/cm3 (divide by 1000); texture fractions: direct pass-through"
+      spatial_mapping: "1:1 grid cell match (nearest VIC cell)"
+      temporal_mapping: "Static -- applied once at initialization"
+      layer_mapping: "VIC 3 layers (d1=~10cm, d2=~50cm, d3=~150cm) -> LDNDC 5-10 layers by depth interpolation"
+    tool:
+      script_path: "tools/s10_vic_coupling/vic_soil_to_ldndc_site.py"
+      inputs: ["vic_soil_file", "lat", "lon"]
+      outputs: ["soil_data JSON for generate_site_xml"]
+      validation: "Check: clay+sand+silt~1.0; 0.5<bd<2.0 g/cm3; corg<0.10 for mineral soils"
+    rationale: "Consistent soil properties between VIC (hydrology) and LDNDC (biogeochemistry) ensure physically coherent coupled simulations"
+    impact: "Soil texture controls water retention and thus anaerobic volume (N2O/CH4 production). Bulk density controls pore space and gas diffusion."
+    limitation: "VIC has no pH or organic carbon. These must come from HWSD separately, creating potential inconsistency for organic soils."
+    references:
+      - "Haas et al. (2013) LandscapeDNDC. Landscape Ecology 28:615-636"
+
+  - id: "c_vic_ldndc_soilmoist"
+    name: "VIC Soil Moisture to LDNDC Initial Conditions"
+    source:
+      model: "VIC 5.1.0"
+      output_variable: "OUT_SOIL_MOIST (mm per layer, 3 layers)"
+      output_file_pattern: "{prefix}_fluxes_{lat}_{lon}"
+      output_format: "ASCII_daily"
+      output_units: "mm"
+      temporal_resolution: "daily"
+      spatial_resolution: "0.25 or 0.1 degree"
+    target:
+      model: "LandscapeDNDC v1.30+"
+      input_variable: "initial soil water content per layer"
+      input_section: "site.xml initial conditions"
+      input_file: "site.xml"
+      input_units: "volumetric fraction (m3/m3)"
+      injection_timing: "at simulation start"
+    transformation:
+      description: "Extract VIC soil moisture on start date, convert to volumetric, interpolate across LDNDC layers"
+      formula: "theta = SM_mm / (layer_depth_mm)"
+      unit_conversion: "mm -> m3/m3: divide by layer thickness in mm"
+      spatial_mapping: "1:1 grid cell match"
+      temporal_mapping: "Extract value on simulation start date"
+      layer_mapping: "VIC 3 layers -> LDNDC layers by depth-weighted interpolation"
+    tool:
+      script_path: "tools/s10_vic_coupling/vic_to_ldndc_soilwater.py"
+      inputs: ["vic_result_dir", "lat", "lon", "ldndc_layer_depths"]
+      outputs: ["soil_water JSON"]
+      validation: "Check: 0 < theta < porosity for each layer"
+    rationale: "Starting LDNDC with realistic soil moisture from VIC avoids spin-up artifacts in the first simulation year"
+    impact: "Initial soil moisture affects decomposition rates, nitrification, and N2O pulse events in the first months"
+    limitation: "Only applies to initial conditions. Dynamic soil moisture coupling (daily updates) is not implemented."
+    references: []
+
+  - id: "c_cama_ldndc_watertable"
+    name: "CaMa-Flood Water Table to LDNDC Groundwater"
+    source:
+      model: "CaMa-Flood v4.20"
+      output_variable: "sfcelv (surface water elevation), flddph (flood depth)"
+      output_file_pattern: "out/{run_name}/sfcelv*.nc"
+      output_format: "NetCDF_daily"
+      output_units: "m"
+      temporal_resolution: "daily"
+      spatial_resolution: "15 arc-min (~0.25 degree)"
+    target:
+      model: "LandscapeDNDC v1.30+"
+      input_variable: "groundwater table depth"
+      input_section: "site.xml groundwater or dynamic forcing"
+      input_file: "site.xml or external coupling"
+      input_units: "m below surface"
+      injection_timing: "daily (dynamic coupling)"
+    transformation:
+      description: "Convert CaMa-Flood surface water elevation to depth-to-water-table for LDNDC"
+      formula: "wt_depth = surface_elevation - water_level; if flood: wt_depth = -flddph (above surface)"
+      unit_conversion: "Direct meters"
+      spatial_mapping: "CaMa-Flood 15min grid -> nearest LDNDC site"
+      temporal_mapping: "Daily values"
+      layer_mapping: "N/A (single water table depth value)"
+    tool:
+      script_path: ""
+      inputs: ["cama_output_dir", "lat", "lon"]
+      outputs: ["water_table_timeseries"]
+      validation: "Check: wt_depth > -5m (not deeper than 5m above surface even in floods)"
+    rationale: "Water table depth controls the anaerobic zone extent in soil, which directly determines N2O and CH4 production rates"
+    impact: "Shallow water table increases anaerobic volume, promoting denitrification (N2O) and methanogenesis (CH4). Critical for wetland and floodplain biogeochemistry."
+    limitation: "Dynamic coupling not yet implemented as a validated tool. Currently conceptual."
+    references:
+      - "Butterbach-Bahl et al. (2013) Nitrous oxide emissions from soils. Phil Trans R Soc B 368:20130122"
+
+  - id: "c_ldndc_dssat_yield"
+    name: "LDNDC Yield vs DSSAT Yield Comparison"
+    source:
+      model: "LandscapeDNDC v1.30+"
+      output_variable: "yield (kgC/ha)"
+      output_file_pattern: "output/physiology-daily.txt"
+      output_format: "CSV_daily"
+      output_units: "kgC/ha"
+      temporal_resolution: "daily (harvest event)"
+      spatial_resolution: "site-scale"
+    target:
+      model: "DSSAT-CSM v4.8.5"
+      input_variable: "HWAM (kg/ha dry matter)"
+      input_section: "Summary.OUT"
+      input_file: "Summary.OUT"
+      input_units: "kg/ha dry matter"
+      injection_timing: "at harvest"
+    transformation:
+      description: "Convert LDNDC yield (kgC/ha) to dry matter (kg/ha) for comparison with DSSAT"
+      formula: "yield_DM = yield_C / 0.45"
+      unit_conversion: "kgC/ha -> kg DM/ha: divide by carbon fraction (~0.45 for grain)"
+      spatial_mapping: "Same site/grid cell"
+      temporal_mapping: "Compare annual harvested yields"
+      layer_mapping: "N/A"
+    tool:
+      script_path: ""
+      inputs: ["ldndc_physiology_output", "dssat_summary"]
+      outputs: ["yield_comparison_table"]
+      validation: "LDNDC and DSSAT yields within 30% for same climate/soil/management"
+    rationale: "Cross-model validation: independent yield estimates from biogeochemistry (LDNDC) and agronomic (DSSAT) models increase confidence"
+    impact: "Identifies systematic biases in either model's crop growth parameterization"
+    limitation: "LDNDC and DSSAT use different crop growth algorithms (process-based biogeochemistry vs. radiation use efficiency), so exact agreement is not expected"
+    references: []

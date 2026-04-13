@@ -1,0 +1,741 @@
+# ============================================================================
+# GLM Knowledge Infrastructure v1.0.0
+# ============================================================================
+# General Lake Model v3.3.3 + AED2 water quality
+# 1D vertical hydrodynamic model for lakes and reservoirs
+# ============================================================================
+
+package:
+  name: "hydrocraft-glm-lake"
+  version: "1.0.0"
+  description: "Knowledge infrastructure for GLM lake/reservoir simulation within HydroCraft"
+  target_model: "GLM 3.3.3 + AED2"
+  domain: "lake hydrodynamics and water quality"
+  authors:
+    - "Jianyun Zhang Research Group, Hohai University"
+  license: "GPL-3.0"
+
+pipeline:
+  stages:
+    - id: s0_config
+      name: "Configuration"
+      description: "Lake selection, simulation period, forcing dataset, AED2 toggle"
+      order: 0
+      depends_on: []
+      skill_document: "docs/s0_configuration_skill.md"
+      tools: []
+      milestones:
+        - id: m0_config_defined
+          description: "Lake identified, period set, forcing source selected"
+          verification: "Config dictionary/JSON exists with all required fields"
+
+    - id: s1_lake_identification
+      name: "Lake identification and morphometry"
+      description: "Find lake in HydroLAKES, build depth-area hypsographic curve"
+      order: 1
+      depends_on: [s0_config]
+      skill_document: "docs/s1_lake_identification_skill.md"
+      tools: [lookup_hydrolakes, build_morphometry]
+      milestones:
+        - id: m1_morphometry_created
+          description: "morphometry.json exists with H[], A[], crest_elev, bsn_len, bsn_wid"
+          verification: "python -c \"import json; m=json.load(open('morphometry.json')); assert len(m['H'])==len(m['A'])>=3\""
+
+    - id: s2_met_forcing
+      name: "Meteorological forcing conversion"
+      description: "Convert CMFD/MSWX/VIC forcing to GLM CSV format with unit conversions"
+      order: 2
+      depends_on: [s0_config]
+      skill_document: "docs/s2_met_forcing_skill.md"
+      tools: [convert_met_to_glm]
+      milestones:
+        - id: m2_met_csv_created
+          description: "bcs/met_hourly.csv exists with correct columns and units"
+          verification: "head -1 bcs/met_hourly.csv contains 'ShortWave,LongWave,AirTemp,RelHum,WindSpeed,Rain,Snow'"
+
+    - id: s3_inflow
+      name: "Inflow preparation"
+      description: "Convert river discharge to GLM inflow CSV with temperature estimation"
+      order: 3
+      depends_on: [s0_config, s2_met_forcing]
+      skill_document: "docs/s3_inflow_skill.md"
+      tools: [convert_inflow_to_glm]
+      milestones:
+        - id: m3_inflow_csv_created
+          description: "bcs/inflow_1.csv exists with FLOW, TEMP, SALT columns"
+          verification: "head -1 bcs/inflow_1.csv contains 'FLOW' and 'TEMP' and 'SALT'"
+
+    - id: s4_outflow
+      name: "Outflow configuration"
+      description: "Configure dam operation, spillway, withdrawal depth"
+      order: 4
+      depends_on: [s0_config]
+      skill_document: "docs/s4_outflow_skill.md"
+      tools: [configure_outflow]
+      milestones:
+        - id: m4_outflow_configured
+          description: "Outflow config JSON or CSV exists"
+          verification: "outflow_config.json exists or outflow mode is natural"
+
+    - id: s5_init_profiles
+      name: "Initial conditions"
+      description: "Generate initial temperature and salinity depth profiles"
+      order: 5
+      depends_on: [s1_lake_identification]
+      skill_document: "docs/s5_init_profiles_skill.md"
+      tools: [build_init_profiles]
+      milestones:
+        - id: m5_init_profiles_created
+          description: "init_profiles.json exists with lake_depth, the_depths, the_temps"
+          verification: "python -c \"import json; p=json.load(open('init_profiles.json')); assert p['lake_depth']>0\""
+
+    - id: s6_namelist
+      name: "GLM namelist generation"
+      description: "Assemble glm3.nml from all upstream outputs (13 Fortran namelist blocks)"
+      order: 6
+      depends_on: [s1_lake_identification, s2_met_forcing, s3_inflow, s4_outflow, s5_init_profiles]
+      skill_document: "docs/s6_namelist_skill.md"
+      tools: [generate_glm_nml]
+      milestones:
+        - id: m6_nml_created
+          description: "glm3.nml exists and is valid Fortran namelist format"
+          verification: "grep '&morphometry' glm3.nml && grep '&time' glm3.nml"
+
+    - id: s7_aed_config
+      name: "AED2 water quality configuration"
+      description: "Generate aed2.nml with selected biogeochemical modules (optional)"
+      order: 7
+      depends_on: [s0_config]
+      skill_document: "docs/s7_aed_config_skill.md"
+      tools: [generate_aed_config]
+      milestones:
+        - id: m7_aed_configured
+          description: "aed2.nml exists if AED2 is enabled"
+          verification: "test -f aed2.nml (only if AED2 enabled)"
+
+    - id: s8_execution
+      name: "GLM execution"
+      description: "Run GLM binary with preflight checks and output validation"
+      order: 8
+      depends_on: [s6_namelist]
+      skill_document: "docs/s8_execution_skill.md"
+      tools: [run_glm]
+      milestones:
+        - id: m8_glm_complete
+          description: "GLM exits with code 0 and 'Model Run Complete' in stdout"
+          verification: "test -f output/output.nc && test -f output/lake.csv"
+
+    - id: s9_output_analysis
+      name: "Output analysis and visualization"
+      description: "Parse output.nc, lake.csv; generate temperature heatmaps; calibrate"
+      order: 9
+      depends_on: [s8_execution]
+      skill_document: "docs/s9_output_analysis_skill.md"
+      tools: [parse_glm_output, plot_glm_results, calibrate_glm]
+      milestones:
+        - id: m9_output_parsed
+          description: "Summary JSON and plots generated"
+          verification: "test -f summary.json && test -f glm_results.png"
+
+    - id: s10_coupling
+      name: "Downstream coupling"
+      description: "Convert GLM outflow to CaMa-Flood or SWAT+ input"
+      order: 10
+      depends_on: [s8_execution]
+      skill_document: "docs/s10_coupling_skill.md"
+      tools: [glm_to_cama_outflow]
+      milestones:
+        - id: m10_coupling_done
+          description: "Outflow data converted to downstream model format"
+          verification: "Output CSV or NetCDF with flow timeseries"
+
+tools:
+  - id: lookup_hydrolakes
+    name: "HydroLAKES Lookup"
+    description: "Find a lake in the HydroLAKES global database by name or coordinates"
+    stage: s1_lake_identification
+    script_path: "tools/s1_lake_identification/lookup_hydrolakes.py"
+    language: python
+    inputs:
+      - name: lat
+        type: number
+        description: "Search latitude"
+        required: false
+        example: "46.0"
+      - name: lon
+        type: number
+        description: "Search longitude"
+        required: false
+        example: "-89.7"
+      - name: name
+        type: string
+        description: "Lake name (partial match)"
+        required: false
+        example: "Sparkling"
+      - name: radius_km
+        type: number
+        description: "Search radius in km"
+        required: false
+        example: "10"
+    outputs:
+      - name: result
+        type: file
+        description: "JSON with lake morphometric parameters"
+        path_pattern: "*.json"
+    preconditions:
+      - "HydroLAKES shapefile exists at data/lakes/HydroLAKES_polys_v10.shp"
+    postconditions:
+      - "JSON output contains hylak_id, lake_area_km2, depth_avg_m"
+
+  - id: build_morphometry
+    name: "Morphometry Builder"
+    description: "Construct depth-area hypsographic curve from lake parameters"
+    stage: s1_lake_identification
+    script_path: "tools/s1_lake_identification/build_morphometry.py"
+    language: python
+    inputs:
+      - name: area_km2
+        type: number
+        description: "Lake surface area in km^2"
+        required: false
+        example: "0.64"
+      - name: depth_max
+        type: number
+        description: "Maximum lake depth in meters"
+        required: false
+        example: "18.3"
+      - name: elevation
+        type: number
+        description: "Lake surface elevation (m ASL)"
+        required: false
+        example: "320"
+    outputs:
+      - name: morphometry
+        type: file
+        description: "JSON with H[], A[], bsn_len, bsn_wid, crest_elev"
+        path_pattern: "morphometry.json"
+    preconditions: []
+    postconditions:
+      - "H[] is monotonically increasing"
+      - "A[] corresponds to H[] levels"
+      - "bsn_vals matches len(H)"
+
+  - id: convert_met_to_glm
+    name: "Met Forcing Converter"
+    description: "Convert CMFD/MSWX/VIC forcing to GLM meteorological CSV with unit conversions"
+    stage: s2_met_forcing
+    script_path: "tools/s2_met_forcing/convert_met_to_glm.py"
+    language: python
+    inputs:
+      - name: forcing_dir
+        type: directory
+        description: "CMFD or MSWX forcing directory"
+        required: false
+        example: "data/forcing/Data_forcing_03hr_010deg"
+      - name: vic_forcing_dir
+        type: directory
+        description: "VIC ASCII forcing files directory"
+        required: false
+        example: "outputs/run/vic_temp/forcing/forcing_final"
+      - name: lat
+        type: number
+        description: "Lake latitude"
+        required: true
+        example: "40.48"
+      - name: lon
+        type: number
+        description: "Lake longitude"
+        required: true
+        example: "116.97"
+    outputs:
+      - name: met_csv
+        type: file
+        description: "GLM meteorological CSV"
+        path_pattern: "bcs/met_hourly.csv"
+    preconditions:
+      - "Forcing data exists for the simulation period"
+    postconditions:
+      - "Rain values are in m/day (max < 0.5 for most climates)"
+      - "RelHum values are in % (0-100)"
+      - "ShortWave >= 0"
+
+  - id: convert_inflow_to_glm
+    name: "Inflow Converter"
+    description: "Convert CaMa-Flood/VIC discharge to GLM inflow CSV"
+    stage: s3_inflow
+    script_path: "tools/s3_inflow/convert_inflow_to_glm.py"
+    language: python
+    inputs:
+      - name: cama_outflow
+        type: file
+        description: "CaMa-Flood outflw NetCDF"
+        required: false
+      - name: vic_routing_file
+        type: file
+        description: "VIC Lohmann routing output"
+        required: false
+      - name: met_csv
+        type: file
+        description: "GLM met CSV for temperature estimation"
+        required: false
+    outputs:
+      - name: inflow_csv
+        type: file
+        description: "GLM inflow CSV (FLOW, TEMP, SALT)"
+        path_pattern: "bcs/inflow_1.csv"
+    preconditions: []
+    postconditions:
+      - "FLOW values are positive (m3/s)"
+      - "TEMP values are physically reasonable (0-35 degC)"
+      - "SALT is 0.0 for freshwater lakes"
+
+  - id: configure_outflow
+    name: "Outflow Configurator"
+    description: "Generate outflow CSV and namelist parameters"
+    stage: s4_outflow
+    script_path: "tools/s4_outflow/configure_outflow.py"
+    language: python
+    inputs:
+      - name: mode
+        type: string
+        description: "Outflow mode: natural, constant, scheduled, balance"
+        required: false
+        example: "natural"
+    outputs:
+      - name: outflow_config
+        type: file
+        description: "Outflow configuration JSON"
+        path_pattern: "outflow_config.json"
+    preconditions: []
+    postconditions: []
+
+  - id: build_init_profiles
+    name: "Initial Profiles Builder"
+    description: "Generate initial temperature/salinity depth profiles"
+    stage: s5_init_profiles
+    script_path: "tools/s5_init_profiles/build_init_profiles.py"
+    language: python
+    inputs:
+      - name: depth
+        type: number
+        description: "Initial lake depth in meters"
+        required: true
+        example: "18.3"
+      - name: strategy
+        type: string
+        description: "uniform, stratified, isothermal, or custom"
+        required: false
+        example: "uniform"
+    outputs:
+      - name: init_profiles
+        type: file
+        description: "Initial profiles JSON"
+        path_pattern: "init_profiles.json"
+    preconditions: []
+    postconditions:
+      - "lake_depth <= morphometry max depth"
+
+  - id: generate_glm_nml
+    name: "Namelist Generator"
+    description: "Assemble glm3.nml from upstream tool outputs"
+    stage: s6_namelist
+    script_path: "tools/s6_namelist/generate_glm_nml.py"
+    language: python
+    inputs:
+      - name: morphometry
+        type: file
+        description: "Morphometry JSON from build_morphometry"
+        required: true
+      - name: start_date
+        type: string
+        description: "Simulation start date"
+        required: true
+        example: "2000-01-01"
+      - name: end_date
+        type: string
+        description: "Simulation end date"
+        required: true
+        example: "2010-12-31"
+    outputs:
+      - name: nml
+        type: file
+        description: "GLM namelist file"
+        path_pattern: "glm3.nml"
+    preconditions:
+      - "morphometry.json exists"
+      - "Met CSV referenced in meteo_fl exists"
+    postconditions:
+      - "All strings in single quotes"
+      - "bsn_vals matches H/A array length"
+
+  - id: generate_aed_config
+    name: "AED2 Config Generator"
+    description: "Generate aed2.nml water quality configuration"
+    stage: s7_aed_config
+    script_path: "tools/s7_aed_config/generate_aed_config.py"
+    language: python
+    inputs:
+      - name: modules
+        type: string
+        description: "Comma-separated AED module names"
+        required: false
+        example: "oxygen,nitrogen,phosphorus"
+    outputs:
+      - name: aed_nml
+        type: file
+        description: "AED2 namelist file"
+        path_pattern: "aed2.nml"
+    preconditions: []
+    postconditions: []
+
+  - id: run_glm
+    name: "GLM Runner"
+    description: "Execute GLM with preflight checks, timeout, and output validation"
+    stage: s8_execution
+    script_path: "tools/s8_execution/run_glm.py"
+    language: python
+    inputs:
+      - name: run_dir
+        type: directory
+        description: "Directory containing glm3.nml and input files"
+        required: true
+    outputs:
+      - name: output_nc
+        type: file
+        description: "GLM output NetCDF"
+        path_pattern: "output/output.nc"
+      - name: lake_csv
+        type: file
+        description: "Lake-integrated time series"
+        path_pattern: "output/lake.csv"
+    preconditions:
+      - "GLM binary exists and is executable"
+      - "glm3.nml exists in run_dir"
+      - "All referenced data files exist"
+    postconditions:
+      - "Return code 0"
+      - "output.nc and lake.csv exist with non-zero size"
+
+  - id: parse_glm_output
+    name: "Output Parser"
+    description: "Parse GLM output.nc and lake.csv for summary statistics"
+    stage: s9_output_analysis
+    script_path: "tools/s9_output_analysis/parse_glm_output.py"
+    language: python
+    inputs:
+      - name: output_nc
+        type: file
+        description: "GLM output.nc"
+        required: false
+      - name: lake_csv
+        type: file
+        description: "GLM lake.csv"
+        required: false
+    outputs:
+      - name: summary
+        type: file
+        description: "JSON summary of simulation results"
+        path_pattern: "summary.json"
+    preconditions:
+      - "At least one of output_nc or lake_csv exists"
+    postconditions: []
+
+  - id: plot_glm_results
+    name: "Results Plotter"
+    description: "Generate temperature heatmap, surface/bottom temp, lake level, ice plots"
+    stage: s9_output_analysis
+    script_path: "tools/s9_output_analysis/plot_glm_results.py"
+    language: python
+    inputs:
+      - name: output_nc
+        type: file
+        description: "GLM output.nc"
+        required: false
+      - name: lake_csv
+        type: file
+        description: "GLM lake.csv"
+        required: false
+    outputs:
+      - name: plot
+        type: file
+        description: "Multi-panel PNG plot"
+        path_pattern: "glm_results.png"
+    preconditions: []
+    postconditions: []
+
+  - id: calibrate_glm
+    name: "GLUE Calibrator"
+    description: "GLUE-style parameter calibration against observed temperature"
+    stage: s9_output_analysis
+    script_path: "tools/s9_output_analysis/calibrate_glm.py"
+    language: python
+    inputs:
+      - name: run_dir
+        type: directory
+        description: "GLM simulation directory"
+        required: true
+      - name: observed_temp
+        type: file
+        description: "Observed temperature CSV"
+        required: true
+      - name: n_samples
+        type: number
+        description: "Number of parameter samples"
+        required: false
+        example: "100"
+    outputs:
+      - name: results
+        type: file
+        description: "Calibration results JSON"
+        path_pattern: "calibration_results.json"
+    preconditions:
+      - "GLM simulation runs successfully with default params"
+    postconditions:
+      - "Best parameter set identified with RMSE"
+
+  - id: glm_to_cama_outflow
+    name: "GLM-CaMa Coupler"
+    description: "Convert GLM outflow to CaMa-Flood lateral inflow"
+    stage: s10_coupling
+    script_path: "tools/s10_coupling/glm_to_cama_outflow.py"
+    language: python
+    inputs:
+      - name: glm_outlet
+        type: file
+        description: "GLM outlet CSV"
+        required: false
+      - name: overflow
+        type: file
+        description: "GLM overflow CSV"
+        required: false
+    outputs:
+      - name: outflow
+        type: file
+        description: "CaMa-Flood compatible outflow file"
+        path_pattern: "*.nc or *.csv"
+    preconditions:
+      - "GLM simulation completed successfully"
+    postconditions: []
+
+skill_documents:
+  - id: sd_s0
+    name: "Configuration Guide"
+    stage: s0_config
+    path: "docs/s0_configuration_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 500
+
+  - id: sd_s1
+    name: "Lake Identification and Morphometry"
+    stage: s1_lake_identification
+    path: "docs/s1_lake_identification_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 800
+
+  - id: sd_s2
+    name: "Meteorological Forcing Preparation"
+    stage: s2_met_forcing
+    path: "docs/s2_met_forcing_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 700
+
+  - id: sd_s3
+    name: "Inflow Preparation"
+    stage: s3_inflow
+    path: "docs/s3_inflow_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 600
+
+  - id: sd_s4
+    name: "Outflow Configuration"
+    stage: s4_outflow
+    path: "docs/s4_outflow_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 500
+
+  - id: sd_s5
+    name: "Initial Profiles"
+    stage: s5_init_profiles
+    path: "docs/s5_init_profiles_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 500
+
+  - id: sd_s6
+    name: "Namelist Generation"
+    stage: s6_namelist
+    path: "docs/s6_namelist_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 900
+
+  - id: sd_s7
+    name: "AED2 Configuration"
+    stage: s7_aed_config
+    path: "docs/s7_aed_config_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 600
+
+  - id: sd_s8
+    name: "Execution Guide"
+    stage: s8_execution
+    path: "docs/s8_execution_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 500
+
+  - id: sd_s9
+    name: "Output Analysis"
+    stage: s9_output_analysis
+    path: "docs/s9_output_analysis_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 700
+
+  - id: sd_s10
+    name: "Downstream Coupling"
+    stage: s10_coupling
+    path: "docs/s10_coupling_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 500
+
+  - id: sd_calib
+    name: "Calibration Guide"
+    stage: s9_output_analysis
+    path: "docs/calibration_guide.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 700
+
+diagnostic_triplets:
+  - id: dt_001
+    stage: s2_met_forcing
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_002
+    stage: s2_met_forcing
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_003
+    stage: s2_met_forcing
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_004
+    stage: s3_inflow
+    failure_domain: unit_conversion
+    severity: degraded
+  - id: dt_005
+    stage: s6_namelist
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_006
+    stage: s1_lake_identification
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_007
+    stage: s1_lake_identification
+    failure_domain: parameter_format
+    severity: degraded
+  - id: dt_008
+    stage: s6_namelist
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_009
+    stage: s5_init_profiles
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_010
+    stage: s6_namelist
+    failure_domain: parameter_format
+    severity: silent
+  - id: dt_011
+    stage: s8_execution
+    failure_domain: path_resolution
+    severity: fatal
+  - id: dt_012
+    stage: s8_execution
+    failure_domain: path_resolution
+    severity: fatal
+  - id: dt_013
+    stage: s8_execution
+    failure_domain: runtime
+    severity: fatal
+  - id: dt_014
+    stage: s8_execution
+    failure_domain: runtime
+    severity: degraded
+  - id: dt_015
+    stage: s8_execution
+    failure_domain: runtime
+    severity: fatal
+  - id: dt_016
+    stage: s3_inflow
+    failure_domain: dependency_mismatch
+    severity: silent
+  - id: dt_017
+    stage: s10_coupling
+    failure_domain: dependency_mismatch
+    severity: silent
+  - id: dt_018
+    stage: s9_output_analysis
+    failure_domain: dependency_mismatch
+    severity: degraded
+  - id: dt_019
+    stage: s6_namelist
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_020
+    stage: s2_met_forcing
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_021
+    stage: s6_namelist
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_022
+    stage: s3_inflow
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_023
+    stage: s8_execution
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_024
+    stage: s2_met_forcing
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_025
+    stage: s6_namelist
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_026
+    stage: s2_met_forcing
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_027
+    stage: s6_namelist
+    failure_domain: silent_error
+    severity: silent
+
+summary:
+  total_tools: 13
+  total_tool_lines: 3454
+  total_skill_documents: 12
+  total_skill_words: 7500
+  total_diagnostic_triplets: 27
+  failure_domains:
+    - unit_conversion
+    - parameter_format
+    - path_resolution
+    - runtime
+    - dependency_mismatch
+    - silent_error
+  pipeline_stages: 11
+  pipeline_milestones: 11

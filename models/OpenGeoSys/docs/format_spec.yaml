@@ -1,0 +1,153 @@
+model:
+  name: "OpenGeoSys"
+  version: "6.5.7"
+  domain: "subsurface THMC (Thermo-Hydro-Mechanical-Chemical) processes in porous and fractured media"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenGeoSys/venv/bin/ogs"
+  binary_type: "compiled_cpp"
+  input_format: "XML project file (.prj) + VTU meshes"
+  output_format: "VTU (VTK Unstructured Grid) + PVD time series index"
+  unit_system: "strict SI (Pa, K, m, s, kg) — no internal unit conversion"
+
+inputs:
+  project_file:
+    format: "XML"
+    extension: ".prj"
+    root_element: "OpenGeoSysProject"
+    required_sections:
+      - "meshes"
+      - "processes"
+      - "media"
+      - "time_loop"
+      - "parameters"
+      - "process_variables"
+      - "nonlinear_solvers"
+      - "linear_solvers"
+
+  mesh:
+    format: "VTU (VTK Unstructured Grid)"
+    description: "Unstructured FEM mesh with boundary submeshes"
+    notes: "Boundary conditions require separate submesh .vtu files"
+
+  forcing:
+    - name: "pressure_bc"
+      unit: "Pa"
+      valid_range: [0, 1.0e+8]
+      description: "Dirichlet/Neumann pressure boundary condition"
+    - name: "temperature_bc"
+      unit: "K"
+      valid_range: [200, 500]
+      description: "Temperature boundary condition (must be Kelvin, NOT Celsius)"
+    - name: "recharge"
+      unit: "m/s"
+      valid_range: [0, 1.0e-5]
+      description: "Recharge flux (convert from mm/day: divide by 86400000)"
+    - name: "concentration_bc"
+      unit: "mol/m3"
+      valid_range: [0, 1000]
+      description: "Species concentration boundary condition"
+
+  parameters:
+    critical:
+      - name: "permeability"
+        unit: "m2"
+        valid_range: [1.0e-18, 1.0e-8]
+        description: "Intrinsic permeability (NOT hydraulic conductivity m/s). Convert: kappa = K * mu / (rho * g)"
+      - name: "porosity"
+        unit: "dimensionless"
+        valid_range: [0.01, 0.6]
+        description: "Effective porosity"
+      - name: "storage"
+        unit: "1/Pa"
+        valid_range: [1.0e-12, 1.0e-6]
+        description: "Specific storage coefficient. Must be > 0 for transient flow."
+      - name: "density"
+        unit: "kg/m3"
+        valid_range: [998, 1050]
+        description: "Liquid phase density"
+      - name: "viscosity"
+        unit: "Pa.s"
+        valid_range: [1.0e-4, 1.0e-2]
+        description: "Dynamic viscosity"
+      - name: "thermal_conductivity"
+        unit: "W/(m.K)"
+        valid_range: [0.1, 5.0]
+        description: "Thermal conductivity of porous medium"
+      - name: "specific_heat_capacity"
+        unit: "J/(kg.K)"
+        valid_range: [800, 4200]
+        description: "Specific heat capacity"
+    optional:
+      - name: "youngs_modulus"
+        unit: "Pa"
+        valid_range: [1.0e+6, 1.0e+11]
+        description: "Young's modulus for mechanical problems"
+      - name: "poissons_ratio"
+        unit: "dimensionless"
+        valid_range: [0.0, 0.5]
+        description: "Poisson's ratio"
+      - name: "van_genuchten_alpha"
+        unit: "1/Pa"
+        valid_range: [1.0e-6, 1.0e-2]
+        description: "van Genuchten alpha parameter (convert from 1/cm: p_b = rho*g/(alpha*100))"
+      - name: "residual_saturation"
+        unit: "dimensionless"
+        valid_range: [0.0, 0.4]
+        description: "Residual liquid saturation"
+
+outputs:
+  primary:
+    - name: "pressure"
+      unit: "Pa"
+      valid_range: [0, 1.0e+8]
+      description: "Hydraulic pressure field (node-based)"
+    - name: "temperature"
+      unit: "K"
+      valid_range: [200, 500]
+      description: "Temperature field (node-based)"
+    - name: "displacement"
+      unit: "m"
+      valid_range: [-0.1, 0.1]
+      description: "Displacement vector (node-based)"
+    - name: "darcy_velocity"
+      unit: "m/s"
+      valid_range: [0, 1.0e-3]
+      description: "Darcy velocity (cell-based)"
+    - name: "saturation"
+      unit: "dimensionless"
+      valid_range: [0, 1]
+      description: "Liquid saturation (Richards flow)"
+  output_files:
+    - format: "VTU"
+      pattern: "{prefix}_ts_{timestep}_t_{time}.vtu"
+    - format: "PVD"
+      pattern: "{prefix}.pvd"
+      description: "XML time series index linking timesteps to VTU files"
+    - format: "XDMF/HDF5"
+      description: "Alternative for large parallel runs"
+
+process_types:
+  - "LIQUID_FLOW"
+  - "RICHARDS_FLOW"
+  - "STEADY_STATE_DIFFUSION"
+  - "HEAT_CONDUCTION"
+  - "HT"
+  - "HYDRO_MECHANICS"
+  - "THERMO_MECHANICS"
+  - "SMALL_DEFORMATION"
+  - "LARGE_DEFORMATION"
+  - "RICHARDS_MECHANICS"
+  - "THERMO_RICHARDS_FLOW"
+  - "THERMO_RICHARDS_MECHANICS"
+  - "TH2M"
+  - "COMPONENT_TRANSPORT"
+  - "HEAT_TRANSPORT_BHE"
+
+known_issues:
+  - "All units must be strict SI — no internal conversion. Wrong units produce silent garbage."
+  - "Temperature must be in Kelvin, not Celsius."
+  - "Permeability is intrinsic (m2), not hydraulic conductivity (m/s)."
+  - "Time in project files is always in seconds."
+  - "Boundary conditions require separate submesh VTU files."
+  - "Body force vector dimension must match mesh dimension."
+  - "Storage coefficient must be > 0 for transient flow."
+  - "van Genuchten alpha from literature (1/cm) must be converted to 1/Pa."

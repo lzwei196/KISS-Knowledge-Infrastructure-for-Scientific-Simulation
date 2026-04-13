@@ -1,0 +1,309 @@
+# GSFLOW Diagnostic Triplets
+# symptom → diagnosis → remedy for common failure modes
+
+triplets:
+
+  # ── Unit Conversion Traps ──────────────────────────────────────────────
+
+  - id: dt_001
+    stage: s4_forcing
+    severity: silent
+    symptom: |
+      Model runs successfully but simulated streamflow is 25× higher than
+      observed. Massive flooding in all seasons. Basin water balance shows
+      precipitation far exceeding any reasonable value.
+    diagnosis: |
+      Precipitation units not converted from mm/day (CMFD source) to
+      inches/day (GSFLOW precip_units=0). The factor of 25.4 was missed.
+      GSFLOW interprets mm values as inches, inflating precipitation by 25.4×.
+    remedy: |
+      Multiply precipitation by MM_TO_INCHES = 1/25.4 = 0.03937 before
+      writing to .day or .data file. Alternatively, set precip_units=1 (mm)
+      in the parameter file to keep mm units. Verify: annual precipitation
+      should be ~30-80 inches (760-2000 mm) for most basins.
+    related: [dt_002, dt_003]
+
+  - id: dt_002
+    stage: s4_forcing
+    severity: silent
+    symptom: |
+      No snow accumulation even in winter for basins that should have snow.
+      ET is unrealistically high in winter. All precipitation falls as rain
+      regardless of season.
+    diagnosis: |
+      Temperature data in Celsius being read by GSFLOW as Fahrenheit
+      (temp_units=0). 0°C is interpreted as 0°F, which is -17.8°C — but
+      during summer, 25°C is read as 25°F (-3.9°C), which is still cold.
+      Actually the issue is reversed: Kelvin or Celsius values are much
+      higher than expected Fahrenheit values. 20°C → treated as 20°F is
+      wrong direction. The key issue: if temp_units=0 (Fahrenheit) but
+      data is Celsius, the rain/snow partition threshold (~32°F) is compared
+      against Celsius values (~0-35°C = 0-35 in model's eyes). Since most
+      Celsius values > 0 → all precip falls as rain.
+    remedy: |
+      Convert temperature: K→°F = (K-273.15)×9/5+32 or K→°C = K-273.15.
+      Match temp_units in parameter file to actual data units.
+      Check: winter temperatures should be near/below 32°F (0°C) for
+      snow-producing basins.
+    related: [dt_001, dt_003]
+
+  - id: dt_003
+    stage: s4_forcing
+    severity: silent
+    symptom: |
+      Simulated ET is approximately half the expected value. Soil moisture
+      remains too high. Streamflow is moderately overestimated due to
+      insufficient ET extraction.
+    diagnosis: |
+      Solar radiation not converted from W/m² (CMFD source) to
+      Langleys/day (GSFLOW internal). The conversion factor is ~2.065.
+      Without conversion, radiation appears ~2× too low, reducing
+      computed potential ET by a similar factor.
+    remedy: |
+      Convert: Langleys/day = W/m² × 86400/41868 ≈ W/m² × 2.065.
+      Verify: peak summer solar radiation should be 400-700 Langleys/day
+      (200-340 W/m²). If values are < 200, likely not converted.
+    related: [dt_001, dt_002]
+
+  - id: dt_004
+    stage: s2_soil
+    severity: silent
+    symptom: |
+      All precipitation is stored in soil with almost no streamflow generated.
+      Soil moisture never reaches capacity. The soil acts as an infinite sponge.
+    diagnosis: |
+      Soil moisture capacity (soil_moist_max) computed in mm but GSFLOW
+      expects inches. A typical soil_moist_max of 200mm becomes 200 inches
+      (5080mm) — an impossibly large soil reservoir that never fills.
+    remedy: |
+      Convert soil depth/capacity from mm to inches: divide by 25.4.
+      Typical soil_moist_max range: 2-20 inches (50-500 mm).
+      If soil_moist_max > 30 inches, likely still in mm.
+    related: [dt_001]
+
+  - id: dt_005
+    stage: s1_domain
+    severity: silent
+    symptom: |
+      Temperature lapse rate corrections are wildly wrong. Valley HRUs
+      are too cold or mountain HRUs too warm. Snow line is at wrong
+      elevation. Streamflow timing is incorrect.
+    diagnosis: |
+      DEM elevation units (meters) don't match GSFLOW elevation units
+      (feet, via elev_units parameter). If DEM is in meters but GSFLOW
+      expects feet, lapse rate corrections are applied to wrong values.
+      1 meter ≈ 3.28 feet, so error is ~3.3×.
+    remedy: |
+      Either convert DEM to feet before extracting hru_elev, or set
+      elev_units=1 (meters) in the parameter file. Verify by checking
+      hru_elev values against known basin elevations.
+    related: [dt_002]
+
+  # ── Parameter Format Traps ─────────────────────────────────────────────
+
+  - id: dt_006
+    stage: s0_config
+    severity: fatal
+    symptom: |
+      GSFLOW crashes immediately at startup with error about reading
+      control file or "unexpected end of file" error.
+    diagnosis: |
+      Missing #### delimiter between parameter blocks in control file.
+      Each parameter block must start and end with ####. A single missing
+      delimiter causes the parser to misalign all subsequent parameters.
+    remedy: |
+      Ensure every parameter block in the control file is bounded by
+      #### lines. Use build_control_file.py tool which handles delimiters
+      automatically. Validate by counting #### lines: should be
+      2 × (number of parameters) + 1.
+
+  - id: dt_007
+    stage: s5_parameters
+    severity: fatal
+    symptom: |
+      GSFLOW crashes during initialization with "dimension mismatch" or
+      "array bounds exceeded" error message.
+    diagnosis: |
+      Parameter array length doesn't match declared dimension. For example,
+      if nhru=128 but soil_moist_max has only 100 values, GSFLOW crashes
+      when trying to read value 101.
+    remedy: |
+      Verify each parameter has exactly the declared number of values.
+      Check dimension declarations in parameter files match across all
+      parameter files (nhru, nsegment, nssr must be consistent).
+
+  - id: dt_008
+    stage: s5_parameters
+    severity: silent
+    symptom: |
+      Parameter values are all zero or all the same default value.
+      Model runs but produces uniform output across all HRUs.
+    diagnosis: |
+      Wrong data type code in parameter file. Using code 1 (integer) for
+      a float parameter truncates decimal values to 0. Using code 4 (string)
+      for a numeric parameter reads garbage.
+    remedy: |
+      Data type codes: 1=integer, 2=real (float), 4=character (string).
+      Verify data type codes match parameter type. Most physical parameters
+      are type 2 (real). soil_type and cov_type are type 1 (integer).
+
+  # ── Runtime Traps ──────────────────────────────────────────────────────
+
+  - id: dt_009
+    stage: s6_run
+    severity: fatal
+    symptom: |
+      "FAILED TO MEET SOLVER CONVERGENCE CRITERIA" repeated in MODFLOW
+      listing file. Model may produce output but water budget doesn't close.
+    diagnosis: |
+      MODFLOW groundwater solver (PCG, NWT) cannot converge within the
+      specified iterations. Common causes: unrealistic hydraulic conductivity,
+      initial heads far from solution, dry cells with rewetting problems,
+      or grid resolution too fine relative to properties.
+    remedy: |
+      1. Switch from PCG to NWT solver (more robust for unconfined flow)
+      2. Increase MXITER in solver settings (e.g., 500→1000)
+      3. Relax convergence criteria (HCLOSE: 0.001→0.01)
+      4. Check hydraulic conductivity values are reasonable
+      5. Set initial heads to land surface elevation
+      6. Check for extremely thin layers or steep gradients
+
+  - id: dt_010
+    stage: s6_run
+    severity: fatal
+    symptom: |
+      GSFLOW aborts with "modflow_time_zero must precede simulation
+      start_time" or similar timing error.
+    diagnosis: |
+      The modflow_time_zero control parameter is set to the same date or
+      a date after start_time. GSFLOW requires modflow_time_zero to be
+      at least 1 day before start_time.
+    remedy: |
+      Set modflow_time_zero to 1 day before start_time. For example,
+      if start_time = 1980,10,1, set modflow_time_zero = 1980,9,30.
+
+  - id: dt_011
+    stage: s6_run
+    severity: degraded
+    symptom: |
+      No streamflow generated. basin_cfs is always 0. All water goes to
+      soil and groundwater storage but never reaches streams.
+    diagnosis: |
+      Cascade flow network not defined or improperly configured.
+      HRUs are not connected to stream segments, so surface runoff and
+      interflow have no pathway to streams. Water accumulates in HRUs.
+    remedy: |
+      Verify cascade parameters are defined:
+      - ncascade > 0
+      - hru_up_id and hru_down_id arrays properly assigned
+      - Terminal HRUs cascade to stream segments (hru_segment)
+      Alternatively, use strmflow_in_out module for simple routing.
+
+  - id: dt_012
+    stage: s6_run
+    severity: silent
+    symptom: |
+      Simulated peak flows are much higher than observed, while baseflow
+      is too low. Hydrograph is too flashy with rapid rise and fall.
+    diagnosis: |
+      Groundwater parameters (ssr2gw_rate, gwflow_coef) are too low,
+      causing insufficient groundwater recharge and baseflow. Most water
+      runs off as surface flow or quick interflow.
+    remedy: |
+      Increase ssr2gw_rate (0.1-0.5) and gwflow_coef (0.01-0.05).
+      Also check soil_moist_max — if too low, soil fills quickly and
+      generates excess surface runoff.
+
+  # ── Path and Configuration Traps ───────────────────────────────────────
+
+  - id: dt_013
+    stage: s0_config
+    severity: fatal
+    symptom: |
+      "File not found" errors when running on Linux. Control file was
+      created on Windows and contains backslash path separators.
+    diagnosis: |
+      Windows-style paths (\..\input\prms\file.params) are not valid
+      on Linux. The backslashes are interpreted as escape characters
+      or literal characters, not path separators.
+    remedy: |
+      Convert all backslashes to forward slashes in control file and
+      MODFLOW name file: sed -i 's|\\|/|g' *.control *.nam
+      The build_control_file.py tool always uses forward slashes.
+
+  - id: dt_014
+    stage: s6_run
+    severity: fatal
+    symptom: |
+      Output directory errors. GSFLOW reports cannot open output files.
+      No output files are created.
+    diagnosis: |
+      Output directories specified in control file don't exist. GSFLOW
+      does NOT create directories automatically. If the control file
+      specifies output/prms/ but that directory doesn't exist, writes fail.
+    remedy: |
+      Create all output directories before running:
+      mkdir -p output/prms output/modflow
+      Check all paths in csv_output_file, model_output_file, etc.
+
+  - id: dt_015
+    stage: s4_forcing
+    severity: fatal
+    symptom: |
+      GSFLOW crashes during first timestep with "data file read error"
+      or "wrong number of values" in data file.
+    diagnosis: |
+      The .day file has wrong number of values per line. GSFLOW expects
+      exactly nhru values after the 6 date fields. Fewer values → crash.
+      More values → silently ignored (but usually causes alignment issues).
+    remedy: |
+      Verify each data line has exactly 6 + nhru columns.
+      Check nhru dimension in parameter file matches .day file column count.
+      Watch for inconsistent line endings (Windows CRLF vs Unix LF).
+
+  # ── Validation and Calibration Traps ───────────────────────────────────
+
+  - id: dt_016
+    stage: s7_postprocess
+    severity: silent
+    symptom: |
+      Validation metrics (NSE, KGE) are much worse than expected despite
+      reasonable-looking hydrographs. NSE is strongly negative.
+    diagnosis: |
+      Spinup period included in validation statistics. The first 1-3 years
+      of simulation have unrealistic initial conditions (dry soil, wrong
+      groundwater heads), which dramatically inflate error statistics.
+    remedy: |
+      Discard first 1-3 years as spinup period. For Bengbu 1980-1990:
+      start model at 1980, validate only 1981-1990 (or even 1982-1990).
+
+  - id: dt_017
+    stage: s7_postprocess
+    severity: silent
+    symptom: |
+      Simulated discharge is approximately 35× higher or lower than
+      observed discharge. Temporal pattern may look correct but magnitude
+      is completely wrong.
+    diagnosis: |
+      Output unit mismatch. GSFLOW outputs basin_cfs (cubic feet per
+      second) but observations are in m³/s. The conversion factor is
+      0.028317. Comparing cfs to cms directly gives 35× error.
+    remedy: |
+      Convert basin_cfs to m³/s: multiply by CFS_TO_CMS = 0.028317.
+      Or convert basin_stflow (inches) to m³/s using basin area:
+      Q_cms = stflow_in × area_km² × 25.4 × 1000 / 86400
+
+  - id: dt_018
+    stage: s1_domain
+    severity: silent
+    symptom: |
+      Basin area in model is wrong. Water balance doesn't close. Runoff
+      volume is systematically over or underestimated by a constant factor.
+    diagnosis: |
+      HRU area (hru_area) is in wrong units. PRMS expects acres.
+      Common mistake: using km² or m². 1 km² = 247.105 acres.
+      If hru_area is in km², volumes will be off by 247×.
+    remedy: |
+      Convert basin area to acres: km² × 247.105 or m² / 4046.86.
+      Verify: sum(hru_area) should equal basin area in acres.
+      Bengbu basin: ~121,330 km² ≈ 29,977,000 acres.

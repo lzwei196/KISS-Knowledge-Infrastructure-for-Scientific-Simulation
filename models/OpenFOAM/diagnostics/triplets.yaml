@@ -1,0 +1,620 @@
+# OpenFOAM Diagnostic Triplets
+# Symptom -> Diagnosis -> Remedy entries for common failures
+# Severity: fatal (crashes), degraded (runs but poor quality), silent (runs, wrong results)
+
+- id: dt_001
+  stage: s2_boundary_conditions
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Solver crashes immediately with "Dimension mismatch" error when reading
+      pressure field. Error mentions incompatible dimensions for p.
+    error_pattern: "dimensions.*not equal"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      Pressure field uses dynamic dimensions [1 -1 -2 0 0 0 0] (Pa) but
+      incompressible solver expects kinematic dimensions [0 2 -2 0 0 0 0] (m^2/s^2).
+    explanation: >
+      OpenFOAM incompressible solvers (incompressibleFluid, icoFoam, simpleFoam)
+      solve for kinematic pressure p/rho. The dimension array in the p field file
+      must reflect this. Dynamic pressure in Pa is only valid for compressible
+      solvers (fluid, rhoPimpleFoam).
+    affected_components: [convert_forcing_to_openfoam.py, 0/p]
+  remedy:
+    action: "Change pressure dimensions to [0 2 -2 0 0 0 0] and divide values by density"
+    tool_to_run: "convert_forcing_to_openfoam.py"
+    manual_steps:
+      - "Edit 0/p: change dimensions to [0 2 -2 0 0 0 0]"
+      - "Divide all pressure values by fluid density (rho)"
+      - "For water: p_kinematic = p_Pa / 998"
+    prevention: "check_case.py validates dimension arrays before run"
+  severity: fatal
+  cross_references: [dt_011]
+
+- id: dt_002
+  stage: s1_mesh_generation
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Simulation converges but velocity and pressure values are orders of magnitude
+      wrong. Reynolds number does not match expected flow regime.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      convertToMeters in blockMeshDict is wrong. Vertices are in millimeters but
+      convertToMeters is set to 1 (meters), making the domain 1000x too large.
+    explanation: >
+      The convertToMeters factor scales all vertex coordinates. If vertices are
+      defined in mm (e.g., for a 100mm pipe), convertToMeters must be 0.001.
+      With the wrong scale, the mesh is at the wrong physical size. Since
+      OpenFOAM uses SI units internally, all derived quantities (Re, pressure
+      drop, etc.) will be wrong. The simulation may still converge, making
+      this a silent error.
+    affected_components: [generate_mesh.py, system/blockMeshDict]
+  remedy:
+    action: "Set convertToMeters to correct value and regenerate mesh"
+    tool_to_run: "generate_mesh.py"
+    manual_steps:
+      - "Check vertex coordinate units in blockMeshDict"
+      - "Set convertToMeters: 1 for meters, 0.001 for mm, 0.01 for cm"
+      - "Re-run blockMesh"
+      - "Verify domain dimensions in checkMesh output or ParaView"
+    prevention: "generate_mesh.py reports domain size in meters for verification"
+  severity: silent
+  cross_references: []
+
+- id: dt_003
+  stage: s2_boundary_conditions
+  failure_domain: patch_consistency
+  symptom:
+    description: >
+      Fatal error at startup: "patch name X not found in mesh boundary".
+      Solver exits before any calculation.
+    error_pattern: "patch.*not found"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      Boundary patch names in field files (0/U, 0/p) do not match the patch
+      names defined in constant/polyMesh/boundary.
+    explanation: >
+      After regenerating the mesh (blockMesh, snappyHexMesh), patch names may
+      change. Field files in 0/ still reference the old patch names. OpenFOAM
+      requires exact match (case-sensitive) between field boundary entries and
+      mesh patches.
+    affected_components: [0/U, 0/p, constant/polyMesh/boundary]
+  remedy:
+    action: "Update patch names in all field files to match polyMesh/boundary"
+    tool_to_run: "check_case.py"
+    manual_steps:
+      - "Read constant/polyMesh/boundary to get current patch names"
+      - "Update all files in 0/ to use matching patch names"
+      - "Ensure every mesh patch has an entry in every field file"
+    prevention: "check_case.py validates patch name consistency"
+  severity: fatal
+  cross_references: []
+
+- id: dt_004
+  stage: s5_execution
+  failure_domain: numerical_stability
+  symptom:
+    description: >
+      Simulation diverges after a few time steps. Log shows increasing residuals,
+      then "Floating point exception" or NaN values. Often preceded by very high
+      Courant number.
+    error_pattern: "Floating point exception|nan|inf"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      Time step deltaT is too large for the mesh resolution and flow velocity,
+      resulting in Courant number >> 1.
+    explanation: >
+      The Courant-Friedrichs-Lewy (CFL) condition requires Co = U*dt/dx < 1 for
+      explicit and semi-implicit time schemes. With PISO, this is strictly required.
+      With PIMPLE, Co can exceed 1 if enough outer correctors are used, but
+      excessively large Co still causes divergence.
+    affected_components: [system/controlDict, system/fvSolution]
+  remedy:
+    action: "Reduce deltaT or enable adaptive time stepping with maxCo=1"
+    tool_to_run: "configure_case.py"
+    manual_steps:
+      - "Estimate required dt: dt < dx / U_max"
+      - "Or enable adjustTimeStep yes and maxCo 1 in controlDict"
+      - "If using PIMPLE, increase nOuterCorrectors to 3-5"
+      - "Start with 1st order Euler time scheme for initial stability"
+    prevention: "run_openfoam.py monitors Courant number and warns if > 1"
+  severity: fatal
+  cross_references: [dt_013]
+
+- id: dt_005
+  stage: s3_physical_properties
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Gravity appears to work backwards: heavy fluid (water) rises and light
+      fluid (air) sinks in a VoF simulation. Buoyancy-driven flows go the
+      wrong direction.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Gravity vector has wrong sign or is pointing along wrong axis relative
+      to the mesh coordinate system.
+    explanation: >
+      In a Y-up mesh, gravity should be (0 -9.81 0). In a Z-up mesh,
+      (0 0 -9.81). A positive gravity component means "up" in that direction,
+      reversing buoyancy. The simulation will run without error but produce
+      physically impossible results.
+    affected_components: [convert_properties_to_openfoam.py, constant/g]
+  remedy:
+    action: "Correct gravity vector to point downward in mesh coordinate system"
+    tool_to_run: "convert_properties_to_openfoam.py"
+    manual_steps:
+      - "Determine which axis is 'up' in your mesh"
+      - "Set gravity to negative along that axis: (0 -9.81 0) for Y-up"
+      - "Verify magnitude is approximately 9.81 m/s^2"
+    prevention: "check_case.py validates gravity direction and magnitude"
+  severity: silent
+  cross_references: []
+
+- id: dt_006
+  stage: s2_boundary_conditions
+  failure_domain: initialization
+  symptom:
+    description: >
+      Turbulent simulation diverges in first 5-10 iterations. Residuals for k
+      and epsilon/omega explode immediately. Laminar equivalent works fine.
+    error_pattern: "Solving for k.*Initial residual = 1"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      Turbulence fields (k, epsilon, omega) initialized with zero or unreasonable
+      values. The turbulence model equations become singular.
+    explanation: >
+      Turbulence model equations require non-zero initial fields. Setting k=0
+      causes division-by-zero in epsilon or omega equations. Use estimation
+      formulas: k = 1.5*(U*TI)^2, epsilon = Cmu^0.75 * k^1.5 / l.
+    affected_components: [0/k, 0/epsilon, 0/omega]
+  remedy:
+    action: "Initialize turbulence fields with physically reasonable values"
+    tool_to_run: ""
+    manual_steps:
+      - "Estimate turbulence intensity TI (0.01-0.10)"
+      - "Calculate k = 1.5 * (U_ref * TI)^2"
+      - "Calculate epsilon = 0.09^0.75 * k^1.5 / (0.07 * D_h)"
+      - "Set uniform initial values in 0/k and 0/epsilon"
+      - "Set inlet boundary conditions with same values"
+    prevention: "Validate k > 0 and epsilon > 0 in all field files before running"
+  severity: fatal
+  cross_references: []
+
+- id: dt_007
+  stage: s0_configuration
+  failure_domain: configuration
+  symptom:
+    description: >
+      Simulation produces far fewer or far more output files than expected.
+      Either disk fills up with thousands of time directories, or only one
+      output exists at the end time.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      writeControl and writeInterval have mismatched semantics. writeControl
+      is set to "timeStep" but writeInterval is a time in seconds (e.g., 0.1),
+      or vice versa.
+    explanation: >
+      If writeControl=timeStep and writeInterval=0.1, OpenFOAM writes every
+      0.1 time steps, which rounds to every step. If writeControl=runTime and
+      writeInterval=100, it writes every 100 seconds. The units of
+      writeInterval depend on writeControl mode.
+    affected_components: [configure_case.py, system/controlDict]
+  remedy:
+    action: "Match writeInterval units to writeControl mode"
+    tool_to_run: "configure_case.py"
+    manual_steps:
+      - "For timeStep: writeInterval = number of steps (integer)"
+      - "For runTime: writeInterval = seconds of simulation time"
+      - "For adjustableRunTime: same as runTime, adjusts dt to hit times"
+      - "Calculate expected N outputs = endTime / writeInterval"
+    prevention: "configure_case.py always uses runTime for consistency"
+  severity: silent
+  cross_references: []
+
+- id: dt_008
+  stage: s2_boundary_conditions
+  failure_domain: initialization
+  symptom:
+    description: >
+      VoF (interFoam/incompressibleVoF) simulation runs but shows no water --
+      entire domain is air. Free surface never appears despite correct settings.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Phase fraction field alpha.water is initialized as uniform 0 (all air).
+      The water region was never defined.
+    explanation: >
+      In VoF, alpha=1 is water and alpha=0 is air. The field must be initialized
+      with setFields or funkySetFields to define the initial water body geometry.
+      A uniform 0 field means no water exists anywhere.
+    affected_components: [0/alpha.water]
+  remedy:
+    action: "Use setFields to initialize water region in alpha.water"
+    tool_to_run: ""
+    manual_steps:
+      - "Create system/setFieldsDict with boxToCell or cylinderToCell"
+      - "Define water region geometry (coordinates of water body)"
+      - "Set alpha.water = 1 inside water region, 0 outside"
+      - "Run: setFields -case <caseDir>"
+      - "Verify in ParaView that alpha distribution is correct"
+    prevention: "Check that alpha field has both 0 and 1 regions before running"
+  severity: silent
+  cross_references: [dt_012]
+
+- id: dt_009
+  stage: s5_execution
+  failure_domain: parallel
+  symptom:
+    description: >
+      MPI crash at startup when running parallel. Error message about
+      "number of processor directories does not equal number of processors"
+      or similar MPI abort.
+    error_pattern: "processor.*does not equal|MPI_ABORT"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      The -np argument to mpirun does not match numberOfSubdomains in
+      system/decomposeParDict.
+    explanation: >
+      OpenFOAM requires exact match between MPI process count and domain
+      decomposition. If decomposeParDict says 4 subdomains but mpirun uses
+      -np 8, the solver cannot find the right processor directories.
+    affected_components: [run_openfoam.py, system/decomposeParDict]
+  remedy:
+    action: "Match mpirun -np N with numberOfSubdomains N in decomposeParDict"
+    tool_to_run: "run_openfoam.py"
+    manual_steps:
+      - "Check numberOfSubdomains in system/decomposeParDict"
+      - "Use same N in mpirun -np N"
+      - "If changing N, re-run decomposePar"
+      - "Delete old processor* directories before re-decomposing"
+    prevention: "run_openfoam.py validates np vs decomposeParDict before launching"
+  severity: fatal
+  cross_references: [dt_015]
+
+- id: dt_010
+  stage: s1_mesh_generation
+  failure_domain: mesh_quality
+  symptom:
+    description: >
+      Solver diverges after some iterations. checkMesh reports max non-orthogonality
+      > 70 degrees. Pressure equation shows oscillating or increasing residuals.
+    error_pattern: "Max non-orthogonality.*[7-9][0-9]|non-orthogonality > 70"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      Mesh has cells with high non-orthogonality (face normal significantly
+      misaligned with line connecting cell centers).
+    explanation: >
+      The finite volume surface normal gradient approximation breaks down for
+      highly non-orthogonal cells. Without correction, the pressure equation
+      produces oscillatory or divergent results. snappyHexMesh can produce
+      such cells near complex geometry.
+    affected_components: [system/fvSolution, system/fvSchemes]
+  remedy:
+    action: "Add non-orthogonal correctors and use limited schemes"
+    tool_to_run: ""
+    manual_steps:
+      - "In fvSolution/PIMPLE: set nNonOrthogonalCorrectors 2"
+      - "In fvSchemes: use 'limited corrected 0.5' for laplacian and snGrad"
+      - "If still diverging, improve mesh quality or refine problem areas"
+      - "Run checkMesh to verify improvement"
+    prevention: "Always run checkMesh and fix non-orthogonality > 65 before running"
+  severity: fatal
+  cross_references: []
+
+- id: dt_011
+  stage: s3_physical_properties
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Simulation runs but Reynolds number is wrong by factor ~1000. Flow appears
+      much more or less turbulent than expected. Pressure drop is unrealistic.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Dynamic viscosity mu [Pa.s] was entered instead of kinematic viscosity
+      nu [m^2/s]. For water, mu = 1e-3 Pa.s but nu = 1e-6 m^2/s.
+    explanation: >
+      OpenFOAM physicalProperties expects kinematic viscosity nu = mu/rho.
+      Using dynamic viscosity directly makes the fluid appear 1000x more
+      viscous (for water). The simulation converges but at wrong Re.
+    affected_components: [convert_properties_to_openfoam.py, constant/physicalProperties]
+  remedy:
+    action: "Convert to kinematic viscosity: nu = mu / rho"
+    tool_to_run: "convert_properties_to_openfoam.py"
+    manual_steps:
+      - "Check current nu value in physicalProperties"
+      - "For water at 20C: nu should be ~1e-6 m^2/s (not 1e-3)"
+      - "If wrong, compute nu = mu / rho and update"
+      - "Re-estimate Reynolds number: Re = U * L / nu"
+    prevention: "convert_properties_to_openfoam.py warns if nu > 1e-3"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_012
+  stage: s2_boundary_conditions
+  failure_domain: syntax
+  symptom:
+    description: >
+      Fatal parse error: "expected token, found on line X". Solver cannot
+      read field file and exits immediately.
+    error_pattern: "expected.*token|parse error"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      Vector internalField specified as scalar: "internalField uniform 0"
+      instead of "internalField uniform (0 0 0)" for a volVectorField.
+    explanation: >
+      OpenFOAM distinguishes between scalar and vector fields. A volVectorField
+      requires parenthesized vector values (Ux Uy Uz). Using a bare scalar
+      causes a parse error. This commonly happens when copying a pressure field
+      template for velocity.
+    affected_components: [0/U]
+  remedy:
+    action: "Use vector syntax for vector fields"
+    tool_to_run: ""
+    manual_steps:
+      - "Change 'internalField uniform 0' to 'internalField uniform (0 0 0)'"
+      - "Similarly for boundaryField: 'value uniform (Ux Uy Uz)'"
+      - "Check field class is volVectorField for U, volScalarField for p"
+    prevention: "convert_forcing_to_openfoam.py generates correct format"
+  severity: fatal
+  cross_references: [dt_008]
+
+- id: dt_013
+  stage: s0_configuration
+  failure_domain: convergence
+  symptom:
+    description: >
+      Residuals oscillate instead of decreasing. Solver never converges to
+      specified tolerance. SIMPLE or PIMPLE iterations show sawtooth pattern.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Relaxation factors are too aggressive (too close to 1.0) for the current
+      mesh and flow conditions, or nOuterCorrectors is insufficient.
+    explanation: >
+      Under-relaxation damps the update between iterations to prevent
+      oscillations. For SIMPLE/PIMPLE, typical values are 0.3-0.7 for
+      velocity and 0.2-0.3 for pressure. Values too close to 1.0 remove
+      the damping effect, causing the pressure-velocity coupling to oscillate.
+    affected_components: [configure_case.py, system/fvSolution]
+  remedy:
+    action: "Reduce relaxation factors and/or increase outer correctors"
+    tool_to_run: "configure_case.py"
+    manual_steps:
+      - "Set relaxation: U=0.5, p=0.2 (conservative start)"
+      - "Increase nOuterCorrectors to 5-10 for PIMPLE"
+      - "Use 1st order upwind temporarily for stability"
+      - "Gradually increase relaxation as solution develops"
+    prevention: "Start with conservative relaxation, increase after convergence"
+  severity: degraded
+  cross_references: [dt_004]
+
+- id: dt_014
+  stage: s6_postprocessing
+  failure_domain: configuration
+  symptom:
+    description: >
+      Output time directories disappear during or after simulation. Only the
+      last few time steps are available. Earlier results are lost.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      purgeWrite is set to a non-zero value in controlDict, causing OpenFOAM
+      to delete old time directories and keep only the last N.
+    explanation: >
+      purgeWrite N tells OpenFOAM to keep only the most recent N output times.
+      This saves disk space for long runs but destroys earlier results.
+      Setting purgeWrite 0 keeps all outputs.
+    affected_components: [system/controlDict]
+  remedy:
+    action: "Set purgeWrite 0 to keep all time directories"
+    tool_to_run: ""
+    manual_steps:
+      - "Edit system/controlDict"
+      - "Set purgeWrite 0"
+      - "Re-run simulation from last available time"
+    prevention: "configure_case.py defaults to purgeWrite 0"
+  severity: silent
+  cross_references: []
+
+- id: dt_015
+  stage: s5_execution
+  failure_domain: dependency
+  symptom:
+    description: >
+      Error "foamRun: command not found" or "libOpenFOAM.so: cannot open shared
+      object file" when trying to run the solver.
+    error_pattern: "command not found|cannot open shared object"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      OpenFOAM environment not sourced. PATH and LD_LIBRARY_PATH do not include
+      OpenFOAM directories.
+    explanation: >
+      OpenFOAM requires sourcing etc/bashrc to set up environment variables
+      (WM_PROJECT_DIR, FOAM_APPBIN, FOAM_LIBBIN, etc.). Without this, the
+      shell cannot find OpenFOAM executables or shared libraries.
+    affected_components: [run_openfoam.py]
+  remedy:
+    action: "Source OpenFOAM environment before running"
+    tool_to_run: "run_openfoam.py"
+    manual_steps:
+      - "source $WM_PROJECT_DIR/etc/bashrc"
+      - "Or specify --foam-bashrc in run_openfoam.py"
+      - "Verify with: which foamRun (should show path)"
+    prevention: "run_openfoam.py accepts --foam-bashrc to source automatically"
+  severity: fatal
+  cross_references: [dt_009]
+
+- id: dt_016
+  stage: s1_mesh_generation
+  failure_domain: mesh_quality
+  symptom:
+    description: >
+      Wall functions produce warnings about y+ being outside valid range.
+      Turbulence near walls is inaccurate, skin friction coefficient is wrong.
+    error_pattern: "y\\+ value .* is outside"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      First cell height near walls does not match the turbulence wall treatment.
+      Wall functions require 30 < y+ < 300. Resolved walls require y+ < 1.
+    explanation: >
+      y+ = u_tau * y / nu, where u_tau is friction velocity, y is first cell
+      height. If using wall functions (kEpsilon, kOmegaSST with default BCs),
+      y+ should be 30-300. If y+ is too low, wall functions give wrong results.
+      If too high, the boundary layer is not captured.
+    affected_components: [generate_mesh.py, system/blockMeshDict]
+  remedy:
+    action: "Adjust first cell height to achieve correct y+ range"
+    tool_to_run: ""
+    manual_steps:
+      - "Estimate y+ = u_tau * y / nu where u_tau = sqrt(tau_w / rho)"
+      - "For wall functions: target y+ = 30-100"
+      - "Use grading in blockMesh to concentrate cells near wall"
+      - "Or switch to low-Re wall treatment (resolve to y+ < 1)"
+    prevention: "Estimate required first cell height before meshing"
+  severity: degraded
+  cross_references: [dt_010]
+
+- id: dt_017
+  stage: s0_configuration
+  failure_domain: configuration
+  symptom:
+    description: >
+      No postProcessing/ directory created. Function objects (probes, forces,
+      samples) produce no output even though they are defined.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Function objects are defined in controlDict but the functions{} block
+      is empty, commented out, or has syntax errors that silently prevent
+      loading.
+    explanation: >
+      OpenFOAM silently skips malformed function objects without error. A
+      missing semicolon, wrong library name, or incorrect type string causes
+      the function to not load. No error is printed -- the output simply
+      doesn't appear.
+    affected_components: [system/controlDict]
+  remedy:
+    action: "Check function object syntax and library names"
+    tool_to_run: ""
+    manual_steps:
+      - "Run with -postProcess flag to test function objects separately"
+      - "Check for syntax errors in functions{} block"
+      - "Verify libs entries point to correct shared libraries"
+      - "Test with simple builtin: #includeFunc residuals"
+    prevention: "Use #includeFunc macros for standard function objects"
+  severity: silent
+  cross_references: []
+
+- id: dt_018
+  stage: s0_configuration
+  failure_domain: syntax
+  symptom:
+    description: >
+      Fatal error on startup: "keyword X not found" or "unexpected end of file".
+      Solver cannot parse a dictionary file.
+    error_pattern: "keyword.*not found|unexpected.*end"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      Missing semicolon at the end of a dictionary entry. OpenFOAM dictionaries
+      require semicolons after every value assignment.
+    explanation: >
+      Unlike JSON or YAML, OpenFOAM dictionaries use C-like syntax where every
+      statement ends with a semicolon. A missing semicolon causes the parser to
+      read the next keyword as part of the value, producing confusing error
+      messages about missing keywords or unexpected tokens.
+    affected_components: [system/controlDict, system/fvSchemes, system/fvSolution]
+  remedy:
+    action: "Add missing semicolons to dictionary files"
+    tool_to_run: ""
+    manual_steps:
+      - "Check the line number reported in the error message"
+      - "Look for missing semicolons on that line and preceding lines"
+      - "Every assignment must end with semicolon: 'key value;'"
+      - "Closing braces also need semicolons in some contexts"
+    prevention: "Use check_case.py or foamDictionary for syntax validation"
+  severity: fatal
+  cross_references: []
+
+- id: dt_019
+  stage: s3_physical_properties
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      VoF simulation: interface is unrealistically sharp or diffuse. Droplets
+      fragment into unphysical small structures.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Surface tension coefficient sigma has wrong dimensions or value. OpenFOAM
+      expects sigma in [kg/s^2] = [N/m] but value may be wrong by orders of
+      magnitude.
+    explanation: >
+      Surface tension sigma controls the capillary pressure across the interface.
+      Too low sigma allows unphysical fragmentation. Too high sigma prevents
+      any deformation. For water-air at 20C, sigma = 0.072 N/m.
+    affected_components: [convert_properties_to_openfoam.py, constant/transportProperties]
+  remedy:
+    action: "Set correct surface tension value for the fluid pair"
+    tool_to_run: "convert_properties_to_openfoam.py"
+    manual_steps:
+      - "Water-air at 20C: sigma = 0.072 N/m"
+      - "Check dimensions are [1 0 -2 0 0 0 0]"
+      - "Verify Weber number: We = rho * U^2 * L / sigma"
+    prevention: "Use fluid preset values in convert_properties_to_openfoam.py"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_020
+  stage: s4_solver_setup
+  failure_domain: convergence
+  symptom:
+    description: >
+      Pressure field shows checkerboard pattern. Oscillating pressure values
+      between adjacent cells. Non-physical pressure distribution.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Insufficient nNonOrthogonalCorrectors on a non-orthogonal mesh, or
+      using uncorrected snGrad/laplacian schemes.
+    explanation: >
+      Non-orthogonal correction is needed when mesh faces are not aligned with
+      the vector connecting cell centers. Without correction, the pressure
+      Laplacian approximation introduces systematic errors that manifest as
+      checkerboard patterns.
+    affected_components: [system/fvSolution, system/fvSchemes]
+  remedy:
+    action: "Add non-orthogonal correctors and use corrected schemes"
+    tool_to_run: ""
+    manual_steps:
+      - "Set nNonOrthogonalCorrectors to 1-3 in PIMPLE block"
+      - "Use 'Gauss linear corrected' for laplacianSchemes"
+      - "Use 'corrected' for snGradSchemes"
+      - "For severe non-orthogonality, use 'limited corrected 0.5'"
+    prevention: "Run checkMesh and set correctors based on non-orthogonality"
+  severity: degraded
+  cross_references: [dt_010]

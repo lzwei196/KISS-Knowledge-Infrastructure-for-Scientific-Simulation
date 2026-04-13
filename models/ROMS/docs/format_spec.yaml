@@ -1,0 +1,197 @@
+model:
+  name: "ROMS"
+  full_name: "Regional Ocean Modeling System"
+  version: "4.1"
+  domain: "ocean_hydrodynamics"
+  subdomain: "coastal and estuarine modeling"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ROMS/source/repo/build/romsS"
+  binary_type: "serial (romsS), MPI (romsM)"
+  developers: "Rutgers University (H. Arango, A. Shchepetkin, J. Warner)"
+  license: "MIT/X style"
+
+grid:
+  type: "Arakawa C-grid, orthogonal curvilinear"
+  vertical: "stretched terrain-following S-coordinates"
+  parameters:
+    - name: "Vtransform"
+      valid_range: [1, 2]
+      description: "Vertical transformation equation"
+    - name: "Vstretching"
+      valid_range: [1, 5]
+      description: "Vertical stretching function"
+    - name: "THETA_S"
+      valid_range: [0.1, 10.0]
+      description: "Surface stretching parameter"
+    - name: "THETA_B"
+      valid_range: [0.0, 4.0]
+      description: "Bottom stretching parameter"
+    - name: "TCLINE"
+      unit: "m"
+      valid_range: [5.0, 200.0]
+      description: "Critical depth for stretching"
+
+inputs:
+  config:
+    - name: "roms.in"
+      format: "plain text key-value"
+      description: "Main configuration / namelist file"
+    - name: "CPP header (.h)"
+      format: "C preprocessor"
+      description: "Compile-time physics options"
+
+  forcing:
+    - name: "sustr"
+      unit: "N/m2"
+      description: "Surface wind stress, XI-direction (on U-points)"
+    - name: "svstr"
+      unit: "N/m2"
+      description: "Surface wind stress, ETA-direction (on V-points)"
+    - name: "srflx"
+      unit: "W/m2"
+      valid_range: [0, 1400]
+      description: "Shortwave radiation (positive downward)"
+    - name: "lrflx"
+      unit: "W/m2"
+      description: "Net longwave radiation (positive = warming)"
+    - name: "rain"
+      unit: "kg/m2/s"
+      description: "Precipitation rate"
+    - name: "Qair"
+      unit: "kg/kg"
+      description: "Specific humidity"
+    - name: "Tair"
+      unit: "Celsius"
+      description: "Air temperature at 2m"
+    - name: "Pair"
+      unit: "mb"
+      description: "Air pressure (hPa)"
+    - name: "Uwind"
+      unit: "m/s"
+      description: "Wind speed, XI-direction (for BULK_FLUXES)"
+    - name: "Vwind"
+      unit: "m/s"
+      description: "Wind speed, ETA-direction (for BULK_FLUXES)"
+
+  grid_fields:
+    - name: "h"
+      unit: "m"
+      valid_range: [0.01, 12000]
+      description: "Bathymetry (positive depth)"
+    - name: "f"
+      unit: "1/s"
+      description: "Coriolis parameter"
+    - name: "pm"
+      unit: "1/m"
+      description: "XI-direction grid metric (inverse spacing)"
+    - name: "pn"
+      unit: "1/m"
+      description: "ETA-direction grid metric (inverse spacing)"
+    - name: "mask_rho"
+      valid_range: [0, 1]
+      description: "Land/sea mask at RHO-points"
+
+  initial_conditions:
+    - name: "temp"
+      unit: "Celsius"
+      valid_range: [-2, 40]
+      description: "Initial temperature"
+    - name: "salt"
+      unit: "PSU"
+      valid_range: [0, 42]
+      description: "Initial salinity"
+    - name: "zeta"
+      unit: "m"
+      description: "Initial free-surface elevation"
+    - name: "u"
+      unit: "m/s"
+      description: "Initial XI-direction velocity"
+    - name: "v"
+      unit: "m/s"
+      description: "Initial ETA-direction velocity"
+
+  parameters:
+    critical:
+      - name: "dt"
+        unit: "seconds"
+        valid_range: [1, 3600]
+        description: "Baroclinic (3D) time step"
+      - name: "NDTFAST"
+        valid_range: [20, 60]
+        description: "Ratio of barotropic to baroclinic time steps"
+      - name: "VISC2"
+        unit: "m2/s"
+        valid_range: [1, 100]
+        description: "Horizontal Laplacian viscosity"
+      - name: "TNU2"
+        unit: "m2/s"
+        valid_range: [0, 50]
+        description: "Horizontal Laplacian tracer diffusivity"
+      - name: "AKT_BAK"
+        unit: "m2/s"
+        valid_range: [1.0e-6, 1.0e-4]
+        description: "Background vertical tracer diffusivity"
+      - name: "AKV_BAK"
+        unit: "m2/s"
+        valid_range: [1.0e-6, 1.0e-4]
+        description: "Background vertical momentum diffusivity"
+      - name: "RDRG2"
+        valid_range: [0.001, 0.01]
+        description: "Quadratic bottom drag coefficient"
+      - name: "Zob"
+        unit: "m"
+        valid_range: [0.001, 0.1]
+        description: "Bottom roughness length"
+
+outputs:
+  primary:
+    - name: "temp"
+      unit: "Celsius"
+      valid_range: [-2, 40]
+      description: "Temperature"
+    - name: "salt"
+      unit: "PSU"
+      valid_range: [0, 42]
+      description: "Salinity"
+    - name: "u"
+      unit: "m/s"
+      valid_range: [-5, 5]
+      description: "XI-direction velocity (3D)"
+    - name: "v"
+      unit: "m/s"
+      valid_range: [-5, 5]
+      description: "ETA-direction velocity (3D)"
+    - name: "zeta"
+      unit: "m"
+      valid_range: [-10, 10]
+      description: "Free-surface elevation"
+    - name: "ubar"
+      unit: "m/s"
+      description: "Depth-averaged XI velocity"
+    - name: "vbar"
+      unit: "m/s"
+      description: "Depth-averaged ETA velocity"
+  output_files:
+    - name: "roms_his.nc"
+      description: "History file (snapshots at nHIS intervals)"
+    - name: "roms_avg.nc"
+      description: "Time-averaged fields at nAVG intervals"
+    - name: "roms_dia.nc"
+      description: "Diagnostic fields (momentum/tracer budgets)"
+    - name: "roms_rst.nc"
+      description: "Restart file for continuing runs"
+    - name: "roms_sta.nc"
+      description: "Station time series (if STATIONS enabled)"
+
+time:
+  variable: "ocean_time"
+  unit: "seconds since reference date"
+  reference: "Set by TIME_REF in roms.in (YYYYMMDD.dd format)"
+
+known_issues:
+  - "Wind stress (sustr/svstr) silently accepts m/s instead of N/m2 — must convert via bulk formula"
+  - "Shortwave radiation sign convention: positive downward; wrong sign causes ocean heat loss"
+  - "Precipitation must be in kg/m2/s, not mm/day — silent unit error"
+  - "Grid metrics pm/pn are inverse meters, not meters — inversion causes CFL blowup"
+  - "Time variable must be seconds since TIME_REF — mixing Julian days is a silent error"
+  - "Vtransform 1 vs 2 have different stretching formulations and parameter ranges"
+  - "BULK_FLUXES computes fluxes internally — do not also supply precomputed fluxes"

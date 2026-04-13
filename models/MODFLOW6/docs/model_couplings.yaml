@@ -1,0 +1,192 @@
+# ============================================================================
+# Model Couplings — MODFLOW 6 <-> HydroCraft Components
+# ============================================================================
+# Documents data flows between MODFLOW 6 and other HydroCraft models:
+#   VIC, CaMa-Flood, Lohmann Routing
+#
+# Each coupling specifies:
+#   source_model, source_variable -> transformation -> target_model, target_input
+#   with validation rules and scientific justification.
+# ============================================================================
+
+couplings:
+
+  # --- Coupling 1: VIC deep percolation -> MODFLOW recharge ---
+  - id: "coupling_vic_to_mf6_rch"
+    name: "VIC Deep Percolation to MODFLOW Recharge"
+    direction: "VIC -> MODFLOW 6"
+    scientific_justification: >
+      VIC computes vertical water balance including infiltration excess runoff,
+      saturation excess runoff, and deep percolation through the lowest soil layer.
+      This deep percolation represents water that leaves the root zone and percolates
+      to the water table, making it the natural input for MODFLOW's recharge package.
+    source:
+      model: "VIC 5.1.0"
+      variable: "OUT_BASEFLOW"
+      output_file: "fluxes_*.txt or vic_result/*.nc"
+      column: "Column 7 in VIC classic output (after preprocessing)"
+      units: "mm/day"
+      spatial_resolution: "VIC grid (0.1 or 0.25 degree)"
+      temporal_resolution: "daily"
+    target:
+      model: "MODFLOW 6"
+      package: "RCH (Recharge)"
+      input_variable: "recharge"
+      units: "m/day (if LENGTH_UNITS=meters)"
+      spatial_resolution: "MODFLOW grid (variable cell size)"
+      temporal_resolution: "per stress period"
+    transformation:
+      steps:
+        - "1. Extract VIC OUT_BASEFLOW (mm/day) from VIC output files"
+        - "2. Unit conversion: divide by 1000 to get m/day"
+        - "3. Spatial regridding: map VIC grid cells to MODFLOW grid cells using area-weighted average"
+        - "4. Temporal aggregation: average daily values over each MODFLOW stress period"
+        - "5. Apply to RCH package stress_period_data"
+      unit_conversion: "mm/day / 1000 = m/day"
+      spatial_method: "area-weighted interpolation using grid cell overlap"
+      temporal_method: "arithmetic mean over stress period"
+    validation:
+      - "Recharge values should be positive (no negative recharge in RCH)"
+      - "Typical recharge: 0.0001 to 0.01 m/day (0.1 to 10 mm/day)"
+      - "Annual recharge should be 5-30% of annual precipitation for temperate climates"
+      - "Total MODFLOW RCH volume should match total VIC baseflow volume (mass balance)"
+    silent_failure_modes:
+      - "Using mm/day directly without /1000 conversion -> recharge 1000x too high -> immediate convergence failure or heads above land surface"
+      - "Using VIC runoff instead of baseflow -> double-counting surface runoff as recharge"
+      - "Misaligned grids -> recharge applied to wrong locations"
+    tool: "build_rch_package"
+    tool_option: "vic_recharge_nc"
+
+  # --- Coupling 2: MODFLOW drain discharge -> Routing baseflow ---
+  - id: "coupling_mf6_drn_to_routing"
+    name: "MODFLOW Drain Discharge to Routing Baseflow"
+    direction: "MODFLOW 6 -> Lohmann Routing / CaMa-Flood"
+    scientific_justification: >
+      Groundwater discharges to streams and rivers when the water table intersects
+      the land surface or stream bed. The MODFLOW DRN package simulates this process:
+      when head exceeds drain elevation, water flows out proportional to conductance.
+      This drain flux represents the baseflow component that should be added to
+      surface runoff for total streamflow routing.
+    source:
+      model: "MODFLOW 6"
+      variable: "DRN flux"
+      output_file: "gwf.cbc (binary cell budget file)"
+      budget_text: "DRN"
+      units: "m3/day (volumetric rate per cell)"
+      spatial_resolution: "MODFLOW grid"
+      temporal_resolution: "per timestep"
+    target:
+      model: "Lohmann Routing or CaMa-Flood"
+      package: "Runoff input"
+      input_variable: "baseflow component"
+      units: "mm/day (Lohmann) or m3/s (CaMa-Flood)"
+      spatial_resolution: "VIC grid or CaMa-Flood grid"
+      temporal_resolution: "daily"
+    transformation:
+      steps:
+        - "1. Extract DRN budget from .cbc using flopy.utils.CellBudgetFile"
+        - "2. Sum DRN flux by VIC grid cell (spatial aggregation)"
+        - "3. Unit conversion for Lohmann: m3/day / (cell_area_m2) * 1000 = mm/day"
+        - "4. Unit conversion for CaMa-Flood: m3/day / 86400 = m3/s"
+        - "5. Add to VIC surface runoff as baseflow component"
+      unit_conversion_lohmann: "(m3/day) / (cell_area_m2) * 1000 = mm/day"
+      unit_conversion_cama: "(m3/day) / 86400 = m3/s"
+    validation:
+      - "DRN flux should be non-positive (water leaves aquifer, MODFLOW convention: negative = outflow)"
+      - "Baseflow should be smooth (no sudden spikes) compared to surface runoff"
+      - "Baseflow fraction of total streamflow: typically 30-80% depending on geology"
+    silent_failure_modes:
+      - "Forgetting to negate DRN flux (MODFLOW convention: negative = outflow, routing expects positive)"
+      - "Wrong cell area in unit conversion -> baseflow magnitude wrong"
+    tool: "extract_budget"
+
+  # --- Coupling 3: CaMa-Flood river stage -> MODFLOW RIV ---
+  - id: "coupling_cama_to_mf6_riv"
+    name: "CaMa-Flood River Stage to MODFLOW River Boundary"
+    direction: "CaMa-Flood -> MODFLOW 6"
+    scientific_justification: >
+      River-aquifer exchange depends on the difference between river stage and
+      groundwater head. CaMa-Flood computes dynamic river water surface elevation
+      (sfcelv) accounting for backwater effects and floodplain inundation. Using
+      CaMa-Flood stages instead of static river stages captures temporal variability
+      in groundwater-surface water interaction, which is critical during flood events.
+    source:
+      model: "CaMa-Flood v4.20"
+      variable: "sfcelv (surface water elevation)"
+      output_file: "out/<run>/sfcelv_YYYYMMDD.nc"
+      units: "meters above datum"
+      spatial_resolution: "CaMa-Flood grid (typically 15 arcmin = ~25 km)"
+      temporal_resolution: "daily"
+    target:
+      model: "MODFLOW 6"
+      package: "RIV (River)"
+      input_variable: "stage"
+      units: "meters (same datum as MODFLOW TOP/BOTM)"
+      spatial_resolution: "MODFLOW grid"
+      temporal_resolution: "per stress period"
+    transformation:
+      steps:
+        - "1. Extract CaMa-Flood sfcelv from NetCDF for each timestep"
+        - "2. Map CaMa river pixels to MODFLOW river cells (spatial intersection)"
+        - "3. Ensure datum consistency (both relative to same vertical datum)"
+        - "4. Update RIV stage values per stress period"
+        - "5. River bottom (RBOT) remains static, conductance may be adjusted"
+      spatial_method: "nearest-neighbor from CaMa grid to MODFLOW RIV cells"
+      temporal_method: "daily CaMa output averaged to MODFLOW stress period length"
+    validation:
+      - "River stage > river bottom (RBOT) at all times"
+      - "River stage should correlate with precipitation and upstream routing"
+      - "Gaining reach: river stage > groundwater head -> water flows aquifer->river"
+      - "Losing reach: river stage < groundwater head -> water flows river->aquifer"
+    silent_failure_modes:
+      - "Datum mismatch between CaMa-Flood and MODFLOW -> incorrect head gradient"
+      - "CaMa-Flood sfcelv in wrong grid cells -> river stage applied to wrong MODFLOW cells"
+    tool: "build_riv_package"
+    tool_option: "cama_stage_nc"
+
+  # --- Coupling 4: MODFLOW water table -> VIC soil moisture feedback ---
+  - id: "coupling_mf6_wt_to_vic"
+    name: "MODFLOW Water Table Depth to VIC Soil Moisture Feedback"
+    direction: "MODFLOW 6 -> VIC"
+    scientific_justification: >
+      When the water table is shallow (within the root zone), it reduces the
+      available soil water storage capacity and can increase surface runoff by
+      reducing infiltration capacity. VIC's soil moisture accounting should
+      reflect this constraint. This coupling is most important in alluvial
+      plains, wetlands, and areas with shallow groundwater.
+    source:
+      model: "MODFLOW 6"
+      variable: "Water table elevation (head in top active layer)"
+      output_file: "gwf.hds"
+      units: "meters above datum"
+      spatial_resolution: "MODFLOW grid"
+      temporal_resolution: "per timestep"
+    target:
+      model: "VIC 5.1.0"
+      package: "Soil parameters (soil_d3, soil moisture capacity)"
+      input_variable: "Effective soil column depth"
+      units: "meters"
+      spatial_resolution: "VIC grid"
+      temporal_resolution: "daily or per VIC timestep"
+    transformation:
+      steps:
+        - "1. Extract water table elevation from MODFLOW heads (top active layer)"
+        - "2. Compute water table depth: WTD = land_surface_elevation - water_table_head"
+        - "3. Map MODFLOW grid to VIC grid (area-weighted)"
+        - "4. If WTD < VIC soil_d3: reduce effective soil depth to WTD"
+        - "5. Recompute VIC maximum soil moisture for layer 3: max_moist = Ws * effective_depth * 1000"
+        - "6. This requires iterative coupling (run VIC -> MODFLOW -> update VIC -> repeat)"
+      spatial_method: "area-weighted average of MODFLOW WTD over VIC grid cell"
+    validation:
+      - "Water table depth should be non-negative (WTD >= 0)"
+      - "If WTD > total VIC soil depth, no feedback is needed (deep water table)"
+      - "Convergence criterion: WTD change < 0.1 m between coupling iterations"
+    complexity_note: >
+      This is the most complex coupling and requires iterative execution:
+      VIC produces recharge -> MODFLOW computes heads -> water table feeds back to VIC.
+      For weakly coupled systems (deep water table), a single pass may suffice.
+      For shallow water table regions, 3-5 iterations are typically needed.
+    silent_failure_modes:
+      - "Not iterating when water table is shallow -> VIC overestimates soil storage"
+      - "Using cell center head instead of water table -> wrong depth in confined layers"
+    tool: "extract_heads"

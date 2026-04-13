@@ -1,0 +1,544 @@
+entries:
+- id: err_001
+  timestamp: '2026-03-16T14:30:00'
+  recorded_by: claude-code
+  stage: s4_soil_setup
+  failure_domain: runtime
+  symptom:
+    description: 'NameError: name ''particle_density'' is not defined when write_soil_properties tool calls write_new_soil_physical_properties_to_dat()'
+    error_pattern: NameError.*particle_density
+    detection_method: exit_code
+  diagnosis:
+    root_cause: Method relied on closure variable from parent function rzwqm_scenario_mass_generation(). Standalone tool calls
+      lack this closure.
+    affected_components:
+    - lib/rzwqm_file.py:1781
+  resolution:
+    action: Changed to dict_of_soil_physical_properties[layer].particle_density — reads from object attribute
+    files_changed:
+    - lib/rzwqm_file.py
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_002
+  timestamp: '2026-03-16T14:45:00'
+  recorded_by: claude-code
+  stage: s7_scenario_assembly
+  failure_domain: path_resolution
+  symptom:
+    description: FileNotFoundError for RZWQM.dat/rzwqm.dat, RZINIT.dat/rzinit.dat, IPNAMES.DAT/ipnames.dat on Linux
+    error_pattern: FileNotFoundError.*No such file.*\.dat
+    detection_method: exit_code
+  diagnosis:
+    root_cause: Windows case-insensitive filesystem. Template files lowercase, code references uppercase. Linux is case-sensitive.
+    affected_components:
+    - lib/rzwqm_file.py RZWQM.__init__
+    - tools/s7*/update_ipnames_paths.py
+    - tools/s9*/parse_layer_output.py
+  resolution:
+    action: Added _resolve_case() to RZWQM class. Tries both cases, picks whichever exists on disk.
+    files_changed:
+    - lib/rzwqm_file.py
+    - tools/s7_scenario_assembly/update_ipnames_paths.py
+    - tools/s9_result_parsing/parse_layer_output.py
+  severity: fatal
+  promoted: true
+  promoted_as: dt_013
+- id: err_003
+  timestamp: '2026-03-16T15:00:00'
+  recorded_by: claude-code
+  stage: s4_soil_setup
+  failure_domain: silent_error
+  symptom:
+    description: 'Model refuses to start: SATURATED WATER CONTENT < 1/10 BAR SWC AT LAYER 1. fc10 exceeds ws for all soil
+      types.'
+    error_pattern: SATURATED WATER CONTENT < 1/10 BAR SWC
+    detection_method: log_match
+  diagnosis:
+    root_cause: 'fc10_estimate() standalone function has wrong parenthesization: ((ws-wr)*bp)^psd instead of (ws-wr)*(bp)^psd.
+      Class method version was correct.'
+    affected_components:
+    - lib/rzwqm_file.py:1403 fc10_estimate()
+  resolution:
+    action: Fixed formula to (ws-wr) * (bp/100)^psd + wr matching correct Brooks-Corey equation
+    files_changed:
+    - lib/rzwqm_file.py
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_004
+  timestamp: '2026-03-16T14:40:00'
+  recorded_by: claude-code
+  stage: s3_brk_generation
+  failure_domain: parameter_format
+  symptom:
+    description: 'S3 output validation fails: Calendar code line (19) expected ''1'', got ''====...''. BRK file actually correct.'
+    error_pattern: Calendar code line.*expected.*1.*got
+    detection_method: exit_code
+  diagnosis:
+    root_cause: Off-by-one in validation. Header has 19 comment lines (0-18) + '1' at line 19. Validator checked lines[18]
+      instead of lines[19].
+    affected_components:
+    - tools/s3_brk_generation/create_breakpoint_file.py:119
+  resolution:
+    action: Changed validation to check lines[19] and event lines starting at lines[20]
+    files_changed:
+    - tools/s3_brk_generation/create_breakpoint_file.py
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_005
+  timestamp: '2026-03-16T15:10:00'
+  recorded_by: claude-code
+  stage: s7_scenario_assembly
+  failure_domain: path_resolution
+  symptom:
+    description: Simulation dates not updated. Model runs for old template dates (2011-2021) instead of configured dates.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: update_ipnames_paths tool only updated file paths (lines 0-7), not dates (line 8). Original initialize_scneario_based_on_existing()
+      did update dates.
+    affected_components:
+    - tools/s7_scenario_assembly/update_ipnames_paths.py
+  resolution:
+    action: Added START_DATE and END_DATE parameters. Tool now writes DD MM YYYY DD MM YYYY to ipnames line 8.
+    files_changed:
+    - tools/s7_scenario_assembly/update_ipnames_paths.py
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_006
+  timestamp: '2026-03-16T15:30:00'
+  recorded_by: claude-code
+  stage: s6_initial_conditions
+  failure_domain: parameter_format
+  symptom:
+    description: 'forrtl: severe (24): end-of-file during read on RZINIT.dat. Model crashes after ''INITIAL VALUES READ IN''.'
+    error_pattern: forrtl.*severe.*24.*end-of-file.*RZINIT
+    detection_method: exit_code
+  diagnosis:
+    root_cause: write_new_soil_init_nutrient() had logic bug — when horizons >= placeholders, new_list stayed empty. Nutrient
+      section written with 0 data lines.
+    affected_components:
+    - lib/rzwqm_file.py:2007 write_new_soil_init_nutrient()
+  resolution:
+    action: 'Simplified to: extend placeholders to match horizon count, then slice to exact count.'
+    files_changed:
+    - lib/rzwqm_file.py
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_007
+  timestamp: '2026-03-16T15:45:00'
+  recorded_by: claude-code
+  stage: s7_scenario_assembly
+  failure_domain: path_resolution
+  symptom:
+    description: 'ERROR.OUT: File MZCER040.CUL not found. DSSAT crop model fails to load cultivar files.'
+    error_pattern: File.*MZCER040\.CUL.*Error key.*IPVAR
+    detection_method: file_check
+  diagnosis:
+    root_cause: 'RZX paths written as absolute without trailing slash. Fortran does string concatenation: ''DSSAT'' + ''MZCER040.CUL''
+      = ''DSSATMZCER040.CUL''. Ohio template uses relative ''DSSAT/'' with trailing slash.'
+    affected_components:
+    - tools/s7_scenario_assembly/update_rzx_paths.py:149
+  resolution:
+    action: Tool ensures trailing slash. Orchestration passes relative paths ('DSSAT/', './').
+    files_changed:
+    - tools/s7_scenario_assembly/update_rzx_paths.py
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_008
+  timestamp: '2026-03-16T16:30:00'
+  recorded_by: claude-code
+  stage: s6_5_management_write
+  failure_domain: silent_error
+  symptom:
+    description: Year 2 plants SOYBEAN, year 3 plants WHEAT instead of MAIZE every year.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: write_management_events used incrementing ref_num (1,2,3) as crop reference. RZWQM2 maps this to RZCropSel.rzq
+      entry index, cycling through crops.
+    affected_components:
+    - tools/s6_management_write/write_management_events.py:126
+  resolution:
+    action: Added crop_ref parameter (default=1). All years use same crop_ref unless rotation is explicitly requested.
+    files_changed:
+    - tools/s6_management_write/write_management_events.py
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_009
+  timestamp: '2026-03-16T19:00:00'
+  recorded_by: claude-code
+  stage: s6_5_management_write
+  failure_domain: parameter_format
+  symptom:
+    description: Maize planted at 518,910 seeds/ha (soybean density). Real maize density is 84,014.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Ohio template uses ref=2 (soybean) with 518,910 and ref=1 (maize) with 84,014. Density was copied from wrong
+      crop.
+    affected_components:
+    - run_iowa.py orchestration
+  resolution:
+    action: 'Corrected to 84,014 for maize. Documented crop-specific densities: maize ~84K, soybean ~519K, wheat ~3.9M.'
+    files_changed:
+    - run_iowa.py
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_010
+  timestamp: '2026-03-16T19:30:00'
+  recorded_by: claude-code
+  stage: s2_met_prep
+  failure_domain: silent_error
+  symptom:
+    description: Crop dies of water stress with 0 yield despite 74cm stored soil water. Root water uptake drops to zero. PotET=0.5
+      but ActET=0.00.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Non-zero E-pan and PAR in .met file override RZWQM2 internal Penman-Monteith ET calculation. Estimated values
+      produce incorrect water demand.
+    affected_components:
+    - tools/s2_met_prep/generate_met_file.py:160-166
+  resolution:
+    action: Hardcoded E-pan=0 and PAR=0 in generate_met_file. Ohio template always had these as 0.
+    files_changed:
+    - tools/s2_met_prep/generate_met_file.py
+  severity: silent
+  promoted: true
+  promoted_as: dt_014
+- id: err_011
+  timestamp: '2026-03-16T15:50:00'
+  recorded_by: claude-code
+  stage: s0_global_data
+  failure_domain: environment
+  symptom:
+    description: SoilGrids returns nodata (-32768) for NE China (Jilin). Texture classification crashes with 'Inputs adds
+      over 100%'.
+    error_pattern: Inputs adds over 100%
+    detection_method: exit_code
+  diagnosis:
+    root_cause: SoilGrids has coverage gaps. Nodata value (-32768) not filtered before unit conversion.
+    affected_components:
+    - tools/s0_global_data/soil_source_adapter.py _retrieve_soilgrids()
+  resolution:
+    action: Added nodata detection (skip values == nodata or < -9000). Regional gap remains — need HWSD for China.
+    files_changed:
+    - tools/s0_global_data/soil_source_adapter.py
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_012
+  timestamp: '2026-03-16T16:00:00'
+  recorded_by: claude-code
+  stage: s0_global_data
+  failure_domain: runtime
+  symptom:
+    description: MSWX forcing retrieval takes 5+ minutes per variable. 6-year run would take 30+ minutes for data alone.
+    error_pattern: ''
+    detection_method: exit_code
+  diagnosis:
+    root_cause: Sequential netCDF4 reads on 9GB global files. Each file read loads full spatial extent.
+    affected_components:
+    - tools/s0_global_data/forcing_source_adapter.py _retrieve_mswx()
+  resolution:
+    action: Rewrote with multiprocessing.Pool — 6 variables read in parallel. ~4 min/year.
+    files_changed:
+    - tools/s0_global_data/forcing_source_adapter.py
+  severity: degraded
+  promoted: false
+  promoted_as: ''
+- id: err_013
+  timestamp: '2026-03-17T13:00:00'
+  recorded_by: claude-code
+  stage: s7_scenario_assembly
+  failure_domain: silent_error
+  symptom:
+    description: Model plants wrong cultivar. RZCropSel.rzq shows 990001 SPRING but MANAGE.OUT shows 990003 WINTER-US.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: RZWQM2 reads crop list from rzwqm.dat (~line 494), not RZCropSel.rzq. The update_crop_selection tool only
+      modified the GUI file.
+    affected_components:
+    - tools/s7_scenario_assembly/update_crop_selection.py
+    - rzwqm.dat crop section
+  resolution:
+    action: Rewrote tool to update rzwqm.dat (real source) + RZCropSel.rzq (sync). Takes crop_code as input.
+    files_changed:
+    - tools/s7_scenario_assembly/update_crop_selection.py
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_014
+  timestamp: '2026-03-17T13:10:00'
+  recorded_by: claude-code
+  stage: s7_scenario_assembly
+  failure_domain: silent_error
+  symptom:
+    description: Wheat N uptake = 0.00 kg/ha despite 120 kg N fertilizer applied. Wheat biomass limited.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: WHDSSAT.RZX had ISWNIT=N (nitrogen routines disabled). Template from Ohio had it off for wheat.
+    affected_components:
+    - WHDSSAT.RZX simulation control line
+  resolution:
+    action: update_rzx_paths.py now auto-enables ISWNIT=Y in all RZX files.
+    files_changed:
+    - tools/s7_scenario_assembly/update_rzx_paths.py
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_015
+  timestamp: '2026-03-17T19:20:00'
+  recorded_by: claude-code
+  run_context:
+    basin: hutuo
+    model: RZWQM2
+    run_name: hutuo_wheat_sites
+    conversation_id: claude-hydrocraft-session
+  stage: s0_global_data
+  failure_domain: missing_tool
+  symptom:
+    description: soil_source_adapter.py returns 'hwsd backend not yet implemented' when source='hwsd'. Agent falls back to
+      VIC soil coupling which is not recommended.
+    error_pattern: hwsd backend not yet implemented
+    detection_method: exit_code
+  diagnosis:
+    root_cause: hwsd_soil_adapter.py was built as a separate standalone tool but not integrated into the main soil_source_adapter.py
+      dispatcher. The 'hwsd' branch still had a placeholder error.
+    explanation: 'The HWSD adapter was created during the Siping test (2026-03-17) but only as a standalone script. The main
+      soil_source_adapter.py that all other tools and the mass_project_generator call was never updated to delegate to it.
+
+      '
+    affected_components:
+    - tools/s0_global_data/soil_source_adapter.py
+    - tools/s10_mass_generation/mass_project_generator.py
+  resolution:
+    action: Added HWSD delegation in soil_source_adapter.py — imports from hwsd_soil_adapter and calls _get_mu_global, _lookup_hwsd,
+      _build_horizons.
+    files_changed:
+    - tools/s0_global_data/soil_source_adapter.py
+    prevention: When adding new backends, always integrate into the main dispatcher, not just as standalone.
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_016
+  timestamp: '2026-03-17T19:20:00'
+  recorded_by: claude-code
+  run_context:
+    basin: hutuo
+    model: RZWQM2
+    run_name: hutuo_wheat_sites
+    conversation_id: claude-hydrocraft-session
+  stage: s10_mass_generation
+  failure_domain: parameter_format
+  symptom:
+    description: mass_project_generator.py fails when calling generate_met_file — KeyError on 'output_path'. Met file not
+      generated.
+    error_pattern: KeyError.*output_path
+    detection_method: exit_code
+  diagnosis:
+    root_cause: mass_project_generator passes key 'output_met_path' but generate_met_file.py process() expects 'output_path'.
+    explanation: 'The mass_project_generator was written referencing an older version of the generate_met_file tool interface.
+      The key names diverged during knowledge infrastructure development.
+
+      '
+    affected_components:
+    - tools/s10_mass_generation/mass_project_generator.py:235
+  resolution:
+    action: Changed 'output_met_path' to 'output_path' in mass_project_generator.py line 235.
+    files_changed:
+    - tools/s10_mass_generation/mass_project_generator.py
+    prevention: Tool interface changes should grep all callers for the old key name.
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_017
+  timestamp: '2026-03-17T12:47:41Z'
+  recorded_by: claude-code
+  run_context:
+    basin: ''
+    model: RZWQM2
+    run_name: ''
+  stage: s2_met_prep
+  failure_domain: parameter_format
+  symptom:
+    description: Agent called met_quality_check with met_path argument instead of project_path + station_id — tool expects
+      two separate arguments, not a file path
+    error_pattern: met_path
+    detection_method: log_match
+  diagnosis:
+    root_cause: Skill doc showed library call (RZWQM(project_path, station_id)) but not the validated tool CLI interface,
+      so agent guessed wrong parameter names
+    explanation: ''
+    affected_components:
+    - met_quality_check.py
+    - s2_met_prep_skill.md
+  resolution:
+    action: 'Updated s2_met_prep_skill.md to document CLI interface explicitly: python met_quality_check.py <project_path>
+      <station_id>'
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_018
+  timestamp: '2026-03-17T12:47:41Z'
+  recorded_by: claude-code
+  run_context:
+    basin: ''
+    model: RZWQM2
+    run_name: ''
+  stage: s2_met_prep
+  failure_domain: parameter_format
+  symptom:
+    description: Agent called met_quality_check.process() with only met_file key — process() requires project_path, station_id,
+      and met_file
+    error_pattern: KeyError.*project_path
+    detection_method: log_match
+  diagnosis:
+    root_cause: process() expected all 3 keys from validate_inputs() output but agent bypassed validation and passed incomplete
+      dict
+    explanation: ''
+    affected_components:
+    - met_quality_check.py
+  resolution:
+    action: 'Made process() resilient: derives project_path and station_id from met_file path if missing'
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_019
+  timestamp: '2026-03-17T13:01:15Z'
+  recorded_by: claude-code
+  run_context:
+    basin: ''
+    model: RZWQM2
+    run_name: ''
+  stage: s0_vic_coupling
+  failure_domain: parameter_format
+  symptom:
+    description: 'vic_soil_converter.py wrong column indices: bulk_density at [31,32,33] but actual at [33,34,35]. Produces
+      fc33=1814, hb=1.74e20, RZWQM2 crashes with SATURATED WATER CONTENT < 1/3 BAR SWC'
+    error_pattern: SATURATED WATER CONTENT
+    detection_method: log_match
+  diagnosis:
+    root_cause: VIC 53-column layout has no header and varies by how fill_parameters populated it. VIC_COL dict uses wrong
+      offsets.
+    explanation: ''
+    affected_components:
+    - vic_soil_converter.py
+  resolution:
+    action: Prioritize hwsd_soil_adapter.py over vic_soil_converter.py. HWSD gives real properties without column guesswork.
+    files_changed: []
+    prevention: Always use hwsd_soil_adapter.py as primary soil source for DSSAT and RZWQM2.
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+
+  - id: "err_018"
+    timestamp: "2026-03-17T20:00:00"
+    recorded_by: "claude-code"
+    run_context:
+      basin: "hutuo"
+      model: "RZWQM2"
+      run_name: "hutuo_wheat_maize_26sites"
+    stage: "s6_5_management_write"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "RZWQM2 crashes with 'INPUT INCORRECT FOR IRRIGATION => IDOI' when irrigation is enabled."
+      error_pattern: "INPUT INCORRECT FOR IRRIGATION.*IDOI"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "write_management_events used timing=4 (ET-deficit) with MAD fraction 0.50 for irrigation. RZWQM2 expects timing=2 (specific dates) with integer date fields. The model tries to parse 0.50 as a date and fails."
+      affected_components: ["tools/s6_management_write/write_management_events.py _format_irrigation_lines()"]
+    resolution:
+      action: "Rewrote irrigation to use timing=2 (specific dates), type=2 (flood), methodology=1 (fixed amount). Mid-season irrigation date auto-calculated from planting/harvest DOY."
+      files_changed: ["tools/s6_management_write/write_management_events.py"]
+    severity: "fatal"
+    promoted: false
+    promoted_as: ""
+
+  - id: "err_019"
+    timestamp: "2026-03-17T20:10:00"
+    recorded_by: "claude-code"
+    run_context:
+      basin: "hutuo"
+      model: "RZWQM2"
+      run_name: "hutuo_wheat_maize_26sites"
+    stage: "s7_scenario_assembly"
+    failure_domain: "path_resolution"
+    symptom:
+      description: "RZWQM2 crashes at day 77 with 'end-of-file during read' on .sno file. Snow file is 0 bytes in Meteorology/."
+      error_pattern: "forrtl.*end-of-file.*sno"
+      detection_method: "exit_code"
+    diagnosis:
+      root_cause: "initialize_scenario and mass_project_generator create empty .sno files in Meteorology/ but don't copy the template snow data. The template has akron-updated.sno in the scenario dir but it's not copied to the Meteorology/ path that ipnames references."
+      affected_components: ["tools/s7_scenario_assembly/initialize_scenario.py", "mass_project_generator.py"]
+    resolution:
+      action: "Orchestration scripts (run_iowa.py, run_bengbu.py) already copy sno explicitly. The initialize_scenario tool should also ensure the sno copy. For now, documented in workflow.md as a required step."
+      files_changed: []
+    severity: "fatal"
+    promoted: false
+    promoted_as: ""
+
+  - id: "err_020"
+    timestamp: "2026-03-17T21:50:00"
+    recorded_by: "claude-code"
+    run_context:
+      basin: "hutuo"
+      model: "RZWQM2"
+      run_name: "hutuo_wheat_maize_26sites"
+    stage: "s2_met_prep"
+    failure_domain: "silent_error"
+    symptom:
+      description: "Annual precipitation 76 mm/yr in RZWQM2 vs 693 mm/yr in VIC (10% of actual). Crop yields near zero. Model runs to completion without error."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Agent converted VIC flux output (hutuo_fluxes_*.txt) to RZWQM2 weather CSV instead of using CMFD forcing directly. VIC OUT_PREC values are daily model output in mm but the conversion script likely applied additional unit conversions that reduced the values. The forcing_source_adapter tool with source='cmfd' produces correct precipitation."
+      explanation: >
+        The workflow.md did not explicitly warn against using VIC output as RZWQM2 weather input.
+        The agent found VIC flux files in the project directory and reasonably tried to convert them.
+        But VIC flux output should never be used as RZWQM2 forcing — always use the raw gridded
+        dataset (CMFD/MSWX) via forcing_source_adapter.
+      affected_components:
+        - "weather_csv generation (custom script, not our tools)"
+        - "workflow.md (missing guidance)"
+    resolution:
+      action: "Updated workflow.md with explicit warning: never use VIC flux as RZWQM2 weather. Always use CMFD/MSWX via forcing_source_adapter. Added as dt_015 candidate."
+      files_changed:
+        - "workflow/workflow.md"
+      prevention: "Workflow.md now has critical warning in Step 2 and in Critical Domain Knowledge section."
+    severity: "silent"
+    promoted: false
+    promoted_as: ""
+
+  - id: "err_021"
+    timestamp: "2026-03-17T23:30:00"
+    recorded_by: "claude-code"
+    stage: "s0_global_data"
+    failure_domain: "runtime"
+    symptom:
+      description: "CMFD forcing retrieval takes ~18 min per site (19 years). 13 sites = 4+ hours. Sequential netCDF4 reads on 1368 monthly files."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "CMFD backend in forcing_source_adapter.py read files sequentially. MSWX backend had multiprocessing but CMFD did not."
+      affected_components: ["tools/s0_global_data/forcing_source_adapter.py _retrieve_cmfd()"]
+    resolution:
+      action: "Added multiprocessing.Pool to CMFD backend (same pattern as MSWX). 6 parallel workers read different variables simultaneously. Expected 4-5x speedup."
+      files_changed: ["tools/s0_global_data/forcing_source_adapter.py"]
+    severity: "degraded"
+    promoted: false
+    promoted_as: ""

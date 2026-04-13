@@ -1,0 +1,251 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["crop"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "AquaCrop-OSPy v3.0.12"
+  domain: "crop"
+  secondary_domains: ["water_productivity", "deficit_irrigation"]
+  binary: null
+  package: "aquacrop (pip install aquacrop)"
+  language: "Python"
+  execution: "model = AquaCropModel(...); model.run_model(till_termination=True)"
+  notes: >
+    Pure-Python implementation of FAO AquaCrop v7.1. No compiled binary.
+    All inputs are Python objects, outputs are pandas DataFrames.
+    Unique strength: water productivity analysis and deficit irrigation optimization.
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "temperature_min"
+      column: "MinTemp"
+      unit: "degC"
+      valid_range: [-50.0, 50.0]
+      format: "pandas DataFrame column"
+      conversion_from_cmfd: "K -> degC: subtract 273.15"
+
+    - name: "temperature_max"
+      column: "MaxTemp"
+      unit: "degC"
+      valid_range: [-40.0, 60.0]
+      format: "pandas DataFrame column"
+
+    - name: "precipitation"
+      column: "Precipitation"
+      unit: "mm/day"
+      valid_range: [0.0, 500.0]
+      format: "pandas DataFrame column"
+
+    - name: "reference_et"
+      column: "ReferenceET"
+      unit: "mm/day"
+      valid_range: [0.1, 20.0]
+      format: "pandas DataFrame column"
+      notes: >
+        MUST be > 0 (clipped to 0.1 internally). AquaCrop does NOT compute ET0
+        internally -- this is the #1 difference from DSSAT. If missing from your
+        data source, compute using FAO Penman-Monteith (tools/s3_weather_prep/
+        compute_eto_penman_monteith.py).
+
+    - name: "date"
+      column: "Date"
+      format: "pandas Timestamp"
+      notes: "Must be a datetime index with daily frequency, no gaps."
+
+  parameters:
+    critical:
+      - name: "crop_type"
+        description: "Built-in crop name or GDD variant"
+        valid_values_calendar: ["Barley", "Cotton", "Maize", "PaddyRice", "Potato", "Soybean", "SugarBeet", "Wheat", "Sorghum", "Sunflower", "Tomato"]
+        valid_values_gdd: ["MaizeGDD", "WheatGDD", "SoybeanGDD", "PaddyRiceGDD", "PotatoGDD", "SorghumGDD", "SunflowerGDD", "TomatoGDD", "BarleyGDD"]
+        notes: "GDD variants preferred -- they adapt phenology to local temperature."
+
+      - name: "planting_date"
+        format: "MM/DD (e.g., '05/01')"
+        notes: "Used in Crop() constructor. Must align with local growing season."
+
+      - name: "simulation_dates"
+        format: "YYYY/MM/DD (slash separator REQUIRED)"
+        silent_error: >
+          Using dashes (YYYY-MM-DD) raises ValueError. Must use slashes.
+          This is checked at model construction time (dt_009).
+
+      - name: "soil_type"
+        description: "Built-in soil name or custom soil with layers"
+        valid_values: ["Clay", "ClayLoam", "Loam", "LoamySand", "Sand", "SandyClay", "SandyClayLoam", "SandyLoam", "Silt", "SiltClay", "SiltClayLoam", "SiltLoam", "Paddy"]
+        notes: >
+          For custom soils, use add_layer_from_texture(). Hydraulic ordering
+          constraint: thWP < thFC < thS must hold for all layers.
+
+      - name: "irrigation_method"
+        description: "Irrigation management strategy"
+        valid_values:
+          0: "Rainfed"
+          1: "Soil Moisture Target (SMT=[s1,s2,s3,s4] as % TAW)"
+          2: "Fixed Interval"
+          3: "Predefined Schedule (DataFrame)"
+          4: "Net Irrigation"
+          5: "Constant Depth"
+
+  files:
+    required:
+      - name: "Weather DataFrame"
+        description: "pandas DataFrame with MinTemp, MaxTemp, Precipitation, ReferenceET, Date columns"
+        notes: >
+          Column names are case-sensitive and must match exactly. Missing columns
+          cause ValueError (dt_007). ReferenceET must be computed externally.
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "dry_yield"
+      method: "model.get_simulation_results()"
+      column: "Dry yield (tonne/ha)"
+      unit: "t/ha"
+      valid_range: [0, 25]
+      notes: "Seasonal summary. Convert to kg/ha by multiplying by 1000."
+
+    - name: "fresh_yield"
+      method: "model.get_simulation_results()"
+      column: "Fresh yield (tonne/ha)"
+      unit: "t/ha"
+
+    - name: "seasonal_irrigation"
+      method: "model.get_simulation_results()"
+      column: "Seasonal irrigation (mm)"
+      unit: "mm"
+
+  daily_water:
+    - name: "water_flux"
+      method: "model.get_water_flux()"
+      key_columns: ["Es", "EsPot", "Tr", "TrPot", "IrrDay", "Runoff", "DeepPerc"]
+      unit: "mm/day"
+
+  daily_crop:
+    - name: "crop_growth"
+      method: "model.get_crop_growth()"
+      key_columns: ["canopy_cover", "biomass", "z_root", "harvest_index", "DryYield"]
+      unit: "various"
+
+  water_productivity:
+    - name: "crop_water_productivity"
+      computation: "CWP = DryYield(kg/ha) / ET(mm) = kg/m3"
+      unit: "kg/m3"
+      typical_range: [0.5, 2.5]
+
+    - name: "irrigation_water_use_efficiency"
+      computation: "IWUE = (Yield_irr - Yield_rain) / Irrigation(mm)"
+      unit: "kg/ha/mm"
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "missing_et0"
+    triplet: "dt_001"
+    description: "Missing or zero ReferenceET column in weather DataFrame"
+    affected_output: "Model fails to run or produces zero transpiration"
+    detection: "ReferenceET column missing or all values <= 0"
+    fix: "Compute ET0 using FAO Penman-Monteith from temperature, radiation, wind, humidity"
+
+  - id: "date_format_dashes"
+    triplet: "dt_009"
+    description: "Simulation dates with dashes (YYYY-MM-DD) instead of slashes (YYYY/MM/DD)"
+    affected_output: "ValueError at model construction"
+    detection: "Dashes in sim_start_time or sim_end_time"
+    fix: "Replace dashes with slashes"
+
+  - id: "soil_hydraulic_ordering"
+    triplet: "dt_003"
+    description: "thWP >= thFC or thFC >= thS in custom soil layers"
+    affected_output: "Assertion error at model construction"
+    detection: "Check thWP < thFC < thS for all layers"
+    fix: "Recompute with Saxton-Rawls pedotransfer or use built-in soil type"
+
+  - id: "pbias_wangjiaba_wheat"
+    description: >
+      AquaCrop wheat yield at Wangjiaba shows PBIAS of -30.3% vs SPAM2020.
+      10-year mean 4210 kg/ha vs observed 6036 kg/ha. High interannual
+      variability (CV=48%). Status: MARGINAL.
+    affected_output: "Wheat yield underestimate for Huai River basin"
+    detection: "PBIAS > 25% for wheat simulations"
+    fix: >
+      May require GDD crop parameter calibration. Bengbu single-site comparison
+      shows 6307 kg/ha (+4.5% PBIAS) suggesting weather forcing differences.
+    scorecard: "aquacrop_wheat_wangjiaba.json (MARGINAL)"
+
+  - id: "yield_zero_silent"
+    triplet: "dt_014"
+    description: "Model runs to completion but yield is zero -- silent crop death"
+    affected_output: "Dry yield = 0 despite no error message"
+    detection: "Yield = 0 in simulation results"
+    fix: "Check planting date (wrong season?), initial water content (too dry?), waterlogging (dt_008)"
+
+  - id: "weather_column_case"
+    triplet: "dt_007"
+    description: "Weather DataFrame column names are case-sensitive"
+    affected_output: "ValueError: required column not found"
+    detection: "'MinTemp' not 'mintemp' or 'MINTEMP'"
+    fix: "Use exact column names: MinTemp, MaxTemp, Precipitation, ReferenceET, Date"
+
+  - id: "gdd_base_temperature"
+    triplet: "dt_002"
+    description: "Wrong GDD base temperature causes incorrect phenology timing"
+    affected_output: "Crop matures too early or too late, wrong yield"
+    detection: "Compare simulated season length with expected crop calendar"
+    fix: "Check GDD_up and GDD_lo parameters in crop definition"
+
+# =========================================================================
+# EXPECTED RANGES (from validated results)
+# =========================================================================
+expected_ranges:
+  bengbu_wheat:
+    yield_kgha: [5000, 7500]
+    reference: "6307 kg/ha (+4.5% PBIAS vs SPAM2020)"
+  bengbu_maize:
+    yield_kgha: [10000, 16000]
+    reference: "14281 kg/ha (uncalibrated, potential overestimate)"
+    notes: "AquaCrop maize tends to overestimate at Bengbu. Cross-check with DSSAT/WOFOST."
+  wangjiaba_wheat:
+    yield_kgha: [3500, 6500]
+    reference: "4210 kg/ha (MARGINAL, -30.3% PBIAS)"
+    scorecard: "aquacrop_wheat_wangjiaba.json"
+  irrigation_test:
+    rainfed_wheat_tha: [3.5, 5.5]
+    deficit_smt50_wheat_tha: [6.0, 8.0]
+    full_smt80_wheat_tha: [6.0, 8.0]
+    scorecard: "core_aquacrop_irrig.json (PASS)"
+
+# =========================================================================
+# CALIBRATION REFERENCE
+# =========================================================================
+calibration_reference:
+  approach: "GDD-based crop parameter calibration"
+  key_parameters:
+    - name: "CCx"
+      description: "Maximum canopy cover"
+      unit: "fraction"
+    - name: "WP"
+      description: "Water productivity normalized for CO2 and ET0"
+      unit: "g/m2"
+    - name: "HI0"
+      description: "Reference harvest index"
+      unit: "fraction"
+    - name: "Emergence, Senescence, Maturity GDD"
+      description: "Phenological timing in growing degree days"
+  notes: >
+    For deficit irrigation optimization, calibrate SMT thresholds (% TAW)
+    across 4 growth stages. IWUE analysis shows diminishing returns above
+    SMT=50% for wheat at Wangjiaba (15.0 vs 9.3 kg/ha/mm).

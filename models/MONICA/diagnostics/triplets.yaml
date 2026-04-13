@@ -1,0 +1,268 @@
+# MONICA Diagnostic Triplets
+# symptom → diagnosis → remedy for common failure modes
+# Organized by failure domain
+
+---
+# Unit conversion traps (silent errors)
+
+- id: dt_01
+  stage: climate_forcing
+  failure_domain: unit_conversion
+  symptom: >
+    Yield is 10–100× too high (e.g., 500,000 kg ha⁻¹ instead of 5,000).
+    Crop LAI grows to extreme values. All biomass pools inflated.
+  diagnosis: >
+    Global radiation (globrad) was supplied in J cm⁻² or W m⁻² instead of
+    MJ m⁻² d⁻¹. MONICA reads the value as-is, resulting in 100× or ~12×
+    over-estimation of available photosynthetically active radiation.
+  remedy: >
+    Convert globrad before writing climate.csv:
+    - J cm⁻² → MJ m⁻² d⁻¹: divide by 100
+    - W m⁻² → MJ m⁻² d⁻¹: multiply by 0.0864
+    Alternatively, use header-to-acd-names in sim.json:
+    "globrad": ["globrad", "/", 100]
+  severity: silent
+
+- id: dt_02
+  stage: climate_forcing
+  failure_domain: unit_conversion
+  symptom: >
+    ET0 is always 0 or near 0. Crops show severe water stress even with
+    adequate precipitation. Transpiration deficit (TraDef) stuck at 1.0.
+  diagnosis: >
+    Relative humidity was provided as a fraction [0–1] instead of percentage
+    [0–100]. The Penman-Monteith ET calculation receives near-zero humidity
+    values, leading to incorrect vapour pressure deficit computation.
+  remedy: >
+    Ensure relhumid is in percent (0–100). If source data is fraction,
+    multiply by 100. Use --relhumid-unit fraction flag in the converter tool.
+  severity: silent
+
+- id: dt_03
+  stage: climate_forcing
+  failure_domain: unit_conversion
+  symptom: >
+    Unrealistic actual evapotranspiration values (ET > 20 mm d⁻¹ regularly).
+    Soil dries out much faster than expected.
+  diagnosis: >
+    Wind speed was provided in km h⁻¹ instead of m s⁻¹. Wind speed enters
+    the Penman-Monteith equation directly; a 3.6× overestimate amplifies
+    the aerodynamic term of ET.
+  remedy: >
+    Convert wind speed: km h⁻¹ ÷ 3.6 = m s⁻¹.
+    Use --wind-unit km_h flag in the converter tool.
+  severity: silent
+
+- id: dt_04
+  stage: climate_forcing
+  failure_domain: unit_conversion
+  symptom: >
+    Precipitation totals are 1000× too high. Massive waterlogging and
+    surface runoff. Crop dies from oxygen stress.
+  diagnosis: >
+    Precipitation was provided in m d⁻¹ instead of mm d⁻¹.
+    ERA5 natively reports total precipitation in metres.
+  remedy: >
+    Convert m to mm: multiply by 1000.
+    Use --precip-unit m flag in the converter tool.
+  severity: silent
+
+- id: dt_05
+  stage: soil_parameterisation
+  failure_domain: unit_conversion
+  symptom: >
+    Negative volumetric soil moisture. Model may crash or produce
+    physically impossible soil water content values.
+  diagnosis: >
+    Soil layer thickness was provided in cm instead of m. A layer
+    specified as "30" (meaning 30 cm) is interpreted as 30 m, causing
+    the water balance to become nonsensical.
+  remedy: >
+    Ensure Thickness is in metres: [0.1, "m"] for 10 cm layers.
+    If source data is in cm, divide by 100.
+  severity: fatal
+
+- id: dt_06
+  stage: soil_parameterisation
+  failure_domain: unit_conversion
+  symptom: >
+    Soil water dynamics are wrong. Field capacity and wilting point
+    computed by pedotransfer functions are incorrect.
+  diagnosis: >
+    Bulk density (SoilRawDensity) was provided in g cm⁻³ instead of
+    kg m⁻³. A value of 1.4 (g cm⁻³) is interpreted as 1.4 kg m⁻³
+    (essentially zero density), corrupting porosity calculations.
+  remedy: >
+    Convert g cm⁻³ to kg m⁻³: multiply by 1000.
+    Value should be in range [500, 2000] kg m⁻³.
+  severity: silent
+
+- id: dt_07
+  stage: soil_parameterisation
+  failure_domain: unit_conversion
+  symptom: >
+    SOC decomposition rates are extreme. Either too fast (SOC in g/kg
+    interpreted as %) or unmeasurably slow (SOC as fraction interpreted as %).
+  diagnosis: >
+    SoilOrganicCarbon was provided in g kg⁻¹ instead of %.
+    A value of 15 g kg⁻¹ = 1.5% is read as 15%.
+  remedy: >
+    Convert g kg⁻¹ to %: divide by 10.
+    Typical agricultural SOC: 0.5–4%.
+  severity: silent
+
+- id: dt_08
+  stage: soil_parameterisation
+  failure_domain: unit_conversion
+  symptom: >
+    Sand/clay fractions appear as 40–80 in the JSON (as percentages)
+    but MONICA expects fractions. Pedotransfer functions produce wrong
+    field capacity and wilting point.
+  diagnosis: >
+    Sand and Clay were provided as percentages (0–100) where fractions
+    (0–1) are expected, or vice versa depending on configuration.
+  remedy: >
+    When using Sand/Clay directly (not KA5TextureClass), provide as
+    fractions [0–1]. Divide percentages by 100.
+  severity: silent
+
+- id: dt_09
+  stage: crop_rotation
+  failure_domain: unit_conversion
+  symptom: >
+    Nitrogen surplus is 5× higher than expected. Soil NO₃ accumulates
+    to extreme levels. N leaching far exceeds observations.
+  diagnosis: >
+    Mineral fertiliser amount was specified in kg product ha⁻¹ instead
+    of kg N ha⁻¹. For example, 200 kg Ammonium Nitrate ha⁻¹ contains
+    only ~68 kg N ha⁻¹ (34% N).
+  remedy: >
+    Specify fertiliser amount as kg N ha⁻¹. The N partitioning
+    (NH4/NO3/Carbamid fractions) is defined in the fertiliser parameter
+    file, not the amount field.
+  severity: silent
+
+- id: dt_10
+  stage: soil_parameterisation
+  failure_domain: unit_conversion
+  symptom: >
+    Background N leaching is very high even without fertilisation.
+    Soil mineral N accumulates unrealistically between crop seasons.
+  diagnosis: >
+    NDeposition was specified as a daily rate (kg N ha⁻¹ d⁻¹) instead
+    of annual (kg N ha⁻¹ yr⁻¹). A value of 30 kg N ha⁻¹ d⁻¹ would
+    deposit 10,950 kg N ha⁻¹ yr⁻¹.
+  remedy: >
+    NDeposition must be annual: [30, "kg N ha-1 y-1"].
+    Typical range: 5–50 kg N ha⁻¹ yr⁻¹.
+  severity: silent
+
+# Configuration and runtime errors
+
+- id: dt_11
+  stage: execution
+  failure_domain: path_resolution
+  symptom: >
+    MONICA starts but produces zero output. No crop growth, no soil
+    processes. Output file contains only headers.
+  diagnosis: >
+    The MONICA_PARAMETERS environment variable is not set or points to
+    a wrong directory. All "include-from-file" references fail silently,
+    resulting in default (zero) parameters.
+  remedy: >
+    Set MONICA_PARAMETERS to the monica-parameters repository root:
+    export MONICA_PARAMETERS=/path/to/monica-parameters
+    Verify: ls $MONICA_PARAMETERS/crops/ should list crop JSON files.
+  severity: silent
+
+- id: dt_12
+  stage: execution
+  failure_domain: runtime
+  symptom: >
+    JSON parse error on startup. MONICA refuses to run with a cryptic
+    error message about unexpected token.
+  diagnosis: >
+    The JSON configuration file has a syntax error. Most commonly: a
+    trailing comma after the last element in an array or object. JSON
+    does not allow trailing commas (unlike JavaScript).
+  remedy: >
+    Validate JSON with a linter (python -m json.tool sim.json).
+    Remove trailing commas. Check for missing brackets.
+  severity: fatal
+
+- id: dt_13
+  stage: execution
+  failure_domain: runtime
+  symptom: >
+    Segmentation fault immediately on startup. No output produced.
+  diagnosis: >
+    The mas_cpp_misc symlink is missing or broken. MONICA's shared
+    libraries (date, helpers, climate-file-io) cannot be found,
+    leading to uninitialised function pointers.
+  remedy: >
+    Create the symlink: ln -sf ../mas-infrastructure/src mas_cpp_misc
+    Rebuild: cd _cmake_release && cmake .. && make -j$(nproc)
+  severity: fatal
+
+- id: dt_14
+  stage: execution
+  failure_domain: dependency_mismatch
+  symptom: >
+    "No climate data available" error. Simulation period is empty
+    despite climate.csv having data.
+  diagnosis: >
+    Date format mismatch between climate.csv and sim.json configuration.
+    Climate.csv uses DE-date (DD.MM.YYYY) but sim.json maps it as
+    iso-date (YYYY-MM-DD), or vice versa.
+  remedy: >
+    Match the header-to-acd-names mapping in sim.json to the actual
+    column names in climate.csv. Use "DE-date": "de-date" for German
+    dates or "iso-date": "iso-date" for ISO dates.
+  severity: fatal
+
+- id: dt_15
+  stage: execution
+  failure_domain: runtime
+  symptom: >
+    Crop never reaches harvest. AutomaticHarvest never triggers.
+    Simulation runs to end date without producing yield.
+  diagnosis: >
+    The latest-date for AutomaticHarvest is set too early (before the
+    crop reaches maturity), OR the crop cultivar's StageTemperatureSum
+    is too large for the available growing degree days at this location.
+  remedy: >
+    Extend the latest-date to well past expected maturity. Check that
+    the cultivar is appropriate for the climate zone. Compare TempSum
+    accumulation in daily output against StageTemperatureSum requirements.
+  severity: degraded
+
+- id: dt_16
+  stage: crop_rotation
+  failure_domain: parameter_format
+  symptom: >
+    Winter crop planted in spring shows extremely late development
+    and low yield. Spring crop planted in autumn dies.
+  diagnosis: >
+    The is-winter-crop flag does not match the actual sowing season.
+    Winter crops require vernalisation (cold period); sowing them in
+    spring means they never satisfy vernalisation requirements.
+  remedy: >
+    Set is-winter-crop correctly. Match sowing date to crop type:
+    winter crops in Sep–Nov, spring crops in Mar–May.
+  severity: degraded
+
+- id: dt_17
+  stage: output_analysis
+  failure_domain: silent_error
+  symptom: >
+    Water balance does not close. Annual ET + recharge + runoff
+    differs significantly from precipitation + irrigation.
+  diagnosis: >
+    Likely a soil parameter error (wrong bulk density or field capacity)
+    causing incorrect storage change calculations, or the soil column
+    depth is insufficient (< 2m) leading to truncated percolation.
+  remedy: >
+    Check soil parameters, especially bulk density units (kg m⁻³).
+    Ensure soil column extends to 2 m (20 layers × 0.1 m).
+    Compare simulated vs measured soil moisture profiles.
+  severity: degraded

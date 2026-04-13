@@ -1,0 +1,1110 @@
+# ============================================================================
+# Knowledge Infrastructure Schema — WOFOST/PCSE Crop Simulation Model
+# ============================================================================
+# Created via knowledge dissection of WOFOST 7.2 implemented in PCSE 6.0
+# Target: WOFOST (WOrld FOod STudies) via PCSE (Python Crop Simulation Environment)
+#
+# WOFOST is the EU standard crop growth model developed at Wageningen University.
+# PCSE is its pure-Python implementation (pip install pcse), providing a clean
+# programmatic API for crop simulation without compiled executables.
+#
+# Three layers:
+#   1. Validated Tools    → agent CALLS (procedural knowledge)
+#   2. Skill Documents    → agent READS (evaluative & sequencing knowledge)
+#   3. Diagnostic Triplets → agent LOOKS UP (operational debugging knowledge)
+# ============================================================================
+
+# --- Package metadata ---
+package:
+  name: "wofost-pcse-knowledge"
+  version: "1.0.0"
+  description: "Knowledge infrastructure for autonomous WOFOST crop simulation via PCSE Python API"
+  target_model: "WOFOST 7.2 via PCSE 6.0"
+  domain: "crop simulation / food production modelling"
+  authors:
+    - "Zhang Jianyun Research Group (Hohai University)"
+  license: "CC-BY-4.0"
+  related_packages:
+    - id: "dssat-csm-knowledge"
+      name: "DSSAT Crop Simulation Knowledge Infrastructure"
+      path: "/home/server/DSSAT/knowledge_infrastructure/"
+      relationship: >
+        Peer crop model. WOFOST and DSSAT are complementary: WOFOST is the EU
+        standard (Wageningen), DSSAT is the US standard (IFDC/IBSNAT). Together
+        they form a multi-model ensemble for crop yield estimation. Key differences:
+        WOFOST uses development stage (DVS 0→1→2), DSSAT uses V-stage/R-stage;
+        WOFOST soil is bucket model (SMW/SMFCF/SM0), DSSAT is layer-based
+        (SLLL/SDUL/SSAT per layer); WOFOST weather uses J/m2/day for IRRAD (PCSE docs say kJ but internal DB stores Joules),
+        DSSAT uses MJ/m2/day for SRAD.
+    - id: "hydrocraft-vic-routing"
+      name: "HydroCraft VIC-Routing Knowledge Infrastructure"
+      path: "/mnt/disk1/Hydrocraft_server/"
+      relationship: >
+        Upstream hydrology model. VIC produces daily weather variables (temperature,
+        precipitation, radiation) and soil moisture that can feed WOFOST weather
+        data providers and initialize soil water state.
+
+# --- Pipeline definition ---
+# The 8-stage WOFOST/PCSE simulation pipeline.
+# Stages 1-5 are INPUT PREPARATION (converging).
+# Stage 6 is EXECUTION. Stage 7 is OUTPUT PARSING. Stage 8 is ANALYSIS.
+#
+# Key insight: PCSE is pure Python — no compilation, no batch files, no Fortran.
+# The engine is instantiated with Python objects (ParameterProvider, WeatherDataProvider,
+# AgroManager) and run via engine.run_till_terminate(). All configuration is YAML or Python dicts.
+pipeline:
+  stages:
+
+    # -----------------------------------------------------------------------
+    # STAGE 1: CROP PARAMETER CONFIGURATION
+    # -----------------------------------------------------------------------
+    - id: "s1_crop_params"
+      name: "Crop Parameter Configuration"
+      description: >
+        Select and configure crop parameters from the WOFOST crop parameter
+        database (YAML format). Parameters define phenology (TSUM1, TSUM2),
+        initial biomass (TDWI), photosynthesis (AMAXTB, EFFTB), leaf dynamics
+        (SPAN, SLATB), partitioning (FOTB, FLTB, FSTB, FRTB), and
+        vernalization (VERNSAT, VERNBASE, VERNDVS) for winter crops.
+        PCSE uses YAMLCropDataProvider to load these hierarchically:
+        GenericC3/C4 → EcoType → Variety.
+      order: 1
+      depends_on: []
+      knowledge_type: "evaluative"
+      skill_document: "docs/s1_crop_params_skill.md"
+      tools:
+        - "load_crop_parameters"
+        - "validate_crop_params"
+      milestones:
+        - id: "m1_crop_yaml_loaded"
+          description: "Crop YAML file loaded without parse errors"
+          verification: "YAMLCropDataProvider instantiates without exception; set_active_crop() succeeds"
+        - id: "m1_key_params_present"
+          description: "Critical parameters TSUM1, TSUM2, TDWI, SPAN, TBASE present and in range"
+          verification: "TSUM1 > 0, TSUM2 > 0, TDWI > 0, SPAN > 0, TBASE is defined"
+        - id: "m1_vernalization_configured"
+          description: "For winter crops: VERNSAT, VERNBASE, VERNDVS are set"
+          verification: "If crop_type is winter_wheat: VERNSAT > 0, VERNBASE defined, VERNDVS > 0"
+
+    # -----------------------------------------------------------------------
+    # STAGE 2: SOIL PARAMETER SETUP
+    # -----------------------------------------------------------------------
+    - id: "s2_soil_params"
+      name: "Soil Parameter Setup"
+      description: >
+        Configure WOFOST soil parameters for the classic water balance.
+        Parameters define water-holding properties (SMW, SMFCF, SM0),
+        hydraulic conductivity (K0, SOPE, KSUB), rootable depth (RDMSOL),
+        and critical air content (CRAIRC). WOFOST uses a single-layer
+        bucket model (unlike DSSAT's multi-layer approach). Soil data
+        can come from HWSD global database via the hwsd_soil_adapter.
+      order: 2
+      depends_on: []
+      knowledge_type: "procedural"
+      skill_document: "docs/s2_soil_params_skill.md"
+      tools:
+        - "convert_hwsd_to_pcse_soil"
+        - "validate_soil_params"
+      milestones:
+        - id: "m2_soil_dict_created"
+          description: "Soil parameter dictionary created with all required keys"
+          verification: "Dict contains SMW, SMFCF, SM0, CRAIRC, K0, SOPE, KSUB, RDMSOL, IFUNRN, WAV, SSI, SSMAX, SMLIM, NOTINF"
+        - id: "m2_water_limits_valid"
+          description: "Soil water limits satisfy SMW < SMFCF < SM0"
+          verification: "0 < SMW < SMFCF < SM0 <= 0.65; SM0 - SMFCF > CRAIRC"
+
+    # -----------------------------------------------------------------------
+    # STAGE 3: WEATHER DATA PREPARATION
+    # -----------------------------------------------------------------------
+    - id: "s3_weather_prep"
+      name: "Weather Data Preparation"
+      description: >
+        Prepare daily weather data for PCSE using one of its weather data
+        providers: NASAPowerWeatherDataProvider (online, automatic),
+        CSVWeatherDataProvider (local CSV files), ExcelWeatherDataProvider
+        (local Excel files), or a custom provider from VIC forcing output.
+        Required variables: IRRAD (J/m2/day — WARNING: PCSE docs say kJ but internal DB uses Joules), TMIN (C), TMAX (C),
+        VAP (kPa), WIND (m/s), RAIN (cm/day), SNOWDEPTH (cm, optional).
+        CRITICAL: IRRAD is in J/m2/day (NOT kJ or MJ — multiply W/m2 by 86400, NOT 86.4), RAIN is
+        in cm/day (NOT mm like most other models).
+      order: 3
+      depends_on: []
+      knowledge_type: "procedural"
+      skill_document: "docs/s3_weather_prep_skill.md"
+      tools:
+        - "convert_vic_to_pcse_weather"
+        - "create_csv_weather_file"
+        - "validate_weather_data"
+      milestones:
+        - id: "m3_provider_instantiated"
+          description: "WeatherDataProvider object created without errors"
+          verification: "Provider responds to provider(date) calls; returns WeatherDataContainer"
+        - id: "m3_units_correct"
+          description: "IRRAD in J/m2/day (Joules, NOT kJ), RAIN in cm/day, TMIN/TMAX in Celsius, VAP in kPa, WIND in m/s"
+          verification: "IRRAD values typically 5000-35000; RAIN typically 0-10; TMIN < TMAX"
+        - id: "m3_no_gaps"
+          description: "No missing days in the simulation period"
+          verification: "All dates from start to end have weather data"
+
+    # -----------------------------------------------------------------------
+    # STAGE 4: AGROMANAGEMENT DEFINITION
+    # -----------------------------------------------------------------------
+    - id: "s4_agromanagement"
+      name: "Agromanagement Definition"
+      description: >
+        Define the agromanagement schedule in YAML format. This specifies
+        the crop calendar (crop_name, variety_name, crop_start_date,
+        crop_start_type, crop_end_type, max_duration), timed events
+        (irrigation, fertilization), and state events (triggered by
+        crop state). The YAML structure uses campaigns indexed by date,
+        each containing a CropCalendar and optional TimedEvents/StateEvents.
+        crop_name and variety_name are CASE SENSITIVE and must exactly
+        match entries in the crop parameter YAML files.
+      order: 4
+      depends_on:
+        - "s1_crop_params"
+      knowledge_type: "evaluative"
+      skill_document: "docs/s4_agromanagement_skill.md"
+      tools:
+        - "generate_agromanagement_yaml"
+        - "validate_agromanagement"
+      milestones:
+        - id: "m4_yaml_parsed"
+          description: "Agromanagement YAML parses without errors"
+          verification: "yaml.safe_load() succeeds; structure has AgroManagement key with list of campaigns"
+        - id: "m4_crop_names_match"
+          description: "crop_name and variety_name match entries in crop parameter files"
+          verification: "YAMLCropDataProvider.get_crop_types() contains crop_name; variety exists"
+        - id: "m4_dates_valid"
+          description: "Campaign start date precedes crop_start_date; max_duration > 0"
+          verification: "Campaign date <= crop_start_date; max_duration typically 100-365"
+
+    # -----------------------------------------------------------------------
+    # STAGE 5: ENGINE CONFIGURATION
+    # -----------------------------------------------------------------------
+    - id: "s5_engine_config"
+      name: "Engine Configuration"
+      description: >
+        Assemble the PCSE engine by choosing the simulation mode and
+        combining all data providers into a ParameterProvider. Three
+        engine classes available: Wofost72_PP (potential production,
+        no water stress), Wofost72_WLP_FD (water-limited, free drainage),
+        Wofost72_WLP_CWB (water-limited, classic water balance with
+        groundwater). The ParameterProvider wraps crop, soil, and site
+        parameters. Site parameters include WAV (initial available water),
+        CO2 (atmospheric CO2 concentration), and IFUNRN (infiltration flag).
+      order: 5
+      depends_on:
+        - "s1_crop_params"
+        - "s2_soil_params"
+        - "s3_weather_prep"
+        - "s4_agromanagement"
+      knowledge_type: "evaluative"
+      skill_document: "docs/s5_engine_config_skill.md"
+      tools:
+        - "configure_pcse_engine"
+        - "validate_engine_config"
+      milestones:
+        - id: "m5_parameter_provider_created"
+          description: "ParameterProvider created from crop + soil + site dicts"
+          verification: "ParameterProvider instantiates; contains all required parameters for chosen engine"
+        - id: "m5_engine_instantiated"
+          description: "Engine class instantiates without error"
+          verification: "Wofost72_WLP_FD(params, weather, agro) succeeds; no KeyError or ValueError"
+        - id: "m5_mode_matches_data"
+          description: "If WLP mode chosen, soil parameters are provided; if PP, soil can be minimal"
+          verification: "WLP requires SMW/SMFCF/SM0/K0; PP does not use soil water balance"
+
+    # -----------------------------------------------------------------------
+    # STAGE 6: SIMULATION EXECUTION
+    # -----------------------------------------------------------------------
+    - id: "s6_execution"
+      name: "Simulation Execution"
+      description: >
+        Run the WOFOST simulation by calling engine.run_till_terminate()
+        or engine.run(days=N) for step-by-step execution. The engine
+        iterates daily through the crop growth cycle: phenology update →
+        assimilation → respiration → partitioning → leaf dynamics →
+        root growth → water balance (if WLP) → death/senescence.
+        DVS progresses from 0 (emergence) → 1 (anthesis) → 2 (maturity).
+        Simulation terminates when DVS >= 2, max_duration reached, or
+        crop_end_date reached.
+      order: 6
+      depends_on:
+        - "s5_engine_config"
+      knowledge_type: "debugging"
+      skill_document: "docs/s6_execution_skill.md"
+      tools:
+        - "run_wofost_simulation"
+        - "check_simulation_status"
+      milestones:
+        - id: "m6_simulation_complete"
+          description: "Simulation ran to DVS=2 (maturity) or max_duration without crash"
+          verification: "engine.run_till_terminate() returns; no exception raised"
+        - id: "m6_dvs_reached_maturity"
+          description: "DVS reached 2.0 (full maturity)"
+          verification: "Final DVS value from get_variable('DVS') >= 2.0"
+        - id: "m6_no_zero_yield"
+          description: "Total weight of storage organs (TWSO) is positive"
+          verification: "get_variable('TWSO') > 0"
+
+    # -----------------------------------------------------------------------
+    # STAGE 7: OUTPUT PARSING
+    # -----------------------------------------------------------------------
+    - id: "s7_output_parsing"
+      name: "Output Parsing"
+      description: >
+        Extract simulation results using engine.get_output() for time
+        series and engine.get_summary_output() for season totals. Key
+        output variables: DVS (development stage), LAI (leaf area index),
+        TAGP (total above-ground production, kg/ha), TWSO (total weight
+        storage organs = grain yield, kg/ha), TWLV (leaf weight), TWST
+        (stem weight), TWRT (root weight), TRA (transpiration, cm/day),
+        RD (rooting depth, cm), SM (soil moisture, cm3/cm3).
+        Convert output list-of-dicts to pandas DataFrame for analysis.
+      order: 7
+      depends_on:
+        - "s6_execution"
+      knowledge_type: "procedural"
+      skill_document: "docs/s7_output_parsing_skill.md"
+      tools:
+        - "parse_wofost_output"
+        - "export_output_csv"
+      milestones:
+        - id: "m7_output_retrieved"
+          description: "engine.get_output() returns non-empty list"
+          verification: "len(output) > 0; output is list of dicts with 'day' key"
+        - id: "m7_summary_available"
+          description: "Summary output contains yield and phenology dates"
+          verification: "Summary has DOE, DOA, DOM, TWSO, TAGP, LAIMAX keys"
+        - id: "m7_dataframe_created"
+          description: "Output converted to pandas DataFrame with date index"
+          verification: "DataFrame has DatetimeIndex; columns include DVS, LAI, TAGP, TWSO"
+
+    # -----------------------------------------------------------------------
+    # STAGE 8: YIELD ANALYSIS AND ENSEMBLE
+    # -----------------------------------------------------------------------
+    - id: "s8_yield_analysis"
+      name: "Yield Analysis and Multi-Model Ensemble"
+      description: >
+        Analyze WOFOST yield output, compare with DSSAT results for
+        ensemble estimation, compute spatial yield maps for gridded runs,
+        and generate visualizations. When coupled with HydroCraft, run
+        WOFOST for each VIC grid cell using cell-specific weather and
+        soil data. Aggregate cell yields to basin-level statistics.
+        For WOFOST-DSSAT ensemble: average yields, compare phenology
+        timing, analyze water stress patterns.
+      order: 8
+      depends_on:
+        - "s7_output_parsing"
+      knowledge_type: "evaluative"
+      skill_document: "docs/s8_yield_analysis_skill.md"
+      tools:
+        - "compute_gridded_yield"
+        - "compare_wofost_dssat"
+        - "generate_yield_map"
+      milestones:
+        - id: "m8_yield_reasonable"
+          description: "Simulated yield within agronomically plausible range"
+          verification: "TWSO > 500 and < 20000 kg/ha for grain crops"
+        - id: "m8_spatial_output"
+          description: "Gridded yield CSV created with lat/lon/yield columns"
+          verification: "CSV file has lat, lon, twso_kgha columns; N rows matches grid cells"
+
+# --- Layer 1: Validated Tools ---
+# Agent CALLS these — procedural knowledge encoded as executable scripts.
+tools:
+  # Stage 1: Crop Parameters
+  - id: "load_crop_parameters"
+    name: "Load Crop Parameters"
+    description: "Load WOFOST crop parameters from YAML using YAMLCropDataProvider, validate key parameters, set active crop and variety"
+    stage: "s1_crop_params"
+    script_path: "tools/s1_crop_params/load_crop_parameters.py"
+    language: "python"
+    inputs:
+      - name: "crop_name"
+        type: "string"
+        description: "PCSE crop name (e.g., 'wheat', 'maize', 'rice', 'soybean') — case sensitive"
+        required: true
+        example: "wheat"
+      - name: "variety_name"
+        type: "string"
+        description: "PCSE variety name (e.g., 'Winter_wheat_101') — case sensitive"
+        required: true
+        example: "Winter_wheat_101"
+      - name: "crop_dir"
+        type: "directory"
+        description: "Directory containing YAML crop parameter files (default: PCSE built-in)"
+        required: false
+        example: ""
+    outputs:
+      - name: "crop_params"
+        type: "value"
+        description: "Dict of crop parameters for ParameterProvider"
+        path_pattern: "returned Python dict"
+    preconditions:
+      - "pcse package installed (pip install pcse)"
+      - "Crop YAML file exists for the requested crop"
+    postconditions:
+      - "crop_params dict contains TSUM1, TSUM2, TDWI, SPAN, TBASE and all required WOFOST parameters"
+
+  - id: "validate_crop_params"
+    name: "Validate Crop Parameters"
+    description: "Check crop parameter ranges, verify AFGEN tables are monotonic, validate vernalization params for winter crops"
+    stage: "s1_crop_params"
+    script_path: "tools/s1_crop_params/validate_crop_params.py"
+    language: "python"
+    inputs:
+      - name: "crop_params"
+        type: "config"
+        description: "Crop parameter dictionary from load_crop_parameters"
+        required: true
+        example: ""
+      - name: "is_winter_crop"
+        type: "string"
+        description: "'true' if winter crop requiring vernalization"
+        required: false
+        example: "false"
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON report with pass/fail for each parameter check"
+        path_pattern: "stdout JSON"
+    preconditions:
+      - "crop_params dict is populated"
+    postconditions:
+      - "All critical parameters within physically plausible ranges"
+
+  # Stage 2: Soil Parameters
+  - id: "convert_hwsd_to_pcse_soil"
+    name: "Convert HWSD to PCSE Soil Parameters"
+    description: "Convert HWSD soil properties (sand/silt/clay/OC/bulk density) to WOFOST water balance parameters (SMW/SMFCF/SM0/K0) via pedotransfer functions"
+    stage: "s2_soil_params"
+    script_path: "tools/s2_soil_params/convert_hwsd_to_pcse_soil.py"
+    language: "python"
+    inputs:
+      - name: "lat"
+        type: "number"
+        description: "Latitude of the target location"
+        required: true
+        example: "52.0"
+      - name: "lon"
+        type: "number"
+        description: "Longitude of the target location"
+        required: true
+        example: "5.5"
+      - name: "hwsd_raster"
+        type: "file"
+        description: "Path to HWSD global raster (hwsd.bil)"
+        required: false
+        example: "data/soil/HWSD_RASTER/hwsd.bil"
+      - name: "hwsd_mdb"
+        type: "file"
+        description: "Path to HWSD MDB database"
+        required: false
+        example: "data/forcing/huaihe_raw/soil/HWSD.mdb"
+    outputs:
+      - name: "soil_params"
+        type: "value"
+        description: "Dict with WOFOST soil parameters"
+        path_pattern: "stdout JSON"
+    preconditions:
+      - "HWSD raster and MDB accessible"
+    postconditions:
+      - "SMW < SMFCF < SM0; all values in [0, 0.65]"
+
+  - id: "validate_soil_params"
+    name: "Validate Soil Parameters"
+    description: "Check WOFOST soil parameter consistency: SMW < SMFCF < SM0, CRAIRC < SM0-SMFCF, K0 > 0, RDMSOL > 0"
+    stage: "s2_soil_params"
+    script_path: "tools/s2_soil_params/validate_soil_params.py"
+    language: "python"
+    inputs:
+      - name: "soil_params"
+        type: "config"
+        description: "Soil parameter dictionary"
+        required: true
+        example: ""
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON validation report"
+        path_pattern: "stdout JSON"
+    preconditions:
+      - "soil_params dict is populated"
+    postconditions:
+      - "All soil constraints satisfied"
+
+  # Stage 3: Weather
+  - id: "convert_vic_to_pcse_weather"
+    name: "Convert VIC Forcing to PCSE Weather"
+    description: "Convert VIC forcing files (ASCII) to PCSE CSV weather format with correct unit conversions: SW radiation W/m2 → J/m2/day (multiply by 86400, NOT 86.4), precip mm → cm, specific humidity → vapor pressure kPa"
+    stage: "s3_weather_prep"
+    script_path: "tools/s3_weather_prep/convert_vic_to_pcse_weather.py"
+    language: "python"
+    inputs:
+      - name: "forcing_dir"
+        type: "directory"
+        description: "Directory containing VIC forcing files"
+        required: true
+        example: "outputs/run1/vic_temp/forcing/forcing_final"
+      - name: "grid_nc"
+        type: "file"
+        description: "VIC basin grid NetCDF"
+        required: true
+        example: "outputs/run1/vic_temp/grid/basin_grid.nc"
+      - name: "output_dir"
+        type: "directory"
+        description: "Output directory for PCSE CSV weather files"
+        required: true
+        example: "outputs/run1/wofost/weather"
+      - name: "start_year"
+        type: "number"
+        description: "Start year of weather data"
+        required: true
+        example: "2000"
+      - name: "end_year"
+        type: "number"
+        description: "End year of weather data"
+        required: true
+        example: "2010"
+    outputs:
+      - name: "weather_csv_files"
+        type: "directory"
+        description: "CSV weather files per grid cell"
+        path_pattern: "outputs/{run}/wofost/weather/weather_{lat}_{lon}.csv"
+    preconditions:
+      - "VIC forcing files exist for the simulation period"
+      - "Grid NetCDF defines cell coordinates"
+    postconditions:
+      - "Each CSV has columns: DAY, IRRAD, TMIN, TMAX, VAP, WIND, RAIN, SNOWDEPTH"
+      - "IRRAD in J/m2/day (Joules — PCSE docs say kJ but DB uses J; multiply W/m2 by 86400), RAIN in cm/day (not mm)"
+
+  - id: "create_csv_weather_file"
+    name: "Create CSV Weather File"
+    description: "Create a PCSE-compatible CSV weather file from generic daily weather data with proper header and units"
+    stage: "s3_weather_prep"
+    script_path: "tools/s3_weather_prep/create_csv_weather_file.py"
+    language: "python"
+    inputs:
+      - name: "input_csv"
+        type: "file"
+        description: "Input CSV with daily weather (any column names)"
+        required: true
+        example: ""
+      - name: "lat"
+        type: "number"
+        description: "Station latitude"
+        required: true
+        example: "52.0"
+      - name: "lon"
+        type: "number"
+        description: "Station longitude"
+        required: true
+        example: "5.5"
+      - name: "elev"
+        type: "number"
+        description: "Station elevation (m)"
+        required: true
+        example: "10"
+      - name: "output_file"
+        type: "file"
+        description: "Output CSV file path"
+        required: true
+        example: ""
+    outputs:
+      - name: "weather_csv"
+        type: "file"
+        description: "PCSE-formatted CSV weather file"
+        path_pattern: ""
+    preconditions:
+      - "Input CSV has date, radiation, temperature, precipitation columns"
+    postconditions:
+      - "Output CSV has PCSE header format and correct units"
+
+  - id: "validate_weather_data"
+    name: "Validate Weather Data"
+    description: "Validate PCSE weather data: check units (IRRAD J/m2/day — NOT kJ or MJ, RAIN cm not mm), date continuity, physical ranges, Angstrom coefficients"
+    stage: "s3_weather_prep"
+    script_path: "tools/s3_weather_prep/validate_weather_data.py"
+    language: "python"
+    inputs:
+      - name: "weather_provider_or_csv"
+        type: "file"
+        description: "CSV weather file path or WeatherDataProvider object"
+        required: true
+        example: ""
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON validation report with warnings and errors"
+        path_pattern: "stdout JSON"
+    preconditions: []
+    postconditions:
+      - "IRRAD values in range 0-45000000 J/m2/day (= 0-45000 kJ/m2/day = 0-45 MJ/m2/day)"
+      - "RAIN values in range 0-50 cm/day"
+      - "TMIN <= TMAX for every day"
+
+  # Stage 4: Agromanagement
+  - id: "generate_agromanagement_yaml"
+    name: "Generate Agromanagement YAML"
+    description: "Generate PCSE agromanagement YAML with crop calendar, optional irrigation and fertilization events"
+    stage: "s4_agromanagement"
+    script_path: "tools/s4_agromanagement/generate_agromanagement_yaml.py"
+    language: "python"
+    inputs:
+      - name: "crop_name"
+        type: "string"
+        description: "Crop name (must match crop parameter file)"
+        required: true
+        example: "wheat"
+      - name: "variety_name"
+        type: "string"
+        description: "Variety name (must match crop parameter file)"
+        required: true
+        example: "Winter_wheat_101"
+      - name: "campaign_start"
+        type: "string"
+        description: "Campaign start date (YYYY-MM-DD)"
+        required: true
+        example: "2000-10-01"
+      - name: "crop_start_date"
+        type: "string"
+        description: "Sowing/emergence date (YYYY-MM-DD)"
+        required: true
+        example: "2000-10-15"
+      - name: "crop_start_type"
+        type: "string"
+        description: "'sowing' or 'emergence'"
+        required: true
+        example: "sowing"
+      - name: "crop_end_type"
+        type: "string"
+        description: "'maturity', 'harvest', or 'earliest'"
+        required: true
+        example: "maturity"
+      - name: "max_duration"
+        type: "number"
+        description: "Maximum simulation duration in days"
+        required: true
+        example: "300"
+      - name: "output_file"
+        type: "file"
+        description: "Output YAML file path"
+        required: true
+        example: "outputs/run1/wofost/agromanagement.yaml"
+    outputs:
+      - name: "agro_yaml"
+        type: "file"
+        description: "Agromanagement YAML file"
+        path_pattern: "outputs/{run}/wofost/agromanagement.yaml"
+    preconditions:
+      - "Crop name and variety exist in crop parameter database"
+    postconditions:
+      - "YAML file parseable by yaml.safe_load()"
+      - "crop_name and variety_name are case-exact matches"
+
+  - id: "validate_agromanagement"
+    name: "Validate Agromanagement"
+    description: "Validate agromanagement YAML structure, check crop/variety name existence, verify date ordering"
+    stage: "s4_agromanagement"
+    script_path: "tools/s4_agromanagement/validate_agromanagement.py"
+    language: "python"
+    inputs:
+      - name: "agro_yaml"
+        type: "file"
+        description: "Agromanagement YAML file"
+        required: true
+        example: ""
+      - name: "crop_dir"
+        type: "directory"
+        description: "Crop parameter directory for name validation"
+        required: false
+        example: ""
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON validation report"
+        path_pattern: "stdout JSON"
+    preconditions: []
+    postconditions:
+      - "YAML structure valid; crop_name and variety_name exist in parameter database"
+
+  # Stage 5: Engine Configuration
+  - id: "configure_pcse_engine"
+    name: "Configure PCSE Engine"
+    description: "Assemble ParameterProvider from crop/soil/site dicts, select engine class (PP/WLP_FD/WLP_CWB), instantiate engine"
+    stage: "s5_engine_config"
+    script_path: "tools/s5_engine_config/configure_pcse_engine.py"
+    language: "python"
+    inputs:
+      - name: "simulation_mode"
+        type: "string"
+        description: "'PP' (potential), 'WLP_FD' (water-limited free drainage), or 'WLP_CWB' (water-limited classic water balance)"
+        required: true
+        example: "WLP_FD"
+      - name: "crop_params_file"
+        type: "file"
+        description: "Path to crop parameter YAML or pickled dict"
+        required: true
+        example: ""
+      - name: "soil_params_file"
+        type: "file"
+        description: "Path to soil parameter YAML or pickled dict"
+        required: true
+        example: ""
+      - name: "weather_csv"
+        type: "file"
+        description: "Path to PCSE weather CSV file"
+        required: true
+        example: ""
+      - name: "agro_yaml"
+        type: "file"
+        description: "Path to agromanagement YAML"
+        required: true
+        example: ""
+      - name: "co2_concentration"
+        type: "number"
+        description: "Atmospheric CO2 in ppm (default 360)"
+        required: false
+        example: "400"
+      - name: "wav"
+        type: "number"
+        description: "Initial available water in soil profile (cm)"
+        required: false
+        example: "10"
+    outputs:
+      - name: "engine"
+        type: "value"
+        description: "Configured PCSE engine object ready to run"
+        path_pattern: "returned Python object"
+    preconditions:
+      - "All input files exist and are valid"
+    postconditions:
+      - "Engine object instantiated without error"
+
+  - id: "validate_engine_config"
+    name: "Validate Engine Configuration"
+    description: "Cross-validate engine configuration: check mode vs available parameters, verify weather coverage spans agromanagement dates"
+    stage: "s5_engine_config"
+    script_path: "tools/s5_engine_config/validate_engine_config.py"
+    language: "python"
+    inputs:
+      - name: "simulation_mode"
+        type: "string"
+        description: "PP, WLP_FD, or WLP_CWB"
+        required: true
+        example: "WLP_FD"
+      - name: "crop_params"
+        type: "config"
+        description: "Crop parameter dict"
+        required: true
+        example: ""
+      - name: "soil_params"
+        type: "config"
+        description: "Soil parameter dict"
+        required: true
+        example: ""
+      - name: "weather_first_date"
+        type: "string"
+        description: "First date in weather data"
+        required: true
+        example: "2000-01-01"
+      - name: "weather_last_date"
+        type: "string"
+        description: "Last date in weather data"
+        required: true
+        example: "2010-12-31"
+      - name: "agro_campaign_start"
+        type: "string"
+        description: "Campaign start date from agromanagement"
+        required: true
+        example: "2000-10-01"
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON cross-validation report"
+        path_pattern: "stdout JSON"
+    preconditions: []
+    postconditions:
+      - "Weather data covers entire agromanagement period"
+      - "Soil parameters present if WLP mode selected"
+
+  # Stage 6: Execution
+  - id: "run_wofost_simulation"
+    name: "Run WOFOST Simulation"
+    description: "Execute WOFOST simulation for a single grid cell: instantiate engine, run_till_terminate(), extract output and summary"
+    stage: "s6_execution"
+    script_path: "tools/s6_execution/run_wofost_simulation.py"
+    language: "python"
+    inputs:
+      - name: "crop_params_file"
+        type: "file"
+        description: "Crop parameter YAML"
+        required: true
+        example: ""
+      - name: "soil_params_file"
+        type: "file"
+        description: "Soil parameter YAML/JSON"
+        required: true
+        example: ""
+      - name: "weather_csv"
+        type: "file"
+        description: "PCSE weather CSV"
+        required: true
+        example: ""
+      - name: "agro_yaml"
+        type: "file"
+        description: "Agromanagement YAML"
+        required: true
+        example: ""
+      - name: "simulation_mode"
+        type: "string"
+        description: "PP, WLP_FD, or WLP_CWB"
+        required: true
+        example: "WLP_FD"
+      - name: "output_file"
+        type: "file"
+        description: "Output CSV file path"
+        required: true
+        example: "outputs/run1/wofost/cell_output.csv"
+    outputs:
+      - name: "output_csv"
+        type: "file"
+        description: "Daily simulation output CSV"
+        path_pattern: "outputs/{run}/wofost/cell_output.csv"
+      - name: "summary_json"
+        type: "file"
+        description: "Season summary JSON"
+        path_pattern: "outputs/{run}/wofost/cell_summary.json"
+    preconditions:
+      - "All input files exist and are validated"
+    postconditions:
+      - "Output CSV has daily records with DVS, LAI, TAGP, TWSO columns"
+      - "Final DVS >= 2.0 (maturity reached)"
+
+  - id: "check_simulation_status"
+    name: "Check Simulation Status"
+    description: "Diagnose WOFOST simulation issues: check if DVS reached maturity, detect zero yield, analyze water stress"
+    stage: "s6_execution"
+    script_path: "tools/s6_execution/check_simulation_status.py"
+    language: "python"
+    inputs:
+      - name: "output_csv"
+        type: "file"
+        description: "WOFOST output CSV from run_wofost_simulation"
+        required: true
+        example: ""
+    outputs:
+      - name: "status_report"
+        type: "value"
+        description: "JSON status report with diagnostics"
+        path_pattern: "stdout JSON"
+    preconditions:
+      - "Output CSV exists from a completed (or failed) simulation"
+    postconditions:
+      - "Report identifies: final DVS, max LAI, total yield, water stress days"
+
+  # Stage 7: Output Parsing
+  - id: "parse_wofost_output"
+    name: "Parse WOFOST Output"
+    description: "Parse engine.get_output() and get_summary_output() into structured DataFrames with proper column names and units"
+    stage: "s7_output_parsing"
+    script_path: "tools/s7_output_parsing/parse_wofost_output.py"
+    language: "python"
+    inputs:
+      - name: "output_csv"
+        type: "file"
+        description: "Raw WOFOST output CSV"
+        required: true
+        example: ""
+    outputs:
+      - name: "parsed_output"
+        type: "file"
+        description: "Cleaned output CSV with units annotation"
+        path_pattern: ""
+    preconditions:
+      - "Output CSV has expected WOFOST columns"
+    postconditions:
+      - "All columns have physical units documented"
+
+  - id: "export_output_csv"
+    name: "Export Output to CSV"
+    description: "Export WOFOST simulation output to analysis-ready CSV with lat/lon identifiers for gridded runs"
+    stage: "s7_output_parsing"
+    script_path: "tools/s7_output_parsing/export_output_csv.py"
+    language: "python"
+    inputs:
+      - name: "engine_output"
+        type: "config"
+        description: "Output from engine.get_output()"
+        required: true
+        example: ""
+      - name: "lat"
+        type: "number"
+        description: "Grid cell latitude"
+        required: true
+        example: "52.0"
+      - name: "lon"
+        type: "number"
+        description: "Grid cell longitude"
+        required: true
+        example: "5.5"
+      - name: "output_file"
+        type: "file"
+        description: "Output CSV path"
+        required: true
+        example: ""
+    outputs:
+      - name: "output_csv"
+        type: "file"
+        description: "CSV with date index, lat, lon, and WOFOST variables"
+        path_pattern: ""
+    preconditions: []
+    postconditions:
+      - "CSV file created with all output variables"
+
+  # Stage 8: Yield Analysis
+  - id: "compute_gridded_yield"
+    name: "Compute Gridded Yield"
+    description: "Aggregate single-cell WOFOST outputs into a gridded yield CSV for spatial analysis"
+    stage: "s8_yield_analysis"
+    script_path: "tools/s8_yield_analysis/compute_gridded_yield.py"
+    language: "python"
+    inputs:
+      - name: "cell_outputs_dir"
+        type: "directory"
+        description: "Directory with per-cell WOFOST output CSVs"
+        required: true
+        example: ""
+      - name: "grid_nc"
+        type: "file"
+        description: "Basin grid NetCDF for cell coordinates"
+        required: true
+        example: ""
+    outputs:
+      - name: "gridded_yield_csv"
+        type: "file"
+        description: "CSV with lat, lon, twso_kgha, tagp_kgha, lai_max"
+        path_pattern: "outputs/{run}/wofost/gridded_yield.csv"
+    preconditions:
+      - "All cell simulations completed"
+    postconditions:
+      - "One row per grid cell; TWSO > 0 for most cells"
+
+  - id: "compare_wofost_dssat"
+    name: "Compare WOFOST vs DSSAT Yields"
+    description: "Compare WOFOST and DSSAT gridded yield outputs for multi-model ensemble analysis"
+    stage: "s8_yield_analysis"
+    script_path: "tools/s8_yield_analysis/compare_wofost_dssat.py"
+    language: "python"
+    inputs:
+      - name: "wofost_yield_csv"
+        type: "file"
+        description: "WOFOST gridded yield CSV"
+        required: true
+        example: ""
+      - name: "dssat_yield_csv"
+        type: "file"
+        description: "DSSAT gridded yield CSV"
+        required: true
+        example: ""
+    outputs:
+      - name: "comparison_csv"
+        type: "file"
+        description: "Side-by-side comparison with ensemble mean"
+        path_pattern: ""
+    preconditions:
+      - "Both CSVs have lat/lon/yield columns"
+    postconditions:
+      - "Ensemble mean yield computed; bias statistics generated"
+
+  - id: "generate_yield_map"
+    name: "Generate Yield Map"
+    description: "Create spatial yield map visualization from gridded WOFOST output using plot_crop_yield_map.py"
+    stage: "s8_yield_analysis"
+    script_path: "tools/s8_yield_analysis/generate_yield_map.py"
+    language: "python"
+    inputs:
+      - name: "gridded_yield_csv"
+        type: "file"
+        description: "Gridded yield CSV"
+        required: true
+        example: ""
+      - name: "shp_path"
+        type: "file"
+        description: "Basin boundary shapefile"
+        required: false
+        example: ""
+      - name: "output_png"
+        type: "file"
+        description: "Output map PNG path"
+        required: true
+        example: ""
+    outputs:
+      - name: "yield_map"
+        type: "file"
+        description: "Yield map PNG"
+        path_pattern: "outputs/{run}/wofost/yield_map.png"
+    preconditions:
+      - "Gridded yield CSV exists"
+    postconditions:
+      - "PNG file created with spatial yield distribution"
+
+# --- Layer 2: Skill Documents ---
+# Agent READS these — evaluative and sequencing knowledge.
+skill_documents:
+  - id: "s1_crop_params_skill"
+    name: "Crop Parameter Configuration"
+    stage: "s1_crop_params"
+    path: "docs/s1_crop_params_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 2800
+
+  - id: "s2_soil_params_skill"
+    name: "Soil Parameter Setup"
+    stage: "s2_soil_params"
+    path: "docs/s2_soil_params_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 2200
+
+  - id: "s3_weather_prep_skill"
+    name: "Weather Data Preparation"
+    stage: "s3_weather_prep"
+    path: "docs/s3_weather_prep_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 3200
+
+  - id: "s4_agromanagement_skill"
+    name: "Agromanagement Definition"
+    stage: "s4_agromanagement"
+    path: "docs/s4_agromanagement_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 2600
+
+  - id: "s5_engine_config_skill"
+    name: "Engine Configuration"
+    stage: "s5_engine_config"
+    path: "docs/s5_engine_config_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 2400
+
+  - id: "s6_execution_skill"
+    name: "Simulation Execution"
+    stage: "s6_execution"
+    path: "docs/s6_execution_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 2500
+
+  - id: "s7_output_parsing_skill"
+    name: "Output Parsing"
+    stage: "s7_output_parsing"
+    path: "docs/s7_output_parsing_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 2000
+
+  - id: "s8_yield_analysis_skill"
+    name: "Yield Analysis and Multi-Model Ensemble"
+    stage: "s8_yield_analysis"
+    path: "docs/s8_yield_analysis_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 2100
+
+# --- Layer 3: Diagnostic Triplets ---
+# Agent LOOKS UP these — operational debugging knowledge.
+diagnostic_triplets:
+  path: "diagnostics/triplets.yaml"
+  count: 15
+  stages_covered: ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8"]
+
+# --- Summary statistics ---
+summary:
+  total_tools: 17
+  total_tool_lines: 0  # to be populated after tool implementation
+  total_skill_documents: 8
+  total_skill_words: 19800
+  total_diagnostic_triplets: 21
+  failure_domains:
+    - "yaml_parse_error"
+    - "unit_conversion"
+    - "parameter_range"
+    - "vernalization_misconfiguration"
+    - "silent_error"
+    - "mode_mismatch"
+    - "dependency_mismatch"
+    - "runtime"
+    - "zero_yield"
+    - "api_version"
+    - "case_sensitivity"
+    - "date_ordering"
+  pipeline_stages: 8
+  pipeline_milestones: 19
+  coverage:
+    layer_1_tools: "17 tools defined (stub implementations)"
+    layer_2_skill_docs: "8/8 stages covered (100%)"
+    layer_3_triplets: "15 triplets across 12 failure domains"
+  missing_tools: []

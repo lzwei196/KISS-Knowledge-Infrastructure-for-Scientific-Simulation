@@ -1,0 +1,101 @@
+{
+  "model_id": "13",
+  "model": "SFINCS",
+  "domain": "flood",
+  "basin": "Wangjiaba (51030)",
+  "basin_area_km2": 30630,
+  "ki_path": "/mnt/disk1/Hydrocraft_server/models/SFINCS/knowledge_infrastructure",
+  "test_status": "PASS",
+  "ki_generalized": true,
+  "binary_found": true,
+  "model_ran": true,
+  "output_verified": true,
+  "simulation_details": {
+    "domain_size": "149x142 cells (29.8km x 28.4km)",
+    "resolution_m": 200,
+    "epsg": 32650,
+    "event": "July 1983 flood (peak 3010 m3/s on Jul 24)",
+    "period": "1983-07-10 to 1983-07-31",
+    "forcing": "Observed Q discharge source + CMFD 0.25deg daily precipitation",
+    "runtime_seconds": 14.9,
+    "avg_timestep_s": 27.2,
+    "total_cells": 21158,
+    "active_cells": 21016,
+    "outflow_cells": 142
+  },
+  "flood_results": {
+    "max_depth_m": 4.184,
+    "mean_depth_flooded_m": 0.294,
+    "flooded_area_km2": 840.64,
+    "flood_volume_million_m3": 247.528,
+    "flooded_cells_gt05cm": 21016,
+    "flooded_cells_gt30cm": 4909,
+    "flooded_cells_gt1m": 1936,
+    "flooded_cells_gt3m": 109,
+    "flood_fraction": 0.993,
+    "physical_validation": "Max depth 4.18m is consistent with Huai River floodplain major flood; water accumulates along low-elevation river channel corridors; comparable to Bengbu validation (6.99m max at 100m res with 390mm precip)"
+  },
+  "metrics": {
+    "note": "SFINCS is a 2D flood model producing spatial inundation maps, not point discharge. Validation is against flood extent/depth physical reasonableness, not against obs Q."
+  },
+  "issues": [
+    "CRITICAL: KI topobathy tool generates mask=3 for interior cells, but SFINCS binary uses mask=1 for active cells. mask=3 is INVALID in SFINCS \u2014 the model treats these cells as inactive, producing zero flooding. The Bengbu validation used mask=1 (likely manually set), masking the bug.",
+    "Source discharge (srcfile/disfile) boundary condition was never validated by KI \u2014 both Chaohe and Bengbu tests used precipitation only.",
+    "Precipitation file must start at t=0.0 with 3-hourly timesteps (matching Bengbu format). KI prepare_sfincs_rainfall tool outputs NetCDF, but SKILL.md says use ASCII precipfile \u2014 format inconsistency.",
+    "No KI tool exists for converting observed discharge to SFINCS src/dis boundary conditions. cama_to_sfincs_boundary.py only handles CaMa-Flood output."
+  ],
+  "ki_gaps": [
+    {
+      "id": "gap_001",
+      "severity": "CRITICAL",
+      "category": "mask_encoding",
+      "description": "SKILL.md and build_sfincs_topobathy.py use mask=3 for 'active interior cells', but SFINCS v2.3.2 binary uses mask=1 for active. mask=3 is treated as inactive, producing zero flooding \u2014 a completely silent error.",
+      "fix": "Change build_sfincs_topobathy.py line 147 from 'msk[basin_mask == 1] = 3' to 'msk[basin_mask == 1] = 1', and lines 158 from 'msk[edge] = 2' to appropriate boundary encoding. Also update all mask documentation in SKILL.md."
+    },
+    {
+      "id": "gap_002",
+      "severity": "moderate",
+      "category": "tool_coverage",
+      "description": "No tool for converting observed discharge time series to SFINCS src/dis boundary conditions. cama_to_sfincs_boundary.py only handles CaMa-Flood NetCDF output.",
+      "fix": "Add --obs_file option to cama_to_sfincs_boundary.py or create obs_to_sfincs_boundary.py"
+    },
+    {
+      "id": "gap_003",
+      "severity": "moderate",
+      "category": "format_inconsistency",
+      "description": "prepare_sfincs_rainfall.py outputs NetCDF, but SKILL.md dt_v004 says use ASCII precipfile. generate_sfincs_inp.py writes 'precipfile' (ASCII keyword). This mismatch would cause SFINCS to silently ignore rainfall from the rainfall tool.",
+      "fix": "Change prepare_sfincs_rainfall.py to output ASCII format (time_seconds precip_mmhr) consistent with generate_sfincs_inp.py and validated Bengbu format."
+    },
+    {
+      "id": "gap_004",
+      "severity": "low",
+      "category": "validation_coverage",
+      "description": "Neither validated test (Chaohe, Bengbu) used discharge source boundary conditions (srcfile/disfile). Both used precipitation-only forcing. The src/dis coupling path was untested.",
+      "fix": "Add a validation test case using discharge source BCs (e.g., from observed Q or CaMa-Flood output)."
+    },
+    {
+      "id": "gap_005",
+      "severity": "low",
+      "category": "documentation",
+      "description": "SKILL.md Section 4 documents mask values as {0=inactive, 1=boundary inflow, 2=outflow, 3=active}. The actual SFINCS v2.3.2 encoding is {0=inactive, 1=active, 2=outflow boundary}. This documentation error propagated to the topobathy tool.",
+      "fix": "Correct SKILL.md mask value documentation. Verify against SFINCS source code."
+    }
+  ],
+  "ki_tools_used": [
+    "setup_sfincs_domain.py (S1) \u2014 worked correctly",
+    "build_sfincs_topobathy.py (S2) \u2014 mask encoding BUG (gap_001), DEM resampling worked",
+    "prepare_sfincs_rainfall.py (S4) \u2014 NOT USED due to format inconsistency, manually created ASCII precip",
+    "cama_to_sfincs_boundary.py (S4) \u2014 NOT USED, no CaMa-Flood output available; manually created src/dis from obs Q",
+    "generate_sfincs_inp.py (S6) \u2014 worked correctly (used precipfile keyword correctly per dt_v004/dt_v008)",
+    "run_sfincs.py (S7) \u2014 worked correctly (preflight checks, log parsing, SIGABRT handling)",
+    "extract_sfincs_results.py (S8) \u2014 worked correctly (hmax variable, GeoTIFF export)",
+    "plot_sfincs_flood_map.py (S8) \u2014 worked correctly (depth classes, colormap)"
+  ],
+  "workaround_applied": [
+    "Fixed mask: changed all interior cells from mask=3 to mask=1 (SFINCS active)",
+    "Fixed outflow: set east edge to mask=2 only (not all edges) per dt_v005",
+    "Created ASCII sfincs.precip manually from CMFD daily data (3-hourly disaggregation, starting at t=0)",
+    "Created sfincs.src/sfincs.dis manually from observed Q at station 51030"
+  ],
+  "timestamp": "2026-04-02T14:19:34.285670"
+}

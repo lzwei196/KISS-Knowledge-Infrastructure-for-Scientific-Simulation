@@ -1,0 +1,107 @@
+model:
+  name: "PISM"
+  full_name: "Parallel Ice Sheet Model"
+  version: "2.3"
+  domain: "cryosphere"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PISM/build/pism_ssa_test_j"
+  main_binary: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PISM/build/pism"
+  language: "C++"
+  parallelism: "MPI via PETSc"
+  io_format: "NetCDF (CF-compliant)"
+  license: "GPL-3.0"
+
+inputs:
+  forcing:
+    - name: "ice_surface_temp"
+      unit: "K"
+      valid_range: [200.0, 280.0]
+      description: "Near-surface air temperature"
+    - name: "precipitation"
+      unit: "kg m^-2 year^-1"
+      valid_range: [0.0, 10000.0]
+      description: "Mean annual precipitation"
+    - name: "climatic_mass_balance"
+      unit: "kg m^-2 year^-1"
+      valid_range: [-91000.0, 91000.0]
+      description: "Surface mass balance (accumulation/ablation) rate"
+    - name: "bheatflx"
+      unit: "W m^-2"
+      valid_range: [0.0, 0.150]
+      description: "Basal (geothermal) heat flux"
+
+  geometry:
+    - name: "topg"
+      unit: "m"
+      valid_range: [-5000.0, 5000.0]
+      description: "Bedrock surface elevation"
+    - name: "thk"
+      unit: "m"
+      valid_range: [0.0, 5000.0]
+      description: "Ice thickness"
+
+  parameters:
+    critical:
+      - name: "sia_e"
+        valid_range: [1.0, 5.0]
+        default: 3.0
+        description: "SIA enhancement factor"
+      - name: "ssa_e"
+        valid_range: [0.5, 1.5]
+        default: 1.0
+        description: "SSA enhancement factor"
+      - name: "pseudo_plastic_q"
+        valid_range: [0.1, 1.0]
+        default: 0.25
+        description: "Pseudo-plastic sliding exponent"
+      - name: "till_effective_fraction_overburden"
+        valid_range: [0.01, 0.05]
+        default: 0.02
+        description: "Till effective fraction of overburden pressure"
+
+outputs:
+  primary:
+    - name: "thk"
+      unit: "m"
+      valid_range: [0.0, 5000.0]
+      description: "Ice thickness"
+    - name: "usurf"
+      unit: "m"
+      valid_range: [0.0, 5000.0]
+      description: "Ice surface elevation"
+    - name: "velsurf_mag"
+      unit: "m year^-1"
+      valid_range: [0.0, 15000.0]
+      description: "Surface ice speed"
+    - name: "velbase_mag"
+      unit: "m year^-1"
+      valid_range: [0.0, 15000.0]
+      description: "Basal sliding speed"
+
+  scalar_diagnostics:
+    - name: "ice_volume_glacierized"
+      unit: "m^3"
+      valid_range: [0.0, 3.0e16]
+      description: "Total ice volume"
+    - name: "ice_area_glacierized"
+      unit: "m^2"
+      valid_range: [0.0, 2.0e13]
+      description: "Total ice-covered area"
+    - name: "ice_mass"
+      unit: "kg"
+      valid_range: [0.0, 3.0e19]
+      description: "Total ice mass"
+    - name: "max_hor_vel"
+      unit: "m year^-1"
+      valid_range: [0.0, 15000.0]
+      description: "Maximum horizontal velocity"
+
+known_issues:
+  - id: "dt_001"
+    description: "Precipitation units: PISM expects kg m^-2 year^-1, common sources use m w.e. year^-1 (multiply by 1000)"
+    severity: "fatal"
+  - id: "dt_002"
+    description: "Temperature must be in kelvin, not degC"
+    severity: "fatal"
+  - id: "dt_003"
+    description: "Geothermal heat flux: PISM expects W m^-2, common sources use mW m^-2 (multiply by 0.001)"
+    severity: "silent"

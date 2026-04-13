@@ -1,0 +1,258 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["lake"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "CE-QUAL-W2 v4.5"
+  domain: "lake"
+  secondary_domains: ["water_quality", "river"]
+  binary: "w2.exe"
+  binary_path: "/mnt/disk1/Hydrocraft_server/model/ce_qual_w2/bin/w2.exe"
+  language: "Fortran"
+  working_directory: "directory containing w2_con.npt and all referenced files"
+  notes: "2D laterally-averaged hydrodynamic and water quality model for elongated reservoirs and rivers."
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "air_temperature"
+      file: "met_wb*.npt"
+      unit: "degC"
+      valid_range: [-50.0, 55.0]
+      format: "Fixed-width 8-char fields, JDAY (decimal) + data columns"
+
+    - name: "dewpoint_temperature"
+      file: "met_wb*.npt"
+      unit: "degC"
+      valid_range: [-60.0, 40.0]
+      format: "Fixed-width 8-char fields"
+      conversion_from_cmfd: "VP (kPa) -> TDEW: TDEW = (237.3 * ln(VP/0.6108)) / (17.27 - ln(VP/0.6108))"
+      notes: "CE-QUAL-W2 expects dewpoint, NOT relative humidity or vapor pressure."
+
+    - name: "wind_speed"
+      file: "met_wb*.npt"
+      unit: "m/s"
+      valid_range: [0.0, 80.0]
+      format: "Fixed-width 8-char fields"
+
+    - name: "cloud_cover"
+      file: "met_wb*.npt"
+      unit: "tenths (0-10)"
+      valid_range: [0.0, 10.0]
+      format: "Fixed-width 8-char fields"
+      conversion_from_cmfd: "Cloud fraction (0-1) * 10 -> tenths (0-10)"
+      notes: "#1 silent error for CE-QUAL-W2. Passing 0-1 fraction makes model see near-clear sky always, water temps 3-5 C too warm."
+
+    - name: "shortwave_radiation"
+      file: "met_wb*.npt"
+      unit: "W/m2"
+      valid_range: [0.0, 1400.0]
+      format: "Fixed-width 8-char fields"
+
+  parameters:
+    critical:
+      - name: "WSC"
+        file: "w2_con.npt (WNDSHLD card)"
+        description: "Wind sheltering coefficient"
+        valid_range: [0.5, 1.0]
+        default: 0.85
+        unit: "fraction"
+        sensitivity: "HIGH — controls surface mixing depth and thermocline"
+
+      - name: "EXH2O"
+        file: "w2_con.npt (EXTINC card)"
+        description: "Pure water light extinction coefficient"
+        valid_range: [0.1, 1.0]
+        default: 0.45
+        unit: "1/m"
+        sensitivity: "HIGH — controls thermocline depth"
+
+      - name: "AX"
+        file: "w2_con.npt"
+        description: "Longitudinal eddy viscosity"
+        valid_range: [0.1, 10.0]
+        default: 1.0
+        unit: "m2/s"
+        sensitivity: "MEDIUM"
+
+      - name: "CBHE"
+        file: "w2_con.npt"
+        description: "Coefficient of bottom heat exchange"
+        valid_range: [0.3, 1.5]
+        default: 0.3
+        unit: "W/m2/degC"
+        sensitivity: "MEDIUM"
+
+      - name: "TSED"
+        file: "w2_con.npt"
+        description: "Sediment temperature"
+        valid_range: [5.0, 15.0]
+        default: 10.0
+        unit: "degC"
+        sensitivity: "LOW"
+
+      - name: "segment_bottom_elevations"
+        file: "w2_con.npt (BRANCH card) / bth_wb*.npt"
+        description: "Bottom elevation of each segment"
+        unit: "m"
+        bug_history: >
+          Bottom elevations must be monotonically non-increasing downstream.
+          A downstream segment with HIGHER bottom creates a depression that
+          traps water. Model runs but produces wrong longitudinal gradients.
+          Triplet dt_013.
+
+  files:
+    required:
+      - name: "w2_con.npt"
+        description: "Master control file — ALL model configuration"
+        format: "Fortran fixed-width, 8-character fields, right-justified"
+        notes: "Off-by-one alignment shifts ALL subsequent values silently."
+
+      - name: "bth_wb*.npt"
+        description: "Bathymetry file (segment-layer grid)"
+        format: "Fixed-width, layer widths per segment"
+
+      - name: "met_wb*.npt"
+        description: "Meteorological forcing per waterbody"
+        format: "Fixed-width, JDAY (decimal) + TAIR, TDEW, WIND, CLOUD, SRO"
+
+      - name: "qin_br*.npt"
+        description: "Inflow discharge per branch"
+        format: "Fixed-width, JDAY + Q (m3/s)"
+
+      - name: "tin_br*.npt"
+        description: "Inflow temperature per branch"
+        format: "Fixed-width, JDAY + T (degC)"
+
+    optional:
+      - name: "cin_br*.npt"
+        description: "Inflow constituent concentrations"
+        format: "Fixed-width, JDAY + N constituent columns"
+        notes: "Number of columns must EXACTLY match number of active constituents."
+
+      - name: "qot_br*.npt"
+        description: "Outflow discharge per branch"
+
+      - name: "qdt_br*.npt"
+        description: "Distributed tributary flow"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "temperature_curtain"
+      file: "Snapshot output (snp_wb*.opt)"
+      unit: "degC"
+      valid_range: [0.0, 40.0]
+      format: "Text or binary, 2D (segment x layer)"
+      notes: "2D longitudinal-vertical temperature field."
+
+    - name: "water_surface_elevation"
+      file: "Time series output (tsr_wb*.opt)"
+      unit: "m"
+      valid_range: null
+      format: "Text, time series at specified segments"
+
+    - name: "discharge"
+      file: "Time series or spreadsheet output"
+      unit: "m3/s"
+      valid_range: [0.0, null]
+
+    - name: "water_quality_constituents"
+      file: "Snapshot/time series output"
+      unit: "mg/L or degC"
+      valid_range: null
+      notes: "DO, nutrients, algae — only present when WQ constituents are active."
+
+  diagnostics:
+    - name: "thermal_stratification"
+      check: "Vertical temperature gradient in summer: surface-bottom > 5 degC for deep reservoirs"
+      notes: "If no stratification, check EXH2O and WSC."
+
+    - name: "water_balance"
+      check: "Inflow volume ~ outflow volume + storage change"
+      notes: "Mass conservation depends on CFL-limited timestep."
+
+    - name: "cfl_stability"
+      check: "Adaptive timestep does not drop below 1 second"
+      notes: "Very small timesteps indicate numerical instability."
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "cloud_cover_fraction_vs_tenths"
+    triplet: "dt_001"
+    description: "Cloud cover in fraction (0-1) instead of tenths (0-10) — 3-5 C warm bias"
+    affected_output: "Water temperature everywhere"
+    detection: "Systematic warm bias, no stratification breakdown"
+    fix: "Multiply cloud fraction by 10"
+
+  - id: "dewpoint_not_rh"
+    triplet: "dt_002"
+    description: "Passing RH or VP instead of dewpoint temperature"
+    affected_output: "Evaporation, energy balance, temperature"
+    detection: "Wrong evaporation rates"
+    fix: "Convert VP to TDEW: TDEW = (237.3 * ln(VP/0.6108)) / (17.27 - ln(VP/0.6108))"
+
+  - id: "integer_jday"
+    triplet: "dt_005"
+    description: "Julian day as integer instead of decimal — shifts diurnal radiation cycle"
+    affected_output: "Diurnal temperature cycle"
+    detection: "Phase-shifted temperature compared to observations"
+    fix: "JDAY = day_of_year + hour/24 + minute/1440"
+
+  - id: "fixed_width_alignment"
+    triplet: "dt_006"
+    description: "w2_con.npt field misalignment — silent value shift"
+    affected_output: "ALL model parameters (every subsequent value wrong)"
+    detection: "Bizarre model behavior, parameter values don't match input"
+    fix: "Every numeric field must be exactly 8 characters, right-justified: {:>8.2f}"
+
+  - id: "path_truncation"
+    triplet: "dt_008"
+    description: "File paths > 72 characters silently truncated by Fortran"
+    affected_output: "File not found or wrong file read"
+    detection: "Missing file errors or unexpected data"
+    fix: "Use relative paths or symlinks. generate_w2_control.py uses os.path.basename()"
+
+  - id: "bottom_elev_non_monotonic"
+    triplet: "dt_013"
+    description: "Non-monotonic bottom elevations trap water in depressions"
+    affected_output: "Longitudinal flow pattern"
+    detection: "Anomalous water accumulation in mid-reservoir segments"
+    fix: "Ensure bottom elevations decrease monotonically downstream"
+
+  - id: "constituent_column_mismatch"
+    triplet: "dt_015"
+    description: "Inflow WQ columns do not match active constituent count — silent corruption"
+    affected_output: "All constituent concentrations shifted"
+    detection: "Wrong constituent values (e.g., temperature read as DO)"
+    fix: "cin_br*.npt must have exactly N data columns matching N active constituents"
+
+  - id: "double_counting_runoff"
+    triplet: "dt_021"
+    description: "Main channel + distributed tributary inflows double-count catchment area"
+    affected_output: "Reservoir receives 2x water input"
+    detection: "Water level rising too fast"
+    fix: "Subtract main inflow contributing area from distributed tributary area"
+
+# =========================================================================
+# EXPECTED RANGES (typical deep reservoir)
+# =========================================================================
+expected_ranges:
+  typical_reservoir:
+    surface_temp_summer_degC: [20, 30]
+    bottom_temp_degC: [4, 12]
+    stratification_diff_degC: ">5 in summer"
+    notes: "CE-QUAL-W2 recommended for reservoirs with length:width > 5:1"

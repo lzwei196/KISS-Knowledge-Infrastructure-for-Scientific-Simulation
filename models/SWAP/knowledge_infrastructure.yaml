@@ -1,0 +1,402 @@
+# ============================================================================
+# SWAP Knowledge Infrastructure v1.0.0
+# ============================================================================
+# Soil-Water-Atmosphere-Plant model v4.2.0
+# 1D vertical transport of water, solutes, and heat in variably saturated soils
+# ============================================================================
+
+package:
+  name: "hydrocraft-swap-soil"
+  version: "1.0.0"
+  description: "Knowledge infrastructure for SWAP vadose zone simulation within HydroCraft"
+  target_model: "SWAP 4.2.0"
+  domain: "soil hydrology and vadose zone transport"
+  authors:
+    - "Wageningen University and Research (WUR)"
+  license: "LGPL-2.1"
+  created: "2026-03-28"
+
+pipeline:
+  stages:
+    - id: s0_config
+      name: "Configuration"
+      description: "Site selection, simulation period, forcing source, crop schedule, output options"
+      order: 0
+      depends_on: []
+      skill_document: "docs/s0_configuration_skill.md"
+      tools: []
+      milestones:
+        - id: m0_config_defined
+          description: "Site, period, forcing source, and crop schedule defined"
+          verification: "All dates within forcing data coverage, crop dates non-overlapping"
+
+    - id: s1_met_forcing
+      name: "Meteorological forcing conversion"
+      description: "Convert CMFD/MSWX/local forcing to SWAP .met format with unit conversions"
+      order: 1
+      depends_on: [s0_config]
+      skill_document: "docs/s1_met_forcing_skill.md"
+      tools: [convert_forcing_to_swap]
+      milestones:
+        - id: m1_met_created
+          description: ".met file exists with correct columns and units"
+          verification: "head -1 *.met contains 'Station,DD,MM,YYYY,Rad,Tmin,Tmax,Hum,Wind,Rain'"
+
+    - id: s2_soil_parameters
+      name: "Soil parameter conversion"
+      description: "Convert HWSD or manual texture to Mualem-van Genuchten parameters"
+      order: 2
+      depends_on: [s0_config]
+      skill_document: "docs/s2_soil_parameters_skill.md"
+      tools: [convert_soil_to_swap]
+      milestones:
+        - id: m2_soil_params
+          description: "MvG parameter table with ORES < OSAT for all layers"
+          verification: "python -c \"# check ORES < OSAT in output file\""
+
+    - id: s3_config_assembly
+      name: "Configuration assembly"
+      description: "Assemble .swp, .crp, .dra files from parameters and templates"
+      order: 3
+      depends_on: [s1_met_forcing, s2_soil_parameters]
+      skill_document: "docs/s0_configuration_skill.md"
+      tools: []
+      milestones:
+        - id: m3_swp_assembled
+          description: "swap.swp exists with all sections populated"
+          verification: "grep -c 'SECTION' swap.swp >= 8"
+
+    - id: s4_execution
+      name: "Model execution"
+      description: "Run SWAP binary with preflight checks and output validation"
+      order: 4
+      depends_on: [s3_config_assembly]
+      skill_document: "docs/s4_execution_skill.md"
+      tools: [run_swap]
+      milestones:
+        - id: m4_execution_complete
+          description: "SWAP exits with code 0, output files created"
+          verification: "test -f result.blc && test -s result.blc"
+
+    - id: s5_output_parsing
+      name: "Output parsing"
+      description: "Extract SWAP results to structured CSV for analysis"
+      order: 5
+      depends_on: [s4_execution]
+      skill_document: "docs/s5_output_parsing_skill.md"
+      tools: [parse_swap_output]
+      milestones:
+        - id: m5_parsed
+          description: "Parsed CSV files and summary JSON exist"
+          verification: "test -f parsed/summary.json"
+
+    - id: s6_visualization
+      name: "Visualization and validation"
+      description: "Generate plots and compare against observations"
+      order: 6
+      depends_on: [s5_output_parsing]
+      skill_document: "docs/s6_visualization_skill.md"
+      tools: [plot_swap_results]
+      milestones:
+        - id: m6_figures
+          description: "Water balance and timeseries figures generated"
+          verification: "ls figures/*.png | wc -l >= 2"
+
+tools:
+  - id: convert_forcing_to_swap
+    name: "Forcing converter (CMFD/MSWX → SWAP .met)"
+    stage: s1_met_forcing
+    script_path: "tools/convert_forcing_to_swap.py"
+    language: python
+    inputs:
+      - name: source
+        type: string
+        required: true
+        example: "cmfd"
+      - name: forcing_dir
+        type: file
+        required: true
+        example: "/mnt/disk1/Hydrocraft_server/data/forcing/Data_forcing_01dy_010deg/"
+      - name: lat
+        type: number
+        required: true
+        example: 52.069
+      - name: lon
+        type: number
+        required: true
+        example: 6.657
+      - name: start
+        type: string
+        required: true
+        example: "2002-01-01"
+      - name: end
+        type: string
+        required: true
+        example: "2004-12-31"
+      - name: output
+        type: string
+        required: true
+        example: "283.met"
+    outputs:
+      - name: met_file
+        type: file
+        description: "SWAP .met meteorological forcing file"
+        path_pattern: "*.met"
+    preconditions:
+      - "Forcing directory exists with NetCDF files for requested period"
+      - "Coordinates within forcing grid extent"
+    postconditions:
+      - "Rad in 0-50000 kJ/m²/d range"
+      - "Hum in 0.05-10 kPa range (vapor pressure, NOT relative humidity)"
+      - "Tmin < Tmax for all records"
+      - "Rain >= 0, Wind >= 0"
+
+  - id: convert_soil_to_swap
+    name: "Soil parameter converter (HWSD → MvG)"
+    stage: s2_soil_parameters
+    script_path: "tools/convert_soil_to_swap.py"
+    language: python
+    inputs:
+      - name: hwsd
+        type: file
+        required: false
+        example: "/mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img"
+      - name: lat
+        type: number
+        required: true
+      - name: lon
+        type: number
+        required: true
+      - name: texture
+        type: string
+        required: false
+        example: "sandy_loam"
+    outputs:
+      - name: soil_params
+        type: file
+        description: "Mualem-van Genuchten parameter table"
+        path_pattern: "soil_params.*"
+    preconditions:
+      - "HWSD raster exists OR texture class specified"
+    postconditions:
+      - "ORES < OSAT for all layers"
+      - "NPAR > 1.001"
+      - "KSATFIT > 0"
+      - "BDENS in 100-10000 range"
+
+  - id: run_swap
+    name: "SWAP execution wrapper"
+    stage: s4_execution
+    script_path: "tools/run_swap.py"
+    language: python
+    inputs:
+      - name: binary
+        type: file
+        required: true
+        example: "builddir/swap"
+      - name: work_dir
+        type: file
+        required: true
+      - name: swp_file
+        type: string
+        required: false
+        example: "swap.swp"
+    outputs:
+      - name: result_files
+        type: file
+        description: "SWAP output files (result.blc, result.inc, etc.)"
+        path_pattern: "result.*"
+    preconditions:
+      - "Binary exists and is executable"
+      - "swap.swp and all referenced input files exist"
+      - "All filenames lowercase (Linux)"
+    postconditions:
+      - "Exit code 0"
+      - "result.blc exists and is non-empty"
+      - "No .dwb.csv error files"
+
+  - id: parse_swap_output
+    name: "Output parser (SWAP → CSV)"
+    stage: s5_output_parsing
+    script_path: "tools/parse_swap_output.py"
+    language: python
+    inputs:
+      - name: work_dir
+        type: file
+        required: true
+      - name: outfil
+        type: string
+        required: false
+        example: "result"
+    outputs:
+      - name: parsed_csvs
+        type: file
+        description: "Structured CSV files and summary JSON"
+        path_pattern: "parsed/*.csv"
+    preconditions:
+      - "SWAP output files exist in work_dir"
+    postconditions:
+      - "water_balance.csv or daily_increments.csv exists"
+      - "summary.json exists with totals"
+
+  - id: plot_swap_results
+    name: "Result visualizer"
+    stage: s6_visualization
+    script_path: "tools/plot_swap_results.py"
+    language: python
+    inputs:
+      - name: parsed_dir
+        type: file
+        required: true
+      - name: output_dir
+        type: file
+        required: true
+    outputs:
+      - name: figures
+        type: file
+        description: "PNG figures for water balance and timeseries"
+        path_pattern: "figures/*.png"
+    preconditions:
+      - "Parsed CSV files exist"
+      - "matplotlib available"
+    postconditions:
+      - "At least 2 PNG figures generated"
+
+skill_documents:
+  - id: sd_s0
+    name: "Configuration Guide"
+    stage: s0_config
+    path: "docs/s0_configuration_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+
+  - id: sd_s1
+    name: "Met Forcing Conversion Guide"
+    stage: s1_met_forcing
+    path: "docs/s1_met_forcing_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+
+  - id: sd_s2
+    name: "Soil Parameter Conversion Guide"
+    stage: s2_soil_parameters
+    path: "docs/s2_soil_parameters_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+
+  - id: sd_s4
+    name: "Execution Guide"
+    stage: s4_execution
+    path: "docs/s4_execution_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+
+  - id: sd_s5
+    name: "Output Parsing Guide"
+    stage: s5_output_parsing
+    path: "docs/s5_output_parsing_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+
+  - id: sd_s6
+    name: "Visualization and Validation Guide"
+    stage: s6_visualization
+    path: "docs/s6_visualization_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+
+diagnostic_triplets:
+  - id: dt_001
+    stage: s1_met_forcing
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_002
+    stage: s1_met_forcing
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_003
+    stage: s1_met_forcing
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_004
+    stage: s1_met_forcing
+    failure_domain: unit_conversion
+    severity: fatal
+  - id: dt_005
+    stage: s2_soil_parameters
+    failure_domain: parameter_format
+    severity: silent
+  - id: dt_006
+    stage: s2_soil_parameters
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_007
+    stage: s2_soil_parameters
+    failure_domain: parameter_format
+    severity: silent
+  - id: dt_008
+    stage: s4_execution
+    failure_domain: path_resolution
+    severity: fatal
+  - id: dt_009
+    stage: s4_execution
+    failure_domain: path_resolution
+    severity: fatal
+  - id: dt_010
+    stage: s4_execution
+    failure_domain: runtime
+    severity: degraded
+  - id: dt_011
+    stage: s4_execution
+    failure_domain: runtime
+    severity: degraded
+  - id: dt_012
+    stage: s4_execution
+    failure_domain: runtime
+    severity: fatal
+  - id: dt_013
+    stage: s0_config
+    failure_domain: dependency_mismatch
+    severity: silent
+  - id: dt_014
+    stage: s0_config
+    failure_domain: dependency_mismatch
+    severity: degraded
+  - id: dt_015
+    stage: s2_soil_parameters
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_016
+    stage: s1_met_forcing
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_017
+    stage: s2_soil_parameters
+    failure_domain: silent_error
+    severity: silent
+
+validation:
+  tier: "analytic"
+  tier_justification: "Validated against built-in Hupselbrook test case with published reference water balance"
+  benchmark: "Hupselbrook, Netherlands (KNMI station 283), 2002-2004"
+  metrics:
+    reference_rain_cm: 84.18
+    reference_transpiration_cm: 38.17
+    reference_soil_evaporation_cm: 16.69
+    reference_drainage_cm: 22.11
+  figure: "figures/s8_validation.png"
+
+summary:
+  total_tools: 5
+  total_tool_lines: 1200
+  total_skill_documents: 6
+  total_diagnostic_triplets: 17
+  failure_domains:
+    - unit_conversion
+    - parameter_format
+    - path_resolution
+    - runtime
+    - dependency_mismatch
+    - silent_error
+  pipeline_stages: 7
+  pipeline_milestones: 7

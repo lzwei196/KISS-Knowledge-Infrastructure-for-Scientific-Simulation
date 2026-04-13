@@ -1,0 +1,142 @@
+model:
+  name: "PCR_GLOBWB_2"
+  full_name: "PCRaster Global Water Balance model version 2"
+  domain: "global_hydrology"
+  developer: "Utrecht University, Department of Physical Geography"
+  binary_type: "python_conda_env"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PCR_GLOBWB_2/miniconda/_conda"
+  conda_env: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3"
+  entry_point: "model/deterministic_runner.py"
+  config_format: "ini"
+  timestep: "daily"
+  spatial_resolution: ["5_arcmin", "30_arcmin"]
+
+inputs:
+  forcing:
+    - name: "precipitation"
+      unit: "m/day"
+      valid_range: [0.0, 0.5]
+      netcdf_varname: "precipitation"
+      common_source_unit: "mm/day"
+      conversion: "divide_by_1000"
+      trap_id: "dt_001"
+    - name: "temperature"
+      unit: "degrees_Celsius"
+      valid_range: [-60.0, 60.0]
+      netcdf_varname: "temperature"
+      common_source_unit: "Kelvin"
+      conversion: "subtract_273.15"
+      trap_id: "dt_002"
+    - name: "reference_potential_ET"
+      unit: "m/day"
+      valid_range: [0.0, 0.02]
+      netcdf_varname: "evapotranspiration"
+      common_source_unit: "mm/day"
+      conversion: "divide_by_1000"
+      trap_id: "dt_003"
+
+  parameters:
+    critical:
+      - name: "degreeDayFactor"
+        valid_range: [0.001, 0.01]
+        unit: "m/day/degC"
+        description: "Snow melt rate factor (degree-day method)"
+        sensitivity: "HIGH"
+      - name: "minRecessionCoeff"
+        valid_range: [1.0e-5, 1.0e-2]
+        unit: "1/day"
+        description: "Minimum groundwater recession coefficient controlling baseflow"
+        sensitivity: "HIGH"
+      - name: "manningsN"
+        valid_range: [0.01, 0.10]
+        unit: "dimensionless"
+        description: "Manning roughness coefficient for channel routing"
+        sensitivity: "MEDIUM"
+      - name: "kSatAquifer"
+        valid_range: [0.01, 100.0]
+        unit: "m/day"
+        description: "Saturated hydraulic conductivity of aquifer"
+        sensitivity: "MEDIUM"
+      - name: "arnoBeta"
+        valid_range: [0.01, 1.2]
+        unit: "dimensionless"
+        description: "Improved Arno scheme runoff generation curve shape parameter"
+        sensitivity: "MEDIUM"
+      - name: "irrigationEfficiency"
+        valid_range: [0.3, 1.0]
+        unit: "fraction"
+        description: "Fraction of abstracted water effectively used for irrigation"
+        sensitivity: "LOW"
+
+  soil:
+    - name: "KSat1"
+      unit: "m/day"
+      description: "Saturated hydraulic conductivity, upper layer"
+    - name: "KSat2"
+      unit: "m/day"
+      description: "Saturated hydraulic conductivity, lower layer"
+    - name: "satVolWC1"
+      unit: "m3/m3"
+      description: "Saturated volumetric water content, upper layer"
+    - name: "satVolWC2"
+      unit: "m3/m3"
+      description: "Saturated volumetric water content, lower layer"
+    - name: "resVolWC1"
+      unit: "m3/m3"
+      description: "Residual volumetric water content, upper layer"
+    - name: "resVolWC2"
+      unit: "m3/m3"
+      description: "Residual volumetric water content, lower layer"
+    - name: "specificYield"
+      unit: "m3/m3"
+      valid_range: [0.0, 1.0]
+      description: "Aquifer specific yield (fraction)"
+      trap_id: "dt_007"
+
+outputs:
+  primary:
+    - name: "discharge"
+      unit: "m3/s"
+      valid_range: [0.0, 300000.0]
+      description: "River discharge at each grid cell"
+    - name: "totalRunoff"
+      unit: "m/day"
+      valid_range: [0.0, 0.5]
+      description: "Total runoff (surface + subsurface)"
+    - name: "gwRecharge"
+      unit: "m/day"
+      valid_range: [0.0, 0.1]
+      description: "Groundwater recharge"
+    - name: "actualET"
+      unit: "m/day"
+      valid_range: [0.0, 0.02]
+      description: "Actual evapotranspiration"
+  secondary:
+    - name: "storGroundwater"
+      unit: "m"
+      description: "Groundwater storage"
+    - name: "channelStorage"
+      unit: "m3"
+      description: "Channel water storage"
+    - name: "snowCoverSWE"
+      unit: "m"
+      description: "Snow water equivalent"
+    - name: "totalWaterStorageThickness"
+      unit: "m"
+      description: "Total terrestrial water storage"
+    - name: "surfaceWaterStorage"
+      unit: "m3"
+      description: "Total surface water storage"
+    - name: "waterBodyStorage"
+      unit: "m3"
+      description: "Lake and reservoir storage"
+
+known_issues:
+  - id: "ki_001"
+    description: "Allocation segments float32 precision error — yearly accumulated actSurfaceWaterAbstract and allocSurfaceWaterAbstract may differ slightly"
+  - id: "ki_002"
+    description: "Script backup does not include subfolders (e.g., evaporation/)"
+  - id: "ki_003"
+    description: "Variable name inconsistency between model versions for initial conditions — repair_ini_key_names() handles backward compatibility"
+  - id: "ki_004"
+    description: "OPeNDAP input access is 10-100x slower than local files; network timeouts common for large domains"

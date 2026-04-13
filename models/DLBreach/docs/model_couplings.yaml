@@ -1,0 +1,156 @@
+# ============================================================================
+# Model Couplings -- DLBreach <-> HydroCraft Components
+# ============================================================================
+# Documents data flows between DLBreach and other HydroCraft models:
+#   CaMa-Flood (primary), VIC (indirect)
+#
+# Each coupling specifies:
+#   source_model, source_variable -> transformation -> target_model, target_input
+#   with validation rules and scientific justification.
+# ============================================================================
+
+couplings:
+
+  # --- Coupling 1: CaMa-Flood outflw -> DLBreach inflow ---
+  - id: "coupling_cama_to_dlbreach_inflow"
+    name: "CaMa-Flood River Discharge to DLBreach Reservoir Inflow"
+    direction: "CaMa-Flood -> DLBreach"
+    scientific_justification: >
+      CaMa-Flood simulates river routing at 15-arcmin resolution and produces
+      daily mean river discharge (outflw) at each grid cell. At a dam location,
+      this discharge represents the water flowing into the reservoir. DLBreach
+      uses this as the Upstream_Reservoir_Inflow to compute the reservoir water
+      balance during a breach event.
+    source:
+      model: "CaMa-Flood v4.20"
+      variable: "outflw"
+      output_file: "model/cmf_v420_pkg/out/<run>/o_outflw<YYYY>.nc"
+      units: "m3/s"
+      spatial_resolution: "15 arcmin (~25 km)"
+      temporal_resolution: "daily mean"
+    target:
+      model: "DLBreach v2016.4"
+      input_card: "Upstream_Reservoir_Inflow"
+      input_format: "time (hours), discharge (m3/s)"
+      temporal_resolution: "hourly"
+    transformation:
+      steps:
+        - "1. Extract outflw at the dam grid cell (nearest to dam lat/lon)"
+        - "2. Select the date range covering the flood event"
+        - "3. Temporal disaggregation: daily mean -> hourly using PCHIP interpolation"
+        - "4. Ensure non-negative values (clip at 0)"
+        - "5. Convert time to hours relative to simulation start"
+        - "6. Format as Upstream_Reservoir_Inflow card (N, t1 Q1, t2 Q2, ...)"
+      unit_conversion: "None (m3/s -> m3/s). Only time: daily -> hourly."
+      spatial_method: "Nearest grid cell to dam coordinates"
+      temporal_method: "Piecewise Cubic Hermite Interpolating Polynomial (PCHIP), monotonicity-preserving"
+    validation:
+      - "Dam coordinates should be within 0.25 degrees of the nearest CaMa cell center"
+      - "CaMa discharge magnitude should be consistent with the dam's design inflow (e.g., within same order of magnitude as published PMF)"
+      - "Verify the CaMa cell is on the correct river branch (check river name, upstream area)"
+      - "Peak CaMa discharge should correspond to a credible flood event for the basin"
+    tool: "convert_cama_to_inflow"
+
+  # --- Coupling 2: DLBreach breach flow -> CaMa-Flood runoff ---
+  - id: "coupling_dlbreach_to_cama_runoff"
+    name: "DLBreach Breach Outflow to CaMa-Flood Downstream Runoff"
+    direction: "DLBreach -> CaMa-Flood"
+    scientific_justification: >
+      When a dam breaches, the flood wave propagates downstream through the
+      river system. To route this wave with CaMa-Flood, the breach outflow
+      must be injected as additional runoff at the first downstream grid cell
+      (not the dam cell itself, to avoid double-counting the reservoir flow).
+      The breach discharge (m3/s) is converted to equivalent runoff depth
+      (mm/day) over the downstream cell area and added to the existing
+      CaMa-Flood runoff NetCDF for re-simulation.
+    source:
+      model: "DLBreach v2016.4"
+      variable: "breach_flow (col 2) + spillway_gate_flow (col 3)"
+      output_file: "casename.out"
+      units: "m3/s"
+      temporal_resolution: "per time step (typically seconds to minutes)"
+    target:
+      model: "CaMa-Flood v4.20"
+      input_file: "outputs/<run>/cama_input/<basin>_runoff_1d_YYYY.nc"
+      input_variable: "runoff"
+      units: "mm/day (depth over cell area)"
+      temporal_resolution: "daily"
+    transformation:
+      steps:
+        - "1. Extract breach_flow + spillway_gate_flow from casename.out"
+        - "2. Aggregate from sub-hourly to daily mean discharge (m3/s)"
+        - "3. Convert m3/s to mm/day: Q * 86400 / cell_area * 1000"
+        - "4. Determine the DOWNSTREAM CaMa cell (use CaMa nextxy flow direction)"
+        - "5. Add the breach runoff to the existing runoff at that cell for each day"
+        - "6. Save modified NetCDF"
+        - "7. Re-run CaMa-Flood with modified runoff"
+      unit_conversion: "m3/s * 86400 / cell_area_m2 * 1000 = mm/day"
+      spatial_method: "Inject at the first CaMa cell downstream of the dam (via CaMa nextxy)"
+      temporal_method: "Daily mean aggregation from DLBreach sub-hourly output"
+    validation:
+      - "Total breach volume (integral of Q*dt) should be conserved in the injection"
+      - "Check that daily peak matches the expected dam-break peak"
+      - "Injection cell must be DOWNSTREAM of dam, not AT the dam (avoid double-counting)"
+      - "Re-run CaMa and verify that discharge increases downstream of the dam"
+    tool: "inject_breach_to_cama"
+
+  # --- Coupling 3: VIC -> (CaMa -> DLBreach) indirect coupling ---
+  - id: "coupling_vic_indirect"
+    name: "VIC Runoff to DLBreach via CaMa-Flood (Indirect)"
+    direction: "VIC -> CaMa-Flood -> DLBreach"
+    scientific_justification: >
+      VIC produces runoff and baseflow that drive CaMa-Flood river routing.
+      The CaMa-Flood output at the dam cell reflects the upstream hydrology
+      simulated by VIC. Therefore, VIC-CaMa coupling quality directly affects
+      the DLBreach inflow hydrograph. Calibrated VIC parameters (especially
+      binfilt, Ds, soil depths) determine flood peak magnitude and timing.
+    source:
+      model: "VIC 5.1.0"
+      variable: "OUT_RUNOFF + OUT_BASEFLOW"
+      units: "mm/day"
+    intermediate:
+      model: "CaMa-Flood v4.20"
+      process: "River routing (1D kinematic wave + floodplain storage)"
+      output_variable: "outflw (m3/s)"
+    target:
+      model: "DLBreach v2016.4"
+      input_card: "Upstream_Reservoir_Inflow"
+    validation:
+      - "VIC should be calibrated for the basin (NSE > 0.6) before using for dam breach"
+      - "CaMa discharge at the dam cell should match observed river discharge at or near the dam"
+      - "For extreme events (PMF), VIC may underestimate peak flows due to resolution and process limitations"
+      - "Consider using observed inflow data if available instead of VIC-CaMa coupling for critical dam safety analyses"
+    notes: >
+      For operational dam safety analysis, using observed dam inflow data is
+      preferred over VIC-CaMa model chain when available. The model chain
+      introduces uncertainties at each step. However, for scenario analysis
+      (climate change, land use change), the VIC-CaMa-DLBreach chain provides
+      a fully process-based framework.
+
+  # --- Coupling 4: DLBreach -> CaMa-Flood -> Downscaling (full chain) ---
+  - id: "coupling_full_flood_chain"
+    name: "Full Dam Breach Flood Mapping Chain"
+    direction: "DLBreach -> CaMa-Flood -> CaMa Downscaling"
+    scientific_justification: >
+      After dam breach simulation and re-routing through CaMa-Flood, the
+      CaMa-Flood downscaling tool can produce 1-arcmin (~1.8 km) resolution
+      flood depth maps. This provides the downstream flood inundation extent
+      needed for emergency management and evacuation planning.
+    chain:
+      - step: 1
+        model: "DLBreach"
+        output: "Breach hydrograph (casename.out)"
+      - step: 2
+        tool: "inject_breach_to_cama"
+        output: "Modified CaMa runoff NetCDF"
+      - step: 3
+        model: "CaMa-Flood"
+        action: "Re-run with modified runoff"
+        output: "River flow, flood depth, inundation fraction"
+      - step: 4
+        tool: "CaMa downscaling (cama-downscale skill)"
+        output: "1-arcmin flood depth maps"
+    validation:
+      - "Compare downstream flood extent with known dam failure inundation maps if available"
+      - "Peak downstream discharge should decrease and broaden (attenuate) with distance from dam"
+      - "Flood arrival time should be consistent with wave celerity (~2-5 m/s in channels)"

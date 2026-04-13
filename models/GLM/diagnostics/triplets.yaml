@@ -1,0 +1,773 @@
+# ============================================================================
+# GLM Diagnostic Triplets
+# ============================================================================
+# 30 diagnostic triplets covering 7 failure domains.
+# Generated during GLM knowledge dissection for HydroCraft platform.
+# Updated 2026-04-03: Added AED2 phytoplankton triplets (dt_028-030).
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Lake level rises continuously, overflow every day. Lake volume grows unrealistically."
+    error_pattern: "overflow"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Rain in mm/day instead of m/day — 1000x too much precipitation input"
+    explanation: >
+      GLM expects rain in meters per day (m/day). CMFD and MSWX provide precipitation
+      in mm per 3-hour timestep. The correct conversion is: mm/3hr * 8 / 1000 = m/day.
+      If the /1000 step is omitted, the lake receives 1000x too much rain.
+    affected_components: [convert_met_to_glm, meteorology_block]
+  remedy:
+    action: "Divide rain values by 1000 in convert_met_to_glm.py"
+    tool_to_run: convert_met_to_glm
+    manual_steps:
+      - "Check max rain value in met CSV — should be < 0.5 m/day for most climates"
+      - "If max rain > 1.0 m/day, values are likely in mm/day — divide by 1000"
+    prevention: "validate_outputs() in convert_met_to_glm checks for unrealistic rain values"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_002
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Lake dries up rapidly. Extreme evaporation. Lake level drops to zero."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "RelHum as fraction (0-1) instead of percentage (0-100)"
+    explanation: >
+      GLM expects relative humidity as percentage (0-100). CMFD/MSWX provide vapor
+      pressure in kPa, which must be converted to RH%. If the conversion yields values
+      in 0-1 range instead of 0-100, GLM computes enormous evaporation because it
+      interprets 0.7 (70% RH) as 0.7% RH.
+    affected_components: [convert_met_to_glm, vp_to_rh]
+  remedy:
+    action: "Multiply RH by 100 if values are in 0-1 range"
+    tool_to_run: convert_met_to_glm
+    manual_steps:
+      - "Check max RelHum in met CSV — should be 60-100 for most climates"
+      - "If max RelHum < 1.0, values are fraction — multiply by 100"
+    prevention: "validate_outputs() checks for RH < 1.0 and warns"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Negative shortwave radiation values in forcing CSV. May cause NaN in temperature."
+    error_pattern: "NaN"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Night-time shortwave radiation not clipped to zero after temporal interpolation"
+    explanation: >
+      When interpolating 3-hourly forcing to hourly, linear interpolation can produce
+      small negative values for shortwave radiation during night-time transitions.
+      GLM may handle these as-is or produce numerical artifacts.
+    affected_components: [convert_met_to_glm]
+  remedy:
+    action: "Apply max(0, SW) after interpolation"
+    tool_to_run: convert_met_to_glm
+    manual_steps:
+      - "Check min ShortWave value in met CSV — must be >= 0"
+    prevention: "convert_met_to_glm applies np.maximum(sw, 0.0) by default"
+  severity: silent
+  cross_references: []
+
+- id: dt_004
+  stage: s3_inflow
+  failure_domain: unit_conversion
+  symptom:
+    description: "Inflow temperature always 0 degC or NaN. Artificial cold layer forms at insertion depth."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature column missing from inflow CSV or not estimated from air temperature"
+    explanation: >
+      GLM reads TEMP from inflow CSV. If the column is missing or all zeros, the inflow
+      water enters at 0 degC, creating an artificially cold density current that sinks to
+      the bottom and disrupts the thermal structure.
+    affected_components: [convert_inflow_to_glm, inflow_block]
+  remedy:
+    action: "Estimate inflow temperature from air temperature using T_water = 0.9*T_air + 1.5"
+    tool_to_run: convert_inflow_to_glm
+    manual_steps:
+      - "Verify TEMP column exists in inflow CSV"
+      - "Check that values are physically reasonable (0-30 degC typically)"
+    prevention: "convert_inflow_to_glm auto-estimates T from met CSV if available"
+  severity: degraded
+  cross_references: [dt_022]
+
+# --- Parameter Format ---
+
+- id: dt_005
+  stage: s6_namelist
+  failure_domain: parameter_format
+  symptom:
+    description: "Fortran read error on namelist. GLM crashes at startup with parse error."
+    error_pattern: "error reading namelist"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "String values use double quotes instead of single quotes in Fortran namelist"
+    explanation: >
+      Fortran namelists require single-quoted strings ('value'). Double-quoted strings
+      ("value") cause a parse error. This is a common mistake when generating namelists
+      from Python, which prefers double quotes.
+    affected_components: [generate_glm_nml]
+  remedy:
+    action: "Replace all double quotes with single quotes in glm3.nml"
+    tool_to_run: generate_glm_nml
+    manual_steps:
+      - "sed -i \"s/\\\"/'/g\" glm3.nml"
+    prevention: "generate_glm_nml uses fmt_str() which always produces single quotes"
+  severity: fatal
+  cross_references: []
+
+- id: dt_006
+  stage: s1_lake_identification
+  failure_domain: parameter_format
+  symptom:
+    description: "GLM crashes at startup with layer thickness or morphometry error."
+    error_pattern: "layer thickness"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "H[] and A[] arrays not monotonically increasing (bottom to top)"
+    explanation: >
+      GLM requires the morphometry arrays H[] (elevation) and A[] (area) to be in
+      ascending order from the lake bottom to the surface. If they are reversed
+      (top to bottom), or contain non-monotonic values, GLM cannot construct the
+      Lagrangian layer structure and crashes.
+    affected_components: [build_morphometry, morphometry_block]
+  remedy:
+    action: "Sort H[] in ascending order and ensure A[] corresponds correctly"
+    tool_to_run: build_morphometry
+    manual_steps:
+      - "Verify H[0] < H[1] < ... < H[n]"
+      - "Verify A[0] <= A[1] <= ... <= A[n]"
+      - "A[0] should be 0 or near-0 (lake bottom)"
+    prevention: "build_morphometry validates monotonicity in validate_outputs()"
+  severity: fatal
+  cross_references: [dt_007, dt_008]
+
+- id: dt_007
+  stage: s1_lake_identification
+  failure_domain: parameter_format
+  symptom:
+    description: "Lake volume is unrealistic. Stratification develops at wrong depth."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Depth-area curve has too few points (< 5)"
+    explanation: >
+      With fewer than 5 points in the hypsographic curve, the volume approximation
+      is very crude. This can cause the lake to have significantly wrong total volume,
+      which affects all water balance calculations and stratification dynamics.
+    affected_components: [build_morphometry]
+  remedy:
+    action: "Interpolate to at least 10-15 depth levels"
+    tool_to_run: build_morphometry
+    manual_steps:
+      - "Use --num_levels 15 (default) when running build_morphometry"
+    prevention: "build_morphometry defaults to 15 levels"
+  severity: degraded
+  cross_references: [dt_006]
+
+- id: dt_008
+  stage: s6_namelist
+  failure_domain: parameter_format
+  symptom:
+    description: "GLM crashes: bsn_vals does not match number of H/A values"
+    error_pattern: "bsn_vals"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "bsn_vals manually set but does not match actual H[] and A[] array lengths"
+    explanation: >
+      The bsn_vals parameter must exactly equal the number of elements in both H[]
+      and A[] arrays. If set manually (e.g., from an old namelist), it may not match
+      the arrays generated by build_morphometry.
+    affected_components: [generate_glm_nml, morphometry_block]
+  remedy:
+    action: "Auto-compute bsn_vals from len(H) in generate_glm_nml"
+    tool_to_run: generate_glm_nml
+    manual_steps:
+      - "Count elements in H array and set bsn_vals to that number"
+    prevention: "generate_glm_nml auto-computes bsn_vals = len(H)"
+  severity: fatal
+  cross_references: [dt_006]
+
+- id: dt_009
+  stage: s5_init_profiles
+  failure_domain: parameter_format
+  symptom:
+    description: "GLM crashes: lake_depth exceeds morphometry maximum depth"
+    error_pattern: "lake_depth"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "init_profiles lake_depth > max(H) - min(H)"
+    explanation: >
+      The initial lake depth cannot exceed the maximum depth defined by the
+      morphometry (crest_elev - bottom_elev). If it does, GLM cannot create
+      the initial layer structure.
+    affected_components: [build_init_profiles, init_profiles_block]
+  remedy:
+    action: "Clip lake_depth to morphometry range"
+    tool_to_run: build_init_profiles
+    manual_steps:
+      - "Set lake_depth = max(H) - min(H) or slightly less"
+    prevention: "build_init_profiles clips when --max_morph_depth is provided"
+  severity: fatal
+  cross_references: []
+
+- id: dt_010
+  stage: s6_namelist
+  failure_domain: parameter_format
+  symptom:
+    description: "num_inflows is 0 but inflow CSV files are referenced. Inflow is silently ignored."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Inconsistency between num_inflows count and inflow file list"
+    explanation: >
+      If num_inflows = 0, GLM ignores all inflow_fl entries. The lake runs without
+      any river input, which may be incorrect. This produces no error message.
+    affected_components: [generate_glm_nml, inflow_block]
+  remedy:
+    action: "Set num_inflows to match the number of inflow CSV files"
+    tool_to_run: generate_glm_nml
+    manual_steps:
+      - "Count inflow CSV files and set num_inflows accordingly"
+    prevention: "generate_glm_nml auto-sets num_inflows from inflow_csv argument"
+  severity: silent
+  cross_references: []
+
+# --- Path Resolution ---
+
+- id: dt_011
+  stage: s8_execution
+  failure_domain: path_resolution
+  symptom:
+    description: "Unable to open meteo file. GLM exits immediately."
+    error_pattern: "Unable to open"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "meteo_fl path in namelist is relative but GLM run from wrong directory"
+    explanation: >
+      GLM resolves file paths relative to the current working directory, not the
+      namelist file location. If you run GLM from a different directory than where
+      the namelist and data files are, all relative paths will fail.
+    affected_components: [run_glm, meteorology_block]
+  remedy:
+    action: "Use absolute paths in namelist, or ensure cd to run directory before executing"
+    tool_to_run: run_glm
+    manual_steps:
+      - "cd to the directory containing glm3.nml before running"
+      - "Or convert all paths in glm3.nml to absolute paths"
+    prevention: "run_glm uses cwd=run_dir to ensure correct working directory"
+  severity: fatal
+  cross_references: [dt_012]
+
+- id: dt_012
+  stage: s8_execution
+  failure_domain: path_resolution
+  symptom:
+    description: "Unable to open inflow file. GLM exits during setup."
+    error_pattern: "Unable to open"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "inflow_fl path does not match actual file location"
+    explanation: >
+      Same as dt_011 but for inflow files. The inflow_fl path must be resolvable
+      from the GLM working directory.
+    affected_components: [run_glm, inflow_block]
+  remedy:
+    action: "Verify all file paths in namelist exist before running GLM"
+    tool_to_run: run_glm
+    manual_steps:
+      - "run_glm preflight check validates all referenced file paths"
+    prevention: "run_glm validates met, inflow, and outflow file paths before execution"
+  severity: fatal
+  cross_references: [dt_011]
+
+# --- Runtime Errors ---
+
+- id: dt_013
+  stage: s8_execution
+  failure_domain: runtime
+  symptom:
+    description: "GLM crashes with NaN in temperature. Simulation aborts mid-run."
+    error_pattern: "NaN"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Extremely large wind speed or unrealistic forcing causing numerical instability"
+    explanation: >
+      Very high wind speeds (>50 m/s sustained), zero timestep, or extreme temperature
+      swings can cause the mixing calculations to produce NaN values, which propagate
+      through the temperature profile and crash the model.
+    affected_components: [meteorology_block, mixing_block]
+  remedy:
+    action: "Check forcing data for outliers. Ensure dt >= 60 seconds."
+    tool_to_run: ""
+    manual_steps:
+      - "Check WindSpeed column for values > 30 m/s"
+      - "Check AirTemp for sudden jumps > 20 degC between timesteps"
+      - "Ensure dt = 3600 (standard hourly timestep)"
+      - "Try reducing wind_factor if wind data is noisy"
+    prevention: "validate_outputs in convert_met_to_glm flags extreme values"
+  severity: fatal
+  cross_references: []
+
+- id: dt_014
+  stage: s8_execution
+  failure_domain: runtime
+  symptom:
+    description: "Ice model produces unrealistic thickness (>5m). Permanent ice cover in warm climate."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Snow accumulation without melt in warm/tropical climate due to temperature data issues"
+    explanation: >
+      For tropical lakes (latitude < 23), the snowice model should produce negligible
+      or zero ice. If ice thickness grows unrealistically, it usually means the
+      temperature data has errors (e.g., negative bias) or the snow albedo feedback
+      is creating a runaway cooling effect.
+    affected_components: [snowice_block, meteorology_block]
+  remedy:
+    action: "For tropical lakes, verify temperature data. Consider increasing min_layer_thick."
+    tool_to_run: ""
+    manual_steps:
+      - "Check if AirTemp is consistently below 0 degC (wrong for tropical)"
+      - "Verify latitude is correct in morphometry block"
+      - "GLM handles ice automatically — if data is correct, ice should be zero"
+    prevention: "verify latitude and temperature range are consistent"
+  severity: degraded
+  cross_references: []
+
+- id: dt_015
+  stage: s8_execution
+  failure_domain: runtime
+  symptom:
+    description: "Layer merge error or GLM appears to hang in infinite loop"
+    error_pattern: "layer"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "max_layer_thick too small relative to lake depth, causing excessive layer splitting"
+    explanation: >
+      If max_layer_thick is too small, GLM creates many layers that constantly
+      split and merge, potentially causing performance issues or numerical errors.
+      For very deep lakes (>100m), increase max_layer_thick to 1.0-2.0m.
+    affected_components: [glm_setup_block]
+  remedy:
+    action: "Increase max_layer_thick. For deep lakes (>100m), use 1.0-2.0m."
+    tool_to_run: ""
+    manual_steps:
+      - "Edit glm3.nml: max_layer_thick = 1.0 (for deep lakes)"
+      - "Optionally reduce max_layers from 500 to 200"
+    prevention: "generate_glm_nml scales max_layer_thick based on depth"
+  severity: fatal
+  cross_references: []
+
+# --- Dependency Mismatch ---
+
+- id: dt_016
+  stage: s3_inflow
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "Inflow timing offset — flow arrives 1 day early or late"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Timezone mismatch between forcing and inflow data"
+    explanation: >
+      If the meteorological CSV uses UTC timestamps but the inflow CSV uses
+      local time (or vice versa), there is a systematic offset. For Chinese
+      lakes (UTC+8), this is an 8-hour shift that can place peak inflows
+      at the wrong time of day.
+    affected_components: [convert_met_to_glm, convert_inflow_to_glm, time_block]
+  remedy:
+    action: "Ensure all CSV timestamps use the same timezone as GLM timezone parameter"
+    tool_to_run: ""
+    manual_steps:
+      - "Check timezone parameter in &time block"
+      - "Verify met CSV and inflow CSV use consistent time references"
+    prevention: "Use the same timezone convention throughout the pipeline"
+  severity: silent
+  cross_references: [dt_017]
+
+- id: dt_017
+  stage: s10_coupling
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "CaMa-Flood discharge is inconsistent with GLM inflow. Water balance does not close."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "CaMa grid cell does not correspond to the actual lake inlet"
+    explanation: >
+      When extracting CaMa-Flood discharge for GLM inflow, the grid cell must
+      be the one immediately upstream of the lake, not the lake cell itself.
+      Using the wrong cell produces flow from a different tributary.
+    affected_components: [convert_inflow_to_glm, glm_to_cama_outflow]
+  remedy:
+    action: "Verify spatial alignment of CaMa output point with GLM inflow location"
+    tool_to_run: ""
+    manual_steps:
+      - "Check CaMa river network to find the correct upstream cell"
+      - "Compare total inflow volume to expected watershed runoff"
+    prevention: "Verify inflow makes hydrological sense (Q ~ P * A * runoff_coeff)"
+  severity: silent
+  cross_references: [dt_016]
+
+- id: dt_018
+  stage: s9_output_analysis
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "Temperature heatmap shows artifacts at depth boundaries. Stripy patterns."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Output nsave too large — misses diurnal cycle and layer dynamics"
+    explanation: >
+      If nsave is set too high (e.g., 168 = weekly), the output captures only
+      snapshots of the evolving layer structure. The Lagrangian layers change
+      depth between outputs, creating visual artifacts in the heatmap.
+    affected_components: [output_block]
+  remedy:
+    action: "Set nsave to 24 (daily) or lower for thermal analysis"
+    tool_to_run: generate_glm_nml
+    manual_steps:
+      - "Edit nsave in &output block to 24 (daily, with dt=3600)"
+    prevention: "generate_glm_nml defaults to nsave=24"
+  severity: degraded
+  cross_references: []
+
+# --- Silent Errors (Model Runs, Results Wrong) ---
+
+- id: dt_019
+  stage: s6_namelist
+  failure_domain: silent_error
+  symptom:
+    description: "Stratification never develops in deep lake. Surface-to-bottom temp difference < 2 degC."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Kw (light extinction) too high — all solar energy absorbed near surface"
+    explanation: >
+      High Kw values (>3 m^-1) cause all shortwave radiation to be absorbed in the
+      top 1-2 meters. No heat penetrates deeper, so the surface warms but the deep
+      water stays cold — BUT wind mixing then immediately redistributes this surface
+      heat, preventing stable stratification from developing. Paradoxically, very
+      turbid lakes CAN stratify, but the thermocline is very shallow.
+    affected_components: [light_block, generate_glm_nml]
+  remedy:
+    action: "Use literature Kw values. Clear lakes: 0.2-0.5, moderate: 0.5-1.5, turbid: 1.5-3.0"
+    tool_to_run: calibrate_glm
+    manual_steps:
+      - "Check Kw value in &light block"
+      - "For clear oligotrophic lakes, start with Kw = 0.3"
+      - "For eutrophic lakes with algae, Kw = 1.0-2.0"
+      - "Secchi depth relationship: Kw ~ 1.7 / Secchi_depth_m"
+    prevention: "generate_glm_nml defaults to Kw=0.5 (moderate)"
+  severity: silent
+  cross_references: [dt_021]
+
+- id: dt_020
+  stage: s2_met_forcing
+  failure_domain: silent_error
+  symptom:
+    description: "Summer surface temperatures 3-5 degC too warm. Excessive heating."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Longwave radiation double-counted — both computed internally and provided in forcing"
+    explanation: >
+      GLM has two longwave modes: 'LW_IN' (incoming LW provided in forcing CSV)
+      and 'LW_CC' (computed from cloud cover). If lw_type='LW_CC' but the forcing
+      CSV also contains a LongWave column, the column is ignored. But if
+      lw_type='LW_IN' and the LW values are too high (e.g., from a different sensor
+      or double-counting), the lake receives excess thermal radiation.
+    affected_components: [meteorology_block, convert_met_to_glm]
+  remedy:
+    action: "Set lw_type consistently: 'LW_IN' if forcing has measured/modeled LW, 'LW_CC' if only cloud cover"
+    tool_to_run: generate_glm_nml
+    manual_steps:
+      - "Check if LongWave column in met CSV contains real incoming LW data"
+      - "If so, use lw_type = 'LW_IN'"
+      - "If LW is computed from cloud cover, use lw_type = 'LW_CC' and provide Cloud column instead"
+    prevention: "generate_glm_nml defaults to LW_IN when CMFD/MSWX LW data is available"
+  severity: silent
+  cross_references: []
+
+- id: dt_021
+  stage: s6_namelist
+  failure_domain: silent_error
+  symptom:
+    description: "Mixing too strong — no thermal stratification develops even in summer"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "coef_wind_stir or wind_factor too high for sheltered or small lake"
+    explanation: >
+      Large wind_factor (>1.5) or coef_wind_stir (>0.8) can prevent stratification
+      by mixing surface heat into deeper water faster than solar heating can maintain
+      the temperature gradient. Small sheltered lakes need lower values.
+    affected_components: [mixing_block, meteorology_block]
+  remedy:
+    action: "Reduce wind_factor or coef_wind_stir for small/sheltered lakes"
+    tool_to_run: calibrate_glm
+    manual_steps:
+      - "Start with wind_factor = 0.7-0.8 for small sheltered lakes"
+      - "Start with coef_wind_stir = 0.2-0.3 for small lakes"
+    prevention: "calibrate_glm optimizes these parameters against observed temperature"
+  severity: silent
+  cross_references: [dt_019]
+
+- id: dt_022
+  stage: s3_inflow
+  failure_domain: silent_error
+  symptom:
+    description: "Artificial cold or warm layer forms at wrong depth. Density instability."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Inflow salinity set to non-zero when lake is freshwater"
+    explanation: >
+      GLM computes inflow density from both temperature AND salinity. If the inflow
+      CSV has SALT = 0.5 psu (a small non-zero value) but the lake is fresh (SALT = 0),
+      the inflow is denser than expected and inserts deeper than it should. This creates
+      an artificial intrusion layer that disrupts the natural thermal structure.
+    affected_components: [convert_inflow_to_glm, inflow_block]
+  remedy:
+    action: "Set inflow SALT = 0.0 for all freshwater lakes"
+    tool_to_run: convert_inflow_to_glm
+    manual_steps:
+      - "Check SALT column in inflow CSV — should be 0.0 for freshwater"
+      - "convert_inflow_to_glm defaults to salinity=0.0"
+    prevention: "convert_inflow_to_glm defaults to --salinity 0.0"
+  severity: silent
+  cross_references: [dt_004]
+
+# --- Miyun Validation Findings (2026-03-22) ---
+
+- id: dt_023
+  stage: s8_execution
+  failure_domain: silent_error
+  symptom:
+    description: "Surface T asymptotes to 0.002 C but never crosses 0 C. No ice forms despite air temp reaching -15 C. All mixing/wind/LW parameters exhaustively tested."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Missing dt_iceon_avg parameter in &snowice block (see dt_027). Originally diagnosed as thermal inertia issue, but true cause was the missing ice onset parameter."
+    explanation: >
+      Exhaustively tested: coef_wind_stir 0.18-0.40, wind_factor 0.7-1.0, lw_factor
+      0.50-1.00, coef_mix_conv 0.05-0.20, sed_temp_mean 5-8 — NONE fixed the problem.
+      The 0.002 C floor was consistent across ALL parameter combinations. Root cause
+      was dt_iceon_avg missing from snowice block (dt_027). After adding dt_iceon_avg=0.02,
+      ice forms correctly (71 days/yr, max 0.28m on Miyun).
+    affected_components: [snowice_block, generate_glm_nml]
+  remedy:
+    action: "Add dt_iceon_avg=0.02 and min_ice_thickness=0.001 to &snowice block"
+    tool_to_run: generate_glm_nml
+    manual_steps:
+      - "See dt_027 for full fix"
+    prevention: "generate_glm_nml now always includes dt_iceon_avg and min_ice_thickness"
+  severity: silent
+  cross_references: [dt_027, dt_014]
+
+- id: dt_024
+  stage: s2_met_forcing
+  failure_domain: silent_error
+  symptom:
+    description: "GLM met CSV has zero precipitation (Rain=0, Snow=0) for entire simulation. No direct rainfall on lake surface."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "convert_met_to_glm.py does not extract CMFD precipitation. VIC forcing files may not have precipitation mapped to GLM Rain/Snow columns."
+    explanation: >
+      Miyun Reservoir receives ~480 mm/yr precipitation but the met CSV has Rain=0 and
+      Snow=0 for all timesteps. This affects water balance (no direct rainfall) and ice
+      formation (no snow on lake). The lake water balance is purely inflow-driven.
+    affected_components: [convert_met_to_glm]
+  remedy:
+    action: "Add precipitation extraction to convert_met_to_glm.py using CMFD prec variable"
+    tool_to_run: convert_met_to_glm
+    manual_steps:
+      - "Extract CMFD precipitation (mm/3hr) and convert to m/day"
+      - "Split rain vs snow using air temperature threshold at 0 degC"
+      - "Validate: annual sum should approximate basin MAP in meters (e.g., 0.48 m for Miyun)"
+    prevention: "validate_outputs() checks that Rain column sum > 0 for simulations > 1 year"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_025
+  stage: s6_namelist
+  failure_domain: parameter_format
+  symptom:
+    description: "GLM crashes at startup when timefmt=3 but start/stop are datetime strings"
+    error_pattern: "error reading"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "generate_glm_nml.py hardcoded timefmt=3 (seconds since epoch) but generates datetime string start/stop values like '2001-01-01 00:00:00'"
+    explanation: >
+      timefmt=2 expects datetime strings ('YYYY-MM-DD HH:MM:SS'), timefmt=3 expects
+      integer seconds. The generator always outputs datetime strings but set timefmt=3,
+      causing a format mismatch. Fixed by auto-detecting: if start contains '-', use
+      timefmt=2.
+    affected_components: [generate_glm_nml, time_block]
+  remedy:
+    action: "Auto-detect timefmt from start date format in generate_glm_nml.py"
+    tool_to_run: generate_glm_nml
+    manual_steps:
+      - "Check start and stop format — if they contain '-', set timefmt=2"
+      - "If they are integer seconds, set timefmt=3"
+    prevention: "generate_glm_nml.py now auto-detects timefmt from start format"
+  severity: fatal
+  cross_references: [dt_005]
+
+- id: dt_026
+  stage: s2_met_forcing
+  failure_domain: silent_error
+  symptom:
+    description: "subdaily=.true. with 3-hourly CMFD forcing produces flat temperature (max ~4.5 C). No seasonal cycle despite correct forcing data."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Timestamp alignment issue between 3-hourly CMFD forcing and GLM internal dt=3600s. GLM may not correctly interpolate between 3-hourly records."
+    explanation: >
+      With met_miyun.csv (3-hourly, 29217 rows) and subdaily=.true., GLM produces
+      unrealistic output: max surface T = 4.55 C instead of ~30 C. The same forcing
+      data averaged to daily with subdaily=.false. produces correct seasonal cycle.
+      Suggests a parsing or interpolation bug with 3-hourly data.
+    affected_components: [meteorology_block, convert_met_to_glm]
+  remedy:
+    action: "Use daily forcing with subdaily=.false. for CMFD data until 3-hourly parsing is debugged"
+    tool_to_run: convert_met_to_glm
+    manual_steps:
+      - "Average 3-hourly forcing to daily before providing to GLM"
+      - "Validate first week of output matches expected seasonal pattern"
+    prevention: "Default to subdaily=.false. with daily met. Only use subdaily=.true. with hourly (not 3-hourly) data."
+  severity: silent
+  cross_references: [dt_020]
+
+- id: dt_027
+  stage: s6_namelist
+  failure_domain: silent_error
+  symptom:
+    description: "Zero ice formation despite sub-zero air temperatures. Surface temp asymptotes to 0.002 C but never freezes. All ice columns remain zero."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Missing dt_iceon_avg and min_ice_thickness parameters in &snowice block. Without these, GLM ice model is silently disabled."
+    explanation: >
+      The &snowice block in most GLM examples only includes snow_albedo_factor,
+      snow_rho_max, and snow_rho_min. But GLM v3.3.3 requires dt_iceon_avg (the
+      ice onset averaging period in days) and min_ice_thickness to actually trigger
+      ice formation. Without dt_iceon_avg, the surface temperature approaches 0 C
+      but never crosses it — the energy balance solver hits a numerical floor at
+      ~0.002 C. Setting dt_iceon_avg=0.02 (averaging over ~30 minutes) enables ice.
+      Values >0.04 days can disable ice again on deep lakes.
+    affected_components: [snowice_block, generate_glm_nml]
+  remedy:
+    action: "Add dt_iceon_avg and min_ice_thickness to &snowice block"
+    tool_to_run: generate_glm_nml
+    manual_steps:
+      - "Add to &snowice: dt_iceon_avg = 0.02"
+      - "Add to &snowice: min_ice_thickness = 0.001"
+      - "For deep reservoirs (>50m), dt_iceon_avg may need to be <=0.04"
+      - "For shallow lakes (<20m), dt_iceon_avg = 0.05-0.10 may work"
+    prevention: "generate_glm_nml always includes dt_iceon_avg=0.02 and min_ice_thickness=0.001 in snowice block"
+  severity: silent
+  cross_references: [dt_023, dt_014]
+
+# --- AED2 Configuration (Phytoplankton / Water Quality) ---
+
+- id: dt_028
+  stage: s7_aed_config
+  failure_domain: aed2_config
+  symptom:
+    description: "GLM-AED2 crashes at startup with module initialization error when phytoplankton is enabled."
+    error_pattern: "Error initializing module|Missing variable|aed_phytoplankton"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "Phytoplankton module enabled without required dependency modules (oxygen, nitrogen, phosphorus, organic_matter)"
+    explanation: >
+      The &aed_phytoplankton block couples with oxygen (photosynthetic O2 production),
+      nitrogen (NO3/NH4 uptake), phosphorus (PO4 uptake), and organic matter (excretion/mortality
+      products). If any dependency module is missing from the &aed_models list, AED2 cannot
+      find the required state variables and crashes at initialization. Additionally, diatoms
+      require the silica module (&aed_silica) for Si uptake.
+    affected_components: [generate_aed_config, aed_models_block]
+  remedy:
+    action: "Ensure all dependency modules are in the &aed_models list before aed_phytoplankton"
+    tool_to_run: generate_aed_config
+    manual_steps:
+      - "Add to &aed_models: 'aed_oxygen', 'aed_nitrogen', 'aed_phosphorus', 'aed_organic_matter'"
+      - "If diatoms are enabled, also add 'aed_silica'"
+      - "Module order in &aed_models list matters — dependencies must come before dependents"
+      - "Use generate_aed_config.py with --modules including all dependencies (auto-added by tool)"
+    prevention: "generate_aed_config.py auto-adds missing dependencies via ensure_phyto_dependencies()"
+  severity: fatal
+  cross_references: []
+
+- id: dt_029
+  stage: s7_aed_config
+  failure_domain: aed2_config
+  symptom:
+    description: "AED2 runs successfully but phytoplankton biomass collapses to near-zero within weeks. Chlorophyll-a is unrealistically low (<0.1 ug/L) even for eutrophic lakes."
+    error_pattern: "PHY_tchla.*0\\.0|PHY_diatom.*0\\.0"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Inflow CSV has no nutrient columns — AED2 receives zero external nutrient loading"
+    explanation: >
+      When the inflow CSV only contains FLOW, TEMP, SALT (no NIT_nit, NIT_amm, PHS_frp, etc.),
+      AED2 runs with zero external nutrient input. The initial nutrient pool is consumed by
+      phytoplankton within the first few weeks, after which growth becomes nutrient-limited.
+      This produces unrealistically oligotrophic conditions regardless of the actual trophic
+      state of the lake. The simulation runs without errors — only the results are wrong.
+      This is the most common AED2 setup mistake.
+    affected_components: [configure_inflow_wq, inflow_block, init_profiles_block]
+  remedy:
+    action: "Add nutrient concentrations to inflow CSV using configure_inflow_wq.py"
+    tool_to_run: configure_inflow_wq
+    manual_steps:
+      - "Run configure_inflow_wq.py --inflow_csv <path> --trophic <state> --output <path>"
+      - "Update glm3.nml &inflow block: inflow_varnum = 17, add all WQ vars to inflow_vars"
+      - "Update &init_profiles: num_wq_vars, wq_names, wq_init_vals for AED2 variables"
+      - "Verify nutrient concentrations are in mmol/m3 (AED2 internal units), NOT mg/L"
+    prevention: "configure_inflow_wq.py generates complete inflow CSV with trophic-state presets"
+  severity: silent
+  cross_references: [dt_028]
+
+- id: dt_030
+  stage: s6_namelist
+  failure_domain: aed2_config
+  symptom:
+    description: "GLM-AED2 crashes at startup with WQ initialization error. Error references num_wq_vars or wq_init_vals count."
+    error_pattern: "wq_init_vals|num_wq_vars|init_profiles"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "Number of WQ initial values does not match num_wq_vars * num_depths"
+    explanation: >
+      The &init_profiles block in glm3.nml requires wq_init_vals to have exactly
+      num_wq_vars * num_depths values. Each WQ variable needs one concentration value
+      per depth level. For example, with 14 WQ variables and 3 depth levels, you need
+      42 values in wq_init_vals. A mismatch crashes GLM at startup. The wq_names list
+      must also match the AED2 variable names exactly (e.g., 'OXY_oxy' not 'oxygen').
+    affected_components: [generate_glm_nml, init_profiles_block]
+  remedy:
+    action: "Ensure wq_init_vals has exactly num_wq_vars * num_depths values"
+    tool_to_run: generate_glm_nml
+    manual_steps:
+      - "Count WQ variables in aed2.nml — each module contributes state variables"
+      - "Set num_wq_vars = total count of WQ state variables"
+      - "Provide num_depths values per variable in wq_init_vals (comma-separated)"
+      - "Use AED2 variable names in wq_names: OXY_oxy, NIT_nit, NIT_amm, PHS_frp, etc."
+      - "Typical values: OXY_oxy=300, NIT_nit=5, NIT_amm=2, PHS_frp=0.1, OGM_doc=50"
+    prevention: "Auto-generate wq_init_vals from aed2.nml module list and initial concentrations"
+  severity: fatal
+  cross_references: [dt_028, dt_029]

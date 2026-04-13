@@ -1,0 +1,179 @@
+package:
+  name: "biome-bgc-knowledge-infrastructure"
+  version: "1.0.0"
+  description: >
+    Knowledge infrastructure for BIOME-BGC 4.2 terrestrial biogeochemistry model.
+    Simulates daily C/N/water cycling for natural ecosystems (forests, grasslands, shrublands).
+    Coupled with VIC/LDNDC in HydroCraft for full-basin carbon budgets and FLUXNET validation.
+  target_model: "BIOME-BGC 4.2"
+  domain: "terrestrial biogeochemistry, forest carbon cycling, natural ecosystem C/N/water fluxes"
+  binary: "/mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-src/bgc"
+  example_data: "/mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-src/"
+  authors:
+    - "HydroCraft Team (Jianyun Zhang Research Group)"
+    - "Claude (Knowledge Dissection)"
+  license: "CC-BY-4.0"
+
+pipeline:
+  stages:
+    - id: s1_site_definition
+      name: "Site Definition (.ini file)"
+      description: "Generate .ini initialization file with site physical characteristics"
+      knowledge_type: [procedural, evaluative]
+      depends_on: []
+      milestones:
+        - "INI file generated with correct keyword-section structure"
+        - "All file paths verified (met, epc, restart, output)"
+        - "Soil texture sums to 100%"
+
+    - id: s2_ecophysiology
+      name: "Ecophysiology Parameters (.epc file)"
+      description: "Select plant functional type and generate .epc parameter file"
+      knowledge_type: [procedural, evaluative]
+      depends_on: []
+      milestones:
+        - "PFT identified from AVHRR land cover"
+        - "EPC file generated with 44 parameters in correct order"
+        - "Litter fractions sum to 1.0"
+
+    - id: s3_meteorological_forcing
+      name: "Meteorological Forcing (.mtcNN file)"
+      description: "Convert CMFD/MSWX/VIC forcing to BIOME-BGC daily met format"
+      knowledge_type: [procedural]
+      depends_on: []
+      milestones:
+        - "9-column met file generated (year yday Tmax Tmin Tday prcp VPD srad daylen)"
+        - "Precipitation in cm/day (NOT mm)"
+        - "VPD in Pa (NOT kPa)"
+        - "Day length computed from latitude"
+
+    - id: s4_co2_concentration
+      name: "CO2 Concentration"
+      description: "Set constant or time-varying atmospheric CO2"
+      knowledge_type: [procedural]
+      depends_on: []
+      milestones:
+        - "CO2 value set in .ini (constant) or co2.txt file (varying)"
+
+    - id: s5_spinup
+      name: "Spinup Execution"
+      description: "Run model for 1000-6000 years to equilibrate soil C/N pools"
+      knowledge_type: [procedural, evaluative]
+      depends_on: [s1_site_definition, s2_ecophysiology, s3_meteorological_forcing, s4_co2_concentration]
+      milestones:
+        - "Spinup .ini configured (mode=spinup, write_restart=1, no output)"
+        - "Spinup completed without error"
+        - "Restart (.endpoint) file written"
+        - "SOC change < 0.5 gC/m2/yr (convergence)"
+
+    - id: s6_normal_execution
+      name: "Normal Execution"
+      description: "Run production simulation for target period"
+      knowledge_type: [procedural]
+      depends_on: [s5_spinup]
+      milestones:
+        - "Normal .ini configured (mode=normal, read_restart=1, output enabled)"
+        - "Model completed without error"
+        - "Daily and annual output files created"
+
+    - id: s7_output_analysis
+      name: "Output Parsing & Flux Analysis"
+      description: "Parse output files, compute C budgets, validate physical ranges"
+      knowledge_type: [procedural, evaluative]
+      depends_on: [s6_normal_execution]
+      milestones:
+        - "Daily/annual output parsed to CSV"
+        - "GPP, NPP, NEE, ET annual totals computed"
+        - "Physical reasonableness checks passed"
+
+    - id: s8_vic_coupling
+      name: "VIC/HydroCraft Coupling"
+      description: "Run BIOME-BGC on VIC grid cells for basin-scale carbon assessment"
+      knowledge_type: [procedural, evaluative]
+      depends_on: [s7_output_analysis]
+      milestones:
+        - "VIC grid cells partitioned by land cover"
+        - "Forest/grassland cells assigned to BIOME-BGC"
+        - "Per-cell BIOME-BGC runs completed"
+        - "Basin-wide C budget aggregated"
+
+tools:
+  - id: t01
+    name: generate_site_ini
+    script: tools/generate_site_ini.py
+    stage: s1_site_definition
+    purpose: "Generate .ini initialization file from structured inputs"
+    lines: 280
+
+  - id: t02
+    name: select_ecophysiology
+    script: tools/select_ecophysiology.py
+    stage: s2_ecophysiology
+    purpose: "Map AVHRR land cover to PFT and generate .epc file"
+    lines: 220
+
+  - id: t03
+    name: convert_forcing_to_bgc
+    script: tools/convert_forcing_to_bgc.py
+    stage: s3_meteorological_forcing
+    purpose: "Convert VIC forcing to BIOME-BGC met format (mm->cm, Pa VPD, daylen)"
+    lines: 260
+
+  - id: t04
+    name: run_bgc_spinup
+    script: tools/run_bgc_spinup.py
+    stage: s5_spinup
+    purpose: "Execute spinup with convergence monitoring"
+    lines: 200
+
+  - id: t05
+    name: run_bgc
+    script: tools/run_bgc.py
+    stage: s6_normal_execution
+    purpose: "Execute normal BIOME-BGC simulation"
+    lines: 160
+
+  - id: t06
+    name: parse_bgc_output
+    script: tools/parse_bgc_output.py
+    stage: s7_output_analysis
+    purpose: "Parse daily/annual output, compute C budgets, physical checks"
+    lines: 300
+
+skill_documents:
+  - id: sd01
+    title: "Site Definition Skill"
+    path: docs/s1_site_definition_skill.md
+    stage: s1_site_definition
+
+  - id: sd02
+    title: "Meteorological Forcing Skill"
+    path: docs/s3_meteorological_forcing_skill.md
+    stage: s3_meteorological_forcing
+
+  - id: sd03
+    title: "Spinup Strategy Skill"
+    path: docs/s5_spinup_strategy_skill.md
+    stage: s5_spinup
+
+diagnostic_triplets:
+  path: diagnostics/triplets.yaml
+  count: 25
+  failure_domains:
+    - unit_conversion
+    - config_format
+    - spinup_convergence
+    - coupling
+    - parameter_selection
+    - runtime
+
+summary:
+  total_tools: 6
+  total_tool_lines: 1420
+  total_skill_documents: 3
+  total_diagnostic_triplets: 25
+  failure_domains: 6
+  pipeline_stages: 8
+  validation_status: binary_only
+  epc_library: 7
+  epc_pfts: [ENF, EBF, DNF, DBF, SHRUB, C3GRASS, C4GRASS]

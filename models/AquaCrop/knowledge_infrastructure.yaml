@@ -1,0 +1,1167 @@
+# ============================================================================
+# Knowledge Infrastructure Schema -- AquaCrop-OSPy Crop-Water Productivity Model
+# ============================================================================
+# Created via knowledge dissection of AquaCrop-OSPy v3.0.12
+# Target: FAO AquaCrop crop-water productivity model (Python implementation)
+#
+# Three layers:
+#   1. Validated Tools    -> agent CALLS (procedural knowledge)
+#   2. Skill Documents    -> agent READS (evaluative & sequencing knowledge)
+#   3. Diagnostic Triplets -> agent LOOKS UP (operational debugging knowledge)
+# ============================================================================
+
+# --- Package metadata ---
+package:
+  name: "aquacrop-ospy-knowledge"
+  version: "1.0.0"
+  description: "Knowledge infrastructure for autonomous AquaCrop-OSPy crop-water simulation with water productivity analysis and deficit irrigation optimization"
+  target_model: "AquaCrop-OSPy v3.0.12 (FAO AquaCrop v7.1 Python implementation)"
+  domain: "crop-water productivity modeling / irrigation management"
+  authors:
+    - "Zhang Jianyun Research Group (Hohai University)"
+  license: "CC-BY-4.0"
+  related_packages:
+    - id: "dssat-csm-knowledge"
+      name: "DSSAT Crop Simulation Knowledge Infrastructure"
+      path: "/home/server/DSSAT/knowledge_infrastructure/"
+      relationship: "Peer crop model for ensemble comparison. AquaCrop excels at water productivity, DSSAT at nitrogen dynamics. Cross-model coupling for yield ensemble via model_couplings.yaml."
+    - id: "hydrocraft-vic-routing"
+      name: "HydroCraft VIC-Routing Knowledge Infrastructure"
+      path: "/mnt/disk1/Hydrocraft_server/skills/"
+      relationship: "Upstream hydrology model providing weather forcing, soil moisture initial conditions, and flood inundation data for waterlogging stress."
+
+# --- Pipeline definition ---
+# 10-stage AquaCrop-OSPy simulation pipeline.
+# Stages 1-7 are INPUT PREPARATION (parallel branches that converge).
+# Stage 8 is EXECUTION. Stage 9 is OUTPUT ANALYSIS. Stage 10 is WATER PRODUCTIVITY.
+#
+# Key insight: AquaCrop-OSPy is a pure-Python model with no compilation.
+# All inputs are Python objects (Soil, Crop, IrrigationManagement, etc.)
+# passed to AquaCropModel.__init__(). The model runs in-memory and returns
+# pandas DataFrames. This is fundamentally different from DSSAT/VIC which
+# use config files, executables, and file I/O.
+pipeline:
+  stages:
+
+    # -----------------------------------------------------------------------
+    # STAGE 1: CROP SELECTION & PARAMETERIZATION
+    # -----------------------------------------------------------------------
+    - id: "s1_crop_selection"
+      name: "Crop Selection & Parameterization"
+      description: >
+        Select crop type from built-in defaults or create a custom crop.
+        Built-in crops: Barley, BarleyGDD, Cotton, CottonGDD, Default,
+        DryBean, DryBeanGDD, Maize, MaizeGDD, PaddyRice, PaddyRiceGDD,
+        Potato, PotatoGDD, PotatoLocalGDD, Quinoa, Sorghum, SorghumGDD,
+        Soybean, SoybeanGDD, SugarBeet, SugarBeetGDD, SugarCane,
+        Sunflower, SunflowerGDD, Tomato, TomatoGDD, Wheat, WheatGDD,
+        WheatGDD_1dec, HydWheatGDD, WheatLongGDD, Tef, AlfalfaGDD,
+        Cassava, localpaddy, MaizeChampionGDD, SugarBeetGDD_UK.
+        Key parameters: Tbase, Tupp, GDDmethod, HI0, WP, CCx, CGC, CDC,
+        Emergence, Maturity, Senescence (in GDD or calendar days).
+        Planting date (mm/dd format) is required.
+      order: 1
+      depends_on: []
+      knowledge_type: "evaluative"
+      skill_document: "docs/s1_crop_selection_skill.md"
+      tools:
+        - "select_crop"
+        - "validate_crop_params"
+      milestones:
+        - id: "m1_crop_created"
+          description: "Crop object instantiated with valid name and planting date"
+          verification: "Crop('CropName', planting_date='MM/DD') returns without assertion error"
+        - id: "m1_gdd_params_valid"
+          description: "GDD parameters consistent (Tbase < Tupp, Emergence < Maturity)"
+          verification: "crop.Tbase < crop.Tupp and crop.Emergence < crop.Maturity"
+
+    # -----------------------------------------------------------------------
+    # STAGE 2: SOIL PROFILE SETUP
+    # -----------------------------------------------------------------------
+    - id: "s2_soil_profile"
+      name: "Soil Profile Setup"
+      description: >
+        Create soil profile from built-in types or custom layers. Built-in
+        types: Clay, ClayLoam, Default, Loam, LoamySand, Sand, SandyClay,
+        SandyClayLoam, SandyLoam, Silt, SiltClay, SiltClayLoam, SiltLoam,
+        Paddy, ac_TunisLocal, custom. Each type sets thWP, thFC, thS, Ksat,
+        CN, REW. Custom soils use add_layer(thickness, thWP, thFC, thS,
+        Ksat, penetrability) or add_layer_from_texture(thickness, Sand%,
+        Clay%, OrgMat, penetrability). CRITICAL: thWP < thFC < thS must
+        hold for all layers.
+      order: 2
+      depends_on: []
+      knowledge_type: "procedural"
+      skill_document: "docs/s2_soil_profile_skill.md"
+      tools:
+        - "create_soil_profile"
+        - "validate_soil_hydraulics"
+      milestones:
+        - id: "m2_soil_created"
+          description: "Soil object instantiated with at least one layer"
+          verification: "soil.nLayer >= 1 and soil.profile is not None"
+        - id: "m2_hydraulics_valid"
+          description: "Water limits satisfy thWP < thFC < thS for all layers"
+          verification: "For each layer: th_wp < th_fc < th_s and all > 0"
+
+    # -----------------------------------------------------------------------
+    # STAGE 3: WEATHER DATA PREPARATION
+    # -----------------------------------------------------------------------
+    - id: "s3_weather_prep"
+      name: "Weather Data Preparation"
+      description: >
+        Prepare weather DataFrame with EXACTLY these columns: MinTemp (C),
+        MaxTemp (C), Precipitation (mm/day), ReferenceET (mm/day), Date
+        (pd.Timestamp). ReferenceET (ET0) is REQUIRED and must be > 0.
+        Can load from file via prepare_weather() which expects a
+        whitespace-separated file with 7 columns: Day Month Year MinTemp
+        MaxTemp Precipitation ReferenceET. Or construct DataFrame directly
+        from VIC/MSWX/CMFD forcing data. ET0 can be computed using
+        FAO Penman-Monteith if not available in source data.
+      order: 3
+      depends_on: []
+      knowledge_type: "procedural"
+      skill_document: "docs/s3_weather_prep_skill.md"
+      tools:
+        - "prepare_weather_df"
+        - "compute_eto_penman_monteith"
+        - "validate_weather_df"
+      milestones:
+        - id: "m3_df_columns_correct"
+          description: "DataFrame has all 5 required columns"
+          verification: "set(['MinTemp','MaxTemp','Precipitation','ReferenceET','Date']).issubset(weather_df.columns)"
+        - id: "m3_no_missing_days"
+          description: "No gaps in daily time series"
+          verification: "weather_df.Date.diff().max() == pd.Timedelta(days=1)"
+        - id: "m3_et0_positive"
+          description: "ReferenceET has no zero or negative values"
+          verification: "weather_df.ReferenceET.min() > 0 (clipped to 0.1 mm/day minimum)"
+
+    # -----------------------------------------------------------------------
+    # STAGE 4: INITIAL WATER CONTENT
+    # -----------------------------------------------------------------------
+    - id: "s4_initial_conditions"
+      name: "Initial Water Content"
+      description: >
+        Define initial soil water conditions using InitialWaterContent class.
+        Three wc_type options: 'Prop' (use property names 'WP'/'FC'/'SAT'),
+        'Num' (numeric m3/m3), 'Pct' (% of TAW). Two method options:
+        'Layer' (constant per layer), 'Depth' (interpolate depth points).
+        CRITICAL: for custom multi-layer soils, must specify multi-layer
+        InitialWaterContent, otherwise defaults to FC for all layers.
+      order: 4
+      depends_on:
+        - "s2_soil_profile"
+      knowledge_type: "evaluative"
+      skill_document: "docs/s4_initial_conditions_skill.md"
+      tools:
+        - "create_initial_water_content"
+      milestones:
+        - id: "m4_iwc_created"
+          description: "InitialWaterContent object created with valid type and values"
+          verification: "iwc.wc_type in ['Prop','Num','Pct'] and len(iwc.value) >= 1"
+        - id: "m4_layers_match"
+          description: "Number of IWC layers matches soil layers (for custom soils)"
+          verification: "len(iwc.depth_layer) == soil.nLayer (if method='Layer')"
+
+    # -----------------------------------------------------------------------
+    # STAGE 5: IRRIGATION MANAGEMENT
+    # -----------------------------------------------------------------------
+    - id: "s5_irrigation"
+      name: "Irrigation Management"
+      description: >
+        Define irrigation strategy using IrrigationManagement class.
+        Six irrigation_method values: 0=rainfed, 1=soil moisture targets
+        (SMT as %TAW per growth stage, list of 4 values), 2=fixed time
+        interval (IrrInterval in days), 3=predefined schedule (DataFrame
+        with Date+Depth columns), 4=net irrigation (NetIrrSMT as %TAW),
+        5=constant daily depth. Additional params: WetSurf (% wetted),
+        AppEff (% efficiency), MaxIrr (mm/day max), MaxIrrSeason (mm/season).
+        This is AquaCrop's UNIQUE STRENGTH: deficit irrigation optimization
+        by varying SMT thresholds across growth stages.
+      order: 5
+      depends_on: []
+      knowledge_type: "evaluative"
+      skill_document: "docs/s5_irrigation_skill.md"
+      tools:
+        - "create_irrigation_management"
+        - "optimize_deficit_irrigation"
+      milestones:
+        - id: "m5_irr_created"
+          description: "IrrigationManagement object created with valid method"
+          verification: "irr.irrigation_method in [0,1,2,3,4,5]"
+        - id: "m5_smt_valid"
+          description: "SMT values are 0-100 for method=1"
+          verification: "all(0 <= s <= 100 for s in irr.SMT) if irrigation_method==1"
+
+    # -----------------------------------------------------------------------
+    # STAGE 6: FIELD MANAGEMENT
+    # -----------------------------------------------------------------------
+    - id: "s6_field_management"
+      name: "Field Management"
+      description: >
+        Configure field management options using FieldMngt class. Controls
+        mulches (mulch_pct, f_mulch), surface bunds (z_bund in meters,
+        bund_water in mm), curve number adjustment, and surface runoff
+        inhibition. CRITICAL: z_bund is specified in METERS but internally
+        converted to mm (multiplied by 1000) on initialization. Bunds are
+        essential for paddy rice simulation.
+      order: 6
+      depends_on: []
+      knowledge_type: "evaluative"
+      skill_document: "docs/s6_field_management_skill.md"
+      tools:
+        - "create_field_management"
+        - "apply_cama_flood"
+      milestones:
+        - id: "m6_fieldmngt_created"
+          description: "FieldMngt object created"
+          verification: "FieldMngt instance exists with valid parameters"
+
+    # -----------------------------------------------------------------------
+    # STAGE 7: MODEL ASSEMBLY
+    # -----------------------------------------------------------------------
+    - id: "s7_model_assembly"
+      name: "Model Assembly"
+      description: >
+        Assemble all components into an AquaCropModel object. Required
+        args: sim_start_time ('YYYY/MM/DD'), sim_end_time ('YYYY/MM/DD'),
+        weather_df, soil, crop, initial_water_content. Optional:
+        irrigation_management (default rainfed), field_management,
+        fallow_field_management, groundwater, co2_concentration, off_season.
+        CRITICAL: Date format must be 'YYYY/MM/DD' with slashes, NOT
+        dashes. sim_start_time must precede planting date.
+      order: 7
+      depends_on:
+        - "s1_crop_selection"
+        - "s2_soil_profile"
+        - "s3_weather_prep"
+        - "s4_initial_conditions"
+        - "s5_irrigation"
+        - "s6_field_management"
+      knowledge_type: "procedural"
+      skill_document: "docs/s7_model_assembly_skill.md"
+      tools:
+        - "assemble_model"
+        - "validate_model_config"
+      milestones:
+        - id: "m7_model_created"
+          description: "AquaCropModel instantiated without errors"
+          verification: "AquaCropModel() returns without ValueError"
+        - id: "m7_dates_consistent"
+          description: "Simulation dates cover at least one growing season"
+          verification: "sim_start <= planting_date and sim_end >= expected maturity"
+
+    # -----------------------------------------------------------------------
+    # STAGE 8: MODEL EXECUTION
+    # -----------------------------------------------------------------------
+    - id: "s8_execution"
+      name: "Model Execution"
+      description: >
+        Run the simulation using model.run_model(till_termination=True).
+        Returns True when complete. Alternative: step-by-step execution
+        with run_model(num_steps=N, initialize_model=False) for real-time
+        applications. Pure Python execution, no compilation needed.
+        Typical runtime: <1 second for single season, ~1 minute for
+        multi-year with daily output.
+      order: 8
+      depends_on:
+        - "s7_model_assembly"
+      knowledge_type: "debugging"
+      skill_document: "docs/s8_execution_skill.md"
+      tools:
+        - "run_aquacrop"
+      milestones:
+        - id: "m8_run_complete"
+          description: "run_model() returns True"
+          verification: "model.run_model(till_termination=True) == True"
+        - id: "m8_outputs_exist"
+          description: "Output DataFrames are populated"
+          verification: "model.get_simulation_results() returns DataFrame with rows"
+
+    # -----------------------------------------------------------------------
+    # STAGE 9: OUTPUT ANALYSIS
+    # -----------------------------------------------------------------------
+    - id: "s9_output_analysis"
+      name: "Output Analysis"
+      description: >
+        Extract and analyze simulation results. Four output accessors:
+        get_simulation_results() -> final_stats (Season, crop Type,
+        Harvest Date, Dry yield tonne/ha, Fresh yield tonne/ha, Yield
+        potential, Seasonal irrigation mm);
+        get_water_flux() -> daily water flux (IrrDay, Infl, Runoff,
+        DeepPerc, CR, GwIn, Es, EsPot, Tr, TrPot, Wr, surface_storage);
+        get_water_storage() -> daily soil water per compartment (th1..thN);
+        get_crop_growth() -> daily crop growth (gdd, gdd_cum, z_root,
+        canopy_cover, biomass, harvest_index, DryYield, FreshYield).
+      order: 9
+      depends_on:
+        - "s8_execution"
+      knowledge_type: "procedural"
+      skill_document: "docs/s9_output_analysis_skill.md"
+      tools:
+        - "extract_results"
+        - "compare_sim_obs"
+      milestones:
+        - id: "m9_yield_reasonable"
+          description: "Simulated dry yield is physically reasonable"
+          verification: "0 < Dry yield < 25 tonne/ha for grain crops"
+        - id: "m9_water_balance"
+          description: "Water balance components are non-negative"
+          verification: "Es >= 0, Tr >= 0, DeepPerc >= 0, Runoff >= 0"
+
+    # -----------------------------------------------------------------------
+    # STAGE 10: WATER PRODUCTIVITY ANALYSIS
+    # -----------------------------------------------------------------------
+    - id: "s10_water_productivity"
+      name: "Water Productivity Analysis"
+      description: >
+        Compute and analyze crop water productivity (WP = Yield / ET),
+        irrigation water use efficiency (IWUE = Yield / Irrigation),
+        and perform deficit irrigation optimization. Compare rainfed vs
+        irrigated scenarios. Run multi-scenario SMT sweeps to find the
+        optimal irrigation strategy that maximizes yield per unit water.
+        This is AquaCrop's UNIQUE STRENGTH and the reason to choose it
+        over DSSAT or WOFOST.
+      order: 10
+      depends_on:
+        - "s9_output_analysis"
+      knowledge_type: "evaluative"
+      skill_document: "docs/s10_water_productivity_skill.md"
+      tools:
+        - "compute_water_productivity"
+        - "optimize_deficit_irrigation"
+        - "compare_irrigation_scenarios"
+      milestones:
+        - id: "m10_wp_computed"
+          description: "Water productivity metrics computed"
+          verification: "WP (kg/m3) and IWUE (kg/m3) are positive and reasonable"
+        - id: "m10_scenarios_compared"
+          description: "Multiple irrigation scenarios compared"
+          verification: "Scenario comparison table generated with yield, ET, irrigation, WP"
+
+# --- Layer 1: Validated Tools ---
+# Agent CALLS these -- procedural knowledge encoded as executable scripts.
+tools:
+  - id: "select_crop"
+    name: "Select and Configure Crop"
+    description: "Creates a Crop object from built-in defaults or custom parameters. Validates crop name against available list, checks GDD parameter consistency."
+    stage: "s1_crop_selection"
+    script_path: "tools/s1_crop_selection/select_crop.py"
+    language: "python"
+    inputs:
+      - name: "crop_name"
+        type: "string"
+        description: "Built-in crop name or 'custom'"
+        required: true
+        example: "Maize"
+      - name: "planting_date"
+        type: "string"
+        description: "Planting date in MM/DD format"
+        required: true
+        example: "05/01"
+      - name: "harvest_date"
+        type: "string"
+        description: "Latest harvest date in MM/DD format (optional)"
+        required: false
+        example: "10/15"
+      - name: "overrides"
+        type: "config"
+        description: "Dict of parameter overrides (e.g. Tbase, HI0, WP)"
+        required: false
+        example: "{'Tbase': 10, 'HI0': 0.50}"
+    outputs:
+      - name: "crop_object"
+        type: "value"
+        description: "Configured Crop instance"
+        path_pattern: "in-memory Python object"
+    preconditions:
+      - "crop_name is in built-in list or equals 'custom'"
+      - "planting_date is valid MM/DD string"
+    postconditions:
+      - "crop.Tbase < crop.Tupp"
+      - "crop.Emergence < crop.Maturity (for GDD crops)"
+      - "crop.HI0 > 0 and crop.HI0 <= 1"
+
+  - id: "validate_crop_params"
+    name: "Validate Crop Parameters"
+    description: "Checks crop parameter consistency: GDD ordering, water stress thresholds, canopy cover limits"
+    stage: "s1_crop_selection"
+    script_path: "tools/s1_crop_selection/validate_crop_params.py"
+    language: "python"
+    inputs:
+      - name: "crop"
+        type: "value"
+        description: "Crop object to validate"
+        required: true
+        example: "Crop('Maize', '05/01')"
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON validation report with pass/fail and warnings"
+        path_pattern: "stdout JSON"
+    preconditions:
+      - "Crop object exists"
+    postconditions:
+      - "All validation checks pass or warnings are reported"
+
+  - id: "create_soil_profile"
+    name: "Create Soil Profile"
+    description: "Creates a Soil object from built-in type or custom layers. Validates hydraulic properties and layer structure."
+    stage: "s2_soil_profile"
+    script_path: "tools/s2_soil_profile/create_soil_profile.py"
+    language: "python"
+    inputs:
+      - name: "soil_type"
+        type: "string"
+        description: "Built-in soil type name or 'custom'"
+        required: true
+        example: "SandyLoam"
+      - name: "layers"
+        type: "config"
+        description: "List of layer dicts for custom soil: [{thickness, thWP, thFC, thS, Ksat, penetrability}]"
+        required: false
+        example: "[{'thickness': 0.3, 'thWP': 0.10, 'thFC': 0.22, 'thS': 0.41, 'Ksat': 1200, 'penetrability': 100}]"
+      - name: "dz"
+        type: "config"
+        description: "Compartment thickness list (default [0.1]*12)"
+        required: false
+        example: "[0.1, 0.1, 0.1, 0.1, 0.15, 0.15, 0.15, 0.15, 0.2, 0.2, 0.2, 0.2]"
+    outputs:
+      - name: "soil_object"
+        type: "value"
+        description: "Configured Soil instance with profile DataFrame"
+        path_pattern: "in-memory Python object"
+    preconditions:
+      - "soil_type is in built-in list or equals 'custom'"
+    postconditions:
+      - "soil.nLayer >= 1"
+      - "For all layers: th_wp < th_fc < th_s"
+      - "Ksat > 0 for all layers"
+
+  - id: "validate_soil_hydraulics"
+    name: "Validate Soil Hydraulic Properties"
+    description: "Checks thWP < thFC < thS ordering, Ksat positivity, and penetrability bounds for all soil layers"
+    stage: "s2_soil_profile"
+    script_path: "tools/s2_soil_profile/validate_soil_hydraulics.py"
+    language: "python"
+    inputs:
+      - name: "soil"
+        type: "value"
+        description: "Soil object to validate"
+        required: true
+        example: "Soil('SandyLoam')"
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON validation report"
+        path_pattern: "stdout JSON"
+    preconditions:
+      - "Soil object exists with profile DataFrame"
+    postconditions:
+      - "All hydraulic constraints satisfied"
+
+  - id: "prepare_weather_df"
+    name: "Prepare Weather DataFrame"
+    description: "Creates weather DataFrame from file or VIC output. Ensures correct column names, date parsing, ET0 clipping, and no missing days."
+    stage: "s3_weather_prep"
+    script_path: "tools/s3_weather_prep/prepare_weather_df.py"
+    language: "python"
+    inputs:
+      - name: "source_path"
+        type: "file"
+        description: "Path to weather data (text file, VIC forcing, or NetCDF)"
+        required: true
+        example: "data/weather/maize_weather.txt"
+      - name: "source_type"
+        type: "string"
+        description: "Source format: 'aquacrop_txt', 'vic_forcing', 'csv', 'manual'"
+        required: true
+        example: "aquacrop_txt"
+      - name: "start_date"
+        type: "string"
+        description: "Start date YYYY/MM/DD"
+        required: false
+        example: "2000/01/01"
+      - name: "end_date"
+        type: "string"
+        description: "End date YYYY/MM/DD"
+        required: false
+        example: "2010/12/31"
+    outputs:
+      - name: "weather_df"
+        type: "value"
+        description: "pandas DataFrame with MinTemp, MaxTemp, Precipitation, ReferenceET, Date"
+        path_pattern: "in-memory DataFrame"
+    preconditions:
+      - "Source file exists and is readable"
+    postconditions:
+      - "DataFrame has all 5 required columns"
+      - "ReferenceET >= 0.1 mm/day for all rows"
+      - "No missing days in time series"
+
+  - id: "compute_eto_penman_monteith"
+    name: "Compute Reference ET (Penman-Monteith)"
+    description: "Computes FAO-56 Penman-Monteith reference ET from temperature, radiation, wind, humidity. Used when source data lacks ET0."
+    stage: "s3_weather_prep"
+    script_path: "tools/s3_weather_prep/compute_eto_penman_monteith.py"
+    language: "python"
+    inputs:
+      - name: "tmin"
+        type: "value"
+        description: "Daily minimum temperature (C)"
+        required: true
+        example: "numpy array"
+      - name: "tmax"
+        type: "value"
+        description: "Daily maximum temperature (C)"
+        required: true
+        example: "numpy array"
+      - name: "solar_rad"
+        type: "value"
+        description: "Solar radiation (MJ/m2/day)"
+        required: true
+        example: "numpy array"
+      - name: "wind"
+        type: "value"
+        description: "Wind speed at 2m (m/s)"
+        required: true
+        example: "numpy array"
+      - name: "lat"
+        type: "number"
+        description: "Latitude in degrees"
+        required: true
+        example: 35.0
+      - name: "elevation"
+        type: "number"
+        description: "Elevation in meters"
+        required: true
+        example: 100
+    outputs:
+      - name: "eto"
+        type: "value"
+        description: "Reference evapotranspiration (mm/day)"
+        path_pattern: "numpy array"
+    preconditions:
+      - "All input arrays have same length"
+      - "tmax > tmin for all days"
+    postconditions:
+      - "ET0 > 0 for all days"
+      - "ET0 typically 1-12 mm/day"
+
+  - id: "validate_weather_df"
+    name: "Validate Weather DataFrame"
+    description: "Validates weather DataFrame format, column presence, value ranges, date continuity, and ET0 positivity"
+    stage: "s3_weather_prep"
+    script_path: "tools/s3_weather_prep/validate_weather_df.py"
+    language: "python"
+    inputs:
+      - name: "weather_df"
+        type: "value"
+        description: "Weather DataFrame to validate"
+        required: true
+        example: "pandas.DataFrame"
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON validation report"
+        path_pattern: "stdout JSON"
+    preconditions:
+      - "weather_df is a pandas DataFrame"
+    postconditions:
+      - "All required columns present"
+      - "No NaN values in required columns"
+      - "Temperature range physically reasonable (-50 to 60 C)"
+
+  - id: "create_initial_water_content"
+    name: "Create Initial Water Content"
+    description: "Creates InitialWaterContent object with proper wc_type, method, and layer/depth specification"
+    stage: "s4_initial_conditions"
+    script_path: "tools/s4_initial_conditions/create_initial_water_content.py"
+    language: "python"
+    inputs:
+      - name: "wc_type"
+        type: "string"
+        description: "Water content type: 'Prop' (WP/FC/SAT), 'Num' (m3/m3), 'Pct' (% TAW)"
+        required: true
+        example: "Prop"
+      - name: "method"
+        type: "string"
+        description: "Specification method: 'Layer' or 'Depth'"
+        required: true
+        example: "Layer"
+      - name: "depth_layer"
+        type: "config"
+        description: "Layer numbers or depth values"
+        required: true
+        example: "[1]"
+      - name: "value"
+        type: "config"
+        description: "Water content values at each location"
+        required: true
+        example: "['FC']"
+    outputs:
+      - name: "iwc_object"
+        type: "value"
+        description: "InitialWaterContent instance"
+        path_pattern: "in-memory Python object"
+    preconditions:
+      - "wc_type in ['Prop', 'Num', 'Pct']"
+      - "method in ['Layer', 'Depth']"
+    postconditions:
+      - "IWC object has matching layer count to soil (for multi-layer)"
+
+  - id: "create_irrigation_management"
+    name: "Create Irrigation Management"
+    description: "Creates IrrigationManagement object for rainfed, SMT-based, interval, schedule, net irrigation, or constant depth strategies"
+    stage: "s5_irrigation"
+    script_path: "tools/s5_irrigation/create_irrigation_management.py"
+    language: "python"
+    inputs:
+      - name: "irrigation_method"
+        type: "number"
+        description: "Method code: 0=rainfed, 1=SMT, 2=interval, 3=schedule, 4=net, 5=constant"
+        required: true
+        example: 1
+      - name: "kwargs"
+        type: "config"
+        description: "Method-specific parameters (SMT, IrrInterval, Schedule, NetIrrSMT, etc.)"
+        required: false
+        example: "{'SMT': [70, 80, 80, 70]}"
+    outputs:
+      - name: "irr_object"
+        type: "value"
+        description: "IrrigationManagement instance"
+        path_pattern: "in-memory Python object"
+    preconditions:
+      - "irrigation_method in [0, 1, 2, 3, 4, 5]"
+    postconditions:
+      - "For method 1: len(SMT) == 4 and all values 0-100"
+      - "For method 3: Schedule is DataFrame with Date and Depth columns"
+
+  - id: "optimize_deficit_irrigation"
+    name: "Optimize Deficit Irrigation Strategy"
+    description: "Runs multi-scenario SMT sweeps to find optimal deficit irrigation thresholds. Evaluates yield vs water use tradeoffs."
+    stage: "s5_irrigation"
+    script_path: "tools/s5_irrigation/optimize_deficit_irrigation.py"
+    language: "python"
+    inputs:
+      - name: "weather_df"
+        type: "value"
+        description: "Weather DataFrame"
+        required: true
+        example: "pandas.DataFrame"
+      - name: "soil"
+        type: "value"
+        description: "Soil object"
+        required: true
+        example: "Soil('SandyLoam')"
+      - name: "crop"
+        type: "value"
+        description: "Crop object"
+        required: true
+        example: "Crop('Maize', '05/01')"
+      - name: "smt_range"
+        type: "config"
+        description: "Range of SMT values to test"
+        required: false
+        example: "[0, 20, 40, 60, 80, 100]"
+    outputs:
+      - name: "optimization_results"
+        type: "file"
+        description: "CSV with yield, ET, irrigation, WP for each SMT scenario"
+        path_pattern: "outputs/{run_name}/aquacrop/deficit_optimization.csv"
+    preconditions:
+      - "All input objects are valid"
+    postconditions:
+      - "Results contain yield and water use for all tested scenarios"
+
+  - id: "create_field_management"
+    name: "Create Field Management"
+    description: "Creates FieldMngt object for mulches, bunds, CN adjustment, and runoff inhibition"
+    stage: "s6_field_management"
+    script_path: "tools/s6_field_management/create_field_management.py"
+    language: "python"
+    inputs:
+      - name: "mulches"
+        type: "config"
+        description: "Mulch settings: {mulches: bool, mulch_pct: float, f_mulch: float}"
+        required: false
+        example: "{'mulches': True, 'mulch_pct': 50, 'f_mulch': 0.5}"
+      - name: "bunds"
+        type: "config"
+        description: "Bund settings: {bunds: bool, z_bund: float (m), bund_water: float (mm)}"
+        required: false
+        example: "{'bunds': True, 'z_bund': 0.15, 'bund_water': 0}"
+    outputs:
+      - name: "field_mngt_object"
+        type: "value"
+        description: "FieldMngt instance"
+        path_pattern: "in-memory Python object"
+    preconditions: []
+    postconditions:
+      - "z_bund internally stored in mm (z_bund_m * 1000)"
+
+  - id: "apply_cama_flood"
+    name: "Apply CaMa-Flood Waterlogging to AquaCrop"
+    description: "Converts CaMa-Flood flddph/fldfrc to AquaCrop GroundWater object for mechanistic waterlogging stress"
+    stage: "s6_field_management"
+    script_path: "tools/s6_field_management/apply_cama_flood.py"
+    language: "python"
+    inputs:
+      - name: "cama_out_dir"
+        type: "directory"
+        description: "CaMa-Flood output directory containing flddph/fldfrc NetCDF files"
+        required: true
+        example: "model/cmf_v420_pkg/out/<run_name>"
+      - name: "lat"
+        type: "float"
+        description: "Target latitude for grid cell extraction"
+        required: true
+        example: 32.95
+      - name: "lon"
+        type: "float"
+        description: "Target longitude for grid cell extraction"
+        required: true
+        example: 117.35
+      - name: "start_date"
+        type: "string"
+        description: "Start date for flood data extraction"
+        required: true
+        example: "1985/01/01"
+      - name: "end_date"
+        type: "string"
+        description: "End date for flood data extraction"
+        required: true
+        example: "1985/12/31"
+    outputs:
+      - name: "groundwater_object"
+        type: "value"
+        description: "AquaCrop GroundWater object with daily water table depth"
+        path_pattern: "in-memory Python object"
+      - name: "daily_csv"
+        type: "file"
+        description: "Daily flood depth, fraction, and water table CSV"
+        path_pattern: "outputs/{run}/aquacrop/cama_flood_daily.csv"
+    preconditions:
+      - "CaMa-Flood simulation has completed for the target period"
+      - "flddph and fldfrc NetCDF files exist in cama_out_dir"
+    postconditions:
+      - "GroundWater object covers sim_start to sim_end"
+      - "Water table depth is 0 m on flood days, >2 m on non-flood days"
+
+  - id: "assemble_model"
+    name: "Assemble AquaCrop Model"
+    description: "Combines all components into AquaCropModel, validates date formats and component compatibility"
+    stage: "s7_model_assembly"
+    script_path: "tools/s7_model_assembly/assemble_model.py"
+    language: "python"
+    inputs:
+      - name: "sim_start_time"
+        type: "string"
+        description: "Start date YYYY/MM/DD"
+        required: true
+        example: "2000/01/01"
+      - name: "sim_end_time"
+        type: "string"
+        description: "End date YYYY/MM/DD"
+        required: true
+        example: "2005/12/31"
+      - name: "weather_df"
+        type: "value"
+        description: "Weather DataFrame"
+        required: true
+        example: "pandas.DataFrame"
+      - name: "soil"
+        type: "value"
+        description: "Soil object"
+        required: true
+        example: "Soil('SandyLoam')"
+      - name: "crop"
+        type: "value"
+        description: "Crop object"
+        required: true
+        example: "Crop('Maize', '05/01')"
+      - name: "initial_water_content"
+        type: "value"
+        description: "InitialWaterContent object"
+        required: true
+        example: "InitialWaterContent()"
+    outputs:
+      - name: "model"
+        type: "value"
+        description: "AquaCropModel instance ready for execution"
+        path_pattern: "in-memory Python object"
+    preconditions:
+      - "Date format is YYYY/MM/DD with slashes"
+      - "Weather DataFrame covers sim_start_time to sim_end_time"
+      - "All component objects are valid"
+    postconditions:
+      - "AquaCropModel instance created without errors"
+
+  - id: "validate_model_config"
+    name: "Validate Model Configuration"
+    description: "Pre-flight checks on assembled model: date consistency, weather coverage, soil-crop compatibility"
+    stage: "s7_model_assembly"
+    script_path: "tools/s7_model_assembly/validate_model_config.py"
+    language: "python"
+    inputs:
+      - name: "model"
+        type: "value"
+        description: "AquaCropModel to validate"
+        required: true
+        example: "AquaCropModel(...)"
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON validation report"
+        path_pattern: "stdout JSON"
+    preconditions:
+      - "AquaCropModel instance exists"
+    postconditions:
+      - "All consistency checks pass"
+
+  - id: "run_aquacrop"
+    name: "Run AquaCrop Simulation"
+    description: "Executes model.run_model(till_termination=True), captures runtime, checks for silent failures"
+    stage: "s8_execution"
+    script_path: "tools/s8_execution/run_aquacrop.py"
+    language: "python"
+    inputs:
+      - name: "model"
+        type: "value"
+        description: "Assembled AquaCropModel"
+        required: true
+        example: "AquaCropModel(...)"
+    outputs:
+      - name: "success"
+        type: "value"
+        description: "True if model completed successfully"
+        path_pattern: "boolean"
+    preconditions:
+      - "Model has been assembled (s7 complete)"
+    postconditions:
+      - "model.run_model() returns True"
+      - "get_simulation_results() returns non-empty DataFrame"
+
+  - id: "extract_results"
+    name: "Extract Simulation Results"
+    description: "Extracts all four output types (final_stats, water_flux, water_storage, crop_growth) into DataFrames and CSV files"
+    stage: "s9_output_analysis"
+    script_path: "tools/s9_output_analysis/extract_results.py"
+    language: "python"
+    inputs:
+      - name: "model"
+        type: "value"
+        description: "Executed AquaCropModel"
+        required: true
+        example: "AquaCropModel (after run_model)"
+      - name: "output_dir"
+        type: "directory"
+        description: "Directory for output CSV files"
+        required: true
+        example: "outputs/maize_2000_2010/aquacrop/"
+    outputs:
+      - name: "final_stats_csv"
+        type: "file"
+        description: "Seasonal summary CSV"
+        path_pattern: "outputs/{run}/aquacrop/final_stats.csv"
+      - name: "water_flux_csv"
+        type: "file"
+        description: "Daily water flux CSV"
+        path_pattern: "outputs/{run}/aquacrop/water_flux.csv"
+      - name: "crop_growth_csv"
+        type: "file"
+        description: "Daily crop growth CSV"
+        path_pattern: "outputs/{run}/aquacrop/crop_growth.csv"
+    preconditions:
+      - "model.run_model() has been called and returned True"
+    postconditions:
+      - "All CSV files exist and contain data"
+      - "Dry yield > 0 (if crop reached maturity)"
+
+  - id: "compare_sim_obs"
+    name: "Compare Simulated vs Observed"
+    description: "Compares simulated yield, ET, or phenology against observed data. Computes RMSE, NRMSE, d-index."
+    stage: "s9_output_analysis"
+    script_path: "tools/s9_output_analysis/compare_sim_obs.py"
+    language: "python"
+    inputs:
+      - name: "simulated"
+        type: "value"
+        description: "Simulated values (yield, ET, etc.)"
+        required: true
+        example: "pandas Series"
+      - name: "observed"
+        type: "value"
+        description: "Observed values"
+        required: true
+        example: "pandas Series"
+    outputs:
+      - name: "metrics"
+        type: "value"
+        description: "Performance metrics: RMSE, NRMSE, d-index, bias"
+        path_pattern: "stdout JSON"
+    preconditions:
+      - "Simulated and observed have same length"
+    postconditions:
+      - "Metrics are finite numbers"
+
+  - id: "compute_water_productivity"
+    name: "Compute Water Productivity Metrics"
+    description: "Computes CWP (kg/m3), IWUE (kg/m3), and water footprint (m3/tonne) from simulation outputs"
+    stage: "s10_water_productivity"
+    script_path: "tools/s10_water_productivity/compute_water_productivity.py"
+    language: "python"
+    inputs:
+      - name: "final_stats"
+        type: "value"
+        description: "Final stats DataFrame from model"
+        required: true
+        example: "model.get_simulation_results()"
+      - name: "water_flux"
+        type: "value"
+        description: "Water flux DataFrame from model"
+        required: true
+        example: "model.get_water_flux()"
+    outputs:
+      - name: "wp_metrics"
+        type: "value"
+        description: "Water productivity metrics per season"
+        path_pattern: "stdout JSON or CSV"
+    preconditions:
+      - "Model has been executed successfully"
+    postconditions:
+      - "CWP > 0 if yield > 0"
+      - "Seasonal ET > 0"
+
+  - id: "compare_irrigation_scenarios"
+    name: "Compare Irrigation Scenarios"
+    description: "Runs and compares multiple irrigation strategies (rainfed, full, deficit at various SMT levels) for yield-water tradeoff analysis"
+    stage: "s10_water_productivity"
+    script_path: "tools/s10_water_productivity/compare_irrigation_scenarios.py"
+    language: "python"
+    inputs:
+      - name: "weather_df"
+        type: "value"
+        description: "Weather DataFrame"
+        required: true
+        example: "pandas.DataFrame"
+      - name: "soil"
+        type: "value"
+        description: "Soil object"
+        required: true
+        example: "Soil('SandyLoam')"
+      - name: "crop"
+        type: "value"
+        description: "Crop object"
+        required: true
+        example: "Crop('Maize', '05/01')"
+      - name: "scenarios"
+        type: "config"
+        description: "List of irrigation scenarios to compare"
+        required: true
+        example: "[{'name': 'rainfed', 'method': 0}, {'name': 'full', 'method': 4, 'NetIrrSMT': 100}]"
+      - name: "output_dir"
+        type: "directory"
+        description: "Directory for comparison output"
+        required: true
+        example: "outputs/maize_wp/"
+    outputs:
+      - name: "comparison_csv"
+        type: "file"
+        description: "Scenario comparison table"
+        path_pattern: "outputs/{run}/aquacrop/scenario_comparison.csv"
+      - name: "comparison_plot"
+        type: "file"
+        description: "Yield vs water use plot"
+        path_pattern: "outputs/{run}/aquacrop/scenario_comparison.png"
+    preconditions:
+      - "All input objects are valid"
+    postconditions:
+      - "Results exist for all scenarios"
+
+# --- Layer 2: Skill Documents ---
+# Agent READS these -- evaluative and sequencing knowledge.
+skill_documents:
+  - id: "s1_crop_selection_skill"
+    name: "Crop Selection & Parameterization"
+    stage: "s1_crop_selection"
+    path: "docs/s1_crop_selection_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 2200
+
+  - id: "s2_soil_profile_skill"
+    name: "Soil Profile Setup"
+    stage: "s2_soil_profile"
+    path: "docs/s2_soil_profile_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 2000
+
+  - id: "s3_weather_prep_skill"
+    name: "Weather Data Preparation"
+    stage: "s3_weather_prep"
+    path: "docs/s3_weather_prep_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 2500
+
+  - id: "s4_initial_conditions_skill"
+    name: "Initial Water Content"
+    stage: "s4_initial_conditions"
+    path: "docs/s4_initial_conditions_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 1500
+
+  - id: "s5_irrigation_skill"
+    name: "Irrigation Management"
+    stage: "s5_irrigation"
+    path: "docs/s5_irrigation_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 2500
+
+  - id: "s6_field_management_skill"
+    name: "Field Management"
+    stage: "s6_field_management"
+    path: "docs/s6_field_management_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 1200
+
+  - id: "s7_model_assembly_skill"
+    name: "Model Assembly"
+    stage: "s7_model_assembly"
+    path: "docs/s7_model_assembly_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 1800
+
+  - id: "s8_execution_skill"
+    name: "Model Execution"
+    stage: "s8_execution"
+    path: "docs/s8_execution_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 1500
+
+  - id: "s9_output_analysis_skill"
+    name: "Output Analysis"
+    stage: "s9_output_analysis"
+    path: "docs/s9_output_analysis_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 2000
+
+  - id: "s10_water_productivity_skill"
+    name: "Water Productivity Analysis"
+    stage: "s10_water_productivity"
+    path: "docs/s10_water_productivity_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections:
+      - purpose
+      - prerequisites
+      - inputs
+      - procedure
+      - expected_outputs
+      - validation_checks
+      - common_pitfalls
+    word_count: 2500
+
+# --- Layer 3: Diagnostic Triplets ---
+# Agent LOOKS UP these -- operational debugging knowledge.
+diagnostic_triplets:
+  path: "diagnostics/triplets.yaml"
+  count: 18
+  stages_covered: ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10"]
+
+# --- Summary statistics ---
+summary:
+  total_tools: 19
+  total_tool_lines: 1969
+  total_skill_documents: 10
+  total_skill_words: 6814
+  total_diagnostic_triplets: 18
+  failure_domains:
+    - "parameter_format"
+    - "unit_conversion"
+    - "column_mismatch"
+    - "date_format"
+    - "silent_error"
+    - "dependency_mismatch"
+    - "value_range"
+    - "runtime"
+    - "environment"
+  pipeline_stages: 10
+  pipeline_milestones: 20
+  coverage:
+    layer_1_tools: "18 tool stubs defined"
+    layer_2_skill_docs: "10/10 stages covered (100%)"
+    layer_3_triplets: "18 triplets across 9 failure domains"
+  missing_tools: []

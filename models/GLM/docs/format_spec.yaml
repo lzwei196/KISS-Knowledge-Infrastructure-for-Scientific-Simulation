@@ -1,0 +1,281 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["lake"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "GLM v3.3.3"
+  domain: "lake"
+  secondary_domains: ["water_quality"]
+  binary: "glm"
+  binary_path: "/mnt/disk1/Hydrocraft_server/model/glm/bin/glm"
+  language: "Fortran / C"
+  working_directory: "directory containing glm3.nml"
+  notes: "1D vertical hydrodynamic model for lakes and reservoirs. Optional AED2 water quality library."
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "shortwave_radiation"
+      file: "met CSV (ShortWave column)"
+      unit: "W/m2"
+      valid_range: [0.0, 1400.0]
+      format: "CSV, column header ShortWave"
+
+    - name: "longwave_radiation"
+      file: "met CSV (LongWave column)"
+      unit: "W/m2"
+      valid_range: [50.0, 600.0]
+      format: "CSV, column header LongWave"
+      notes: "Used when lw_type = 'LW_IN'. If lw_type = 'LW_CC', GLM computes LW from cloud cover."
+
+    - name: "air_temperature"
+      file: "met CSV (AirTemp column)"
+      unit: "degC"
+      valid_range: [-50.0, 55.0]
+      format: "CSV, column header AirTemp"
+
+    - name: "relative_humidity"
+      file: "met CSV (RelHum column)"
+      unit: "percent (0-100)"
+      valid_range: [0.0, 100.0]
+      format: "CSV, column header RelHum"
+      conversion_from_vic: "VP (kPa) to RH%: RH = 100 * VP / (0.6108 * exp(17.27*T/(T+237.3)))"
+      notes: "GLM expects 0-100%. If RH is 0.7 instead of 70, GLM computes extreme evaporation."
+
+    - name: "wind_speed"
+      file: "met CSV (WindSpeed column)"
+      unit: "m/s"
+      valid_range: [0.0, 80.0]
+      format: "CSV, column header WindSpeed"
+
+    - name: "precipitation"
+      file: "met CSV (Rain column)"
+      unit: "m/day"
+      valid_range: [0.0, 0.5]
+      format: "CSV, column header Rain"
+      conversion_from_cmfd: "CMFD mm/3hr * 8 / 1000 = m/day"
+      notes: "GLM expects m/day, NOT mm/day. Off by 1000x if /1000 is skipped."
+
+    - name: "cloud_cover"
+      file: "met CSV (Cloud column)"
+      unit: "fraction (0-1)"
+      valid_range: [0.0, 1.0]
+      format: "CSV, column header Cloud"
+      notes: "Used when lw_type = 'LW_CC'."
+
+  parameters:
+    critical:
+      - name: "Kw"
+        file: "glm3.nml (&light block)"
+        description: "Light extinction coefficient"
+        valid_range: [0.1, 5.0]
+        default: 0.5
+        unit: "1/m"
+        bug_history: >
+          Single most sensitive parameter. Too high (>3): no stratification.
+          Too low (<0.1): unrealistic deep heating. Rule: Kw ~ 1.7 / Secchi_depth_m.
+          Triplet dt_019.
+
+      - name: "bsn_vals"
+        file: "glm3.nml (&morphometry block)"
+        description: "Number of elevation-area pairs in morphometry"
+        valid_range: [2, 1000]
+        unit: "count"
+        bug_history: >
+          Must exactly match length of H[] and A[] arrays. Mismatch crashes GLM
+          at startup. Always auto-compute from len(H). Triplet dt_008.
+
+      - name: "H_and_A_arrays"
+        file: "glm3.nml (&morphometry block)"
+        description: "Elevation (H) and area (A) arrays for lake bathymetry"
+        unit: "m, m2"
+        bug_history: >
+          H[] and A[] must be ascending (bottom to top). H[0] is deepest point,
+          H[n] is crest. A[0] should be 0 (point at bottom). Reversed arrays
+          crash GLM. Triplet dt_006.
+
+      - name: "dt_iceon_avg"
+        file: "glm3.nml (&snowice block)"
+        description: "Ice onset averaging window"
+        valid_range: [0.001, 0.04]
+        default: 0.02
+        unit: "days"
+        bug_history: >
+          Without dt_iceon_avg, ice model is SILENTLY DISABLED. Surface temp
+          asymptotes to ~0.002 C but never freezes, producing zero ice even
+          with -15 C air. For deep reservoirs (>50m), must be <= 0.04 days.
+          Triplet dt_027.
+
+      - name: "lw_type"
+        file: "glm3.nml (&meteorology block)"
+        description: "Longwave radiation input type"
+        valid_range: ["LW_IN", "LW_CC", "LW_NET"]
+        default: "LW_CC"
+        bug_history: >
+          Using LW_IN with incorrect LW values causes 3-5 degC warm bias
+          in summer. Double-counting if forcing has LW but lw_type=LW_CC
+          also computes it. Triplet dt_020.
+
+      - name: "inflow_salinity"
+        file: "inflow CSV (SALT column)"
+        description: "Inflow salinity for freshwater lakes"
+        valid_range: [0.0, 0.0]
+        default: 0.0
+        unit: "PSU"
+        bug_history: >
+          Non-zero inflow salinity changes density calculation, causing inflow
+          to insert at wrong depth. Creates artificial intrusion layers and
+          disrupts thermal structure silently. Triplet dt_022.
+
+  files:
+    required:
+      - name: "glm3.nml"
+        description: "Master namelist file (13 Fortran namelist blocks)"
+        format: "Fortran namelist — string values MUST use single quotes"
+
+      - name: "met CSV"
+        description: "Meteorological forcing time series"
+        format: "CSV with datetime + ShortWave, LongWave, AirTemp, RelHum, WindSpeed, Rain, Cloud"
+
+    optional:
+      - name: "inflow CSV"
+        description: "Lake inflow time series (from CaMa-Flood or VIC)"
+        format: "CSV with FLOW (m3/s), TEMP (degC), SALT (PSU)"
+
+      - name: "outflow CSV"
+        description: "Lake outflow configuration"
+
+      - name: "aed2.nml"
+        description: "AED2 water quality configuration"
+        format: "Fortran namelist — required for WQ simulation"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "temperature_profile"
+      file: "output/output.nc"
+      unit: "degC"
+      valid_range: [0.0, 40.0]
+      key_columns: ["temp"]
+      format: "NetCDF (time x depth)"
+      notes: "Vertical temperature profile at each timestep."
+
+    - name: "lake_level"
+      file: "output/lake.csv"
+      unit: "m"
+      valid_range: null
+      key_columns: ["Lake Level"]
+      format: "CSV time series"
+
+    - name: "surface_temperature"
+      file: "output/lake.csv"
+      unit: "degC"
+      valid_range: [0.0, 35.0]
+      key_columns: ["Surface Temp"]
+
+    - name: "aed2_wq_output"
+      file: "output/output.nc"
+      unit: "various (mmol/m3)"
+      notes: "Only present when AED2 is enabled. Includes DO, nutrients, Chl-a."
+
+  diagnostics:
+    - name: "thermal_stratification"
+      check: "Summer surface-bottom temperature difference > 5 degC for stratified lakes"
+      notes: "Lack of stratification usually means Kw is too high or wind is too strong."
+
+    - name: "ice_cover"
+      check: "Ice forms when air temp < 0 for sustained periods"
+      notes: "If no ice despite cold temperatures, check dt_iceon_avg setting."
+
+    - name: "water_balance"
+      check: "Lake level stable or follows expected seasonal pattern"
+      notes: "Rapid lake level drop suggests excessive evaporation (check RH units)."
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "rain_unit_error"
+    triplet: "dt_001"
+    description: "Rain in mm/day instead of m/day — lake floods continuously"
+    affected_output: "Lake level, all outputs"
+    detection: "Lake level rises unrealistically"
+    fix: "Divide by 1000: m/day = mm/day / 1000"
+
+  - id: "rh_fraction_not_pct"
+    triplet: "dt_002"
+    description: "Relative humidity 0-1 instead of 0-100% — extreme evaporation"
+    affected_output: "Lake level, surface temperature"
+    detection: "Lake level drops rapidly, extreme evaporation"
+    fix: "Multiply by 100: RH% = RH_fraction * 100"
+
+  - id: "fortran_double_quotes"
+    triplet: "dt_005"
+    description: "Double quotes in glm3.nml cause Fortran parse error"
+    affected_output: "GLM fails to start"
+    detection: "Fortran namelist read error"
+    fix: "Use single quotes for all string values in namelist"
+
+  - id: "morphometry_reversed"
+    triplet: "dt_006"
+    description: "H[] and A[] arrays in descending order — crash"
+    affected_output: "GLM crashes at startup"
+    detection: "GLM abort on morphometry read"
+    fix: "Sort H[] and A[] ascending (bottom to top)"
+
+  - id: "bsn_vals_mismatch"
+    triplet: "dt_008"
+    description: "bsn_vals does not match H/A array length — crash"
+    affected_output: "GLM crashes at startup"
+    detection: "Array bounds error"
+    fix: "Set bsn_vals = len(H)"
+
+  - id: "aed2_nan_thermal_only"
+    triplet: "dt_028"
+    description: "AED2 phytoplankton module without dependencies produces NaN"
+    affected_output: "AED2 WQ outputs"
+    detection: "NaN values in WQ variables"
+    fix: "Enable all dependency modules (oxygen, nitrogen, phosphorus, organic_matter) or use thermal-only mode (disable AED2)"
+
+  - id: "aed2_no_inflow_nutrients"
+    triplet: "dt_029"
+    description: "AED2 with zero inflow nutrient loading depletes nutrients rapidly"
+    affected_output: "Phytoplankton, nutrient concentrations"
+    detection: "Nutrients drop to zero within weeks"
+    fix: "Use configure_inflow_wq.py to add nutrient columns to inflow CSV"
+
+  - id: "ice_silently_disabled"
+    triplet: "dt_027"
+    description: "Missing dt_iceon_avg silently disables ice model"
+    affected_output: "Ice thickness = 0 despite freezing conditions"
+    detection: "Surface temp ~0.002 C, zero ice"
+    fix: "Set dt_iceon_avg = 0.02, min_ice_thickness = 0.001"
+
+  - id: "lw_double_counting"
+    triplet: "dt_020"
+    description: "LongWave double-counting when lw_type mismatches forcing"
+    affected_output: "Surface temperature (3-5 degC warm bias)"
+    detection: "Systematic warm bias in summer"
+    fix: "Match lw_type to forcing content: LW_IN if forcing has LW, LW_CC if cloud cover"
+
+# =========================================================================
+# EXPECTED RANGES (Miyun Reservoir reference)
+# =========================================================================
+expected_ranges:
+  miyun_reservoir:
+    validation_period: "2001-2010"
+    surface_temp_range_degC: [0, 30]
+    bottom_temp_range_degC: [4, 15]
+    summer_stratification_diff_degC: ">5"
+    runtime_seconds: "<1 for 32 years (Sparkling Lake example)"

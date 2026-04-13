@@ -1,0 +1,152 @@
+model:
+  name: "CAESAR_Lisflood"
+  full_name: "HAIL-CAESAR (High-performance Architecture Independent LISFLOOD-CAESAR)"
+  version: "1.0"
+  domain: "Geomorphology / Flood inundation / Landscape evolution"
+  language: "C++"
+  parallelism: "OpenMP shared-memory"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/CAESAR_Lisflood/source/repo/bin/HAIL-CAESAR.exe"
+  source_url: "https://github.com/dvalters/HAIL-CAESAR"
+
+inputs:
+  dem:
+    - name: "surface_elevation"
+      format: "ESRI ASCII Grid (.asc)"
+      unit: "metres"
+      valid_range: [-500, 9000]
+      required: true
+      notes: "Outlet must touch DEM edge. NODATA_value must match header exactly (-9999)."
+  forcing:
+    - name: "rainfall_rate"
+      format: "Plain text, headerless, space-delimited"
+      unit: "mm/hr"
+      valid_range: [0, 500]
+      required: true
+      notes: "One row per timestep. Multiple columns for spatially variable rainfall (matching hydroindex zones)."
+  supplementary:
+    - name: "hydroindex"
+      format: "ESRI ASCII Grid (.asc)"
+      unit: "integer zone IDs"
+      required: false
+      notes: "Same extent as DEM. Integer zone IDs matching rainfall columns."
+    - name: "grain_data"
+      format: "Special text (index, x, y, grain fractions)"
+      required: false
+    - name: "bedrock_dem"
+      format: "ESRI ASCII Grid (.asc)"
+      unit: "metres"
+      required: false
+      notes: "Elevations must be lower than surface DEM."
+  parameters:
+    critical:
+      - name: "max_run_duration"
+        unit: "hours"
+        valid_range: [0, 100000]
+        description: "Simulation duration. Must be set to T-1 (e.g., 71 for 72hr simulation)."
+      - name: "topmodel_m_value"
+        unit: "metres"
+        valid_range: [0.001, 0.05]
+        description: "TOPMODEL m parameter controlling subsurface flow. 0.005=flashy, 0.02=slow response."
+      - name: "mannings_n"
+        unit: "s/m^(1/3)"
+        valid_range: [0.01, 0.3]
+        description: "Manning's roughness coefficient. 0.03-0.06 for channels, 0.1+ for floodplains."
+      - name: "courant_number"
+        unit: "dimensionless"
+        valid_range: [0.3, 0.7]
+        description: "CFL stability control. 0.3 for <2m DEMs, 0.7 for 20-50m DEMs."
+      - name: "froude_num_limit"
+        unit: "dimensionless"
+        valid_range: [0.5, 1.0]
+        description: "Froude number limit for subcritical flow. Default 0.8."
+      - name: "rain_data_time_step"
+        unit: "minutes"
+        valid_range: [1, 1440]
+        description: "Timestep of rainfall input file. Must match actual file resolution."
+    sediment:
+      - name: "transport_law"
+        valid_values: ["wilcock", "einstein"]
+        description: "Sediment transport law: Wilcock-Crowe or Einstein-Brown."
+      - name: "active_layer_thickness"
+        unit: "metres"
+        valid_range: [0.01, 2.0]
+        description: "Surface layer thickness. Must be >= 4x erode_limit."
+      - name: "erode_limit"
+        unit: "metres"
+        valid_range: [0.001, 0.5]
+        description: "Max erosion/deposition per cell per step. ~0.01 for <=10m DEMs."
+    hillslope:
+      - name: "creep_rate"
+        unit: "m/yr"
+        valid_range: [0, 0.1]
+        description: "Soil creep rate."
+      - name: "slope_failure_thresh"
+        unit: "degrees"
+        valid_range: [20, 90]
+        description: "Critical angle for landslide."
+
+outputs:
+  primary:
+    - name: "actual_discharge"
+      column: 2
+      unit: "m3/s"
+      valid_range: [0, 100000]
+      description: "Instantaneous water discharge at outlet(s)."
+    - name: "expected_discharge"
+      column: 3
+      unit: "m3/s"
+      valid_range: [0, 100000]
+      description: "TOPMODEL-estimated discharge."
+    - name: "total_sediment_Q"
+      column: 5
+      unit: "m3"
+      valid_range: [0, 1000000]
+      description: "Total sediment discharge for interval (NOT a rate)."
+  rasters:
+    - name: "WaterDepths"
+      unit: "metres"
+      valid_range: [0, 100]
+      format: "ESRI ASCII Grid (.asc)"
+    - name: "Elevations"
+      unit: "metres"
+      format: "ESRI ASCII Grid (.asc)"
+    - name: "Grainz"
+      format: "ESRI ASCII Grid (.asc)"
+    - name: "ElevationDiff"
+      unit: "metres"
+      format: "ESRI ASCII Grid (.asc)"
+
+execution:
+  command: "./bin/HAIL-CAESAR.exe /path/to/input_files/ parameter_file.params"
+  arguments:
+    - position: 1
+      description: "Path to directory containing DEM, rainfall, and other inputs"
+    - position: 2
+      description: "Name of the parameter file (must be in the path above)"
+  environment:
+    OMP_NUM_THREADS: "Number of OpenMP threads (default: 1)"
+
+known_issues:
+  - "max_run_duration must be T-1 (e.g., 71 for 72hr sim) due to loop condition quirk"
+  - "read_fname must NOT include .asc extension"
+  - "Lateral erosion is experimental and not fully implemented"
+  - "Vegetation module is not implemented/tested"
+  - "read_path in params must be relative to binary execution directory or absolute"
+
+unit_traps:
+  - variable: "rainfall_rate"
+    expects: "mm/hr"
+    common_error: "mm/day or m/s"
+    fix: "Divide daily by 24; multiply m/s by 3.6e6"
+  - variable: "DEM_elevation"
+    expects: "metres"
+    common_error: "feet, cm"
+    fix: "Multiply feet by 0.3048; divide cm by 100"
+  - variable: "topmodel_m"
+    expects: "metres"
+    common_error: "mm"
+    fix: "Divide mm by 1000"
+  - variable: "run_duration"
+    expects: "hours (T-1)"
+    common_error: "hours (T)"
+    fix: "Subtract 1 from desired hours"

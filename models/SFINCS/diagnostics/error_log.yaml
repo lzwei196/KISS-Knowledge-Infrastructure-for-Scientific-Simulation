@@ -1,0 +1,124 @@
+# SFINCS Error Log
+# Errors discovered during installation and validation runs
+# =========================================================
+
+errors:
+  - id: err_001
+    timestamp: "2026-03-21T18:00:00Z"
+    stage: installation
+    symptom: "No pre-built Linux binary available on GitHub releases"
+    root_cause: "Deltares only distributes Windows executables via download portal. Linux users must compile from source or use Docker."
+    fix: "Compile from source using gfortran + netcdf-fortran: bash source/build_gfortran_cpu.sh"
+    severity: fatal
+    domain: installation
+    promoted_to_triplet: null
+
+  - id: err_002
+    timestamp: "2026-03-21T18:00:00Z"
+    stage: installation
+    symptom: "hydromt_sfincs 1.2.2 installed successfully with no dependency conflicts"
+    root_cause: "Dependencies compatible with existing HydroCraft venv"
+    fix: "N/A — success"
+    severity: info
+    domain: installation
+    promoted_to_triplet: null
+
+  - id: err_003
+    timestamp: "2026-03-21T18:20:00Z"
+    stage: installation
+    symptom: "sfincs_advection_diffusion.f90 fails to compile on main branch — missing module variables ntracer, trconc, trflux, dico"
+    root_cause: "Development branch has incomplete advection diffusion code. Module variables not declared in sfincs_data.f90 for this feature."
+    fix: "Skip sfincs_advection_diffusion.f90 during compilation. Advection is disabled by default (advection=0) so this is safe for standard flood simulations."
+    severity: degraded
+    domain: compilation
+    promoted_to_triplet: null
+
+  - id: err_004
+    timestamp: "2026-03-21T18:25:00Z"
+    stage: s7_execution
+    symptom: "SFINCS binary crashes with SIGABRT at cleanup after successful simulation (exit code -6)"
+    root_cause: "gfortran 13.3 + NetCDF cleanup race condition. The simulation completes normally ('Simulation finished' in log) and output files are written correctly, but the process crashes during Fortran runtime finalization."
+    fix: "Ignore non-zero exit code if sfincs.log contains 'Simulation finished' AND sfincs_map.nc exists. The output is valid."
+    severity: degraded
+    domain: runtime
+    promoted_to_triplet: dt_v006
+
+  - id: err_005
+    timestamp: "2026-03-21T18:25:00Z"
+    stage: s6_config
+    symptom: "sfincs.inp with key=value format (no spaces around =) causes mask to parse incorrectly — only 1 active cell found instead of 2500"
+    root_cause: "SFINCS Fortran parser expects specific spacing in sfincs.inp. Format 'key = value' (with spaces) works; 'key=value' may work for some keys but not for mask/index file parsing."
+    fix: "Always use 'key           = value' format with spaces and alignment in sfincs.inp. generate_sfincs_inp.py uses this format by default."
+    severity: silent
+    domain: parameter_format
+    promoted_to_triplet: null
+
+  - id: err_006
+    timestamp: "2026-03-21T19:00:00Z"
+    stage: s2_topobathy
+    symptom: "SFINCS reads sfincs.ind and reports 'Number of active z points: 1' despite 29754 cells in mask"
+    root_cause: "build_sfincs_topobathy.py writes sfincs.ind as a full 2D grid of sequential int32 indices. SFINCS v2.3.2 expects the index file format: [n_active (int32)] followed by [n_active flat indices (int32, 1-based)]. The first int32 value is interpreted as the count of active points."
+    fix: "Rewrite index file generation: header = n_active (int32), body = 1-based flat indices of active cells. See fix_sfincs_files.py."
+    severity: fatal
+    domain: file_format
+    promoted_to_triplet: dt_v001
+
+  - id: err_007
+    timestamp: "2026-03-21T19:00:00Z"
+    stage: s4_forcing
+    symptom: "prepare_sfincs_rainfall.py reads wrong VIC forcing column (col 0 = temperature instead of col 1 = precipitation), producing negative 'precipitation' values"
+    root_cause: "Line 131: 'precip_sum += data[:, 0]  # Column 0 is PREC' — VIC forcing column order is TEMP(0), PREC(1), PRESSURE(2), SW(3), LW(4), VP(5), WIND(6). Column 0 is temperature, not precipitation."
+    fix: "Change data[:, 0] to data[:, 1] in vic_ascii branch of prepare_sfincs_rainfall.py"
+    severity: fatal
+    domain: unit_conversion
+    promoted_to_triplet: dt_v002
+
+  - id: err_008
+    timestamp: "2026-03-21T19:00:00Z"
+    stage: s4_forcing
+    symptom: "prepare_sfincs_rainfall.py reads wrong time period — always reads from file start (year 2000) instead of the specified start_date"
+    root_cause: "VIC forcing files contain the entire simulation period (e.g., 2000-2010). The tool reads the whole file but takes only the first n_times entries without computing the correct offset. For start_date=2005-07-01, it reads Jan 2000 data instead."
+    fix: "Compute day offset from VIC simulation start to target start_date, then slice: data[ts_start:ts_end, 1]"
+    severity: fatal
+    domain: temporal_alignment
+    promoted_to_triplet: dt_v003
+
+  - id: err_009
+    timestamp: "2026-03-21T19:00:00Z"
+    stage: s4_forcing
+    symptom: "SFINCS does not read NetCDF precipitation (netprecipfile) — 'Precipitation: no' in log despite file existing"
+    root_cause: "SFINCS v2.3.2 ASCII precipitation (precipfile keyword) works reliably. NetCDF precipitation (netprecipfile) requires specific variable naming and coordinate conventions that may differ from the tool's output format."
+    fix: "Use ASCII precipitation format (time_seconds precip_mmhr) with 'precipfile' keyword instead of NetCDF format with 'netprecipfile'. See create_ascii_precip.py."
+    severity: degraded
+    domain: file_format
+    promoted_to_triplet: dt_v004
+
+  - id: err_010
+    timestamp: "2026-03-21T19:00:00Z"
+    stage: s2_topobathy
+    symptom: "Zero water depth despite correct active cells and precipitation — all h=0, hmax=0 in output"
+    root_cause: "Mask outflow boundaries (mask=2) default to water level = 0.0m (sea level). For inland mountainous terrain at 143-1387m elevation, this creates a 143m+ hydraulic gradient at boundaries that instantly drains all rainfall. Water never accumulates."
+    fix: "For inland/mountainous domains: (1) Use mask=1 for all cells (closed boundaries, water accumulates in valleys), or (2) Provide bzs file with boundary water levels matching bed level, or (3) Only set mask=2 at the lowest-elevation downstream cells."
+    severity: silent
+    domain: boundary_conditions
+    promoted_to_triplet: dt_v005
+
+  - id: err_011
+    timestamp: "2026-03-22T09:37:00Z"
+    stage: s8_postprocess
+    symptom: "extract_sfincs_results.py reports max flood depth 310.28m and all 174,720 cells in >3.0m category — physically impossible"
+    root_cause: "The variable selection list prioritized 'zsmax' (maximum water SURFACE elevation = bed_level + water_depth) over 'hmax' (maximum water DEPTH). For the Bengbu domain with terrain up to 310m, zsmax equals terrain elevation plus water depth, which is meaningless for flood depth analysis."
+    fix: "Changed variable priority order in extract_sfincs_results.py to ['hmax', 'h', 'point_zs', 'zs_max', 'zsmax', 'zs'] — hmax (water depth) is now first priority. After fix, correct max depth = 6.99m."
+    severity: silent
+    domain: variable_selection
+    promoted_to_triplet: dt_v007
+
+  - id: err_012
+    timestamp: "2026-03-22T09:28:00Z"
+    stage: s6_config
+    symptom: "generate_sfincs_inp.py writes 'netprecipfile = sfincs.precip' in sfincs.inp, but the precipitation file is ASCII format"
+    root_cause: "The tool unconditionally used 'netprecipfile' keyword for precipitation. When the file is in ASCII format (time_seconds precip_mmhr), SFINCS expects 'precipfile' keyword. Using 'netprecipfile' with an ASCII file causes SFINCS to silently fall back to no precipitation."
+    fix: "Changed generate_sfincs_inp.py to write 'precipfile' instead of 'netprecipfile'. ASCII precipitation is the recommended format (dt_v004)."
+    severity: silent
+    domain: config_generation
+    promoted_to_triplet: dt_v008

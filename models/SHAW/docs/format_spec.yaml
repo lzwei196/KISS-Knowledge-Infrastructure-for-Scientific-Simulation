@@ -1,0 +1,328 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["soil"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "SHAW v3.03"
+  domain: "soil"
+  secondary_domains: ["freeze_thaw", "snow", "energy_balance"]
+  binary: "shaw303"
+  binary_path: "/mnt/disk1/Hydrocraft_server/model/shaw/Code/shaw303"
+  language: "Fortran 77"
+  working_directory: "directory containing input files"
+  notes: "1D field-scale model for coupled heat, water, and solute transfer. Reads input file path from stdin."
+  execution: "echo 'Trial.30.inp' | /path/to/shaw303"
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "air_temperature_hourly"
+      file: ".wea file (MTSTEP=0)"
+      unit: "degC"
+      valid_range: [-60.0, 55.0]
+      format: "Free format: JD JH JYR TA WIND HUM PRECIP SNODEN SUNHOR (9 columns)"
+      notes: "Hourly format. Used when MTSTEP=0."
+
+    - name: "temperature_max_min_daily"
+      file: ".wea file (MTSTEP=1)"
+      unit: "degC"
+      valid_range: [-60.0, 55.0]
+      format: "Free format: JD JYR TMAX TMIN TDEW WIND PRECIP SOLAR (8 columns)"
+      notes: "Daily format. Used when MTSTEP=1. NO hour column."
+
+    - name: "wind_speed"
+      file: ".wea file"
+      unit: "m/s (IFLAGSI=1) or mph/miles_day (IFLAGSI=0)"
+      valid_range: [0.0, 80.0]
+      notes: "Always set IFLAGSI=1 for SI units when using CMFD/MSWX data."
+
+    - name: "relative_humidity"
+      file: ".wea file (hourly: HUM column)"
+      unit: "percent (0-100)"
+      valid_range: [0.0, 100.0]
+      notes: "Hourly format only. Daily format uses dewpoint temperature instead."
+
+    - name: "dewpoint_temperature"
+      file: ".wea file (daily: TDEW column)"
+      unit: "degC"
+      valid_range: [-60.0, 40.0]
+      notes: "Daily format only. Convert from VP: TDEW = (237.3*ln(VP/0.6108))/(17.27-ln(VP/0.6108))"
+
+    - name: "precipitation"
+      file: ".wea file"
+      unit: "mm (IFLAGSI=1) or inches (IFLAGSI=0)"
+      valid_range: [0.0, 200.0]
+      format: "Per-timestep accumulation"
+      notes: "Always set IFLAGSI=1 for mm. CMFD/MSWX is in mm."
+
+    - name: "solar_radiation"
+      file: ".wea file (SUNHOR or SOLAR column)"
+      unit: "W/m2"
+      valid_range: [0.0, 1400.0]
+      format: "Instantaneous (hourly) or average daily"
+      conversion_from_cmfd: "If CMFD gives MJ/m2/day, multiply by 11.574 to get average W/m2"
+      notes: "Same unit (W/m2) regardless of IFLAGSI flag."
+
+  parameters:
+    critical:
+      - name: "MTSTEP"
+        file: ".inp file (Line B)"
+        description: "Weather data timestep: 0=hourly, 1=daily, 2=custom"
+        valid_range: [0, 2]
+        unit: "flag"
+        bug_history: >
+          MTSTEP must match weather file format. MTSTEP=0 expects 9 columns
+          (hourly with JH). MTSTEP=1 expects 8 columns (daily, no JH).
+          Wrong MTSTEP causes zero precipitation or wrong data parsing.
+          Triplet shaw_026.
+
+      - name: "IFLAGSI"
+        file: ".inp file"
+        description: "Unit system flag: 0=English, 1=SI"
+        valid_range: [0, 1]
+        default: 1
+        unit: "flag"
+        notes: "Always set 1 for CMFD/MSWX data (mm, m/s)."
+
+      - name: "HRNOON"
+        file: ".sit file"
+        description: "Solar noon hour (decimal)"
+        valid_range: [11.0, 13.0]
+        unit: "hours"
+        bug_history: >
+          Controls when precipitation is assigned during the day. Incorrect
+          value (e.g., 0.01) assigns all precip to hour 0. Compute from
+          longitude: HRNOON = 12.0 - (longitude - timezone_meridian) / 15.
+          Triplet shaw_028.
+
+      - name: "IWRC"
+        file: ".sit file"
+        description: "Water retention curve option: 1=Campbell, 2=Brooks-Corey, 3=van Genuchten"
+        valid_range: [1, 3]
+        default: 3
+        unit: "flag"
+        notes: "Each option requires different per-layer parameters."
+
+      - name: "MCANFLG"
+        file: ".inp file"
+        description: "Plant canopy flag"
+        valid_range: [0, 3]
+        unit: "flag"
+        bug_history: >
+          MCANFLG=0 must NOT have root distribution line in .sit file.
+          Including it causes Fortran read errors. Triplet dt_v003.
+
+      - name: "NSALT"
+        file: ".sit file"
+        description: "Number of solute types"
+        valid_range: [0, 10]
+        default: 0
+        unit: "count"
+        bug_history: >
+          NSALT=0 must NOT have ASALT/DISPER columns in soil properties.
+          Including them shifts column parsing. Triplet dt_v004.
+
+      - name: "JSTART"
+        file: ".inp file"
+        description: "Starting Julian day for simulation"
+        unit: "day of year"
+        bug_history: >
+          Must be first_wea_doy + 1 (SHAW needs previous-day data for
+          initialization). Setting JSTART = first .wea day causes no
+          previous-day data error. Triplet shaw_030.
+
+      - name: "soil_ksat"
+        file: ".sit file"
+        description: "Saturated hydraulic conductivity per soil layer"
+        valid_range: [0.0001, 100.0]
+        unit: "cm/hr"
+        notes: "Always cm/hr regardless of IFLAGSI setting."
+
+      - name: "soil_depth"
+        file: ".sit file"
+        description: "Depth of each soil node"
+        valid_range: [0.01, 10.0]
+        unit: "m"
+        notes: "Always meters regardless of IFLAGSI setting."
+
+  files:
+    required:
+      - name: ".inp file"
+        description: "Master control file (version, flags, paths, output config)"
+        format: "Free-format text, multi-section"
+        notes: "File paths limited to 80 characters."
+
+      - name: ".sit file"
+        description: "Site characteristics (location, soil layers, snow/residue/solute params)"
+        format: "Free-format text, complex multi-section structure"
+
+      - name: ".wea file"
+        description: "Weather/forcing data"
+        format: "Free-format text, columns depend on MTSTEP"
+        notes: "Needs +24h padding at end to avoid EOF error."
+
+      - name: ".moi file"
+        description: "Initial soil moisture profiles"
+        format: "Free-format text (volumetric water content or matric potential)"
+
+      - name: ".tem file"
+        description: "Initial soil temperature profiles"
+        format: "Free-format text. 99999 = no measurement (model interpolates)."
+
+    optional:
+      - name: "plant growth file"
+        description: "Temporal LAI, height, biomass per species"
+        notes: "Required when MCANFLG=1 or 3."
+
+      - name: "residue file"
+        description: "Changing residue cover, thickness, albedo"
+        notes: "Required when NRCHANG=1."
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "soil_temperature_profiles"
+      file: "TEMP.out"
+      unit: "degC"
+      valid_range: [-30.0, 50.0]
+      format: "Text, T(z,t) at each soil node per output timestep"
+      notes: "Primary validation target. Compare against observed at specific depths."
+
+    - name: "soil_moisture_profiles"
+      file: "MOIST.out (total) / LIQUID.out (liquid only)"
+      unit: "fraction (volumetric)"
+      valid_range: [0.0, 0.6]
+      format: "Text, theta(z,t) at each soil node"
+
+    - name: "frost_thaw_depth"
+      file: "FROST.out"
+      unit: "m"
+      valid_range: [0.0, 5.0]
+      format: "Text time series"
+      notes: "Key output for freeze-thaw studies."
+
+    - name: "snow_depth_swe"
+      file: "FROST.out"
+      unit: "m (depth), mm (SWE)"
+      valid_range: [0.0, 5.0]
+
+    - name: "energy_balance"
+      file: "ENERGY.out"
+      unit: "W/m2"
+      format: "Text: Rn, H, LE, G per timestep"
+
+    - name: "water_balance"
+      file: "WATER.out"
+      unit: "mm"
+      format: "Text: Precip, ET, runoff, drainage"
+
+  diagnostics:
+    - name: "soil_temperature_r2"
+      check: "R2 > 0.91 at all depths (uncalibrated JackPine reference)"
+      reference: "JackPine validation: R2 = 0.91-0.96 across 2-100 cm depths"
+      notes: "Best performance at 50-100 cm depth. Surface more variable."
+
+    - name: "soil_temperature_rmse"
+      check: "RMSE < 5 degC at shallow depths, < 2 degC at 50-100 cm"
+      reference: "JackPine: RMSE 1.45-4.32 degC. Manitoba: RMSE 2.93-6.17 degC."
+      notes: "Manitoba had cold bias due to insufficient snow insulation from precip undercatch."
+
+    - name: "frost_depth"
+      check: "Non-zero frost depth in winter for cold-climate sites"
+      notes: "Zero frost despite freezing temps suggests snow insulation or soil params issue."
+
+    - name: "water_balance"
+      check: "Precip approx_eq ET + Runoff + Drainage + delta_SM"
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "mtstep_format_mismatch"
+    triplet: "shaw_026"
+    description: "MTSTEP=0 (hourly) but weather file is daily format — zero precip"
+    affected_output: "All water balance outputs"
+    detection: "Zero precipitation despite data in .wea file"
+    fix: "Set MTSTEP=1 for daily weather data"
+
+  - id: "weather_column_swap"
+    triplet: "shaw_027"
+    description: "Weather columns YR DOY instead of DOY YR — wrong dates parsed"
+    affected_output: "All outputs (wrong time alignment)"
+    detection: "Dates don't match expected period"
+    fix: "Ensure column order: DOY first, YR second"
+
+  - id: "hrnoon_wrong"
+    triplet: "shaw_028"
+    description: "HRNOON=0.01 instead of ~12.3 — precip assigned to hour 0"
+    affected_output: "Diurnal distribution of precipitation"
+    detection: "All precip concentrated at midnight"
+    fix: "Compute from longitude: HRNOON = 12.0 - (lon - tz_meridian) / 15"
+
+  - id: "solar_mj_not_wm2"
+    triplet: "shaw_029"
+    description: "Solar radiation in MJ/m2/day not converted to W/m2 — 11.6x too low"
+    affected_output: "Energy balance, ET, soil temperature"
+    detection: "Very low energy input, cold bias"
+    fix: "Multiply MJ/m2/day by 11.574 to get average W/m2"
+
+  - id: "jstart_too_early"
+    triplet: "shaw_030"
+    description: "JSTART = first .wea DOY — no previous-day data available"
+    affected_output: "Initialization failure or wrong first-day values"
+    detection: "SHAW stops or produces bad first-day output"
+    fix: "JSTART = first_wea_doy + 1"
+
+  - id: "mcanflg_root_line"
+    triplet: "dt_v003"
+    description: "MCANFLG=0 with root distribution line in .sit causes Fortran read error"
+    affected_output: "SHAW crashes at input parsing"
+    detection: "Fortran read error in .sit file"
+    fix: "Do NOT include root distribution line when MCANFLG=0"
+
+  - id: "nsalt_extra_columns"
+    triplet: "dt_v004"
+    description: "NSALT=0 with ASALT/DISPER columns in soil properties — column shift"
+    affected_output: "All soil properties parsed wrong"
+    detection: "Unexpected soil property values"
+    fix: "Do NOT include ASALT/DISPER columns when NSALT=0"
+
+  - id: "weather_eof_padding"
+    triplet: "dt_v005"
+    description: "Weather file needs +24h padding at end to avoid EOF"
+    affected_output: "SHAW stops early or crashes at end"
+    detection: "Simulation ends before expected date"
+    fix: "Add 24 hours of padding data at end of .wea file"
+
+# =========================================================================
+# EXPECTED RANGES (validated sites)
+# =========================================================================
+expected_ranges:
+  jackpine_boreal:
+    location: "53.916N, 104.692W, 580m"
+    period: "1999 (365 days)"
+    runtime_seconds: 30
+    soil_temp_r2: [0.91, 0.96]
+    soil_temp_rmse_degC: [1.45, 4.32]
+    annual_precip_mm: 466
+    annual_et_mm: 499
+
+  manitoba_prairie:
+    location: "49.81N, 100.37W, 460m"
+    period: "Nov 2019 - Oct 2020"
+    soil_temp_r2: [0.78, 0.90]
+    soil_temp_rmse_degC: [2.93, 6.17]
+    max_frost_depth_cm: 25.1
+    max_snow_depth_cm: 11.8
+    notes: "Cold bias from precip undercatch reducing snow insulation"

@@ -1,0 +1,181 @@
+model:
+  name: "COSIPY"
+  version: "2.0.2"
+  domain: "cryosphere"
+  subdomain: "glacier and snowpack energy/mass balance"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/COSIPY/venv/bin/python"
+  entry_point: "COSIPY.py"
+  source_repo: "https://github.com/cryotools/cosipy"
+  config_format: "TOML"
+  io_format: "netCDF"
+
+inputs:
+  forcing:
+    - name: "T2"
+      unit: "K"
+      description: "2-m air temperature"
+      valid_range: [223.16, 316.16]
+    - name: "RH2"
+      unit: "%"
+      description: "2-m relative humidity"
+      valid_range: [0, 100]
+    - name: "U2"
+      unit: "m s^-1"
+      description: "2-m wind speed"
+      valid_range: [0, 50]
+    - name: "G"
+      unit: "W m^-2"
+      description: "Incoming shortwave radiation"
+      valid_range: [0, 1600]
+    - name: "PRES"
+      unit: "hPa"
+      description: "Surface air pressure"
+      valid_range: [200, 1080]
+    - name: "RRR"
+      unit: "mm"
+      description: "Total precipitation per time step"
+      valid_range: [0, 20]
+    - name: "N"
+      unit: "fraction"
+      description: "Cloud cover fraction"
+      valid_range: [0, 1]
+    - name: "LWin"
+      unit: "W m^-2"
+      description: "Incoming longwave radiation (optional if N given)"
+      valid_range: [0, 400]
+    - name: "SNOWFALL"
+      unit: "m"
+      description: "Snowfall in snow height per timestep (optional if RRR given)"
+      valid_range: [0, 0.05]
+
+  static:
+    - name: "HGT"
+      unit: "m"
+      description: "Elevation (DEM)"
+    - name: "ASPECT"
+      unit: "degrees"
+      description: "Slope aspect"
+    - name: "SLOPE"
+      unit: "degrees"
+      description: "Terrain slope angle"
+    - name: "MASK"
+      unit: "boolean"
+      description: "Glacier mask (0/1)"
+
+  parameters:
+    critical:
+      - name: "dt"
+        unit: "s"
+        valid_range: [900, 86400]
+        default: 3600
+        description: "Time step — must match input data frequency"
+      - name: "max_layers"
+        valid_range: [10, 500]
+        default: 200
+        description: "Maximum number of vertical layers"
+      - name: "albedo_method"
+        valid_values: ["Oerlemans98", "Bougamont05"]
+        default: "Oerlemans98"
+        description: "Albedo parameterization scheme"
+      - name: "stability_correction"
+        valid_values: ["Ri", "MO"]
+        default: "Ri"
+        description: "Atmospheric stability correction method"
+      - name: "initial_snowheight_constant"
+        unit: "m"
+        valid_range: [0, 10]
+        default: 0.2
+        description: "Initial snow depth"
+      - name: "initial_glacier_height"
+        unit: "m"
+        valid_range: [0, 1000]
+        default: 40.0
+        description: "Glacier ice thickness"
+      - name: "temperature_bottom"
+        unit: "K"
+        valid_range: [250, 275]
+        default: 270.16
+        description: "Bottom boundary temperature"
+      - name: "albedo_fresh_snow"
+        valid_range: [0.7, 0.95]
+        default: 0.85
+        description: "Fresh snow albedo"
+      - name: "albedo_firn"
+        valid_range: [0.4, 0.7]
+        default: 0.55
+        description: "Firn albedo"
+      - name: "albedo_ice"
+        valid_range: [0.15, 0.45]
+        default: 0.3
+        description: "Ice albedo"
+
+outputs:
+  primary:
+    - name: "MB"
+      unit: "m w.e."
+      description: "Total mass balance per timestep"
+      valid_range: [-0.01, 0.01]
+    - name: "surfMB"
+      unit: "m w.e."
+      description: "Surface mass balance per timestep"
+      valid_range: [-0.01, 0.01]
+    - name: "intMB"
+      unit: "m w.e."
+      description: "Internal mass balance per timestep"
+      valid_range: [-0.001, 0.001]
+    - name: "SNOWHEIGHT"
+      unit: "m"
+      description: "Total snow height"
+      valid_range: [0, 20]
+    - name: "TOTALHEIGHT"
+      unit: "m"
+      description: "Total column height (snow + ice)"
+      valid_range: [0, 100]
+    - name: "TS"
+      unit: "K"
+      description: "Surface temperature"
+      valid_range: [200, 280]
+    - name: "ALBEDO"
+      unit: "-"
+      description: "Surface albedo"
+      valid_range: [0.1, 0.95]
+    - name: "Q"
+      unit: "m w.e."
+      description: "Runoff per timestep"
+      valid_range: [0, 0.01]
+    - name: "ME"
+      unit: "W m^-2"
+      description: "Melt energy"
+      valid_range: [0, 500]
+
+  energy_fluxes:
+    - name: "H"
+      unit: "W m^-2"
+      description: "Sensible heat flux"
+      valid_range: [-200, 200]
+    - name: "LE"
+      unit: "W m^-2"
+      description: "Latent heat flux"
+      valid_range: [-200, 200]
+    - name: "LWin"
+      unit: "W m^-2"
+      description: "Incoming longwave radiation"
+      valid_range: [0, 400]
+    - name: "LWout"
+      unit: "W m^-2"
+      description: "Outgoing longwave radiation"
+      valid_range: [-400, 0]
+    - name: "B"
+      unit: "W m^-2"
+      description: "Ground heat flux"
+      valid_range: [-50, 50]
+
+known_issues:
+  - id: "restart_array_bug"
+    description: "Restart writing crashes with 'setting an array element with a sequence' on xarray/numpy >=2.0"
+    severity: "medium"
+    workaround: "Set restart_output = false in config.toml or pin numpy<2.0"
+  - id: "unit_traps"
+    description: "10 silent unit conversion traps documented in SKILL.md — T2(K), RH2(%), PRES(hPa), etc."
+    severity: "high"
+    workaround: "Use convert_forcing tool which validates all units"

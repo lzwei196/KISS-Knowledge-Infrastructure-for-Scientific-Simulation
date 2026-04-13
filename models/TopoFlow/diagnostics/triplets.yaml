@@ -1,0 +1,493 @@
+# TopoFlow 3.6 Diagnostic Triplets
+# Each entry: symptom → diagnosis → remedy
+# Severity: silent (model runs, results wrong), degraded (runs with warnings),
+#           fatal (model crashes)
+
+- id: dt_001
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Model produces extreme flooding even for moderate rainfall events.
+      Peak Q is 10–100× higher than expected.
+    error_pattern: "Q_peak.*[0-9]{4,}"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation provided in mm/day instead of mm/hr"
+    explanation: >
+      ERA5, MSWX, and many reanalysis products provide daily accumulations.
+      If mm/day values are used directly as mm/hr, rainfall intensity is 24×
+      too high.  TopoFlow then internally converts mm/hr to m/s, compounding
+      the error.
+    affected_components: [tf_meteorology, topoflow_driver]
+  remedy:
+    action: "Divide precipitation by 24 to convert mm/day → mm/hr"
+    tool_to_run: convert_forcing
+    manual_steps:
+      - "Check source data documentation for precipitation units"
+      - "Apply: P_mmhr = P_mmday / 24.0"
+      - "Verify max P_mmhr < 200 for most storms"
+    prevention: "convert_forcing.py validates max rain rate < 500 mm/hr"
+  severity: silent
+  cross_references: [dt_002, dt_005]
+
+- id: dt_002
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Model produces near-zero or zero runoff despite significant rainfall
+      in the forcing data.
+    error_pattern: "Q_peak.*0\\.000"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation pre-converted to m/s before writing to .cfg"
+    explanation: >
+      TopoFlow expects precipitation in mm/hr in the .cfg and internally
+      converts to m/s by dividing by 3.6e6.  If the user already converted
+      to m/s, the double conversion produces values ~1e-6 too small, yielding
+      effectively zero rainfall.
+    affected_components: [tf_meteorology]
+  remedy:
+    action: "Provide precipitation in mm/hr, not m/s"
+    tool_to_run: convert_forcing
+    manual_steps:
+      - "Check cfg file: P_rain values should be order 1–100, not 1e-6"
+      - "If values are ~1e-6, multiply by 3.6e6 to recover mm/hr"
+    prevention: "convert_forcing.py warns if max rain < 0.001 mm/hr"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s1_domain_setup
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Model crashes with division-by-zero error or produces NaN values
+      in velocity and discharge calculations.
+    error_pattern: "ZeroDivisionError|RuntimeWarning.*divide by zero|nan"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Slope grid contains zero values"
+    explanation: >
+      Manning's equation computes velocity as v = (1/n) × R^(2/3) × S^(1/2).
+      Zero slope produces zero velocity and can cause 0/0 divisions in the
+      kinematic wave update.  Flat DEM regions (lakes, plateaus) commonly
+      have zero slope after standard computation.
+    affected_components: [tf_channels_kin_wave, tf_channels_diff_wave]
+  remedy:
+    action: "Impose minimum slope floor of 1e-6 m/m on the slope grid"
+    tool_to_run: ""
+    manual_steps:
+      - "slope = np.fromfile('slope.rtg', dtype=np.float32).reshape(nr, nc)"
+      - "slope = np.maximum(slope, 1e-6)"
+      - "slope.tofile('slope.rtg')"
+    prevention: "Check slope.min() > 0 before running"
+  severity: fatal
+  cross_references: [dt_006]
+
+- id: dt_004
+  stage: s3_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Infiltration is 100× too high. All rainfall infiltrates and there
+      is no surface runoff even for intense storms.
+    error_pattern: "v0.*[0-9]\\.[0-9]e-0[12]"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Capillary length G provided in cm instead of m"
+    explanation: >
+      Green-Ampt and Smith-Parlange wetting front suction (G) is commonly
+      reported in cm in soil physics literature (e.g., G = 11 cm for sandy
+      loam).  TopoFlow expects meters.  Using 11.0 instead of 0.11 produces
+      100× excessive infiltration capacity.
+    affected_components: [tf_infil_green_ampt, tf_infil_smith_parlange]
+  remedy:
+    action: "Divide G by 100 to convert cm → m"
+    tool_to_run: convert_soil_params
+    manual_steps:
+      - "Check .cfg: G_val should be 0.01–0.50 m for most soils"
+      - "If G_val > 5, it is likely in cm"
+      - "Apply: G_val_m = G_val_cm / 100"
+    prevention: "convert_soil_params.py validates G < 5 m"
+  severity: silent
+  cross_references: [dt_010]
+
+- id: dt_005
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      No snowmelt occurs despite snow-covered conditions.  Evapotranspiration
+      is unrealistically high (order 100+ mm/hr).
+    error_pattern: "ET.*[0-9]{3}"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Air temperature provided in Kelvin instead of Celsius"
+    explanation: >
+      ERA5 provides temperature in K (e.g., 293 K = 20 °C).  If fed directly,
+      TopoFlow interprets 293 as 293 °C.  The snow component never triggers
+      melt (since T is always >> 0°C threshold), and ET calculations produce
+      extreme evaporation rates.
+    affected_components: [tf_meteorology, tf_snow_degree_day, tf_evap_priestley_taylor]
+  remedy:
+    action: "Subtract 273.15 from temperature to convert K → °C"
+    tool_to_run: convert_forcing
+    manual_steps:
+      - "T_air_C = T_air_K - 273.15"
+      - "Verify T_air mean is reasonable for location and season"
+    prevention: "convert_forcing.py flags mean T > 100°C"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_006
+  stage: s1_domain_setup
+  failure_domain: data_consistency
+  symptom:
+    description: >
+      Water routes incorrectly — flows uphill, pools in unexpected locations,
+      or the outlet receives wrong contributing area.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "D8 flow codes computed from a different DEM than the current one"
+    explanation: >
+      If the DEM was modified (pit-filling, smoothing, resampling) after the
+      D8 codes were computed, the flow directions no longer match the elevation
+      surface.  TopoFlow uses stale flow codes silently with no warning.
+    affected_components: [tf_channels_kin_wave, topoflow_driver]
+  remedy:
+    action: "Recompute D8 codes, slopes, and areas from the current DEM"
+    tool_to_run: ""
+    manual_steps:
+      - "Delete old flow.rtg, slope.rtg, area.rtg"
+      - "Run D8 component on updated DEM"
+      - "Verify area at outlet matches expected basin size"
+    prevention: "Compare DEM timestamp vs D8 file timestamps"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_007
+  stage: s1_domain_setup
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Spatial outputs show shifted or scrambled patterns. Values at known
+      locations don't match expected topography.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "RTG binary file dimensions don't match the RTI header"
+    explanation: >
+      RTG files are raw binary float32 arrays with no embedded dimensions.
+      If the RTI header specifies different nrows/ncols than the actual
+      data, numpy.reshape reads shifted values.  This is completely silent.
+    affected_components: [all components reading grids]
+  remedy:
+    action: "Verify RTG file size equals nrows × ncols × 4 bytes"
+    tool_to_run: ""
+    manual_steps:
+      - "Read nrows, ncols from .rti header"
+      - "Check: os.path.getsize('file.rtg') == nrows * ncols * 4"
+      - "If mismatch, regenerate RTG from source raster"
+    prevention: "run_topoflow.py checks RTG/RTI consistency in preflight"
+  severity: silent
+  cross_references: []
+
+- id: dt_008
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: >
+      Discharge oscillates wildly, alternating between very high and very
+      low (or negative) values at each timestep.
+    error_pattern: "negative.*depth|oscillat"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Channel timestep too large, violating the CFL condition"
+    explanation: >
+      The Courant-Friedrichs-Lewy condition requires dt ≤ dx/v_max.
+      For a 30 m grid with slope 0.01 and n=0.03, v_max ≈ 3 m/s,
+      so dt should be ≤ 10 seconds.  Too-large dt causes the kinematic
+      wave scheme to overshoot.
+    affected_components: [tf_channels_kin_wave]
+  remedy:
+    action: "Reduce channel dt to satisfy CFL (typically 2–6 seconds for 30m grids)"
+    tool_to_run: ""
+    manual_steps:
+      - "Compute v_max = (1/n) * R^(2/3) * S_max^(1/2)"
+      - "Set dt < dx / v_max"
+      - "For 30m grid: dt = 6 sec is usually safe"
+    prevention: "Check dt vs. grid spacing before running"
+  severity: degraded
+  cross_references: []
+
+- id: dt_009
+  stage: s5_execution
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      EMELI framework crashes during initialization with "component not found"
+      or "KeyError" for a component name.
+    error_pattern: "KeyError|component not found|not in provider"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Provider file has incorrect or misspelled component name"
+    explanation: >
+      Component names in the provider file are case-sensitive and must exactly
+      match the registered names (e.g., 'tf_channels_kin_wave' not
+      'tf_Channels_Kin_Wave').  A single character error causes failure.
+    affected_components: [emeli framework]
+  remedy:
+    action: "Correct the component name in the provider file"
+    tool_to_run: ""
+    manual_steps:
+      - "Compare provider file entries against valid names in SKILL.md §8"
+      - "Fix any typos or case mismatches"
+      - "Valid names: tf_meteorology, tf_channels_kin_wave, tf_infil_green_ampt, etc."
+    prevention: "Validate provider names before running"
+  severity: fatal
+  cross_references: []
+
+- id: dt_010
+  stage: s3_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Model crashes with error about soil moisture exceeding 1.0, or
+      produces nonsensical water balance with negative storage.
+    error_pattern: "theta.*>.*1|moisture.*exceed|negative.*storage"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Soil porosity (θs) provided as percentage (0–100) instead of fraction (0–1)"
+    explanation: >
+      Some soil databases report porosity as a percentage (e.g., 45% for loam).
+      If 45 is entered directly instead of 0.45, all moisture calculations
+      overflow.
+    affected_components: [tf_infil_green_ampt, tf_infil_richards_1d, tf_satzone_darcy_layers]
+  remedy:
+    action: "Divide porosity by 100 if source is in percentage"
+    tool_to_run: convert_soil_params
+    manual_steps:
+      - "Check .cfg: qs_val should be 0.30–0.55"
+      - "If qs_val > 1.0, divide by 100"
+    prevention: "convert_soil_params.py validates θs < 0.65"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_011
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: >
+      NetCDF output file exists but has zero time steps or cannot be read.
+      Time dimension is missing or has length 0.
+    error_pattern: "RuntimeError.*time|dimension.*0|empty.*dataset"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "save_grid_dt or save_pixels_dt is larger than the simulation duration"
+    explanation: >
+      If the save interval is longer than the total simulation time, no data
+      gets written to the output file.  The file is created during init but
+      remains empty.
+    affected_components: [topoflow_driver]
+  remedy:
+    action: "Set save_grid_dt and save_pixels_dt smaller than T_stop_model"
+    tool_to_run: ""
+    manual_steps:
+      - "Check driver .cfg: save_grid_dt should be << T_stop_model * 60"
+      - "Typical: save_grid_dt = 60.0 (every minute)"
+      - "save_pixels_dt = 6.0 (every timestep)"
+    prevention: "Check save interval < simulation duration before running"
+  severity: degraded
+  cross_references: []
+
+- id: dt_012
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      ET is 24× too high, consuming most or all rainfall before it can
+      generate runoff.  Water balance shows negative net precipitation.
+    error_pattern: "ET.*[0-9]{2,}.*mm"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Evapotranspiration rate provided in mm/day instead of mm/hr"
+    explanation: >
+      If ET forcing (from read_file method) is in mm/day and the .cfg expects
+      mm/hr, the model applies 24× the correct evaporation rate.  This
+      removes all available water.
+    affected_components: [tf_evap_read_file]
+  remedy:
+    action: "Divide ET by 24 to convert mm/day → mm/hr"
+    tool_to_run: ""
+    manual_steps:
+      - "Check ET source data units"
+      - "Apply: ET_mmhr = ET_mmday / 24"
+      - "Typical ET: 0.1–0.5 mm/hr (2–12 mm/day)"
+    prevention: "Validate ET range before running: should be < 2 mm/hr"
+  severity: silent
+  cross_references: [dt_001, dt_005]
+
+- id: dt_013
+  stage: s5_execution
+  failure_domain: dependency
+  symptom:
+    description: >
+      EMELI framework crashes immediately with ImportError for cfunits.
+    error_pattern: "ImportError.*cfunits|ModuleNotFoundError.*cfunits"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "cfunits package not installed"
+    explanation: >
+      TopoFlow's EMELI framework uses cfunits for automatic unit conversion
+      between components.  Without it, the framework cannot initialize the
+      variable coupling system.
+    affected_components: [emeli framework]
+  remedy:
+    action: "Install cfunits: pip install cfunits"
+    tool_to_run: ""
+    manual_steps:
+      - "pip install cfunits"
+      - "If cfunits install fails, install UDUNITS2 first: apt-get install libudunits2-dev"
+    prevention: "run_topoflow.py checks for cfunits in preflight"
+  severity: fatal
+  cross_references: []
+
+- id: dt_014
+  stage: s1_domain_setup
+  failure_domain: data_consistency
+  symptom:
+    description: >
+      Outlet discharge is always zero even though the model runs and
+      interior cells show flow.
+    error_pattern: "Q_out.*0\\.0000"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Outlet pixel coordinates are outside the D8 flow domain"
+    explanation: >
+      The outlets.txt file specifies (col, row) for monitoring pixels.
+      If these coordinates are outside the grid bounds or at a cell that
+      doesn't receive flow (e.g., a ridge cell), the reported Q is always zero.
+    affected_components: [topoflow_driver]
+  remedy:
+    action: "Verify outlet pixel is the maximum-area cell at the basin boundary"
+    tool_to_run: ""
+    manual_steps:
+      - "Load area grid: area = np.fromfile('area.rtg', float32).reshape(nr,nc)"
+      - "Find outlet: idx = np.unravel_index(area.argmax(), area.shape)"
+      - "Update outlets.txt with correct col, row"
+    prevention: "Check outlet pixel has max contributing area"
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_015
+  stage: s4_channel_geometry
+  failure_domain: runtime
+  symptom:
+    description: >
+      Model crashes with floating point error or produces Inf velocity
+      at certain grid cells.
+    error_pattern: "FloatingPointError|inf.*velocity|overflow"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Channel width is zero at some grid cells"
+    explanation: >
+      Discharge per unit width (q = Q/w) causes division by zero when
+      channel width is zero.  This typically occurs at ridgeline cells
+      or when a width grid has nodata values that weren't filled.
+    affected_components: [tf_channels_kin_wave, tf_channels_diff_wave]
+  remedy:
+    action: "Ensure all cells in width grid have w > 0 (minimum 0.1 m)"
+    tool_to_run: ""
+    manual_steps:
+      - "width = np.fromfile('chan-w.rtg', float32).reshape(nr,nc)"
+      - "width = np.maximum(width, 0.1)"
+      - "width.tofile('chan-w.rtg')"
+    prevention: "Validate width.min() > 0 before running"
+  severity: fatal
+  cross_references: [dt_003]
+
+- id: dt_016
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Turbulent heat fluxes and ET are significantly over- or under-estimated.
+      Wind-related processes appear wrong.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wind speed measurement height doesn't match .cfg z parameter"
+    explanation: >
+      ERA5 provides 10m wind (u10, v10).  If the .cfg z value is set to
+      2m (common for station data), the logarithmic wind profile adjustment
+      is incorrect.  This affects all turbulent transfer calculations.
+    affected_components: [tf_meteorology, tf_evap_priestley_taylor]
+  remedy:
+    action: "Set z in meteorology .cfg to match actual measurement height"
+    tool_to_run: ""
+    manual_steps:
+      - "For ERA5: set z = 10.0 m"
+      - "For station data: use actual anemometer height"
+      - "Or convert wind speed: u2 = u10 × (2/10)^0.2 (approx.)"
+    prevention: "Document wind height source in forcing metadata"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_017
+  stage: s4_channel_geometry
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Flow velocities are 100-1000× too fast or too slow.  Hydrograph
+      timing is completely wrong but peak magnitude may look reasonable.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Manning's n inverted — using 1/n instead of n"
+    explanation: >
+      Some references tabulate Manning's conveyance (1/n = 33 for n=0.03).
+      If 33 is entered instead of 0.03, velocity v = (1/n)×R^(2/3)×S^(1/2)
+      becomes v = (1/33)×R^(2/3)×S^(1/2) instead of v = 33×..., which is
+      1000× too slow.  Conversely, entering 33 as n makes v 1000× too fast.
+    affected_components: [tf_channels_kin_wave]
+  remedy:
+    action: "Verify Manning's n is in range 0.01–0.30 (not 1/n)"
+    tool_to_run: ""
+    manual_steps:
+      - "Check .cfg: nval should be 0.01–0.30"
+      - "If nval > 1, it is likely 1/n — take reciprocal"
+      - "Common values: 0.03 (clean stream), 0.05 (weedy), 0.10 (overland)"
+    prevention: "Validate Manning's n range in preflight"
+  severity: silent
+  cross_references: [dt_008]
+
+- id: dt_018
+  stage: s3_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Infiltration rate is orders of magnitude too high or too low.
+      All rainfall infiltrates (Ks too high) or none does (Ks too low).
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Saturated hydraulic conductivity Ks in mm/hr instead of m/s"
+    explanation: >
+      HWSD and many soil databases report Ks in mm/hr (e.g., sandy loam
+      Ks ≈ 26 mm/hr).  TopoFlow expects m/s (26 mm/hr = 7.2e-6 m/s).
+      If 26 is entered as m/s, infiltration capacity is 3.6 million times
+      too high.
+    affected_components: [tf_infil_green_ampt, tf_infil_smith_parlange, tf_infil_richards_1d]
+  remedy:
+    action: "Convert Ks: m/s = mm/hr ÷ 3,600,000"
+    tool_to_run: convert_soil_params
+    manual_steps:
+      - "Check .cfg: Ks should be 1e-7 to 1e-3 m/s"
+      - "If Ks > 0.001, it is likely in mm/hr"
+      - "Apply: Ks_ms = Ks_mmhr / 3.6e6"
+    prevention: "convert_soil_params.py always outputs Ks in m/s"
+  severity: silent
+  cross_references: [dt_004, dt_010]

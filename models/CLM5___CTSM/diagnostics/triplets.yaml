@@ -1,0 +1,586 @@
+# CLM5/CTSM Diagnostic Triplets
+# Each entry: symptom → diagnosis → remedy
+# Coverage: forcing, soil, execution, output, calibration stages
+
+- id: dt_001
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+
+  symptom:
+    description: >
+      Runoff is unrealistically high (>10000 mm/yr) or model crashes with
+      NaN soil moisture within the first few timesteps.
+    error_pattern: "NaN|Inf|QRUNOFF.*extreme"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Precipitation in mm/day or mm/hr used directly as kg/m2/s (mm/s)"
+    explanation: >
+      CLM5 DATM expects precipitation as PRECTmms in kg/m2/s (equivalent to
+      mm/s). If precipitation is provided in mm/day (typical for many datasets),
+      the rate is 86400x too high. At 5 mm/day normal rainfall, this becomes
+      5 mm/s = 432000 mm/day, overwhelming the soil column instantly.
+    affected_components:
+      - DATM_streams
+      - SoilHydrologyMod
+      - QRUNOFF
+      - H2OSOI
+
+  remedy:
+    action: "Divide precipitation by 86400 (for mm/day) or 3600 (for mm/hr)"
+    tool_to_run: convert_forcing_to_clm.py
+    manual_steps:
+      - "Check input precip units in source documentation"
+      - "Apply conversion: PRECTmms = precip_mm_day / 86400.0"
+      - "Verify max rate < 0.1 mm/s after conversion"
+    prevention: "The forcing converter validates max precip rate and warns if > 0.1 mm/s"
+
+  severity: silent
+  cross_references: [dt_013]
+
+- id: dt_002
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+
+  symptom:
+    description: >
+      All soil layers frozen year-round. Zero or near-zero GPP, NEE, and
+      latent heat flux even in tropical locations.
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Temperature provided in Celsius instead of Kelvin"
+    explanation: >
+      CLM5 expects TBOT in Kelvin. If temperature is 20°C but interpreted as
+      20 K (-253°C), the Stefan-Boltzmann longwave emission is essentially
+      zero, all water freezes, and biogeochemistry shuts down. The model
+      runs to completion but produces physically meaningless results.
+    affected_components:
+      - DATM_streams
+      - SurfaceAlbedoMod
+      - CanopyFluxesMod
+      - SoilTemperatureMod
+
+  remedy:
+    action: "Add 273.15 to all temperature values"
+    tool_to_run: convert_forcing_to_clm.py
+    manual_steps:
+      - "Check if mean temperature < 200 K (indicates Celsius)"
+      - "Apply: TBOT = temperature_C + 273.15"
+    prevention: "The forcing converter checks mean temperature and warns if < 200 K"
+
+  severity: silent
+  cross_references: []
+
+- id: dt_003
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+
+  symptom:
+    description: >
+      Surface temperatures too cold. Energy balance closure fails. Soil
+      temperatures drift downward over time.
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Net longwave radiation used instead of downward longwave"
+    explanation: >
+      CLM5 expects downward longwave (FLDS, always positive, 50-600 W/m2).
+      Net longwave can be negative (surface emits more than atmosphere).
+      Using net LW as downward LW creates an energy deficit that causes
+      progressive surface cooling and incorrect energy partitioning.
+    affected_components:
+      - DATM_streams
+      - SurfaceRadiationMod
+      - SoilTemperatureMod
+
+  remedy:
+    action: "Ensure longwave is downward-only (positive), not net"
+    tool_to_run: convert_forcing_to_clm.py
+    manual_steps:
+      - "Check if any LW values are negative (indicates net LW)"
+      - "If net LW, compute downward LW from upward = sigma*T4 and net = down - up"
+    prevention: "The converter validates LW range and warns if values < 50 W/m2"
+
+  severity: silent
+  cross_references: []
+
+- id: dt_004
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+
+  symptom:
+    description: >
+      Extreme latent heat flux values. Either model crash (if RH% used as
+      kg/kg) or severe drying/wetting of land surface.
+    error_pattern: "QBOT.*unrealistic|latent.*extreme"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Relative humidity (0-100 or 0-1) used instead of specific humidity (kg/kg)"
+    explanation: >
+      CLM5 expects QBOT as specific humidity in kg/kg (typical range 0.001-0.025).
+      If RH=80% is entered as 80.0 kg/kg, saturation vapor pressure calculations
+      produce physically impossible results and the model crashes. If RH=0.80 is
+      entered as QBOT=0.80, the model runs but vastly overestimates moisture,
+      producing unrealistic latent heat and precipitation recycling.
+    affected_components:
+      - DATM_streams
+      - CanopyFluxesMod
+      - PhotosynthesisMod
+
+  remedy:
+    action: "Convert RH to specific humidity using Tetens equation and pressure"
+    tool_to_run: convert_forcing_to_clm.py
+    manual_steps:
+      - "q = 0.622 * e / (P - 0.378 * e)"
+      - "e = (RH/100) * 611.2 * exp(17.67 * Tc / (Tc + 243.5))"
+      - "Verify 0 < QBOT < 0.04 kg/kg"
+    prevention: "The converter validates max humidity and warns if > 0.05 kg/kg"
+
+  severity: silent
+  cross_references: []
+
+- id: dt_005
+  stage: s3_soil_params
+  failure_domain: parameter_format
+
+  symptom:
+    description: >
+      Deep soil carbon pools unrealistically high. Soil thermal conductivity
+      too high at depth. Water table dynamics incorrect.
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Soil properties extrapolated as constant below measurement depth"
+    explanation: >
+      HWSD provides soil data for only 0-30cm (topsoil) and 30-100cm (subsoil).
+      CLM5 has 25 layers extending to 8.5m. Using topsoil organic matter values
+      at all depths massively overestimates deep soil carbon, which affects
+      thermal conductivity (organic soil is a better insulator) and water retention.
+    affected_components:
+      - SoilStateType
+      - SoilBiogeochemDecompCascadeMod
+      - SoilTemperatureMod
+
+  remedy:
+    action: "Apply exponential decay to organic matter below measurement depth"
+    tool_to_run: convert_soil_params.py
+    manual_steps:
+      - "For layers below 1m: OM(z) = OM(1m) * exp(-0.5 * (z - 1.0))"
+      - "Mineral texture (sand/clay) can be held constant"
+    prevention: "The soil converter applies exponential OM decay by default"
+
+  severity: degraded
+  cross_references: [dt_014]
+
+- id: dt_006
+  stage: s3_soil_params
+  failure_domain: parameter_format
+
+  symptom:
+    description: >
+      Mass conservation errors in land surface budget. Unexpected bare ground
+      appearing in vegetated regions. Warning about PFT fractions in log.
+    error_pattern: "pft.*fraction|PCT.*sum"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "PFT fractions do not sum to 1.0 after surface dataset modification"
+    explanation: >
+      CLM5 surface datasets require that per-gridcell fractions (PCT_NATVEG,
+      PCT_CROP, PCT_LAKE, PCT_WETLAND, PCT_GLACIER, PCT_URBAN) sum to 100%.
+      When modifying one fraction without adjusting others, the total exceeds
+      or falls below 100%, causing mass conservation violations or creating
+      artificial bare ground.
+    affected_components:
+      - surfrdMod
+      - subgridWeightsMod
+      - filterMod
+
+  remedy:
+    action: "Renormalize PFT fractions to sum to 100% after modification"
+    tool_to_run: convert_soil_params.py
+    manual_steps:
+      - "After modifying any land type fraction, check total sum"
+      - "Adjust PCT_NATVEG to absorb the difference"
+    prevention: "Always verify sum with ncdump -v PCT_NATVEG,PCT_CROP,... surfdata.nc"
+
+  severity: degraded
+  cross_references: []
+
+- id: dt_007
+  stage: s2_met_forcing
+  failure_domain: dependency_mismatch
+
+  symptom:
+    description: >
+      Model crashes at end of February in leap years. Or forcing data silently
+      shifts by one day per leap year, accumulating multi-day offsets over
+      decades.
+    error_pattern: "calendar|Feb.*29|time.*bounds"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "Calendar mismatch between forcing data and model"
+    explanation: >
+      CLM5 typically uses noleap (365-day) calendar. ERA5 and most reanalysis
+      products use gregorian calendar with leap years. If forcing files contain
+      Feb 29 data, CLM5 cannot parse the date and crashes. If forcing is
+      pre-processed to remove Feb 29 but time encoding still references
+      gregorian, a 1-day shift accumulates per leap year.
+    affected_components:
+      - DATM_streams
+      - time_manager
+
+  remedy:
+    action: "Remove Feb 29 from forcing data and use noleap calendar encoding"
+    tool_to_run: convert_forcing_to_clm.py
+    manual_steps:
+      - "Filter out Feb 29 data from all forcing files"
+      - "Re-encode time dimension with calendar='noleap'"
+      - "Or set model to use gregorian: ./xmlchange CALENDAR=GREGORIAN"
+    prevention: "The forcing converter detects and removes Feb 29 data with a warning"
+
+  severity: fatal
+  cross_references: [dt_013]
+
+- id: dt_008
+  stage: s0_configuration
+  failure_domain: unit_conversion
+
+  symptom:
+    description: >
+      Near-zero GPP and NPP despite correct forcing and vegetation. Stomatal
+      conductance extremely low.
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "CO2 concentration in wrong units (mol/mol instead of ppmv)"
+    explanation: >
+      CLM5 namelist variable co2_ppmv expects parts per million by volume.
+      Current atmospheric CO2 is ~420 ppmv. If provided as mol fraction
+      (4.2e-4) or umol/mol without conversion, the photosynthesis module
+      sees essentially zero CO2, shutting down carbon assimilation.
+    affected_components:
+      - PhotosynthesisMod
+      - CNDriverMod
+      - clm_inparm
+
+  remedy:
+    action: "Set co2_ppmv to value in range 280-560 (units: ppmv)"
+    tool_to_run: null
+    manual_steps:
+      - "In user_nl_clm: co2_ppmv = 400.0"
+      - "For transient runs: use co2_type='diagnostic' with CO2 stream file"
+    prevention: "Check that co2_ppmv is in the hundreds (not fractions or thousands)"
+
+  severity: silent
+  cross_references: []
+
+- id: dt_009
+  stage: s6_execution
+  failure_domain: runtime
+
+  symptom:
+    description: >
+      Soil carbon pools (TOTSOMC) still increasing after decades of simulation.
+      NEE strongly negative (large carbon sink) in pre-industrial or year-2000
+      simulations that should be near equilibrium.
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Insufficient spinup for BGC mode"
+    explanation: >
+      CLM5 BGC mode requires 200-600+ years to equilibrate soil carbon pools.
+      Slow-turnover pools (centuries timescale) take longest. Running without
+      adequate spinup produces artificial carbon sink behavior that does not
+      represent actual ecosystem dynamics. Results from the first 50-100 years
+      should be discarded or treated as spinup artifacts.
+    affected_components:
+      - SoilBiogeochemDecompCascadeMod
+      - CNDriverMod
+      - TOTSOMC
+      - NEE
+
+  remedy:
+    action: "Run 100+ years with CLM_ACCELERATED_SPINUP=on, then 50+ years normal"
+    tool_to_run: run_clm.py
+    manual_steps:
+      - "./xmlchange CLM_ACCELERATED_SPINUP=on"
+      - "./xmlchange STOP_OPTION=nyears; ./xmlchange STOP_N=100"
+      - "After spinup: ./xmlchange CLM_ACCELERATED_SPINUP=off"
+      - "Run another 50+ years to equilibrate"
+    prevention: "Monitor TOTSOMC trend; it should plateau before production runs"
+
+  severity: degraded
+  cross_references: []
+
+- id: dt_010
+  stage: s6_execution
+  failure_domain: path_resolution
+
+  symptom:
+    description: >
+      Model crashes immediately at startup with file-not-found error for
+      surface dataset or domain file.
+    error_pattern: "STOP.*fsurdat|No such file|IOError.*surfdata"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "Surface dataset or domain file path incorrect in namelist"
+    explanation: >
+      The lnd_in namelist variable fsurdat must point to an existing surface
+      dataset file. If resolution, PFT configuration, or data directory
+      changes without updating the path, CLM5 cannot find required input
+      and terminates immediately.
+    affected_components:
+      - controlMod
+      - surfrdMod
+
+  remedy:
+    action: "Verify file path in lnd_in and update if needed"
+    tool_to_run: null
+    manual_steps:
+      - "Check CaseDocs/lnd_in for fsurdat path"
+      - "Verify file exists: ls -la $fsurdat_path"
+      - "If missing, download via ./check_input_data or create with mksurfdata_esmf"
+    prevention: "Run ./check_input_data before submitting"
+
+  severity: fatal
+  cross_references: []
+
+- id: dt_011
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+
+  symptom:
+    description: >
+      Wind speed consistently too high or too low. Sensible heat flux biased.
+      Evapotranspiration biased but temperature appears correct.
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Wind speed measured at wrong reference height"
+    explanation: >
+      CLM5 expects wind at the atmospheric reference height (typically same
+      as forcing data height). ERA5 provides 10m wind. If station data is
+      at 2m or tower data at 30m, the aerodynamic resistance calculation
+      is biased. Wind at 2m is typically 60-70% of 10m wind; using it
+      directly underestimates turbulent fluxes.
+    affected_components:
+      - FrictionVelocityMod
+      - CanopyFluxesMod
+
+  remedy:
+    action: "Apply logarithmic wind profile correction to reference height"
+    tool_to_run: convert_forcing_to_clm.py
+    manual_steps:
+      - "u_ref = u_meas * ln(z_ref/z0) / ln(z_meas/z0)"
+      - "Typical z0 = 0.01m for open terrain"
+    prevention: "Document measurement height in forcing metadata"
+
+  severity: silent
+  cross_references: []
+
+- id: dt_012
+  stage: s6_execution
+  failure_domain: runtime
+
+  symptom:
+    description: >
+      Model crashes during initialization with NetCDF dimension mismatch error.
+    error_pattern: "dimension.*mismatch|ncdimlen|inconsistent.*dimensions"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "Forcing files have different spatial dimensions than domain file"
+    explanation: >
+      All forcing files and the domain file must share the same spatial grid.
+      If a forcing file was created for a different resolution or the domain
+      file was swapped without updating forcing, dimension mismatches occur
+      at file read time.
+    affected_components:
+      - DATM
+      - PIO
+
+  remedy:
+    action: "Ensure all input files share the same spatial grid dimensions"
+    tool_to_run: null
+    manual_steps:
+      - "ncdump -h forcing.nc | head  # check dimensions"
+      - "ncdump -h domain.nc | head    # compare"
+      - "Regrid forcing if needed: ESMF_RegridWeightGen"
+    prevention: "Check dimension consistency before submitting"
+
+  severity: fatal
+  cross_references: [dt_010]
+
+- id: dt_013
+  stage: s2_met_forcing
+  failure_domain: dependency_mismatch
+
+  symptom:
+    description: >
+      Precipitation appears as continuous drizzle instead of realistic storms.
+      Or extreme precipitation spikes at interval boundaries.
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Temporal interpolation method wrong for precipitation"
+    explanation: >
+      CLM5 DATM interpolates forcing between timesteps. For precipitation,
+      linear interpolation (tintalgo='linear') spreads events across intervals,
+      creating artificial drizzle. Precipitation should use nearest-neighbor
+      or coszen-weighted interpolation. Conversely, using 'nearest' for
+      radiation creates unrealistic step functions.
+    affected_components:
+      - DATM_streams
+      - shr_strdata_mod
+
+  remedy:
+    action: "Set tintalgo='nearest' for precipitation, 'coszen' for radiation"
+    tool_to_run: null
+    manual_steps:
+      - "Edit stream files: set tintalgo for each variable appropriately"
+      - "Precip: nearest; Radiation: coszen; Temperature/wind: linear"
+    prevention: "Use CDEPS with proper stream configuration"
+
+  severity: degraded
+  cross_references: [dt_001, dt_007]
+
+- id: dt_014
+  stage: s3_soil_params
+  failure_domain: silent_error
+
+  symptom:
+    description: >
+      Soil thermal conductivity unrealistic. Soil moisture retention curve
+      wrong. Water table too shallow or too deep compared to observations.
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Soil organic matter units wrong (g/kg used as kg/m3)"
+    explanation: >
+      SoilGrids provides SOC in g/kg (or dg/kg). CLM5 internally uses
+      organic matter density. If g/kg values are used directly without
+      multiplying by bulk density and dividing by 1000, the organic
+      matter content is typically 10-100x wrong. Since organic soil has
+      very different thermal and hydraulic properties than mineral soil,
+      this cascades into biased temperature and moisture profiles.
+    affected_components:
+      - SoilStateType
+      - SoilWaterRetentionCurveMod
+      - SoilTemperatureMod
+
+  remedy:
+    action: "Convert SOC from g/kg to kg/m3 using bulk density"
+    tool_to_run: convert_soil_params.py
+    manual_steps:
+      - "OM_kgm3 = SOC_gkg * bulk_density_kgm3 / 1000"
+      - "Typical bulk density: 1200-1600 kg/m3 for mineral soil"
+    prevention: "The soil converter handles unit conversion automatically"
+
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_015
+  stage: s6_execution
+  failure_domain: parameter_format
+
+  symptom:
+    description: >
+      Model crashes at startup with Fortran namelist read error. Error
+      message references specific namelist group and variable.
+    error_pattern: "namelist.*read|NAMELIST.*error|invalid.*character"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "Fortran namelist syntax error in user_nl_clm"
+    explanation: >
+      Fortran namelists have strict formatting requirements. Common mistakes:
+      using double quotes instead of single quotes for strings, using Python
+      True/False instead of .true./.false., forgetting commas between array
+      elements, or including comments with # instead of !.
+    affected_components:
+      - controlMod
+      - clm_inparm
+
+  remedy:
+    action: "Fix namelist syntax in user_nl_clm"
+    tool_to_run: null
+    manual_steps:
+      - "Strings: use single quotes: finidat = '/path/to/file.nc'"
+      - "Logicals: use .true. or .false. (with dots)"
+      - "Arrays: hist_fincl1 = 'GPP', 'NPP', 'NEE'"
+      - "Comments: use ! not #"
+    prevention: "Run ./preview_namelists to catch syntax errors before building"
+
+  severity: fatal
+  cross_references: []
+
+- id: dt_016
+  stage: s6_execution
+  failure_domain: runtime
+
+  symptom:
+    description: >
+      Model runs very slowly, SYPD (simulated years per day) much lower
+      than expected. High memory usage warnings.
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Too many history fields or too frequent output"
+    explanation: >
+      CLM5 can output up to 2500 fields on 10 history tapes. Writing all
+      default fields at sub-daily frequency generates enormous I/O load.
+      Each additional history field adds memory and I/O overhead. At daily
+      frequency on f09 grid, output can reach 50+ GB per simulated year.
+    affected_components:
+      - histFileMod
+      - PIO
+
+  remedy:
+    action: "Reduce history output frequency and field count"
+    tool_to_run: null
+    manual_steps:
+      - "Use hist_fexcl1 to exclude unneeded default fields"
+      - "Limit hist_fincl to essential variables"
+      - "Set hist_nhtfrq = 0 for monthly output (default)"
+    prevention: "Start with monthly output, add sub-daily only for needed variables"
+
+  severity: degraded
+  cross_references: []
+
+- id: dt_017
+  stage: s7_output_analysis
+  failure_domain: silent_error
+
+  symptom:
+    description: >
+      Computed statistics (mean, max, std) are wildly wrong. NaN values
+      contaminate entire analysis pipeline.
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "CLM5 fill value (1e36) not masked before analysis"
+    explanation: >
+      CLM5 uses approximately 1e36 as the fill/missing value for inactive
+      grid cells and masked areas. If not explicitly filtered, these values
+      dominate any statistical computation. xarray usually handles this
+      automatically with _FillValue attribute, but raw numpy/pandas
+      operations may not.
+    affected_components:
+      - histFileMod
+      - analysis_scripts
+
+  remedy:
+    action: "Filter values > 1e35 or use xarray's built-in masking"
+    tool_to_run: parse_clm_output.py
+    manual_steps:
+      - "data[data > 1e35] = np.nan"
+      - "Or use: ds['GPP'].where(ds['GPP'] < 1e35)"
+    prevention: "The output parser automatically masks fill values"
+
+  severity: silent
+  cross_references: []

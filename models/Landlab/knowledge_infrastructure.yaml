@@ -1,0 +1,350 @@
+package:
+  name: Landlab
+  domain: geomorphology
+  version: "2.x"
+  created: '2026-03-25'
+  updated: '2026-03-25'
+  language: python
+  build_system: pip
+  validation_status: reference_validated
+  authors:
+    - "Auto-dissect KI generator"
+  license: MIT
+  description: >
+    Open-source Python framework for numerical modeling of Earth surface dynamics.
+    Provides ~60 plug-and-play components (flow routing, stream power erosion,
+    hillslope diffusion, overland flow, groundwater, vegetation, etc.) composed
+    on flexible grids (raster, hex, Voronoi, network).
+
+pipeline:
+  stages:
+
+  - id: s0_config
+    name: Configuration
+    description: >
+      Define simulation parameters: grid dimensions, resolution, time span,
+      component selection, and output frequency. Produces config.yaml that
+      governs all downstream stages.
+    knowledge_type: procedural
+    depends_on: []
+    tools: []
+    milestones:
+    - id: m_s0_config
+      description: config.yaml exists with valid grid, time, and component sections
+      verification: "python -c \"import yaml; yaml.safe_load(open('config.yaml'))\""
+
+  - id: s1_domain
+    name: Domain Setup
+    description: >
+      Create a RasterModelGrid from a DEM (ESRI ASCII or GeoTIFF) or synthetic
+      topography. Set boundary conditions. Save grid as NetCDF.
+    knowledge_type: procedural
+    depends_on: [s0_config]
+    tools:
+    - id: build_grid_from_dem
+      name: Build Grid from DEM
+      script: tools/s1_domain/build_grid_from_dem.py
+      language: python
+      description: Convert DEM (ESRI ASCII) to Landlab RasterModelGrid, set boundary conditions, save as NetCDF
+      inputs:
+        - name: dem_file
+          type: file
+          format: ESRI ASCII (.asc) or synthetic config
+          description: Digital elevation model or grid config for synthetic generation
+        - name: config_file
+          type: file
+          format: YAML
+          description: Pipeline configuration with grid shape and spacing
+      outputs:
+        - name: grid_file
+          type: file
+          format: NetCDF (.nc)
+          path: grid.nc
+          description: Landlab RasterModelGrid with topographic__elevation field
+      preconditions:
+        - config.yaml must exist with grid section
+        - DEM file must exist (if using real DEM)
+      postconditions:
+        - grid.nc exists with topographic__elevation at nodes
+        - Boundary conditions are set correctly
+    milestones:
+    - id: m_s1_domain
+      description: grid.nc exists with topographic__elevation field at nodes
+      verification: "python -c \"from landlab.io.netcdf import read_netcdf; g=read_netcdf('grid.nc'); assert 'topographic__elevation' in g.at_node\""
+
+  - id: s2_data
+    name: Data Preparation
+    description: >
+      Prepare soil and lithology parameters from HWSD or user-supplied data.
+      Convert hydraulic conductivity, erodibility, and diffusivity to model
+      units. Produces soil_params.yaml.
+    knowledge_type: procedural
+    depends_on: [s0_config]
+    tools:
+    - id: prepare_soil_params
+      name: Prepare Soil Parameters
+      script: tools/s2_data/prepare_soil_params.py
+      language: python
+      description: Convert HWSD soil data to Landlab erodibility and diffusivity parameters
+      inputs:
+        - name: hwsd_file
+          type: file
+          format: CSV or NetCDF
+          description: HWSD soil database extract with texture, Ksat, organic content
+        - name: config_file
+          type: file
+          format: YAML
+          description: Pipeline configuration with component selection
+      outputs:
+        - name: soil_params_file
+          type: file
+          format: YAML
+          path: soil_params.yaml
+          description: Soil-derived parameters (K_sp, linear_diffusivity, hydraulic_conductivity)
+      preconditions:
+        - config.yaml must exist
+        - HWSD file must exist (or use defaults)
+      postconditions:
+        - soil_params.yaml exists with K_sp, linear_diffusivity keys
+        - Hydraulic conductivity converted from cm/day to m/s
+    milestones:
+    - id: m_s2_data
+      description: soil_params.yaml exists with K_sp, linear_diffusivity, and hydraulic_conductivity
+      verification: "python -c \"import yaml; d=yaml.safe_load(open('soil_params.yaml')); assert 'K_sp' in d\""
+
+  - id: s3_forcing
+    name: Forcing Conversion
+    description: >
+      Convert meteorological forcing (CMFD, MSWX, or user data) to Landlab-
+      compatible forcing CSV. Handles unit conversions from kg/m2/s or mm/day
+      to m/s for FlowAccumulator or mm for SoilMoisture.
+    knowledge_type: procedural
+    depends_on: [s0_config]
+    tools:
+    - id: convert_forcing_to_landlab
+      name: Convert Forcing to Landlab
+      script: tools/s3_forcing/convert_forcing_to_landlab.py
+      language: python
+      description: >
+        Convert CMFD/MSWX meteorological data to Landlab forcing CSV.
+        CRITICAL: CMFD precip is kg/m2/s → multiply by 86400 for mm/day,
+        or keep as mm/s and convert to m/s (÷1000).
+        MSWX precip is mm/day → divide by 86400000 for m/s.
+      inputs:
+        - name: forcing_dir
+          type: directory
+          format: NetCDF files (CMFD or MSWX)
+          description: Directory with meteorological forcing data
+        - name: config_file
+          type: file
+          format: YAML
+          description: Configuration with lat/lon, time range, target units
+      outputs:
+        - name: forcing_file
+          type: file
+          format: CSV
+          path: forcing.csv
+          description: Timeseries with timestamp, precip (model units), temperature, radiation
+      preconditions:
+        - Forcing NetCDF files exist in forcing_dir
+        - config.yaml specifies lat, lon, start_date, end_date
+      postconditions:
+        - forcing.csv exists with no NaN values
+        - Precipitation values in correct units for target component
+    milestones:
+    - id: m_s3_forcing
+      description: forcing.csv exists with timestamp and precipitation columns, no NaN
+      verification: "python -c \"import pandas as pd; df=pd.read_csv('forcing.csv'); assert not df.isnull().any().any()\""
+
+  - id: s4_parameters
+    name: Parameter Generation
+    description: >
+      Generate a complete parameter YAML for all selected components. Merges
+      soil parameters from s2, validates unit consistency, writes params.yaml.
+    knowledge_type: procedural
+    depends_on: [s0_config, s2_data]
+    tools:
+    - id: generate_landlab_params
+      name: Generate Landlab Parameters
+      script: tools/s4_parameters/generate_landlab_params.py
+      language: python
+      description: Merge config + soil params into unified component parameter file
+      inputs:
+        - name: config_file
+          type: file
+          format: YAML
+          description: Pipeline config with component selection
+        - name: soil_params_file
+          type: file
+          format: YAML
+          description: Soil-derived parameters from stage s2
+      outputs:
+        - name: params_file
+          type: file
+          format: YAML
+          path: params.yaml
+          description: Unified parameter file for all Landlab components
+      preconditions:
+        - config.yaml and soil_params.yaml must exist
+      postconditions:
+        - params.yaml has sections for each selected component
+        - All units are consistent (same time base)
+    milestones:
+    - id: m_s4_parameters
+      description: params.yaml exists with sections for each selected component
+      verification: "python -c \"import yaml; d=yaml.safe_load(open('params.yaml')); assert 'stream_power' in d or 'linear_diffuser' in d\""
+
+  - id: s5_run
+    name: Execution
+    description: >
+      Execute the Landlab simulation: create grid, instantiate components, run
+      time loop. Saves NetCDF snapshots at configured intervals and a
+      timeseries CSV of summary statistics each timestep.
+    knowledge_type: procedural
+    depends_on: [s1_domain, s3_forcing, s4_parameters]
+    tools:
+    - id: run_landlab
+      name: Run Landlab Simulation
+      script: tools/s5_run/run_landlab.py
+      language: python
+      description: >
+        Execute Landlab landscape evolution model. Creates grid, instantiates
+        FlowDirector → FlowAccumulator → StreamPowerEroder → LinearDiffuser
+        in correct order, runs time loop with dt from config.
+      inputs:
+        - name: grid_file
+          type: file
+          format: NetCDF (.nc)
+          description: Grid with initial topography
+        - name: forcing_file
+          type: file
+          format: CSV
+          description: Forcing timeseries (optional for pure geomorphology)
+        - name: params_file
+          type: file
+          format: YAML
+          description: Component parameters
+        - name: config_file
+          type: file
+          format: YAML
+          description: Time stepping and output configuration
+      outputs:
+        - name: snapshots
+          type: directory
+          format: NetCDF files
+          path: output/snapshot_*.nc
+          description: Grid state at each output interval
+        - name: timeseries
+          type: file
+          format: CSV
+          path: output/timeseries.csv
+          description: Per-timestep summary statistics
+      preconditions:
+        - grid.nc, params.yaml, config.yaml must exist
+        - Landlab installed in Python environment
+      postconditions:
+        - At least one snapshot NetCDF file in output/
+        - timeseries.csv has rows equal to n_steps / output_interval
+    milestones:
+    - id: m_s5_run
+      description: At least one output NetCDF snapshot exists and timeseries.csv has rows
+      verification: "ls output/snapshot_*.nc && wc -l output/timeseries.csv"
+
+  - id: s6_output
+    name: Output Parsing
+    description: >
+      Extract key results from output NetCDF files and timeseries. Compute
+      summary statistics (mean erosion rate, max elevation, drainage density).
+      Produce results.csv and summary.json for validation comparison.
+    knowledge_type: procedural
+    depends_on: [s5_run]
+    tools:
+    - id: parse_landlab_output
+      name: Parse Landlab Output
+      script: tools/s6_output/parse_landlab_output.py
+      language: python
+      description: Parse Landlab output snapshots to summary CSV and JSON
+      inputs:
+        - name: output_dir
+          type: directory
+          format: NetCDF snapshots + timeseries CSV
+          description: Directory with simulation output
+      outputs:
+        - name: results_csv
+          type: file
+          format: CSV
+          path: results.csv
+          description: Per-snapshot summary statistics
+        - name: summary_json
+          type: file
+          format: JSON
+          path: summary.json
+          description: Final simulation summary with key metrics
+      preconditions:
+        - output/ directory contains snapshot NetCDF files
+        - output/timeseries.csv exists
+      postconditions:
+        - results.csv has one row per snapshot
+        - summary.json has mean_erosion_rate, max_elevation, drainage_density
+    milestones:
+    - id: m_s6_output
+      description: results.csv and summary.json exist with valid data
+      verification: "python -c \"import json; d=json.load(open('summary.json')); assert 'mean_erosion_rate' in d\""
+
+skill_documents:
+  - id: sd_s0_config
+    name: Configuration
+    path: docs/s0_config.md
+    stage: s0_config
+    knowledge_type: procedural
+  - id: sd_s1_domain
+    name: Domain Setup
+    path: docs/s1_domain.md
+    stage: s1_domain
+    knowledge_type: procedural
+  - id: sd_s2_data
+    name: Data Preparation
+    path: docs/s2_data.md
+    stage: s2_data
+    knowledge_type: procedural
+  - id: sd_s3_forcing
+    name: Forcing Conversion
+    path: docs/s3_forcing.md
+    stage: s3_forcing
+    knowledge_type: procedural
+  - id: sd_s4_parameters
+    name: Parameter Generation
+    path: docs/s4_parameters.md
+    stage: s4_parameters
+    knowledge_type: procedural
+  - id: sd_s5_run
+    name: Execution
+    path: docs/s5_run.md
+    stage: s5_run
+    knowledge_type: procedural
+  - id: sd_s6_output
+    name: Output Parsing
+    path: docs/s6_output.md
+    stage: s6_output
+    knowledge_type: procedural
+
+diagnostics:
+  path: diagnostics/triplets.yaml
+  count: 27
+  failure_domains:
+    - unit_conversion
+    - parameter_format
+    - path_resolution
+    - dependency_mismatch
+    - runtime
+    - silent_error
+
+summary:
+  total_tools: 6
+  total_lines_python: ~870
+  total_skill_docs: 7
+  total_triplets: 27
+  total_failure_domains: 6
+  total_stages: 7
+  validation_type: reference_validated
+  test_case: "Steady-state fluvial landscape (Whipple & Tucker 1999)"

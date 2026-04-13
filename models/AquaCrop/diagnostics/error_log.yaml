@@ -1,0 +1,55 @@
+# ============================================================================
+# Error Log — AquaCrop-OSPy Knowledge Infrastructure
+# ============================================================================
+# Records actual errors encountered during HydroCraft validation testing.
+# Each entry links to a diagnostic triplet (dt_XXX) in triplets.yaml.
+# Sorted chronologically.
+# ============================================================================
+
+errors:
+
+  - date: "2026-03-19"
+    triplet_id: dt_v001
+    model: "AquaCrop-OSPy"
+    basin: "Bengbu (蚌埠)"
+    environment:
+      aquacrop_version: "3.0.12"
+      python_version: "3.12"
+      os: "Linux"
+      venv_path: "/mnt/disk1/Hydrocraft_server/python_env/"
+    error_message: "TypeError: '<' not supported between instances of 'float' and 'Timestamp' in growing_degree_day.py"
+    context: >
+      When constructing a weather DataFrame from VIC forcing output, the Date column
+      was created as datetime64[s] (second precision) using pd.Timestamp(datetime.date(...)).
+      AquaCrop-OSPy's internal GDD calculation in growing_degree_day.py performs
+      pd.Timestamp comparisons that fail when the Date column is datetime64[s] instead
+      of datetime64[us] (microsecond precision). The built-in prepare_weather() function
+      returns datetime64[us], but VIC-to-AquaCrop conversion produces datetime64[s].
+    resolution: >
+      Convert Date column to microsecond precision after building the weather DataFrame:
+      wdf['Date'] = pd.to_datetime(wdf['Date']).astype('datetime64[us]').
+      The prepare_weather_df tool in s3_weather_prep now always forces datetime64[us].
+    status: "resolved"
+
+  - date: "2026-03-19"
+    triplet_id: dt_v002
+    model: "AquaCrop-OSPy"
+    basin: "Bengbu (蚌埠)"
+    environment:
+      aquacrop_version: "3.0.12"
+      python_version: "3.12"
+      os: "Linux"
+      venv_path: "/mnt/disk1/Hydrocraft_server/python_env/"
+    error_message: "ET0 values unrealistic — ReferenceET < 0.1 or > 20 mm/day"
+    context: >
+      VIC forcing column 6 contains vapor pressure in kPa (range 0.1-4.2), not specific
+      humidity in kg/kg. When this column was treated as specific humidity and used in
+      the Penman-Monteith ET0 calculation, the resulting ReferenceET values were incorrect.
+      AquaCrop requires pre-computed ET0 in mm/day as input, and wrong ET0 silently
+      produces wrong irrigation demand, water stress, and yield estimates.
+    resolution: >
+      Use Hargreaves-Samani ET0 formula which requires only Tmin, Tmax, and
+      extraterrestrial radiation (Ra), bypassing the VP column entirely:
+      ET0 = 0.0023 * (Tavg + 17.8) * sqrt(Tmax - Tmin) * Ra * 0.408.
+      Validate ET0 range is 0.5-10 mm/day for most climates.
+    status: "resolved"

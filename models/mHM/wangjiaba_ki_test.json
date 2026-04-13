@@ -1,0 +1,55 @@
+{
+  "model_id": "06",
+  "model": "mHM",
+  "domain": "hydrology",
+  "basin": "Wangjiaba (51030)",
+  "basin_area_km2": 30630,
+  "ki_path": "/mnt/disk1/Hydrocraft_server/models/mHM/knowledge_infrastructure",
+  "test_status": "PASS",
+  "ki_generalized": true,
+  "binary_found": true,
+  "model_ran": true,
+  "output_verified": true,
+  "metrics": {
+    "NSE": -0.344,
+    "KGE": -0.3571,
+    "PBIAS": -94.71,
+    "r": 0.7524,
+    "RMSE": 405.78,
+    "obs_mean_m3s": 242.6,
+    "sim_mean_m3s": 12.8,
+    "n_valid_days": 3287,
+    "eval_period": "1981-1990"
+  },
+  "issues": [
+    "Severe volume underestimation (PBIAS=-94.7%) with default uncalibrated parameters \u2014 expected, since mHM MPR defaults are tuned for central European basins",
+    "Good temporal correlation (r=0.75) suggests timing is reasonable despite magnitude issue",
+    "Gauge had to be moved from user-specified location to max-Q L11 cell after first run (routing topology issue)",
+    "Forcing tmin/tmax synthesized as tavg\u00b15\u00b0C (crude) because CMFD daily only provides mean temperature",
+    "PET appears inflated (mean=98 mm/d) \u2014 Hargreaves with crude tmin/tmax likely overestimates"
+  ],
+  "ki_gaps": [
+    "KI FORCING TOOL: convert_forcing_to_mhm.py assumes lat/lon dimension names but CMFD Huai data uses x/y \u2014 fails on non-standard CMFD formats",
+    "KI FORCING TOOL: does not create header.txt (required by mHM for forcing grid definition)",
+    "KI FORCING TOOL: writes yearly NC files but mHM expects a single concatenated NC per variable",
+    "KI SOIL TOOL: hwsd_to_mhm_soil.py writes raw MU_GLOBAL IDs (e.g. 14766) into soil_class.asc but mHM requires sequential 1..N class IDs",
+    "KI LANDCOVER TOOL: maps AVHRR to 10-class LAI scheme but mHM MPR requires 3-class scheme (forest=1, sealed=2, pervious=3)",
+    "KI LATLON TOOL: generates lat/lon at L1 resolution with wrong variable names (lat/lon instead of lat_l0/lon_l0) and wrong dimensions \u2014 mHM expects L0+L1+L11 grids in a single file",
+    "KI DOMAIN TOOL: computes L1/L11 grid independently from L0 with buffer, but mHM derives L1/L11 as ceil(L0_dims/ratio) \u2014 dimensions don't match",
+    "KI NAMELIST TOOL: puts resolution in meters (24000) when iFlag_cordinate_sys=1 requires DEGREES (0.25) \u2014 despite SKILL.md correctly documenting this",
+    "KI NAMELIST TOOL: does not add dir_minTemperature/dir_maxTemperature for Hargreaves PET method",
+    "KI GAUGE TOOL: writes simple 4-column format (YYYY MM DD Q) but mHM expects 5-line header + 6-column format (YYYY MM DD HH MM Q)",
+    "KI CONFIG TOOL: does not enforce that L2 (forcing) resolution must also be integer multiple of L0 \u2014 leads to resolution mismatch errors",
+    "MISSING: No tool to handle gauge-to-L11 mapping correction (gauge placement at max-Q cell after first run)",
+    "MISSING: No tool to create warmup-year land cover (LCoverYearStart must cover warmup period)"
+  ],
+  "notes": [
+    "Model binary ran successfully (v5.13.1, 105,192 timesteps, ~1.5s runtime)",
+    "All 10 pipeline stages (s0-s8) were attempted using KI tools",
+    "7 of 10 KI tools required manual fixes before they produced mHM-compatible output",
+    "The KI provides excellent CONCEPTUAL guidance (SKILL.md documents the three-grid architecture, D8 conventions, unit traps) but the TOOLS have bugs that prevent direct use on a new basin",
+    "With manual fixes, mHM ran and produced reasonable timing (r=0.75) but poor volume (PBIAS=-95%) \u2014 calibration needed",
+    "Total basin area in mHM: 17,974 km\u00b2 (ConfigFile.log) vs expected 30,630 km\u00b2 \u2014 partial coverage at L1 resolution"
+  ],
+  "timestamp": "2026-04-02T23:29:28.169016"
+}

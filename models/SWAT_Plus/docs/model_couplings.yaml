@@ -1,0 +1,236 @@
+# ============================================================================
+# Model Coupling Registry — SWAT+ Knowledge Infrastructure
+# ============================================================================
+# Documents data flows between SWAT+ and other models/data sources in the
+# HydroCraft framework. Each coupling specifies: source → transformation →
+# target, with validation rules and scientific justification.
+# ============================================================================
+
+couplings:
+
+  # --- DEM TO SWAT+ ---
+  - id: "mc_001"
+    name: "DEM to SWAT+ Watershed"
+    source:
+      model: "DEM (SRTM / Copernicus GLO-30 / China 90m)"
+      variable: "Elevation grid"
+      format: "GeoTIFF raster"
+      unit: "meters"
+      path: "data/dem/ or auto-downloaded"
+    target:
+      model: "SWAT+"
+      variable: "Subbasins, stream network, slope, topography"
+      format: "Shapefiles + SWAT+ text files (topography.hyd, chandeg.con)"
+      unit: "meters, degrees, percent"
+      path: "TxtInOut/"
+    transformation:
+      description: "WhiteboxTools or QSWAT+ processes DEM through pit-filling, flow direction, flow accumulation, stream definition, and watershed delineation to produce subbasins, streams, and topographic parameters."
+      steps:
+        - "Clip and reproject DEM to projected CRS (UTM)"
+        - "Breach depressions / fill pits"
+        - "D8 flow direction and accumulation"
+        - "Stream network definition at user-specified threshold"
+        - "Watershed and subbasin delineation"
+        - "Extract slope, channel length, channel slope per subbasin"
+      tool_chain: ["delineate_watershed", "define_subbasins"]
+    validation:
+      - "Delineated area within 10% of known basin area"
+      - "Stream network matches published river network"
+      - "Subbasin slopes are physically reasonable (0-90%)"
+    scientific_justification: >
+      The DEM-derived spatial framework defines the physical domain of the
+      SWAT+ simulation. Subbasin delineation controls the routing network,
+      and topographic parameters (slope, slope length) directly affect
+      surface runoff velocity, erosion (MUSLE), and lateral flow calculations.
+    silent_failure_modes:
+      - "Outlet on wrong stream -> wrong basin (dt_008)"
+      - "DEM in geographic CRS -> wrong slopes and areas"
+
+  # --- CMFD/MSWX TO SWAT+ WEATHER ---
+  - id: "mc_002"
+    name: "CMFD/MSWX Forcing to SWAT+ Weather Files"
+    source:
+      model: "CMFD (China, 0.1deg, 3-hourly) or MSWX (global, 0.1deg, 3-hourly)"
+      variable: "Temperature, precipitation, solar radiation, humidity, wind speed, pressure"
+      format: "NetCDF"
+      unit: "K, mm/3hr, W/m2, kg/kg, m/s, Pa"
+      path: "data/forcing/Data_forcing_03hr_010deg/ (CMFD) or /mnt/disk3/msxw/ (MSWX)"
+    target:
+      model: "SWAT+"
+      variable: "Daily weather station files"
+      format: "Space-delimited text (.pcp, .tmp, .slr, .hmd, .wnd)"
+      unit: "mm/day, C, MJ/m2/day, fraction (0-1), m/s"
+      path: "TxtInOut/*.pcp, *.tmp, *.slr, *.hmd, *.wnd"
+    transformation:
+      description: "Extract grid cells nearest to subbasin centroids, aggregate 3-hourly to daily, convert units, write SWAT+ format with 3-line headers."
+      steps:
+        - "Identify grid cells nearest to station locations"
+        - "Extract time series for each variable"
+        - "Aggregate 3-hourly to daily: sum (precip), max/min (temp), mean (others)"
+        - "Convert units: K->C (-273.15), W/m2->MJ/m2/day (*0.0864), q->RH"
+        - "Write SWAT+ format files with 3-line headers"
+        - "Generate .cli index files and weather-sta.cli"
+      tool_chain: ["prepare_weather_files", "generate_weather_stations", "validate_weather_data"]
+    validation:
+      - "Tmax >= Tmin for all days"
+      - "Precipitation >= 0"
+      - "Solar radiation in 0-40 MJ/m2/day range"
+      - "Relative humidity in 0-1 range"
+    unit_conversion_table:
+      - variable: "Temperature"
+        source_unit: "K"
+        target_unit: "C"
+        conversion: "T_C = T_K - 273.15"
+        silent_failure: "All snow processes and ET are wrong (dt_003)"
+      - variable: "Precipitation"
+        source_unit: "mm/3hr (rate)"
+        target_unit: "mm/day (total)"
+        conversion: "P_day = sum(P_3hr * 1) for 8 timesteps"
+        silent_failure: "Wrong water balance"
+      - variable: "Solar radiation"
+        source_unit: "W/m2 (instantaneous)"
+        target_unit: "MJ/m2/day (daily total)"
+        conversion: "SLR = mean_W * 86400 / 1e6 = mean_W * 0.0864"
+        silent_failure: "ET 3-12x too high/low (dt_012)"
+      - variable: "Relative humidity"
+        source_unit: "specific humidity (kg/kg)"
+        target_unit: "fraction (0-1)"
+        conversion: "RH = q * P / (0.622 * es(T)); es(T) = 611.2 * exp(17.67*T/(T+243.5))"
+        silent_failure: "Wrong dew point and condensation"
+      - variable: "Wind speed"
+        source_unit: "m/s"
+        target_unit: "m/s"
+        conversion: "No conversion needed"
+        silent_failure: "None"
+    scientific_justification: >
+      SWAT+ uses daily meteorological forcing to drive the hydrological cycle.
+      CMFD (China Meteorological Forcing Dataset) and MSWX (Multi-Source
+      Weighted-Ensemble Precipitation) provide high-resolution gridded data
+      that can serve as virtual weather stations. The 3-hourly to daily
+      aggregation preserves total precipitation and diurnal temperature range.
+
+  # --- HWSD/SSURGO TO SWAT+ SOILS ---
+  - id: "mc_003"
+    name: "HWSD Global Soil Database to SWAT+ soils.sol"
+    source:
+      model: "HWSD v1.2 (FAO/IIASA)"
+      variable: "Soil texture, organic carbon, bulk density, drainage class, AWC"
+      format: "Raster (hwsd.bil) + MDB attribute database"
+      unit: "%, g/cm3, mm/mm"
+      path: "data/soil/HWSD_RASTER/hwsd.bil + data/forcing/huaihe_raw/soil/HWSD.mdb"
+    target:
+      model: "SWAT+"
+      variable: "Soil physical and hydraulic properties"
+      format: "Multi-line text file (soils.sol)"
+      unit: "mm, g/cm3, mm/mm, mm/hr, %"
+      path: "TxtInOut/soils.sol"
+    transformation:
+      description: "Extract HWSD mapping units within basin, query MDB for properties, apply pedotransfer functions for missing parameters, write soils.sol multi-line format."
+      steps:
+        - "Clip HWSD raster to basin extent"
+        - "Extract unique mapping unit IDs"
+        - "Query HWSD MDB for T_SAND, T_SILT, T_CLAY, T_OC, T_BD, T_REF_BULK, DRAINAGE"
+        - "Map DRAINAGE to HYDGRP (A/B/C/D)"
+        - "Estimate missing properties: AWC (Saxton-Rawls), Ksat (Saxton-Rawls), USLE_K (Williams)"
+        - "Convert units: HWSD Ksat cm/day -> SWAT+ mm/hr (multiply by 10/24)"
+        - "Write soils.sol with profile line + N layer lines per soil"
+      tool_chain: ["build_soils_database", "validate_soil_properties"]
+    validation:
+      - "Texture sum = 100% per layer"
+      - "SOL_BD in [0.9, 2.5]"
+      - "SOL_AWC in [0.0, 0.5]"
+      - "SOL_K > 0"
+      - "Layer count matches nly"
+    scientific_justification: >
+      HWSD provides globally consistent soil data at 30 arc-second resolution.
+      While coarser than SSURGO (US only), it enables SWAT+ setup anywhere
+      worldwide. The same HWSD data source is used by VIC (via fill_parameters1.py)
+      and DSSAT (via hwsd_soil_adapter.py), ensuring soil consistency across
+      coupled models in HydroCraft.
+
+  # --- SWAT+ WATER QUALITY OUTPUT ---
+  - id: "mc_004"
+    name: "SWAT+ Nutrient/Sediment Output for Water Quality Assessment"
+    source:
+      model: "SWAT+"
+      variable: "Discharge, sediment, organic N, NO3, NH3, organic P, dissolved P"
+      format: "Space-delimited text (channel_sd_day.txt)"
+      unit: "m3/s, tons, kg, kg, kg, kg, kg"
+      path: "TxtInOut/channel_sd_day.txt"
+    target:
+      model: "Water quality assessment / regulatory compliance"
+      variable: "Pollutant loads and concentrations"
+      format: "CSV time series or regulatory report"
+      unit: "kg/day, mg/L"
+      path: "outputs/{run_name}/water_quality/"
+    transformation:
+      description: "Parse channel_sd output at outlet, compute daily loads and concentrations, aggregate to monthly/annual, compare against water quality standards."
+      steps:
+        - "Parse channel_sd_day.txt for outlet channel"
+        - "Extract flo_out (m3/s), sed_out (tons), orgn_out + no3_out + nh3_out (kg N), sedp_out + solp_out (kg P)"
+        - "Compute concentrations: C (mg/L) = load (kg/day) / flow (m3/day) * 1000"
+        - "Aggregate to monthly and annual totals"
+        - "Compare against standards (e.g., TN < 1.0 mg/L, TP < 0.1 mg/L)"
+      tool_chain: ["parse_channel_output", "compute_performance_metrics"]
+    validation:
+      - "Concentrations are non-negative"
+      - "Sediment concentration < 50,000 mg/L (physical limit)"
+      - "Annual N export typically 1-50 kg/ha/yr for agricultural basins"
+    scientific_justification: >
+      SWAT+ simulates the full N and P cycles including soil pools, crop uptake,
+      mineralization, nitrification, denitrification, and transport via surface
+      runoff, lateral flow, and groundwater. This makes it suitable for TMDL
+      (Total Maximum Daily Load) assessments and non-point source pollution
+      studies — capabilities that VIC does not have.
+
+  # --- SWAT+ VS VIC COMPARISON ---
+  - id: "mc_005"
+    name: "SWAT+ vs VIC Model Comparison"
+    source:
+      model: "SWAT+ and VIC 5.1.0"
+      variable: "Hydrological outputs"
+      format: "Text-based outputs"
+    target:
+      model: "Comparison framework"
+      variable: "Performance metrics, process representation differences"
+      format: "Comparison report"
+    transformation:
+      description: "Compare SWAT+ and VIC for the same basin, period, and forcing data to understand structural differences."
+    comparison_table:
+      - aspect: "Spatial unit"
+        swat_plus: "HRU (land use + soil + slope within subbasin)"
+        vic: "Grid cell (regular lat/lon grid)"
+        implication: "SWAT+ captures land use heterogeneity; VIC captures spatial continuity"
+      - aspect: "Routing"
+        swat_plus: "Internal (variable storage or Muskingum channel routing)"
+        vic: "External (Lohmann unit hydrograph or CaMa-Flood)"
+        implication: "SWAT+ is self-contained; VIC needs separate routing model"
+      - aspect: "Water quality"
+        swat_plus: "Full N/P/sediment cycle with 5+ nutrient pools"
+        vic: "None — hydrology only"
+        implication: "SWAT+ required for water quality; VIC for large-scale hydrology"
+      - aspect: "Crop growth"
+        swat_plus: "Simplified plant growth (heat unit based)"
+        vic: "None (static vegetation parameters)"
+        implication: "SWAT+ can simulate crop management effects on water cycle"
+      - aspect: "Calibration"
+        swat_plus: "calibration.cal text file (runtime adjustment)"
+        vic: "Edit soil parameter file directly"
+        implication: "SWAT+ calibration is non-destructive; VIC requires file modification"
+      - aspect: "Energy balance"
+        swat_plus: "Simplified (SCS CN for runoff, Penman-Monteith for ET)"
+        vic: "Full energy balance (optional)"
+        implication: "VIC better for cold regions, permafrost, detailed ET partitioning"
+      - aspect: "Setup complexity"
+        swat_plus: "Higher (many input files, HRU definition choices)"
+        vic: "Lower (grid-based, fewer files)"
+        implication: "VIC is faster to set up; SWAT+ has more decision points"
+      - aspect: "Typical application"
+        swat_plus: "Agricultural watersheds, TMDL, BMP assessment"
+        vic: "Regional/continental hydrology, climate change impact"
+    scientific_justification: >
+      SWAT+ and VIC are complementary models. In HydroCraft, VIC provides
+      the primary hydrological simulation for large basins, while SWAT+ adds
+      water quality capability for basins where nutrient/sediment assessment
+      is needed. Both can use the same forcing data (CMFD/MSWX) and soil data
+      (HWSD), enabling consistent multi-model comparison.

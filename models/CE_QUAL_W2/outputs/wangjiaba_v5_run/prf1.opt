@@ -1,0 +1,116 @@
+Long Lake or Spokane Lake WA                                            
+                                                                        
+S. Wells                                                                
+Comment4                                                                
+Comment5                                                                
+Comment6                                                                
+Comment7                                                                
+Comment8                                                                
+W2 Version 5 Testing                                                    
+6/2025, Zhong Zhang                                                     
+Model run at 14:48:04 on 04/02/26                                       
+      47       1       1      79      33       3       1       2 T
+      36
+  ON  ON  ON  ON  ON  ON  ON  ON OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF  ON
+  ON  ON OFF OFF  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON
+  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON  ON
+  ON  ON  ON  ON OFF  ON  ON  ON  ON  ON  ON  ON  ON OFF OFF OFF OFF OFF OFF OFF
+ OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF
+ OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF OFF
+Temperature,oC                            TDS,  g/m^3                                
+Age,  days                                 Tracer,  g/m^3                             
+Bacteria,  col/100ml                       Conductivity,  mhos                        
+Chloride,  mg/l                            ISS,  g/m^3                                
+Age,  days                                 Bacteria,  col/100ml                       
+Dissolved Gas Pressure,atm                 N2 dissolved gas, mg/l                     
+H2S, dissolved gas, mg/l                   CH4 dissolved gas, mg/l                    
+SO4 dissolved, mg/l                        Reduced FE(II), mg/l                       
+Oxidized FeOOH, mg/l                       Reduced Mn(II), mg/l                       
+Oxidized MnO2, mg/l                        Phosphate,  g/m^3                          
+Ammonium,  g/m^3                           Nitrate-Nitrite,  g/m^3                    
+Dissolved silica,  g/m^3                   Particulate silica,  g/m^3                 
+Labile DOM,  g/m^3                         Refractory DOM,  g/m^3                     
+Labile POM,  g/m^3                         Refractory POM,  g/m^3                     
+1CBOD,  g/m^3                              2CBOD,  g/m^3                              
+3CBOD,  g/m^3                              4CBOD,  g/m^3                              
+5CBOD,  g/m^3                              6CBOD,  g/m^3                              
+7CBOD,  g/m^3                              8CBOD,  g/m^3                              
+9CBOD,  g/m^3                              10CBOD,  g/m^3                             
+1CBODP,  g/m^3                             2CBODP,  g/m^3                             
+3CBODP,  g/m^3                             4CBODP,  g/m^3                             
+5CBODP,  g/m^3                             6CBODP,  g/m^3                             
+7CBODP,  g/m^3                             8CBODP,  g/m^3                             
+9CBODP,  g/m^3                             10CBODP,  g/m^3                            
+1CBODN,  g/m^3                             2CBODN,  g/m^3                             
+3CBODN,  g/m^3                             4CBODN,  g/m^3                             
+5CBODN,  g/m^3                             6CBODN,  g/m^3                             
+7CBODN,  g/m^3                             8CBODN,  g/m^3                             
+9CBODN,  g/m^3                             10CBODN,  g/m^3                            
+Algae1 Diatoms,  g/m^3                     Algae2 Green,  g/m^3                       
+Algae3 Cyanobacteria, g/m^3                Dissolved oxygen,  g/m^3                   
+Inorganic carbon,  g/m^3                   Alkalinity,  g/m^3                         
+Zooplankton1,  g/m^3                       LDOM P,  g/m^3                             
+RDOM P,  g/m^3                             LPOM P,  g/m^3                             
+RPOM P,  g/m^3                             LDOM N,  g/m^3                             
+RDOM N,  g/m^3                             LPOM N,  g/m^3                             
+RPOM N,  g/m^3                             Microcystin, g/m^3                         
+Cylindrospermopsin, g/m^3                  Anatoxin-A, g/m^3                          
+Saxitoxin, g/m^3                           Hg0, ng/L                                  
+HgII, ng/L                                 MeHg, ng/L                                 
+Dissolved organic carbon, g/m^3            Particulate organic carbon, g/m^3          
+Total organic carbon, g/m^3                Dissolved organic nitrogen, g/m^3          
+Particulate organic nitrogen, g/m^3        Total organic nitrogen, g/m^3              
+Total Kheldahl Nitrogen, g/m^3             Total nitrogen, g/m^3                      
+Unionized ammonia, g/m3 as N               Dissolved organic phosphorus, g/m^3        
+Particulate organic phosphorus, g/m^3      Total organic phosphorus, g/m^3            
+Total phosphorus, g/m^3                    Algal production, g/m^2/day                
+Chlorophyll a, mg/m^3                      Total algae, g/m^3                         
+Oxygen % Gas Saturation                    Total dissolved gas, %                     
+Turbidity, NTU                             Total suspended Solids, g/m^3              
+Total Inorganic Suspended Solids,g/m^3     Carbonaceous Ultimate BOD, g/m^3           
+pH                                         CO2                                        
+HCO3                                       CO3                                        
+Secchi disk depth, m                       Particulate HgII-w, ng/l                   
+Particulate HgII-s, ng/g                   Particulate MeHg-w, ng/l                   
+Particulate MeHg-s, ng/g                   Dissolved HgII, ng/l                       
+Dissolved Me Hg, ng/l                      
+   1   3   8
+      1.      1.      1.      1.      1.      1.      1.      1.      1.      1.
+      1.      1.      1.      1.      1.      1.      1.      1.      1.      1.
+      1.      1.      1.      1.      1.      1.      1.      1.      1.      1.
+      1.      1.      1.      1.      1.      1.      1.      1.      1.      1.
+      1.      1.      1.      1.      1.      1.      1.      1.      1.      1.
+      1.      1.      1.      1.      1.      1.      1.      1.      1.      1.
+      1.      1.      1.      1.      1.      1.      1.      1.      1.      1.
+      1.      1.      1.      1.      1.      1.      1.      1.      1.      1.
+      1.      1.      1.      1.      1.      1.      1.      1.      1.      1.
+      1.      1.      1.      1.      1.      1.      1.      1.      1.      1.
+      1.      1.      1.      1.      1.      1.      1.      1.      1.      1.
+      1.      1.      1.
+  46
+    1.01    1.01    1.01    1.01    1.01    1.01    1.01    1.01    1.01    1.01
+    1.01    1.01    1.01    1.01    1.01    1.01    1.01    1.01    1.01    1.01
+    1.01    1.01    1.01    1.01    1.01    1.01    1.01    1.01    1.01    1.01
+    1.01    1.01    1.01    1.01    1.01    1.01    1.01    1.01    1.01    1.01
+    1.01    1.01    1.01    1.01    1.01    1.01    1.01
+TEMP      45
+      9.00      9.00      9.00      9.00      9.00      9.00      9.00      9.00
+      9.00      9.00      9.00      9.00      9.00      9.00      9.00      9.00
+      9.00      9.00      9.00      9.00      9.00      9.00      9.00      9.00
+      9.00      9.00      9.00      9.00      9.00      9.00      9.00      9.00
+      9.00      9.00      9.00      9.00      9.00      9.00      9.00      9.00
+      9.00      9.00      9.00      9.00      9.00
+Gen1             45
+ 0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00
+ 0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00
+ 0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00
+ 0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00
+ 0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00
+ 0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00
+ISS1             45
+ 0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00
+ 0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00
+ 0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00
+ 0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00
+ 0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00
+ 0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00

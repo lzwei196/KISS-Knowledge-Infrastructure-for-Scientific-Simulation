@@ -1,0 +1,155 @@
+entries:
+- id: err_001
+  timestamp: '2026-03-19T06:34:44Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: SWAT+
+    run_name: ''
+  stage: s2_hru_definition
+  failure_domain: runtime
+  symptom:
+    description: SIGSEGV in mgt_operatn_ with generic_ag management
+    error_pattern: SIGSEGV.*mgt_operatn_
+    detection_method: log_match
+  diagnosis:
+    root_cause: Simplified management.sch incompatible with SWAT+ rev59
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Default all land uses to no_mgt
+    files_changed: []
+    prevention: generate_hru_from_global.py defaults to no_mgt
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_002
+  timestamp: '2026-03-19T06:34:44Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: SWAT+
+    run_name: ''
+  stage: s7_simulation_config
+  failure_domain: silent_error
+  symptom:
+    description: basin_wb_yr.txt empty - header only no data
+    error_pattern: basin_wb_yr.*3 lines
+    detection_method: file_check
+  diagnosis:
+    root_cause: Missing soils_lte.sol and file.cio reference
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Create empty soils_lte.sol and add to file.cio
+    files_changed: []
+    prevention: Generator Step 8 creates soils_lte.sol
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_003
+  timestamp: '2026-03-19T06:34:44Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: SWAT+
+    run_name: ''
+  stage: s7_simulation_config
+  failure_domain: parameter_format
+  symptom:
+    description: pySWATPlus ParserError on cal_parms.cal
+    error_pattern: Expected 5 fields.*saw 6
+    detection_method: log_match
+  diagnosis:
+    root_cause: Uppercase headers and multi-word units in cal_parms.cal
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Lowercase headers and join units with underscore
+    files_changed: []
+    prevention: fix_cal_parms_cal() auto-fixes
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_004
+  timestamp: '2026-03-19T06:34:44Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: SWAT+
+    run_name: ''
+  stage: s2_hru_definition
+  failure_domain: parameter_format
+  symptom:
+    description: Fertilizer elem-n not found in fertilizer.frt
+    error_pattern: elem-n
+    detection_method: log_match
+  diagnosis:
+    root_cause: Hyphen instead of underscore in fertilizer name
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Replace elem-n with elem_n
+    files_changed: []
+    prevention: Fixed in generator code
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_005
+  timestamp: '2026-03-19T06:41:37Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: SWAT+
+    run_name: ''
+  stage: s9_output_parsing
+  failure_domain: unit_conversion
+  symptom:
+    description: SWAT+ channel flo_out in ha-m/day mistaken for m3/s
+    error_pattern: discharge.*200x
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: flo_out unit is ha-m/day not m3/s
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Q_cms = flo_out_ham * 10000 / 86400
+    files_changed: []
+    prevention: Auto-detect units from channel output header
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_006
+  timestamp: '2026-03-20T08:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: chaohe
+    model: SWAT+
+    run_name: chaohe_swatplus
+  stage: s1_watershed_delineation
+  failure_domain: parameter_format
+  symptom:
+    description: Channel threshold=100 cells generates 2,847 subbasins (extreme over-segmentation) causing SWAT+
+      to take hours to run or crash. With threshold=5000, only 28 subbasins generated — 12x faster (358s to 29s).
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: Stream network threshold too low for basin scale. Default threshold=100 accumulation cells at
+      0.25deg (25km) resolution generates tiny sub-watersheds. For 9,000km2 basin at 90m DEM, threshold=5000
+      gives proper stream density (1% channel cells, order 3).
+    explanation: The channel threshold controls minimum contributing area for stream initiation. Too low creates
+      an unrealistically dense channel network that overwhelms SWAT+ routing. Scale threshold with basin area
+      and DEM resolution. For 90m DEM, 5000 cells = ~40 km2 minimum contributing area.
+    affected_components:
+    - generate_hru_from_global.py
+    - channels.cha
+    - subbasins
+  resolution:
+    action: Set channel threshold to 5000 for basins >5000km2 at 90m DEM resolution. Scale proportionally
+      for different DEM resolutions.
+    files_changed:
+    - tools/s2/generate_hru_from_global.py
+    prevention: generate_hru_from_global.py defaults to threshold=5000
+  severity: degraded
+  promoted: false
+  promoted_as: ''

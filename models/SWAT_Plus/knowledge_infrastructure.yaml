@@ -1,0 +1,1578 @@
+# ============================================================================
+# Knowledge Infrastructure — SWAT+
+# Soil and Water Assessment Tool Plus
+# ============================================================================
+# Built using the Knowledge Dissection Toolkit v1.0
+# Model: SWAT+ (Fortran CLI, modular text-based inputs, no ArcGIS dependency)
+# Official repo: https://github.com/swat-model/swatplus
+# Docs: https://swatplus.gitbook.io/io-docs
+# ============================================================================
+
+package:
+  name: "swatplus-knowledge-infrastructure"
+  version: "1.0.0"
+  description: "Knowledge infrastructure for autonomous operation of SWAT+ watershed model for hydrology and water quality (N, P, sediment) simulation"
+  target_model: "SWAT+ (Soil and Water Assessment Tool Plus, USDA-ARS / Texas A&M)"
+  domain: "watershed hydrology, water quality, sediment transport, nutrient cycling"
+  authors:
+    - "Jianyun Zhang Research Group (Knowledge Dissection)"
+  license: "CC-BY-4.0"
+
+# --- Pipeline definition ---
+pipeline:
+  stages:
+    - id: "s1_watershed_delineation"
+      name: "Watershed Delineation"
+      description: "Process DEM to generate subbasins, stream network, and outlet definition. Produces the spatial framework (subbasins, channels, landscape units) that all subsequent steps reference. Can use QSWAT+ (QGIS plugin) or programmatic tools (pysheds, WhiteboxTools). Output: subbasin shapefile, stream network, watershed boundary."
+      order: 1
+      depends_on: []
+      skill_document: "docs/s1_watershed_delineation_skill.md"
+      tools:
+        - "delineate_watershed"
+        - "define_subbasins"
+      milestones:
+        - id: "m1_dem_processed"
+          description: "DEM clipped, projected, and pit-filled"
+          verification: "Pit-filled DEM raster exists and has no sink cells"
+        - id: "m1_streams_defined"
+          description: "Stream network delineated with user-defined threshold"
+          verification: "Stream shapefile exists; stream count matches expected basin complexity"
+        - id: "m1_subbasins_created"
+          description: "Subbasin boundaries created and outlet defined"
+          verification: "Subbasin shapefile exists; total area matches expected basin area within 5%"
+
+    - id: "s2_hru_definition"
+      name: "HRU Definition"
+      description: "Overlay land use, soil, and slope maps onto subbasins to create Hydrologic Response Units (HRUs). Each HRU is a unique combination of subbasin + land use + soil type + slope class. Threshold filtering removes small HRUs. Output: hru-data.hru, hru.con, topography.hyd, hydrology.hyd."
+      order: 2
+      depends_on: ["s1_watershed_delineation"]
+      skill_document: "docs/s2_hru_definition_skill.md"
+      tools:
+        - "create_hru_overlay"
+        - "apply_hru_threshold"
+      milestones:
+        - id: "m2_landuse_classified"
+          description: "Land use raster reclassified to SWAT+ plant codes"
+          verification: "plants.plt contains all referenced land use codes; landuse.lum file generated"
+        - id: "m2_soils_mapped"
+          description: "Soil map linked to SWAT+ soils database"
+          verification: "soils.sol file has entries for all soil types in the basin; each has valid layers"
+        - id: "m2_hrus_created"
+          description: "HRUs generated with threshold filtering applied"
+          verification: "hru-data.hru exists; HRU count is reasonable (typically 50-5000)"
+
+    - id: "s3_weather_preparation"
+      name: "Weather Data Preparation"
+      description: "Prepare weather station files for SWAT+. Requires: precipitation (.pcp), temperature (.tmp), solar radiation (.slr), relative humidity (.hmd), wind speed (.wnd). Each variable has a .cli index file listing station data files, and weather-sta.cli maps stations to spatial objects. Weather generator (wgn.wgn) provides statistical parameters for gap-filling."
+      order: 3
+      depends_on: ["s1_watershed_delineation"]
+      skill_document: "docs/s3_weather_preparation_skill.md"
+      tools:
+        - "prepare_weather_files"
+        - "generate_weather_stations"
+        - "validate_weather_data"
+      milestones:
+        - id: "m3_pcp_files_created"
+          description: "Precipitation station files (.pcp) created with correct format"
+          verification: "Each .pcp file has 3-line header (title, column names, station info) + daily data; pcp.cli lists all files"
+        - id: "m3_tmp_files_created"
+          description: "Temperature station files (.tmp) created with Tmax and Tmin"
+          verification: "Each .tmp file has daily Tmax >= Tmin; tmp.cli lists all files"
+        - id: "m3_weather_sta_created"
+          description: "weather-sta.cli maps station combinations to spatial objects"
+          verification: "weather-sta.cli has one record per unique station combination; all referenced station names exist in respective .cli files"
+        - id: "m3_wgn_created"
+          description: "Weather generator statistics computed for each station"
+          verification: "wgn.wgn has 12 monthly rows per station with valid ranges"
+
+    - id: "s4_soil_database"
+      name: "Soil Database Configuration"
+      description: "Configure soils.sol with physical and hydrological properties for each soil type in the basin. Properties per layer: depth (SOL_Z mm), bulk density (SOL_BD g/cm3), available water capacity (SOL_AWC mm/mm), saturated hydraulic conductivity (SOL_K mm/hr), organic carbon (SOL_CBN %), clay/silt/sand percentages, USLE K factor. Sources: SSURGO (US), HWSD (global), FAO Digital Soil Map."
+      order: 4
+      depends_on: []
+      skill_document: "docs/s4_soil_database_skill.md"
+      tools:
+        - "build_soils_database"
+        - "validate_soil_properties"
+      milestones:
+        - id: "m4_soils_sol_created"
+          description: "soils.sol file created with all basin soil types"
+          verification: "soils.sol has header + profile lines + layer lines for each soil; SOL_BD in [0.9, 2.5], SOL_AWC in [0.0, 0.5], SOL_K > 0"
+        - id: "m4_texture_valid"
+          description: "Sand + silt + clay = 100% for each layer"
+          verification: "Parse each layer and verify texture percentages sum to 100 +/- 1%"
+
+    - id: "s5_landuse_management"
+      name: "Land Use and Management Configuration"
+      description: "Configure land use parameters (plants.plt, landuse.lum) and management schedules (management.sch). Management schedules define tillage, planting, fertilizer, pesticide, harvest, and irrigation operations by decision table or fixed schedule. Also configure urban.urb for urban HRUs, cntable.lum for conditional management."
+      order: 5
+      depends_on: ["s2_hru_definition"]
+      skill_document: "docs/s5_landuse_management_skill.md"
+      tools:
+        - "build_management_schedules"
+        - "configure_landuse"
+      milestones:
+        - id: "m5_plants_plt_valid"
+          description: "plants.plt database has entries for all land cover types"
+          verification: "Every land use code referenced in hru-data.hru has a matching entry in plants.plt"
+        - id: "m5_management_sch_created"
+          description: "management.sch has valid operation sequences"
+          verification: "Each schedule has planting before harvest; fertilizer amounts are physically reasonable (< 500 kg/ha N)"
+        - id: "m5_landuse_lum_created"
+          description: "landuse.lum links HRU land uses to management schedules and CN tables"
+          verification: "landuse.lum references valid management.sch names and valid cn2 values"
+
+    - id: "s6_calibration_parameters"
+      name: "Calibration Parameter Setup"
+      description: "Configure calibration.cal for parameter adjustment. SWAT+ uses a text-based calibration file that specifies parameter name, change type (absval/abschg/pctchg), value, conditions (object type, land use, soil, etc.). Key calibration parameters: cn2, esco, awc, surlag, lat_ttime, canmx, epco, perco, revap_co, revap_min, gw_delay, alpha_bf, flo_min."
+      order: 6
+      depends_on: ["s2_hru_definition", "s4_soil_database"]
+      skill_document: "docs/s6_calibration_parameters_skill.md"
+      tools:
+        - "generate_calibration_file"
+        - "apply_calibration"
+      milestones:
+        - id: "m6_calibration_cal_created"
+          description: "calibration.cal file created with parameter adjustments"
+          verification: "calibration.cal has valid header and parameter lines; change types are absval/abschg/pctchg"
+        - id: "m6_parameters_within_range"
+          description: "All calibration parameters within physically meaningful ranges"
+          verification: "cn2 in [25,98], esco in [0,1], awc change < +/-50%, alpha_bf in [0,1]"
+
+    - id: "s7_simulation_config"
+      name: "Simulation Configuration"
+      description: "Configure file.cio (master control), time.sim (simulation period, time step, warmup), print.prt (output printing frequency and variables), object.cnt (spatial object counts), and codes.bsn / parameters.bsn (basin-wide parameters). Verify all file references in file.cio point to existing files in TxtInOut."
+      order: 7
+      depends_on: ["s1_watershed_delineation", "s2_hru_definition", "s3_weather_preparation", "s4_soil_database", "s5_landuse_management", "s6_calibration_parameters"]
+      skill_document: "docs/s7_simulation_config_skill.md"
+      tools:
+        - "configure_file_cio"
+        - "configure_time_sim"
+        - "configure_print_prt"
+        - "validate_txtinout"
+      milestones:
+        - id: "m7_file_cio_valid"
+          description: "file.cio references all required input files; no 'null' for required categories"
+          verification: "Parse file.cio and verify each referenced file exists in TxtInOut directory"
+        - id: "m7_time_sim_valid"
+          description: "time.sim has valid start/end dates and warmup period"
+          verification: "Start date < end date; warmup >= 1 year (recommended 2-3 years); time step = 1 (daily)"
+        - id: "m7_print_prt_configured"
+          description: "print.prt enables desired output variables at correct frequency"
+          verification: "At least channel_sd and basin_wb lines have 'y' for printing"
+
+    - id: "s8_model_execution"
+      name: "Model Execution"
+      description: "Compile (if needed) and run the SWAT+ Fortran executable. The binary reads file.cio from the current working directory (must cd into TxtInOut). Monitor runtime for convergence, check for Fortran runtime errors (array bounds, NaN, file I/O). Typical runtime: seconds to minutes for small basins, hours for large multi-year simulations."
+      order: 8
+      depends_on: ["s7_simulation_config"]
+      skill_document: "docs/s8_model_execution_skill.md"
+      tools:
+        - "compile_swatplus"
+        - "run_swatplus"
+      milestones:
+        - id: "m8_executable_ready"
+          description: "SWAT+ executable compiled or available"
+          verification: "swatplus binary exists and is executable; test with --version or by running on minimal test case"
+        - id: "m8_simulation_complete"
+          description: "Simulation finished without fatal errors"
+          verification: "No 'STOP' or 'Error' in stdout/stderr; output files created in TxtInOut"
+
+    - id: "s9_output_parsing"
+      name: "Output Parsing and Analysis"
+      description: "Parse SWAT+ output files: channel_sd (channel sediment/nutrient), basin_wb (basin water balance), basin_nb (basin nutrient balance), basin_pw (basin plant weather), basin_ls (basin losses), hru_wb (HRU water balance), hru_nb (HRU nutrient balance), aquifer (groundwater). Compare simulated discharge against observed. Compute NSE, PBIAS, KGE. Generate time series plots, spatial maps, mass balance checks."
+      order: 9
+      depends_on: ["s8_model_execution"]
+      skill_document: "docs/s9_output_parsing_skill.md"
+      tools:
+        - "parse_channel_output"
+        - "parse_basin_output"
+        - "compute_performance_metrics"
+        - "check_mass_balance"
+      milestones:
+        - id: "m9_channel_sd_parsed"
+          description: "channel_sd output parsed for discharge (flo_out m3/s) and sediment (sed_out tons)"
+          verification: "Parsed time series covers simulation period; discharge values are physically reasonable"
+        - id: "m9_performance_computed"
+          description: "NSE, PBIAS, KGE computed against observed data"
+          verification: "Metrics computed without error; NSE > -Inf (valid comparison)"
+        - id: "m9_mass_balance_checked"
+          description: "Water and nutrient mass balances verified"
+          verification: "basin_wb: precip ~= ET + surface_runoff + lateral_flow + percolation + delta_storage (within 5%)"
+
+    - id: "s10_water_quality"
+      name: "Water Quality Simulation (N/P/Sediment)"
+      description: "Configure and analyze SWAT+ water quality output including nitrogen (NO3, NH4, organic N), phosphorus (dissolved, sediment-bound), and sediment yield. Covers fertilizer management configuration, nutrient output enabling, nutrient load parsing, and validation against observed water quality data."
+      order: 10
+      depends_on: ["s5_landuse_management", "s7_simulation_config"]
+      skill_document: null
+      tools:
+        - "configure_nutrient_output"
+        - "configure_fertilizer"
+        - "configure_point_sources"
+        - "parse_nutrient_output"
+        - "validate_water_quality"
+      milestones:
+        - id: "m10_nutrient_output_enabled"
+          description: "print.prt configured for nutrient/sediment output"
+          verification: "basin_nb daily=y, channel_sd daily=y in print.prt"
+        - id: "m10_fertilizer_configured"
+          description: "management.sch has realistic fertilizer schedule for target crops"
+          verification: "Total N application 50-400 kgN/ha; fertilizer entries use valid fertilizer.frt names"
+        - id: "m10_nutrient_output_parsed"
+          description: "Channel nutrient output parsed to CSV with TN/TP/sediment loads"
+          verification: "TN 5-20 kgN/ha/yr, TP 0.5-3 kgP/ha/yr for Chinese agricultural basins"
+        - id: "m10_wq_validated"
+          description: "Water quality metrics computed against observations"
+          verification: "PBIAS < +/-25% for N, < +/-40% for P (Moriasi et al., 2007)"
+
+# --- Layer 1: Validated Tools ---
+tools:
+  # --- S1: Watershed Delineation ---
+  - id: "delineate_watershed"
+    name: "Watershed Delineation from DEM"
+    description: "Process DEM to generate pit-filled elevation, flow direction, flow accumulation, stream network, and subbasin boundaries using WhiteboxTools or pysheds."
+    stage: "s1_watershed_delineation"
+    script_path: "tools/s1/delineate_watershed.py"
+    language: "python"
+    inputs:
+      - name: "dem_path"
+        type: "file"
+        description: "Path to DEM raster (GeoTIFF or similar)"
+        required: true
+        example: "data/dem/basin_dem.tif"
+      - name: "outlet_lat"
+        type: "number"
+        description: "Basin outlet latitude (decimal degrees)"
+        required: true
+        example: "32.5"
+      - name: "outlet_lon"
+        type: "number"
+        description: "Basin outlet longitude (decimal degrees)"
+        required: true
+        example: "-90.3"
+      - name: "stream_threshold"
+        type: "number"
+        description: "Minimum upstream area (km2) to define streams"
+        required: false
+        example: "25"
+      - name: "output_dir"
+        type: "directory"
+        description: "Output directory for shapefiles and rasters"
+        required: true
+        example: "outputs/watershed/"
+    outputs:
+      - name: "subbasin_shapefile"
+        type: "file"
+        description: "Subbasin boundary shapefile"
+        path_pattern: "{output_dir}/subbasins.shp"
+      - name: "stream_shapefile"
+        type: "file"
+        description: "Stream network shapefile"
+        path_pattern: "{output_dir}/streams.shp"
+      - name: "watershed_boundary"
+        type: "file"
+        description: "Watershed boundary shapefile"
+        path_pattern: "{output_dir}/watershed.shp"
+    preconditions:
+      - "DEM raster exists and is in a projected coordinate system (meters)"
+      - "Outlet coordinates are within the DEM extent"
+    postconditions:
+      - "Subbasin shapefile covers the entire watershed"
+      - "Stream network is topologically connected to the outlet"
+      - "Total watershed area is physically reasonable"
+
+  - id: "define_subbasins"
+    name: "Define Subbasins and Channel Network"
+    description: "Generate subbasin-level connectivity, channel geometry, and landscape unit definitions needed by SWAT+ connect files."
+    stage: "s1_watershed_delineation"
+    script_path: "tools/s1/define_subbasins.py"
+    language: "python"
+    inputs:
+      - name: "subbasin_shapefile"
+        type: "file"
+        description: "Subbasin boundaries from delineate_watershed"
+        required: true
+      - name: "dem_path"
+        type: "file"
+        description: "Pit-filled DEM"
+        required: true
+      - name: "stream_shapefile"
+        type: "file"
+        description: "Stream network from delineate_watershed"
+        required: true
+    outputs:
+      - name: "chandeg_con"
+        type: "file"
+        description: "Channel connectivity file (chandeg.con)"
+        path_pattern: "{output_dir}/chandeg.con"
+      - name: "rout_unit_con"
+        type: "file"
+        description: "Routing unit connectivity (rout_unit.con)"
+        path_pattern: "{output_dir}/rout_unit.con"
+    preconditions:
+      - "Subbasin and stream shapefiles from delineate_watershed exist"
+    postconditions:
+      - "All subbasins have a routing path to the outlet"
+
+  # --- S2: HRU Definition ---
+  - id: "create_hru_overlay"
+    name: "Create HRU Overlay"
+    description: "Overlay land use, soil type, and slope class rasters onto subbasin boundaries to generate unique HRU combinations. Writes hru-data.hru and hru.con."
+    stage: "s2_hru_definition"
+    script_path: "tools/s2/create_hru_overlay.py"
+    language: "python"
+    inputs:
+      - name: "subbasin_shapefile"
+        type: "file"
+        description: "Subbasin boundaries"
+        required: true
+      - name: "landuse_raster"
+        type: "file"
+        description: "Land use/land cover raster"
+        required: true
+      - name: "soil_raster"
+        type: "file"
+        description: "Soil type raster (SSURGO MUKEY or HWSD MU)"
+        required: true
+      - name: "dem_path"
+        type: "file"
+        description: "DEM for slope calculation"
+        required: true
+      - name: "slope_classes"
+        type: "config"
+        description: "Slope class boundaries in percent"
+        required: false
+        example: "[0, 3, 8, 15, 9999]"
+      - name: "output_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+    outputs:
+      - name: "hru_data"
+        type: "file"
+        description: "HRU data file"
+        path_pattern: "{output_dir}/hru-data.hru"
+      - name: "hru_con"
+        type: "file"
+        description: "HRU connectivity file"
+        path_pattern: "{output_dir}/hru.con"
+    preconditions:
+      - "Land use raster has lookup table mapping raster values to SWAT+ plant codes"
+      - "Soil raster values match soils.sol database entries"
+    postconditions:
+      - "hru-data.hru has one line per HRU with subbasin, land use, soil, slope"
+      - "hru.con has connectivity for each HRU"
+
+  - id: "apply_hru_threshold"
+    name: "Apply HRU Threshold Filter"
+    description: "Remove small HRUs below area thresholds (land use %, soil %, slope %) and redistribute their area to dominant HRUs within each subbasin."
+    stage: "s2_hru_definition"
+    script_path: "tools/s2/apply_hru_threshold.py"
+    language: "python"
+    inputs:
+      - name: "hru_data_path"
+        type: "file"
+        description: "Raw hru-data.hru before filtering"
+        required: true
+      - name: "landuse_threshold"
+        type: "number"
+        description: "Minimum land use percentage within subbasin (default 5%)"
+        required: false
+        example: "5"
+      - name: "soil_threshold"
+        type: "number"
+        description: "Minimum soil type percentage (default 5%)"
+        required: false
+        example: "5"
+      - name: "slope_threshold"
+        type: "number"
+        description: "Minimum slope class percentage (default 5%)"
+        required: false
+        example: "5"
+    outputs:
+      - name: "filtered_hru_data"
+        type: "file"
+        description: "Filtered hru-data.hru"
+        path_pattern: "{output_dir}/hru-data.hru"
+    preconditions:
+      - "hru-data.hru exists from create_hru_overlay"
+    postconditions:
+      - "Total basin area is preserved after filtering (within 0.1%)"
+      - "Each remaining HRU exceeds the combined threshold"
+
+  # --- S3: Weather Preparation ---
+  - id: "prepare_weather_files"
+    name: "Prepare SWAT+ Weather Files"
+    description: "Convert meteorological data (CMFD, MSWX, station CSV) to SWAT+ format: .pcp, .tmp, .slr, .hmd, .wnd files with 3-line headers (title, column names, station metadata). Also generates pcp.cli, tmp.cli, slr.cli, hmd.cli, wnd.cli index files."
+    stage: "s3_weather_preparation"
+    script_path: "tools/s3/prepare_weather_files.py"
+    language: "python"
+    inputs:
+      - name: "forcing_source"
+        type: "string"
+        description: "Data source: cmfd, mswx, csv, nasa_power"
+        required: true
+        example: "cmfd"
+      - name: "forcing_dir"
+        type: "directory"
+        description: "Directory with source forcing data (or CSV path)"
+        required: true
+      - name: "station_coords"
+        type: "config"
+        description: "List of [lat, lon] for weather stations (grid cell centers)"
+        required: true
+        example: "[[32.5, 116.8], [32.75, 117.0]]"
+      - name: "start_date"
+        type: "string"
+        description: "Start date YYYY-MM-DD"
+        required: true
+      - name: "end_date"
+        type: "string"
+        description: "End date YYYY-MM-DD"
+        required: true
+      - name: "output_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+    outputs:
+      - name: "pcp_files"
+        type: "file"
+        description: "Precipitation data files (*.pcp) and pcp.cli"
+        path_pattern: "{output_dir}/*.pcp"
+      - name: "tmp_files"
+        type: "file"
+        description: "Temperature data files (*.tmp) and tmp.cli"
+        path_pattern: "{output_dir}/*.tmp"
+      - name: "slr_files"
+        type: "file"
+        description: "Solar radiation files (*.slr) and slr.cli"
+        path_pattern: "{output_dir}/*.slr"
+      - name: "hmd_files"
+        type: "file"
+        description: "Relative humidity files (*.hmd) and hmd.cli"
+        path_pattern: "{output_dir}/*.hmd"
+      - name: "wnd_files"
+        type: "file"
+        description: "Wind speed files (*.wnd) and wnd.cli"
+        path_pattern: "{output_dir}/*.wnd"
+    preconditions:
+      - "Source forcing data covers the requested time period"
+      - "Station coordinates are within the basin extent"
+    postconditions:
+      - "All .cli files list exactly the number of station files created"
+      - "Data files have year + Julian day + variable columns"
+      - "No missing values (NaN) in output files; gaps filled with -99.0"
+
+  - id: "generate_weather_stations"
+    name: "Generate Weather Station Configuration"
+    description: "Create weather-sta.cli that maps station name combinations to spatial objects, and wgn.wgn with monthly weather generator statistics."
+    stage: "s3_weather_preparation"
+    script_path: "tools/s3/generate_weather_stations.py"
+    language: "python"
+    inputs:
+      - name: "pcp_cli_path"
+        type: "file"
+        description: "Path to pcp.cli"
+        required: true
+      - name: "station_coords"
+        type: "config"
+        description: "Station coordinates for nearest-station assignment"
+        required: true
+      - name: "subbasin_centroids"
+        type: "config"
+        description: "Subbasin centroid coordinates for station assignment"
+        required: true
+      - name: "output_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+    outputs:
+      - name: "weather_sta_cli"
+        type: "file"
+        description: "Weather station assignment file"
+        path_pattern: "{output_dir}/weather-sta.cli"
+      - name: "wgn_wgn"
+        type: "file"
+        description: "Weather generator statistics"
+        path_pattern: "{output_dir}/wgn.wgn"
+    preconditions:
+      - "pcp.cli, tmp.cli, slr.cli, hmd.cli, wnd.cli all exist"
+    postconditions:
+      - "weather-sta.cli has one record per unique station combination"
+      - "wgn.wgn has 12 monthly rows per station"
+
+  - id: "validate_weather_data"
+    name: "Validate Weather Data Files"
+    description: "Quality-check weather input files: verify Tmax >= Tmin, precip >= 0, solar radiation >= 0, relative humidity in [0,100], wind speed >= 0. Report missing data and extreme values."
+    stage: "s3_weather_preparation"
+    script_path: "tools/s3/validate_weather_data.py"
+    language: "python"
+    inputs:
+      - name: "txtinout_dir"
+        type: "directory"
+        description: "TxtInOut directory with weather files"
+        required: true
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON report of data quality issues"
+        path_pattern: ""
+    preconditions:
+      - "Weather files exist in TxtInOut"
+    postconditions:
+      - "All weather files pass basic physical range checks"
+
+  # --- S4: Soil Database ---
+  - id: "build_soils_database"
+    name: "Build SWAT+ Soils Database"
+    description: "Generate soils.sol from global soil data (HWSD, SSURGO, or SoilGrids). For each soil type: profile-level properties (HYDGRP, SOL_ZMX) + per-layer properties (SOL_Z, SOL_BD, SOL_AWC, SOL_K, SOL_CBN, CLAY, SILT, SAND, ROCK, USLE_K). Units: SOL_Z in mm, SOL_BD in g/cm3, SOL_AWC in mm H2O/mm soil, SOL_K in mm/hr."
+    stage: "s4_soil_database"
+    script_path: "tools/s4/build_soils_database.py"
+    language: "python"
+    inputs:
+      - name: "soil_source"
+        type: "string"
+        description: "Source: hwsd, ssurgo, soilgrids"
+        required: true
+        example: "hwsd"
+      - name: "basin_shapefile"
+        type: "file"
+        description: "Basin boundary for spatial query"
+        required: true
+      - name: "hwsd_raster"
+        type: "file"
+        description: "HWSD raster (for hwsd source)"
+        required: false
+        example: "data/soil/HWSD_RASTER/hwsd.bil"
+      - name: "hwsd_mdb"
+        type: "file"
+        description: "HWSD attribute database (for hwsd source)"
+        required: false
+        example: "data/forcing/huaihe_raw/soil/HWSD.mdb"
+      - name: "output_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+    outputs:
+      - name: "soils_sol"
+        type: "file"
+        description: "SWAT+ soils database file"
+        path_pattern: "{output_dir}/soils.sol"
+    preconditions:
+      - "Soil data source is available and covers the basin"
+    postconditions:
+      - "soils.sol has profile + layer entries for all mapped soil types"
+      - "All layer properties are within physically valid ranges"
+
+  - id: "validate_soil_properties"
+    name: "Validate Soil Properties"
+    description: "Check soils.sol for physical consistency: bulk density ranges, AWC ranges, texture sums to 100%, layer depth ordering, USLE K within bounds."
+    stage: "s4_soil_database"
+    script_path: "tools/s4/validate_soil_properties.py"
+    language: "python"
+    inputs:
+      - name: "soils_sol_path"
+        type: "file"
+        description: "Path to soils.sol"
+        required: true
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON validation report"
+        path_pattern: ""
+    preconditions:
+      - "soils.sol exists"
+    postconditions:
+      - "All soils pass physical consistency checks"
+
+  # --- S5: Land Use and Management ---
+  - id: "build_management_schedules"
+    name: "Build Management Schedules"
+    description: "Generate management.sch with operation sequences (plant, fertilize, irrigate, harvest, kill) for each land use type. Operations reference plants.plt (crop names), fertilizer.frt (fertilizer types), and tillage.til (tillage operations)."
+    stage: "s5_landuse_management"
+    script_path: "tools/s5/build_management_schedules.py"
+    language: "python"
+    inputs:
+      - name: "landuse_types"
+        type: "config"
+        description: "List of land use types in the basin"
+        required: true
+      - name: "crop_calendar"
+        type: "config"
+        description: "Planting/harvest dates by crop type"
+        required: true
+      - name: "fertilizer_rates"
+        type: "config"
+        description: "N/P/K application rates by crop"
+        required: false
+      - name: "output_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+    outputs:
+      - name: "management_sch"
+        type: "file"
+        description: "Management schedule file"
+        path_pattern: "{output_dir}/management.sch"
+    preconditions:
+      - "plants.plt has entries for all crop types"
+    postconditions:
+      - "management.sch has valid operation sequences"
+      - "Fertilizer amounts are physically reasonable"
+
+  - id: "configure_landuse"
+    name: "Configure Land Use Lookup"
+    description: "Generate landuse.lum linking each land use class to its management schedule, CN2 table, urban parameters, and other lookup tables."
+    stage: "s5_landuse_management"
+    script_path: "tools/s5/configure_landuse.py"
+    language: "python"
+    inputs:
+      - name: "landuse_types"
+        type: "config"
+        description: "Land use types in the basin"
+        required: true
+      - name: "management_sch_path"
+        type: "file"
+        description: "management.sch file"
+        required: true
+      - name: "output_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+    outputs:
+      - name: "landuse_lum"
+        type: "file"
+        description: "Land use lookup management file"
+        path_pattern: "{output_dir}/landuse.lum"
+    preconditions:
+      - "management.sch exists with named schedules"
+    postconditions:
+      - "landuse.lum references only existing schedule names"
+
+  # --- S6: Calibration Parameters ---
+  - id: "generate_calibration_file"
+    name: "Generate Calibration Parameter File"
+    description: "Create calibration.cal with parameter adjustments. Format: parameter_name change_type value conditions. Change types: absval (absolute value), abschg (absolute change), pctchg (percent change). Conditions filter by object type, land use, soil, etc."
+    stage: "s6_calibration_parameters"
+    script_path: "tools/s6/generate_calibration_file.py"
+    language: "python"
+    inputs:
+      - name: "parameter_set"
+        type: "config"
+        description: "Dict of parameter_name: {change_type, value, conditions}"
+        required: true
+        example: '{"cn2": {"change_type": "pctchg", "value": -10}, "esco": {"change_type": "absval", "value": 0.85}}'
+      - name: "output_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+    outputs:
+      - name: "calibration_cal"
+        type: "file"
+        description: "Calibration parameter file"
+        path_pattern: "{output_dir}/calibration.cal"
+    preconditions:
+      - "Parameter names match SWAT+ internal variable names"
+    postconditions:
+      - "calibration.cal has valid format with header line"
+      - "All values within physically meaningful ranges"
+
+  - id: "apply_calibration"
+    name: "Apply Calibration Parameters"
+    description: "Validate calibration.cal parameter ranges and verify parameter names exist in SWAT+ variable dictionary. Generate sensitivity analysis setup if requested."
+    stage: "s6_calibration_parameters"
+    script_path: "tools/s6/apply_calibration.py"
+    language: "python"
+    inputs:
+      - name: "calibration_cal_path"
+        type: "file"
+        description: "Path to calibration.cal"
+        required: true
+      - name: "txtinout_dir"
+        type: "directory"
+        description: "TxtInOut directory for cross-referencing"
+        required: true
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON validation of calibration parameters"
+        path_pattern: ""
+    preconditions:
+      - "calibration.cal exists"
+    postconditions:
+      - "All parameter names are valid SWAT+ variables"
+
+  # --- S7: Simulation Configuration ---
+  - id: "configure_file_cio"
+    name: "Configure Master Control File (file.cio)"
+    description: "Generate or update file.cio with correct references to all input files. Categories: simulation, basin, climate, connect, hru, lsunit, aquifer, channel, reservoir, recall, exco, dr, routing_unit, salts, constituents. Set 'null' for unused optional files."
+    stage: "s7_simulation_config"
+    script_path: "tools/s7/configure_file_cio.py"
+    language: "python"
+    inputs:
+      - name: "txtinout_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+      - name: "optional_modules"
+        type: "config"
+        description: "Dict of optional modules to enable/disable"
+        required: false
+        example: '{"reservoir": false, "wetland": false, "salts": false}'
+    outputs:
+      - name: "file_cio"
+        type: "file"
+        description: "Master control file"
+        path_pattern: "{txtinout_dir}/file.cio"
+    preconditions:
+      - "All required input files exist in TxtInOut"
+    postconditions:
+      - "Every file referenced in file.cio exists in TxtInOut"
+
+  - id: "configure_time_sim"
+    name: "Configure Simulation Time"
+    description: "Generate time.sim with simulation period (day_start, yrc_start, day_end, yrc_end), time step (1=daily), and print settings (nyskip for warmup)."
+    stage: "s7_simulation_config"
+    script_path: "tools/s7/configure_time_sim.py"
+    language: "python"
+    inputs:
+      - name: "start_date"
+        type: "string"
+        description: "Simulation start date YYYY-MM-DD"
+        required: true
+      - name: "end_date"
+        type: "string"
+        description: "Simulation end date YYYY-MM-DD"
+        required: true
+      - name: "warmup_years"
+        type: "number"
+        description: "Number of warmup years to skip in output (default 2)"
+        required: false
+        example: "2"
+      - name: "output_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+    outputs:
+      - name: "time_sim"
+        type: "file"
+        description: "Simulation time configuration"
+        path_pattern: "{output_dir}/time.sim"
+    preconditions:
+      - "Weather data covers start_date minus warmup_years through end_date"
+    postconditions:
+      - "time.sim has valid Julian day and year entries"
+
+  - id: "configure_print_prt"
+    name: "Configure Print Settings"
+    description: "Generate print.prt controlling which output files are written and at what frequency (daily, monthly, yearly, average annual). Key outputs: basin_wb, basin_nb, basin_ls, channel_sd, hru_wb, hru_nb, hru_ls, aquifer, hru_pw."
+    stage: "s7_simulation_config"
+    script_path: "tools/s7/configure_print_prt.py"
+    language: "python"
+    inputs:
+      - name: "output_variables"
+        type: "config"
+        description: "Dict of output category: {daily: bool, monthly: bool, yearly: bool, avann: bool}"
+        required: true
+        example: '{"basin_wb": {"daily": true}, "channel_sd": {"daily": true}, "basin_nb": {"monthly": true}}'
+      - name: "output_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+    outputs:
+      - name: "print_prt"
+        type: "file"
+        description: "Print configuration file"
+        path_pattern: "{output_dir}/print.prt"
+    preconditions: []
+    postconditions:
+      - "print.prt has valid y/n flags for each output category"
+
+  - id: "validate_txtinout"
+    name: "Validate TxtInOut Directory"
+    description: "Cross-check all file references in file.cio against actual files in TxtInOut. Verify internal consistency: object counts in object.cnt match actual object counts in data files. Check weather-sta.cli references match .cli file contents."
+    stage: "s7_simulation_config"
+    script_path: "tools/s7/validate_txtinout.py"
+    language: "python"
+    inputs:
+      - name: "txtinout_dir"
+        type: "directory"
+        description: "TxtInOut directory to validate"
+        required: true
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON report of validation results"
+        path_pattern: ""
+    preconditions:
+      - "file.cio exists in TxtInOut"
+    postconditions:
+      - "All file references resolve to existing files"
+      - "Object counts are consistent"
+
+  # --- S8: Model Execution ---
+  - id: "compile_swatplus"
+    name: "Compile SWAT+ from Source"
+    description: "Compile SWAT+ Fortran source code using CMake + gfortran on Linux. Applies any necessary patches for gfortran compatibility."
+    stage: "s8_model_execution"
+    script_path: "tools/s8/compile_swatplus.py"
+    language: "python"
+    inputs:
+      - name: "source_dir"
+        type: "directory"
+        description: "SWAT+ source code directory"
+        required: true
+        example: "model/swatplus/src"
+      - name: "build_dir"
+        type: "directory"
+        description: "Build output directory"
+        required: true
+        example: "model/swatplus/build"
+      - name: "compiler"
+        type: "string"
+        description: "Fortran compiler (default gfortran)"
+        required: false
+        example: "gfortran"
+    outputs:
+      - name: "executable"
+        type: "file"
+        description: "Compiled SWAT+ binary"
+        path_pattern: "{build_dir}/swatplus"
+    preconditions:
+      - "gfortran >= 9.0 installed"
+      - "cmake >= 3.16 installed"
+      - "Source directory contains CMakeLists.txt"
+    postconditions:
+      - "swatplus binary exists and is executable"
+
+  - id: "run_swatplus"
+    name: "Run SWAT+ Simulation"
+    description: "Execute SWAT+ binary from the TxtInOut directory. The binary reads file.cio from the current working directory. Captures stdout/stderr and monitors for runtime errors."
+    stage: "s8_model_execution"
+    script_path: "tools/s8/run_swatplus.py"
+    language: "python"
+    inputs:
+      - name: "executable_path"
+        type: "file"
+        description: "Path to SWAT+ binary"
+        required: true
+        example: "model/swatplus/build/swatplus"
+      - name: "txtinout_dir"
+        type: "directory"
+        description: "TxtInOut directory (working directory for execution)"
+        required: true
+    outputs:
+      - name: "run_log"
+        type: "file"
+        description: "Captured stdout/stderr from simulation"
+        path_pattern: "{txtinout_dir}/swatplus_run.log"
+      - name: "output_files"
+        type: "directory"
+        description: "Output files in TxtInOut directory"
+        path_pattern: "{txtinout_dir}/"
+    preconditions:
+      - "SWAT+ binary exists and is executable"
+      - "file.cio exists in TxtInOut directory"
+      - "All files referenced in file.cio exist"
+    postconditions:
+      - "No STOP or fatal error messages in run log"
+      - "Output files (channel_sd_day.txt, basin_wb_day.txt, etc.) exist if enabled in print.prt"
+
+  # --- S9: Output Parsing ---
+  - id: "parse_channel_output"
+    name: "Parse Channel Output (channel_sd)"
+    description: "Parse channel_sd_day.txt or channel_sd_mon.txt to extract discharge (flo_out, m3/s), sediment (sed_out, tons), and nutrient loads (orgn_out, sedp_out, no3_out, solp_out, nh3_out, no2_out) at specified channel/outlet."
+    stage: "s9_output_parsing"
+    script_path: "tools/s9/parse_channel_output.py"
+    language: "python"
+    inputs:
+      - name: "channel_sd_path"
+        type: "file"
+        description: "Path to channel_sd_day.txt"
+        required: true
+      - name: "channel_id"
+        type: "number"
+        description: "Channel ID at the outlet (typically 1 or last channel)"
+        required: true
+      - name: "start_date"
+        type: "string"
+        description: "Analysis start date (after warmup)"
+        required: true
+      - name: "end_date"
+        type: "string"
+        description: "Analysis end date"
+        required: true
+    outputs:
+      - name: "discharge_timeseries"
+        type: "value"
+        description: "JSON with date, flo_out, sed_out, orgn_out, solp_out arrays"
+        path_pattern: ""
+    preconditions:
+      - "channel_sd_day.txt exists and has data rows"
+    postconditions:
+      - "Parsed discharge values are non-negative"
+      - "Time series covers the requested period"
+
+  - id: "parse_basin_output"
+    name: "Parse Basin-Level Output"
+    description: "Parse basin_wb_day.txt (water balance) and basin_nb_day.txt (nutrient balance) for basin-wide summaries. Extract: precip, surq_gen, latq, wateryld, perc, et, sw_final (water balance); orgn, no3, nh3, solp, sedp (nutrient balance)."
+    stage: "s9_output_parsing"
+    script_path: "tools/s9/parse_basin_output.py"
+    language: "python"
+    inputs:
+      - name: "txtinout_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+      - name: "output_type"
+        type: "string"
+        description: "Output type: basin_wb, basin_nb, basin_ls, basin_pw"
+        required: true
+      - name: "frequency"
+        type: "string"
+        description: "Temporal frequency: day, mon, yr, aa"
+        required: false
+        example: "day"
+    outputs:
+      - name: "basin_data"
+        type: "value"
+        description: "JSON with parsed basin-level time series"
+        path_pattern: ""
+    preconditions:
+      - "Requested output file exists in TxtInOut"
+    postconditions:
+      - "All water balance components are non-negative"
+
+  - id: "compute_performance_metrics"
+    name: "Compute Performance Metrics"
+    description: "Compute NSE, PBIAS, KGE, R2, RMSE between simulated and observed discharge. Also computes Moriasi et al. (2007) performance ratings."
+    stage: "s9_output_parsing"
+    script_path: "tools/s9/compute_performance_metrics.py"
+    language: "python"
+    inputs:
+      - name: "simulated"
+        type: "config"
+        description: "Simulated discharge time series (JSON or CSV path)"
+        required: true
+      - name: "observed"
+        type: "config"
+        description: "Observed discharge time series (JSON or CSV path)"
+        required: true
+    outputs:
+      - name: "metrics"
+        type: "value"
+        description: "JSON with NSE, PBIAS, KGE, R2, RMSE and performance ratings"
+        path_pattern: ""
+    preconditions:
+      - "Simulated and observed cover the same time period"
+      - "At least 365 overlapping data points"
+    postconditions:
+      - "NSE in [-Inf, 1], PBIAS in [-100, 100], KGE in [-Inf, 1]"
+
+  - id: "check_mass_balance"
+    name: "Check Water and Nutrient Mass Balance"
+    description: "Verify mass balance closure from basin_wb (water) and basin_nb (nutrient) outputs. Water: precip = ET + surq + latq + perc + delta_storage. Nutrient: inputs (fert + fixation + deposition) = outputs (crop uptake + loss) + delta_pool."
+    stage: "s9_output_parsing"
+    script_path: "tools/s9/check_mass_balance.py"
+    language: "python"
+    inputs:
+      - name: "txtinout_dir"
+        type: "directory"
+        description: "TxtInOut directory with output files"
+        required: true
+    outputs:
+      - name: "mass_balance_report"
+        type: "value"
+        description: "JSON with water/nutrient balance closure errors"
+        path_pattern: ""
+    preconditions:
+      - "basin_wb and basin_nb output files exist"
+    postconditions:
+      - "Water balance error < 5% of total precipitation"
+      - "Nutrient balance error < 10% of total inputs"
+
+  # --- Previously unregistered tools (added 2026-03-23 audit) ---
+
+  - id: "generate_hru_from_global"
+    name: "Generate HRUs from Global Datasets"
+    description: "All-in-one SWAT+ setup from global data: DEM processing, HWSD soil mapping, AVHRR land cover, HRU generation, weather files, soils_lte.sol creation, cal_parms.cal fix. The primary tool for autonomous SWAT+ basin setup (2200+ lines)."
+    stage: "s2_hru_definition"
+    script_path: "tools/s2/generate_hru_from_global.py"
+    language: "python"
+    inputs:
+      - name: "basin_shapefile"
+        type: "file"
+        description: "Basin boundary shapefile"
+        required: true
+      - name: "dem_path"
+        type: "file"
+        description: "DEM raster"
+        required: true
+      - name: "template_dir"
+        type: "directory"
+        description: "SWAT+ TxtInOut template directory"
+        required: true
+      - name: "output_dir"
+        type: "directory"
+        description: "Output TxtInOut directory"
+        required: true
+      - name: "threshold"
+        type: "number"
+        description: "Stream definition threshold (default 5000 for 12x speedup)"
+        required: false
+        example: "5000"
+    outputs:
+      - name: "txtinout"
+        type: "directory"
+        description: "Complete TxtInOut directory ready for SWAT+ execution"
+        path_pattern: "{output_dir}/"
+    preconditions:
+      - "HWSD raster and MDB available"
+      - "AVHRR land cover raster available"
+    postconditions:
+      - "file.cio exists and references all required files"
+      - "soils_lte.sol exists (empty file, prevents crash)"
+      - "cal_parms.cal has correct header line count"
+
+  - id: "vic_forcing_to_swatplus"
+    name: "Convert VIC Forcing to SWAT+ Weather"
+    description: "Convert VIC/CMFD/MSWX forcing data to SWAT+ weather file format (.pcp, .tmp, .slr, .hmd, .wnd) with proper headers and CLI index files."
+    stage: "s3_weather_preparation"
+    script_path: "tools/s3/vic_forcing_to_swatplus.py"
+    language: "python"
+    inputs:
+      - name: "forcing_dir"
+        type: "directory"
+        description: "VIC forcing directory"
+        required: true
+      - name: "output_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+    outputs:
+      - name: "weather_files"
+        type: "file"
+        description: "SWAT+ weather files (.pcp, .tmp, .slr, .hmd, .wnd)"
+        path_pattern: "{output_dir}/*.pcp"
+    preconditions:
+      - "VIC forcing files exist"
+    postconditions:
+      - "All .cli index files generated"
+
+  - id: "hwsd_to_swatplus_soil"
+    name: "HWSD to SWAT+ Soil Database"
+    description: "Convert HWSD global soil data to SWAT+ soils.sol format using pedotransfer functions."
+    stage: "s4_soil_database"
+    script_path: "tools/s4/hwsd_to_swatplus_soil.py"
+    language: "python"
+    inputs:
+      - name: "hwsd_raster"
+        type: "file"
+        description: "HWSD raster path"
+        required: true
+      - name: "hwsd_mdb"
+        type: "file"
+        description: "HWSD attribute database"
+        required: true
+      - name: "basin_shapefile"
+        type: "file"
+        description: "Basin boundary"
+        required: true
+      - name: "output_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+    outputs:
+      - name: "soils_sol"
+        type: "file"
+        description: "SWAT+ soils database"
+        path_pattern: "{output_dir}/soils.sol"
+    preconditions:
+      - "HWSD raster and MDB exist"
+    postconditions:
+      - "soils.sol has valid layer properties"
+
+  - id: "run_swatplus_with_params"
+    name: "Run SWAT+ with Parameter Changes (pySWATPlus)"
+    description: "Run SWAT+ simulation with modified parameters via pySWATPlus TxtinoutReader. Supports absval, abschg, pctchg change types."
+    stage: "s8_model_execution"
+    script_path: "tools/s8/run_swatplus_with_params.py"
+    language: "python"
+    inputs:
+      - name: "txtinout_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+      - name: "parameters"
+        type: "config"
+        description: "List of parameter changes [{name, change_type, value}]"
+        required: true
+      - name: "sim_dir"
+        type: "directory"
+        description: "Simulation output directory"
+        required: true
+    outputs:
+      - name: "results"
+        type: "directory"
+        description: "SWAT+ output files"
+        path_pattern: "{sim_dir}/"
+    preconditions:
+      - "pySWATPlus installed"
+      - "TxtInOut directory has valid file.cio"
+    postconditions:
+      - "Simulation completed without STOP error"
+
+  - id: "calibrate_swatplus"
+    name: "Calibrate SWAT+ (Multi-Objective)"
+    description: "Multi-objective calibration of SWAT+ using pySWATPlus + pymoo. Supports NSGA-II/III optimization for NSE, PBIAS, KGE."
+    stage: "s6_calibration_parameters"
+    script_path: "tools/s6/calibrate_swatplus.py"
+    language: "python"
+    inputs:
+      - name: "txtinout_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+      - name: "observed_file"
+        type: "file"
+        description: "Observed discharge file"
+        required: true
+      - name: "param_ranges"
+        type: "config"
+        description: "Parameter name and [min, max] ranges"
+        required: true
+    outputs:
+      - name: "pareto_front"
+        type: "value"
+        description: "Pareto-optimal parameter sets"
+        path_pattern: ""
+    preconditions:
+      - "pySWATPlus and pymoo installed"
+    postconditions:
+      - "At least one Pareto-optimal solution found"
+
+  - id: "sensitivity_swatplus"
+    name: "Sobol Sensitivity Analysis for SWAT+"
+    description: "Variance-based Sobol sensitivity analysis for SWAT+ parameters using pySWATPlus + SALib."
+    stage: "s6_calibration_parameters"
+    script_path: "tools/s6/sensitivity_swatplus.py"
+    language: "python"
+    inputs:
+      - name: "txtinout_dir"
+        type: "directory"
+        description: "TxtInOut directory"
+        required: true
+      - name: "param_ranges"
+        type: "config"
+        description: "Parameter ranges for sensitivity analysis"
+        required: true
+      - name: "n_samples"
+        type: "number"
+        description: "Number of Sobol samples (default 256)"
+        required: false
+    outputs:
+      - name: "sensitivity_indices"
+        type: "value"
+        description: "First-order (S1) and total-order (ST) indices"
+        path_pattern: ""
+    preconditions:
+      - "SALib installed"
+    postconditions:
+      - "S1 + ST indices computed for all parameters"
+
+  - id: "adapt_swatplus_project"
+    name: "Adapt SWAT+ Template Project for New Basin"
+    description: "Adapt a validated SWAT+ TxtInOut template for a new basin by updating spatial objects, weather stations, and connectivity files."
+    stage: "s7_simulation_config"
+    script_path: "tools/s7/adapt_swatplus_project.py"
+    language: "python"
+    inputs:
+      - name: "template_dir"
+        type: "directory"
+        description: "Source TxtInOut template"
+        required: true
+      - name: "basin_shapefile"
+        type: "file"
+        description: "New basin shapefile"
+        required: true
+      - name: "output_dir"
+        type: "directory"
+        description: "Output TxtInOut directory"
+        required: true
+    outputs:
+      - name: "adapted_txtinout"
+        type: "directory"
+        description: "Adapted TxtInOut directory"
+        path_pattern: "{output_dir}/"
+    preconditions:
+      - "Template TxtInOut is a valid SWAT+ project"
+    postconditions:
+      - "file.cio references updated files"
+
+  - id: "compare_swatplus_vic"
+    name: "Compare SWAT+ Discharge vs VIC Output"
+    description: "Compare SWAT+ simulated discharge against VIC routed discharge for cross-model validation. Computes NSE, KGE, r, PBIAS."
+    stage: "s9_output_parsing"
+    script_path: "tools/s9/compare_swatplus_vic.py"
+    language: "python"
+    inputs:
+      - name: "swatplus_output"
+        type: "file"
+        description: "SWAT+ channel_sd output file"
+        required: true
+      - name: "vic_discharge"
+        type: "file"
+        description: "VIC routed discharge file"
+        required: true
+    outputs:
+      - name: "comparison_report"
+        type: "value"
+        description: "Cross-model comparison metrics"
+        path_pattern: ""
+    preconditions:
+      - "Both outputs cover overlapping time period"
+    postconditions:
+      - "Comparison metrics computed and reported"
+
+  # --- S10: Water Quality ---
+  - id: "configure_nutrient_output"
+    name: "Enable Nutrient/Sediment Output in print.prt"
+    description: "Modify an existing print.prt to enable water quality output: basin_nb daily, hru_nb yearly, channel_sd daily (ensures nutrient columns are included). Supports minimal/standard/detailed output levels."
+    stage: "s10_water_quality"
+    script_path: "tools/s10/configure_nutrient_output.py"
+    language: "python"
+    inputs:
+      - name: "print_prt"
+        type: "file"
+        description: "Path to existing print.prt file"
+        required: true
+      - name: "level"
+        type: "string"
+        description: "Output detail level: minimal, standard, detailed"
+        required: false
+        example: "standard"
+    outputs:
+      - name: "print_prt_updated"
+        type: "file"
+        description: "Updated print.prt with nutrient output enabled"
+        path_pattern: "{print_prt}"
+    preconditions:
+      - "print.prt exists in TxtInOut"
+    postconditions:
+      - "basin_nb daily=y in print.prt"
+      - "channel_sd daily=y in print.prt"
+
+  - id: "configure_fertilizer"
+    name: "Configure Fertilizer Management for Chinese Crops"
+    description: "Generate management.sch with realistic fertilizer schedules for Chinese agricultural systems. Supports wheat, maize, rice, and wheat-maize double cropping. Fertilizer rates from NPKGRIDS dataset and Chinese agricultural surveys."
+    stage: "s10_water_quality"
+    script_path: "tools/s10/configure_fertilizer.py"
+    language: "python"
+    inputs:
+      - name: "management_sch"
+        type: "file"
+        description: "Path to management.sch (created or modified)"
+        required: true
+      - name: "crop"
+        type: "string"
+        description: "Crop system: wheat, maize, rice, wheat_maize"
+        required: true
+      - name: "region"
+        type: "string"
+        description: "Region: huai_river, north_china, northeast, south_china"
+        required: true
+      - name: "append"
+        type: "boolean"
+        description: "Append to existing file instead of overwriting"
+        required: false
+    outputs:
+      - name: "management_sch_updated"
+        type: "file"
+        description: "management.sch with fertilizer schedule"
+        path_pattern: "{management_sch}"
+    preconditions:
+      - "fertilizer.frt has elem_n and elem_p entries"
+    postconditions:
+      - "Total N application 50-400 kgN/ha (typical Chinese range)"
+      - "Schedule has plant->fertilize->harvest sequence"
+
+  - id: "configure_point_sources"
+    name: "Generate Point Source Recall Records"
+    description: "Convert a CSV of point source pollution data (location, flow, nutrient concentrations) into SWAT+ recall.rec format. Supports constant and monthly recall types."
+    stage: "s10_water_quality"
+    script_path: "tools/s10/configure_point_sources.py"
+    language: "python"
+    inputs:
+      - name: "sources_csv"
+        type: "file"
+        description: "CSV with columns: name, flow_m3s, NO3_mg_l, NH4_mg_l, etc."
+        required: true
+      - name: "output_dir"
+        type: "directory"
+        description: "Output directory (typically TxtInOut)"
+        required: true
+      - name: "recall_type"
+        type: "number"
+        description: "1=constant, 2=monthly"
+        required: false
+        example: "1"
+    outputs:
+      - name: "recall_rec"
+        type: "file"
+        description: "recall.rec file for SWAT+"
+        path_pattern: "{output_dir}/recall.rec"
+    preconditions:
+      - "sources_csv has at least name and flow_m3s columns"
+    postconditions:
+      - "recall.rec has one entry per source"
+
+  - id: "parse_nutrient_output"
+    name: "Parse Channel Nutrient/Sediment Output"
+    description: "Parse channel_sd_day.txt or channel_day.txt for sediment and nutrient loads. Extracts sed_out, orgn_out, no3_out, nh4_out, no2_out, solp_out, sedp_out. Computes TN, TP, annual yields (kg/ha/yr)."
+    stage: "s10_water_quality"
+    script_path: "tools/s10/parse_nutrient_output.py"
+    language: "python"
+    inputs:
+      - name: "channel_output"
+        type: "file"
+        description: "Path to channel_sd_day.txt or channel_day.txt"
+        required: true
+      - name: "basin_area_km2"
+        type: "number"
+        description: "Basin area in km2 for yield calculation"
+        required: true
+      - name: "output_csv"
+        type: "file"
+        description: "Output CSV path for daily nutrient time series"
+        required: true
+      - name: "channel_id"
+        type: "number"
+        description: "Channel unit ID to extract (default: 1)"
+        required: false
+      - name: "start_date"
+        type: "string"
+        description: "Start date YYYY-MM-DD"
+        required: false
+      - name: "end_date"
+        type: "string"
+        description: "End date YYYY-MM-DD"
+        required: false
+    outputs:
+      - name: "daily_csv"
+        type: "file"
+        description: "Daily nutrient time series CSV"
+        path_pattern: "{output_csv}"
+      - name: "annual_csv"
+        type: "file"
+        description: "Annual summary CSV"
+        path_pattern: "{output_csv_stem}_annual.csv"
+    preconditions:
+      - "Channel output file exists with nutrient columns"
+    postconditions:
+      - "CSV has TN_kg, TP_kg columns"
+      - "Annual yields are physically reasonable"
+
+  - id: "validate_water_quality"
+    name: "Validate Water Quality Output vs Observations"
+    description: "Compare simulated nutrient/sediment output against observed water quality data. Computes PBIAS, Pearson R, NSE, RMSE. Uses Moriasi et al. (2007) thresholds: PBIAS < +/-25% for N, < +/-40% for P."
+    stage: "s10_water_quality"
+    script_path: "tools/s10/validate_water_quality.py"
+    language: "python"
+    inputs:
+      - name: "sim_csv"
+        type: "file"
+        description: "Simulated nutrient CSV from parse_nutrient_output"
+        required: true
+      - name: "obs_csv"
+        type: "file"
+        description: "Observed water quality data CSV"
+        required: true
+      - name: "variable"
+        type: "config"
+        description: "Variables to validate: TN, TP, sediment"
+        required: false
+        example: '["TN", "TP"]'
+      - name: "timestep"
+        type: "string"
+        description: "Aggregation: monthly or annual"
+        required: false
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON with PBIAS, R, NSE, RMSE and performance ratings"
+        path_pattern: ""
+    preconditions:
+      - "Simulated and observed cover overlapping time periods"
+    postconditions:
+      - "At least one variable validated with >= 3 data points"
+
+# --- Layer 2: Skill Documents ---
+skill_documents:
+  - id: "sd_s1"
+    name: "Watershed Delineation"
+    stage: "s1_watershed_delineation"
+    path: "docs/s1_watershed_delineation_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 1800
+
+  - id: "sd_s2"
+    name: "HRU Definition"
+    stage: "s2_hru_definition"
+    path: "docs/s2_hru_definition_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 1600
+
+  - id: "sd_s3"
+    name: "Weather Data Preparation"
+    stage: "s3_weather_preparation"
+    path: "docs/s3_weather_preparation_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 2200
+
+  - id: "sd_s4"
+    name: "Soil Database Configuration"
+    stage: "s4_soil_database"
+    path: "docs/s4_soil_database_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 1500
+
+  - id: "sd_s5"
+    name: "Land Use and Management Configuration"
+    stage: "s5_landuse_management"
+    path: "docs/s5_landuse_management_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 2000
+
+  - id: "sd_s6"
+    name: "Calibration Parameter Setup"
+    stage: "s6_calibration_parameters"
+    path: "docs/s6_calibration_parameters_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 1800
+
+  - id: "sd_s7"
+    name: "Simulation Configuration"
+    stage: "s7_simulation_config"
+    path: "docs/s7_simulation_config_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 2000
+
+  - id: "sd_s8"
+    name: "Model Execution"
+    stage: "s8_model_execution"
+    path: "docs/s8_model_execution_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 1200
+
+  - id: "sd_s9"
+    name: "Output Parsing and Analysis"
+    stage: "s9_output_parsing"
+    path: "docs/s9_output_parsing_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 1800
+
+# --- Layer 3: Diagnostic Triplets ---
+# See diagnostics/triplets.yaml for full definitions
+diagnostic_triplets:
+  - id: "dt_001"
+    stage: "s7_simulation_config"
+    failure_domain: "path_resolution"
+    severity: "fatal"
+  - id: "dt_002"
+    stage: "s3_weather_preparation"
+    failure_domain: "parameter_format"
+    severity: "fatal"
+  - id: "dt_003"
+    stage: "s3_weather_preparation"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_004"
+    stage: "s2_hru_definition"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_005"
+    stage: "s8_model_execution"
+    failure_domain: "runtime"
+    severity: "fatal"
+  - id: "dt_006"
+    stage: "s4_soil_database"
+    failure_domain: "parameter_format"
+    severity: "fatal"
+  - id: "dt_007"
+    stage: "s8_model_execution"
+    failure_domain: "compilation"
+    severity: "fatal"
+  - id: "dt_008"
+    stage: "s1_watershed_delineation"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_009"
+    stage: "s7_simulation_config"
+    failure_domain: "dependency_mismatch"
+    severity: "fatal"
+  - id: "dt_010"
+    stage: "s9_output_parsing"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_011"
+    stage: "s5_landuse_management"
+    failure_domain: "parameter_format"
+    severity: "degraded"
+  - id: "dt_012"
+    stage: "s3_weather_preparation"
+    failure_domain: "unit_conversion"
+    severity: "silent"
+  - id: "dt_013"
+    stage: "s6_calibration_parameters"
+    failure_domain: "parameter_format"
+    severity: "degraded"
+  - id: "dt_014"
+    stage: "s8_model_execution"
+    failure_domain: "runtime"
+    severity: "fatal"
+  - id: "dt_015"
+    stage: "s9_output_parsing"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_020"
+    stage: "s10_water_quality"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_021"
+    stage: "s10_water_quality"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_022"
+    stage: "s10_water_quality"
+    failure_domain: "silent_error"
+    severity: "silent"
+
+# --- Summary statistics ---
+summary:
+  total_tools: 36  # 23 stubs + 8 working implementations + 5 water quality tools
+  total_tool_lines: 11200
+  total_skill_documents: 1  # SKILL.md (per-stage docs pending)
+  total_skill_words: 17500
+  total_diagnostic_triplets: 26  # 15 base + 7 verified + 1 channel threshold + 3 water quality
+  total_error_log_entries: 6
+  last_audit: "2026-04-01"
+  failure_domains:
+    - "path_resolution"
+    - "parameter_format"
+    - "unit_conversion"
+    - "runtime"
+    - "silent_error"
+    - "compilation"
+    - "dependency_mismatch"
+  pipeline_stages: 10
+  pipeline_milestones: 28

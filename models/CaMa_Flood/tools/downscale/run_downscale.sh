@@ -1,0 +1,1 @@
+/mnt/disk1/Hydrocraft_server/Hydrocraft/skills/cama-downscale/run_downscale.sh

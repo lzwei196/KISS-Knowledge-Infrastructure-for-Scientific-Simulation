@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile>
+<diagram name="RZWQM2 Pipeline">
+<mxGraphModel>
+  <root>
+    <mxCell id="0"/>
+    <mxCell id="1" parent="0"/>
+    <mxCell id="title" value="RZWQM2 Knowledge Infrastructure Pipeline" style="text;html=1;fontSize=16;fontStyle=1;align=center;verticalAlign=middle;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+      <mxGeometry x="100" y="10" width="500" height="40" as="geometry"/>
+    </mxCell>
+    <mxCell id="s1" value="S1: Site/Grid Configuration&#xa;lat/lon (radians), elevation, slope" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D6F;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="60" y="70" width="240" height="50" as="geometry"/>
+    </mxCell>
+    <mxCell id="s2" value="S2: Meteorological Data Prep&#xa;.met file (10 cols, 36-line header)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D6F;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="400" y="70" width="240" height="50" as="geometry"/>
+    </mxCell>
+    <mxCell id="s3" value="S3: Breakpoint Rainfall&#xa;.brk (mm to inches / 25.4)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D6F;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="400" y="160" width="240" height="50" as="geometry"/>
+    </mxCell>
+    <mxCell id="s4" value="S4: Soil Properties&#xa;physical, hydraulic, micro/macropore" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#C4A052;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="60" y="160" width="240" height="50" as="geometry"/>
+    </mxCell>
+    <mxCell id="s5" value="S5: Node Discretization&#xa;nlayer_gen (half-way rule)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D6F;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="60" y="250" width="240" height="50" as="geometry"/>
+    </mxCell>
+    <mxCell id="s6" value="S6: Initial Conditions&#xa;water, chemistry, nutrients (RZINIT.dat)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#C4A052;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="400" y="250" width="240" height="50" as="geometry"/>
+    </mxCell>
+    <mxCell id="s7" value="S7: Scenario Assembly&#xa;ipnames.dat + RZX paths + cntrl.dat" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#C4A052;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="230" y="340" width="240" height="50" as="geometry"/>
+    </mxCell>
+    <mxCell id="s8" value="S8: Model Execution&#xa;RZWQMrelease.exe / main_ryzen (AVX2)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8EAF6;strokeColor=#1B4332;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="230" y="430" width="240" height="50" as="geometry"/>
+    </mxCell>
+    <mxCell id="s9" value="S9: Result Parsing&#xa;.ana (daily) + Layer.plt (profile)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D6F;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="230" y="520" width="240" height="50" as="geometry"/>
+    </mxCell>
+    <mxCell id="e1" style="strokeColor=#2E7D6F;strokeWidth=2;" edge="1" source="s1" target="s4" parent="1">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <mxCell id="e2" style="strokeColor=#2E7D6F;strokeWidth=2;" edge="1" source="s2" target="s3" parent="1">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <mxCell id="e3" style="strokeColor=#2E7D6F;strokeWidth=2;" edge="1" source="s4" target="s5" parent="1">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <mxCell id="e4" style="strokeColor=#2E7D6F;strokeWidth=2;" edge="1" source="s4" target="s6" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="350" y="200"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="e5" style="strokeColor=#2E7D6F;strokeWidth=2;" edge="1" source="s2" target="s7" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="660" y="365"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="e6" style="strokeColor=#2E7D6F;strokeWidth=2;" edge="1" source="s3" target="s7" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="640" y="340"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="e7" style="strokeColor=#2E7D6F;strokeWidth=2;" edge="1" source="s5" target="s7" parent="1">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <mxCell id="e8" style="strokeColor=#2E7D6F;strokeWidth=2;" edge="1" source="s6" target="s7" parent="1">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <mxCell id="e9" style="strokeColor=#2E7D6F;strokeWidth=2;" edge="1" source="s7" target="s8" parent="1">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <mxCell id="e10" style="strokeColor=#2E7D6F;strokeWidth=2;" edge="1" source="s8" target="s9" parent="1">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <mxCell id="ei1" value="lat/lon" style="strokeColor=#C4A052;strokeWidth=1;dashed=1;fontSize=9;" edge="1" source="s1" target="s2" parent="1">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <mxCell id="leg1" value="Procedural (tools)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D6F;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="60" y="600" width="120" height="25" as="geometry"/>
+    </mxCell>
+    <mxCell id="leg2" value="Evaluative (decisions)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#C4A052;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="200" y="600" width="130" height="25" as="geometry"/>
+    </mxCell>
+    <mxCell id="leg3" value="Debugging (execution)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8EAF6;strokeColor=#1B4332;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="350" y="600" width="130" height="25" as="geometry"/>
+    </mxCell>
+    <mxCell id="leg4" value="- - - Implicit dependency" style="text;html=1;fontSize=9;fontStyle=2;fillColor=none;strokeColor=none;fontColor=#C4A052;" vertex="1" parent="1">
+      <mxGeometry x="500" y="600" width="140" height="25" as="geometry"/>
+    </mxCell>
+  </root>
+</mxGraphModel>
+</diagram>
+</mxfile>

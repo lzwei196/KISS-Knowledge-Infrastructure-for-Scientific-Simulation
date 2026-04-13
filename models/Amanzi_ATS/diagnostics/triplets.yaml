@@ -1,0 +1,465 @@
+# ============================================================================
+# Amanzi/ATS Diagnostic Triplets
+# ============================================================================
+# 18 diagnostic triplets covering 5 failure domains.
+# Generated during Amanzi/ATS knowledge dissection for HydroCraft platform.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s2_soil_parameterization
+  failure_domain: unit_conversion
+  symptom:
+    description: "Water drains unrealistically fast. Water table drops to domain bottom instantly. Saturation goes to residual everywhere in first timestep."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Hydraulic conductivity K (m/s) used directly as intrinsic permeability k (m²) — 7 orders of magnitude too high"
+    explanation: >
+      Amanzi uses intrinsic permeability k [m²], not hydraulic conductivity K [m/s].
+      The conversion is k = K × μ/(ρ×g) ≈ K × 1.02e-7. For sandy loam with
+      K = 1.23e-5 m/s, k should be 1.25e-12 m². Using K directly gives k = 1.23e-5 m²,
+      which is ~10 million times too permeable. The domain drains completely in seconds.
+    affected_components: [convert_soil_to_amanzi, materials_block]
+  remedy:
+    action: "Convert K to k using k = K × μ/(ρ×g)"
+    tool_to_run: convert_soil_to_amanzi
+    manual_steps:
+      - "Check permeability value in XML — should be 1e-16 to 1e-9 m² for geological materials"
+      - "If permeability > 1e-6, it is likely K (m/s), not k (m²)"
+      - "Multiply by 1.02e-7 to convert"
+    prevention: "convert_soil_to_amanzi.py always converts from K to k"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_002
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Pressure values are essentially zero. Water table is at or below domain bottom. No flow occurs."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Hydraulic head (m) used where pressure (Pa) is expected"
+    explanation: >
+      Amanzi boundary and initial conditions use pressure in Pascals, not hydraulic
+      head in meters. A water table at 10 m elevation requires P = 101325 + 998.2 × 9.81 × 10
+      ≈ 199,240 Pa. Entering '10' as pressure gives 10 Pa ≈ 0.001 m head, effectively zero.
+    affected_components: [boundary_conditions, initial_conditions]
+  remedy:
+    action: "Convert head to pressure: P = P_atm + ρ×g×h"
+    tool_to_run: convert_forcing_to_amanzi
+    manual_steps:
+      - "Check pressure values in XML — atmospheric is 101325 Pa"
+      - "If values are 0-100, they are likely head in meters, not pressure in Pa"
+      - "Convert using P = 101325 + 9806.65 × h"
+    prevention: "convert_forcing_to_amanzi.py includes head_m_to_pressure_pa()"
+  severity: silent
+  cross_references: [dt_008]
+
+- id: dt_003
+  stage: s2_soil_parameterization
+  failure_domain: unit_conversion
+  symptom:
+    description: "Contaminant transport is orders of magnitude slower or faster than expected. Breakthrough time is wrong."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Concentration in mg/L used where mol/L is expected, or vice versa"
+    explanation: >
+      Amanzi default concentration unit is mol/L (molar). Using mg/L values directly
+      introduces an error of molecular_weight/1000. For uranium (MW=238):
+      1 mg/L = 4.2e-6 mol/L. Using 1.0 (mg/L) as 1.0 mol/L gives 238,000× too much.
+    affected_components: [initial_conditions, boundary_conditions, chemistry]
+  remedy:
+    action: "Convert mg/L to mol/L: C_mol = C_mg / (MW × 1000)"
+    tool_to_run: null
+    manual_steps:
+      - "Check concentration unit in <model_description><units><conc_unit>"
+      - "Verify initial and boundary concentrations match the declared unit"
+    prevention: "Always declare conc_unit explicitly in model_description"
+  severity: silent
+  cross_references: []
+
+- id: dt_004
+  stage: s2_soil_parameterization
+  failure_domain: unit_conversion
+  symptom:
+    description: "Soil drains instantly with no capillary retention. Saturation jumps from 1.0 to residual with no transition zone."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "van Genuchten α in 1/cm used directly where 1/Pa is expected"
+    explanation: >
+      Literature reports van Genuchten α in 1/cm. Amanzi uses α in 1/Pa internally.
+      For sandy loam, α = 0.075 1/cm. The conversion is: α_Pa = α_cm / (ρ×g×100)
+      = 0.075 / 980665 ≈ 7.65e-8 1/Pa. Using 0.075 directly as 1/Pa gives α about
+      1 million times too large — the retention curve has zero capillary effect.
+    affected_components: [convert_soil_to_amanzi, cap_pressure_block]
+  remedy:
+    action: "Convert α: α_Pa = α_cm / 980665"
+    tool_to_run: convert_soil_to_amanzi
+    manual_steps:
+      - "Check α value in XML — should be 1e-6 to 1e-2 for 1/Pa"
+      - "If α > 0.01, it is likely in 1/cm"
+      - "Divide by 980665 to convert to 1/Pa"
+    prevention: "convert_soil_to_amanzi.py converts α from 1/cm to 1/Pa"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_005
+  stage: s3_mesh_generation
+  failure_domain: mesh_region
+  symptom:
+    description: "Boundary conditions not applied. Zero flux at boundaries where recharge or pressure was specified. Simulation runs but results are wrong."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Exodus mesh label IDs do not match XML region definitions"
+    explanation: >
+      When using external Exodus II meshes, regions reference labeled sets by integer ID.
+      If the XML specifies label="30000" but the mesh has sideset 3000 (missing a zero),
+      the BC is silently not applied. No error is generated — the boundary defaults to
+      zero flux (no-flow), which may be physically wrong.
+    affected_components: [regions_block, mesh_file]
+  remedy:
+    action: "Verify Exodus label IDs match XML using ncdump or SEACAS tools"
+    tool_to_run: null
+    manual_steps:
+      - "Run 'ncdump -h mesh.exo | grep ss_names' to list sideset IDs"
+      - "Compare with label values in XML <region_file> elements"
+      - "Ensure entity type (cell/face/node) matches"
+    prevention: "Always verify mesh labels before running"
+  severity: silent
+  cross_references: [dt_010]
+
+- id: dt_006
+  stage: s4_xml_input_assembly
+  failure_domain: unit_conversion
+  symptom:
+    description: "Simulation runs for 31 million times too long or too short. Total simulation time in log does not match expected."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Time values in years used where seconds are expected, or vice versa"
+    explanation: >
+      Amanzi internally uses seconds. The <time_unit> in model_description sets the
+      display unit, but execution_control values must be consistent with it. Entering
+      '10' meaning 10 years when the unit is seconds gives a 10-second simulation.
+      Conversely, entering 3.156e8 (10 years in seconds) when the unit is years gives
+      3.156e8 years.
+    affected_components: [execution_control]
+  remedy:
+    action: "Ensure all time values are in the declared time_unit"
+    tool_to_run: null
+    manual_steps:
+      - "Check <time_unit> in model_description"
+      - "Verify execution_control start/end values match"
+      - "1 year = 3.156e7 seconds"
+    prevention: "convert_forcing_to_amanzi.py always outputs in seconds"
+  severity: silent
+  cross_references: []
+
+- id: dt_007
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "Results differ slightly between runs with different MPI process counts. Pressure values at observation points change by 0.1-1%."
+    error_pattern: ""
+    detection_method: comparison
+  diagnosis:
+    root_cause: "Different mesh partitioning across MPI ranks changes solver convergence path"
+    explanation: >
+      Mesh domain decomposition depends on the number of MPI processes. Different
+      decompositions lead to slightly different solver convergence paths due to
+      communication ordering and preconditioning. This is normal for iterative solvers
+      but can affect reproducibility comparisons.
+    affected_components: [mpi_configuration]
+  remedy:
+    action: "Always document and use the same MPI rank count for reproducible runs"
+    tool_to_run: null
+    manual_steps:
+      - "Record np value used for each simulation"
+      - "For comparison studies, use identical np"
+    prevention: "run_amanzi.py logs the command including np"
+  severity: degraded
+  cross_references: []
+
+- id: dt_008
+  stage: s4_xml_input_assembly
+  failure_domain: parameter_format
+  symptom:
+    description: "Water flows upward. Pressure increases with elevation. Water table rises above recharge surface."
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Gravity vector has wrong sign or magnitude"
+    explanation: >
+      Amanzi expects gravity as a 3D vector, typically (0, 0, -9.81) for downward.
+      A positive Z component (0, 0, +9.81) causes upward gravitational acceleration.
+      The linear_pressure gradient for hydrostatic should be (0, 0, -ρg) = (0, 0, -9806.65).
+      A positive gradient causes pressure to increase with elevation (inverted).
+    affected_components: [initial_conditions, execution_control]
+  remedy:
+    action: "Ensure gravity Z component is negative: (0, 0, -9.81)"
+    tool_to_run: null
+    manual_steps:
+      - "Check gravity vector in XML — Z must be negative"
+      - "Check linear_pressure gradient — Z should be -9806.65 Pa/m"
+    prevention: "Template XML should have correct gravity"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_009
+  stage: s3_mesh_generation
+  failure_domain: parameter_format
+  symptom:
+    description: "Fatal error at startup: dimension mismatch. 'Mesh dimension does not match input specification.'"
+    error_pattern: "dimension mismatch"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "XML specifies 2D but mesh is 3D, or vice versa"
+    explanation: >
+      Amanzi is inherently 3D. 2D simulations use a 3D mesh with ny=1. If the XML
+      dimension tag says 2 but the mesh is fully 3D, or the dimension says 3 but
+      the mesh is a 2D surface mesh, a fatal dimension mismatch error occurs.
+    affected_components: [mesh_block]
+  remedy:
+    action: "Set dimension=3 in XML and use ny=1 for 2D problems"
+    tool_to_run: null
+    manual_steps:
+      - "Set <dimension>3</dimension> in mesh block"
+      - "For 2D, use number_of_cells ny=1 with domain width 1.0 m"
+    prevention: "Always use dimension=3 and control dimensionality via cell counts"
+  severity: fatal
+  cross_references: []
+
+- id: dt_010
+  stage: s3_mesh_generation
+  failure_domain: path_resolution
+  symptom:
+    description: "Fatal error: 'Cannot open mesh file'. Simulation aborts immediately."
+    error_pattern: "Cannot open|file not found|No such file"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "Exodus mesh file path in XML is wrong (relative vs absolute path issue)"
+    explanation: >
+      Amanzi resolves mesh file paths relative to the working directory where the binary
+      is executed, NOT relative to the XML file location. If the XML says
+      <file>meshes/domain.exo</file> but you run from a different directory, the file
+      won't be found.
+    affected_components: [mesh_block]
+  remedy:
+    action: "Use absolute path or ensure working directory is correct"
+    tool_to_run: run_amanzi
+    manual_steps:
+      - "Check mesh file path in XML"
+      - "Run from the directory containing the mesh file, or use absolute paths"
+    prevention: "run_amanzi.py checks mesh file existence before execution"
+  severity: fatal
+  cross_references: [dt_005]
+
+- id: dt_011
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Recharge is 100× too high. Domain becomes fully saturated immediately. Ponding on surface."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Recharge in cm/yr not fully converted to kg/m²/s (missed the ÷100 for cm→m)"
+    explanation: >
+      The full conversion from cm/yr to kg/m²/s is: R × ρ / (100 × 3.156e7).
+      If only ÷3.156e7 is applied (missing ÷100), the recharge is 100× too high.
+      300 cm/yr = 3000 mm/yr ≈ 9.49e-5 kg/m²/s. Without ÷100: 9.49e-3 kg/m²/s
+      (equivalent to 300,000 mm/yr).
+    affected_components: [convert_forcing_to_amanzi]
+  remedy:
+    action: "Verify conversion includes cm→m factor (÷100)"
+    tool_to_run: convert_forcing_to_amanzi
+    manual_steps:
+      - "Check recharge_kg_m2_s in output — should be O(1e-8) for typical climates"
+      - "300 mm/yr = 9.49e-6 kg/m²/s"
+    prevention: "convert_forcing_to_amanzi.py uses validated cm_yr_to_kg_m2_s()"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_012
+  stage: s2_soil_parameterization
+  failure_domain: unit_conversion
+  symptom:
+    description: "Contaminant plume does not move. Retardation factor is 1000× too high. Contaminant stuck at source."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Sorption Kd in mL/g used directly where m³/kg is expected"
+    explanation: >
+      Amanzi uses Kd in m³/kg. Literature typically reports Kd in mL/g.
+      The conversion is Kd [m³/kg] = Kd [mL/g] × 0.001.
+      A Kd of 10 mL/g entered as 10 m³/kg is 1000× too large.
+    affected_components: [chemistry_block, sorption]
+  remedy:
+    action: "Multiply Kd by 0.001 to convert mL/g → m³/kg"
+    tool_to_run: convert_soil_to_amanzi
+    manual_steps:
+      - "Check Kd units in XML — should be m³/kg"
+      - "Common values: 0.001-1.0 m³/kg for most contaminants"
+    prevention: "convert_soil_to_amanzi.py includes kd_ml_g_to_m3_kg()"
+  severity: silent
+  cross_references: []
+
+- id: dt_013
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "NaN detected in residual. Simulation crashes after a few timesteps. 'Nonlinear solver failed: NaN in residual.'"
+    error_pattern: "NaN"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "Extreme permeability values or boundary condition magnitudes cause numerical overflow"
+    explanation: >
+      Very high permeability (>1e-6 m²) or very large pressure gradients can cause
+      numerical overflow in the flow solver. This typically manifests as NaN in the
+      first few timesteps. The most common cause is using K (m/s) instead of k (m²).
+    affected_components: [materials_block, boundary_conditions]
+  remedy:
+    action: "Check all parameter values for unit conversion errors"
+    tool_to_run: null
+    manual_steps:
+      - "Check permeability values — should be 1e-16 to 1e-9 m²"
+      - "Check pressure BCs — should be O(1e5) Pa"
+      - "Reduce init_dt to 0.1 s and retry"
+    prevention: "run_amanzi.py preflight checks parameter ranges"
+  severity: fatal
+  cross_references: [dt_001, dt_002]
+
+- id: dt_014
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "Simulation progress extremely slow. Timestep stuck at minimum. Thousands of nonlinear iterations per step."
+    error_pattern: "Nonlinear solver FAILED|cutting timestep"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "Stiff van Genuchten parameters (high n, sharp retention curve) cause solver non-convergence"
+    explanation: >
+      Very high van Genuchten n (>2.5) creates a sharp saturation front that is
+      difficult for nonlinear solvers. The solver repeatedly fails and cuts the
+      timestep, effectively stalling. This is especially problematic for infiltration
+      into initially dry soil.
+    affected_components: [materials_block, cap_pressure]
+  remedy:
+    action: "Reduce vG n slightly, increase preconditioning, or use Anderson acceleration"
+    tool_to_run: null
+    manual_steps:
+      - "Try reducing n by 10-20% for initial testing"
+      - "Increase hypre_cycle_applications to 10"
+      - "Use smaller init_dt (1-10 s)"
+      - "Consider switching to Brooks-Corey for very sandy soils"
+    prevention: "convert_soil_to_amanzi.py warns for n > 2.5"
+  severity: degraded
+  cross_references: []
+
+- id: dt_015
+  stage: s2_soil_parameterization
+  failure_domain: parameter_format
+  symptom:
+    description: "Negative effective saturation. Solver produces nonsensical pressures. May crash or produce NaN."
+    error_pattern: "negative saturation|NaN"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "Residual saturation S_r ≥ 1.0 or θ_r > θ_s"
+    explanation: >
+      The effective saturation S_e = (S - S_r) / (1 - S_r) becomes negative or
+      undefined if S_r ≥ 1. This can happen if θ_r (residual water content) is
+      accidentally used as S_r without dividing by porosity, and θ_r > θ_s due to
+      data error.
+    affected_components: [cap_pressure_block]
+  remedy:
+    action: "Ensure S_r = θ_r / θ_s and S_r < 1.0"
+    tool_to_run: convert_soil_to_amanzi
+    manual_steps:
+      - "Check sr value in cap_pressure block — must be < 1.0"
+      - "Typical range: 0.05 - 0.35"
+    prevention: "convert_soil_to_amanzi.py computes S_r = θ_r / θ_s"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_016
+  stage: s4_xml_input_assembly
+  failure_domain: parameter_format
+  symptom:
+    description: "Fatal XML parse error at startup. 'Required parameter list not found' or 'Missing required element'."
+    error_pattern: "Required.*not found|Missing required"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "A required XML block (mesh, regions, materials, etc.) is missing from the input file"
+    explanation: >
+      Amanzi requires specific XML blocks to be present. Missing the <mesh> block,
+      <regions> block, or <materials> block causes an immediate fatal error. This
+      often happens when copying templates and forgetting to fill in all sections.
+    affected_components: [xml_input_file]
+  remedy:
+    action: "Add the missing XML block"
+    tool_to_run: run_amanzi
+    manual_steps:
+      - "Read the error message to identify which block is missing"
+      - "Add the block to the XML file"
+      - "Required blocks: mesh, regions, materials, initial_conditions, process_kernels"
+    prevention: "run_amanzi.py preflight checks for all required blocks"
+  severity: fatal
+  cross_references: []
+
+- id: dt_017
+  stage: s4_xml_input_assembly
+  failure_domain: silent_error
+  symptom:
+    description: "No recharge enters the domain. Water table drops steadily. System behaves as if sealed at the top."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Recharge boundary condition missing or assigned to wrong region. Default is zero-flux (no-flow)."
+    explanation: >
+      If no boundary condition is specified for a face, Amanzi applies the natural
+      (zero-flux) boundary condition. If the recharge BC is assigned to region
+      "top_surface" but the mesh region is named "Top Surface" (case-sensitive), the
+      BC is not applied and no water enters the domain.
+    affected_components: [boundary_conditions, regions]
+  remedy:
+    action: "Verify BC region names exactly match defined regions (case-sensitive)"
+    tool_to_run: null
+    manual_steps:
+      - "List all region names in <regions> block"
+      - "Verify each BC assigned_region matches exactly"
+      - "Check for typos, case differences, trailing spaces"
+    prevention: "run_amanzi.py could cross-check region names (future enhancement)"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_018
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "Simulation takes 100× longer than expected. Timestep repeatedly cut. Progress bar shows very slow advance."
+    error_pattern: "cutting timestep|dt = 1e-"
+    detection_method: monitoring
+  diagnosis:
+    root_cause: "Sharp wetting front or dry-to-wet transition causes repeated timestep collapse"
+    explanation: >
+      When a sharp wetting front advances through dry soil (e.g., infiltration into
+      initially dry sandy loam), the nonlinear solver struggles with the rapid change
+      in saturation. The timestep is repeatedly cut to very small values. This is
+      physically correct but computationally expensive.
+    affected_components: [execution_control, materials]
+  remedy:
+    action: "Use smaller max_dt during wetting phase, or initialize with slightly wet conditions"
+    tool_to_run: null
+    manual_steps:
+      - "Set initial saturation slightly above residual (S = S_r + 0.01)"
+      - "Use max_dt = 1e4 s during early infiltration"
+      - "Increase init_dt gradually after wetting front passes"
+      - "Consider using NKA or Anderson acceleration for nonlinear solver"
+    prevention: "Start with wetter initial conditions to smooth the wetting front"
+  severity: degraded
+  cross_references: [dt_014]

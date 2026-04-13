@@ -1,0 +1,615 @@
+# ============================================================================
+# wflow Knowledge Infrastructure v1.0.0
+# ============================================================================
+# Deltares wflow v1.0.2 — distributed hydrological model with sediment transport
+# Julia-based (Wflow.jl) with HydroMT-wflow Python automation
+# ============================================================================
+
+package:
+  name: "hydrocraft-wflow"
+  version: "1.0.0"
+  description: "Knowledge infrastructure for wflow distributed hydrology and sediment transport within HydroCraft"
+  target_model: "wflow v1.0.2 (Wflow.jl) — wflow_sbm + wflow_sediment"
+  domain: "distributed hydrology, erosion and sediment transport"
+  authors:
+    - "Jianyun Zhang Research Group, Hohai University"
+  license: "MIT"
+
+pipeline:
+  stages:
+    - id: s0_config
+      name: "Configuration"
+      description: "Set basin, period, resolution, model variant, routing, sediment toggle, forcing dataset"
+      order: 0
+      depends_on: []
+      skill_document: "docs/s0_configuration_skill.md"
+      tools: [setup_wflow_config]
+      milestones:
+        - id: m0_config_created
+          description: "wflow_config.yaml exists with all required fields"
+          verification: "python -c \"import yaml; yaml.safe_load(open('wflow_config.yaml'))\""
+
+    - id: s1_hydromt_setup
+      name: "Model building (HydroMT or manual)"
+      description: "Build wflow staticmaps.nc with DEM, soil, land use, river network parameters"
+      order: 1
+      depends_on: [s0_config]
+      skill_document: "docs/s1_hydromt_setup_skill.md"
+      tools: [build_data_catalog, run_hydromt_build]
+      milestones:
+        - id: m1_staticmaps_created
+          description: "staticmaps.nc exists with wflow_subcatch, wflow_dem, KsatVer, SoilThickness"
+          verification: "python -c \"import xarray; ds=xarray.open_dataset('staticmaps.nc'); assert 'wflow_subcatch' in ds\""
+
+    - id: s2_forcing
+      name: "Forcing data preparation"
+      description: "Convert CMFD/MSWX to wflow NetCDF format (precip mm/day, temp degC, PET mm/day)"
+      order: 2
+      depends_on: [s1_hydromt_setup]
+      skill_document: "docs/s2_forcing_skill.md"
+      tools: [convert_forcing_to_wflow, calculate_pet]
+      milestones:
+        - id: m2_forcing_created
+          description: "forcing.nc exists with precip, temp, pet variables in correct units"
+          verification: "python -c \"import xarray; ds=xarray.open_dataset('forcing.nc'); assert all(v in ds for v in ['precip','temp','pet'])\""
+
+    - id: s3_parameters
+      name: "TOML configuration and parameter tuning"
+      description: "Generate wflow TOML file, adjust parameters for calibration (scale/offset)"
+      order: 3
+      depends_on: [s1_hydromt_setup, s2_forcing]
+      skill_document: "docs/s3_parameters_skill.md"
+      tools: [generate_wflow_toml, adjust_parameters]
+      milestones:
+        - id: m3_toml_created
+          description: "wflow_sbm.toml exists and is valid TOML"
+          verification: "python -c \"import tomllib; tomllib.load(open('wflow_sbm.toml','rb'))\""
+
+    - id: s4_execution
+      name: "wflow_sbm execution"
+      description: "Run wflow via Julia subprocess with progress monitoring and output validation"
+      order: 4
+      depends_on: [s3_parameters]
+      skill_document: "docs/s4_execution_skill.md"
+      tools: [run_wflow]
+      milestones:
+        - id: m4_wflow_complete
+          description: "output_grid.nc exists and contains q_river with non-NaN values"
+          verification: "python -c \"import xarray; ds=xarray.open_dataset('output_grid.nc'); assert ds.q_river.max()>0\""
+
+    - id: s5_postprocess
+      name: "Output extraction and analysis"
+      description: "Extract discharge, spatial fields, compare with VIC, water balance check"
+      order: 5
+      depends_on: [s4_execution]
+      skill_document: "docs/s5_output_skill.md"
+      tools: [extract_discharge, extract_spatial_output, compare_with_vic]
+      milestones:
+        - id: m5_discharge_extracted
+          description: "discharge.csv exists with date and Q_m3s columns"
+          verification: "python -c \"import pandas; df=pandas.read_csv('discharge.csv'); assert 'Q_m3s' in df.columns\""
+
+    - id: s6_sediment_setup
+      name: "Sediment model building"
+      description: "Build wflow_sediment with USLE parameters, grain size classes, transport formula"
+      order: 6
+      depends_on: [s4_execution]
+      skill_document: "docs/s6_s8_sediment_skill.md"
+      tools: [build_sediment_model, run_wflow_sediment]
+      milestones:
+        - id: m6_sediment_model_built
+          description: "staticmaps_sediment.nc and wflow_sediment.toml exist"
+          verification: "ls staticmaps_sediment.nc wflow_sediment.toml"
+
+    - id: s7_sediment_run
+      name: "Sediment model execution"
+      description: "Run wflow_sediment using SBM hydrological outputs"
+      order: 7
+      depends_on: [s6_sediment_setup]
+      skill_document: "docs/s6_s8_sediment_skill.md"
+      tools: [run_wflow_sediment]
+      milestones:
+        - id: m7_sediment_complete
+          description: "Sediment output NetCDF exists with soilloss variable"
+          verification: "python -c \"import xarray; ds=xarray.open_dataset('sediment_output.nc'); assert 'soilloss' in ds\""
+
+    - id: s8_sediment_post
+      name: "Sediment output analysis"
+      description: "Erosion hotspot mapping, sediment yield, grain size distribution"
+      order: 8
+      depends_on: [s7_sediment_run]
+      skill_document: "docs/s6_s8_sediment_skill.md"
+      tools: [analyze_sediment]
+      milestones:
+        - id: m8_sediment_analyzed
+          description: "Erosion rate map and sediment yield statistics exist"
+          verification: "ls erosion_rate_annual.nc"
+
+    - id: s9_coupling
+      name: "Cross-model integration"
+      description: "Connect with CaMa-Flood, VIC, MODFLOW, SWAT+ for multi-model workflows"
+      order: 9
+      depends_on: [s5_postprocess]
+      skill_document: "docs/s9_coupling_skill.md"
+      tools: [wflow_to_cama, wflow_recharge_to_modflow]
+      milestones:
+        - id: m9_coupling_ready
+          description: "Coupling output files exist in target model format"
+          verification: "ls cama_input/ recharge_modflow.nc 2>/dev/null"
+
+tools:
+  - id: setup_wflow_config
+    name: "Setup wflow configuration"
+    description: "Generate HydroCraft-style wflow_config.yaml from user inputs"
+    stage: "s0_config"
+    script_path: "tools/s0_config/setup_wflow_config.py"
+    language: "python"
+    inputs:
+      - name: basin_name
+        type: string
+        description: "Basin identifier"
+        required: true
+        example: "chaohe"
+      - name: lat
+        type: number
+        description: "Outlet latitude"
+        required: true
+        example: "40.77"
+      - name: lon
+        type: number
+        description: "Outlet longitude"
+        required: true
+        example: "116.85"
+      - name: start_year
+        type: number
+        description: "Simulation start year"
+        required: true
+        example: "2000"
+      - name: end_year
+        type: number
+        description: "Simulation end year"
+        required: true
+        example: "2010"
+    outputs:
+      - name: wflow_config.yaml
+        type: file
+        description: "HydroCraft orchestration config"
+        path_pattern: "outputs/*/wflow_config.yaml"
+    preconditions:
+      - "Basin location and period determined"
+    postconditions:
+      - "wflow_config.yaml exists with all required fields"
+
+  - id: build_data_catalog
+    name: "Build HydroMT data catalog"
+    description: "Create YAML catalog pointing to HydroCraft datasets (HWSD, AVHRR, CMFD/MSWX)"
+    stage: "s1_hydromt_setup"
+    script_path: "tools/s1_hydromt/build_data_catalog.py"
+    language: "python"
+    inputs:
+      - name: forcing
+        type: string
+        description: "Forcing dataset name (cmfd/mswx)"
+        required: true
+        example: "cmfd"
+    outputs:
+      - name: data_catalog.yml
+        type: file
+        description: "HydroMT data catalog"
+        path_pattern: "outputs/*/data_catalog.yml"
+    preconditions:
+      - "HydroCraft data directories exist"
+    postconditions:
+      - "Catalog YAML is valid and paths resolve"
+
+  - id: run_hydromt_build
+    name: "Build wflow model"
+    description: "Build staticmaps.nc using HydroMT or manual pipeline from HydroCraft data"
+    stage: "s1_hydromt_setup"
+    script_path: "tools/s1_hydromt/run_hydromt_build.py"
+    language: "python"
+    inputs:
+      - name: config
+        type: file
+        description: "wflow_config.yaml"
+        required: true
+        example: "wflow_config.yaml"
+    outputs:
+      - name: staticmaps.nc
+        type: file
+        description: "All spatial parameters for wflow"
+        path_pattern: "outputs/*/wflow_project/staticmaps.nc"
+    preconditions:
+      - "Config exists, shapefile or coordinates available"
+    postconditions:
+      - "staticmaps.nc has required variables"
+
+  - id: convert_forcing_to_wflow
+    name: "Convert forcing to wflow format"
+    description: "Convert CMFD/MSWX/VIC forcing to wflow NetCDF (precip mm/day, temp degC, PET mm/day)"
+    stage: "s2_forcing"
+    script_path: "tools/s2_forcing/convert_forcing_to_wflow.py"
+    language: "python"
+    inputs:
+      - name: forcing_dir
+        type: directory
+        description: "VIC ASCII forcing directory"
+        required: true
+        example: "outputs/run/vic_temp/forcing/forcing_final"
+      - name: grid_nc
+        type: file
+        description: "Grid definition for spatial alignment"
+        required: true
+        example: "outputs/run/wflow_project/staticmaps.nc"
+    outputs:
+      - name: forcing.nc
+        type: file
+        description: "wflow forcing NetCDF"
+        path_pattern: "outputs/*/wflow_project/forcing.nc"
+    preconditions:
+      - "Forcing files exist, grid defined"
+    postconditions:
+      - "forcing.nc has precip, temp, pet in correct units"
+
+  - id: calculate_pet
+    name: "Calculate PET"
+    description: "Calculate potential evapotranspiration (Hargreaves or Penman-Monteith)"
+    stage: "s2_forcing"
+    script_path: "tools/s2_forcing/calculate_pet.py"
+    language: "python"
+    inputs:
+      - name: forcing_nc
+        type: file
+        description: "Forcing NetCDF with temperature"
+        required: true
+        example: "forcing.nc"
+    outputs:
+      - name: forcing_with_pet.nc
+        type: file
+        description: "Forcing with PET added"
+        path_pattern: "outputs/*/wflow_project/forcing.nc"
+    preconditions:
+      - "Temperature data exists in forcing NetCDF"
+    postconditions:
+      - "PET variable exists, values 0-15 mm/day"
+
+  - id: generate_wflow_toml
+    name: "Generate wflow TOML"
+    description: "Generate wflow v1.0+ TOML configuration file from HydroCraft config"
+    stage: "s3_parameters"
+    script_path: "tools/s3_parameters/generate_wflow_toml.py"
+    language: "python"
+    inputs:
+      - name: config
+        type: file
+        description: "wflow_config.yaml"
+        required: true
+        example: "wflow_config.yaml"
+    outputs:
+      - name: wflow_sbm.toml
+        type: file
+        description: "wflow configuration"
+        path_pattern: "outputs/*/wflow_project/wflow_sbm.toml"
+    preconditions:
+      - "staticmaps.nc and forcing.nc exist"
+    postconditions:
+      - "TOML is valid, referenced paths exist"
+
+  - id: adjust_parameters
+    name: "Adjust parameters"
+    description: "Modify wflow parameters via TOML scale/offset or direct NetCDF editing"
+    stage: "s3_parameters"
+    script_path: "tools/s3_parameters/adjust_parameters.py"
+    language: "python"
+    inputs:
+      - name: toml or staticmaps
+        type: file
+        description: "TOML or staticmaps.nc to modify"
+        required: true
+        example: "wflow_sbm.toml"
+    outputs:
+      - name: modified file
+        type: file
+        description: "Updated TOML or NetCDF"
+        path_pattern: ""
+    preconditions:
+      - "Target file exists"
+    postconditions:
+      - "Parameters within valid ranges"
+
+  - id: run_wflow
+    name: "Run wflow"
+    description: "Execute wflow_sbm via Julia subprocess with progress monitoring"
+    stage: "s4_execution"
+    script_path: "tools/s4_execution/run_wflow.py"
+    language: "python"
+    inputs:
+      - name: toml
+        type: file
+        description: "wflow TOML configuration"
+        required: true
+        example: "wflow_sbm.toml"
+    outputs:
+      - name: output_grid.nc
+        type: file
+        description: "Gridded model output"
+        path_pattern: "outputs/*/wflow_output/output_grid.nc"
+    preconditions:
+      - "Julia installed, Wflow.jl available, TOML valid"
+    postconditions:
+      - "output_grid.nc exists with q_river variable"
+
+  - id: extract_discharge
+    name: "Extract discharge"
+    description: "Extract discharge timeseries from wflow output at outlet or specified coordinates"
+    stage: "s5_postprocess"
+    script_path: "tools/s5_postprocess/extract_discharge.py"
+    language: "python"
+    inputs:
+      - name: output_nc
+        type: file
+        description: "wflow output NetCDF"
+        required: true
+        example: "output_grid.nc"
+    outputs:
+      - name: discharge.csv
+        type: file
+        description: "Date and Q_m3s timeseries"
+        path_pattern: "outputs/*/wflow_output/discharge.csv"
+    preconditions:
+      - "wflow output exists"
+    postconditions:
+      - "CSV has date and Q_m3s columns, Q > 0"
+
+  - id: extract_spatial_output
+    name: "Extract spatial output"
+    description: "Extract gridded fields (runoff, ET, soil moisture) for visualization"
+    stage: "s5_postprocess"
+    script_path: "tools/s5_postprocess/extract_spatial_output.py"
+    language: "python"
+    inputs:
+      - name: output_nc
+        type: file
+        description: "wflow output NetCDF"
+        required: true
+        example: "output_grid.nc"
+    outputs:
+      - name: spatial maps
+        type: directory
+        description: "Per-variable NetCDF maps"
+        path_pattern: "outputs/*/wflow_output/spatial/"
+    preconditions:
+      - "wflow output exists"
+    postconditions:
+      - "NetCDF files created for requested variables"
+
+  - id: compare_with_vic
+    name: "Compare with VIC"
+    description: "Compare wflow and VIC discharge (correlation, NSE, PBIAS, KGE)"
+    stage: "s5_postprocess"
+    script_path: "tools/s5_postprocess/compare_with_vic.py"
+    language: "python"
+    inputs:
+      - name: wflow_csv
+        type: file
+        description: "wflow discharge CSV"
+        required: true
+        example: "discharge.csv"
+      - name: vic_csv or vic_routing_file
+        type: file
+        description: "VIC discharge data"
+        required: true
+        example: "routing_output.day"
+    outputs:
+      - name: comparison.json
+        type: file
+        description: "Comparison metrics"
+        path_pattern: "outputs/*/wflow_output/comparison.json"
+    preconditions:
+      - "Both model outputs exist for overlapping period"
+    postconditions:
+      - "Metrics computed with at least 30 days overlap"
+
+  - id: build_sediment_model
+    name: "Build sediment model"
+    description: "Build wflow_sediment with USLE parameters and transport formula selection"
+    stage: "s6_sediment_setup"
+    script_path: "tools/s6_sediment/build_sediment_model.py"
+    language: "python"
+    inputs:
+      - name: sbm_staticmaps
+        type: file
+        description: "SBM staticmaps.nc"
+        required: true
+        example: "staticmaps.nc"
+    outputs:
+      - name: staticmaps_sediment.nc
+        type: file
+        description: "Sediment parameters"
+        path_pattern: "outputs/*/wflow_sediment/staticmaps_sediment.nc"
+    preconditions:
+      - "SBM staticmaps exist"
+    postconditions:
+      - "USLE_C, USLE_K, grain fractions, D50 in NetCDF"
+
+  - id: run_wflow_sediment
+    name: "Run wflow sediment"
+    description: "Execute wflow_sediment via Julia subprocess"
+    stage: "s7_sediment_run"
+    script_path: "tools/s6_sediment/run_wflow_sediment.py"
+    language: "python"
+    inputs:
+      - name: toml
+        type: file
+        description: "wflow_sediment TOML config"
+        required: true
+        example: "wflow_sediment.toml"
+    outputs:
+      - name: sediment output
+        type: file
+        description: "Sediment output NetCDF"
+        path_pattern: "outputs/*/wflow_sediment/output/*.nc"
+    preconditions:
+      - "SBM output available, sediment TOML valid"
+    postconditions:
+      - "Output contains soilloss and sediment_concentration"
+
+  - id: analyze_sediment
+    name: "Analyze sediment output"
+    description: "Erosion hotspot map, sediment yield, grain size distribution"
+    stage: "s8_sediment_post"
+    script_path: "tools/s8_sediment_post/analyze_sediment.py"
+    language: "python"
+    inputs:
+      - name: output_nc
+        type: file
+        description: "Sediment output NetCDF"
+        required: true
+        example: "sediment_output.nc"
+    outputs:
+      - name: analysis results
+        type: directory
+        description: "Erosion maps and statistics"
+        path_pattern: "outputs/*/sediment_analysis/"
+    preconditions:
+      - "Sediment output exists"
+    postconditions:
+      - "Erosion rate map and yield statistics computed"
+
+  - id: wflow_to_cama
+    name: "wflow to CaMa-Flood"
+    description: "Convert wflow UNROUTED runoff to CaMa-Flood input format (yearly NetCDF)"
+    stage: "s9_coupling"
+    script_path: "tools/s9_coupling/wflow_to_cama.py"
+    language: "python"
+    inputs:
+      - name: wflow_output
+        type: file
+        description: "wflow output_grid.nc"
+        required: true
+        example: "output_grid.nc"
+    outputs:
+      - name: CaMa runoff files
+        type: directory
+        description: "basin_runoff_1d_YYYY.nc files"
+        path_pattern: "outputs/*/cama_input/"
+    preconditions:
+      - "wflow output exists with runoff variable"
+    postconditions:
+      - "Yearly NetCDF files with runoff in mm/day"
+
+  - id: wflow_recharge_to_modflow
+    name: "wflow recharge to MODFLOW"
+    description: "Extract GW recharge from wflow for MODFLOW RCH package (mm/day -> m/day)"
+    stage: "s9_coupling"
+    script_path: "tools/s9_coupling/wflow_recharge_to_modflow.py"
+    language: "python"
+    inputs:
+      - name: wflow_output
+        type: file
+        description: "wflow output_grid.nc"
+        required: true
+        example: "output_grid.nc"
+    outputs:
+      - name: recharge.nc
+        type: file
+        description: "Recharge in m/day for MODFLOW"
+        path_pattern: "outputs/*/recharge_modflow.nc"
+    preconditions:
+      - "wflow output exists with recharge/percolation variable"
+    postconditions:
+      - "Recharge in m/day (not mm/day)"
+
+skill_documents:
+  - id: sd_s0_config
+    name: "Configuration"
+    stage: "s0_config"
+    path: "docs/s0_configuration_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 400
+
+  - id: sd_s1_hydromt
+    name: "HydroMT Model Setup"
+    stage: "s1_hydromt_setup"
+    path: "docs/s1_hydromt_setup_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 500
+
+  - id: sd_s2_forcing
+    name: "Forcing Data Preparation"
+    stage: "s2_forcing"
+    path: "docs/s2_forcing_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 600
+
+  - id: sd_s3_params
+    name: "Parameter Configuration"
+    stage: "s3_parameters"
+    path: "docs/s3_parameters_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 600
+
+  - id: sd_s4_execution
+    name: "Execution"
+    stage: "s4_execution"
+    path: "docs/s4_execution_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 500
+
+  - id: sd_s5_output
+    name: "Output Processing"
+    stage: "s5_postprocess"
+    path: "docs/s5_output_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 500
+
+  - id: sd_s6_s8_sediment
+    name: "Sediment Model"
+    stage: "s6_sediment_setup"
+    path: "docs/s6_s8_sediment_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 700
+
+  - id: sd_s9_coupling
+    name: "Cross-Model Coupling"
+    stage: "s9_coupling"
+    path: "docs/s9_coupling_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 600
+
+diagnostic_triplets:
+  # 26 triplets defined in diagnostics/triplets.yaml
+  # Summary by domain:
+  #   unit_conversion: 5 (dt_w001-dt_w005)
+  #   runtime: 5 (dt_w006-dt_w010)
+  #   parameter_format: 4 (dt_w011-dt_w014)
+  #   silent_error: 6 (dt_w015-dt_w020)
+  #   environment: 3 (dt_w021-dt_w023)
+  #   dependency_mismatch: 3 (dt_w024-dt_w026)
+  # See diagnostics/triplets.yaml for full definitions
+
+summary:
+  total_tools: 17
+  total_tool_lines: 3843
+  total_skill_documents: 8
+  total_skill_words: 3430
+  total_diagnostic_triplets: 30
+  failure_domains:
+    - unit_conversion
+    - runtime
+    - parameter_format
+    - silent_error
+    - environment
+    - dependency_mismatch
+  pipeline_stages: 10
+  pipeline_milestones: 10
+  silent_error_count: 14
+  silent_error_percentage: 54

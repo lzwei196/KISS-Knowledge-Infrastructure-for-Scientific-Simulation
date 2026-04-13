@@ -1,0 +1,431 @@
+# pyBadlands Diagnostic Triplets
+# Each entry: symptom → diagnosis → remedy
+# Severity: silent (no error, wrong results), degraded (partial failure), fatal (crash)
+
+- id: dt_001
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Extremely rapid landscape denudation in first few timesteps; entire mountain range erased"
+    error_pattern: "cumdiff values exceeding DEM relief within first output step"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Rainfall specified in mm/year or mm/day instead of m/year"
+    explanation: "pyBadlands expects rainfall in m/year. Providing mm/day (common in ERA5, CMFD) without conversion yields 365,000× over-estimate. Even mm/year gives 1000× too much."
+    affected_components: [precipitation, flowNetwork, erosion]
+  remedy:
+    action: "Convert rainfall: m/year = mm/day × 365.25 / 1000"
+    tool_to_run: convert_forcing_to_badlands
+    manual_steps:
+      - "Check rval in XML — should be 0.1–5.0 for most climates"
+      - "If using rain map, check max value in CSV"
+    prevention: "Always verify rainfall range before running. Tool includes range check."
+  severity: silent
+  cross_references: [dt_017]
+
+- id: dt_002
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "River source produces impossibly large sediment plume; basin fills instantly"
+    error_pattern: "Massive deposition around river source coordinates"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Sediment load rQs specified in kg/year instead of Mt/year"
+    explanation: "Code converts rQs internally: qs_kg = rQs × 1e9, then qs_m3 = qs_kg / rhoS. If rQs is already in kg, result is 1e9× too large."
+    affected_components: [rivers, buildFlux, sediment_transport]
+  remedy:
+    action: "Convert to Mt/year: rQs_Mt = rQs_kg / 1e9"
+    tool_to_run: convert_forcing_to_badlands
+    manual_steps:
+      - "Typical river Qs: 0.001 (small) to 100 (Amazon) Mt/year"
+      - "Values > 1000 Mt/year are almost certainly wrong units"
+    prevention: "Document unit in XML comment; validate range in pre-flight."
+  severity: silent
+  cross_references: [dt_011]
+
+- id: dt_003
+  stage: s2_dem
+  failure_domain: unit_conversion
+  symptom:
+    description: "Erosion rates are orders of magnitude off; landscape morphology unrealistic"
+    error_pattern: "Elevation values far outside expected range (e.g., max > 100000)"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "DEM elevation in cm, mm, or feet instead of metres"
+    explanation: "Model performs no unit detection on the DEM. All SPL and diffusion equations assume z in metres. Wrong z-units change all computed slopes."
+    affected_components: [grid, buildMesh, erosion, creep]
+  remedy:
+    action: "Convert DEM to metres before ingestion"
+    tool_to_run: null
+    manual_steps:
+      - "Check z-range: typical land surface -500 to +8000 m"
+      - "If z > 100000, likely in cm → divide by 100"
+      - "If z > 1000000, likely in mm → divide by 1000"
+    prevention: "Include z-range check in DEM preparation step."
+  severity: silent
+  cross_references: [dt_012]
+
+- id: dt_004
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Sea-level changes occur 1000× too rapidly; coastal zones oscillate wildly"
+    error_pattern: "Rapid alternation of marine/subaerial conditions"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Sea-level curve time column in ka (kiloyears) instead of years"
+    explanation: "Model expects time in years. A curve with time in ka (e.g., -500 to 0) spans only 500 years instead of 500,000 years of intended history."
+    affected_components: [sea, coastline, carbonate_growth]
+  remedy:
+    action: "Multiply time column by 1000: time_years = time_ka × 1000"
+    tool_to_run: convert_forcing_to_badlands
+    manual_steps:
+      - "Check time range covers simulation span"
+      - "If time range is -500 to 0, it is likely in ka"
+    prevention: "Compare sea-level curve time range to simulation start/end."
+  severity: silent
+  cross_references: []
+
+- id: dt_005
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Tectonic uplift produces negligible topographic change over simulation"
+    error_pattern: "Expected km-scale uplift but only see metres of change"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Displacement map contains rate (m/year) instead of total displacement (m)"
+    explanation: "pyBadlands ufile/dfile specify TOTAL displacement over the event duration. A rate of 0.001 m/year is interpreted as 0.001 m total, not 5000 m over 5 Myr."
+    affected_components: [tectonic, buildMesh]
+  remedy:
+    action: "Multiply rate by event duration: disp_m = rate_m_per_yr × (dend - dstart)"
+    tool_to_run: convert_forcing_to_badlands
+    manual_steps:
+      - "Check if max displacement matches expected total uplift"
+      - "For 0.001 m/yr over 5 Myr, total should be 5000 m"
+    prevention: "Always compute total displacement from rate × duration."
+  severity: silent
+  cross_references: []
+
+- id: dt_006
+  stage: s4_parameters
+  failure_domain: parameter_format
+  symptom:
+    description: "Erosion rate several orders of magnitude different from expected"
+    error_pattern: "Denudation rate doesn't match literature for similar settings"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "SPL erodibility Kd from literature uses different m,n than configured"
+    explanation: "Kd has units m^(1-2m)/year. A Kd calibrated for m=0.5 cannot be used with m=0.3 without rescaling. The dimensional dependence on m makes direct comparison invalid."
+    affected_components: [erosion, flowNetwork]
+  remedy:
+    action: "Verify literature Kd was calibrated with same m,n values"
+    tool_to_run: convert_soil_params
+    manual_steps:
+      - "Record m,n alongside every Kd value"
+      - "If changing m, recalibrate Kd"
+      - "Approximate: Kd_new ≈ Kd_old × 10^((m_old - m_new) × 2)"
+    prevention: "Tool includes m,n in output metadata."
+  severity: degraded
+  cross_references: [dt_007]
+
+- id: dt_007
+  stage: s4_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Hillslopes become completely smooth; no ridge-valley topography develops"
+    error_pattern: "Diffusion dominates over fluvial incision"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Diffusion coefficient in m²/kyr instead of m²/year"
+    explanation: "Literature often reports κ in m²/kyr. Using these values directly gives 1000× too much diffusion, flattening the landscape."
+    affected_components: [creep, diffLinear]
+  remedy:
+    action: "Divide by 1000: κ_m2_per_year = κ_m2_per_kyr / 1000"
+    tool_to_run: null
+    manual_steps:
+      - "Typical aerial κ: 0.001–1.0 m²/year"
+      - "If κ > 10 m²/year, likely in kyr units"
+    prevention: "Check units in source paper; document conversion."
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_008
+  stage: s1_domain
+  failure_domain: parameter_format
+  symptom:
+    description: "Water accumulates at domain boundary; unrealistic lakes form along edges"
+    error_pattern: "Elevation increases at boundary; ponding visible"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Boundary type 'fixed' or 'wall' used on open landscape"
+    explanation: "Fixed/wall boundaries prevent water outflow. On an open landscape, all water pools at the boundary, creating artificial lakes and preventing erosion."
+    affected_components: [grid, flowNetwork, buildMesh]
+  remedy:
+    action: "Use 'slope' for open landscapes or 'outlet' for single-outlet basins"
+    tool_to_run: null
+    manual_steps:
+      - "Inspect DEM edges: does a natural outlet exist?"
+      - "For catchment studies: use 'outlet' with proper outlet positioning"
+      - "For regional studies: use 'slope'"
+    prevention: "Match boundary type to domain geometry during setup."
+  severity: fatal
+  cross_references: []
+
+- id: dt_009
+  stage: s5_run
+  failure_domain: path_resolution
+  symptom:
+    description: "Model crashes or hangs at first output timestep"
+    error_pattern: "FileNotFoundError or OSError when writing HDF5"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Output folder specified in XML does not exist"
+    explanation: "Some pyBadlands versions do not auto-create the output directory. When the model tries to write the first HDF5 file, it fails."
+    affected_components: [checkPoints, model]
+  remedy:
+    action: "Create output directory before running: mkdir -p output"
+    tool_to_run: run_badlands
+    manual_steps:
+      - "Check outfolder value in XML"
+      - "Create directory: mkdir -p <outfolder>"
+    prevention: "Execution wrapper creates directory automatically."
+  severity: fatal
+  cross_references: []
+
+- id: dt_010
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Wave sediment transport produces unrealistic longshore drift"
+    error_pattern: "Sediment transport magnitude wrong by orders"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wave D50 grain size specified in mm instead of m"
+    explanation: "d50 parameter expects metres. A value of 0.1 (intended as 0.1 mm) is interpreted as 0.1 m = 100 mm = gravel, completely changing transport behaviour."
+    affected_components: [waveglobal, waveSed]
+  remedy:
+    action: "Convert mm to m: d50_m = d50_mm / 1000"
+    tool_to_run: null
+    manual_steps:
+      - "Typical sand d50: 0.0001–0.001 m (0.1–1.0 mm)"
+      - "If d50 > 0.01, likely in mm"
+    prevention: "Document unit conversion alongside value."
+  severity: silent
+  cross_references: [dt_014]
+
+- id: dt_011
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "River source has negligible effect on landscape; no visible delta"
+    error_pattern: "River discharge too low to drive erosion at source"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Discharge rQw specified in L/s instead of m³/s"
+    explanation: "A river with 500 L/s = 0.5 m³/s is a small stream. If intended as 500 m³/s (a large river), the 1000× error makes it ineffective."
+    affected_components: [rivers, buildFlux]
+  remedy:
+    action: "Convert L/s to m³/s: rQw_m3s = rQw_Ls / 1000"
+    tool_to_run: null
+    manual_steps:
+      - "Typical large river: 100–10000 m³/s"
+      - "Typical small stream: 0.01–1 m³/s"
+    prevention: "Verify discharge magnitude matches river size."
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_012
+  stage: s5_run
+  failure_domain: runtime
+  symptom:
+    description: "Output contains NaN values; elevation array is garbage"
+    error_pattern: "numpy RuntimeWarning: invalid value encountered"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Numerical instability from too-large timestep or extreme parameters"
+    explanation: "When maxdt is large and Kd is high, the implicit solver can overshoot, producing negative areas or infinite slopes that propagate NaN through the mesh."
+    affected_components: [flowNetwork, flowalgo, erosion]
+  remedy:
+    action: "Reduce maxdt by factor of 10; reduce Kd if needed"
+    tool_to_run: null
+    manual_steps:
+      - "Check if NaN appears at first step (likely DEM issue) or mid-run (timestep issue)"
+      - "If first step: check DEM for NoData/NaN values"
+      - "If mid-run: reduce maxdt, check if erosion exceeds elevation"
+    prevention: "Start with conservative maxdt; increase gradually."
+  severity: fatal
+  cross_references: [dt_003, dt_016]
+
+- id: dt_013
+  stage: s1_domain
+  failure_domain: parameter_format
+  symptom:
+    description: "Important topographic features are missing from simulation"
+    error_pattern: "Landscape smoother than expected; valleys/ridges absent"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "resfactor too large, reducing DEM resolution below feature scale"
+    explanation: "resfactor=5 on a 90 m DEM yields 450 m resolution. Features smaller than ~1 km are lost. For landscape evolution this may be acceptable, but for specific valleys it is not."
+    affected_components: [grid, buildMesh]
+  remedy:
+    action: "Reduce resfactor or use higher-resolution DEM"
+    tool_to_run: null
+    manual_steps:
+      - "Check effective resolution: DEM_res × resfactor"
+      - "Ensure key features are > 3× effective resolution"
+    prevention: "Compute effective resolution before running."
+  severity: degraded
+  cross_references: []
+
+- id: dt_014
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Wave erosion is extremely weak or extremely strong"
+    error_pattern: "Coastal erosion/deposition rate unrealistic"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wave height (hs) specified in cm instead of m"
+    explanation: "Wave significant height expects metres. A value of 150 (intended as 150 cm = 1.5 m) is interpreted as 150 m waves — physically impossible."
+    affected_components: [waveglobal, waveSed]
+  remedy:
+    action: "Convert: hs_m = hs_cm / 100"
+    tool_to_run: null
+    manual_steps:
+      - "Typical ocean waves: 0.5–5.0 m"
+      - "Storm waves: up to 15 m"
+      - "If hs > 20, likely in cm"
+    prevention: "Validate wave height range in XML."
+  severity: silent
+  cross_references: [dt_010]
+
+- id: dt_015
+  stage: s4_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Flexural isostasy produces no response or extreme tilting"
+    error_pattern: "cumflex values zero or orders of magnitude wrong"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Elastic thickness in km instead of m"
+    explanation: "elasticH expects metres. A value of 30 (intended as 30 km) is interpreted as 30 m — an impossibly thin lithosphere that flexes dramatically."
+    affected_components: [flexure, isoFlex, gFlex]
+  remedy:
+    action: "Convert km to m: elasticH_m = elasticH_km × 1000"
+    tool_to_run: null
+    manual_steps:
+      - "Typical elastic thickness: 5000–100000 m (5–100 km)"
+      - "If elasticH < 1000, likely in km"
+    prevention: "Document unit as metres in XML comment."
+  severity: silent
+  cross_references: []
+
+- id: dt_016
+  stage: s5_run
+  failure_domain: runtime
+  symptom:
+    description: "Model produces oscillating elevation values; checkerboard pattern"
+    error_pattern: "Alternating positive/negative cumdiff at adjacent nodes"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Maximum timestep too large for the erosion rate"
+    explanation: "The CFL-like stability condition requires dt ≤ dx²/(2κ) for diffusion and smaller steps for high Kd. Exceeding this causes oscillation."
+    affected_components: [flowNetwork, diffLinear]
+  remedy:
+    action: "Reduce maxdt by factor of 10"
+    tool_to_run: null
+    manual_steps:
+      - "If using high Kd (> 1e-5), set maxdt < 10000"
+      - "If using high κ (> 0.1), set maxdt < 1000"
+      - "Start conservative, increase until instability appears"
+    prevention: "Estimate stable dt from parameters before running."
+  severity: fatal
+  cross_references: [dt_012]
+
+- id: dt_017
+  stage: s3_forcing
+  failure_domain: silent_error
+  symptom:
+    description: "No erosion occurs; landscape is static despite long simulation"
+    error_pattern: "cumdiff remains zero throughout simulation"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "No precipitation section in XML or rval=0"
+    explanation: "Without rainfall, there is no runoff, no discharge, and no fluvial erosion. Only hillslope diffusion operates (if enabled). Easy to miss if the <precipitation> section is absent."
+    affected_components: [precipitation, flowNetwork, erosion]
+  remedy:
+    action: "Add <precipitation> section to XML with realistic rval"
+    tool_to_run: null
+    manual_steps:
+      - "Check XML has <precipitation> with <climates> > 0"
+      - "Verify rval > 0 or map file exists"
+      - "For humid climate: rval ≈ 1.0–2.0 m/year"
+    prevention: "Pre-flight check should verify precipitation is defined."
+  severity: degraded
+  cross_references: [dt_001]
+
+- id: dt_018
+  stage: s5_run
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "ImportError or TypeError when importing badlands"
+    error_pattern: "numpy.core module not found or ABI incompatibility"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "numpy >= 2.0 installed, but Fortran extensions compiled against numpy < 2"
+    explanation: "pyBadlands requires numpy < 2 (specified in pyproject.toml). numpy 2.0 changed the C API, causing Fortran extension import failures."
+    affected_components: [all Fortran extensions]
+  remedy:
+    action: "Install numpy < 2: pip install 'numpy<2'"
+    tool_to_run: null
+    manual_steps:
+      - "pip install 'numpy<2'"
+      - "Rebuild extensions: pip install --no-build-isolation -e ."
+    prevention: "Pin numpy<2 in requirements."
+  severity: fatal
+  cross_references: []
+
+- id: dt_019
+  stage: s4_parameters
+  failure_domain: parameter_format
+  symptom:
+    description: "Carbonate reef growth produces unrealistic patterns"
+    error_pattern: "Reef grows everywhere or nowhere"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Depth control curve is non-monotonic or has wrong sign"
+    explanation: "The depthControl file maps water depth to growth multiplier (0-1). If the curve is inverted (growth at depth, not shallow), reefs grow in deep water."
+    affected_components: [carb, carbGrowth, species1, species2]
+  remedy:
+    action: "Verify depth control curve: maximum growth at shallow depths"
+    tool_to_run: null
+    manual_steps:
+      - "Plot depthControl file: x=depth, y=growth rate"
+      - "Growth should peak at 0–20 m depth for most reef types"
+      - "Growth should be zero below photic zone (~100 m)"
+    prevention: "Plot and verify control curves before running."
+  severity: degraded
+  cross_references: []
+
+- id: dt_020
+  stage: s4_parameters
+  failure_domain: silent_error
+  symptom:
+    description: "Stratigraphic layers have unrealistic thickness; no compaction"
+    error_pattern: "Layer thickness matches raw deposition without volume reduction"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Porosity parameters poro0 and poroC left at default 0"
+    explanation: "When poro0=0 and poroC=0.47, compaction is effectively disabled. Stratigraphic output shows uncompacted thicknesses, which can be 2-3× too large."
+    affected_components: [strata, underland]
+  remedy:
+    action: "Set physically realistic porosity: poro0=0.63, poroC=0.51 (typical)"
+    tool_to_run: null
+    manual_steps:
+      - "poro0: surface porosity (0.4–0.8 depending on sediment type)"
+      - "poroC: compaction coefficient (0.3–0.6)"
+    prevention: "Always set porosity if using stratigraphic output."
+  severity: silent
+  cross_references: []

@@ -1,0 +1,28 @@
+entries:
+- id: err_001
+  timestamp: '2026-03-22T05:26:29Z'
+  recorded_by: server
+  run_context:
+    basin: bengbu
+    model: mizuRoute
+    run_name: ''
+  stage: s03_execution
+  failure_domain: unit_conversion
+  symptom:
+    description: MPI_SCATTERV serial stub copies data as 4-byte integers instead of 8-byte doubles causing 75-90% discharge
+      magnitude loss
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: Serial MPI stubs declare sendbuf/recvbuf as integer(*) assumed-size arrays. Copy loop iterates by 4-byte steps
+      for 8-byte double data
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Multiply count and displacement by words_per_element (2 for double, 1 for integer) in all MPI stub copy loops
+    files_changed:
+    - route/build/serial_stubs/mpi_stubs.f90
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''

@@ -1,0 +1,97 @@
+# ============================================================================
+# Error Log — OGGM Knowledge Infrastructure
+# ============================================================================
+# Records actual errors encountered during HydroCraft validation testing.
+# Each entry links to a diagnostic triplet (dt_XXX) in triplets.yaml.
+# Sorted chronologically.
+# ============================================================================
+
+errors:
+
+  - date: "2026-03-20"
+    triplet_id: dt_025
+    model: "OGGM"
+    basin: "Yarlung Tsangpo (雅鲁藏布江)"
+    environment:
+      oggm_version: "1.6.x"
+      python_version: "3.12"
+      os: "Linux"
+      venv_path: "/mnt/disk1/Hydrocraft_server/python_env/"
+    error_message: "ModuleNotFoundError: No module named 'oggm'"
+    context: >
+      After installing OGGM via pip in the HydroCraft venv, import failed because
+      the venv at /mnt/disk1/Hydrocraft_server/python_env/ is a symlink to
+      /home/server/桌面/test/hydro-claude/python_env/. Pip installed packages to the
+      original path's site-packages, but sys.path referenced the symlinked path.
+    resolution: >
+      Set PYTHONPATH to include the actual install location:
+      export PYTHONPATH="/home/server/桌面/test/hydro-claude/python_env/lib/python3.12/site-packages"
+      Alternatively, created a .pth file in the venv's site-packages.
+    status: "resolved"
+
+  - date: "2026-03-20"
+    triplet_id: dt_024
+    model: "OGGM"
+    basin: "Yarlung Tsangpo (雅鲁藏布江)"
+    environment:
+      oggm_version: "1.6.x"
+      python_version: "3.12"
+      os: "Linux"
+    error_message: "ModuleNotFoundError: No module named 'salem'"
+    context: >
+      After resolving the site-packages path issue (dt_025), OGGM import failed
+      because the salem dependency was not installed. salem is listed as a dependency
+      but pip did not install it automatically.
+    resolution: "pip install salem"
+    status: "resolved"
+
+  - date: "2026-03-20"
+    triplet_id: dt_023
+    model: "OGGM"
+    basin: "Yarlung Tsangpo (雅鲁藏布江)"
+    environment:
+      oggm_version: "1.6.x"
+      python_version: "3.12"
+      os: "Linux"
+    error_message: "ImportError: Missing optional dependency 'pytables'. Use pip or conda to install pytables."
+    context: >
+      During OGGM data download/initialization, HDF5 checksum verification failed
+      because PyTables was not installed. OGGM uses .sha256.hdf files for download
+      integrity verification.
+    resolution: "pip install tables"
+    status: "resolved"
+
+  - date: "2026-03-20"
+    triplet_id: dt_021
+    model: "OGGM"
+    basin: "Yarlung Tsangpo (雅鲁藏布江)"
+    environment:
+      oggm_version: "1.6.x"
+      python_version: "3.12"
+      os: "Linux"
+    error_message: "InvalidParamsError: Starting with v1.6, users now have to explicitly indicate the url they want to start from."
+    context: >
+      Calling workflow.init_glacier_directories with from_prepro_level but without
+      specifying prepro_base_url. OGGM v1.6 requires the URL to be explicit.
+    resolution: >
+      Added prepro_base_url parameter:
+      prepro_base_url='https://cluster.klima.uni-bremen.de/~oggm/gdirs/oggm_v1.6/L3-L5_files/2023.3/elev_bands/W5E5/'
+    status: "resolved"
+
+  - date: "2026-03-20"
+    triplet_id: dt_022
+    model: "OGGM"
+    basin: "Yarlung Tsangpo (雅鲁藏布江)"
+    environment:
+      oggm_version: "1.6.x"
+      python_version: "3.12"
+      os: "Linux"
+    error_message: "InvalidParamsError: run_with_hydro only works with PARAMS['store_model_geometry'] = True for now."
+    context: >
+      After successfully initializing glacier directories and running mass balance
+      calibration, calling tasks.run_with_hydro failed because store_model_geometry
+      was not set to True during initialization.
+    resolution: >
+      Added cfg.PARAMS['store_model_geometry'] = True immediately after cfg.initialize()
+      in the OGGM workflow script.
+    status: "resolved"

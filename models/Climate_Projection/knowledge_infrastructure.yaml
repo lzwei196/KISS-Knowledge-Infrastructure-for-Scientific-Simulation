@@ -1,0 +1,407 @@
+# ============================================================================
+# Knowledge Infrastructure — Climate Change Projection (HydroCraft)
+# ============================================================================
+# Enables AI agents to run CMIP6-based climate change impact assessments
+# on VIC hydrological models within the HydroCraft framework.
+# ============================================================================
+
+package:
+  name: "hydrocraft-climate-projection"
+  version: "1.0.0"
+  description: "Climate change impact assessment using CMIP6 delta-change method for VIC hydrological models"
+  target_model: "VIC 5.1.0 + CMIP6 bias-corrected (China: 26 models local, Global: 34 models via NEX-GDDP-CMIP6 API)"
+  domain: "distributed hydrology, climate change impact"
+  authors:
+    - "Jianyun Zhang Research Group, Hohai University"
+  license: "CC-BY-4.0"
+
+pipeline:
+  stages:
+    - id: "s1_extract_cmip"
+      name: "Extract CMIP6 data for basin"
+      description: >
+        Two options:
+        (A) China basins: extract_cmip6_basin.py — reads local 650 MB text files, 26 models, fast
+        (B) Any basin worldwide: fetch_nex_gddp_global.py — NASA NEX-GDDP-CMIP6 via THREDDS,
+            34 models, 4 SSPs, bias-corrected 0.25°, ~1 min/year/variable. Drop-in compatible output.
+            Supports --models recommended for 5-model ensemble.
+        Both produce the same output format (NetCDF with time/lat/lon dims).
+      order: 1
+      depends_on: []
+      skill_document: "docs/s1_extract_cmip_skill.md"
+      tools: ["extract_cmip6_basin", "fetch_nex_gddp_global"]
+      milestones:
+        - id: "m1_files_created"
+          description: "3 NetCDF files created per model x scenario (pr, tasmax, tasmin)"
+          verification: "ls outputs/{basin}/climate_projection/cmip6_extracted/*.nc | wc -l >= 3"
+        - id: "m1_cell_count"
+          description: "Number of cells in output matches VIC grid"
+          verification: "ncdump -h {file} | grep 'cell =' should match basin grid cell count"
+
+    - id: "s2_compute_deltas"
+      name: "Compute monthly climate change deltas"
+      description: "Calculate monthly change factors (future/historical) for temperature and precipitation"
+      order: 2
+      depends_on: ["s1_extract_cmip"]
+      skill_document: "docs/s2_compute_deltas_skill.md"
+      tools: ["compute_climate_deltas"]
+      milestones:
+        - id: "m2_delta_file"
+          description: "Delta NetCDF file with 3 variables x 12 months x N cells"
+          verification: "ncdump -h {file} should show delta_pr, delta_tasmax, delta_tasmin with month=12"
+        - id: "m2_reasonable_values"
+          description: "Delta values are physically reasonable"
+          verification: "delta_pr in [0.1, 5.0], delta_T in [-2, +10] degC"
+
+    - id: "s3_apply_deltas"
+      name: "Generate projected VIC forcing"
+      description: "Apply monthly deltas to baseline CMFD/MSWX forcing to create future forcing files"
+      order: 3
+      depends_on: ["s2_compute_deltas"]
+      skill_document: "docs/s3_apply_deltas_skill.md"
+      tools: ["apply_deltas_forcing"]
+      milestones:
+        - id: "m3_forcing_files"
+          description: "7 variables x N years of projected forcing files"
+          verification: "ls outputs/{basin}/climate_projection/forcing_{MODEL}_{SSP}/*.nc | wc -l"
+        - id: "m3_temperature_increase"
+          description: "Mean temperature in projected forcing > baseline"
+          verification: "Compare annual mean of projected temp_*.nc vs baseline temp_*.nc"
+
+    - id: "s4_ensemble_analysis"
+      name: "Run VIC ensemble and analyse results"
+      description: "Run VIC with projected forcing for multiple models/scenarios, compare with historical"
+      order: 4
+      depends_on: ["s3_apply_deltas"]
+      skill_document: "docs/s4_ensemble_analysis_skill.md"
+      tools: []  # Uses VIC and routing tools from other skills
+      milestones:
+        - id: "m4_vic_complete"
+          description: "VIC runs completed for all model x scenario combinations"
+          verification: "Check vic_result_{MODEL}_{SSP}/ directories for output files"
+        - id: "m4_comparison_plot"
+          description: "Multi-model ensemble comparison plot generated"
+          verification: "outputs/{basin}/climate_projection/ensemble_comparison.png exists"
+
+tools:
+  - id: "extract_cmip6_basin"
+    name: "Extract CMIP6 basin data"
+    description: "Reads CMIP6 tab-separated text files and extracts data for basin grid cells as NetCDF"
+    stage: "s1_extract_cmip"
+    script_path: "tools/s1_extract_cmip/extract_cmip6_basin.py"
+    language: "python"
+    inputs:
+      - name: "CMIP6_ROOT"
+        type: "directory"
+        description: "Root directory of Cmip6BaisCorrect_for_China"
+        required: true
+        example: "/mnt/disk3/CMIP_China/Cmip6BaisCorrect_for_China"
+      - name: "GRID_NC"
+        type: "file"
+        description: "VIC basin grid file"
+        required: true
+        example: "outputs/bengbu/vic_temp/grid/basin_grid.nc"
+      - name: "MODEL_NAME"
+        type: "string"
+        description: "CMIP6 model name (case-sensitive)"
+        required: true
+        example: "ACCESS-CM2"
+      - name: "SCENARIO"
+        type: "string"
+        description: "Scenario code: r1, 126, 245, or 585"
+        required: true
+        example: "245"
+      - name: "OUTPUT_DIR"
+        type: "directory"
+        description: "Where to save extracted NetCDF files"
+        required: true
+        example: "outputs/bengbu/climate_projection/cmip6_extracted"
+      - name: "BASIN_NAME"
+        type: "string"
+        description: "Basin identifier for output filenames"
+        required: true
+        example: "bengbu"
+    outputs:
+      - name: "Extracted variable NetCDF files"
+        type: "file"
+        description: "One per variable (pr, tasmax, tasmin)"
+        path_pattern: "{OUTPUT_DIR}/{MODEL}_{SCENARIO}_{var}_{BASIN}.nc"
+    preconditions:
+      - "Basin grid file exists and is readable"
+      - "CMIP6 data directory is mounted and accessible"
+      - "Basin is within China (73.75-135.25E, 15.25-53.75N)"
+    postconditions:
+      - "3 NetCDF files created with valid data"
+      - "Cell count matches basin grid"
+
+  - id: "fetch_nex_gddp_global"
+    name: "Fetch NEX-GDDP-CMIP6 (global)"
+    description: >
+      Fetch bias-corrected CMIP6 daily data from NASA NEX-GDDP-CMIP6 via THREDDS
+      for any basin worldwide. Drop-in replacement for extract_cmip6_basin.py.
+      34 GCMs, 4 SSPs, 0.25°, 1950-2100. Output format identical to China extractor
+      so downstream tools (compute_deltas, apply_deltas) work unchanged.
+    stage: "s1_extract_cmip"
+    script_path: "tools/s1_extract_cmip/fetch_nex_gddp_global.py"
+    language: "python"
+    inputs:
+      - name: "grid_nc"
+        type: "file"
+        description: "VIC basin grid file (any location worldwide)"
+        required: true
+      - name: "model / models"
+        type: "string"
+        description: "CMIP6 model(s). Use 'recommended' for 5-model ensemble."
+        required: true
+        example: "ACCESS-CM2 or recommended"
+      - name: "scenario"
+        type: "string"
+        description: "historical, ssp126, ssp245, ssp370, or ssp585"
+        required: true
+      - name: "years"
+        type: "string"
+        description: "Year range (e.g., 1981-2010 for historical, 2041-2070 for future)"
+        required: true
+      - name: "output_dir"
+        type: "directory"
+        required: true
+      - name: "basin_name"
+        type: "string"
+        required: true
+    outputs:
+      - name: "Extracted variable NetCDF files"
+        type: "file"
+        description: "Same format as extract_cmip6_basin.py output"
+        path_pattern: "{OUTPUT_DIR}/{MODEL}_{SCENARIO}_{var}_{BASIN}.nc"
+    preconditions:
+      - "Internet access to ds.nccs.nasa.gov (NASA THREDDS)"
+      - "Basin grid file exists"
+      - "No geographic restriction — works for any lat/lon worldwide"
+    postconditions:
+      - "3 NetCDF files created per model × scenario"
+      - "Precipitation annual mean within expected range for the region"
+      - "Temperature mean within expected range"
+
+  - id: "compute_climate_deltas"
+    name: "Compute climate change deltas"
+    description: "Calculate monthly change factors from CMIP6 future vs historical climatologies"
+    stage: "s2_compute_deltas"
+    script_path: "tools/s2_compute_deltas/compute_climate_deltas.py"
+    language: "python"
+    inputs:
+      - name: "HIST_DIR"
+        type: "directory"
+        description: "Directory with CMIP6 r1 (historical) extracted files"
+        required: true
+      - name: "FUTURE_DIR"
+        type: "directory"
+        description: "Directory with CMIP6 SSP extracted files"
+        required: true
+      - name: "MODEL_NAME"
+        type: "string"
+        description: "CMIP6 model name"
+        required: true
+      - name: "SCENARIO"
+        type: "string"
+        description: "SSP scenario code (126, 245, 585)"
+        required: true
+      - name: "BASIN_NAME"
+        type: "string"
+        description: "Basin identifier"
+        required: true
+      - name: "REF_PERIOD"
+        type: "string"
+        description: "Reference period as start-end (e.g., 1981-2010)"
+        required: true
+        example: "1981-2010"
+      - name: "FUTURE_PERIOD"
+        type: "string"
+        description: "Future period as start-end (e.g., 2041-2070)"
+        required: true
+        example: "2041-2070"
+    outputs:
+      - name: "Delta NetCDF file"
+        type: "file"
+        description: "Monthly deltas: delta_pr (ratio), delta_tasmax (degC), delta_tasmin (degC)"
+        path_pattern: "{OUTPUT_DIR}/{MODEL}_{SCENARIO}_deltas_{BASIN}_{start}-{end}.nc"
+    preconditions:
+      - "Historical and future CMIP6 extracted files exist"
+      - "Reference period within 1961-2014, future period within 2015-2099"
+    postconditions:
+      - "Delta file contains 3 variables with dims (month=12, cell=N)"
+      - "Precipitation ratios are positive (0.1-5.0)"
+
+  - id: "apply_deltas_forcing"
+    name: "Apply deltas to baseline forcing"
+    description: "Generate future VIC forcing by applying monthly deltas to CMFD/MSWX baseline"
+    stage: "s3_apply_deltas"
+    script_path: "tools/s3_apply_deltas/apply_deltas_forcing.py"
+    language: "python"
+    inputs:
+      - name: "BASELINE_FORCING_DIR"
+        type: "directory"
+        description: "Baseline forcing_1d output directory"
+        required: true
+      - name: "DELTA_FILE"
+        type: "file"
+        description: "Monthly delta NetCDF from Stage 2"
+        required: true
+      - name: "GRID_NC"
+        type: "file"
+        description: "Basin grid file"
+        required: true
+      - name: "TARGET_YEARS"
+        type: "string"
+        description: "Start and end year for projected forcing"
+        required: true
+        example: "2041 2070"
+    outputs:
+      - name: "Projected forcing files"
+        type: "directory"
+        description: "7 variables x N years of forcing NetCDF files"
+        path_pattern: "{OUTPUT_DIR}/"
+    preconditions:
+      - "Baseline forcing directory has all 7 variable files"
+      - "Delta file exists and has valid data"
+    postconditions:
+      - "All 7 variables present in output"
+      - "Temperature is higher than baseline"
+      - "Precipitation is non-negative"
+
+  - id: "convert_projected_forcing"
+    name: "Convert projected forcing NC to VIC ASCII"
+    description: "Convert projected monthly NetCDF forcing files to per-grid-cell ASCII files for VIC"
+    stage: "s3_apply_deltas"
+    script_path: "tools/s3_apply_deltas/convert_projected_forcing.py"
+    language: "python"
+    inputs:
+      - name: "INPUT_DIR"
+        type: "directory"
+        description: "Directory with projected forcing NC files from apply_deltas_forcing.py"
+        required: true
+        example: "outputs/{basin}/climate_projection/forcing_ACCESS-CM2_245"
+      - name: "OUTPUT_DIR"
+        type: "directory"
+        description: "Where to write VIC ASCII forcing files"
+        required: true
+        example: "outputs/{basin}/climate_projection/forcing_final_ACCESS-CM2_245"
+      - name: "SOIL_FILE"
+        type: "file"
+        description: "SOIL_PARAM_COMPLETE.txt for grid cell coordinates"
+        required: true
+      - name: "FORCING_PREFIX"
+        type: "string"
+        description: "Prefix for output filenames (must match VIC global_param FORCING1)"
+        required: true
+        example: "nuxia_0.25deg_"
+      - name: "BASIN_TAG"
+        type: "string"
+        description: "Basin tag suffix in NC filenames"
+        required: true
+      - name: "START_YEAR"
+        type: "number"
+        description: "Start year of projected period"
+        required: true
+        example: "2041"
+      - name: "END_YEAR"
+        type: "number"
+        description: "End year of projected period"
+        required: true
+        example: "2070"
+    outputs:
+      - name: "VIC ASCII forcing files"
+        type: "directory"
+        description: "One file per grid cell, 7 columns (air_temp, prec, pressure, swdown, lwdown, vp, wind)"
+        path_pattern: "{OUTPUT_DIR}/{PREFIX}{lat}_{lon}"
+    preconditions:
+      - "Projected forcing NC files exist (from apply_deltas_forcing.py)"
+      - "SOIL_PARAM_COMPLETE.txt exists with correct grid coordinates"
+    postconditions:
+      - "File count matches grid cell count"
+      - "Each file has ~87664 lines (30yr × 365.25d × 8 timesteps)"
+      - "Temperature values in Celsius (not Kelvin)"
+
+skill_documents:
+  - id: "sd_s1"
+    name: "CMIP6 Data Extraction"
+    stage: "s1_extract_cmip"
+    path: "docs/s1_extract_cmip_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 850
+
+  - id: "sd_s2"
+    name: "Climate Change Delta Computation"
+    stage: "s2_compute_deltas"
+    path: "docs/s2_compute_deltas_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 650
+
+  - id: "sd_s3"
+    name: "Apply Deltas to VIC Forcing"
+    stage: "s3_apply_deltas"
+    path: "docs/s3_apply_deltas_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 600
+
+  - id: "sd_s4"
+    name: "Ensemble VIC Run and Analysis"
+    stage: "s4_ensemble_analysis"
+    path: "docs/s4_ensemble_analysis_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, procedure, expected_outputs, validation_checks, common_pitfalls]
+    word_count: 750
+
+diagnostic_triplets:
+  - id: "dt_cc_001"
+    stage: "s1_extract_cmip"
+    failure_domain: "dependency_mismatch"
+    severity: "fatal"
+  - id: "dt_cc_002"
+    stage: "s1_extract_cmip"
+    failure_domain: "path_resolution"
+    severity: "fatal"
+  - id: "dt_cc_003"
+    stage: "s1_extract_cmip"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_cc_004"
+    stage: "s2_compute_deltas"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_cc_005"
+    stage: "s2_compute_deltas"
+    failure_domain: "silent_error"
+    severity: "degraded"
+  - id: "dt_cc_006"
+    stage: "s3_apply_deltas"
+    failure_domain: "dependency_mismatch"
+    severity: "fatal"
+  - id: "dt_cc_007"
+    stage: "s3_apply_deltas"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_cc_008"
+    stage: "s4_ensemble_analysis"
+    failure_domain: "silent_error"
+    severity: "degraded"
+  - id: "dt_cc_009"
+    stage: "s1_extract_cmip"
+    failure_domain: "runtime"
+    severity: "fatal"
+
+summary:
+  total_tools: 4
+  total_tool_lines: 730
+  total_skill_documents: 4
+  total_skill_words: 2850
+  total_diagnostic_triplets: 9
+  failure_domains:
+    - "dependency_mismatch"
+    - "path_resolution"
+    - "silent_error"
+    - "runtime"
+  pipeline_stages: 4
+  pipeline_milestones: 8

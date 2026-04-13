@@ -1,0 +1,170 @@
+model:
+  name: "ELM"
+  full_name: "E3SM Land Model"
+  version: "E3SM v3"
+  domain: "land_surface"
+  description: "Land surface component of E3SM — simulates energy, water, carbon, nitrogen, and phosphorus exchange between land and atmosphere"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ELM/source/repo/cime_config/config_grids.xml"
+  execution_mode: "HPC batch (MPI+OpenMP via CIME framework)"
+  build_system: "CIME/CMake"
+  requires_hpc: true
+
+inputs:
+  forcing:
+    - name: "TBOT"
+      long_name: "Air temperature"
+      unit: "K"
+      valid_range: [180.0, 340.0]
+      common_error: "Passing Celsius instead of Kelvin (dt_001)"
+    - name: "PRECTmms"
+      long_name: "Precipitation rate (rain)"
+      unit: "mm/s"
+      valid_range: [0.0, 0.1]
+      common_error: "Passing mm/day instead of mm/s — 86400x error (dt_002)"
+    - name: "SNOW"
+      long_name: "Precipitation rate (snow)"
+      unit: "mm/s"
+      valid_range: [0.0, 0.05]
+    - name: "SHUM"
+      long_name: "Specific humidity"
+      unit: "kg/kg"
+      valid_range: [0.0, 0.04]
+      common_error: "Passing relative humidity (%) instead of specific humidity (dt_003)"
+    - name: "FSDS"
+      long_name: "Downwelling shortwave radiation"
+      unit: "W/m2"
+      valid_range: [0.0, 1400.0]
+    - name: "FLDS"
+      long_name: "Downwelling longwave radiation"
+      unit: "W/m2"
+      valid_range: [50.0, 600.0]
+    - name: "WIND"
+      long_name: "Wind speed"
+      unit: "m/s"
+      valid_range: [0.0, 75.0]
+    - name: "PSRF"
+      long_name: "Surface pressure"
+      unit: "Pa"
+      valid_range: [50000.0, 110000.0]
+      common_error: "Passing hPa instead of Pa (dt_004)"
+
+  surface_data:
+    - name: "PCT_PFT"
+      unit: "%"
+      valid_range: [0.0, 100.0]
+      description: "Plant functional type fractions"
+    - name: "PCT_SAND"
+      unit: "%"
+      valid_range: [0.0, 100.0]
+      description: "Sand fraction per soil layer"
+    - name: "PCT_CLAY"
+      unit: "%"
+      valid_range: [0.0, 100.0]
+      description: "Clay fraction per soil layer"
+    - name: "ORGANIC"
+      unit: "kg/m3"
+      valid_range: [0.0, 130.0]
+      description: "Soil organic matter density"
+    - name: "MONTHLY_LAI"
+      unit: "m2/m2"
+      valid_range: [0.0, 12.0]
+      description: "Monthly leaf area index per PFT"
+    - name: "TOPO"
+      unit: "m"
+      valid_range: [-500.0, 9000.0]
+      description: "Surface elevation"
+
+  parameters:
+    critical:
+      - name: "slatop"
+        unit: "m2/gC"
+        valid_range: [0.001, 0.1]
+        description: "Specific leaf area at top of canopy"
+      - name: "vcmaxha"
+        unit: "J/mol"
+        valid_range: [40000.0, 80000.0]
+        description: "Activation energy for Vcmax"
+      - name: "medlynslope"
+        unit: "dimensionless"
+        valid_range: [1.0, 15.0]
+        description: "Medlyn stomatal slope parameter"
+      - name: "froot_leaf"
+        unit: "gC/gC"
+        valid_range: [0.5, 5.0]
+        description: "Fine root to leaf allocation ratio"
+      - name: "flnr"
+        unit: "fraction"
+        valid_range: [0.01, 0.25]
+        description: "Fraction of leaf nitrogen in Rubisco"
+      - name: "dtime"
+        unit: "s"
+        valid_range: [900, 3600]
+        description: "Model timestep (default 1800s)"
+      - name: "co2_ppmv"
+        unit: "ppmv"
+        valid_range: [180.0, 1000.0]
+        description: "Atmospheric CO2 concentration"
+
+outputs:
+  primary:
+    - name: "GPP"
+      long_name: "Gross primary production"
+      unit: "gC/m2/s"
+      valid_range: [0.0, 5.0e-5]
+    - name: "NPP"
+      long_name: "Net primary production"
+      unit: "gC/m2/s"
+      valid_range: [-1.0e-5, 3.0e-5]
+    - name: "NEE"
+      long_name: "Net ecosystem exchange"
+      unit: "gC/m2/s"
+      valid_range: [-5.0e-5, 5.0e-5]
+    - name: "HR"
+      long_name: "Heterotrophic respiration"
+      unit: "gC/m2/s"
+      valid_range: [0.0, 3.0e-5]
+    - name: "FSH"
+      long_name: "Sensible heat flux"
+      unit: "W/m2"
+      valid_range: [-200.0, 500.0]
+    - name: "EFLX_LH_TOT"
+      long_name: "Total latent heat flux"
+      unit: "W/m2"
+      valid_range: [-50.0, 500.0]
+    - name: "QRUNOFF"
+      long_name: "Total runoff"
+      unit: "mm/s"
+      valid_range: [0.0, 0.01]
+      common_error: "Forgetting to multiply by 86400 for daily totals (dt_020)"
+    - name: "QOVER"
+      long_name: "Surface runoff"
+      unit: "mm/s"
+      valid_range: [0.0, 0.01]
+    - name: "QDRAI"
+      long_name: "Subsurface drainage"
+      unit: "mm/s"
+      valid_range: [0.0, 0.005]
+    - name: "H2OSOI"
+      long_name: "Volumetric soil moisture"
+      unit: "mm3/mm3"
+      valid_range: [0.0, 1.0]
+    - name: "TSOI"
+      long_name: "Soil temperature"
+      unit: "K"
+      valid_range: [200.0, 350.0]
+    - name: "TLAI"
+      long_name: "Total leaf area index"
+      unit: "m2/m2"
+      valid_range: [0.0, 12.0]
+    - name: "TOTECOSYSC"
+      long_name: "Total ecosystem carbon"
+      unit: "gC/m2"
+      valid_range: [0.0, 100000.0]
+
+known_issues:
+  - id: "no_hpc"
+    description: "Cannot run native ELM binary without HPC cluster — requires CIME/MPI infrastructure"
+  - id: "bengbu_cross_val_low_nse"
+    description: "Cross-validation of Bengbu params to Wangjiaba gives NSE=0.056 — requires local calibration"
+  - id: "spinup_required"
+    description: "Cold start runs need 200-500 year spin-up for C/N/P pools to equilibrate"

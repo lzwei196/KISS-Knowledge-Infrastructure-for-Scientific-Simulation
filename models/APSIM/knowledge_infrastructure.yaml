@@ -1,0 +1,209 @@
+package:
+  created: '2026-03-25T03:51:21.300724'
+  domain: crop
+  name: APSIM
+  version: '1.0.0'
+  language: csharp
+  build_system: dotnet
+  description: >
+    APSIM Next Generation — process-based crop and farming systems simulator.
+    Models crop growth, soil water balance, nitrogen cycling, and management
+    operations at field/point scale with daily timestep.
+
+pipeline:
+  stages:
+  - id: s0_config
+    name: Configuration
+    description: >
+      Define simulation parameters: crop type, site coordinates, simulation
+      period, management rules (sowing date, fertilizer, irrigation).
+    order: 0
+    depends_on: []
+    knowledge_type: procedural
+    tools: []
+    milestones:
+    - id: m_s0_config
+      description: Crop type, site location, and simulation period defined
+      verification: Configuration parameters documented in workspace
+
+  - id: s1_domain
+    name: Domain Setup
+    description: >
+      Define the field zone properties, select soil type from APSoil database
+      or external source, choose crop cultivar.
+    order: 1
+    depends_on: [s0_config]
+    knowledge_type: procedural
+    tools: []
+    milestones:
+    - id: m_s1_domain
+      description: Soil type identified, crop cultivar selected
+      verification: Soil and cultivar names documented
+
+  - id: s2_data
+    name: Data Preparation
+    description: >
+      Collect raw forcing data (CMFD/MSWX NetCDF) and soil data (HWSD/SoilGrids)
+      for the target site. Verify data availability for the simulation period.
+    order: 2
+    depends_on: [s0_config]
+    knowledge_type: procedural
+    tools: []
+    milestones:
+    - id: m_s2_data
+      description: Raw forcing and soil data files located and verified
+      verification: ls -la forcing_dir/ && ls -la soil_dir/
+
+  - id: s3_forcing
+    name: Forcing/Input
+    description: >
+      Convert CMFD/MSWX gridded forcing to APSIM .met weather file format.
+      Critical unit conversions: W/m² → MJ/m²/day, K → °C, kg/m²/s → mm/day,
+      specific humidity → vapor pressure (hPa).
+    order: 3
+    depends_on: [s2_data]
+    knowledge_type: procedural
+    tools:
+    - id: convert_met_to_apsim
+      script: tools/s3_forcing/convert_met_to_apsim.py
+      description: Convert CMFD/MSWX NetCDF forcing to APSIM .met format
+      inputs: [FORCING_DIR, LATITUDE, LONGITUDE, START_DATE, END_DATE]
+      outputs: [OUTPUT_MET]
+    milestones:
+    - id: m_s3_forcing
+      description: .met weather file created with correct units and header
+      verification: >
+        head -10 output.met && python -c "
+        with open('output.met') as f: lines=f.readlines();
+        assert lines[0].strip()=='[weather.met.weather]', 'Missing header (dt_apsim_008)';
+        # Check first data line radiation < 50 MJ/m2/day
+        "
+
+  - id: s4_parameters
+    name: Parameters
+    description: >
+      Convert HWSD/SoilGrids soil properties to APSIM soil JSON block using
+      Saxton-Rawls pedotransfer functions. Generate Physical, WaterBalance,
+      SoilCrop, Organic, Chemical, and Water nodes.
+    order: 4
+    depends_on: [s2_data]
+    knowledge_type: procedural
+    tools:
+    - id: convert_soil_to_apsim
+      script: tools/s4_parameters/convert_soil_to_apsim.py
+      description: Convert HWSD/SoilGrids to APSIM soil JSON with pedotransfer
+      inputs: [SAND_PCT, CLAY_PCT, OC_PCT, THICKNESS_MM, CROP_NAME]
+      outputs: [OUTPUT_JSON]
+    milestones:
+    - id: m_s4_parameters
+      description: Soil JSON block created with valid parameter ordering
+      verification: >
+        python -c "
+        import json; soil=json.load(open('soil.json'));
+        phys=[c for c in soil['Children'] if 'Physical' in c['$type']][0];
+        assert all(l<=d for l,d in zip(phys['LL15'],phys['DUL'])), 'LL15 > DUL (dt_apsim_013)';
+        "
+
+  - id: s5_run
+    name: Execution
+    description: >
+      Build APSIM from source (dotnet build) and execute the simulation.
+      Preflight checks validate .apsimx JSON structure and weather file
+      references. Output is a SQLite .db file.
+    order: 5
+    depends_on: [s3_forcing, s4_parameters]
+    knowledge_type: procedural
+    tools:
+    - id: run_apsim
+      script: tools/s5_run/run_apsim.py
+      description: Build and execute APSIM simulation with preflight checks
+      inputs: [APSIMX_FILE, APSIM_SOURCE_DIR, BUILD_FIRST, EXPORT_CSV]
+      outputs: [DB_FILE]
+    milestones:
+    - id: m_s5_run
+      description: Simulation completed, .db output file created
+      verification: >
+        sqlite3 simulation.db "SELECT name FROM sqlite_master WHERE type='table'" &&
+        sqlite3 simulation.db "SELECT COUNT(*) FROM Report"
+
+  - id: s6_output
+    name: Output Parsing
+    description: >
+      Extract results from SQLite .db to CSV files. Compute yield statistics
+      (mean, std, CV, min, max) and per-year yield breakdown.
+    order: 6
+    depends_on: [s5_run]
+    knowledge_type: procedural
+    tools:
+    - id: parse_apsim_output
+      script: tools/s6_output/parse_apsim_output.py
+      description: Parse SQLite output to CSV with yield statistics
+      inputs: [DB_FILE, OUTPUT_DIR, YIELD_COLUMN]
+      outputs: [CSV_FILES, YIELD_SUMMARY_JSON]
+    milestones:
+    - id: m_s6_output
+      description: CSV files and yield summary JSON created
+      verification: >
+        ls output/*.csv && cat output/yield_summary.json | python -m json.tool
+
+diagnostics:
+  triplet_file: diagnostics/triplets.yaml
+  total_triplets: 30
+  failure_domains:
+    - unit_conversion
+    - parameter_format
+    - path_resolution
+    - runtime
+    - silent_error
+    - dependency_mismatch
+    - compilation
+
+unit_table:
+  weather:
+    radiation:
+      apsim: MJ/m²/day
+      cmfd: W/m² (instantaneous)
+      mswx: W/m² (instantaneous)
+      conversion: "× 86400 / 1e6"
+      trap: dt_apsim_001
+    temperature:
+      apsim: °C
+      cmfd: K (sometimes °C)
+      mswx: K
+      conversion: "- 273.15"
+      trap: dt_apsim_002
+    precipitation:
+      apsim: mm/day
+      cmfd: mm/3hr
+      mswx: kg/m²/s
+      conversion_cmfd: "× 8"
+      conversion_mswx: "× 86400"
+      trap: dt_apsim_003
+    vapor_pressure:
+      apsim: hPa
+      cmfd: specific humidity (kg/kg)
+      conversion: "q × P_hPa / (0.622 + 0.378 × q)"
+      trap: dt_apsim_004
+    wind:
+      apsim: m/s
+      cmfd: m/s
+      mswx: m/s
+      conversion: none
+      trap: dt_apsim_007
+  soil:
+    hydraulic_conductivity:
+      apsim: mm/day
+      hwsd: cm/day
+      conversion: "× 10"
+      trap: dt_apsim_005
+    bulk_density:
+      apsim: g/cm³
+      hwsd: g/cm³
+      conversion: none
+    water_content:
+      apsim: mm/mm (volumetric)
+      hwsd: mm/mm or %
+      conversion: "÷ 100 if in %"
+    thickness:
+      apsim: mm
+      note: "Not cm — common trap"

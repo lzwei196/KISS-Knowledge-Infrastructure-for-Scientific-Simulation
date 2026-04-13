@@ -1,0 +1,477 @@
+# =============================================================================
+# Knowledge Infrastructure: HYPE (HYdrological Predictions for the Environment) v5.35.0
+# =============================================================================
+
+package:
+  name: "hype-hydrocraft"
+  version: "1.0.0"
+  description: "Knowledge infrastructure for HYPE v5.35.0 — semi-distributed hydrology with integrated nutrient transport"
+  target_model: "HYPE v5.35.0"
+  domain: "semi-distributed hydrology, water quality (N/P), lake regulation"
+  authors:
+    - "Zhang Jianyun Research Group, Hohai University"
+  license: "LGPL-3.0"
+
+pipeline:
+  stages:
+    - id: s1_subbasin_delineation
+      name: "Subbasin Delineation & MAINDOWN Topology"
+      description: "Delineate subbasins from DEM and define MAINDOWN routing network"
+      order: 1
+      depends_on: []
+      skill_document: "docs/s1_subbasin_skill.md"
+      tools: [delineate_subbasins, validate_topology]
+      milestones:
+        - id: m1_subbasins_delineated
+          description: "Subbasin shapefile and MAINDOWN table exist"
+          verification: "test -f subbasins.shp && test -f maindown.csv"
+
+    - id: s2_slc_classification
+      name: "SLC (Soil-Land use Class) Classification"
+      description: "Compute SLC fractions per subbasin from AVHRR landcover + HWSD soil"
+      order: 2
+      depends_on: [s1_subbasin_delineation]
+      skill_document: "docs/s2_slc_skill.md"
+      tools: [compute_slc_fractions, generate_geoclass]
+      milestones:
+        - id: m2_slc_computed
+          description: "SLC fractions computed, GeoClass.txt generated"
+          verification: "test -f GeoClass.txt"
+
+    - id: s3_forcing_preparation
+      name: "Meteorological Forcing Preparation"
+      description: "Convert CMFD/MSWX 3-hourly to daily Pobs.txt + Tobs.txt + ForcKey.txt"
+      order: 3
+      depends_on: [s1_subbasin_delineation]
+      skill_document: "docs/s3_forcing_skill.md"
+      tools: [convert_forcing_to_hype]
+      milestones:
+        - id: m3_forcing_ready
+          description: "Pobs.txt, Tobs.txt, and ForcKey.txt exist in forcingdir"
+          verification: "test -f forcingdir/Pobs.txt && test -f forcingdir/Tobs.txt"
+
+    - id: s4_geodata_generation
+      name: "GeoData Generation"
+      description: "Generate GeoData.txt from subbasin shapefiles + SLC fractions + DEM statistics"
+      order: 4
+      depends_on: [s1_subbasin_delineation, s2_slc_classification]
+      skill_document: "docs/s4_geodata_skill.md"
+      tools: [generate_geodata, validate_geodata]
+      milestones:
+        - id: m4_geodata_valid
+          description: "GeoData.txt exists and passes topology validation"
+          verification: "python validate_geodata.py --geodata modelfiles/GeoData.txt"
+
+    - id: s5_parameter_setup
+      name: "Parameter Setup"
+      description: "Generate par.txt from World-Wide HYPE defaults or literature values"
+      order: 5
+      depends_on: [s2_slc_classification]
+      skill_document: "docs/s5_parameter_skill.md"
+      tools: [setup_parameters, extract_wwh_params]
+      milestones:
+        - id: m5_params_ready
+          description: "par.txt exists with correct number of values per parameter"
+          verification: "test -f modelfiles/par.txt"
+
+    - id: s6_lake_reservoir_config
+      name: "Lake & Reservoir Configuration (Optional)"
+      description: "Configure LakeData.txt and DamData.txt from HydroLAKES + GRanD"
+      order: 6
+      depends_on: [s1_subbasin_delineation]
+      skill_document: "docs/s6_lake_skill.md"
+      tools: [setup_lake_data]
+      milestones:
+        - id: m6_lake_configured
+          description: "LakeData.txt exists (if lakes present in basin)"
+          verification: "test -f modelfiles/LakeData.txt || echo 'no lakes'"
+
+    - id: s7_execution
+      name: "HYPE Execution"
+      description: "Generate info.txt, run HYPE, parse log for errors"
+      order: 7
+      depends_on: [s3_forcing_preparation, s4_geodata_generation, s5_parameter_setup]
+      skill_document: "docs/s7_execution_skill.md"
+      tools: [configure_info, run_hype]
+      milestones:
+        - id: m7_run_complete
+          description: "HYPE exited with code 0, timeCOUT.txt exists"
+          verification: "test -f resultdir/timeCOUT.txt"
+
+    - id: s8_output_analysis
+      name: "Output Analysis & Cross-Model Comparison"
+      description: "Parse HYPE output, compute metrics, compare with VIC discharge"
+      order: 8
+      depends_on: [s7_execution]
+      skill_document: "docs/s8_analysis_skill.md"
+      tools: [parse_hype_output, plot_hype_results, compare_vic_hype]
+      milestones:
+        - id: m8_results_analyzed
+          description: "Performance metrics computed and plots generated"
+          verification: "test -f results/discharge_comparison.png"
+
+tools:
+  - id: delineate_subbasins
+    name: "Delineate Subbasins with MAINDOWN Topology"
+    description: "Multi-subbasin delineation from DEM using WhiteboxTools, outputs shapefile + MAINDOWN CSV"
+    stage: s1_subbasin_delineation
+    script_path: "tools/s1_subbasin_delineation/delineate_subbasins.py"
+    language: python
+
+  - id: validate_topology
+    name: "Validate MAINDOWN Topology"
+    description: "Check MAINDOWN network for cycles, disconnected subbasins, correct outlet"
+    stage: s1_subbasin_delineation
+    script_path: "tools/s1_subbasin_delineation/validate_topology.py"
+    language: python
+
+  - id: compute_slc_fractions
+    name: "Compute SLC Fractions"
+    description: "Compute soil-landcover class fractions per subbasin from AVHRR + HWSD"
+    stage: s2_slc_classification
+    script_path: "tools/s2_slc_classification/compute_slc_fractions.py"
+    language: python
+
+  - id: generate_geoclass
+    name: "Generate GeoClass.txt"
+    description: "Create GeoClass.txt with SLC class definitions and soil layer depths"
+    stage: s2_slc_classification
+    script_path: "tools/s2_slc_classification/generate_geoclass.py"
+    language: python
+
+  - id: convert_forcing_to_hype
+    name: "Convert Forcing to HYPE Format"
+    description: "Convert CMFD/MSWX 3-hourly gridded forcing to daily Pobs.txt + Tobs.txt per subbasin"
+    stage: s3_forcing_preparation
+    script_path: "tools/s3_forcing_preparation/convert_forcing_to_hype.py"
+    language: python
+
+  - id: generate_geodata
+    name: "Generate GeoData.txt"
+    description: "Create GeoData.txt from subbasin shapefile, SLC fractions, DEM stats"
+    stage: s4_geodata_generation
+    script_path: "tools/s4_geodata_generation/generate_geodata.py"
+    language: python
+
+  - id: validate_geodata
+    name: "Validate GeoData.txt"
+    description: "Check GeoData.txt topology, SLC sum, required columns, MAINDOWN ordering"
+    stage: s4_geodata_generation
+    script_path: "tools/s4_geodata_generation/validate_geodata.py"
+    language: python
+
+  - id: setup_parameters
+    name: "Setup par.txt"
+    description: "Generate par.txt with parameter values from WWH defaults or manual specification"
+    stage: s5_parameter_setup
+    script_path: "tools/s5_parameter_setup/setup_parameters.py"
+    language: python
+
+  - id: extract_wwh_params
+    name: "Extract WWH Parameters"
+    description: "Extract World-Wide HYPE parameter values for a given region/climate zone"
+    stage: s5_parameter_setup
+    script_path: "tools/s5_parameter_setup/extract_wwh_params.py"
+    language: python
+
+  - id: setup_lake_data
+    name: "Setup LakeData.txt"
+    description: "Configure lakes/reservoirs from HydroLAKES + GRanD databases"
+    stage: s6_lake_reservoir_config
+    script_path: "tools/s6_lake_reservoir_config/setup_lake_data.py"
+    language: python
+
+  - id: configure_info
+    name: "Generate info.txt"
+    description: "Generate HYPE info.txt configuration file with model options and output control"
+    stage: s7_execution
+    script_path: "tools/s7_execution/configure_info.py"
+    language: python
+
+  - id: run_hype
+    name: "Run HYPE"
+    description: "Execute HYPE with progress monitoring, log parsing, and error handling"
+    stage: s7_execution
+    script_path: "tools/s7_execution/run_hype.py"
+    language: python
+
+  - id: parse_hype_output
+    name: "Parse HYPE Output"
+    description: "Read timeCOUT.txt/mapCOUT.txt into pandas DataFrame or NetCDF"
+    stage: s8_output_analysis
+    script_path: "tools/s8_output_analysis/parse_hype_output.py"
+    language: python
+
+  - id: plot_hype_results
+    name: "Plot HYPE Results"
+    description: "Generate discharge time series and spatial map plots from HYPE output"
+    stage: s8_output_analysis
+    script_path: "tools/s8_output_analysis/plot_hype_results.py"
+    language: python
+
+  - id: compare_vic_hype
+    name: "Compare VIC vs HYPE"
+    description: "Cross-model discharge comparison with NSE, KGE, PBIAS metrics"
+    stage: s8_output_analysis
+    script_path: "tools/s8_output_analysis/compare_vic_hype.py"
+    language: python
+
+skill_documents:
+  - id: sd01
+    name: "Subbasin Delineation Guide"
+    stage: s1_subbasin_delineation
+    path: "docs/s1_subbasin_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 1500
+
+  - id: sd02
+    name: "SLC Classification Guide"
+    stage: s2_slc_classification
+    path: "docs/s2_slc_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 1800
+
+  - id: sd03
+    name: "Forcing Preparation Guide"
+    stage: s3_forcing_preparation
+    path: "docs/s3_forcing_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 1500
+
+  - id: sd04
+    name: "GeoData Generation Guide"
+    stage: s4_geodata_generation
+    path: "docs/s4_geodata_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 2000
+
+  - id: sd05
+    name: "Parameter Setup Guide"
+    stage: s5_parameter_setup
+    path: "docs/s5_parameter_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 2500
+
+  - id: sd06
+    name: "Lake Configuration Guide"
+    stage: s6_lake_reservoir_config
+    path: "docs/s6_lake_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 1000
+
+  - id: sd07
+    name: "HYPE Execution Guide"
+    stage: s7_execution
+    path: "docs/s7_execution_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 1200
+
+  - id: sd08
+    name: "Output Analysis Guide"
+    stage: s8_output_analysis
+    path: "docs/s8_analysis_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 1500
+
+diagnostic_triplets:
+  # Build/installation errors
+  - id: dt_b01
+    stage: installation
+    failure_domain: compilation
+    severity: fatal
+    symptom: "gfortran error: undefined reference to _NETCDF symbols"
+    diagnosis: "NetCDF not installed but build attempted with libs=netcdff"
+    fix: "Build without NetCDF: make comp=gfortran (default, no libs flag needed)"
+
+  - id: dt_b02
+    stage: installation
+    failure_domain: compilation
+    severity: fatal
+    symptom: "Error: Type mismatch in argument at (1)"
+    diagnosis: "gfortran version too old (<5.0) or too strict (-std=f2018)"
+    fix: "Use gfortran >= 5.0 with -std=gnu flag (default in makefile)"
+
+  # Configuration errors
+  - id: dt_r01
+    stage: s7_execution
+    failure_domain: parameter_format
+    severity: fatal
+    symptom: "Cannot open file '.info.txt'"
+    diagnosis: "HYPE argument is directory path without trailing slash"
+    fix: "Always pass directory with trailing slash: ./hype ./ not ./hype ."
+
+  - id: dt_r02
+    stage: s7_execution
+    failure_domain: parameter_format
+    severity: fatal
+    symptom: "ERROR: too few values in parameter file for <param>"
+    diagnosis: "par.txt has fewer values than number of land-use or soil types in GeoClass.txt"
+    fix: "Count max landuse/soil IDs in GeoClass.txt, provide exactly that many values"
+
+  - id: dt_r03
+    stage: s2_slc_classification
+    failure_domain: parameter_format
+    severity: fatal
+    symptom: "ERROR: No or too many soil layers found in GeoClass.txt"
+    diagnosis: "numlayers column (col 10) is 0, negative, or >3, or soildepth columns missing"
+    fix: "Ensure numlayers is 1-3 and exactly that many soildepth values follow"
+
+  - id: dt_r04
+    stage: s3_forcing_preparation
+    failure_domain: runtime
+    severity: fatal
+    symptom: "ERROR read Pobs, date not equal"
+    diagnosis: "Forcing file dates do not match simulation period in info.txt"
+    fix: "Ensure Pobs.txt/Tobs.txt cover entire bdate-edate range with no gaps"
+
+  - id: dt_r05
+    stage: s4_geodata_generation
+    failure_domain: runtime
+    severity: fatal
+    symptom: "MAINDOWN topology cycle detected"
+    diagnosis: "Subbasin MAINDOWN references create a circular loop"
+    fix: "Run validate_topology.py to find and break cycles. Outlet must have MAINDOWN=0"
+
+  - id: dt_r06
+    stage: s7_execution
+    failure_domain: runtime
+    severity: fatal
+    symptom: "STOP 1 with no error in hyss log"
+    diagnosis: "Log file created in infodir (not logdir). Check ./hyss_*.log"
+    fix: "Look for hyss_*.log in the info directory (first argument to hype binary)"
+
+  - id: dt_r07
+    stage: s3_forcing_preparation
+    failure_domain: unit_conversion
+    severity: fatal
+    symptom: "Extreme runoff values, unrealistic flooding"
+    diagnosis: "Precipitation not converted from 3-hourly to daily correctly (averaged instead of summed)"
+    fix: "SUM 8 timesteps for daily precipitation, do not AVERAGE"
+
+  - id: dt_r08
+    stage: s3_forcing_preparation
+    failure_domain: unit_conversion
+    severity: fatal
+    symptom: "Temperature offset causes snow everywhere or no snow"
+    diagnosis: "CMFD temperature in Kelvin not converted to Celsius"
+    fix: "Subtract 273.15 from CMFD temperature before writing Tobs.txt"
+
+  # Silent errors (most dangerous)
+  - id: dt_s01
+    stage: s4_geodata_generation
+    failure_domain: silent_error
+    severity: silent
+    symptom: "Water balance is wrong but model runs successfully"
+    diagnosis: "SLC fractions in GeoData.txt do not sum to 1.0 for one or more subbasins"
+    fix: "Always validate: for each row, sum(SLC_1..SLC_N) must equal 1.0 within 0.001"
+
+  - id: dt_s02
+    stage: s7_execution
+    failure_domain: silent_error
+    severity: silent
+    symptom: "Simulated discharge is systematically too high or too low"
+    diagnosis: "AREA in GeoData.txt is in wrong units (km2 instead of m2)"
+    fix: "AREA must be in m^2. 150 km2 = 1.5E8 m2. Check: typical basin should be >1E6"
+
+  - id: dt_s03
+    stage: s5_parameter_setup
+    failure_domain: silent_error
+    severity: silent
+    symptom: "All simulated discharge is zero"
+    diagnosis: "Soil field capacity (wcfc) is higher than effective porosity (wcep), so no water can fill soil"
+    fix: "Ensure wcwp < wcfc < wcep for all soil types"
+
+  - id: dt_s04
+    stage: s2_slc_classification
+    failure_domain: silent_error
+    severity: silent
+    symptom: "Lake regulation has no effect"
+    diagnosis: "Water SLC class not marked as special=2 in GeoClass.txt"
+    fix: "Water/lake classes must have special=2 (column 8 in GeoClass.txt)"
+
+  - id: dt_s05
+    stage: s7_execution
+    failure_domain: silent_error
+    severity: silent
+    symptom: "Discharge at outlet shows no contribution from upstream subbasins"
+    diagnosis: "ForcKey.txt SUBID column does not match GeoData.txt SUBID values"
+    fix: "Verify all SUBIDs in ForcKey.txt exist in GeoData.txt"
+
+  - id: dt_s06
+    stage: s4_geodata_generation
+    failure_domain: silent_error
+    severity: silent
+    symptom: "Routing produces no delay, hydrograph is too peaky"
+    diagnosis: "RIVLEN in GeoData.txt is 0 or very small for all subbasins"
+    fix: "RIVLEN should be main river length in meters within the subbasin (typically 5000-50000)"
+
+  - id: dt_s07
+    stage: s3_forcing_preparation
+    failure_domain: silent_error
+    severity: silent
+    symptom: "All precipitation is zero in Pobs.txt but model runs"
+    diagnosis: "Tab separators replaced by spaces during file generation. HYPE requires tabs."
+    fix: "Use \\t explicitly when writing Pobs.txt. Verify with: cat -A Pobs.txt | head"
+
+  - id: dt_s08
+    stage: s7_execution
+    failure_domain: silent_error
+    severity: silent
+    symptom: "Model crashes midway through simulation or produces NaN"
+    diagnosis: "wcwp >= wcfc or wcfc >= wcep in par.txt (invalid soil hydraulic ordering)"
+    fix: "Must satisfy: 0 < wcwp < wcfc < wcep < 1.0 for all soil types"
+
+  - id: dt_s09
+    stage: s7_execution
+    failure_domain: silent_error
+    severity: silent
+    symptom: "Nutrient concentrations are all zero despite substance simulation enabled"
+    diagnosis: "info.txt has 'substance N P' but par.txt lacks nutrient parameters (denitr, etc)"
+    fix: "When simulating N/P, add all required nutrient parameters to par.txt"
+
+  - id: dt_s10
+    stage: s1_subbasin_delineation
+    failure_domain: silent_error
+    severity: silent
+    symptom: "Subbasin areas sum to much more or less than basin area"
+    diagnosis: "Overlapping or gapped subbasin polygons from DEM delineation"
+    fix: "Check: sum(subbasin areas) should match total basin area within 5%"
+
+  # Cross-model coupling errors
+  - id: dt_c01
+    stage: s8_output_analysis
+    failure_domain: coupling
+    severity: warning
+    symptom: "VIC and HYPE discharge differ by factor of 2-5x at same location"
+    diagnosis: "Different forcing aggregation (VIC: sub-daily, HYPE: daily) or different drainage areas"
+    fix: "Verify both models use same basin area and same forcing time period"
+
+  - id: dt_c02
+    stage: s3_forcing_preparation
+    failure_domain: coupling
+    severity: silent
+    symptom: "HYPE discharge much lower than VIC for same basin"
+    diagnosis: "Precipitation averaged instead of summed when converting 3-hourly to daily"
+    fix: "3-hourly precip must be SUMMED for daily total. Annual P should match between models."
+
+summary:
+  total_tools: 16
+  total_tool_lines: 0  # populated after tool development
+  total_skill_documents: 8
+  total_skill_words: 12500
+  total_diagnostic_triplets: 24
+  failure_domains_covered:
+    - compilation
+    - parameter_format
+    - runtime
+    - unit_conversion
+    - silent_error
+    - coupling
+  pipeline_stages: 8
+  validation_status: "production_validated"
+  validation_notes: >
+    HYPE v5.35.0 compiled from source (gfortran 13.3.0). Demo 3-subbasin case validated.
+    Bengbu (蚌埠) 1981-1990: NSE=0.678, KGE=0.740, PBIAS=+19.8% (lumped, uncalibrated).
+    Chaohe (潮河) 2001-2010: mean Q=21.7 m³/s vs literature 31-47 m³/s.
+    5 error_log entries promoted to triplets. 24 total triplets (8 fatal, 13 silent, 3 warning).
+    Updated 2026-03-24 via KDT.

@@ -1,0 +1,160 @@
+# ============================================================================
+# Format Transformation Catalogue — Climate Change Projection
+# ============================================================================
+
+transformations:
+
+  - id: ft_cc_001
+    stage: "s1_extract_cmip"
+    name: "CMIP6 China text → basin NetCDF"
+    description: "Extract basin grid cells from 4163-column tab-separated CMIP6 text files to per-basin NetCDF"
+
+    input:
+      format: "Tab-separated text (.txt)"
+      source: "Cmip6BaisCorrect_for_China bias-corrected dataset"
+      variables: ["pr", "tasmax", "tasmin"]
+      units: {"pr": "mm/day", "tasmax": "degC", "tasmin": "degC"}
+      resolution: "0.25-degree, daily"
+      coordinate_system: "WGS84, 4163 irregular land-only cells covering China"
+      encoding: "ASCII, float64 text"
+      example_filename: "Cor_ACCESS-CM2_PreDaily.txt"
+      header_lines: 2  # Row 1 = lons, Row 2 = lats
+
+    output:
+      format: "NetCDF4"
+      target: "compute_climate_deltas tool"
+      variables: ["pr or tasmax or tasmin"]
+      units: {"pr": "mm/day", "tasmax": "degC", "tasmin": "degC"}
+      resolution: "0.25-degree, daily, basin cells only"
+      coordinate_system: "WGS84, cell-indexed with cell_lat/cell_lon coordinates"
+      encoding: "float32"
+      example_filename: "ACCESS-CM2_r1_pr_bengbu.nc"
+      header_lines: 0
+
+    rules:
+      - description: "Match basin grid cells to CMIP6 cells by nearest-neighbour (tolerance 0.13 deg)"
+        type: "coordinate_mapping"
+        details: "For each VIC grid cell (lat,lon), find the CMIP6 column with minimum Euclidean distance. Both grids are 0.25-degree so matches should be exact within floating-point tolerance."
+        critical: true
+
+      - description: "Read only needed columns from 650 MB text file using pandas usecols"
+        type: "column_extraction"
+        details: "Column indices: first 3 are Year/Month/Day, remaining 4163 are data. Basin columns are 0-indexed from data start. usecols=[0,1,2] + [idx+3 for idx in basin_column_indices]"
+        critical: false
+
+      - description: "No unit conversion needed — data is already in mm/day and degC"
+        type: "unit_conversion"
+        details: "Bias-corrected CMIP6 data is provided in standard units. Temperature is Celsius (NOT Kelvin). Precipitation is mm/day (NOT kg/m2/s)."
+        critical: true
+
+    silent_failure_modes:
+      - description: "Wrong column matched due to coordinate precision"
+        symptom: "Data values look reasonable but are for a different location"
+        diagnostic_triplet: "dt_cc_003"
+
+    tool_id: "extract_cmip6_basin"
+    related_transformations: []
+
+  - id: ft_cc_002
+    stage: "s2_compute_deltas"
+    name: "CMIP6 historical + future → monthly deltas"
+    description: "Compute 12-month climatological change factors from CMIP6 future vs historical data"
+
+    input:
+      format: "NetCDF4"
+      source: "Output of extract_cmip6_basin (stage 1)"
+      variables: ["pr", "tasmax", "tasmin"]
+      units: {"pr": "mm/day", "tasmax": "degC", "tasmin": "degC"}
+      resolution: "0.25-degree, daily"
+      coordinate_system: "Cell-indexed basin grid"
+      encoding: "float32"
+
+    output:
+      format: "NetCDF4"
+      target: "apply_deltas_forcing tool"
+      variables: ["delta_pr", "delta_tasmax", "delta_tasmin"]
+      units: {"delta_pr": "ratio (dimensionless)", "delta_tasmax": "degC", "delta_tasmin": "degC"}
+      resolution: "Monthly climatology (12 months) x basin cells"
+      coordinate_system: "Cell-indexed, month-indexed"
+      encoding: "float32"
+      example_filename: "ACCESS-CM2_245_deltas_bengbu_2041-2070.nc"
+
+    rules:
+      - description: "Precipitation: multiplicative ratio = future_climatology / max(historical_climatology, 0.1)"
+        type: "unit_conversion"
+        details: "Ratio capped at [0.1, 5.0]. Historical floored at 0.1 mm/day to prevent division by zero in dry months."
+        critical: true
+
+      - description: "Temperature: additive delta = future_climatology - historical_climatology"
+        type: "unit_conversion"
+        details: "Simple subtraction. No capping applied. Values typically +1 to +6 degC."
+        critical: false
+
+      - description: "Temporal aggregation: daily → monthly climatology (30-year mean)"
+        type: "temporal_aggregation"
+        details: "Group by calendar month, compute mean across all years in the period."
+        critical: false
+
+    silent_failure_modes:
+      - description: "Deltas are all 1.0/0.0 because historical and future data are from the same scenario"
+        symptom: "No climate change signal detected"
+        diagnostic_triplet: "dt_cc_004"
+
+      - description: "Extreme precipitation ratios in arid months"
+        symptom: "Projected precipitation unrealistically high in dry season"
+        diagnostic_triplet: "dt_cc_005"
+
+    tool_id: "compute_climate_deltas"
+    related_transformations: ["ft_cc_001"]
+
+  - id: ft_cc_003
+    stage: "s3_apply_deltas"
+    name: "Baseline forcing + deltas → projected forcing"
+    description: "Apply monthly climate change deltas to existing CMFD/MSWX forcing NetCDF files"
+
+    input:
+      format: "NetCDF4"
+      source: "forcing_1d.py output (baseline VIC forcing)"
+      variables: ["temp", "prec", "pres", "srad", "lrad", "wind", "shum"]
+      units: {"temp": "degC", "prec": "mm/timestep", "pres": "kPa", "srad": "W/m2", "lrad": "W/m2", "wind": "m/s", "shum": "kg/kg"}
+      resolution: "0.25-degree (or 0.1-degree), 3-hourly or daily"
+      coordinate_system: "Regular lat/lon grid"
+      encoding: "float32/float64"
+
+    output:
+      format: "NetCDF4 (same structure as input)"
+      target: "process_forcing.py → VIC"
+      variables: ["temp", "prec", "pres", "srad", "lrad", "wind", "shum"]
+      units: "Same as input"
+      resolution: "Same as input, with time coordinates shifted to future years"
+      coordinate_system: "Same as input"
+      encoding: "Same as input"
+
+    rules:
+      - description: "Precipitation: multiply by monthly delta_pr ratio"
+        type: "unit_conversion"
+        details: "For each timestep, look up the month, find delta_pr for that month and cell, multiply. Ensure non-negative output."
+        critical: true
+
+      - description: "Temperature: add average of delta_tasmax and delta_tasmin"
+        type: "unit_conversion"
+        details: "delta_tmean = (delta_tasmax + delta_tasmin) / 2. Add to baseline temp for each timestep."
+        critical: true
+
+      - description: "Pass-through: wind, pres, srad, lrad, shum copied unchanged"
+        type: "format_rewrite"
+        details: "These variables are not available in CMIP6, so baseline values are retained."
+        critical: false
+
+      - description: "Time coordinate shift: baseline years replaced with future years"
+        type: "coordinate_mapping"
+        details: "Baseline annual cycle is recycled to fill the future period. Year in time coordinate is replaced."
+        critical: true
+
+    silent_failure_modes:
+      - description: "Pass-through variables missing because baseline files have different naming"
+        symptom: "VIC runs but wind/radiation/humidity are zero"
+        diagnostic_triplet: "dt_cc_007"
+
+    tool_id: "apply_deltas_forcing"
+    related_transformations: ["ft_cc_002"]

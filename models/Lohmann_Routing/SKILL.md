@@ -12,6 +12,14 @@
 >
 > Before starting, run: `python preflight_check.py` (in this KI directory)
 > to verify that the model binary/package and required data are available.
+>
+> **DEBUGGING PROTOCOL** — When something goes wrong, follow this order:
+> 1. **Check triplets** — `diagnostics/triplets.yaml` may already cover this error
+> 2. **Read official docs** — The model's own documentation for expected formats/units
+> 3. **Find working examples** — Check `outputs/` or the model's shipped test data
+> 4. **Fix the tool** — With knowledge of what "correct" looks like
+>
+> Do NOT write custom debug scripts. The answers are in the docs and examples.
 
 ---
 

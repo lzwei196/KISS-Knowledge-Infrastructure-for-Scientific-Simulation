@@ -1,0 +1,126 @@
+entries:
+- id: err_001
+  timestamp: '2026-03-24T11:57:56Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s7_execution
+  failure_domain: parameter_format
+  symptom:
+    description: HYPE requires trailing slash on directory argument. Without it, Fortran string concat produces 'dirinfo.txt'
+      instead of 'dir/info.txt'. No error message — just file not found.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: 'Fortran string concatenation: trim(dir)//filename. If dir=''mydir'' not ''mydir/'', result is ''mydirinfo.txt''.'
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Always append '/' to directory paths when calling HYPE.
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: true
+  promoted_as: 'dt_r01'
+- id: err_002
+  timestamp: '2026-03-24T11:57:56Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s4_geodata_generation
+  failure_domain: silent_output
+  symptom:
+    description: SLC fractions in GeoData.txt not summing to 1.0 produces wrong water balance — no warning from HYPE.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: HYPE reads SLC fractions and uses them directly for area-weighted calculations. If they sum to 0.8 instead
+      of 1.0, 20% of precipitation is lost silently.
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Validate SLC fractions sum to 1.0 ± 0.01 using validate_geodata.py before running.
+    files_changed: []
+    prevention: ''
+  severity: silent
+  promoted: true
+  promoted_as: 'dt_s01'
+- id: err_003
+  timestamp: '2026-03-24T14:12:17Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s3_forcing_preparation
+  failure_domain: unit_and_conversion
+  symptom:
+    description: CMFD precipitation is in kg/m2/s not mm/3hr — must multiply by 10800. Without this, precip is all zero and
+      Q is zero.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: HYPE format requirement
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: See HYPE SKILL.md
+    files_changed: []
+    prevention: ''
+  severity: silent
+  promoted: true
+  promoted_as: 'dt_u03'
+- id: err_004
+  timestamp: '2026-03-24T14:12:17Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s4_geodata_generation
+  failure_domain: silent_output
+  symptom:
+    description: GeoClass.txt streamdepth column must be >0. If 0, calculate_soil_runoff returns immediately → zero discharge.
+      Undocumented default behavior.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: HYPE format requirement
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: See HYPE SKILL.md
+    files_changed: []
+    prevention: ''
+  severity: silent
+  promoted: true
+  promoted_as: 'dt_s08'
+- id: err_005
+  timestamp: '2026-03-24T14:12:17Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s4_geodata_generation
+  failure_domain: silent_output
+  symptom:
+    description: SLC with special=2 (lake) captures 100% of runoff via ilakecatch=1.0. Without lake outflow params configured,
+      discharge is zero.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: HYPE format requirement
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: See HYPE SKILL.md
+    files_changed: []
+    prevention: ''
+  severity: silent
+  promoted: true
+  promoted_as: 'dt_s04'

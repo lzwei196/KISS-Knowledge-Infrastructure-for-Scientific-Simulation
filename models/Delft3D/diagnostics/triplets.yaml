@@ -1,0 +1,421 @@
+# ============================================================================
+# Delft3D Diagnostic Triplets
+# ============================================================================
+# 16 diagnostic triplets covering 5 failure domains.
+# Generated during Delft3D knowledge dissection for HydroCraft platform.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s2_bathymetry
+  failure_domain: unit_conversion
+  symptom:
+    description: "All cells are dry. Model reports 'no wet cells' or crashes at start. Water level is below bed everywhere."
+    error_pattern: "no wet cells|dry|all points are dry"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Bathymetry sign convention not negated — GEBCO positive-up used directly as Delft3D depth"
+    explanation: >
+      GEBCO/ETOPO stores elevation as positive UP (ocean floor = negative values, e.g., -500 m).
+      Delft3D expects depth as positive DOWN (ocean floor = +500 m). If GEBCO values are used
+      without negation, the model sees the ocean floor as mountains 500 m above sea level.
+      All cells appear as land → no wet cells → immediate crash or empty output.
+    affected_components: [convert_bathymetry, NetNode_z]
+  remedy:
+    action: "Negate GEBCO elevation values: depth_delft3d = -elevation_gebco"
+    tool_to_run: convert_bathymetry
+    manual_steps:
+      - "Check NetNode_z values in _net.nc — ocean should have POSITIVE depth"
+      - "If ocean points have negative values, run convert_bathymetry with --negate_depth"
+    prevention: "convert_bathymetry validates sign convention and warns if mean depth is negative"
+  severity: crash
+  cross_references: [dt_002]
+
+- id: dt_002
+  stage: s3_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Water levels show almost no response to atmospheric pressure. Inverse barometer effect is 100x too small (~0.1 mm instead of ~10 mm per hPa)."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Atmospheric pressure in hPa instead of Pa — 100x too small"
+    explanation: >
+      Delft3D expects atmospheric pressure in Pascals (e.g., 101325 Pa).
+      Many datasets and tools display pressure in hectoPascals (1013.25 hPa).
+      If hPa values are used directly, the pressure gradient is 100x too small,
+      producing negligible inverse barometer effect. The model runs fine — the
+      error is completely silent and only detectable by comparing with observations.
+    affected_components: [convert_forcing_to_delft3d, pressure.amp]
+  remedy:
+    action: "Multiply pressure values by 100 to convert hPa to Pa"
+    tool_to_run: convert_forcing_to_delft3d
+    manual_steps:
+      - "Check max pressure in forcing file — should be ~101000-103000 Pa"
+      - "If max pressure is ~1010-1030, values are in hPa — multiply by 100"
+    prevention: "convert_forcing_to_delft3d auto-detects hPa and converts to Pa"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_003
+  stage: s3_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Storm surge occurs on wrong side of domain. Wind setup is in opposite direction from expected."
+    error_pattern: ""
+    detection_method: spatial_pattern
+  diagnosis:
+    root_cause: "Wind direction convention is TO instead of FROM — 180° error"
+    explanation: >
+      Delft3D uses nautical convention: wind direction indicates where the wind blows FROM
+      (0°=N, 90°=E). Some datasets use mathematical convention: direction wind blows TO.
+      A 180° error means a north wind (FROM north) becomes a south wind (FROM south),
+      reversing the wind setup pattern. Particularly dangerous for storm surge predictions.
+    affected_components: [convert_forcing_to_delft3d, wind.wnd]
+  remedy:
+    action: "Add 180° to wind direction and take modulo 360"
+    tool_to_run: convert_forcing_to_delft3d
+    manual_steps:
+      - "During a known NW storm event, check if wind direction in forcing is ~315° (FROM NW)"
+      - "If it shows ~135° (FROM SE), the convention is reversed — add 180°"
+    prevention: "Verify with ERA5 (uses same nautical convention as Delft3D)"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_004
+  stage: s3_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Extreme evaporation or condensation. Water surface heat budget is severely wrong. Temperature bias > 5°C."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Relative humidity as fraction (0-1) instead of percentage (0-100)"
+    explanation: >
+      Delft3D expects relative humidity as percentage (0-100). If values are provided
+      as fraction (0.0-1.0), the model interprets 0.7 (70%) as 0.7% RH, computing
+      extreme evaporation. This silently corrupts the entire heat budget.
+    affected_components: [convert_forcing_to_delft3d, relhum.amr]
+  remedy:
+    action: "Multiply RH values by 100 if they are in 0-1 range"
+    tool_to_run: convert_forcing_to_delft3d
+    manual_steps:
+      - "Check max RelHum in forcing — should be 70-100 for coastal areas"
+      - "If max RelHum < 1.5, values are fraction — multiply by 100"
+    prevention: "convert_forcing_to_delft3d auto-detects fraction and warns"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_005
+  stage: s4_boundary_conditions
+  failure_domain: unit_conversion
+  symptom:
+    description: "Tidal boundary oscillates with wrong frequency. M2 period is 60x too fast or 60x too slow."
+    error_pattern: ""
+    detection_method: frequency_analysis
+  diagnosis:
+    root_cause: "Harmonic constituent period in hours instead of minutes (or vice versa)"
+    explanation: >
+      D-Flow FM .bc files expect the harmonic period in MINUTES. M2 period is 745.2 minutes
+      (12.42 hours). If hours are used (12.42), the period is interpreted as 12.42 minutes,
+      producing a tide that oscillates 60x too fast. If seconds are used (44712), the tide
+      is 60x too slow.
+    affected_components: [convert_boundary_conditions, harmonic.bc]
+  remedy:
+    action: "Ensure harmonic periods are in minutes: M2 = 745.2, S2 = 720.0, K1 = 1436.1"
+    tool_to_run: convert_boundary_conditions
+    manual_steps:
+      - "Check the 'Unit' field in .bc file — should be 'minutes'"
+      - "Verify M2 period value is ~745 (not ~12.4 hours or ~44712 seconds)"
+    prevention: "convert_boundary_conditions uses standard period database in minutes"
+  severity: silent
+  cross_references: []
+
+# --- Configuration Errors ---
+
+- id: dt_006
+  stage: s3_met_forcing
+  failure_domain: configuration
+  symptom:
+    description: "NaN values appear in temperature output. Model crashes after a few timesteps."
+    error_pattern: "NaN|nan|infinity"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Negative shortwave radiation values from temporal interpolation"
+    explanation: >
+      When interpolating 3-hourly forcing to hourly timesteps, linear interpolation
+      can produce small negative shortwave radiation during dawn/dusk transitions.
+      Negative SW radiation is physically impossible and can cause numerical artifacts
+      or NaN propagation in the heat flux computation.
+    affected_components: [convert_forcing_to_delft3d]
+  remedy:
+    action: "Clip shortwave radiation to max(0, SW) after interpolation"
+    tool_to_run: convert_forcing_to_delft3d
+    manual_steps:
+      - "Check min shortwave in forcing — must be >= 0 W/m²"
+      - "If negative values exist, clip: SW = max(0, SW)"
+    prevention: "convert_forcing_to_delft3d clips SW to >= 0 by default"
+  severity: crash
+  cross_references: []
+
+- id: dt_007
+  stage: s5_model_configuration
+  failure_domain: configuration
+  symptom:
+    description: "Flow velocities are near zero everywhere. Water barely moves despite strong forcing."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Friction type and value mismatch — Manning value used with Chezy type"
+    explanation: >
+      UnifFrictType=0 means Chezy (typical values 40-70 m^0.5/s).
+      UnifFrictType=1 means Manning (typical values 0.015-0.05 s/m^1/3).
+      If FrictType=0 (Chezy) is set with a Manning value like 0.025, Delft3D interprets
+      Chezy coefficient = 0.025, which means nearly infinite friction. Conversely,
+      FrictType=1 with value 65 (a Chezy value) means Manning n=65, which is absurd.
+    affected_components: [MDU_physics_block]
+  remedy:
+    action: "Verify UnifFrictType matches UnifFrictCoef: Chezy=40-70, Manning=0.01-0.05"
+    manual_steps:
+      - "Check UnifFrictType in MDU: 0=Chezy, 1=Manning, 2=White-Colebrook"
+      - "If Type=0 (Chezy), ensure Coef is 40-70, NOT 0.01-0.05"
+      - "If Type=1 (Manning), ensure Coef is 0.01-0.05, NOT 40-70"
+    prevention: "run_delft3d preflight check validates friction type/value consistency"
+  severity: silent
+  cross_references: []
+
+- id: dt_008
+  stage: s5_model_configuration
+  failure_domain: configuration
+  symptom:
+    description: "Simulation is 60x too short or 60x too long. End time is wrong."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Tunit mismatch — times interpreted in wrong unit (S vs M vs H)"
+    explanation: >
+      All time parameters in MDU (TStart, TStop, DtUser, output intervals) are in
+      units of Tunit. If Tunit=M (minutes) and TStop=86400, the simulation runs for
+      86400 minutes = 60 days, not 86400 seconds = 1 day. Note: DtMax is ALWAYS in
+      seconds regardless of Tunit.
+    affected_components: [MDU_time_block]
+  remedy:
+    action: "Check Tunit and recalculate all time values consistently"
+    manual_steps:
+      - "Read Tunit: S=seconds, M=minutes, H=hours"
+      - "Calculate expected TStop: e.g., 30 days = 2592000 S = 43200 M = 720 H"
+      - "Verify DtUser and output intervals are also in Tunit"
+      - "Remember: DtMax is ALWAYS in seconds"
+    prevention: "run_delft3d preflight check validates simulation duration"
+  severity: silent
+  cross_references: []
+
+# --- Numerical Issues ---
+
+- id: dt_009
+  stage: s1_grid_generation
+  failure_domain: numerical
+  symptom:
+    description: "Grid cell areas are wrong by orders of magnitude. Volume computations nonsensical."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Geographic coordinates (degrees) used without proper projection"
+    explanation: >
+      If the grid uses lat/lon in degrees without a proper geographic CRS definition,
+      Delft3D may compute cell areas as degree² instead of m². A cell of 0.01° × 0.01°
+      should be ~1.1 km × 0.85 km (~0.94 km²), but without projection it's computed
+      as 0.0001 degree² — meaningless. This affects volume, discharge, and all
+      area-dependent quantities.
+    affected_components: [grid_generation, NetFile]
+  remedy:
+    action: "Use projected coordinates (UTM) or ensure CRS is correctly defined in _net.nc"
+    manual_steps:
+      - "Check grid coordinate ranges: if < 360, likely degrees; if > 10000, likely meters"
+      - "For geographic grids, ensure NetFile has proper 'projected_coordinate_system' attribute"
+      - "Alternatively, regenerate grid in UTM projection"
+    prevention: "Grid generation tools should always embed CRS metadata"
+  severity: silent
+  cross_references: []
+
+- id: dt_010
+  stage: s6_execution
+  failure_domain: numerical
+  symptom:
+    description: "Water levels grow exponentially. Velocities reach 100+ m/s. Model crashes with 'divergence' message."
+    error_pattern: "divergence|overflow|blowup|instab"
+    detection_method: log_scan
+  diagnosis:
+    root_cause: "CFL violation — timestep too large for grid resolution and water depth"
+    explanation: >
+      The Courant-Friedrichs-Lewy condition requires CFL = c*dt/dx < 1, where
+      c = sqrt(g*h) is the wave speed. Deep water (h=1000m → c=99 m/s) with fine
+      grid (dx=100m) requires dt < 1s. If DtMax is too large, the numerical scheme
+      becomes unstable and amplifies errors exponentially.
+    affected_components: [MDU_numerics, DtMax]
+  remedy:
+    action: "Reduce DtMax or coarsen the grid"
+    manual_steps:
+      - "Calculate required DtMax: dt < CFLMax * dx_min / sqrt(g * h_max)"
+      - "For dx=100m, h=50m: dt < 0.7 * 100 / sqrt(9.81*50) = 3.2 seconds"
+      - "Set DtMax to this value or smaller"
+      - "Or increase CFLMax cautiously (never above 1.0)"
+    prevention: "run_delft3d preflight estimates CFL and warns"
+  severity: crash
+  cross_references: []
+
+- id: dt_011
+  stage: s6_execution
+  failure_domain: numerical
+  symptom:
+    description: "Output files are empty or contain only 1-2 timesteps. Simulation appears to finish instantly."
+    error_pattern: ""
+    detection_method: file_check
+  diagnosis:
+    root_cause: "Output interval larger than simulation duration"
+    explanation: >
+      If MapInterval = 86400 (seconds) but TStop-TStart = 3600 (1 hour), no map
+      output is written because the first output time hasn't been reached.
+      Similarly, if output intervals are in Tunit and Tunit is misunderstood.
+    affected_components: [MDU_output, MapInterval, HisInterval]
+  remedy:
+    action: "Set MapInterval and HisInterval smaller than simulation duration"
+    manual_steps:
+      - "Verify output interval units match Tunit"
+      - "Ensure interval << simulation duration (e.g., interval = duration/100)"
+    prevention: "run_delft3d checks output interval vs simulation duration"
+  severity: silent
+  cross_references: [dt_008]
+
+# --- File and I/O Errors ---
+
+- id: dt_012
+  stage: s6_execution
+  failure_domain: file_io
+  symptom:
+    description: "Model crashes immediately with file not found error. References to missing .ext, .bc, .pli, or grid file."
+    error_pattern: "file not found|cannot open|No such file"
+    detection_method: log_scan
+  diagnosis:
+    root_cause: "Input file path mismatch — file referenced in MDU/MDF does not exist"
+    explanation: >
+      The MDU file references other files by relative path (relative to MDU location).
+      If files are moved or paths are wrong, the model crashes at startup. Common
+      causes: wrong working directory, path separator mismatch (Windows/Linux),
+      case sensitivity on Linux.
+    affected_components: [MDU, all_input_files]
+  remedy:
+    action: "Verify all file paths in MDU are correct and files exist"
+    manual_steps:
+      - "Read MDU/MDF and list all file references"
+      - "Check each file exists relative to the MDU/MDF directory"
+      - "Pay attention to case sensitivity on Linux"
+    prevention: "run_delft3d preflight validates all file references"
+  severity: crash
+  cross_references: []
+
+- id: dt_013
+  stage: s6_execution
+  failure_domain: file_io
+  symptom:
+    description: "Model runs but no output files are created. Output directory remains empty."
+    error_pattern: ""
+    detection_method: file_check
+  diagnosis:
+    root_cause: "Output directory does not exist — D-Flow FM does not create it automatically"
+    explanation: >
+      The MDU parameter OutputDir specifies where output files are written.
+      D-Flow FM does NOT create this directory if it doesn't exist. The simulation
+      runs normally but silently skips all output writing. This is particularly
+      frustrating because the simulation may take hours before you notice.
+    affected_components: [MDU_output, OutputDir]
+  remedy:
+    action: "Create the output directory before running: mkdir -p dflowfm/output"
+    manual_steps:
+      - "Read OutputDir from MDU file"
+      - "Create the directory: mkdir -p <workingDir>/<OutputDir>"
+    prevention: "run_delft3d preflight creates output directory if missing"
+  severity: silent
+  cross_references: []
+
+# --- Boundary Condition Errors ---
+
+- id: dt_014
+  stage: s4_boundary_conditions
+  failure_domain: boundary
+  symptom:
+    description: "Tidal high/low water timing is shifted by hours compared to observations."
+    error_pattern: ""
+    detection_method: time_comparison
+  diagnosis:
+    root_cause: "Tidal phase reference time mismatch — phases computed for different epoch than RefDate"
+    explanation: >
+      Harmonic tidal phases are relative to a reference time (epoch). FES2014 uses
+      a specific epoch; TPXO uses another. Delft3D applies phases relative to the
+      simulation RefDate. If the phase extraction epoch differs from RefDate, all
+      tidal phases are systematically shifted, producing correct amplitudes but
+      wrong timing.
+    affected_components: [convert_boundary_conditions, tidal_bc]
+  remedy:
+    action: "Convert phases to simulation RefDate epoch or use time-series boundaries"
+    manual_steps:
+      - "Identify the epoch used by tide model (FES2014, TPXO)"
+      - "Compute phase shift: dPhase = 360 * (RefDate - epoch) / constituent_period"
+      - "Add dPhase to each constituent's phase"
+      - "Or use observed time-series boundaries instead of harmonics"
+    prevention: "convert_boundary_conditions adjusts phases to RefDate"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_015
+  stage: s4_boundary_conditions
+  failure_domain: boundary
+  symptom:
+    description: "Salinity is much higher than expected near river mouth. Freshwater inflow appears salty."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "River discharge boundary missing salinity specification — defaults to ocean salinity"
+    explanation: >
+      When a discharge boundary condition is set without explicit salinity, Delft3D
+      may use the initial salinity field value or a default. If the domain is initialized
+      with ocean salinity (35 PSU), the river inflow effectively has 35 PSU salinity,
+      creating an impossibly salty river. This corrupts the entire salinity field and
+      density-driven circulation.
+    affected_components: [convert_boundary_conditions, discharge_bc]
+  remedy:
+    action: "Add salinity=0 (and temperature) specification to river discharge boundary"
+    manual_steps:
+      - "Add 'Quantity = salinitybnd' with 'Unit = PSU' and value 0.0 to river .bc file"
+      - "Optionally add temperature for the river inflow"
+    prevention: "convert_boundary_conditions sets river salinity to 0 by default"
+  severity: silent
+  cross_references: []
+
+- id: dt_016
+  stage: s5_model_configuration
+  failure_domain: configuration
+  symptom:
+    description: "Observation points output (_his.nc) is empty or has no stations. No time series available."
+    error_pattern: "no observation|0 stations"
+    detection_method: file_check
+  diagnosis:
+    root_cause: "Observation point coordinates in wrong CRS — all points outside domain"
+    explanation: >
+      Observation points (.xyn file) must use the same coordinate reference system as
+      the grid. If the grid is in UTM (meters, e.g., x=500000, y=5700000) but .xyn
+      has geographic coordinates (e.g., x=5.0, y=52.0), all points are interpreted as
+      being at position (5m, 52m) — far outside the domain. Delft3D silently ignores
+      out-of-domain observation points.
+    affected_components: [observation_points, xyn_file, MDU]
+  remedy:
+    action: "Convert observation coordinates to same CRS as grid"
+    manual_steps:
+      - "Check grid coordinate range: ncdump -v NetNode_x grid.nc | head"
+      - "Check .xyn coordinate range: head observation_points.xyn"
+      - "If ranges differ by orders of magnitude, CRS is mismatched"
+      - "Convert using pyproj: transformer.transform(lon, lat) → x, y"
+    prevention: "run_delft3d preflight checks if obs points are within grid bounds"
+  severity: silent
+  cross_references: [dt_009]

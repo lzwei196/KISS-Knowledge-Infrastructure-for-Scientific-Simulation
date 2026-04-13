@@ -1,0 +1,149 @@
+model:
+  name: "SNOWPACK"
+  version: "3.7.1"
+  domain: "cryosphere (snow/land-surface)"
+  developer: "WSL/SLF, Switzerland"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/SNOWPACK/source/repo/Source/snowpack/bin/snowpack"
+  meteoio_binary: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/SNOWPACK/local/bin/meteoio_timeseries"
+  description: >
+    1D multi-layer snow and land-surface model simulating mass and energy
+    exchange between snow, atmosphere, optional canopy, and soil.
+
+inputs:
+  forcing:
+    - name: "TA"
+      description: "Air temperature"
+      unit: "K"
+      valid_range: [200, 340]
+    - name: "RH"
+      description: "Relative humidity (fraction)"
+      unit: "0-1"
+      valid_range: [0.0, 1.0]
+    - name: "VW"
+      description: "Wind speed"
+      unit: "m/s"
+      valid_range: [0.0, 75.0]
+    - name: "DW"
+      description: "Wind direction"
+      unit: "degrees"
+      valid_range: [0, 360]
+    - name: "ISWR"
+      description: "Incoming shortwave radiation"
+      unit: "W/m2"
+      valid_range: [0.0, 1400.0]
+    - name: "ILWR"
+      description: "Incoming longwave radiation"
+      unit: "W/m2"
+      valid_range: [50.0, 500.0]
+    - name: "PSUM"
+      description: "Precipitation sum per timestep"
+      unit: "kg/m2"
+      valid_range: [0.0, 50.0]
+    - name: "TSS"
+      description: "Surface temperature (optional)"
+      unit: "K"
+      valid_range: [200, 340]
+    - name: "TSG"
+      description: "Ground temperature (optional)"
+      unit: "K"
+      valid_range: [250, 310]
+    - name: "HS"
+      description: "Measured snow depth (optional)"
+      unit: "m"
+      valid_range: [0.0, 20.0]
+    - name: "P"
+      description: "Atmospheric pressure (optional)"
+      unit: "Pa"
+      valid_range: [50000, 110000]
+  forcing_format: "SMET (Swiss Meteorological Exchange Text)"
+  forcing_timestep: "typically 30-60 min"
+
+  parameters:
+    critical:
+      - name: "CALCULATION_STEP_LENGTH"
+        unit: "seconds"
+        valid_range: [60, 3600]
+        description: "Model integration timestep. Typical: 900 s (15 min)."
+      - name: "HEIGHT_OF_METEO_VALUES"
+        unit: "m"
+        valid_range: [0.5, 10.0]
+        description: "Height of temperature/humidity sensor above ground."
+      - name: "HEIGHT_OF_WIND_VALUE"
+        unit: "m"
+        valid_range: [1.0, 20.0]
+        description: "Height of wind speed sensor above ground."
+      - name: "SW_MODE"
+        unit: "enum"
+        valid_range: ["INCOMING", "REFLECTED", "BOTH"]
+        description: "How shortwave radiation is handled. Must match available SMET fields."
+      - name: "FORCING"
+        unit: "enum"
+        valid_range: ["ATMOS", "MASSBAL"]
+        description: "Forcing mode. ATMOS requires full radiation; MASSBAL is simplified."
+
+  profile:
+    format: ".sno (SNOWPACK initial profile)"
+    critical_fields:
+      - name: "Vol_Frac_I"
+        description: "Ice volume fraction per layer"
+        valid_range: [0.0, 1.0]
+      - name: "Vol_Frac_W"
+        description: "Water volume fraction per layer"
+        valid_range: [0.0, 1.0]
+      - name: "Vol_Frac_V"
+        description: "Void/air volume fraction per layer"
+        valid_range: [0.0, 1.0]
+      - name: "Vol_Frac_S"
+        description: "Soil volume fraction per layer"
+        valid_range: [0.0, 1.0]
+      - name: "Layer_Thick"
+        description: "Layer thickness"
+        unit: "m"
+        valid_range: [0.001, 5.0]
+    constraint: "Vol_Frac_I + Vol_Frac_W + Vol_Frac_V + Vol_Frac_S = 1.0 for every layer"
+
+outputs:
+  primary:
+    - name: "HS"
+      description: "Simulated snow depth"
+      unit: "m"
+      valid_range: [0.0, 20.0]
+    - name: "SWE"
+      description: "Snow water equivalent"
+      unit: "kg/m2"
+      valid_range: [0.0, 3000.0]
+    - name: "Ts"
+      description: "Surface temperature"
+      unit: "K"
+      valid_range: [200, 290]
+    - name: "Tg"
+      description: "Ground temperature"
+      unit: "K"
+      valid_range: [250, 290]
+    - name: "ql"
+      description: "Latent heat flux"
+      unit: "W/m2"
+      valid_range: [-200, 200]
+    - name: "qs"
+      description: "Sensible heat flux"
+      unit: "W/m2"
+      valid_range: [-300, 300]
+    - name: "Albedo"
+      description: "Surface albedo"
+      unit: "0-1"
+      valid_range: [0.0, 1.0]
+  output_formats:
+    - ".met — time series of surface fluxes and bulk snow properties"
+    - ".pro — full snow profile at each timestep (per-layer)"
+    - ".haz — avalanche hazard indices"
+    - ".sno — final snow/soil profile (restart file)"
+
+known_issues:
+  - "Temperature in Celsius causes silent failure (dt_001)"
+  - "RH as percent (0-100) silently clamped to 1.0 (dt_002)"
+  - "Precipitation rate/accumulation mismatch inflates SWE (dt_003)"
+  - "Volume fractions not summing to 1.0 crash initialization (dt_004)"
+  - "CALCULATION_STEP_LENGTH in minutes instead of seconds → 60x slowdown (dt_005)"
+  - "Missing ILWR with ATMOS forcing → extreme cold bias (dt_008)"
+  - "Nodata sentinel mismatch → crash or silent corruption (dt_009)"
+  - "SW_MODE=BOTH without RSWR → albedo=0, rapid melt (dt_007)"

@@ -1,0 +1,163 @@
+model:
+  name: "MONICA"
+  full_name: "Model of Nitrogen and Carbon in Agro-ecosystems"
+  version: "3.x"
+  domain: "crop_agro_ecosystem"
+  time_step: "daily"
+  spatial_domain: "1-D column, 1 m² surface, 2 m depth"
+  language: "C++17 (core), Python (orchestration)"
+  license: "MPL-2.0"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/MONICA/source/repo/_cmake_release/monica-run"
+  binary_type: "ELF 64-bit, x86-64, dynamically linked"
+
+inputs:
+  forcing:
+    - name: "tavg"
+      unit: "°C"
+      valid_range: [-50, 60]
+      description: "Mean daily air temperature"
+    - name: "tmin"
+      unit: "°C"
+      valid_range: [-60, 50]
+      description: "Minimum daily air temperature"
+    - name: "tmax"
+      unit: "°C"
+      valid_range: [-50, 60]
+      description: "Maximum daily air temperature"
+    - name: "wind"
+      unit: "m s⁻¹"
+      valid_range: [0, 50]
+      description: "Wind speed"
+    - name: "globrad"
+      unit: "MJ m⁻² d⁻¹"
+      valid_range: [0, 40]
+      description: "Global radiation"
+    - name: "precip"
+      unit: "mm d⁻¹"
+      valid_range: [0, 500]
+      description: "Precipitation"
+    - name: "relhumid"
+      unit: "%"
+      valid_range: [0, 100]
+      description: "Relative humidity"
+
+  soil_profile:
+    - name: "Thickness"
+      unit: "m"
+      valid_range: [0.01, 1.0]
+      description: "Soil layer thickness"
+    - name: "SoilOrganicCarbon"
+      unit: "%"
+      valid_range: [0.0, 30.0]
+      description: "Soil organic carbon content"
+    - name: "SoilRawDensity"
+      unit: "kg m⁻³"
+      valid_range: [500, 2000]
+      description: "Soil bulk density"
+    - name: "Sand"
+      unit: "fraction 0-1"
+      valid_range: [0.0, 1.0]
+      description: "Sand fraction (alternative to KA5TextureClass)"
+    - name: "Clay"
+      unit: "fraction 0-1"
+      valid_range: [0.0, 1.0]
+      description: "Clay fraction (alternative to KA5TextureClass)"
+
+  parameters:
+    critical:
+      - name: "pc_MaxAssimilationRate"
+        valid_range: [15, 60]
+        unit: "µmol m⁻² s⁻¹"
+        description: "Maximum CO2 assimilation rate"
+      - name: "pc_StageTemperatureSum"
+        valid_range: [0, 3000]
+        unit: "°C d"
+        description: "Temperature sum required per development stage"
+      - name: "pc_CropSpecificMaxRootingDepth"
+        valid_range: [0.5, 2.0]
+        unit: "m"
+        description: "Maximum crop rooting depth"
+      - name: "vs_FieldCapacity"
+        valid_range: [0.10, 0.45]
+        unit: "m³ m⁻³"
+        description: "Field capacity (from PTF or measured)"
+      - name: "vs_PermanentWiltingPoint"
+        valid_range: [0.04, 0.20]
+        unit: "m³ m⁻³"
+        description: "Permanent wilting point (from PTF or measured)"
+      - name: "NDeposition"
+        valid_range: [5, 50]
+        unit: "kg N ha⁻¹ yr⁻¹"
+        description: "Annual atmospheric nitrogen deposition"
+
+  config_files:
+    - name: "sim.json"
+      description: "Simulation configuration: date range, paths, output events, model switches"
+    - name: "site.json"
+      description: "Site & soil profile: location, soil layers, module parameters"
+    - name: "crop.json"
+      description: "Crop rotation: species/cultivar refs, management calendar"
+    - name: "climate.csv"
+      description: "Daily weather forcing, semicolon-separated with 2 header rows"
+
+outputs:
+  primary:
+    - name: "Yield"
+      unit: "kg DM ha⁻¹"
+      valid_range: [0, 20000]
+      description: "Harvested dry-matter yield"
+    - name: "LAI"
+      unit: "m² m⁻²"
+      valid_range: [0, 12]
+      description: "Leaf area index"
+    - name: "Act_ET"
+      unit: "mm"
+      valid_range: [0, 15]
+      description: "Actual evapotranspiration"
+    - name: "Mois"
+      unit: "m³ m⁻³"
+      valid_range: [0.0, 0.6]
+      description: "Volumetric soil moisture per layer"
+    - name: "NLeach"
+      unit: "kg N ha⁻¹"
+      valid_range: [0, 200]
+      description: "Nitrogen leaching below root zone"
+    - name: "SOC"
+      unit: "kgC kg⁻¹"
+      valid_range: [0.0, 0.1]
+      description: "Soil organic carbon per layer"
+    - name: "N2O"
+      unit: "kg N ha⁻¹"
+      valid_range: [0, 50]
+      description: "Nitrous oxide emissions"
+    - name: "GPP"
+      unit: "kg C ha⁻¹"
+      valid_range: [0, 50000]
+      description: "Gross primary production"
+    - name: "Stage"
+      unit: "0-7"
+      valid_range: [0, 7]
+      description: "Phenological development stage"
+
+  output_format:
+    type: "CSV"
+    sections: ["daily", "crop", "yearly", "run"]
+    header_rows: 3
+    description: "Multi-section CSV with field names, units, and JSON column references"
+
+environment:
+  MONICA_PARAMETERS:
+    description: "Must point to monica-parameters repository root"
+    required: true
+
+known_issues:
+  - id: "UT1"
+    description: "globrad unit trap: J cm⁻² vs MJ m⁻² d⁻¹ (÷100) — yields inflated 10-100×"
+  - id: "UT5"
+    description: "relhumid unit trap: fraction vs percent — breaks ET calculation"
+  - id: "UT7"
+    description: "Thickness unit trap: cm vs m — causes negative soil moisture (fatal)"
+  - id: "UT8"
+    description: "SoilRawDensity: g cm⁻³ vs kg m⁻³ — corrupts porosity calculations"
+  - id: "ENV"
+    description: "MONICA_PARAMETERS not set → zero output with no error"

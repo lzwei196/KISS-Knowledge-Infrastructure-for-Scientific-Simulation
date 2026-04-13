@@ -1,0 +1,346 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["hydrology"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "wflow v1.1.0 (Wflow.jl)"
+  domain: "hydrology"
+  secondary_domains: ["sediment"]
+  binary: "julia wflow_runner.jl"
+  binary_path: "/mnt/disk1/Hydrocraft_server/model/julia-1.10.7/bin/julia"
+  language: "Julia"
+  working_directory: "directory containing wflow_sbm.toml"
+  dependencies: "Julia 1.10+, Wflow.jl package"
+  notes: >
+    Distributed hydrology (wflow_sbm) + sediment transport (wflow_sediment).
+    Uses TOML config, NetCDF I/O, built-in kinematic wave routing.
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "precipitation"
+      file: "forcing.nc"
+      variable: "precip"
+      unit: "mm/timestep"
+      valid_range: [0.0, 500.0]
+      format: "NetCDF; dimensions (time, y, x)"
+      conversion_from_cmfd: "mm/3hr -> mm/day: SUM 8 timesteps"
+      bug_history: "mm/s instead of mm/day -> runoff 86400x too high, no error (dt_w001)"
+
+    - name: "temperature"
+      file: "forcing.nc"
+      variable: "temp"
+      unit: "degC"
+      valid_range: [-60.0, 60.0]
+      conversion_from_cmfd: "K -> degC: subtract 273.15"
+      bug_history: "Kelvin -> wrong PET, wrong snow (dt_w002)"
+
+    - name: "potential_evapotranspiration"
+      file: "forcing.nc"
+      variable: "pet"
+      unit: "mm/timestep"
+      valid_range: [0.0, 20.0]
+      notes: "MUST be provided or configured. Missing PET -> all precip becomes runoff (dt_w003)"
+      conversion: "Compute via calculate_pet.py (Hargreaves or Penman-Monteith)"
+
+  parameters:
+    critical:
+      - name: "KsatVer"
+        file: "staticmaps.nc"
+        description: "Vertical saturated hydraulic conductivity"
+        valid_range: [10, 10000]
+        unit: "mm/day"
+        sensitivity: "very high"
+        bug_history: >
+          VIC uses mm/s for Ksat. If VIC values used directly in wflow,
+          soil is 86400x too permeable (dt_w026). Always convert.
+
+      - name: "f (KsatVer decay)"
+        file: "staticmaps.nc or TOML scale/offset"
+        description: "Exponential decay rate of Ksat with depth"
+        valid_range: [0.0005, 0.005]
+        unit: "1/mm"
+        sensitivity: "very high"
+        bug_history: "f too low -> flat hydrograph, no peaks (dt_w017)"
+
+      - name: "SoilThickness"
+        file: "staticmaps.nc"
+        description: "Total soil column depth"
+        valid_range: [500, 5000]
+        unit: "mm"
+        sensitivity: "high"
+
+      - name: "wflow_ldd"
+        file: "staticmaps.nc"
+        description: "Local drain direction (flow direction)"
+        format: "PCRaster LDD encoding (1-9)"
+        bug_history: >
+          Naive D8 on coarse grids creates CYCLES in flat areas.
+          Use priority-flood algorithm from outlet (dt_w027).
+          Y-axis MUST be descending (north first) (dt_w034).
+
+      - name: "wflow_subcatch"
+        file: "staticmaps.nc"
+        description: "Subcatchment IDs"
+        notes: "Must use float64 with NaN for inactive cells, NOT int with 0 (dt_w035)"
+
+      - name: "grain_size_fractions"
+        file: "staticmaps_sediment.nc"
+        description: "Clay, silt, sand, small/large aggregate fractions"
+        valid_range: "each >= 0; sum must equal 1.0 per cell (dt_w019)"
+
+    calibration:
+      - name: "KsatVer"
+        valid_range: [10, 10000]
+        unit: "mm/day"
+        sensitivity: "HIGH"
+        controls: "Infiltration"
+
+      - name: "f"
+        valid_range: [0.0005, 0.005]
+        unit: "1/mm"
+        sensitivity: "HIGH"
+        controls: "Baseflow partitioning"
+
+      - name: "SoilThickness"
+        valid_range: [500, 5000]
+        unit: "mm"
+        sensitivity: "HIGH"
+        controls: "Water storage"
+
+      - name: "RootingDepth"
+        valid_range: [100, 2000]
+        unit: "mm"
+        sensitivity: "MEDIUM"
+        controls: "ET depth"
+
+      - name: "N_River"
+        valid_range: [0.02, 0.1]
+        unit: "s/m^(1/3)"
+        sensitivity: "MEDIUM"
+        controls: "Flow timing"
+
+      - name: "PathFrac"
+        valid_range: [0, 0.3]
+        sensitivity: "MEDIUM"
+        controls: "Direct runoff fraction"
+
+      - name: "InfiltCapSoil"
+        valid_range: [50, 500]
+        unit: "mm/day"
+        sensitivity: "MEDIUM"
+        controls: "Surface runoff threshold"
+
+  files:
+    required:
+      - name: "wflow_sbm.toml"
+        description: "Main TOML configuration file (v1.0+ CSDMS standard names)"
+        format: "TOML"
+        notes: >
+          v1.0 format is DIFFERENT from pre-v1.0 (dt_w006, dt_w022).
+          Use generate_wflow_toml.py which produces correct v1.0+ format.
+
+      - name: "staticmaps.nc"
+        description: "All spatial parameters, DEM, LDD, subcatchments, river network"
+        format: "NetCDF with y descending (north first)"
+        notes: "Inactive cells must be NaN, not 0 (dt_w029)"
+
+      - name: "forcing.nc"
+        description: "Meteorological forcing (precip, temp, PET)"
+        format: "NetCDF; dimensions matching staticmaps grid"
+
+    optional:
+      - name: "staticmaps_sediment.nc"
+        description: "Sediment model parameters (USLE K, C, grain fractions)"
+        notes: "Required for wflow_sediment"
+
+      - name: "instates.nc"
+        description: "Initial conditions for warm start"
+
+  state_variables:
+    notes: "All 11 state variables MUST be listed in TOML even for cold start (dt_w030)"
+    required:
+      - "satwaterdepth"
+      - "snow"
+      - "tsoil"
+      - "ustorelayerdepth"
+      - "snowwater"
+      - "canopystorage"
+      - "q_av"
+      - "h_av"
+      - "ssf"
+      - "glacierstore"
+      - "glacierfrac"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "discharge"
+      file: "output_grid.nc or output_scalar.nc"
+      variable: "q_river"
+      unit: "m3/s"
+      valid_range: [0, null]
+      notes: "Routed discharge at river cells"
+
+    - name: "runoff"
+      file: "output_grid.nc"
+      variable: "runoff"
+      unit: "mm/timestep"
+      notes: "Unrouted lateral runoff — use this for CaMa-Flood coupling (dt_w025)"
+
+    - name: "evapotranspiration"
+      file: "output_grid.nc"
+      variable: "actevap"
+      unit: "mm/timestep"
+      valid_range: [0, 20.0]
+
+  sediment:
+    - name: "soil_erosion"
+      file: "output_sediment.nc"
+      variable: "soilloss"
+      unit: "ton/timestep"
+
+    - name: "sediment_yield"
+      file: "output_sediment.nc"
+      variable: "TCsed"
+      unit: "ton/timestep"
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "precip_mm_s"
+    triplet: "dt_w001"
+    description: "Precipitation in mm/s instead of mm/day — runoff 86400x too high"
+    severity: "silent"
+    fix: "Convert to mm/timestep in convert_forcing_to_wflow.py"
+
+  - id: "temp_kelvin"
+    triplet: "dt_w002"
+    description: "Temperature in Kelvin instead of Celsius"
+    severity: "silent"
+    fix: "Subtract 273.15"
+
+  - id: "pet_missing"
+    triplet: "dt_w003"
+    description: "PET missing or zero — all precip becomes runoff"
+    severity: "silent"
+    fix: "Compute PET via calculate_pet.py"
+
+  - id: "toml_version_mismatch"
+    triplet: "dt_w006"
+    description: "v1.0 TOML format is different from pre-v1.0 — most online examples are OLD"
+    severity: "fatal"
+    fix: "Use generate_wflow_toml.py for v1.0+ format"
+
+  - id: "julia_jit_delay"
+    triplet: "dt_w009"
+    description: "First run takes 30-60 seconds before output (Julia JIT compilation)"
+    severity: "normal behavior"
+    fix: "Do NOT kill the process — this is normal"
+
+  - id: "double_routing_cama"
+    triplet: "dt_w025"
+    description: "Sending routed q_river to CaMa-Flood double-counts routing"
+    severity: "silent"
+    fix: "Use UNROUTED runoff variable for CaMa-Flood coupling"
+
+  - id: "ksat_unit_mismatch"
+    triplet: "dt_w026"
+    description: "wflow uses mm/day for Ksat; VIC uses mm/s; MODFLOW uses m/day"
+    severity: "silent"
+    fix: "Convert Ksat to mm/day for wflow"
+
+  - id: "ldd_cycles"
+    triplet: "dt_w027"
+    description: "Naive D8 on coarse grids creates cycles in flat areas"
+    severity: "fatal"
+    fix: "Use priority-flood algorithm"
+
+  - id: "y_axis_ascending"
+    triplet: "dt_w034"
+    description: "Y-axis in staticmaps.nc must be DESCENDING (north first)"
+    severity: "fatal"
+    fix: "Create y as np.arange(max_lat, min_lat, -step)"
+
+  - id: "nan_not_zero_inactive"
+    triplet: "dt_w035"
+    description: "Mask variables must use NaN for inactive cells, NOT integer 0"
+    severity: "silent"
+    fix: "Use np.float64 with np.nan for inactive cells"
+
+  - id: "grand_capacity_mcm"
+    triplet: "dt_w031"
+    description: "GRanD CAP_MCM is in million m3; wflow maxstorage is in m3"
+    severity: "silent"
+    fix: "Multiply by 1e6 or use lookup_dams.py"
+
+# =========================================================================
+# EXPECTED RANGES (Bengbu reference)
+# =========================================================================
+expected_ranges:
+  bengbu_huai_river:
+    period: "2003-2005 (2003 warmup)"
+    resolution: "0.25 deg (224 cells)"
+    wflow_mean_q_m3s: 1088
+    vic_mean_q_m3s: 1767
+    correlation_r: 0.621
+    correlation_lag: "-3 days (wflow routing lag)"
+    annual_precip_mm: 1125
+    annual_pet_mm: 1009
+    annual_runoff_mm: 283
+    runtime_seconds: 14
+
+# =========================================================================
+# CALIBRATION REFERENCE
+# =========================================================================
+calibration_reference:
+  recommended_sequence:
+    - "KsatVer (infiltration, mm/day)"
+    - "f (Ksat decay, 1/mm)"
+    - "SoilThickness (storage, mm)"
+    - "RootingDepth (ET depth, mm)"
+    - "N_River (channel Manning)"
+    - "PathFrac (direct runoff)"
+    - "InfiltCapSoil (infiltration capacity)"
+
+  target_metrics:
+    - "NSE > 0.5"
+    - "KGE > 0.5"
+    - "PBIAS < 25%"
+
+  warmup: "1-2 years (soil moisture equilibration)"
+
+# =========================================================================
+# UNIT CONVERSION TABLE
+# =========================================================================
+unit_conversions:
+  - variable: "precipitation"
+    source: "CMFD (mm/3hr)"
+    target: "wflow (mm/day)"
+    operation: "SUM 8 timesteps per day"
+    trap_if_wrong: "Runoff 86400x too high (if mm/s) or 8x wrong"
+
+  - variable: "temperature"
+    source: "CMFD (K)"
+    target: "wflow (degC)"
+    offset: -273.15
+    operation: "subtract"
+
+  - variable: "KsatVer"
+    source: "VIC (mm/s)"
+    target: "wflow (mm/day)"
+    factor: 86400
+    operation: "multiply"
+    trap_if_wrong: "Soil 86400x too permeable"

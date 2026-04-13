@@ -1,0 +1,54 @@
+{
+  "model_id": "09",
+  "model": "WOFOST/PCSE",
+  "domain": "crop",
+  "basin": "Wangjiaba (51030)",
+  "basin_area_km2": 30630,
+  "ki_path": "/mnt/disk1/Hydrocraft_server/models/WOFOST/knowledge_infrastructure",
+  "test_status": "PASS",
+  "ki_generalized": true,
+  "binary_found": true,
+  "model_ran": true,
+  "output_verified": true,
+  "metrics": {
+    "wheat_mean_yield_kgha": 2398.2,
+    "wheat_yield_range_kgha": [
+      642.7,
+      3879.4
+    ],
+    "wheat_n_seasons": 11,
+    "maize_mean_yield_kgha": 2946.0,
+    "maize_yield_range_kgha": [
+      2224.2,
+      3516.8
+    ],
+    "maize_n_seasons": 11,
+    "bengbu_reference_wheat_kgha": 3543,
+    "bengbu_reference_maize_kgha": 6102
+  },
+  "issues": [
+    "HWSD pedotransfer function in convert_hwsd_to_pcse_soil.py produces unrealistically low SMFCF for loam soils (0.14 vs expected 0.25-0.35); required manual correction",
+    "Multi-year agromanagement causes soil moisture depletion; single-season with WAV reset needed for reasonable results",
+    "Maize LAI lower than expected (0.76-1.59 vs 3-6) likely due to estimated Tmin/Tmax from daily mean temperature"
+  ],
+  "ki_gaps": [
+    "KI tool convert_hwsd_to_pcse_soil.py: pedotransfer coefficients produce unrealistically low field capacity for common soil types (loam). The simplified Wosten equation needs calibration or replacement with Saxton-Rawls PTF",
+    "KI tool create_csv_weather_file.py: IRRAD_IS_WM2 flag uses \u00d786.4 (kJ) but SKILL.md says internal units are J/m\u00b2/day \u2014 inconsistency between tool and docs, though CSVWeatherDataProvider handles conversion correctly",
+    "KI tool create_csv_weather_file.py: CSV format documentation missing \u2014 no mention that first line is skipped, that string values need Python quoting, that SNOWDEPTH must be \u22650 (not -999), or that dateformat default is YYYYMMDD",
+    "SKILL.md references WOFOST72SiteDataProvider from pcse.util which no longer exists in PCSE 6.0.12 \u2014 sitedata must be a plain dict",
+    "KI missing guidance on multi-year vs single-season simulation strategy \u2014 multi-year campaigns carry soil state, causing progressive degradation without proper fallow/recharge handling",
+    "KI tool run_wofost_simulation.py doesn't pass dateformat to CSVWeatherDataProvider \u2014 fails for ISO date format (YYYY-MM-DD)",
+    "No KI tool for converting CMFD forcing to PCSE weather format \u2014 requires manual unit conversion pipeline (prec kg/m\u00b2/s\u2192mm\u2192cm, temp K\u2192\u00b0C, srad W/m\u00b2\u2192kJ/m\u00b2/day, humidity\u2192VAP kPa)",
+    "Missing guidance on Tmin/Tmax estimation when only daily mean temperature is available (CMFD daily product)"
+  ],
+  "simulation_config": {
+    "weather_source": "CMFD 0.25deg daily, Huai region",
+    "soil_source": "HWSD loam, manually corrected pedotransfer",
+    "simulation_mode": "Wofost72_WLP_FD (water-limited, free drainage)",
+    "simulation_strategy": "Single-season per year with WAV reset",
+    "period": "1979-1990 (wheat 11 seasons, maize 11 seasons)",
+    "CO2": 360,
+    "crop_params": "PCSE built-in (Winter_wheat_101, Grain_maize_201)"
+  },
+  "timestamp": "2026-04-02T23:29:33.482654"
+}

@@ -1,0 +1,261 @@
+model:
+  name: "GEOtop"
+  version: "3.0"
+  domain: "Hydrology / Land-surface energy-water balance"
+  language: "C++11"
+  build_system: "CMake 3.0+"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GEOtop/source/repo/build/geotop"
+  invocation: "./geotop <sim_folder>"
+  time_step_default: 900  # seconds (sub-hourly)
+  simulation_modes:
+    - "point (1D column)"
+    - "distributed (3D catchment)"
+
+inputs:
+  forcing:
+    file_pattern: "meteo/meteoXXXX.txt"
+    format: "CSV with header"
+    date_format: "DD/MM/YYYY hh:mm"
+    nodata: -9999
+    variables:
+      - name: "Iprec"
+        unit: "mm per time step"
+        valid_range: [0, 500]
+        description: "Precipitation intensity"
+      - name: "WindSp"
+        unit: "m/s"
+        valid_range: [0, 50]
+        description: "Wind speed"
+      - name: "WindDir"
+        unit: "degrees"
+        valid_range: [0, 360]
+        description: "Wind direction"
+      - name: "RelHum"
+        unit: "percent (0-100)"
+        valid_range: [0, 100]
+        description: "Relative humidity (NOT fraction 0-1)"
+      - name: "AirT"
+        unit: "degC"
+        valid_range: [-60, 60]
+        description: "Air temperature"
+      - name: "Swglobal"
+        unit: "W/m2"
+        valid_range: [0, 1400]
+        description: "Incoming shortwave radiation"
+      - name: "CloudTrans"
+        unit: "fraction (0-1)"
+        valid_range: [0, 1]
+        description: "Cloud transmissivity (-9999 if unknown)"
+      - name: "LWin"
+        unit: "W/m2"
+        valid_range: [50, 500]
+        description: "Incoming longwave radiation (optional)"
+  soil:
+    file_pattern: "soil/soilXXXX.txt"
+    format: "CSV with header"
+    variables:
+      - name: "Dz"
+        unit: "mm"
+        valid_range: [10, 10000]
+        description: "Layer thickness (MUST be mm, not m)"
+      - name: "Kh"
+        unit: "m/s"
+        valid_range: [1.0e-7, 1.0e-3]
+        description: "Horizontal hydraulic conductivity"
+      - name: "Kv"
+        unit: "m/s"
+        valid_range: [1.0e-7, 1.0e-3]
+        description: "Vertical hydraulic conductivity"
+      - name: "vwc_r"
+        unit: "dimensionless"
+        valid_range: [0.01, 0.15]
+        description: "Residual volumetric water content"
+      - name: "vwc_w"
+        unit: "dimensionless"
+        valid_range: [0.05, 0.25]
+        description: "Wilting point water content"
+      - name: "vwc_fc"
+        unit: "dimensionless"
+        valid_range: [0.1, 0.45]
+        description: "Field capacity water content"
+      - name: "vwc_s"
+        unit: "dimensionless"
+        valid_range: [0.3, 0.65]
+        description: "Saturated water content (porosity)"
+      - name: "alpha"
+        unit: "1/mm"
+        valid_range: [0.0001, 0.01]
+        description: "Van Genuchten alpha (MUST be 1/mm, not 1/cm)"
+      - name: "n"
+        unit: "dimensionless"
+        valid_range: [1.1, 3.0]
+        description: "Van Genuchten n"
+      - name: "stor"
+        unit: "1/m"
+        valid_range: [1.0e-5, 1.0e-2]
+        description: "Specific storage"
+  parameters:
+    config_file: "geotop.inpts"
+    config_format: "key<TAB>=<TAB>value, ! comments"
+    total_keywords: 455
+    critical:
+      - name: "NormalHydrConductivity"
+        valid_range: [1.0e-7, 1.0e-3]
+        unit: "m/s"
+        description: "Vertical hydraulic conductivity (top priority calibration param)"
+      - name: "AlphaVanGenuchten"
+        valid_range: [0.0001, 0.01]
+        unit: "1/mm"
+        description: "Van Genuchten alpha"
+      - name: "NVanGenuchten"
+        valid_range: [1.1, 3.0]
+        unit: "dimensionless"
+        description: "Van Genuchten n parameter"
+      - name: "SnowCorrFactor"
+        valid_range: [0.5, 2.0]
+        unit: "dimensionless"
+        description: "Precipitation undercatch correction"
+      - name: "ThresTempRain"
+        valid_range: [-5, 5]
+        unit: "degC"
+        description: "Temperature threshold for rain"
+      - name: "ThresTempSnow"
+        valid_range: [-5, 5]
+        unit: "degC"
+        description: "Temperature threshold for snow"
+      - name: "SoilRoughness"
+        valid_range: [10, 1000]
+        unit: "mm"
+        description: "Surface roughness length"
+      - name: "MinStomatalRes"
+        valid_range: [10, 200]
+        unit: "s/m"
+        description: "Minimum stomatal resistance"
+      - name: "LSAI"
+        valid_range: [0.5, 8.0]
+        unit: "m2/m2"
+        description: "Leaf and stem area index"
+      - name: "VegHeight"
+        valid_range: [100, 30000]
+        unit: "mm"
+        description: "Vegetation height (MUST be mm, not m)"
+      - name: "InitWaterTableDepth"
+        valid_range: [100, 5000]
+        unit: "mm"
+        description: "Initial water table depth"
+  terrain:
+    format: "ESRI ASCII Grid"
+    required_maps:
+      - "dem.txt"
+      - "slope.txt"
+      - "aspect.txt"
+      - "sky.txt"
+    optional_maps:
+      - "curvature.txt"
+      - "landcover.txt"
+
+outputs:
+  primary:
+    - name: "basin.txt"
+      path: "output-tabs/basin.txt"
+      format: "CSV"
+      variables:
+        - name: "Prain_below_canopy"
+          unit: "mm"
+          valid_range: [0, 500]
+        - name: "Psnow_below_canopy"
+          unit: "mm"
+          valid_range: [0, 200]
+        - name: "Tair"
+          unit: "degC"
+          valid_range: [-60, 60]
+        - name: "Tsurface"
+          unit: "degC"
+          valid_range: [-60, 60]
+        - name: "Evap_surface"
+          unit: "mm"
+          valid_range: [0, 50]
+        - name: "Transpiration_canopy"
+          unit: "mm"
+          valid_range: [0, 30]
+        - name: "LE"
+          unit: "W/m2"
+          valid_range: [-100, 600]
+        - name: "H"
+          unit: "W/m2"
+          valid_range: [-300, 600]
+        - name: "SW"
+          unit: "W/m2"
+          valid_range: [0, 500]
+        - name: "LW"
+          unit: "W/m2"
+          valid_range: [-200, 100]
+        - name: "SWin"
+          unit: "W/m2"
+          valid_range: [0, 1400]
+        - name: "LWin"
+          unit: "W/m2"
+          valid_range: [50, 500]
+        - name: "Mass_balance_error"
+          unit: "mm"
+          valid_range: [-1, 1]
+        - name: "Mean_Time_Step"
+          unit: "seconds"
+          valid_range: [1, 86400]
+    - name: "discharge.txt"
+      path: "output-tabs/discharge.txt"
+      format: "CSV"
+      variables:
+        - name: "Qtot"
+          unit: "m3/s"
+          valid_range: [0, 100000]
+        - name: "Vsup/Dt"
+          unit: "m3/s"
+          valid_range: [0, 100000]
+        - name: "Vsub/Dt"
+          unit: "m3/s"
+          valid_range: [0, 10000]
+    - name: "point0001.txt"
+      path: "output-tabs/pointXXXX.txt"
+      format: "CSV"
+      description: "Point-scale energy/water balance with snow and glacier"
+  secondary:
+    - name: "soilTzXXXX.txt"
+      path: "output-tabs/"
+      description: "Soil temperature profiles (C), rows=time, cols=layers"
+    - name: "thetaliqXXXX.txt"
+      path: "output-tabs/"
+      description: "Soil liquid water content profiles (-)"
+    - name: "snowDepthXXXX.txt"
+      path: "output-tabs/"
+      description: "Snow depth profiles (mm)"
+
+known_issues:
+  - id: "dt_001"
+    description: "Soil layer thickness Dz must be in mm, not m. 10cm = 100mm."
+    severity: "fatal"
+    silent: true
+  - id: "dt_002"
+    description: "Hydraulic conductivity Kh/Kv must be in m/s, not cm/day."
+    severity: "fatal"
+    silent: true
+  - id: "dt_003"
+    description: "Van Genuchten alpha must be in 1/mm, not 1/cm. Divide literature values by 10."
+    severity: "fatal"
+    silent: true
+  - id: "dt_004"
+    description: "Precipitation Iprec is mm per time step. Convert from mm/hr if needed."
+    severity: "degraded"
+    silent: true
+  - id: "dt_005"
+    description: "Relative humidity must be 0-100 percent, not 0-1 fraction."
+    severity: "fatal"
+    silent: true
+  - id: "dt_006"
+    description: "Date format is DD/MM/YYYY, not MM/DD/YYYY."
+    severity: "fatal"
+    silent: true
+  - id: "dt_009"
+    description: "geotop.inpts uses TAB separators. Spaces may cause parse failures."
+    severity: "fatal"
+    silent: false

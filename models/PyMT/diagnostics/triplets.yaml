@@ -1,0 +1,421 @@
+# PyMT Diagnostic Triplets
+# Symptom → Diagnosis → Remedy entries for common PyMT failures
+# 15+ entries covering unit conversion traps, configuration errors, and coupling issues
+
+- id: dt_001
+  stage: s2_configure
+  failure_domain: unit_conversion
+  symptom:
+    description: "Output values are 100x or 1000x too large/small after calling get_value with units parameter"
+    error_pattern: "values orders of magnitude off"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Unit string is not UDUNITS-compatible. gimli.units silently interprets the string differently than intended"
+    explanation: >
+      PyMT uses gimli.units (wrapping UDUNITS) for unit conversion. If the target
+      unit string is not recognized, the conversion may silently produce wrong values
+      or raise an obscure UnitError. For example, "C" might be interpreted as coulombs
+      instead of Celsius.
+    affected_components: [bmi_bridge.py, gimli.units]
+  remedy:
+    action: "Use UDUNITS-compatible unit strings: 'degC' or 'celsius' for temperature, 'm/s' not 'meters per second'"
+    tool_to_run: null
+    manual_steps:
+      - "Check model's native units: model.var_units(var_name)"
+      - "Look up UDUNITS-compatible string for target units"
+      - "Test conversion: gimli.units.Unit('source').to('target')"
+    prevention: "Always verify unit strings with gimli.units before using in get_value()"
+  severity: silent
+  cross_references: [dt_003, dt_004]
+
+- id: dt_002
+  stage: s6_coupling
+  failure_domain: unit_conversion
+  symptom:
+    description: "Wave direction or flow direction is off by exactly 90 degrees in coupled simulation"
+    error_pattern: "direction rotated 90 degrees"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Azimuth angle convention (clockwise from north) vs. math convention (counter-clockwise from east)"
+    explanation: >
+      Coastal models typically use azimuth angles (0=north, 90=east) while PyMT's
+      internal math uses standard math convention (0=east, 90=north). The functions
+      transform_math_to_azimuth and transform_azimuth_to_math in pymt/units.py handle
+      this, but only if the angle= parameter is used in get_value().
+    affected_components: [units.py, bmi_bridge.py]
+  remedy:
+    action: "Use angle='azimuth' or angle='math' parameter in get_value() to specify convention"
+    tool_to_run: null
+    manual_steps:
+      - "Determine which convention the source model uses"
+      - "Determine which convention the target model expects"
+      - "Use get_value(var, angle='azimuth') or angle='math' as appropriate"
+    prevention: "Always check model documentation for angle convention"
+  severity: silent
+  cross_references: [dt_010]
+
+- id: dt_003
+  stage: s4_run
+  failure_domain: unit_conversion
+  symptom:
+    description: "Temperature values are off by 273.15 — model outputs in Kelvin but user expects Celsius or vice versa"
+    error_pattern: "temperature offset by ~273"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature unit mismatch between model native units and user expectation"
+    explanation: >
+      Different BMI models use different temperature scales. Some use Kelvin (K),
+      others Celsius (degC). The get_value() method can convert if the units parameter
+      is specified, but if omitted, values are returned in the model's native units.
+    affected_components: [bmi_bridge.py]
+  remedy:
+    action: "Specify units explicitly: model.get_value('temperature', units='degC')"
+    tool_to_run: null
+    manual_steps:
+      - "Check native units: model.var_units('temperature_var')"
+      - "If K, use units='degC' in get_value to convert"
+      - "If degC and you need K, use units='K'"
+    prevention: "Always check var_units() before interpreting temperature values"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_004
+  stage: s2_configure
+  failure_domain: unit_conversion
+  symptom:
+    description: "Precipitation is impossibly high or low — model expects m/s but data is in mm/day"
+    error_pattern: "precipitation off by factor of 86400000"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation unit chain: mm/day → m/day (÷1000) → m/s (÷86400). Missing one or both conversions."
+    explanation: >
+      Global datasets (CMFD, MSWX, ERA5) typically provide precipitation in mm/day
+      or kg/m²/s. Many BMI models expect m/s or m/day. The full conversion chain
+      must be applied correctly. A common error is dividing by 1000 but forgetting
+      the time conversion, or vice versa.
+    affected_components: [forcing input preparation]
+  remedy:
+    action: "Apply full conversion: mm/day → m/s requires dividing by 86400000 (1000 × 86400)"
+    tool_to_run: configure_model.py
+    manual_steps:
+      - "Check source data units (e.g., mm/day in ERA5)"
+      - "Check model expected units: model.var_units('precipitation_var')"
+      - "Apply conversion factor: mm/day × (1/1000) × (1/86400) = m/s"
+      - "Validate: max precip should be < 0.001 m/s (extreme event)"
+    prevention: "Always validate converted values against physical bounds"
+  severity: silent
+  cross_references: [dt_001, dt_005]
+
+- id: dt_005
+  stage: s2_configure
+  failure_domain: unit_conversion
+  symptom:
+    description: "Discharge values are wrong — data in ft³/s but model expects m³/s"
+    error_pattern: "discharge off by factor ~28"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Imperial to metric conversion not applied. 1 ft³/s = 0.0283168 m³/s."
+    explanation: >
+      USGS streamflow data is in ft³/s (cfs). Most BMI hydrological models use m³/s.
+      The conversion factor is 0.0283168. Missing this conversion makes discharge
+      appear ~35x too large.
+    affected_components: [forcing input preparation]
+  remedy:
+    action: "Multiply ft³/s values by 0.0283168 to get m³/s"
+    tool_to_run: null
+    manual_steps:
+      - "Check data source units (USGS = cfs = ft³/s)"
+      - "Check model expected units"
+      - "Apply: discharge_m3s = discharge_cfs × 0.0283168"
+    prevention: "Include unit assertion in data loading code"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_006
+  stage: s6_coupling
+  failure_domain: runtime
+  symptom:
+    description: "Coupled models desynchronize — one runs 365x faster than the other"
+    error_pattern: "time mismatch between coupled models"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Models have different time_units (e.g., 'd' vs 'h' vs 's'). PyMT does NOT auto-convert time between coupled models."
+    explanation: >
+      If model A uses days and model B uses hours, calling update() on each
+      advances them by different real-time amounts. The coupling loop must
+      account for this by updating the faster model multiple times per
+      slow model step.
+    affected_components: [coupling loop, timeline.py]
+  remedy:
+    action: "Check time_units for both models and adjust update frequency"
+    tool_to_run: couple_models.py
+    manual_steps:
+      - "Print model_a.time_units and model_b.time_units"
+      - "Compute ratio = dt_slow / dt_fast"
+      - "Update fast model 'ratio' times per slow model step"
+    prevention: "Always log time_units when starting a coupled simulation"
+  severity: degraded
+  cross_references: [dt_010]
+
+- id: dt_007
+  stage: s6_coupling
+  failure_domain: runtime
+  symptom:
+    description: "Mapped values are all NaN or wildly wrong after spatial regridding"
+    error_pattern: "NaN values after mapper.run()"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wrong mapper type for the grid combination, or grids don't overlap spatially"
+    explanation: >
+      PyMT mappers (PointToPoint, CellToPoint, PointToCell, EsmpMapper) each
+      work with specific grid type combinations. Using PointToPoint with
+      unstructured grids may produce nearest-neighbor artifacts. If source
+      and target grids don't overlap geographically, all interpolated values
+      will be NaN or extrapolated.
+    affected_components: [mappers/]
+  remedy:
+    action: "Match mapper to grid types; verify spatial overlap"
+    tool_to_run: null
+    manual_steps:
+      - "Check grid types: model.grid_type(grid_id)"
+      - "Compare spatial extents of both grids"
+      - "Select appropriate mapper for the grid combination"
+      - "For conservative mapping, install esmpy"
+    prevention: "Print grid extents before coupling to verify overlap"
+  severity: fatal
+  cross_references: [dt_002]
+
+- id: dt_008
+  stage: s2_configure
+  failure_domain: unit_conversion
+  symptom:
+    description: "Elevation/bathymetry is inverted — model shows land below sea level or ocean above"
+    error_pattern: "elevation sign inverted"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Sign convention mismatch — some models use positive-up, others positive-down for depth/elevation"
+    explanation: >
+      Bathymetry datasets often use positive values for depth below sea level,
+      while DEM data uses positive values for elevation above sea level.
+      BMI models vary in their convention. Confusing the two inverts the
+      topography.
+    affected_components: [grid initialization, morphometry setup]
+  remedy:
+    action: "Check model documentation for sign convention; negate values if needed"
+    tool_to_run: null
+    manual_steps:
+      - "Check if model uses depth (positive down) or elevation (positive up)"
+      - "Check input data convention"
+      - "Apply sign flip if conventions differ: elev = -depth"
+    prevention: "Add assertion: min(elevation) > expected_minimum"
+  severity: silent
+  cross_references: []
+
+- id: dt_009
+  stage: s3_initialize
+  failure_domain: parameter_format
+  symptom:
+    description: "Model runs with default parameters despite providing custom config — changes have no effect"
+    error_pattern: "model ignores configuration"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Config file path passed to initialize() is absolute instead of relative, or dir= parameter is wrong"
+    explanation: >
+      model.initialize(cfg_file, dir=cfg_dir) expects cfg_file to be
+      RELATIVE to cfg_dir. If you pass an absolute path as cfg_file,
+      the model may not find it and fall back to defaults silently.
+      Always use the tuple returned by model.setup().
+    affected_components: [bmi_setup.py, bmi_bridge.py]
+  remedy:
+    action: "Use model.initialize(*model.setup()) — never construct paths manually"
+    tool_to_run: null
+    manual_steps:
+      - "Verify cfg_file is a filename, not a full path"
+      - "Verify cfg_dir is the directory containing cfg_file"
+      - "Use: cfg_file, cfg_dir = model.setup(); model.initialize(cfg_file, dir=cfg_dir)"
+    prevention: "Always unpack setup() output directly into initialize()"
+  severity: silent
+  cross_references: []
+
+- id: dt_010
+  stage: s6_coupling
+  failure_domain: silent_error
+  symptom:
+    description: "Coupled model produces unchanged output — as if coupling variable was never set"
+    error_pattern: "target model output unchanged despite coupling"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Variable name mismatch — CSDMS Standard Names must match EXACTLY between models. A typo or variant name silently fails."
+    explanation: >
+      set_value() with an unrecognized variable name may silently do nothing
+      (depending on BMI implementation). The coupling appears to work but no
+      data is actually exchanged. Standard Names are long and precise:
+      'sea_surface_water_wave__azimuth_angle_of_opposite_of_phase_velocity'
+    affected_components: [bmi_bridge.py, set_value]
+  remedy:
+    action: "Cross-check variable names between models using input_var_names and output_var_names"
+    tool_to_run: couple_models.py
+    manual_steps:
+      - "Print source.output_var_names"
+      - "Print target.input_var_names"
+      - "Find intersection for auto-mapping"
+      - "For manual mapping, copy-paste exact name strings"
+    prevention: "Use auto-discovery: set(src.output_var_names) & set(tgt.input_var_names)"
+  severity: silent
+  cross_references: [dt_002, dt_006]
+
+- id: dt_011
+  stage: s1_discover
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "ImportError when importing pymt or a model plugin — missing compiled library"
+    error_pattern: "ImportError|ModuleNotFoundError|OSError.*shared object"
+    detection_method: error_match
+  diagnosis:
+    root_cause: "Model plugin requires compiled C/Fortran library not installed. Pip install may succeed but import fails."
+    explanation: >
+      Many PyMT model plugins (pymt_cem, pymt_hydrotrend) wrap compiled
+      C or Fortran libraries. pip install gets the Python wrapper but
+      may not build the compiled backend. conda/mamba typically handles
+      this correctly.
+    affected_components: [model_collection.py, plugin entry points]
+  remedy:
+    action: "Install via conda: mamba install pymt_<model> -c conda-forge"
+    tool_to_run: discover_models.py
+    manual_steps:
+      - "Try: python -c 'from pymt.models import ModelName'"
+      - "If ImportError, check for missing .so/.dylib files"
+      - "Install via conda instead of pip"
+      - "If building from source, check for cmake/gfortran/gcc"
+    prevention: "Use conda/mamba for all PyMT model plugin installations"
+  severity: fatal
+  cross_references: []
+
+- id: dt_012
+  stage: s4_run
+  failure_domain: runtime
+  symptom:
+    description: "get_value() returns flat 1D array instead of expected 2D grid shape"
+    error_pattern: "shape mismatch|unexpected array shape"
+    detection_method: shape_check
+  diagnosis:
+    root_cause: "BMI specification requires get_value() to return flattened arrays. This is by design, not a bug."
+    explanation: >
+      All BMI get_value() calls return flattened (1D) numpy arrays regardless
+      of the underlying grid dimensionality. This is part of the BMI spec for
+      language interoperability. Users must reshape manually using grid metadata.
+    affected_components: [bmi_bridge.py, get_value]
+  remedy:
+    action: "Reshape using grid metadata: val.reshape(model.grid_shape(grid_id))"
+    tool_to_run: null
+    manual_steps:
+      - "Get grid ID: grid_id = model.var_grid(var_name)"
+      - "Get shape: shape = model.grid_shape(grid_id)"
+      - "Reshape: values_2d = values.reshape(shape)"
+    prevention: "Always reshape before plotting or analysis"
+  severity: degraded
+  cross_references: []
+
+- id: dt_013
+  stage: s3_initialize
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "Segfault or dtype error after installing numpy 2.x"
+    error_pattern: "Segmentation fault|dtype.*incompatible"
+    detection_method: error_match
+  diagnosis:
+    root_cause: "PyMT requires numpy < 2 (pinned in requirements.txt, see issue #173). numpy 2.x changes array internals."
+    explanation: >
+      numpy 2.0 changed the C API for array dtypes. Compiled BMI libraries
+      built against numpy 1.x will segfault or produce garbage when used
+      with numpy 2.x. This affects all PyMT model plugins with compiled
+      backends.
+    affected_components: [all compiled BMI plugins]
+  remedy:
+    action: "Pin numpy: pip install 'numpy<2' or use conda environment"
+    tool_to_run: null
+    manual_steps:
+      - "Check numpy version: python -c 'import numpy; print(numpy.__version__)'"
+      - "If >= 2.0: pip install 'numpy<2'"
+      - "Recreate venv if needed"
+    prevention: "Always create environments with numpy<2 for PyMT"
+  severity: fatal
+  cross_references: [dt_011]
+
+- id: dt_014
+  stage: s4_run
+  failure_domain: runtime
+  symptom:
+    description: "Model finalize() not called — temporary files accumulate, memory leaks on repeated runs"
+    error_pattern: "disk full|memory growth|leftover temp dirs"
+    detection_method: resource_monitoring
+  diagnosis:
+    root_cause: "finalize() must be called even if the simulation crashes. Missing finalize leaves resources allocated."
+    explanation: >
+      BMI models allocate memory and create temp files in initialize().
+      finalize() deallocates these. Without it, compiled models may leak
+      memory, and run directories accumulate in /tmp. This is especially
+      problematic in loops or calibration runs.
+    affected_components: [bmi_bridge.py, finalize]
+  remedy:
+    action: "Always wrap model runs in try/finally with finalize() in the finally block"
+    tool_to_run: run_model.py
+    manual_steps:
+      - "Use try/finally pattern for all model runs"
+      - "Clean /tmp of leftover pymt_* directories"
+      - "Monitor memory in long calibration runs"
+    prevention: "Use run_model.py which handles finalize automatically"
+  severity: degraded
+  cross_references: []
+
+- id: dt_015
+  stage: s2_configure
+  failure_domain: unit_conversion
+  symptom:
+    description: "Wind speed forcing too high/low — data in knots but model expects m/s"
+    error_pattern: "wind speed off by factor ~2"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "1 knot = 0.514444 m/s. Maritime/aviation data often in knots; most BMI models expect m/s."
+    explanation: >
+      Wind speed from ship observations, aviation data (METAR), or some
+      reanalysis products may be in knots. Most earth-surface models expect
+      m/s. The ~2x error factor is subtle enough to produce plausible but
+      wrong results.
+    affected_components: [forcing preparation]
+  remedy:
+    action: "Convert: wind_ms = wind_knots × 0.514444"
+    tool_to_run: null
+    manual_steps:
+      - "Check source data units"
+      - "Check model expected units: model.var_units('wind_var')"
+      - "Apply conversion if needed"
+      - "Validate: max wind should be < 50 m/s for typical conditions"
+    prevention: "Add unit metadata check to forcing preparation scripts"
+  severity: silent
+  cross_references: [dt_001, dt_004]
+
+- id: dt_016
+  stage: s1_discover
+  failure_domain: parameter_format
+  symptom:
+    description: "model_metadata version conflict — model metadata not found or incorrectly parsed"
+    error_pattern: "model_metadata.*version|KeyError.*parameters"
+    detection_method: error_match
+  diagnosis:
+    root_cause: "PyMT requires model_metadata >= 0.7, < 0.8. Version 0.8+ changed the API."
+    explanation: >
+      The model_metadata package provides parameter defaults, variable info,
+      and configuration templates. Version 0.8 changed the internal API,
+      breaking PyMT's metadata discovery. The pin in requirements.txt
+      (model_metadata<0.8) must be respected.
+    affected_components: [model_collection.py, bmi_setup.py]
+  remedy:
+    action: "Pin model_metadata: pip install 'model_metadata>=0.7,<0.8'"
+    tool_to_run: null
+    manual_steps:
+      - "Check: python -c 'import model_metadata; print(model_metadata.__version__)'"
+      - "If >= 0.8: pip install 'model_metadata<0.8'"
+    prevention: "Use pinned requirements from PyMT's requirements.txt"
+  severity: fatal
+  cross_references: [dt_013]

@@ -1,0 +1,15 @@
+# ============================================================================
+# Error Log — Pywr Knowledge Infrastructure
+# ============================================================================
+# Records errors encountered during HydroCraft integration testing.
+# Each entry links to a diagnostic triplet for structured debugging.
+#
+# Format:
+#   - timestamp: when the error was observed
+#   - triplet_id: which diagnostic triplet applies
+#   - context: what the agent was doing
+#   - resolution: what fixed it
+# ============================================================================
+
+errors: []
+# Entries will be appended as errors are encountered during operation.

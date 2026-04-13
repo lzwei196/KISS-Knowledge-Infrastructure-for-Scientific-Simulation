@@ -1,0 +1,198 @@
+model:
+  name: "RHESSys"
+  version: "7.4 / 5.14.3"
+  domain: "Hydrology, Ecohydrology, Biogeochemistry"
+  language: "C"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/RHESSys/source/repo/rhessys/rhessys7.4"
+  spatial_structure: "World > Basin > Hillslope > Zone > Patch > Canopy Stratum"
+  timestep: "daily or hourly"
+
+inputs:
+  forcing:
+    - name: "tmax"
+      unit: "deg C"
+      file_extension: ".tmax"
+      valid_range: [-60, 60]
+      description: "Daily maximum temperature"
+    - name: "tmin"
+      unit: "deg C"
+      file_extension: ".tmin"
+      valid_range: [-60, 50]
+      description: "Daily minimum temperature"
+    - name: "rain"
+      unit: "m/day"
+      file_extension: ".rain"
+      valid_range: [0, 0.5]
+      description: "Daily precipitation — CRITICAL: must be m/day, NOT mm/day (dt_001)"
+
+  domain_files:
+    - name: "worldfile"
+      extension: ".world"
+      description: "Hierarchical text file defining spatial domain objects"
+    - name: "world_header"
+      extension: ".hdr"
+      description: "Header file listing definition file paths"
+    - name: "flow_table"
+      extension: ".flow"
+      description: "Patch-to-patch routing connectivity table"
+    - name: "tec_file"
+      extension: ".tec"
+      description: "Temporal event control file (print on/off, redefine, etc.)"
+
+  parameters:
+    critical:
+      - name: "m"
+        unit: "m"
+        valid_range: [0.01, 20.0]
+        sensitivity: "Very High"
+        description: "Transmissivity decay parameter — controls lateral flow recession"
+      - name: "Ksat_0"
+        unit: "m/day"
+        valid_range: [0.001, 100.0]
+        sensitivity: "Very High"
+        description: "Saturated hydraulic conductivity at surface"
+      - name: "soil_depth"
+        unit: "m"
+        valid_range: [0.5, 5.0]
+        sensitivity: "High"
+        description: "Total soil depth"
+      - name: "pore_size_index"
+        unit: "dimensionless"
+        valid_range: [0.1, 0.8]
+        sensitivity: "High"
+        description: "Brooks-Corey pore size distribution index"
+      - name: "porosity_0"
+        unit: "m^3/m^3"
+        valid_range: [0.05, 0.70]
+        sensitivity: "Medium"
+        description: "Surface porosity"
+      - name: "psi_air_entry"
+        unit: "m"
+        valid_range: [0.01, 3.0]
+        sensitivity: "High"
+        description: "Air entry pressure (context-dependent units, dt_010)"
+    vegetation:
+      - name: "epc.max_lai"
+        unit: "m^2/m^2"
+        valid_range: [1.0, 12.0]
+        sensitivity: "Medium"
+        description: "Maximum leaf area index"
+      - name: "epc.leaf_turnover"
+        unit: "1/day"
+        valid_range: [0.0001, 0.01]
+        sensitivity: "Medium"
+        description: "Daily leaf turnover rate"
+    groundwater:
+      - name: "gw_loss_coeff"
+        valid_range: [0.0, 0.5]
+        sensitivity: "Medium"
+        description: "Groundwater loss coefficient"
+      - name: "sat_to_gw_coeff"
+        valid_range: [0.0, 0.5]
+        sensitivity: "Medium"
+        description: "Saturated zone to groundwater recharge coefficient"
+
+outputs:
+  primary:
+    - name: "streamflow"
+      unit: "m/day per m^2 basin area"
+      valid_range: [0, 0.1]
+      level: "basin"
+      description: "Basin streamflow — CRITICAL: NOT m^3/s. Convert: Q_m3s = streamflow * basin_area / 86400 (dt_002)"
+    - name: "evaporation"
+      unit: "m/day"
+      valid_range: [0, 0.02]
+      level: "basin/patch"
+      description: "Total evaporation"
+    - name: "transpiration_sat_zone"
+      unit: "m/day"
+      valid_range: [0, 0.02]
+      level: "basin/patch"
+      description: "Transpiration from saturated zone"
+    - name: "transpiration_unsat_zone"
+      unit: "m/day"
+      valid_range: [0, 0.02]
+      level: "basin/patch"
+      description: "Transpiration from unsaturated zone"
+    - name: "sat_deficit"
+      unit: "m"
+      valid_range: [0, 10]
+      level: "patch"
+      description: "Saturation deficit"
+    - name: "snowpack.water_equivalent_depth"
+      unit: "m"
+      valid_range: [0, 5]
+      level: "patch"
+      description: "Snow water equivalent"
+    - name: "epv.proj_lai"
+      unit: "m^2/m^2"
+      valid_range: [0, 15]
+      level: "stratum"
+      description: "Projected leaf area index"
+  biogeochemistry:
+    - name: "cs.net_psn"
+      unit: "kg C/m^2/day"
+      valid_range: [-0.01, 0.05]
+      level: "stratum"
+      description: "Net photosynthesis"
+    - name: "soil_cs.totalc"
+      unit: "kg C/m^2"
+      valid_range: [0, 50]
+      level: "patch"
+      description: "Total soil carbon"
+    - name: "streamflow_NO3"
+      unit: "kg N/m^2/day"
+      valid_range: [0, 0.001]
+      level: "basin"
+      description: "Nitrate export in streamflow"
+
+  output_formats:
+    - type: "legacy_ascii"
+      pattern: "<prefix>_<level>.<timestep>"
+      examples: ["test_basin.daily", "test_patch.daily", "test_basin.yearly"]
+    - type: "csv_filter"
+      config: "YAML filter file via -of flag"
+      pattern: "user-defined filename"
+
+unit_traps:
+  - id: "dt_001"
+    variable: "precipitation"
+    model_expects: "m/day"
+    common_source: "mm/day"
+    conversion: "divide by 1000"
+    severity: "silent — streamflow 1000x too high"
+  - id: "dt_002"
+    variable: "streamflow output"
+    model_expects: "m/day/m^2"
+    common_target: "m^3/s"
+    conversion: "multiply by basin_area / 86400"
+    severity: "silent — unit mismatch in validation"
+  - id: "dt_003"
+    variable: "temperature"
+    model_expects: "deg C"
+    common_source: "K"
+    conversion: "subtract 273.15"
+  - id: "dt_004"
+    variable: "soil_depth"
+    model_expects: "m"
+    common_source: "cm"
+    conversion: "divide by 100"
+  - id: "dt_005"
+    variable: "Ksat"
+    model_expects: "m/day"
+    common_source: "cm/hr"
+    conversion: "multiply by 0.24"
+
+known_issues:
+  - id: "dt_011"
+    description: "Worldfile is whitespace-sensitive — wrong ordering causes silent misassignment"
+  - id: "dt_012"
+    description: "BGC pools need 200-500 year spin-up; without it vegetation dies or explodes"
+  - id: "dt_013"
+    description: "Zero sensitivity multiplier (-s 0 0) crashes the model"
+  - id: "dt_015"
+    description: "Flow table must match worldfile patches exactly or segfault occurs"
+  - id: "dt_017"
+    description: "Canopy stratum cover fractions > 1.0 break water balance"
+  - id: "dt_018"
+    description: "Negative saturation deficit causes runtime crash"

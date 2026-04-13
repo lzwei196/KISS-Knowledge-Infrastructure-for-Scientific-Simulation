@@ -1,0 +1,118 @@
+model:
+  name: "GR4J___airGR"
+  domain: "hydrology"
+  description: "4-parameter daily lumped rainfall-runoff model via airGR R package"
+  version: "airGR v1.7.8"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GR4J___airGR/source/repo/src/airGR.so"
+  binary_type: "ELF 64-bit shared object (Fortran core compiled via R)"
+  spatial_type: "lumped"
+  temporal_resolution: "daily"
+
+inputs:
+  forcing:
+    - name: "Precip"
+      unit: "mm/day"
+      description: "Daily total precipitation (catchment average)"
+      valid_range: [0, 500]
+      required: true
+      no_missing: true
+    - name: "PotEvap"
+      unit: "mm/day"
+      description: "Potential evapotranspiration (Oudin or pre-computed)"
+      valid_range: [0, 30]
+      required: true
+      no_missing: true
+    - name: "TempMean"
+      unit: "degC"
+      description: "Mean daily air temperature (only if computing PE via PE_Oudin)"
+      valid_range: [-40, 50]
+      required: false
+    - name: "Qobs"
+      unit: "mm/day"
+      description: "Observed discharge for calibration (NA allowed)"
+      valid_range: [0, 1000]
+      required: false
+
+  parameters:
+    critical:
+      - name: "X1"
+        description: "Production store capacity"
+        unit: "mm"
+        valid_range: [100, 1200]
+        typical: 450
+      - name: "X2"
+        description: "Inter-catchment groundwater exchange coefficient"
+        unit: "mm/d"
+        valid_range: [-5, 3]
+        typical: 1.5
+      - name: "X3"
+        description: "Routing store capacity"
+        unit: "mm"
+        valid_range: [20, 300]
+        typical: 90
+      - name: "X4"
+        description: "Unit hydrograph time constant"
+        unit: "d"
+        valid_range: [1.1, 2.9]
+        hard_minimum: 0.5
+        typical: 1.7
+
+outputs:
+  primary:
+    - name: "Qsim"
+      unit: "mm/day"
+      description: "Simulated total discharge (QR + QD)"
+      valid_range: [0, 500]
+    - name: "Qsim_m3s"
+      unit: "m3/s"
+      description: "Simulated discharge converted to volumetric flow"
+      valid_range: [0, 100000]
+  diagnostic:
+    - name: "Prod"
+      unit: "mm"
+      description: "Production store level"
+    - name: "Rout"
+      unit: "mm"
+      description: "Routing store level"
+    - name: "AE"
+      unit: "mm/day"
+      description: "Actual evapotranspiration"
+    - name: "PERC"
+      unit: "mm/day"
+      description: "Percolation from production store"
+    - name: "EXCH"
+      unit: "mm/day"
+      description: "Groundwater exchange"
+    - name: "QR"
+      unit: "mm/day"
+      description: "Routed runoff (slow branch, 90%)"
+    - name: "QD"
+      unit: "mm/day"
+      description: "Direct runoff (fast branch, 10%)"
+
+validation_metrics:
+  - name: "NSE"
+    description: "Nash-Sutcliffe Efficiency"
+    acceptable_range: [0.5, 1.0]
+  - name: "KGE"
+    description: "Kling-Gupta Efficiency"
+    acceptable_range: [0.5, 1.0]
+  - name: "PBIAS"
+    description: "Percent bias"
+    acceptable_range: [-25, 25]
+    unit: "%"
+  - name: "r"
+    description: "Pearson correlation coefficient"
+    acceptable_range: [0.7, 1.0]
+
+known_issues:
+  - id: "UT-001"
+    description: "CMFD temperature in K not converted to degC causes PE ~300 mm/d"
+  - id: "UT-002"
+    description: "Precipitation in m/day instead of mm/day causes near-zero runoff"
+  - id: "UT-003"
+    description: "Sub-daily precip not summed to daily causes 1/8 of expected runoff"
+  - id: "UT-004"
+    description: "Qobs in m3/s not converted to mm/day causes NSE = -infinity"
+  - id: "UT-007"
+    description: "PE from Penman in mm/month instead of mm/day drains stores instantly"

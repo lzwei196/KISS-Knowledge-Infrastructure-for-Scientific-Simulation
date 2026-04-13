@@ -1,0 +1,8 @@
+# ============================================================================
+# Failure Episodes — hydrocraft-wflow v1.0.0
+# ============================================================================
+# Complete debugging stories from real runs (context -> error -> trace -> fix).
+# Training data for improving skills and tools.
+# ============================================================================
+
+episodes: []

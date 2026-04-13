@@ -1,0 +1,430 @@
+# ============================================================================
+# Knowledge Infrastructure — WRF (Weather Research and Forecasting Model)
+# ============================================================================
+# WRF v4.7.1 — Advanced Research WRF (ARW) dynamical core
+# 3D non-hydrostatic atmospheric model on Arakawa C-grid
+# ============================================================================
+
+package:
+  name: hydrocraft-wrf-atmosphere
+  version: "1.0.0"
+  created: "2026-03-25"
+  model: WRF
+  model_version: "4.7.1"
+  domain: atmosphere
+  description: >
+    Weather Research and Forecasting (WRF) model — mesoscale numerical weather
+    prediction system for atmospheric research and operational forecasting.
+    Solves fully compressible non-hydrostatic Euler equations on terrain-following
+    eta coordinates with Arakawa C-grid staggering.
+  binary: wrf.exe
+  preprocessors:
+    - geogrid.exe    # WPS: static geographic data → geo_em files
+    - ungrib.exe     # WPS: GRIB → intermediate format
+    - metgrid.exe    # WPS: intermediate → met_em files (model grid)
+    - real.exe       # WRF: met_em → wrfinput + wrfbdy
+  source: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/WRF/source/repo
+  institution: NCAR/UCAR
+
+pipeline:
+  stages:
+
+    # ------------------------------------------------------------------
+    # S0 — Configuration
+    # ------------------------------------------------------------------
+    - id: s0_config
+      name: Configuration
+      description: >
+        Define simulation domain (center lat/lon, extent, resolution),
+        time period, nesting strategy, physics suite, and file paths.
+      depends_on: []
+      knowledge_type: procedural
+      milestones:
+        - id: m_s0_done
+          description: Configuration parameters defined and validated
+          verification: Domain center, extent, resolution, period, and physics suite are set
+
+    # ------------------------------------------------------------------
+    # S1 — WPS Domain Setup (geogrid)
+    # ------------------------------------------------------------------
+    - id: s1_domain
+      name: WPS Domain Setup
+      description: >
+        Run WPS geogrid to interpolate static geographic data (terrain,
+        land use, soil type, albedo, greenness) onto the model grid.
+        Produces geo_em.d01.nc.
+      depends_on: [s0_config]
+      knowledge_type: procedural
+      milestones:
+        - id: m_s1_geo_em
+          description: geo_em.d01.nc created with terrain and land use
+          verification: "ncdump -h geo_em.d01.nc shows HGT_M, LU_INDEX variables"
+
+    # ------------------------------------------------------------------
+    # S2 — Meteorological Forcing (ungrib + metgrid)
+    # ------------------------------------------------------------------
+    - id: s2_forcing
+      name: Meteorological Forcing
+      description: >
+        Convert reanalysis or forecast data (ERA5, GFS, CMFD, MSWX) to
+        WPS intermediate format via ungrib, then horizontally interpolate
+        to the model grid via metgrid. Produces met_em.d01.*.nc files.
+      depends_on: [s1_domain]
+      knowledge_type: [procedural, evaluative_and_sequencing]
+      milestones:
+        - id: m_s2_ungrib
+          description: Intermediate files created from GRIB/NetCDF source
+          verification: "Intermediate files exist for each forcing timestep"
+        - id: m_s2_metgrid
+          description: met_em files created on model grid
+          verification: "met_em.d01.YYYY-MM-DD_HH:00:00.nc files exist"
+        - id: m_s2_units
+          description: All variables in correct units
+          verification: >
+            Temperature in K (not degC), pressure in Pa (not hPa),
+            wind in m/s, humidity as mixing ratio kg/kg
+
+    # ------------------------------------------------------------------
+    # S3 — Namelist Generation
+    # ------------------------------------------------------------------
+    - id: s3_namelist
+      name: Namelist Generation
+      description: >
+        Build namelist.input from configuration parameters. Sets time_control,
+        domains, physics, dynamics, and boundary control sections. Physics
+        suite presets (CONUS, tropical) set consistent option combinations.
+      depends_on: [s0_config, s2_forcing]
+      knowledge_type: [procedural, evaluative_and_sequencing]
+      milestones:
+        - id: m_s3_nml
+          description: namelist.input created and validated
+          verification: >
+            All required sections present, time_step satisfies CFL
+            (dt <= 6*dx_km), num_metgrid_levels matches forcing data,
+            interval_seconds matches forcing frequency
+
+    # ------------------------------------------------------------------
+    # S4 — Initialization (real.exe)
+    # ------------------------------------------------------------------
+    - id: s4_initialization
+      name: Initialization
+      description: >
+        Run real.exe to vertically interpolate met_em data to model eta
+        levels, creating initial conditions (wrfinput_d01) and lateral
+        boundary conditions (wrfbdy_d01).
+      depends_on: [s2_forcing, s3_namelist]
+      knowledge_type: procedural
+      milestones:
+        - id: m_s4_wrfinput
+          description: wrfinput_d01 created
+          verification: "ncdump -h wrfinput_d01 shows U, V, T, QVAPOR fields"
+        - id: m_s4_wrfbdy
+          description: wrfbdy_d01 created
+          verification: "wrfbdy_d01 exists and size > 0"
+        - id: m_s4_real_success
+          description: real.exe completed without errors
+          verification: "rsl.out.0000 contains 'real_em: SUCCESS COMPLETE REAL_EM INIT'"
+
+    # ------------------------------------------------------------------
+    # S5 — Model Execution (wrf.exe)
+    # ------------------------------------------------------------------
+    - id: s5_execution
+      name: Model Execution
+      description: >
+        Run wrf.exe to perform the atmospheric simulation. Uses Runge-Kutta
+        3rd-order time integration with acoustic sub-stepping. Produces
+        wrfout_d01_* history files at specified intervals.
+      depends_on: [s4_initialization]
+      knowledge_type: procedural
+      milestones:
+        - id: m_s5_wrfout
+          description: wrfout history files created
+          verification: "wrfout_d01_* files exist for simulation period"
+        - id: m_s5_success
+          description: wrf.exe completed without CFL violations
+          verification: "rsl.out.0000 contains 'wrf: SUCCESS COMPLETE WRF'"
+
+    # ------------------------------------------------------------------
+    # S6 — Output Parsing
+    # ------------------------------------------------------------------
+    - id: s6_postprocess
+      name: Output Parsing
+      description: >
+        Extract key atmospheric variables from wrfout NetCDF files. Convert
+        accumulated precipitation to rates, compute 2m temperature from
+        potential temperature, extract station timeseries or spatial fields.
+      depends_on: [s5_execution]
+      knowledge_type: procedural
+      milestones:
+        - id: m_s6_csv
+          description: Parsed output CSV files created
+          verification: "CSV files contain datetime, T2, precip_rate, U10, V10, SWDOWN, etc."
+        - id: m_s6_precip
+          description: Precipitation correctly differenced from accumulated fields
+          verification: "RAINC + RAINNC differenced between timesteps, no negative values"
+
+    # ------------------------------------------------------------------
+    # S7 — Validation
+    # ------------------------------------------------------------------
+    - id: s7_validation
+      name: Validation
+      description: >
+        Compare WRF output against observations (weather stations, reanalysis,
+        satellite products). Compute skill metrics: RMSE, bias, correlation,
+        and domain-specific scores (ETS for precipitation, wind speed bias).
+      depends_on: [s6_postprocess]
+      knowledge_type: evaluative_and_sequencing
+      milestones:
+        - id: m_s7_metrics
+          description: Validation metrics computed
+          verification: "RMSE, bias, correlation, and skill scores reported"
+        - id: m_s7_figure
+          description: Validation figure produced
+          verification: "s8_validation.png exists in figures directory"
+
+# ============================================================================
+# Tools
+# ============================================================================
+tools:
+  - id: t01
+    name: convert_forcing_to_wrf
+    description: >
+      Convert CMFD/MSWX/ERA5 forcing data to WPS intermediate format.
+      Handles unit conversions: degC→K, hPa→Pa, specific humidity→mixing ratio,
+      mm/hr→kg/m2/s. Writes WPS intermediate binary files for ungrib bypass.
+    stage: s2_forcing
+    script_path: tools/t01_convert_forcing_to_wrf.py
+    language: python
+    inputs:
+      - name: FORCING_DIR
+        type: directory
+        required: true
+        description: Directory containing raw forcing data (NetCDF)
+        example: /data/forcing/ERA5/
+      - name: FORCING_SOURCE
+        type: string
+        required: true
+        description: "Source dataset: ERA5, CMFD, MSWX, GFS"
+        example: ERA5
+      - name: OUTPUT_DIR
+        type: directory
+        required: true
+        description: Directory for met_em output files
+      - name: START_DATE
+        type: string
+        required: true
+        example: "2019-09-04_12:00:00"
+      - name: END_DATE
+        type: string
+        required: true
+        example: "2019-09-06_00:00:00"
+      - name: GEO_EM_FILE
+        type: file
+        required: true
+        description: geo_em.d01.nc from geogrid (for target grid)
+    outputs:
+      - path_pattern: "{OUTPUT_DIR}/met_em.d01.*.nc"
+        description: Meteorological fields on model grid
+    preconditions:
+      - Raw forcing files exist in FORCING_DIR
+      - geo_em.d01.nc exists (from s1_domain)
+    postconditions:
+      - met_em files exist for every forcing timestep
+      - Temperature fields in K (range 180-340)
+      - Pressure fields in Pa (range 1000-110000)
+      - Mixing ratio >= 0 kg/kg
+
+  - id: t02
+    name: generate_namelist
+    description: >
+      Generate WRF namelist.input from configuration parameters. Validates
+      CFL condition, physics option consistency, and domain dimensions.
+      Supports physics suite presets (CONUS, tropical) and custom selection.
+    stage: s3_namelist
+    script_path: tools/t02_generate_namelist.py
+    language: python
+    inputs:
+      - name: CONFIG
+        type: dict
+        required: true
+        description: >
+          Dictionary with keys: start_date, end_date, dx, dy, e_we, e_sn,
+          e_vert, time_step, physics_suite, max_dom, interval_seconds,
+          num_metgrid_levels, history_interval
+      - name: OUTPUT_PATH
+        type: file
+        required: true
+        description: Path to write namelist.input
+        example: run/namelist.input
+    outputs:
+      - path_pattern: "{OUTPUT_PATH}"
+        description: Complete namelist.input file
+    preconditions:
+      - CONFIG contains all required keys
+      - time_step <= 6 * (dx/1000) for CFL stability
+    postconditions:
+      - namelist.input is valid Fortran namelist format
+      - All sections present (time_control, domains, physics, dynamics, bdy_control)
+      - Single quotes used (NOT double quotes)
+
+  - id: t03
+    name: run_wrf
+    description: >
+      Execute real.exe then wrf.exe in the run directory. Monitors rsl.out
+      for CFL violations and completion status. Links required physics
+      data tables from WRF run/ directory.
+    stage: s5_execution
+    script_path: tools/t03_run_wrf.py
+    language: python
+    inputs:
+      - name: WRF_DIR
+        type: directory
+        required: true
+        description: WRF installation directory (contains main/real.exe, main/wrf.exe)
+      - name: RUN_DIR
+        type: directory
+        required: true
+        description: Working directory for execution
+      - name: NUM_PROCS
+        type: integer
+        required: false
+        description: Number of MPI processes (default 1)
+        example: 4
+    outputs:
+      - path_pattern: "{RUN_DIR}/wrfout_d01_*"
+        description: WRF history output files (NetCDF)
+      - path_pattern: "{RUN_DIR}/rsl.out.0000"
+        description: Primary log file
+    preconditions:
+      - wrfinput_d01 exists in RUN_DIR
+      - wrfbdy_d01 exists in RUN_DIR
+      - namelist.input exists in RUN_DIR
+      - Physics data tables linked in RUN_DIR
+    postconditions:
+      - rsl.out.0000 contains SUCCESS COMPLETE
+      - wrfout files exist for simulation period
+      - No CFL violation in rsl.error.0000
+
+  - id: t04
+    name: parse_wrf_output
+    description: >
+      Extract key atmospheric variables from wrfout NetCDF files to CSV.
+      Computes derived quantities: total precipitation (RAINC + RAINNC,
+      differenced for rates), wind speed from U10/V10, sea level pressure.
+      Supports point extraction (station lat/lon) and domain-mean timeseries.
+    stage: s6_postprocess
+    script_path: tools/t04_parse_wrf_output.py
+    language: python
+    inputs:
+      - name: WRFOUT_DIR
+        type: directory
+        required: true
+        description: Directory containing wrfout_d01_* files
+      - name: OUTPUT_CSV
+        type: file
+        required: true
+        description: Path for output CSV
+      - name: STATION_LAT
+        type: float
+        required: false
+        description: Station latitude for point extraction
+      - name: STATION_LON
+        type: float
+        required: false
+        description: Station longitude for point extraction
+      - name: VARIABLES
+        type: list
+        required: false
+        description: Variables to extract (default all standard)
+        example: [T2, RAINC, RAINNC, U10, V10, PSFC, SWDOWN, GLW, Q2]
+    outputs:
+      - path_pattern: "{OUTPUT_CSV}"
+        description: Timeseries CSV with datetime index
+    preconditions:
+      - wrfout files exist in WRFOUT_DIR
+      - netCDF4 Python package available
+    postconditions:
+      - CSV has datetime column and requested variables
+      - Temperature in K (range 200-340)
+      - Precipitation rate >= 0
+      - No NaN values in core fields
+
+# ============================================================================
+# Skill Documents
+# ============================================================================
+skill_documents:
+  - id: sd_s0
+    name: Configuration
+    file: docs/s0_configuration_skill.md
+    stage: s0_config
+    knowledge_type: procedural
+
+  - id: sd_s1
+    name: WPS Domain Setup
+    file: docs/s1_domain_setup_skill.md
+    stage: s1_domain
+    knowledge_type: procedural
+
+  - id: sd_s2
+    name: Meteorological Forcing
+    file: docs/s2_meteorological_forcing_skill.md
+    stage: s2_forcing
+    knowledge_type: [procedural, evaluative_and_sequencing]
+
+  - id: sd_s3
+    name: Namelist Generation
+    file: docs/s3_namelist_generation_skill.md
+    stage: s3_namelist
+    knowledge_type: [procedural, evaluative_and_sequencing]
+
+  - id: sd_s4
+    name: Initialization
+    file: docs/s4_initialization_skill.md
+    stage: s4_initialization
+    knowledge_type: procedural
+
+  - id: sd_s5
+    name: Model Execution
+    file: docs/s5_execution_skill.md
+    stage: s5_execution
+    knowledge_type: procedural
+
+  - id: sd_s6
+    name: Output Parsing
+    file: docs/s6_output_parsing_skill.md
+    stage: s6_postprocess
+    knowledge_type: procedural
+
+  - id: sd_s7
+    name: Validation
+    file: docs/s7_validation_skill.md
+    stage: s7_validation
+    knowledge_type: evaluative_and_sequencing
+
+# ============================================================================
+# Diagnostic Triplets
+# ============================================================================
+diagnostic_triplets:
+  file: diagnostics/triplets.yaml
+  count: 30
+  failure_domains:
+    - unit_conversion
+    - parameter_format
+    - path_resolution
+    - dependency_mismatch
+    - compilation
+    - runtime
+    - silent_error
+    - environment
+
+# ============================================================================
+# Summary
+# ============================================================================
+summary:
+  tools: 4
+  tool_loc: ~1600
+  skill_documents: 8
+  diagnostic_triplets: 30
+  pipeline_stages: 8
+  physics_suites: [CONUS, tropical]
+  validation_status: source_only

@@ -1,0 +1,633 @@
+# ELM Diagnostic Triplets
+# 20 symptom → diagnosis → remedy entries for the E3SM Land Model
+# Covers unit conversion, parameter format, initialization, runtime, and grid issues
+
+- id: dt_001
+  stage: s2_forcing_data
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Unrealistic energy balance: perpetual snow/ice cover even in tropical regions,
+      ground temperature well below freezing year-round, or model crashes with
+      "temperature out of range" errors.
+    error_pattern: "temp.*out of range|unrealistic.*temperature"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Atmospheric temperature provided in °C instead of K"
+    explanation: >
+      ELM expects air temperature (TBOT) in Kelvin. If Celsius values (e.g., 20°C)
+      are passed, the model interprets them as 20 K (-253°C). This causes the
+      surface energy balance to compute extreme cooling, resulting in perpetual
+      ice/snow cover and eventual numerical failure.
+    affected_components:
+      - atm2lndMod
+      - CanopyFluxesMod
+      - SoilTemperatureMod
+      - SnowHydrologyMod
+  remedy:
+    action: "Convert temperature from °C to K by adding 273.15"
+    tool_to_run: "convert_forcing_to_elm.py"
+    manual_steps:
+      - "Check forcing file: median TBOT should be 250-300 K, not -20 to 40"
+      - "Apply: TBOT_K = TBOT_C + 273.15"
+      - "Rewrite forcing NetCDF with corrected values"
+    prevention: "The forcing converter auto-detects °C vs K and converts"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_002
+  stage: s2_forcing_data
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Extreme flooding or unrealistic drought. If mm/day is passed as mm/s,
+      precipitation is 86400x too high — every grid cell floods. If mm/s is
+      treated as mm/day, precipitation is 86400x too low — extreme drought.
+    error_pattern: "water balance.*error|runoff.*unrealistic"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation in mm/day, mm/hr, or m/day instead of mm/s"
+    explanation: >
+      ELM expects precipitation rate in mm/s (= kg/m²/s). ERA5 provides
+      total precipitation in m/timestep or mm/day. GSWP3 uses mm/3hr.
+      Passing mm/day as mm/s makes rainfall 86400x too intense. A typical
+      10 mm/day rain becomes 10 mm/s = 864,000 mm/day, catastrophically
+      flooding the model.
+    affected_components:
+      - CanopyHydrologyMod
+      - HydrologyNoDrainageMod
+      - SoilHydrologyMod
+  remedy:
+    action: "Divide mm/day by 86400, mm/hr by 3600, or m/day by 86.4"
+    tool_to_run: "convert_forcing_to_elm.py"
+    manual_steps:
+      - "Check: PRECTmms max should be < 0.1 mm/s for most locations"
+      - "If max > 1.0, likely in mm/day → divide by 86400"
+      - "If max > 0.5 but < 30, likely in mm/hr → divide by 3600"
+    prevention: "Use convert_forcing_to_elm.py which auto-detects and converts"
+  severity: silent
+  cross_references: [dt_003, dt_020]
+
+- id: dt_003
+  stage: s2_forcing_data
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Wildly wrong latent heat flux. If relative humidity (0-100%) is passed
+      as specific humidity (kg/kg), the model interprets values like 60 as
+      60 kg/kg of water vapor — physically impossible and causing extreme
+      condensation or numerical overflow.
+    error_pattern: "humidity.*out of range|latent heat.*unrealistic"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Relative humidity (%) passed instead of specific humidity (kg/kg)"
+    explanation: >
+      ELM expects specific humidity (SHUM) in kg/kg, typically 0.001-0.025.
+      Relative humidity (0-100%) or g/kg (1-25) are commonly confused with
+      this. Values > 0.06 kg/kg are physically impossible and indicate unit
+      errors. The conversion from RH to q requires temperature and pressure.
+    affected_components:
+      - BareGroundFluxesMod
+      - CanopyFluxesMod
+      - FrictionVelocityMod
+  remedy:
+    action: "Convert RH to specific humidity using saturation vapor pressure"
+    tool_to_run: "convert_forcing_to_elm.py"
+    manual_steps:
+      - "Check: SHUM values should be 0.0001-0.04 kg/kg"
+      - "If values are 1-100: these are RH% — convert using T and P"
+      - "If values are 1-25: these are g/kg — divide by 1000"
+    prevention: "The forcing converter auto-detects humidity type"
+  severity: silent
+  cross_references: [dt_001, dt_002]
+
+- id: dt_004
+  stage: s2_forcing_data
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Wrong surface energy partitioning. Sensible and latent heat fluxes are
+      systematically too low or too high. Air density computed from pressure
+      is 100x too low (if hPa passed as Pa) or 1000x too low (if kPa).
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Surface pressure in hPa or kPa instead of Pa"
+    explanation: >
+      ELM expects surface pressure (PSRF) in Pa, typically 50000-110000 Pa.
+      Passing hPa (500-1100) or kPa (50-110) causes air density to be
+      computed as 100x or 1000x too low. This affects all turbulent flux
+      calculations (sensible heat, latent heat, momentum) which depend on
+      ρ = P/(R*T).
+    affected_components:
+      - FrictionVelocityMod
+      - BareGroundFluxesMod
+      - CanopyFluxesMod
+  remedy:
+    action: "Multiply hPa by 100 or kPa by 1000 to get Pa"
+    tool_to_run: "convert_forcing_to_elm.py"
+    manual_steps:
+      - "Check: PSRF should be 50000-110000 Pa"
+      - "If values are 500-1100: these are hPa → multiply by 100"
+      - "If values are 50-110: these are kPa → multiply by 1000"
+    prevention: "The forcing converter auto-detects pressure units"
+  severity: silent
+  cross_references: [dt_001, dt_003]
+
+- id: dt_005
+  stage: s3_namelist_setup
+  failure_domain: parameter
+  symptom:
+    description: >
+      Numerical instability: model crashes with floating-point exceptions (FPE),
+      NaN values in soil temperature, or energy balance residuals > 50 W/m².
+      Often occurs in high-latitude or mountainous grid cells.
+    error_pattern: "FPE|NaN|floating.*point|SIGFPE"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Model timestep (dtime) too large for the physics"
+    explanation: >
+      ELM default timestep is 1800s (30 minutes). For certain configurations
+      (high resolution, steep topography, permafrost), this can exceed the
+      CFL stability condition for soil thermal diffusion. Doubling the timestep
+      to 3600s almost always causes instability.
+    affected_components:
+      - SoilTemperatureMod
+      - SnowHydrologyMod
+      - elm_driver
+  remedy:
+    action: "Reduce dtime to 900s or 600s in user_nl_elm"
+    tool_to_run: ""
+    manual_steps:
+      - "Add 'dtime = 900' to user_nl_elm"
+      - "Rebuild namelists: ./preview_namelists"
+      - "Resubmit the run"
+    prevention: "Keep dtime=1800 unless running at very high resolution"
+  severity: degraded
+  cross_references: []
+
+- id: dt_006
+  stage: s1_surface_data
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Zero or extreme photosynthesis. If LAI is in % (0-100) instead of
+      m²/m² (0-12), the canopy is either completely opaque (100% treated as
+      100 m²/m²) or negligible (1% treated as 0.01 m²/m²).
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Leaf Area Index in wrong units (% or fraction instead of m²/m²)"
+    explanation: >
+      ELM expects MONTHLY_LAI in m²/m², typical range 0-12. Values from some
+      remote sensing products may be in different units or have scale factors.
+      MODIS LAI has a scale factor of 0.1 that must be applied.
+    affected_components:
+      - SatellitePhenologyMod
+      - CanopyFluxesMod
+      - PhotosynthesisMod
+  remedy:
+    action: "Verify LAI is in m²/m² with values 0-12"
+    tool_to_run: "convert_surface_data.py"
+    manual_steps:
+      - "Check MONTHLY_LAI range in surfdata.nc"
+      - "If max > 15: likely has wrong scale factor"
+      - "If values are 0-1: might be fraction — multiply by typical max LAI"
+    prevention: "validate_outputs in convert_surface_data.py checks range"
+  severity: silent
+  cross_references: [dt_015]
+
+- id: dt_007
+  stage: s1_surface_data
+  failure_domain: input_validation
+  symptom:
+    description: >
+      Fatal crash during initialization with "invalid soil hydraulic parameters"
+      or negative porosity. Occurs when reading the surface dataset.
+    error_pattern: "invalid.*hydraulic|negative.*porosity|soil.*error"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Sand + clay percentages sum to more than 100%"
+    explanation: >
+      ELM computes silt as 100 - sand - clay. If sand + clay > 100, silt
+      becomes negative, which is used to compute soil hydraulic parameters
+      (saturated conductivity, wilting point, field capacity). Negative silt
+      produces physically impossible hydraulic parameters that crash the model.
+    affected_components:
+      - FuncPedotransferMod
+      - SoilHydrologyMod
+      - initVerticalMod
+  remedy:
+    action: "Ensure sand + clay <= 100% for all soil layers"
+    tool_to_run: "convert_surface_data.py"
+    manual_steps:
+      - "Check surfdata.nc: ncdump -v PCT_SAND,PCT_CLAY surfdata.nc"
+      - "Verify sand[i] + clay[i] <= 100 for all layers"
+      - "If > 100, normalize: sand = sand/(sand+clay)*100, clay = 100-sand"
+    prevention: "validate_outputs in convert_surface_data.py catches this"
+  severity: fatal
+  cross_references: [dt_011]
+
+- id: dt_008
+  stage: s3_namelist_setup
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Model fails to start with "STOP: No valid entries in namelist" or
+      "Fortran runtime error: bad integer for item in namelist". The namelist
+      file cannot be parsed.
+    error_pattern: "No valid entries|bad.*namelist|namelist.*error"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Double quotes used in Fortran namelist instead of single quotes"
+    explanation: >
+      Fortran namelists require single quotes for character strings. Double
+      quotes are not valid Fortran namelist syntax, even though they work in
+      many other contexts. This is especially common when using Python or
+      shell scripts to generate namelists — they default to double quotes.
+    affected_components:
+      - CIME build-namelist
+      - elm_initializeMod
+  remedy:
+    action: "Replace all double quotes with single quotes in user_nl_elm and lnd_in"
+    tool_to_run: ""
+    manual_steps:
+      - "Open user_nl_elm"
+      - "Replace all \" with '"
+      - "Rebuild namelists: ./preview_namelists"
+    prevention: "run_elm.py configure_namelist function ensures single quotes"
+  severity: fatal
+  cross_references: []
+
+- id: dt_009
+  stage: s4_initial_conditions
+  failure_domain: initialization
+  symptom:
+    description: >
+      Unrealistic carbon cycle: TOTSOMC near zero, NEE strongly negative
+      (large carbon sink), heterotrophic respiration near zero, while GPP
+      looks reasonable. The model appears to absorb carbon indefinitely.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "BGC simulation started without spin-up (cold start)"
+    explanation: >
+      Cold-start ELM initializes all soil carbon pools to zero. Since soil
+      organic carbon takes 200-1000 years to accumulate, a production run
+      from cold start has essentially no decomposable substrate. GPP is
+      controlled by leaf properties and is unaffected, but heterotrophic
+      respiration (HR) is near zero because there's nothing to decompose.
+      NEE = -GPP + HR ≈ -GPP (large negative = unrealistic sink).
+    affected_components:
+      - CNCarbonStateType
+      - SoilLittDecompMod
+      - EcosystemDynMod
+  remedy:
+    action: "Run 200-500 year spin-up before production simulation"
+    tool_to_run: ""
+    manual_steps:
+      - "Create AD spin-up case: spinup_state=1, run 200+ years"
+      - "Switch to normal mode: spinup_state=0, run 100+ more years"
+      - "Use final restart as finidat for production run"
+      - "Verify TOTECOSYSC is stable (< 1% annual change)"
+    prevention: "Always check TOTSOMC in first year — if near zero, spin-up is needed"
+  severity: degraded
+  cross_references: [dt_018]
+
+- id: dt_010
+  stage: s2_forcing_data
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Incorrect canopy radiation absorption profile. If total shortwave is
+      provided without splitting into direct/diffuse and visible/near-infrared
+      components, the canopy radiative transfer is wrong.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Shortwave radiation provided as total only, not split into components"
+    explanation: >
+      ELM's two-stream canopy radiation model needs separate direct/diffuse
+      and visible/near-infrared components. DATM can handle total-only input
+      by applying empirical splitting functions, but results are less accurate.
+      If the splitting is done incorrectly, canopy absorption can be 20-30% wrong.
+    affected_components:
+      - SurfaceAlbedoMod
+      - SurfaceRadiationMod
+  remedy:
+    action: "Ensure DATM is configured for appropriate SW splitting"
+    tool_to_run: ""
+    manual_steps:
+      - "Check if source data has separate direct/diffuse components"
+      - "If total only: DATM applies default splitting (OK for most cases)"
+      - "For higher accuracy, provide 4-component SW (direct vis/nir, diffuse vis/nir)"
+    prevention: "Document the SW splitting method used in forcing preparation"
+  severity: silent
+  cross_references: []
+
+- id: dt_011
+  stage: s1_surface_data
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Wrong soil thermal conductivity in organic-rich or permafrost soils.
+      Soil temperatures in upper layers are systematically too warm or too cold
+      compared to observations.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Soil organic matter in wrong units (% or g/g instead of kg/m³)"
+    explanation: >
+      ELM expects ORGANIC in kg/m³ (typical range 0-130). Organic matter
+      strongly affects soil thermal conductivity and water retention. If
+      values from SoilGrids (in g/kg or %) are passed without conversion,
+      organic content is either vastly over- or under-estimated, causing
+      wrong thermal properties especially important for permafrost simulations.
+    affected_components:
+      - SoilTemperatureMod
+      - initVerticalMod
+  remedy:
+    action: "Convert organic matter to kg/m³"
+    tool_to_run: "convert_surface_data.py"
+    manual_steps:
+      - "If source is in % (0-100): multiply by ~13 (approx bulk density × 10)"
+      - "If source is in g/kg: multiply by bulk density / 1000"
+      - "Verify final values 0-130 kg/m³"
+    prevention: "validate_outputs in convert_surface_data.py checks range"
+  severity: silent
+  cross_references: [dt_007]
+
+- id: dt_012
+  stage: s3_namelist_setup
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      GPP magnitude is 30-50% too high or too low compared to expectations.
+      All other forcing data is correct but carbon fluxes are systematically
+      biased.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "CO2 concentration (co2_ppmv) set to wrong value or wrong units"
+    explanation: >
+      ELM expects CO2 in ppmv (parts per million by volume). For 1850
+      simulations, co2_ppmv should be ~284.7; for 2000, ~370; for present day,
+      ~420. If the wrong value is used, photosynthesis rates are directly
+      affected through the Farquhar model. If CO2 is passed in mol/mol or Pa
+      units (values ~0.0004 or ~40), GPP will be essentially zero.
+    affected_components:
+      - PhotosynthesisMod
+      - CanopyFluxesMod
+  remedy:
+    action: "Set co2_ppmv to the correct value for your simulation period"
+    tool_to_run: ""
+    manual_steps:
+      - "For 1850: co2_ppmv = 284.7"
+      - "For 2000: co2_ppmv = 369.0"
+      - "For 2020: co2_ppmv = 412.0"
+      - "Verify units are ppmv, NOT mol/mol or Pa"
+    prevention: "Check co2_ppmv matches the compset time period"
+  severity: silent
+  cross_references: []
+
+- id: dt_013
+  stage: s2_forcing_data
+  failure_domain: calendar
+  symptom:
+    description: >
+      Date drift over multi-year simulations: forcing data and model time
+      gradually desynchronize. After several years, January forcing data is
+      applied in February.
+    error_pattern: "calendar.*mismatch|date.*error"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Calendar mismatch between forcing data and model (noleap vs gregorian)"
+    explanation: >
+      ELM typically uses a noleap (365-day) calendar. If forcing data uses
+      a gregorian calendar (with leap years), the time axes diverge by 1 day
+      every 4 years. After 120 years, forcing is misaligned by a full month.
+      DATM can handle this if configured correctly, but misconfiguration
+      causes the drift.
+    affected_components:
+      - DATM
+      - elm_driver
+  remedy:
+    action: "Ensure forcing data calendar matches the model calendar"
+    tool_to_run: ""
+    manual_steps:
+      - "Check model calendar: grep calendar lnd_in"
+      - "Check forcing calendar: ncdump -h forcing.nc | grep calendar"
+      - "If mismatch: either convert forcing to noleap or configure DATM for gregorian"
+    prevention: "Always specify calendar='noleap' when writing forcing NetCDF"
+  severity: degraded
+  cross_references: []
+
+- id: dt_014
+  stage: s1_surface_data
+  failure_domain: grid
+  symptom:
+    description: >
+      Model runs but results make no sense for the study location: tropical
+      site shows tundra vegetation responses, or vice versa. No error messages.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Latitude orientation flipped in surface or forcing data"
+    explanation: >
+      Some datasets store latitude from North to South (90 to -90), while ELM
+      and most climate data use South to North (-90 to 90). If the orientation
+      is wrong, grid cell (40°N, 117°E) gets data for (40°S, 117°E) — a
+      completely different climate zone.
+    affected_components:
+      - atm2lndMod
+      - mksurfdata_map
+  remedy:
+    action: "Verify latitude orientation in all input files"
+    tool_to_run: ""
+    manual_steps:
+      - "Check: ncdump -v lat forcing.nc | head → should increase from S to N"
+      - "If decreasing: flip the latitude dimension"
+      - "Verify surface data lat matches forcing data lat orientation"
+    prevention: "Always check lat[0] < lat[-1] before writing input files"
+  severity: silent
+  cross_references: [dt_015]
+
+- id: dt_015
+  stage: s1_surface_data
+  failure_domain: input_validation
+  symptom:
+    description: >
+      Energy and water balance do not close. Some grid cells have excess or
+      deficit energy/water. Spatial patterns of fluxes show discontinuities.
+    error_pattern: "balance.*error|missing.*area"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "PFT fractions do not sum to 100% per grid cell"
+    explanation: >
+      ELM requires that all PFT fractions (PCT_NAT_PFT) sum to exactly 100%
+      for each grid cell. If the sum is < 100%, some land area is unaccounted
+      for; if > 100%, area is double-counted. Both cause energy/water balance
+      errors because fluxes are weighted by PFT fraction.
+    affected_components:
+      - initSubgridMod
+      - subgridAveMod
+  remedy:
+    action: "Normalize PFT fractions to sum to 100%"
+    tool_to_run: "convert_surface_data.py"
+    manual_steps:
+      - "Check: sum PCT_NAT_PFT for each grid cell"
+      - "If != 100: pft_frac = pft_frac / sum(pft_frac) * 100"
+    prevention: "validate_outputs in convert_surface_data.py checks the sum"
+  severity: degraded
+  cross_references: [dt_006, dt_014]
+
+- id: dt_016
+  stage: s6_execution
+  failure_domain: runtime
+  symptom:
+    description: >
+      Model crashes during initialization with "decomposition failed" or
+      "invalid processor layout" error. Cannot start the simulation.
+    error_pattern: "decomposition.*failed|invalid.*layout|proc.*error"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "MPI task count doesn't match the grid decomposition requirements"
+    explanation: >
+      ELM decomposes the global grid across MPI tasks. Some task counts
+      cannot evenly divide certain grids, causing the decomposition algorithm
+      to fail. This is especially common with non-standard grids or very
+      small task counts.
+    affected_components:
+      - decompInitMod
+      - decompMod
+  remedy:
+    action: "Adjust NTASKS_LND to be compatible with the grid"
+    tool_to_run: ""
+    manual_steps:
+      - "Try common task counts: 1, 2, 4, 8, 16, 32"
+      - "./xmlchange NTASKS_LND=4"
+      - "./case.setup --reset && ./case.build"
+    prevention: "Use power-of-2 task counts for safe decomposition"
+  severity: fatal
+  cross_references: []
+
+- id: dt_017
+  stage: s6_execution
+  failure_domain: dependency
+  symptom:
+    description: >
+      Runtime crash: "error while loading shared libraries: libnetcdf.so:
+      cannot open shared object file" or similar library-not-found errors.
+    error_pattern: "libnetcdf|libhdf5|cannot open shared|library not found"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "NetCDF or HDF5 shared library not in LD_LIBRARY_PATH at runtime"
+    explanation: >
+      ELM links dynamically against NetCDF and HDF5 libraries. If the
+      runtime environment doesn't have these in LD_LIBRARY_PATH (common when
+      batch scheduler resets environment), the executable fails at startup.
+    affected_components:
+      - e3sm binary
+  remedy:
+    action: "Load NetCDF/HDF5 modules in the job script"
+    tool_to_run: ""
+    manual_steps:
+      - "Check: ldd $(./xmlquery --value EXEROOT)/e3sm.exe | grep 'not found'"
+      - "Load missing modules: module load netcdf hdf5"
+      - "Or set LD_LIBRARY_PATH explicitly in env_mach_specific.xml"
+    prevention: "Verify library paths before submitting"
+  severity: fatal
+  cross_references: []
+
+- id: dt_018
+  stage: s4_initial_conditions
+  failure_domain: initialization
+  symptom:
+    description: >
+      Model starts but soil moisture and temperature profiles show unrealistic
+      patterns. Spatial discontinuities in surface fluxes. Values are wrong
+      for the first several years, then gradually improve.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Initial conditions file (finidat) from a different resolution or grid"
+    explanation: >
+      If finidat was generated for a different grid (e.g., 1° global) and used
+      for a different resolution (e.g., regional 0.25°), the interpolation
+      introduces artifacts. Soil state variables may not be physically
+      consistent after interpolation (e.g., ice in warm regions, saturated
+      soil in deserts).
+    affected_components:
+      - initInterp
+      - elm_initializeMod
+  remedy:
+    action: "Run additional 20-50 years of spin-up after interpolation"
+    tool_to_run: ""
+    manual_steps:
+      - "Use interpinic tool: ./interpinic -i old_finidat.nc -o new_finidat.nc"
+      - "Run 20-50 year adjustment period before production"
+      - "Or use cold start with full spin-up for best results"
+    prevention: "Generate finidat at the target resolution whenever possible"
+  severity: silent
+  cross_references: [dt_009]
+
+- id: dt_019
+  stage: s6_execution
+  failure_domain: runtime
+  symptom:
+    description: >
+      Model crashes mid-run with "No space left on device" or stops writing
+      output. History files consume more disk than expected.
+    error_pattern: "No space left|disk quota|write error|I/O error"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "History file output exceeds available disk space"
+    explanation: >
+      ELM history files can be very large, especially with high-frequency
+      output (hourly or sub-hourly) at high resolution. A single year of
+      hourly global output at 1° resolution can be 50+ GB. Many users
+      don't anticipate this and run out of space.
+    affected_components:
+      - histFileMod
+  remedy:
+    action: "Reduce output frequency or variable count"
+    tool_to_run: ""
+    manual_steps:
+      - "Use hist_empty_htapes = .true. to clear defaults"
+      - "Only include needed variables in hist_fincl1"
+      - "Use monthly output (hist_nhtfrq=0) unless sub-monthly is required"
+      - "Enable compression: hist_ndens = 2"
+    prevention: "Estimate output size: n_vars × n_gridcells × n_timesteps × 4 bytes"
+  severity: fatal
+  cross_references: []
+
+- id: dt_020
+  stage: s7_output_analysis
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Runoff or carbon flux values are 86400x too high when comparing to
+      observations. Annual runoff is reported as thousands of mm/yr instead
+      of hundreds. GPP is reported as millions of gC/m²/yr.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "ELM output flux rates (mm/s, gC/m²/s) treated as daily totals"
+    explanation: >
+      All ELM flux outputs are in per-second rates. QRUNOFF is mm/s (not
+      mm/day), GPP is gC/m²/s (not gC/m²/day). Forgetting to multiply by
+      86400 when computing daily totals, or conversely treating already
+      per-second rates as daily, causes 86400x errors in either direction.
+    affected_components:
+      - parse_elm_output.py
+      - user analysis scripts
+  remedy:
+    action: "Multiply per-second rates by 86400 for daily, by 86400×365 for annual"
+    tool_to_run: "parse_elm_output.py --to_daily"
+    manual_steps:
+      - "QRUNOFF_mm_day = QRUNOFF_mm_s × 86400"
+      - "GPP_gC_m2_day = GPP_gC_m2_s × 86400"
+      - "Use --to_daily flag in parse_elm_output.py"
+    prevention: "Always check output variable units with ncdump -h before analysis"
+  severity: silent
+  cross_references: [dt_002]

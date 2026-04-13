@@ -1,0 +1,1 @@
+/mnt/disk1/Hydrocraft_server/Hydrocraft/skills/vic_cali_ai/run_bengbu_ai_calibration.py

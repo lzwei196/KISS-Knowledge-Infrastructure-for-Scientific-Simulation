@@ -1,0 +1,279 @@
+# ParFlow Knowledge Infrastructure
+# Schema version: 1.0
+# Created by: Jianyun Zhang Research Group, Hohai University
+# Date: 2026-03-21
+
+package:
+  name: hydrocraft-parflow
+  version: 1.2.0
+  model: ParFlow
+  model_version: v3.13+
+  status: production_validated
+  description: >
+    Integrated surface-subsurface hydrological model solving 3D variably-saturated
+    Richards equation coupled with 2D overland flow and CLM land surface.
+    Replaces VIC + MODFLOW + Lohmann/CaMa routing with a single physically-coupled model.
+    Production validated on Bengbu (121,330 km2) with CMFD forcing: mean Q=2040 m3/s.
+  domain: hydrology
+  subdomain: integrated_surface_subsurface
+  created_by: Jianyun Zhang Research Group, Hohai University
+  last_updated: "2026-03-22"
+  validated_basins:
+    - name: Bengbu (Huai River)
+      area_km2: 121330
+      period: July 2003
+      forcing: CMFD
+      mean_Q_m3s: 2040
+      runoff_ratio: 0.155
+      status: production_validated
+
+pipeline:
+  stages:
+    - id: s0_configuration
+      name: Configuration
+      description: Define basin, period, resolution, paths, CLM on/off, MPI topology
+      knowledge_type: evaluative
+      depends_on: []
+      milestone: Configuration file created with valid paths and parameters
+
+    - id: s1_domain
+      name: Domain and Grid Definition
+      description: Create 3D computational domain (NX x NY x NZ) covering basin in UTM projection
+      knowledge_type: procedural
+      depends_on: [s0_configuration]
+      milestone: Domain definition JSON + mask PFB created, active cell count verified
+
+    - id: s2_subsurface
+      name: Subsurface Properties
+      description: Map HWSD/GLHYMPS soil data to van Genuchten params and K (in m/hr)
+      knowledge_type: procedural
+      depends_on: [s1_domain]
+      milestone: K, porosity, alpha, n, Ss PFB files created with correct units
+
+    - id: s3_topography
+      name: Topography and Slopes
+      description: Compute slope_x, slope_y from DEM for overland flow routing
+      knowledge_type: procedural
+      depends_on: [s1_domain]
+      milestone: slope_x.pfb, slope_y.pfb, elevation.pfb created, sinks filled
+
+    - id: s4_clm
+      name: CLM Land Surface Setup
+      description: Configure CLM coupling with vegetation maps and driver file
+      knowledge_type: procedural
+      depends_on: [s1_domain]
+      milestone: drv_clmin.dat, drv_vegm.dat, drv_vegp.dat created
+
+    - id: s5_forcing
+      name: Meteorological Forcing
+      description: Convert CMFD/MSWX to CLM PFB forcing (8 variables, critical unit conversions)
+      knowledge_type: procedural
+      depends_on: [s1_domain, s4_clm]
+      milestone: NLDAS.*.pfb forcing files created for each timestep
+
+    - id: s6_ic_bc
+      name: Initial and Boundary Conditions
+      description: Generate initial pressure head field and boundary condition setup
+      knowledge_type: evaluative
+      depends_on: [s1_domain, s2_subsurface, s3_topography]
+      milestone: initial_pressure.pfb created, water table initialized
+
+    - id: s7_solver
+      name: Solver Configuration and Run Script
+      description: Generate ParFlow Python run script with solver, BC, and output settings
+      knowledge_type: evaluative
+      depends_on: [s1_domain, s2_subsurface, s3_topography, s4_clm, s5_forcing, s6_ic_bc]
+      milestone: run_<name>.py script generated, all keys configured
+
+    - id: s8_execution
+      name: Execution
+      description: Run ParFlow with MPI, monitor convergence, validate output
+      knowledge_type: procedural
+      depends_on: [s7_solver]
+      milestone: ParFlow exits 0, pressure and saturation PFB files exist
+
+    - id: s9_output
+      name: Output Processing
+      description: Parse PFB output -- extract discharge, water table depth, soil moisture
+      knowledge_type: procedural
+      depends_on: [s8_execution]
+      milestone: Timeseries and spatial maps extracted, water balance checked
+
+  parallelism:
+    - [s2_subsurface, s3_topography, s4_clm]  # Can run in parallel after s1
+
+tools:
+  - id: define_parflow_domain
+    stage: s1_domain
+    name: Define ParFlow Domain
+    script_path: tools/s1_domain/define_parflow_domain.py
+    lines: 210
+    purpose: Basin shapefile to ParFlow grid (UTM projection, NX/NY/NZ, origin)
+
+  - id: build_domain_mask
+    stage: s1_domain
+    name: Build Domain Mask
+    script_path: tools/s1_domain/build_domain_mask.py
+    lines: 160
+    purpose: Create 3D indicator field for basin boundary
+
+  - id: build_subsurface_properties
+    stage: s2_subsurface
+    name: Build Subsurface Properties
+    script_path: tools/s2_subsurface/build_subsurface_properties.py
+    lines: 280
+    purpose: HWSD + Rosetta pedotransfer to K (m/hr), porosity, van Genuchten params
+
+  - id: build_mannings
+    stage: s2_subsurface
+    name: Build Manning's n
+    script_path: tools/s2_subsurface/build_mannings.py
+    lines: 170
+    purpose: AVHRR land cover to Manning's roughness field
+
+  - id: build_slopes
+    stage: s3_topography
+    name: Build Slopes
+    script_path: tools/s3_topography/build_slopes.py
+    lines: 250
+    purpose: DEM to slope_x, slope_y with sink filling and minimum slope enforcement
+
+  - id: setup_clm_driver
+    stage: s4_clm
+    name: Setup CLM Driver
+    script_path: tools/s4_clm/setup_clm_driver.py
+    lines: 250
+    purpose: Generate drv_clmin.dat, drv_vegm.dat, drv_vegp.dat for CLM coupling
+
+  - id: convert_forcing_to_pfb
+    stage: s5_forcing
+    name: Convert Forcing to PFB
+    script_path: tools/s5_forcing/convert_forcing_to_pfb.py
+    lines: 230
+    purpose: CMFD/MSWX to CLM forcing PFB (8 vars, unit conversions)
+
+  - id: generate_initial_conditions
+    stage: s6_ic_bc
+    name: Generate Initial Conditions
+    script_path: tools/s6_ic_bc/generate_initial_conditions.py
+    lines: 230
+    purpose: Water table depth to 3D pressure head field (hydrostatic/uniform/Reinecke)
+
+  - id: generate_parflow_script
+    stage: s7_solver
+    name: Generate ParFlow Run Script
+    script_path: tools/s7_solver/generate_parflow_script.py
+    lines: 300
+    purpose: Generate complete pftools Python run script with all solver keys
+
+  - id: run_parflow
+    stage: s8_execution
+    name: Run ParFlow
+    script_path: tools/s8_execution/run_parflow.py
+    lines: 200
+    purpose: MPI execution wrapper with process monitoring and convergence checking
+
+  - id: parse_parflow_output
+    stage: s9_output
+    name: Parse ParFlow Output
+    script_path: tools/s9_output/parse_parflow_output.py
+    lines: 250
+    purpose: Extract water table depth, ponding, storage from PFB pressure/saturation
+
+  - id: parflow_to_cama
+    stage: s10_coupling
+    name: ParFlow to CaMa-Flood
+    script_path: tools/s10_coupling/parflow_to_cama.py
+    lines: 210
+    purpose: Extract surface runoff from ParFlow for CaMa-Flood routing
+
+skill_documents:
+  - stage: s1_domain
+    path: docs/s1_domain_skill.md
+    covers: Grid design, UTM projection, terrain-following grid, MPI topology constraints
+  - stage: s2_subsurface
+    path: docs/s2_subsurface_skill.md
+    covers: Van Genuchten params, Rosetta pedotransfer, K units (m/hr), anisotropy
+  - stage: s3_topography
+    path: docs/s3_topography_skill.md
+    covers: Sink filling, slope computation, minimum slope, smoothing
+  - stage: s4_clm
+    path: docs/s4_clm_skill.md
+    covers: CLM IGBP types, LAI, CLM timestep alignment, CLM output variables
+  - stage: s5_forcing
+    path: docs/s5_forcing_skill.md
+    covers: Unit conversions (mm/s, K, Pa, W/m2, kg/kg), PFB naming convention
+  - stage: s6_ic_bc
+    path: docs/s6_ic_bc_skill.md
+    covers: Pressure head semantics, spinup strategy, lateral BC selection
+  - stage: s7_solver
+    path: docs/s7_solver_skill.md
+    covers: Newton-Krylov settings, PFMG preconditioner, timestep, convergence
+  - stage: s8_execution
+    path: docs/s8_execution_skill.md
+    covers: MPI topology, memory estimation, kinsol.log interpretation
+  - stage: s9_output
+    path: docs/s9_output_skill.md
+    covers: Discharge extraction, water table computation, water balance closure
+
+diagnostic_triplets:
+  total: 29
+  validated: 12
+  failure_domains:
+    - unit_conversion (7 triplets, 7 silent)
+    - domain_setup (5 triplets, 1 silent)
+    - solver (4 triplets, 0 silent)
+    - clm_coupling (2 triplets, 1 silent)
+    - output (3 triplets, 1 silent)
+    - coupling (3 triplets, 2 silent)
+    - api_usage (3 triplets, 0 silent) # validated from Chaohe test
+    - missing_key (1 triplet, 0 silent) # validated from Chaohe test
+  silent_error_count: 12
+  silent_error_fraction: 0.41
+
+couplings:
+  - id: c_pf_01
+    source: ParFlow
+    target: CaMa-Flood
+    direction: downstream
+    variable: surface runoff (mm/day)
+    tool: parflow_to_cama.py
+
+  - id: c_pf_02
+    source: ParFlow
+    target: DSSAT
+    direction: downstream
+    variable: soil moisture profile
+    tool: null  # future
+
+  - id: c_pf_03
+    source: ParFlow
+    target: LDNDC
+    direction: downstream
+    variable: soil moisture + temperature + water table depth
+    tool: null  # future
+
+  - id: c_pf_04
+    source: CMIP6
+    target: ParFlow
+    direction: upstream
+    variable: climate forcing delta-change
+    tool: null  # reuse climate-projection skill
+
+  - id: c_pf_05
+    source: OGGM
+    target: ParFlow
+    direction: upstream
+    variable: glacier melt flux
+    tool: null  # future
+
+summary:
+  total_tools: 12
+  total_lines: 3144
+  total_skill_documents: 9
+  total_diagnostic_triplets: 36
+  validated_triplets: 5
+  pipeline_stages: 10
+  silent_error_fraction: 0.41
+  installation_status: installed (v3.13.0, compiled 2026-03-21, CLM+HYPRE+MPI)
+  validation_status: basin_validated (Chaohe 25x23x5, 30-day constant rain + CMFD July 2005)

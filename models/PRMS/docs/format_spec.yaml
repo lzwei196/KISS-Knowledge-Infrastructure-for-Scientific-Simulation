@@ -1,0 +1,182 @@
+model:
+  name: "PRMS"
+  version: "5.1.0"
+  full_name: "Precipitation-Runoff Modeling System"
+  domain: "hydrology"
+  developer: "USGS"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PRMS/source/repo/prms/prms_hpc"
+  unit_system: "US customary (Fahrenheit, inches, acres, feet, cfs)"
+
+inputs:
+  control_file:
+    format: "plain text with #### delimiters"
+    type_codes:
+      1: "long integer"
+      2: "float"
+      3: "double"
+      4: "string"
+
+  forcing:
+    - name: "tmax"
+      description: "Daily maximum temperature"
+      unit: "degrees Fahrenheit"
+      valid_range: [-40, 130]
+    - name: "tmin"
+      description: "Daily minimum temperature"
+      unit: "degrees Fahrenheit"
+      valid_range: [-60, 120]
+    - name: "precip"
+      description: "Daily precipitation"
+      unit: "inches/day"
+      valid_range: [0, 30]
+    - name: "runoff"
+      description: "Observed streamflow (optional, for calibration)"
+      unit: "cfs"
+      valid_range: [0, 1000000]
+
+  parameters:
+    critical:
+      - name: "hru_area"
+        unit: "acres"
+        valid_range: [1, 50000]
+        description: "Area of each HRU"
+      - name: "hru_elev"
+        unit: "feet (elev_units=0) or meters (elev_units=1)"
+        valid_range: [0, 15000]
+        description: "Mean elevation of each HRU"
+      - name: "hru_lat"
+        unit: "decimal degrees"
+        valid_range: [-90, 90]
+        description: "Latitude of HRU centroid"
+      - name: "soil_moist_max"
+        unit: "inches"
+        valid_range: [1, 20]
+        description: "Maximum soil moisture storage capacity"
+      - name: "soil_rechr_max"
+        unit: "inches"
+        valid_range: [0.5, 10]
+        description: "Maximum recharge zone capacity"
+      - name: "gwflow_coef"
+        unit: "fraction/day"
+        valid_range: [0.001, 0.5]
+        description: "Groundwater linear flow coefficient"
+      - name: "slowcoef_lin"
+        unit: "fraction/day"
+        valid_range: [0.001, 0.5]
+        description: "Linear interflow coefficient"
+      - name: "fastcoef_lin"
+        unit: "fraction/day"
+        valid_range: [0.001, 1.0]
+        description: "Linear preferential flow coefficient"
+      - name: "ssr2gw_rate"
+        unit: "fraction/day"
+        valid_range: [0.001, 0.5]
+        description: "Subsurface to groundwater transfer rate"
+      - name: "smidx_coef"
+        unit: "fraction"
+        valid_range: [0.001, 0.06]
+        description: "Surface runoff SMIDX coefficient"
+      - name: "smidx_exp"
+        unit: "1/inch"
+        valid_range: [0.1, 0.5]
+        description: "Surface runoff SMIDX exponent"
+      - name: "tmax_allsnow"
+        unit: "degrees Fahrenheit"
+        valid_range: [28, 40]
+        description: "Tmax below which all precip is snow"
+      - name: "tmax_allrain"
+        unit: "degrees Fahrenheit"
+        valid_range: [35, 50]
+        description: "Tmax above which all precip is rain"
+
+  dimensions:
+    - name: "nhru"
+      description: "Number of Hydrologic Response Units"
+      typical_range: [1, 100000]
+    - name: "nsegment"
+      description: "Number of stream segments"
+      typical_range: [1, 100000]
+    - name: "ngw"
+      description: "Number of groundwater reservoirs (= nhru)"
+    - name: "nssr"
+      description: "Number of subsurface reservoirs (= nhru)"
+    - name: "nobs"
+      description: "Number of streamflow observation stations"
+      typical_range: [0, 10]
+
+outputs:
+  primary:
+    - name: "basin_cfs"
+      description: "Total basin streamflow"
+      unit: "cfs"
+      valid_range: [0, 1000000]
+    - name: "basin_ppt"
+      description: "Basin-average precipitation"
+      unit: "inches/day"
+      valid_range: [0, 30]
+    - name: "basin_actet"
+      description: "Basin actual evapotranspiration"
+      unit: "inches/day"
+      valid_range: [0, 1]
+    - name: "basin_potet"
+      description: "Basin potential evapotranspiration"
+      unit: "inches/day"
+      valid_range: [0, 1]
+    - name: "basin_tmax"
+      description: "Basin maximum temperature"
+      unit: "degrees Fahrenheit"
+      valid_range: [-40, 130]
+    - name: "basin_tmin"
+      description: "Basin minimum temperature"
+      unit: "degrees Fahrenheit"
+      valid_range: [-60, 120]
+    - name: "basin_soil_moist"
+      description: "Basin soil moisture"
+      unit: "inches"
+      valid_range: [0, 20]
+    - name: "basin_gwstor"
+      description: "Basin groundwater storage"
+      unit: "inches"
+      valid_range: [0, 50]
+    - name: "basin_snowcov"
+      description: "Basin snow cover fraction"
+      unit: "fraction"
+      valid_range: [0, 1]
+    - name: "basin_swrad"
+      description: "Basin shortwave radiation"
+      unit: "Langleys/day"
+      valid_range: [0, 900]
+
+  output_formats:
+    - "CSV (csvON_OFF=1): daily comma-separated basin summary"
+    - "StatVar (statsON_OFF=1): selected variables at each timestep"
+    - "Basin Summary (basinOutON_OFF=1): daily/monthly/yearly averages"
+    - "NHru Summary (nhruOutON_OFF=1): per-HRU output for selected variables"
+
+unit_conversions:
+  - from: "Celsius"
+    to: "Fahrenheit"
+    formula: "F = C * 9/5 + 32"
+    trap: "Off by ~50 if unconverted"
+  - from: "mm/day"
+    to: "inches/day"
+    formula: "in = mm / 25.4"
+    trap: "25.4x too much precip"
+  - from: "meters"
+    to: "feet"
+    formula: "ft = m / 0.3048"
+    trap: "Lapse rate errors"
+  - from: "km2"
+    to: "acres"
+    formula: "acres = km2 * 247.105"
+    trap: "Water balance wrong by orders of magnitude"
+  - from: "m3/s"
+    to: "cfs"
+    formula: "cfs = cms / 0.028317"
+    trap: "Calibration mismatch"
+
+known_issues:
+  - "NSE=-1.09 on Wangjiaba with transferred parameters (no local calibration)"
+  - "Parameters transferred from Bengbu without re-calibration produce PBIAS=41%"
+  - "-C flag requires no space: -C/path/to/control (not -C /path/to/control)"
+  - "Data file columns are positional, not name-matched"

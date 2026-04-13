@@ -1,0 +1,33 @@
+# ============================================================================
+# Error Log — EPA SWMM Knowledge Infrastructure
+# ============================================================================
+# Records actual errors encountered during HydroCraft validation testing.
+# Each entry links to a diagnostic triplet (dt_XXX) in triplets.yaml.
+# Sorted chronologically.
+# ============================================================================
+
+errors:
+
+  - date: "2026-03-20"
+    triplet_id: dt_021
+    model: "SWMM via pyswmm"
+    basin: "Shunqing (顺庆), Sichuan"
+    inp_file: "data/swmm/shunqing/shunqing.inp"
+    environment:
+      pyswmm_version: "2.1.0"
+      python_version: "3.12"
+      os: "Linux"
+    error_message: "AttributeError: 'Simulation' object has no attribute 'routing_error'"
+    context: >
+      SWMM simulation of Shunqing urban drainage network (106 subcatchments, CMS units)
+      completed successfully. Post-simulation code attempted to read continuity errors
+      via Simulation.routing_error and Simulation.runoff_error attributes, which no
+      longer exist in pyswmm v2.1.0.
+    resolution: >
+      Switched to parsing the .rpt file for continuity error percentages instead of
+      using the deprecated Simulation object attributes. Used check_continuity_errors.py
+      tool which reads the RPT file directly.
+    status: "resolved"
+    test_data_source: "https://github.com/Zhiyu014/GNN-UDS"
+    additional_test_models:
+      - "data/swmm/chaohu/chaohu.inp (Chaohu, Anhui, 31 subcatchments, LPS)"

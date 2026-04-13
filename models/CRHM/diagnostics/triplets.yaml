@@ -1,0 +1,744 @@
+# ============================================================================
+# Diagnostic Triplets -- CRHM (Cold Regions Hydrological Model)
+# ============================================================================
+# 18 triplets covering cold-regions-specific failure modes, VIC coupling
+# errors, and .prj/.obs format issues. Priority on SILENT errors (37% of
+# all model errors per PREFLIGHT.md).
+#
+# Failure domains: unit_conversion, silent_error, parameter_format,
+#   dependency_mismatch, path_resolution, runtime, compilation
+# ============================================================================
+
+triplets:
+
+  # ---- UNIT CONVERSION ERRORS (the #1 silent error category) ----
+
+  - id: dt_001
+    stage: "s2_observation_data"
+    failure_domain: "unit_conversion"
+    symptom:
+      description: >
+        CRHM simulation runs to completion but SWE accumulates indefinitely,
+        never melting completely in summer. Sublimation is near zero. ET is
+        unrealistically low. No error message is produced.
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Specific humidity (kg/kg) passed as relative humidity (%) in .obs file"
+      explanation: >
+        VIC forcing provides specific humidity (values 0.001-0.02 kg/kg).
+        CRHM expects relative humidity (values 0-100%). If specific humidity
+        is written directly to the .obs file, CRHM interprets 0.005 as 0.005%
+        RH -- essentially bone-dry atmosphere. All sublimation and evaporation
+        go to zero. Snow accumulates without limit because the atmosphere
+        cannot remove any moisture. The simulation completes without error,
+        making this extremely difficult to detect.
+      affected_components:
+        - "convert_vic_to_obs.py"
+        - "PBSM module (sublimation)"
+        - "SnobalCRHM module (latent heat)"
+        - "Soil module (ET)"
+    remedy:
+      action: "Convert specific humidity to relative humidity using Tetens formula"
+      tool_to_run: "convert_vic_to_obs"
+      manual_steps:
+        - "Check max RH in .obs file: if max < 1.0, units are wrong"
+        - "Apply conversion: RH = (q*P / (0.622*es)) * 100"
+        - "Verify RH values are 0-100%, not 0-1 or 0-0.02"
+      prevention: "Always use convert_vic_to_obs.py which handles conversion automatically"
+    severity: "silent"
+    cross_references: ["dt_009"]
+
+  - id: dt_002
+    stage: "s2_observation_data"
+    failure_domain: "silent_error"
+    symptom:
+      description: >
+        Simulated discharge peaks are 3-8x too high. Flooding occurs in
+        every month, not just spring melt. Annual water balance shows
+        more output water than input precipitation.
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Precipitation rate vs accumulation mismatch"
+      explanation: >
+        VIC forcing provides precipitation per timestep (e.g., mm per 3 hours).
+        CRHM expects precipitation rate in mm/day. If 3-hourly accumulation
+        is passed directly, CRHM receives 8 timesteps per day, each interpreted
+        as mm/d, effectively multiplying daily precipitation by 8. Annual
+        precipitation appears reasonable per-line but integrates to 8x too much.
+      affected_components:
+        - "convert_vic_to_obs.py"
+        - "All downstream modules (infiltration, runoff, SWE)"
+    remedy:
+      action: "Convert precipitation from mm/timestep to mm/d rate"
+      tool_to_run: "convert_vic_to_obs"
+      manual_steps:
+        - "Multiply precipitation by 24/timestep_hours"
+        - "For 3-hourly VIC: multiply by 24/3 = 8 to get daily rate"
+        - "Wait -- that makes it 8x larger? No: VIC value is already per 3h, not per day"
+        - "CORRECT: If CRHM reads sub-daily, pass mm/timestep. If CRHM reads daily, SUM the sub-daily values"
+        - "The conversion depends on CRHM's own timestep setting"
+      prevention: "Verify daily total precipitation matches known climatology for the basin"
+    severity: "silent"
+    cross_references: ["dt_001"]
+
+  - id: dt_003
+    stage: "s2_observation_data"
+    failure_domain: "parameter_format"
+    symptom:
+      description: >
+        CRHM crashes at startup with error about observation file format.
+        Error message mentions variable count mismatch or invalid header.
+      error_pattern: "Error.*obs.*format|variable.*count|header"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: ".obs file header format incorrect"
+      explanation: >
+        CRHM .obs header must have exact format: variable name, space,
+        column count (integer), space, unit in parentheses. Example:
+        "t 1 (C)". Common mistakes: missing column count, using tab
+        instead of space, unit without parentheses, or variable name
+        with spaces.
+      affected_components:
+        - ".obs file header"
+        - "Obs module reader"
+    remedy:
+      action: "Fix .obs header to match required format"
+      tool_to_run: "validate_obs_file"
+      manual_steps:
+        - "Each variable line: 'varname N (unit)'"
+        - "Computed variables: '$varname formula (unit) description'"
+        - "Column count N must be integer >= 1"
+        - "Data columns (after YYYY M D H 0) must equal sum of all N values"
+      prevention: "Use convert_vic_to_obs.py to generate correctly formatted headers"
+    severity: "fatal"
+    cross_references: []
+
+  # ---- MODULE DEPENDENCY ERRORS ----
+
+  - id: dt_004
+    stage: "s3_module_selection"
+    failure_domain: "dependency_mismatch"
+    symptom:
+      description: >
+        CRHM crashes during initialization with error about unresolved
+        variable reference. Error mentions a variable name that a module
+        tries to get but no other module provides.
+      error_pattern: "declgetvar.*not found|unresolved.*variable|module.*dependency"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "Module chain order incorrect -- module requires variable from later module"
+      explanation: >
+        CRHM modules use declgetvar() to retrieve variables produced by
+        earlier modules via declvar(). If module A calls declgetvar("SWE")
+        but module B (which provides SWE) appears AFTER module A in the
+        chain, the variable doesn't exist yet. The fix is always to reorder
+        the chain, not to modify the modules.
+      affected_components:
+        - ".prj Modules section"
+        - "Module chain ordering"
+    remedy:
+      action: "Reorder module chain so producers come before consumers"
+      tool_to_run: "select_modules"
+      manual_steps:
+        - "Identify which module produces the missing variable"
+        - "Move that module earlier in the chain (before the consumer)"
+        - "Standard order: basin > global > obs > radiation > canopy > snow > infiltration > soil > routing"
+      prevention: "Use select_modules.py which validates dependency chain automatically"
+    severity: "fatal"
+    cross_references: []
+
+  # ---- PARAMETER FORMAT ERRORS ----
+
+  - id: dt_005
+    stage: "s4_parameter_config"
+    failure_domain: "parameter_format"
+    symptom:
+      description: >
+        CRHM crashes or produces garbage output. Parameter values appear
+        to be read from wrong locations in the .prj file. Some HRUs have
+        physically impossible parameter values.
+      error_pattern: "parameter.*count|nhru.*mismatch"
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Wrong number of parameter values for nhru"
+      explanation: >
+        Per-HRU parameters must have exactly nhru values. If nhru=10 but
+        only 8 values are provided, CRHM reads the next 2 values from
+        whatever follows in the file -- which may be the next parameter's
+        declaration line or range specification. This shifts all subsequent
+        parameter reads, cascading corruption through the entire parameter set.
+      affected_components:
+        - ".prj Parameters section"
+        - "All modules reading corrupted parameters"
+    remedy:
+      action: "Ensure each per-HRU parameter has exactly nhru values"
+      tool_to_run: "validate_prj"
+      manual_steps:
+        - "Count nhru in Dimensions section"
+        - "For each parameter, count values (space-separated across lines)"
+        - "Values must equal nhru (per-HRU) or 1 (global)"
+      prevention: "Use create_prj_file.py which auto-generates correct value counts"
+    severity: "fatal"
+    cross_references: ["dt_013"]
+
+  - id: dt_006
+    stage: "s4_parameter_config"
+    failure_domain: "silent_error"
+    symptom:
+      description: >
+        Simulation runs without error but results don't change when you
+        modify a parameter value. You set fetch=50000 but results are
+        identical to fetch=10000.
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Parameter value silently clamped to declared range boundary"
+      explanation: >
+        CRHM parameters have declared ranges in angle brackets: <min to max>.
+        If a value exceeds the max, CRHM silently clamps it to max. The .prj
+        file shows 50000 but the model uses 10000. No warning is produced.
+        This makes parameter sensitivity analysis unreliable -- you think
+        you're testing a wide range but actually hitting the same boundary value.
+      affected_components:
+        - "Any module with out-of-range parameters"
+    remedy:
+      action: "Ensure all parameter values are within declared ranges"
+      tool_to_run: "validate_prj"
+      manual_steps:
+        - "Run validate_prj.py -- it checks all values against ranges"
+        - "For any range violation, adjust the value to be within <min to max>"
+        - "If the range is too narrow for your basin, this may indicate the wrong module"
+      prevention: "Always validate .prj before running. Never assume CRHM will warn about bad values."
+    severity: "silent"
+    cross_references: ["dt_005"]
+
+  # ---- PATH AND RUNTIME ERRORS ----
+
+  - id: dt_007
+    stage: "s5_execution"
+    failure_domain: "path_resolution"
+    symptom:
+      description: >
+        CRHM crashes at startup with error about observation file not found.
+        The .prj file has a valid path but CRHM cannot find it.
+      error_pattern: "cannot open.*obs|file not found|observation.*error"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "Observation file path in .prj is relative to working directory, not .prj location"
+      explanation: >
+        CRHM resolves .obs file paths relative to the current working
+        directory (CWD) when crhm is invoked, NOT relative to the .prj
+        file's directory. If the .prj has "obs/basin.obs" and you run CRHM
+        from /home/user, it looks for /home/user/obs/basin.obs even if
+        the .prj is in /data/project/. This is similar to Fortran path
+        resolution issues in DSSAT and RZWQM2.
+      affected_components:
+        - ".prj Observations section"
+        - "CRHM file loader"
+    remedy:
+      action: "Use absolute paths or --obs_file_directory flag"
+      tool_to_run: ""
+      manual_steps:
+        - "Option 1: Use absolute path in .prj Observations section"
+        - "Option 2: Run CRHM with --obs_file_directory pointing to obs directory"
+        - "Option 3: cd to the directory containing the .obs file before running CRHM"
+      prevention: "create_prj_file.py generates absolute paths by default"
+    severity: "fatal"
+    cross_references: []
+
+  - id: dt_008
+    stage: "s5_execution"
+    failure_domain: "runtime"
+    symptom:
+      description: >
+        CRHM exits with non-zero return code. Error message on stderr
+        mentions a specific module name and variable.
+      error_pattern: "STOP|abort|segfault|runtime error"
+      detection_method: "exit_code"
+    diagnosis:
+      root_cause: "Module encountered invalid data or state during simulation"
+      explanation: >
+        Common causes: (1) observation data has NaN or extreme outlier values
+        that cause numerical overflow, (2) parameter combination leads to
+        division by zero (e.g., zero soil depth), (3) snow depth goes negative
+        due to excessive sublimation, (4) timestep too large for the module's
+        numerical stability.
+      affected_components:
+        - "The module named in the error"
+        - "Observation data quality"
+        - "Parameter values"
+    remedy:
+      action: "Check observation data quality and parameter ranges"
+      tool_to_run: "validate_obs_file"
+      manual_steps:
+        - "Run validate_obs_file.py to check for extreme values"
+        - "Check for NaN, -9999, or other missing value indicators in .obs"
+        - "Verify no parameter is zero that shouldn't be (soil_Depth, route_L)"
+        - "Try running with a shorter period to isolate when the crash occurs"
+      prevention: "Validate both .obs and .prj files before running"
+    severity: "fatal"
+    cross_references: ["dt_003", "dt_005"]
+
+  # ---- VIC COUPLING ERRORS ----
+
+  - id: dt_009
+    stage: "s6_vic_coupling"
+    failure_domain: "unit_conversion"
+    symptom:
+      description: >
+        Merged CRHM+VIC comparison shows wildly different magnitudes for
+        the same variable (e.g., VIC SWE is 50mm while CRHM SWE is 5000mm
+        or vice versa). Water balance doesn't close.
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Unit mismatch between VIC and CRHM output variables"
+      explanation: >
+        VIC reports some variables in different units than CRHM:
+        - VIC runoff: mm/day. CRHM runoff: may be mm/timestep.
+        - VIC SWE: mm. CRHM SWE: mm (usually same, but check).
+        - VIC ET: mm/day. CRHM ET_act: mm/day or mm/timestep.
+        Merging without unit alignment produces nonsensical comparisons.
+        This is the coupling-specific instance of the universal unit trap
+        (37% of all silent errors across 15 models).
+      affected_components:
+        - "merge_crhm_vic.py"
+        - "All comparison plots and statistics"
+    remedy:
+      action: "Verify units for every variable before merging"
+      tool_to_run: "merge_crhm_vic"
+      manual_steps:
+        - "Check CRHM output units (row 2 of STD output)"
+        - "Check VIC output units (from global_param OUTVAR definitions)"
+        - "Convert all variables to common units before merging"
+        - "For fluxes: mm/day. For states: mm."
+      prevention: "Build a unit conversion table before any coupling attempt"
+    severity: "silent"
+    cross_references: ["dt_001"]
+
+  - id: dt_010
+    stage: "s6_vic_coupling"
+    failure_domain: "silent_error"
+    symptom:
+      description: >
+        Combined water balance shows more output (ET + Q) than input (P).
+        Annual runoff ratio exceeds 1.0. Results appear physically impossible
+        but no error is raised.
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Double-counting hydrological processes between VIC and CRHM"
+      explanation: >
+        Both VIC and CRHM compute snowmelt, sublimation, ET, and soil moisture.
+        If both models' snowmelt values are added together, the total melt
+        is 2x the actual value. Similarly for ET and runoff. The process
+        ownership table (from PREFLIGHT.md coupling traps) was not defined
+        or not followed during the merge step.
+      affected_components:
+        - "merge_crhm_vic.py"
+        - "Process ownership logic"
+    remedy:
+      action: "Define and enforce process ownership table"
+      tool_to_run: ""
+      manual_steps:
+        - "Create process ownership table: each process assigned to exactly one model"
+        - "When merging, use ONLY the owner's value for each process"
+        - "For snow processes: typically CRHM (better cold regions physics)"
+        - "For routing: always VIC (grid-based Lohmann/CaMa-Flood)"
+        - "Validate: P - ET - Q - dS should be approximately zero over multiple years"
+      prevention: "Define process ownership BEFORE running the merge tool"
+    severity: "silent"
+    cross_references: ["dt_009"]
+
+  # ---- COLD REGIONS SPECIFIC ERRORS ----
+
+  - id: dt_011
+    stage: "s2_observation_data"
+    failure_domain: "silent_error"
+    symptom:
+      description: >
+        Winter SWE is unrealistically smooth or constant. Temperature,
+        wind, and precipitation show suspiciously repetitive patterns
+        during December-March. Simulated spring melt timing is wrong.
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Gap-filled winter observation data with artificial constant values"
+      explanation: >
+        Cold-region weather stations frequently fail during extreme cold
+        (-40C), blizzards, or rime icing of instruments. Automated gap
+        filling often inserts constant values (last known reading) or
+        climatological means during these outages. CRHM reads whatever
+        is in the .obs file without checking. Constant temperature during
+        a blizzard misses the cold snap that would freeze the soil surface,
+        affecting frozen soil infiltration and spring runoff timing.
+      affected_components:
+        - ".obs file data quality"
+        - "PrairieInfil (depends on winter soil temperature)"
+        - "SnobalCRHM (energy balance during extreme cold)"
+    remedy:
+      action: "Detect and properly fill winter data gaps"
+      tool_to_run: "validate_obs_file"
+      manual_steps:
+        - "Check for constant-value runs > 3 days (suspicious in winter)"
+        - "Compare against nearby stations or reanalysis for gap periods"
+        - "Use ERA5 or MERRA-2 for winter gap filling (better than constant fill)"
+        - "Flag gap-filled periods in output interpretation"
+      prevention: "Use reanalysis-based forcing (CMFD, MSWX, ERA5) instead of station data for cold regions"
+    severity: "silent"
+    cross_references: []
+
+  - id: dt_012
+    stage: "s1_basin_setup"
+    failure_domain: "silent_error"
+    symptom:
+      description: >
+        Total HRU area is much larger or smaller than expected basin area.
+        HRU elevations are all identical or don't match known basin relief.
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "CRS mismatch between DEM and basin shapefile"
+      explanation: >
+        If the DEM is in UTM (meters) and the shapefile is in WGS84 (degrees),
+        the spatial clip operation may return incorrect areas. A 100 km2 basin
+        might compute as 0.01 km2 (if area is in degrees-squared) or 10^10 m2
+        (if coordinates are treated as meters when they're degrees).
+        The HRU creation completes without error but all areas are wrong.
+      affected_components:
+        - "create_hru_config.py"
+        - "All downstream area-dependent calculations"
+    remedy:
+      action: "Reproject DEM and shapefile to common CRS before clipping"
+      tool_to_run: "create_hru_config"
+      manual_steps:
+        - "Check DEM CRS: gdalinfo dem.tif | grep 'AUTHORITY'"
+        - "Check shapefile CRS: ogrinfo basin.shp -al | grep 'AUTHORITY'"
+        - "If different, reproject: gdalwarp -t_srs EPSG:4326 dem.tif dem_wgs84.tif"
+        - "Re-run create_hru_config.py"
+      prevention: "Always assert CRS equality before spatial operations"
+    severity: "silent"
+    cross_references: []
+
+  - id: dt_013
+    stage: "s4_parameter_config"
+    failure_domain: "parameter_format"
+    symptom:
+      description: >
+        CRHM fails to parse .prj file. Error about missing section or
+        unexpected content where a section header was expected.
+      error_pattern: "section.*not found|unexpected.*format|parse.*error.*prj"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "Section delimiter is not exactly 6 hash characters '######'"
+      explanation: >
+        CRHM .prj format uses exactly '######' (6 hashes) on a standalone
+        line as section delimiters. Using 5 hashes, 7 hashes, or adding
+        spaces after the hashes causes CRHM to treat the delimiter as content
+        rather than a section boundary. The section name must appear on the
+        NEXT line (not same line as hashes), followed by another '######'.
+      affected_components:
+        - ".prj file parser"
+        - "All sections after the malformed delimiter"
+    remedy:
+      action: "Fix section delimiters to exactly '######'"
+      tool_to_run: "validate_prj"
+      manual_steps:
+        - "Search .prj for lines with '#' characters"
+        - "Replace any that are not exactly '######' (6 characters, no trailing spaces)"
+        - "Ensure section name is on the line between two '######' lines"
+      prevention: "Use create_prj_file.py which generates correct delimiters"
+    severity: "fatal"
+    cross_references: []
+
+  - id: dt_014
+    stage: "s5_execution"
+    failure_domain: "runtime"
+    symptom:
+      description: >
+        CRHM exits with code 0 (success) but the output file is empty
+        or contains only header lines with no data.
+      error_pattern: ""
+      detection_method: "missing_output"
+    diagnosis:
+      root_cause: "No output variables specified in Display_Variable section of .prj"
+      explanation: >
+        If the Display_Variable section is empty, CRHM runs the entire
+        simulation but writes nothing to the output file. The exit code
+        is still 0 because no error occurred -- the model simply had nothing
+        to display. This wastes the entire computation time and produces
+        no usable results.
+      affected_components:
+        - ".prj Display_Variable section"
+        - "CRHM output writer"
+    remedy:
+      action: "Add output variables to Display_Variable section"
+      tool_to_run: ""
+      manual_steps:
+        - "Open .prj file"
+        - "Find '######' Display_Variable: '######' section"
+        - "Add variables: SWE, snowmelt, runoff, soil_moist, WS_outflow"
+        - "Format: 'variable_name HRU_indices' (e.g., 'SWE 1 2 3')"
+      prevention: "create_prj_file.py always adds default output variables"
+    severity: "degraded"
+    cross_references: []
+
+  - id: dt_015
+    stage: "s6_vic_coupling"
+    failure_domain: "dependency_mismatch"
+    symptom:
+      description: >
+        Merged CRHM+VIC dataset has many NaN values. Time series plots
+        show gaps. Correlation metrics between models return NaN.
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Temporal resolution mismatch between VIC and CRHM outputs"
+      explanation: >
+        VIC may output daily (1 row/day) while CRHM outputs hourly or
+        3-hourly (8-24 rows/day). A naive join on datetime produces NaN
+        for all CRHM sub-daily rows that have no VIC match, and vice versa.
+        The merged dataset appears mostly empty.
+      affected_components:
+        - "merge_crhm_vic.py"
+        - "Temporal alignment logic"
+    remedy:
+      action: "Resample both datasets to common daily resolution before merging"
+      tool_to_run: "merge_crhm_vic"
+      manual_steps:
+        - "Resample CRHM to daily: sum for fluxes, mean for state variables"
+        - "Ensure VIC is daily (or resample similarly)"
+        - "Then merge on daily datetime index"
+      prevention: "merge_crhm_vic.py auto-detects and resamples sub-daily data"
+    severity: "degraded"
+    cross_references: ["dt_010"]
+
+  - id: dt_016
+    stage: "s3_module_selection"
+    failure_domain: "silent_error"
+    symptom:
+      description: >
+        Simulated SWE distribution across HRUs is physically unrealistic.
+        Wind-sheltered forest HRUs show more blowing snow transport than
+        exposed prairie HRUs. Or mountain basin shows no radiation
+        difference between north and south aspects.
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Module chain inappropriate for basin landscape type"
+      explanation: >
+        Using PBSM (prairie blowing snow) in dense forest produces unrealistic
+        snow transport because forest wind speeds are too low for transport
+        but the module doesn't check vegetation density. Using SnobalCRHM
+        without Slope_Qsi in mountainous terrain gives identical radiation
+        to all aspects, making north and south slopes melt identically.
+        The simulation runs without error but the physics is wrong for
+        the landscape.
+      affected_components:
+        - "Module chain selection"
+        - "PBSM in forest"
+        - "SnobalCRHM without Slope_Qsi in mountains"
+    remedy:
+      action: "Match module chain to basin landscape type"
+      tool_to_run: "select_modules"
+      manual_steps:
+        - "Prairie: use PBSM + PrairieInfil"
+        - "Forest: use CRHMCanopy + SnobalCRHM (no PBSM)"
+        - "Mountain: use Slope_Qsi + SnobalCRHM"
+        - "Review select_modules.py landscape chain recommendations"
+      prevention: "Use select_modules.py which recommends chains based on basin_type"
+    severity: "silent"
+    cross_references: ["dt_004"]
+
+  - id: dt_017
+    stage: "s5_execution"
+    failure_domain: "compilation"
+    symptom:
+      description: >
+        CRHM executable fails to run with error about missing shared library.
+        Error mentions libboost or libstdc++.
+      error_pattern: "error while loading shared libraries|libboost.*not found|GLIBCXX"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "Boost library version mismatch or missing at runtime"
+      explanation: >
+        CRHM requires Boost 1.75.0. If built with dynamic linking, the
+        Boost shared libraries must be on LD_LIBRARY_PATH at runtime.
+        If the system has a different Boost version (e.g., 1.83), the
+        executable may find the wrong version, causing symbol resolution
+        errors. The CMake build defaults to the local Boost in src/libs/
+        which should be statically linked, but this can break if CMake
+        finds the system Boost first.
+      affected_components:
+        - "CRHM executable"
+        - "Boost library linkage"
+    remedy:
+      action: "Ensure correct Boost is available"
+      tool_to_run: ""
+      manual_steps:
+        - "Check if static or dynamic: ldd build/crhm | grep boost"
+        - "If dynamic: export LD_LIBRARY_PATH=/path/to/boost_1_75_0/lib:$LD_LIBRARY_PATH"
+        - "If wrong version: rebuild with -DBOOST_ROOT=/path/to/boost_1_75_0"
+        - "Preferred: rebuild with static Boost linking"
+      prevention: "Use install_crhm.sh which downloads correct Boost version"
+    severity: "fatal"
+    cross_references: []
+
+  - id: dt_018
+    stage: "s2_observation_data"
+    failure_domain: "parameter_format"
+    symptom:
+      description: >
+        CRHM reads observation data but produces different results than
+        expected. Some timesteps appear to be skipped or doubled.
+        Output has wrong number of rows for the simulation period.
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Observation timestep doesn't match .prj configuration"
+      explanation: >
+        CRHM infers the observation timestep from the first two data rows
+        in the .obs file. If the .obs file is 3-hourly (rows at hours
+        3, 6, 9, ...) but the .prj expects hourly, CRHM may interpolate
+        or skip rows depending on the module configuration. If the .obs is
+        daily but modules expect sub-daily data, intermediate timesteps
+        are filled with the previous value (zero-order hold), which is
+        physically wrong for temperature and radiation diurnal cycles.
+      affected_components:
+        - ".obs file timestep"
+        - ".prj time configuration"
+        - "Obs module reader"
+    remedy:
+      action: "Ensure .obs timestep matches simulation requirements"
+      tool_to_run: "validate_obs_file"
+      manual_steps:
+        - "Check .obs timestep: look at hour values in first data rows"
+        - "Hourly: hours 1,2,3,...24. 3-hourly: hours 3,6,9,...24. Daily: hour 1 only"
+        - "If modules need sub-daily, provide sub-daily .obs data"
+        - "Energy balance modules (SnobalCRHM) work best with hourly data"
+      prevention: "Match .obs temporal resolution to the finest module requirement"
+    severity: "degraded"
+    cross_references: ["dt_003"]
+
+# === South Saskatchewan Investigation (2026-03-23) ===
+
+- id: "dt_crhm_012"
+  stage: "s2_observation_data"
+  failure_domain: "unit_conversion"
+  severity: "silent"
+  symptom:
+    description: "Annual precipitation 3,672-6,205 mm in .obs file vs real Saskatchewan 350-400 mm. Discharge PBIAS=+696%. MSWX 3-hourly values written as daily totals."
+    error_pattern: "annual_precip > 2000"
+    detection_method: "value_comparison"
+  diagnosis:
+    root_cause: "MSWX 3-hourly precipitation not aggregated to daily. Each 3hr value treated as full daily mm, inflating precip by 8x."
+    affected_components: ["convert_forcing_to_obs.py", ".obs file"]
+  remedy:
+    action: "Sum 8 MSWX timesteps to get daily total. precip_daily = sum(precip_3hr[0:8])."
+    prevention: "Forcing converter must aggregate 3-hourly to daily for CRHM .obs format"
+  cross_references: ["err_012"]
+
+- id: "dt_crhm_013"
+  stage: "s3_module_selection"
+  failure_domain: "parameter_format"
+  severity: "fatal"
+  symptom:
+    description: "Spring snowmelt bypasses frozen-soil infiltration. ebsm and PBSM conflict over SWE variable. PrairieInfil missing from module chain."
+    detection_method: "file_check"
+  diagnosis:
+    root_cause: "Module chain uses Belly River mountain template instead of prairie chain. PrairieInfil absent, ebsm conflicts with PBSM."
+    affected_components: ["select_modules.py", ".prj module list"]
+  remedy:
+    action: "Use prairie chain: basin→global→obs→PBSM→PrairieInfil→Soil→Netroute. Remove ebsm."
+    prevention: "select_modules.py must detect prairie vs mountain basins and use appropriate chain"
+  cross_references: ["err_013"]
+
+- id: "dt_crhm_014"
+  stage: "s2_observation_data"
+  failure_domain: "silent_error"
+  severity: "silent"
+  symptom:
+    description: "SWE peaks at 6,831 mm (45-68x normal 50-150 mm). High-elevation HRUs (3,510m) receive lowland temperature, accumulating unrealistic snowpack."
+    error_pattern: "SWE > 1000"
+    detection_method: "value_comparison"
+  diagnosis:
+    root_cause: "No temperature lapse rate applied to MSWX forcing. Single grid cell T used for all HRUs regardless of elevation (0-3,510m range)."
+    affected_components: ["convert_forcing_to_obs.py", ".obs temperature"]
+  remedy:
+    action: "Apply -6.5°C/km lapse rate to T based on HRU elevation. Apply orographic precip factor 1.5-2.0x per 1000m."
+    prevention: "Forcing prep must apply lapse rate when basin has >500m elevation range"
+  cross_references: ["err_014"]
+
+- id: "dt_crhm_015"
+  stage: "s4_parameter_config"
+  failure_domain: "parameter_format"
+  severity: "degraded"
+  symptom:
+    description: "gwLag=700 days causes 23-month groundwater delay. Near-zero winter baseflow vs observed ~200 m³/s in January. All GW release shifted to following year summer."
+    error_pattern: "gwLag > 300"
+    detection_method: "value_comparison"
+  diagnosis:
+    root_cause: "Default gwLag=700 days too high for large prairie basin with alluvial aquifer. South Saskatchewan has quick groundwater response (~30-90 days), not slow deep bedrock (700 days)."
+    affected_components: ["create_prj_file.py", ".prj groundwater parameters"]
+  remedy:
+    action: "Set gwLag to 30-90 days for prairie alluvial basins. Use 200-400 days for mountain bedrock. Default should be basin-geology-dependent."
+    prevention: "create_prj_file.py should set gwLag based on basin geology: alluvial/prairie=30-90d, mountain bedrock=200-400d"
+  cross_references: ["err_015"]
+
+  # ---- BUGS FOUND 2026-04-10 GHOST RIVER REVALIDATION ----
+
+  - id: dt_019
+    stage: "s4_parameter_config"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "CRHM crashes with 'Unknown Module: Basin_Group' or SIGSEGV (exit -11)"
+      error_pattern: "Unknown Module"
+      detection_method: "error_message"
+    diagnosis:
+      root_cause: ".prj uses Macro group format instead of flat module format"
+      explanation: >
+        create_prj_file.py generated modules as 'Basin_Group Macro' with '+module' lines.
+        This is a GUI-only format. The CLI binary (crhmcode) requires flat format where
+        each module is on its own line as 'module_name CRHM date'. The working Belly River
+        .prj uses flat format. Discovered by comparing with working example (docs-first).
+      affected_components:
+        - "create_prj_file.py module section"
+    remedy:
+      action: "Use flat module format: 'basin CRHM 02/24/12' (no Basin_Group, no +prefix)"
+      tool_to_run: "create_prj_file.py (fixed 2026-04-11)"
+      manual_steps:
+        - "Replace 'Basin_Group Macro 04/20/06' + '+module' lines with 'module CRHM date' lines"
+        - "Use validated dates from belly_river_v6.prj"
+      prevention: "create_prj_file.py now uses flat format by default"
+    severity: "fatal"
+    verified: "2026-04-11 (Ghost River)"
+    cross_references: []
+
+  - id: dt_020
+    stage: "s2_observation_data"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "CRHM crashes with 'Observation: u, not in Data file' despite u being in header"
+      error_pattern: "not in Data file"
+      detection_method: "error_message"
+    diagnosis:
+      root_cause: ".obs file has 2 description lines instead of 1"
+      explanation: >
+        CRHM .obs format expects EXACTLY 1 description line, then variable declarations.
+        The forcing converter wrote 2 description lines. CRHM parsed the second description
+        line as a variable declaration, shifting all subsequent variable names. When it
+        looked for 'u' (wind), it found a shifted/wrong variable name. The resulting SIGSEGV
+        is from accessing invalid data. Discovered by comparing with working Belly River .obs.
+      affected_components:
+        - "convert_forcing.py CRHM writer"
+    remedy:
+      action: "Ensure .obs has exactly 1 description line before variable declarations"
+      tool_to_run: "convert_forcing.py (fixed 2026-04-11)"
+      manual_steps:
+        - "Check line 2 of .obs — must be a variable declaration (e.g., 't 1'), not text"
+      prevention: "convert_forcing.py now writes single description line"
+    severity: "fatal"
+    verified: "2026-04-11 (Ghost River)"
+    cross_references: ["dt_003"]

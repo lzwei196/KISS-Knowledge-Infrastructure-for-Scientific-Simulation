@@ -1,0 +1,326 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["crop"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "RZWQM2 (Root Zone Water Quality Model 2)"
+  domain: "crop"
+  secondary_domains: ["water_quality", "soil_water", "nutrient_transport", "tile_drainage"]
+  binary: "main_ryzen"
+  binary_path: "/mnt/disk1/Hydrocraft_server/model/rzwqm2/main_ryzen_patched"
+  language: "Fortran"
+  execution: "cd <scenario_dir> && ./main_ryzen_patched"
+  notes: >
+    USDA-ARS process-based model for water movement, nutrient transport, and crop
+    growth (via embedded DSSAT) in agricultural fields. Linux binary requires
+    patchelf ELF interpreter fix and AVX2-capable CPU.
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "temperature_min"
+      file: "*.met"
+      unit: "degC"
+      valid_range: [-60.0, 50.0]
+      format: "fixed-width columns in RZWQM2 .met format"
+
+    - name: "temperature_max"
+      file: "*.met"
+      unit: "degC"
+      valid_range: [-50.0, 60.0]
+
+    - name: "wind_speed"
+      file: "*.met"
+      unit: "km/day"
+      valid_range: [0.0, 900.0]
+      conversion_from_cmfd: "m/s -> km/day: multiply by 86.4"
+
+    - name: "solar_radiation"
+      file: "*.met"
+      unit: "MJ/m2/day"
+      valid_range: [0.0, 35.0]
+      conversion_from_cmfd: "W/m2 -> MJ/m2/day: multiply by 0.0864"
+
+    - name: "pan_evaporation"
+      file: "*.met"
+      unit: "mm/day"
+      valid_range: [0.0, 20.0]
+      notes: "If unavailable, estimate as 0.7 * Hargreaves ET0"
+
+    - name: "relative_humidity"
+      file: "*.met"
+      unit: "%"
+      valid_range: [0, 100]
+
+    - name: "par"
+      file: "*.met"
+      unit: "MJ/m2/day"
+      valid_range: [0.0, 18.0]
+      notes: "Photosynthetically active radiation. Estimate as 0.48 * shortwave if missing."
+
+    - name: "breakpoint_rainfall"
+      file: "*.brk"
+      unit: "inches"
+      valid_range: [0.0, 20.0]
+      conversion_from_met: "mm -> inches: divide by 25.4"
+      silent_error: >
+        BRK precipitation must be in INCHES, not mm. The .met file uses mm.
+        Providing mm in .brk causes drainage 25x too high. (dt_004)
+
+  parameters:
+    critical:
+      - name: "latitude"
+        file: "RZWQM.dat"
+        unit: "radians"
+        valid_range: [-1.571, 1.571]
+        silent_error: >
+          MUST be in RADIANS, not degrees. Convert: rad = deg * pi / 180.
+          Wrong units cause incorrect ET and radiation calculations. (dt_009)
+
+      - name: "longitude"
+        file: "RZWQM.dat"
+        unit: "radians"
+        valid_range: [-3.142, 3.142]
+        silent_error: "Must be in radians. Degrees cause silent errors in solar geometry."
+
+      - name: "soil_texture"
+        file: "RZWQM.dat"
+        description: "Physical, hydraulic, micropore, macropore soil properties"
+        notes: >
+          All soil sections must have the same horizon count. Brooks-Corey
+          hydraulic parameters derived from texture via pedotransfer.
+
+      - name: "cultivar_coefficients"
+        file: "*.CUL"
+        description: "DSSAT cultivar parameters embedded in RZWQM2"
+        notes: >
+          RZWQM2 reads .CUL files from BOTH scenario root AND DSSAT/ subdirectory.
+          Cultivar updates must target both locations. (dt_022)
+          ECO# must start at column 25 (1-indexed). VRNAME = 16 name + 1 space = 17 chars. (dt_023)
+
+      - name: "tile_drainage_params"
+        description: "drain flag + perched_WT=1 + bottom_BC=3 + lateral_ksat>1.0 + geometry"
+        notes: >
+          Just enabling the drain flag produces zero drainage. Need all 5 params:
+          drain flag, perched water table, bottom boundary condition (constant flux),
+          lateral Ksat > 1.0 cm/hr, and drain spacing/depth geometry.
+
+      - name: "field_sat"
+        description: "Field saturation fraction for constant-flux bottom BC"
+        valid_range: [0.70, 1.00]
+        typical: [0.80, 0.85]
+        notes: "Controls water influx. 1.0 = maximum, 0.80-0.85 typical for calibrated tile-drained clay."
+
+    management:
+      - name: "crop_ref"
+        file: "RZCropSel.rzq"
+        description: "Crop reference number (1=maize, 2=soybean, 3=wheat)"
+        notes: "Must match management events in rzwqm.dat"
+
+  files:
+    required:
+      - name: "ipnames.dat"
+        description: "Master control file with 8 file paths + simulation dates"
+        format: "Lines 0-7: file paths. Line 8: DD MM YYYY DD MM YYYY"
+        notes: "All paths must point to existing files. Primary source of path-not-found errors."
+
+      - name: "RZWQM.dat"
+        description: "Main parameter file (soil, site, management, options)"
+        format: "Fortran fixed-width sections"
+        notes: "Use validated tools for all modifications. Encoding: ISO-8859-1."
+
+      - name: "RZINIT.dat"
+        description: "Initial conditions (soil water, temperature, chemistry, nutrients)"
+
+      - name: "*.met"
+        description: "Daily meteorological data"
+
+      - name: "*.brk"
+        description: "Breakpoint rainfall (sub-daily, in inches)"
+
+      - name: "*.CUL + *.ECO + *.SPE"
+        description: "DSSAT genotype files"
+
+      - name: "RZCropSel.rzq"
+        description: "Crop selection registry"
+
+      - name: "*.RZX"
+        description: "Experiment file with DSSAT database paths"
+        notes: "Paths must be updated for the scenario directory"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "soil_water_storage"
+      file: "*.ana"
+      unit: "cm"
+      valid_range: [0, 200]
+      notes: "Total stored soil water across all horizons"
+
+    - name: "crop_yield"
+      file: "*.ana"
+      unit: "kg/ha"
+      notes: "From embedded DSSAT crop growth module"
+
+    - name: "evapotranspiration"
+      file: "*.ana"
+      unit: "mm/day"
+      valid_range: [0, 15]
+
+    - name: "tile_drainage"
+      file: "*.ana"
+      unit: "cm"
+      valid_range: [0, 50]
+      notes: >
+        IMPORTANT: Tile drainage in .ana output is in CENTIMETERS.
+        Multiply by 10 for mm. (dt_010)
+
+    - name: "no3_leaching"
+      file: "*.ana"
+      unit: "kgN/ha"
+      notes: "Nitrate leaching below root zone"
+
+    - name: "deep_seepage"
+      file: "*.ana"
+      unit: "cm"
+
+  layer_output:
+    - name: "layer_soil_water"
+      file: "Layer.plt"
+      description: "Depth-resolved soil water, temperature, N species"
+      notes: "Use parse_layer_output.py for extraction"
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "elf_interpreter_wrong"
+    triplet: "dt_012"
+    description: >
+      Linux binary has wrong ELF interpreter path (ComputeCanada cluster path).
+      Must be patched with patchelf for standard Linux systems.
+    affected_output: "Binary fails to start with 'No such file or directory' despite existing"
+    detection: "Binary exists but 'No such file or directory' error on execution"
+    fix: "patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 main_ryzen"
+    scorecard: "core_RZWQM2.json (PASS after patchelf)"
+
+  - id: "avx2_required"
+    description: "Binary requires AVX2 instruction set"
+    affected_output: "Illegal instruction or SIGILL on older CPUs"
+    detection: "SIGILL signal or 'Illegal instruction' error"
+    fix: "Run on x86-64 CPU with AVX2 support. Will not run on ARM or pre-Haswell x86."
+
+  - id: "brk_precipitation_inches"
+    triplet: "dt_004"
+    description: "Breakpoint rainfall in mm instead of inches"
+    affected_output: "Drainage 25x too high"
+    detection: "Drainage values unrealistically high"
+    fix: "Divide mm by 25.4 in .brk file"
+
+  - id: "lat_lon_degrees_not_radians"
+    triplet: "dt_009"
+    description: "Latitude/longitude in degrees instead of radians"
+    affected_output: "Wrong ET and radiation -- silent error"
+    detection: "Latitude values > 1.6 in RZWQM.dat"
+    fix: "Convert: radians = degrees * pi / 180"
+
+  - id: "tile_drainage_cm_not_mm"
+    triplet: "dt_010"
+    description: "Tile drainage output in cm, not mm"
+    affected_output: "Drainage appears 10x too low when compared to mm-based observations"
+    detection: "Drainage values seem unreasonably small"
+    fix: "Multiply .ana tile drainage values by 10 for mm"
+
+  - id: "soil_texture_whitespace"
+    triplet: "dt_008"
+    description: "Wrong soil texture from whitespace mismatch in fixed-width format"
+    affected_output: "Wrong hydraulic properties, cascading errors in water balance"
+    detection: "Soil type does not match expected USDA classification"
+    fix: "Use write_soil_properties.py which handles exact column alignment"
+
+  - id: "ipnames_path_resolution"
+    description: "ipnames.dat paths not pointing to correct files"
+    affected_output: "Binary crashes immediately or reads wrong data"
+    detection: "File not found errors or unexpected behavior"
+    fix: "Use update_ipnames_paths.py to fix all 8 paths"
+
+  - id: "cul_dual_location"
+    triplet: "dt_022"
+    description: "Cultivar .CUL files read from both scenario root and DSSAT/ subdir"
+    affected_output: "Old cultivar parameters used if only one location updated"
+    detection: "Yield does not change after cultivar update"
+    fix: "Update .CUL in BOTH scenario root and DSSAT/ subdirectory"
+
+  - id: "fortran_fixed_width_eco"
+    triplet: "dt_023"
+    description: "ECO# field must start at column 25 (1-indexed) in .CUL files"
+    affected_output: "Wrong ecotype parameters silently applied"
+    detection: "Yield or phenology does not match expected values"
+    fix: "VRNAME = 16 chars name + 1 space = 17 chars before ECO# starts at column 25"
+
+  - id: "encoding_iso8859"
+    description: "rzwqm_file.py reads ISO-8859-1; all writes must use encoding='ISO-8859-1'"
+    affected_output: "File bloats 3x per read-write cycle with UTF-8 default"
+    detection: "RZWQM.dat file size grows after each modification"
+    fix: "Always use encoding='ISO-8859-1' in open() calls"
+
+# =========================================================================
+# EXPECTED RANGES (from validated results — Iowa Maize)
+# =========================================================================
+expected_ranges:
+  iowa_maize:
+    stored_soil_water_cm: [50, 100]
+    total_soil_inorganic_n_kgNha: [100, 400]
+    output_columns: 139
+    daily_records: 1095
+    reference: "Iowa Maize 2015-2017"
+    scorecard: "core_RZWQM2.json (PASS)"
+
+# =========================================================================
+# CALIBRATION REFERENCE
+# =========================================================================
+calibration_reference:
+  approach: "Automated LHS/Sobol sampling + agent-guided batches"
+  tool: "tools/s10_calibration/rzwqm2_calibrate.py"
+  key_parameters:
+    - name: "Ksat"
+      description: "Saturated hydraulic conductivity"
+      unit: "cm/hr"
+      notes: "Primary control on infiltration and drainage"
+
+    - name: "ws (porosity)"
+      description: "Total porosity"
+      unit: "cm3/cm3"
+      conversion_from_vic: "1 - bulk_density/2650"
+
+    - name: "fc33"
+      description: "Field capacity at 33 kPa"
+      unit: "volumetric"
+
+    - name: "lateral_ksat"
+      description: "Lateral saturated hydraulic conductivity for tile drainage"
+      unit: "cm/hr"
+      valid_range: [1.0, 50.0]
+
+    - name: "drain_spacing"
+      description: "Tile drain spacing"
+      unit: "cm"
+
+    - name: "field_sat"
+      description: "Field saturation fraction"
+      valid_range: [0.70, 1.00]
+  notes: >
+    6-parameter calibration: Ksat, ws, fc33, lateral_ksat, drain_spacing, field_sat.
+    LHS sampling with 10 runs per batch. Calibration targets: soil moisture, tile
+    drainage, crop yield.

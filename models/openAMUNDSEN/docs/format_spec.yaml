@@ -1,0 +1,166 @@
+model:
+  name: "openAMUNDSEN"
+  domain: "cryosphere — snow accumulation, ablation, energy balance in mountain regions"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/openAMUNDSEN/venv/bin/python"
+  binary_type: "python_package"
+  cli_command: "openamundsen config.yml"
+  version: "0.0.post1+gb501171df"
+  language: "Python (Numba JIT)"
+  license: "MIT"
+
+inputs:
+  forcing:
+    - name: "temp"
+      unit: "K"
+      valid_range: [200, 330]
+      description: "Air temperature (Kelvin, NOT Celsius)"
+    - name: "precip"
+      unit: "kg m-2 per timestep"
+      valid_range: [0, 100]
+      description: "Precipitation accumulation per timestep (CSV) or rate kg m-2 s-1 (NetCDF)"
+    - name: "rel_hum"
+      unit: "%"
+      valid_range: [0, 100]
+      description: "Relative humidity as percent (0-100, NOT 0-1 fraction)"
+    - name: "sw_in"
+      unit: "W m-2"
+      valid_range: [0, 1400]
+      description: "Incoming shortwave radiation"
+    - name: "wind_speed"
+      unit: "m s-1"
+      valid_range: [0, 50]
+      description: "Wind speed"
+    - name: "cloud_fraction"
+      unit: "%"
+      valid_range: [0, 100]
+      description: "Cloud cover fraction (percent, auto-converts from 0-1 if max<=1)"
+
+  grids:
+    - name: "DEM"
+      format: "Arc/Info ASCII (.asc)"
+      naming: "dem_{domain}_{resolution}.asc"
+      unit: "m"
+      description: "Digital elevation model (meters)"
+    - name: "ROI"
+      format: "Arc/Info ASCII (.asc)"
+      naming: "roi_{domain}_{resolution}.asc"
+      description: "Region of interest mask (optional)"
+    - name: "SVF"
+      format: "Arc/Info ASCII (.asc)"
+      naming: "svf_{domain}_{resolution}.asc"
+      description: "Sky view factor (optional, computed if missing)"
+
+  parameters:
+    critical:
+      - name: "snow.albedo.max"
+        valid_range: [0.75, 0.95]
+        default: 0.85
+        description: "Fresh snow albedo"
+      - name: "snow.albedo.min"
+        valid_range: [0.40, 0.65]
+        default: 0.55
+        description: "Old snow albedo"
+      - name: "snow.albedo.cold_snow_decay_timescale"
+        valid_range: [100, 1000]
+        default: 480
+        unit: "h"
+        description: "Albedo aging rate for cold snow"
+      - name: "snow.albedo.melting_snow_decay_timescale"
+        valid_range: [50, 500]
+        default: 200
+        unit: "h"
+        description: "Albedo aging rate for melting snow"
+      - name: "snow.albedo.refresh_snowfall"
+        valid_range: [0.1, 2.0]
+        default: 0.5
+        unit: "kg m-2 h-1"
+        description: "Snowfall amount to reset albedo"
+      - name: "snow.thermal_conductivity"
+        valid_range: [0.1, 0.5]
+        default: 0.24
+        unit: "W m-1 K-1"
+        description: "Snow thermal conductivity"
+      - name: "meteo.precipitation_phase.threshold_temp"
+        valid_range: [272, 275]
+        default: 273.65
+        unit: "K"
+        description: "Rain/snow partition temperature threshold"
+
+outputs:
+  primary:
+    - name: "swe"
+      unit: "kg m-2"
+      valid_range: [0, 3000]
+      description: "Snow water equivalent"
+    - name: "snow_depth"
+      unit: "m"
+      valid_range: [0, 15]
+      description: "Snow depth"
+    - name: "melt"
+      unit: "kg m-2"
+      valid_range: [0, 50]
+      description: "Snow melt per timestep"
+    - name: "runoff"
+      unit: "kg m-2"
+      valid_range: [0, 50]
+      description: "Runoff per timestep"
+    - name: "sublimation"
+      unit: "kg m-2"
+      valid_range: [-5, 5]
+      description: "Snow sublimation (negative = condensation)"
+    - name: "surface_temp"
+      unit: "K"
+      valid_range: [200, 330]
+      description: "Surface temperature"
+    - name: "surface_albedo"
+      unit: "-"
+      valid_range: [0.1, 0.95]
+      description: "Surface albedo"
+    - name: "snow_density"
+      unit: "kg m-3"
+      valid_range: [50, 917]
+      description: "Bulk snow density"
+    - name: "soil_temp"
+      unit: "K"
+      valid_range: [250, 310]
+      description: "Soil temperature"
+  radiation:
+    - name: "sw_in"
+      unit: "W m-2"
+      valid_range: [0, 1400]
+    - name: "sw_out"
+      unit: "W m-2"
+      valid_range: [0, 1200]
+    - name: "lw_in"
+      unit: "W m-2"
+      valid_range: [100, 500]
+    - name: "lw_out"
+      unit: "W m-2"
+      valid_range: [150, 500]
+  turbulent:
+    - name: "sens_heat_flux"
+      unit: "W m-2"
+      valid_range: [-500, 600]
+    - name: "lat_heat_flux"
+      unit: "W m-2"
+      valid_range: [-400, 200]
+
+known_issues:
+  - id: "dt_001"
+    description: "Temperature in Celsius silently clipped to NaN (expects Kelvin)"
+    severity: "silent"
+  - id: "dt_002"
+    description: "Precipitation unit mismatch (rate vs accumulation) causes massive SWE errors"
+    severity: "silent"
+  - id: "dt_003"
+    description: "Relative humidity as fraction (0-1) silently clipped to NaN"
+    severity: "silent"
+  - id: "dt_009"
+    description: "DEM filename must match domain/resolution in config exactly"
+    severity: "fatal"
+  - id: "dt_013"
+    description: "Lapse rate in K/km instead of K/m crashes temperatures"
+    severity: "silent"
+  - id: "dt_014"
+    description: "Station coordinates in wrong CRS causes spatial mismatch"
+    severity: "fatal"

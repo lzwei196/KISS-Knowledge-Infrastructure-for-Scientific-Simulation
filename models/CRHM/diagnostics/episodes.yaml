@@ -1,0 +1,8 @@
+# ============================================================================
+# Failure Episodes -- CRHM Knowledge Infrastructure
+# ============================================================================
+# Complete debugging stories from real runs. Training data for agent improvement.
+# See templates/failure_episode_template.yaml for format.
+# ============================================================================
+
+episodes: []

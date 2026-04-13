@@ -1,0 +1,297 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["biogeochemistry"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "BIOME-BGC 4.2"
+  domain: "biogeochemistry"
+  secondary_domains: ["carbon_cycling", "forest_ecosystem", "water_balance"]
+  binary: "bgc"
+  binary_path: "/mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-src/bgc"
+  language: "C"
+  execution_spinup: "./bgc -u -s ini/spinup.ini"
+  execution_normal: "./bgc -m -a ini/normal.ini"
+  notes: >
+    Simulates daily C/N/water fluxes for natural terrestrial ecosystems.
+    Complement to LDNDC: BIOME-BGC handles forests/grasslands/shrublands,
+    LDNDC handles cropland/managed systems. Together they enable full-basin
+    carbon budgets.
+  plant_functional_types: ["ENF", "EBF", "DNF", "DBF", "SHRUB", "C3GRASS", "C4GRASS"]
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "temperature_max"
+      file: "*.mtc43 (met file)"
+      column: 1
+      unit: "degC"
+      valid_range: [-70.0, 60.0]
+      format: "space-separated ASCII, one row per day"
+
+    - name: "temperature_min"
+      file: "*.mtc43"
+      column: 2
+      unit: "degC"
+      valid_range: [-80.0, 50.0]
+
+    - name: "precipitation"
+      file: "*.mtc43"
+      column: 4
+      unit: "cm/day"
+      valid_range: [0.0, 50.0]
+      conversion_from_cmfd: "mm/day -> cm/day: divide by 10"
+      silent_error: >
+        BIOME-BGC expects precipitation in cm/day. CMFD/MSWX/VIC provide mm.
+        Forgetting to divide by 10 gives 10x too much water. The model runs
+        fine -- GPP/NPP will just be unrealistically high. This is the #1 silent error. (dt_007)
+
+    - name: "vpd"
+      file: "*.mtc43"
+      column: 3
+      unit: "Pa"
+      valid_range: [0.0, 10000.0]
+      conversion_from_cmfd: "Compute from Tmin/Tmax and specific humidity using bgc_utils.compute_vpd_from_tmin_tmax_q()"
+      silent_error: >
+        VPD must be in Pascals (typical: 200-4000 Pa). If provided in kPa (0.2-4.0),
+        stomata stay fully open, transpiration is unrealistic. No error message. (dt_008)
+
+    - name: "shortwave_radiation"
+      file: "*.mtc43"
+      column: 5
+      unit: "W/m2"
+      valid_range: [0.0, 500.0]
+      notes: "Daily average shortwave radiation"
+
+    - name: "day_length"
+      file: "*.mtc43"
+      column: 6
+      unit: "seconds"
+      valid_range: [0, 86400]
+      notes: >
+        MUST be computed from latitude and day-of-year. NOT available from CMFD/MSWX.
+        Use bgc_utils.compute_daylength(lat, yday). If day length is 0, GPP will be 0. (dt_009)
+
+  parameters:
+    critical:
+      - name: "plant_functional_type"
+        file: "*.epc (ecophysiology file)"
+        description: "PFT selection controls all physiological parameters"
+        valid_values: ["ENF", "EBF", "DNF", "DBF", "SHRUB", "C3GRASS", "C4GRASS"]
+        notes: >
+          BIOME-BGC is for AVHRR classes 1-10 (natural vegetation) only.
+          Cropland (class 11) must use LDNDC or DSSAT. Running BIOME-BGC on
+          cropland produces nonsensical results. (dt_021)
+
+      - name: "SLA"
+        file: "*.epc"
+        description: "Specific leaf area"
+        unit: "m2/kgC"
+        typical_values:
+          ENF: 12
+          DBF: 30
+          C3GRASS: 45
+
+      - name: "leaf_cn"
+        file: "*.epc"
+        description: "Leaf C:N ratio"
+        unit: "kgC/kgN"
+        typical_values:
+          ENF: 42
+          DBF: 24
+          C3GRASS: 24
+
+    site:
+      - name: "soil_depth"
+        file: "*.ini"
+        description: "Total soil depth"
+        unit: "m"
+        valid_range: [0.1, 5.0]
+
+      - name: "sand_silt_clay"
+        file: "*.ini"
+        description: "Soil texture fractions (must sum to 100%)"
+        unit: "percent"
+
+      - name: "elevation"
+        file: "*.ini"
+        unit: "m"
+
+      - name: "latitude"
+        file: "*.ini"
+        unit: "degrees"
+        notes: "Used for day length computation and radiation geometry"
+
+  files:
+    required:
+      - name: "*.ini"
+        description: "Master configuration file (keyword-section format)"
+        format: >
+          Keyword markers (MET_INPUT, RESTART, TIME_DEFINE, etc.) followed by
+          sequential values read by scan_value(). An extra or missing line shifts
+          ALL subsequent parameters. NEVER hand-edit. Use generate_site_ini.py. (dt_004)
+
+      - name: "*.epc"
+        description: "Ecophysiology parameter file (40+ params per PFT)"
+        format: "Keyword-value pairs"
+        notes: "Use select_ecophysiology.py to generate from PFT classification"
+
+      - name: "*.mtc43"
+        description: "Meteorological forcing (daily, 6 columns)"
+        format: "Space-separated ASCII: Tmax, Tmin, Tday, prec_cm, srad_W, daylength_s"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "gross_primary_production"
+      file: "*.dayout.ascii"
+      unit: "gC/m2/day"
+      valid_range: [0, 30]
+      aggregation: "Annual GPP = sum of daily values"
+      notes: "Expected: 800-1500 gC/m2/yr for ENF (warm restart), lower for cold start"
+
+    - name: "net_primary_production"
+      file: "*.dayout.ascii"
+      unit: "gC/m2/day"
+      valid_range: [0, 15]
+      notes: "NPP = GPP - autotrophic respiration"
+
+    - name: "net_ecosystem_exchange"
+      file: "*.dayout.ascii"
+      unit: "gC/m2/day"
+      notes: "NEE = NPP - heterotrophic respiration. Negative = carbon sink."
+
+    - name: "leaf_area_index"
+      file: "*.dayout.ascii"
+      unit: "m2/m2"
+      valid_range: [0, 12]
+      notes: "Expected: 3-6 for ENF with warm restart, 1-2 for cold start"
+
+    - name: "vegetation_carbon"
+      file: "*.annout.ascii"
+      unit: "kgC/m2"
+      valid_range: [0, 30]
+
+    - name: "soil_carbon"
+      file: "*.annout.ascii"
+      unit: "kgC/m2"
+      valid_range: [0, 30]
+      notes: "CENTURY-style 4 litter + 4 soil pools"
+
+    - name: "total_ecosystem_carbon"
+      file: "*.annout.ascii"
+      unit: "kgC/m2"
+      valid_range: [5, 50]
+      notes: "Vegetation + litter + soil C. Missoula ENF reference: 23.86 kgC/m2"
+
+  diagnostics:
+    - name: "evapotranspiration"
+      file: "*.dayout.ascii"
+      unit: "mm/day (output as kg/m2/day water)"
+      notes: >
+        Both VIC and BIOME-BGC compute ET. When coupled, VIC owns the water
+        balance. BIOME-BGC ET is diagnostic only -- do NOT add to discharge. (dt_020)
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "precip_mm_not_cm"
+    triplet: "dt_007"
+    description: "Precipitation in mm/day instead of cm/day (10x too much water)"
+    affected_output: "GPP/NPP unrealistically high, soil waterlogged"
+    detection: "Precip values > 5 cm/day for non-extreme events"
+    fix: "Divide mm/day by 10 to get cm/day"
+
+  - id: "vpd_kpa_not_pa"
+    triplet: "dt_008"
+    description: "VPD in kPa instead of Pa (1000x too low)"
+    affected_output: "Stomata fully open, unrealistic transpiration"
+    detection: "VPD values < 10 Pa for daytime conditions"
+    fix: "Multiply kPa by 1000 to get Pa"
+
+  - id: "daylength_missing"
+    triplet: "dt_009"
+    description: "Day length column is zero or missing"
+    affected_output: "GPP = 0 (photosynthesis requires daylight hours)"
+    detection: "Day length = 0 in met file"
+    fix: "Compute from latitude + DOY using bgc_utils.compute_daylength()"
+
+  - id: "ini_format_shifted"
+    triplet: "dt_004"
+    description: "Extra or missing line in .ini file shifts all subsequent parameters"
+    affected_output: "Random wrong parameter values, unpredictable behavior"
+    detection: "Unexpected output values, no error message"
+    fix: "Always use generate_site_ini.py. Never hand-edit .ini files."
+
+  - id: "spinup_required"
+    triplet: "dt_012"
+    description: "Running without spinup leaves soil C/N pools uninitialized"
+    affected_output: "NEE dominated by initial condition artifacts, not real ecosystem dynamics"
+    detection: "NEE has unrealistic trend in first decades"
+    fix: >
+      Always run spinup first (bgc -u -s spinup.ini). Spinup durations:
+      grassland 1000-1500 yr, deciduous forest 2000-3000 yr,
+      evergreen forest 3000-6000 yr, boreal 4000-6000 yr.
+
+  - id: "cropland_wrong_model"
+    triplet: "dt_021"
+    description: "BIOME-BGC used on cropland (AVHRR class 11)"
+    affected_output: "Nonsensical carbon/nitrogen budgets"
+    detection: "AVHRR land cover class is 11 (cropland)"
+    fix: "Use LDNDC or DSSAT for cropland. BIOME-BGC is for classes 1-10 only."
+
+  - id: "et_double_counting"
+    triplet: "dt_020"
+    description: "Adding BIOME-BGC ET to VIC discharge when coupled"
+    affected_output: "Double-counted evapotranspiration, wrong water balance"
+    detection: "Basin ET appears unrealistically high when summing VIC + BGC"
+    fix: "VIC owns the water balance. BIOME-BGC ET is diagnostic only."
+
+# =========================================================================
+# EXPECTED RANGES (from validated results — Missoula ENF)
+# =========================================================================
+expected_ranges:
+  missoula_enf:
+    spinup_convergence_years: [1500, 6000]
+    spinup_residual: "<0.01"
+    vegetation_c_kgCm2: [5, 25]
+    soil_c_kgCm2: [5, 20]
+    total_c_kgCm2: [15, 40]
+    max_lai_m2m2: [1, 8]
+    gpp_gCm2yr_warm_restart: [800, 1500]
+    nee_gCm2yr: [-300, -50]
+    scorecard: "core_BIOME_BGC.json (PASS)"
+    reference: "Missoula MT, 46.8N, ENF, 1950-1993, CO2=294.8 ppm"
+
+# =========================================================================
+# CALIBRATION REFERENCE
+# =========================================================================
+calibration_reference:
+  approach: "Ecophysiology (.epc) parameter adjustment"
+  notes: >
+    Primary calibration targets: SLA (specific leaf area), leaf C:N ratio,
+    maximum stomatal conductance, allocation fractions (new leaf/stem/root C).
+    BIOME-BGC typically does not require calibration for order-of-magnitude
+    estimates when using appropriate PFT parameters.
+  key_parameters:
+    - name: "SLA"
+      description: "Specific leaf area -- controls canopy light interception"
+      unit: "m2/kgC"
+    - name: "leaf_cn"
+      description: "Leaf C:N ratio -- controls N demand and photosynthetic capacity"
+    - name: "max_stomatal_conductance"
+      description: "Maximum stomatal conductance -- controls transpiration and CO2 uptake"
+      unit: "m/s"
+    - name: "TSUM (TBASE)"
+      description: "Thermal accumulation parameters for phenology"

@@ -1,0 +1,179 @@
+model:
+  name: "PorePy"
+  version: "1.12.0"
+  domain: "Fractured porous media simulation (subsurface flow, poromechanics)"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PorePy/venv/bin/python"
+  language: "Python 3.10+"
+  license: "GPL v3"
+  developers: "Porous Media Group, University of Bergen, Norway"
+
+inputs:
+  forcing:
+    - name: "pressure_bc"
+      unit: "Pa"
+      valid_range: [0, 1.0e+10]
+      description: "Pressure boundary condition (Dirichlet)"
+    - name: "flux_bc"
+      unit: "m^3/s"
+      valid_range: [-1.0e+3, 1.0e+3]
+      description: "Flux boundary condition (Neumann)"
+    - name: "displacement_bc"
+      unit: "m"
+      valid_range: [-100, 100]
+      description: "Displacement boundary condition for mechanics"
+    - name: "temperature_bc"
+      unit: "K"
+      valid_range: [200, 1000]
+      description: "Temperature boundary condition for thermal models"
+
+  parameters:
+    critical:
+      - name: "permeability"
+        unit: "m^2"
+        valid_range: [1.0e-20, 1.0e-12]
+        description: "Rock matrix permeability — MUST be in m^2 (not Darcy)"
+      - name: "porosity"
+        unit: "dimensionless"
+        valid_range: [0.001, 0.40]
+        description: "Porosity as fraction (not percentage)"
+      - name: "fracture_aperture"
+        unit: "m"
+        valid_range: [1.0e-5, 1.0e-2]
+        description: "Fracture aperture — MUST be in meters (not mm)"
+      - name: "biot_coefficient"
+        unit: "dimensionless"
+        valid_range: [0.1, 1.0]
+        description: "Biot poroelastic coupling coefficient"
+      - name: "viscosity"
+        unit: "Pa.s"
+        valid_range: [1.0e-4, 1.0e-2]
+        description: "Fluid dynamic viscosity — MUST be in Pa.s (not cP)"
+      - name: "density_solid"
+        unit: "kg/m^3"
+        valid_range: [1000, 5000]
+        description: "Solid grain density"
+      - name: "density_fluid"
+        unit: "kg/m^3"
+        valid_range: [500, 1500]
+        description: "Fluid density"
+      - name: "shear_modulus"
+        unit: "Pa"
+        valid_range: [1.0e+8, 1.0e+11]
+        description: "Shear modulus of solid"
+      - name: "lame_lambda"
+        unit: "Pa"
+        valid_range: [1.0e+8, 1.0e+11]
+        description: "First Lame parameter"
+      - name: "specific_heat_capacity_solid"
+        unit: "J/(kg.K)"
+        valid_range: [500, 2000]
+        description: "Solid specific heat capacity"
+      - name: "thermal_conductivity_solid"
+        unit: "W/(m.K)"
+        valid_range: [0.5, 10.0]
+        description: "Solid thermal conductivity"
+      - name: "friction_coefficient"
+        unit: "dimensionless"
+        valid_range: [0.1, 0.9]
+        description: "Fracture friction coefficient for contact mechanics"
+
+    solver:
+      - name: "nl_max_iterations"
+        valid_range: [1, 100]
+        default: 10
+        description: "Maximum Newton iterations"
+      - name: "nl_convergence_res_atol"
+        valid_range: [1.0e-12, 1.0e-2]
+        default: 1.0e-6
+        description: "Absolute residual tolerance"
+      - name: "nl_convergence_inc_atol"
+        valid_range: [1.0e-12, 1.0e-2]
+        default: 1.0e-6
+        description: "Absolute increment tolerance"
+
+    time_stepping:
+      - name: "end_time"
+        unit: "s"
+        description: "Simulation end time — MUST be in seconds"
+      - name: "dt_init"
+        unit: "s"
+        description: "Initial time step — MUST be in seconds"
+      - name: "cell_size"
+        unit: "m"
+        description: "Mesh cell size in meters"
+
+outputs:
+  primary:
+    - name: "pressure"
+      unit: "Pa"
+      valid_range: [0, 1.0e+10]
+      description: "Fluid pressure at cell centers"
+    - name: "displacement"
+      unit: "m"
+      valid_range: [-100, 100]
+      description: "Solid displacement vector at cell centers"
+    - name: "temperature"
+      unit: "K"
+      valid_range: [200, 1000]
+      description: "Temperature at cell centers"
+    - name: "darcy_flux"
+      unit: "m^3/s"
+      valid_range: [-1.0e+3, 1.0e+3]
+      description: "Darcy flux at cell faces"
+    - name: "stress"
+      unit: "Pa"
+      valid_range: [-1.0e+10, 1.0e+10]
+      description: "Stress tensor at cell centers"
+    - name: "fracture_aperture"
+      unit: "m"
+      valid_range: [0, 1.0]
+      description: "Fracture aperture (deformed)"
+    - name: "contact_traction"
+      unit: "Pa"
+      valid_range: [-1.0e+10, 1.0e+10]
+      description: "Contact traction on fracture interfaces"
+
+  format: "VTU/VTK (ParaView compatible)"
+  collection_file: ".pvd (time series)"
+  solver_stats: "solver_statistics.json"
+
+model_types:
+  - name: "SinglePhaseFlow"
+    physics: "Darcy flow in porous media"
+    variables: ["pressure"]
+  - name: "MomentumBalance"
+    physics: "Linear elasticity"
+    variables: ["displacement"]
+  - name: "Poromechanics"
+    physics: "Coupled flow + mechanics (Biot)"
+    variables: ["pressure", "displacement"]
+  - name: "ContactMechanics"
+    physics: "Fracture contact + elasticity"
+    variables: ["displacement", "contact_traction"]
+  - name: "Thermoporomechanics"
+    physics: "THM coupling"
+    variables: ["pressure", "displacement", "temperature"]
+  - name: "CompositionalFlow"
+    physics: "Multiphase multicomponent"
+    variables: ["pressure", "fractions"]
+
+unit_system:
+  base_units: ["m", "s", "kg", "K", "mol", "rad"]
+  critical_constraint: "Time scaling in pp.Units MUST remain 1 s (NotImplementedError otherwise)"
+
+known_issues:
+  - id: "dt_011"
+    severity: "fatal"
+    description: "Time unit scaling != 1 s causes NotImplementedError"
+  - id: "dt_001"
+    severity: "silent"
+    description: "Permeability in Darcy instead of m^2 causes flow rates off by orders of magnitude"
+  - id: "dt_006"
+    severity: "silent"
+    description: "Porosity as percentage (0-100) instead of fraction (0-1) causes 100x mass balance error"
+  - id: "dt_014"
+    severity: "fatal"
+    description: "Gmsh fails on degenerate fracture geometry"
+  - id: "dt_018"
+    severity: "fatal"
+    description: "Fracture extends outside domain causes mesh generation failure"

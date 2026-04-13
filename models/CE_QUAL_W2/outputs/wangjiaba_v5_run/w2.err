@@ -1,0 +1,6 @@
+ Format Error QWD_Layers:JDAY,QWDO,ELWS,QNEW:   1.0000000000000000        367.31900000000002        468.07726781442574        23.287005491680713     
+Unstable water surface elevation on day 27.981
+negative surface layer thickness using minimum timestep at iteration 16160
+ Branch #:           1  in Waterbody:           1  Surface layer KT:          46
+Segment, Surface layer thickness, m, Flow m3/s, U(KT,I) m/s, ELWS, m, Prior ELWS, m
+    36                 -0.00         0.000E+00 -0.362E+05      422.10      422.10

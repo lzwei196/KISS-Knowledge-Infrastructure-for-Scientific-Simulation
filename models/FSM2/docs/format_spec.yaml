@@ -1,0 +1,210 @@
+model:
+  name: "FSM2"
+  version: "2.1.2"
+  full_name: "Flexible Snow Model"
+  domain: "cryosphere"
+  subdomain: "snow accumulation, melt, forest canopy snow processes"
+  author: "Richard Essery, University of Edinburgh"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/FSM2/source/repo/FSM2"
+  source_dir: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/FSM2/source/repo/src"
+  language: "Fortran 90"
+  compiler: "gfortran -cpp -O3"
+  timestep_s: 3600
+
+inputs:
+  forcing:
+    format: "space-delimited ASCII, one row per timestep"
+    columns_driv1d_1:
+      - name: "year"
+        unit: "-"
+        type: "integer"
+      - name: "month"
+        unit: "-"
+        type: "integer"
+      - name: "day"
+        unit: "-"
+        type: "integer"
+      - name: "hour"
+        unit: "-"
+        type: "real"
+      - name: "SW"
+        unit: "W/m2"
+        valid_range: [0, 1400]
+        description: "Incoming shortwave radiation"
+      - name: "LW"
+        unit: "W/m2"
+        valid_range: [100, 500]
+        description: "Incoming longwave radiation"
+      - name: "Sf"
+        unit: "kg/m2/s"
+        valid_range: [0, 0.01]
+        description: "Snowfall rate"
+      - name: "Rf"
+        unit: "kg/m2/s"
+        valid_range: [0, 0.01]
+        description: "Rainfall rate"
+      - name: "Ta"
+        unit: "K"
+        valid_range: [200, 330]
+        description: "Air temperature"
+      - name: "RH"
+        unit: "%"
+        valid_range: [0, 100]
+        description: "Relative humidity (percent, NOT fraction)"
+      - name: "Ua"
+        unit: "m/s"
+        valid_range: [0, 50]
+        description: "Wind speed (clamped to min 0.1 internally)"
+      - name: "Ps"
+        unit: "Pa"
+        valid_range: [40000, 110000]
+        description: "Surface air pressure"
+
+  parameters:
+    critical:
+      - name: "asmn"
+        default: 0.5
+        valid_range: [0.3, 0.7]
+        description: "Minimum snow albedo (melting)"
+      - name: "asmx"
+        default: 0.85
+        valid_range: [0.7, 0.95]
+        description: "Maximum snow albedo (fresh)"
+      - name: "rhof"
+        default: 100
+        unit: "kg/m3"
+        valid_range: [50, 200]
+        description: "Fresh snow density"
+      - name: "hfsn"
+        default: 0.1
+        unit: "m"
+        valid_range: [0.01, 1.0]
+        description: "Snow cover fraction depth scale"
+      - name: "kfix"
+        default: 0.24
+        unit: "W/m/K"
+        valid_range: [0.05, 0.75]
+        description: "Fixed snow thermal conductivity"
+      - name: "z0sn"
+        default: 0.001
+        unit: "m"
+        valid_range: [0.0001, 0.01]
+        description: "Snow roughness length"
+      - name: "fcly"
+        default: 0.3
+        valid_range: [0, 1]
+        description: "Soil clay fraction"
+      - name: "fsnd"
+        default: 0.6
+        valid_range: [0, 1]
+        description: "Soil sand fraction"
+    namelist:
+      - name: "Npnts"
+        description: "Number of simulation points"
+      - name: "met_file"
+        description: "Path to meteorological forcing file"
+      - name: "lat"
+        unit: "degrees"
+        description: "Latitude (converted to radians internally)"
+      - name: "dt"
+        unit: "s"
+        default: 3600
+        description: "Timestep in seconds"
+      - name: "zT"
+        unit: "m"
+        description: "Temperature measurement height"
+      - name: "zU"
+        unit: "m"
+        description: "Wind measurement height"
+    vegetation:
+      - name: "alb0"
+        description: "Snow-free ground albedo (per point)"
+      - name: "vegh"
+        unit: "m"
+        description: "Canopy height (0 = no canopy)"
+      - name: "VAI"
+        description: "Vegetation area index (0 = open site)"
+
+  compile_time_options:
+    - name: "ALBEDO"
+      values: [1, 2]
+      description: "Snow albedo: 1=diagnostic, 2=prognostic"
+    - name: "CONDCT"
+      values: [0, 1]
+      description: "Snow conductivity: 0=fixed, 1=density-dependent"
+    - name: "DENSTY"
+      values: [0, 1, 2]
+      description: "Snow density: 0=fixed, 1=age-compaction, 2=overburden"
+    - name: "EXCHNG"
+      values: [0, 1]
+      description: "Turbulent exchange: 0=neutral, 1=stability-corrected"
+    - name: "HYDROL"
+      values: [0, 1, 2]
+      description: "Snow hydrology: 0=free-drain, 1=bucket, 2=gravitational"
+    - name: "SGRAIN"
+      values: [1, 2]
+      description: "Grain growth: 1=temperature, 2=temperature-gradient"
+    - name: "SNFRAC"
+      values: [1, 2, 3]
+      description: "Snow cover fraction: 1=linear, 2=tanh, 3=asymptotic"
+    - name: "CANMOD"
+      values: [1, 2]
+      description: "Forest canopy layers: 1=single, 2=two layers"
+    - name: "CANRAD"
+      values: [1, 2]
+      description: "Canopy radiation: 1=Beer-Lambert, 2=two-stream"
+    - name: "PROFNC"
+      values: [0, 1]
+      description: "Output: 0=ASCII, 1=NetCDF (single-point only)"
+
+outputs:
+  primary:
+    - name: "snd"
+      unit: "m"
+      valid_range: [0, 20]
+      description: "Snow depth"
+      file: "{runid}stat.txt"
+    - name: "snw"
+      unit: "kg/m2"
+      valid_range: [0, 2000]
+      description: "Snow water equivalent (SWE)"
+      file: "{runid}stat.txt"
+    - name: "Tsrf"
+      unit: "K"
+      valid_range: [200, 320]
+      description: "Surface temperature"
+      file: "{runid}stat.txt"
+    - name: "Tsoil"
+      unit: "K"
+      valid_range: [250, 300]
+      description: "Soil layer temperatures (Nsoil values)"
+      file: "{runid}stat.txt"
+  fluxes:
+    - name: "H"
+      unit: "W/m2"
+      valid_range: [-200, 500]
+      description: "Sensible heat flux (positive upward)"
+      file: "{runid}flux.txt"
+    - name: "LE"
+      unit: "W/m2"
+      valid_range: [-100, 500]
+      description: "Latent heat flux (positive upward)"
+      file: "{runid}flux.txt"
+    - name: "Melt"
+      unit: "kg/m2/s"
+      valid_range: [0, 0.01]
+      description: "Surface melt rate"
+      file: "{runid}flux.txt"
+    - name: "Roff"
+      unit: "kg/m2/s"
+      valid_range: [0, 0.01]
+      description: "Runoff from snow"
+      file: "{runid}flux.txt"
+
+known_issues:
+  - "NetCDF output (PROFNC=1) only supports single-point runs (Npnts=1)"
+  - "RH must be in percent (0-100), not fraction (0-1)"
+  - "Pressure must be in Pa, not hPa or kPa"
+  - "Precipitation rates in kg/m2/s, not mm/h or mm/day"
+  - "Namelist blocks must appear in fixed order: params, gridpnts, gridlevs, drive, veg, initial, outputs"
+  - "Npnts in gridpnts must match array lengths in veg block"

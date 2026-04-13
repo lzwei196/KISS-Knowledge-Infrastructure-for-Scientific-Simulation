@@ -1,0 +1,741 @@
+# Raven Hydrological Modelling Framework — Diagnostic Triplets
+# Package: hydrocraft-raven v1.0.0
+# Generated: 2026-03-21
+# Total: 25 triplets across 7 failure domains
+
+triplets:
+
+  # ========================================================================
+  # UNIT CONVERSION ERRORS (Raven's #1 trap — SILENT)
+  # "Raven ignores units and will not do units conversion" — Raven cheat sheet
+  # ========================================================================
+
+  - id: dt_rav_001
+    severity: silent
+    failure_domain: unit_conversion
+    stage: s3
+    symptom:
+      description: "Model runs successfully but simulated discharge is 8x too high"
+      error_pattern: null
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Precipitation input in mm/3hr instead of mm/d. Raven treats all values as daily totals."
+      explanation: |
+        CMFD/MSWX forcing is 3-hourly. If the tool sums 8 timesteps to get daily totals,
+        Raven gets correct mm/d. If raw 3-hourly values are passed directly, Raven
+        interprets each 3-hourly value as a full day's precipitation, giving 8x overestimate.
+      affected_components: [convert_forcing_to_rvt.py, ".rvt file"]
+    remedy:
+      action: "Ensure precipitation is aggregated to daily (sum of 8 timesteps) before writing .rvt"
+      tool_to_run: convert_forcing_to_rvt.py
+      manual_steps:
+        - "Check .rvt PRECIP values: daily precip > 200mm is suspicious"
+        - "Verify mean annual precip is 200-3000 mm/yr, not 1600-24000"
+      prevention: "convert_forcing_to_rvt.py has bounds checking (max 500 mm/d)"
+
+  - id: dt_rav_002
+    severity: silent
+    failure_domain: unit_conversion
+    stage: s3
+    symptom:
+      description: "Temperature-dependent processes (snowmelt, PET) produce wrong results. No error message."
+      error_pattern: null
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Temperature in Kelvin instead of Celsius. Raven expects degC."
+      explanation: |
+        CMFD raw temperature is in Kelvin. The VIC forcing pipeline converts to Celsius,
+        but if raw CMFD NetCDF is read directly, temperatures of 273-310K are interpreted
+        as 273-310 degC, producing absurd PET and no snowmelt.
+      affected_components: [convert_forcing_to_rvt.py, ".rvt file"]
+    remedy:
+      action: "Subtract 273.15 from all temperature variables"
+      tool_to_run: convert_forcing_to_rvt.py
+      manual_steps:
+        - "Check .rvt TEMP values: should be -40 to +50 degC"
+        - "If values are 230-320, they are still in Kelvin"
+      prevention: "Bounds checking in convert_forcing_to_rvt.py catches T > 60 degC"
+
+  - id: dt_rav_003
+    severity: silent
+    failure_domain: unit_conversion
+    stage: s3
+    symptom:
+      description: "PET computed by Raven is unrealistically high or low"
+      error_pattern: null
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Shortwave radiation in W/m2 instead of MJ/m2/d"
+      explanation: |
+        Raven expects SW_RADIA in MJ/m2/d. CMFD/MSWX provides instantaneous W/m2.
+        Conversion factor: mean_W_m2 * 0.0864 = MJ/m2/d. If raw W/m2 values (0-400)
+        are provided, Raven interprets them as MJ/m2/d (physically impossible — solar
+        constant is ~118 MJ/m2/d), producing extreme PET.
+      affected_components: [convert_forcing_to_rvt.py]
+    remedy:
+      action: "Multiply mean daily shortwave (W/m2) by 0.0864 to get MJ/m2/d"
+      tool_to_run: convert_forcing_to_rvt.py
+      manual_steps:
+        - "Check SW_RADIA values: should be 0-40 MJ/m2/d"
+        - "Values > 50 indicate W/m2 was not converted"
+      prevention: "Bounds checking in convert_forcing_to_rvt.py"
+
+  - id: dt_rav_004
+    severity: silent
+    failure_domain: unit_conversion
+    stage: s3
+    symptom:
+      description: "Penman-Monteith PET computation fails or gives wrong values"
+      error_pattern: null
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Air pressure in Pa instead of kPa"
+      explanation: |
+        Raven expects AIR_PRES in kPa. CMFD provides Pa. The VIC pipeline
+        already converts to kPa, but if using raw CMFD data, 101325 Pa would be
+        interpreted as 101325 kPa (1000x too high), breaking vapor pressure calculations.
+      affected_components: [convert_forcing_to_rvt.py]
+    remedy:
+      action: "Divide pressure by 1000 (Pa -> kPa)"
+      manual_steps: ["Check AIR_PRES: should be 60-110 kPa, not 60000-110000"]
+      prevention: "Bounds checking catches values outside 30-110 kPa"
+
+  - id: dt_rav_005
+    severity: silent
+    failure_domain: unit_conversion
+    stage: s3
+    symptom:
+      description: "Raven reports zero precipitation despite forcing data being present"
+      error_pattern: null
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Forcing data timestep does not match :TimeStep in .rvi"
+      explanation: |
+        If .rvi has :TimeStep 1.0 (daily) but .rvt provides 3-hourly data with
+        interval=0.125, Raven may only read every 8th value. Conversely, if .rvt
+        says interval=1.0 but data is actually 3-hourly, Raven reads all values
+        as consecutive days, spreading 1 day's data over 8 days.
+      affected_components: [".rvi file", ".rvt file"]
+    remedy:
+      action: "Ensure :TimeStep in .rvi matches the data interval in .rvt :Data block"
+      manual_steps:
+        - "Verify .rvt data interval (4th value in header line after :Data)"
+        - "Typical: interval=1.0 for daily, interval=0.125 for 3-hourly"
+      prevention: "validate_raven_inputs.py checks timestep consistency"
+
+  # ========================================================================
+  # FILE FORMAT / STRUCTURE ERRORS
+  # ========================================================================
+
+  - id: dt_rav_006
+    severity: fatal
+    failure_domain: parameter_format
+    stage: s1
+    symptom:
+      description: "Raven crashes with 'Error: HRU area sum does not equal basin area'"
+      error_pattern: "HRU area.*does not equal"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Sum of HRU areas in .rvh does not match SubBasin area"
+      explanation: |
+        Raven checks that the total area of all HRUs assigned to a subbasin
+        matches the subbasin's expected area. Floating-point rounding during
+        HRU construction can cause tiny mismatches that trigger this error.
+      affected_components: [build_rvh_from_shapefile.py, ".rvh file"]
+    remedy:
+      action: "Rescale HRU areas to sum exactly to basin area"
+      tool_to_run: build_rvh_from_shapefile.py
+      manual_steps:
+        - "Calculate sum of HRU AREA values in .rvh"
+        - "Adjust largest HRU to absorb the rounding difference"
+      prevention: "build_rvh_from_shapefile.py rescales automatically (1% tolerance)"
+
+  - id: dt_rav_007
+    severity: fatal
+    failure_domain: parameter_format
+    stage: s2
+    symptom:
+      description: "Raven crashes with 'Soil profile not found' error"
+      error_pattern: "Soil profile.*not found"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Soil profile name in .rvh does not match any profile in .rvp"
+      explanation: |
+        The SOIL_PROFILE column in .rvh HRU table must exactly match a
+        :SoilProfile name in .rvp. Case-sensitive. Common mismatch:
+        .rvh uses 'DEFAULT_PROF' but .rvp defines 'Default_Prof'.
+      affected_components: [".rvh file", ".rvp file"]
+    remedy:
+      action: "Ensure soil profile names match exactly between .rvh and .rvp"
+      tool_to_run: validate_raven_inputs.py
+      prevention: "validate_raven_inputs.py cross-checks all class names"
+
+  - id: dt_rav_008
+    severity: fatal
+    failure_domain: parameter_format
+    stage: s2
+    symptom:
+      description: "Raven crashes with 'Land use class not found' error"
+      error_pattern: "Land use class.*not found|Vegetation class.*not found"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Land use or vegetation class in .rvh not defined in .rvp"
+      explanation: |
+        Every LAND_USE_CLASS and VEG_CLASS value in the .rvh HRU table must have
+        a corresponding entry in :LandUseClasses and :VegetationClasses blocks
+        in the .rvp file. If build_rvh and build_rvp use different naming conventions,
+        this error occurs.
+      affected_components: [build_rvh_from_shapefile.py, build_rvp_parameters.py]
+    remedy:
+      action: "Regenerate .rvp from .rvh to ensure class names match"
+      tool_to_run: "build_rvp_parameters.py --rvh_file <path>"
+      prevention: "Always generate .rvp AFTER .rvh, using --rvh_file flag"
+
+  - id: dt_rav_009
+    severity: fatal
+    failure_domain: parameter_format
+    stage: s3
+    symptom:
+      description: "Raven crashes with 'Bad data in time series' or 'Insufficient data'"
+      error_pattern: "Bad data|Insufficient data|cannot read"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Mismatch between declared data count and actual data lines in .rvt"
+      explanation: |
+        The .rvt :Data header declares the number of data points (e.g., '365' for 1 year
+        daily). If the actual number of data lines differs, Raven either reads past end
+        of data (corrupt values) or runs out of data mid-simulation.
+      affected_components: [convert_forcing_to_rvt.py, ".rvt file"]
+    remedy:
+      action: "Verify data count in .rvt header matches actual number of data lines"
+      manual_steps:
+        - "Count lines between ':Data' header and ':EndData'"
+        - "Compare with the count value in the header line"
+      prevention: "convert_forcing_to_rvt.py computes count from actual data length"
+
+  # ========================================================================
+  # MISSING DATA / SILENT FILL ERRORS
+  # ========================================================================
+
+  - id: dt_rav_010
+    severity: silent
+    failure_domain: silent_error
+    stage: s3
+    symptom:
+      description: "Model runs but produces zero or near-zero discharge"
+      error_pattern: null
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Forcing variable not provided — Raven fills with zeros silently"
+      explanation: |
+        If a required forcing variable (e.g., PRECIP) is missing from .rvt,
+        Raven does NOT crash. It fills the missing variable with zeros.
+        Zero precipitation = zero runoff = zero discharge. No warning is issued.
+        This is the most dangerous silent failure mode.
+      affected_components: [".rvt file"]
+    remedy:
+      action: "Verify all required forcing variables are present in .rvt"
+      tool_to_run: validate_raven_inputs.py
+      manual_steps:
+        - "Check .rvt has at minimum: :Data PRECIP, :Data TEMP_MIN, :Data TEMP_MAX"
+        - "If using PET_PENMAN_MONTEITH, also need WIND_VEL, REL_HUMIDITY, SW_RADIA"
+      prevention: "validate_raven_inputs.py checks forcing vs PET method requirements"
+
+  - id: dt_rav_011
+    severity: silent
+    failure_domain: silent_error
+    stage: s7
+    symptom:
+      description: "Diagnostics.csv shows NSE = -9999.000 or NASH_SUTCLIFFE not computed"
+      error_pattern: "-9999"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "No observation data provided for the gauged subbasin"
+      explanation: |
+        Raven computes performance diagnostics (NSE, KGE, etc.) only when observed
+        data is provided in the .rvt file for the gauged subbasin. If no observed
+        data is present, diagnostics are reported as -9999 — not as an error.
+      affected_components: [".rvt file"]
+    remedy:
+      action: "Add observed discharge data to .rvt for the gauged subbasin"
+      manual_steps:
+        - "Add :ObservationData HYDROGRAPH 1 block to .rvt (subbasin ID = 1)"
+        - "Ensure observed data covers the simulation period"
+        - "Raven's missing data marker is -1.2345"
+      prevention: "Warn user when no observed data is provided"
+
+  - id: dt_rav_012
+    severity: silent
+    failure_domain: silent_error
+    stage: s0
+    symptom:
+      description: "Snow-dominated basin produces no snowmelt peaks despite snowfall"
+      error_pattern: null
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Selected template has no snow process (e.g., GR4J, HYMOD, SAC-SMA)"
+      explanation: |
+        GR4J, HYMOD, and basic SAC-SMA do not include snow balance processes.
+        In snow-dominated basins, all winter precipitation is treated as rain,
+        producing runoff in winter instead of spring snowmelt peaks. The model
+        runs fine — the physics is just wrong for the basin.
+      affected_components: [select_model_template.py, ".rvi file"]
+    remedy:
+      action: "Use a snow-capable template (HBV-EC, HMETS, UBC, MOHYSE, HYPR)"
+      tool_to_run: "select_model_template.py --recommend --climate cold"
+      prevention: "select_model_template.py warns if snow_capable=False for cold/alpine basins"
+
+  # ========================================================================
+  # PROCESS COMPATIBILITY ERRORS
+  # ========================================================================
+
+  - id: dt_rav_013
+    severity: fatal
+    failure_domain: dependency_mismatch
+    stage: s4
+    symptom:
+      description: "Raven crashes with 'Incompatible algorithm' or 'State variable not found'"
+      error_pattern: "Incompatible|State variable.*not found"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Mixing process algorithms from different model families"
+      explanation: |
+        Some algorithms expect specific state variables. For example, GR4J
+        infiltration (INF_GR4J) expects GR4J-specific soil stores. Using it with
+        HBV baseflow (BASE_LINEAR) may fail because the expected state variable
+        routing does not match. Emulation templates are safe; custom builds risk this.
+      affected_components: [".rvi file"]
+    remedy:
+      action: "Use a complete emulation template or verify algorithm compatibility"
+      tool_to_run: select_model_template.py
+      manual_steps:
+        - "Use predefined templates (gr4j, hbv_ec, hmets, etc.) as starting point"
+        - "If customizing, verify all algorithms reference existing state variables"
+      prevention: "select_model_template.py generates compatible algorithm sets"
+
+  - id: dt_rav_014
+    severity: degraded
+    failure_domain: dependency_mismatch
+    stage: s4
+    symptom:
+      description: "PET is zero or unrealistic despite correct forcing"
+      error_pattern: null
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "PET method requires forcing variables not provided"
+      explanation: |
+        PET_PENMAN_MONTEITH requires WIND_VEL, REL_HUMIDITY, and SW_RADIA.
+        If only PRECIP + TEMP_MIN + TEMP_MAX are provided, Raven falls back
+        to internal generators that may produce inaccurate results. It does
+        NOT error — it silently uses generated values which may be poor.
+      affected_components: [".rvi file", ".rvt file"]
+    remedy:
+      action: "Match PET method to available forcing or provide full forcing"
+      manual_steps:
+        - "For minimal forcing (P+T): use PET_OUDIN or PET_HARGREAVES_1985"
+        - "For full forcing (7 vars): use PET_PENMAN_MONTEITH"
+      prevention: "validate_raven_inputs.py checks PET method vs available forcing"
+
+  # ========================================================================
+  # CALIBRATION ERRORS
+  # ========================================================================
+
+  - id: dt_rav_015
+    severity: degraded
+    failure_domain: calibration
+    stage: s9
+    symptom:
+      description: "DDS calibration does not improve after many iterations"
+      error_pattern: null
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Wrong template for basin or parameter ranges too narrow"
+      explanation: |
+        If the selected model structure is fundamentally wrong for the basin
+        (e.g., no snow process for a snow basin), no amount of parameter tuning
+        will produce good results. Also, if parameter ranges are too narrow,
+        DDS cannot explore the parameter space effectively.
+      affected_components: [calibrate_raven_dds.py]
+    remedy:
+      action: "Try a different model template or widen parameter ranges"
+      manual_steps:
+        - "Run ensemble comparison first (run_ensemble_comparison.py) to find best template"
+        - "Then calibrate only the best-performing template"
+        - "Widen parameter ranges if DDS hits bounds repeatedly"
+      prevention: "Always run ensemble first, calibrate second"
+
+  - id: dt_rav_016
+    severity: degraded
+    failure_domain: calibration
+    stage: s9
+    symptom:
+      description: "Calibrated model overfits — good calibration NSE but poor validation"
+      error_pattern: null
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Too many parameters calibrated relative to data length"
+      explanation: |
+        Models with many parameters (SAC-SMA: 16, HBV: 21) can overfit short
+        calibration periods. Rule of thumb: need at least 3 years of daily data
+        per calibrated parameter. GR4J (4 params) is most resistant to overfitting.
+      affected_components: [calibrate_raven_dds.py]
+    remedy:
+      action: "Use fewer parameters or longer calibration period"
+      manual_steps:
+        - "Split data into calibration (70%) and validation (30%)"
+        - "Report both calibration and validation metrics"
+        - "For short records (<10 years), prefer GR4J or HYMOD (fewer params)"
+
+  # ========================================================================
+  # RUNTIME ERRORS
+  # ========================================================================
+
+  - id: dt_rav_017
+    severity: fatal
+    failure_domain: runtime
+    stage: s6
+    symptom:
+      description: "Raven reports 'Mass balance error exceeds tolerance'"
+      error_pattern: "Mass balance.*error|water balance"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Timestep too large for the process algorithms, or numerical instability"
+      explanation: |
+        Some process algorithms (especially routing) can become numerically unstable
+        at large timesteps. Diffusive wave routing with daily timestep on small
+        basins may produce mass balance violations.
+      affected_components: [".rvi file"]
+    remedy:
+      action: "Reduce timestep or use simpler routing"
+      manual_steps:
+        - "Change :TimeStep from 1.0 to 0.25 (6-hourly)"
+        - "Or change :Routing to ROUTE_NONE and :CatchmentRoute to ROUTE_DUMP"
+
+  - id: dt_rav_018
+    severity: fatal
+    failure_domain: runtime
+    stage: s6
+    symptom:
+      description: "Raven crashes with segmentation fault"
+      error_pattern: "Segmentation fault|SIGSEGV"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Stack overflow from too many HRUs or very long simulation period"
+      explanation: |
+        Raven allocates arrays proportional to (n_HRUs * n_timesteps * n_state_variables).
+        Very large domains (>10,000 HRUs) or very long periods (>50 years daily) can
+        exceed the default stack size.
+      affected_components: [Raven binary]
+    remedy:
+      action: "Reduce HRU count or increase stack size"
+      manual_steps:
+        - "Aggregate HRUs (use lumped strategy instead of fine-grained)"
+        - "Or increase stack: ulimit -s unlimited before running"
+        - "Or recompile Raven with -Wl,-z,stacksize=268435456"
+
+  # ========================================================================
+  # COUPLING ERRORS
+  # ========================================================================
+
+  - id: dt_rav_019
+    severity: silent
+    failure_domain: coupling
+    stage: s10
+    symptom:
+      description: "Raven and VIC disagree strongly despite same forcing and basin"
+      error_pattern: null
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Expected — different model structures produce different results"
+      explanation: |
+        Raven and VIC use fundamentally different physics. A 20-50% difference in
+        mean discharge is EXPECTED with uncalibrated parameters. This is NOT an error
+        — it quantifies structural uncertainty. Only flag as an issue if:
+        (1) correlation r < 0.3 (timing completely wrong), or
+        (2) volume ratio outside 0.3-3.0 (order of magnitude wrong).
+      affected_components: [raven_vic_comparison.py]
+    remedy:
+      action: "Accept differences as structural uncertainty unless extreme"
+      manual_steps:
+        - "Check correlation (timing): r > 0.5 is acceptable"
+        - "Check volume ratio: 0.5-2.0 is acceptable for uncalibrated"
+        - "Calibrate both models, then compare"
+
+  - id: dt_rav_020
+    severity: silent
+    failure_domain: coupling
+    stage: s10
+    symptom:
+      description: "Raven discharge has different timing than VIC (peaks early/late)"
+      error_pattern: null
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Different routing and runoff generation mechanisms"
+      explanation: |
+        VIC uses variable infiltration curve + Lohmann routing (unit hydrograph).
+        Raven emulations (HBV, GR4J) use their own infiltration + optional routing.
+        Different runoff generation = different peak timing. Routing adds further
+        lag. Compare with observed data to determine which is more realistic.
+      affected_components: [".rvi process selection", VIC configuration]
+    remedy:
+      action: "Use observed data as reference rather than comparing models to each other"
+      manual_steps:
+        - "Plot Raven, VIC, and observed on same graph"
+        - "Cross-correlate to find lag"
+
+  # ========================================================================
+  # INSTALLATION ERRORS
+  # ========================================================================
+
+  - id: dt_rav_021
+    severity: fatal
+    failure_domain: compilation
+    stage: installation
+    symptom:
+      description: "Compilation fails with undefined reference to netcdf functions"
+      error_pattern: "undefined reference to.*nc_|netcdf"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "NetCDF option enabled but library not linked"
+      explanation: |
+        If Makefile has CXXFLAGS += -Dnetcdf uncommented but LDLIBS does not
+        point to the correct NetCDF library path, compilation succeeds but
+        linking fails.
+      affected_components: [Makefile]
+    remedy:
+      action: "Either disable NetCDF (comment out -Dnetcdf) or set correct library path"
+      manual_steps:
+        - "For basic Raven (no NetCDF I/O): leave -Dnetcdf commented out in Makefile"
+        - "For NetCDF support: LDLIBS += -L/usr/lib/x86_64-linux-gnu -lnetcdf"
+
+  - id: dt_rav_022
+    severity: fatal
+    failure_domain: runtime
+    stage: s6
+    symptom:
+      description: "Raven.exe: Permission denied"
+      error_pattern: "Permission denied"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Binary not marked as executable after compilation"
+      explanation: |
+        After compiling with make or g++, the output binary may not have
+        execute permission depending on umask settings.
+      affected_components: [Raven.exe]
+    remedy:
+      action: "chmod +x Raven.exe"
+      manual_steps: ["chmod +x /mnt/disk1/Hydrocraft_server/model/raven/Raven.exe"]
+
+  # ========================================================================
+  # SPINUP / WARM START ERRORS
+  # ========================================================================
+
+  - id: dt_rav_023
+    severity: degraded
+    failure_domain: silent_error
+    stage: s5
+    symptom:
+      description: "First 1-2 years of simulation show unrealistic discharge spikes or dips"
+      error_pattern: null
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Cold start spinup artifact — initial soil moisture too high or too low"
+      explanation: |
+        Default initial conditions (zero or arbitrary soil moisture) take 1-2 years
+        to equilibrate. During spinup, discharge may be unrealistically high (if initial
+        soil is over-saturated) or low (if initially dry). This is normal and expected.
+      affected_components: [generate_rvc_initial.py, ".rvc file"]
+    remedy:
+      action: "Discard first 1-2 years as spinup, or use solution.rvc from previous run"
+      manual_steps:
+        - "Set simulation start 2 years before analysis period"
+        - "Or copy solution.rvc from a completed run as the new .rvc"
+      prevention: "generate_rvc_initial.py uses climate-aware defaults to reduce spinup"
+
+  - id: dt_rav_024
+    severity: silent
+    failure_domain: silent_error
+    stage: s8
+    symptom:
+      description: "Ensemble models produce identical results despite different templates"
+      error_pattern: null
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "All ensemble members share the same .rvp — template-specific parameters not applied"
+      explanation: |
+        If the ensemble runner copies the same .rvp to all run directories without
+        regenerating template-specific parameters, all models effectively use the same
+        parameters. The .rvi differs (process algorithms) but parameters are identical,
+        which may or may not produce identical output depending on the algorithm.
+      affected_components: [run_ensemble_comparison.py]
+    remedy:
+      action: "Regenerate .rvp for each template using build_rvp_parameters.py"
+      tool_to_run: "run_ensemble_comparison.py (already does this internally)"
+      prevention: "run_ensemble_comparison.py generates template-specific .rvp for each member"
+
+  - id: dt_rav_025
+    severity: silent
+    failure_domain: silent_error
+    stage: s3
+    symptom:
+      description: "Raven fills missing forcing with its internal generators — results differ from expectations"
+      error_pattern: null
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Raven silently generates missing forcing variables using internal functions"
+      explanation: |
+        Raven has 40+ 'forcing function generators' that can estimate missing
+        variables from those provided. For example, TEMP_AVE from TEMP_MIN+TEMP_MAX,
+        or SW_RADIA from latitude+day_of_year. These are approximations and may
+        differ significantly from actual measurements. Raven does NOT warn when
+        using generators — it simply uses them when data is missing.
+      affected_components: [".rvt file"]
+    remedy:
+      action: "Provide as many forcing variables as available to minimize reliance on generators"
+      manual_steps:
+        - "Include at minimum: PRECIP, TEMP_MIN, TEMP_MAX"
+        - "Preferably also: TEMP_AVE, SW_RADIA, WIND_VEL"
+        - "Check ForcingFunctions.csv to see what Raven generated internally"
+
+  # ========================================================================
+  # ERRORS DISCOVERED DURING BENGBU STEP 3 VALIDATION (2026-03-22)
+  # ========================================================================
+
+  - id: dt_rav_026
+    severity: silent
+    failure_domain: unit_conversion
+    stage: s3
+    symptom:
+      description: "Forcing conversion produces 44,551 mm/yr precip and 50C mean temperature — all variables mapped to wrong physical quantities"
+      error_pattern: "BOUNDS VIOLATION: PRECIP.*range.*outside expected"
+      detection_method: bounds_check
+    diagnosis:
+      root_cause: "convert_forcing_to_rvt.py had wrong VIC forcing column mapping. Tool assumed column order [PRECIP, TMAX, TMIN, WIND, SW, LW, PRESSURE] but actual VIC process_forcing.py output is [AIR_TEMP, PREC, PRESSURE, SWDOWN, LWDOWN, VP, WIND]. Temperature was summed as precip (44x overestimate), pressure was read as temperature (95 kPa -> '95 C')."
+      explanation: |
+        The original tool was written from VIC documentation which shows a different column order
+        than what HydroCraft's process_forcing.py actually produces. This is a SILENT error —
+        Raven runs without error with any numeric forcing data, but the outputs are completely
+        wrong. Only the bounds-check in the tool caught this. Without bounds checking, this would
+        have produced 44x too much runoff with absurd temperature-driven PET.
+      affected_components: [convert_forcing_to_rvt.py, aggregate_3hourly_to_daily]
+    remedy:
+      action: "Fixed column indices in aggregate_3hourly_to_daily(): VIC col 0->TEMP, 1->PRECIP, 2->PRESSURE, 3->SW, 4->LW, 5->VP, 6->WIND"
+      tool_to_run: convert_forcing_to_rvt.py
+      verification: "After fix: annual precip 1035 mm (expected 800-1100), mean temp 15.4 C (expected 14-16 C for Bengbu)"
+
+  - id: dt_rav_027
+    severity: fatal
+    failure_domain: dependency_mismatch
+    stage: s3
+    symptom:
+      description: "convert_forcing_to_rvt.py reports 'No grid cells found' when reading HydroCraft VIC grid NetCDF"
+      error_pattern: "No grid cells found. Provide --grid_nc"
+      detection_method: error_message
+    diagnosis:
+      root_cause: "Tool reads ds.variables['lat']/['lon'] but HydroCraft VIC grid NetCDF uses 'y'/'x' with a 2D 'mask' array. The bare except block swallows the KeyError."
+      explanation: |
+        HydroCraft's make_basin_grid_nc.py produces grid files with variables named 'y', 'x',
+        and 'mask' (2D array). This is a valid convention but differs from the 1D lat/lon
+        arrays the Raven tool expected. The fallback filename parser also failed because
+        Bengbu forcing files have no .txt/.dat extension (VIC process_forcing.py produces
+        extensionless files like 'bengbu_0.25deg_31.1250_115.6250').
+      affected_components: [convert_forcing_to_rvt.py]
+    remedy:
+      action: "Added y/x + 2D mask support in grid reader. Also removed extension filter in filename parser."
+      tool_to_run: convert_forcing_to_rvt.py
+
+  - id: dt_rav_028
+    severity: fatal
+    failure_domain: parameter_format
+    stage: s0
+    symptom:
+      description: "Raven v4.1 rejects GR4J_X1-X4 as GlobalParameter — 'Unrecognized/invalid global parameter name'"
+      error_pattern: "CGlobalParams::SetGlobalProperty: Unrecognized/invalid global parameter name (GR4J_X1)"
+      detection_method: error_file
+    diagnosis:
+      root_cause: "select_model_template.py and build_rvp_parameters.py place GR4J parameters as :GlobalParameter commands. But Raven v4.1 requires GR4J_X2/X3 as soil parameters (SoilParameterList), GR4J_X4 as a land-use parameter (LandUseParameterList), and GR4J_X1 is encoded implicitly via soil_thickness * porosity = X1/1000."
+      explanation: |
+        This affects all model templates in the generic tools. Each Raven emulation has
+        specific requirements for WHERE parameters must be defined (global vs soil vs land-use
+        vs vegetation). The Raven User Manual documents this per-template, but the generic tools
+        treat all parameters as global. The working Chaohe test used hand-crafted templates that
+        correctly placed parameters per Raven source code requirements.
+      affected_components: [select_model_template.py, build_rvp_parameters.py]
+    remedy:
+      action: "Use hand-crafted .rvi/.rvp templates per model (as in run_ensemble_v2.py). Generic tools need major refactoring to properly route parameters."
+      manual_steps:
+        - "GR4J: X1 via soil_thickness*porosity*1000, X2/X3 as SoilParameterList, X4 as LandUseParameterList"
+        - "HBV: soil params in SoilParameterList, melt/refreeze in LandUseParameterList"
+        - "HYMOD: BASEFLOW_COEFF per soil class, PDM_B as LandUseParameterList"
+
+  # === Validated from Bengbu + Chaohe testing (err_003, err_004, err_007, err_008, err_009) ===
+
+  - id: dt_rav_029
+    severity: fatal
+    failure_domain: dependency_mismatch
+    stage: s2
+    symptom:
+      description: "MOHYSE crashes with 'required soil property HBV_BETA not included' — hidden dependency"
+      error_pattern: "required soil property HBV_BETA"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "INF_HBV infiltration algorithm (used internally by MOHYSE) requires HBV_BETA as a soil parameter. MOHYSE also requires MOHYSE_PET_COEFF (global) and AET_COEFF (land use) — none documented in the emulation template."
+      affected_components: [select_model_template.py, build_rvp_parameters.py]
+    remedy:
+      action: "Add HBV_BETA to SoilParameterList, MOHYSE_PET_COEFF to GlobalParameter, AET_COEFF to LandUseParameterList"
+
+  - id: dt_rav_030
+    severity: fatal
+    failure_domain: parameter_format
+    stage: s6
+    symptom:
+      description: "Raven exits with 'Cannot find or read .rvc file' even for cold start"
+      error_pattern: "Cannot find or read .rvc"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Raven v4.1 requires a .rvc file to exist even if empty. Unlike VIC which runs without IC, Raven insists on finding the file path specified in the .rvi."
+      affected_components: [generate_rvc_initial.py]
+    remedy:
+      action: "Create a minimal .rvc file with just a comment: '# Empty initial conditions — cold start'"
+
+  - id: dt_rav_031
+    severity: fatal
+    failure_domain: parameter_format
+    stage: s2
+    symptom:
+      description: "build_rvp_parameters.py generates wrong class names from comma-separated .rvh — trailing commas"
+      error_pattern: "WETLAND,"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "parse_rvh_classes() uses line.split() (whitespace) on comma-separated HRU lines, producing tokens like 'WETLAND,' with trailing commas. Class names don't match between .rvh and .rvp."
+      affected_components: [build_rvp_parameters.py]
+    remedy:
+      action: "Detect comma in line and use split(',') + strip() for CSV format"
+
+  - id: dt_rav_032
+    severity: fatal
+    failure_domain: parameter_format
+    stage: s2
+    symptom:
+      description: "build_rvp_parameters.py reads AQUIFER_PROFILE as TERRAIN_CLASS — wrong column index"
+      error_pattern: "[NONE]"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Parser reads column [9] as terrain class, but 13-column .rvh format has AQUIFER_PROFILE at [9], TERRAIN_CLASS at [10]. Order: ID(0) AREA(1) ELEV(2) LAT(3) LON(4) BASIN(5) LU(6) VEG(7) SOIL(8) AQUIFER(9) TERRAIN(10) SLOPE(11) ASPECT(12)"
+      affected_components: [build_rvp_parameters.py]
+    remedy:
+      action: "Changed to read parts[10] for terrain class"
+
+  - id: dt_rav_033
+    severity: fatal
+    failure_domain: parameter_format
+    stage: s0
+    symptom:
+      description: "Raven v4.1 rejects :SWCanopyCorrect and :ExchangeFlow2 — unrecognized commands from generic template"
+      error_pattern: "Unrecognized|unrecognized"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "select_model_template.py generates .rvi with commands that exist in Raven documentation but are not compiled into v4.1 binary (:SWCanopyCorrect, :ExchangeFlow2). The Raven source code has conditional compilation flags."
+      affected_components: [select_model_template.py]
+    remedy:
+      action: "Use hand-crafted per-model templates validated against Raven v4.1 binary. Generic template generation needs version-awareness."

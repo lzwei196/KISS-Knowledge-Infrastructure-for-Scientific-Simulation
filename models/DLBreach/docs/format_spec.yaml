@@ -1,0 +1,238 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["flood"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "DLBreach v2016.4"
+  domain: "flood"
+  secondary_domains: ["dam_safety"]
+  binary: "DLBreach.exe"
+  binary_path: "/mnt/disk1/Hydrocraft_server/model/dlbreach/bin/DLBreach.exe"
+  language: "Fortran"
+  working_directory: "directory containing casename.txt"
+  notes: "Dam/levee breach model. Single input file, single output file, SI units."
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "inflow_hydrograph"
+      file: "casename.txt (Inflow_Hydrograph card)"
+      unit: "m3/s"
+      valid_range: [0.0, 1e6]
+      format: "Card-based: time (HOURS) + discharge (m3/s) pairs"
+      conversion_from_cama: "CaMa outflw (m3/s) at dam cell, daily -> hourly interpolation"
+      notes: "Time in inflow card is in HOURS, not seconds."
+
+    - name: "initial_water_level"
+      file: "casename.txt (Upstream_Water_Level card)"
+      unit: "m (above embankment base)"
+      valid_range: [0.0, 500.0]
+      format: "Card-based keyword-value"
+      notes: "Water level is relative to embankment BASE, not sea level."
+
+  parameters:
+    critical:
+      - name: "breach_mode"
+        file: "casename.txt (Breach_Mode card)"
+        description: "Failure mode: 1=overtopping, 2=internal erosion (piping)"
+        valid_range: [1, 2]
+        unit: "integer flag"
+
+      - name: "overtopping_mode"
+        file: "casename.txt (Overtopping_Mode card)"
+        description: "Erosion mechanism: 1=surface erosion, 2=headcut, 3=composite"
+        valid_range: [1, 3]
+        unit: "integer flag"
+        notes: "Only used when Breach_Mode=1."
+
+      - name: "dam_height"
+        file: "casename.txt (Embankment_Height card)"
+        description: "Embankment height from crest to base"
+        valid_range: [1.0, 300.0]
+        unit: "m"
+        notes: "Crest-to-base height, NOT geo-reference elevation."
+
+      - name: "dam_crest_width"
+        file: "casename.txt (Embankment_Crest_Width card)"
+        description: "Width of embankment crest"
+        valid_range: [1.0, 50.0]
+        unit: "m"
+
+      - name: "upstream_slope"
+        file: "casename.txt (Embankment_Upstream_Slope card)"
+        description: "Upstream face slope (V/H ratio)"
+        valid_range: [0.1, 2.0]
+        unit: "V/H"
+        notes: "V/H ratio, NOT H/V. E.g., 1V:3H = 0.333."
+
+      - name: "downstream_slope"
+        file: "casename.txt (Embankment_Downstream_Slope card)"
+        description: "Downstream face slope (V/H ratio)"
+        valid_range: [0.1, 2.0]
+        unit: "V/H"
+
+      - name: "embankment_length"
+        file: "casename.txt (Embankment_Length card)"
+        description: "Base length of embankment = maximum breach bottom width"
+        valid_range: [10.0, 10000.0]
+        unit: "m"
+
+      - name: "sediment_diameter"
+        file: "casename.txt (Sediment_Diameter card)"
+        description: "Representative grain size"
+        valid_range: [0.00001, 0.1]
+        default: 0.001
+        unit: "m"
+        notes: "Non-cohesive: ~0.001m (1mm). Cohesive: ~0.00003m (30 micron)."
+
+      - name: "breach_manning_n"
+        file: "casename.txt (Breach_Manning_n card)"
+        description: "Manning roughness in the breach channel"
+        valid_range: [0.010, 0.060]
+        default: 0.025
+        unit: "s/m^(1/3)"
+
+      - name: "kd_erosion_coeff"
+        file: "casename.txt (Cohesive_Soil_Erosion_kd card)"
+        description: "Cohesive soil erodibility coefficient"
+        valid_range: [0.1, 100.0]
+        default: 10.0
+        unit: "cm3/N-s"
+        sensitivity: "HIGHEST for cohesive dams"
+
+      - name: "tauc_critical_shear"
+        file: "casename.txt (Cohesive_Soil_Erosion_Tauc card)"
+        description: "Critical shear stress for erosion initiation"
+        valid_range: [0.01, 10.0]
+        default: 0.15
+        unit: "Pa"
+
+      - name: "time_step"
+        file: "casename.txt (Time_Step card)"
+        description: "Computational timestep"
+        valid_range: [0.1, 5.0]
+        unit: "seconds"
+        notes: "Field scale: 1-5s. Lab scale: 0.1-1s."
+
+      - name: "reservoir_curve"
+        file: "casename.txt (Reservoir_Elevation_Area_Volume card)"
+        description: "Elevation-area-volume relationship for reservoir"
+        unit: "m, m2, m3"
+        notes: "Elevation is above embankment base."
+
+  files:
+    required:
+      - name: "casename.txt"
+        description: "Single input file containing ALL model parameters as keyword cards"
+        format: "Card-based: Keyword value(s) ! optional comment"
+        notes: "No blank lines or comments between keyword and multiline tabulated data."
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "breach_discharge"
+      file: "casename.out (column 2)"
+      unit: "m3/s"
+      valid_range: [0.0, 1e6]
+      format: "ASCII, 13 columns, space-delimited"
+      notes: "Peak breach discharge is the primary validation target."
+
+    - name: "spillway_gate_flow"
+      file: "casename.out (column 3)"
+      unit: "m3/s"
+      valid_range: [0.0, 1e6]
+
+    - name: "upstream_water_level"
+      file: "casename.out (column 4)"
+      unit: "m (above base)"
+      valid_range: [0.0, 500.0]
+
+    - name: "breach_bottom_width"
+      file: "casename.out (column 7)"
+      unit: "m"
+      valid_range: [0.0, 10000.0]
+      notes: "Breach geometry evolution — width grows as erosion progresses."
+
+    - name: "breach_bottom_elevation"
+      file: "casename.out (column 6)"
+      unit: "m (above base)"
+      valid_range: [0.0, 300.0]
+      notes: "Should decrease from crest to base as breach erodes downward."
+
+    - name: "cumulative_volume"
+      file: "casename.out (column 11)"
+      unit: "m3"
+      valid_range: [0.0, null]
+
+  diagnostics:
+    - name: "peak_discharge"
+      check: "Peak breach Q within physically plausible range for dam size"
+      reference: "Banqiao (1975): ~78,800 m3/s for 118m dam with 7e8 m3 reservoir"
+      notes: "Scale with dam height and reservoir volume."
+
+    - name: "failure_time"
+      check: "Breach formation time: minutes to hours for overtopping, hours for piping"
+      notes: "Very fast (< 1 min) or very slow (> 24 hr) suggests parameter issues."
+
+    - name: "breach_width_vs_length"
+      check: "Final breach bottom width <= embankment length"
+      notes: "Breach cannot be wider than the dam."
+
+    - name: "water_level_drawdown"
+      check: "Upstream WL should decrease as reservoir drains through breach"
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "time_unit_confusion"
+    description: "Inflow/WSL card time is HOURS but Time_Step and Simulation_Period are SECONDS"
+    affected_output: "Inflow timing completely wrong"
+    detection: "Inflow arrives 3600x too fast or too slow"
+    fix: "Inflow card: hours. Time_Step/Simulation_Period: seconds."
+
+  - id: "slope_vh_not_hv"
+    description: "Slopes must be V/H (vertical/horizontal), NOT H/V"
+    affected_output: "Dam geometry and erosion rates"
+    detection: "Slopes > 1 for typical earth dams (should be < 0.5)"
+    fix: "1V:3H slope = 0.333 V/H, not 3.0"
+
+  - id: "water_level_above_base"
+    description: "Water levels relative to embankment base, not absolute elevation"
+    affected_output: "Hydrostatic pressure, breach initiation"
+    detection: "Water level > dam height (should be <= dam height)"
+    fix: "Subtract base elevation from absolute water level"
+
+  - id: "no_blank_lines_in_data"
+    description: "Blank lines between keyword and multiline data cards cause read errors"
+    affected_output: "Input parsing fails"
+    detection: "Fortran read error or wrong values"
+    fix: "No blank lines or comments within multiline card data blocks"
+
+  - id: "embankment_length_is_max_breach"
+    description: "Embankment_Length is base length = maximum possible breach bottom width"
+    affected_output: "Breach width physically capped"
+    detection: "Breach width reaches embankment length and stops growing"
+    fix: "Set to actual dam length at base, not crest length"
+
+# =========================================================================
+# EXPECTED RANGES (Banqiao validation reference)
+# =========================================================================
+expected_ranges:
+  banqiao_reference:
+    dam_height_m: 118
+    reservoir_volume_m3: 7.01e8
+    peak_breach_discharge_m3s: 78800
+    failure_time_hr: "~5.5 (overtopping to peak)"
+    notes: "1975 Banqiao dam failure — largest recorded dam breach"

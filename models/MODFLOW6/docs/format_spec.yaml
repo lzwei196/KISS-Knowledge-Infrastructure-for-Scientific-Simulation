@@ -1,0 +1,250 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["groundwater"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "MODFLOW 6.6.1"
+  domain: "groundwater"
+  secondary_domains: ["solute_transport", "streamflow_routing"]
+  binary: "mf6"
+  binary_path: "System PATH or specified path"
+  language: "Fortran 90"
+  python_interface: "flopy >= 3.10.0"
+  working_directory: "user-specified workspace"
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "recharge"
+      file: "RCH package (via FloPy)"
+      unit: "m/day"
+      valid_range: [0.0, 0.01]
+      format: "FloPy array or list-based stress period data"
+      missing_value: null
+      conversion_from_vic: "VIC baseflow_out (mm/day) / 1000 -> m/day"
+      notes: "Recharge is a rate (LENGTH/TIME), NOT a volume. Common silent error: passing mm/day without dividing by 1000."
+
+    - name: "river_stage"
+      file: "RIV package (via FloPy)"
+      unit: "m"
+      valid_range: [0.0, 10000.0]
+      format: "FloPy stress period data: [(cellid, stage, conductance, rbot)]"
+      conversion_from_cama: "CaMa sfcelv (m) direct"
+      notes: "rbot must be above cell BOTM or MODFLOW aborts."
+
+    - name: "well_pumping"
+      file: "WEL package (via FloPy)"
+      unit: "m3/day"
+      valid_range: [-1e6, 1e6]
+      format: "FloPy stress period data: [(cellid, Q)]"
+      notes: "Negative Q = extraction, Positive Q = injection."
+
+  parameters:
+    critical:
+      - name: "hydraulic_conductivity"
+        file: "NPF package"
+        description: "Horizontal hydraulic conductivity"
+        valid_range: [1e-7, 1000.0]
+        default: 1.0
+        unit: "m/day"
+        bug_history: >
+          HWSD soil Ksat (~0.01 m/day) is NOT aquifer K. Aquifer K is typically
+          1-10 m/day. Scale HWSD by ~100x for Layer 1. Using unscaled HWSD K
+          produces unrealistically high water tables.
+
+      - name: "specific_yield"
+        file: "STO package"
+        description: "Specific yield for unconfined layers"
+        valid_range: [0.01, 0.45]
+        default: 0.15
+        unit: "fraction"
+
+      - name: "specific_storage"
+        file: "STO package"
+        description: "Specific storage for confined layers"
+        valid_range: [1e-6, 1e-3]
+        default: 1e-5
+        unit: "1/m"
+
+      - name: "icelltype"
+        file: "NPF package"
+        description: "Cell type flag: 0=confined, 1=convertible (unconfined)"
+        valid_range: [0, 1]
+        default: 1
+        unit: "flag"
+        bug_history: >
+          ICELLTYPE=0 for top layer with water table causes heads to rise
+          above cell top with no error. Set ICELLTYPE=1 for all water-table layers.
+
+      - name: "solver_complexity"
+        file: "IMS package"
+        description: "Iterative solver complexity level"
+        valid_range: ["SIMPLE", "MODERATE", "COMPLEX"]
+        default: "MODERATE"
+        bug_history: >
+          Newton formulation requires MODERATE or COMPLEX solver. SIMPLE uses CG
+          which fails on asymmetric Newton matrices. Newton + SIMPLE = ERROR.
+
+      - name: "recharge_unit_check"
+        file: "RCH package"
+        description: "Recharge in m/day, NOT mm/day"
+        valid_range: [0.0, 0.01]
+        unit: "m/day"
+        bug_history: >
+          Passing VIC deep percolation as mm/day without dividing by 1000
+          gives 1000x too much recharge. Silent error -- no warning from MODFLOW.
+          Triplet dt_mf6_004.
+
+  files:
+    required:
+      - name: "mfsim.nam"
+        description: "Simulation name file listing all models, exchanges, and solutions"
+        format: "Block/keyword text (BEGIN...END blocks)"
+
+      - name: "gwf.nam"
+        description: "GWF model name file listing all packages"
+
+      - name: "DIS/DISV package"
+        description: "Spatial discretization (structured or vertex grid)"
+
+      - name: "NPF package"
+        description: "Node property flow (K, ICELLTYPE)"
+
+      - name: "IC package"
+        description: "Initial conditions (starting heads)"
+
+      - name: "OC package"
+        description: "Output control (what to save and when)"
+
+      - name: "TDIS package"
+        description: "Temporal discretization (stress periods, timesteps)"
+
+      - name: "IMS package"
+        description: "Iterative model solution (solver settings)"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "hydraulic_head"
+      file: "gwf.hds"
+      unit: "m"
+      valid_range: [-100, 10000]
+      format: "Binary, read with flopy.utils.HeadFile (precision='double' for double-precision builds)"
+      notes: "HDRY sentinel (1.0e30) marks dry cells. Filter before computing statistics."
+
+    - name: "cell_budget"
+      file: "gwf.cbc"
+      unit: "m3/day"
+      valid_range: null
+      format: "Binary, read with flopy.utils.CellBudgetFile"
+      notes: "Contains flow terms for each package (RCH, DRN, RIV, etc.)"
+
+    - name: "concentration"
+      file: "gwt.ucn"
+      unit: "mg/L (user-defined)"
+      valid_range: [0.0, null]
+      format: "Binary, read with flopy.utils.HeadFile(text='CONCENTRATION')"
+      notes: "Only present when GWT model is included."
+
+    - name: "sfr_stage"
+      file: "gwf.sfr.stg"
+      unit: "m"
+      valid_range: null
+      format: "Binary, read with flopy.utils.HeadFile"
+      notes: "DNODATA sentinel (-1e30) marks dry reaches. Only present when SFR package is used."
+
+  diagnostics:
+    - name: "budget_closure"
+      file: "gwf.lst (listing file)"
+      check: "Budget percent discrepancy < 1%"
+      tolerance_pct: 1.0
+      notes: "Typical well-posed models have < 0.01%. Large discrepancy indicates convergence failure."
+
+    - name: "water_table_depth"
+      check: "WT depth median 1-10 m for alluvial basins"
+      reference: "Bengbu validation: median 0.9m, mean 2.0m"
+
+    - name: "dry_cells"
+      check: "Layer 1 dry cells < 20%"
+      notes: "Deep layer dry cells are normal for unconfined aquifer with WT in Layer 1."
+
+    - name: "convergence_failures"
+      check: "0 convergence failures"
+      file: "gwf.lst"
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "convergence_failure"
+    triplet: "dt_mf6_001"
+    description: "Solver did not converge within iteration limit"
+    affected_output: "All head and budget outputs"
+    detection: "Non-convergence messages in listing file"
+    fix: "Increase OUTER_MAXIMUM, tighten DVCLOSE/RCLOSE, use UNDER_RELAXATION"
+
+  - id: "dry_cells_oscillation"
+    triplet: "dt_mf6_002"
+    description: "Cells repeatedly wetting and drying cause oscillation"
+    affected_output: "Heads and budget in unconfined layers"
+    detection: "Oscillating heads, many inner iterations per outer"
+    fix: "Use NEWTON UNDER_RELAXATION in GWF model options"
+
+  - id: "budget_imbalance"
+    triplet: "dt_mf6_003"
+    description: "Budget percent discrepancy > 0.1%"
+    affected_output: "All water balance terms"
+    detection: "Large percent discrepancy in listing file budget summary"
+    fix: "Check convergence, tighten DVCLOSE/RCLOSE"
+
+  - id: "recharge_unit_error"
+    triplet: "dt_mf6_004"
+    description: "Recharge in mm/day instead of m/day (silent 1000x error)"
+    affected_output: "Water table depth, all flow terms"
+    detection: "Water table at surface, massive budget imbalance"
+    fix: "Divide VIC recharge by 1000"
+
+  - id: "riv_rbot_below_botm"
+    description: "RIV rbot below cell BOTM causes fatal abort"
+    detection: "MODFLOW error: RIVER BOTTOM IS LESS THAN CELL BOTTOM"
+    fix: "Clamp rbot = max(rbot, botm + 0.5)"
+
+  - id: "gwt_no_cnc_source_warning"
+    description: "GWT model without CNC or SRC source produces zero concentrations silently"
+    affected_output: "gwt.ucn all zeros"
+    detection: "Concentration == 0 everywhere despite expected contamination"
+    fix: "Add CNC constant concentration boundary or SRC mass source, or use SSM with GWF package auxiliaries"
+
+  - id: "sfr_zero_slope"
+    description: "SFR reach with gradient <= 0 causes fatal termination"
+    detection: "MODFLOW error about negative or zero slope"
+    fix: "Clamp minimum slope to 1e-6 when building from DEM"
+
+  - id: "newton_simple_incompatible"
+    description: "Newton formulation with SIMPLE solver (CG) fails"
+    detection: "CG incompatible with asymmetric matrix error"
+    fix: "Use MODERATE or COMPLEX solver complexity"
+
+# =========================================================================
+# EXPECTED RANGES (Bengbu Basin reference)
+# =========================================================================
+expected_ranges:
+  bengbu_basin:
+    grid: "16x24, 224 active cells, 0.25deg"
+    wt_depth_median_m: 0.9
+    wt_depth_mean_m: 2.0
+    wt_depth_range_m: [0.5, 5.0]
+    budget_closure_pct: 0.0002
+    convergence_failures: 0
+    runtime_seconds: 0.4

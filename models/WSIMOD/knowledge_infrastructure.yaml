@@ -1,0 +1,356 @@
+# ============================================================================
+# WSIMOD Knowledge Infrastructure v1.0.0
+# ============================================================================
+# Water Systems Integrated Modelling framework
+# Integrated water cycle simulation — quantity and quality
+# ============================================================================
+
+package:
+  name: "hydrocraft-wsimod"
+  version: "1.0.0"
+  description: "Knowledge infrastructure for WSIMOD integrated water cycle simulation within HydroCraft"
+  target_model: "WSIMOD 0.6+"
+  domain: "water_quality"
+  authors:
+    - "Barnaby Dobson, Imperial College London"
+  license: "BSD-3-Clause"
+
+pipeline:
+  stages:
+    - id: s0_config
+      name: "Configuration"
+      description: "Define simulation period, pollutant set, node-arc graph topology, execution mode"
+      order: 0
+      depends_on: []
+      skill_document: "docs/s0_configuration_skill.md"
+      tools: []
+      milestones:
+        - id: m0_config_defined
+          description: "Settings YAML or API configuration defined with dates, nodes, arcs"
+          verification: "python -c \"import yaml; d=yaml.safe_load(open('config.yaml')); assert 'nodes' in d\""
+
+    - id: s1_domain
+      name: "Domain Setup"
+      description: "Identify catchment boundaries, node graph topology, land use"
+      order: 1
+      depends_on: [s0_config]
+      skill_document: "docs/s0_configuration_skill.md"
+      tools: []
+      milestones:
+        - id: m1_domain_defined
+          description: "Node types selected and connectivity designed"
+          verification: "Node graph has at least one Waste node as outlet"
+
+    - id: s2_data
+      name: "Data Preparation"
+      description: "Gather raw meteorological and hydrological timeseries, convert units"
+      order: 2
+      depends_on: [s0_config]
+      skill_document: "docs/s2_data_preparation_skill.md"
+      tools: [convert_forcing_data]
+      milestones:
+        - id: m2_data_prepared
+          description: "CSV files exist with site, date, variable, value columns"
+          verification: "head -1 timeseries_data.csv contains 'site,date,variable,value'"
+
+    - id: s3_forcing
+      name: "Forcing/Input"
+      description: "Convert forcing data to WSIMOD data_input_dict with correct units"
+      order: 3
+      depends_on: [s0_config, s2_data]
+      skill_document: "docs/s2_data_preparation_skill.md"
+      tools: [convert_forcing_data]
+      milestones:
+        - id: m3_forcing_ready
+          description: "data_input_dict created with (variable, Timestamp) keys; precipitation in m"
+          verification: "max(precipitation) < 0.5 m/d"
+
+    - id: s4_parameters
+      name: "Parameters"
+      description: "Configure node parameters: areas (m²), capacities, soil properties, pollutant loads"
+      order: 4
+      depends_on: [s0_config, s1_domain]
+      skill_document: "docs/s4_parameters_skill.md"
+      tools: [convert_parameters]
+      milestones:
+        - id: m4_params_set
+          description: "All node config dicts have required parameters with correct units"
+          verification: "All areas in m², sewer capacity in m³/d, depths in m"
+
+    - id: s5_run
+      name: "Execution"
+      description: "Run WSIMOD via CLI or Python API, capture flows/tanks/surfaces"
+      order: 5
+      depends_on: [s2_data, s3_forcing, s4_parameters]
+      skill_document: "docs/s5_execution_skill.md"
+      tools: [run_wsimod]
+      milestones:
+        - id: m5_run_complete
+          description: "Model completes without exception; flows.csv, tanks.csv, surfaces.csv generated"
+          verification: "test -f outputs/flows.csv && test -f outputs/tanks.csv"
+
+    - id: s6_output
+      name: "Output Parsing"
+      description: "Parse output CSVs, validate physical reasonableness, compute statistics"
+      order: 6
+      depends_on: [s5_run]
+      skill_document: "docs/s6_output_analysis_skill.md"
+      tools: [parse_wsimod_output]
+      milestones:
+        - id: m6_output_parsed
+          description: "Output validated — no NaN/Inf, flows non-negative, mass balance closed"
+          verification: "No NaN in flows.csv; water balance imbalance < 1e-6"
+
+tools:
+  - id: convert_forcing_data
+    name: "Forcing Data Converter"
+    description: "Convert meteorological CSV to WSIMOD data_input_dict with unit conversions"
+    stage: s2_data
+    script_path: "tools/convert_forcing_data.py"
+    language: python
+    inputs:
+      - name: input
+        type: file
+        required: true
+        example: "timeseries_data.csv"
+      - name: site
+        type: string
+        required: false
+        example: "oxford_land"
+      - name: precip_unit
+        type: string
+        required: false
+        example: "mm"
+      - name: et0_unit
+        type: string
+        required: false
+        example: "mm"
+    outputs:
+      - name: result
+        type: file
+        path_pattern: "*.json"
+    preconditions:
+      - "Input CSV has columns: site, date, variable, value"
+    postconditions:
+      - "Output JSON contains data_input_dict with (variable|date) keys"
+      - "Precipitation values are in m/timestep"
+
+  - id: convert_parameters
+    name: "Parameter Converter"
+    description: "Convert catchment/soil parameters to WSIMOD node config dictionaries"
+    stage: s4_parameters
+    script_path: "tools/convert_parameters.py"
+    language: python
+    inputs:
+      - name: catchment_area
+        type: number
+        required: true
+        example: "50.0"
+      - name: area_unit
+        type: string
+        required: false
+        example: "km2"
+      - name: soil_depth
+        type: number
+        required: false
+        example: "500"
+      - name: land_use
+        type: string
+        required: false
+        example: '{"urban": 0.3, "rural": 0.7}'
+    outputs:
+      - name: result
+        type: file
+        path_pattern: "*.json"
+    preconditions:
+      - "Catchment area is positive"
+    postconditions:
+      - "Output contains nodes list with areas in m² and depths in m"
+
+  - id: run_wsimod
+    name: "Execution Wrapper"
+    description: "Run WSIMOD with preflight checks and result capture"
+    stage: s5_run
+    script_path: "tools/run_wsimod.py"
+    language: python
+    inputs:
+      - name: settings
+        type: file
+        required: true
+        example: "config.yaml"
+      - name: mode
+        type: string
+        required: false
+        example: "api"
+    outputs:
+      - name: flows
+        type: file
+        path_pattern: "flows.csv"
+      - name: tanks
+        type: file
+        path_pattern: "tanks.csv"
+      - name: surfaces
+        type: file
+        path_pattern: "surfaces.csv"
+    preconditions:
+      - "Settings YAML exists and is valid"
+      - "All referenced data files exist"
+      - "wsimod package is installed"
+    postconditions:
+      - "flows.csv, tanks.csv, surfaces.csv generated in output directory"
+
+  - id: parse_wsimod_output
+    name: "Output Parser"
+    description: "Parse WSIMOD output CSV files into analysis-ready DataFrames"
+    stage: s6_output
+    script_path: "tools/parse_wsimod_output.py"
+    language: python
+    inputs:
+      - name: output_dir
+        type: directory
+        required: true
+        example: "./outputs"
+    outputs:
+      - name: result
+        type: file
+        path_pattern: "*.json"
+    preconditions:
+      - "Output directory contains flows.csv"
+    postconditions:
+      - "JSON result with statistics, warnings, and validation status"
+
+skill_documents:
+  - id: sd_s0
+    name: "Configuration Guide"
+    stage: s0_config
+    path: "docs/s0_configuration_skill.md"
+    knowledge_type: "procedural_and_evaluative"
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+    word_count: 700
+
+  - id: sd_s2
+    name: "Data Preparation Guide"
+    stage: s2_data
+    path: "docs/s2_data_preparation_skill.md"
+    knowledge_type: "procedural_and_unit_traps"
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+    word_count: 800
+
+  - id: sd_s4
+    name: "Parameter Setup Guide"
+    stage: s4_parameters
+    path: "docs/s4_parameters_skill.md"
+    knowledge_type: "evaluative_and_domain"
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+    word_count: 800
+
+  - id: sd_s5
+    name: "Execution Guide"
+    stage: s5_run
+    path: "docs/s5_execution_skill.md"
+    knowledge_type: "sequencing_and_procedural"
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+    word_count: 700
+
+  - id: sd_s6
+    name: "Output Analysis Guide"
+    stage: s6_output
+    path: "docs/s6_output_analysis_skill.md"
+    knowledge_type: "procedural_and_diagnostic"
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+    word_count: 800
+
+diagnostic_triplets:
+  - id: dt_001
+    stage: s3_forcing
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_002
+    stage: s4_parameters
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_003
+    stage: s6_output
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_004
+    stage: s3_forcing
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_005
+    stage: s0_config
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_006
+    stage: s4_parameters
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_007
+    stage: s3_forcing
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_008
+    stage: s4_parameters
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_009
+    stage: s5_run
+    failure_domain: parameter_format
+    severity: silent
+  - id: dt_010
+    stage: s4_parameters
+    failure_domain: parameter_format
+    severity: degraded
+  - id: dt_011
+    stage: s4_parameters
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_012
+    stage: s4_parameters
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_013
+    stage: s5_run
+    failure_domain: runtime
+    severity: fatal
+  - id: dt_014
+    stage: s5_run
+    failure_domain: runtime
+    severity: degraded
+  - id: dt_015
+    stage: s3_forcing
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_016
+    stage: s5_run
+    failure_domain: dependency_mismatch
+    severity: fatal
+  - id: dt_017
+    stage: s6_output
+    failure_domain: silent_error
+    severity: degraded
+  - id: dt_018
+    stage: s3_forcing
+    failure_domain: unit_conversion
+    severity: silent
+
+validation:
+  tier: "synthetic"
+  tier_justification: "Ran built-in quickstart demo with Oxford land forcing data. Compared normalized flow patterns against observed Thames flow (NRFA 39008). Pattern correlation R=0.71 daily, R=0.77 monthly. Model not calibrated — demo scale vs real scale. Pipeline test with pattern comparison."
+  test_case: "Quickstart demo with Oxford land forcing and Thames observed flow"
+  metrics:
+    pearson_R_daily: 0.7071
+    pearson_R_monthly: 0.7719
+    mean_flow_m3d: 6.863
+    negative_flows: 0
+    n_timesteps: 1456
+
+summary:
+  total_tools: 4
+  total_tool_lines: 1000
+  total_skill_documents: 5
+  total_skill_words: 3800
+  total_diagnostic_triplets: 18
+  failure_domains: [unit_conversion, parameter_format, runtime, dependency_mismatch, silent_error]
+  pipeline_stages: 7
+  pipeline_milestones: 7

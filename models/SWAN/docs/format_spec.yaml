@@ -1,0 +1,123 @@
+model:
+  name: "SWAN"
+  full_name: "Simulating WAves Nearshore"
+  toolbox: "PySWaN (pyswan-ocean v1.0.0)"
+  domain: "coastal_wave"
+  description: "Third-generation spectral wave model for coastal regions; PySWaN provides Python I/O and spectral analysis"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/SWAN/venv/bin/python"
+  binary_note: "PySWaN is a pure-Python I/O toolbox; the SWAN Fortran binary is external"
+
+inputs:
+  forcing:
+    - name: "wind_speed"
+      unit: "m/s"
+      valid_range: [0, 60]
+      description: "Wind speed at 10m elevation"
+    - name: "wind_direction"
+      unit: "degrees"
+      valid_range: [0, 360]
+      description: "Meteorological convention — direction FROM which wind blows"
+    - name: "bathymetry"
+      unit: "m"
+      valid_range: [0, 11000]
+      description: "Water depth, positive downward"
+    - name: "boundary_spectra_1d"
+      unit: "m2/Hz"
+      valid_range: [0, 1000]
+      description: "1D variance density spectrum at boundaries"
+    - name: "boundary_spectra_2d"
+      unit: "m2/Hz/deg"
+      valid_range: [0, 100]
+      description: "2D variance density spectrum at boundaries"
+    - name: "tpar_Hs"
+      unit: "m"
+      valid_range: [0, 25]
+      description: "Parametric boundary Hs (significant wave height)"
+    - name: "tpar_Tp"
+      unit: "s"
+      valid_range: [1, 30]
+      description: "Parametric boundary Tp (peak period)"
+    - name: "tpar_pdir"
+      unit: "degrees"
+      valid_range: [-180, 360]
+      description: "Parametric boundary peak direction (nautical)"
+    - name: "tpar_ms"
+      unit: "dimensionless"
+      valid_range: [1, 100]
+      description: "Directional spreading power (cos^ms)"
+
+  parameters:
+    critical:
+      - name: "frequency_range"
+        valid_range: [0.025, 1.0]
+        unit: "Hz"
+        description: "Frequency discretization for spectral computations"
+      - name: "n_frequencies"
+        valid_range: [10, 100]
+        unit: "count"
+        description: "Number of frequency bins"
+      - name: "n_directions"
+        valid_range: [12, 72]
+        unit: "count"
+        description: "Number of directional bins (2D spectra only)"
+      - name: "gamma"
+        valid_range: [1.0, 10.0]
+        unit: "dimensionless"
+        description: "JONSWAP peak enhancement factor (default 3.3)"
+      - name: "timecoding"
+        valid_range: [1, 1]
+        unit: "enum"
+        description: "Time format: 1 = YYYYMMDD.HHMMSS"
+
+outputs:
+  primary:
+    - name: "Hm0"
+      unit: "m"
+      valid_range: [0, 25]
+      description: "Significant wave height from zeroth moment (4*sqrt(m0))"
+    - name: "Tp"
+      unit: "s"
+      valid_range: [1, 30]
+      description: "Peak period (1/fp)"
+    - name: "Tm01"
+      unit: "s"
+      valid_range: [1, 25]
+      description: "Mean period from first moment (m0/m1)"
+    - name: "Tm02"
+      unit: "s"
+      valid_range: [1, 25]
+      description: "Mean period from second moment (sqrt(m0/m2))"
+    - name: "peak_direction"
+      unit: "degrees"
+      valid_range: [0, 360]
+      description: "Peak wave direction (nautical convention)"
+    - name: "energy_1d"
+      unit: "m2/Hz"
+      valid_range: [0, 1000]
+      description: "1D variance density spectrum E(f)"
+    - name: "energy_2d"
+      unit: "m2/Hz/deg"
+      valid_range: [0, 100]
+      description: "2D variance density spectrum E(f,theta)"
+
+  file_formats:
+    - extension: ".spc"
+      description: "SWAN spectral file (1D or 2D)"
+    - extension: ".s1d"
+      description: "SWAN 1D spectral file"
+    - extension: ".s2d"
+      description: "SWAN 2D spectral file"
+    - extension: ".tpar"
+      description: "SWAN parametric boundary file"
+    - extension: ".crv"
+      description: "SWAN TABLE output (curve data)"
+    - extension: ".swn"
+      description: "SWAN command/input file"
+    - extension: ".bot"
+      description: "Bathymetry grid file"
+
+known_issues:
+  - "pyswan __init__.py uses bare imports (import swan) instead of relative imports — breaks when installed as a package"
+  - "pyswan only handles FACTOR keyword in spectral data blocks; ZERO and NODATA not fully supported"
+  - "Direction convention confusion: NDIR (nautical, FROM) vs CDIR (Cartesian, TO) requires careful handling"
+  - "Some buoy data reports energy in m2/Hz/rad instead of m2/Hz/deg — needs conversion (* pi/180)"

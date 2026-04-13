@@ -1,0 +1,189 @@
+# ============================================================================
+# Model Couplings — EPA SWMM 5.2 x HydroCraft
+# ============================================================================
+# Defines the four coupling pathways between SWMM and HydroCraft models
+# (VIC, CaMa-Flood). Each coupling specifies the data flow, unit conversion,
+# temporal/spatial mapping, and validation requirements.
+# ============================================================================
+
+couplings:
+
+  # --- Coupling 1: VIC Surface Runoff → SWMM Junction Inflow ---
+  - id: "vic_runoff_to_swmm_inflow"
+    name: "VIC Runoff to SWMM Inflow"
+    description: >
+      Rural watershed runoff (surface runoff + baseflow) from VIC grid cells
+      enters the urban SWMM drainage network as external inflow at junction
+      nodes. Represents the hydrologic connection between upstream rural areas
+      and downstream urban drainage.
+    source_model: "VIC 5.1.0"
+    target_model: "EPA SWMM 5.2"
+    direction: "one-way (VIC → SWMM)"
+
+    source_data:
+      variable: "OUT_RUNOFF + OUT_BASEFLOW"
+      units: "mm/day"
+      spatial: "per VIC grid cell (0.1° or 0.25°)"
+      temporal: "daily"
+      file_format: "VIC flux ASCII output"
+      path_pattern: "outputs/{run}/vic_result/fluxes_{lat}_{lon}"
+
+    target_data:
+      section: "[INFLOWS]"
+      variable: "FLOW"
+      units: "m3/s (CMS) or ft3/s (CFS)"
+      spatial: "per junction node"
+      temporal: "sub-daily (matched to SWMM timestep)"
+      file_format: "SWMM TIMESERIES"
+
+    conversion:
+      formula: "Q(m3/s) = runoff(mm/day) * cell_area(m2) / 86400000"
+      unit_factors:
+        mm_to_m: 0.001
+        day_to_seconds: 86400
+        combined: 86400000
+      spatial_mapping: "nearest VIC cell to SWMM junction, or area-weighted split"
+      temporal_disaggregation: "uniform distribution of daily to sub-daily, or SCS temporal pattern"
+      cfs_conversion: "Q(ft3/s) = Q(m3/s) * 35.3147"
+
+    validation:
+      volume_tolerance_pct: 1.0
+      checks:
+        - "Total VIC runoff volume (mm * area) = Total SWMM inflow volume (m3/s * time) within 1%"
+        - "Peak SWMM inflow is physically plausible for the contributing area"
+        - "Inflow time series covers the SWMM simulation period"
+
+    tool: "convert_vic_runoff_to_swmm_inflow"
+    silent_error_risk: "HIGH — unit conversion errors produce wrong flow magnitude with no warning"
+    related_triplet: "dt_010"
+
+  # --- Coupling 2: CaMa-Flood River Stage → SWMM Outfall Boundary ---
+  - id: "cama_stage_to_swmm_outfall"
+    name: "CaMa-Flood Stage to SWMM Outfall BC"
+    description: >
+      River water surface elevation from CaMa-Flood is used as a time-varying
+      boundary condition at SWMM outfall nodes. This captures backwater effects
+      when the receiving river floods, preventing drainage discharge and potentially
+      causing flooding from the downstream end of the urban drainage system.
+    source_model: "CaMa-Flood v4.20"
+    target_model: "EPA SWMM 5.2"
+    direction: "one-way (CaMa → SWMM)"
+
+    source_data:
+      variable: "sfcelv (water surface elevation)"
+      units: "meters above MSL"
+      spatial: "per CaMa grid cell (0.25° / 15 arc-min)"
+      temporal: "daily (or sub-daily if configured)"
+      file_format: "NetCDF"
+      path_pattern: "model/cmf_v420_pkg/out/{run}/sfcelv{YYYYMMDD}.nc"
+
+    target_data:
+      section: "[OUTFALLS] with Type=TIMESERIES"
+      variable: "head (water surface elevation in SWMM datum)"
+      units: "meters (CMS) or feet (CFS)"
+      spatial: "per outfall node"
+      temporal: "daily or finer"
+      file_format: "SWMM TIMESERIES"
+
+    conversion:
+      formula: "SWMM_stage = CaMa_sfcelv - datum_offset"
+      datum_offset: "Must be determined from survey/DEM comparison. datum_offset = CaMa_datum_elev - SWMM_datum_elev"
+      spatial_mapping: "nearest CaMa cell to SWMM outfall location"
+      temporal_interpolation: "SWMM linearly interpolates between time series points"
+      cfs_conversion: "If FLOW_UNITS=CFS, convert meters to feet: stage_ft = stage_m * 3.28084"
+
+    validation:
+      checks:
+        - "Datum offset is physically reasonable (typically 0-20 m)"
+        - "Dry-weather outfall stage matches known low-water conditions"
+        - "Flood-stage outfall stage matches known flood levels"
+        - "Time series covers SWMM simulation period"
+
+    tool: "convert_cama_stage_to_outfall_bc"
+    silent_error_risk: "HIGH — wrong datum offset shifts all backwater effects by a constant vertical error"
+    related_triplet: "dt_015"
+
+  # --- Coupling 3: SWMM Outfall Discharge → CaMa-Flood Lateral Inflow ---
+  - id: "swmm_outflow_to_cama_lateral"
+    name: "SWMM Outflow to CaMa-Flood Lateral Inflow"
+    description: >
+      Urban drainage discharge at SWMM outfalls is converted to CaMa-Flood
+      lateral inflow, representing urban contributions to the river channel.
+      This closes the urban-to-river water cycle.
+    source_model: "EPA SWMM 5.2"
+    target_model: "CaMa-Flood v4.20"
+    direction: "one-way (SWMM → CaMa)"
+
+    source_data:
+      variable: "Total_Inflow at outfall nodes (= outfall discharge)"
+      units: "m3/s (CMS) or ft3/s (CFS)"
+      spatial: "per outfall node"
+      temporal: "REPORT_STEP interval (typically 5 min)"
+      file_format: "SWMM binary OUT file"
+
+    target_data:
+      variable: "lateral inflow"
+      units: "m3/s"
+      spatial: "per CaMa grid cell"
+      temporal: "daily or hourly"
+      file_format: "NetCDF"
+
+    conversion:
+      formula: "If CFS: Q_cama(m3/s) = Q_swmm(ft3/s) * 0.0283168. If CMS: no conversion."
+      temporal_aggregation: "Average SWMM sub-hourly values to CaMa daily/hourly timestep"
+      spatial_mapping: "Map SWMM outfall to nearest CaMa river grid cell"
+
+    validation:
+      volume_tolerance_pct: 1.0
+      checks:
+        - "Total SWMM outfall volume = Total CaMa lateral inflow volume within 1%"
+        - "No negative outflow values (check for reverse flow at outfalls)"
+        - "Temporal aggregation preserves total volume"
+
+    tool: "convert_swmm_outflow_to_cama_lateral"
+    silent_error_risk: "MEDIUM — CFS/CMS conversion error is detectable from flow magnitude"
+    related_triplet: "dt_010"
+
+  # --- Coupling 4: VIC Forcing → SWMM Rainfall ---
+  - id: "vic_forcing_to_swmm_rainfall"
+    name: "VIC Forcing to SWMM Rainfall"
+    description: >
+      Reuse VIC meteorological forcing (CMFD, MSWX, or NASA POWER) as SWMM
+      rainfall input. Ensures consistent precipitation between the rural VIC
+      simulation and the urban SWMM simulation for coupled modeling.
+    source_model: "VIC 5.1.0 (forcing data)"
+    target_model: "EPA SWMM 5.2"
+    direction: "one-way (VIC forcing → SWMM)"
+
+    source_data:
+      variable: "PREC (precipitation, column 5 in VIC forcing files)"
+      units: "mm/timestep (3-hourly for CMFD/MSWX, hourly for NASA POWER)"
+      spatial: "per VIC grid cell"
+      temporal: "3-hourly or hourly"
+      file_format: "VIC forcing ASCII"
+      path_pattern: "outputs/{run}/vic_temp/forcing/forcing_final/{prefix}{lat}_{lon}"
+
+    target_data:
+      section: "[RAINGAGES] and [TIMESERIES]"
+      variable: "rainfall"
+      units: "mm (CMS) or inches (CFS), FORMAT=INTENSITY (mm/hr) or VOLUME (mm/interval)"
+      spatial: "per rain gage"
+      temporal: "3-hourly or hourly"
+      file_format: "SWMM TIMESERIES"
+
+    conversion:
+      intensity_formula: "intensity(mm/hr) = precip(mm/timestep) / timestep_hours"
+      volume_formula: "depth(mm) = precip(mm/timestep) [no conversion needed if FORMAT=VOLUME and INTERVAL matches]"
+      spatial_mapping: "nearest VIC cell to SWMM rain gage, or Thiessen polygon assignment"
+      cfs_conversion: "If FLOW_UNITS=CFS: depth_in = depth_mm / 25.4"
+
+    validation:
+      checks:
+        - "RAINGAGE FORMAT matches the conversion used (INTENSITY or VOLUME)"
+        - "RAINGAGE INTERVAL matches VIC forcing timestep"
+        - "Total rainfall depth over simulation matches VIC precipitation total"
+        - "No negative rainfall values"
+
+    tool: "convert_vic_forcing_to_swmm"
+    silent_error_risk: "HIGH — FORMAT/INTERVAL mismatch produces wrong rainfall by factor of timestep ratio"
+    related_triplet: "dt_009"

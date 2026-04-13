@@ -1,0 +1,538 @@
+# ============================================================================
+# SuperflexPy Diagnostic Triplets
+# ============================================================================
+# 18 symptom → diagnosis → remedy entries for common SuperflexPy failures
+# Severity: silent (runs, wrong results), degraded (partial), fatal (crash)
+# ============================================================================
+
+- id: dt_001
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Simulated streamflow is 1000x larger than observed; reservoir storage grows unboundedly"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Precipitation supplied in meters/day instead of mm/day"
+    explanation: >
+      SuperflexPy expects all fluxes in mm/d. If precipitation is in m/d
+      (e.g., from ERA5 native units), the model receives 1000x too much
+      water. All storage and flux calculations scale linearly with input,
+      so Q_sim will be ~1000x too large.
+    affected_components: [all elements, all models]
+
+  remedy:
+    action: "Multiply precipitation by 1000 to convert m/d to mm/d"
+    tool_to_run: "convert_forcing.py --p-unit m/d"
+    manual_steps:
+      - "Check source data documentation for native units"
+      - "Apply conversion: P_mm = P_m * 1000"
+      - "Verify mean daily P is 1-15 mm/d for the region"
+    prevention: "Always use convert_forcing.py which validates magnitudes"
+
+  severity: silent
+  cross_references: [dt_002, dt_003]
+
+- id: dt_002
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Model dries out quickly; actual ET far exceeds precipitation; storage drops to near-zero"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "PET supplied in mm/month instead of mm/d"
+    explanation: >
+      If monthly PET (typically 50-200 mm/month) is passed as mm/d, the
+      model sees 50-200 mm/d of potential ET demand. This exceeds any
+      realistic precipitation, causing storage to deplete rapidly and
+      streamflow to drop to near zero.
+    affected_components: [UnsaturatedReservoir, ProductionStore, InterceptionFilter]
+
+  remedy:
+    action: "Divide PET by 30.44 to convert mm/month to mm/d"
+    tool_to_run: "convert_forcing.py --pet-unit mm/month"
+    manual_steps:
+      - "Check PET source: monthly totals vs daily values"
+      - "Apply: PET_daily = PET_monthly / days_in_month"
+      - "Verify PET is 0-10 mm/d"
+    prevention: "Validate PET < 15 mm/d before running model"
+
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s5_model_execution
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Water balance doesn't close; storage dynamics are too fast or too slow relative to forcing"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Timestep (dt) doesn't match forcing temporal resolution"
+    explanation: >
+      The ODE solver uses dt in the finite difference equation:
+      dS/dt ≈ (S^{n+1} - S^n) / dt. If forcing is hourly but dt=1.0 (day),
+      the solver treats each hourly value as a full day's worth of input.
+      This creates a 24x error in water volume per step.
+    affected_components: [all ODEsElement subclasses]
+
+  remedy:
+    action: "Set model.set_timestep(dt) to match forcing resolution"
+    tool_to_run: ""
+    manual_steps:
+      - "For daily data: set_timestep(1.0)"
+      - "For hourly data: set_timestep(1.0/24.0)"
+      - "For sub-daily: dt = hours / 24.0"
+    prevention: "Include timestep metadata in forcing file and validate at load time"
+
+  severity: silent
+  cross_references: [dt_001, dt_002]
+
+- id: dt_004
+  stage: s2_parameter_setup
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Large initial transient spike or dip in first ~50 timesteps; model then stabilizes"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Initial storage state (S0) in wrong units (m or cm instead of mm)"
+    explanation: >
+      If S0 is set to 0.01 (thinking meters) instead of 10 (mm), the
+      reservoir starts nearly empty and must fill up from precipitation,
+      causing an artificial initial transient. The model eventually
+      equilibrates but the warmup period may be very long.
+    affected_components: [PowerReservoir, UnsaturatedReservoir, ProductionStore, RoutingStore]
+
+  remedy:
+    action: "Ensure S0 is in mm; typical values are 0-500 mm"
+    tool_to_run: ""
+    manual_steps:
+      - "Set S0 relative to storage capacity (e.g., S0 = 0.5 * Smax)"
+      - "Run sufficient warmup period (1-2 years)"
+      - "Exclude warmup from metric calculation"
+    prevention: "Validate S0 is same order of magnitude as Smax"
+
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_005
+  stage: s5_model_execution
+  failure_domain: parameter_format
+
+  symptom:
+    description: "Model runs but produces physically implausible Q; hydrograph shape bears no relation to forcing"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Input array order is swapped (P and PET positions exchanged)"
+    explanation: >
+      SuperflexPy elements have different input order conventions.
+      InterceptionFilter (GR4J) expects [PET, P] but UnsaturatedReservoir
+      (HBV) expects [P, PET]. If swapped, precipitation is treated as ET
+      demand and vice versa, producing nonsensical water partitioning.
+    affected_components: [InterceptionFilter, UnsaturatedReservoir, ProductionStore]
+
+  remedy:
+    action: "Check the first element's set_input() docstring for correct order"
+    tool_to_run: ""
+    manual_steps:
+      - "GR4J: model.set_input([PET, P])"
+      - "HBV:  model.set_input([P, PET])"
+      - "Always verify via model's first layer element documentation"
+    prevention: "Add explicit input order to model config; verify with a 1-timestep test"
+
+  severity: silent
+  cross_references: [dt_001, dt_002]
+
+- id: dt_006
+  stage: s2_parameter_setup
+  failure_domain: parameter_format
+
+  symptom:
+    description: "KeyError when calling set_parameters() or parameter changes have no effect"
+    error_pattern: "KeyError: 'x1'"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "Parameter name doesn't include hierarchical prefix"
+    explanation: >
+      SuperflexPy automatically prefixes parameter names through the
+      hierarchy: unit_id + '_' + element_id + '_' + param_name. Calling
+      set_parameters({'x1': 300}) fails because the actual key is
+      'model_ps_x1'. Without the prefix, set_parameters silently ignores
+      the unknown key in some versions.
+    affected_components: [all elements accessed through Unit/Node/Network]
+
+  remedy:
+    action: "Use model.get_parameters_name() to discover full prefixed names"
+    tool_to_run: ""
+    manual_steps:
+      - "names = model.get_parameters_name()"
+      - "print(names)  # Shows ['model_ps_x1', ...]"
+      - "model.set_parameters({'model_ps_x1': 300.0})"
+    prevention: "Always discover names before setting; build parameter dict programmatically"
+
+  severity: fatal
+  cross_references: []
+
+- id: dt_007
+  stage: s3_model_assembly
+  failure_domain: parameter_format
+
+  symptom:
+    description: "Crash during model.get_output() with array length or shape mismatch in lag function"
+    error_pattern: "ValueError: operands could not be broadcast"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "LagElement state initialized with array instead of None"
+    explanation: >
+      UnitHydrograph1/2 states must be initialized as {'lag': None}. The
+      framework dynamically creates the lag array based on the lag-time
+      parameter and the number of input fluxes. Pre-allocating an array
+      of wrong size causes broadcast errors when the lag convolution runs.
+    affected_components: [UnitHydrograph1, UnitHydrograph2, all LagElement subclasses]
+
+  remedy:
+    action: "Set states={'lag': None} when creating lag elements"
+    tool_to_run: ""
+    manual_steps:
+      - "uh1 = UnitHydrograph1(parameters={'lag-time': 2.0}, states={'lag': None}, id='uh1')"
+      - "After reset, re-set lag states to None if needed"
+    prevention: "Never manually set lag state arrays"
+
+  severity: fatal
+  cross_references: [dt_008]
+
+- id: dt_008
+  stage: s3_model_assembly
+  failure_domain: parameter_format
+
+  symptom:
+    description: "IndexError or wrong flux routing in models with Splitter elements"
+    error_pattern: "IndexError: list index out of range"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "Splitter weight or direction matrix dimensions don't match element topology"
+    explanation: >
+      The Splitter's weight matrix shape must be [n_downstream][n_upstream_fluxes]
+      and direction must be [n_downstream][n_upstream_fluxes]. If the upstream
+      element produces 1 flux but weight has 2 columns, or if there are 2
+      downstream elements but only 1 row, indexing fails.
+    affected_components: [Splitter, Junction]
+
+  remedy:
+    action: "Verify matrix dimensions match the number of upstream fluxes and downstream elements"
+    tool_to_run: ""
+    manual_steps:
+      - "Count upstream fluxes: n_up = len(upstream_element.get_output())"
+      - "Count downstream elements in the next layer"
+      - "weight shape: [n_downstream][n_up]"
+      - "direction shape: [n_downstream][n_up]"
+    prevention: "Test with a 1-timestep dry run before full simulation"
+
+  severity: fatal
+  cross_references: [dt_007]
+
+- id: dt_009
+  stage: s5_model_execution
+  failure_domain: runtime
+
+  symptom:
+    description: "First model run takes 5-30 seconds; subsequent runs are fast"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Numba JIT compilation triggered on first call"
+    explanation: >
+      When using Numba-accelerated solvers (ImplicitEulerNumba, PegasusNumba),
+      the first invocation triggers just-in-time compilation of the decorated
+      functions. This is a one-time cost per Python session. The delay is
+      proportional to the number of JIT-compiled functions.
+    affected_components: [all Numba variants]
+
+  remedy:
+    action: "Wait for compilation to complete; this is normal behavior"
+    tool_to_run: ""
+    manual_steps:
+      - "Run a short warmup simulation first to trigger compilation"
+      - "Or use Python variants (ImplicitEulerPython) for quick tests"
+      - "Numba compilation caches persist across runs in __pycache__"
+    prevention: "Use Python variants during development; Numba for production runs"
+
+  severity: degraded
+  cross_references: []
+
+- id: dt_010
+  stage: s5_model_execution
+  failure_domain: runtime
+
+  symptom:
+    description: "Negative storage values; streamflow oscillates or diverges; NaN in output"
+    error_pattern: "RuntimeWarning: invalid value encountered"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "Explicit Euler solver produces negative storage for large timesteps or fluxes"
+    explanation: >
+      The Explicit Euler method S^{n+1} = S^n + dt * f(S^n) can produce
+      negative S when outflow exceeds storage within one timestep. This
+      causes NaN when computing S^alpha (negative base, fractional exponent).
+      The implicit Euler avoids this through its stability properties.
+    affected_components: [all ODEsElement with ExplicitEuler]
+
+  remedy:
+    action: "Switch to ImplicitEuler solver with Pegasus root finder"
+    tool_to_run: ""
+    manual_steps:
+      - "Replace ExplicitEulerPython with ImplicitEulerPython"
+      - "Add root_finder=PegasusPython() to ImplicitEuler"
+      - "Or reduce timestep (dt) to improve explicit stability"
+    prevention: "Default to ImplicitEuler for production; ExplicitEuler only for debugging"
+
+  severity: fatal
+  cross_references: [dt_015]
+
+- id: dt_011
+  stage: s3_model_assembly
+  failure_domain: architecture
+
+  symptom:
+    description: "Model hangs indefinitely during get_output(); infinite loop in network solver"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Network topology contains a cycle"
+    explanation: >
+      The Network class solves nodes from headwater to outlet using topological
+      ordering. If the topology dict creates a cycle (A→B→C→A), the solver
+      never terminates because it always finds unsolved upstream nodes.
+    affected_components: [Network]
+
+  remedy:
+    action: "Fix topology to be a tree (DAG): each node has at most one downstream, no cycles"
+    tool_to_run: ""
+    manual_steps:
+      - "Draw the network on paper; verify it's a tree"
+      - "Check topology dict: no node should appear as both upstream and downstream of another"
+      - "Outlet node must have None as downstream"
+    prevention: "Validate topology for cycles before constructing Network"
+
+  severity: silent
+  cross_references: []
+
+- id: dt_012
+  stage: s3_model_assembly
+  failure_domain: architecture
+
+  symptom:
+    description: "Node output is systematically too high or too low; doesn't match individual unit runs"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Node unit weights don't sum to 1.0"
+    explanation: >
+      A Node combines parallel Unit outputs with fractional weights. If weights
+      sum to 0.8 instead of 1.0, 20% of the catchment is unaccounted for.
+      If they sum to 1.5, output is amplified by 50%. The framework does not
+      enforce normalization.
+    affected_components: [Node]
+
+  remedy:
+    action: "Ensure weights sum to 1.0; normalize if derived from area fractions"
+    tool_to_run: ""
+    manual_steps:
+      - "weights = [0.3, 0.5, 0.2]  # Must sum to 1.0"
+      - "Or: weights = [w / sum(weights) for w in raw_weights]"
+    prevention: "Assert sum(weights) ≈ 1.0 before Node construction"
+
+  severity: silent
+  cross_references: [dt_014]
+
+- id: dt_013
+  stage: s3_model_assembly
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Network routing produces fluxes that are 1e6 too large or too small"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Node area specified in m² instead of km²"
+    explanation: >
+      The Node's area parameter is used in network routing to convert between
+      specific discharge (mm/d) and volumetric flow (m³/s). If area is
+      1.5e8 m² instead of 150 km², routing calculations are wrong by a
+      factor of 1e6.
+    affected_components: [Node, Network]
+
+  remedy:
+    action: "Express area in km²"
+    tool_to_run: ""
+    manual_steps:
+      - "Convert: area_km2 = area_m2 / 1e6"
+      - "Node(units=[...], weights=[...], area=150.0, id='node1')"
+    prevention: "Validate area is in range 0.01-1e6 km²"
+
+  severity: silent
+  cross_references: [dt_008]
+
+- id: dt_014
+  stage: s3_model_assembly
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "Node output is ~100x too large; sum of weighted unit outputs clearly wrong"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Node weights specified as percentages (0-100) instead of fractions (0-1)"
+    explanation: >
+      If weights are [30, 50, 20] (percentages) instead of [0.3, 0.5, 0.2]
+      (fractions), the weighted sum is 100x too large. The framework treats
+      weights as multipliers without validation.
+    affected_components: [Node]
+
+  remedy:
+    action: "Divide weights by 100 to convert from percentages to fractions"
+    tool_to_run: ""
+    manual_steps:
+      - "weights = [w / 100 for w in percentage_weights]"
+      - "Verify: sum(weights) = 1.0"
+    prevention: "Validate 0 < weight < 1 and sum ≈ 1.0"
+
+  severity: silent
+  cross_references: [dt_012]
+
+- id: dt_015
+  stage: s5_model_execution
+  failure_domain: runtime
+
+  symptom:
+    description: "Implicit solver warning about non-convergence; output has subtle errors"
+    error_pattern: "Root finder did not converge"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "Pegasus root finder fails to converge for extreme parameter combinations"
+    explanation: >
+      The implicit Euler scheme requires finding S^{n+1} such that
+      S^{n+1} - S^n - dt*f(S^{n+1}) = 0. For very large k or alpha
+      values, the root function becomes extremely steep, and the Pegasus
+      bracketing algorithm may not converge within its iteration limit.
+    affected_components: [PegasusPython, PegasusNumba, ImplicitEuler solvers]
+
+  remedy:
+    action: "Reduce timestep, check parameter ranges, or increase root finder iterations"
+    tool_to_run: ""
+    manual_steps:
+      - "Check k * S^alpha is not producing huge values"
+      - "Reduce dt to improve solver conditioning"
+      - "Try Runge-Kutta 4 as alternative"
+    prevention: "Validate parameters are within documented ranges before running"
+
+  severity: degraded
+  cross_references: [dt_010]
+
+- id: dt_016
+  stage: s2_parameter_setup
+  failure_domain: parameter_format
+
+  symptom:
+    description: "IndexError during model solve; array length mismatch"
+    error_pattern: "IndexError: index N is out of bounds for axis 0 with size M"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "Time-varying parameter array length doesn't match number of timesteps"
+    explanation: >
+      SuperflexPy supports time-varying parameters as numpy arrays. If a
+      parameter array has 100 elements but forcing has 365 timesteps, the
+      solver crashes when accessing parameter[ind] for ind >= 100.
+    affected_components: [all ParameterizedElement subclasses]
+
+  remedy:
+    action: "Ensure time-varying parameter arrays match forcing length"
+    tool_to_run: ""
+    manual_steps:
+      - "param_array = np.full(n_timesteps, param_value)"
+      - "Or use scalar value for constant parameters"
+    prevention: "Validate array lengths match before model.set_input()"
+
+  severity: fatal
+  cross_references: []
+
+- id: dt_017
+  stage: s3_model_assembly
+  failure_domain: dependency_mismatch
+
+  symptom:
+    description: "Import error or compilation failure when using Numba solvers"
+    error_pattern: "numba.core.errors.TypingError"
+    detection_method: log_match
+
+  diagnosis:
+    root_cause: "Numba version incompatible with numpy version"
+    explanation: >
+      SuperflexPy requires numba==0.57.1 and numpy==1.24.3. Newer numpy
+      versions may change the C-level array API that Numba depends on,
+      causing TypingError or compilation failures in JIT-decorated functions.
+    affected_components: [all Numba variants]
+
+  remedy:
+    action: "Install pinned dependency versions: pip install numpy==1.24.3 numba==0.57.1"
+    tool_to_run: ""
+    manual_steps:
+      - "pip install numpy==1.24.3 numba==0.57.1"
+      - "Or use Python-only solvers as fallback"
+    prevention: "Use requirements.txt with pinned versions; test in clean venv"
+
+  severity: fatal
+  cross_references: [dt_009]
+
+- id: dt_018
+  stage: s2_parameter_setup
+  failure_domain: unit_conversion
+
+  symptom:
+    description: "GR4J exchange flux (F) has wrong sign; water balance doesn't close for networks"
+    error_pattern: ""
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "x2 sign convention misunderstood: positive = groundwater import"
+    explanation: >
+      In SuperflexPy's GR4J implementation, x2 > 0 means the catchment
+      imports water from external sources (gaining stream). x2 < 0 means
+      the catchment exports water (losing stream). This is opposite to
+      some other GR4J implementations where positive means loss.
+    affected_components: [RoutingStore]
+
+  remedy:
+    action: "Check x2 sign: positive = import, negative = export"
+    tool_to_run: ""
+    manual_steps:
+      - "For gaining streams: x2 > 0 (typical: 0.1-3.0)"
+      - "For losing streams: x2 < 0 (typical: -5.0 to -0.1)"
+      - "For neutral: x2 ≈ 0"
+    prevention: "Document sign convention in parameter setup; verify water balance"
+
+  severity: silent
+  cross_references: [dt_001]

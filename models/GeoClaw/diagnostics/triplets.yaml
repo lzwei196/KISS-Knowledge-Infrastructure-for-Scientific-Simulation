@@ -1,0 +1,469 @@
+# GeoClaw Diagnostic Triplets
+# 18 symptom → diagnosis → remedy entries covering the most common failure modes
+# Organized by failure domain: unit_conversion, parameter_format, runtime, silent, dependency
+
+- id: dt_001
+  stage: s1_bathymetry
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Ocean appears as a mountain — water depth is zero everywhere, no wave propagation."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Bathymetry sign convention is wrong — positive-down ocean depth instead of GeoClaw negative-below-datum."
+    explanation: >
+      GeoClaw uses negative values for ocean depth and positive for land elevation.
+      Many DEM sources (GEBCO pre-2019, sonar surveys, some NOAA datasets) use
+      positive-down for ocean depth.  If not negated, the ocean floor appears as
+      terrain above sea level, and the solver produces zero flow.
+    affected_components: [convert_bathymetry, topo_data]
+  remedy:
+    action: "Negate all elevation values: use --flip-sign in convert_bathymetry.py"
+    tool_to_run: convert_bathymetry
+    manual_steps:
+      - "Check z_min and z_max in the topo file"
+      - "If z_min > 0 and domain includes ocean, the sign is wrong"
+      - "Re-run convert_bathymetry.py with --flip-sign"
+    prevention: "validate_outputs() checks if all values are positive and warns"
+  cross_references: [dt_002]
+
+- id: dt_002
+  stage: s1_bathymetry
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Domain appears empty or solution is concentrated in one corner. Grid looks correct but features are misplaced."
+    error_pattern: null
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Coordinate system mismatch — topo file uses meters but geo_data.coordinate_system=2 (lat-lon), or vice versa."
+    explanation: >
+      If topography coordinates are in meters (e.g., UTM) but the solver expects
+      degrees (coordinate_system=2), the topo spans a tiny fraction of the domain
+      in degree-space.  The reverse puts the domain in a ~100km×100km box when
+      it should span thousands of km.
+    affected_components: [convert_bathymetry, setrun, geo_data]
+  remedy:
+    action: "Ensure topo coordinates match geo_data.coordinate_system (1=meters, 2=degrees)"
+    tool_to_run: convert_bathymetry
+    manual_steps:
+      - "Check topo file header for xll, yll values"
+      - "If values are large (>1000) with coordinate_system=2, they are likely in meters"
+      - "Either convert topo to degrees or set coordinate_system=1"
+    prevention: "generate_setrun.py validates coordinate ranges against coordinate_system"
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s3_configuration
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Simulation finishes instantly with only initial condition output, or runs for days without completing."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "tfinal is in wrong time units — minutes or hours instead of seconds."
+    explanation: >
+      GeoClaw uses seconds for all time parameters.  If tfinal=6 is intended as
+      6 hours but interpreted as 6 seconds, only the initial condition is output.
+      Conversely, tfinal=21600 intended as seconds but supplied as 21600 hours
+      makes the simulation run essentially forever.
+    affected_components: [setrun, clawdata]
+  remedy:
+    action: "Convert tfinal to seconds: hours×3600, minutes×60"
+    tool_to_run: generate_setrun
+    manual_steps:
+      - "Check clawdata.tfinal in setrun.py"
+      - "Verify it is in seconds (e.g., 6 hours = 21600 seconds)"
+      - "Check that output times also make sense in seconds"
+    prevention: "generate_setrun.py warns if tfinal > 1e7 seconds"
+  cross_references: []
+
+- id: dt_004
+  stage: s3_configuration
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Water flow stops within a few grid cells from the source. Inundation extent is much smaller than expected."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Manning coefficient is too high (>0.1), causing extreme bottom friction."
+    explanation: >
+      Manning's n for natural channels is typically 0.01-0.06.  Values > 0.1 create
+      extreme friction that dissipates momentum rapidly.  The simulation runs without
+      error but produces a stunted wave that doesn't propagate far.  This also happens
+      if Manning's n is specified in non-standard units.
+    affected_components: [setrun, geo_data]
+  remedy:
+    action: "Set manning_coefficient to 0.025 (typical default) or check published values for the terrain type"
+    tool_to_run: generate_setrun
+    manual_steps:
+      - "Check geo_data.manning_coefficient in setrun.py"
+      - "Typical values: open ocean 0.01-0.02, coastal 0.02-0.03, vegetated 0.03-0.06"
+      - "If > 0.1, likely too high"
+    prevention: "generate_setrun.py warns if manning_coefficient > 0.1"
+  cross_references: [dt_012]
+
+- id: dt_005
+  stage: s3_configuration
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Initial water level is wrong — domain is either completely flooded or completely dry where it shouldn't be."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "sea_level is in wrong units (feet or cm instead of meters) or wrong datum."
+    explanation: >
+      geo_data.sea_level sets the initial water surface elevation in meters
+      relative to the bathymetry datum.  If bathymetry is referenced to MSL
+      but sea_level is set in feet or relative to a different datum, the initial
+      condition is wrong.  A sea_level of 0 means water fills all areas where
+      bathymetry < 0.
+    affected_components: [setrun, geo_data]
+  remedy:
+    action: "Set sea_level in meters relative to the same datum as the bathymetry"
+    tool_to_run: generate_setrun
+    manual_steps:
+      - "Check geo_data.sea_level and bathymetry datum"
+      - "Ensure both use the same vertical reference (MSL, NAVD88, etc.)"
+      - "Convert if necessary: feet×0.3048 → meters"
+    prevention: "Visual inspection of initial condition plot"
+  cross_references: [dt_001]
+
+- id: dt_006
+  stage: s3_configuration
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Wave speed is wrong — tsunami arrives too early or too late by a factor of ~1.7."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Gravity is set to 32.2 (ft/s²) instead of 9.81 (m/s²)."
+    explanation: >
+      Shallow water wave speed is c = sqrt(g*h).  Using g=32.2 (imperial) instead
+      of 9.81 (metric) makes waves travel sqrt(32.2/9.81) ≈ 1.81× too fast.
+      The simulation runs fine but arrival times and wave heights are wrong.
+    affected_components: [setrun, geo_data]
+  remedy:
+    action: "Set geo_data.gravity = 9.81 (m/s²)"
+    tool_to_run: generate_setrun
+    manual_steps:
+      - "Check geo_data.gravity in setrun.py"
+      - "Must be 9.81 m/s² (not 32.2 ft/s²)"
+    prevention: "generate_setrun.py uses 9.81 as default"
+  cross_references: []
+
+- id: dt_007
+  stage: s3_configuration
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "In lat-lon mode, distances are scaled by ~1000× — grid cells are enormous or tiny."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "earth_radius is in km (6367.5) instead of meters (6367500.0)."
+    explanation: >
+      When coordinate_system=2, GeoClaw uses earth_radius to convert degrees to
+      meters for the metric terms in the shallow water equations.  If earth_radius
+      is in km instead of meters, all distances are 1000× too small, making cells
+      appear 1000× smaller than intended.  Grid spacing dx in meters = earth_radius × cos(lat) × dlon_rad.
+    affected_components: [setrun, geo_data]
+  remedy:
+    action: "Set geo_data.earth_radius = 6367500.0 (meters)"
+    tool_to_run: generate_setrun
+    manual_steps:
+      - "Check geo_data.earth_radius in setrun.py"
+      - "Must be in meters: 6367500.0 or 6.3675e6"
+    prevention: "generate_setrun.py uses 6367500.0 as default"
+  cross_references: [dt_002]
+
+- id: dt_008
+  stage: s3_configuration
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Storm surge height is ~2× too large or too small compared to observations."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wind speed is in knots or mph instead of m/s."
+    explanation: >
+      GeoClaw storm surge module expects wind speed in m/s.  IBTrACS often provides
+      wind in knots (1 knot = 0.5144 m/s).  Using knots directly makes wind forcing
+      about 2× too strong.  NHC best track uses knots; JMA uses m/s.
+    affected_components: [surge_data, storm forcing]
+  remedy:
+    action: "Convert wind speed: knots × 0.5144 → m/s; mph × 0.4470 → m/s"
+    tool_to_run: null
+    manual_steps:
+      - "Check wind speed units in storm data file"
+      - "IBTrACS: usually knots → multiply by 0.5144"
+      - "Verify max wind speed is reasonable: Cat 5 ≈ 70 m/s"
+    prevention: "Check max wind speed against Saffir-Simpson scale"
+  cross_references: [dt_009]
+
+- id: dt_009
+  stage: s3_configuration
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Storm surge is negligible despite strong wind — pressure forcing has no effect."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Atmospheric pressure is in mbar/hPa instead of Pa."
+    explanation: >
+      GeoClaw expects pressure in Pascals (Pa).  Standard atmospheric pressure is
+      101325 Pa = 1013.25 hPa = 1013.25 mbar.  If pressure is given in mbar (e.g., 950),
+      it is 100× too small in Pa-space, making the pressure gradient negligible.
+      The inverse barometer effect (1 mbar ≈ 1 cm of surge) won't manifest.
+    affected_components: [surge_data, storm forcing]
+  remedy:
+    action: "Convert pressure: mbar × 100 → Pa; hPa × 100 → Pa"
+    tool_to_run: null
+    manual_steps:
+      - "Check pressure values in storm data"
+      - "If max pressure is ~1013 (not ~101325), convert: × 100"
+      - "Central pressure deficit should be 10-100 mbar (1000-10000 Pa)"
+    prevention: "Check if pressure values are in realistic Pa range (90000-110000)"
+  cross_references: [dt_008]
+
+- id: dt_010
+  stage: s2_earthquake_source
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Tsunami wave height is negligible — maximum surface elevation is < 1 mm despite large earthquake."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Fault slip is in centimeters instead of meters."
+    explanation: >
+      The Okada model in dtopotools expects slip in meters.  Many published fault
+      models report slip in centimeters.  Using cm directly produces seafloor
+      deformation that is 100× too small.  The simulation runs but the tsunami
+      wave is invisible.
+    affected_components: [dtopotools, SubFault]
+  remedy:
+    action: "Convert fault slip from cm to meters: divide by 100"
+    tool_to_run: null
+    manual_steps:
+      - "Check fault.slip value"
+      - "For M8+ earthquakes, typical slip is 1-30 meters"
+      - "If slip values are 100-3000, they are likely in cm"
+      - "Divide by 100 to convert to meters"
+    prevention: "Check maximum deformation against expected values for the magnitude"
+  cross_references: []
+
+- id: dt_011
+  stage: s5_execution
+  failure_domain: runtime
+  severity: fatal
+  symptom:
+    description: "Simulation aborts with 'Courant number too large' or output contains NaN/Inf values."
+    error_pattern: "Courant number too large|NaN|forrtl"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "CFL number exceeds 1.0 due to extreme velocities or insufficient resolution."
+    explanation: >
+      The CFL condition requires dt * max_wave_speed / dx < 1.  If cfl_desired is too
+      close to 1.0, transient spikes can exceed cfl_max and abort the run.  This also
+      happens when bathymetry has sharp discontinuities or when the initial condition
+      creates unrealistic velocities.
+    affected_components: [setrun, clawdata]
+  remedy:
+    action: "Reduce cfl_desired to 0.75 (default) or increase grid resolution"
+    tool_to_run: generate_setrun
+    manual_steps:
+      - "Set cfl_desired = 0.75 and cfl_max = 1.0"
+      - "Check for sharp bathymetry gradients and smooth them"
+      - "Increase grid resolution (smaller dx) if needed"
+      - "Check initial conditions for unrealistic velocities"
+    prevention: "generate_setrun.py enforces cfl_desired < 1.0"
+  cross_references: [dt_013]
+
+- id: dt_012
+  stage: s5_execution
+  failure_domain: silent
+  severity: silent
+  symptom:
+    description: "Shoreline oscillates rapidly or water appears/disappears at coast. Checkerboard pattern at wet-dry interface."
+    error_pattern: null
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "dry_tolerance is too small, causing numerical oscillations at the wet-dry interface."
+    explanation: >
+      The dry_tolerance parameter (default 1e-3 m) sets the minimum depth to consider
+      a cell 'wet'.  Values that are too small (e.g., 1e-8) cause the solver to
+      repeatedly wet and dry cells at the shoreline, producing oscillations.  Values
+      that are too large (e.g., 1.0) miss thin water layers.
+    affected_components: [setrun, geo_data]
+  remedy:
+    action: "Set dry_tolerance between 1e-4 and 1e-2 meters (default 1e-3)"
+    tool_to_run: generate_setrun
+    manual_steps:
+      - "Check geo_data.dry_tolerance in setrun.py"
+      - "Try 1e-3 (default) for most applications"
+      - "Increase to 1e-2 if oscillations persist"
+    prevention: "Default value of 1e-3 works for most cases"
+  cross_references: [dt_004]
+
+- id: dt_013
+  stage: s3_configuration
+  failure_domain: parameter_format
+  severity: fatal
+  symptom:
+    description: "Fortran runtime error at startup — 'array index out of bounds' or segfault."
+    error_pattern: "forrtl: severe|Segmentation fault|SIGSEGV"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "AMR refinement_ratios array length doesn't match amr_levels_max - 1."
+    explanation: >
+      The refinement_ratios_x/y/t arrays must have exactly (amr_levels_max - 1) entries.
+      If amr_levels_max=3, there must be 2 refinement ratios (level 1→2, level 2→3).
+      A mismatch causes an array bounds error in the Fortran AMR code.
+    affected_components: [setrun, amrdata]
+  remedy:
+    action: "Ensure len(refinement_ratios_x) == amr_levels_max - 1"
+    tool_to_run: generate_setrun
+    manual_steps:
+      - "Count entries in refinement_ratios_x/y/t"
+      - "Compare to amr_levels_max - 1"
+      - "Add or remove entries as needed"
+    prevention: "generate_setrun.py validates array lengths"
+  cross_references: [dt_011]
+
+- id: dt_014
+  stage: s1_bathymetry
+  failure_domain: parameter_format
+  severity: silent
+  symptom:
+    description: "Artificial walls or cliffs appear at boundaries between topography datasets."
+    error_pattern: null
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Topography files don't cover the entire computational domain."
+    explanation: >
+      When topo files have gaps, GeoClaw uses zero elevation for uncovered regions.
+      This creates sudden jumps from real bathymetry to zero, appearing as underwater
+      cliffs.  The simulation runs but waves reflect off these artificial boundaries.
+    affected_components: [topo_data, convert_bathymetry]
+  remedy:
+    action: "Ensure topography files collectively cover the entire domain without gaps"
+    tool_to_run: convert_bathymetry
+    manual_steps:
+      - "Plot the topo file extent over the computational domain"
+      - "Check for gaps between multiple topo files"
+      - "Extend topo data or adjust domain bounds"
+    prevention: "Visual inspection of initial bathymetry"
+  cross_references: [dt_001]
+
+- id: dt_015
+  stage: s5_execution
+  failure_domain: runtime
+  severity: fatal
+  symptom:
+    description: "Disk fills up during simulation — output directory grows to tens of GB."
+    error_pattern: "No space left on device|IOError"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "ASCII output with fine AMR grids produces very large files."
+    explanation: >
+      Each fort.q file contains all AMR patches in ASCII.  With multiple refinement
+      levels (e.g., 4 levels with ratio 4), the finest level has 256× more cells
+      than the coarsest.  ASCII format is ~4× larger than binary.  A 6-hour simulation
+      with 100 output frames can easily produce 50+ GB.
+    affected_components: [setrun, clawdata]
+  remedy:
+    action: "Use binary output format and reduce output frequency"
+    tool_to_run: generate_setrun
+    manual_steps:
+      - "Set clawdata.output_format = 'binary'"
+      - "Reduce num_output_times"
+      - "Use FGout for specific regions instead of full domain output"
+      - "Estimate: n_cells × 3_vars × 8_bytes × n_frames for binary"
+    prevention: "Estimate output size before running"
+  cross_references: []
+
+- id: dt_016
+  stage: s3_configuration
+  failure_domain: silent
+  severity: silent
+  symptom:
+    description: "fort.gauge file is empty or missing gauge data for a specific gauge ID."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Gauge location is outside the computational domain or in a permanently dry cell."
+    explanation: >
+      Gauge coordinates must be within [xlower, xupper] × [ylower, yupper].
+      If a gauge is placed in a dry cell (e.g., on land above sea_level), it
+      reports h=0 for the entire simulation.  GeoClaw does not error on
+      out-of-domain gauges — it simply skips them.
+    affected_components: [setrun, gaugedata]
+  remedy:
+    action: "Verify gauge coordinates are within the domain and in wet cells"
+    tool_to_run: null
+    manual_steps:
+      - "Check gauge x,y against domain bounds"
+      - "Verify the gauge is in a wet region (bathymetry < sea_level)"
+      - "Plot gauge locations on the bathymetry map"
+    prevention: "Plot gauge locations before running"
+  cross_references: []
+
+- id: dt_017
+  stage: s5_execution
+  failure_domain: dependency
+  severity: fatal
+  symptom:
+    description: "make .exe fails with 'gfortran: command not found' or 'No rule to make target'."
+    error_pattern: "command not found|No rule to make target"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Fortran compiler not installed or CLAW environment variable not set."
+    explanation: >
+      GeoClaw requires a Fortran compiler (gfortran recommended) and the CLAW
+      environment variable pointing to the clawpack installation.  The Makefile
+      includes $CLAW/clawutil/src/Makefile.common which contains build rules.
+    affected_components: [Makefile, build system]
+  remedy:
+    action: "Install gfortran and set CLAW environment variable"
+    tool_to_run: null
+    manual_steps:
+      - "Install: sudo apt install gfortran (Debian/Ubuntu)"
+      - "Set: export CLAW=/path/to/clawpack"
+      - "Set: export FC=gfortran"
+      - "Verify: gfortran --version"
+    prevention: "run_geoclaw.py checks for compiler before attempting build"
+  cross_references: [dt_018]
+
+- id: dt_018
+  stage: s5_execution
+  failure_domain: dependency
+  severity: fatal
+  symptom:
+    description: "ImportError: No module named 'clawpack' when running setrun.py."
+    error_pattern: "ImportError|ModuleNotFoundError|No module named"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Clawpack Python package is not installed in the active Python environment."
+    explanation: >
+      setrun.py imports from clawpack.clawutil and clawpack.geoclaw.  If clawpack
+      is not installed (pip install clawpack) or the wrong Python environment is
+      active, the import fails.  This is distinct from the CLAW environment variable
+      which points to the source tree for Fortran compilation.
+    affected_components: [setrun.py, Python environment]
+  remedy:
+    action: "pip install clawpack in the active Python environment"
+    tool_to_run: null
+    manual_steps:
+      - "Check: python -c 'import clawpack; print(clawpack.__path__)'"
+      - "If ImportError: pip install clawpack"
+      - "Or install from source: cd clawpack && pip install -e ."
+    prevention: "run_geoclaw.py checks for clawpack import before running"
+  cross_references: [dt_017]

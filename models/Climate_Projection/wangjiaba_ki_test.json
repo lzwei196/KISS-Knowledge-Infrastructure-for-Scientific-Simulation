@@ -1,0 +1,92 @@
+{
+  "model_id": "21",
+  "model": "CMIP6 Framework",
+  "domain": "climate",
+  "basin": "Wangjiaba (51030)",
+  "basin_area_km2": 30630,
+  "ki_path": "/mnt/disk1/Hydrocraft_server/models/Climate_Projection/knowledge_infrastructure",
+  "test_status": "PASS",
+  "ki_generalized": true,
+  "binary_found": true,
+  "model_ran": true,
+  "output_verified": true,
+  "metrics": {
+    "note": "CMIP6 is a climate projection framework, not a discharge model \u2014 no NSE/KGE metrics apply",
+    "cmip6_model": "ACCESS-CM2",
+    "scenario": "SSP2-4.5",
+    "reference_period": "1981-2010",
+    "future_period": "2041-2070",
+    "delta_pr_range": [
+      0.679,
+      1.629
+    ],
+    "delta_pr_mean": 1.142,
+    "delta_tasmax_range_degC": [
+      2.148,
+      4.521
+    ],
+    "delta_tasmax_mean_degC": 3.192,
+    "delta_tasmin_range_degC": [
+      1.586,
+      3.671
+    ],
+    "delta_tasmin_mean_degC": 2.768,
+    "jan_temp_warming_degC": 2.82,
+    "jul_precip_ratio": 1.241,
+    "passthrough_vars_unchanged": true,
+    "grid_cells_matched": "40/40",
+    "output_files": 840,
+    "variables_complete": "7/7 (temp, prec, srad, lrad, pres, wind, shum)",
+    "spatial_coverage": {
+      "lat_range": "31.375 to 32.625",
+      "lon_range": "113.375 to 115.625"
+    },
+    "temporal_coverage": "2041-2050 (10 years projected)"
+  },
+  "pipeline_stages": {
+    "s1_extract_r1": {
+      "status": "success",
+      "cells_matched": "40/40",
+      "days_read": 19723,
+      "runtime_sec": 7
+    },
+    "s1_extract_245": {
+      "status": "success",
+      "cells_matched": "40/40",
+      "days_read": 31046,
+      "runtime_sec": 10
+    },
+    "s2_compute_deltas": {
+      "status": "success",
+      "variables": 3,
+      "months": 12,
+      "cells": 40,
+      "runtime_sec": 1
+    },
+    "s3_apply_deltas": {
+      "status": "success",
+      "output_files": 840,
+      "target_years": "2041-2050",
+      "runtime_sec": 10
+    }
+  },
+  "verification": {
+    "all_7_forcing_variables_present": true,
+    "temperature_increased": true,
+    "precip_ratio_physical": true,
+    "passthrough_unchanged": true,
+    "grid_matches_basin": true,
+    "time_coords_correct": true,
+    "no_nan_in_data": true,
+    "cmip6_model_attr_set": true
+  },
+  "issues": [],
+  "ki_gaps": [
+    "VIC grid uses y/x coordinate naming but tool handles this correctly (line 189-190 in extract_cmip6_basin.py)",
+    "No automated S4 ensemble analysis script \u2014 user must manually run VIC + routing for each model/scenario",
+    "KI recommends 5-model ensemble but does not provide a batch script to loop all 5 models through S1-S3",
+    "convert_projected_forcing.py (NC\u2192VIC ASCII) not tested in this run \u2014 would be needed for actual VIC execution",
+    "Baseline forcing_1d must pre-exist from a previous VIC run \u2014 KI does not document this dependency explicitly"
+  ],
+  "timestamp": "2026-04-02T16:00:29.852918"
+}

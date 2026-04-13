@@ -1,0 +1,680 @@
+# =============================================================================
+# HYPE v5.35.0 — Diagnostic Triplets
+# Generated via Knowledge Dissection Toolkit (KDT)
+# Updated: 2026-03-24 (post Bengbu + Chaohe validation)
+# =============================================================================
+
+triplets:
+  # =========================================================================
+  # COMPILATION / INSTALLATION
+  # =========================================================================
+  - id: dt_b01
+    stage: installation
+    failure_domain: compilation
+    severity: fatal
+    symptom:
+      description: "gfortran linker error: undefined reference to _NETCDF symbols"
+      error_pattern: "undefined reference to.*netcdf"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "NetCDF library not installed but build attempted with libs=netcdff flag"
+      explanation: >
+        HYPE can optionally compile with NetCDF output support, but the default
+        HydroCraft setup uses text-based output (timeCOUT.txt, etc.). The build
+        flag libs=netcdff triggers NetCDF linking unnecessarily.
+      affected_components: ["makefile", "build.sh"]
+    remedy:
+      action: "Build without NetCDF: make comp=gfortran (no libs flag needed)"
+      tool_to_run: ""
+      manual_steps:
+        - "cd model/hype/hype_5_35_0_src/"
+        - "make comp=gfortran"
+      prevention: "Never add libs=netcdff unless NetCDF output is explicitly required"
+    severity: fatal
+    cross_references: []
+
+  - id: dt_b02
+    stage: installation
+    failure_domain: compilation
+    severity: fatal
+    symptom:
+      description: "Type mismatch in argument at (1) during compilation"
+      error_pattern: "Error: Type mismatch in argument"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "gfortran version too old (<5.0) or compilation flags too strict (-std=f2018)"
+      explanation: >
+        HYPE 5.35.0 Fortran 90 code uses some implicit type conversions that
+        strict standards reject. gfortran >= 5.0 with the default -std=gnu
+        flag handles these correctly.
+      affected_components: ["gfortran", "makefile"]
+    remedy:
+      action: "Use gfortran >= 5.0 with -std=gnu flag (default in makefile)"
+      tool_to_run: ""
+      manual_steps:
+        - "gfortran --version  # must be >= 5.0"
+      prevention: "Check gfortran version before build"
+    severity: fatal
+    cross_references: []
+
+  # =========================================================================
+  # CONFIGURATION / PARAMETER FORMAT
+  # =========================================================================
+  - id: dt_r01
+    stage: s7_execution
+    failure_domain: parameter_format
+    severity: fatal
+    symptom:
+      description: "HYPE fails to open info.txt — reports 'Cannot open file'"
+      error_pattern: "Cannot open file.*info.txt"
+      detection_method: log_match
+    diagnosis:
+      root_cause: >
+        Fortran string concatenation: trim(dir)//filename. If dir='mydir' (no slash),
+        result is 'mydirinfo.txt' instead of 'mydir/info.txt'.
+      explanation: >
+        HYPE's Fortran code does not check or append a trailing separator to the
+        directory argument. This is a fundamental Fortran string handling pattern
+        that affects all path-related operations.
+      affected_components: ["info.txt", "all directory paths", "run_hype.py"]
+    remedy:
+      action: "Always pass directory path with trailing slash: hype ./ not hype ."
+      tool_to_run: "run_hype"
+      manual_steps:
+        - "Ensure argument ends with '/'"
+      prevention: "run_hype.py auto-appends slash. Never call binary directly without it."
+    severity: fatal
+    cross_references: ["cm_008"]
+    promoted_from: "err_001"
+
+  - id: dt_r02
+    stage: s7_execution
+    failure_domain: parameter_format
+    severity: fatal
+    symptom:
+      description: "HYPE reports too few values in parameter file for a parameter"
+      error_pattern: "ERROR: too few values in parameter file"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "par.txt has fewer values than max land-use or soil type ID in GeoClass.txt"
+      explanation: >
+        If GeoClass.txt has land-use IDs 1, 2, 3, then each land-use-dependent
+        parameter in par.txt MUST have exactly 3 values. The count is based on
+        the highest ID, not the number of unique IDs — so if IDs are 1, 3, 5,
+        you need 5 values (with 0 for unused IDs 2, 4).
+      affected_components: ["par.txt", "GeoClass.txt"]
+    remedy:
+      action: "Count max landuse/soil IDs in GeoClass.txt, provide exactly that many values"
+      tool_to_run: "setup_parameters"
+      manual_steps:
+        - "grep -v '^!!' GeoClass.txt | awk '{print $2}' | sort -n | tail -1  # max landuse"
+        - "grep -v '^!!' GeoClass.txt | awk '{print $3}' | sort -n | tail -1  # max soil"
+      prevention: "setup_parameters.py auto-counts from GeoClass.txt"
+    severity: fatal
+    cross_references: []
+
+  - id: dt_r03
+    stage: s2_slc_classification
+    failure_domain: parameter_format
+    severity: fatal
+    symptom:
+      description: "HYPE error about soil layers in GeoClass.txt"
+      error_pattern: "ERROR: No or too many soil layers"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "numlayers column is 0, negative, or >3; or soildepth columns don't match"
+      explanation: >
+        Column 11 (numlayers) must be 1, 2, or 3. After column 11, exactly that
+        many soildepth values must follow. Extra or missing columns shift all
+        subsequent parsing silently.
+      affected_components: ["GeoClass.txt"]
+    remedy:
+      action: "Ensure numlayers is 1-3 and exactly that many soildepth values follow"
+      tool_to_run: "generate_geoclass"
+      manual_steps:
+        - "Verify column count = 11 + numlayers for each SLC row"
+      prevention: "generate_geoclass.py validates column count automatically"
+    severity: fatal
+    cross_references: ["cm_009"]
+
+  # =========================================================================
+  # RUNTIME ERRORS
+  # =========================================================================
+  - id: dt_r04
+    stage: s3_forcing_preparation
+    failure_domain: runtime
+    severity: fatal
+    symptom:
+      description: "HYPE fatal error about date mismatch when reading forcing"
+      error_pattern: "ERROR read Pobs, date not equal"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Forcing file dates do not cover entire bdate-edate range in info.txt"
+      explanation: >
+        HYPE reads forcing sequentially by date. If Pobs.txt starts later than
+        bdate or ends before edate, HYPE stops with a date mismatch error.
+        There is no interpolation or fill for missing dates.
+      affected_components: ["Pobs.txt", "Tobs.txt", "info.txt"]
+    remedy:
+      action: "Ensure Pobs.txt/Tobs.txt cover entire bdate-edate range with no gaps"
+      tool_to_run: "convert_forcing_to_hype"
+      manual_steps:
+        - "head -2 forcingdir/Pobs.txt  # check first date"
+        - "tail -1 forcingdir/Pobs.txt  # check last date"
+        - "Compare with bdate/edate in info.txt"
+      prevention: "convert_forcing_to_hype.py aligns dates automatically"
+    severity: fatal
+    cross_references: []
+
+  - id: dt_r05
+    stage: s4_geodata_generation
+    failure_domain: runtime
+    severity: fatal
+    symptom:
+      description: "HYPE crashes or produces wrong routing due to MAINDOWN cycle"
+      error_pattern: "MAINDOWN.*cycle|topology"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Subbasin MAINDOWN references create a circular loop"
+      explanation: >
+        If subbasin 1→2→3→1, HYPE enters infinite routing loop.
+        Outlet subbasin must have MAINDOWN=0 to terminate the chain.
+      affected_components: ["GeoData.txt"]
+    remedy:
+      action: "Run validate_topology.py to find and break cycles"
+      tool_to_run: "validate_topology"
+      manual_steps:
+        - "python validate_topology.py --geodata modelfiles/GeoData.txt"
+      prevention: "Always validate topology before running HYPE"
+    severity: fatal
+    cross_references: []
+
+  - id: dt_r06
+    stage: s7_execution
+    failure_domain: runtime
+    severity: fatal
+    symptom:
+      description: "HYPE exits with STOP 1 but no error in logdir"
+      error_pattern: "STOP 1"
+      detection_method: exit_code
+    diagnosis:
+      root_cause: "Log file created in infodir (working directory), not logdir"
+      explanation: >
+        Early-stage errors (before logdir is parsed from info.txt) write to
+        the current working directory, not the configured logdir.
+      affected_components: ["hyss_*.log"]
+    remedy:
+      action: "Look for hyss_*.log in the info directory (HYPE's first argument)"
+      tool_to_run: ""
+      manual_steps:
+        - "ls *.log in the directory passed to hype binary"
+      prevention: "run_hype.py checks both locations for log files"
+    severity: fatal
+    cross_references: []
+
+  # =========================================================================
+  # UNIT CONVERSION ERRORS
+  # =========================================================================
+  - id: dt_u01
+    stage: s3_forcing_preparation
+    failure_domain: unit_conversion
+    severity: silent
+    symptom:
+      description: "Extreme runoff values or unrealistic flooding. Discharge 8x too high."
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Precipitation averaged instead of summed when converting 3-hourly to daily"
+      explanation: >
+        CMFD/MSWX provide 3-hourly precipitation (mm per 3hr step). For daily
+        total, you must SUM all 8 timesteps. If you AVERAGE instead, daily
+        precipitation is 8x too low. Conversely, if you multiply the mean by 24
+        instead of 8, precipitation is 3x too high.
+      affected_components: ["Pobs.txt", "convert_forcing_to_hype.py"]
+    remedy:
+      action: "SUM 8 timesteps per day for precipitation. Verify: annual P ~ 400-1600 mm for most basins."
+      tool_to_run: "convert_forcing_to_hype"
+      manual_steps:
+        - "Check annual precipitation total against climatology"
+      prevention: "convert_forcing_to_hype.py uses sum, not mean, for precipitation"
+    severity: silent
+    cross_references: ["cm_004", "dt_c02"]
+
+  - id: dt_u02
+    stage: s3_forcing_preparation
+    failure_domain: unit_conversion
+    severity: silent
+    symptom:
+      description: "Temperature offset causes snow everywhere year-round, or no snow at all"
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "CMFD temperature in Kelvin not converted to Celsius"
+      explanation: >
+        CMFD stores temperature as Kelvin (e.g., 293.15 K = 20°C). HYPE expects
+        Celsius. Without subtracting 273.15, all temperatures appear ~273°C too
+        high, causing PET to explode and snow to never form.
+      affected_components: ["Tobs.txt", "convert_forcing_to_hype.py"]
+    remedy:
+      action: "Subtract 273.15 from CMFD temperature. MSWX is already in °C."
+      tool_to_run: "convert_forcing_to_hype"
+      manual_steps:
+        - "head -3 forcingdir/Tobs.txt  # should show reasonable °C values (-30 to 45)"
+      prevention: "convert_forcing_to_hype.py auto-detects K vs °C from value range"
+    severity: silent
+    cross_references: ["cm_004"]
+
+  - id: dt_u03
+    stage: s3_forcing_preparation
+    failure_domain: unit_conversion
+    severity: silent
+    symptom:
+      description: "All precipitation in Pobs.txt is zero despite CMFD files containing data"
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: >
+        CMFD stores precipitation as kg/m²/s (equivalent to mm/s). Values are
+        ~1e-5 magnitude. Without multiplying by 10800 (seconds per 3hr step),
+        the values are so small they round to zero in the daily sum.
+      explanation: >
+        This was the #1 error found during Bengbu validation. The model ran
+        without any error, but produced zero discharge because all precipitation
+        was zero after rounding. Only discovered by checking Pobs.txt values.
+      affected_components: ["Pobs.txt", "convert_forcing_to_hype.py"]
+    remedy:
+      action: "Multiply CMFD precipitation by 10800 to convert kg/m²/s → mm/3hr, then SUM 8 steps for daily."
+      tool_to_run: "convert_forcing_to_hype"
+      manual_steps:
+        - "python -c \"import xarray; ds=xarray.open_dataset('prec_file.nc'); print(ds['prec'].values.mean())\""
+        - "If mean is ~1e-5, it's kg/m²/s — multiply by 10800"
+        - "If mean is ~0.1-2.0, it's already mm/3hr"
+      prevention: "convert_forcing_to_hype.py checks value magnitude and auto-converts"
+    severity: silent
+    cross_references: ["cm_004", "err_003"]
+    promoted_from: "err_003"
+
+  # =========================================================================
+  # SILENT ERRORS (most dangerous — model runs, output is wrong)
+  # =========================================================================
+  - id: dt_s01
+    stage: s4_geodata_generation
+    failure_domain: silent_error
+    severity: silent
+    symptom:
+      description: "Water balance is wrong but model runs successfully with exit code 0"
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "SLC fractions in GeoData.txt do not sum to 1.0 for one or more subbasins"
+      explanation: >
+        If SLC fractions sum to 0.8, then 20% of precipitation is lost silently.
+        HYPE produces NO warning about this. The error is proportional to the
+        deviation from 1.0 and affects all water balance components.
+      affected_components: ["GeoData.txt", "compute_slc_fractions.py"]
+    remedy:
+      action: "Validate: for each subbasin row, sum(SLC_1..SLC_N) must equal 1.0 within 0.001"
+      tool_to_run: "validate_geodata"
+      manual_steps:
+        - "python validate_geodata.py --geodata modelfiles/GeoData.txt"
+      prevention: "Always run validate_geodata.py before HYPE execution"
+    severity: silent
+    cross_references: []
+    promoted_from: "err_002"
+
+  - id: dt_s02
+    stage: s7_execution
+    failure_domain: silent_error
+    severity: silent
+    symptom:
+      description: "Simulated discharge is systematically 1000x too high or too low"
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "AREA in GeoData.txt is in km² instead of m²"
+      explanation: >
+        HYPE expects AREA in square meters. 150 km² = 1.5E8 m². If entered as
+        150 (meaning km²), HYPE treats it as 150 m² — a tiny plot, not a basin.
+        Discharge scales linearly with area, so the error is exactly 1,000,000x.
+      affected_components: ["GeoData.txt", "generate_geodata.py"]
+    remedy:
+      action: "AREA must be in m². Typical subbasin: 1E7 to 1E10 m². If values are 10-10000, they're probably km²."
+      tool_to_run: "generate_geodata"
+      manual_steps:
+        - "grep -v '^!!' GeoData.txt | awk '{print $3}'  # should see scientific notation like 1.5E8"
+      prevention: "generate_geodata.py outputs in m² and validates magnitude"
+    severity: silent
+    cross_references: []
+
+  - id: dt_s03
+    stage: s5_parameter_setup
+    failure_domain: silent_error
+    severity: silent
+    symptom:
+      description: "All simulated discharge is zero despite valid forcing"
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Soil field capacity (wcfc) >= effective porosity (wcep), so no water can percolate"
+      explanation: >
+        HYPE's soil routine requires wcwp < wcfc < wcep. If wcfc >= wcep,
+        the soil is always at 'capacity' and no additional water enters,
+        effectively blocking all infiltration. Discharge remains zero.
+      affected_components: ["par.txt"]
+    remedy:
+      action: "Ensure wcwp < wcfc < wcep for all soil types"
+      tool_to_run: "setup_parameters"
+      manual_steps:
+        - "grep -E 'wcwp|wcfc|wcep' par.txt"
+        - "For each soil type column: wcwp < wcfc < wcep must hold"
+      prevention: "setup_parameters.py validates ordering before writing par.txt"
+    severity: silent
+    cross_references: ["dt_s08"]
+
+  - id: dt_s04
+    stage: s2_slc_classification
+    failure_domain: silent_error
+    severity: silent
+    symptom:
+      description: "Lake regulation has no effect on downstream discharge"
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Water SLC class not marked as special=2 in GeoClass.txt"
+      explanation: >
+        The 'special' column (column 8) must be 2 for lake/water SLC classes.
+        Without this flag, water areas are treated as normal land with soil
+        processes, not as open water bodies with lake regulation.
+      affected_components: ["GeoClass.txt"]
+    remedy:
+      action: "Set special=2 for water/lake classes in GeoClass.txt column 8"
+      tool_to_run: "generate_geoclass"
+      manual_steps:
+        - "Check column 8 for water class rows: must be 2, not 0"
+      prevention: "generate_geoclass.py auto-sets special=2 for water land-use classes"
+    severity: silent
+    cross_references: ["err_005"]
+    promoted_from: "err_005"
+
+  - id: dt_s05
+    stage: s7_execution
+    failure_domain: silent_error
+    severity: silent
+    symptom:
+      description: "Discharge at outlet shows no contribution from upstream subbasins"
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "ForcKey.txt SUBID column does not match GeoData.txt SUBID values"
+      explanation: >
+        ForcKey.txt maps each SUBID to a forcing station. If SUBIDs don't match
+        GeoData.txt, HYPE cannot find forcing for some subbasins. Those subbasins
+        run with zero precipitation and contribute no discharge.
+      affected_components: ["ForcKey.txt", "GeoData.txt"]
+    remedy:
+      action: "Verify all SUBIDs in ForcKey.txt exist in GeoData.txt and vice versa"
+      tool_to_run: "convert_forcing_to_hype"
+      manual_steps:
+        - "diff <(awk 'NR>1{print $1}' ForcKey.txt | sort) <(awk 'NR>1{print $1}' GeoData.txt | sort)"
+      prevention: "convert_forcing_to_hype.py reads SUBIDs from GeoData.txt directly"
+    severity: silent
+    cross_references: []
+
+  - id: dt_s06
+    stage: s4_geodata_generation
+    failure_domain: silent_error
+    severity: silent
+    symptom:
+      description: "Routing produces no delay, hydrograph is unrealistically peaky"
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "RIVLEN in GeoData.txt is 0 or very small for all subbasins"
+      explanation: >
+        RIVLEN is the main river length within a subbasin (meters). With RIVLEN=0,
+        water arrives at the outlet instantaneously. For a 150 km² subbasin,
+        typical RIVLEN is 5,000-50,000 m.
+      affected_components: ["GeoData.txt"]
+    remedy:
+      action: "Set RIVLEN to main river length in meters. Estimate: sqrt(AREA_km2) * 1.5 * 1000 for meandering."
+      tool_to_run: "generate_geodata"
+      manual_steps:
+        - "grep -v '^!!' GeoData.txt | awk '{print $7}'  # RIVLEN column"
+      prevention: "generate_geodata.py estimates RIVLEN from subbasin area if not provided"
+    severity: silent
+    cross_references: []
+
+  - id: dt_s07
+    stage: s3_forcing_preparation
+    failure_domain: silent_error
+    severity: silent
+    symptom:
+      description: "All precipitation is zero in Pobs.txt but no error from HYPE"
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Tab separators replaced by spaces during file generation"
+      explanation: >
+        HYPE's Fortran parser expects TAB-separated columns. If spaces are used
+        instead, the parser may read incorrect column values or fail to split
+        columns entirely, resulting in all-zero or all-missing values.
+      affected_components: ["Pobs.txt", "Tobs.txt", "ForcKey.txt"]
+    remedy:
+      action: "Use explicit \\t when writing forcing files. Verify with: cat -A Pobs.txt | head"
+      tool_to_run: "convert_forcing_to_hype"
+      manual_steps:
+        - "cat -A forcingdir/Pobs.txt | head -3  # should see ^I (tab) between columns"
+      prevention: "convert_forcing_to_hype.py uses sep='\\t' in pandas to_csv"
+    severity: silent
+    cross_references: []
+
+  - id: dt_s08
+    stage: s4_geodata_generation
+    failure_domain: silent_error
+    severity: silent
+    symptom:
+      description: "Zero discharge despite valid precipitation — GeoClass streamdepth=0"
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: >
+        GeoClass.txt streamdepth column (col 10) is 0. When streamdepth=0,
+        HYPE's calculate_soil_runoff returns immediately without computing runoff.
+      explanation: >
+        This is an undocumented default behavior. The streamdepth parameter controls
+        tile drainage depth. When set to 0, HYPE interprets it as 'no soil runoff
+        calculation' for that SLC class. Found during Bengbu validation — the model
+        ran successfully but produced zero discharge until streamdepth was set >0.
+      affected_components: ["GeoClass.txt", "generate_geoclass.py"]
+    remedy:
+      action: "Set streamdepth > 0 for all non-water SLC classes. Typical range: 0.5-2.0 m."
+      tool_to_run: "generate_geoclass"
+      manual_steps:
+        - "awk 'NR>1{print $10}' GeoClass.txt  # column 10 should be >0 for land classes"
+      prevention: "generate_geoclass.py defaults streamdepth to 1.0 m for land classes"
+    severity: silent
+    cross_references: []
+    promoted_from: "err_004"
+
+  - id: dt_s09
+    stage: s7_execution
+    failure_domain: silent_error
+    severity: silent
+    symptom:
+      description: "Nutrient concentrations are all zero despite substance flag in info.txt"
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "info.txt has 'substance N P' but par.txt lacks nutrient-specific parameters"
+      explanation: >
+        When N/P simulation is enabled, HYPE requires additional parameters in
+        par.txt (denitr, denitrw, maxprod, etc.). Without these, nutrient
+        processes are effectively disabled but the model still runs.
+      affected_components: ["par.txt", "info.txt"]
+    remedy:
+      action: "When simulating N/P, add all required nutrient parameters to par.txt"
+      tool_to_run: "setup_parameters"
+      manual_steps:
+        - "Check HYPE documentation for substance-specific parameters"
+      prevention: "setup_parameters.py adds nutrient params when substance flag is detected"
+    severity: silent
+    cross_references: []
+
+  - id: dt_s10
+    stage: s1_subbasin_delineation
+    failure_domain: silent_error
+    severity: silent
+    symptom:
+      description: "Subbasin areas sum to much more or less than total basin area"
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Overlapping or gapped subbasin polygons from DEM delineation"
+      explanation: >
+        If subbasin polygons overlap, water is double-counted. If gaps exist,
+        water is lost. Both produce wrong total discharge without any warning.
+      affected_components: ["subbasin shapefile", "delineate_subbasins.py"]
+    remedy:
+      action: "Check: sum(subbasin areas) should match total basin area within 5%"
+      tool_to_run: "validate_topology"
+      manual_steps:
+        - "ogr2ogr info on subbasin shapefile, sum areas vs basin boundary area"
+      prevention: "delineate_subbasins.py uses non-overlapping watershed delineation"
+    severity: silent
+    cross_references: []
+
+  # =========================================================================
+  # CROSS-MODEL COUPLING
+  # =========================================================================
+  - id: dt_c01
+    stage: s8_output_analysis
+    failure_domain: coupling
+    severity: warning
+    symptom:
+      description: "VIC and HYPE discharge differ by factor 2-5x at same outlet location"
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Different forcing aggregation, drainage areas, or PET methods"
+      explanation: >
+        VIC uses sub-daily energy balance while HYPE uses daily temperature-based
+        PET. Different temporal resolution of forcing changes infiltration/runoff
+        partitioning. Also verify both models use exactly the same basin area.
+      affected_components: ["VIC output", "HYPE output"]
+    remedy:
+      action: "Verify both models use same basin area and same forcing time period. Compare annual P and ET."
+      tool_to_run: "compare_vic_hype"
+      manual_steps:
+        - "python compare_vic_hype.py --vic <vic_dir> --hype <hype_dir>"
+      prevention: "Always run compare_vic_hype.py after both models complete"
+    severity: warning
+    cross_references: []
+
+  - id: dt_c02
+    stage: s3_forcing_preparation
+    failure_domain: coupling
+    severity: silent
+    symptom:
+      description: "HYPE discharge much lower than VIC for same basin and period"
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Precipitation averaged instead of summed when converting 3-hourly to daily"
+      explanation: >
+        If mean() is used instead of sum() for daily P aggregation, HYPE receives
+        1/8th of the actual precipitation. VIC processes the 3-hourly data directly.
+        Annual P comparison will show HYPE receiving ~100 mm/yr vs VIC's ~800 mm/yr.
+      affected_components: ["Pobs.txt", "convert_forcing_to_hype.py"]
+    remedy:
+      action: "3-hourly precip must be SUMMED for daily total. Cross-check: annual P in Pobs.txt should match VIC."
+      tool_to_run: "convert_forcing_to_hype"
+      manual_steps:
+        - "Compare annual precipitation between VIC forcing and HYPE Pobs.txt"
+      prevention: "convert_forcing_to_hype.py uses .sum() explicitly for precipitation"
+    severity: silent
+    cross_references: ["dt_u01"]
+
+  # =========================================================================
+  # VALIDATION-DISCOVERED ERRORS (Bengbu + Chaohe runs, 2026-03-24)
+  # =========================================================================
+  - id: dt_v01
+    stage: s7_execution
+    failure_domain: silent_error
+    severity: silent
+    symptom:
+      description: >
+        HYPE runs successfully but discharge is ~20% too high (PBIAS=+19.8%)
+        despite correct forcing units. Bengbu basin, 1981-1990.
+      error_pattern: ""
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: >
+        Lumped (1-subbasin) setup with default parameters. HYPE's internal routing
+        with MAINDOWN in lumped mode has no routing delay — all runoff appears
+        instantly at outlet, causing peak overprediction.
+      explanation: >
+        With a single subbasin for a 121,330 km² basin, there is no attenuation
+        from subbasin-to-subbasin routing. Semi-distributed setup (5-10 subbasins)
+        would improve timing and reduce peak overprediction. NSE=0.678 is already
+        good for uncalibrated lumped mode.
+      affected_components: ["GeoData.txt", "delineate_subbasins.py"]
+    remedy:
+      action: "For basins >10,000 km², use semi-distributed setup with multiple subbasins for better routing."
+      tool_to_run: "delineate_subbasins"
+      manual_steps:
+        - "Re-run with --num_subbasins 5-10 for large basins"
+      prevention: "Recommend semi-distributed for any basin > 10,000 km²"
+    severity: warning
+    cross_references: []
+
+  - id: dt_v02
+    stage: s3_forcing_preparation
+    failure_domain: silent_error
+    severity: silent
+    symptom:
+      description: >
+        Multiple HYPE run attempts produced zero discharge. Nine log files
+        (hyss_000_*) before success indicates iterative debugging was needed.
+      error_pattern: ""
+      detection_method: missing_output
+    diagnosis:
+      root_cause: >
+        Cascading silent errors: (1) CMFD precip unit (kg/m²/s not converted),
+        (2) streamdepth=0 in GeoClass.txt, (3) SLC fractions not validated.
+        Each was fixed sequentially across 9 attempts.
+      explanation: >
+        This is the canonical example of why the VALIDATION_PROTOCOL requires
+        progressive data replacement. All three errors are SILENT — the model
+        runs cleanly each time. Only output inspection revealed the problems.
+        The 9 log files document the discovery sequence.
+      affected_components: ["Pobs.txt", "GeoClass.txt", "GeoData.txt"]
+    remedy:
+      action: "Follow VALIDATION_PROTOCOL Step 2: replace one component at a time, verify after each."
+      tool_to_run: ""
+      manual_steps:
+        - "Check Pobs.txt annual total first (should be 400-1600 mm)"
+        - "Check GeoClass.txt streamdepth > 0"
+        - "Check GeoData.txt SLC fractions sum to 1.0"
+      prevention: "Use validate_geodata.py + annual P sanity check before every run"
+    severity: silent
+    cross_references: ["dt_u03", "dt_s08", "dt_s01"]
+
+# =============================================================================
+# Summary Statistics
+# =============================================================================
+# Total triplets: 24
+#   - Compilation: 2
+#   - Configuration/format: 3
+#   - Runtime: 3
+#   - Unit conversion: 3
+#   - Silent errors: 10
+#   - Coupling: 2
+#   - Validation-discovered: 2 (from Bengbu + Chaohe runs)
+#
+# Severity breakdown:
+#   - fatal: 8
+#   - silent: 13
+#   - warning: 3
+#
+# Promoted from error_log: 5 (err_001→dt_r01, err_002→dt_s01, err_003→dt_u03, err_004→dt_s08, err_005→dt_s04)
+# =============================================================================

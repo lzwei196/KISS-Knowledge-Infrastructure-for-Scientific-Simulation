@@ -1,0 +1,413 @@
+entries:
+- id: err_001
+  timestamp: '2026-03-19T07:42:12Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: LDNDC
+    run_name: ''
+  stage: s2_site_config
+  failure_domain: parameter_format
+  symptom:
+    description: LDNDC rejects soil type mnemonic LO or SL
+    error_pattern: unknown soil type
+    detection_method: log_match
+  diagnosis:
+    root_cause: LDNDC uses full names like LOAM SAND CLAY SILT SLCL not abbreviations
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Use LOAM SAND CLAY SILT SLCL LOSI etc from Lresources file
+    files_changed: []
+    prevention: Check valid types in model/ldndc/ldndc-1.37.linux64/Lresources
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_002
+  timestamp: '2026-03-19T07:42:12Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: LDNDC
+    run_name: ''
+  stage: s6_management_config
+  failure_domain: parameter_format
+  symptom:
+    description: 'Maize crop not recognized with :maize: species name'
+    error_pattern: unknown species|crop not found
+    detection_method: log_match
+  diagnosis:
+    root_cause: 'LDNDC uses CORN not :maize: for maize species'
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Use CORN for maize, WIWH for winter wheat, PADR for paddy rice (NOT RICE — abstract base class!)
+    files_changed: []
+    prevention: Check species names in Lresources species database
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_003
+  timestamp: '2026-03-19T07:42:12Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: LDNDC
+    run_name: ''
+  stage: s4_climate_prep
+  failure_domain: unit_conversion
+  symptom:
+    description: Temperature values 273+ degrees in climate.txt
+    error_pattern: temperature.*27[0-9]|tavg > 100
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: VIC forcing temperature is already Celsius not Kelvin
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Do NOT subtract 273.15 from VIC temperature column
+    files_changed: []
+    prevention: Validate tavg range -40 to 50 after conversion
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_004
+  timestamp: '2026-03-19T07:42:12Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: LDNDC
+    run_name: ''
+  stage: s2_site_config
+  failure_domain: unit_conversion
+  symptom:
+    description: Saturated hydraulic conductivity unrealistically high
+    error_pattern: sks.*[0-9]{3,}
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: sks unit in LDNDC site.xml is cm/min not mm/hr or m/d
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: 'Convert: sks_cm_min = ksat_mm_hr / 600'
+    files_changed: []
+    prevention: Validate sks range 0.001-1.0 cm/min for mineral soils
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_005
+  timestamp: '2026-03-19T07:42:12Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: LDNDC
+    run_name: ''
+  stage: s2_site_config
+  failure_domain: unit_conversion
+  symptom:
+    description: SOC pools 100x too high or too low
+    error_pattern: corg.*[1-9][0-9]\.|corg.*0\.000
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: corg in site.xml is fraction (0.023=2.3%) not percentage
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: HWSD OC is in %, divide by 100 for LDNDC corg
+    files_changed: []
+    prevention: Validate corg range 0.001-0.10 for mineral soils
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_006
+  timestamp: '2026-03-20T15:30:39Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s3_management
+  failure_domain: silent_output
+  symptom:
+    description: All rice runs fail silently — LDNDC processes the management.xml but crop never grows. 10,633 cells affected
+      across 31 scenarios in Harbin basin. No error message, just zero yield/emissions.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: 'RICE is an abstract base class in LDNDC parameters_species.xml — it defines the crop type but is NOT runnable.
+      Must use specific cultivar codes: PADR (paddy rice, flooded) or UPLR (upland rice, rainfed). LDNDC silently accepts
+      RICE as species name but treats it as a no-op.'
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Replace all <plant type='RICE'> with <plant type='PADR'> in management.xml for flooded rice, or UPLR for upland
+      rice. Also fix any documentation that says 'PADR for paddy rice (NOT RICE — abstract base class!)' — this is WRONG.
+    files_changed: []
+    prevention: ''
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_007
+  timestamp: '2026-03-20T15:30:39Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s2_soil
+  failure_domain: data_quality
+  symptom:
+    description: 4 cells crash at startup — HWSD mapping units 11927/11928 are water bodies (ISSOIL=0). Soil cache returns
+      empty, setup.xml and site.xml never generated. LDNDC segfaults or produces no output.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: HWSD global database contains water body entries (ISSOIL=0) which have no soil properties. The VIC-to-LDNDC
+      soil converter does not filter these, producing empty soil parameter files.
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: 'Filter HWSD by ISSOIL=1 before extracting soil params. For water body cells, copy soil parameters from the nearest
+      valid neighbor cell (same approach as DSSAT). Add check: if soil_cache is empty, skip cell with warning.'
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_008
+  timestamp: '2026-03-20T15:30:39Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: MeTrX solver error mid-run for specific cells (V5459001 maize). LDNDC crashes partway through simulation
+      with numerical instability in soil chemistry solver.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: Extreme soil property combinations (very high Ksat, very low porosity) or extreme precipitation events cause
+      the MeTrX solver to diverge. The solver does not have adaptive timestep control for edge cases.
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Retry with reduced simulation timestep. If persists, adjust extreme soil parameters (clamp Ksat to 0.1-100 cm/d,
+      porosity to 0.2-0.7). As last resort, skip the cell and interpolate from neighbors.
+    files_changed: []
+    prevention: ''
+  severity: degraded
+  promoted: false
+  promoted_as: ''
+- id: err_009
+  timestamp: '2026-03-21T03:24:06Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s1_model_config
+  failure_domain: dependency_and_order
+  symptom:
+    description: 'Rice with PADR species still crashes immediately if setup.xml uses dryland crop module stack (physiology:plamox,
+      soilchemistry:metrx). LDNDC requires paddy-specific modules for flooded rice: paddyecm for anaerobic soil chemistry,
+      specific watercycle for ponded water.'
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: LDNDC's standard dryland module stack cannot simulate flooded rice paddies. The soil chemistry (MeTrX) assumes
+      aerobic conditions. Rice paddies need anaerobic decomposition, CH4 production, and ponded water layer. Without the paddy
+      module stack, the simulation crashes at first timestep.
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: 'Use paddy-specific setup.xml for rice: replace soilchemistry:metrx with paddyecm or equivalent anaerobic module.
+      Ensure watercycle handles ponded conditions. The write_management_harbin() function now has a rice-specific branch that
+      generates the correct module stack.'
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_010
+  timestamp: '2026-03-21T03:24:06Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s6_management_config
+  failure_domain: parameter_format
+  symptom:
+    description: Rice paddies need explicit flood and drain events in management.xml. Without flood events, the paddy water
+      layer is never established even with paddy modules. Without drain events before harvest, the model cannot complete the
+      harvest operation.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: 'LDNDC paddy management requires: (1) flood event ~DOY 135 (transplanting, 50-100mm water depth), (2) mid-season
+      drain ~DOY 195-200, (3) re-flood ~DOY 205, (4) final drain ~DOY 250 (pre-harvest). These are NOT auto-generated — they
+      must be explicit in management.xml.'
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: 'Add flood/drain events to rice management.xml: <event type=''flood'' doy=''135'' depth_mm=''80''/>, <event type=''drain''
+      doy=''195''/>, <event type=''flood'' doy=''205'' depth_mm=''50''/>, <event type=''drain'' doy=''250''/>. The write_management_harbin()
+      rice branch now generates these automatically.'
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_011
+  timestamp: '2026-03-21T03:24:06Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s2_soil
+  failure_domain: data_quality
+  symptom:
+    description: HWSD water body cells (ISSOIL=0) produce empty soil cache. 4 cells in Harbin basin (V5659001, V6069001, V6359001,
+      V7529001) affected. All crops × all scenarios fail for these cells (~248 runs).
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: HWSD mapping units 11927/11928 are classified as water bodies with no soil properties. The soil parameter
+      extractor silently returns empty results, and setup.xml/site.xml are never generated. LDNDC then crashes or skips these
+      cells.
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: 'Nearest-neighbor soil donor strategy: find closest cell with valid soil (0.25° offset search), copy its soil
+      parameters. Applied successfully for all 4 cells, 248/248 re-runs succeeded. Add ISSOIL check to soil extraction pipeline
+      as prevention.'
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''
+- id: err_012
+  timestamp: '2026-03-21T06:18:30Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s6_management_config
+  failure_domain: coupling
+  symptom:
+    description: DSSAT-coupled residue events (<event type='residue'>) in management.xml do NOT increase N₂O. N₂O only changed
+      0.325→0.343 kgN/ha/yr despite injecting 810 kgC/ha + 13.5 kgN/ha of residue. LDNDC likely ignores unknown event types
+      silently.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: 'LDNDC plamox module still grows its own crop internally. The harvest event ''remains=0.50'' controls residue
+      from plamox, not from external input. The <event type=''residue''> is not a valid LDNDC event type — it is silently
+      ignored. The real issue is plamox DVS only reaches 0.4-0.65 (crop doesn''t mature in 50% of years), producing near-zero
+      biomass in those years → near-zero residue → low N₂O. Correct fix: either calibrate plamox GDD parameters for NE China
+      short-season cultivars, OR replace plamox with a prescribed-biomass approach.'
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: 'Option A: Calibrate plamox thermal time parameters (reduce GDD requirement from 1560 to ~1200 for short-season
+      NE China maize). Option B: Use LDNDC''s prescribed-crop mode if available — inject DSSAT biomass timeline directly.
+      Option C: Increase ''remains'' to 0.80-0.90 and set initialbiomass from DSSAT total_biomass to force plamox to start
+      with correct biomass.'
+    files_changed: []
+    prevention: ''
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_013
+  timestamp: '2026-03-21T06:49:47Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s6_management_config
+  failure_domain: coupling
+  symptom:
+    description: DSSAT residue coupling via <event type='manure' type='straw'> successfully increases CO₂ respiration (+66%)
+      but N₂O DECREASES because more residue → more crop N uptake → less mineral N for denitrification. N₂O is N-limited,
+      not C-limited in this system.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: LDNDC's N₂O production is controlled by mineral N availability (NO₃⁻ for denitrification). Adding crop residue
+      increases microbial N immobilization (C:N=60 for maize straw) which REDUCES available NO₃⁻. To increase N₂O, must ALSO
+      increase N fertilizer to compensate. NE China maize typically receives 250-300 kgN/ha, not 180 kgN/ha. The correct coupling
+      must adjust BOTH residue AND fertilizer from DSSAT outputs.
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: 'Three-part coupling: (1) Add manure/straw events for DSSAT residue C/N, (2) Increase fertilizer to match regional
+      practice (250+ kgN/ha for NE China maize), (3) Use LDNDC manure type=''straw'' with crop-specific C:N ratios and cellulose/lignin
+      fractions. The key insight: C and N inputs must be coupled TOGETHER — adding C alone without N makes N₂O worse.'
+    files_changed: []
+    prevention: ''
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_014
+  timestamp: '2026-03-21T07:18:00Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s6_management_config
+  failure_domain: calibration
+  symptom:
+    description: N₂O responds linearly to fertilizer (0.325→0.497→0.611→0.814 kgN/ha/yr at 180→280→350→500 kgN/ha) but never
+      reaches literature range (1-3 kgN/ha/yr) even at extreme rates. Fertilizer alone cannot fix the N₂O underestimate.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: 'plamox crop failure in ~50% of years (DVS 0.4-0.65 instead of 2.0) means: (1) no root exudates → less rhizosphere
+      denitrification, (2) no consistent residue → soil organic C depleted over time, (3) less transpiration → different soil
+      moisture regime → less WFPS-driven anaerobic microsites. The N₂O underestimate is fundamentally a crop phenology problem,
+      not a fertilizer or residue problem.'
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: Must calibrate plamox GDD parameters for NE China short-season maize. Reduce thermal time requirement from ~1560
+      to ~1100-1200 GDD in parameters_species.xml. This ensures DVS reaches 2.0 every year → consistent residue + roots →
+      proper soil N cycling → realistic N₂O. This is future work requiring access to LDNDC source or species parameter customization.
+    files_changed: []
+    prevention: ''
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_015
+  timestamp: '2026-03-21T07:18:00Z'
+  recorded_by: server
+  run_context:
+    basin: ''
+    model: ''
+    run_name: ''
+  stage: s5_execution
+  failure_domain: dependency_and_order
+  symptom:
+    description: LDNDC crashes with 'premature termination' when called as 'ldndc project.xml'. No log file created, no useful
+      error message.
+    error_pattern: ''
+    detection_method: log_match
+  diagnosis:
+    root_cause: LDNDC v1.37 requires a .conf file specifying resources_path (where Lresources directory is). Without --conf,
+      LDNDC cannot find its internal parameter databases and crashes before creating a log.
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: 'Always call: ldndc --conf <path/to/ldndc.conf> project.xml. The .conf must have: resources_path = /path/to/ldndc-1.37.linux64
+      (the installation directory containing Lresources/).'
+    files_changed: []
+    prevention: ''
+  severity: fatal
+  promoted: false
+  promoted_as: ''

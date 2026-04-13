@@ -1,0 +1,539 @@
+# ============================================================================
+# FloPy / MODFLOW Diagnostic Triplets
+# ============================================================================
+# 20 diagnostic triplets covering 5 failure domains.
+# Generated during FloPy knowledge dissection for HydroCraft platform.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s2_aquifer_properties
+  failure_domain: unit_conversion
+  symptom:
+    description: "Hydraulic conductivity has no effect — water table is flat regardless of boundary conditions."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "K in cm/s instead of m/day — values 864× too small"
+    explanation: >
+      MODFLOW requires K in model length/time units. If LENUNI=meters and ITMUNI=days,
+      K must be in m/day. Literature values are often reported in cm/s. A K of 0.01 cm/s
+      = 8.64 m/day. If entered as 0.01 m/day, the aquifer is 864× less permeable than intended.
+      The model converges but the water table barely responds to pumping or recharge.
+    affected_components: [convert_soil_to_aquifer, NPF, LPF]
+  remedy:
+    action: "Convert K: m/day = cm/s × 864"
+    tool_to_run: convert_soil_to_aquifer
+    manual_steps:
+      - "Check K units in source data"
+      - "If K < 0.01 m/day for sand/gravel, likely in cm/s"
+      - "Multiply by 864 to convert cm/s → m/day"
+    prevention: "validate_outputs() checks K against typical ranges per texture class"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_002
+  stage: s3_forcing_boundaries
+  failure_domain: unit_conversion
+  symptom:
+    description: "Heads rise unrealistically. Water table above land surface. Model may still converge."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Recharge in mm/day instead of m/day — 1000× too much water input"
+    explanation: >
+      MODFLOW expects recharge in model length/time units (typically m/day). Precipitation
+      data is commonly in mm/day. If 3 mm/day is entered as 3.0 m/day, the aquifer receives
+      1000× too much water. The water table rises to or above land surface. MODFLOW may
+      still converge because it allows heads above top elevation.
+    affected_components: [convert_forcing_to_modflow, RCH, RCHA]
+  remedy:
+    action: "Divide recharge by 1000: m/day = mm/day ÷ 1000"
+    tool_to_run: convert_forcing_to_modflow
+    manual_steps:
+      - "Check: is recharge > 0.05 m/day (50 mm/day)?"
+      - "If yes, values are likely in mm/day — divide by 1000"
+      - "Typical recharge: 0.0001 to 0.003 m/day (0.1 to 3 mm/day)"
+    prevention: "validate_outputs() warns if recharge > 0.1 m/day"
+  severity: silent
+  cross_references: [dt_001, dt_008]
+
+- id: dt_003
+  stage: s3_forcing_boundaries
+  failure_domain: unit_conversion
+  symptom:
+    description: "Pumping wells have negligible effect on heads. Drawdown cone much smaller than expected."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Well pumping rate in L/s instead of m³/day — 86× too small"
+    explanation: >
+      MODFLOW expects well flux in model length³/time (typically m³/day). Field data
+      often reports pumping in L/s or m³/hr. 10 L/s = 864 m³/day. If entered as 10 m³/day,
+      the well pumps 86× less than intended. The model converges but drawdown is minimal.
+    affected_components: [convert_forcing_to_modflow, WEL]
+  remedy:
+    action: "Convert: m³/day = L/s × 86.4; m³/day = m³/hr × 24"
+    tool_to_run: convert_forcing_to_modflow
+    manual_steps:
+      - "Check well rate units in source data"
+      - "If rate < 100 m³/day for a production well, likely in L/s"
+      - "Multiply L/s by 86.4 to get m³/day"
+    prevention: "Tool checks for flux_unit column and auto-converts"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_004
+  stage: s2_aquifer_properties
+  failure_domain: unit_conversion
+  symptom:
+    description: "Transient model shows no storage response. Heads change instantly between stress periods."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Specific storage (Ss) too small by orders of magnitude, or Sy not set for unconfined layer"
+    explanation: >
+      Ss typical range is 1e-6 to 1e-4 (1/m). If Ss is accidentally set to 1e-10, storage
+      release is negligible and the model behaves as quasi-steady-state. For unconfined layers,
+      Sy (0.01-0.35) dominates storage; if Sy is zero or not set, the transient response
+      is effectively absent.
+    affected_components: [convert_soil_to_aquifer, STO]
+  remedy:
+    action: "Use typical Ss = 1e-5 to 1e-4. Set Sy = 0.1 to 0.3 for unconfined layers."
+    tool_to_run: convert_soil_to_aquifer
+    manual_steps:
+      - "Check Ss values — should be 1e-6 to 1e-4"
+      - "Check Sy for top layer — should be 0.01 to 0.35"
+      - "Ensure STO package has transient={kper: True} for transient periods"
+    prevention: "validate_outputs() checks Ss and Sy ranges"
+  severity: silent
+  cross_references: []
+
+- id: dt_005
+  stage: s3_forcing_boundaries
+  failure_domain: unit_conversion
+  symptom:
+    description: "River-aquifer interaction too strong or too weak. River acts as constant head or is disconnected."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "River conductance calculated incorrectly — using aquifer K instead of riverbed K, or wrong geometry"
+    explanation: >
+      River conductance C = K_bed × Length × Width / bed_thickness. Common errors:
+      (1) Using aquifer K (1-100 m/day) instead of riverbed K (0.01-1 m/day) — 10-1000× too high.
+      (2) Omitting cell dimensions — using K_bed directly as conductance.
+      (3) Using aquifer thickness instead of bed thickness (0.1-1 m).
+      Too-high conductance makes the river a constant head; too-low makes it disconnected.
+    affected_components: [convert_forcing_to_modflow, RIV, GHB]
+  remedy:
+    action: "C = K_bed × L_cell × W_river / d_bed. K_bed typically 0.01-1 m/day."
+    tool_to_run: convert_forcing_to_modflow
+    manual_steps:
+      - "Typical riverbed K: 0.01 to 1 m/day (much less than aquifer K)"
+      - "Bed thickness: 0.3 to 1 m"
+      - "Conductance per cell: 10 to 1000 m²/day typically"
+    prevention: "Tool provides default conductance based on cell geometry"
+  severity: degraded
+  cross_references: [dt_006]
+
+- id: dt_006
+  stage: s3_forcing_boundaries
+  failure_domain: unit_conversion
+  symptom:
+    description: "Groundwater flows in wrong direction near boundaries. Gradient reversed."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Boundary head/stage values in different datum than grid elevation"
+    explanation: >
+      All elevations in MODFLOW must use the same vertical datum. If the DEM is in
+      meters ASL (above sea level) but river stages are in local datum or relative
+      values, the hydraulic gradient is wrong. Water may flow away from rivers instead
+      of toward them, or boundary heads may be below the model bottom.
+    affected_components: [build_grid_from_dem, convert_forcing_to_modflow]
+  remedy:
+    action: "Ensure all elevations use the same datum (typically meters ASL)"
+    tool_to_run: convert_forcing_to_modflow
+    manual_steps:
+      - "Compare river stage values to DEM elevation at same location"
+      - "River stage should be close to (but below) land surface elevation"
+      - "If stages are < 0 but DEM is > 100, datum mismatch"
+    prevention: "Cross-check boundary values against grid top elevation"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_007
+  stage: s4_model_assembly
+  failure_domain: unit_conversion
+  symptom:
+    description: "Stress period too short or too long. Model runs for wrong simulation duration."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Stress period length in wrong time units (seconds vs days, or months vs days)"
+    explanation: >
+      If ITMUNI=4 (days) but stress period length is entered as 365 thinking it's years,
+      the model runs for 365 days (correct). But if entered as 1 thinking '1 year' when
+      ITMUNI=4, the model runs for 1 day only. Conversely, entering 31536000 (seconds in a year)
+      when units are days gives a 31-million-day simulation.
+    affected_components: [model_assembly, TDIS, DIS]
+  remedy:
+    action: "Match perlen values to ITMUNI setting"
+    tool_to_run: null
+    manual_steps:
+      - "Check ITMUNI setting (4=days is most common)"
+      - "Verify perlen values are in matching time unit"
+      - "Total simulation = sum(perlen values)"
+    prevention: "Print total simulation duration after assembly for user verification"
+  severity: silent
+  cross_references: []
+
+- id: dt_008
+  stage: s3_forcing_boundaries
+  failure_domain: unit_conversion
+  symptom:
+    description: "ET removes far too much water. Water table drops rapidly. Heads much too low."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "ET rate in mm/day instead of m/day — 1000× too much extraction"
+    explanation: >
+      Same unit trap as recharge. ET rates in MODFLOW must be in model length/time units.
+      Typical ET is 2-8 mm/day (0.002-0.008 m/day). If entered as 5.0 m/day instead of
+      0.005 m/day, each cell loses 1000× too much water. The water table drops below the
+      extinction depth everywhere.
+    affected_components: [convert_forcing_to_modflow, EVT]
+  remedy:
+    action: "Divide ET by 1000: m/day = mm/day ÷ 1000"
+    tool_to_run: convert_forcing_to_modflow
+    manual_steps:
+      - "Check: is ET > 0.02 m/day (20 mm/day)?"
+      - "If yes, likely in mm/day — divide by 1000"
+      - "Max physically reasonable ET ≈ 0.012 m/day (12 mm/day)"
+    prevention: "validate_outputs() warns if ET > 0.02 m/day"
+  severity: silent
+  cross_references: [dt_002]
+
+# --- Indexing & Format ---
+
+- id: dt_009
+  stage: s3_forcing_boundaries
+  failure_domain: indexing
+  symptom:
+    description: "Boundary conditions placed in wrong cells. Wells pump from wrong layer/location."
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Using 1-based indexing from MODFLOW docs instead of FloPy's 0-based indexing"
+    explanation: >
+      FloPy uses zero-based indexing (Python convention): Layer 0, Row 0, Col 0 is the
+      first cell. MODFLOW documentation and many references use 1-based indexing. A well
+      at 'Layer 1, Row 5, Column 10' in MODFLOW terms should be (0, 4, 9) in FloPy.
+      Off-by-one errors place boundaries in adjacent cells silently.
+    affected_components: [all boundary packages]
+  remedy:
+    action: "Subtract 1 from all MODFLOW documentation indices when using FloPy"
+    tool_to_run: null
+    manual_steps:
+      - "FloPy: layer 0 = first layer, row 0 = first row"
+      - "MODFLOW docs: layer 1 = first layer"
+      - "Always subtract 1 when converting from MODFLOW docs to FloPy"
+    prevention: "Validate boundary cell locations against grid extent"
+  severity: silent
+  cross_references: []
+
+- id: dt_010
+  stage: s4_model_assembly
+  failure_domain: indexing
+  symptom:
+    description: "Boundaries disappear in later stress periods or persist when they should be removed."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Stress period data dictionary keys not matching expected behavior"
+    explanation: >
+      FloPy boundary packages use dicts keyed by stress period (0-based). If dict has
+      keys {0: data, 2: data}, period 1 repeats period 0's data (not zero). To remove
+      all boundaries in a period, use an empty list: {1: []}. Missing keys DON'T default
+      to zero — they repeat the previous period's data.
+    affected_components: [WEL, CHD, RIV, DRN, GHB, RCH]
+  remedy:
+    action: "Explicitly specify data for every stress period, or use [] to remove"
+    tool_to_run: null
+    manual_steps:
+      - "For pumping that stops: {0: well_data, 1: []}"
+      - "For pumping that continues: {0: well_data} (repeats)"
+      - "Don't skip keys expecting zero default"
+    prevention: "Always verify stress period data covers all periods"
+  severity: degraded
+  cross_references: [dt_009]
+
+# --- Package Configuration ---
+
+- id: dt_011
+  stage: s4_model_assembly
+  failure_domain: package_configuration
+  symptom:
+    description: "AttributeError or 'package not found' when mixing MF6 and MF2005 API calls."
+    error_pattern: "AttributeError"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Mixing MODFLOW 6 and MODFLOW-2005 FloPy classes in same model"
+    explanation: >
+      FloPy has separate class hierarchies: flopy.mf6.* for MODFLOW 6 and
+      flopy.modflow.* for MODFLOW-2005. Using flopy.modflow.ModflowDis with a MF6
+      simulation or flopy.mf6.ModflowGwfdis with a MF2005 model causes AttributeError.
+      Package names also differ: LPF (MF2005) → NPF (MF6), PCG → IMS, BAS → IC.
+    affected_components: [model_assembly]
+  remedy:
+    action: "Use consistent API: all flopy.mf6.* for MF6, all flopy.modflow.* for MF2005"
+    tool_to_run: null
+    manual_steps:
+      - "MF6: flopy.mf6.MFSimulation, ModflowGwf, ModflowGwfdis, ModflowGwfnpf"
+      - "MF2005: flopy.modflow.Modflow, ModflowDis, ModflowLpf"
+      - "Don't mix the two hierarchies"
+    prevention: "Check import statements — use only one API family"
+  severity: crash
+  cross_references: []
+
+- id: dt_012
+  stage: s6_output_analysis
+  failure_domain: package_configuration
+  symptom:
+    description: "Head statistics show extreme values (-1e30). Plots have artifacts. Mean head is negative."
+    error_pattern: "-1e30"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "HDRY values (-1e30) not masked before computing statistics or plotting"
+    explanation: >
+      Cells that go dry during simulation are assigned HDRY = -1e30 (default). These
+      values must be masked (set to NaN) before any analysis. Computing mean, min, or
+      plotting without masking produces garbage results. The model ran correctly; the
+      post-processing is wrong.
+    affected_components: [parse_modflow_output, HeadFile]
+  remedy:
+    action: "Mask dry cells: head[head < -1e29] = np.nan"
+    tool_to_run: parse_modflow_output
+    manual_steps:
+      - "After reading head: head = np.where(head < -1e29, np.nan, head)"
+      - "Use np.nanmean(), np.nanmin() for statistics"
+      - "matplotlib will skip NaN values in plots"
+    prevention: "parse_modflow_output.py applies HDRY masking automatically"
+  severity: degraded
+  cross_references: []
+
+- id: dt_013
+  stage: s6_output_analysis
+  failure_domain: package_configuration
+  symptom:
+    description: "Garbage values when reading .hds or .bud file. Array shapes wrong. Random large numbers."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Binary file precision mismatch — reading single-precision file as double or vice versa"
+    explanation: >
+      MODFLOW binary output defaults to single precision (float32). Some MF6 configurations
+      or older MF2005 compilations use double precision (float64). HeadFile and CellBudgetFile
+      must be opened with the matching precision. Wrong precision silently produces garbage
+      data because byte boundaries are misinterpreted.
+    affected_components: [parse_modflow_output, HeadFile, CellBudgetFile]
+  remedy:
+    action: "Try both precisions: HeadFile(path, precision='double')"
+    tool_to_run: parse_modflow_output
+    manual_steps:
+      - "Default: precision='single'"
+      - "If data looks wrong, try precision='double'"
+      - "Check file size: double precision files are 2× larger"
+    prevention: "parse_modflow_output.py auto-detects by trying both precisions"
+  severity: degraded
+  cross_references: []
+
+- id: dt_014
+  stage: s4_model_assembly
+  failure_domain: package_configuration
+  symptom:
+    description: "All layers have identical properties despite providing per-layer arrays."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Missing LAYERED keyword in MF6 package — all layers use first layer's values"
+    explanation: >
+      In MODFLOW 6, array data must be preceded by the LAYERED keyword to indicate
+      per-layer specification. Without it, a single array is read and applied to all
+      layers. FloPy handles this correctly when you pass a 3D numpy array, but manual
+      file editing or incorrect array shapes can trigger this.
+    affected_components: [DIS, NPF, IC, STO]
+  remedy:
+    action: "Ensure arrays are 3D (nlay, nrow, ncol) when passing to FloPy MF6 packages"
+    tool_to_run: null
+    manual_steps:
+      - "Check array shape: should be (nlay, nrow, ncol) for layered data"
+      - "FloPy auto-adds LAYERED when shape is 3D"
+      - "If editing files manually, add 'LAYERED' before per-layer blocks"
+    prevention: "Verify array dimensions match nlay before passing to FloPy"
+  severity: silent
+  cross_references: []
+
+- id: dt_015
+  stage: s4_model_assembly
+  failure_domain: package_configuration
+  symptom:
+    description: "Heads change instantaneously between stress periods. No gradual drawdown response."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Transient stress period flagged as steady-state — storage terms ignored"
+    explanation: >
+      In MODFLOW-2005, each stress period is set as steady or transient in the DIS package.
+      In MF6, this is in the STO package via steady_state/transient dictionaries. If a
+      transient period is accidentally set as steady-state, storage (Ss, Sy) is ignored,
+      and heads jump to equilibrium instantly. The model converges but physics is wrong.
+    affected_components: [DIS, STO, TDIS]
+  remedy:
+    action: "Set transient={period: True} for transient periods in STO package"
+    tool_to_run: null
+    manual_steps:
+      - "MF6: flopy.mf6.ModflowGwfsto(gwf, steady_state={0: True}, transient={1: True})"
+      - "MF2005: flopy.modflow.ModflowDis(model, steady=[True, False, False, ...])"
+      - "Verify in listing file: STRESS PERIOD should say 'TRANSIENT'"
+    prevention: "Print stress period types after model assembly"
+  severity: silent
+  cross_references: []
+
+# --- Solver Convergence ---
+
+- id: dt_016
+  stage: s5_execution
+  failure_domain: solver
+  symptom:
+    description: "FAILED TO CONVERGE in listing file. Model does not reach solution."
+    error_pattern: "FAILED TO CONVERGE"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Insufficient iterations or closure criteria too tight for model complexity"
+    explanation: >
+      MODFLOW iterative solvers (IMS for MF6, PCG for MF2005) need enough iterations
+      to converge. Default settings may be insufficient for models with strong nonlinearities
+      (unconfined layers, rewetting, high K contrasts). Non-convergence means the solution
+      is unreliable.
+    affected_components: [IMS, PCG, solver settings]
+  remedy:
+    action: "Increase outer_maximum (100→500), inner_maximum (50→200). Try COMPLEXITY COMPLEX."
+    tool_to_run: run_modflow
+    manual_steps:
+      - "Increase MXITER / outer_maximum to 500"
+      - "Increase inner iterations to 200"
+      - "Relax closure: outer_dvclose = 1e-3"
+      - "For unconfined: use Newton (COMPLEXITY COMPLEX in MF6, or MODFLOW-NWT)"
+    prevention: "Start with MODERATE complexity, escalate to COMPLEX if needed"
+  severity: crash
+  cross_references: [dt_017, dt_018]
+
+- id: dt_017
+  stage: s5_execution
+  failure_domain: solver
+  symptom:
+    description: "Heads oscillate between two values. Convergence bounces. Dry-wet cell cycling."
+    error_pattern: "oscillat"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Cell alternately going dry and wet between iterations (dry-wet cycling)"
+    explanation: >
+      In unconfined models, a cell can go dry (head drops below bottom), causing it
+      to be deactivated, which redirects flow to neighbors, raising their heads, which
+      may re-wet the original cell. This cycle prevents convergence. It's especially
+      common with thin layers and strong pumping.
+    affected_components: [IMS, NPF, solver]
+  remedy:
+    action: "Use Newton-Raphson solver (COMPLEXITY COMPLEX), or add under-relaxation"
+    tool_to_run: run_modflow
+    manual_steps:
+      - "MF6: Set COMPLEXITY COMPLEX in IMS package"
+      - "Or add under_relaxation='DBD' with theta=0.85"
+      - "Consider thickening thin layers"
+      - "MF2005: Switch to MODFLOW-NWT"
+    prevention: "Use Newton solver by default for models with unconfined layers"
+  severity: crash
+  cross_references: [dt_016]
+
+- id: dt_018
+  stage: s5_execution
+  failure_domain: solver
+  symptom:
+    description: "Model takes hours for a simple problem. Progress is extremely slow."
+    error_pattern: ""
+    detection_method: runtime
+  diagnosis:
+    root_cause: "Poor grid quality or extreme parameter contrasts causing slow convergence"
+    explanation: >
+      Very high K contrasts between adjacent cells (>1000×), extremely thin layers,
+      or highly irregular grid spacing creates ill-conditioned matrix systems. The solver
+      requires many more iterations per time step. Also check for accidentally fine grid
+      (e.g., 1m cells instead of 100m).
+    affected_components: [DIS, NPF, solver]
+  remedy:
+    action: "Smooth K transitions, increase thin layer thickness, check cell sizes"
+    tool_to_run: null
+    manual_steps:
+      - "Check grid cell count — may be too large"
+      - "Smooth K transitions (no 1000× jumps between cells)"
+      - "Minimum layer thickness > 1m"
+      - "Try BICGSTAB linear acceleration"
+    prevention: "Review grid statistics before running"
+  severity: degraded
+  cross_references: [dt_016]
+
+# --- Boundary Conditions ---
+
+- id: dt_019
+  stage: s3_forcing_boundaries
+  failure_domain: boundary_conditions
+  symptom:
+    description: "Well extraction is positive but should produce drawdown. Injection instead of pumping."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Well flux sign convention: extraction must be NEGATIVE in MODFLOW"
+    explanation: >
+      MODFLOW convention: negative flux = extraction (removing water from aquifer),
+      positive flux = injection (adding water). Many operational databases report
+      pumping as positive values. If not negated, the 'pumping' well actually injects
+      water, causing mounding instead of drawdown.
+    affected_components: [convert_forcing_to_modflow, WEL]
+  remedy:
+    action: "Negate pumping rates: flux = -abs(pumping_rate)"
+    tool_to_run: convert_forcing_to_modflow
+    manual_steps:
+      - "Check: extraction wells should have negative flux"
+      - "Injection wells should have positive flux"
+      - "convert_forcing_to_modflow auto-negates if all values are positive"
+    prevention: "validate_outputs() warns if all well fluxes are positive"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_020
+  stage: s3_forcing_boundaries
+  failure_domain: boundary_conditions
+  symptom:
+    description: "Constant head boundary drains the entire model. All heads converge to CHD value."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Too many constant head cells or CHD values set too low"
+    explanation: >
+      Constant head boundaries are infinitely permeable — they supply or remove any
+      amount of water to maintain the specified head. If too many cells are set as CHD,
+      or CHD heads are much lower than natural water table, the boundary dominates the
+      solution and makes other features irrelevant. Use sparingly at true known-head boundaries.
+    affected_components: [CHD]
+  remedy:
+    action: "Minimize CHD cells. Use GHB (general head) for distant boundaries instead."
+    tool_to_run: null
+    manual_steps:
+      - "CHD should only be at well-known boundaries (ocean, large lake)"
+      - "For distant/uncertain boundaries, use GHB with finite conductance"
+      - "Check water balance: CHD in/out should not dominate total budget"
+    prevention: "Review water balance after first run — CHD should be < 30% of total"
+  severity: degraded
+  cross_references: []

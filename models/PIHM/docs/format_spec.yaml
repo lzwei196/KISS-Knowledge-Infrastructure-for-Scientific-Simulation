@@ -1,0 +1,207 @@
+model:
+  name: "MM-PIHM"
+  full_name: "Multi-Modular Penn State Integrated Hydrologic Model"
+  version: "1.0.0.post"
+  domain: "distributed_hydrology"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PIHM/source/repo/pihm"
+  language: "C (gcc)"
+  solver: "SUNDIALS CVODE v7.3.0"
+  license: "MIT"
+  parallelization: "OpenMP"
+  mesh_type: "unstructured triangular (TIN)"
+
+inputs:
+  forcing:
+    - name: "PRCP"
+      unit: "kg/m2/s"
+      valid_range: [0.0, 0.1]
+      description: "Precipitation as mass flux (1 kg/m2/s = 3600 mm/hr)"
+    - name: "SFCTMP"
+      unit: "K"
+      valid_range: [200.0, 330.0]
+      description: "Surface air temperature in Kelvin"
+    - name: "RH"
+      unit: "%"
+      valid_range: [0.0, 100.0]
+      description: "Relative humidity"
+    - name: "SFCSPD"
+      unit: "m/s"
+      valid_range: [0.0, 50.0]
+      description: "Surface wind speed"
+    - name: "SOLAR"
+      unit: "W/m2"
+      valid_range: [0.0, 1400.0]
+      description: "Downward shortwave radiation"
+    - name: "LONGWV"
+      unit: "W/m2"
+      valid_range: [50.0, 600.0]
+      description: "Downward longwave radiation"
+    - name: "PRES"
+      unit: "Pa"
+      valid_range: [50000.0, 110000.0]
+      description: "Surface air pressure in Pascals (NOT hPa)"
+
+  parameters:
+    critical:
+      - name: "KSATH"
+        valid_range: [0.01, 100.0]
+        description: "Calibration multiplier for lateral saturated hydraulic conductivity"
+      - name: "KSATV"
+        valid_range: [0.01, 100.0]
+        description: "Calibration multiplier for vertical saturated hydraulic conductivity"
+      - name: "KINF"
+        valid_range: [0.01, 100.0]
+        description: "Calibration multiplier for infiltration rate"
+      - name: "KMACSATH"
+        valid_range: [0.01, 100.0]
+        description: "Calibration multiplier for macropore lateral saturated conductivity"
+      - name: "DMAC"
+        valid_range: [0.1, 10.0]
+        description: "Calibration multiplier for macropore depth"
+      - name: "ROUGH_RIV"
+        valid_range: [0.1, 10.0]
+        description: "Calibration multiplier for river Manning roughness"
+      - name: "PRCP"
+        valid_range: [0.8, 1.2]
+        description: "Precipitation bias correction multiplier"
+      - name: "ALPHA"
+        valid_range: [0.1, 10.0]
+        description: "Calibration multiplier for van Genuchten alpha (base unit: 1/m)"
+      - name: "ABSTOL"
+        valid_range: [1.0e-7, 0.01]
+        description: "CVODE absolute tolerance in meters"
+      - name: "RELTOL"
+        valid_range: [1.0e-6, 0.01]
+        description: "CVODE relative tolerance (dimensionless)"
+
+  soil:
+    - name: "KINF"
+      unit: "m/s"
+      description: "Infiltration hydraulic conductivity"
+    - name: "KSATV"
+      unit: "m/s"
+      description: "Vertical saturated hydraulic conductivity"
+    - name: "KSATH"
+      unit: "m/s"
+      description: "Horizontal saturated hydraulic conductivity"
+    - name: "MAXSMC"
+      unit: "m3/m3"
+      description: "Porosity (maximum soil moisture content)"
+    - name: "MINSMC"
+      unit: "m3/m3"
+      description: "Residual soil moisture content"
+    - name: "ALPHA"
+      unit: "1/m"
+      description: "van Genuchten alpha parameter (NOT 1/cm)"
+    - name: "BETA"
+      unit: "-"
+      description: "van Genuchten n parameter"
+
+  required_files:
+    - extension: ".mesh"
+      description: "Triangular mesh (nodes, elements, neighbors)"
+    - extension: ".att"
+      description: "Element attributes (soil, geol, LC, meteo indices)"
+    - extension: ".soil"
+      description: "Soil hydraulic properties"
+    - extension: ".meteo"
+      description: "Meteorological forcing time series"
+    - extension: ".riv"
+      description: "River network (segments, shapes, materials)"
+    - extension: ".para"
+      description: "Simulation control parameters"
+    - extension: ".calib"
+      description: "Calibration multipliers"
+    - extension: ".lc"
+      description: "Land cover properties"
+
+  optional_files:
+    - extension: ".ic"
+      description: "Initial conditions (from spin-up)"
+    - extension: ".lai"
+      description: "Leaf area index time series"
+    - extension: ".bc"
+      description: "Boundary conditions"
+    - extension: ".geol"
+      description: "Geology/aquifer properties"
+
+outputs:
+  primary:
+    - name: "SURF"
+      unit: "m"
+      valid_range: [0.0, 10.0]
+      file_suffix: ".surf.dat"
+      description: "Surface water depth per element"
+    - name: "GW"
+      unit: "m"
+      valid_range: [0.0, 500.0]
+      file_suffix: ".gw.dat"
+      description: "Groundwater head per element"
+    - name: "UNSAT"
+      unit: "m"
+      valid_range: [0.0, 10.0]
+      file_suffix: ".unsat.dat"
+      description: "Unsaturated zone storage per element"
+    - name: "RIVFLX1"
+      unit: "m3/s"
+      valid_range: [-1000.0, 10000.0]
+      file_suffix: ".rivflx1.dat"
+      description: "Downstream river flux per segment"
+    - name: "INFIL"
+      unit: "m/s"
+      valid_range: [0.0, 0.01]
+      file_suffix: ".infil.dat"
+      description: "Infiltration rate per element"
+    - name: "RECHARGE"
+      unit: "m/s"
+      valid_range: [-0.001, 0.01]
+      file_suffix: ".recharge.dat"
+      description: "Groundwater recharge rate per element"
+    - name: "ETT"
+      unit: "m/s"
+      valid_range: [0.0, 0.001]
+      file_suffix: ".ett.dat"
+      description: "Transpiration per element"
+    - name: "EC"
+      unit: "m/s"
+      valid_range: [0.0, 0.001]
+      file_suffix: ".ec.dat"
+      description: "Canopy evaporation per element"
+    - name: "EDIR"
+      unit: "m/s"
+      valid_range: [0.0, 0.001]
+      file_suffix: ".edir.dat"
+      description: "Direct soil evaporation per element"
+    - name: "SNOW"
+      unit: "m"
+      valid_range: [0.0, 5.0]
+      file_suffix: ".snow.dat"
+      description: "Snow water equivalent per element"
+    - name: "STAGE"
+      unit: "m"
+      valid_range: [0.0, 20.0]
+      file_suffix: ".stage.dat"
+      description: "River water stage per segment"
+
+  output_format:
+    type: "binary"
+    precision: "double (8 bytes)"
+    record_layout: "[timestamp_int] [val_elem1_double] ... [val_elemN_double]"
+    text_companion: true
+    text_suffix: ".txt"
+
+known_issues:
+  - id: "dt_001"
+    description: "Precipitation must be kg/m2/s, not mm/hr. Off by 3600x if wrong."
+  - id: "dt_002"
+    description: "Temperature must be Kelvin, not Celsius. Causes silent snow errors."
+  - id: "dt_003"
+    description: "Pressure must be Pa, not hPa. Off by 100x if wrong."
+  - id: "dt_008"
+    description: "van Genuchten alpha must be 1/m, not 1/cm. Off by 100x."
+  - id: "dt_011"
+    description: "Calibration file uses multipliers near 1.0, not absolute values."
+  - id: "dt_012"
+    description: "Spin-up essential for groundwater initialization."
+  - id: "dt_013"
+    description: "ABSTOL > 0.01 causes mass balance errors; < 1e-7 causes solver slowdown."

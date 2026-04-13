@@ -1,0 +1,313 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["biogeochemistry"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "LandscapeDNDC v1.37"
+  domain: "biogeochemistry"
+  secondary_domains: ["ghg_emissions", "nutrient_leaching", "crop_yield", "soil_carbon"]
+  binary: "ldndc"
+  binary_path: "/home/server/LDNDC/bin/ldndc"
+  language: "C++11"
+  execution: "$LDNDC_BIN project.xml"
+  working_directory: "project directory with input/ and output/ subdirectories"
+  validated_tool: "tools/run_ldndc_bengbu_ghg.py (end-to-end pipeline)"
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "temperature_average"
+      file: "climate.txt"
+      column: "tavg"
+      unit: "degC"
+      valid_range: [-60.0, 60.0]
+      format: "tab-separated with header row"
+      silent_error: "Temperature in Kelvin runs without error but all biogeochemistry rates are wrong"
+
+    - name: "temperature_min"
+      file: "climate.txt"
+      column: "tmin"
+      unit: "degC"
+      valid_range: [-70.0, 50.0]
+
+    - name: "temperature_max"
+      file: "climate.txt"
+      column: "tmax"
+      unit: "degC"
+      valid_range: [-50.0, 60.0]
+
+    - name: "precipitation"
+      file: "climate.txt"
+      column: "prec"
+      unit: "mm/day"
+      valid_range: [0.0, 500.0]
+      conversion_from_vic: "mm/3hr -> mm/day: sum 8 timesteps"
+
+    - name: "wind_speed"
+      file: "climate.txt"
+      column: "wind"
+      unit: "m/s"
+      valid_range: [0.0, 80.0]
+
+    - name: "relative_humidity"
+      file: "climate.txt"
+      column: "rh"
+      unit: "%"
+      valid_range: [0, 100]
+
+    - name: "global_radiation"
+      file: "climate.txt"
+      column: "glob"
+      unit: "W/m2"
+      valid_range: [0.0, 500.0]
+      notes: "Optional. Can be synthesized internally."
+
+  parameters:
+    critical:
+      - name: "corg"
+        file: "site.xml"
+        description: "Soil organic carbon"
+        unit: "mass fraction (e.g., 0.015 = 1.5%)"
+        valid_range: [0.001, 0.30]
+        silent_error: >
+          LDNDC expects corg as mass fraction. If provided as percentage (1.5 instead
+          of 0.015), soil C pools will be 100x too large, producing massively inflated
+          CO2 emissions. The model runs without error. (dt_005)
+        conversion_from_hwsd: "HWSD OC% -> fraction: divide by 100"
+
+      - name: "sks (Ksat)"
+        file: "site.xml"
+        description: "Saturated hydraulic conductivity"
+        unit: "cm/min"
+        valid_range: [0.00001, 0.1]
+        conversion_from_hwsd: "mm/hr -> cm/min: divide by 600"
+        silent_error: >
+          For paddy rice, standard HWSD Ksat is too high. Must use paddy plow pan
+          Ksat (0.0001-0.0003 cm/min) to maintain ponded water for CH4 production.
+
+      - name: "clay_fraction"
+        file: "site.xml"
+        description: "Clay content"
+        unit: "mass fraction"
+        valid_range: [0.0, 1.0]
+        conversion_from_hwsd: "HWSD clay% -> fraction: divide by 100"
+
+      - name: "species_name"
+        file: "mana.xml"
+        description: "Crop species identifier"
+        valid_values:
+          CORN: "Maize"
+          WIWH: "Winter wheat"
+          SWHE: "Spring wheat"
+          RICE: "Rice (abstract base class - DO NOT USE for paddy)"
+          PADR: "Paddy rice (flooded - USE THIS)"
+          UPLR: "Upland rice (rainfed)"
+          SOYB: "Soybean"
+          RAPE: "Rapeseed"
+        silent_error: >
+          Species name must exactly match parameters_species.xml. Mismatch causes
+          LDNDC to use default parameters or skip the crop entirely. No error raised.
+          For paddy rice: use PADR, NOT RICE (RICE is abstract base, produces zero output).
+
+    airchemistry:
+      - name: "co2_concentration"
+        file: "airchem.txt"
+        unit: "ppm"
+        valid_range: [280, 600]
+
+      - name: "n_deposition"
+        file: "airchem.txt"
+        unit: "kgN/ha/yr"
+        valid_range: [0.5, 50]
+        silent_error: >
+          LDNDC expects kgN/ha/yr. Providing g/m2/yr (factor of 10 different)
+          silently corrupts the N budget. (dt_014)
+
+  files:
+    required:
+      - name: "project.xml"
+        description: "Master configuration with schedule, source paths, output sinks"
+        format: "XML"
+
+      - name: "site.xml"
+        description: "Soil profile and canopy definition"
+        format: "XML"
+
+      - name: "setup.xml"
+        description: "Module selection (physiology, soil chemistry, water cycle)"
+        format: "XML"
+        notes: >
+          Module combinations matter: paddy rice needs anaerobic-capable modules.
+          Standard dryland MeTrX crashes for paddies.
+
+      - name: "climate.txt"
+        description: "Daily meteorological forcing"
+        format: "tab-separated with header"
+
+      - name: "airchem.txt"
+        description: "Atmospheric CO2 and N deposition"
+        format: "tab-separated"
+
+      - name: "mana.xml"
+        description: "Management events (sowing, fertilizer, harvest, flood/drain for paddy)"
+        format: "XML"
+
+      - name: "parameters_species.xml"
+        description: "Crop/vegetation physiological parameters"
+        format: "XML (from LDNDC Lresources)"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "n2o_emission"
+      file: "soilchemistry-daily.txt"
+      unit: "kgN/ha/day"
+      valid_range: [0, 0.5]
+      aggregation: "Annual N2O = sum of daily values"
+      notes: "Primary biogeochemistry output. IPCC EF1 default is 1% of applied N."
+
+    - name: "co2_heterotrophic"
+      file: "soilchemistry-daily.txt"
+      unit: "kgC/ha/day"
+      valid_range: [0, 50]
+      notes: "Soil heterotrophic respiration (decomposition)"
+
+    - name: "ch4_emission"
+      file: "soilchemistry-daily.txt"
+      unit: "kgC/ha/day"
+      valid_range: [0, 10]
+      notes: "Methane from methanogenesis. Requires anaerobic conditions (paddy/wetland)."
+
+    - name: "no3_leaching"
+      file: "soilchemistry-daily.txt"
+      unit: "kgN/ha/day"
+      valid_range: [0, 1.0]
+
+    - name: "crop_yield"
+      file: "physiology-daily.txt or harvests output"
+      unit: "kgC/ha"
+      notes: "Fruit/grain carbon. Multiply by ~2.2 for approximate grain weight."
+
+  water_cycle:
+    - name: "evapotranspiration"
+      file: "watercycle-daily.txt"
+      unit: "mm/day"
+
+    - name: "drainage"
+      file: "watercycle-daily.txt"
+      unit: "mm/day"
+
+  annual_budget:
+    - name: "annual_ghg_budget"
+      file: "soilchemistry-yearly.txt"
+      notes: >
+        Total GHG in CO2eq = CO2 + N2O*298 + CH4*25 (AR4 GWP).
+        Bengbu reference: ~12,234 kgCO2eq/ha/yr.
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "corg_percentage_not_fraction"
+    triplet: "dt_005"
+    description: "Soil organic carbon as percentage (1.5) instead of fraction (0.015)"
+    affected_output: "CO2 emissions 100x too high"
+    detection: "corg > 0.30 in site.xml"
+    fix: "Divide HWSD OC% by 100"
+
+  - id: "airchemistry_n_deposition_spurious"
+    description: >
+      The airchemistrydndc module can produce spurious N deposition if airchem.txt
+      has wrong units or unrealistic values. This inflates the soil N pool and
+      amplifies N2O emissions.
+    affected_output: "N2O and NO3 leaching inflated"
+    detection: "N deposition > 30 kgN/ha/yr for non-industrial regions"
+    fix: "Verify airchem.txt uses kgN/ha/yr. Typical values: 5-15 for China, 2-10 for US Midwest."
+
+  - id: "paddy_ksat_too_high"
+    description: >
+      Standard HWSD Ksat is too high for paddy rice soils. Without plow pan
+      parameterization (Ksat 0.0001-0.0003 cm/min), ponded water drains
+      immediately. CH4 production requires sustained anaerobic conditions.
+    affected_output: "CH4 emission near zero for paddy simulations"
+    detection: "CH4 < 10 kgC/ha/yr for flooded rice"
+    fix: >
+      Reduce Ksat to 0.0001-0.0003 cm/min for paddy plow pan layer.
+      Also increase bulk density to ~1.51, raise field capacity.
+    scorecard: "test_ldndc_rice_paddy_ch4.json (PASS after fix: 253.7 kgC/ha/yr)"
+
+  - id: "rice_species_wrong"
+    description: "Using RICE instead of PADR for paddy rice"
+    affected_output: "Zero or minimal output -- RICE is abstract base class"
+    detection: "physiology output shows no crop growth for rice simulation"
+    fix: "Use species type='PADR' in mana.xml for paddy rice"
+
+  - id: "module_mismatch"
+    triplet: "dt_013"
+    description: "Incompatible module combination (e.g., forest physiology with crop management)"
+    affected_output: "Nonsensical output, no error raised"
+    detection: "Cross-check module selection in setup.xml against land use type"
+    fix: "Use plamox + metrx for crops; appropriate modules for forest/grassland"
+
+  - id: "n2o_plamox_underestimate_illinois"
+    description: >
+      LDNDC N2O may underestimate absolute values when plamox phenology does not
+      fully mature in some years. Illinois test: 0.534 kgN/ha/yr vs expected 2-8.
+      Relative changes between scenarios remain valid.
+    affected_output: "N2O absolute values below literature range"
+    detection: "N2O emission factor < 0.3% of applied N"
+    fix: "Use LDNDC for relative scenario comparisons. Cross-validate absolute N2O with field data."
+    scorecard: "fresh_ldndc_illinois.json (PARTIAL)"
+
+# =========================================================================
+# EXPECTED RANGES (from validated results)
+# =========================================================================
+expected_ranges:
+  bengbu_wheat_maize:
+    n2o_kgN_ha_yr: [1.9, 8.0]
+    reference: "5.80 kgN/ha/yr (10-year mean, PASS)"
+    emission_factor_pct: 1.4
+    co2_hetero_kgC_ha_yr: [1000, 4000]
+    no3_leach_kgN_ha_yr: [30, 60]
+    scorecard: "ldndc_n2o_bengbu.json (PASS)"
+  rice_paddy_se_china:
+    ch4_kgC_ha_yr: [100, 500]
+    reference: "253.7 kgC/ha/yr (mature years, PASS)"
+    n2o_kgN_ha_yr: [0.1, 0.5]
+    scorecard: "test_ldndc_rice_paddy_ch4.json (PASS)"
+  illinois_corn_soybean:
+    n2o_kgN_ha_yr: [0.2, 1.5]
+    reference: "0.534 kgN/ha/yr (BELOW literature 2-8, known plamox limitation)"
+    co2_hetero_kgC_ha_yr: [1000, 4000]
+    scorecard: "fresh_ldndc_illinois.json (PARTIAL)"
+
+# =========================================================================
+# CALIBRATION REFERENCE
+# =========================================================================
+calibration_reference:
+  approach: "Soil and management parameter adjustment"
+  notes: >
+    LDNDC default parameters with HWSD soil + VIC climate produce publication-quality
+    GHG estimates without calibration for Bengbu wheat-maize. Primary calibration
+    targets: corg (soil organic carbon), Ksat (hydraulic conductivity), clay fraction,
+    fertilizer application rates and timing.
+  key_parameters:
+    - name: "corg"
+      description: "Soil organic carbon fraction -- controls decomposition and CO2"
+    - name: "sks (Ksat)"
+      description: "Saturated hydraulic conductivity -- controls anaerobic zone extent"
+    - name: "fertilizer_n"
+      description: "N application rate -- primary driver of N2O"
+    - name: "plow_pan_ksat"
+      description: "For paddy: controls water retention and CH4 production"

@@ -1,0 +1,482 @@
+# ============================================================================
+# TRIGRS Diagnostic Triplets
+# ============================================================================
+# 18 diagnostic triplets covering 5 failure domains.
+# Generated during TRIGRS knowledge dissection for HydroCraft platform.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s3_rainfall_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "All cells show FS < 1.0 immediately. Entire domain saturates within first timestep."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Rainfall intensity (cri) in mm/hr instead of m/s — 3,600,000x too much"
+    explanation: >
+      TRIGRS expects rainfall intensity in meters per second (m/s). A common error
+      is entering values in mm/hr directly. For example, 20 mm/hr should be entered
+      as 5.56e-6 m/s. Entering 20 instead of 5.56e-6 produces a rainfall rate of
+      72 billion mm/hr, causing instant saturation and universal instability.
+    affected_components: [convert_rainfall_to_trigrs, tr_in.txt]
+  remedy:
+    action: "Divide rainfall intensity by 3.6e6 to convert mm/hr to m/s"
+    tool_to_run: convert_rainfall_to_trigrs
+    manual_steps:
+      - "Check cri values in tr_in.txt — typical values are 1e-8 to 1e-4 m/s"
+      - "If cri > 0.001, values are almost certainly in wrong units"
+      - "Convert: cri(m/s) = cri(mm/hr) / 3600000"
+    prevention: "convert_rainfall_to_trigrs validates output range automatically"
+  severity: silent
+  cross_references: [dt_002, dt_003]
+
+- id: dt_002
+  stage: s3_rainfall_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Simulation shows no transient response. FS does not change from initial values."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Rainfall intensity (cri) in m/hr or m/day instead of m/s — values too small by 3600x or 86400x"
+    explanation: >
+      If rainfall is converted to m/hr (e.g., 0.02 m/hr for 20 mm/hr) but entered
+      as m/s, the actual intensity is 3600x too low. TRIGRS will compute with
+      essentially zero rainfall, showing no pore pressure change.
+    affected_components: [convert_rainfall_to_trigrs, tr_in.txt]
+  remedy:
+    action: "Verify units — m/s requires dividing mm/hr by 3.6e6, not just by 1000"
+    tool_to_run: convert_rainfall_to_trigrs
+    manual_steps:
+      - "Check if cri values are in 1e-5 to 1e-4 range for typical storms"
+      - "If cri < 1e-10, values may be in m/hr or m/day"
+    prevention: "convert_rainfall_to_trigrs warns if values are atypically low"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s3_rainfall_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Storm event appears to last only a few seconds. FS barely changes."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Time values (t, capt) entered in hours instead of seconds"
+    explanation: >
+      TRIGRS expects all temporal values in seconds. A 48-hour storm needs
+      t = 172800, not t = 48. Entering hours results in a simulation that
+      runs for 48 seconds, during which negligible infiltration occurs.
+    affected_components: [generate_tr_in, tr_in.txt]
+  remedy:
+    action: "Multiply all time values by 3600 to convert hours to seconds"
+    tool_to_run: generate_tr_in
+    manual_steps:
+      - "Check t value — should be > 3600 for any realistic storm"
+      - "Check capt() values — all should be in seconds"
+      - "Verify: last capt value = t"
+    prevention: "generate_tr_in warns if t < 3600"
+  severity: silent
+  cross_references: [dt_001, dt_002]
+
+- id: dt_004
+  stage: s2_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Factor of safety unrealistically high (>100) at moderate slopes. No instability anywhere."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Cohesion entered in kPa instead of Pa — 1000x too high"
+    explanation: >
+      TRIGRS expects cohesion in Pascals (Pa). Published geotechnical values are
+      commonly in kPa. Entering 3.5 kPa as 3.5 instead of 3500 would make FS
+      too low; conversely entering a kPa value (e.g., 35) when you meant Pa gives
+      a much lower cohesion than intended. More commonly, values like 3500 (meaning
+      kPa) are entered directly, giving cohesion 1000x too high (3.5 MPa).
+    affected_components: [convert_soil_to_trigrs, tr_in.txt]
+  remedy:
+    action: "Verify cohesion units — TRIGRS expects Pa, not kPa"
+    tool_to_run: convert_soil_to_trigrs
+    manual_steps:
+      - "Typical cohesion range: 0-50000 Pa (0-50 kPa)"
+      - "If cohesion > 100000, likely in wrong units"
+      - "Convert from kPa to Pa: multiply by 1000"
+    prevention: "convert_soil_to_trigrs --cohesion_unit kpa handles conversion"
+  severity: silent
+  cross_references: [dt_005, dt_006]
+
+- id: dt_005
+  stage: s2_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "FS values systematically shifted. Slope stability analysis gives inconsistent results."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Unit weight of water (uww) or soil (uws) in kN/m^3 instead of N/m^3"
+    explanation: >
+      TRIGRS expects uww and uws in N/m^3. uww should be ~9800 N/m^3, not 9.8 kN/m^3.
+      Similarly uws should be ~19000-22000 N/m^3. Entering kN/m^3 values results in
+      pore pressure and driving/resisting forces being 1000x too small, distorting
+      the FS calculation in complex ways.
+    affected_components: [convert_soil_to_trigrs, generate_tr_in, tr_in.txt]
+  remedy:
+    action: "Multiply by 1000 to convert kN/m^3 to N/m^3"
+    tool_to_run: convert_soil_to_trigrs
+    manual_steps:
+      - "Check uww — should be ~9800 N/m^3"
+      - "Check uws — should be 14000-25000 N/m^3"
+      - "If values are 9-25 range, they are in kN/m^3"
+    prevention: "generate_tr_in warns if uww < 9000 or > 11000"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_006
+  stage: s2_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Infiltration timing is wrong. Saturation front arrives too fast or too slow."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "K-sat in cm/hr instead of m/s"
+    explanation: >
+      TRIGRS expects saturated hydraulic conductivity in m/s. Common sources report
+      Ks in cm/hr. A typical value of 1 cm/hr should be entered as 2.778e-6 m/s.
+      Entering 1.0 directly means Ks = 1.0 m/s (3,600,000 cm/hr), which is
+      absurdly high and causes instant drainage.
+    affected_components: [convert_soil_to_trigrs, tr_in.txt]
+  remedy:
+    action: "Convert cm/hr to m/s: multiply by 2.778e-6"
+    tool_to_run: convert_soil_to_trigrs
+    manual_steps:
+      - "Typical Ks range in m/s: 1e-8 (clay) to 1e-3 (gravel)"
+      - "If Ks > 0.01 m/s, likely in wrong units"
+      - "From cm/hr: multiply by 2.778e-6"
+    prevention: "convert_soil_to_trigrs --ksat_unit cm/hr handles conversion"
+  severity: silent
+  cross_references: [dt_004, dt_005]
+
+- id: dt_007
+  stage: s1_dem_slope_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "All FS values near 1.0 regardless of rainfall. No spatial variation in stability."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Slope angle grid in radians instead of degrees"
+    explanation: >
+      TRIGRS expects slope angle in degrees. If the slope grid is in radians
+      (e.g., 0.5 rad = 28.6 degrees), the tan(slope) calculation uses wrong
+      values. Since radian values are small (<1.5), the driving force is
+      underestimated, producing FS values clustered near 1.0.
+    affected_components: [DEM processing, slope.asc]
+  remedy:
+    action: "Multiply slope grid by 180/pi (57.2958) to convert radians to degrees"
+    tool_to_run: UnitConvert
+    manual_steps:
+      - "Check max slope value — should be < 90 if in degrees"
+      - "If max slope < 1.6, values are likely in radians"
+      - "Use UnitConvert with factor 57.2958"
+    prevention: "Verify slope units during Stage 1 grid preparation"
+  severity: silent
+  cross_references: []
+
+# --- Grid Format Errors ---
+
+- id: dt_008
+  stage: s1_dem_slope_preparation
+  failure_domain: grid_format
+  symptom:
+    description: "TRIGRS crashes with array bounds error or segmentation fault."
+    error_pattern: "SIGSEGV|array bound|segfault"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Input grids have different dimensions (ncols, nrows) or nodata cell locations"
+    explanation: >
+      All TRIGRS input grids must have identical dimensions and nodata cell
+      locations. If grids are generated from different sources (e.g., DEM from
+      SRTM, slope from ASTER), they may have slightly different extents or
+      nodata patterns. TRIGRS assumes all grids are perfectly congruent and
+      uses a single cell indexing scheme.
+    affected_components: [all input grids]
+  remedy:
+    action: "Run GridMatch to verify and fix grid congruence"
+    tool_to_run: GridMatch
+    manual_steps:
+      - "Check headers of all grids: ncols, nrows, xllcorner, yllcorner, cellsize must match"
+      - "Check nodata cell locations are identical"
+      - "Regenerate all grids from the same DEM"
+    prevention: "Always derive all grids from a single DEM source"
+  severity: fatal
+  cross_references: [dt_009]
+
+- id: dt_009
+  stage: s1_dem_slope_preparation
+  failure_domain: grid_format
+  symptom:
+    description: "TRIGRS reads wrong number of cells. Output grid has wrong spatial extent."
+    error_pattern: "grid size"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "TIgrid_size.txt or TRgrid_size.txt has wrong imax, row, col values"
+    explanation: >
+      TRIGRS looks for grid size files in the DEM directory. If these files exist
+      from a previous run with different data, TRIGRS will use the old dimensions.
+      This causes array allocation errors or incorrect spatial mapping.
+    affected_components: [TIgrid_size.txt, TRgrid_size.txt, GMgrid_size.txt]
+  remedy:
+    action: "Delete old grid_size.txt files and re-run TopoIndex"
+    tool_to_run: run_trigrs
+    manual_steps:
+      - "Delete TIgrid_size.txt, TRgrid_size.txt, GMgrid_size.txt from DEM directory"
+      - "Re-run TopoIndex to regenerate"
+      - "Or let TRIGRS auto-detect from DEM"
+    prevention: "Always re-run TopoIndex when changing study area"
+  severity: fatal
+  cross_references: [dt_008]
+
+- id: dt_010
+  stage: s3_rainfall_forcing
+  failure_domain: grid_format
+  symptom:
+    description: "Rainfall pattern does not match topography. Rain falls on wrong cells."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Rainfall grid has different origin (xllcorner/yllcorner) than DEM"
+    explanation: >
+      If the rainfall grids have different spatial extents than the DEM, TRIGRS
+      applies rainfall values to the wrong cells. The grids may have the same
+      dimensions but different coordinate origins.
+    affected_components: [rainfall grids, DEM]
+  remedy:
+    action: "Ensure rainfall grids have identical headers to DEM"
+    tool_to_run: convert_rainfall_to_trigrs
+    manual_steps:
+      - "Compare xllcorner/yllcorner of rainfall grids with DEM"
+      - "Resample rainfall to DEM grid if necessary"
+    prevention: "convert_rainfall_to_trigrs reads DEM header and writes matching grids"
+  severity: silent
+  cross_references: [dt_008]
+
+- id: dt_011
+  stage: s1_dem_slope_preparation
+  failure_domain: grid_format
+  symptom:
+    description: "Large areas with FS = -9999 that should have data."
+    error_pattern: "-9999"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "NODATA_value in grids is not -9999 or is inconsistent across grids"
+    explanation: >
+      TRIGRS uses -9999 as the default nodata value. If grids use a different
+      value (e.g., -32768, NaN), TRIGRS may try to compute on nodata cells
+      or skip valid cells.
+    affected_components: [all input grids]
+  remedy:
+    action: "Standardize NODATA_value to -9999 in all grid headers"
+    tool_to_run: UnitConvert
+    manual_steps:
+      - "Check NODATA_value in each grid header"
+      - "Replace inconsistent values with -9999"
+    prevention: "Standardize nodata during grid export from GIS"
+  severity: silent
+  cross_references: [dt_008]
+
+# --- Parameter Logic Errors ---
+
+- id: dt_012
+  stage: s2_soil_parameters
+  failure_domain: parameter_logic
+  symptom:
+    description: "Unsaturated model not activating. Saturated model used despite unsaturated parameters."
+    error_pattern: ""
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Alpha parameter is negative, forcing saturated model"
+    explanation: >
+      TRIGRS uses the sign of Alpha to select the infiltration model.
+      Negative Alpha = saturated model. Positive Alpha = unsaturated model.
+      This is non-intuitive. If the user wants the unsaturated model but
+      enters a negative Alpha (e.g., from a convention where Alpha < 0
+      represents Gardner parameter), the saturated model is used silently.
+    affected_components: [tr_in.txt, zone parameters]
+  remedy:
+    action: "Set Alpha to positive value for unsaturated model"
+    tool_to_run: generate_tr_in
+    manual_steps:
+      - "Check Alpha sign in tr_in.txt zone blocks"
+      - "For unsaturated model: Alpha > 0, Theta-sat > Theta-res > 0"
+      - "For saturated model: Alpha < 0 (or set to -0.5)"
+    prevention: "generate_tr_in warns about Alpha sign and model selection"
+  severity: silent
+  cross_references: [dt_013]
+
+- id: dt_013
+  stage: s2_soil_parameters
+  failure_domain: parameter_logic
+  symptom:
+    description: "Pore pressure does not decay after rainfall stops. Infinite drainage."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "mmax is positive (infinite depth model) when finite depth model is needed"
+    explanation: >
+      When mmax is positive, TRIGRS uses the infinite-depth infiltration model.
+      This model assumes the soil column extends infinitely downward, so water
+      never reaches a bottom boundary. For shallow soils on bedrock, the finite-
+      depth model (mmax < 0) is more appropriate and produces water table rise.
+    affected_components: [tr_in.txt]
+  remedy:
+    action: "Set mmax to negative value for finite-depth model"
+    tool_to_run: generate_tr_in
+    manual_steps:
+      - "If soil depth is bounded (bedrock at known depth), use negative mmax"
+      - "Typical: mmax = -100 for finite depth"
+      - "Positive mmax = infinite depth (for deep soils)"
+    prevention: "generate_tr_in documents mmax sign convention"
+  severity: silent
+  cross_references: [dt_012]
+
+- id: dt_014
+  stage: s3_rainfall_forcing
+  failure_domain: parameter_logic
+  symptom:
+    description: "Soil dries beyond initial conditions during zero-rainfall periods."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Background flux option disabled (bkgrof = F) with multi-period simulation"
+    explanation: >
+      When rainfall stops between periods (cri = 0), the transient solution can
+      drive pore pressures below the initial steady-state condition, producing
+      unrealistic drying. The background flux option adds the steady-state
+      infiltration rate (rizero) to the transient rate to prevent this.
+    affected_components: [tr_in.txt, line 78-79]
+  remedy:
+    action: "Set background flux option to T (.true.) in tr_in.txt"
+    tool_to_run: generate_tr_in
+    manual_steps:
+      - "Find line 'Add steady background flux...' in tr_in.txt"
+      - "Set to T"
+    prevention: "generate_tr_in defaults background_flux to True"
+  severity: silent
+  cross_references: [dt_002]
+
+# --- Runtime Errors ---
+
+- id: dt_015
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "TRIGRS runs extremely slowly. Some cells take minutes to converge."
+    error_pattern: "non-convergent"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Saturated finite-depth solution does not converge for certain parameter combinations"
+    explanation: >
+      The error function series used for early-time computation of the finite-depth
+      saturated solution can converge poorly for certain D0/zmax/t combinations.
+      TRIGRS v2.1 added a later-time formula to mitigate this, but some edge cases
+      remain. Non-convergent cells are logged to TRnon_convrg_*.txt.
+    affected_components: [savage.f95, svgstp.f95]
+  remedy:
+    action: "Increase nmax (max series terms) or adjust parameters"
+    tool_to_run: run_trigrs
+    manual_steps:
+      - "Check TRnon_convrg_*.txt for non-convergent cells"
+      - "Increase nmax from 30 to 100"
+      - "Or use infinite-depth model (positive mmax) if appropriate"
+      - "Or reduce domain to exclude problematic cells"
+    prevention: "Start with nmax=100; use parallel version for large domains"
+  severity: degraded
+  cross_references: [dt_013]
+
+- id: dt_016
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "TRIGRS killed by OS or runs out of memory on large grids."
+    error_pattern: "Killed|MemoryError|cannot allocate"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Grid too large for serial processing. Arrays exceed available memory."
+    explanation: >
+      TRIGRS stores pressure head, FS, and other arrays for all cells and depth
+      points in memory. For large grids (>1M cells) with many depth points (nzs>20),
+      memory requirements can exceed available RAM. The parallel version distributes
+      arrays across processes with reduced per-process memory.
+    affected_components: [trigrs.f90 main program]
+  remedy:
+    action: "Use parallel version (prg) with MPI, or reduce grid size"
+    tool_to_run: run_trigrs
+    manual_steps:
+      - "Estimate memory: ~8 bytes * imax * nzs * 5 arrays"
+      - "For 1M cells, nzs=20: ~800 MB minimum"
+      - "Use parallel version: mpirun -np 4 ./prg"
+      - "Or subsample grid (reduce resolution)"
+    prevention: "Use parallel version for grids > 500K cells"
+  severity: fatal
+  cross_references: [dt_015]
+
+# --- Output Interpretation Errors ---
+
+- id: dt_017
+  stage: s5_output_analysis
+  failure_domain: output_interpretation
+  symptom:
+    description: "Very high FS (>10) in flat areas. Misinterpreted as unconditionally safe."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Flat areas (slope ~0) produce FS -> infinity, which is mathematically correct"
+    explanation: >
+      The infinite-slope FS formula has tan(slope) in the denominator of the
+      driving force term. As slope approaches zero, the driving force approaches
+      zero and FS approaches infinity. This is physically reasonable — flat
+      ground cannot slide as an infinite slope. However, these cells may still
+      be at risk of other failure modes (rotational, toppling) that TRIGRS
+      cannot model.
+    affected_components: [output interpretation]
+  remedy:
+    action: "Apply slomin threshold to exclude flat areas from analysis"
+    tool_to_run: parse_trigrs_output
+    manual_steps:
+      - "Set Min_Slope_Angle in tr_in.txt to exclude flat areas (e.g., 5 degrees)"
+      - "When mapping, mask cells with slope < threshold"
+      - "Do not interpret high FS in flat areas as geotechnically meaningful"
+    prevention: "Set slomin = 5-10 degrees in tr_in.txt"
+  severity: silent
+  cross_references: []
+
+- id: dt_018
+  stage: s5_output_analysis
+  failure_domain: output_interpretation
+  symptom:
+    description: "Minimum FS depth is at ground surface (z=0) for all cells."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "zmin = 0 and the wetting front has not penetrated below surface"
+    explanation: >
+      When zmin is set to 0 or near-zero, TRIGRS computes FS at the ground
+      surface. For short-duration simulations with low-conductivity soils,
+      the wetting front may not penetrate significantly, so the minimum FS
+      occurs at the surface. This may not represent the actual failure surface.
+    affected_components: [tr_in.txt, output interpretation]
+  remedy:
+    action: "Set zmin > 0 (e.g., 0.01 m) to avoid surface artifacts"
+    tool_to_run: generate_tr_in
+    manual_steps:
+      - "Check zmin value — should be > 0 for saturated model"
+      - "Increase simulation duration to allow deeper penetration"
+      - "Check nzs — more depth points give better resolution"
+    prevention: "generate_tr_in defaults zmin to 0.001 m"
+  severity: silent
+  cross_references: [dt_017]

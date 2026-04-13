@@ -1,0 +1,377 @@
+# COAWST Diagnostic Triplets
+# Symptom → Diagnosis → Remedy chains for common failures
+# See SKILL.md Section 13 for summary table
+
+- id: dt_001
+  stage: s2_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "SST diverges to ~300°C. Density computation produces unrealistic values. Model may run but all thermal dynamics are wrong."
+    error_pattern: "temp.*2[789][0-9]|temp.*30[0-9]"
+    detection_method: value_range_check
+  diagnosis:
+    root_cause: "Atmospheric temperature provided in Kelvin instead of Celsius"
+    explanation: "ERA5, GFS, NARR provide air temperature in Kelvin (e.g., 293 K). ROMS expects Celsius (e.g., 20°C). If BULK_FLUXES is on, heat flux computation uses Tair directly — 293°C air temperature drives massive heat input."
+    affected_components: [convert_forcing, bulk_flux]
+  remedy:
+    action: "Subtract 273.15 from temperature fields"
+    tool_to_run: "convert_forcing.py --source-format era5"
+    manual_steps:
+      - "Check Tair range in forcing file: ncdump -v Tair forcing.nc | tail"
+      - "Expected range: -60 to +50 °C"
+      - "If values are 200-320, subtract 273.15"
+    prevention: "convert_forcing.py validates output range automatically"
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_002
+  stage: s2_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Currents are ~1000× too strong. Model may blow up quickly or produce unrealistic transport patterns."
+    error_pattern: "BLOWUP|velocity.*[0-9]{3}"
+    detection_method: value_range_check
+  diagnosis:
+    root_cause: "Wind stress provided in Pa (N/m²) instead of ROMS internal m²/s²"
+    explanation: "ROMS expects surface momentum stress as sustr/svstr in m²/s² (= N/m² ÷ ρ₀). If stress is provided in Pa and used directly, currents are amplified by factor of ρ₀ ≈ 1025. This only matters when NOT using BULK_FLUXES."
+    affected_components: [convert_forcing, surface_flux]
+  remedy:
+    action: "Divide stress by reference density ρ₀ = 1025 kg/m³"
+    tool_to_run: "convert_forcing.py"
+    manual_steps:
+      - "Check if BULK_FLUXES is defined in application .h file"
+      - "If BULK_FLUXES: provide wind speed (m/s), not stress — ROMS computes stress internally"
+      - "If no BULK_FLUXES: ensure sustr/svstr are in m²/s² (divide Pa by 1025)"
+    prevention: "Use BULK_FLUXES with atmospheric variables instead of prescribed stress"
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_003
+  stage: s2_forcing
+  failure_domain: time_reference
+  symptom:
+    description: "Model crashes with NaN or uses forcing from wrong time period. Output shows unrealistic seasonal patterns or constant fields."
+    error_pattern: "NaN|Blowup|extrapolat"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "Time reference mismatch between forcing file and ocean.in TIME_REF"
+    explanation: "ROMS interpolates forcing in time using ocean_time (from TIME_REF) vs frc_time. If forcing uses 'days since 1900-01-01' but TIME_REF is '20120101.0d0', the temporal offset causes ROMS to extrapolate beyond available data or use wrong-season forcing."
+    affected_components: [convert_forcing, read_forcing]
+  remedy:
+    action: "Align TIME_REF in ocean.in with time units in forcing files"
+    tool_to_run: "generate_config.py"
+    manual_steps:
+      - "ncdump -v frc_time forcing.nc | head -5 → check units attribute"
+      - "Ensure ocean.in TIME_REF matches the epoch"
+      - "Example: if frc_time units='days since 2012-10-01', set TIME_REF=20121001.0d0"
+    prevention: "generate_config.py cross-checks time references"
+  severity: fatal
+  cross_references: []
+
+- id: dt_004
+  stage: s5_coupling
+  failure_domain: configuration
+  symptom:
+    description: "Model hangs immediately after startup. No output, no error message. MPI processes are alive but not progressing."
+    error_pattern: "deadlock|hang|timeout"
+    detection_method: timeout
+  diagnosis:
+    root_cause: "NtileI × NtileJ does not equal allocated ocean processors (NnodesOCN)"
+    explanation: "ROMS distributes the grid across NtileI × NtileJ MPI processes. If this product doesn't match the processes allocated to the ocean model, some processes wait for data from non-existent partners, causing deadlock."
+    affected_components: [coupling, ocean_config]
+  remedy:
+    action: "Ensure NtileI × NtileJ = NnodesOCN, and NnodesOCN + NnodesWAV + NnodesATM = total mpirun -np N"
+    tool_to_run: "generate_config.py"
+    manual_steps:
+      - "Check ocean.in: NtileI, NtileJ values"
+      - "Check coupling.in: NnodesOCN value"
+      - "Verify: NtileI × NtileJ == NnodesOCN"
+      - "Verify: NnodesOCN + NnodesWAV + NnodesATM == mpirun -np N"
+    prevention: "generate_config.py validates this before writing files"
+  severity: fatal
+  cross_references: []
+
+- id: dt_005
+  stage: s8_execution
+  failure_domain: numerical_stability
+  symptom:
+    description: "Model prints 'BLOWUP' and stops after a few timesteps. Velocity or sea level values grow exponentially."
+    error_pattern: "BLOWUP|Blowing-up"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "Baroclinic or barotropic timestep violates CFL condition"
+    explanation: "CFL requires c·dt/dx < 1, where c=√(g·h) for barotropic mode. With DT=300s, NDTFAST=20 → dt_baro=15s. For h=5000m, dx=1km: CFL = 221×15/1000 = 3.3 → blowup. The barotropic timestep (DT/NDTFAST) is usually the binding constraint."
+    affected_components: [time_stepping, barotropic]
+  remedy:
+    action: "Reduce DT or increase NDTFAST to satisfy CFL < 0.7"
+    tool_to_run: "generate_config.py (validates CFL)"
+    manual_steps:
+      - "Compute: c_max = sqrt(9.81 × h_max)"
+      - "Compute: dx_min = minimum grid spacing"
+      - "Compute: dt_baro_max = 0.7 × dx_min / c_max"
+      - "Set NDTFAST >= DT / dt_baro_max"
+    prevention: "generate_config.py CFL check warns before run"
+  severity: fatal
+  cross_references: [dt_004]
+
+- id: dt_006
+  stage: s2_forcing
+  failure_domain: configuration
+  symptom:
+    description: "Model runs with zero surface forcing. SST drifts toward initial conditions without atmospheric correction. Currents are weak."
+    error_pattern: "no pattern — silent failure"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "BULK_FLUXES CPP flag does not match forcing file contents"
+    explanation: "With BULK_FLUXES defined, ROMS expects atmospheric variables (Uwind, Tair, Qair, etc.) and computes fluxes internally. Without BULK_FLUXES, ROMS expects pre-computed fluxes (sustr, svstr, shflux, etc.). If you provide wind speed to a non-BULK_FLUXES build, the variables are simply ignored."
+    affected_components: [surface_flux, forcing]
+  remedy:
+    action: "Match forcing file type to BULK_FLUXES flag in application header"
+    tool_to_run: "N/A — requires recompilation if flag needs changing"
+    manual_steps:
+      - "Check application .h file: grep BULK_FLUXES sandy.h"
+      - "If BULK_FLUXES defined: provide Uwind, Vwind, Tair, Pair, Qair, rain, swrad, lwrad"
+      - "If NOT defined: provide sustr, svstr, shflux, ssflux, dQdSST, swrad"
+    prevention: "Document which CPP flags are active for each build"
+  severity: silent
+  cross_references: [dt_001, dt_002]
+
+- id: dt_007
+  stage: s1_grid
+  failure_domain: unit_conversion
+  symptom:
+    description: "Model crashes immediately. Bathymetry appears as mountains above sea level. All water cells are masked as land."
+    error_pattern: "grid.*negative|h.*<.*0"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "Bathymetry not negated from GEBCO/ETOPO convention (negative=ocean) to ROMS convention (positive=depth)"
+    explanation: "GEBCO and ETOPO use negative values for ocean depths and positive for land elevations. ROMS requires h > 0 for water depth below MSL. If the bathymetry is not negated, all ocean points have h < 0 and are treated as above water."
+    affected_components: [convert_grid, grid_file]
+  remedy:
+    action: "Negate bathymetry values: h_roms = -z_gebco"
+    tool_to_run: "convert_grid.py (handles this automatically for gebco/etopo formats)"
+    manual_steps:
+      - "ncdump -v h grid.nc | head → values should be positive"
+      - "If negative, multiply by -1"
+    prevention: "convert_grid.py auto-negates for known formats"
+  severity: fatal
+  cross_references: []
+
+- id: dt_008
+  stage: s2_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Freshwater flux is 1000× too high. Lake/estuary salinity drops to zero. Sea level rises rapidly."
+    error_pattern: "overflow|salinity.*0\\.0|zeta.*rising"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation in mm/day or mm/step instead of m/s or kg/m²/s"
+    explanation: "ERA5 provides total precipitation as m/step (accumulated). Some post-processed datasets provide mm/day. ROMS expects kg/m²/s. 1 mm/day = 1.157e-5 kg/m²/s. If mm/day values (e.g., 10) are used directly as kg/m²/s, freshwater input is ~860,000× too large."
+    affected_components: [convert_forcing, freshwater_flux]
+  remedy:
+    action: "Convert: mm/day → kg/m²/s: divide by 86400. m/step → kg/m²/s: multiply by 1000/dt_step"
+    tool_to_run: "convert_forcing.py"
+    manual_steps:
+      - "Check max rain value: typical max ~0.01 kg/m²/s for extreme events"
+      - "If max rain > 1.0, units are likely wrong"
+    prevention: "convert_forcing.py validates rain range"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_009
+  stage: s4_boundary
+  failure_domain: grid_staggering
+  symptom:
+    description: "Boundary artifacts appear as stripes or discontinuities at domain edges. Velocity/tracer fields show jumps at boundaries."
+    error_pattern: "boundary.*artifact|stripe"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Boundary condition data provided on wrong stagger point (e.g., rho data on u-point boundary)"
+    explanation: "ROMS uses Arakawa C-grid with different dimensions for rho, u, v points. Boundary files must provide u-velocity on u-points (Lm+1), v-velocity on v-points (Mm+1), and tracers on rho-points (Lm+2). Dimension mismatch causes interpolation to wrong locations."
+    affected_components: [boundary_conditions, grid_stagger]
+  remedy:
+    action: "Ensure boundary arrays match the correct stagger dimensions"
+    tool_to_run: "N/A — check with ncdump"
+    manual_steps:
+      - "ncdump -h boundary.nc → check variable dimensions"
+      - "u-boundary variables should have dimension xi_u (not xi_rho)"
+      - "v-boundary variables should have dimension eta_v (not eta_rho)"
+    prevention: "Use CDL templates from Data/ROMS/CDL/ as reference"
+  severity: silent
+  cross_references: [dt_007]
+
+- id: dt_010
+  stage: s5_coupling
+  failure_domain: configuration
+  symptom:
+    description: "Coupled model shows stepping artifacts in exchanged fields. Wave height jumps discontinuously. SST in WRF has temporal gaps."
+    error_pattern: "desync|step.*artifact"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Coupling interval is not an integer multiple of all model timesteps"
+    explanation: "If TI_OCN2WAV=300s but ROMS DT=200s, ROMS timesteps at 0, 200, 400... The exchange at 300s is missed. The next exchange happens at 400s using stale data. This creates a 100s timing error that repeats every coupling cycle."
+    affected_components: [coupling, time_stepping]
+  remedy:
+    action: "Set coupling intervals as integer multiples of the longest component timestep"
+    tool_to_run: "generate_config.py"
+    manual_steps:
+      - "TI = N × max(DT_ocean, DT_swan, DT_wrf) where N is a positive integer"
+      - "Common choice: TI = 600s with DT_ocean=60s, DT_swan=600s"
+    prevention: "generate_config.py validates coupling interval divisibility"
+  severity: degraded
+  cross_references: [dt_004]
+
+- id: dt_011
+  stage: s2_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Wave-current interaction forces are in the wrong direction. Longshore currents are reversed. Sediment transport goes offshore instead of along-shore."
+    error_pattern: "wrong.*direction|reversed"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Wave direction in degrees (meteorological convention) instead of radians (mathematical convention)"
+    explanation: "ROMS internal wave variables use radians. Meteorological convention reports direction waves come FROM in degrees clockwise from north. ROMS uses direction waves GO TO in radians counterclockwise from east. Direct use of met degrees in radians fields amplifies errors by ~57×."
+    affected_components: [wave_forcing, wave_current_interaction]
+  remedy:
+    action: "Convert: rad = (270 - degrees_met) × π/180"
+    tool_to_run: "convert_forcing.py"
+    manual_steps:
+      - "Check Dwave range in forcing: should be 0 to 2π radians"
+      - "If values are 0-360, convert degrees to radians with convention rotation"
+    prevention: "convert_forcing.py handles convention conversion"
+  severity: silent
+  cross_references: []
+
+- id: dt_012
+  stage: s3_initial
+  failure_domain: data_quality
+  symptom:
+    description: "Model crashes in first few timesteps with density errors. Barotropic pressure gradient is extreme."
+    error_pattern: "density|rho.*NaN|pressure.*gradient"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "Initial condition salinity or temperature values are out of valid range for equation of state"
+    explanation: "ROMS equation of state (Jackett & McDougall) is valid for T: -2 to 40°C, S: 0 to 42 PSU. If initial conditions have fill values (e.g., 9999) or wrong units, the density computation produces NaN, which propagates to pressure gradient and causes immediate blowup."
+    affected_components: [initial_conditions, equation_of_state]
+  remedy:
+    action: "Validate IC ranges: T in [-2, 40], S in [0, 42]. Replace fill values with realistic values."
+    tool_to_run: "N/A"
+    manual_steps:
+      - "ncdump -v temp initial.nc | python3 -c 'import sys; [print(l) for l in sys.stdin if \"_\" not in l]'"
+      - "Check for fill values (1e37, 9999, -999)"
+      - "Check ranges are physically reasonable"
+    prevention: "Always inspect IC file before first run"
+  severity: fatal
+  cross_references: [dt_001]
+
+- id: dt_013
+  stage: s8_execution
+  failure_domain: configuration
+  symptom:
+    description: "Restart run produces wrong results. Simulation time jumps. Forcing interpolation uses data from wrong period."
+    error_pattern: "restart.*time|NRREC"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "NRREC in ocean.in does not match restart file time record"
+    explanation: "NRREC specifies which time record in the restart file to use. If NRREC=0, ROMS uses the last record. If NRREC=1 but the restart file was overwritten with a later time, the simulation clock will be wrong and all time-dependent forcing will be misaligned."
+    affected_components: [restart, time_management]
+  remedy:
+    action: "Set NRREC=0 to use latest record, or verify exact record index"
+    tool_to_run: "N/A"
+    manual_steps:
+      - "ncdump -v ocean_time restart.nc → check available time records"
+      - "Set NRREC=0 (use latest) or set to specific record number"
+      - "Verify DSTART matches the restart time"
+    prevention: "Always use NRREC=0 unless specific record is needed"
+  severity: fatal
+  cross_references: [dt_003]
+
+- id: dt_014
+  stage: s6_config
+  failure_domain: configuration
+  symptom:
+    description: "Wave model misses swell energy. Wave spectra are too narrow. Wave period shows systematic bias."
+    error_pattern: "wave.*bias|swell.*missing"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "SWAN spectral resolution too coarse: too few frequency bins or direction bins"
+    explanation: "SWAN with < 24 direction bins smears directional spreading, losing refraction and shadowing effects. With < 25 frequency bins, the gap between swell (0.04-0.15 Hz) and wind-sea (0.1-0.5 Hz) is poorly resolved, causing energy leakage between spectral peaks."
+    affected_components: [swan_config, wave_spectrum]
+  remedy:
+    action: "Use ≥ 36 direction bins and ≥ 31 frequency bins (0.04-1.0 Hz)"
+    tool_to_run: "generate_config.py --swan"
+    manual_steps:
+      - "In SWAN input: CIRCLE 36 0.04 1.0 31"
+      - "36 directions × 10° = full circle"
+      - "31 frequencies logarithmically spaced from 0.04 to 1.0 Hz"
+    prevention: "generate_config.py sets these defaults"
+  severity: degraded
+  cross_references: []
+
+- id: dt_015
+  stage: s2_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Latent heat flux is enormously wrong. Evaporation rate is unrealistic. Sea surface salinity drifts."
+    error_pattern: "evap|latent|humidity"
+    detection_method: value_range_check
+  diagnosis:
+    root_cause: "Humidity provided as relative humidity (%) instead of specific humidity (kg/kg)"
+    explanation: "ROMS BULK_FLUXES expects specific humidity in kg/kg (typical values 0.001-0.025). If relative humidity (0-100%) is used directly, the humidity is interpreted as 1-100 kg/kg — ~4000× too large. This massively overestimates latent heat flux and evaporation."
+    affected_components: [convert_forcing, bulk_flux]
+  remedy:
+    action: "Convert RH% to specific humidity using Clausius-Clapeyron relation"
+    tool_to_run: "convert_forcing.py (handles this for ERA5 dewpoint → specific humidity)"
+    manual_steps:
+      - "Check Qair range: should be 0.0001 to 0.04 kg/kg"
+      - "If values are 10-100, they are likely % RH — convert using:"
+      - "es = 6.112 × exp(17.67 × T / (T + 243.5))"
+      - "e = (RH/100) × es"
+      - "q = 0.622 × e / (P - 0.378 × e)"
+    prevention: "convert_forcing.py validates Qair range"
+  severity: silent
+  cross_references: [dt_001, dt_008]
+
+- id: dt_016
+  stage: s1_grid
+  failure_domain: numerical_stability
+  symptom:
+    description: "Pressure gradient errors near steep topography. Spurious currents along continental slope. Unrealistic upwelling/downwelling."
+    error_pattern: "pressure.*error|spurious.*current"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Bathymetry rx0 (Beckmann-Haidvogel number) exceeds safe threshold"
+    explanation: "In sigma coordinates, steep topography creates large pressure gradient errors. The rx0 parameter measures |Δh|/(h₁+h₂). Values > 0.2 can produce spurious currents comparable to real ocean currents. This is fundamental to terrain-following coordinate models."
+    affected_components: [grid, bathymetry_smoothing]
+  remedy:
+    action: "Smooth bathymetry to achieve rx0 < 0.2 everywhere"
+    tool_to_run: "convert_grid.py --smooth-factor 0.2"
+    manual_steps:
+      - "Compute rx0 = max(|h(i+1)-h(i)| / (h(i+1)+h(i)))"
+      - "Apply Shapiro or Laplacian smoothing iteratively"
+      - "Verify rx0 < 0.2 (or < 0.4 for well-resolved problems)"
+    prevention: "convert_grid.py smooths to target rx0"
+  severity: degraded
+  cross_references: [dt_007]
+
+- id: dt_017
+  stage: s8_execution
+  failure_domain: configuration
+  symptom:
+    description: "Model runs but wetting/drying produces checkerboard pattern. Alternating wet/dry cells oscillate every timestep."
+    error_pattern: "checkerboard|wet.*dry.*oscillat"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "WET_DRY enabled but initial sea level inconsistent with bathymetry"
+    explanation: "When WET_DRY is active, cells with h + zeta < Dcrit are masked dry. If initial zeta is set to 0 but shallow cells have h < Dcrit, they start dry. Adjacent cells may then flood/drain repeatedly, creating instabilities."
+    affected_components: [wetting_drying, initial_conditions]
+  remedy:
+    action: "Set initial zeta to ensure all intended wet cells have h + zeta > Dcrit"
+    tool_to_run: "N/A"
+    manual_steps:
+      - "Check Dcrit value in ocean.in (DCRIT parameter)"
+      - "Verify initial zeta + h > Dcrit for all water cells"
+      - "Use a small positive initial zeta if needed"
+    prevention: "Validate IC against grid before run"
+  severity: degraded
+  cross_references: [dt_012]

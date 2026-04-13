@@ -1,0 +1,290 @@
+# HydroTrend Diagnostic Triplets
+# Format: symptom → diagnosis → remedy
+# Each entry: symptom, diagnosis, remedy, severity, tags
+
+triplets:
+
+  # ============================================================
+  # UNIT CONVERSION TRAPS
+  # ============================================================
+
+  - id: ht_001
+    symptom: "Simulated discharge is near zero; only baseflow contributes to Q"
+    diagnosis: >
+      Monthly precipitation (HYDRO.IN lines 12-23) was provided in meters
+      instead of millimeters. The model internally divides by 1000, so values
+      already in meters become 1000x too small (e.g., 0.005m → 0.000005m).
+    remedy: >
+      Ensure monthly precipitation values in HYDRO.IN lines 12-23 are in
+      millimeters (mm). Typical values: 5-500 mm/month. The model converts
+      to meters internally. Check: if values are < 1, they are likely in meters.
+    severity: critical
+    tags: [unit_conversion, precipitation, silent_failure]
+
+  - id: ht_002
+    symptom: "Simulated discharge is 1000x too high; extreme flooding every year"
+    diagnosis: >
+      Annual precipitation (HYDRO.IN line 9) was provided in mm/yr instead
+      of m/yr. HydroTrend expects m/yr here (no internal conversion).
+      1240mm/yr entered as 1240 instead of 1.24 gives 1000x too much water.
+    remedy: >
+      Convert annual precipitation to meters: divide mm/yr by 1000.
+      Line 9 should read like "1.24 0.0002 0.05" for ~1240mm/yr basin.
+    severity: critical
+    tags: [unit_conversion, precipitation, silent_failure]
+
+  - id: ht_003
+    symptom: "Snow/ice melt is negligible despite high-altitude glaciated basin"
+    diagnosis: >
+      Lapse rate (HYDRO.IN line 24) was provided in °C/m instead of °C/km.
+      The model divides by 1000 internally, so 0.0065 °C/m becomes
+      0.0000065 °C/m internal — effectively no temperature variation with
+      altitude, preventing snow/ice accumulation.
+    remedy: >
+      Provide lapse rate in °C/km (typical: 5-10 °C/km). Standard atmosphere
+      is ~6.5 °C/km. Use -9999 for the global default calculation.
+    severity: critical
+    tags: [unit_conversion, lapse_rate, glacier]
+
+  - id: ht_004
+    symptom: "Basin length appears 1000x too large in log; travel times unrealistic"
+    diagnosis: >
+      Basin length (HYDRO.IN line 31) was provided in meters instead of
+      kilometers. The model multiplies by 1000 internally, so 100000m
+      becomes 100,000,000m = 100,000km.
+    remedy: >
+      Provide basin length in kilometers. A 100km basin should be entered
+      as "100" on line 31. The model converts to meters internally.
+    severity: high
+    tags: [unit_conversion, basin_geometry]
+
+  - id: ht_005
+    symptom: "Evapotranspiration/canopy interception has negligible effect"
+    diagnosis: >
+      Canopy interception α (line 27) or evapotranspiration α (line 28)
+      was provided in m/d instead of mm/d. The model divides by 1000,
+      making the already-small m/d value effectively zero.
+    remedy: >
+      Provide α values in mm/d. Typical canopy α: -0.1 to 1.0 mm/d.
+      Typical ET α: 5-15 mm/d. The model converts to m/d internally.
+    severity: high
+    tags: [unit_conversion, evapotranspiration]
+
+  - id: ht_006
+    symptom: "Hydraulic conductivity too low; no subsurface flow contribution"
+    diagnosis: >
+      Saturated hydraulic conductivity Ko (line 39) was provided in m/day
+      instead of mm/day. The model divides by 1000, so 0.25 m/day becomes
+      0.00025 m/day internally — negligible percolation.
+    remedy: >
+      Provide Ko in mm/day. Typical values: 10-1000 mm/day depending on
+      soil type. Sandy soil ~500 mm/d, clay ~1 mm/d, loam ~50-250 mm/d.
+    severity: high
+    tags: [unit_conversion, hydraulic_conductivity, groundwater]
+
+  # ============================================================
+  # INPUT FORMAT ERRORS
+  # ============================================================
+
+  - id: ht_007
+    symptom: "Model crashes immediately with 'Unable to open input file' error"
+    diagnosis: >
+      Input file naming mismatch. The model looks for {PREFIX}.IN with
+      exact case. Common: prefix is HYDRO but file is hydro.in or Hydro.IN.
+    remedy: >
+      Ensure the input file name matches the prefix exactly: if --prefix=HYDRO,
+      the file must be HYDRO.IN (uppercase). Also verify --in-dir points to
+      the correct directory.
+    severity: high
+    tags: [input_format, file_naming]
+
+  - id: ht_008
+    symptom: "Grain size proportions don't sum to 1; sediment mass not conserved"
+    diagnosis: >
+      Line 7 grain fractions do not sum to exactly 1.0. The model does NOT
+      normalize these values. Sum > 1 creates excess sediment; sum < 1 loses
+      sediment mass.
+    remedy: >
+      Manually verify grain fractions sum to 1.0000. For 4 grain sizes:
+      e.g., 0.20 + 0.20 + 0.25 + 0.35 = 1.00. Use enough decimal places
+      to ensure exact sum.
+    severity: medium
+    tags: [input_format, sediment, mass_balance]
+
+  - id: ht_009
+    symptom: "Model reads wrong values for parameters after monthly climate block"
+    diagnosis: >
+      The monthly climate section (lines 12-23) has the wrong number of
+      columns or months. Each line must have exactly 5 fields: month_name,
+      T_mean, T_std, P_total, P_std. Missing or extra values shift all
+      subsequent line reads.
+    remedy: >
+      Verify exactly 12 monthly lines (Jan-Dec), each with 5 space-separated
+      values. The month name is read but not used; it can be any 3-character
+      string. Comments after the 5th value are ignored.
+    severity: high
+    tags: [input_format, parsing, climate]
+
+  - id: ht_010
+    symptom: "Output directory is empty after seemingly successful run"
+    diagnosis: >
+      ASCII output flag (line 2) is set to OFF. The model only writes
+      binary .DIS file when ASCII is OFF. Also possible: output directory
+      path in line 3 doesn't end with '/' or doesn't exist.
+    remedy: >
+      Set line 2 to "ON" for ASCII output. Ensure line 3 output directory
+      ends with '/' and the directory exists before running.
+    severity: medium
+    tags: [input_format, output, silent_failure]
+
+  # ============================================================
+  # RUNTIME / NaN CRASHES
+  # ============================================================
+
+  - id: ht_011
+    symptom: "NaN error in HydroSedload: Qs = nan"
+    diagnosis: >
+      Sediment calculation produced NaN. Common causes: (1) Qbartotal = 0
+      causing division by zero in Qs(i)/Qbar ratio, (2) negative values
+      in pow() function with fractional exponent, (3) extreme C exponent
+      from log10 of very small Qsbar.
+    remedy: >
+      Check: (a) precipitation is not zero (ensures Qbar > 0),
+      (b) hypsometry area > 0, (c) temperature is reasonable for the
+      sediment formula. For BQART with T < 2°C, formula switches to
+      doubled coefficient — check if Tbar calculation is correct.
+    severity: critical
+    tags: [runtime, nan, sediment]
+
+  - id: ht_012
+    symptom: "Model runs but Qbar is unrealistically low or zero"
+    diagnosis: >
+      Mean annual discharge (Qbar) is near zero, typically because:
+      (1) precipitation is zero or negligible, (2) evapotranspiration
+      exceeds precipitation (arid basin), (3) all precipitation falls as
+      snow but never melts (ELA too low or lapse rate wrong).
+    remedy: >
+      Check water balance: P - ET should be positive for runoff.
+      Verify monthly P values are in mm (not m). Check ELA is above
+      basin maximum elevation if no glaciers are intended. Check lapse
+      rate allows snowmelt.
+    severity: high
+    tags: [runtime, discharge, water_balance]
+
+  - id: ht_013
+    symptom: "Segmentation fault or memory error during long simulation"
+    diagnosis: >
+      The model pre-allocates random number arrays sized by nyears.
+      Very long simulations (>10000 years) with many grain sizes may
+      exhaust memory. Also possible: array index out of bounds if
+      hypsometry bins exceed allocated size.
+    remedy: >
+      Reduce simulation length or grain size count. Check hypsometry
+      file has correct bin count on line 6 matching actual data lines.
+      Monitor memory usage with tools like valgrind.
+    severity: medium
+    tags: [runtime, memory, segfault]
+
+  # ============================================================
+  # SILENT OUTPUT ERRORS
+  # ============================================================
+
+  - id: ht_014
+    symptom: "Sediment load is orders of magnitude too high"
+    diagnosis: >
+      Hypsometry area values were provided in m² instead of km². The
+      BQART formula uses A in km² — with m² values, A is 1e6 too large.
+      Since Qs ∝ A^0.5, sediment is ~1000x too high.
+    remedy: >
+      Verify hypsometry file areas are in km². Total basin area in the
+      last bin should match known watershed area (e.g., 100-100000 km²,
+      not 1e8-1e11 m²).
+    severity: critical
+    tags: [silent_failure, sediment, hypsometry, unit_conversion]
+
+  - id: ht_015
+    symptom: "No seasonal variation in discharge; flat hydrograph"
+    diagnosis: >
+      Monthly climate variability is too low. If T_std and P_std are
+      near zero for all months, the stochastic weather generator produces
+      near-constant daily values with no seasonal cycle.
+    remedy: >
+      Ensure monthly standard deviations reflect actual climate variability.
+      T_std typically 1-5°C within a month. P_std typically 20-100% of
+      P_mean. Check that standard deviations were not accidentally set to
+      zero or confused with standard errors.
+    severity: medium
+    tags: [silent_failure, climate, seasonality]
+
+  - id: ht_016
+    symptom: "BQART sediment load doubles unexpectedly for cold basins"
+    diagnosis: >
+      The BQART formula has a hard threshold at T = 2°C. Below 2°C, the
+      coefficient doubles and the temperature term is dropped. A basin
+      with Tbar just below 2°C may show much higher sediment than expected.
+    remedy: >
+      This is intended model behavior (Syvitski & Milliman 2007) to account
+      for glacial erosion. If basin temperature is near 2°C, be aware of
+      this discontinuity when comparing scenarios. Verify Tbar calculation
+      uses lapse-rate-adjusted temperature, not sea-level temperature.
+    severity: medium
+    tags: [silent_failure, sediment, bqart, temperature]
+
+  - id: ht_017
+    symptom: "Reservoir trapping efficiency seems wrong; TE doesn't match Brune curve"
+    diagnosis: >
+      HydroTrend uses two different TE formulas depending on reservoir
+      volume. Volume < 0.5 km³ uses Brown's method; volume ≥ 0.5 km³
+      uses Vorosmarty's method. The cutoff is hard-coded and may not
+      match published Brune curves for your reservoir.
+    remedy: >
+      Understand which formula applies to your reservoir size. For fine
+      control, you can modify the reservoir volume to fall on the desired
+      side of the 0.5 km³ threshold, or modify the sediment filter
+      parameter (line 44) to adjust trapping post-hoc.
+    severity: medium
+    tags: [silent_failure, reservoir, sediment_trapping]
+
+  # ============================================================
+  # BUILD / DEPENDENCY ISSUES
+  # ============================================================
+
+  - id: ht_018
+    symptom: "CMake error: Could not find bmi-c / bmic library"
+    diagnosis: >
+      The CMakeLists.txt requires the bmi-c library (Basic Model Interface
+      for C). This is an optional coupling library that may not be installed
+      in a standard development environment.
+    remedy: >
+      Option 1: Install bmi-c from https://github.com/csdms/bmi-c
+      (mkdir build && cd build && cmake .. && make && make install).
+      Option 2: Comment out bmi-c references in CMakeLists.txt if you
+      only need the standalone executable.
+    severity: high
+    tags: [build, dependency, bmi]
+
+  - id: ht_019
+    symptom: "Linker error: undefined reference to 'BMI_*' functions"
+    diagnosis: >
+      The bmi-c library was found by CMake but not properly linked.
+      This can happen if bmi-c was installed to a non-standard prefix
+      or if pkg-config cannot find it.
+    remedy: >
+      Set CMAKE_PREFIX_PATH to the bmi-c install location:
+      cmake .. -DCMAKE_PREFIX_PATH=/path/to/bmi-c/install
+      Or set PKG_CONFIG_PATH to include the bmi-c .pc file directory.
+    severity: medium
+    tags: [build, linker, bmi]
+
+  - id: ht_020
+    symptom: "Compiler warning: implicit declaration of getopt functions"
+    diagnosis: >
+      The system does not provide getopt.h. The code has a fallback for
+      systems without getopt, but the CLI parsing will be limited to
+      positional arguments only (no --in-dir, --prefix flags).
+    remedy: >
+      Install getopt development headers (typically part of libc-dev on
+      Linux). On systems without getopt, use positional arguments:
+      hydrotrend PREFIX INPUT_DIR
+    severity: low
+    tags: [build, getopt, portability]

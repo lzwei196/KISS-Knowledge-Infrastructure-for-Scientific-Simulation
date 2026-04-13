@@ -1,0 +1,463 @@
+# ============================================================================
+# LPJmL Diagnostic Triplets
+# ============================================================================
+# 18 diagnostic triplets covering 6 failure domains.
+# Generated during LPJmL knowledge dissection.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s1_climate_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "All temperatures unrealistically high (~300 degC). Photosynthesis inactive, no vegetation growth."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature input in Kelvin instead of degrees Celsius"
+    explanation: >
+      LPJmL expects temperature in degrees Celsius. If Kelvin values are provided
+      (e.g., 293 K = 20 degC), the model interprets 293 as 293 degC, causing
+      all vegetation processes to fail silently — no error is raised.
+    affected_components: [convert_climate_to_clm, temp_input]
+  remedy:
+    action: "Subtract 273.15 from temperature values"
+    tool_to_run: convert_climate_to_clm
+    manual_steps:
+      - "Check mean temperature in CLM file with printclm — should be -20 to +30 degC"
+      - "If mean temp > 200, values are in Kelvin — subtract 273.15"
+    prevention: "validate_outputs() checks for unrealistic temperature ranges"
+  severity: silent
+  cross_references: []
+
+- id: dt_002
+  stage: s1_climate_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Extreme drought everywhere. NPP near zero. No crop growth. All vegetation dies."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation in kg/m2/s instead of mm/day — values 86400x too small"
+    explanation: >
+      ISIMIP/GSWP3 often provide precipitation as kg/m2/s (= mm/s). LPJmL expects
+      mm/day. A value of 0.00001 kg/m2/s (0.86 mm/day) appears as 0.00001 mm/day
+      to LPJmL, producing zero effective rainfall.
+    affected_components: [convert_climate_to_clm, prec_input]
+  remedy:
+    action: "Multiply precipitation by 86400 to convert kg/m2/s to mm/day"
+    tool_to_run: convert_climate_to_clm
+    manual_steps:
+      - "Check max precipitation — daily values should range 0-200 mm/day"
+      - "If max prec < 0.01, values are likely in kg/m2/s — multiply by 86400"
+    prevention: "validate_outputs() flags max precip < 1.0 mm/day"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_003
+  stage: s1_climate_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Massive flooding, runoff 30x too high, water balance errors (ERROR005)."
+    error_pattern: "ERROR005"
+    detection_method: error_code
+  diagnosis:
+    root_cause: "Precipitation in mm/month provided to daily timestep configuration"
+    explanation: >
+      If monthly precipitation totals (e.g., 150 mm/month) are provided but LPJmL
+      expects daily values, each day receives the full monthly total. The model
+      receives 30x too much water, causing flooding and water balance errors.
+    affected_components: [convert_climate_to_clm, prec_input]
+  remedy:
+    action: "Divide monthly totals by number of days in each month, or set nstep=12"
+    tool_to_run: convert_climate_to_clm
+    manual_steps:
+      - "Check if precip values > 50 and nstep=365 — likely monthly values in daily config"
+      - "Either convert to daily or change nstep to 12 in CLM header"
+    prevention: "Cross-check nstep in CLM header with actual data frequency"
+  severity: error
+  cross_references: [dt_002]
+
+- id: dt_004
+  stage: s1_climate_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "GPP unrealistically high (>5000 gC/m2/month). Vegetation carbon explodes."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Shortwave radiation in J/m2/day instead of W/m2 — values 86400x too large"
+    explanation: >
+      LPJmL expects shortwave downward radiation in W/m2. Some datasets provide
+      energy flux as J/m2/day. Since W = J/s, dividing by 86400 converts J/m2/day
+      to W/m2. Without this conversion, radiation is 86400x too high.
+    affected_components: [convert_climate_to_clm, swdown_input]
+  remedy:
+    action: "Divide shortwave radiation by 86400"
+    tool_to_run: convert_climate_to_clm
+    manual_steps:
+      - "Check max shortwave radiation — should be 0-450 W/m2"
+      - "If max SW > 1000, values likely in J/m2/day — divide by 86400"
+    prevention: "validate_outputs() checks for SW > 500 W/m2"
+  severity: silent
+  cross_references: []
+
+- id: dt_005
+  stage: s5_output_analysis
+  failure_domain: unit_conversion
+  symptom:
+    description: "Crop yields appear 100x too high or too low compared to FAO statistics."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Confusing gC/m2 output with t/ha yield — missing biomass2c and area conversion"
+    explanation: >
+      LPJmL outputs harvested carbon in gC/m2/yr. To convert to standard yield
+      units (t DM/ha): divide by 0.45 (carbon fraction = biomass2c) and multiply
+      by 0.01 (g/m2 to t/ha). Missing either conversion gives wrong yield values.
+      A harvest of 450 gC/m2 = 10 t DM/ha, not 450 t/ha.
+    affected_components: [parse_lpjml_output, yield_analysis]
+  remedy:
+    action: "Apply conversion: yield_tha = harvestc_gCm2 / 0.45 * 0.01"
+    tool_to_run: parse_lpjml_output
+    manual_steps:
+      - "Expected wheat yield: 2-8 t/ha, in gC/m2 that's 90-360 gC/m2"
+      - "Expected maize yield: 3-12 t/ha, in gC/m2 that's 135-540 gC/m2"
+    prevention: "Use --convert_yield flag in parse_lpjml_output.py"
+  severity: silent
+  cross_references: []
+
+- id: dt_006
+  stage: s2_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "All cells classified as sand (type 12). Extremely fast drainage, low water retention."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Soil fractions in 0-1 range instead of 0-100 percentage"
+    explanation: >
+      LPJmL soil classification expects sand/silt/clay as percentages (0-100).
+      If fractions (0-1) are provided without conversion, all values appear near
+      zero, and the classification algorithm defaults to sand (highest sand class).
+    affected_components: [convert_soil_to_lpjml]
+  remedy:
+    action: "Multiply soil fractions by 100 to convert to percentages"
+    tool_to_run: convert_soil_to_lpjml
+    manual_steps:
+      - "Check if max sand value < 1.0 — fractions need multiplication by 100"
+    prevention: "convert_soil_to_lpjml.py auto-detects 0-1 range"
+  severity: silent
+  cross_references: []
+
+# --- Configuration Errors ---
+
+- id: dt_007
+  stage: s3_configuration
+  failure_domain: configuration
+  symptom:
+    description: "ERROR001: Error reading configuration. LPJmL refuses to start."
+    error_pattern: "ERROR001"
+    detection_method: error_code
+  diagnosis:
+    root_cause: "JSON syntax error or missing include file in lpjml_config.cjson"
+    explanation: >
+      The configuration file uses JSON with C preprocessor directives (#include,
+      #ifdef). Syntax errors, missing comma, or missing included files cause
+      parse failures. The preprocessor runs first, so macro errors also trigger this.
+    affected_components: [lpjml_config.cjson, par/*.cjson]
+  remedy:
+    action: "Run lpjcheck to identify syntax errors, fix JSON and try again"
+    tool_to_run: null
+    manual_steps:
+      - "Run: bin/lpjcheck lpjml_config.cjson"
+      - "Check for missing commas, brackets, or include files"
+      - "Verify par/ directory contains all required .cjson files"
+    prevention: "Always validate with lpjcheck before running lpjml"
+  severity: error
+  cross_references: []
+
+- id: dt_008
+  stage: s3_configuration
+  failure_domain: configuration
+  symptom:
+    description: "No crop output despite land use enabled. Only natural vegetation simulated."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Missing -DFROM_RESTART flag for transient run with land use"
+    explanation: >
+      LPJmL uses the FROM_RESTART preprocessor macro to enable land use sections
+      in the config file. Without it, landuse is set to "no" and equilsoil to true,
+      running a natural vegetation spinup regardless of output settings.
+    affected_components: [lpjml_config.cjson, run_lpjml]
+  remedy:
+    action: "Add -DFROM_RESTART to the lpjml command line"
+    tool_to_run: run_lpjml
+    manual_steps:
+      - "Run: ./bin/lpjml -DFROM_RESTART lpjml_config.cjson"
+      - "Verify a restart file exists from the spinup"
+    prevention: "run_lpjml.py sets FROM_RESTART automatically in transient mode"
+  severity: silent
+  cross_references: []
+
+# --- Input Data Errors ---
+
+- id: dt_009
+  stage: s1_climate_forcing
+  failure_domain: input_data
+  symptom:
+    description: "ERROR002: Error initializing input data. Cannot read climate files."
+    error_pattern: "ERROR002"
+    detection_method: error_code
+  diagnosis:
+    root_cause: "Input file paths in config don't match actual file locations"
+    explanation: >
+      LPJmL constructs input paths by combining inpath + filename from config.
+      If LPJINPATH is not set or points to wrong directory, files are not found.
+      Relative paths in config are relative to the current working directory.
+    affected_components: [input.cjson, environment]
+  remedy:
+    action: "Set LPJINPATH environment variable or fix paths in input.cjson"
+    tool_to_run: null
+    manual_steps:
+      - "Run: bin/lpjfiles lpjml_config.cjson to list all expected paths"
+      - "Verify each file exists at the listed path"
+      - "Set: export LPJINPATH=/path/to/input/data"
+    prevention: "run_lpjml.py validates file existence in preflight"
+  severity: error
+  cross_references: []
+
+- id: dt_010
+  stage: s1_climate_forcing
+  failure_domain: input_data
+  symptom:
+    description: "ERROR003: Error initializing grid. Grid file cannot be read."
+    error_pattern: "ERROR003"
+    detection_method: error_code
+  diagnosis:
+    root_cause: "Grid file missing, wrong format, or CLM header mismatch"
+    explanation: >
+      The grid file (grid.bin) contains lon/lat coordinates for all cells.
+      If the grid doesn't match the climate/soil input grid, or uses wrong
+      datatype (short vs float), initialization fails.
+    affected_components: [grid.bin, coord_input]
+  remedy:
+    action: "Verify grid file exists and matches input data resolution"
+    tool_to_run: null
+    manual_steps:
+      - "Check grid file: bin/printclm input/grid.bin"
+      - "Verify ncell matches climate file grid"
+      - "Check grid_type setting in config: 'short', 'float', or 'double'"
+    prevention: "Cross-check grid dimensions with all input files"
+  severity: error
+  cross_references: []
+
+- id: dt_011
+  stage: s1_climate_forcing
+  failure_domain: input_data
+  symptom:
+    description: "ERROR015: Invalid year in getco2(). Simulation crashes at specific year."
+    error_pattern: "ERROR015"
+    detection_method: error_code
+  diagnosis:
+    root_cause: "CO2 file doesn't cover simulation period"
+    explanation: >
+      The CO2 concentration file (annual text values) must span from the first
+      spinup year through lastyear. If firstyear or spinup start year is before
+      the CO2 file range, ERROR015 is raised.
+    affected_components: [co2_input]
+  remedy:
+    action: "Extend CO2 file to cover full simulation period including spinup"
+    tool_to_run: null
+    manual_steps:
+      - "Check CO2 file range: head/tail input/co2.txt"
+      - "Spinup uses nspinyear cycling — ensure CO2 file covers those years"
+      - "For pre-industrial, add constant ~280 ppm entries for early years"
+    prevention: "Validate CO2 year range against config firstyear and nspinup"
+  severity: error
+  cross_references: []
+
+# --- Balance Violations ---
+
+- id: dt_012
+  stage: s4_execution
+  failure_domain: balance_violation
+  symptom:
+    description: "ERROR004: Invalid carbon balance. Model terminates during simulation."
+    error_pattern: "ERROR004"
+    detection_method: error_code
+  diagnosis:
+    root_cause: "Carbon inputs/outputs don't balance within tolerance (0.5 gC/m2)"
+    explanation: >
+      LPJmL checks carbon balance every time step when compiled with CHECK_BALANCE.
+      Violations indicate a bug or extreme input values causing numerical instability.
+      Common causes: extreme precipitation causing rapid litter decay, or corrupt input.
+    affected_components: [carbon_cycle, input_data]
+  remedy:
+    action: "Check input data for outliers; compile without CHECK_BALANCE for testing"
+    tool_to_run: null
+    manual_steps:
+      - "Identify the year/cell where error occurs from stdout"
+      - "Check climate inputs for that cell — look for extreme values"
+      - "Try -DNO_FAIL_BALANCE to continue past errors (diagnostic only)"
+    prevention: "Validate all input data ranges before running"
+  severity: error
+  cross_references: [dt_013]
+
+- id: dt_013
+  stage: s4_execution
+  failure_domain: balance_violation
+  symptom:
+    description: "ERROR005: Invalid water balance. Negative soil moisture or runoff."
+    error_pattern: "ERROR005"
+    detection_method: error_code
+  diagnosis:
+    root_cause: "Water inputs exceed physical capacity — typically wrong precipitation units"
+    explanation: >
+      Water balance errors almost always trace back to precipitation unit
+      mismatches. Too much rain overwhelms soil capacity, producing negative
+      values in intermediate calculations. Less commonly caused by extreme
+      irrigation demands or reservoir errors.
+    affected_components: [water_cycle, precipitation_input]
+  remedy:
+    action: "Check precipitation units and values — most common cause"
+    tool_to_run: convert_climate_to_clm
+    manual_steps:
+      - "Verify precipitation is in mm/day (daily) or mm/month (monthly)"
+      - "Check max values: daily < 200, monthly < 3000 mm"
+      - "If river_routing=true, check drainage file matches grid"
+    prevention: "Always validate precipitation ranges in preflight"
+  severity: error
+  cross_references: [dt_002, dt_003]
+
+# --- Output Interpretation ---
+
+- id: dt_014
+  stage: s5_output_analysis
+  failure_domain: output_interpretation
+  symptom:
+    description: "Binary output file reads as garbage values. All data looks random."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wrong datatype or byte order when reading raw binary output"
+    explanation: >
+      LPJmL raw output files have no header by default (unless CLM format).
+      The reader must know the correct datatype (float32 for most outputs),
+      number of cells, bands, and timesteps. Wrong assumptions produce garbage.
+    affected_components: [parse_lpjml_output, output_reading]
+  remedy:
+    action: "Use JSON metafile for correct metadata, or specify dimensions explicitly"
+    tool_to_run: parse_lpjml_output
+    manual_steps:
+      - "Check output JSON metafile: cat output/mnpp.bin.json"
+      - "Verify datatype, ncell, nbands, nstep from metafile"
+      - "Try reading as float32 with correct dimensions"
+    prevention: "Enable output_metafile=true in config for automatic metadata"
+  severity: silent
+  cross_references: []
+
+- id: dt_015
+  stage: s5_output_analysis
+  failure_domain: output_interpretation
+  symptom:
+    description: "Yield output is zero for all crops despite land use being active."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Reading wrong bands from PFT output — band order follows landusemap"
+    explanation: >
+      PFT-specific outputs like pft_harvestc have 32 bands (16 rainfed + 16 irrigated).
+      The band order follows the landusemap in the config file. If the wrong band
+      index is extracted, it may correspond to a CFT with zero area in that cell.
+    affected_components: [parse_lpjml_output, band_order]
+  remedy:
+    action: "Check landusemap in config for correct band ordering"
+    tool_to_run: parse_lpjml_output
+    manual_steps:
+      - "Band 0 = temperate cereals (rainfed)"
+      - "Band 1 = rice (rainfed)"
+      - "Band 2 = maize (rainfed)"
+      - "Bands 16-31 = irrigated variants of above"
+      - "Check cftfrac output to see which CFTs have area > 0"
+    prevention: "Use CFT_NAMES mapping in parse_lpjml_output.py"
+  severity: silent
+  cross_references: [dt_005]
+
+# --- Build/Install ---
+
+- id: dt_016
+  stage: s0_installation
+  failure_domain: build
+  symptom:
+    description: "Compilation fails with 'netcdf.h not found' or 'json-c/json.h not found'."
+    error_pattern: "not found"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Missing development libraries for NetCDF, JSON-C, or UDUNITS"
+    explanation: >
+      LPJmL requires libnetcdf-dev, libjson-c-dev, and libudunits2-dev for compilation.
+      Without these, the C compiler cannot find the required header files.
+    affected_components: [build_system]
+  remedy:
+    action: "Install required development packages"
+    tool_to_run: null
+    manual_steps:
+      - "sudo apt-get install libnetcdf-dev libudunits2-dev libjson-c-dev"
+      - "Run ./configure.sh again"
+      - "Run make clean && make"
+    prevention: "Check dependencies before build"
+  severity: error
+  cross_references: []
+
+- id: dt_017
+  stage: s1_climate_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Fertilizer has no effect on crop yields. Yields same with and without fertilizer."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Fertilizer input in kg N/ha instead of gN/m2 — values 10x too small"
+    explanation: >
+      LPJmL expects fertilizer application rates in gN/m2/yr. Common datasets
+      provide values in kg N/ha/yr. Since 1 kg/ha = 0.1 g/m2, using kg/ha values
+      directly gives 10x less fertilizer than intended, reducing its effect.
+    affected_components: [fertilizer_input]
+  remedy:
+    action: "Divide fertilizer values by 10 to convert kgN/ha to gN/m2"
+    tool_to_run: null
+    manual_steps:
+      - "Expected range: 0-30 gN/m2 (= 0-300 kgN/ha)"
+      - "If max fert > 50 gN/m2, values may be in kgN/ha"
+    prevention: "Check units in input file metadata"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_018
+  stage: s4_execution
+  failure_domain: configuration
+  symptom:
+    description: "Spinup takes extremely long, soil carbon never equilibrates."
+    error_pattern: ""
+    detection_method: runtime_check
+  diagnosis:
+    root_cause: "equilsoil=true with insufficient nequilsoil calls or wrong interval"
+    explanation: >
+      The soil equilibration procedure (equilsoil) analytically solves for
+      equilibrium soil carbon. If nequilsoil (number of calls) is too low or
+      equisoil_interval is too short, the soil doesn't reach equilibrium and
+      the spinup continues cycling without convergence.
+    affected_components: [lpjparam.cjson, spinup_config]
+  remedy:
+    action: "Increase nequilsoil to 20+ and equisoil_interval to 60+ years"
+    tool_to_run: null
+    manual_steps:
+      - "Check lpjparam.cjson: nequilsoil (default 20), equisoil_interval (default 60)"
+      - "Monitor globalflux during spinup — soil carbon should stabilize"
+      - "If still slow, increase nspinup from 4000 to 5000"
+    prevention: "Use default parameters unless domain expertise suggests otherwise"
+  severity: silent
+  cross_references: []

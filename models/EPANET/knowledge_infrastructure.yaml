@@ -1,0 +1,168 @@
+package:
+  name: EPANET
+  version: "2.2.0"
+  domain: urban
+  description: >
+    Water distribution system hydraulic and water quality simulation.
+    Models pipe networks with junctions, reservoirs, tanks, pumps, and valves.
+  created: '2026-03-25'
+  binary: SRC_engines/build/src/run/runepanet
+  library: SRC_engines/build/src/solver/libepanet2.so
+  source: https://github.com/OpenWaterAnalytics/EPANET
+  license: MIT
+
+pipeline:
+  stages:
+  - id: s0_config
+    name: Project Configuration
+    description: >
+      Select unit system (US/SI), head loss formula (H-W/D-W/C-M),
+      analysis type (hydraulic-only or hydraulic+quality), simulation
+      duration, and time step sizes.
+    depends_on: []
+    knowledge_type: procedural
+    milestones:
+    - id: m_s0_config
+      description: Unit system, head loss formula, and time parameters defined
+      verification: "[OPTIONS] section contains Units, Headloss, and Quality keywords"
+    tools: []
+
+  - id: s1_network
+    name: Network Topology
+    description: >
+      Define the pipe network: junctions with elevations, reservoirs
+      with fixed heads, tanks with geometry, pipes with length/diameter/roughness,
+      pumps with head curves, and valves with settings. Validate connectivity.
+    depends_on:
+    - s0_config
+    knowledge_type: procedural
+    milestones:
+    - id: m_s1_network
+      description: Network topology defined and validated
+      verification: >
+        INP file has [JUNCTIONS], [RESERVOIRS] or [TANKS], [PIPES] sections;
+        all nodes connected; at least one source node exists
+    tools:
+    - validate_inp_file
+
+  - id: s2_demands
+    name: Water Demand Patterns
+    description: >
+      Define base demands at junction nodes and time-varying demand
+      patterns. Patterns are multipliers applied to base demands at each
+      pattern time step. Multiple demand categories can be assigned per node.
+    depends_on:
+    - s1_network
+    knowledge_type: procedural
+    milestones:
+    - id: m_s2_demands
+      description: Demand patterns assigned to all junction nodes
+      verification: >
+        [PATTERNS] section has at least one pattern; all junctions reference
+        valid pattern IDs; pattern multipliers sum to reasonable values
+    tools:
+    - generate_demand_patterns
+
+  - id: s3_hydraulics
+    name: Hydraulic Parameters
+    description: >
+      Configure pipe roughness coefficients (matching head loss formula),
+      pump characteristic curves, valve types and settings, minor loss
+      coefficients, and emitter coefficients. Set controls and rules.
+    depends_on:
+    - s1_network
+    knowledge_type: procedural
+    milestones:
+    - id: m_s3_hydraulics
+      description: All hydraulic parameters within valid ranges
+      verification: >
+        Roughness > 0 for all pipes; pump curves monotonically decreasing;
+        valve settings within type-specific ranges
+
+  - id: s4_quality
+    name: Water Quality Setup
+    description: >
+      Configure water quality analysis: chemical transport (e.g., chlorine
+      decay), water age tracking, or source tracing. Set bulk/wall reaction
+      coefficients, source injections, tank mixing models, and initial quality.
+    depends_on:
+    - s1_network
+    knowledge_type: procedural
+    milestones:
+    - id: m_s4_quality
+      description: Quality parameters set if quality analysis requested
+      verification: >
+        [QUALITY] section has initial concentrations; [REACTIONS] has
+        valid bulk/wall coefficients; source nodes defined if needed
+
+  - id: s5_parameters
+    name: Simulation Parameters
+    description: >
+      Set simulation duration, hydraulic/quality/pattern/report time steps,
+      convergence tolerances (accuracy, max trials), demand model (DDA/PDA),
+      and reporting options.
+    depends_on:
+    - s0_config
+    - s3_hydraulics
+    - s4_quality
+    knowledge_type: procedural
+    milestones:
+    - id: m_s5_parameters
+      description: All simulation parameters set and consistent
+      verification: >
+        Duration > 0; hydraulic timestep <= pattern timestep;
+        quality timestep <= hydraulic timestep; accuracy in [0.001, 0.01]
+
+  - id: s6_run
+    name: Model Execution
+    description: >
+      Run the EPANET binary with the prepared .inp file. Produces a text
+      report file (.rpt) and optional binary output file. Check for
+      convergence warnings and error messages.
+    depends_on:
+    - s2_demands
+    - s5_parameters
+    knowledge_type: procedural
+    milestones:
+    - id: m_s6_run
+      description: EPANET ran successfully with no errors
+      verification: >
+        Exit code 0; report file contains "EPANET ran successfully";
+        no "WARNING" or "ERROR" in report header
+    tools:
+    - run_epanet
+
+  - id: s7_postprocess
+    name: Output Parsing
+    description: >
+      Parse the EPANET report file to extract node results (demand, head,
+      pressure, quality) and link results (flow, velocity, headloss) at
+      each reporting time step. Export to CSV for analysis.
+    depends_on:
+    - s6_run
+    knowledge_type: procedural
+    milestones:
+    - id: m_s7_postprocess
+      description: Results extracted to CSV files
+      verification: >
+        node_results.csv and link_results.csv exist; row count matches
+        expected (n_nodes * n_timesteps and n_links * n_timesteps)
+    tools:
+    - parse_epanet_output
+
+  - id: s8_validation
+    name: Results Validation
+    description: >
+      Validate simulation results against physical constraints and expected
+      ranges. Check mass balance, pressure positivity, velocity limits,
+      and water quality decay patterns.
+    depends_on:
+    - s7_postprocess
+    knowledge_type: procedural
+    milestones:
+    - id: m_s8_validation
+      description: All validation checks pass
+      verification: >
+        No negative pressures at demand nodes (DDA mode);
+        velocities < 10 ft/s (3 m/s); mass balance error < 5%;
+        chlorine concentrations in [0, source_concentration]

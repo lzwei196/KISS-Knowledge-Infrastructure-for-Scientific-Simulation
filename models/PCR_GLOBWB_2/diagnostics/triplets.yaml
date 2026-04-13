@@ -1,0 +1,496 @@
+# ============================================================================
+# PCR-GLOBWB 2 Diagnostic Triplets
+# ============================================================================
+# 20 diagnostic triplets covering 5 failure domains.
+# Generated during PCR-GLOBWB 2 knowledge dissection for HydroCraft platform.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s2_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Extreme flooding, unrealistic runoff values. River discharge 1000x too high."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation in mm/day instead of m/day — 1000x too much input"
+    explanation: >
+      PCR-GLOBWB expects precipitation in meters per day (m/day). Most global
+      datasets (ERA5, CMFD, CRU) provide precipitation in mm/day. If the
+      mm-to-m conversion is omitted (divide by 1000), the model receives
+      1000x too much precipitation. This causes extreme flooding, unrealistic
+      soil saturation, and enormous runoff values.
+    affected_components: [convert_forcing_to_pcrglobwb, meteo.py]
+  remedy:
+    action: "Divide precipitation values by 1000 to convert mm/day to m/day"
+    tool_to_run: convert_forcing_to_pcrglobwb
+    manual_steps:
+      - "Check max precipitation in forcing NetCDF — should be < 0.5 m/day"
+      - "If max precip > 1.0, values are likely in mm/day — divide by 1000"
+    prevention: "validate_outputs() checks for unrealistic precipitation values"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_002
+  stage: s2_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "No snow accumulation even in cold regions. Wrong ET calculation. Temperature values above 200."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature in Kelvin instead of Celsius"
+    explanation: >
+      PCR-GLOBWB expects temperature in degrees Celsius. ERA5 and W5E5
+      provide temperature in Kelvin (typically 250-310 K). If not converted,
+      the model treats 293 K as 293 deg C, causing zero snow (always above
+      freezing), enormous ET, and numerical instabilities. CRU-ERA-Interim
+      already provides Celsius — no conversion needed for that source.
+    affected_components: [convert_forcing_to_pcrglobwb, meteo.py]
+  remedy:
+    action: "Subtract 273.15 from temperature values to convert K to C"
+    tool_to_run: convert_forcing_to_pcrglobwb
+    manual_steps:
+      - "Check temperature range in forcing NetCDF"
+      - "If values > 100, likely in Kelvin — subtract 273.15"
+    prevention: "validate_outputs() checks for T > 100 deg C"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s2_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Soil is always dry. Excessive actual ET. Groundwater depletes rapidly."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Reference ET in mm/day instead of m/day — 1000x too much evaporation"
+    explanation: >
+      PCR-GLOBWB expects reference potential ET in m/day. Most global datasets
+      provide ET in mm/day. Without dividing by 1000, the model computes
+      enormous actual ET, rapidly depleting soil moisture and groundwater.
+    affected_components: [convert_forcing_to_pcrglobwb, meteo.py]
+  remedy:
+    action: "Divide reference ET values by 1000 to convert mm/day to m/day"
+    tool_to_run: convert_forcing_to_pcrglobwb
+    manual_steps:
+      - "Check max reference ET in forcing NetCDF — should be < 0.02 m/day"
+      - "If max ET > 1.0, values are in mm/day — divide by 1000"
+    prevention: "validate_outputs() checks for unrealistic ET values"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_004
+  stage: s3_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Soil saturates in one timestep. Extreme surface runoff, no infiltration."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Soil water capacity in mm instead of m"
+    explanation: >
+      PCR-GLOBWB stores all soil water quantities in meters. If soil properties
+      are provided in millimeters (e.g., soil depth = 1500 mm instead of 1.5 m),
+      the soil capacity is 1000x too small, causing immediate saturation and
+      excessive surface runoff.
+    affected_components: [convert_soil_params, parameterSoilAndTopo.py]
+  remedy:
+    action: "Divide soil depth/capacity values by 1000 if in mm"
+    tool_to_run: convert_soil_params
+    manual_steps:
+      - "Check soil property ranges — total depth should be 0.5-5.0 m"
+      - "If values > 100, likely in mm — divide by 1000"
+    prevention: "validate_outputs() in convert_soil_params checks value ranges"
+  severity: silent
+  cross_references: [dt_007]
+
+- id: dt_005
+  stage: s4_water_demand
+  failure_domain: unit_conversion
+  symptom:
+    description: "Rivers run dry even in wet regions. Excessive water abstraction."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Water demand in mm/day or m3/day instead of m/day (depth)"
+    explanation: >
+      PCR-GLOBWB expects water demand as depth over cell area in m/day.
+      If demand is in mm/day (1000x too high) or in absolute volume (m3/day),
+      the model abstracts far too much water, depleting rivers and reservoirs.
+    affected_components: [landSurface.py, landCover.py]
+  remedy:
+    action: "Convert demand to m/day depth: demand_m_per_day = demand_mm / 1000 or demand_m3 / cell_area_m2"
+    manual_steps:
+      - "Check demand values — domestic demand should be 0.0001-0.01 m/day"
+      - "If values > 0.1, likely in wrong units"
+    prevention: "Check unit attributes in demand NetCDF files"
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_006
+  stage: s4_water_demand
+  failure_domain: unit_conversion
+  symptom:
+    description: "Groundwater depletes unrealistically fast. Fossil groundwater exhausted quickly."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Groundwater abstraction in wrong units (not m/day depth)"
+    explanation: >
+      All PCR-GLOBWB abstraction quantities are in m/day as a depth over the cell area.
+      If abstraction values are in m3/day (volume) instead of m/day (depth), and cells have
+      area ~10^8 m2, the abstraction is enormously overestimated.
+    affected_components: [groundwater.py]
+  remedy:
+    action: "Ensure all abstraction quantities are in m/day depth (= volume / cell_area)"
+    manual_steps:
+      - "Check maximumDailyGroundwaterAbstraction — default is 0.050 m/day"
+      - "Check pumpingCapacityNC units — should be billion m3/year per region"
+    prevention: "Configuration repair_ini_key_names() sets defaults"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_007
+  stage: s3_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Unrealistic groundwater storage. Baseflow too high or too low."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Specific yield in percentage (0-100) instead of fraction (0-1)"
+    explanation: >
+      Specific yield must be a fraction (typically 0.01-0.3). If provided as
+      a percentage (1-30), the groundwater store capacity is 100x too large,
+      causing unrealistic groundwater storage dynamics.
+    affected_components: [convert_soil_params, groundwater.py]
+  remedy:
+    action: "Divide specific yield by 100 if values > 1.0"
+    tool_to_run: convert_soil_params
+    manual_steps:
+      - "Check specificYield range — must be 0.01-0.30"
+    prevention: "convert_soil_params auto-detects and corrects"
+  severity: silent
+  cross_references: [dt_008]
+
+- id: dt_008
+  stage: s3_soil_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Baseflow recession is extremely fast or slow."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "kSatAquifer in cm/hr instead of m/day"
+    explanation: >
+      PCR-GLOBWB expects aquifer saturated hydraulic conductivity in m/day.
+      If provided in cm/hr, the values are off by a factor of ~0.24.
+      This affects groundwater flow rates and baseflow generation.
+    affected_components: [convert_soil_params, groundwater.py]
+  remedy:
+    action: "Multiply kSat by 0.24 to convert cm/hr to m/day"
+    tool_to_run: convert_soil_params
+    manual_steps:
+      - "Check kSatAquifer range — typical 0.01-100 m/day"
+    prevention: "convert_soil_params validates ranges"
+  severity: silent
+  cross_references: [dt_007]
+
+# --- NetCDF / Input Format Errors ---
+
+- id: dt_009
+  stage: s2_forcing_preparation
+  failure_domain: input_format
+  symptom:
+    description: "Model reads zero forcing. No precipitation, zero temperature. Silent failure."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "NetCDF variable name does not match expected name"
+    explanation: >
+      PCR-GLOBWB reads forcing by exact variable name: 'precipitation',
+      'temperature', 'evapotranspiration' or 'referencePotET'. Common
+      alternative names like 'tp', 'precip', 'PRECIP', 'Precipitation'
+      will NOT be found. The model silently uses zeros for missing variables.
+    affected_components: [meteo.py, virtualOS.py]
+  remedy:
+    action: "Rename NetCDF variable to match expected name exactly"
+    manual_steps:
+      - "Use ncrename: ncrename -v tp,precipitation input.nc"
+      - "Or use convert_forcing_to_pcrglobwb tool which handles renaming"
+    prevention: "Always use convert_forcing_to_pcrglobwb for format standardization"
+  severity: silent
+  cross_references: []
+
+- id: dt_010
+  stage: s1_configuration
+  failure_domain: input_format
+  symptom:
+    description: "Crash on startup: cannot read clone map from OPeNDAP."
+    error_pattern: "Error"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Clone map specified as OPeNDAP URL instead of local file path"
+    explanation: >
+      The clone map (PCRaster format) defines the spatial extent and resolution.
+      PCRaster cannot read .map files from OPeNDAP — they must be local.
+      All other inputs CAN use OPeNDAP, but the clone map is the exception.
+    affected_components: [configuration.py, pcrglobwb.py]
+  remedy:
+    action: "Download clone map to local disk and update cloneMap path in .ini"
+    manual_steps:
+      - "Download from examples: clone_landmask_maps/clone_landmask_examples.zip"
+      - "Set cloneMap to local absolute path"
+    prevention: "run_pcrglobwb preflight checks for local clone map"
+  severity: crash
+  cross_references: [dt_011]
+
+- id: dt_011
+  stage: s1_configuration
+  failure_domain: input_format
+  symptom:
+    description: "Spatial misalignment between forcing and parameters. Checkerboard artifacts."
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Clone map corner coordinates not at nicely-rounded integer values"
+    explanation: >
+      The corner coordinates of the clone map must be integer multiples of the
+      cell size. For 5 arcmin, corners must be at multiples of 5/60 degrees.
+      For 30 arcmin, at multiples of 0.5 degrees. Non-aligned corners cause
+      half-cell shifts in data reading, producing artifacts.
+    affected_components: [virtualOS.py, ncConverter.py]
+  remedy:
+    action: "Use clone maps from the official examples or ensure corners are aligned"
+    manual_steps:
+      - "Check clone map properties with PCRaster: pcrcalc --clone map.map"
+      - "Verify corner coordinates are nicely rounded"
+    prevention: "Use pre-made clone maps from clone_landmask_maps/"
+  severity: silent
+  cross_references: [dt_010]
+
+# --- Runtime / Execution Errors ---
+
+- id: dt_012
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "Error message: 'The model runs only on daily time step.'"
+    error_pattern: "daily time step"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "timeStep or timeStepUnit in .ini not set to daily"
+    explanation: >
+      PCR-GLOBWB 2 operates exclusively on daily timesteps. The model checks
+      that timeStep=1.0 and timeStepUnit=day. Any other value triggers an error.
+    affected_components: [configuration.py]
+  remedy:
+    action: "Set timeStep=1.0 and timeStepUnit=day in [globalOptions], or remove these keys"
+    manual_steps:
+      - "Edit .ini: timeStep = 1.0 and timeStepUnit = day"
+      - "Or simply remove these keys — daily is the default"
+    prevention: "run_pcrglobwb preflight checks timestep settings"
+  severity: crash
+  cross_references: []
+
+- id: dt_013
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "Spin-up never converges. Model runs indefinitely through spin-up cycles."
+    error_pattern: "Spin-Up"
+    detection_method: log_monitoring
+  diagnosis:
+    root_cause: "Convergence thresholds too strict or too few spin-up years"
+    explanation: >
+      Spin-up convergence is checked by comparing total storage change between
+      beginning and end of each cycle. If thresholds (minConvForSoilSto, etc.)
+      are set too tight (e.g., 0.001 m), convergence may never be reached.
+      For global runs, 20-50 years of spin-up are typical.
+    affected_components: [spinUp.py, deterministic_runner.py]
+  remedy:
+    action: "Relax convergence thresholds or increase maxSpinUpsInYears"
+    manual_steps:
+      - "Set all minConv* = 0.0 to skip convergence check (run full spin-up)"
+      - "Or increase maxSpinUpsInYears to 30-50"
+      - "Monitor log for convergence progress between cycles"
+    prevention: "Start with minConv* = 0.0 and fixed number of spin-up years"
+  severity: runtime
+  cross_references: []
+
+- id: dt_014
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "Model runs extremely slowly. Minutes per timestep instead of seconds."
+    error_pattern: ""
+    detection_method: timing
+  diagnosis:
+    root_cause: "Reading all input data from OPeNDAP (remote server)"
+    explanation: >
+      PCR-GLOBWB supports reading input files directly from the 4TU OPeNDAP
+      server, but network latency makes each file access 10-100x slower than
+      local disk. For a global run reading hundreds of variables daily, this
+      accumulates to enormous slowdowns.
+    affected_components: [virtualOS.py, netCDF4]
+  remedy:
+    action: "Download input data locally for production runs"
+    manual_steps:
+      - "Download from: https://opendap.4tu.nl/thredds/catalog/data2/pcrglobwb/"
+      - "Total size: ~250 GB for global 5 arcmin"
+      - "Update inputDir in .ini to local path"
+    prevention: "Use OPeNDAP only for testing; download for production"
+  severity: performance
+  cross_references: []
+
+- id: dt_015
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "MemoryError or system kills process. Model crashes during global 5 arcmin run."
+    error_pattern: "MemoryError"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Insufficient memory for global high-resolution run"
+    explanation: >
+      A global 5 arcmin PCR-GLOBWB run requires ~50-100 GB RAM due to the
+      large number of grid cells (~7.2M land cells) and state variables.
+      Running on a single machine with < 64 GB RAM will likely fail.
+    affected_components: [pcrglobwb.py, all modules]
+  remedy:
+    action: "Split domain into multiple clones and run in parallel"
+    manual_steps:
+      - "Prepare clone maps for subdomains (e.g., 53 clones for global)"
+      - "Create separate .ini files for each clone"
+      - "Run in parallel on HPC cluster"
+      - "Merge outputs using merge_netcdf.py"
+    prevention: "Use 30 arcmin for testing; split clones for 5 arcmin production"
+  severity: crash
+  cross_references: []
+
+# --- Model Physics / Configuration Errors ---
+
+- id: dt_016
+  stage: s1_configuration
+  failure_domain: model_physics
+  symptom:
+    description: "No irrigation water use in output despite includeIrrigation=True."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Historical irrigation area file not provided or has zero values"
+    explanation: >
+      Even with includeIrrigation=True, PCR-GLOBWB requires irrigated area
+      data (historicalIrrigationArea) to determine where irrigation occurs.
+      If this file is missing, has wrong units (should be hectares), or covers
+      a different time period, irrigation withdrawal will be zero.
+    affected_components: [landSurface.py, landCover.py]
+  remedy:
+    action: "Verify historicalIrrigationArea file has non-zero values and covers simulation period"
+    manual_steps:
+      - "Check historicalIrrigationArea in .ini is not None"
+      - "Verify NetCDF has data for simulation years"
+      - "Unit must be hectares"
+    prevention: "Always verify irrigation area coverage before running"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_017
+  stage: s5_execution
+  failure_domain: model_physics
+  symptom:
+    description: "Dynamic flood plain shows zero inundation even during high flows."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "dynamicFloodPlain = False or missing relative elevation files"
+    explanation: >
+      Dynamic flood plain simulation requires dynamicFloodPlain=True and
+      the relativeElevationFiles and relativeElevationLevels parameters in
+      [routingOptions]. Without these, channel overflow does not spread to
+      the flood plain, and all water stays in the channel.
+    affected_components: [routing.py]
+  remedy:
+    action: "Set dynamicFloodPlain=True and provide relative elevation data"
+    manual_steps:
+      - "Set dynamicFloodPlain = True in [routingOptions]"
+      - "Provide relativeElevationFiles and relativeElevationLevels"
+      - "Set floodplainManningsN (typically 0.07)"
+    prevention: "Check routing options for flood plain settings"
+  severity: silent
+  cross_references: []
+
+- id: dt_018
+  stage: s5_execution
+  failure_domain: model_physics
+  symptom:
+    description: "Baseflow is always zero. No groundwater contribution to streamflow."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Groundwater recession coefficient too low or initial storage is zero"
+    explanation: >
+      Baseflow = recessionCoeff * storGroundwater. If recessionCoeff is extremely
+      low (< 1e-6 day-1) or initial groundwater storage is zero and recharge
+      is too small, baseflow will be effectively zero.
+    affected_components: [groundwater.py]
+  remedy:
+    action: "Check minRecessionCoeff and initial groundwater storage"
+    manual_steps:
+      - "Verify minRecessionCoeff in [groundwaterOptions] — default 1.0e-4 day-1"
+      - "Check storGroundwaterIni — should not be zero everywhere"
+      - "Run spin-up to initialize groundwater storage"
+    prevention: "Always use spin-up or proper initial conditions"
+  severity: silent
+  cross_references: [dt_013]
+
+- id: dt_019
+  stage: s1_configuration
+  failure_domain: model_physics
+  symptom:
+    description: "Interflow and lateral subsurface flow are zero. Only surface runoff and baseflow."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Topographic slope (tanslope) is zero or missing"
+    explanation: >
+      Interflow in PCR-GLOBWB is driven by slope: interflow = f(Ksat, tanslope, slopeLength).
+      If tanslope is zero (flat terrain or missing data), interflow will be zero.
+      This is physically correct for very flat regions but may indicate missing data.
+    affected_components: [parameterSoilAndTopo.py, landCover.py]
+  remedy:
+    action: "Verify topographyNC contains non-zero tanslope values"
+    manual_steps:
+      - "Check topographyNC file for tanslope variable"
+      - "Verify values are physically reasonable (0.001-1.0)"
+    prevention: "Use default topography from 4TU OPeNDAP"
+  severity: silent
+  cross_references: []
+
+- id: dt_020
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "Float32 numerical differences in surface water allocation reporting."
+    error_pattern: "small differences"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "PCRaster float32 precision limitation in allocation operations"
+    explanation: >
+      When using allocation segments for surface water abstraction, the yearly
+      accumulated values of actSurfaceWaterAbstract and allocSurfaceWaterAbstract
+      may differ slightly. This is documented as a known issue due to PCRaster's
+      float32 implementation for spatial operations.
+    affected_components: [routing.py, landSurface.py]
+  remedy:
+    action: "Accept small numerical differences (< 0.1%) in allocation reporting"
+    manual_steps:
+      - "Compare actSurfaceWaterAbstract vs allocSurfaceWaterAbstract"
+      - "Differences should be < 0.1% of total — this is expected"
+    prevention: "This is a known PCRaster limitation — cannot be fixed"
+  severity: cosmetic
+  cross_references: []

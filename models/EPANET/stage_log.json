@@ -1,0 +1,110 @@
+{
+  "model": "EPANET",
+  "version": "2.2.0",
+  "dissection_date": "2026-03-25",
+  "stages": {
+    "s0_config": {
+      "status": "completed",
+      "result": {
+        "unit_system": "US",
+        "flow_units": "GPM",
+        "headloss_formula": "H-W",
+        "quality_type": "Chlorine",
+        "duration_hr": 24,
+        "hydraulic_timestep_hr": 1,
+        "quality_timestep_min": 5
+      }
+    },
+    "s1_network": {
+      "status": "completed",
+      "result": {
+        "junctions": 5,
+        "reservoirs": 1,
+        "tanks": 1,
+        "pipes": 6,
+        "pumps": 1,
+        "valves": 0,
+        "total_nodes": 7,
+        "total_links": 7,
+        "validation_status": "PASS"
+      }
+    },
+    "s2_demands": {
+      "status": "completed",
+      "result": {
+        "patterns": 1,
+        "pattern_timestep_hr": 6,
+        "pattern_type": "diurnal",
+        "mean_multiplier": 1.0
+      }
+    },
+    "s3_hydraulics": {
+      "status": "completed",
+      "result": {
+        "roughness_range": [100, 100],
+        "formula": "H-W",
+        "pump_curves": 1,
+        "valves": 0
+      }
+    },
+    "s4_quality": {
+      "status": "completed",
+      "result": {
+        "quality_type": "Chlorine mg/L",
+        "bulk_coefficient": -1,
+        "wall_coefficient": 0,
+        "source_concentration_mgL": 1.0
+      }
+    },
+    "s5_parameters": {
+      "status": "completed",
+      "result": {
+        "demand_model": "DDA",
+        "accuracy": 0.001,
+        "max_trials": 200
+      }
+    },
+    "s6_run": {
+      "status": "completed",
+      "result": {
+        "exit_code": 0,
+        "runtime_seconds": 0.003,
+        "status": "SUCCESS",
+        "warnings": 0
+      }
+    },
+    "s7_postprocess": {
+      "status": "completed",
+      "result": {
+        "node_records": 175,
+        "link_records": 175,
+        "n_timesteps": 25,
+        "n_nodes": 7,
+        "n_links": 7
+      }
+    },
+    "s8_validation": {
+      "status": "completed",
+      "result": {
+        "metrics": {
+          "min_pressure_PSI": 61.28,
+          "max_pressure_PSI": 388.2,
+          "mean_pressure_PSI": 130.5,
+          "max_velocity_fps": 3.43,
+          "mean_velocity_fps": 1.28,
+          "negative_pressure_pct": 0.0,
+          "max_chlorine_mgL": 1.0,
+          "mass_balance_ok": true
+        },
+        "basin": "EPANET Tutorial Network, 7-node pipe network, US GPM units",
+        "findings": [
+          "All junction pressures positive (min 61.28 PSI) - no pressure deficiency in this small network",
+          "Tank 7 fills during low-demand period (pattern=0.5) and drains during peak demand (pattern=1.3), showing correct extended-period behavior",
+          "Chlorine propagates from reservoir (1.0 mg/L) through network with -1/day bulk decay, reaching 0.48-0.92 mg/L at endpoints by hour 24",
+          "Maximum pipe velocity 3.43 ft/s is within acceptable range (<5 ft/s design limit)",
+          "Pump operates at 75% efficiency, consuming 51.35 kW average — consistent with single-point curve at 1000 GPM/200 ft head"
+        ]
+      }
+    }
+  }
+}

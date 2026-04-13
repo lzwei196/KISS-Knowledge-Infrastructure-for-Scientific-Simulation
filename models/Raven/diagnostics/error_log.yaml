@@ -1,0 +1,99 @@
+# Raven Error Log — Records from real runs
+# Use tools/record_error.py to add entries
+# Promote validated entries to diagnostics/triplets.yaml
+
+errors:
+  - id: err_001
+    timestamp: "2026-03-21T15:30:00"
+    stage: s1
+    symptom: "Raven segfaults with 'line N in file X.rvh is wrong length' showing only the HRU ID"
+    root_cause: ".rvh HRU table requires exactly 13 comma-separated columns including AQUIFER_PROFILE between SOIL_PROFILE and TERRAIN_CLASS. ParseHRUFile.cpp line 253 checks Len>=13. Without the AQUIFER_PROFILE column, only 12 tokens are parsed, triggering ImproperFormat and subsequent segfault."
+    fix: "Add AQUIFER_PROFILE column (set to [NONE]) as the 10th column in the :HRUs table. Full column order: ID, AREA, ELEVATION, LATITUDE, LONGITUDE, BASIN_ID, LAND_USE_CLASS, VEG_CLASS, SOIL_PROFILE, AQUIFER_PROFILE, TERRAIN_CLASS, SLOPE, ASPECT"
+    severity: fatal
+    domain: parameter_format
+    promoted_to: dt_026
+
+  - id: err_002
+    timestamp: "2026-03-21T15:20:00"
+    stage: s2
+    symptom: "Raven crashes with 'Unrecognized command in .rvp file: GR4J_X1'"
+    root_cause: ":GlobalParameter is a SINGLE-LINE command (':GlobalParameter PARAM value'), not a block (':GlobalParameter / ... / :EndGlobalParameter'). Raven reads the first line after :GlobalParameter as a command and fails when it encounters a parameter name."
+    fix: "Use single-line format: ':GlobalParameter GR4J_X1 350.0' on each line"
+    severity: fatal
+    domain: parameter_format
+    promoted_to: dt_027
+
+  - id: err_003
+    timestamp: "2026-03-21T15:25:00"
+    stage: s2
+    symptom: "Raven crashes with 'required soil property HBV_BETA not included' even for MOHYSE"
+    root_cause: "The INF_HBV infiltration algorithm (used in MOHYSE) requires HBV_BETA as a soil parameter. Also, MOHYSE requires MOHYSE_PET_COEFF as a global parameter and AET_COEFF as a land use parameter."
+    fix: "Add HBV_BETA to SoilParameterList. Add ':GlobalParameter MOHYSE_PET_COEFF 1.0'. Add AET_COEFF to LandUseParameterList."
+    severity: fatal
+    domain: dependency_mismatch
+    promoted_to: dt_029
+
+  - id: err_004
+    timestamp: "2026-03-21T15:28:00"
+    stage: s6
+    symptom: "Raven exits with 'Cannot find or read .rvc file'"
+    root_cause: "Raven requires a .rvc file even if it is empty. Unlike VIC which runs fine without initial conditions, Raven v4.1 insists on finding the file."
+    fix: "Create a minimal .rvc file with just a comment line. Tool generate_rvc_initial.py handles this."
+    severity: fatal
+    domain: parameter_format
+    promoted_to: dt_030
+
+  - id: err_005
+    timestamp: "2026-03-22T08:45:00"
+    stage: s3
+    symptom: "convert_forcing_to_rvt.py produces 44,551 mm/yr precip, temperature 50C — bounds violations on ALL variables"
+    root_cause: "Tool assumed VIC forcing column order [PRECIP, TMAX, TMIN, WIND, SW, LW, PRESSURE] but actual output from process_forcing.py is [AIR_TEMP, PREC, PRESSURE, SWDOWN, LWDOWN, VP, WIND]. Column 0 (AIR_TEMP in C) was summed as precip (mm/3hr), giving 44x overestimate. Column 2 (PRESSURE in kPa ~95) was read as TMIN, producing 'temperature' of 95C."
+    fix: "Fixed aggregate_3hourly_to_daily() column indices: VIC col 0->TEMP, col 1->PRECIP, col 2->PRESSURE, col 3->SW, col 4->LW, col 5->VP, col 6->WIND. After fix: annual precip 1035mm, mean temp 15.4C — correct for Bengbu."
+    severity: silent
+    domain: unit_conversion
+    promoted_to: dt_026
+    discovered_during: "Bengbu Step 3 validation (2026-03-22)"
+
+  - id: err_006
+    timestamp: "2026-03-22T08:40:00"
+    stage: s3
+    symptom: "convert_forcing_to_rvt.py reports 'No grid cells found' for Bengbu grid NC"
+    root_cause: "Tool reads ds.variables['lat']/['lon'] but HydroCraft VIC grid NC files use 'y'/'x' variable names with a 2D 'mask' array. NetCDF4 KeyError on 'lat' caught by bare except, then filename parser also fails because Bengbu forcing files have no .txt/.dat extension."
+    fix: "Added y/x + 2D mask support. Also removed extension filter from filename parser so it works with extensionless VIC forcing files."
+    severity: fatal
+    domain: dependency_mismatch
+    promoted_to: dt_027
+    discovered_during: "Bengbu Step 3 validation (2026-03-22)"
+
+  - id: err_007
+    timestamp: "2026-03-22T08:50:00"
+    stage: s2
+    symptom: "build_rvp_parameters.py generates wrong class names from comma-separated .rvh"
+    root_cause: "parse_rvh_classes() uses line.split() (whitespace) on comma-separated HRU lines, producing tokens like 'WETLAND,' with trailing commas. Class names don't match between .rvh and .rvp."
+    fix: "Detect comma in line and use split(',') + strip() for CSV format."
+    severity: fatal
+    domain: parameter_format
+    promoted_to: dt_031
+    discovered_during: "Bengbu Step 3 validation (2026-03-22)"
+
+  - id: err_008
+    timestamp: "2026-03-22T08:52:00"
+    stage: s2
+    symptom: "build_rvp_parameters.py puts [NONE] in TerrainClasses definition block"
+    root_cause: "Parser reads column index [9] as terrain class, but column [9] is AQUIFER_PROFILE ([NONE]). Terrain class is at column [10] in the 13-column .rvh format: ID(0), AREA(1), ELEV(2), LAT(3), LON(4), BASIN(5), LU(6), VEG(7), SOIL(8), AQUIFER(9), TERRAIN(10), SLOPE(11), ASPECT(12)."
+    fix: "Changed to read parts[10] for terrain class."
+    severity: fatal
+    domain: parameter_format
+    promoted_to: dt_032
+    discovered_during: "Bengbu Step 3 validation (2026-03-22)"
+
+  - id: err_009
+    timestamp: "2026-03-22T08:55:00"
+    stage: s0
+    symptom: "Raven v4.1 rejects GR4J_X1-X4 as :GlobalParameter and requires EXCHANGE_FLOW as soil property"
+    root_cause: "select_model_template.py places GR4J parameters as :GlobalParameter commands, but Raven v4.1 requires GR4J_X2/X3 as SoilParameterList entries, GR4J_X4 as LandUseParameterList entry, and GR4J_X1 is encoded implicitly as soil_thickness * porosity. Also uses :SWCanopyCorrect which is not recognized in v4.1 build. Also :ExchangeFlow2 is unrecognized."
+    fix: "Use hand-crafted templates from working Chaohe run (run_ensemble_v2.py). Generic tools need parameter format refactoring to match Raven v4.1 source code requirements."
+    severity: fatal
+    domain: parameter_format
+    promoted_to: dt_033
+    discovered_during: "Bengbu Step 3 validation (2026-03-22)"

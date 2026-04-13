@@ -1,0 +1,158 @@
+model:
+  name: "TRIGRS"
+  version: "2.1.00c"
+  full_name: "Transient Rainfall Infiltration and Grid-Based Regional Slope-Stability Analysis"
+  domain: "landslide"
+  subdomain: "rainfall-induced shallow landslide susceptibility"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/TRIGRS/source/trigrs_full/src/TRIGRS/trg"
+  source: "USGS (Rex L. Baum & Massimiliano Alvioli)"
+  method: "Analytical 1D vertical infiltration + infinite-slope factor-of-safety"
+
+inputs:
+  forcing:
+    - name: "rainfall_intensity"
+      symbol: "cri"
+      unit: "m/s"
+      valid_range: [0.0, 1.0e-3]
+      description: "Rainfall intensity per period (ESRI ASCII grid or scalar)"
+      trap: "Common source is mm/hr; must divide by 3.6e6"
+    - name: "initial_infiltration"
+      symbol: "rizero"
+      unit: "m/s"
+      valid_range: [-1.0, 1.0e-4]
+      description: "Initial steady-state infiltration rate (negative = use grid)"
+    - name: "period_boundaries"
+      symbol: "capt"
+      unit: "seconds"
+      valid_range: [0, 1.0e9]
+      description: "Cumulative time at start/end of each rainfall period"
+
+  grids:
+    - name: "dem"
+      format: "ESRI ASCII (.asc)"
+      unit: "m"
+      description: "Digital elevation model"
+    - name: "slope"
+      format: "ESRI ASCII (.asc)"
+      unit: "degrees"
+      valid_range: [0, 90]
+      description: "Slope angle grid"
+    - name: "zones"
+      format: "ESRI ASCII (.asc)"
+      unit: "integer"
+      description: "Property zone ID grid"
+    - name: "zmax"
+      format: "ESRI ASCII (.asc)"
+      unit: "m"
+      valid_range: [0.1, 100]
+      description: "Maximum soil depth grid"
+    - name: "depthwt"
+      format: "ESRI ASCII (.asc)"
+      unit: "m"
+      valid_range: [0, 100]
+      description: "Initial water table depth below surface"
+
+  parameters:
+    critical:
+      - name: "cohesion"
+        symbol: "c"
+        unit: "Pa"
+        valid_range: [0, 1.0e6]
+        description: "Soil cohesion (NOT kPa — multiply kPa by 1000)"
+      - name: "friction_angle"
+        symbol: "phi"
+        unit: "degrees"
+        valid_range: [0, 60]
+        description: "Soil internal friction angle"
+      - name: "unit_weight_soil"
+        symbol: "uws"
+        unit: "N/m^3"
+        valid_range: [10000, 30000]
+        description: "Saturated unit weight of soil (typically 19000-22000)"
+      - name: "hydraulic_diffusivity"
+        symbol: "D0"
+        unit: "m^2/s"
+        valid_range: [1.0e-7, 1.0e-2]
+        description: "Saturated hydraulic diffusivity"
+      - name: "hydraulic_conductivity"
+        symbol: "Ks"
+        unit: "m/s"
+        valid_range: [1.0e-9, 1.0e-2]
+        description: "Saturated hydraulic conductivity"
+      - name: "theta_sat"
+        symbol: "ths"
+        unit: "dimensionless"
+        valid_range: [0.2, 0.7]
+        description: "Saturated volumetric water content"
+      - name: "theta_res"
+        symbol: "thr"
+        unit: "dimensionless"
+        valid_range: [0.01, 0.2]
+        description: "Residual volumetric water content"
+      - name: "alpha"
+        symbol: "alpha"
+        unit: "1/m"
+        valid_range: [-100, 100]
+        description: "Gardner parameter (negative = saturated model only)"
+    temporal:
+      - name: "simulation_duration"
+        symbol: "t"
+        unit: "seconds"
+        valid_range: [1, 1.0e9]
+        description: "Total simulation duration (MUST be seconds, not hours)"
+      - name: "mmax"
+        symbol: "mmax"
+        unit: "integer"
+        valid_range: [-1000, 1000]
+        description: "Max iterations; negative = finite-depth model"
+      - name: "nzs"
+        symbol: "nzs"
+        unit: "integer"
+        valid_range: [1, 100]
+        description: "Number of vertical computation points"
+
+outputs:
+  primary:
+    - name: "factor_of_safety_min"
+      file_pattern: "TRfs_min_SUFFIX_#.asc"
+      unit: "dimensionless"
+      valid_range: [0.0, 100.0]
+      description: "Minimum factor of safety across all depths and times"
+    - name: "depth_at_fs_min"
+      file_pattern: "TRz_at_fs_min_SUFFIX_#.asc"
+      unit: "m"
+      valid_range: [0.0, 100.0]
+      description: "Depth where minimum FS occurs"
+    - name: "pressure_head_at_fs_min"
+      file_pattern: "TRp_at_fs_min_SUFFIX_#.asc"
+      unit: "m"
+      valid_range: [-100.0, 100.0]
+      description: "Pressure head at the depth of minimum FS"
+    - name: "water_table_depth"
+      file_pattern: "TRwater_depth_SUFFIX_#.asc"
+      unit: "m"
+      valid_range: [0.0, 100.0]
+      description: "Water table depth below ground surface"
+  secondary:
+    - name: "infiltration_rate"
+      file_pattern: "TRinfiltration_SUFFIX_#.asc"
+      unit: "m/s"
+      valid_range: [0.0, 1.0e-3]
+    - name: "surface_runoff"
+      file_pattern: "TRrunoff_SUFFIX_#.asc"
+      unit: "m/s"
+      valid_range: [0.0, 1.0e-3]
+  profiles:
+    - name: "depth_pressure_fs_list"
+      file_pattern: "TRlist_z_p_fs_SUFFIX.txt"
+      description: "Per-cell vertical profiles of pressure head and FS"
+
+known_issues:
+  - id: "dt_001"
+    description: "Rainfall in mm/hr entered as m/s causes 3.6M x overestimate"
+  - id: "dt_004"
+    description: "Cohesion in kPa instead of Pa causes FS 1000x too high"
+  - id: "dt_005"
+    description: "mmax sign convention: positive=infinite depth, negative=finite depth"
+  - id: "dk_005"
+    description: "Negative Alpha silently forces saturated model (no warning)"

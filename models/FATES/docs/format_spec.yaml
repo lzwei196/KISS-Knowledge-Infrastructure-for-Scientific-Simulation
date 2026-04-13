@@ -1,0 +1,145 @@
+model:
+  name: "FATES"
+  full_name: "Functionally Assembled Terrestrial Ecosystem Simulator"
+  domain: "biogeochemistry / dynamic global vegetation model (DGVM)"
+  language: "Fortran 2003+"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/FATES/source/repo/functional_unit_testing/parteh/bld/PRTParametersMod.o"
+  binary_type: "compiled_object (ELF shared object, not standalone executable)"
+  standalone: false
+  host_models: ["CTSM/CLM", "E3SM/ELM", "CESM"]
+  source_repo: "https://github.com/NGEET/fates"
+  architecture: "Grid cells -> Sites -> Patches (age-structured) -> Cohorts (size-structured)"
+
+inputs:
+  forcing:
+    - name: "Temperature"
+      unit: "K"
+      valid_range: [200.0, 330.0]
+      note: "Atmospheric temperature via DATM; convert from C with +273.15"
+    - name: "Precipitation"
+      unit: "mm/s"
+      valid_range: [0.0, 0.05]
+      note: "Rain+snow rate; convert from mm/day with /86400"
+    - name: "Shortwave radiation"
+      unit: "W/m2"
+      valid_range: [0.0, 1400.0]
+      note: "Downward shortwave; convert from MJ/m2/day with /86400*1e6"
+    - name: "Longwave radiation"
+      unit: "W/m2"
+      valid_range: [50.0, 600.0]
+    - name: "Wind speed"
+      unit: "m/s"
+      valid_range: [0.0, 50.0]
+    - name: "Specific humidity"
+      unit: "kg/kg"
+      valid_range: [0.0, 0.04]
+    - name: "Surface pressure"
+      unit: "Pa"
+      valid_range: [50000.0, 110000.0]
+    - name: "CO2 concentration"
+      unit: "ppmv"
+      valid_range: [180.0, 1500.0]
+      note: "Convert from mol/mol with *1e6"
+  parameters:
+    critical:
+      - name: "fates_mort_scalar_cstarvation"
+        valid_range: [0.1, 10.0]
+        default: 0.6
+        sensitivity: "HIGH"
+        description: "Carbon starvation mortality rate scalar"
+      - name: "fates_allom_d2bl1"
+        valid_range: [0.01, 10.0]
+        sensitivity: "HIGH"
+        description: "DBH to leaf biomass allometric coefficient (PFT-specific)"
+      - name: "fates_leaf_vcmax25top"
+        valid_range: [10.0, 100.0]
+        unit: "umol/m2/s"
+        sensitivity: "HIGH"
+        description: "Maximum carboxylation rate at 25C at canopy top"
+      - name: "fates_turnover_leaf"
+        valid_range: [0.5, 10.0]
+        unit: "yr"
+        sensitivity: "HIGH"
+        description: "Leaf longevity / turnover time"
+      - name: "fates_recruit_seed_supplement"
+        valid_range: [0.0, 1.0]
+        default: 0.0
+        sensitivity: "HIGH"
+        description: "Seed rain supplementation fraction"
+      - name: "fates_mort_scalar_hydrfailure"
+        valid_range: [0.1, 10.0]
+        default: 0.6
+        sensitivity: "MEDIUM"
+        description: "Hydraulic failure mortality rate scalar"
+      - name: "fates_fire_nignitions"
+        valid_range: [0.0, 0.1]
+        unit: "/km2/day"
+        default: 0.003
+        sensitivity: "MEDIUM"
+        description: "Lightning ignition density"
+  parameter_file:
+    format: "JSON"
+    default_path: "parameter_files/fates_params_default.json"
+    pfts: 14
+    param_count: "200+"
+    note: "JSON replaced legacy netCDF CDL format since ~2023"
+
+outputs:
+  primary:
+    - name: "FATES_VEGC"
+      unit: "kgC/m2"
+      valid_range: [0.0, 40.0]
+      description: "Total vegetation carbon"
+    - name: "FATES_GPP"
+      unit: "kgC/m2/s"
+      valid_range: [0.0, 5.0e-6]
+      description: "Gross primary production"
+    - name: "FATES_NPP"
+      unit: "kgC/m2/s"
+      valid_range: [-1.0e-6, 5.0e-6]
+      description: "Net primary production"
+    - name: "FATES_AUTORESP"
+      unit: "kgC/m2/s"
+      valid_range: [0.0, 5.0e-6]
+      description: "Autotrophic respiration"
+    - name: "FATES_LAI"
+      unit: "m2/m2"
+      valid_range: [0.0, 12.0]
+      description: "Leaf area index"
+    - name: "FATES_NPLANT"
+      unit: "stems/m2"
+      valid_range: [0.0, 5.0]
+      description: "Stem density (multiply by 10000 for stems/ha)"
+    - name: "FATES_LEAFC"
+      unit: "kgC/m2"
+      valid_range: [0.0, 2.0]
+      description: "Leaf carbon pool"
+    - name: "FATES_SAPWOODC"
+      unit: "kgC/m2"
+      valid_range: [0.0, 20.0]
+      description: "Sapwood carbon pool"
+    - name: "FATES_MORTALITY"
+      unit: "stems/m2/yr"
+      valid_range: [0.0, 0.1]
+      description: "Total mortality rate"
+    - name: "FATES_DISTURBANCE_RATE_FIRE"
+      unit: "fraction/yr"
+      valid_range: [0.0, 1.0]
+      description: "Fire disturbance rate"
+  output_format: "NetCDF (via host model history files)"
+  size_bins: [0, 1, 2, 5, 10, 15, 20, 30, 40, 50, 60, 70, 80]
+  age_bins: [0, 1, 2, 5, 10, 20, 50]
+
+known_issues:
+  - id: "dt_003"
+    description: "FATES cannot run standalone — requires host land model (CTSM/ELM/CESM)"
+  - id: "dt_013"
+    description: "JSON parameter files replaced legacy netCDF CDL format; old docs may reference .cdl/.nc"
+  - id: "dt_014"
+    description: "PFT indices are 1-based in Fortran, 0-based in JSON — off-by-one trap"
+  - id: "dt_016"
+    description: "SPITFIRE fire model disabled by default (hlm_spitfire_mode=0)"
+  - id: "dt_017"
+    description: "Plant hydraulics is experimental; requires Christoffersen et al. 2016 citation"
+  - id: "dt_018"
+    description: "Restart files not backward-compatible across major FATES versions"

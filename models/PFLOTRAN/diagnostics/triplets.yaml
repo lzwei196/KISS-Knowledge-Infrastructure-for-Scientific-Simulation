@@ -1,0 +1,444 @@
+# PFLOTRAN Diagnostic Triplets
+# Each triplet: symptom → diagnosis → remedy
+# Organized by failure domain
+#
+# Failure domains:
+#   1. Unit Conversion (dt_001 – dt_010)
+#   2. Input Format (dt_011 – dt_013)
+#   3. Runtime Errors (dt_014 – dt_016)
+#   4. Silent Errors (dt_017 – dt_018)
+#
+# Total: 18 triplets
+
+triplets:
+
+  # ================================================================
+  # FAILURE DOMAIN 1: Unit Conversion
+  # ================================================================
+
+  - id: dt_001
+    domain: unit_conversion
+    stage: s2_material_properties
+    symptom: |
+      Unrealistic flow velocities; domain drains instantly;
+      Darcy velocity orders of magnitude too high.
+    error_pattern: "Permeability value > 1e-8 m^2"
+    detection: "Check if permeability values exceed 1e-8 m^2"
+    root_cause: |
+      Permeability entered in Darcy (D) instead of m^2.
+      1 Darcy = 9.869e-13 m^2. Entering 1.0 (meaning 1 D)
+      instead of 9.869e-13 gives a 1e12 factor error.
+    affected_components:
+      - MATERIAL_PROPERTY.PERMEABILITY.PERM_ISO
+    remedy:
+      manual: |
+        1. Convert: k_m2 = k_darcy * 9.869233e-13
+        2. Or use PFLOTRAN unit keyword: PERM_ISO 1.d0 darcy
+      code: "k_m2 = k_darcy * 9.869233e-13"
+    prevention: |
+      Always verify permeability is in m^2. Typical range:
+      gravel 1e-8, sand 1e-11, silt 1e-13, clay 1e-16 m^2.
+
+  - id: dt_002
+    domain: unit_conversion
+    stage: s3_forcing_boundary
+    symptom: |
+      Domain floods within first timestep; water table rises to surface;
+      saturation jumps to 1.0 everywhere immediately.
+    error_pattern: "Recharge flux > 1e-5 m/s"
+    detection: "Check LIQUID_FLUX magnitude in FLOW_CONDITION"
+    root_cause: |
+      Recharge entered in mm/yr or mm/day instead of m/s.
+      100 mm/yr = 3.17e-9 m/s. Entering 100 directly gives
+      a 3.15e10 factor error (100 m/s vs 3.17e-9 m/s).
+    affected_components:
+      - FLOW_CONDITION.LIQUID_FLUX
+    remedy:
+      manual: |
+        1. Convert: flux_m_s = flux_mm_yr * 3.171e-11
+        2. Convert: flux_m_s = flux_mm_day * 1.1574e-8
+        3. Or use PFLOTRAN unit: LIQUID_FLUX 100.d0 mm/yr
+      code: "flux_m_s = flux_mm_yr * 3.171e-11"
+    prevention: |
+      Always express recharge in m/s for PFLOTRAN.
+      Typical groundwater recharge: 1e-10 to 1e-7 m/s.
+
+  - id: dt_003
+    domain: unit_conversion
+    stage: s3_forcing_boundary
+    symptom: |
+      No flow despite expected gradient; heads essentially flat;
+      boundary conditions appear to have no effect.
+    error_pattern: "Pressure values in range 1-10 instead of 1e5"
+    detection: "Check LIQUID_PRESSURE values in boundary conditions"
+    root_cause: |
+      Pressure entered in atm or bar instead of Pa.
+      1 atm = 101325 Pa. Entering 1.0 gives 1 Pa instead
+      of 101325 Pa — a factor of 1e5 error.
+    affected_components:
+      - FLOW_CONDITION.LIQUID_PRESSURE
+      - BOUNDARY_CONDITION
+    remedy:
+      manual: |
+        1. Convert: P_pa = P_atm * 101325
+        2. Convert: P_pa = P_bar * 1e5
+        3. Or use: LIQUID_PRESSURE 1.d0 atm
+      code: "P_pa = P_atm * 101325.0"
+    prevention: |
+      PFLOTRAN uses Pa internally. For hydrostatic: P = rho*g*h + P_atm.
+
+  - id: dt_004
+    domain: unit_conversion
+    stage: s2_material_properties
+    symptom: |
+      Flow velocities ~86400x too high; water table responds
+      unrealistically fast to recharge events.
+    error_pattern: "Hydraulic conductivity used instead of permeability"
+    detection: "Check if K (m/s or m/day) was entered for permeability (m^2)"
+    root_cause: |
+      Hydraulic conductivity (K, m/s) entered where intrinsic
+      permeability (k, m^2) is expected. K = k*rho*g/mu, so
+      k = K * mu/(rho*g) = K * 1.022e-7 for water at 20C.
+      Entering K=1e-4 m/s gives k=1e-4 m^2 instead of 1e-11 m^2.
+    affected_components:
+      - MATERIAL_PROPERTY.PERMEABILITY.PERM_ISO
+    remedy:
+      manual: |
+        1. k_m2 = K_m_s * 1.022e-7 (at 20C)
+        2. k_m2 = K_m_s * mu / (rho * g)
+      code: "k_m2 = K_m_s * 1.002e-3 / (998.2 * 9.80665)"
+    prevention: |
+      PFLOTRAN always uses intrinsic permeability (m^2), never K (m/s).
+
+  - id: dt_005
+    domain: unit_conversion
+    stage: s2_material_properties
+    symptom: |
+      Immediate solver crash; negative saturation values;
+      "ERROR: saturation < 0" in output.
+    error_pattern: "POROSITY value > 1.0"
+    detection: "Check POROSITY values in MATERIAL_PROPERTY blocks"
+    root_cause: |
+      Porosity entered as percentage (e.g., 35) instead of
+      fraction (0.35). Porosity > 1.0 is unphysical and causes
+      the saturation function to produce negative values.
+    affected_components:
+      - MATERIAL_PROPERTY.POROSITY
+    remedy:
+      manual: "Divide porosity by 100: phi = phi_percent / 100"
+      code: "porosity = porosity_percent / 100.0"
+    prevention: |
+      PFLOTRAN porosity is always a fraction in (0, 1). GLHYMPS
+      reports porosity in %, so always divide by 100.
+
+  - id: dt_006
+    domain: unit_conversion
+    stage: s2_material_properties
+    symptom: |
+      Soil drains instantly; no capillary retention; vadose zone
+      completely dry above water table; saturation profile is step function.
+    error_pattern: "van Genuchten ALPHA > 0.01"
+    detection: "Check ALPHA in CHARACTERISTIC_CURVES SATURATION_FUNCTION"
+    root_cause: |
+      van Genuchten alpha entered in 1/cm (literature convention)
+      instead of 1/Pa (PFLOTRAN convention). Alpha in 1/cm is
+      ~10000x larger than 1/Pa. Example: Loam alpha=0.036 1/cm
+      should be 3.67e-6 1/Pa, but entering 0.036 directly gives
+      a factor-of-9804 error.
+    affected_components:
+      - CHARACTERISTIC_CURVES.SATURATION_FUNCTION.ALPHA
+    remedy:
+      manual: |
+        alpha_Pa = alpha_cm / (rho_water * g)
+                 = alpha_cm / 9804.139
+      code: "alpha_Pa = alpha_cm / 9804.139"
+    prevention: |
+      ALWAYS convert vG alpha from literature (1/cm) to PFLOTRAN (1/Pa).
+      Typical PFLOTRAN alpha range: 1e-7 to 1e-3 1/Pa.
+
+  - id: dt_007
+    domain: unit_conversion
+    stage: s2_material_properties
+    symptom: |
+      Solute plume spreads 100x faster than expected;
+      concentration front smears out unrealistically.
+    error_pattern: "DIFFUSION_COEFFICIENT > 1e-5 m^2/s"
+    detection: "Check DIFFUSION_COEFFICIENT in FLUID_PROPERTY"
+    root_cause: |
+      Diffusion coefficient entered in cm^2/s instead of m^2/s.
+      Typical molecular diffusion: 1e-9 m^2/s = 1e-5 cm^2/s.
+      Entering 1e-5 (meaning cm^2/s) gives 1e-5 m^2/s, which is
+      10000x too large.
+    affected_components:
+      - FLUID_PROPERTY.DIFFUSION_COEFFICIENT
+    remedy:
+      manual: "D_m2_s = D_cm2_s * 1e-4"
+      code: "D_m2_s = D_cm2_s * 1e-4"
+    prevention: |
+      Typical aqueous diffusion: 1e-9 to 1e-10 m^2/s. Values > 1e-7
+      are almost certainly in wrong units.
+
+  - id: dt_008
+    domain: unit_conversion
+    stage: s3_forcing_boundary
+    symptom: |
+      Incorrect fluid density; buoyancy-driven flow artifacts;
+      thermal simulation gives wrong temperature distribution.
+    error_pattern: "Temperature values > 100 in FLOW_CONDITION"
+    detection: "Check temperature values in initial/boundary conditions"
+    root_cause: |
+      Temperature entered in Kelvin instead of Celsius.
+      PFLOTRAN uses Celsius for input. 293 K = 20 C.
+      Entering 293 gives water at 293 C (supercritical!).
+    affected_components:
+      - FLOW_CONDITION temperature fields
+    remedy:
+      manual: "T_C = T_K - 273.15"
+      code: "temp_c = temp_k - 273.15"
+    prevention: |
+      PFLOTRAN input temperatures are always in Celsius.
+
+  - id: dt_009
+    domain: unit_conversion
+    stage: s3_forcing_boundary
+    symptom: |
+      Reaction rates wrong; mineral dissolution/precipitation
+      orders of magnitude off; chemistry does not match benchmarks.
+    error_pattern: "Concentration entered in mg/L instead of mol/L"
+    detection: "Check CONSTRAINT block concentration values"
+    root_cause: |
+      Aqueous concentrations entered in mg/L instead of mol/L
+      (molarity). PFLOTRAN uses mol/L for CONSTRAINT blocks.
+      Conversion: C_mol = C_mg / (MW * 1000).
+    affected_components:
+      - CONSTRAINT aqueous species concentrations
+    remedy:
+      manual: "C_mol_L = C_mg_L / (molecular_weight_g_mol * 1000)"
+      code: "C_mol = C_mg / (MW * 1000.0)"
+    prevention: |
+      PFLOTRAN CONSTRAINT concentrations are always in mol/L.
+
+  - id: dt_010
+    domain: unit_conversion
+    stage: s5_input_deck_assembly
+    symptom: |
+      Simulation ends almost immediately or never finishes;
+      output times don't match expectations.
+    error_pattern: "FINAL_TIME appears to use wrong time unit"
+    detection: "Check if FINAL_TIME has correct unit keyword"
+    root_cause: |
+      Time entered in years numerically but unit keyword missing
+      or wrong. FINAL_TIME 10.d0 without unit = 10 seconds.
+      FINAL_TIME 10.d0 y = 10 years = 3.16e8 seconds.
+    affected_components:
+      - TIME.FINAL_TIME
+      - TIME.INITIAL_TIMESTEP_SIZE
+      - TIME.MAXIMUM_TIMESTEP_SIZE
+    remedy:
+      manual: |
+        Always include unit keyword: s, min, h, d, w, mo, y
+        Example: FINAL_TIME 10.d0 y
+      code: "time_s = time_yr * 3.15576e7"
+    prevention: |
+      Always use explicit unit keywords in TIME block.
+
+  # ================================================================
+  # FAILURE DOMAIN 2: Input Format
+  # ================================================================
+
+  - id: dt_011
+    domain: input_format
+    stage: s5_input_deck_assembly
+    symptom: |
+      "ERROR: region not found" at startup; simulation refuses to start.
+    error_pattern: "Region.*not found"
+    detection: "Check PFLOTRAN startup error messages"
+    root_cause: |
+      Region name in BOUNDARY_CONDITION, INITIAL_CONDITION, or STRATA
+      does not match any defined REGION block. PFLOTRAN region names
+      are case-sensitive.
+    affected_components:
+      - BOUNDARY_CONDITION.REGION
+      - INITIAL_CONDITION.REGION
+      - STRATA.REGION
+    remedy:
+      manual: |
+        1. List all REGION definitions and their names
+        2. Verify exact name match (case-sensitive) in referencing blocks
+        3. Check for trailing spaces or typos
+    prevention: |
+      Use a consistent naming convention (lowercase_with_underscores).
+
+  - id: dt_012
+    domain: input_format
+    stage: s5_input_deck_assembly
+    symptom: |
+      "ERROR: material not found" at startup; or "Characteristic curves
+      not found" error.
+    error_pattern: "Material.*not found|Characteristic.*not found"
+    detection: "Check material and CC cross-references"
+    root_cause: |
+      MATERIAL_PROPERTY references a CHARACTERISTIC_CURVES name that
+      doesn't exist, or STRATA references a MATERIAL name that doesn't
+      exist. Names are case-sensitive.
+    affected_components:
+      - MATERIAL_PROPERTY.CHARACTERISTIC_CURVES
+      - STRATA.MATERIAL
+    remedy:
+      manual: |
+        1. Verify each MATERIAL_PROPERTY has matching CHARACTERISTIC_CURVES
+        2. Verify each STRATA references an existing MATERIAL name
+    prevention: |
+      Always define MATERIAL_PROPERTY and CHARACTERISTIC_CURVES before STRATA.
+
+  - id: dt_013
+    domain: input_format
+    stage: s5_input_deck_assembly
+    symptom: |
+      "ERROR: reading input file" with no specific line number;
+      parser fails silently or at unexpected location.
+    error_pattern: "Error.*reading input|Unexpected keyword"
+    detection: "Check PFLOTRAN startup output for parsing errors"
+    root_cause: |
+      Block nesting error: missing END or /, mismatched block
+      delimiters, or incorrect keyword order. PFLOTRAN's Fortran
+      parser is strict about block structure.
+    affected_components:
+      - Input deck structure
+    remedy:
+      manual: |
+        1. Check that every block has matching END or /
+        2. Verify SUBSURFACE ... END_SUBSURFACE wrapper
+        3. Check for stray characters or incorrect indentation
+        4. Use a linter: count opening/closing block pairs
+    prevention: |
+      Use consistent END (not /) for readability. Indent nested blocks.
+
+  # ================================================================
+  # FAILURE DOMAIN 3: Runtime Errors
+  # ================================================================
+
+  - id: dt_014
+    domain: runtime
+    stage: s6_execution
+    symptom: |
+      "SNES_DIVERGED_FNORM_NAN" or "Newton solver DIVERGED";
+      simulation crashes after a few timesteps.
+    error_pattern: "SNES_DIVERGED|Newton.*DIVERGED|FNORM_NAN"
+    detection: "Check PFLOTRAN stdout/stderr for convergence messages"
+    root_cause: |
+      Nonlinear solver divergence, typically caused by:
+      1. van Genuchten alpha in wrong units (dt_006)
+      2. Inconsistent initial and boundary conditions
+      3. Initial timestep too large for problem stiffness
+      4. Permeability contrast too sharp between adjacent cells
+    affected_components:
+      - Solver convergence
+    remedy:
+      manual: |
+        1. Reduce INITIAL_TIMESTEP_SIZE by 10x
+        2. Check all unit conversions (especially vG alpha, dt_006)
+        3. Use HYDROSTATIC initial condition
+        4. Smooth permeability transitions between materials
+        5. Add NEWTON_SOLVER options: ATOL 1e-12, RTOL 1e-12
+    prevention: |
+      Start with conservative timestep. Use HYDROSTATIC IC.
+
+  - id: dt_015
+    domain: runtime
+    stage: s6_execution
+    symptom: |
+      PFLOTRAN crashes with "Allocated memory exceeded" or OS
+      kills the process (OOM killer on Linux).
+    error_pattern: "memory exceeded|Killed|oom-killer"
+    detection: "Check system logs (dmesg) or PFLOTRAN error output"
+    root_cause: |
+      Grid too large for available memory per MPI process.
+      Each cell needs ~1-10 KB depending on mode and variables.
+      1M cells × 10 KB = 10 GB per process.
+    affected_components:
+      - Grid resolution
+      - Number of MPI processes
+    remedy:
+      manual: |
+        1. Increase MPI processes: mpirun -n 8 pflotran ...
+        2. Reduce grid resolution (coarsen mesh)
+        3. Use domain decomposition effectively
+        4. Check available RAM: free -h
+    prevention: |
+      Estimate memory: ncells * 10 KB / nproc < available RAM per node.
+
+  - id: dt_016
+    domain: runtime
+    stage: s6_execution
+    symptom: |
+      PFLOTRAN fails immediately with PETSc error about
+      incompatible versions or missing libraries.
+    error_pattern: "PETSC ERROR|Incompatible|library not found"
+    detection: "Check PFLOTRAN startup for PETSc messages"
+    root_cause: |
+      PFLOTRAN binary compiled with different PETSc version or
+      architecture than the runtime environment. Common when
+      using pre-built binaries on a different system.
+    affected_components:
+      - Build system
+      - PETSc configuration
+    remedy:
+      manual: |
+        1. Verify PETSC_DIR and PETSC_ARCH match compile-time values
+        2. Rebuild: cd pflotran/src/pflotran && make clean && make pflotran
+        3. Or use Docker: docker run pflotran/pflotran
+    prevention: |
+      Build PFLOTRAN from source on the target system.
+
+  # ================================================================
+  # FAILURE DOMAIN 4: Silent Errors
+  # ================================================================
+
+  - id: dt_017
+    domain: silent_error
+    stage: s7_output_analysis
+    symptom: |
+      Head values systematically offset by ~10.33 m from observed;
+      shape of hydrograph is correct but absolute values are wrong.
+    error_pattern: "Simulated head = observed head + ~10.3 m"
+    detection: "Compare mean head bias against 10.33 m offset"
+    root_cause: |
+      When converting PFLOTRAN output pressure (Pa) to hydraulic head (m),
+      atmospheric pressure (101325 Pa) was not subtracted.
+      P_atm / (rho*g) = 101325 / 9804 = 10.33 m.
+    affected_components:
+      - Output post-processing
+    remedy:
+      manual: |
+        head_m = (P_Pa - 101325) / (998.2 * 9.80665) + z_m
+        NOT: head_m = P_Pa / (998.2 * 9.80665) + z_m
+      code: "head = (pressure - 101325.0) / 9804.139 + elevation"
+    prevention: |
+      Always subtract atmospheric pressure before converting to head.
+
+  - id: dt_018
+    domain: silent_error
+    stage: s5_input_deck_assembly
+    symptom: |
+      Simulation runs but STRATA does not cover all cells; some cells
+      have no material assigned; solver may still converge but results
+      are physically meaningless in unassigned regions.
+    error_pattern: "Cells without material assignment"
+    detection: |
+      Check PFLOTRAN output for "X cells do not have a material" warning.
+      Or verify that union of all STRATA regions = entire domain.
+    root_cause: |
+      STRATA block regions do not cover the full computational domain.
+      PFLOTRAN may assign default properties to uncovered cells (or crash),
+      leading to heterogeneous artifacts.
+    affected_components:
+      - STRATA blocks
+      - REGION definitions
+    remedy:
+      manual: |
+        1. Ensure at least one STRATA with REGION all covers entire domain
+        2. Layer-specific STRATA should use Z-coordinate subregions
+        3. Check PFLOTRAN startup messages for unassigned cells
+    prevention: |
+      Always include a base STRATA with REGION all as a fallback.

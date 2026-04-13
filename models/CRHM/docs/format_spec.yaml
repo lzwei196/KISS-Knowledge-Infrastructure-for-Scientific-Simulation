@@ -1,0 +1,287 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["hydrology"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "CRHM 1.3 (crhmcode)"
+  domain: "hydrology"
+  secondary_domains: ["cold_regions"]
+  binary: "crhm"
+  binary_path: "/mnt/disk1/Hydrocraft_server/model/crhmcode/crhmcode/build/crhm"
+  language: "C++ (C++14)"
+  working_directory: "./"
+  invocation: "crhm [-t ISO] [-f STD] [-o output.txt] project.prj"
+  dependencies: "cmake, g++ (C++14), Boost 1.75.0 (auto-downloaded by install_crhm.sh)"
+  notes: >
+    Cold regions hydrological model — HRU-based, modular.
+    Specialized for blowing snow, sublimation, frozen soil infiltration,
+    energy-balance snowmelt. Coupling target for VIC cold-regions enhancement.
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "temperature"
+      file: "{basin}.obs"
+      variable: "t"
+      unit: "degC"
+      valid_range: [-60.0, 60.0]
+      format: "CRHM .obs format: header + space-delimited data"
+      missing_value: null
+      notes: "VIC forcing is already in degC — no conversion needed"
+
+    - name: "relative_humidity"
+      file: "{basin}.obs"
+      variable: "rh"
+      unit: "percent"
+      valid_range: [0, 100]
+      bug_history: >
+        THE #1 SILENT ERROR: VIC uses specific humidity (kg/kg, values ~0.001-0.02).
+        CRHM expects relative humidity (%, values 0-100). If specific humidity is
+        passed directly, CRHM interprets atmosphere as 0.001-0.02% RH (bone dry).
+        All sublimation goes to zero. SWE accumulates forever. Model runs to
+        completion with NO error (dt_001).
+      conversion_from_vic: "kg/kg -> %: Tetens formula (see convert_vic_to_obs.py)"
+
+    - name: "wind_speed"
+      file: "{basin}.obs"
+      variable: "u"
+      unit: "m/s"
+      valid_range: [0.0, 80.0]
+
+    - name: "precipitation"
+      file: "{basin}.obs"
+      variable: "ppt"
+      unit: "mm/d"
+      valid_range: [0.0, 500.0]
+      conversion_from_vic: "mm/timestep -> mm/d: multiply by 24/timestep_hours"
+      bug_history: "Wrong timestep conversion -> silent over/under-estimate (dt_002)"
+
+    - name: "shortwave_radiation"
+      file: "{basin}.obs"
+      variable: "Qsi"
+      unit: "W/m2"
+      valid_range: [0.0, 1400.0]
+      notes: "VIC and CRHM both use W/m2 — no conversion needed"
+
+    - name: "vapour_pressure"
+      file: "{basin}.obs"
+      variable: "$ea ea(t, rh)"
+      unit: "kPa"
+      notes: "Derived variable — computed from t and rh by CRHM if declared with $ea syntax"
+
+  parameters:
+    critical:
+      - name: "fetch"
+        file: "{basin}.prj (Parameters section)"
+        module: "PBSM"
+        description: "Fetch distance for blowing snow transport"
+        valid_range: [10, 10000]
+        unit: "meters"
+        bug_history: >
+          CRHM clamps parameters to declared <min to max> range WITHOUT warning.
+          Setting fetch=50000 silently uses max=10000. Always validate with
+          validate_prj.py (dt_006).
+
+      - name: "precip_elev_adj"
+        file: "{basin}.prj"
+        module: "obs"
+        description: "Precipitation elevation adjustment factor"
+        valid_range: [0.0, 0.2]
+        default: 0.0
+        notes: "Use 0.05 for mountain basins (Belly River validation)"
+
+      - name: "gw_K"
+        file: "{basin}.prj"
+        module: "Soil"
+        description: "Groundwater recession constant"
+        valid_range: [1, 100]
+        default: 2
+        notes: "gwKstorage=50-80, gwLag=500-1000 for sustained winter baseflow"
+
+      - name: "module_chain"
+        file: "{basin}.prj (Modules section)"
+        description: "Ordered sequence of process modules"
+        notes: >
+          Module output feeds to next via declvar/declgetvar. Chain order
+          determines physics. Pre-built chains available for prairie,
+          mountain, forest, and arctic landscapes.
+
+    module_chains:
+      prairie: "basin > global > obs > PBSM > PrairieInfil > Soil > Netroute"
+      mountain: "basin > global > obs > Slope_Qsi > SnobalCRHM > GreenAmpt > Soil > Netroute"
+      forest: "basin > global > obs > CRHMCanopy > SnobalCRHM > GreenAmpt > Soil > Netroute"
+      arctic: "basin > global > obs > PBSM > SnobalCRHM > PrairieInfil > Soil > REWroute"
+
+  files:
+    required:
+      - name: "{basin}.prj"
+        description: "Project file with dimensions, observations, dates, modules, parameters"
+        format: "Section-delimited (######) text file"
+        notes: >
+          Sections: Dimensions, Observations, Dates, Modules, Parameters.
+          Parameter values are N values per line (N = nhru).
+
+      - name: "{basin}.obs"
+        description: "Observation/forcing data file"
+        format: "Header (variable declarations) + space-delimited time series"
+        notes: >
+          NO #### line before variable declarations — causes infinite loop (dt_v001).
+          Header line 1 = description, then variable lines: 'varname N (unit)',
+          then data: 'YYYY M D H 0 val1 val2 ...'
+
+    optional:
+      - name: "output.txt"
+        description: "CRHM output file (specified with -o flag)"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "SWE"
+      description: "Snow water equivalent per HRU"
+      unit: "mm"
+      valid_range: [0, 5000]
+      notes: "Key validation variable for cold regions"
+
+    - name: "discharge"
+      description: "Routed streamflow from Netroute module"
+      unit: "m3/s"
+      valid_range: [0, null]
+
+    - name: "actual_ET"
+      description: "Actual evapotranspiration"
+      unit: "mm"
+
+    - name: "soil_moisture"
+      description: "Soil water content"
+      unit: "mm"
+
+    - name: "sublimation"
+      description: "Snow sublimation from PBSM or CRHMCanopy"
+      unit: "mm"
+      notes: "30-40% of snowfall in boreal forests; key CRHM strength"
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "humidity_unit_silent"
+    triplet: "dt_001"
+    description: >
+      VIC specific humidity (kg/kg) fed as CRHM relative humidity (%).
+      Model interprets 0.001-0.02% RH. Sublimation drops to zero,
+      SWE accumulates forever. Model runs to completion with NO error.
+    affected_output: "All snow and sublimation outputs"
+    detection: "max(RH) in .obs file < 1.0 means units are wrong"
+    fix: "Use convert_vic_to_obs.py which applies Tetens formula"
+    severity: "silent — THE #1 trap"
+
+  - id: "precip_timestep"
+    triplet: "dt_002"
+    description: "Precipitation timestep conversion wrong"
+    severity: "silent"
+    fix: "Multiply by 24/timestep_hours for mm/d"
+
+  - id: "parameter_clamping"
+    triplet: "dt_006"
+    description: "CRHM clamps parameters to <min to max> range WITHOUT warning"
+    severity: "silent"
+    fix: "Run validate_prj.py before executing CRHM"
+
+  - id: "obs_header_format"
+    triplet: "dt_v001"
+    description: "#### line before variable declarations causes infinite loop"
+    severity: "fatal"
+    fix: "Remove any #### lines from .obs header"
+
+  - id: "pbsm_required"
+    triplet: "dt_v002"
+    description: "Without PBSM module, CRHM segfaults on wildcard SWE search"
+    severity: "fatal"
+    fix: "Include PBSM in module chain even for non-prairie basins"
+
+  - id: "vic_coupling_double_count"
+    triplet: "dt_010"
+    description: "Both VIC and CRHM compute snowmelt, ET, soil moisture"
+    affected_output: "Water balance errors >100% if both model outputs merged"
+    fix: "Define process ownership table — each process assigned to exactly one model"
+
+  - id: "nasa_power_precip_div24"
+    triplet: "dt_v004"
+    description: "NASA POWER hourly values are mm/day rate, not mm/hr"
+    fix: "Divide by 24 for hourly timestep"
+
+  - id: "blowing_snow_landscape"
+    description: "PBSM only valid for wind-exposed terrain (prairie, tundra, alpine above treeline)"
+    fix: "Use CRHMCanopy for forested landscapes instead"
+
+# =========================================================================
+# EXPECTED RANGES (Belly River reference)
+# =========================================================================
+expected_ranges:
+  belly_river_alberta:
+    period: "2005-2015"
+    landscape: "Mountain"
+    module_chain: "basin > global > obs > calcsun > Slope_Qsi > walmsley_wind > intcp > pbsm > albedo > ebsm > netall > crack > evap > Soil > Netroute"
+    kge: 0.65
+    pbias_pct: -3.4
+
+# =========================================================================
+# CALIBRATION REFERENCE
+# =========================================================================
+calibration_reference:
+  notes: >
+    CRHM does not have built-in calibration. Parameter tuning is manual
+    or via external optimization wrapper. Key parameters depend on
+    module chain selection.
+
+  key_parameters_by_chain:
+    prairie:
+      - "fetch (PBSM, 10-10000m)"
+      - "N_S (PBSM, vegetation height)"
+      - "Kstorage, Lag (Netroute)"
+    mountain:
+      - "hru_ASL, hru_GSL (Slope_Qsi, aspect/slope)"
+      - "A, L (walmsley_wind, topographic amplification)"
+      - "tfactor, nfactor (ebsm, melt factors)"
+      - "gw_K, gw_max (Soil, groundwater)"
+      - "gwKstorage, gwLag (Netroute, GW routing)"
+    forest:
+      - "canopy parameters (CRHMCanopy)"
+      - "GreenAmpt infiltration parameters"
+
+  target_metrics:
+    - "KGE > 0.5"
+    - "PBIAS < 25%"
+    - "SWE peak timing within 1 week"
+
+# =========================================================================
+# UNIT CONVERSION TABLE
+# =========================================================================
+unit_conversions:
+  - variable: "humidity"
+    source: "VIC (kg/kg specific humidity)"
+    target: "CRHM (% relative humidity)"
+    operation: "Tetens formula conversion"
+    trap_if_wrong: "max(RH) < 1.0 in .obs file; sublimation = 0, SWE infinite"
+
+  - variable: "precipitation"
+    source: "VIC (mm/timestep)"
+    target: "CRHM (mm/d)"
+    operation: "multiply by 24/timestep_hours"
+    trap_if_wrong: "Precipitation wrong by factor of timestep ratio"
+
+  - variable: "temperature"
+    source: "VIC (degC)"
+    target: "CRHM (degC)"
+    operation: "none"

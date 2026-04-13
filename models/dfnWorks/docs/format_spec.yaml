@@ -1,0 +1,129 @@
+model:
+  name: "dfnWorks"
+  version: "2.10.0"
+  domain: "subsurface_hydrology"
+  subdomain: "discrete_fracture_network"
+  description: "Computational suite for modeling flow and transport in 3D discrete fracture networks"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/dfnWorks/venv/bin/python"
+  native_binaries:
+    DFNGen: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/dfnWorks/source/repo/DFNGen/DFNGen"
+    DFNTrans: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/dfnWorks/source/repo/DFNTrans/DFNTrans"
+    correct_volume: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/dfnWorks/source/repo/CPP_correct_volumes/correct_volume"
+  modes:
+    - name: "graph"
+      description: "Graph-based flow and transport (no external dependencies)"
+      dependencies: ["pydfnworks"]
+    - name: "full_physics"
+      description: "Mesh-based flow via PFLOTRAN/FEHM and particle tracking via DFNTrans"
+      dependencies: ["pydfnworks", "LaGriT", "PFLOTRAN or FEHM", "PETSc"]
+
+inputs:
+  forcing:
+    - name: "pressure_in"
+      unit: "Pa"
+      valid_range: [0, 1.0e+10]
+      description: "Inflow boundary pressure"
+    - name: "pressure_out"
+      unit: "Pa"
+      valid_range: [0, 1.0e+10]
+      description: "Outflow boundary pressure"
+  parameters:
+    critical:
+      - name: "domainSize"
+        unit: "m"
+        valid_range: [0.1, 100000]
+        description: "3D domain bounding box dimensions [x, y, z] in meters"
+      - name: "h"
+        unit: "m"
+        valid_range: [0.001, 100]
+        description: "Minimum mesh feature size (must be < 0.5 * min_radius)"
+      - name: "permeability"
+        unit: "m^2"
+        valid_range: [1.0e-15, 1.0e-8]
+        description: "Intrinsic fracture permeability (NOT hydraulic conductivity)"
+      - name: "aperture"
+        unit: "m"
+        valid_range: [1.0e-6, 1.0e-2]
+        description: "Fracture aperture"
+      - name: "p32"
+        unit: "1/m"
+        valid_range: [0.01, 10]
+        description: "Fracture intensity (fracture area per unit volume)"
+      - name: "kappa"
+        unit: "dimensionless"
+        valid_range: [0.1, 100]
+        description: "Fisher concentration parameter for fracture orientation"
+      - name: "alpha"
+        unit: "dimensionless"
+        valid_range: [1.0, 4.0]
+        description: "Truncated power-law exponent for fracture size distribution"
+      - name: "min_radius"
+        unit: "m"
+        valid_range: [0.01, 1000]
+        description: "Minimum fracture radius"
+      - name: "max_radius"
+        unit: "m"
+        valid_range: [0.1, 10000]
+        description: "Maximum fracture radius"
+      - name: "boundaryFaces"
+        unit: "flag"
+        valid_range: [0, 1]
+        description: "6-element list [top, bottom, left_w, front_n, right_e, back_s] for boundary connectivity"
+    optional:
+      - name: "matrix_porosity"
+        unit: "dimensionless"
+        valid_range: [0.001, 0.3]
+        description: "Matrix porosity for TDRW diffusion"
+      - name: "matrix_diffusivity"
+        unit: "m^2/s"
+        valid_range: [1.0e-12, 1.0e-9]
+        description: "Matrix diffusivity for TDRW"
+      - name: "seed"
+        unit: "integer"
+        valid_range: [1, 2147483647]
+        description: "Random seed for stochastic network generation"
+
+outputs:
+  primary:
+    - name: "Total travel time"
+      unit: "s"
+      valid_range: [0, 1.0e+15]
+      format: "HDF5 (graph_partime.hdf5)"
+    - name: "Pathline length"
+      unit: "m"
+      valid_range: [0, 1.0e+6]
+      format: "HDF5 (graph_partime.hdf5)"
+    - name: "Advective time"
+      unit: "s"
+      valid_range: [0, 1.0e+15]
+      format: "HDF5 (graph_partime.hdf5)"
+    - name: "Beta"
+      unit: "s/m"
+      valid_range: [0, 1.0e+18]
+      format: "HDF5 (graph_partime.hdf5)"
+  flow:
+    - name: "velocity"
+      unit: "m/s"
+      valid_range: [0, 1.0e+3]
+      format: "HDF5 (graph_flow.hdf5)"
+    - name: "vol_flow_rate"
+      unit: "m^3/s"
+      valid_range: [0, 1.0e+6]
+      format: "HDF5 (graph_flow.hdf5)"
+  network:
+    - name: "num_fractures"
+      unit: "count"
+      description: "Total fractures after isolation removal"
+    - name: "p32_achieved"
+      unit: "1/m"
+      description: "Actual fracture intensity achieved"
+
+known_issues:
+  - id: "env_vars"
+    description: "LAGRIT_EXE env var must exist (even if empty) or pydfnworks crashes at init"
+    workaround: "Set os.environ['LAGRIT_EXE'] = '' before importing pydfnworks"
+  - id: "time_module"
+    description: "pydfnworks clobbers the 'time' module namespace; use 'from time import time as _now'"
+  - id: "graph_sparse"
+    description: "Graph flow fails with 'no nodes in inlet' on small/sparse networks"
+    workaround: "Use larger domains or higher p32 to ensure boundary connectivity"

@@ -1,0 +1,136 @@
+model:
+  name: "PFLOTRAN"
+  version: "Development Version"
+  domain: "Groundwater flow and reactive transport"
+  description: "Massively parallel simulator for multiphase flow, reactive multicomponent transport, and geomechanics in the subsurface"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PFLOTRAN/source/pflotran_full/src/pflotran/pflotran"
+  execution: "mpirun -n <nproc> pflotran -pflotranin <input_file.in>"
+  dependencies:
+    - "PETSc (v3.18+)"
+    - "MPI (OpenMPI or MPICH)"
+    - "HDF5"
+    - "BLAS/LAPACK"
+
+inputs:
+  input_deck:
+    format: ".in keyword-based block structure"
+    description: "Hierarchical blocks delimited by keywords and END or / terminators"
+
+  forcing:
+    - name: "LIQUID_FLUX"
+      unit: "m/s"
+      valid_range: [1.0e-11, 1.0e-6]
+      description: "Recharge / infiltration flux at top boundary (Neumann BC)"
+    - name: "LIQUID_PRESSURE"
+      unit: "Pa"
+      valid_range: [50000.0, 500000.0]
+      description: "Prescribed pressure boundary condition (Dirichlet BC)"
+
+  parameters:
+    critical:
+      - name: "PERM_ISO"
+        unit: "m^2"
+        valid_range: [1.0e-18, 1.0e-8]
+        description: "Isotropic intrinsic permeability (NOT hydraulic conductivity)"
+      - name: "POROSITY"
+        unit: "dimensionless (fraction)"
+        valid_range: [0.01, 0.60]
+        description: "Matrix porosity (must be fraction 0-1, not percent)"
+      - name: "VG_ALPHA"
+        unit: "1/Pa"
+        valid_range: [1.0e-7, 1.0e-3]
+        description: "van Genuchten alpha parameter (1/Pa, NOT 1/cm)"
+      - name: "VG_M"
+        unit: "dimensionless"
+        valid_range: [0.05, 0.95]
+        description: "van Genuchten m parameter (m = 1 - 1/n)"
+      - name: "LIQUID_RESIDUAL_SATURATION"
+        unit: "dimensionless"
+        valid_range: [0.01, 0.40]
+        description: "Residual liquid saturation for VG curves"
+      - name: "TORTUOSITY"
+        unit: "dimensionless"
+        valid_range: [0.01, 1.0]
+        description: "Matrix tortuosity factor"
+      - name: "DIFFUSION_COEFFICIENT"
+        unit: "m^2/s"
+        valid_range: [1.0e-12, 1.0e-8]
+        description: "Molecular diffusion coefficient (m^2/s, NOT cm^2/s)"
+
+    grid:
+      - name: "NXYZ"
+        description: "Number of grid cells in X, Y, Z directions"
+      - name: "BOUNDS"
+        unit: "m"
+        description: "Domain extent coordinates (x_min y_min z_min to x_max y_max z_max)"
+
+    time:
+      - name: "FINAL_TIME"
+        unit: "s (or with keyword: d, y, h)"
+        description: "Simulation end time"
+      - name: "INITIAL_TIMESTEP_SIZE"
+        unit: "s (or with keyword: d, y, h)"
+        valid_range: [0.001, 86400.0]
+        description: "Starting timestep size"
+      - name: "MAXIMUM_TIMESTEP_SIZE"
+        unit: "s (or with keyword: d, y, h)"
+        description: "Maximum allowed timestep"
+
+outputs:
+  primary:
+    - name: "LIQUID_PRESSURE"
+      unit: "Pa"
+      valid_range: [0.0, 1.0e7]
+      description: "Liquid pressure field at cell centers"
+    - name: "LIQUID_SATURATION"
+      unit: "dimensionless"
+      valid_range: [0.0, 1.0]
+      description: "Liquid saturation (0=dry, 1=fully saturated)"
+    - name: "LIQUID_VELOCITY"
+      unit: "m/s"
+      valid_range: [-1.0e-3, 1.0e-3]
+      description: "Darcy velocity components (X, Y, Z)"
+  formats:
+    - "HDF5 (.h5) — primary output with /Time:*/variable structure"
+    - "TecPlot (.tec) — observation point time series"
+    - "VTK (.vtk/.pvd) — ParaView visualization"
+    - "Mass balance (.massbal) — fluid/solute conservation tracking"
+
+unit_system: "SI (internally). Inline unit keywords supported for convenience."
+
+unit_traps:
+  - id: "dt_001"
+    variable: "Permeability"
+    wrong_unit: "Darcy"
+    correct_unit: "m^2"
+    error_factor: 1.0e+12
+  - id: "dt_002"
+    variable: "Recharge flux"
+    wrong_unit: "mm/yr"
+    correct_unit: "m/s"
+    error_factor: 3.15e+10
+  - id: "dt_005"
+    variable: "Porosity"
+    wrong_unit: "percent"
+    correct_unit: "fraction (0-1)"
+    error_factor: 100
+  - id: "dt_006"
+    variable: "VG alpha"
+    wrong_unit: "1/cm"
+    correct_unit: "1/Pa"
+    error_factor: 9804
+
+known_issues:
+  - "Mualem-van Genuchten without SMOOTH option triggers warning but runs"
+  - "PETSc version must match build version exactly"
+  - "HDF5 parallel I/O requires matching MPI-enabled HDF5 library"
+
+simulation_modes:
+  - name: "RICHARDS"
+    description: "Variably saturated single-phase groundwater flow"
+  - name: "GENERAL"
+    description: "Multiphase (water + gas) flow with phase transitions"
+  - name: "TH"
+    description: "Coupled thermal-hydrologic (heat + flow)"
+  - name: "REACTIVE_TRANSPORT"
+    description: "Aqueous, mineral, sorption, gas-phase chemistry"

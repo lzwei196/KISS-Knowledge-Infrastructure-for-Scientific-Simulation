@@ -1,0 +1,113 @@
+model:
+  name: "SuperflexPy"
+  version: "1.3.2"
+  domain: "hydrology"
+  description: "Flexible conceptual hydrological modelling framework with component-based architecture"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/SuperflexPy/venv/bin/python"
+  binary_type: "python_package"
+  hierarchy: ["Element", "Unit", "Node", "Network"]
+  prebuilt_models: ["GR4J", "HBV", "HYMOD"]
+
+inputs:
+  forcing:
+    - name: "precipitation"
+      symbol: "P"
+      unit: "mm/d"
+      valid_range: [0.0, 1000.0]
+      description: "Total rainfall per timestep"
+    - name: "potential_evapotranspiration"
+      symbol: "PET"
+      unit: "mm/d"
+      valid_range: [0.0, 30.0]
+      description: "Potential evapotranspiration"
+    - name: "temperature"
+      symbol: "T"
+      unit: "degC"
+      valid_range: [-50.0, 60.0]
+      description: "Air temperature (only if snow module used)"
+      optional: true
+  parameters:
+    critical:
+      - name: "x1"
+        description: "Production store capacity"
+        unit: "mm"
+        valid_range: [10.0, 2000.0]
+        model: "GR4J"
+        sensitivity: "very_high"
+      - name: "x2"
+        description: "Groundwater exchange coefficient"
+        unit: "mm/d"
+        valid_range: [-5.0, 5.0]
+        model: "GR4J"
+        sensitivity: "medium"
+      - name: "x3"
+        description: "Routing store capacity"
+        unit: "mm"
+        valid_range: [1.0, 500.0]
+        model: "GR4J"
+        sensitivity: "high"
+      - name: "x4"
+        description: "Unit hydrograph base time"
+        unit: "d"
+        valid_range: [0.5, 10.0]
+        model: "GR4J"
+        sensitivity: "high"
+      - name: "Smax"
+        description: "Maximum soil moisture storage"
+        unit: "mm"
+        valid_range: [10.0, 1000.0]
+        model: "HBV"
+        sensitivity: "very_high"
+      - name: "k"
+        description: "Recession coefficient"
+        unit: "1/d"
+        valid_range: [0.001, 1.0]
+        model: "HBV"
+        sensitivity: "high"
+  timestep:
+    unit: "days"
+    type: "float"
+    typical_value: 1.0
+    description: "ODE integration step; must match forcing temporal resolution"
+
+outputs:
+  primary:
+    - name: "streamflow"
+      symbol: "Q"
+      unit: "mm/d"
+      valid_range: [0.0, 2000.0]
+      description: "Simulated discharge at outlet"
+  states:
+    - name: "production_store"
+      symbol: "S_ps"
+      unit: "mm"
+      valid_range: [0.0, 2000.0]
+    - name: "routing_store"
+      symbol: "S_rs"
+      unit: "mm"
+      valid_range: [0.0, 500.0]
+
+solvers:
+  - name: "ImplicitEuler"
+    recommended: true
+    description: "Unconditionally stable, default for production"
+  - name: "ExplicitEuler"
+    recommended: false
+    description: "Fast but conditionally stable"
+  - name: "RungeKutta4"
+    recommended: false
+    description: "High accuracy, slower"
+
+known_issues:
+  - id: "dk_001"
+    severity: "critical"
+    description: "Input array order is element-specific and errors are SILENT"
+  - id: "dk_002"
+    severity: "critical"
+    description: "Timestep must match forcing resolution or ODE solver gives wrong results SILENTLY"
+  - id: "dk_003"
+    severity: "info"
+    description: "First call triggers Numba JIT compilation (5-30s delay)"
+  - id: "dk_005"
+    severity: "high"
+    description: "Lag states must be initialized as None, not pre-allocated arrays"

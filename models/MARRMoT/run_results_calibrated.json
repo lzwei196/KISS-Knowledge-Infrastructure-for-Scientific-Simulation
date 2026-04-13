@@ -1,0 +1,36 @@
+{
+  "status": "success",
+  "model": "m_29_hymod_5p_5s (Python, calibrated)",
+  "theta": [
+    390.8726,
+    0.086,
+    0.0109,
+    0.5768,
+    0.2
+  ],
+  "S0": [
+    195.44,
+    0,
+    0,
+    0,
+    0
+  ],
+  "basin": "Buffalo River near Flat Woods, Tennessee, USA",
+  "gauge_id": "3604000",
+  "n_timesteps": 1461,
+  "warmup_days": 365,
+  "metrics": {
+    "NSE": 0.1309,
+    "KGE": 0.2967,
+    "r": 0.4194,
+    "alpha": 0.6267,
+    "beta": 1.1348,
+    "PBIAS": 13.48,
+    "RMSE": 5.8282
+  },
+  "findings": [
+    "Calibrated HyMOD achieves NSE=0.131, KGE=0.297 on Buffalo River",
+    "Optimal Smax=391 mm suggests moderate soil storage",
+    "Explicit Euler solver maintains perfect water balance (0.0 mm error)"
+  ]
+}

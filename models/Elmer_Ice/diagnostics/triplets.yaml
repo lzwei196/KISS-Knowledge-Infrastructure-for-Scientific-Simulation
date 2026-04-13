@@ -1,0 +1,447 @@
+# Elmer/Ice Diagnostic Triplets
+# 18 symptom → diagnosis → remedy entries for common failure modes
+# Severity: silent (wrong results, no error), degraded (poor accuracy), fatal (crash)
+
+- id: dt_001
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Velocity output looks 10^7x too small when compared to published values (e.g., 3e-8 m/s instead of ~1 m/a)"
+    error_pattern: "velocity near zero"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Velocity comparison without m/s to m/a conversion"
+    explanation: >
+      Elmer/Ice outputs velocity in m/s (SI units). Glaciology literature uses m/a.
+      1 m/a = 3.1688e-8 m/s. When comparing VTU output to published data,
+      values appear ~31.6 million times too small if the conversion is forgotten.
+    affected_components: [parse_vtu_output, validation_scripts]
+  remedy:
+    action: "Convert velocity: multiply m/s by 31556926 to get m/a"
+    tool_to_run: parse_vtu_output --convert_velocity_to_ma
+    manual_steps:
+      - "Check velocity units in VTU — always m/s"
+      - "Multiply by 3.1557e7 for m/a"
+    prevention: "Use --convert_velocity_to_ma flag in parse_vtu_output.py"
+  cross_references: [dt_009]
+
+- id: dt_002
+  stage: s4_sif
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Ice viscosity is 27x wrong — ice flows far too fast or too slow"
+    error_pattern: "unrealistic velocity magnitude"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Viscosity Exponent set to n instead of 1/n in SIF"
+    explanation: >
+      Glen's flow law uses n=3 as the power law exponent, but the SIF keyword
+      'Viscosity Exponent' expects 1/n = 0.333. If n=3 is passed directly,
+      the effective exponent is 3 instead of 1/3, making viscosity 3^3 = 27x wrong.
+    affected_components: [generate_sif, Material_block]
+  remedy:
+    action: "Set Viscosity Exponent = Real $(1.0/3.0) for Glen's n=3"
+    tool_to_run: generate_sif --glen_n 3.0
+    manual_steps:
+      - "Open SIF → Material block"
+      - "Check: Viscosity Exponent should be 0.333, NOT 3.0"
+    prevention: "generate_sif.py auto-computes 1/n from --glen_n"
+  cross_references: []
+
+- id: dt_003
+  stage: s4_sif
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Flotation criterion is wrong — ice floats where it should be grounded, or vice versa"
+    error_pattern: "grounding line in wrong location"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Density in g/cm3 instead of kg/m3"
+    explanation: >
+      Elmer uses SI units throughout. Ice density should be 910 kg/m3, not 0.91 g/cm3.
+      Seawater density should be 1025 kg/m3, not 1.025 g/cm3. Using g/cm3 makes
+      the flotation criterion (rho_i * H = rho_w * D) off by factor 1000.
+    affected_components: [generate_sif, Material_block, Constants_block]
+  remedy:
+    action: "Use kg/m3: ice=910, seawater=1025"
+    tool_to_run: generate_sif --ice_density 910 --water_density 1025
+    manual_steps:
+      - "Check Material: Density = 910.0 (not 0.91)"
+      - "Check Constants: Water Density = 1025.0 (not 1.025)"
+    prevention: "generate_sif.py validates density range 100-2000"
+  cross_references: []
+
+- id: dt_004
+  stage: s4_sif
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Temperature-dependent viscosity is wildly wrong — ice too stiff at warm temperatures or too soft at cold"
+    error_pattern: "temperature field looks correct but velocity is wrong"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature in Kelvin used where Celsius expected, or vice versa"
+    explanation: >
+      Elmer uses Kelvin internally for Arrhenius rate factor computation
+      (A(T) = A0 * exp(-Q/(R*T))). However, SIF boundary conditions for
+      surface temperature typically use Celsius. Using Kelvin values (e.g., 253)
+      where Celsius is expected gives T = 253°C, causing nonsensical viscosity.
+    affected_components: [convert_forcing, generate_sif, EnthalpySolver]
+  remedy:
+    action: "Check all temperature sources: SIF BC uses Celsius, Arrhenius uses Kelvin"
+    tool_to_run: convert_forcing --temp_units K
+    manual_steps:
+      - "Verify temperature range in forcing: should be -60 to +20°C for ice sheets"
+      - "convert_forcing.py auto-converts K to C"
+    prevention: "validate_outputs checks for T > 50°C (likely still in K)"
+  cross_references: []
+
+- id: dt_005
+  stage: s4_sif
+  failure_domain: physics
+  severity: silent
+  symptom:
+    description: "Temperate ice extent is wrong — pressure melting point computed at wrong depth"
+    error_pattern: "water content in cold ice"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wrong Clausius-Clapeyron slope (beta_clapeyron)"
+    explanation: >
+      The Clausius-Clapeyron relation dT/dP = 9.8e-8 K/Pa (for air-free ice)
+      or 7.42e-8 K/Pa (for air-saturated ice). Using the wrong value shifts
+      the pressure melting point by up to 1°C at depth, changing where temperate
+      ice forms. Most Elmer/Ice examples use 9.8e-8.
+    affected_components: [EnthalpySolver, Constants_block]
+  remedy:
+    action: "Set beta_clapeyron = 9.8e-8 K/Pa in Constants block"
+    manual_steps:
+      - "Check Constants: beta_clapeyron = 9.8e-8"
+      - "Use 7.42e-8 only for air-saturated ice (rare)"
+    prevention: "Document choice in SIF comments"
+  cross_references: []
+
+- id: dt_006
+  stage: s4_sif
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Basal drag is orders of magnitude too high or low — velocity completely wrong"
+    error_pattern: "ice velocity near zero or unrealistically fast"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Friction parameter units don't match friction law"
+    explanation: >
+      The friction parameter beta has different dimensions for each friction law:
+      - Linear: beta in Pa s/m (or Pa a/m)
+      - Weertman: beta in Pa (m/a)^(-1/n) — depends on exponent
+      - Coulomb: dimensionless coefficient 0-1
+      Using linear-law beta values with Weertman law changes drag by orders of magnitude.
+    affected_components: [generate_sif, Material_block]
+  remedy:
+    action: "Match beta units to friction law — see SSA.md documentation"
+    manual_steps:
+      - "Check which friction law is set in Material block"
+      - "Verify beta parameter range matches that law's expected values"
+      - "Linear: 1e-5 to 1e-1 Pa s/m; Weertman: 1e-5 to 1e-1; Coulomb: 0.1-0.5"
+    prevention: "generate_sif.py documents expected ranges per friction law"
+  cross_references: [dt_002]
+
+- id: dt_007
+  stage: s2_mesh
+  failure_domain: configuration
+  severity: fatal
+  symptom:
+    description: "Solver crashes at startup with dimension mismatch or wrong element type errors"
+    error_pattern: "ERROR:: .*dimension"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Coordinate system mismatch between SIF and mesh"
+    explanation: >
+      In Elmer, 'Cartesian 2D' means x-z vertical plane (flowline), while
+      'Cartesian 3D' means x-y-z plan-view with depth. A 2D mesh with 3D
+      coordinate system, or vice versa, causes element dimension errors.
+      For plan-view SSA on a 2D mesh, use 'Cartesian 2D' with DOFs=2.
+    affected_components: [generate_sif, ElmerGrid]
+  remedy:
+    action: "Match Coordinate System in SIF to mesh dimensionality"
+    manual_steps:
+      - "2D mesh → Cartesian 2D"
+      - "3D extruded mesh → Cartesian 3D"
+      - "Check SSA DOFs: 1 for flowline, 2 for plan-view"
+    prevention: "generate_sif.py validates coordinate system vs. mesh"
+  cross_references: []
+
+- id: dt_008
+  stage: s1_geometry
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Gravity-driven flow is 1000x too weak — ice barely moves even with correct viscosity"
+    error_pattern: "very small velocity despite correct viscosity"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Mesh node coordinates in km instead of meters"
+    explanation: >
+      Elmer computes gravity-driven stress as rho*g*H where g=9.81 m/s2.
+      If mesh coordinates (and thus H) are in km, the driving stress is
+      1000x too small. The ice will barely flow even with correct rheology.
+    affected_components: [convert_geometry, ElmerGrid]
+  remedy:
+    action: "Ensure all mesh coordinates and DEM data are in meters"
+    tool_to_run: convert_geometry
+    manual_steps:
+      - "Check mesh.nodes — coordinates should be in meters"
+      - "For BedMachine data, verify coordinate projection is in meters"
+    prevention: "convert_geometry.py warns if max(|zb|) < 10"
+  cross_references: []
+
+- id: dt_009
+  stage: s4_sif
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Simulation takes 10^7x too many timesteps to show any change"
+    error_pattern: "no visible ice evolution after many timesteps"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Timestep Sizes in SIF set to 1.0 (meaning 1 second) instead of 31556926 (1 year)"
+    explanation: >
+      SIF Timestep Sizes is in seconds. Setting it to 1.0 thinking it means
+      '1 year' makes each step only 1 second long. Ice dynamics operates on
+      annual timescales, so 31.6 million steps would be needed for 1 year.
+    affected_components: [generate_sif, Simulation_block]
+  remedy:
+    action: "Use Timestep Sizes = 31556926.0 for 1-year steps"
+    tool_to_run: generate_sif --dt_years 1.0
+    manual_steps:
+      - "Check Simulation block: Timestep Sizes should be ~3.16e7 for annual"
+      - "Or use MATC: Timestep Sizes = Real $365.25*24*3600"
+    prevention: "generate_sif.py auto-converts --dt_years to seconds"
+  cross_references: [dt_001]
+
+- id: dt_010
+  stage: s2_mesh
+  failure_domain: numerical
+  severity: degraded
+  symptom:
+    description: "Nonlinear iteration does not converge — residual oscillates or diverges near grounding line"
+    error_pattern: "Nonlinear.*not converged"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Mesh too coarse at grounding line where stress gradient is steep"
+    explanation: >
+      The grounding line (transition from grounded to floating ice) has a sharp
+      stress gradient. If mesh elements are larger than ~1 km at the GL, the
+      FEM discretization cannot resolve the transition, causing nonlinear
+      convergence failure or inaccurate GL migration.
+    affected_components: [ElmerGrid, mesh_refinement]
+  remedy:
+    action: "Refine mesh to <1 km at grounding line"
+    manual_steps:
+      - "Use Gmsh or ElmerGrid with graded refinement near GL"
+      - "Or use adaptive mesh refinement (MMG)"
+      - "Increase Nonlinear System Max Iterations to 100"
+      - "Reduce Relaxation Factor to 0.5-0.8"
+    prevention: "Check GroundedMask output — GL should span multiple elements"
+  cross_references: []
+
+- id: dt_011
+  stage: s5_execute
+  failure_domain: configuration
+  severity: fatal
+  symptom:
+    description: "MPI run crashes immediately with 'Mesh partitioning not found' or similar error"
+    error_pattern: "partitioning.*not found|mesh.*partition"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Mesh not partitioned before parallel (MPI) run"
+    explanation: >
+      For parallel runs with mpirun -np N, the mesh must first be partitioned
+      into N subdomains using ElmerGrid. Without partitioning, each MPI rank
+      cannot find its portion of the mesh and crashes.
+    affected_components: [run_elmerice, ElmerGrid]
+  remedy:
+    action: "Partition mesh: ElmerGrid 2 2 mesh_dir -partdual -metis N"
+    manual_steps:
+      - "Run: ElmerGrid 2 2 rectangle -partdual -metis 4"
+      - "This creates partitioning.4/ directory inside mesh_dir"
+      - "Then run: mpirun -np 4 ElmerSolver simulation.sif"
+    prevention: "run_elmerice.py checks for partitioning.N directory"
+  cross_references: []
+
+- id: dt_012
+  stage: s4_sif
+  failure_domain: configuration
+  severity: silent
+  symptom:
+    description: "Velocity is exactly zero everywhere despite correct mesh and material"
+    error_pattern: "all velocities zero"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Missing Body Force block or missing surface/thickness gradient"
+    explanation: >
+      SSA requires surface slope (FreeSurfGrad) or thickness + bed geometry
+      to compute driving stress. If the Body Force block is missing, or if
+      Zs/Zb are not set in Initial Condition, there is no driving stress
+      and velocity remains at its initial value of zero.
+    affected_components: [generate_sif, Body_Force_block, Initial_Condition]
+  remedy:
+    action: "Add Body Force block with surface accumulation; set Zs, Zb, H in Initial Condition"
+    manual_steps:
+      - "Check SIF has Body Force block"
+      - "Check Initial Condition sets Zs, Zb, H"
+      - "Verify surface has non-zero slope (flat slab = zero driving stress)"
+    prevention: "generate_sif.py always includes Body Force with SMB"
+  cross_references: []
+
+- id: dt_013
+  stage: s4_sif
+  failure_domain: numerical
+  severity: fatal
+  symptom:
+    description: "NaN values propagate through solution — output contains NaN in velocity and other fields"
+    error_pattern: "NaN|nan|not a number"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Critical Shear Rate set to 0.0 causing division by zero in viscosity computation"
+    explanation: >
+      Glen's flow law viscosity: eta = 0.5 * A^(-1/n) * (eps_II)^((1-n)/(2n))
+      When eps_II (second invariant of strain rate) is exactly 0, this is 0^(-1)
+      which is infinity. Critical Shear Rate provides a floor value to prevent this.
+      Setting it to 0.0 removes this protection, causing NaN propagation.
+    affected_components: [generate_sif, Material_block]
+  remedy:
+    action: "Set Critical Shear Rate = Real 1.0e-10 in Material block"
+    tool_to_run: generate_sif --critical_shear_rate 1e-10
+    manual_steps:
+      - "Check Material block: Critical Shear Rate must be > 0"
+      - "Typical value: 1e-10 to 1e-8 s^-1"
+    prevention: "generate_sif.py validates critical_shear_rate > 0"
+  cross_references: []
+
+- id: dt_014
+  stage: s3_forcing
+  failure_domain: unit_conversion
+  severity: silent
+  symptom:
+    description: "Ice sheet grows everywhere — no ablation zone despite warm temperatures at margins"
+    error_pattern: "thickness increases monotonically"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "SMB sign convention wrong — ablation entered as positive"
+    explanation: >
+      In Elmer/Ice, Top Surface Accumulation is positive for accumulation
+      (mass gain) and negative for ablation (mass loss). Some climate models
+      and datasets use the opposite convention. If ablation is entered as
+      positive, the ice sheet gains mass everywhere.
+    affected_components: [convert_forcing, Body_Force_block]
+  remedy:
+    action: "Check SMB sign: positive = accumulation, negative = ablation"
+    tool_to_run: convert_forcing
+    manual_steps:
+      - "Verify: in the ablation zone (low elevation), SMB should be negative"
+      - "RACMO SMB uses positive=accumulation (correct for Elmer)"
+      - "Some models use positive=melt — negate these before use"
+    prevention: "convert_forcing.py warns if SMB is always positive"
+  cross_references: []
+
+- id: dt_015
+  stage: s7_postprocess
+  failure_domain: configuration
+  severity: degraded
+  symptom:
+    description: "VTU output files are empty or only contain initial state"
+    error_pattern: "only 1 VTU file|empty VTU"
+    detection_method: file_check
+  diagnosis:
+    root_cause: "Output Intervals in SIF is larger than Timestep Intervals"
+    explanation: >
+      If Output Intervals = 1000 but Timestep Intervals = 100, only the
+      initial state is written because no time step is a multiple of the
+      output interval within the simulation period.
+    affected_components: [generate_sif, Simulation_block]
+  remedy:
+    action: "Set Output Intervals <= Timestep Intervals (e.g., 10)"
+    manual_steps:
+      - "Check SIF: Output Intervals should divide Timestep Intervals"
+      - "Typical: Output Intervals = 10 for 100 timesteps"
+    prevention: "generate_sif.py defaults to Output Intervals = 10"
+  cross_references: []
+
+- id: dt_016
+  stage: s4_sif
+  failure_domain: physics
+  severity: silent
+  symptom:
+    description: "Ice thickness becomes negative in some elements — non-physical solution"
+    error_pattern: "negative thickness"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Missing thickness limiter in ThicknessSolver"
+    explanation: >
+      Without an explicit lower limit on ice thickness, the advection scheme
+      can produce negative values, especially at ice margins where thickness
+      approaches zero. This is a Gibbs phenomenon in the FEM discretization.
+    affected_components: [ThicknessSolver, Solver_block]
+  remedy:
+    action: "Add thickness limiter keywords to ThicknessSolver"
+    manual_steps:
+      - "Add to Solver block: Apply Dirichlet = Logical True"
+      - "Add to Solver block: Stabilization Method = Stabilized"
+      - "Add to Body Force: H Lower Limit = Real 0.0"
+    prevention: "generate_sif.py includes these keywords by default"
+  cross_references: []
+
+- id: dt_017
+  stage: s5_execute
+  failure_domain: numerical
+  severity: fatal
+  symptom:
+    description: "MUMPS solver crashes with out-of-memory error on fine mesh"
+    error_pattern: "MUMPS.*memory|allocation.*failed|INFO\\(1\\)=-9"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Direct solver (MUMPS/UMFPACK) requires O(N^2) memory for sparse factorization on fine meshes"
+    explanation: >
+      Direct solvers like MUMPS store the factored matrix, which can require
+      10-100x the memory of the original sparse matrix. For meshes with >100k
+      nodes, this often exceeds available RAM. Iterative solvers (BiCGStab, GMRES)
+      have O(N) memory cost but may converge slowly.
+    affected_components: [run_elmerice, Solver_block]
+  remedy:
+    action: "Switch to iterative solver for large meshes"
+    manual_steps:
+      - "Change SIF: Linear System Solver = Iterative"
+      - "Set: Linear System Iterative Method = BiCGStab"
+      - "Set: Linear System Preconditioning = ILU1"
+      - "Or coarsen mesh to reduce system size"
+    prevention: "run_elmerice.py warns about MUMPS memory errors"
+  cross_references: [dt_010]
+
+- id: dt_018
+  stage: s4_sif
+  failure_domain: configuration
+  severity: fatal
+  symptom:
+    description: "Fabric solver crashes with 'wrong number of DOFs' error"
+    error_pattern: "DOFs.*error|dimension.*mismatch.*fabric"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Fabric variable declared with wrong number of DOFs (must be 5 in 3D)"
+    explanation: >
+      The fabric orientation tensor a(2) has 5 independent components in 3D
+      (symmetric 3x3 tensor with trace=1: a11, a22, a12, a23, a13).
+      Declaring Fabric with DOFs=3 or DOFs=6 causes a dimension mismatch
+      in the FabricSolve subroutine.
+    affected_components: [FabricSolve, Solver_block]
+  remedy:
+    action: "Set Variable = -dofs 5 'Fabric' in FabricSolver block"
+    manual_steps:
+      - "Check Solver block for FabricSolve"
+      - "Must have: Variable = -dofs 5 'Fabric'"
+      - "In 2D: use -dofs 3 'Fabric'"
+    prevention: "Match fabric DOFs to mesh dimension: 3D→5, 2D→3"
+  cross_references: [dt_007]

@@ -1,0 +1,432 @@
+# ============================================================================
+# Diagnostic Triplets -- DLBreach Knowledge Infrastructure
+# ============================================================================
+# Each triplet encodes one piece of operational debugging knowledge:
+#   symptom  -> what the agent observes
+#   diagnosis -> why it happened
+#   remedy   -> what to do about it
+#
+# Failure domains:
+#   runtime, silent_error, unit_conversion, parameter_format,
+#   environment, path_resolution, coupling_mismatch
+#
+# Severity levels:
+#   fatal    -- pipeline cannot continue
+#   degraded -- continues but output quality affected
+#   warning  -- cosmetic or non-critical
+#   silent   -- no error shown, but output is wrong
+# ============================================================================
+
+triplets:
+
+  # --- dt_dlb_001: Binary not found ---
+  - id: dt_dlb_001
+    stage: "s1_installation"
+    failure_domain: "environment"
+    symptom:
+      description: "DLBreach binary not found. verify_dlbreach reports status=binary_not_found."
+      error_pattern: "binary not found"
+      detection_method: "tool_output"
+    diagnosis:
+      root_cause: "DLBreach.exe is a Windows binary and has not been placed in the expected path, or no Wine/Linux native binary is available."
+      explanation: >
+        DLBreach is distributed as a Windows .exe from Clarkson University.
+        On Linux, it requires either Wine to run the .exe, or compilation from
+        Fortran source code using gfortran. The binary must be placed in
+        model/dlbreach/bin/ or on the system PATH.
+      affected_components:
+        - "DLBreach binary"
+        - "Wine (optional)"
+    remedy:
+      action: "Download and install DLBreach binary."
+      manual_steps:
+        - "Download DLBreach_Barrier.zip from https://webspace.clarkson.edu/~wwu/DLBreach.html"
+        - "Extract to model/dlbreach/bin/"
+        - "Install Wine: sudo apt-get install wine"
+        - "Test: wine model/dlbreach/bin/DLBreach.exe"
+        - "Alternative: if Fortran source is available, compile with gfortran -o dlbreach *.f90"
+      prevention: "Keep DLBreach binary in model/dlbreach/bin/ and verify after system updates."
+    severity: "fatal"
+
+  # --- dt_dlb_002: Input file format error ---
+  - id: dt_dlb_002
+    stage: "s6_execution"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "DLBreach crashes immediately or produces empty output. Stderr may show Fortran read error."
+      error_pattern: "STOP|read error|end of file|runtime error"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "The input file has malformed cards, comments in multiline data blocks, or missing required parameters."
+      explanation: >
+        DLBreach uses Fortran READ statements to parse the input file. Common
+        format errors: (1) comments (!) or blank lines between a multiline card
+        keyword and its data lines, (2) wrong number of values for a card,
+        (3) missing comma separators, (4) non-numeric text where numbers expected.
+        The Upstream_Reservoir and Upstream_Reservoir_Inflow cards are especially
+        sensitive because they read multiple lines as a single statement.
+      affected_components:
+        - "Input file parser"
+        - "Multiline card blocks"
+    remedy:
+      action: "Validate and fix the input file format."
+      tool_to_run: "assemble_input_file"
+      manual_steps:
+        - "Ensure NO comments or blank lines between multiline card keywords and data"
+        - "Check comma separators in multi-value cards"
+        - "Verify all required cards are present (use assemble_input_file --validate)"
+        - "Compare with test cases for correct formatting"
+      prevention: "Always use assemble_input_file tool to generate the input file."
+    severity: "fatal"
+    cross_references: ["dt_dlb_003"]
+
+  # --- dt_dlb_003: Missing required cards ---
+  - id: dt_dlb_003
+    stage: "s5_breach_config"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "assemble_input_file reports missing required cards. DLBreach may crash or use unexpected defaults."
+      error_pattern: "Missing required cards"
+      detection_method: "tool_output"
+    diagnosis:
+      root_cause: "One or more mandatory cards (Time_Step, Simulation_Period, geometry, sediment properties, initial WSL) are not present in the assembled input file."
+      explanation: >
+        DLBreach requires approximately 14 mandatory cards. Without them, the
+        Fortran code may read uninitialized memory or crash. Unlike some models,
+        DLBreach does not provide informative error messages for missing cards.
+      affected_components:
+        - "Input file completeness"
+    remedy:
+      action: "Add the missing cards using the appropriate tool."
+      manual_steps:
+        - "Run assemble_input_file to see which cards are missing"
+        - "Use create_dam_geometry for geometry cards"
+        - "Use set_breach_parameters for breach/sediment cards"
+        - "Use create_reservoir_curve for reservoir cards"
+        - "Manually add Time_Step, Simulation_Period, Initial_Up&Downstream_WSL"
+      prevention: "Always run the full tool pipeline (s2 -> s3 -> s4 -> s5) before assembly."
+    severity: "fatal"
+    cross_references: ["dt_dlb_002"]
+
+  # --- dt_dlb_004: Wrong time units ---
+  - id: dt_dlb_004
+    stage: "s5_breach_config"
+    failure_domain: "unit_conversion"
+    symptom:
+      description: "DLBreach produces unreasonably fast or slow breach evolution. Peak discharge occurs at unexpected time."
+      error_pattern: ""
+      detection_method: "output_inspection"
+    diagnosis:
+      root_cause: "Time units are mixed: Time_Step and Simulation_Period use SECONDS, but Upstream_Reservoir_Inflow and WSL time series use HOURS."
+      explanation: >
+        DLBreach has an inconsistent time unit convention documented in the I/O
+        format guide. Time_Step and Simulation_Period are in SECONDS. However,
+        the inflow hydrograph (Upstream_Reservoir_Inflow), water level time series
+        (Upstream_WSL_Time_Series, Downstream_WSL_Time_Series), wave time series,
+        and wind time series all use time in HOURS. The output file also reports
+        time in HOURS. Confusing these units produces wildly wrong results with
+        no error message.
+      affected_components:
+        - "Time_Step card"
+        - "Simulation_Period card"
+        - "Upstream_Reservoir_Inflow card"
+        - "WSL time series cards"
+    remedy:
+      action: "Verify all time units match DLBreach conventions."
+      manual_steps:
+        - "Time_Step: value in SECONDS (e.g., 1.0 = 1 second)"
+        - "Simulation_Period: both values in SECONDS (e.g., 0.0, 86400.0 = 1 day)"
+        - "Upstream_Reservoir_Inflow: time in HOURS (e.g., 0.0, 1.0 = 1 hour)"
+        - "WSL time series: time in HOURS"
+        - "Output time (col 1): in HOURS"
+      prevention: "Use convert_cama_to_inflow tool which handles the conversion automatically."
+    severity: "silent"
+
+  # --- dt_dlb_005: Slope convention error ---
+  - id: dt_dlb_005
+    stage: "s2_dam_properties"
+    failure_domain: "unit_conversion"
+    symptom:
+      description: "Embankment geometry looks unrealistic (too steep or too flat). Breach evolves abnormally."
+      error_pattern: ""
+      detection_method: "output_inspection"
+    diagnosis:
+      root_cause: "Slopes are specified as H/V instead of V/H. DLBreach uses V/H (vertical/horizontal) convention."
+      explanation: >
+        Engineering practice commonly uses both V/H and H/V conventions. DLBreach
+        uses V/H (vertical to horizontal ratio). A typical earthfill dam has
+        upstream slope ~0.33-0.40 V/H (i.e., 1V:2.5H to 1V:3H). If H/V is used
+        instead, 2.5 or 3.0 would produce an impossibly steep near-vertical slope.
+        Side slopes (Breach_Side_Slope_Constant) also use V/H.
+      affected_components:
+        - "Embankment_Upstream_Slope"
+        - "Embankment_Downstream_Slope"
+        - "Breach_Side_Slope_Constant"
+    remedy:
+      action: "Convert slopes to V/H convention."
+      manual_steps:
+        - "If you have H/V values, take the reciprocal: V/H = 1/(H/V)"
+        - "Typical earthfill: 0.25-0.50 V/H (1:4 to 1:2)"
+        - "Steep earthfill: 0.50-0.67 V/H (1:2 to 1:1.5)"
+        - "Rockfill: 0.40-0.57 V/H"
+      prevention: "Use create_dam_geometry tool which validates slope ranges."
+    severity: "silent"
+
+  # --- dt_dlb_006: Embankment_Length misunderstanding ---
+  - id: dt_dlb_006
+    stage: "s2_dam_properties"
+    failure_domain: "parameter_format"
+    symptom:
+      description: "Breach width is limited to an unexpectedly small value, or breach grows far wider than the dam."
+      error_pattern: ""
+      detection_method: "output_inspection"
+    diagnosis:
+      root_cause: "Embankment_Length is the maximum breach bottom width, not the dam crest length."
+      explanation: >
+        The documentation states: 'The embankment length is the base length,
+        which is the maximum breach bottom width.' This is the longitudinal
+        base width of the trapezoidal embankment cross-section. If set too
+        small, the breach cannot fully develop. If set much larger than the
+        actual base width, it has minimal effect but wastes computation.
+        The actual dam crest length (along the river) is not a DLBreach input.
+      affected_components:
+        - "Embankment_Length card"
+    remedy:
+      action: "Set Embankment_Length to the embankment base width."
+      manual_steps:
+        - "Compute base_width = crest_width + height/us_slope + height/ds_slope"
+        - "Set Embankment_Length equal to or slightly larger than base_width"
+        - "For partial breach, set smaller than base_width to limit breach extent"
+      prevention: "Use create_dam_geometry tool which computes and warns about this."
+    severity: "degraded"
+
+  # --- dt_dlb_007: Numerical instability ---
+  - id: dt_dlb_007
+    stage: "s6_execution"
+    failure_domain: "runtime"
+    symptom:
+      description: "Output shows oscillating or exploding values (NaN, Inf, or wildly fluctuating discharge). Model may crash mid-run."
+      error_pattern: "NaN|Inf|overflow|floating"
+      detection_method: "output_inspection"
+    diagnosis:
+      root_cause: "Time step is too large for the problem, causing numerical instability in the explicit time-marching scheme."
+      explanation: >
+        DLBreach uses an explicit numerical scheme. Large time steps cause
+        oscillation or divergence, especially during rapid breach growth.
+        Field cases typically need dt=1-5s, lab cases dt=0.1-1s. Very large
+        dams with rapid failure may need smaller steps. The recommended
+        approach is to start with a small step and increase until results
+        converge.
+      affected_components:
+        - "Time_Step card"
+    remedy:
+      action: "Reduce the time step."
+      manual_steps:
+        - "Start with Time_Step = 0.5 (or 0.1 for lab cases)"
+        - "If stable, try doubling the time step"
+        - "Check that results don't change significantly between dt=1.0 and dt=0.5"
+        - "For very large dams (H > 100m), start with dt = 0.1"
+      prevention: "Always verify time step independence by comparing runs with different dt values."
+    severity: "fatal"
+
+  # --- dt_dlb_008: Zero breach flow (overtopping) ---
+  - id: dt_dlb_008
+    stage: "s7_output"
+    failure_domain: "silent_error"
+    symptom:
+      description: "Output shows zero breach flow for the entire simulation. No breach development occurs."
+      error_pattern: ""
+      detection_method: "output_inspection"
+    diagnosis:
+      root_cause: "Initial upstream water level is below the embankment crest, so no overtopping occurs."
+      explanation: >
+        For overtopping breach (Breach_Mode=1), the upstream water level must
+        exceed the embankment height for flow to initiate. The initial water level
+        is set by Initial_Up&Downstream_WSL (first value). If this is below the
+        embankment height and no inflow raises it above the crest, the breach
+        never initiates. Check: upstream_wsl > Embankment_Height (at least initially
+        or via inflow).
+      affected_components:
+        - "Initial_Up&Downstream_WSL"
+        - "Upstream_Reservoir_Inflow"
+        - "Embankment_Height"
+    remedy:
+      action: "Set initial upstream WSL above the crest or provide sufficient inflow."
+      manual_steps:
+        - "Set upstream WSL slightly above Embankment_Height (e.g., height + 0.5m)"
+        - "Or provide an inflow hydrograph that raises the level above the crest"
+        - "Check Initial_Overtopping_Breach depth is reasonable (0.2-0.4m)"
+      prevention: "Verify upstream_wsl >= Embankment_Height before running."
+    severity: "silent"
+
+  # --- dt_dlb_009: Incorrect CaMa coupling cell ---
+  - id: dt_dlb_009
+    stage: "s4_inflow"
+    failure_domain: "coupling_mismatch"
+    symptom:
+      description: "Inflow hydrograph from CaMa-Flood has unreasonably small or large discharge for the dam."
+      error_pattern: ""
+      detection_method: "output_inspection"
+    diagnosis:
+      root_cause: "The dam coordinates map to a wrong CaMa-Flood grid cell (wrong river, tributary, or dry cell)."
+      explanation: >
+        CaMa-Flood uses a 15-arcmin grid (~25km). If the dam coordinates are
+        slightly off, the nearest cell may be on a different river branch or a
+        dry (no-flow) cell. This produces either zero flow or flow from the
+        wrong watershed. The convert_cama_to_inflow tool warns if the nearest
+        cell is more than 0.25 degrees away, but even within 0.25 degrees the
+        cell may be on the wrong branch.
+      affected_components:
+        - "convert_cama_to_inflow tool"
+        - "CaMa-Flood grid resolution"
+    remedy:
+      action: "Verify the CaMa cell matches the expected river."
+      manual_steps:
+        - "Compare CaMa outflw at the selected cell with known dam inflow data"
+        - "Try adjacent cells and compare discharge magnitudes"
+        - "Check CaMa-Flood river network map to verify the dam is on the right river"
+        - "If CaMa resolution is too coarse, use manual inflow data instead"
+      prevention: "Always compare CaMa discharge with expected dam design flood before running DLBreach."
+    severity: "degraded"
+
+  # --- dt_dlb_010: Cohesive kd too high/low ---
+  - id: dt_dlb_010
+    stage: "s5_breach_config"
+    failure_domain: "silent_error"
+    symptom:
+      description: "For cohesive embankment, breach develops unrealistically fast (kd too high) or barely progresses (kd too low)."
+      error_pattern: ""
+      detection_method: "output_inspection"
+    diagnosis:
+      root_cause: "The cohesive erosion coefficient kd is the most sensitive parameter and requires calibration or careful estimation."
+      explanation: >
+        The technical report states: 'kd is the most important one among all
+        DLBreach parameters in the case of cohesive embankment.' Values from
+        literature range from 2.5 to 30.0 cm3/N-s. Too high -> instant failure.
+        Too low -> breach barely develops. kd should ideally be measured with
+        a submerged jet test device (Hanson and Cook 2004). Without measurements,
+        start with kd=10.0 and conduct sensitivity analysis.
+      affected_components:
+        - "Cohesive_Soil_Erosion_kd card"
+    remedy:
+      action: "Calibrate kd by comparing with observed breach data or literature values."
+      manual_steps:
+        - "Start with kd=10.0 cm3/N-s as baseline"
+        - "Run sensitivity: kd = 2.5, 5.0, 10.0, 20.0, 30.0"
+        - "Compare peak Q and failure time with historical data if available"
+        - "For compacted fill: kd ~ 2.5-10.0"
+        - "For loose fill: kd ~ 10.0-30.0"
+      prevention: "Always run sensitivity analysis on kd for cohesive breach cases."
+    severity: "degraded"
+
+  # --- dt_dlb_011: Downstream injection to wrong CaMa cell ---
+  - id: dt_dlb_011
+    stage: "s7_output"
+    failure_domain: "coupling_mismatch"
+    symptom:
+      description: "After injecting breach flow and re-running CaMa-Flood, downstream flood does not appear or appears in wrong location."
+      error_pattern: ""
+      detection_method: "output_inspection"
+    diagnosis:
+      root_cause: "Breach outflow was injected into a CaMa-Flood cell that is not on the downstream river or is above the dam location."
+      explanation: >
+        The inject_breach_to_cama tool adds breach outflow as runoff to a
+        specified CaMa grid cell. This cell must be DOWNSTREAM of the dam
+        on the CaMa river network. If injected at the dam cell itself (which
+        already has the upstream flow), the flow is double-counted. If injected
+        to a cell on a different branch, the flood wave propagates on the wrong
+        river.
+      affected_components:
+        - "inject_breach_to_cama tool"
+        - "CaMa-Flood river network topology"
+    remedy:
+      action: "Verify the injection cell is immediately downstream of the dam in the CaMa network."
+      manual_steps:
+        - "Use CaMa-Flood nextxy to find the cell downstream of the dam"
+        - "Inject into the FIRST downstream cell, not the dam cell itself"
+        - "Verify by checking that CaMa discharge increases at the injection point"
+      prevention: "Use CaMa-Flood flow direction data to automatically identify the downstream cell."
+    severity: "degraded"
+
+  # --- dt_dlb_012: Piping breach pipe not reaching WSL ---
+  - id: dt_dlb_012
+    stage: "s5_breach_config"
+    failure_domain: "silent_error"
+    symptom:
+      description: "Piping breach produces no flow. The initial pipe location is above the water level."
+      error_pattern: ""
+      detection_method: "output_inspection"
+    diagnosis:
+      root_cause: "Initial_Piping_Breach depth from top places the pipe above the upstream water surface level, so no flow drives through it."
+      explanation: >
+        The Initial_Piping_Breach card specifies (depth_from_top, width). The
+        depth_from_top measures from the embankment crest downward. For piping
+        to initiate, the pipe must be below the upstream water level. If the
+        pipe is at 5m below the 10m crest (i.e., at elevation 5m) but the
+        upstream WSL is only 4m, there is no head driving flow through the pipe.
+      affected_components:
+        - "Initial_Piping_Breach card"
+        - "Initial_Up&Downstream_WSL"
+    remedy:
+      action: "Ensure the pipe elevation is below the upstream water level."
+      manual_steps:
+        - "Pipe elevation = Embankment_Height - Initial_Piping_Breach[0]"
+        - "Verify: pipe_elevation < Initial_Up&Downstream_WSL[0]"
+        - "Typical: pipe at ~60-80% of dam height below crest"
+      prevention: "Check pipe elevation vs WSL before running."
+    severity: "silent"
+
+  # --- dt_dlb_013: Output only 1-2 lines ---
+  - id: dt_dlb_013
+    stage: "s6_execution"
+    failure_domain: "runtime"
+    symptom:
+      description: "DLBreach produces an output file with very few lines (1-2), then stops. No error message."
+      error_pattern: ""
+      detection_method: "output_inspection"
+    diagnosis:
+      root_cause: "Simulation_Period end time is too short, or the model completes the breach very quickly and stops."
+      explanation: >
+        DLBreach stops when either: (1) the simulation end time is reached,
+        (2) the breach flow becomes negligible and the model detects completion.
+        If Simulation_Period end is only slightly after start (e.g., seconds
+        instead of hours converted to seconds), the model produces minimal
+        output. Remember: Simulation_Period is in SECONDS, not hours.
+        A 10-hour simulation needs end_time = 36000.0 seconds.
+      affected_components:
+        - "Simulation_Period card"
+    remedy:
+      action: "Increase Simulation_Period end time."
+      manual_steps:
+        - "For dam breach: typically 6-48 hours = 21600-172800 seconds"
+        - "For levee breach: may need days = 86400-864000 seconds"
+        - "Set end_time = expected_breach_duration * 2 (in seconds)"
+      prevention: "Always compute simulation duration in seconds: hours * 3600."
+    severity: "fatal"
+
+  # --- dt_dlb_014: Reservoir curve causes immediate drainage ---
+  - id: dt_dlb_014
+    stage: "s3_reservoir_curve"
+    failure_domain: "silent_error"
+    symptom:
+      description: "Upstream water level drops to zero almost immediately, even with large reservoir. Peak breach Q is unrealistically low."
+      error_pattern: ""
+      detection_method: "output_inspection"
+    diagnosis:
+      root_cause: "Reservoir volume-elevation curve has wrong units (e.g., MCM instead of m3), making the reservoir appear tiny."
+      explanation: >
+        DLBreach uses SI units: V in m3, As in m2, z in m. If reservoir volume
+        is given in million cubic meters (MCM) without converting to m3, the
+        reservoir appears 1,000,000x smaller. A 1000 MCM reservoir should be
+        entered as 1.0e9 m3. Similarly, surface area must be in m2, not km2
+        (1 km2 = 1.0e6 m2). The power-law methods (2,3,4) are also affected.
+      affected_components:
+        - "Upstream_Reservoir card"
+    remedy:
+      action: "Convert all reservoir data to SI units (m3, m2, m)."
+      manual_steps:
+        - "Volume: MCM * 1e6 = m3, acre-feet * 1233.48 = m3"
+        - "Area: km2 * 1e6 = m2, acres * 4046.86 = m2"
+        - "Elevation: always in meters above embankment base, not sea level"
+      prevention: "Use create_reservoir_curve tool which expects and validates SI units."
+    severity: "silent"

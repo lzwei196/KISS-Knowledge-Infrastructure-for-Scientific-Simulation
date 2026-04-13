@@ -1,0 +1,147 @@
+model:
+  name: "icepack"
+  version: "1.1.0"
+  domain: "cryosphere"
+  subdomain: "glacier and ice sheet flow modeling"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/icepack/venv/bin/python"
+  interface: "python_library"
+  description: >
+    Python library for modeling the flow of ice sheets and glaciers using
+    the finite element method (FEM), built on Firedrake/PETSc.
+  unit_system: "non-SI (MPa, meters, years)"
+
+inputs:
+  forcing:
+    - name: "velocity"
+      unit: "m/yr"
+      valid_range: [0, 15000]
+      description: "Ice velocity field (vx, vy components); satellite-derived from MEaSUREs"
+    - name: "thickness"
+      unit: "m"
+      valid_range: [0, 5000]
+      description: "Ice thickness from BedMachine or similar; must be > 0 on mesh"
+    - name: "surface"
+      unit: "m"
+      valid_range: [-500, 5000]
+      description: "Surface elevation (m above sea level); required for ice stream/shallow ice"
+    - name: "bed"
+      unit: "m"
+      valid_range: [-6000, 5000]
+      description: "Bed elevation (m above sea level)"
+    - name: "accumulation"
+      unit: "m_ice/yr"
+      valid_range: [-10, 10]
+      description: "Net surface mass balance; convert from m w.e./yr by multiplying rho_w/rho_i"
+    - name: "temperature"
+      unit: "K"
+      valid_range: [200, 273.15]
+      description: "Ice temperature in Kelvin; used to compute rate factor A"
+
+  parameters:
+    critical:
+      - name: "fluidity_A"
+        unit: "MPa^-3 yr^-1"
+        valid_range: [1, 100]
+        description: "Glen's flow law rate factor; compute via icepack.rate_factor(T) from temperature"
+      - name: "friction_C"
+        unit: "MPa yr^(1/m) m^(-1/m)"
+        valid_range: [0.001, 1.0]
+        description: "Weertman friction coefficient for ice stream; must be calibrated per site"
+      - name: "glen_exponent_n"
+        unit: "dimensionless"
+        valid_range: [3, 3]
+        description: "Power-law exponent in Glen's flow law; always 3"
+      - name: "weertman_exponent_m"
+        unit: "dimensionless"
+        valid_range: [3, 3]
+        description: "Sliding law exponent; default 3"
+      - name: "dt"
+        unit: "years"
+        valid_range: [0.001, 10]
+        description: "Timestep for prognostic solve; typical range 0.01-1.0 yr"
+      - name: "num_steps"
+        unit: "count"
+        valid_range: [1, 100000]
+        description: "Number of time steps for prognostic simulation"
+
+    mesh:
+      - name: "mesh_type"
+        valid_values: ["rectangle", "geojson"]
+        description: "Mesh source: rectangle for idealized, geojson for real glacier outline"
+      - name: "lcar"
+        unit: "m"
+        valid_range: [100, 50000]
+        description: "Characteristic mesh element size for gmsh"
+
+    solver:
+      - name: "model_type"
+        valid_values: ["ice_shelf", "ice_stream", "shallow_ice", "hybrid"]
+        description: "Physics model selection"
+      - name: "diagnostic_solver_type"
+        valid_values: ["petsc", "icepack"]
+        description: "Solver backend; petsc is default and recommended"
+      - name: "prognostic_solver_type"
+        valid_values: ["lax-wendroff", "implicit-euler"]
+        description: "Time integration scheme; lax-wendroff is 2nd-order default"
+
+outputs:
+  primary:
+    - name: "velocity"
+      unit: "m/yr"
+      valid_range: [0, 15000]
+      description: "Solved ice velocity field on FEM mesh"
+    - name: "thickness"
+      unit: "m"
+      valid_range: [0, 5000]
+      description: "Evolved ice thickness after prognostic time stepping"
+  derived:
+    - name: "strain_rate"
+      unit: "yr^-1"
+      valid_range: [0, 1]
+      description: "Strain rate tensor; regularized by strain_rate_min = 1e-5"
+    - name: "stress"
+      unit: "MPa"
+      valid_range: [0, 1]
+      description: "Deviatoric stress tensor"
+    - name: "mass_flux"
+      unit: "m^2/yr"
+      valid_range: [0, 1e8]
+      description: "Ice flux = thickness * velocity"
+
+physical_constants:
+  seconds_per_year: 3.15576e7
+  gravity_icepack: 9.75e15  # m/yr^2
+  rho_ice: 917.0  # kg/m^3 (SI); 9.2e-19 MPa yr^2/m^2 (icepack)
+  rho_water: 1024.0  # kg/m^3 (SI); 1.03e-18 MPa yr^2/m^2 (icepack)
+  glen_n: 3.0
+  weertman_m: 3.0
+  melting_temp: 273.15  # K
+
+unit_traps:
+  - variable: "velocity"
+    source_unit: "m/s"
+    target_unit: "m/yr"
+    conversion: "multiply by 3.15576e7"
+    trap: "Velocities ~0 if left in m/s"
+  - variable: "temperature"
+    source_unit: "degC"
+    target_unit: "K"
+    conversion: "add 273.15"
+    trap: "rate_factor() expects K; wrong T gives wrong A"
+  - variable: "rate_factor_A"
+    source_unit: "Pa^-3 s^-1"
+    target_unit: "MPa^-3 yr^-1"
+    conversion: "use icepack.rate_factor(T)"
+    trap: "Complex conversion; always use built-in function"
+  - variable: "accumulation"
+    source_unit: "m_we/yr"
+    target_unit: "m_ice/yr"
+    conversion: "multiply by rho_w/rho_i (~1.09)"
+    trap: "Slight bias if not converted"
+
+known_issues:
+  - "Firedrake dependency must be installed separately via its own installer"
+  - "icepack uses non-SI units internally; all inputs must be converted"
+  - "Mesh coordinates must be in projected CRS (not lat/lon)"
+  - "Ice thickness must be > 0 everywhere on mesh"
+  - "Requires NASA EarthData account for NSIDC dataset access"

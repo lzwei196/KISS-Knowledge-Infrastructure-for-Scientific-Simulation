@@ -1,0 +1,1 @@
+/mnt/disk1/Hydrocraft_server/Hydrocraft/skills/vic_cali_ai/SKILL.md

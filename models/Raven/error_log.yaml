@@ -1,0 +1,160 @@
+# Raven Error Log — Discovered during Chaohe validation (2026-03-21)
+
+errors:
+  - id: raven_e001
+    date: 2026-03-21
+    model: Raven v4.1
+    stage: s0_config
+    severity: critical
+    symptom: "All models except MOHYSE produce zero discharge"
+    root_cause: >
+      :Precipitation PRECIP_RAVEN requires 4 tokens in Raven v4.1:
+      ":Precipitation PRECIP_RAVEN ATMOS_PRECIP MULTIPLE"
+      With only 2 tokens, Raven silently ignores the command (Len<4 check
+      in ParseInput.cpp line 2491), resulting in no precipitation entering
+      the model and zero discharge. NO ERROR is raised — only a WARNING.
+    fix: >
+      Changed all .rvi templates to use full 4-token format:
+      ":Precipitation PRECIP_RAVEN ATMOS_PRECIP MULTIPLE"
+    tools_affected:
+      - s0_config/select_model_template.py (all templates)
+    status: fixed_in_validation
+
+  - id: raven_e002
+    date: 2026-03-21
+    model: Raven v4.1
+    stage: s0_config
+    severity: critical
+    symptom: "GR4J fails with 'exchange flow must be between two soil units'"
+    root_cause: >
+      select_model_template.py specifies :ExchangeFlow PERC_GR4JEXCH SOIL[1] SURFACE_WATER
+      but Raven requires both FROM and TO to be SOIL compartments for ExchangeFlow.
+      SURFACE_WATER is not a SOIL type.
+    fix: >
+      Removed ExchangeFlow process from GR4J template.
+      With GR4J_X2=0 (default), no exchange occurs anyway.
+      For calibration with X2!=0, use SOIL[1] SOIL[0] as the target.
+    tools_affected:
+      - s0_config/select_model_template.py (gr4j template)
+    status: fixed_in_validation
+
+  - id: raven_e003
+    date: 2026-03-21
+    model: Raven v4.1
+    stage: s0_config
+    severity: critical
+    symptom: "GR4J_X1-X4 'Unrecognized global parameter' warnings, GR4J_X2/X3 'not used'"
+    root_cause: >
+      select_model_template.py puts GR4J_X1-X4 as :GlobalParameter in .rvp.
+      In Raven v4.1:
+      - GR4J_X1 is NOT a named parameter — it equals soil capacity
+        (soil_thickness * porosity * 1000 mm)
+      - GR4J_X2 is a SOIL property (SoilParameterList)
+      - GR4J_X3 is a SOIL property (SoilParameterList)
+      - GR4J_X4 is a LAND USE property (LandUseParameterList)
+    fix: >
+      Set soil thickness = X1/1000 with porosity=1.0 in SoilProfiles.
+      Move X2, X3 to SoilParameterList. Move X4 to LandUseParameterList.
+    tools_affected:
+      - s0_config/select_model_template.py
+      - s2_parameters/build_rvp_parameters.py
+    status: fixed_in_validation
+
+  - id: raven_e004
+    date: 2026-03-21
+    model: Raven v4.1
+    stage: s2_parameters
+    severity: high
+    symptom: "HBV-EC fails with 'NONE cannot be used as channel code if routing is not ROUTE_NONE'"
+    root_cause: >
+      HBV-EC template uses ROUTE_DIFFUSIVE_WAVE routing which requires channel
+      profiles to be defined in .rvp and .rvh. NONE profile is only valid
+      for ROUTE_NONE.
+    fix: >
+      Changed HBV to use ROUTE_NONE + ROUTE_TRI_CONVOLUTION (lumped approach).
+      For distributed HBV-EC, channel profiles must be provided.
+    tools_affected:
+      - s0_config/select_model_template.py (hbv_ec template)
+    status: fixed_in_validation
+
+  - id: raven_e005
+    date: 2026-03-21
+    model: Raven v4.1
+    stage: s2_parameters
+    severity: high
+    symptom: "HMETS fails with missing DD_AGGRADATION, SWI_REDUCT_COEFF"
+    root_cause: >
+      HMETS snow process (SNOBAL_HMETS + POTMELT_HMETS) requires several
+      land-use parameters not included in the template:
+      DD_AGGRADATION, HMETS_RUNOFF_COEFF (land-use not global),
+      SWI_REDUCT_COEFF (global).
+      Also SOILEVAP_HYMOD is unrecognized — should use SOILEVAP_ALL.
+    fix: >
+      Added DD_AGGRADATION to LandUseParameterList, HMETS_RUNOFF_COEFF
+      as land-use param, SWI_REDUCT_COEFF + SNOW_SWI_MIN/MAX as globals.
+      Changed SOILEVAP_HYMOD to SOILEVAP_ALL.
+    tools_affected:
+      - s0_config/select_model_template.py (hmets template)
+      - s2_parameters/build_rvp_parameters.py
+    status: fixed_in_validation
+
+  - id: raven_e006
+    date: 2026-03-21
+    model: Raven v4.1
+    stage: s2_parameters
+    severity: medium
+    symptom: "HYMOD fails with missing PDM_B"
+    root_cause: >
+      PDM_B is a CLASS_LANDUSE property (LandUseClass.cpp), not a soil
+      property. build_rvp_parameters.py placed it in SoilParameterList
+      where it is unrecognized.
+    fix: Move PDM_B to LandUseParameterList.
+    tools_affected:
+      - s2_parameters/build_rvp_parameters.py
+    status: fixed_in_validation
+
+  - id: raven_e007
+    date: 2026-03-21
+    model: Raven v4.1
+    stage: s6_execution
+    severity: high
+    symptom: "All models fail with 'Cannot find or read .rvc file'"
+    root_cause: >
+      Raven v4.1 requires a .rvc file to exist even for cold start.
+      The tool chain does not generate one.
+    fix: Create empty .rvc with a comment line.
+    tools_affected:
+      - s6_execution/run_raven.py (should create .rvc if missing)
+    status: fixed_in_validation
+
+  - id: raven_e008
+    date: 2026-03-21
+    model: Raven v4.1
+    stage: s1_basin_setup
+    severity: medium
+    symptom: "parse_rvh_classes fails to parse comma-separated HRU lines"
+    root_cause: >
+      build_rvp_parameters.py uses line.split() on comma-separated .rvh
+      lines, resulting in class names with trailing commas (e.g. "CLOSED_SHRUB,").
+      The int(parts[0]) check fails on "1,".
+    fix: >
+      Use comma-aware parsing: split by comma, strip whitespace and commas.
+    tools_affected:
+      - s2_parameters/build_rvp_parameters.py (parse_rvh_classes)
+    status: documented
+
+  - id: raven_e009
+    date: 2026-03-21
+    model: Raven v4.1
+    stage: s3_forcing
+    severity: medium
+    symptom: "convert_forcing_to_rvt.py cannot find grid cells"
+    root_cause: >
+      Grid NetCDF uses variable names 'x' and 'y' (from VIC grid generation),
+      but the tool looks for 'lat' and 'lon'. Also, forcing files have no
+      extension (.txt/.dat) so the fallback filename parser skips them.
+    fix: >
+      Read 'x'/'y' variables, or parse filenames without extension requirement.
+    tools_affected:
+      - s3_forcing/convert_forcing_to_rvt.py
+    status: documented

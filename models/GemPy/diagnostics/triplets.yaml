@@ -1,0 +1,540 @@
+# GemPy Diagnostic Triplets
+# Format: symptom → diagnosis → remedy
+# 15+ entries covering unit conversion, parameter format, runtime, and silent errors
+
+- id: dt_001
+  stage: s1_input_data
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Model extent appears correct but all geological layers are paper-thin
+      or surfaces cluster at one elevation. Cross-sections show no
+      meaningful stratigraphy.
+    error_pattern: "layer thickness near zero"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Coordinates are in kilometers but GemPy expects meters. The extent
+      spans e.g., 0–2 km but is interpreted as 0–2 meters, compressing
+      all geology into a 2 m cube.
+    explanation: >
+      GemPy uses meters internally. If CSV data is in km, all distances
+      are 1000x too small. The model computes but produces meaningless
+      thin layers.
+    affected_components: [convert_geological_data, create_geomodel]
+  remedy:
+    action: "Multiply all X, Y, Z values by 1000 (km → m conversion)"
+    tool_to_run: convert_geological_data
+    manual_steps:
+      - "Check typical coordinate values — if < 100, likely in km"
+      - "Use --coord-unit km in convert_geological_data.py"
+      - "Verify extent after conversion spans realistic distances"
+    prevention: "convert_geological_data validates coordinate range and warns if suspiciously small"
+  severity: silent
+  cross_references: [dt_009]
+
+- id: dt_002
+  stage: s1_input_data
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Orientation vectors produce surfaces that are nearly vertical or
+      point in wrong directions. Geological structure looks rotated or
+      inverted compared to field observations.
+    error_pattern: "orientation mismatch"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: >
+      Azimuth values are in radians (0–6.28) instead of degrees (0–360).
+      The sin/cos conversion produces incorrect gradient components.
+    explanation: >
+      GemPy's azimuth_dip_to_gradient conversion expects degrees. If
+      radians are passed, an azimuth of 1.57 rad (=90°) is treated as
+      1.57° — almost due North instead of due East.
+    affected_components: [convert_geological_data, orientations_table]
+  remedy:
+    action: "Convert azimuth from radians to degrees: azimuth_deg = azimuth_rad * 180 / pi"
+    tool_to_run: convert_geological_data
+    manual_steps:
+      - "Check max azimuth value — if < 7, it's in radians"
+      - "Multiply all azimuth values by 180/pi"
+      - "Similarly check dip values"
+    prevention: "convert_geological_data validates azimuth range (0-360)"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_003
+  stage: s1_input_data
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      All geological surfaces appear inverted — formations that should
+      dip gently appear nearly vertical, and vice versa. Anticlines
+      appear as synclines.
+    error_pattern: "surfaces inverted"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: >
+      Dip angle measured from vertical (0° = vertical) instead of from
+      horizontal (0° = horizontal). A 10° dip-from-vertical becomes a
+      near-horizontal surface when interpreted as dip-from-horizontal.
+    explanation: >
+      Geological convention varies: some surveys measure dip from the
+      vertical axis. GemPy expects dip from horizontal (0° = flat,
+      90° = vertical).
+    affected_components: [convert_geological_data]
+  remedy:
+    action: "Convert: dip_from_horizontal = 90 - dip_from_vertical"
+    tool_to_run: convert_geological_data
+    manual_steps:
+      - "Check if horizontal layers have dip near 90° (suggests from-vertical convention)"
+      - "Subtract dip values from 90"
+    prevention: "Document source survey convention before conversion"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_004
+  stage: s1_input_data
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Layer stacking order is reversed — the youngest formation appears
+      at the bottom and the oldest at the top. Fault offset direction
+      is opposite to expected.
+    error_pattern: "reversed stratigraphy"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: >
+      Polarity sign is flipped (+1 should be -1 or vice versa). The
+      gradient vector points in the opposite direction, reversing the
+      scalar field ordering.
+    explanation: >
+      GemPy's scalar field increases in the direction of the gradient.
+      A flipped polarity reverses which side of a surface is "older"
+      vs "younger", inverting the stratigraphic stack.
+    affected_components: [convert_geological_data, orientations_table]
+  remedy:
+    action: "Multiply polarity by -1 for all orientations"
+    tool_to_run: convert_geological_data
+    manual_steps:
+      - "Check if Z-gradient (G_z) has unexpected sign"
+      - "For normally stacked layers, G_z should be positive (pointing up)"
+      - "Negate polarity column and recompute"
+    prevention: "Verify one known contact (e.g., basement top) has correct orientation"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_005
+  stage: s2_model_init
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Model creation fails with an error about invalid extent, or the
+      model produces an empty grid with zero points. compute_model()
+      may crash or return immediately with no results.
+    error_pattern: "extent error|empty grid|zero points"
+    detection_method: error_message
+  diagnosis:
+    root_cause: >
+      The Z-axis extent is inverted: z_min > z_max. For example,
+      extent=[0, 1000, 0, 1000, 0, -500] puts the surface (0) as min
+      and depth (-500) as max.
+    explanation: >
+      GemPy requires extent as [xmin, xmax, ymin, ymax, zmin, zmax]
+      where each min < max. Since geological depth is typically negative,
+      z_min should be the deepest (most negative) value.
+    affected_components: [create_geomodel, grid]
+  remedy:
+    action: "Swap z_min and z_max so that z_min < z_max"
+    tool_to_run: build_structural_params
+    manual_steps:
+      - "Check extent: z_min must be < z_max"
+      - "For models below sea level: extent=[..., -1000, 0] not [..., 0, -1000]"
+    prevention: "build_structural_params validates z_min < z_max"
+  severity: fatal
+  cross_references: []
+
+- id: dt_006
+  stage: s1_input_data
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Interpolation produces asymmetric surfaces even for symmetric input
+      data. Surfaces are biased toward one side of the model. Fit to
+      data points is visibly uneven.
+    error_pattern: "asymmetric interpolation"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: >
+      Gradient vectors are not normalized to unit length. A gradient with
+      magnitude 2 has double the influence of one with magnitude 1,
+      creating artificial bias in the interpolation.
+    explanation: >
+      GemPy's co-kriging treats gradient magnitude as a weight. Non-unit
+      gradients bias the scalar field, pulling surfaces toward locations
+      with larger gradient magnitudes.
+    affected_components: [convert_geological_data, orientations_table]
+  remedy:
+    action: "Normalize all gradient vectors to unit length: G / |G|"
+    tool_to_run: convert_geological_data
+    manual_steps:
+      - "Compute |G| = sqrt(G_x² + G_y² + G_z²) for each orientation"
+      - "Divide each component by |G|"
+      - "Verify |G| = 1.0 ± 0.01 after normalization"
+    prevention: "convert_geological_data normalizes automatically"
+  severity: degraded
+  cross_references: []
+
+- id: dt_007
+  stage: s6_computation
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Model computes successfully but surfaces are over-smoothed and
+      don't pass through the input data points. The block model shows
+      smooth, broad formations that ignore local data constraints.
+    error_pattern: "surfaces don't honor data"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: >
+      Nugget value is too large (> 0.1 for surface points). The
+      regularization overwhelms the data signal, allowing surfaces to
+      deviate significantly from input points.
+    explanation: >
+      The nugget effect (Tikhonov regularization) adds diagonal noise
+      to the covariance matrix. Large nuggets effectively tell the
+      interpolator "these data points are very uncertain — you don't
+      need to pass through them."
+    affected_components: [create_geomodel, compute_model]
+  remedy:
+    action: "Reduce nugget_surface_points to 0.00002 (default) or optimize with optimize_nuggets()"
+    tool_to_run: run_gempy_model
+    manual_steps:
+      - "Check current nugget values in the structural elements"
+      - "Set nugget_surface_points back to 0.00002"
+      - "If still too smooth, try 0.000001"
+      - "If matrix becomes singular, use optimize_nuggets()"
+    prevention: "build_structural_params warns if nugget > 0.1"
+  severity: degraded
+  cross_references: [dt_008]
+
+- id: dt_008
+  stage: s6_computation
+  failure_domain: runtime
+  symptom:
+    description: >
+      compute_model() crashes with LinAlgError: singular matrix, or
+      produces NaN/Inf in the scalar field. Model fails to converge.
+    error_pattern: "LinAlgError|singular|NaN|Inf"
+    detection_method: error_message
+  diagnosis:
+    root_cause: >
+      Nugget value is too small (< 1e-8), making the covariance matrix
+      numerically singular. Alternatively, data points are nearly
+      coincident (distance < 1e-6 m).
+    explanation: >
+      The covariance matrix inversion requires regularization (nugget)
+      for numerical stability. Without sufficient regularization,
+      floating-point errors make the matrix appear singular.
+    affected_components: [compute_model, gempy_engine]
+  remedy:
+    action: "Increase nugget to 0.00002 (default) or use optimize_nuggets()"
+    tool_to_run: run_gempy_model
+    manual_steps:
+      - "Check for duplicate/near-coincident data points and remove them"
+      - "Increase nugget_surface_points to 0.00002"
+      - "Increase nugget_orientations to 0.01"
+      - "If persists, use optimize_nuggets() with PyTorch backend"
+    prevention: "build_structural_params warns if nugget < 1e-8"
+  severity: fatal
+  cross_references: [dt_007]
+
+- id: dt_009
+  stage: s1_input_data
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Model geometry is severely distorted — features appear stretched
+      in one direction or the aspect ratio is wrong. Circular features
+      in reality appear elliptical in the model.
+    error_pattern: "distorted geometry"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: >
+      Input data mixes coordinate reference systems — e.g., X in WGS84
+      degrees and Y in UTM meters, or surface points in one CRS and
+      orientations in another.
+    explanation: >
+      GemPy treats all coordinates as a Cartesian system. If X is in
+      degrees (0.01° ≈ 1 km) and Y is in meters, the X-axis is
+      compressed by ~100,000x relative to Y.
+    affected_components: [convert_geological_data]
+  remedy:
+    action: "Convert all data to a consistent projected CRS (e.g., UTM) before import"
+    tool_to_run: convert_geological_data
+    manual_steps:
+      - "Identify the CRS of each input file"
+      - "Reproject to a common UTM zone"
+      - "Verify X and Y are both in meters"
+    prevention: "Check coordinate ranges — if X < 180 and Y > 10000, likely mixed CRS"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_010
+  stage: s4_grid_config
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Topography surface intersects or clips through geological surfaces
+      that should be underground. Surface formations appear above the
+      ground surface in cross-sections.
+    error_pattern: "topography clipping"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: >
+      Topography elevation data is in different units (e.g., feet or
+      cm) than the model coordinates (meters). A topography at
+      "500 feet" is interpreted as "500 meters", placing it too high.
+    explanation: >
+      GemPy doesn't auto-convert topography units. If the DEM is in
+      feet (152 m = 500 ft), but interpreted as 500 m, the topography
+      will be 3.28x too high, intersecting subsurface formations.
+    affected_components: [set_topography_from_file, grid_configuration]
+  remedy:
+    action: "Convert topography to same units as model coordinates (meters)"
+    tool_to_run: convert_geological_data
+    manual_steps:
+      - "Check DEM elevation range vs model Z extent"
+      - "If DEM max >> model z_max, units likely differ"
+      - "Multiply topography by conversion factor (ft→m: 0.3048)"
+    prevention: "Compare topography range with surface point Z range before loading"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_011
+  stage: s3_structural_org
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Erosion patterns are geologically impossible — older formations
+      erode younger ones, or unconformity surfaces cut the wrong layers.
+      The block model shows a stratigraphic sequence that violates the
+      known geological history.
+    error_pattern: "impossible erosion"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: >
+      Structural groups are in the wrong order. GemPy processes groups
+      from index 0 (youngest/top) to last (oldest/bottom). If the
+      order is reversed, old formations erroneously erode young ones.
+    explanation: >
+      In map_stack_to_surfaces(), the first group in the dict is
+      youngest. For Python < 3.7, dict ordering was not guaranteed.
+      Even in modern Python, users may list groups bottom-up (geological
+      convention) instead of top-down (GemPy convention).
+    affected_components: [map_stack_to_surfaces, structural_frame]
+  remedy:
+    action: "Reorder groups so youngest is first and oldest is last"
+    tool_to_run: build_structural_params
+    manual_steps:
+      - "Review geological history: identify youngest → oldest sequence"
+      - "List youngest group first in mapping_object"
+      - "Faults should be listed before the series they affect"
+    prevention: "build_structural_params cross-validates group ordering"
+  severity: silent
+  cross_references: [dt_012]
+
+- id: dt_012
+  stage: s5_fault_config
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Fault surface is visible in the model (as a formation boundary)
+      but does not actually displace the surrounding geology. Layers
+      pass through the fault plane without offset.
+    error_pattern: "fault no offset"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: >
+      The fault relation matrix entry is missing. set_is_fault() marks
+      the group as a fault, but set_fault_relation() must also specify
+      which series the fault affects. Without this, the fault geometry
+      exists but has no mechanical effect.
+    explanation: >
+      GemPy separates fault geometry (set_is_fault) from fault mechanics
+      (set_fault_relation). Both are required for a working fault.
+      The fault relation is a boolean matrix — fr[i,j]=True means
+      "fault group i displaces group j".
+    affected_components: [set_is_fault, set_fault_relation]
+  remedy:
+    action: "Call set_fault_relation() with correct boolean matrix"
+    tool_to_run: build_structural_params
+    manual_steps:
+      - "Create boolean matrix of shape (n_groups, n_groups)"
+      - "Set fr[fault_idx, target_idx] = True for each affected series"
+      - "Remember: fault relations are NOT symmetric"
+    prevention: "build_structural_params validates fault relations exist for all fault groups"
+  severity: silent
+  cross_references: [dt_011]
+
+- id: dt_013
+  stage: s6_computation
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Thin geological layers (< 10m) disappear from the block model.
+      The layer exists in the scalar field but is not represented in
+      the discrete block model. Cross-sections show missing layers.
+    error_pattern: "missing thin layers"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      OCTREE refinement level is too low. At refinement=4, the minimum
+      cell size may be larger than thin layer thickness, causing the
+      layer to be missed during discretization.
+    explanation: >
+      OCTREE grids adapt resolution based on scalar field gradients,
+      but with low refinement, even adaptive cells may be too coarse
+      to resolve thin layers. The layer exists in the continuous
+      scalar field but is missed when sampling to discrete blocks.
+    affected_components: [compute_model, grid]
+  remedy:
+    action: "Increase refinement from 4 to 6 or 8"
+    tool_to_run: run_gempy_model
+    manual_steps:
+      - "Check minimum layer thickness in the input data"
+      - "Increase refinement to 6 (default) or 8 (high detail)"
+      - "Alternatively, switch to DENSE grid with resolution < layer thickness"
+      - "Monitor memory usage — refinement 8 uses ~8x more cells than 6"
+    prevention: "Check min layer thickness vs. min cell size before computing"
+  severity: degraded
+  cross_references: [dt_014]
+
+- id: dt_014
+  stage: s6_computation
+  failure_domain: runtime
+  symptom:
+    description: >
+      Python process crashes with MemoryError or the system becomes
+      unresponsive during compute_model(). OOM killer may terminate
+      the process.
+    error_pattern: "MemoryError|OOM|killed"
+    detection_method: error_message
+  diagnosis:
+    root_cause: >
+      The computation grid has too many points. A DENSE grid of
+      200x200x200 = 8M cells, each requiring multiple float64 values,
+      can consume 10+ GB of RAM. With multiple structural groups,
+      memory usage multiplies.
+    explanation: >
+      Memory scales as O(n_grid_points * n_surfaces * n_data_points)
+      for the interpolation. Large grids with many surfaces and data
+      points can exceed available RAM quickly.
+    affected_components: [compute_model, grid]
+  remedy:
+    action: "Reduce grid size or switch to OCTREE"
+    tool_to_run: run_gempy_model
+    manual_steps:
+      - "Switch from DENSE to OCTREE grid (adaptive resolution)"
+      - "Reduce DENSE resolution (e.g., 100x100x100 → 50x50x50)"
+      - "Reduce OCTREE refinement (e.g., 8 → 6)"
+      - "Process subdomains independently if needed"
+    prevention: "build_structural_params warns if total cells > 10M"
+  severity: fatal
+  cross_references: [dt_013]
+
+- id: dt_015
+  stage: s7_output
+  failure_domain: runtime
+  symptom:
+    description: >
+      Extracted mesh surfaces have holes, self-intersections, or
+      disconnected fragments. VTK export shows broken surfaces near
+      fault intersections or at model boundaries.
+    error_pattern: "mesh artifacts"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: >
+      Marching cubes / dual contouring algorithms can produce degenerate
+      triangles near faults, model boundaries, or where the scalar
+      field has sharp gradients. These are numerical artifacts of the
+      mesh extraction, not the interpolation itself.
+    explanation: >
+      The scalar field is continuous and correct, but discretization
+      to triangular meshes at sharp features (faults, pinchouts) can
+      produce poorly-shaped triangles or gaps. This is a known
+      limitation of isosurface extraction algorithms.
+    affected_components: [marching_cubes, mesh_extraction]
+  remedy:
+    action: "Increase grid resolution near faults, or post-process meshes"
+    tool_to_run: parse_gempy_output
+    manual_steps:
+      - "Increase OCTREE refinement to better resolve sharp features"
+      - "Use scikit-image or PyMeshFix for mesh repair"
+      - "For visualization only, small holes may be acceptable"
+      - "For volume calculations, use block model instead of meshes"
+    prevention: "Use block model for quantitative analysis; meshes are for visualization"
+  severity: degraded
+  cross_references: []
+
+- id: dt_016
+  stage: s6_computation
+  failure_domain: dependency_mismatch
+  symptom:
+    description: >
+      ImportError when calling compute_model(): cannot import name from
+      gempy_engine. Or unexpected behavior due to API changes between
+      gempy and gempy_engine versions.
+    error_pattern: "ImportError|AttributeError|gempy_engine"
+    detection_method: error_message
+  diagnosis:
+    root_cause: >
+      Version mismatch between gempy and gempy_engine packages. GemPy v3
+      requires specific gempy_engine versions (>=2026.0.1dev0,<2026.1.0).
+      Installing from different sources can produce incompatible versions.
+    explanation: >
+      GemPy v3 split into separate packages (gempy, gempy_engine,
+      gempy_viewer). These packages have tightly coupled APIs and must
+      be version-compatible.
+    affected_components: [gempy, gempy_engine]
+  remedy:
+    action: "Install compatible versions: pip install 'gempy[base]'"
+    tool_to_run: null
+    manual_steps:
+      - "Check versions: pip show gempy gempy-engine gempy-viewer"
+      - "Reinstall from PyPI: pip install 'gempy[base]' --force-reinstall"
+      - "For development: install from same git commit"
+    prevention: "Always install gempy with extras: pip install 'gempy[base]'"
+  severity: fatal
+  cross_references: []
+
+- id: dt_017
+  stage: s2_model_init
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Model is created but the structural frame shows "Default" elements
+      only. Surface points are loaded but not assigned to named formations.
+      All points appear as a single unnamed surface.
+    error_pattern: "all points in Default surface"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: >
+      The CSV column name for formation doesn't match the ImporterHelper
+      default ("formation"). If the CSV uses "Layer", "Unit", or "Name",
+      the importer assigns all points to the default surface.
+    explanation: >
+      ImporterHelper has configurable column names via surface_name
+      parameter (default: "formation"). If the CSV uses a different
+      column name and it's not remapped, all points get the default ID.
+    affected_components: [ImporterHelper, io_API]
+  remedy:
+    action: "Remap formation column or rename in CSV"
+    tool_to_run: convert_geological_data
+    manual_steps:
+      - "Check CSV header for the formation/layer column name"
+      - "Use --col-formation in convert_geological_data.py to remap"
+      - "Or rename the column to 'formation' in the CSV"
+    prevention: "convert_geological_data standardizes to 'formation' column"
+  severity: silent
+  cross_references: []

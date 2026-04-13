@@ -1,0 +1,332 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["hydrology"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "mHM v5.13.1"
+  domain: "hydrology"
+  binary: "mhm"
+  binary_path: "/mnt/disk1/Hydrocraft_server/model/mhm/mhm"
+  language: "Fortran 90"
+  working_directory: "run directory containing mhm.nml"
+  dependencies: "NetCDF-Fortran, LAPACK"
+  notes: >
+    Distributed hydrology with Multiscale Parameter Regionalization (MPR).
+    Unique in HydroCraft: global parameters (~70) calibrated on gauged basins
+    can be transferred directly to ungauged basins via transfer functions.
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "precipitation"
+      file: "meteo_forcing/pre.nc"
+      variable: "pre"
+      unit: "mm/day"
+      valid_range: [0.0, 500.0]
+      format: "NetCDF; dimensions (time, lat, lon)"
+      conversion_from_cmfd: "mm/3hr -> mm/day: SUM 8 timesteps per day"
+      bug_history: "mm/3hr fed directly = 8x too low precipitation"
+
+    - name: "temperature"
+      file: "meteo_forcing/tavg.nc"
+      variable: "tavg"
+      unit: "degC"
+      valid_range: [-60.0, 60.0]
+      conversion_from_cmfd: "K -> degC: subtract 273.15; mean of 8 timesteps"
+      bug_history: "Kelvin not converted -> wrong PET, wrong snow"
+
+    - name: "potential_evapotranspiration"
+      file: "meteo_forcing/pet.nc"
+      variable: "pet"
+      unit: "mm/day"
+      valid_range: [0.0, 20.0]
+      notes: "Pre-computed PET or Tmin/Tmax for Hargreaves"
+
+  parameters:
+    critical:
+      - name: "iFlag_cordinate_sys"
+        file: "mhm.nml"
+        description: "Coordinate system flag: 0=projected, 1=geographic (lat/lon)"
+        valid_range: [0, 1]
+        default: 0
+        bug_history: >
+          MUST be 1 for all HydroCraft basins using EPSG:4326 (lat/lon).
+          Using 0 with geographic coordinates causes cell areas to be
+          0.25*0.25 = 0.0625 m^2 instead of ~680 km^2, producing
+          ZERO routed discharge. This is the #1 cause of zero discharge.
+
+      - name: "resolution_Hydrology"
+        file: "mhm.nml"
+        description: "L1 hydrological grid resolution"
+        notes: >
+          When iFlag_cordinate_sys=1, units are DEGREES (e.g., 0.25).
+          MUST be an integer multiple of L0 resolution.
+
+      - name: "resolution_Routing"
+        file: "mhm.nml"
+        description: "L11 routing grid resolution"
+        notes: "Must be integer multiple of L0. Usually same as L1."
+
+      - name: "D8 flow direction"
+        file: "morph/fdir.asc"
+        description: "ArcGIS D8 convention (1=E, 2=SE, 4=S, 8=SW, 16=W, 32=NW, 64=N, 128=NE)"
+        bug_history: >
+          WhiteboxTools uses a DIFFERENT D8 convention — must convert to
+          ArcGIS encoding. Wrong encoding -> zero discharge (dt_r05).
+
+      - name: "ASCII grid header consistency"
+        file: "morph/*.asc"
+        description: "ALL morphological grids must have identical ncols, nrows, xllcorner, yllcorner, cellsize"
+        bug_history: "Any mismatch causes 'ERROR: Resolution mismatch' at startup"
+
+      - name: "soil_classdefinition.txt"
+        file: "morph/soil_classdefinition.txt"
+        description: "Soil class definitions with horizon depths and texture"
+        format: "Tab-separated; first line: nSoil_Types N"
+        bug_history: "Wrong format (missing header) -> fatal error at startup"
+
+    mpr_global_parameters:
+      count: "~50-70"
+      file: "mhm_parameter.nml"
+      description: >
+        Transfer function coefficients that map physical properties
+        (sand%, clay%, bulk_density) to model parameters (Ksat, porosity).
+        These are the parameters calibrated and transferred across basins.
+      climate_presets:
+        humid_subtropical: "Wider infiltration/interflow, narrow snow ranges"
+        semi_arid: "High infiltration shape, narrow interflow, low recharge"
+        cold_alpine: "Wide snow parameters, moderate infiltration"
+        tropical: "No snow, high interflow, intense rainfall infiltration"
+
+  files:
+    required:
+      - name: "mhm.nml"
+        description: "Master namelist (simulation, paths, process switches)"
+        format: "Fortran namelist"
+        notes: "iFlag_cordinate_sys MUST be 1 for lat/lon grids"
+
+      - name: "mhm_parameter.nml"
+        description: "MPR global parameter values and bounds"
+        format: "Fortran namelist"
+
+      - name: "mrm_outputs.nml"
+        description: "Routing model output configuration"
+        format: "Fortran namelist"
+
+      - name: "mhm_outputs.nml"
+        description: "Land surface model output configuration"
+        format: "Fortran namelist"
+
+      - name: "morph/dem.asc"
+        description: "Digital elevation model"
+        format: "ESRI ASCII grid"
+
+      - name: "morph/slope.asc"
+        description: "Terrain slope"
+        format: "ESRI ASCII grid"
+
+      - name: "morph/aspect.asc"
+        description: "Terrain aspect"
+        format: "ESRI ASCII grid"
+
+      - name: "morph/fdir.asc"
+        description: "D8 flow direction (ArcGIS convention)"
+        format: "ESRI ASCII grid"
+
+      - name: "morph/facc.asc"
+        description: "Flow accumulation"
+        format: "ESRI ASCII grid"
+
+      - name: "morph/soil_class.asc"
+        description: "Soil class ID grid"
+        format: "ESRI ASCII grid"
+
+      - name: "morph/soil_classdefinition.txt"
+        description: "Soil class properties (texture, horizons)"
+
+      - name: "morph/geology_class.asc"
+        description: "Geology class ID grid"
+        format: "ESRI ASCII grid"
+
+      - name: "morph/geology_classdefinition.txt"
+        description: "Geology class properties (karstic flag)"
+
+      - name: "morph/lc_YYYY.asc"
+        description: "Land cover class grids (one per time period)"
+        format: "ESRI ASCII grid"
+
+      - name: "morph/lai_classdefinition.txt"
+        description: "Monthly LAI per land use class"
+
+      - name: "gauge/gauge.asc"
+        description: "Gauge location grid"
+        format: "ESRI ASCII grid"
+
+      - name: "latlon.nc"
+        description: "Latitude/longitude NetCDF for the domain"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "discharge"
+      file: "output/mRM_Fluxes_States.nc"
+      variable: "Qrouted"
+      unit: "m3/s"
+      valid_range: [0, null]
+      notes: "Routed discharge at L11 grid cells. Extract at gauge location."
+
+    - name: "evapotranspiration"
+      file: "output/mHM_Fluxes_States.nc"
+      variable: "aET"
+      unit: "mm/day"
+      valid_range: [0, 20.0]
+
+    - name: "soil_moisture"
+      file: "output/mHM_Fluxes_States.nc"
+      variable: "SM"
+      unit: "mm"
+
+    - name: "total_runoff"
+      file: "output/mHM_Fluxes_States.nc"
+      variable: "total_runoff"
+      unit: "mm/day"
+
+  diagnostics:
+    - name: "config_log"
+      file: "ConfigFile.log"
+      notes: >
+        Check for 'Resolution [m]: 0.' or 'Effective Area: 0.000'
+        which indicate wrong iFlag_cordinate_sys.
+
+    - name: "calibration_output"
+      file: "output/FinalParam.nml"
+      notes: "Best parameter set from DDS/SCE calibration"
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "coordinate_sys_flag"
+    triplet: "dt_r01"
+    description: "iFlag_cordinate_sys=0 with lat/lon grids -> cell area 0.0625 m^2 -> zero discharge"
+    affected_output: "All outputs — zero discharge"
+    detection: "ConfigFile.log shows 'Resolution [m]: 0.' or 'Effective Area: 0.000'"
+    fix: "Set iFlag_cordinate_sys = 1 in mhm.nml"
+    severity: "silent — #1 cause of zero discharge"
+
+  - id: "resolution_not_multiple"
+    triplet: "dt_r02"
+    description: "L1/L11 resolution not integer multiple of L0"
+    affected_output: "Fatal: 'ERROR: Resolution mismatch'"
+    fix: "Ensure L1 and L11 resolutions are exact integer multiples of L0"
+
+  - id: "d8_convention_wrong"
+    triplet: "dt_r05"
+    description: "WhiteboxTools D8 convention differs from ArcGIS D8"
+    affected_output: "Zero discharge"
+    fix: "Convert to ArcGIS encoding (1=E, 2=SE, 4=S, ...)"
+
+  - id: "ascii_header_mismatch"
+    description: "Not all morphological ASCII grids have identical headers"
+    affected_output: "Fatal at startup"
+    detection: "Run validate_morph_grids.py"
+    fix: "Regenerate all grids with consistent headers"
+
+  - id: "gauge_placement_upscaling"
+    description: "Highest-facc L0 cell may NOT map to highest-Q L11 cell after upscaling"
+    affected_output: "Gauge captures wrong (low) discharge"
+    fix: >
+      After first run, read mRM_Fluxes_States.nc to find L11 cell with max Qrouted,
+      place gauge at max-facc L0 cell within that L11 cell.
+
+  - id: "forcing_variable_names"
+    triplet: "dt_r03"
+    description: "NetCDF variable names must match mhm.nml expectations"
+    fix: "Check forcing file variable names against namelist settings"
+
+  - id: "german_defaults"
+    description: "Default MPR parameters are calibrated for Mosel basin (Germany)"
+    affected_output: "NSE=-0.304 on Bengbu with defaults"
+    fix: "Use climate-zone-aware presets or calibrate for target region"
+
+# =========================================================================
+# EXPECTED RANGES
+# =========================================================================
+expected_ranges:
+  mosel_test_case:
+    nse: 0.77
+    kge: 0.75
+    notes: "Bundled test domain with calibrated parameters"
+
+  bengbu_defaults:
+    nse: -0.304
+    notes: "German defaults are very poor for Chinese basins — calibration essential"
+
+# =========================================================================
+# CALIBRATION REFERENCE
+# =========================================================================
+calibration_reference:
+  built_in_methods:
+    - "DDS (opti_method=1, recommended, 1000 iterations usually sufficient)"
+    - "SCE (opti_method=3, more robust but slower)"
+
+  objective_functions:
+    - "KGE (opti_function=10, recommended)"
+    - "1-NSE (opti_function=1, biased toward peaks)"
+
+  recommended_sequence:
+    - "Set up basin with climate-zone-aware MPR defaults"
+    - "Forward run to verify setup"
+    - "DDS calibration (1000 iterations, KGE objective)"
+    - "Extract FinalParam.nml"
+    - "Transfer to ungauged basin via transfer_mpr_params.py"
+
+  regionalization_workflow:
+    description: >
+      Calibrate global MPR parameters on gauged basin, then apply
+      same parameters to ungauged basin with local physiographic data.
+      BOTH basins MUST use same L0 data sources (HWSD, GLiM, AVHRR).
+    steps:
+      - "Calibrate on gauged basin -> mhm_parameter_calibrated.nml"
+      - "Set up ungauged basin with same L0 data"
+      - "python transfer_mpr_params.py --calibrated_nml ... --target_dir ..."
+      - "Forward simulation on ungauged basin"
+
+  target_metrics:
+    - "NSE > 0.5"
+    - "KGE > 0.5"
+    - "PBIAS < 25%"
+
+# =========================================================================
+# UNIT CONVERSION TABLE
+# =========================================================================
+unit_conversions:
+  - variable: "precipitation"
+    source: "CMFD (mm/3hr)"
+    target: "mHM (mm/day)"
+    operation: "SUM 8 timesteps (multiply by 8)"
+    trap_if_wrong: "Precipitation 8x too low"
+
+  - variable: "temperature"
+    source: "CMFD (K)"
+    target: "mHM (degC)"
+    offset: -273.15
+    operation: "subtract"
+    trap_if_wrong: "Wrong PET and snow processes"
+
+  - variable: "solar_radiation"
+    source: "CMFD (W/m2)"
+    target: "mHM (W/m2)"
+    operation: "none"
+    notes: "Only needed for Penman-Monteith PET method"

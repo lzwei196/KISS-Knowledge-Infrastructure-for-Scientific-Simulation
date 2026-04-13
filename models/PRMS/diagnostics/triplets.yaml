@@ -1,0 +1,479 @@
+# ============================================================================
+# PRMS v5.1.0 Diagnostic Triplets
+# ============================================================================
+# 18 diagnostic triplets covering unit conversion, file format,
+# parameterization, and runtime failure domains.
+# Generated during PRMS knowledge dissection for HydroCraft platform.
+# ============================================================================
+
+# --- Unit Conversion Traps (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Extreme flooding, unrealistic peak flows, runoff ratio > 1.0, basin floods continuously"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation in mm/day instead of inches/day — 25.4x too much precipitation"
+    explanation: >
+      PRMS expects daily precipitation in inches. Global datasets (CMFD, ERA5, MSWX)
+      provide mm/day or mm/timestep. If mm values are fed directly without dividing
+      by 25.4, the basin receives 25.4x more precipitation than reality. The model
+      runs without errors but produces catastrophic flooding.
+    affected_components: [convert_forcing_to_prms, data_file, cbh_files]
+  remedy:
+    action: "Divide all precipitation values by 25.4 in convert_forcing_to_prms.py"
+    tool_to_run: convert_forcing_to_prms
+    manual_steps:
+      - "Check mean precip value — should be 0.01-0.3 inches/day for most basins"
+      - "If mean precip > 1.0 inches/day, values are likely in mm — divide by 25.4"
+      - "Annual total should be 15-60 inches for most US basins"
+    prevention: "validate_outputs() checks for unrealistic precipitation values"
+  severity: silent
+  cross_references: [dt_002, dt_003]
+
+- id: dt_002
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "No snow accumulation even in cold basins, snow module inactive, all precipitation falls as rain"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature in Celsius instead of Fahrenheit"
+    explanation: >
+      PRMS expects temperatures in degrees Fahrenheit. The tmax_allsnow parameter
+      defaults to 32F (0C). If Celsius values are fed directly, 0C is interpreted
+      as 0F = -17.8C. Since most temperatures are > 0C = 0F, PRMS classifies
+      all precipitation as rain. Snow never accumulates, spring snowmelt runoff
+      disappears, and the hydrograph is completely wrong.
+    affected_components: [convert_forcing_to_prms, climate_hru, temp_distribution]
+  remedy:
+    action: "Apply F = C * 9/5 + 32 to all temperature values"
+    tool_to_run: convert_forcing_to_prms
+    manual_steps:
+      - "Check mean tmax — should be 40-80F for temperate basins"
+      - "If mean tmax is 5-30, values are likely in Celsius"
+      - "If mean tmax is 270-300, values are likely in Kelvin"
+    prevention: "validate_outputs() checks for suspiciously low temperatures"
+  severity: silent
+  cross_references: [dt_001, dt_009]
+
+- id: dt_003
+  stage: s2_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Temperature distribution is nearly flat across all HRUs despite elevation range. Lapse rate corrections ineffective."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Elevation in meters but elev_units=0 (feet expected)"
+    explanation: >
+      When elev_units=0 (default), PRMS expects elevation in feet. If meters are
+      provided, elevation differences are 3.28x smaller than expected. Temperature
+      lapse rate corrections (typically -3.5F per 1000ft) are under-applied, making
+      the temperature field nearly uniform across the basin. This affects snow
+      distribution, ET spatial patterns, and runoff generation.
+    affected_components: [convert_params_to_prms, hru_elev, lapse_rate]
+  remedy:
+    action: "Either convert elevations to feet (m * 3.28084) or set elev_units=1"
+    tool_to_run: convert_params_to_prms
+    manual_steps:
+      - "Check hru_elev values — if max < 5000 for mountain basins, likely in meters"
+      - "Convert: feet = meters * 3.28084"
+      - "OR set elev_units=1 in parameter file"
+    prevention: "validate_outputs() checks elevation range vs elev_units"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_004
+  stage: s2_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Water balance volumes are orders of magnitude wrong. Basin area appears ~247x too small."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "HRU area in km2 instead of acres"
+    explanation: >
+      PRMS expects hru_area in acres (1 km2 = 247.105 acres). If km2 values are
+      used directly, the basin area is ~247x too small. Streamflow volume calculations
+      are wrong because depth-to-volume conversions depend on area.
+    affected_components: [convert_params_to_prms, hru_area, water_balance]
+  remedy:
+    action: "Multiply all hru_area values by 247.105"
+    tool_to_run: convert_params_to_prms
+    manual_steps:
+      - "Check hru_area values — typical HRUs are 50-5000 acres"
+      - "If values are 0.5-50, they are likely in km2"
+      - "Convert: acres = km2 * 247.105"
+    prevention: "validate_outputs() warns if max hru_area < 1 acre"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_005
+  stage: s2_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Soil never saturates, no surface runoff generated, extreme infiltration"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "soil_moist_max in mm instead of inches — 25.4x too large"
+    explanation: >
+      soil_moist_max defines the total available water storage in the soil zone.
+      If values are in mm (e.g., 150mm) instead of inches (5.9in), the soil
+      zone is 25.4x too large. All precipitation infiltrates, soil never
+      saturates, and Dunnian surface runoff never occurs. Peak flows are
+      dramatically underestimated.
+    affected_components: [convert_params_to_prms, soilzone, srunoff]
+  remedy:
+    action: "Divide soil_moist_max by 25.4"
+    tool_to_run: convert_params_to_prms
+    manual_steps:
+      - "Check soil_moist_max values — typical range is 2-15 inches"
+      - "If values are 50-400, they are likely in mm"
+      - "Convert: inches = mm / 25.4"
+    prevention: "validate_outputs() warns if soil_moist_max > 100"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_006
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Streamflow calibration appears to fail — observed and simulated flows differ by factor of ~35"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Observed streamflow in m3/s but runoff_units=0 (cfs expected)"
+    explanation: >
+      If runoff_units=0 (default), PRMS expects observed streamflow in cubic feet
+      per second (cfs). If m3/s values are fed directly, the observed flow is
+      ~35.3x too small (1 cfs = 0.02832 m3/s). NSE and PBIAS metrics will be
+      misleading because the comparison is between incompatible units.
+    affected_components: [data_file, obs_module, basin_sum]
+  remedy:
+    action: "Convert m3/s to cfs: cfs = cms / 0.028317"
+    tool_to_run: convert_forcing_to_prms
+    manual_steps:
+      - "Check observed runoff values and compare magnitudes"
+      - "Set runoff_units=1 in parameter file to use cms directly"
+      - "Or convert values: cfs = cms / 0.028317"
+    prevention: "Cross-check flow units with basin area and precipitation"
+  severity: silent
+  cross_references: [dt_001]
+
+# --- File Format Errors ---
+
+- id: dt_007
+  stage: s4_execution
+  failure_domain: file_format
+  symptom:
+    description: "PRMS fails to start with 'Usage: Set the full path to the control file using the -C option'"
+    error_pattern: "Usage: Set the full path"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Space between -C flag and control file path"
+    explanation: >
+      The PRMS command line parser requires NO space between -C and the path.
+      Using './prms -C /path/to/control' treats '/path/to/control' as a separate
+      positional argument, and -C gets no value. The parser falls through to
+      the NULL check and prints the usage message.
+    affected_components: [parse_args, mmf]
+  remedy:
+    action: "Remove space: use -C/path/to/control"
+    tool_to_run: run_prms
+    manual_steps:
+      - "Use: ./prms_hpc -C/path/to/control"
+      - "NOT: ./prms_hpc -C /path/to/control"
+    prevention: "run_prms.py constructs the command correctly"
+  severity: fatal
+  cross_references: []
+
+- id: dt_008
+  stage: s1_forcing
+  failure_domain: file_format
+  symptom:
+    description: "PRMS crashes reading CBH file with 'Early end-of-file' or IOSTAT error"
+    error_pattern: "IOSTAT"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "CBH file header format wrong — missing variable count or wrong delimiter"
+    explanation: >
+      CBH files must have exactly: line 1 = 'varname nhru_count', line 2 = '########...',
+      then data. If nhru_count is missing, the delimiter is wrong (#### instead of ########),
+      or there are extra blank lines, the Fortran READ statements fail.
+    affected_components: [climate_hru, cbh_reader]
+  remedy:
+    action: "Fix CBH header format"
+    tool_to_run: convert_forcing_to_prms
+    manual_steps:
+      - "Line 1 must be: variable_name nhru_count (e.g., 'tmax 42')"
+      - "Line 2 must be: ######## (8 or more # characters)"
+      - "No blank lines before data"
+      - "Data columns must equal nhru_count"
+    prevention: "convert_forcing_to_prms.py writes correct headers"
+  severity: fatal
+  cross_references: [dt_010]
+
+- id: dt_009
+  stage: s3_control
+  failure_domain: file_format
+  symptom:
+    description: "start_time or end_time not recognized, model uses wrong simulation period"
+    error_pattern: ""
+    detection_method: runtime_behavior
+  diagnosis:
+    root_cause: "start_time/end_time type code wrong — must be type 1 (long integer)"
+    explanation: >
+      start_time and end_time are arrays of 6 long integers in the control file.
+      If the type code is set to 4 (string) or 2 (float) instead of 1 (long),
+      the values are misinterpreted. The model may use default dates (2000-10-01
+      to 2001-09-30) without warning.
+    affected_components: [read_control, get_times]
+  remedy:
+    action: "Ensure start_time and end_time use type code 1"
+    tool_to_run: generate_control_file
+    manual_steps:
+      - "Verify control file has: size=6, type=1 for start_time and end_time"
+      - "Check that year, month, day, hour, min, sec are each on separate lines"
+    prevention: "generate_control_file.py uses correct type codes"
+  severity: silent
+  cross_references: []
+
+- id: dt_010
+  stage: s1_forcing
+  failure_domain: file_format
+  symptom:
+    description: "PRMS crashes with 'Variable X not declared' error for data file variable"
+    error_pattern: "not declared"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Data file contains variable not used by selected modules"
+    explanation: >
+      The data file header declares variables (e.g., 'solrad 1'). If the selected
+      modules don't declare that variable, PRMS fails because it can't find the
+      variable in its internal database. This commonly happens when switching
+      from station-based to climate_hru mode but keeping the old data file.
+    affected_components: [read_datainfo, obs_module]
+  remedy:
+    action: "Remove unused variables from data file header, or switch data file"
+    tool_to_run: convert_forcing_to_prms
+    manual_steps:
+      - "Remove variable declarations from data file that aren't needed"
+      - "When using climate_hru, data file only needs 'runoff' (if available)"
+      - "Or create a minimal data file with just the #### delimiter"
+    prevention: "Match data file variables to selected modules"
+  severity: fatal
+  cross_references: [dt_008]
+
+# --- Parameterization Errors ---
+
+- id: dt_011
+  stage: s2_parameters
+  failure_domain: parameterization
+  symptom:
+    description: "PRMS crashes during initialization with dimension error or array bounds error"
+    error_pattern: "dimension"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "nhru in parameter file doesn't match CBH file column count"
+    explanation: >
+      The parameter file declares nhru=N, but the CBH files have M columns per line.
+      If N != M, the Fortran READ statement reads wrong number of values, causing
+      array bounds errors or segfaults. This is a fatal mismatch.
+    affected_components: [call_modules, climate_hru, param_file]
+  remedy:
+    action: "Ensure nhru dimension is consistent across all files"
+    tool_to_run: convert_params_to_prms
+    manual_steps:
+      - "Check nhru in parameter file: look for 'nhru' in Dimensions section"
+      - "Count columns in CBH files (subtract 6 for date fields)"
+      - "They must be equal"
+    prevention: "Tools ensure consistent nhru"
+  severity: fatal
+  cross_references: [dt_008]
+
+- id: dt_012
+  stage: s2_parameters
+  failure_domain: parameterization
+  symptom:
+    description: "No surface runoff generated, all flow is baseflow/interflow"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "smidx_coef too small or soil_moist_max too large"
+    explanation: >
+      Surface runoff in PRMS (srunoff_smidx) depends on soil moisture index.
+      The runoff fraction = smidx_coef * 10^(smidx_exp * soil_moist / soil_moist_max).
+      If smidx_coef is near zero or soil_moist_max is very large, the runoff
+      fraction stays near zero regardless of precipitation.
+    affected_components: [srunoff, soilzone]
+  remedy:
+    action: "Increase smidx_coef (try 0.01-0.05) or decrease soil_moist_max"
+    tool_to_run: null
+    manual_steps:
+      - "Check smidx_coef — typical range 0.001 to 0.06"
+      - "Check soil_moist_max — typical range 2 to 15 inches"
+      - "Ensure soil_moist_max is in inches, not mm"
+    prevention: "Use validate_outputs() to check parameter ranges"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_013
+  stage: s2_parameters
+  failure_domain: parameterization
+  symptom:
+    description: "Baseflow recession is too fast — flow drops to zero between storms"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "gwflow_coef too high"
+    explanation: >
+      gwflow_coef is the linear coefficient for groundwater flow. The daily
+      groundwater discharge = gwflow_coef * gwstor. If gwflow_coef = 0.5,
+      half the GW storage flows out each day — a residence time of ~2 days.
+      For most basins, gwflow_coef should be 0.005-0.05 (20-200 day residence time).
+    affected_components: [gwflow]
+  remedy:
+    action: "Decrease gwflow_coef to 0.005-0.02"
+    tool_to_run: null
+    manual_steps:
+      - "Check gwflow_coef value for each HRU"
+      - "Typical values: 0.005 for deep/slow aquifers, 0.05 for shallow/fast"
+      - "Also check gwstor_init — may need to increase initial GW storage"
+    prevention: "Start with default value of 0.015"
+  severity: silent
+  cross_references: [dt_012]
+
+- id: dt_014
+  stage: s2_parameters
+  failure_domain: parameterization
+  symptom:
+    description: "Missing snarea_curve parameter causes crash in snow module"
+    error_pattern: "snarea_curve"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Snow depletion curve parameter not in parameter file"
+    explanation: >
+      The snowcomp module requires snarea_curve (ndeplval=11 values defining
+      the snow covered area depletion curve). If this parameter is missing from
+      the parameter file, PRMS crashes during the declare phase.
+    affected_components: [snowcomp, param_file]
+  remedy:
+    action: "Add snarea_curve to parameter file with 11 values"
+    tool_to_run: convert_params_to_prms
+    manual_steps:
+      - "Add to parameter file: snarea_curve with ndeplval dimension"
+      - "Default values: 0.05, 0.25, 0.40, 0.55, 0.65, 0.75, 0.82, 0.88, 0.93, 0.97, 1.00"
+    prevention: "convert_params_to_prms.py always includes snarea_curve"
+  severity: fatal
+  cross_references: []
+
+# --- Runtime Errors ---
+
+- id: dt_015
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "PRMS binary fails with 'error while loading shared libraries: libnetcdff.so'"
+    error_pattern: "libnetcdff"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "NetCDF Fortran library not in LD_LIBRARY_PATH"
+    explanation: >
+      PRMS v5.1.0 is compiled with NetCDF support for optional NetCDF output.
+      The runtime linker needs to find libnetcdff.so and libnetcdf.so. If these
+      libraries are installed in a non-standard location, LD_LIBRARY_PATH must
+      include their directory.
+    affected_components: [prms_binary, system_libraries]
+  remedy:
+    action: "Set LD_LIBRARY_PATH or install NetCDF libraries"
+    tool_to_run: run_prms
+    manual_steps:
+      - "Find libraries: find / -name 'libnetcdff.so*' 2>/dev/null"
+      - "Export: export LD_LIBRARY_PATH=/path/to/netcdf/lib:$LD_LIBRARY_PATH"
+      - "Or install: apt install libnetcdff-dev"
+    prevention: "run_prms.py checks for required libraries"
+  severity: fatal
+  cross_references: []
+
+- id: dt_016
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "Model runs but CSV output file is empty or missing"
+    error_pattern: ""
+    detection_method: file_check
+  diagnosis:
+    root_cause: "csvON_OFF control variable set to 0 or csv_output_file path invalid"
+    explanation: >
+      The CSV summary output is only produced when csvON_OFF=1 in the control file.
+      If the flag is 0 or missing, no CSV output is generated. Also, if the
+      csv_output_file path points to a non-existent directory, the file creation
+      silently fails.
+    affected_components: [prms_summary, control_file]
+  remedy:
+    action: "Set csvON_OFF=1 and ensure csv_output_file directory exists"
+    tool_to_run: generate_control_file
+    manual_steps:
+      - "Add csvON_OFF with value 1 to control file"
+      - "Ensure csv_output_file points to valid directory"
+      - "Create output directory if needed"
+    prevention: "generate_control_file.py defaults csvON_OFF=1"
+  severity: silent
+  cross_references: []
+
+- id: dt_017
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "Compilation fails with 'fallow-argument-mismatch' error"
+    error_pattern: "fallow-argument-mismatch"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "GFortran version >= 10 requires -fallow-argument-mismatch flag"
+    explanation: >
+      GFortran 10+ enforces strict type checking for procedure arguments by default.
+      The PRMS Fortran code uses some legacy calling conventions that violate this.
+      The -fallow-argument-mismatch flag is already in the makelist file but may
+      need to be added if using a custom build system.
+    affected_components: [makelist, gfortran]
+  remedy:
+    action: "Add -fallow-argument-mismatch to FFLAGS"
+    tool_to_run: null
+    manual_steps:
+      - "Edit makelist: add -fallow-argument-mismatch to FFLAGS line"
+      - "This flag is already present in the default makelist"
+    prevention: "Use the provided makelist which includes this flag"
+  severity: fatal
+  cross_references: []
+
+- id: dt_018
+  stage: s2_parameters
+  failure_domain: parameterization
+  symptom:
+    description: "Negative evapotranspiration values in output, or ET exceeds precipitation"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "jh_coef calibration coefficient too high for the basin"
+    explanation: >
+      The Jensen-Haise ET coefficient (jh_coef) controls the relationship between
+      temperature and potential ET. The default value of 0.014 works for many basins
+      but can produce excessive ET in warm, arid regions. If ET > precipitation
+      for extended periods, the water balance breaks down and storage goes negative.
+    affected_components: [potet_jh, water_balance]
+  remedy:
+    action: "Reduce jh_coef to 0.005-0.01 for arid basins"
+    tool_to_run: null
+    manual_steps:
+      - "Check basin_potet vs basin_ppt in CSV output"
+      - "If annual potet > 2 * ppt, jh_coef is too high"
+      - "Try jh_coef = 0.005 for arid, 0.014 for humid basins"
+    prevention: "Check ET/PET ratio in output validation"
+  severity: silent
+  cross_references: [dt_012]

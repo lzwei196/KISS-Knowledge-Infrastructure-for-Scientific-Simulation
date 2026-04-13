@@ -1,0 +1,455 @@
+# MARRMoT Diagnostic Triplets
+# ============================
+# Each entry: symptom → diagnosis → remedy
+# Severity: silent (runs, wrong results), degraded (runs, suspicious), fatal (crashes)
+
+- id: dt_001
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Simulated streamflow is 3-8x too high compared to observed. Runoff ratio exceeds 1.0."
+    error_pattern: "Q_mean > 50 mm/d"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation from CMFD is in mm/3h but treated as mm/d."
+    explanation: >
+      CMFD provides 3-hourly precipitation accumulations. Each daily value should
+      be the sum of 8 sub-daily values. If the raw 3-hourly values are passed
+      directly as daily values, each timestep has ~1/8 of the correct daily total
+      but there are 8x too many records, or if a single 3h value is used per day,
+      it represents only 3 hours of rain, not 24.
+    affected_components: [convert_forcing.py]
+  remedy:
+    action: "Sum 8 consecutive 3-hourly values to get daily total."
+    tool_to_run: "convert_forcing.py --format cmfd"
+    manual_steps:
+      - "Load all 8 sub-daily values per day"
+      - "Sum to get daily total: P_daily = sum(P_3h[0:8])"
+      - "Verify mean P is 0.5-15 mm/d for most climates"
+    prevention: "convert_forcing.py auto-detects CMFD format and aggregates."
+  severity: silent
+  cross_references: [dt_002, dt_003]
+
+- id: dt_002
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Precipitation near zero. Simulated Q is essentially zero throughout."
+    error_pattern: "P_mean < 0.001 mm/d"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "ERA5 precipitation in kg/m2/s not multiplied by 86400."
+    explanation: >
+      ERA5 total precipitation (tp) is provided in kg/m2/s (equivalent to mm/s).
+      A typical value is ~5e-5 kg/m2/s which equals ~4.3 mm/d. Without the
+      86400 multiplier, the model receives ~0.00005 mm/d, producing no runoff.
+    affected_components: [convert_forcing.py]
+  remedy:
+    action: "Multiply ERA5 tp by 86400 to convert kg/m2/s to mm/d."
+    tool_to_run: "convert_forcing.py --format era5"
+    manual_steps:
+      - "Check ERA5 variable units in metadata: should be kg/m2/s or m"
+      - "If kg/m2/s: multiply by 86400"
+      - "If m: multiply by 1000"
+    prevention: "convert_forcing.py detects ERA5 magnitude and auto-converts."
+  severity: silent
+  cross_references: [dt_001, dt_003]
+
+- id: dt_003
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Precipitation 1000x too low. Q near zero despite wet climate."
+    error_pattern: "P_mean < 0.01 mm/d"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation in m/d not converted to mm/d."
+    explanation: >
+      Some GCM outputs and ERA5 monthly products provide precipitation in
+      meters per day. A typical value of 0.003 m/d should be 3 mm/d. Without
+      the 1000x multiplier, the model receives negligible precipitation.
+    affected_components: [convert_forcing.py]
+  remedy:
+    action: "Multiply precipitation by 1000 to convert m/d to mm/d."
+    tool_to_run: "convert_forcing.py"
+    manual_steps:
+      - "Check source metadata for precipitation units"
+      - "If m/d: multiply by 1000"
+      - "Verify result: mean P should be 0.5-15 mm/d"
+    prevention: "convert_forcing.py checks magnitude and warns if likely m/d."
+  severity: silent
+  cross_references: [dt_001, dt_002]
+
+- id: dt_004
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Actual evapotranspiration exceeds precipitation. Stores drain rapidly to zero."
+    error_pattern: "Ea_mean > P_mean"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Net radiation (W/m2 or MJ/m2/d) passed as PET instead of actual PET in mm/d."
+    explanation: >
+      MARRMoT expects pre-computed potential evapotranspiration in mm/d (typically
+      0.5-8 mm/d). Net radiation values of 100-300 W/m2 or 5-25 MJ/m2/d are
+      orders of magnitude larger when interpreted as mm/d. The model will evaporate
+      all available water at every timestep, draining stores completely.
+    affected_components: [convert_forcing.py]
+  remedy:
+    action: "Compute PET from radiation using Penman-Monteith or Hargreaves, not pass radiation directly."
+    tool_to_run: "convert_forcing.py"
+    manual_steps:
+      - "Check if PET column contains radiation values (> 20 typical)"
+      - "Use Hargreaves if only Tmin/Tmax available"
+      - "Use Penman-Monteith if radiation, humidity, wind available"
+      - "Verify PET is 0.5-8 mm/d"
+    prevention: "convert_forcing.py warns if PET mean > 20 mm/d."
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_005
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "PET ~30x too high in some months. Actual ET unrealistically large."
+    error_pattern: "PET values 30-200 mm/d in some months"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Monthly PET values not divided by days in month."
+    explanation: >
+      Monthly PET data (e.g., from CRU or Thornthwaite tables) gives total
+      monthly PET in mm/month. If used directly as mm/d, January has PET ~150
+      mm/d instead of ~5 mm/d (150/31). This causes massive over-evaporation.
+    affected_components: [convert_forcing.py]
+  remedy:
+    action: "Divide monthly PET by the number of days in each month."
+    tool_to_run: "convert_forcing.py"
+    manual_steps:
+      - "Identify monthly PET values (they will be 30-200 range)"
+      - "Divide each by days in corresponding month"
+      - "Distribute evenly across all days or use daily interpolation"
+    prevention: "convert_forcing.py detects monthly-scale PET and divides."
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_006
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Snow models produce zero snow. All precipitation is rain even in winter."
+    error_pattern: "Snow fraction = 0 despite cold climate"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature in Kelvin not converted to Celsius."
+    explanation: >
+      ERA5 temperature (t2m) is in Kelvin (e.g., 273-300 K). Snow/rain
+      partitioning models (HBV, alpine models) use a threshold near 0°C.
+      With Kelvin values, temperature is always far above any threshold,
+      so all precipitation is classified as rain. No error is raised.
+    affected_components: [convert_forcing.py]
+  remedy:
+    action: "Subtract 273.15 from Kelvin temperature values."
+    tool_to_run: "convert_forcing.py --format era5"
+    manual_steps:
+      - "Check temperature range: if 250-320, likely Kelvin"
+      - "Subtract 273.15 to convert to Celsius"
+      - "Verify: mean temp should be -20 to 35°C for most locations"
+    prevention: "convert_forcing.py warns if mean temperature > 100."
+  severity: silent
+  cross_references: [dt_007]
+
+- id: dt_007
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Temperature-dependent processes behave incorrectly. Degree-day melt unrealistic."
+    error_pattern: "Temperature values 32-100 range"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature in Fahrenheit not converted to Celsius."
+    explanation: >
+      US-sourced datasets sometimes provide temperature in Fahrenheit.
+      70°F (21°C) passed as 70°C produces massive snowmelt and
+      incorrect evaporation scaling. No error is raised.
+    affected_components: [convert_forcing.py]
+  remedy:
+    action: "Convert Fahrenheit to Celsius: C = (F - 32) * 5/9."
+    tool_to_run: "convert_forcing.py"
+    manual_steps:
+      - "If temperature values are 32-100 range, likely Fahrenheit"
+      - "Apply conversion: (T_F - 32) * 5/9"
+    prevention: "convert_forcing.py warns if temperature range suggests Fahrenheit."
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_008
+  stage: s2_params
+  failure_domain: unit_conversion
+  symptom:
+    description: "Model storage never fills or drains unrealistically fast. Smax appears wrong."
+    error_pattern: "Smax < 1 mm or Smax > 10000 mm"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Storage parameter in m or cm instead of mm."
+    explanation: >
+      MARRMoT storage parameters (Smax, x1, x3) are in mm. HWSD soil depth
+      is in cm; SoilGrids may be in mm. If a 1.5 m soil depth is passed as
+      1.5 (meters) to Smax, the store holds only 1.5 mm — it fills and
+      overflows immediately. If passed as 1500 mm correctly, behaviour
+      is appropriate. Conversely, if 150 cm is treated as mm, Smax=150
+      may be too small for deep soils.
+    affected_components: [convert_parameters.py]
+  remedy:
+    action: "Verify source units. Convert cm to mm (*10), m to mm (*1000)."
+    tool_to_run: "convert_parameters.py"
+    manual_steps:
+      - "Check HWSD/SoilGrids documentation for depth units"
+      - "If cm: multiply by 10"
+      - "If m: multiply by 1000"
+      - "Typical Smax range: 50-2000 mm"
+    prevention: "convert_parameters.py documents source unit in output JSON."
+  severity: silent
+  cross_references: []
+
+- id: dt_009
+  stage: s5_execute
+  failure_domain: parameter_format
+  symptom:
+    description: "All fluxes (Q, Ea) are 24x too large or 24x too small."
+    error_pattern: "Q_mean inconsistent with water balance"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "delta_t set to 24 (hours) instead of 1 (day) for daily forcing."
+    explanation: >
+      MARRMoT's delta_t is in days. Setting delta_t=24 tells the model each
+      timestep is 24 days long, causing it to multiply all fluxes by 24
+      when integrating storage changes: dS = flux * delta_t. The water
+      balance will show a massive error because fluxes are 24x wrong.
+    affected_components: [run_marrmot.py]
+  remedy:
+    action: "Set delta_t = 1 for daily data. For hourly data, use delta_t = 1/24."
+    tool_to_run: "run_marrmot.py --delta-t 1"
+    manual_steps:
+      - "Verify forcing timestep matches delta_t"
+      - "Daily data: delta_t = 1"
+      - "Hourly data: delta_t = 1/24 = 0.0417"
+      - "3-hourly data: delta_t = 3/24 = 0.125"
+    prevention: "run_marrmot.py defaults to delta_t=1 (daily)."
+  severity: degraded
+  cross_references: [dt_015]
+
+- id: dt_010
+  stage: s6_output
+  failure_domain: unit_conversion
+  symptom:
+    description: "NSE is extremely negative (< -100). PBIAS > 10000%. Obs and sim on different scales."
+    error_pattern: "NSE << -1"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Observed streamflow in m3/s compared directly to simulated mm/d."
+    explanation: >
+      MARRMoT outputs streamflow in mm/d. Observed gauge data is typically
+      in m3/s. For a 1000 km2 catchment, 1 mm/d ≈ 11.6 m3/s. Without
+      conversion, a simulated 2 mm/d is compared to an observed 23 m3/s,
+      producing terrible metrics. The conversion requires catchment area.
+    affected_components: [parse_output.py]
+  remedy:
+    action: "Convert observed m3/s to mm/d: Q_mm = Q_m3s * 86400 / (A_km2 * 1e6) * 1000."
+    tool_to_run: "parse_output.py --obs-unit m3_s --area-km2 1000"
+    manual_steps:
+      - "Determine catchment area upstream of gauge (km2)"
+      - "Convert: Q_mm_d = Q_m3s * 86400 / (area_km2 * 1e6) * 1000"
+      - "Verify: typical Q is 0.1-20 mm/d"
+    prevention: "parse_output.py converts automatically when --obs-unit m3_s and --area-km2 provided."
+  severity: silent
+  cross_references: []
+
+- id: dt_011
+  stage: s1_forcing
+  failure_domain: parameter_format
+  symptom:
+    description: "Evaporation unrealistically high or low. Temperature-dependent processes wrong."
+    error_pattern: "Ea values track temperature pattern, not seasonal PET pattern"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Climate array columns in wrong order: [P, T, Ep] instead of [P, Ep, T]."
+    explanation: >
+      MARRMoT expects input_climate = [P, Ep, T]. If columns are swapped
+      to [P, T, Ep], the model uses temperature values as PET and PET values
+      as temperature. Winter temperature (~0°C) becomes PET=0 mm/d (correct
+      by coincidence), but summer temperature (~25°C) becomes PET=25 mm/d
+      (way too high). No error is raised.
+    affected_components: [convert_forcing.py, run_marrmot.py]
+  remedy:
+    action: "Verify column order is [P, Ep, T]. Check header in CSV output."
+    tool_to_run: "convert_forcing.py"
+    manual_steps:
+      - "Open forcing CSV and check column headers"
+      - "Must be: date, P_mm_d, Ep_mm_d, T_degC (in this order)"
+      - "If swapped: re-run convert_forcing.py"
+    prevention: "convert_forcing.py writes explicit column headers."
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_012
+  stage: s5_execute
+  failure_domain: parameter_format
+  symptom:
+    description: "MATLAB/Octave crashes with 'Index exceeds array dimensions' error."
+    error_pattern: "error:.*index.*out of bound|Index exceeds"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "S0 vector length does not match model's numStores."
+    explanation: >
+      Each model has a fixed number of stores (e.g., HyMOD has 5).
+      S0 must have exactly that many elements. If S0 is too short
+      (e.g., [0,0] for a 5-store model), MATLAB crashes when accessing
+      S0(3). If too long, extra elements are silently ignored, leaving
+      some stores at their default initial value.
+    affected_components: [run_marrmot.py, convert_parameters.py]
+  remedy:
+    action: "Set S0 to have exactly m.numStores elements."
+    tool_to_run: "convert_parameters.py"
+    manual_steps:
+      - "Check model's numStores: m = feval('model'); m.numStores"
+      - "Ensure len(S0) == numStores"
+      - "Default: S0 = zeros(1, numStores)"
+    prevention: "convert_parameters.py generates S0 with correct length."
+  severity: fatal
+  cross_references: []
+
+- id: dt_013
+  stage: s5_execute
+  failure_domain: runtime
+  symptom:
+    description: "Water balance error > 10 mm. Solver fallback warnings in console output."
+    error_pattern: "warning:.*fsolve|warning:.*lsqnonlin|water balance.*[1-9]\\d"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Newton-Raphson solver fails to converge on stiff ODE system."
+    explanation: >
+      Some parameter combinations create stiff ODEs (e.g., very large Smax
+      with near-zero initial storage, or extreme non-linearity parameters).
+      The Newton-Raphson solver fails, falls back to fsolve, then lsqnonlin.
+      If all fail, the best approximate solution is used, introducing mass
+      balance errors. The model continues but results are degraded.
+    affected_components: [run_marrmot.py]
+  remedy:
+    action: "Increase resnorm_maxiter to 12+. Check 5th output (solverSteps) for diagnostics."
+    tool_to_run: "run_marrmot.py --solver-maxiter 12"
+    manual_steps:
+      - "Increase solver_opts.resnorm_maxiter to 12 or higher"
+      - "Decrease solver_opts.resnorm_tolerance to 0.01"
+      - "Check if parameters are at extreme ranges"
+      - "Consider initializing S0 closer to steady state"
+    prevention: "run_marrmot.py checks water balance and warns if > 1 mm."
+  severity: degraded
+  cross_references: [dt_014]
+
+- id: dt_014
+  stage: s5_execute
+  failure_domain: silent_error
+  symptom:
+    description: "Model completes successfully but total water balance is several mm off."
+    error_pattern: "waterBalance > 1.0"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Water balance check is informational only, not enforced."
+    explanation: >
+      MARRMoT prints a water balance summary to the console but does not
+      stop execution if the balance is violated. A water balance error of
+      even 1 mm over a multi-year simulation indicates the numerical solver
+      did not fully converge on some timesteps. The error accumulates
+      silently and can bias long-term statistics.
+    affected_components: [run_marrmot.py, parse_output.py]
+  remedy:
+    action: "Always check water balance output. If > 1 mm, increase solver iterations."
+    tool_to_run: ""
+    manual_steps:
+      - "Check 4th output of get_output(): waterBalance"
+      - "If |waterBalance| > 1 mm: increase resnorm_maxiter"
+      - "If still failing: reduce delta_t or simplify model"
+    prevention: "run_marrmot.py extracts and reports water balance in JSON output."
+  severity: silent
+  cross_references: [dt_013]
+
+- id: dt_015
+  stage: s5_execute
+  failure_domain: parameter_format
+  symptom:
+    description: "Hydrograph peak timing is shifted. Unit hydrograph appears too wide or narrow."
+    error_pattern: "Peak Q offset by multiple days"
+    detection_method: user_report
+  diagnosis:
+    root_cause: "Unit hydrograph time base does not account for delta_t."
+    explanation: >
+      MARRMoT unit hydrograph functions (uh_1_half through uh_8_delay)
+      distribute flow over a number of timesteps. The UH parameter
+      (e.g., maxbas in HBV, x4 in GR4J) defines the time base in days.
+      If delta_t is changed from 1 to 1/24 (hourly), the same UH parameter
+      distributes flow over the same number of timesteps but each timestep
+      is now 1 hour instead of 1 day, compressing the response to 1/24
+      of its intended duration. UH parameters must be rescaled when
+      changing delta_t.
+    affected_components: [run_marrmot.py]
+  remedy:
+    action: "Rescale UH time base parameter when changing delta_t: maxbas_new = maxbas / delta_t."
+    tool_to_run: ""
+    manual_steps:
+      - "Identify which parameter controls UH time base"
+      - "If switching from daily to hourly: multiply by 24"
+      - "If switching from daily to 3-hourly: multiply by 8"
+    prevention: "Document delta_t alongside UH parameters in params.json."
+  severity: degraded
+  cross_references: [dt_009]
+
+- id: dt_016
+  stage: s5_execute
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "Octave error: 'optim' package not found. Calibration fails."
+    error_pattern: "error:.*optim.*not found|pkg.*load.*optim"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "GNU Octave optim package not installed."
+    explanation: >
+      MARRMoT's calibrate() method and some solver fallbacks require the
+      optim package (provides fsolve, lsqnonlin). The MARRMoT_model
+      constructor tries to load it automatically (pkg load optim), but
+      if not installed, calibration and advanced solving fail.
+    affected_components: [run_marrmot.py]
+  remedy:
+    action: "Install optim package: pkg install -forge optim"
+    tool_to_run: ""
+    manual_steps:
+      - "In Octave: pkg install -forge optim"
+      - "Verify: pkg load optim (should not error)"
+      - "Alternatively: apt install octave-optim"
+    prevention: "run_marrmot.py checks Octave availability but not packages."
+  severity: fatal
+  cross_references: []
+
+- id: dt_017
+  stage: s5_execute
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "Python BMI bridge fails: oct2py import error or Octave not found."
+    error_pattern: "ModuleNotFoundError.*oct2py|Oct2PyError"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "oct2py not installed or Octave not in PATH."
+    explanation: >
+      The Python BMI interface requires oct2py which bridges Python and Octave.
+      oct2py requires Octave to be installed and accessible in PATH. If either
+      is missing, the BMI wrapper cannot initialize.
+    affected_components: [run_marrmot.py]
+  remedy:
+    action: "pip install oct2py; ensure Octave is in PATH."
+    tool_to_run: ""
+    manual_steps:
+      - "pip install oct2py"
+      - "Verify Octave: octave --version"
+      - "If not installed: apt install octave"
+    prevention: "run_marrmot.py validates Octave availability at startup."
+  severity: fatal
+  cross_references: [dt_016]

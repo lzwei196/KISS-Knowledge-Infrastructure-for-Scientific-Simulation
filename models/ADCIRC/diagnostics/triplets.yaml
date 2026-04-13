@@ -1,0 +1,567 @@
+# ============================================================================
+# ADCIRC Diagnostic Triplets
+# ============================================================================
+# 20 diagnostic triplets covering 6 failure domains.
+# Generated during ADCIRC knowledge dissection for HydroCraft platform.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s1_mesh_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Domain appears inverted — ocean areas are dry, land areas are flooded. Water surface elevation is negative everywhere in the ocean."
+    error_pattern: "all nodes dry"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Depth sign convention inverted — elevation used instead of depth"
+    explanation: >
+      ADCIRC uses a depth convention where positive values are BELOW the geoid
+      and negative values are ABOVE. This is opposite to standard elevation
+      (positive up). When converting DEM data (where elevation is positive up),
+      the values must be negated: DP = -elevation. If this step is skipped,
+      every ocean node has negative depth (treated as land) and every land
+      node has positive depth (treated as ocean).
+    affected_components: [fort.14, convert_bathymetry_to_fort14]
+  remedy:
+    action: "Negate all depth values: DP = -elevation"
+    tool_to_run: convert_bathymetry_to_fort14
+    manual_steps:
+      - "Check DP values in fort.14 — ocean nodes should have DP > 0"
+      - "If all DP < 0, multiply column 4 by -1"
+      - "Land nodes above geoid should have DP < 0"
+    prevention: "validate_outputs() checks for positive ocean depths"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_002
+  stage: s2_parameter_configuration
+  failure_domain: unit_conversion
+  symptom:
+    description: "Model runs but produces completely wrong water levels and velocities. Tidal amplitudes are off by orders of magnitude."
+    error_pattern: "unrealistic velocities"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Gravitational constant G=32.174 (feet) used with spherical coordinates ICS=2 (degrees)"
+    explanation: >
+      When using spherical coordinates (ICS=2, lat/lon in degrees), ADCIRC
+      internally converts to meters using Earth's radius. The gravitational
+      constant G must be 9.81 m/s² for this to be consistent. Using
+      G=32.174 ft/s² (imperial) with ICS=2 introduces a ~3.28x error in
+      all gravity-dependent calculations (wave speed, tidal potential,
+      pressure gradient). There is NO error message — the model runs to
+      completion with completely wrong results.
+    affected_components: [fort.15]
+  remedy:
+    action: "Set G = 9.81 in fort.15 when ICS = 2"
+    tool_to_run: null
+    manual_steps:
+      - "Open fort.15, find the G value"
+      - "If ICS=2, G must be 9.81"
+      - "G=32.174 is only valid with ICS=1 (Cartesian, feet)"
+    prevention: "run_adcirc.py preflight checks G/ICS consistency"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s4_meteorological_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Storm surge is 100x too large (>100m) or pressure gradient term dominates unrealistically. Model may crash with NaN."
+    error_pattern: "NaN|overflow|extreme elevation"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Atmospheric pressure supplied in Pa instead of mb (millibars/hPa)"
+    explanation: >
+      ADCIRC's OWI format (NWS=12) expects pressure in millibars (hPa).
+      Standard atmospheric pressure is ~1013.25 mb. If pressure is
+      supplied in Pa (101325 Pa), the model interprets this as 101325 mb,
+      creating an extreme pressure gradient that produces unrealistic surge.
+      Conversion: mb = Pa / 100. The inverse error (mb where Pa expected)
+      gives near-zero pressure forcing.
+    affected_components: [fort.221, convert_forcing_to_adcirc]
+  remedy:
+    action: "Divide Pa values by 100 to get mb: pressure_mb = pressure_Pa / 100"
+    tool_to_run: convert_forcing_to_adcirc
+    manual_steps:
+      - "Check max value in fort.221 — should be 950-1050 for mb"
+      - "If values are ~95000-105000, data is in Pa — divide by 100"
+      - "If values are ~0.95-1.05, data is in atm — multiply by 1013.25"
+    prevention: "convert_forcing_to_adcirc validates pressure range in output"
+  severity: silent
+  cross_references: [dt_010]
+
+- id: dt_004
+  stage: s4_meteorological_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Peak storm surge is 30-50% lower than expected for a major hurricane. Wind stress appears capped."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Default wind drag coefficient is capped at Cd=0.003 for wind speeds >33.6 m/s"
+    explanation: >
+      ADCIRC's default Garratt (1977) drag law caps the drag coefficient at
+      Cd=0.003, which corresponds to ~33.6 m/s wind speed. For Category 3+
+      hurricanes (>50 m/s), this cap means increasing wind speed above 33.6 m/s
+      does NOT increase wind stress proportionally. Recent research (Powell 2003,
+      Donelan 2004) shows drag actually DECREASES at extreme wind speeds.
+      The cap produces conservative surge estimates for intense storms.
+    affected_components: [wind.F, fort.15]
+  remedy:
+    action: "Use alternative drag law or modify CDMAX for extreme wind studies"
+    tool_to_run: null
+    manual_steps:
+      - "For research: consider Powell (2003) drag reduction at high winds"
+      - "For operations: the default cap is conservative (safe for forecasting)"
+      - "Check max wind speed in fort.222 — if >40 m/s, drag cap is active"
+    prevention: "Document drag law choice in run metadata"
+  severity: silent
+  cross_references: [dt_010]
+
+- id: dt_010
+  stage: s4_meteorological_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Storm surge is approximately half of expected value. Wind forcing appears systematically weak."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wind speed in knots instead of m/s"
+    explanation: >
+      ADCIRC expects wind velocity in m/s for OWI format. If wind data is
+      in knots (1 knot = 0.5144 m/s), the wind stress is approximately
+      (0.5144)² ≈ 0.26x of correct value, producing ~50% lower surge.
+      Similarly, wind in km/h (÷3.6) or mph (÷2.237) will be over-
+      estimated if used directly.
+    affected_components: [fort.222, convert_forcing_to_adcirc]
+  remedy:
+    action: "Multiply knots by 0.5144 to get m/s"
+    tool_to_run: convert_forcing_to_adcirc
+    manual_steps:
+      - "Check max wind in fort.222 — Category 5 hurricane should show ~70-80 m/s"
+      - "If max shows ~140-160, data is likely in knots"
+      - "If max shows ~250-290, data is likely in km/h"
+    prevention: "convert_forcing_to_adcirc auto-detects and converts knots"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_011
+  stage: s1_mesh_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Mesh appears point-like or covers wrong area. Domain is tiny or in wrong location."
+    error_pattern: "domain mismatch"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Coordinates in radians instead of degrees for spherical mode (ICS=2)"
+    explanation: >
+      ADCIRC with ICS=2 expects coordinates in decimal degrees. If lat/lon
+      are provided in radians (common in some GIS outputs), the domain
+      appears ~57x smaller (1 radian = 57.3 degrees). Latitude range
+      0-3.14 rad looks like 0-180° to ADCIRC, producing a global domain
+      when a local one was intended.
+    affected_components: [fort.14]
+  remedy:
+    action: "Convert radians to degrees: deg = rad × 180/π"
+    tool_to_run: null
+    manual_steps:
+      - "Check coordinate ranges in fort.14 columns 2-3"
+      - "Longitude should be -180 to 180 or 0 to 360"
+      - "Latitude should be -90 to 90"
+      - "If max latitude < 1.6, coordinates are likely in radians"
+    prevention: "convert_bathymetry_to_fort14 validates coordinate ranges"
+  severity: silent
+  cross_references: []
+
+- id: dt_012
+  stage: s5_boundary_conditions
+  failure_domain: unit_conversion
+  symptom:
+    description: "Tidal signal has wrong frequency — period appears much too long or too short. Tidal constituents are unrecognizable."
+    error_pattern: "wrong tidal frequency"
+    detection_method: spectral_analysis
+  diagnosis:
+    root_cause: "Tidal constituent period specified in hours instead of seconds in fort.15"
+    explanation: >
+      ADCIRC expects tidal forcing periods in SECONDS. M2 period is
+      44714.16 seconds (12.42 hours). If the period is entered as 12.42
+      (hours), ADCIRC interprets this as 12.42 seconds — a frequency
+      ~3600x too high. The model runs but produces meaningless high-
+      frequency oscillations instead of tidal signals.
+    affected_components: [fort.15]
+  remedy:
+    action: "Multiply tidal periods by 3600 to convert hours to seconds"
+    tool_to_run: null
+    manual_steps:
+      - "Check NBFR period values in fort.15"
+      - "M2 should be ~44714 s, S2 ~43200 s, K1 ~86164 s"
+      - "If values are 12.42, 12.0, 23.93 — they're in hours, multiply by 3600"
+    prevention: "Add period validation check before model execution"
+  severity: silent
+  cross_references: []
+
+- id: dt_015
+  stage: s7_output_analysis
+  failure_domain: unit_conversion
+  symptom:
+    description: "Output time axis is wrong — simulation appears 86400x too long or too short. Plots show incorrect time labels."
+    error_pattern: "time axis wrong"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Confusion between days and seconds for time reference"
+    explanation: >
+      ADCIRC output timestamps are in seconds since cold start. STATIM and
+      REFTIM in fort.15 are in DAYS. Output analysis tools that assume
+      timestamps are in days (or vice versa) will have a 86400x error
+      in the time axis.
+    affected_components: [parse_adcirc_output, fort.63]
+  remedy:
+    action: "Output time is always seconds. Convert to days: days = seconds / 86400"
+    tool_to_run: parse_adcirc_output
+    manual_steps:
+      - "Check first few time values in fort.63"
+      - "If TIME = 3600, this is 3600 seconds = 1 hour (not 3600 days)"
+      - "STATIM in fort.15 is days, but output TIME is seconds"
+    prevention: "parse_adcirc_output labels time axis as seconds"
+  severity: silent
+  cross_references: []
+
+# --- Parameter Format ---
+
+- id: dt_005
+  stage: s2_parameter_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: "Mass balance errors in water level. Spurious oscillations in shallow areas. Volume not conserved."
+    error_pattern: "mass balance"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "TAU0 (GWCE weighting factor) is too small, causing inadequate diffusion"
+    explanation: >
+      The GWCE weighting factor TAU0 controls the balance between the
+      primitive continuity equation (mass-conserving) and the GWCE
+      (wave-equation form). Small TAU0 (<0.001) reduces artificial
+      diffusion but can cause mass balance errors and 2Δx oscillations.
+      Large TAU0 (>0.1) is over-diffusive but stable. TAU0=-3 enables
+      automatic spatially-varying values based on local depth and element size.
+    affected_components: [fort.15, gwce.F]
+  remedy:
+    action: "Set TAU0 = -3 for automatic spatially-varying GWCE weighting"
+    tool_to_run: null
+    manual_steps:
+      - "If TAU0 > 0 and < 0.005, increase to 0.01-0.03"
+      - "Or set TAU0 = -3 for automatic (recommended)"
+      - "TAU0 = -5 for element-area-based weighting"
+    prevention: "run_adcirc.py warns if TAU0 is very small"
+  severity: degraded
+  cross_references: [dt_006]
+
+- id: dt_006
+  stage: s2_parameter_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: "Growing oscillations in water level. Model may crash with NaN after many timesteps. Elevation values grow exponentially."
+    error_pattern: "NaN|Inf|overflow"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "Timestep DTDP violates CFL stability condition"
+    explanation: >
+      The CFL condition requires DTDP < dx_min / sqrt(g * h_max),
+      where dx_min is the smallest element size and h_max is the
+      maximum depth. For a mesh with 100m elements and 50m depth:
+      DTDP < 100/sqrt(9.81*50) = 4.5s. ADCIRC does NOT automatically
+      check or enforce CFL. Violation causes growing oscillations that
+      may take thousands of timesteps to manifest as NaN.
+    affected_components: [fort.15, timestep.F]
+  remedy:
+    action: "Reduce DTDP to satisfy CFL: DTDP < dx_min / sqrt(g * h_max)"
+    tool_to_run: null
+    manual_steps:
+      - "Identify smallest element size (from mesh generation tool)"
+      - "Identify maximum depth (from fort.14)"
+      - "Compute CFL limit and set DTDP to 50-80% of limit"
+      - "For safety, start with DTDP = 1.0 s and increase gradually"
+    prevention: "run_adcirc.py computes CFL from mesh and warns if violated"
+  severity: fatal
+  cross_references: [dt_005, dt_016]
+
+- id: dt_007
+  stage: s4_meteorological_forcing
+  failure_domain: parameter_format
+  symptom:
+    description: "Wind and pressure forcing appears shifted spatially. Storm track is displaced from expected location. Asymmetric surge pattern is wrong."
+    error_pattern: "spatial mismatch"
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "OWI header grid dimensions (iLat, iLong) off by one or mismatched with data"
+    explanation: >
+      The OWI format header specifies grid dimensions (iLat, iLong),
+      spacing (DX, DY), and SW corner (SWLat, SWLon). If iLat or iLong
+      is off by one, subsequent data rows are read with wrong spatial
+      mapping. This shifts the entire wind/pressure field, causing the
+      storm eye to appear at the wrong location.
+    affected_components: [fort.221, fort.222, convert_forcing_to_adcirc]
+  remedy:
+    action: "Verify iLat × iLong matches the number of data values per snapshot"
+    tool_to_run: convert_forcing_to_adcirc
+    manual_steps:
+      - "Count data values between consecutive iLat headers"
+      - "Should equal iLat × iLong"
+      - "Verify SWLat/SWLon matches the SW corner of your data grid"
+    prevention: "convert_forcing_to_adcirc auto-computes grid dimensions from data"
+  severity: silent
+  cross_references: []
+
+- id: dt_008
+  stage: s2_parameter_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: "Inundation extent is smaller than expected. Flooding does not reach areas known to have flooded in reality."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wetting/drying threshold H0 is too large"
+    explanation: >
+      H0 is the minimum water depth for a node to be considered wet.
+      If H0=1.0m, a node must have >1m of water above its elevation to
+      be flagged as wet. This excludes shallow inundation areas and
+      significantly underestimates flooding extent. For storm surge:
+      H0=0.05m is typical. For tidal studies: H0=0.01m.
+    affected_components: [fort.15, wetdry.F]
+  remedy:
+    action: "Reduce H0 to 0.01-0.05 m"
+    tool_to_run: null
+    manual_steps:
+      - "Check H0 value in fort.15"
+      - "If H0 > 0.5, it is likely too large"
+      - "Set H0 = 0.05 for storm surge, H0 = 0.01 for tidal"
+      - "Too small H0 (<0.001) may cause wet/dry chattering"
+    prevention: "run_adcirc.py warns if H0 > 1.0"
+  severity: degraded
+  cross_references: []
+
+- id: dt_013
+  stage: s2_parameter_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: "Bottom friction effect is orders of magnitude wrong. Linear friction values used where quadratic expected."
+    error_pattern: "extreme velocities"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Linear friction coefficient TAU (1/s) confused with quadratic CF (dimensionless)"
+    explanation: >
+      NOLIBF=0 uses linear friction with TAU in units of 1/second (typical
+      0.0001-0.001). NOLIBF=1 uses quadratic friction with CF dimensionless
+      (typical 0.001-0.01). Using a quadratic value (0.003) with linear
+      formulation gives excessive friction. Using a linear value (0.0001)
+      with quadratic gives almost no friction.
+    affected_components: [fort.15]
+  remedy:
+    action: "Match friction coefficient to NOLIBF setting"
+    tool_to_run: null
+    manual_steps:
+      - "If NOLIBF=0: TAU ~ 0.0001 - 0.001 (1/s)"
+      - "If NOLIBF=1: CF ~ 0.001 - 0.01 (dimensionless)"
+      - "If NOLIBF=2: hybrid — check HBREAK, FTHETA, FGAMMA"
+    prevention: "run_adcirc.py cross-checks NOLIBF with friction value"
+  severity: silent
+  cross_references: [dt_014]
+
+- id: dt_014
+  stage: s3_nodal_attributes
+  failure_domain: parameter_format
+  symptom:
+    description: "Velocities unrealistically high or low in specific areas. Tidal amplification wrong in certain channels."
+    error_pattern: "extreme velocities"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Manning's n values outside physical range in fort.13"
+    explanation: >
+      Manning's n for ocean/coastal applications typically ranges from
+      0.015 (smooth open ocean) to 0.15 (dense marsh). Values outside
+      this range indicate data errors. n=0 causes division by zero.
+      n>0.3 effectively blocks all flow. Common error: using Manning's n
+      values from river hydraulics (0.03-0.05 for channels) uniformly
+      across the entire coastal domain.
+    affected_components: [fort.13]
+  remedy:
+    action: "Verify Manning's n is in range 0.01-0.20 for all nodes"
+    tool_to_run: convert_bathymetry_to_fort14
+    manual_steps:
+      - "Check min/max Manning's n in fort.13"
+      - "Deep ocean: 0.015-0.025"
+      - "Shelf: 0.020-0.035"
+      - "Coastal: 0.025-0.050"
+      - "Marsh: 0.060-0.120"
+    prevention: "convert_bathymetry_to_fort14 uses depth-based classification table"
+  severity: degraded
+  cross_references: [dt_013]
+
+# --- Runtime Errors ---
+
+- id: dt_009
+  stage: s6_execution
+  failure_domain: runtime
+  symptom:
+    description: "Model crashes at startup with Fortran I/O error reading hot start file. Error: 'End of record' or 'Bad file descriptor'."
+    error_pattern: "Fortran runtime error|End of record|Bad file descriptor"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "Hot start file (fort.67/68) is binary incompatible with current compiler"
+    explanation: >
+      ADCIRC hot start files are Fortran unformatted (binary). They use
+      compiler-specific record markers, byte ordering, and data alignment.
+      A fort.67 written by ifort WILL NOT work with gfortran (and vice
+      versa). Even different versions of the same compiler may produce
+      incompatible files if compiler flags change padding/alignment.
+    affected_components: [fort.67, fort.68, hstart.F]
+  remedy:
+    action: "Regenerate hot start files using the same compiler and flags"
+    tool_to_run: null
+    manual_steps:
+      - "Run a cold start (IHOT=0) to completion"
+      - "Use the resulting fort.67/68 for hot start"
+      - "Never share hot start files between different compiler builds"
+    prevention: "Document compiler version in run metadata"
+  severity: fatal
+  cross_references: []
+
+- id: dt_016
+  stage: s6_execution
+  failure_domain: runtime
+  symptom:
+    description: "Velocity field develops NaN values after some timesteps. NaN appears first in shallow areas or near boundaries."
+    error_pattern: "NaN|Inf"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "Lateral viscosity ESLM is too large for the mesh resolution"
+    explanation: >
+      The eddy viscosity coefficient ESLM (m²/s) controls numerical
+      diffusion in the momentum equation. If ESLM is too large relative
+      to element size, it introduces numerical instability. Rule of thumb:
+      ESLM < 0.5 × dx_min² / DTDP. For 100m elements with DTDP=2s:
+      ESLM < 2500 m²/s. For most applications, ESLM = 1-50 m²/s.
+    affected_components: [fort.15, momentum.F]
+  remedy:
+    action: "Reduce ESLM — typical range 1-50 m²/s"
+    tool_to_run: null
+    manual_steps:
+      - "Start with ESLM = 10 m²/s"
+      - "If oscillations persist, increase gradually"
+      - "If NaN appears, decrease ESLM"
+    prevention: "run_adcirc.py checks ESLM against mesh resolution"
+  severity: fatal
+  cross_references: [dt_006]
+
+- id: dt_017
+  stage: s6_execution
+  failure_domain: path_resolution
+  symptom:
+    description: "ADCIRC crashes immediately at startup with file not found error."
+    error_pattern: "Cannot open|file not found|fort.14"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "fort.14 or fort.15 not present in the working directory"
+    explanation: >
+      ADCIRC reads input files from the current working directory. It
+      does NOT accept file paths as arguments. All fort.* files must be
+      in the directory where adcirc is executed. Common mistake: running
+      adcirc from the build directory instead of the run directory.
+    affected_components: [adcirc, read_input.F]
+  remedy:
+    action: "Ensure all fort.* files are in the working directory"
+    tool_to_run: run_adcirc
+    manual_steps:
+      - "cd to the directory containing fort.14, fort.15"
+      - "Run adcirc from that directory"
+      - "Or use run_adcirc.py --work_dir to specify the directory"
+    prevention: "run_adcirc.py preflight checks for required files"
+  severity: fatal
+  cross_references: []
+
+# --- Silent Errors ---
+
+- id: dt_018
+  stage: s1_mesh_preparation
+  failure_domain: silent_error
+  symptom:
+    description: "Boundary conditions applied incorrectly — flow direction wrong at some boundaries. No error message."
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Boundary nodes not ordered counter-clockwise around the domain"
+    explanation: >
+      ADCIRC requires boundary nodes to be listed counter-clockwise (CCW)
+      when viewed from above. Land boundaries should have the domain
+      interior on their left. If nodes are ordered clockwise, ADCIRC
+      may apply boundary conditions on the wrong side (e.g., treating
+      a land boundary as an open boundary or vice versa) WITHOUT any
+      error message.
+    affected_components: [fort.14, boundaries.F]
+  remedy:
+    action: "Reorder boundary nodes to counter-clockwise"
+    tool_to_run: null
+    manual_steps:
+      - "Visualize boundary nodes and verify CCW ordering"
+      - "Land boundaries: domain interior on left side"
+      - "Open boundaries: open ocean on right side"
+    prevention: "Mesh generation tools (OceanMesh2D, SMS) handle this automatically"
+  severity: silent
+  cross_references: []
+
+# --- Dependency Mismatch ---
+
+- id: dt_019
+  stage: s6_execution
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "Parallel run hangs or segfaults during initialization. adcprep completes successfully but padcirc fails."
+    error_pattern: "segfault|SIGSEGV|MPI_ERR"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "MPI library version mismatch between adcprep and padcirc compilation"
+    explanation: >
+      adcprep and padcirc must be compiled with the same MPI implementation
+      and version. Mixing OpenMPI-compiled adcprep with MPICH-compiled
+      padcirc (or different major versions) causes ABI incompatibilities
+      that manifest as segfaults or hangs during MPI_Init or communication.
+    affected_components: [padcirc, adcprep, MPI]
+  remedy:
+    action: "Rebuild both adcprep and padcirc with the same MPI"
+    tool_to_run: null
+    manual_steps:
+      - "Check MPI: mpirun --version"
+      - "Rebuild: cmake -DCMAKE_Fortran_COMPILER=mpif90 .."
+      - "Verify: ldd padcirc | grep mpi"
+    prevention: "Build adcprep and padcirc together in same cmake build"
+  severity: fatal
+  cross_references: []
+
+- id: dt_020
+  stage: s6_execution
+  failure_domain: runtime
+  symptom:
+    description: "adcprep crashes during domain decomposition. Error mentions METIS or graph partitioning failure."
+    error_pattern: "METIS|partition|graph"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "Mesh contains disconnected elements or isolated node groups"
+    explanation: >
+      METIS graph partitioning requires a connected mesh. If the mesh has
+      disconnected islands, isolated elements, or unreferenced nodes,
+      METIS cannot create valid partitions. This often happens when
+      combining multiple mesh regions or when mesh editing removes
+      connecting elements without updating the node list.
+    affected_components: [fort.14, adcprep, decomp.F]
+  remedy:
+    action: "Fix mesh connectivity — remove isolated elements/nodes"
+    tool_to_run: null
+    manual_steps:
+      - "Check mesh in SMS or OceanMesh2D for connectivity"
+      - "Remove isolated nodes not referenced by any element"
+      - "Ensure all elements share at least one edge with another element"
+    prevention: "Validate mesh connectivity before running adcprep"
+  severity: fatal
+  cross_references: []

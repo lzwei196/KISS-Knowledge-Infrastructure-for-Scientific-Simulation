@@ -1,0 +1,155 @@
+model:
+  name: "CWatM"
+  version: "1.5"
+  full_name: "Community Water Model"
+  developer: "IIASA Water Security Research Group"
+  domain: "Global/regional hydrology — daily water cycle simulation"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/CWatM/venv/bin/python"
+  entry_point: "run_cwatm.py"
+  source_repo: "https://github.com/iiasa/CWatM"
+  license: "GNU GPLv3"
+  language: "Python 3.8+ with C++ routing acceleration"
+  config_format: "INI"
+  grid_type: "structured (30 arcmin or 5 arcmin)"
+  time_step: "daily"
+
+inputs:
+  forcing:
+    - name: "precipitation"
+      settings_key: "PrecipitationMaps"
+      unit: "kg m-2 s-1"
+      internal_unit: "m/day"
+      conversion_factor: 86.4
+      valid_range: [0.0, 0.001]
+      format: "NetCDF"
+    - name: "tavg"
+      settings_key: "TavgMaps"
+      unit: "K"
+      valid_range: [200, 330]
+      format: "NetCDF"
+    - name: "tmin"
+      settings_key: "TminMaps"
+      unit: "K"
+      valid_range: [200, 330]
+      format: "NetCDF"
+      note: "Penman-Monteith only"
+    - name: "tmax"
+      settings_key: "TmaxMaps"
+      unit: "K"
+      valid_range: [200, 330]
+      format: "NetCDF"
+      note: "Penman-Monteith only"
+    - name: "surface_pressure"
+      settings_key: "PSurfMaps"
+      unit: "Pa"
+      valid_range: [50000, 110000]
+      format: "NetCDF"
+      note: "Penman-Monteith only"
+    - name: "specific_humidity"
+      settings_key: "QAirMaps"
+      unit: "kg/kg"
+      valid_range: [0.0, 0.04]
+      format: "NetCDF"
+      note: "Or use RhsMaps (relative humidity, %) instead"
+    - name: "wind_speed"
+      settings_key: "WindMaps"
+      unit: "m/s"
+      valid_range: [0.0, 50.0]
+      format: "NetCDF"
+      note: "Penman-Monteith only"
+    - name: "shortwave_radiation"
+      settings_key: "RSDSMaps"
+      unit: "W/m2"
+      valid_range: [0.0, 500.0]
+      format: "NetCDF"
+      note: "Penman-Monteith only"
+    - name: "longwave_radiation"
+      settings_key: "RSDLMaps"
+      unit: "W/m2"
+      valid_range: [100.0, 500.0]
+      format: "NetCDF"
+      note: "Penman-Monteith only"
+
+  parameters:
+    critical:
+      - name: "precipitation_coversion"
+        valid_range: [0.001, 86400]
+        default: 86.4
+        description: "Converts input precipitation to m/day. 86.4 for kg/m2/s, 0.001 for mm/day, 1.0 for m/day"
+      - name: "TemperatureInKelvin"
+        valid_range: [false, true]
+        default: true
+        description: "If True, input temperature is in Kelvin. CRITICAL: mismatch causes silent catastrophic errors"
+      - name: "SnowMeltCoef"
+        valid_range: [0.001, 0.01]
+        description: "Snow melt coefficient (degree-day method)"
+      - name: "crop_correct"
+        valid_range: [0.8, 1.5]
+        description: "Crop correction factor for ET"
+      - name: "soildepth_factor"
+        valid_range: [0.5, 2.0]
+        description: "Soil depth multiplier"
+      - name: "arnoBeta_add"
+        valid_range: [0.01, 1.0]
+        description: "Arno beta parameter for runoff shape"
+      - name: "recessionCoeff_factor"
+        valid_range: [1.0, 10.0]
+        description: "Baseflow recession coefficient multiplier"
+      - name: "manningsN"
+        valid_range: [0.5, 5.0]
+        description: "Manning's n multiplier for channel routing"
+    soil:
+      - name: "KSat1, KSat2, KSat3"
+        unit: "cm/day"
+        description: "Saturated hydraulic conductivity per soil layer. TRAP: expects cm/day, not mm/hr or m/s"
+      - name: "alpha1, alpha2, alpha3"
+        unit: "1/cm"
+        description: "van Genuchten alpha parameter"
+      - name: "lambda1, lambda2, lambda3"
+        unit: "dimensionless"
+        description: "van Genuchten lambda (pore-size index)"
+      - name: "thetas1, thetas2, thetas3"
+        unit: "dimensionless"
+        description: "Saturated volumetric water content"
+      - name: "thetar1, thetar2, thetar3"
+        unit: "dimensionless"
+        description: "Residual volumetric water content"
+
+outputs:
+  primary:
+    - name: "discharge"
+      unit: "m3/s"
+      valid_range: [0.0, 100000.0]
+      description: "River discharge at each cell or gauge"
+    - name: "totalET"
+      unit: "m"
+      valid_range: [0.0, 0.02]
+      description: "Total evapotranspiration"
+    - name: "runoff"
+      unit: "m"
+      valid_range: [0.0, 0.1]
+      description: "Total runoff (surface + subsurface)"
+    - name: "baseflow"
+      unit: "m"
+      valid_range: [0.0, 0.05]
+      description: "Groundwater contribution to streamflow"
+    - name: "storGroundwater"
+      unit: "m"
+      valid_range: [0.0, 10.0]
+      description: "Groundwater storage"
+    - name: "SnowCover"
+      unit: "m"
+      valid_range: [0.0, 5.0]
+      description: "Snow water equivalent"
+    - name: "tws"
+      unit: "m"
+      valid_range: [0.0, 20.0]
+      description: "Total water storage (all compartments)"
+  format: "NetCDF (CF-compliant), CSV for gauge time series"
+
+known_issues:
+  - "TemperatureInKelvin flag mismatch causes silent catastrophic errors in snow and ET"
+  - "precipitation_coversion factor mismatch causes silent 86x over/under-estimation"
+  - "KSat units (cm/day) trap: SoilGrids data in mm/hr needs ×2.4 conversion"
+  - "LDD coding follows PCRaster convention (5=pit), not ArcGIS D8"
+  - "C++ routing library (t5_linux.so) may need recompilation on some systems"

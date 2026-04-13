@@ -1,0 +1,118 @@
+model:
+  name: "DART"
+  full_name: "Data Assimilation Research Testbed"
+  version: "Manhattan Release"
+  domain: "ensemble_data_assimilation"
+  language: "Fortran 90+"
+  developer: "DAReS / NSF NCAR"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DART/source/repo/models/lorenz_63/work/filter"
+  additional_executables:
+    - "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DART/source/repo/models/lorenz_63/work/perfect_model_obs"
+    - "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DART/source/repo/models/lorenz_63/work/obs_diag"
+
+inputs:
+  forcing:
+    - name: "obs_seq.in"
+      description: "Observation sequence definition (types, locations, times)"
+      format: "DART obs_seq (ASCII or binary)"
+    - name: "obs_seq.out"
+      description: "Observation values for assimilation (from perfect_model_obs or converters)"
+      format: "DART obs_seq (ASCII or binary)"
+  state:
+    - name: "filter_input.nc"
+      description: "Ensemble initial conditions (NetCDF)"
+      format: "NetCDF"
+      variables:
+        - name: "state"
+          description: "State vector for each ensemble member"
+          unit: "model-dependent"
+  configuration:
+    - name: "input.nml"
+      description: "Fortran namelist controlling all DART programs"
+      format: "Fortran namelist"
+  parameters:
+    critical:
+      - name: "ens_size"
+        valid_range: [2, 10000]
+        description: "Number of ensemble members"
+        namelist: "filter_nml"
+      - name: "cutoff"
+        valid_range: [0.001, 1000000.0]
+        description: "Localization half-width (radians for 3D sphere, fraction for 1D)"
+        namelist: "assim_tools_nml"
+      - name: "inf_flavor"
+        valid_range: [0, 5]
+        description: "Inflation scheme: 0=none, 2=adaptive spatially-varying, 3=uniform, 4=RTPS, 5=enhanced"
+        namelist: "filter_nml"
+      - name: "inf_initial"
+        valid_range: [1.0, 2.0]
+        description: "Initial inflation magnitude"
+        namelist: "filter_nml"
+      - name: "outlier_threshold"
+        valid_range: [2.0, 100.0]
+        description: "Observation outlier rejection threshold (in std devs)"
+        namelist: "filter_nml"
+      - name: "async"
+        valid_range: [0, 4]
+        description: "Model advance mode: 0=synchronous, 2=shell, 4=parallel shell"
+        namelist: "filter_nml"
+
+outputs:
+  primary:
+    - name: "analysis.nc"
+      description: "Post-assimilation ensemble state"
+      format: "NetCDF"
+      variables:
+        - name: "state"
+          unit: "model-dependent"
+          description: "Analysis state vector per member"
+        - name: "state_mean"
+          unit: "model-dependent"
+          description: "Ensemble mean of analysis"
+        - name: "state_sd"
+          unit: "model-dependent"
+          description: "Ensemble standard deviation"
+    - name: "preassim.nc"
+      description: "Pre-assimilation (prior) ensemble state"
+      format: "NetCDF"
+    - name: "obs_seq.final"
+      description: "Observations with prior/posterior values and QC flags"
+      format: "DART obs_seq"
+    - name: "true_state.nc"
+      description: "True state trajectory (OSSE only, from perfect_model_obs)"
+      format: "NetCDF"
+  diagnostics:
+    - name: "obs_diag_output.nc"
+      description: "Observation-space statistics from obs_diag"
+      format: "NetCDF"
+
+unit_traps:
+  - variable: "obs error"
+    expected: "variance (sigma^2)"
+    common_mistake: "standard deviation (sigma)"
+    consequence: "Wrong assimilation weights"
+  - variable: "localization cutoff"
+    expected: "radians (3D sphere)"
+    common_mistake: "degrees or km"
+    consequence: "Spurious correlations or no localization"
+  - variable: "pressure"
+    expected: "Pascals (Pa)"
+    common_mistake: "hPa or mb"
+    consequence: "Wrong vertical localization"
+  - variable: "missing data"
+    expected: "-888888.0"
+    common_mistake: "NaN or -9999"
+    consequence: "Silent data corruption"
+
+validation:
+  test_case: "Lorenz 63 OSSE"
+  metrics:
+    - name: "RMSE"
+      expected: "~2.0"
+      threshold: 4.0
+    - name: "ensemble_spread"
+      expected: "~RMSE"
+    - name: "filter_divergence"
+      expected: "none"
+
+known_issues: []

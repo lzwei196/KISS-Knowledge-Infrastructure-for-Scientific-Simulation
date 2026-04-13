@@ -1,0 +1,77 @@
+package:
+  created: '2026-03-25T03:59:50.819694'
+  domain: groundwater
+  name: DuMux
+  version: auto-generated
+pipeline:
+  stages:
+  - depends_on: []
+    description: ''
+    id: s0_config
+    knowledge_type: procedural
+    milestones:
+    - description: Stage Configuration completed successfully
+      id: m_s0_config
+      verification: Output files exist and pass validation
+    name: Configuration
+    tools: []
+  - depends_on: []
+    description: ''
+    id: s1_domain
+    knowledge_type: procedural
+    milestones:
+    - description: Stage Domain Setup completed successfully
+      id: m_s1_domain
+      verification: Output files exist and pass validation
+    name: Domain Setup
+    tools: []
+  - depends_on: []
+    description: ''
+    id: s2_data
+    knowledge_type: procedural
+    milestones:
+    - description: Stage Data Preparation completed successfully
+      id: m_s2_data
+      verification: Output files exist and pass validation
+    name: Data Preparation
+    tools: []
+  - depends_on: []
+    description: ''
+    id: s3_forcing
+    knowledge_type: procedural
+    milestones:
+    - description: Stage Forcing/Input completed successfully
+      id: m_s3_forcing
+      verification: Output files exist and pass validation
+    name: Forcing/Input
+    tools: []
+  - depends_on: []
+    description: ''
+    id: s4_parameters
+    knowledge_type: procedural
+    milestones:
+    - description: Stage Parameters completed successfully
+      id: m_s4_parameters
+      verification: Output files exist and pass validation
+    name: Parameters
+    tools: []
+  - depends_on: []
+    description: ''
+    id: s5_run
+    knowledge_type: procedural
+    milestones:
+    - description: Stage Execution completed successfully
+      id: m_s5_run
+      verification: Output files exist and pass validation
+    name: Execution
+    tools: []
+  - depends_on: []
+    description: ''
+    id: s6_output
+    knowledge_type: procedural
+    milestones:
+    - description: Stage Output Parsing completed successfully
+      id: m_s6_output
+      verification: Output files exist and pass validation
+    name: Output Parsing
+    tools: []

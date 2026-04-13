@@ -1,0 +1,429 @@
+# =============================================================================
+# Knowledge Infrastructure: mHM (mesoscale Hydrological Model) v5.13.1
+# =============================================================================
+
+package:
+  name: "mhm-hydrocraft"
+  version: "1.0.0"
+  description: "Knowledge infrastructure for mHM v5.13.1 with Multiscale Parameter Regionalization"
+  target_model: "mHM v5.13.1"
+  domain: "distributed hydrology with parameter regionalization"
+  authors:
+    - "Zhang Jianyun Research Group, Hohai University"
+  license: "LGPL-3.0"
+
+pipeline:
+  stages:
+    - id: s0_config
+      name: "Configuration & Basin Definition"
+      description: "Define basin, resolution, time period, forcing dataset, PET method"
+      order: 0
+      depends_on: []
+      skill_document: "docs/s0_config_skill.md"
+      tools: [configure_mhm_basin]
+      milestones:
+        - id: m0_config_created
+          description: "config.json exists with all settings"
+          verification: "test -f config.json"
+
+    - id: s1_domain
+      name: "Domain Grid Setup"
+      description: "Compute L0/L1/L11 grids and domain extent from shapefile"
+      order: 1
+      depends_on: [s0_config]
+      skill_document: "docs/s1_domain_skill.md"
+      tools: [setup_mhm_domain, generate_latlon_files]
+      milestones:
+        - id: m1_domain_info
+          description: "domain_info.json exists with valid grid headers"
+          verification: "test -f domain_info.json"
+
+    - id: s2_morphology
+      name: "Morphological Data Preparation"
+      description: "Generate ESRI ASCII grids for DEM, soil, geology, land cover at L0 resolution"
+      order: 2
+      depends_on: [s1_domain]
+      skill_document: "docs/s2_morphology_skill.md"
+      tools: [prepare_morpho_data, hwsd_to_mhm_soil, glim_to_mhm_geology, landcover_to_mhm_luse, generate_gauge_grid, validate_morph_grids]
+      milestones:
+        - id: m2_all_grids_valid
+          description: "validate_morph_grids.py returns PASS"
+          verification: "python validate_morph_grids.py --morph_dir input/morph/"
+
+    - id: s3_mpr
+      name: "MPR Parameter Setup"
+      description: "Configure transfer function global parameters in mhm_parameter.nml"
+      order: 3
+      depends_on: [s0_config]
+      skill_document: "docs/s3_mpr_skill.md"
+      tools: [generate_mhm_parameters]
+      milestones:
+        - id: m3_params_valid
+          description: "mhm_parameter.nml exists with all parameters in bounds"
+          verification: "test -f mhm_parameter.nml"
+
+    - id: s4_forcing
+      name: "Meteorological Forcing"
+      description: "Convert CMFD/MSWX forcing to mHM NetCDF format"
+      order: 4
+      depends_on: [s1_domain]
+      skill_document: "docs/s4_forcing_skill.md"
+      tools: [convert_forcing_to_mhm]
+      milestones:
+        - id: m4_forcing_ready
+          description: "NetCDF files exist in input/meteo/pre/ and input/meteo/tavg/"
+          verification: "ls input/meteo/pre/*.nc input/meteo/tavg/*.nc"
+
+    - id: s5_gauge
+      name: "Observed Discharge"
+      description: "Convert observed Q to mHM gauge format"
+      order: 5
+      depends_on: []
+      skill_document: "docs/s5_gauge_skill.md"
+      tools: [prepare_mhm_gauge]
+      milestones:
+        - id: m5_gauge_ready
+          description: "Gauge file exists in input/gauge/"
+          verification: "ls input/gauge/*.txt"
+
+    - id: s6_namelist
+      name: "Namelist Assembly"
+      description: "Generate the 4 Fortran namelist files"
+      order: 6
+      depends_on: [s0_config, s1_domain, s2_morphology, s3_mpr, s4_forcing, s5_gauge]
+      skill_document: "docs/s6_namelist_skill.md"
+      tools: [generate_mhm_namelists]
+      milestones:
+        - id: m6_namelists_ready
+          description: "All 4 .nml files exist in run directory"
+          verification: "test -f mhm.nml -a -f mhm_parameter.nml"
+
+    - id: s7_execute
+      name: "Model Execution"
+      description: "Run mHM and verify completion"
+      order: 7
+      depends_on: [s6_namelist]
+      skill_document: "docs/s7_execute_skill.md"
+      tools: [run_mhm]
+      milestones:
+        - id: m7_run_complete
+          description: "mHM exited with code 0 and 'mHM: Finished!' in stdout"
+          verification: "test -f output_b1/discharge.nc"
+
+    - id: s8_postprocess
+      name: "Output Extraction & Analysis"
+      description: "Extract discharge, ET, soil moisture; compute performance metrics"
+      order: 8
+      depends_on: [s7_execute]
+      skill_document: "docs/s8_postprocess_skill.md"
+      tools: [parse_mhm_output, compare_mhm_vic]
+      milestones:
+        - id: m8_results_parsed
+          description: "Performance metrics computed"
+          verification: "python parse_mhm_output.py --output_dir output_b1/"
+
+    - id: s10_regionalize
+      name: "Transfer to Ungauged Basins"
+      description: "Apply calibrated global parameters to new basins via MPR"
+      order: 10
+      depends_on: [s7_execute]
+      skill_document: "docs/s10_regionalize_skill.md"
+      tools: [transfer_mpr_params]
+      milestones:
+        - id: m10_transfer_complete
+          description: "transfer_report.json exists in target basin"
+          verification: "test -f transfer_report.json"
+
+tools:
+  - id: configure_mhm_basin
+    name: "Configure mHM Basin"
+    description: "Create directory structure and initial config"
+    stage: s0_config
+    script_path: "tools/s0_config/configure_mhm_basin.py"
+    language: python
+
+  - id: setup_mhm_domain
+    name: "Setup mHM Domain"
+    description: "Compute L0/L1/L11 grid extents from shapefile"
+    stage: s1_domain
+    script_path: "tools/s1_domain/setup_mhm_domain.py"
+    language: python
+
+  - id: prepare_morpho_data
+    name: "Prepare Morphological Data"
+    description: "Generate DEM, slope, aspect, flow direction, flow accumulation ASCII grids"
+    stage: s2_morphology
+    script_path: "tools/s2_morphology/prepare_morpho_data.py"
+    language: python
+
+  - id: hwsd_to_mhm_soil
+    name: "HWSD to mHM Soil Classes"
+    description: "Convert HWSD global soil database to mHM soil classification"
+    stage: s2_morphology
+    script_path: "tools/s2_morphology/hwsd_to_mhm_soil.py"
+    language: python
+
+  - id: glim_to_mhm_geology
+    name: "GLiM to mHM Geology Classes"
+    description: "Convert Global Lithological Map to mHM geology classification"
+    stage: s2_morphology
+    script_path: "tools/s2_morphology/glim_to_mhm_geology.py"
+    language: python
+
+  - id: landcover_to_mhm_luse
+    name: "Land Cover to mHM Classes"
+    description: "Convert AVHRR land cover to mHM land use classes with LAI lookup"
+    stage: s2_morphology
+    script_path: "tools/s2_morphology/landcover_to_mhm_luse.py"
+    language: python
+
+  - id: generate_gauge_grid
+    name: "Generate Gauge Grid"
+    description: "Create idgauges.asc with gauge location"
+    stage: s2_morphology
+    script_path: "tools/s2_morphology/generate_gauge_grid.py"
+    language: python
+
+  - id: validate_morph_grids
+    name: "Validate Morphological Grids"
+    description: "Check all ASCII grids have identical headers"
+    stage: s2_morphology
+    script_path: "tools/s2_morphology/validate_morph_grids.py"
+    language: python
+
+  - id: generate_mhm_parameters
+    name: "Generate MPR Parameters"
+    description: "Create mhm_parameter.nml with literature-informed defaults"
+    stage: s3_mpr
+    script_path: "tools/s3_mpr/generate_mhm_parameters.py"
+    language: python
+
+  - id: convert_forcing_to_mhm
+    name: "Convert Forcing to mHM"
+    description: "Convert CMFD/MSWX to mHM NetCDF forcing format"
+    stage: s4_forcing
+    script_path: "tools/s4_forcing/convert_forcing_to_mhm.py"
+    language: python
+
+  - id: prepare_mhm_gauge
+    name: "Prepare mHM Gauge Data"
+    description: "Convert observed discharge to mHM gauge format"
+    stage: s5_gauge
+    script_path: "tools/s5_gauge/prepare_mhm_gauge.py"
+    language: python
+
+  - id: generate_mhm_namelists
+    name: "Generate mHM Namelists"
+    description: "Assemble all 4 Fortran namelist files"
+    stage: s6_namelist
+    script_path: "tools/s6_namelist/generate_mhm_namelists.py"
+    language: python
+
+  - id: run_mhm
+    name: "Run mHM"
+    description: "Execute mHM with progress monitoring and error handling"
+    stage: s7_execute
+    script_path: "tools/s7_execute/run_mhm.py"
+    language: python
+
+  - id: parse_mhm_output
+    name: "Parse mHM Output"
+    description: "Extract discharge, ET, soil moisture from NetCDF output"
+    stage: s8_postprocess
+    script_path: "tools/s8_postprocess/parse_mhm_output.py"
+    language: python
+
+  - id: compare_mhm_vic
+    name: "Compare mHM vs VIC"
+    description: "Cross-model discharge comparison with metrics"
+    stage: s8_postprocess
+    script_path: "tools/s8_postprocess/compare_mhm_vic.py"
+    language: python
+
+  - id: transfer_mpr_params
+    name: "Transfer MPR Parameters"
+    description: "Apply calibrated global parameters to a new ungauged basin"
+    stage: s10_regionalize
+    script_path: "tools/s10_regionalize/transfer_mpr_params.py"
+    language: python
+
+skill_documents:
+  - id: sd01
+    name: "mHM Configuration Guide"
+    stage: s0_config
+    path: "docs/s0_config_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 1500
+
+  - id: sd02
+    name: "Domain Grid Setup"
+    stage: s1_domain
+    path: "docs/s1_domain_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 1200
+
+  - id: sd03
+    name: "Morphological Data Preparation"
+    stage: s2_morphology
+    path: "docs/s2_morphology_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 2000
+
+  - id: sd04
+    name: "MPR Methodology & Parameters"
+    stage: s3_mpr
+    path: "docs/s3_mpr_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 2500
+
+  - id: sd05
+    name: "Forcing Data Preparation"
+    stage: s4_forcing
+    path: "docs/s4_forcing_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 1500
+
+  - id: sd06
+    name: "Observed Data & Gauges"
+    stage: s5_gauge
+    path: "docs/s5_gauge_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 800
+
+  - id: sd07
+    name: "Namelist Reference"
+    stage: s6_namelist
+    path: "docs/s6_namelist_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 2000
+
+  - id: sd08
+    name: "Model Execution"
+    stage: s7_execute
+    path: "docs/s7_execute_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 1000
+
+  - id: sd09
+    name: "Output Analysis"
+    stage: s8_postprocess
+    path: "docs/s8_postprocess_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 1200
+
+  - id: sd10
+    name: "MPR Regionalization Guide"
+    stage: s10_regionalize
+    path: "docs/s10_regionalize_skill.md"
+    knowledge_type: evaluative_and_sequencing
+    word_count: 2000
+
+diagnostic_triplets:
+  - id: dt_b01
+    stage: installation
+    failure_domain: compilation
+    severity: fatal
+  - id: dt_b02
+    stage: installation
+    failure_domain: compilation
+    severity: fatal
+  - id: dt_b03
+    stage: installation
+    failure_domain: compilation
+    severity: fatal
+  - id: dt_b04
+    stage: installation
+    failure_domain: compilation
+    severity: fatal
+  - id: dt_b05
+    stage: installation
+    failure_domain: compilation
+    severity: warning
+  - id: dt_r01
+    stage: s2_morphology
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_r02
+    stage: s1_domain
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_r03
+    stage: s4_forcing
+    failure_domain: runtime
+    severity: fatal
+  - id: dt_r04
+    stage: s2_morphology
+    failure_domain: runtime
+    severity: fatal
+  - id: dt_r05
+    stage: s2_morphology
+    failure_domain: runtime
+    severity: fatal
+  - id: dt_r06
+    stage: s4_forcing
+    failure_domain: unit_conversion
+    severity: fatal
+  - id: dt_r07
+    stage: s2_morphology
+    failure_domain: parameter_format
+    severity: degraded
+  - id: dt_r08
+    stage: s3_mpr
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_r09
+    stage: s7_execute
+    failure_domain: runtime
+    severity: degraded
+  - id: dt_r10
+    stage: s7_execute
+    failure_domain: runtime
+    severity: warning
+  - id: dt_s01
+    stage: s2_morphology
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_s02
+    stage: s4_forcing
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_s03
+    stage: s10_regionalize
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_s04
+    stage: s9_calibrate
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_s05
+    stage: s2_morphology
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_s06
+    stage: s6_namelist
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_s07
+    stage: s6_namelist
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_s08
+    stage: s4_forcing
+    failure_domain: silent_error
+    severity: silent
+
+summary:
+  total_tools: 17
+  total_tool_lines: 3909
+  total_skill_documents: 10
+  total_skill_words: 15700
+  total_diagnostic_triplets: 26
+  failure_domains_covered:
+    - compilation
+    - parameter_format
+    - runtime
+    - unit_conversion
+    - silent_error
+  pipeline_stages: 10
+  validation_status: "binary_only"
+  validation_notes: "mHM v5.13.1 built from source, test domain passed (KGE=0.75, NSE=0.77). Full HydroCraft data validation pending."

@@ -1,0 +1,141 @@
+# ============================================================================
+# Knowledge Infrastructure — SHAW v3.03
+# Simultaneous Heat and Water (Soil-Plant-Atmosphere) Model
+# ============================================================================
+# Built using the Knowledge Dissection Toolkit v1.0
+# Model: SHAW v3.03 (Fortran CLI, interactive stdin prompt)
+# Developer: USDA-ARS, Northwest Watershed Research Center
+# Documentation: https://www.ars.usda.gov/pacific-west-area/boise-id/watershed-management-research/docs/shaw-model/
+# ============================================================================
+
+package:
+  name: "shaw-knowledge-infrastructure"
+  version: "1.0.0"
+  description: "Knowledge infrastructure for autonomous AI operation of SHAW soil-plant-atmosphere model within HydroCraft"
+  target_model: "SHAW v3.03 (Fortran CLI, stdin-prompted)"
+  domain: "soil heat/water transfer, frost dynamics, snow physics, evapotranspiration"
+  authors:
+    - "Jianyun Zhang Research Group"
+    - "Claude (Knowledge Dissection)"
+  license: "CC-BY-4.0"
+
+# --- Pipeline definition ---
+pipeline:
+  stages:
+    - id: "s1_site_setup"
+      name: "Site File Creation"
+      description: "Create the SHAW .inp site file with soil layers, depths, texture, and hydraulic properties. Define simulation control flags (IFLAGSI, MESSION, MTSTEP)."
+      order: 1
+      depends_on: []
+      tools:
+        - "create_site_file"
+        - "setup_shaw_from_template"
+
+    - id: "s2_weather_prep"
+      name: "Weather/Forcing Preparation"
+      description: "Convert CMFD/MSWX/NASA POWER forcing data to SHAW weather format. Critical unit conversions: IFLAGSI=1 for SI units (wind m/s, precip mm, radiation W/m2)."
+      order: 2
+      depends_on: ["s1_site_setup"]
+      tools:
+        - "convert_forcing_to_shaw"
+
+    - id: "s3_plant_config"
+      name: "Plant/Canopy Configuration"
+      description: "Create plant parameter file with LAI, height, root depth, stomatal resistance. Configure canopy flags (MCANFLG)."
+      order: 3
+      depends_on: ["s1_site_setup"]
+      tools:
+        - "create_plant_file"
+
+    - id: "s4_initial_conditions"
+      name: "Initial Conditions"
+      description: "Set initial soil temperature and moisture profiles, snow depth, and residue conditions."
+      order: 4
+      depends_on: ["s1_site_setup"]
+      tools:
+        - "set_initial_conditions"
+
+    - id: "s5_snow_residue_config"
+      name: "Snow & Residue Configuration"
+      description: "Configure snow physics parameters and crop residue properties."
+      order: 5
+      depends_on: ["s1_site_setup"]
+      tools:
+        - "configure_snow_params"
+        - "configure_residue"
+
+    - id: "s6_execution"
+      name: "Run SHAW & Parse Output"
+      description: "Execute SHAW via stdin pipe (echo 'file.inp' | ./shaw303). Parse output files for soil temperature, moisture, frost depth, ET, and energy balance."
+      order: 6
+      depends_on: ["s1_site_setup", "s2_weather_prep", "s3_plant_config", "s4_initial_conditions", "s5_snow_residue_config"]
+      tools:
+        - "run_shaw"
+        - "validate_shaw_inputs"
+        - "parse_shaw_output"
+        - "plot_shaw_profiles"
+        - "shaw_frost_analysis"
+
+    - id: "s7_vic_coupling"
+      name: "VIC Coupling"
+      description: "Convert VIC soil parameters to SHAW format. Map VIC Ksat (mm/s) to SHAW SATCON (cm/hr) with factor 360."
+      order: 7
+      depends_on: ["s6_execution"]
+      tools:
+        - "vic_to_shaw_soil"
+
+# --- Tool registry ---
+tools:
+  - { id: create_site_file, script: "s1_site_setup/tools/create_site_file.py", stage: s1_site_setup }
+  - { id: setup_shaw_from_template, script: "tools/s1_site_setup/setup_shaw_from_template.py", stage: s1_site_setup }
+  - { id: convert_forcing_to_shaw, script: "s2_weather_prep/tools/convert_forcing_to_shaw.py", stage: s2_weather_prep }
+  - { id: create_plant_file, script: "s3_plant_config/tools/create_plant_file.py", stage: s3_plant_config }
+  - { id: set_initial_conditions, script: "s4_initial_conditions/tools/set_initial_conditions.py", stage: s4_initial_conditions }
+  - { id: configure_snow_params, script: "s5_snow_residue_config/tools/configure_snow_params.py", stage: s5_snow_residue_config }
+  - { id: configure_residue, script: "s5_snow_residue_config/tools/configure_residue.py", stage: s5_snow_residue_config }
+  - { id: run_shaw, script: "s6_execution/tools/run_shaw.py", stage: s6_execution }
+  - { id: validate_shaw_inputs, script: "s6_execution/tools/validate_shaw_inputs.py", stage: s6_execution }
+  - { id: parse_shaw_output, script: "s6_execution/tools/parse_shaw_output.py", stage: s6_execution }
+  - { id: plot_shaw_profiles, script: "s6_execution/tools/plot_shaw_profiles.py", stage: s6_execution }
+  - { id: shaw_frost_analysis, script: "s6_execution/tools/shaw_frost_analysis.py", stage: s6_execution }
+  - { id: vic_to_shaw_soil, script: "s7_vic_coupling/tools/vic_to_shaw_soil.py", stage: s7_vic_coupling }
+
+# --- Diagnostic triplets ---
+diagnostic_triplets:
+  path: "diagnostics/triplets.yaml"
+  count: 31
+  note: >
+    SHAW triplets use trigger/error/fix schema (non-standard). A future migration
+    to symptom/diagnosis/remedy is planned. Category-to-stage mapping:
+    execution,fortran_trap,convergence,platform_trap,methodology -> s6_execution;
+    unit_conversion -> s2_weather_prep; discretization -> s1_site_setup;
+    input_format -> multiple stages; parameterization -> s1/s3;
+    initialization -> s4_initial_conditions.
+  failure_domains:
+    - "execution"
+    - "fortran_trap"
+    - "unit_conversion"
+    - "discretization"
+    - "input_format"
+    - "parameterization"
+    - "convergence"
+    - "initialization"
+    - "platform_trap"
+    - "methodology"
+  by_severity:
+    critical: 10
+    high: 9
+    medium: 8
+    info: 4
+
+# --- Summary ---
+summary:
+  total_tools: 13
+  total_diagnostic_triplets: 31
+  total_skill_documents: 1
+  pipeline_stages: 7
+  validation_status: "dissected"
+  known_issues:
+    - "Triplets use non-standard trigger/error/fix schema instead of symptom/diagnosis/remedy"
+    - "Duplicate triplet file exists at triplets/shaw_triplets.yaml (canonical is diagnostics/triplets.yaml)"
+    - "Severity scale uses critical/high/medium/info instead of fatal/degraded/silent"

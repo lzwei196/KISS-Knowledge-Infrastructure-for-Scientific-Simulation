@@ -1,0 +1,455 @@
+# ============================================================================
+# Daisy Diagnostic Triplets
+# ============================================================================
+# 18 diagnostic triplets covering 5 failure domains.
+# Generated during Daisy knowledge dissection for HydroCraft platform.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s1_weather_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Crops barely grow, stunted LAI, very low yield. No error messages."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Radiation in MJ/m²/d interpreted as W/m² — roughly 12x too low"
+    explanation: >
+      Daisy expects GlobRad in W/m² (daily mean). If the source provides daily total
+      radiation in MJ/m²/d (typical for ERA5 and many station datasets), the values must
+      be divided by 0.0864 to convert. A typical summer day at 20 MJ/m²/d should be ~231
+      W/m². If left as 20, Daisy sees almost no light and photosynthesis is minimal.
+    affected_components: [convert_weather_to_dwf]
+  remedy:
+    action: "Divide radiation by 0.0864 when converting from MJ/m²/d to W/m²"
+    tool_to_run: convert_weather_to_dwf
+    manual_steps:
+      - "Check max GlobRad in .dwf — summer peaks should be 200-350 W/m²"
+      - "If max GlobRad < 40, values are likely in MJ/m²/d — divide by 0.0864"
+    prevention: "validate_outputs() checks for suspiciously low radiation values"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_002
+  stage: s1_weather_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Temperature values around 270-310°C in daisy.log or .dwf. Immediate crash or extreme ET."
+    error_pattern: "temperature"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature in Kelvin (K) not converted to degrees Celsius (°C)"
+    explanation: >
+      Daisy expects AirTemp in dgC (degrees Celsius). ERA5 and many reanalysis products
+      provide temperature in Kelvin. Forgetting the K→°C conversion (−273.15) results in
+      temperatures of ~280°C, causing extreme evapotranspiration calculations.
+    affected_components: [convert_weather_to_dwf]
+  remedy:
+    action: "Subtract 273.15 from temperature values"
+    tool_to_run: convert_weather_to_dwf
+    manual_steps:
+      - "Check AirTemp range in .dwf — should be −30 to +40°C for temperate"
+      - "If values are 240-320, they are in Kelvin — subtract 273.15"
+    prevention: "validate_outputs() flags temperatures > 60°C"
+  severity: critical
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s1_weather_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Soil waterlogged, anaerobic conditions, excessive drainage, unrealistic water balance."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation in mm/3h or mm/h used as mm/d — 8x or 24x too much rain"
+    explanation: >
+      Daisy expects Precip in mm/d. CMFD provides precipitation in mm/3h (accumulated
+      per 3-hour period). If the daily sum is not computed (multiply by 8), Daisy receives
+      only 1/8 of the actual daily precipitation. Conversely, if hourly data (mm/h) is
+      used directly as mm/d, the result is 1/24 of actual precipitation.
+    affected_components: [convert_weather_to_dwf]
+  remedy:
+    action: "Aggregate sub-daily precipitation to daily totals before writing .dwf"
+    tool_to_run: convert_weather_to_dwf
+    manual_steps:
+      - "Check annual precipitation total — should be 400-1200 mm/yr for temperate"
+      - "If annual total < 100, sub-daily values not aggregated properly"
+    prevention: "validate_outputs() checks for extreme daily precipitation"
+  severity: silent
+  cross_references: []
+
+- id: dt_004
+  stage: s2_soil_definition
+  failure_domain: unit_conversion
+  symptom:
+    description: "Daisy crashes at startup: texture fractions exceed 1.0 or sum > 1."
+    error_pattern: "sum"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Soil texture given as percent (0-100) instead of fraction (0-1)"
+    explanation: >
+      Daisy expects clay, silt, sand as fractions summing to ~1.0 (excluding humus).
+      HWSD and many soil databases provide these as percentages. Entering 10.7 for clay
+      (meaning 10.7%) is interpreted as 1070% — an obvious impossibility.
+    affected_components: [convert_soil_to_dai]
+  remedy:
+    action: "Divide all texture values by 100 when source is in percent"
+    tool_to_run: convert_soil_to_dai
+    manual_steps:
+      - "Check: clay + silt + sand should sum to ~1.0, not ~100"
+      - "If any value > 1.5, data is in percent — divide by 100"
+    prevention: "validate_inputs() auto-detects percent vs fraction"
+  severity: critical
+  cross_references: [dt_005]
+
+- id: dt_005
+  stage: s2_soil_definition
+  failure_domain: unit_conversion
+  symptom:
+    description: "Extremely rapid drainage, soil never holds water, crops wilt immediately."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Bulk density in kg/m³ (e.g., 1450) used where g/cm³ expected (1.45)"
+    explanation: >
+      Daisy expects dry_bulk_density in g/cm³ (typical range 1.0–1.8). HWSD provides
+      bulk density in kg/m³ (1000–1800). Using 1450 g/cm³ makes the soil appear
+      impossibly dense, distorting porosity calculations and water retention.
+    affected_components: [convert_soil_to_dai]
+  remedy:
+    action: "Divide bulk density by 1000 when converting from kg/m³ to g/cm³"
+    tool_to_run: convert_soil_to_dai
+    manual_steps:
+      - "Check dry_bulk_density values — should be 1.0–2.0 g/cm³"
+      - "If values > 100, they are in kg/m³ — divide by 1000"
+    prevention: "convert_bulk_density() auto-detects unit"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_006
+  stage: s2_soil_definition
+  failure_domain: unit_conversion
+  symptom:
+    description: "Horizon interpreted as above ground. Soil column has zero or negative thickness."
+    error_pattern: "horizon"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Horizon depths given as positive values instead of negative"
+    explanation: >
+      Daisy convention: depths below the soil surface are NEGATIVE. A horizon at 30 cm
+      depth must be specified as -30 [cm]. Positive values are interpreted as heights above
+      the surface, creating an impossible soil column.
+    affected_components: [convert_soil_to_dai]
+  remedy:
+    action: "Negate all depth values so they are negative (below surface)"
+    tool_to_run: convert_soil_to_dai
+    manual_steps:
+      - "Check horizon depths in .dai — all should be negative"
+      - "First horizon should be shallowest (e.g., -25), last deepest (e.g., -200)"
+    prevention: "convert_depth() ensures negative output"
+  severity: critical
+  cross_references: []
+
+- id: dt_007
+  stage: s2_soil_definition
+  failure_domain: unit_conversion
+  symptom:
+    description: "Water moves unrealistically fast through soil. Ponding never occurs."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "K_sat in m/s used where cm/h expected — ~360000x too high"
+    explanation: >
+      Daisy expects saturated hydraulic conductivity (K_sat) in cm/h. Many databases
+      and literature sources report K_sat in m/s. The conversion factor is large:
+      1 m/s = 360000 cm/h. A typical value of 1e-5 m/s should be 3.6 cm/h.
+    affected_components: [convert_soil_to_dai]
+  remedy:
+    action: "Multiply K_sat by 360000 when converting from m/s to cm/h"
+    tool_to_run: convert_soil_to_dai
+    manual_steps:
+      - "Check K_sat values — should be 0.01–100 cm/h for most soils"
+      - "If values are 1e-7 to 1e-3, they are likely in m/s"
+    prevention: "convert_ksat() handles unit conversion"
+  severity: silent
+  cross_references: [dt_008]
+
+- id: dt_008
+  stage: s2_soil_definition
+  failure_domain: unit_conversion
+  symptom:
+    description: "van Genuchten retention curve has wrong shape. Field capacity unrealistic."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Alpha parameter in m⁻¹ used where cm⁻¹ expected — 100x too high"
+    explanation: >
+      The van Genuchten alpha parameter has units of inverse length. Daisy expects cm⁻¹.
+      If alpha is provided in m⁻¹ (common in some databases), it must be divided by 100.
+      Typical alpha for clay is 0.01–0.03 cm⁻¹, for sand 0.03–0.15 cm⁻¹.
+    affected_components: [convert_soil_to_dai]
+  remedy:
+    action: "Divide alpha by 100 when converting from m⁻¹ to cm⁻¹"
+    tool_to_run: convert_soil_to_dai
+    manual_steps:
+      - "Check alpha values — should be 0.005–0.2 cm⁻¹"
+      - "If values are 0.5–20, they are in m⁻¹ — divide by 100"
+    prevention: "Validate alpha range after setting hydraulic parameters"
+  severity: silent
+  cross_references: [dt_007]
+
+# --- Configuration Errors ---
+
+- id: dt_009
+  stage: s3_management_setup
+  failure_domain: configuration
+  symptom:
+    description: "'Unknown crop' error at startup. Daisy refuses to run."
+    error_pattern: "Unknown"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Crop name in management does not match library definition exactly"
+    explanation: >
+      Daisy crop names are case-sensitive strings. The name in sow/harvest/wait commands
+      must exactly match the name in the crop library. "Spring Barley" is not the same as
+      "spring barley" or "SpringBarley" or "Spring barley".
+    affected_components: [management_setup]
+  remedy:
+    action: "Use exact crop name from crop.dai library"
+    manual_steps:
+      - "Check crop.dai for exact names: 'Spring Barley', 'Winter Wheat', etc."
+      - "Ensure quotes match: (sow \"Spring Barley\") not (sow Spring Barley)"
+    prevention: "Cross-reference crop names against library before running"
+  severity: critical
+  cross_references: []
+
+- id: dt_010
+  stage: s3_management_setup
+  failure_domain: configuration
+  symptom:
+    description: "Simulation produces no harvest events. harvest.dlf is empty."
+    error_pattern: ""
+    detection_method: file_check
+  diagnosis:
+    root_cause: "Harvest wait condition never satisfied before simulation end"
+    explanation: >
+      The management typically waits for (crop_ds_after "Crop" 2.0) (development stage 2 = ripe).
+      If the simulation stops before the crop reaches maturity, or if an (or ...) fallback
+      date is after the stop date, no harvest occurs. Also happens when sowing date is too
+      late for the climate.
+    affected_components: [management_setup]
+  remedy:
+    action: "Add a fallback date in the wait condition or extend simulation period"
+    manual_steps:
+      - "Use (wait (or (crop_ds_after \"Crop\" 2.0) (mm_dd 08 20)))"
+      - "Check that fallback date is before simulation stop date"
+      - "Ensure warmup period before first sowing"
+    prevention: "Always include (or ... (mm_dd M D)) fallback in harvest wait"
+  severity: silent
+  cross_references: [dt_011]
+
+- id: dt_011
+  stage: s3_management_setup
+  failure_domain: configuration
+  symptom:
+    description: "Simulation hangs or runs indefinitely. Never reaches stop date."
+    error_pattern: ""
+    detection_method: timeout
+  diagnosis:
+    root_cause: "Management wait condition can never be satisfied"
+    explanation: >
+      A (wait ...) action blocks the simulation until the condition is true. If the
+      condition references a crop that was never sown, or uses impossible conditions,
+      the simulation waits forever. Common cause: (wait (crop_ds_after "Crop" 2.0))
+      without the crop being sown, or missing (or ... (at YYYY M D H)) timeout.
+    affected_components: [management_setup]
+  remedy:
+    action: "Add timeout/fallback to all wait conditions"
+    manual_steps:
+      - "Review all (wait ...) for unreachable conditions"
+      - "Add date-based fallback: (wait (or CONDITION (at YYYY M D H)))"
+      - "Use --timeout flag in run_daisy.py"
+    prevention: "Always pair crop-based waits with date-based fallbacks"
+  severity: critical
+  cross_references: [dt_010]
+
+# --- Runtime Errors ---
+
+- id: dt_012
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "'File not found' errors for crop.dai, tillage.dai, or fertilizer.dai."
+    error_pattern: "not found"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Daisy library files not accessible from working directory"
+    explanation: >
+      Daisy loads library files from its installed lib/ directory or from the current
+      working directory. If running from a custom directory without proper installation,
+      the standard libraries (crop.dai, tillage.dai, fertilizer.dai, log.dai) cannot be
+      found. The (input file "crop.dai") directive searches relative to the CWD and the
+      lib/ directory.
+    affected_components: [run_daisy]
+  remedy:
+    action: "Copy or symlink library files to working directory, or install Daisy properly"
+    manual_steps:
+      - "Copy needed .dai files: cp /path/to/daisy/lib/*.dai /your/work/dir/"
+      - "Or install Daisy system-wide so lib/ is in the search path"
+    prevention: "validate_inputs() in run_daisy.py checks for referenced files"
+  severity: critical
+  cross_references: []
+
+- id: dt_013
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "'Negative dt' or convergence warnings in daisy.log. Simulation slows drastically."
+    error_pattern: "Negative dt|convergence|Could not find solution"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Extreme soil hydraulic conditions causing numerical instability"
+    explanation: >
+      Daisy solves the Richards equation for unsaturated water flow. Extreme K_sat values,
+      very high irrigation rates, or highly heterogeneous soil layers can cause the solver
+      to fail or require very small time steps. This is especially common with high
+      irrigation rates (> 50 mm/h) or incorrect K_sat values.
+    affected_components: [soil_definition, management_setup]
+  remedy:
+    action: "Reduce irrigation intensity or check soil hydraulic parameters"
+    manual_steps:
+      - "Use moderate irrigation: 10 mm/h for 3 hours instead of 100 mm/h for 0.3 hours"
+      - "Check K_sat values are in cm/h (not m/s)"
+      - "Ensure smooth transitions between soil layers"
+    prevention: "Validate K_sat range and irrigation rates before running"
+  severity: warning
+  cross_references: [dt_007]
+
+# --- Output Interpretation ---
+
+- id: dt_014
+  stage: s5_output_analysis
+  failure_domain: interpretation
+  symptom:
+    description: "Parsed harvest data has wrong columns or misaligned values."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "DLF parser not handling tab separators correctly"
+    explanation: >
+      Daisy DLF files use tab characters as column separators. If a parser splits on
+      whitespace instead of tabs, columns with spaces in names (e.g., crop names)
+      will be split incorrectly, causing misalignment of all subsequent columns.
+    affected_components: [parse_daisy_output]
+  remedy:
+    action: "Use tab-aware parsing: sep='\\t' in pandas.read_csv"
+    tool_to_run: parse_daisy_output
+    manual_steps:
+      - "Open .dlf in hex editor to confirm tab characters"
+      - "Use pd.read_csv(path, sep='\\t') not pd.read_csv(path)"
+    prevention: "parse_dlf_data() detects and uses tab separators"
+  severity: warning
+  cross_references: []
+
+- id: dt_015
+  stage: s5_output_analysis
+  failure_domain: interpretation
+  symptom:
+    description: "Yield appears much higher than expected. Comparing total DM with grain DM."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Confusing total harvest DM with grain (sorg_DM) DM"
+    explanation: >
+      Daisy reports harvest components separately: stem_DM, leaf_DM, dead_DM, sorg_DM.
+      The grain yield is sorg_DM (storage organ). Total DM = stem + leaf + dead + sorg.
+      When stem fraction is set to 0.70 (70% of stem removed), total_DM is much higher
+      than grain yield. Literature often reports grain yield only.
+    affected_components: [parse_daisy_output]
+  remedy:
+    action: "Use sorg_DM for grain yield comparison, not total_DM"
+    manual_steps:
+      - "For grain yield: use sorg_DM column"
+      - "For total biomass: use stem_DM + leaf_DM + dead_DM + sorg_DM"
+      - "Check harvest_index: should be 0.3-0.5 for cereals"
+    prevention: "extract_harvest_summary() reports both sorg_DM and total_DM"
+  severity: silent
+  cross_references: []
+
+- id: dt_016
+  stage: s6_validation
+  failure_domain: interpretation
+  symptom:
+    description: "Validation metrics look good for first year but poor overall."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Spinup period contaminating validation metrics"
+    explanation: >
+      Daisy needs time to equilibrate soil water and nitrogen pools. The first 1-3 years
+      of simulation may show artifacts from initial conditions. Including these in
+      validation metrics biases the result. Standard practice is to use a warmup period
+      before the validation period.
+    affected_components: [validation]
+  remedy:
+    action: "Exclude first 1-3 years from metric computation"
+    manual_steps:
+      - "Start simulation 1-3 years before the validation period"
+      - "Only compute metrics for the period after warmup"
+      - "Compare metrics with and without warmup years"
+    prevention: "Set simulation start ≥ 1 year before analysis period"
+  severity: warning
+  cross_references: []
+
+- id: dt_017
+  stage: s3_management_setup
+  failure_domain: configuration
+  symptom:
+    description: "Organic fertilizer has no effect on crop growth. NH4 all lost to atmosphere."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Volatilization set to 100% or organic N in slow pool with very high C/N"
+    explanation: >
+      Organic fertilizers (slurry) have a volatilization parameter that determines
+      how much NH4-N is lost to the atmosphere during/after application. If set too
+      high (or left at default for surface application without incorporation), most N
+      is lost. The (to -1 [cm]) parameter controls incorporation depth.
+    affected_components: [management_setup]
+  remedy:
+    action: "Set volatilization to 5-15% and incorporate with (to -1 [cm]) or deeper"
+    manual_steps:
+      - "Check volatilization parameter: typically 5% for injected, 10-15% for surface applied"
+      - "Add (to -1 [cm]) to place fertilizer in topsoil"
+      - "Plow or incorporate shortly after application"
+    prevention: "Document typical volatilization rates for each application method"
+  severity: silent
+  cross_references: []
+
+- id: dt_018
+  stage: s1_weather_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Weather file rejected: 'No weather data for requested period'."
+    error_pattern: "No weather data"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Begin/End dates in DWF header do not cover simulation period"
+    explanation: >
+      Daisy checks that the weather file covers the entire simulation period (from
+      'time' to 'stop' in the .dai file). If the DWF Begin/End dates are wrong or
+      the simulation period extends beyond weather data, Daisy refuses to run.
+      Common when converting from ERA5 with incorrect date parsing.
+    affected_components: [convert_weather_to_dwf]
+  remedy:
+    action: "Ensure DWF Begin/End dates match or exceed simulation time/stop"
+    manual_steps:
+      - "Check Begin: and End: lines in .dwf header"
+      - "Check (time ...) and (stop ...) in .dai file"
+      - "Weather range must encompass simulation range"
+    prevention: "validate_outputs() could cross-check with .dai file"
+  severity: critical
+  cross_references: [dt_002]

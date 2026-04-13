@@ -1750,3 +1750,40 @@ triplets:
       prevention: "Always use parse_summary_out.py from the knowledge infrastructure. Never reimplement Summary.OUT parsing with split()."
     severity: "silent"
     cross_references: []
+
+  # ===========================================================================
+  # S5 SIMULATION CONTROLS (additional)
+  # ===========================================================================
+
+  - id: dt_051
+    stage: "s5_simulation_controls"
+    failure_domain: "wrong_photosynthesis_method"
+    symptom:
+      description: "CROPGRO-based crops (soybean, peanut, dry bean, cotton, chickpea, etc.) produce zero yield despite normal phenology. PlantGro.OUT shows LAI stuck near zero while leaf number advances normally. OVERVIEW.OUT reports 'Plant died due to extreme stress' with AGEFAC=0.00."
+      error_pattern: "Plant died due to extreme stress.*AGEFAC.*0\\.00"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "The photosynthesis method (PHOTO) in the FileX simulation controls is set to 'R' (radiation-use efficiency) instead of 'L' (leaf-level). CROPGRO requires PHOTO=L; using PHOTO=R causes the leaf-level photosynthesis routine to produce near-zero assimilates, resulting in no biomass accumulation."
+      explanation: >
+        DSSAT has two photosynthesis methods: R (radiation-use efficiency, used by CERES models
+        for maize, wheat, rice, sorghum) and L (leaf-level canopy photosynthesis, used by CROPGRO
+        for soybean, peanut, cotton, dry bean, etc.). When PHOTO=R is used with CROPGRO, the
+        model calculates photosynthesis incorrectly, producing near-zero daily carbon gain. The
+        crop emerges and advances through phenological stages (driven by temperature and
+        photoperiod, independent of biomass) but never accumulates biomass. At maturity the plant
+        dies with AGEFAC=0.00 (all leaves senesced) and zero grain yield.
+      affected_components:
+        - "FileX SIMULATION CONTROLS section (PHOTO field)"
+        - "dssat_workdir_setup.py _generate_filex function"
+    remedy:
+      action: "Set PHOTO=L for CROPGRO-based crops in the FileX simulation controls."
+      tool_to_run: "dssat_workdir_setup.py (fixed in v4.0)"
+      manual_steps:
+        - "In the FileX, find the line: @N METHODS  WTHER INCON LIGHT EVAPO INFIL PHOTO HYDRO..."
+        - "Change the PHOTO column from R to L for CROPGRO crops"
+        - "CROPGRO crops: soybean, peanut, dry bean, cotton, cowpea, chickpea, pigeon pea, faba bean, canola, sunflower, tomato"
+        - "CERES crops (keep PHOTO=R): maize, wheat, rice, sorghum, barley, millet"
+      prevention: "Use dssat_workdir_setup.py which now automatically sets PHOTO based on the crop model engine."
+    severity: "critical"
+    cross_references:
+      - "dt_002 (zero yield)"

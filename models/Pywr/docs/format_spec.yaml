@@ -1,0 +1,223 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["water_resources"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "Pywr 1.30.0"
+  domain: "water_resources"
+  secondary_domains: ["reservoir_operations", "flood_control"]
+  binary: "Python package (pywr)"
+  binary_path: "/home/server/桌面/test/hydro-claude/python_env/bin/python3"
+  language: "Python (Cython core)"
+  solver: "GLPK (GNU Linear Programming Kit)"
+  working_directory: "directory containing model JSON"
+  notes: "Linear programming-based water allocation. Each timestep solves an independent LP problem via GLPK."
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "reservoir_inflow"
+      file: "inflow CSV (referenced by Pywr JSON dataframe parameter)"
+      unit: "m3/s"
+      valid_range: [0.0, 1e5]
+      format: "CSV with datetime index + inflow column"
+      conversion_from_vic: "VIC runoff+baseflow (mm/day) * cell_area_m2 / (1000 * 86400) -> m3/s"
+      notes: "Missing /1000 gives 1000x too large. Missing /86400 gives 86400x too large."
+
+    - name: "dam_database"
+      file: "GRanD_allocated.csv"
+      unit: "various"
+      format: "CSV with dam properties"
+      path: "/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/map/data/GRanD_allocated.csv"
+      notes: "7,320 dams globally, 1,571 in China. CAP_MCM in million cubic meters."
+
+  parameters:
+    critical:
+      - name: "reservoir_capacity"
+        file: "Pywr JSON (storage node max_volume)"
+        description: "Maximum reservoir storage volume"
+        valid_range: [1e4, 1e12]
+        unit: "m3"
+        bug_history: >
+          GRanD CAP_MCM is in million cubic meters. Pywr uses m3.
+          Forgetting * 1e6 makes reservoir 1 million times too small.
+          Triplet dt_pywr_014.
+
+      - name: "priority_costs"
+        file: "Pywr JSON (node cost parameters)"
+        description: "LP cost values controlling allocation priority"
+        unit: "dimensionless"
+        notes: >
+          More negative cost = higher priority. Recommended:
+          Environmental flow: -1000, Municipal: -900, Irrigation: -800,
+          Industrial: -700, Spill: +1000.
+
+      - name: "control_curve"
+        file: "Pywr JSON (ControlCurveParameter)"
+        description: "Monthly target storage levels for reservoir regulation"
+        valid_range: [0.0, 1.0]
+        unit: "fraction of max_volume"
+        bug_history: >
+          Without a ControlCurveParameter, the LP solver either fills to max or
+          empties to min with no intermediate regulation. Control curves are
+          essential for realistic operation.
+
+      - name: "environmental_flow"
+        file: "Pywr JSON (output node min_flow)"
+        description: "Minimum environmental flow requirement"
+        valid_range: [0.0, 10000.0]
+        unit: "m3/s"
+        notes: "Typically 10-30% of mean annual flow."
+
+      - name: "spill_path"
+        file: "Pywr JSON (link from storage to spill node)"
+        description: "Overflow/spillway path from reservoir"
+        bug_history: >
+          Every storage node MUST have a spill/overflow path. Without it,
+          Pywr raises InfeasibleError when inflow exceeds demand + storage
+          capacity. Triplet dt_pywr_009.
+
+      - name: "node_types_lowercase"
+        file: "Pywr JSON"
+        description: "Node and parameter type names"
+        bug_history: >
+          All node types are lowercase: storage, input, output, link, catchment.
+          All parameter types are lowercase: constant, monthlyprofile, dataframe, controlcurve.
+          Using capitalized names (Storage, MonthlyProfile) causes parse error.
+
+      - name: "csv_path_resolution"
+        file: "Pywr JSON (dataframe parameter url)"
+        description: "CSV file path in dataframe parameters"
+        bug_history: >
+          Dataframe CSV paths are resolved relative to model JSON location.
+          Use absolute paths to avoid FileNotFoundError.
+
+  files:
+    required:
+      - name: "model.json"
+        description: "Pywr model definition file"
+        format: "JSON with nodes, edges, parameters, recorders"
+
+      - name: "inflow CSV"
+        description: "Reservoir inflow time series"
+        format: "CSV with datetime index"
+
+    optional:
+      - name: "demand CSV"
+        description: "Time-varying demand profiles"
+
+      - name: "operating rules JSON"
+        description: "Monthly control curves and release rules"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "storage_volume"
+      file: "storage_timeseries.csv"
+      unit: "m3"
+      valid_range: [0.0, null]
+      format: "CSV with datetime index"
+      notes: "Daily reservoir storage. Should stay between dead storage and max_volume."
+
+    - name: "release_discharge"
+      file: "release_timeseries.csv"
+      unit: "m3/s"
+      valid_range: [0.0, null]
+      format: "CSV with datetime index"
+      notes: "Total release = regulated release + spill."
+
+    - name: "spill_discharge"
+      file: "Pywr recorder output"
+      unit: "m3/s"
+      valid_range: [0.0, null]
+      notes: "Uncontrolled overflow when reservoir is full."
+
+    - name: "demand_deficit"
+      file: "Pywr recorder output"
+      unit: "m3/s"
+      valid_range: [0.0, null]
+      notes: "Unmet demand at each demand node."
+
+  diagnostics:
+    - name: "reliability_metrics"
+      check: "Supply reliability > 90% for priority demands"
+      notes: "Reliability = fraction of timesteps where demand is fully met."
+
+    - name: "storage_range"
+      check: "Storage stays within [dead_storage, max_volume]"
+      notes: "Storage below dead storage = demand exceeds supply. Storage at max = frequent spill."
+
+    - name: "water_balance"
+      check: "Inflow = Release + Spill + Evaporation + delta_Storage"
+      notes: "LP should conserve mass exactly."
+
+    - name: "priority_ordering"
+      check: "Higher-priority demands served before lower-priority"
+      notes: "Verify by checking deficit sequence: environmental first, then municipal, then irrigation."
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "glpk_not_found"
+    triplet: "dt_pywr_001"
+    description: "GLPK solver not installed — Pywr cannot solve LP"
+    affected_output: "No simulation possible"
+    detection: "ImportError or solver error on run"
+    fix: "sudo apt install libglpk-dev"
+
+  - id: "inflow_all_zeros"
+    triplet: "dt_pywr_005"
+    description: "VIC inflow conversion produces all zeros"
+    affected_output: "Reservoir empties, all demands unmet"
+    detection: "Inflow CSV values all 0.0"
+    fix: "Check VIC flux file format, upstream cell selection, unit conversion"
+
+  - id: "infeasible_no_spill"
+    triplet: "dt_pywr_009"
+    description: "InfeasibleError — no spill path from storage node"
+    affected_output: "Simulation crashes"
+    detection: "pywr.core.InfeasibleError"
+    fix: "Add spill link from storage to a downstream output node with cost +1000"
+
+  - id: "cama_injection_negative"
+    triplet: "dt_pywr_011"
+    description: "CaMa injection produces negative runoff — cell area unit error"
+    affected_output: "CaMa-Flood routing fails or gives wrong discharge"
+    detection: "Negative runoff values in CaMa input"
+    fix: "Check cell area units in m3/s -> mm/day conversion"
+
+  - id: "mcm_to_m3_forgotten"
+    triplet: "dt_pywr_014"
+    description: "GRanD CAP_MCM not multiplied by 1e6 — reservoir 1M times too small"
+    affected_output: "Reservoir fills/empties in minutes"
+    detection: "Storage oscillates wildly or is always at max/min"
+    fix: "Capacity (m3) = CAP_MCM * 1e6"
+
+  - id: "vic_conversion_error"
+    triplet: "dt_pywr_015"
+    description: "VIC mm/day to m3/s missing /1000 or /86400"
+    affected_output: "Inflow 1000x or 86400x wrong"
+    detection: "Inflow magnitude unrealistic for basin size"
+    fix: "Q (m3/s) = runoff (mm/day) * area (m2) / (1000 * 86400)"
+
+# =========================================================================
+# EXPECTED RANGES (typical reservoir operations)
+# =========================================================================
+expected_ranges:
+  typical_reservoir:
+    supply_reliability_pct: ">90 for priority demands"
+    annual_spill_fraction: "<20% of inflow for well-managed reservoir"
+    storage_range: "Between dead storage (10-20% of max) and max_volume"
+    notes: "Huai River basin has ~68 GRanD dams"

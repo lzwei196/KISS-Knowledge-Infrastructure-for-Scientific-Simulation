@@ -1,0 +1,280 @@
+# MOM6 Diagnostic Triplets
+# Format: symptom → diagnosis → remedy
+# Each triplet addresses a specific failure mode encountered in MOM6 simulations.
+# Focus areas: unit conversion traps, configuration errors, silent errors, runtime failures.
+
+triplets:
+  # ===== Unit Conversion Traps =====
+
+  - id: dt_001
+    domain: unit_conversion
+    stage: s2_forcing
+    severity: critical
+    silent: true
+    symptom: >
+      Sea surface temperature rapidly exceeds 100 degC within first few timesteps.
+      Energy in ocean.stats grows exponentially. Model may crash with velocity truncation.
+    diagnosis: >
+      Air temperature in forcing file is in Kelvin (K) instead of degrees Celsius (degC).
+      MOM6 expects degC for bulk formula computations. Values of ~290 K are interpreted
+      as 290 degC, causing extreme heating.
+    remedy: >
+      Convert temperature: T_degC = T_K - 273.15. In forcing_converter.py this is
+      handled automatically for ERA5/JRA55. Verify with:
+      `ncdump -v t_air forcing.nc | head -20` — values should be in [-80, 60] range.
+
+  - id: dt_002
+    domain: unit_conversion
+    stage: s3_initial_conditions
+    severity: high
+    silent: true
+    symptom: >
+      Multi-decadal simulation shows slow temperature drift of ~0.1-0.2 degC/decade.
+      Short runs (< 5 years) appear normal. Density structure gradually degrades.
+    diagnosis: >
+      Potential temperature used as initial condition when EQUATION_OF_STATE = "TEOS10"
+      expects conservative temperature. The difference is small (~0.04 degC at surface,
+      ~0.2 degC at depth) but accumulates. Conversely, using conservative temperature
+      with Wright or UNESCO EOS also causes drift.
+    remedy: >
+      Match T/S type to EOS choice. For TEOS10: use gsw_CT_from_pt(SA, pt) from the
+      GSW toolbox. For Wright/UNESCO: use potential temperature directly. Add assertion
+      in IC preparation: if EOS="TEOS10", verify T_max < 33 degC (conservative temp
+      is always less than potential temp at depth).
+
+  - id: dt_003
+    domain: unit_conversion
+    stage: s3_initial_conditions
+    severity: medium
+    silent: true
+    symptom: >
+      Salinity bias of ~0.17 PSU globally. Density calculation slightly off, affecting
+      mixed layer depth and overturning circulation strength.
+    diagnosis: >
+      Absolute salinity (g/kg, used by TEOS10) and practical salinity (PSU, used by
+      Wright/UNESCO) differ by a factor of ~1.00472. Using the wrong type introduces
+      a systematic bias.
+    remedy: >
+      For TEOS10: convert S_A = gsw_SA_from_SP(SP, p, lon, lat). For Wright/UNESCO:
+      use practical salinity directly. Check: if S values > 36 in open ocean with
+      TEOS10, they're likely absolute salinity (correct). If using Wright and seeing
+      values > 36, may be absolute salinity (incorrect — convert to practical).
+
+  - id: dt_005
+    domain: unit_conversion
+    stage: s1_topography
+    severity: critical
+    silent: false
+    symptom: >
+      MOM6 crashes at initialization with "All points on processor are land" or runs
+      with zero ocean cells. No useful output produced.
+    diagnosis: >
+      Topography depth values have wrong sign convention. MOM6 expects positive-down
+      (ocean = positive values). GEBCO and ETOPO provide elevation (positive-up),
+      where ocean is negative. Using raw elevation means all ocean cells are masked.
+    remedy: >
+      Negate elevation: depth = -elevation. Then set land to 0.0 (or mask it).
+      topography_converter.py handles this automatically via the is_elevation flag.
+      Verify: `ncdump -v depth topog.nc | tail` — all ocean values should be > 0.
+
+  - id: dt_007
+    domain: unit_conversion
+    stage: s2_forcing
+    severity: medium
+    silent: true
+    symptom: >
+      Ocean currents are 10× weaker than expected. Kinetic energy in ocean.stats is
+      very low. Mixed layer depth is shallower than observations.
+    diagnosis: >
+      Wind stress provided in dyn/cm² (CGS) instead of Pa (SI). 1 dyn/cm² = 0.1 Pa.
+      Some older forcing datasets and textbook formulas use CGS units.
+    remedy: >
+      Multiply by 0.1: tau_Pa = tau_dyncm2 × 0.1. Always verify wind stress range:
+      typical values are 0-0.3 Pa, peak storms ~1-3 Pa. If values are 0-3 dyn/cm²,
+      they need conversion.
+
+  - id: dt_008
+    domain: unit_conversion
+    stage: s2_forcing
+    severity: critical
+    silent: true
+    symptom: >
+      Ocean loses heat when it should gain heat (or vice versa). SST has opposite
+      seasonal cycle. Global mean SST drifts steadily in wrong direction.
+    diagnosis: >
+      Heat flux sign convention is reversed. MOM6 expects positive = into ocean.
+      Some atmospheric models output positive = upward (out of ocean). Latent and
+      sensible heat fluxes are most commonly affected.
+    remedy: >
+      Negate the flux: Q_mom6 = -Q_source (if source convention is positive-up).
+      Verify by checking summer hemisphere SST trend over first few months.
+
+  - id: dt_009
+    domain: unit_conversion
+    stage: s2_forcing
+    severity: high
+    silent: true
+    symptom: >
+      Extreme freshwater input. Salinity drops unrealistically (e.g., SSS < 20 PSU
+      globally within months). Sea level rises anomalously.
+    diagnosis: >
+      Precipitation in mm/day or mm/hr not converted to kg/m²/s. MOM6 expects
+      kg/m²/s. 1 mm/day of rain ≈ 1.157e-5 kg/m²/s. If 5 mm/day is passed directly
+      as 5.0 kg/m²/s, the freshwater flux is ~430,000× too large.
+    remedy: >
+      Convert: P_kgm2s = P_mmday / 86400. For mm/hr: P_kgm2s = P_mmhr / 3600.
+      Verify range: global mean precip ≈ 3e-5 kg/m²/s, max ≈ 1e-3 kg/m²/s.
+
+  - id: dt_010
+    domain: unit_conversion
+    stage: s3_initial_conditions
+    severity: medium
+    silent: true
+    symptom: >
+      Density computed incorrectly at depth. Deep water formation regions produce
+      wrong water masses. Pressure-dependent EOS effects are wrong by factor of 10000.
+    diagnosis: >
+      Pressure provided in dbar instead of Pa. MOM6 EOS routines expect pressure in
+      Pa. 1 dbar = 10000 Pa. At 4000 m depth, pressure ≈ 400 dbar = 4×10⁷ Pa.
+    remedy: >
+      Convert: P_Pa = P_dbar × 10000. Most EOS routines in MOM6 handle the conversion
+      internally via the US%Z_to_Pa scaling, but external IC preparation must use Pa.
+
+  - id: dt_011
+    domain: unit_conversion
+    stage: s2_forcing
+    severity: high
+    silent: true
+    symptom: >
+      Freshwater balance is systematically wrong. Salinity increases steadily even
+      with correct precipitation. Net surface freshwater flux is positive (adding salt).
+    diagnosis: >
+      Evaporation sign convention error. MOM6 expects evaporation as negative
+      (water leaving the ocean). Some datasets provide evaporation as a positive
+      quantity (mm/day or kg/m²/s). Additionally, mm/day → kg/m²/s conversion may
+      be missing.
+    remedy: >
+      evap_kgm2s = -abs(evap_mmday) / 86400. Always verify: evap must be ≤ 0 in
+      the MOM6 forcing file. Typical range: -1e-4 to 0 kg/m²/s.
+
+  # ===== Configuration Errors =====
+
+  - id: dt_014
+    domain: configuration
+    stage: s5_parameters
+    severity: critical
+    silent: false
+    symptom: >
+      MOM6 crashes immediately with CFL violation or negative thickness at first
+      timestep. Energy explodes in ocean.stats first entry.
+    diagnosis: >
+      Timestep DT specified in hours or minutes instead of seconds. MOM6 expects
+      DT in seconds. DT = 1 (intended as 1 hour = 3600 s) is extremely small and
+      causes no harm, but DT = 3600 (intended as 3600 hours) is far too large.
+    remedy: >
+      Ensure DT is in seconds. Typical values: DT = 300-1800 s for 1° global,
+      DT = 60-300 s for 1/4° global, DT = 10-60 s for 1/12° global.
+
+  - id: dt_015
+    domain: configuration
+    stage: s5_parameters
+    severity: high
+    silent: false
+    symptom: >
+      MOM6 runs but crashes after several timesteps with "Thickness has become
+      negative" or velocity truncation. Occurs only in specific regions.
+    diagnosis: >
+      Barotropic timestep DTBT is too large for the grid spacing. The barotropic
+      CFL condition requires DTBT < dx / sqrt(g × H_max). With fine grids or
+      deep ocean, DTBT must be very small.
+    remedy: >
+      Set DTBT = -0.98 to let MOM6 auto-calculate from CFL. Or compute manually:
+      DTBT = 0.9 × dx_min / sqrt(9.81 × H_max). For 1° grid with H=6000m: DTBT ≈ 30s.
+
+  - id: dt_016
+    domain: configuration
+    stage: s1_topography
+    severity: medium
+    silent: false
+    symptom: >
+      "Domain decomposition error" at startup. MOM6 cannot distribute grid across
+      MPI processes. Error message mentions layout or mask_table.
+    diagnosis: >
+      Grid dimensions (NIGLOBAL, NJGLOBAL) are not evenly divisible by the number
+      of MPI processes, or the land-elimination mask_table excludes too many PEs.
+    remedy: >
+      Choose NIGLOBAL and NJGLOBAL with many factors (e.g., 360, 180). Set LAYOUT
+      explicitly in MOM_input: LAYOUT = Nx, Ny where Nx*Ny = nprocs and
+      NIGLOBAL/Nx and NJGLOBAL/Ny are integers. Or use MASKTABLE to skip land-only PEs.
+
+  # ===== Silent Errors =====
+
+  - id: dt_017
+    domain: silent_error
+    stage: s5_parameters
+    severity: high
+    silent: true
+    symptom: >
+      Equation of state produces subtly wrong density. Water mass properties
+      are incorrect. Deep circulation is too weak or too strong. Problem is only
+      evident after comparing to observations.
+    diagnosis: >
+      EQUATION_OF_STATE parameter does not match the type of temperature and
+      salinity in the initial conditions and forcing. E.g., using TEOS10 EOS with
+      potential temperature instead of conservative temperature. The difference is
+      small but physically important for density-driven flows.
+    remedy: >
+      Verify consistency: TEOS10 requires conservative temperature + absolute
+      salinity. WRIGHT and UNESCO require potential temperature + practical salinity.
+      LINEAR works with any type. Document the choice in MOM_input comments.
+
+  - id: dt_018
+    domain: silent_error
+    stage: s7_output
+    severity: medium
+    silent: true
+    symptom: >
+      Diagnostic output file is unexpectedly small or contains all zeros for some
+      variables. No error messages in log files.
+    diagnosis: >
+      Variable name in diag_table does not match the registered diagnostic name.
+      MOM6 silently ignores unknown diagnostic names. The field is never written.
+    remedy: >
+      Check available_diags.000000 (written at startup) for exact diagnostic names.
+      Common mistakes: "sst" vs "SST", "temp" vs "Temp", "mld" vs "MLD_003".
+      Use exact names from available_diags file.
+
+  - id: dt_019
+    domain: silent_error
+    stage: s2_forcing
+    severity: high
+    silent: true
+    symptom: >
+      Model runs normally but SST has a persistent warm bias of 2-5 degC. Heat
+      content increases monotonically. Seasonal cycle amplitude is correct but
+      mean is shifted.
+    diagnosis: >
+      Net longwave radiation is provided as downwelling LW only, not net LW.
+      The upwelling component (εσT⁴ ≈ 350-400 W/m²) is missing. This adds
+      ~350 W/m² of extra heating to the ocean surface.
+    remedy: >
+      Compute net LW: LW_net = LW_down - ε × σ × SST⁴, where ε ≈ 0.97 and
+      σ = 5.67e-8 W/m²/K⁴. Or configure MOM6 to compute upwelling LW internally
+      by using bulk formula forcing mode (BUOY_CONFIG = "linear").
+
+  - id: dt_020
+    domain: silent_error
+    stage: s3_initial_conditions
+    severity: medium
+    silent: true
+    symptom: >
+      Vertical structure appears correct initially but layer thicknesses become
+      unrealistically thin or thick within the first day. ALE regridding oscillates.
+    diagnosis: >
+      Layer thickness h is in kg/m² (non-Boussinesq convention) but the model is
+      configured for Boussinesq mode (default), which expects h in meters.
+      h_m = h_kgm2 / rho_0 where rho_0 ≈ 1035 kg/m³.
+    remedy: >
+      Check BOUSSINESQ parameter in MOM_input (default True). If True, ensure h
+      in initial conditions is in meters. Convert: h_m = h_kgm2 / RHO_0.
+      Verify: sum of layer thicknesses should equal bottom depth.

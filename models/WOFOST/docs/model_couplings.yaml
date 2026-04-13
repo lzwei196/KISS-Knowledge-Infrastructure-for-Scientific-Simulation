@@ -1,0 +1,291 @@
+# ============================================================================
+# WOFOST/PCSE Model Coupling Registry
+# ============================================================================
+# Documents data flows between WOFOST and other models in the HydroCraft
+# multi-model framework. Each coupling defines: what data flows, how it's
+# transformed, and where it's injected into the downstream model.
+# ============================================================================
+
+couplings:
+
+  # --------------------------------------------------------------------------
+  # C1: VIC Weather → PCSE Weather Provider
+  # --------------------------------------------------------------------------
+  - id: "c1_vic_weather_to_pcse"
+    name: "VIC Forcing Output → PCSE Weather Data"
+
+    source:
+      model: "VIC 5.1.0"
+      output_variable: "forcing files (PREC, TMAX, TMIN, WIND, SW_DOWN, LW_DOWN, VP, PRESS)"
+      output_file_pattern: "{basin}_{resolution}_{lat}_{lon}"
+      output_format: "ASCII_3hourly_or_daily"
+      output_units: "PREC: mm, TMAX/TMIN: C, WIND: m/s, SW: W/m2, LW: W/m2, VP: kPa, PRESS: kPa"
+      temporal_resolution: "3-hourly (aggregated to daily for PCSE)"
+      spatial_resolution: "0.25 or 0.1 degree"
+
+    target:
+      model: "WOFOST 7.2 via PCSE 6.0"
+      input_variable: "IRRAD, TMIN, TMAX, VAP, WIND, RAIN"
+      input_section: "CSVWeatherDataProvider"
+      input_file: "weather_{lat}_{lon}.csv"
+      input_units: "IRRAD: kJ/m2/day, TMIN/TMAX: C, VAP: kPa, WIND: m/s, RAIN: cm/day"
+      injection_timing: "daily"
+
+    transformation:
+      description: >
+        Convert VIC 3-hourly forcing to PCSE daily weather CSV format.
+        Aggregate sub-daily to daily (sum precip, average temp/wind/radiation).
+        Convert units: SW radiation W/m2 → kJ/m2/day, precipitation mm → cm.
+      formula: |
+        IRRAD = mean(SW_DOWN_3h) * 86.4        # W/m2 × (3600×24/1000) = kJ/m2/day
+        TMIN = min(TMIN_3h)                      # daily minimum from 3-hourly
+        TMAX = max(TMAX_3h)                      # daily maximum from 3-hourly
+        VAP = mean(VP_3h)                        # kPa, no conversion
+        WIND = mean(WIND_3h)                     # m/s, no conversion
+        RAIN = sum(PREC_3h) / 10.0              # mm → cm (divide by 10)
+      unit_conversion: |
+        SW radiation: W/m2 → kJ/m2/day  (multiply by 86.4)
+        Precipitation: mm → cm  (divide by 10)
+        Temperature: C → C  (no change)
+        Vapor pressure: kPa → kPa  (no change)
+        Wind speed: m/s → m/s  (no change)
+      spatial_mapping: "1:1 grid cell match (same VIC grid cell → same PCSE simulation point)"
+      temporal_mapping: "3-hourly → daily aggregation (sum for precip, average for others)"
+      layer_mapping: "N/A (atmospheric data, no soil layers)"
+
+    tool:
+      script_path: "tools/s3_weather_prep/convert_vic_to_pcse_weather.py"
+      inputs:
+        - "VIC forcing directory"
+        - "Basin grid NetCDF (for cell coordinates)"
+        - "Start/end year"
+      outputs:
+        - "PCSE CSV weather files (one per grid cell)"
+      validation: >
+        Check IRRAD range (5000-35000 kJ/m2/day), RAIN range (0-10 cm/day),
+        TMIN <= TMAX, no missing days. The #1 failure is forgetting the mm→cm
+        conversion for RAIN or the W/m2→kJ/m2/day conversion for IRRAD.
+
+    rationale: >
+      VIC forcing data provides the meteorological inputs that drive WOFOST crop
+      growth simulation. Using the same weather data that drove the hydrological
+      simulation ensures physical consistency between water balance and crop growth.
+    impact: >
+      WOFOST photosynthesis, transpiration, and phenological development are
+      directly driven by the weather inputs. Incorrect unit conversions produce
+      plausible but wrong yield estimates.
+    limitation: >
+      VIC forcing is at 0.1-0.25 degree resolution. Within a single grid cell,
+      all crop simulations use identical weather. Sub-grid variability is not captured.
+      VIC does not output PAR or relative humidity directly — these are estimated.
+    references:
+      - "De Wit et al. (2019). 25 years of the WOFOST cropping systems model. Agricultural Systems."
+      - "Liang et al. (1994). A simple hydrologically based model of land surface water and energy fluxes. JGR."
+
+  # --------------------------------------------------------------------------
+  # C2: HWSD → PCSE Soil Parameters
+  # --------------------------------------------------------------------------
+  - id: "c2_hwsd_to_pcse_soil"
+    name: "HWSD Global Soil Database → PCSE Soil Parameters"
+
+    source:
+      model: "HWSD v1.2 (FAO/IIASA)"
+      output_variable: "T_SAND, T_SILT, T_CLAY, T_OC, T_REF_BULK_DENSITY, T_GRAVEL"
+      output_file_pattern: "hwsd.bil (raster) + HWSD.mdb (properties)"
+      output_format: "GeoTIFF raster + Access MDB"
+      output_units: "Sand/Silt/Clay: %, OC: %, BD: g/cm3, Gravel: %"
+      temporal_resolution: "static"
+      spatial_resolution: "30 arc-seconds (~1 km)"
+
+    target:
+      model: "WOFOST 7.2 via PCSE 6.0"
+      input_variable: "SMW, SMFCF, SM0, CRAIRC, K0, SOPE, KSUB, RDMSOL"
+      input_section: "soildata dict for ParameterProvider"
+      input_file: "in-memory Python dict"
+      input_units: "SMW/SMFCF/SM0: cm3/cm3, K0/SOPE/KSUB: cm/day, RDMSOL: cm"
+      injection_timing: "at_initialization"
+
+    transformation:
+      description: >
+        Extract HWSD soil properties for the target grid cell and convert
+        to WOFOST bucket model parameters using Wosten pedotransfer functions.
+        HWSD provides raw texture/OC/BD; pedotransfer converts to hydraulic
+        properties (water retention limits, conductivity).
+      formula: |
+        SMW = 0.001 + 0.26*(clay/100) + 0.05*(OM/100)    # wilting point
+        SMFCF = 0.02 + 0.37*(clay/100) + 0.15*(OM/100) + 0.10*(silt/100)  # field capacity
+        SM0 = 1.0 - BD/2.65                                # porosity
+        K0 = 10^(1.26 - 0.006*clay)                       # saturated conductivity
+        # OM = OC * 1.724 (van Bemmelen factor)
+      unit_conversion: |
+        Sand/Clay/Silt: % (HWSD) → fraction (÷100) for pedotransfer
+        OC → OM: multiply by 1.724
+        SMW/SMFCF/SM0 output: cm3/cm3 (volumetric, 0-0.65 range)
+      spatial_mapping: "Point extraction from 30-arcsec raster at grid cell center"
+      temporal_mapping: "Static — soil does not change over simulation"
+      layer_mapping: >
+        HWSD provides top soil (0-30 cm) and subsoil (30-100 cm) properties.
+        WOFOST bucket model uses a single effective profile. Use topsoil (0-30 cm)
+        for SMW/SMFCF/SM0 as most root activity occurs in the topsoil.
+
+    tool:
+      script_path: "tools/s2_soil_params/convert_hwsd_to_pcse_soil.py"
+      inputs:
+        - "HWSD raster path"
+        - "HWSD MDB path"
+        - "Grid cell lat/lon"
+      outputs:
+        - "Soil parameter dict (JSON)"
+      validation: >
+        Check: 0 < SMW < SMFCF < SM0 <= 0.65. If SMW >= SMFCF or SMFCF >= SM0,
+        the pedotransfer function failed (likely incorrect input units or extreme
+        texture values). K0 should be 1-100 cm/day.
+
+    rationale: >
+      Using the same HWSD source as VIC and DSSAT ensures soil consistency across
+      the multi-model framework. The hwsd_soil_adapter.py provides a unified interface.
+    impact: >
+      Soil parameters control water stress in WLP simulations. Wrong soil params
+      cause either too much stress (SMW too high → chronic drought) or too little
+      (SM0 too high → no drought even in arid climates).
+    limitation: >
+      WOFOST bucket model is a simplification — it has no vertical layering.
+      Deep-rooted crops in layered soils may behave differently than the bucket
+      model predicts. HWSD has known gaps in some regions (Greenland, Antarctica).
+    references:
+      - "Wosten et al. (1999). Development and use of a database of hydraulic properties of European soils. Geoderma."
+      - "Nachtergaele et al. (2012). Harmonized World Soil Database v1.2. FAO/IIASA."
+
+  # --------------------------------------------------------------------------
+  # C3: WOFOST ↔ DSSAT Multi-Model Ensemble
+  # --------------------------------------------------------------------------
+  - id: "c3_wofost_dssat_ensemble"
+    name: "WOFOST × DSSAT Multi-Model Yield Ensemble"
+
+    source:
+      model: "WOFOST 7.2 via PCSE 6.0"
+      output_variable: "TWSO (grain yield, kg/ha)"
+      output_file_pattern: "gridded_yield.csv"
+      output_format: "CSV with lat, lon, twso_kgha columns"
+      output_units: "kg/ha"
+      temporal_resolution: "seasonal (one value per growing season)"
+      spatial_resolution: "matching VIC grid (0.1-0.25 degree)"
+
+    target:
+      model: "DSSAT-CSM v4.8.5"
+      input_variable: "HWAM (harvested yield at maturity, kg/ha)"
+      input_section: "Summary.OUT parsed output"
+      input_file: "gridded_yield.csv"
+      input_units: "kg/ha"
+      injection_timing: "post-processing (both models run independently)"
+
+    transformation:
+      description: >
+        Both models are run independently on the same grid cells with the same
+        weather and soil data. Post-processing merges outputs by grid cell
+        (lat/lon matching) and computes ensemble statistics: mean, range, and
+        coefficient of variation. No data flows from one model to the other
+        during simulation — this is an ensemble comparison, not a coupling.
+      formula: |
+        yield_ensemble = (TWSO_wofost + HWAM_dssat) / 2
+        yield_range = abs(TWSO_wofost - HWAM_dssat)
+        yield_cv = std([TWSO_wofost, HWAM_dssat]) / mean([TWSO_wofost, HWAM_dssat])
+      unit_conversion: "Both in kg/ha — no conversion needed. WOFOST TWSO ≡ DSSAT HWAM."
+      spatial_mapping: "1:1 grid cell match by lat/lon"
+      temporal_mapping: "Seasonal match by growing year"
+      layer_mapping: "N/A"
+
+    tool:
+      script_path: "tools/s8_yield_analysis/compare_wofost_dssat.py"
+      inputs:
+        - "WOFOST gridded yield CSV"
+        - "DSSAT gridded yield CSV"
+      outputs:
+        - "Ensemble comparison CSV with mean, range, CV per cell"
+      validation: >
+        Check that both CSVs have the same grid cells (lat/lon match).
+        If model spread (yield_range) is > 50% of ensemble mean, investigate
+        whether the difference is due to parameter differences or model structure.
+
+    rationale: >
+      Multi-model ensembles reduce structural uncertainty in yield estimation.
+      WOFOST and DSSAT use different algorithms for photosynthesis (Gaussian vs
+      rectangular), water balance (bucket vs layer), and phenology (thermal time
+      vs V/R-stage), providing complementary perspectives.
+    impact: >
+      The ensemble mean is typically more accurate than either model alone.
+      The model spread (WOFOST-DSSAT difference) quantifies structural uncertainty,
+      which is useful for risk assessment and policy analysis.
+    limitation: >
+      Both models share the same weather and soil inputs — they are not fully
+      independent. Correlated input errors affect both models equally and are
+      NOT captured by the ensemble spread. For true uncertainty quantification,
+      add input perturbation.
+    references:
+      - "Asseng et al. (2013). Uncertainty in simulating wheat yields under climate change. Nature Climate Change."
+      - "Martre et al. (2015). Multimodel ensembles of wheat growth. Global Change Biology."
+
+  # --------------------------------------------------------------------------
+  # C4: WOFOST LAI → VIC Vegetation Feedback (Experimental)
+  # --------------------------------------------------------------------------
+  - id: "c4_wofost_lai_to_vic"
+    name: "WOFOST Daily LAI → VIC Vegetation Parameters (Experimental)"
+
+    source:
+      model: "WOFOST 7.2 via PCSE 6.0"
+      output_variable: "LAI (leaf area index, m2/m2)"
+      output_file_pattern: "daily_output_{lat}_{lon}.csv"
+      output_format: "CSV with day, LAI columns"
+      output_units: "m2/m2"
+      temporal_resolution: "daily"
+      spatial_resolution: "matching VIC grid"
+
+    target:
+      model: "VIC 5.1.0"
+      input_variable: "LAI (in vegetation parameter file, monthly LAI12 values)"
+      input_section: "VEG_PARAM file, LAI12 row for cropland vegetation class"
+      input_file: "VEG_PARAM_COMPLETE.txt"
+      input_units: "m2/m2"
+      injection_timing: "monthly (aggregate daily LAI to monthly means for VIC)"
+
+    transformation:
+      description: >
+        EXPERIMENTAL: Use WOFOST-simulated LAI to update VIC vegetation parameters
+        for cropland grid cells, replacing static climatological LAI with dynamic
+        crop-model LAI. This creates a feedback loop: VIC weather → WOFOST LAI →
+        VIC transpiration. Currently one-way (no iteration); future work may iterate.
+      formula: |
+        LAI_monthly[m] = mean(LAI_daily[d] for d in month m)
+        # Replace LAI12 row in VEG_PARAM for the cropland veg class
+      unit_conversion: "Both in m2/m2 — no conversion. Daily → monthly averaging."
+      spatial_mapping: "1:1 grid cell match"
+      temporal_mapping: "Daily WOFOST LAI → 12 monthly VIC LAI values"
+      layer_mapping: "N/A"
+
+    tool:
+      script_path: "tools/s8_yield_analysis/generate_yield_map.py"
+      inputs:
+        - "WOFOST daily output CSVs with LAI column"
+        - "VIC vegetation parameter file"
+      outputs:
+        - "Updated VIC VEG_PARAM file with WOFOST-derived LAI"
+      validation: >
+        Check that updated LAI values are physically reasonable (0-8 m2/m2).
+        Verify LAI peaks in the correct month for the crop type.
+
+    rationale: >
+      VIC uses static climatological LAI for cropland, which does not respond to
+      weather variability. WOFOST LAI is dynamic and weather-driven, providing
+      more realistic transpiration estimates for agricultural areas. This improves
+      VIC's simulation of crop water use and irrigation demand.
+    impact: >
+      Higher LAI → higher VIC transpiration → lower runoff and soil moisture.
+      During drought years, WOFOST LAI is lower → VIC transpiration decreases →
+      more realistic drought simulation in agricultural basins.
+    limitation: >
+      Currently one-way (no iterative coupling). WOFOST water balance and VIC
+      water balance are independent — they may give inconsistent soil moisture.
+      Only affects cropland grid cells; natural vegetation is unchanged.
+      This coupling is EXPERIMENTAL and has not been validated against observations.
+    references:
+      - "Yin et al. (2020). Improving the simulation of crop growth in VIC using WOFOST. Agricultural Water Management."

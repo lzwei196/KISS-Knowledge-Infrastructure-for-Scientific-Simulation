@@ -1,0 +1,423 @@
+# ============================================================================
+# FloPy Knowledge Infrastructure v1.0.0
+# ============================================================================
+# FloPy 3.11.0 — Python interface for MODFLOW groundwater models
+# Creates, runs, and post-processes MODFLOW 6 / 2005 / NWT / USG simulations
+# ============================================================================
+
+package:
+  name: "hydrocraft-flopy-groundwater"
+  version: "1.0.0"
+  description: "Knowledge infrastructure for MODFLOW groundwater simulation via FloPy within HydroCraft"
+  target_model: "FloPy 3.11.0 + MODFLOW 6"
+  domain: "groundwater flow and transport"
+  authors:
+    - "Jianyun Zhang Research Group, Hohai University"
+  license: "CC0-1.0"
+
+pipeline:
+  stages:
+    - id: s0_config
+      name: "Configuration"
+      description: "Select MODFLOW version, simulation type (GWF/GWT/GWE), workspace, units (LENUNI/ITMUNI)"
+      order: 0
+      depends_on: []
+      skill_document: "docs/s0_configuration_skill.md"
+      tools: []
+      milestones:
+        - id: m0_config_defined
+          description: "Simulation workspace created, MODFLOW version selected, unit system defined"
+          verification: "Workspace directory exists; config dict has sim_name, exe_name, lenuni, itmuni"
+
+    - id: s1_domain
+      name: "Domain Setup"
+      description: "Define grid discretization (DIS/DISV/DISU), layer elevations, stress periods, time stepping"
+      order: 1
+      depends_on: [s0_config]
+      skill_document: "docs/s1_domain_setup_skill.md"
+      tools: []
+      milestones:
+        - id: m1_grid_defined
+          description: "Grid dimensions, cell sizes, layer tops/bottoms, and temporal discretization set"
+          verification: "python -c \"import flopy; sim=flopy.mf6.MFSimulation.load(sim_ws='workspace'); print(sim.get_model().modelgrid)\""
+
+    - id: s2_data
+      name: "Data Preparation"
+      description: "Gather and prepare spatial data: DEM for layer elevations, aquifer extent, boundary locations"
+      order: 2
+      depends_on: [s0_config]
+      skill_document: "docs/s2_data_preparation_skill.md"
+      tools: []
+      milestones:
+        - id: m2_spatial_data_ready
+          description: "Layer elevation arrays, boundary cell lists, and observation locations prepared"
+          verification: "NumPy arrays for top, botm exist with correct grid dimensions"
+
+    - id: s3_forcing
+      name: "Forcing / Recharge"
+      description: "Convert meteorological forcing (CMFD/MSWX precipitation) to groundwater recharge in model length/time units"
+      order: 3
+      depends_on: [s0_config, s1_domain]
+      skill_document: "docs/s3_forcing_recharge_skill.md"
+      tools: [convert_recharge_to_modflow]
+      milestones:
+        - id: m3_recharge_ready
+          description: "Recharge array or time series in model units (e.g., m/day) ready for RCH/RCHa package"
+          verification: "Recharge values between 0 and 0.01 m/day for typical climates; no negative values"
+
+    - id: s4_parameters
+      name: "Aquifer Parameters"
+      description: "Convert soil/geology data (HWSD, GLHYMPS) to hydraulic conductivity, storage, porosity in model units"
+      order: 4
+      depends_on: [s0_config, s1_domain]
+      skill_document: "docs/s4_parameters_skill.md"
+      tools: [convert_soil_to_aquifer_params]
+      milestones:
+        - id: m4_params_ready
+          description: "K, Ss, Sy arrays assigned to model layers; values within physically plausible ranges"
+          verification: "K in [1e-11, 1e5] length/time; Ss in [1e-6, 1e-2] 1/length; Sy in [0.01, 0.5]"
+
+    - id: s5_run
+      name: "Execution"
+      description: "Write MODFLOW input files via FloPy, run MODFLOW binary, capture return code and listing file"
+      order: 5
+      depends_on: [s1_domain, s2_data, s3_forcing, s4_parameters]
+      skill_document: "docs/s5_execution_skill.md"
+      tools: [run_modflow]
+      milestones:
+        - id: m5_run_complete
+          description: "MODFLOW exits with code 0; 'Normal termination' in listing file; .hds and .bud files exist"
+          verification: "grep 'Normal termination' workspace/*.lst && test -f workspace/*.hds"
+
+    - id: s6_output
+      name: "Output Parsing"
+      description: "Read binary head/budget files, extract time series at observation wells, compute water balance, export to CSV"
+      order: 6
+      depends_on: [s5_run]
+      skill_document: "docs/s6_output_parsing_skill.md"
+      tools: [parse_modflow_output]
+      milestones:
+        - id: m6_output_parsed
+          description: "Head time series CSV, water balance summary, and spatial head arrays extracted"
+          verification: "test -f outputs/head_timeseries.csv && test -f outputs/water_balance.csv"
+
+    - id: s7_validation
+      name: "Validation"
+      description: "Compare simulated heads with observed well data; compute RMSE, MAE, r²; generate water table plots"
+      order: 7
+      depends_on: [s6_output]
+      skill_document: "docs/s7_validation_skill.md"
+      tools: []
+      milestones:
+        - id: m7_validation_complete
+          description: "Validation metrics computed; scatter plot and water table figure generated"
+          verification: "test -f outputs/validation_metrics.json && test -f figures/s8_validation.png"
+
+tools:
+  - id: convert_recharge_to_modflow
+    name: "Recharge Converter"
+    description: "Convert CMFD/MSWX precipitation to MODFLOW recharge with unit conversion and recharge fraction"
+    stage: s3_forcing
+    script_path: "tools/convert_recharge_to_modflow.py"
+    language: python
+    inputs:
+      - name: FORCING_FILE
+        type: file
+        description: "CMFD or MSWX NetCDF/CSV with precipitation"
+        required: true
+        example: "data/forcing/cmfd_prcp_daily.nc"
+      - name: RECHARGE_FRACTION
+        type: number
+        description: "Fraction of precipitation becoming recharge (0.05-0.30)"
+        required: true
+        example: "0.15"
+      - name: SOURCE_UNIT
+        type: string
+        description: "Input precipitation unit: mm/day, mm/hr, kg/m2/s, m/day"
+        required: true
+        example: "mm/day"
+      - name: TARGET_UNIT
+        type: string
+        description: "MODFLOW recharge unit matching LENUNI/ITMUNI: m/day, ft/day, m/s"
+        required: true
+        example: "m/day"
+    outputs:
+      - name: recharge_csv
+        type: file
+        description: "Recharge array or time series in model units"
+        path_pattern: "outputs/recharge_modflow.csv"
+    preconditions:
+      - "Forcing data file exists with precipitation variable"
+      - "Recharge fraction is between 0.01 and 0.50"
+    postconditions:
+      - "All recharge values >= 0"
+      - "Max recharge < 0.05 m/day for typical climates"
+      - "No NaN values in output"
+
+  - id: convert_soil_to_aquifer_params
+    name: "Soil-to-Aquifer Parameter Converter"
+    description: "Convert HWSD/GLHYMPS soil texture to hydraulic conductivity, specific storage, specific yield"
+    stage: s4_parameters
+    script_path: "tools/convert_soil_to_aquifer_params.py"
+    language: python
+    inputs:
+      - name: SOIL_DATA_FILE
+        type: file
+        description: "HWSD or GLHYMPS data file with soil texture classes"
+        required: true
+        example: "data/soils/hwsd_basin.csv"
+      - name: TARGET_LENUNI
+        type: string
+        description: "Target length unit: meters, feet, centimeters"
+        required: true
+        example: "meters"
+      - name: TARGET_ITMUNI
+        type: string
+        description: "Target time unit: seconds, days, years"
+        required: true
+        example: "days"
+    outputs:
+      - name: aquifer_params
+        type: file
+        description: "JSON with K, Ss, Sy per soil class in model units"
+        path_pattern: "outputs/aquifer_params.json"
+    preconditions:
+      - "Soil data file exists with texture class column"
+    postconditions:
+      - "K values in range [1e-11, 1e5] in target units"
+      - "Ss values in range [1e-6, 1e-2] in 1/target length"
+      - "Sy values in range [0.01, 0.5]"
+
+  - id: run_modflow
+    name: "MODFLOW Execution Wrapper"
+    description: "Write FloPy simulation files, run MODFLOW binary, validate output existence and convergence"
+    stage: s5_run
+    script_path: "tools/run_modflow.py"
+    language: python
+    inputs:
+      - name: SIM_WS
+        type: directory
+        description: "Simulation workspace directory containing FloPy model"
+        required: true
+        example: "workspace/"
+      - name: EXE_NAME
+        type: string
+        description: "MODFLOW executable name or path"
+        required: true
+        example: "mf6"
+      - name: SILENT
+        type: boolean
+        description: "Suppress MODFLOW stdout"
+        required: false
+        example: "True"
+    outputs:
+      - name: head_file
+        type: file
+        description: "Binary head file"
+        path_pattern: "workspace/*.hds"
+      - name: budget_file
+        type: file
+        description: "Binary budget file"
+        path_pattern: "workspace/*.bud"
+      - name: listing_file
+        type: file
+        description: "MODFLOW listing file with convergence info"
+        path_pattern: "workspace/*.lst"
+    preconditions:
+      - "MODFLOW executable exists and is runnable"
+      - "FloPy simulation object can be loaded from SIM_WS"
+    postconditions:
+      - "MODFLOW exit code is 0"
+      - "'Normal termination' found in listing file"
+      - ".hds and .bud files exist with non-zero size"
+
+  - id: parse_modflow_output
+    name: "MODFLOW Output Parser"
+    description: "Read binary head/budget files, extract time series at specified cells, compute water balance, export CSV"
+    stage: s6_output
+    script_path: "tools/parse_modflow_output.py"
+    language: python
+    inputs:
+      - name: SIM_WS
+        type: directory
+        description: "Simulation workspace with completed MODFLOW run"
+        required: true
+        example: "workspace/"
+      - name: OBS_CELLS
+        type: string
+        description: "Observation cell indices as JSON list of [layer, row, col] tuples"
+        required: false
+        example: "[[0, 5, 5], [0, 10, 10]]"
+    outputs:
+      - name: head_timeseries
+        type: file
+        description: "Head time series at observation cells"
+        path_pattern: "outputs/head_timeseries.csv"
+      - name: water_balance
+        type: file
+        description: "Water balance summary (inflows, outflows, storage change)"
+        path_pattern: "outputs/water_balance.csv"
+      - name: head_arrays
+        type: file
+        description: "Spatial head arrays per time step"
+        path_pattern: "outputs/heads_final.npy"
+    preconditions:
+      - "MODFLOW run completed successfully"
+      - ".hds file exists in SIM_WS"
+    postconditions:
+      - "Head values are within physically plausible range (not -1e30 dry cells unless expected)"
+      - "Water balance percent discrepancy < 1%"
+
+skill_documents:
+  - id: sd_s0
+    name: "Configuration Guide"
+    stage: s0_config
+    path: "docs/s0_configuration_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+
+  - id: sd_s1
+    name: "Domain Setup"
+    stage: s1_domain
+    path: "docs/s1_domain_setup_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+
+  - id: sd_s2
+    name: "Data Preparation"
+    stage: s2_data
+    path: "docs/s2_data_preparation_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+
+  - id: sd_s3
+    name: "Forcing / Recharge Preparation"
+    stage: s3_forcing
+    path: "docs/s3_forcing_recharge_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+
+  - id: sd_s4
+    name: "Aquifer Parameters"
+    stage: s4_parameters
+    path: "docs/s4_parameters_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+
+  - id: sd_s5
+    name: "Execution Guide"
+    stage: s5_run
+    path: "docs/s5_execution_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+
+  - id: sd_s6
+    name: "Output Parsing"
+    stage: s6_output
+    path: "docs/s6_output_parsing_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+
+  - id: sd_s7
+    name: "Validation"
+    stage: s7_validation
+    path: "docs/s7_validation_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls]
+
+diagnostic_triplets:
+  - id: dt_flopy_001
+    stage: s3_forcing
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_flopy_002
+    stage: s3_forcing
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_flopy_003
+    stage: s4_parameters
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_flopy_004
+    stage: s4_parameters
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_flopy_005
+    stage: s1_domain
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_flopy_006
+    stage: s1_domain
+    failure_domain: parameter_format
+    severity: silent
+  - id: dt_flopy_007
+    stage: s5_run
+    failure_domain: runtime
+    severity: fatal
+  - id: dt_flopy_008
+    stage: s5_run
+    failure_domain: runtime
+    severity: fatal
+  - id: dt_flopy_009
+    stage: s5_run
+    failure_domain: path_resolution
+    severity: fatal
+  - id: dt_flopy_010
+    stage: s6_output
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_flopy_011
+    stage: s4_parameters
+    failure_domain: parameter_format
+    severity: degraded
+  - id: dt_flopy_012
+    stage: s3_forcing
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_flopy_013
+    stage: s5_run
+    failure_domain: runtime
+    severity: fatal
+  - id: dt_flopy_014
+    stage: s1_domain
+    failure_domain: dependency_mismatch
+    severity: silent
+  - id: dt_flopy_015
+    stage: s4_parameters
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_flopy_016
+    stage: s5_run
+    failure_domain: environment
+    severity: fatal
+  - id: dt_flopy_017
+    stage: s6_output
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_flopy_018
+    stage: s1_domain
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_flopy_019
+    stage: s3_forcing
+    failure_domain: silent_error
+    severity: silent
+  - id: dt_flopy_020
+    stage: s5_run
+    failure_domain: runtime
+    severity: degraded
+
+summary:
+  total_tools: 4
+  total_skill_documents: 8
+  total_diagnostic_triplets: 20
+  failure_domains:
+    - unit_conversion
+    - parameter_format
+    - path_resolution
+    - runtime
+    - dependency_mismatch
+    - silent_error
+    - environment
+  pipeline_stages: 8
+  pipeline_milestones: 8

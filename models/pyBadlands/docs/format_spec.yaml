@@ -1,0 +1,151 @@
+model:
+  name: "pyBadlands"
+  full_name: "Basin and Landscape Dynamics"
+  domain: "geomorphology"
+  subdomain: "landscape_evolution"
+  language: "Python + Fortran + C"
+  build_system: "meson + mesonpy"
+  binary_type: "python_package"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyBadlands/venv/bin/python"
+  venv_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyBadlands/venv"
+  invocation: "from badlands.model import Model; m = Model(); m.load_xml('input.xml'); m.run_to_time(T)"
+
+inputs:
+  config:
+    - name: "input.xml"
+      format: "XML"
+      description: "Master configuration file defining grid, time, forcing, erosion, and output parameters"
+
+  forcing:
+    - name: "rainfall"
+      xml_path: "precipitation/rain/rval"
+      unit: "m/year"
+      valid_range: [0.0, 10.0]
+      description: "Uniform rainfall rate (or spatially variable via rainfall map)"
+      trap: "dt_001 — common datasets use mm/day; convert via rain_mm_day * 365.25 / 1000"
+
+    - name: "sea_level"
+      xml_path: "sea/curve"
+      unit: "years, metres"
+      description: "Two-column file: time (years) and sea-level elevation (metres)"
+      trap: "dt_004 — time must be in years, not ka"
+
+    - name: "tectonic_displacement"
+      xml_path: "tectonic/disp/ufile"
+      unit: "metres (total)"
+      description: "Vertical displacement map — cumulative total, NOT rate"
+      trap: "dt_005 — must be total displacement, not m/year rate"
+
+    - name: "dem"
+      xml_path: "grid/demfile"
+      format: "CSV (x, y, z columns)"
+      unit: "metres"
+      description: "Digital elevation model raster"
+      trap: "dt_003 — elevation must be in metres, not cm/mm/ft"
+
+  parameters:
+    critical:
+      - name: "erodibility"
+        xml_path: "sp_law/erodibility"
+        unit: "m^(1-2m)/year"
+        valid_range: [1.0e-8, 1.0e-3]
+        description: "Stream Power Law erodibility coefficient (Kd)"
+        sensitivity: "VERY HIGH"
+        trap: "dt_006 — units depend on m,n exponents"
+
+      - name: "SPL_m"
+        xml_path: "sp_law/m"
+        unit: "dimensionless"
+        valid_range: [0.3, 0.7]
+        description: "Discharge exponent in Stream Power Law"
+        sensitivity: "HIGH"
+
+      - name: "SPL_n"
+        xml_path: "sp_law/n"
+        unit: "dimensionless"
+        valid_range: [0.7, 2.0]
+        description: "Slope exponent in Stream Power Law"
+        sensitivity: "HIGH"
+
+    secondary:
+      - name: "caerial"
+        xml_path: "creep/caerial"
+        unit: "m²/year"
+        valid_range: [0.001, 1.0]
+        description: "Subaerial hillslope diffusion coefficient"
+        trap: "dt_007 — literature often reports m²/kyr"
+
+      - name: "cmarine"
+        xml_path: "creep/cmarine"
+        unit: "m²/year"
+        valid_range: [0.001, 5.0]
+        description: "Submarine hillslope diffusion coefficient"
+
+      - name: "boundary"
+        xml_path: "grid/boundary"
+        valid_values: ["slope", "flat", "wall", "fixed", "outlet"]
+        description: "Edge boundary condition type"
+        trap: "dt_008 — must match DEM geometry"
+
+      - name: "maxdt"
+        xml_path: "time/maxdt"
+        unit: "years"
+        valid_range: [1000, 1.0e6]
+        description: "Maximum adaptive timestep"
+
+outputs:
+  primary:
+    - name: "elevation"
+      file: "h5/tin.timeN.hdf5 → coords[:, 2]"
+      unit: "m"
+      valid_range: [-11000, 9000]
+      description: "Current topographic elevation at each TIN node"
+
+    - name: "cumdiff"
+      file: "h5/tin.timeN.hdf5 → cumdiff"
+      unit: "m"
+      valid_range: [-10000, 10000]
+      description: "Cumulative erosion (negative) / deposition (positive)"
+
+    - name: "discharge"
+      file: "h5/tin.timeN.hdf5 → discharge"
+      unit: "m³/year"
+      valid_range: [0, 1.0e12]
+      description: "Water discharge at each node"
+
+    - name: "cumhill"
+      file: "h5/tin.timeN.hdf5 → cumhill"
+      unit: "m"
+      description: "Cumulative hillslope diffusion change"
+
+    - name: "sedload"
+      file: "h5/flow.timeN.hdf5 → sedload"
+      unit: "m³/year"
+      description: "Sediment transport load in flow network"
+
+    - name: "chi"
+      file: "h5/flow.timeN.hdf5 → chi"
+      unit: "m"
+      description: "Chi index (steady-state proxy for landscape evolution)"
+
+  format:
+    type: "HDF5 + XDMF"
+    directory_structure: "output/{h5,xmf}/ with tin.timeN.hdf5, flow.timeN.hdf5, sed.timeN.hdf5"
+    time_series: "tin.series.xdmf, flow.series.xdmf"
+
+known_issues:
+  - id: "dt_001"
+    severity: "silent"
+    description: "Rainfall must be m/year, not mm/day — 1000x error if unconverted"
+  - id: "dt_005"
+    severity: "silent"
+    description: "Tectonic displacement is cumulative total, not rate"
+  - id: "dt_006"
+    severity: "degraded"
+    description: "Erodibility units are dimensionally complex — depend on m,n"
+  - id: "dt_009"
+    severity: "fatal"
+    description: "Output folder must exist before run"
+  - id: "dt_018"
+    severity: "fatal"
+    description: "numpy >= 2 is incompatible with current Fortran extensions"

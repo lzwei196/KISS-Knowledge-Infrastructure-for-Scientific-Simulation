@@ -1,0 +1,492 @@
+---
+# OpenHydroQual Diagnostic Triplets
+# Symptom -> Diagnosis -> Remedy for common failure modes
+---
+
+- id: dt_001
+  stage: s2_template_configuration
+  failure_domain: path_resolution
+  symptom:
+    description: "Model crashes immediately with no output or cryptic JSON parse error"
+    error_pattern: "Cannot open file|JSON parse error|template.*not found"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Template path in .ohq file points to non-existent location"
+    explanation: >
+      OHQ example files contain hardcoded absolute paths from the developer's
+      machine (e.g., /home/arash/Projects/QAquifolium/...). When run on a
+      different system, these paths do not exist and template loading fails.
+      The binary also resolves the default template path relative to its own
+      location at ../../../resources/, which may not exist if the binary was
+      moved or installed to a different location.
+    affected_components: [Script.cpp, MetaModel.cpp]
+  remedy:
+    action: "Replace template paths with local absolute paths"
+    tool_to_run: "run_ohq.py --fix-paths"
+    manual_steps:
+      - "Open the .ohq file in a text editor"
+      - "Find all loadtemplate and addtemplate lines"
+      - "Replace paths with the correct local path to resources/"
+      - "Verify each referenced JSON file exists"
+    prevention: "Always use --fix-paths flag when running example files"
+  severity: fatal
+  cross_references: [dt_002]
+
+- id: dt_002
+  stage: s4_model_execution
+  failure_domain: path_resolution
+  symptom:
+    description: "Model runs but produces empty output.txt (0 bytes)"
+    error_pattern: "output.txt.*0 bytes|empty output"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Working folder derivation fails when input path is relative"
+    explanation: >
+      OHQ derives the working folder from the .ohq input file path using
+      QFileInfo::canonicalPath(). If the input file is specified with a
+      relative path that cannot be resolved, the working folder becomes empty
+      and output files are written to an unexpected location or not at all.
+      Time series input files (inflow.txt, loading files) also resolve from
+      the working folder, so they silently fail to load.
+    affected_components: [System.cpp, main.cpp]
+  remedy:
+    action: "Use absolute paths for the input .ohq file"
+    tool_to_run: ""
+    manual_steps:
+      - "Use full absolute path when calling OHQLibTest"
+      - "Verify time series files exist in the .ohq file directory"
+      - "Check output file location in stdout"
+    prevention: "Always pass absolute path to the binary"
+  severity: fatal
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s3_model_construction
+  failure_domain: parameter_format
+  symptom:
+    description: "Values appear unreasonable (e.g., storage shows as 357.6 instead of 357.6 m^3)"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Missing unit bracket notation [unit] on parameter values"
+    explanation: >
+      OHQ uses bracket notation to specify units: Storage=357.6[m~^3].
+      When the brackets are omitted (Storage=357.6), the value is accepted
+      but may be interpreted in default units which differ from intended.
+      The ~^ notation represents superscript (m^3). This is a silent error
+      because the model runs without complaint.
+    affected_components: [Quan.h, Script.cpp]
+  remedy:
+    action: "Add unit brackets to all dimensional values"
+    tool_to_run: ""
+    manual_steps:
+      - "Review all create block/link/source commands"
+      - "Add [unit] suffix to every dimensional value"
+      - "Use OHQ notation: [m~^3] for m^3, [m~^2] for m^2, [1/day] for rates"
+    prevention: "Include unit brackets on every value as a coding standard"
+  severity: silent
+  cross_references: [dt_005, dt_006]
+
+- id: dt_004
+  stage: s3_model_construction
+  failure_domain: parameter_format
+  symptom:
+    description: "Some parameters in a create command are silently ignored"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Semicolon/comma delimiter confusion in .ohq commands"
+    explanation: >
+      In OHQ script syntax, semicolons separate command fields (e.g.,
+      'create block; type=Pond, name=myPond') while commas separate
+      key=value pairs within a field. Using a semicolon where a comma
+      should be causes the parser to treat subsequent text as a new
+      (invalid) command field, silently dropping parameters.
+    affected_components: [Script.cpp, Command.cpp]
+  remedy:
+    action: "Use semicolons only between command and type/name fields"
+    tool_to_run: ""
+    manual_steps:
+      - "Check that 'create block;type=X,name=Y,prop1=V1,prop2=V2' uses commas between properties"
+      - "Only the first field separator should be semicolon"
+    prevention: "Follow exact syntax from working examples"
+  severity: silent
+  cross_references: []
+
+- id: dt_005
+  stage: s1_data_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Flow rates or reactions are 86400x too fast or too slow"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Time units in seconds instead of days"
+    explanation: >
+      OHQ uses DAYS as the internal time unit for everything: simulation
+      time, timestep, reaction rates (1/day), flow rates (m^3/day),
+      diffusion coefficients (m^2/day). Inputting values in per-second
+      or per-hour units without conversion causes rates to be off by
+      factors of 86400 or 24 respectively. This is the most common
+      unit trap because many external data sources use SI (seconds).
+    affected_components: [all]
+  remedy:
+    action: "Convert all rates to per-day before input"
+    tool_to_run: "convert_forcing.py --time-unit hours"
+    manual_steps:
+      - "Multiply m^3/s by 86400 to get m^3/day"
+      - "Multiply m/s (Ksat) by 86400 to get m/day"
+      - "Multiply m^2/s (diffusion) by 86400 to get m^2/day"
+      - "Multiply 1/hr rates by 24 to get 1/day"
+    prevention: "Always verify units are per-day in final input"
+  severity: silent
+  cross_references: [dt_006, dt_010, dt_011]
+
+- id: dt_006
+  stage: s1_data_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Concentrations are 1000x too high, reactions saturate immediately"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Concentration in mg/m^3 or ug/L instead of g/m^3 (= mg/L)"
+    explanation: >
+      OHQ uses g/m^3 for all concentrations, which is numerically equal
+      to mg/L. If input data is in ug/L or mg/m^3, concentrations are
+      1000x too high. This causes Monod-type reaction kinetics (X/(X+K))
+      to saturate at 1.0, making reactions appear zero-order and hiding
+      the effect of half-saturation constants.
+    affected_components: [constituent.cpp, reaction.cpp]
+  remedy:
+    action: "Convert concentrations to g/m^3 (= mg/L)"
+    tool_to_run: ""
+    manual_steps:
+      - "Divide ug/L values by 1000 to get mg/L = g/m^3"
+      - "Verify initial concentrations are in expected range"
+      - "Check loading files are in g/day not mg/day"
+    prevention: "Document units in .ohq file comments"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_007
+  stage: s3_model_construction
+  failure_domain: parameter_format
+  symptom:
+    description: "Boundary block water level changes during simulation (should be fixed)"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "fixed_head block Storage value too small"
+    explanation: >
+      Fixed-head boundary blocks must have artificially large Storage
+      values (e.g., 100000 m^3) to act as infinite reservoirs. If Storage
+      is small (e.g., 100 m^3), the boundary block depletes or fills during
+      simulation, causing the head to change and flow to reverse or stop.
+      The model runs without errors but the boundary condition is violated.
+    affected_components: [Block.cpp]
+  remedy:
+    action: "Set Storage >= 100000 m^3 for fixed_head blocks"
+    tool_to_run: ""
+    manual_steps:
+      - "Find all fixed_head blocks in the .ohq file"
+      - "Set Storage=100000[m~^3] or larger"
+      - "Verify head remains constant in output"
+    prevention: "Always use Storage >= 100000 for boundary blocks"
+  severity: degraded
+  cross_references: []
+
+- id: dt_008
+  stage: s4_model_execution
+  failure_domain: runtime
+  symptom:
+    description: "Solution oscillates wildly or diverges to NaN"
+    error_pattern: "nan|inf|NaN|Inf|-nan"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Crank-Nicholson weight too low for the timestep size"
+    explanation: >
+      Setting c_n_weight=0 (fully explicit) or low values like 0.3
+      with a large initial_time_step causes numerical instability.
+      The explicit scheme has a Courant-type stability limit. When
+      violated, solutions oscillate and eventually produce NaN.
+      The default c_n_weight=1 (fully implicit) is unconditionally
+      stable and should be used unless accuracy requires otherwise.
+    affected_components: [System.cpp, Matrix_arma.cpp]
+  remedy:
+    action: "Set c_n_weight=1 (fully implicit) for stability"
+    tool_to_run: ""
+    manual_steps:
+      - "Set c_n_weight to 1 in the .ohq file"
+      - "If accuracy is needed, try 0.5 (Crank-Nicholson) with smaller timestep"
+      - "Reduce initial_time_step if oscillations persist"
+    prevention: "Start with c_n_weight=1, only reduce after stability is confirmed"
+  severity: fatal
+  cross_references: [dt_009]
+
+- id: dt_009
+  stage: s4_model_execution
+  failure_domain: runtime
+  symptom:
+    description: "Solver hangs indefinitely, CPU at 100% but no progress"
+    error_pattern: "timeout|stall"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Newton-Raphson tolerance too tight relative to minimum timestep"
+    explanation: >
+      If nr_tolerance is very small (e.g., 1e-10) and the system is
+      highly nonlinear, the NR solver repeatedly reduces the timestep
+      until it hits minimum_timestep but still cannot converge. It then
+      makes tiny progress per step, effectively stalling. The
+      maximum_number_of_matrix_inversions limit (default 200000) may
+      take hours to reach.
+    affected_components: [System.cpp]
+  remedy:
+    action: "Relax nr_tolerance to 0.001 or increase minimum_timestep"
+    tool_to_run: ""
+    manual_steps:
+      - "Set nr_tolerance to 0.001"
+      - "Set minimum_timestep to 1e-6"
+      - "Set maximum_time_allowed to 3600 (1 hour CPU limit)"
+      - "If still slow, simplify the model or reduce simulation duration"
+    prevention: "Use nr_tolerance=0.001 as default starting point"
+  severity: fatal
+  cross_references: [dt_008]
+
+- id: dt_010
+  stage: s1_data_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Pond fills or drains unrealistically fast (hours instead of days)"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Inflow rate in m^3/s instead of m^3/day"
+    explanation: >
+      OHQ expects flow rates in m^3/day. If inflow time series data
+      is in m^3/s (SI standard), the flow is 86400x too high. A 1 m^3/s
+      inflow becomes 86400 m^3/day, which will fill a small pond in
+      minutes of simulation time. The model runs without error but
+      produces physically impossible water levels.
+    affected_components: [Block.cpp, Link.cpp]
+  remedy:
+    action: "Multiply m^3/s values by 86400 to get m^3/day"
+    tool_to_run: "convert_forcing.py"
+    manual_steps:
+      - "Check units of inflow data source"
+      - "Convert: Q_day = Q_sec * 86400"
+      - "Verify inflow magnitude is reasonable for the system"
+    prevention: "Always annotate units in data file headers"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_011
+  stage: s3_model_construction
+  failure_domain: unit_conversion
+  symptom:
+    description: "Groundwater drains completely or water table drops to aquifer bottom"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Hydraulic conductivity in m/s instead of m/day"
+    explanation: >
+      OHQ expects hydraulic conductivity in m/day. A typical sand aquifer
+      has Ksat around 1e-4 m/s = 8.64 m/day. If the m/s value (1e-4) is
+      entered directly, it becomes 1e-4 m/day, which is extremely low
+      (clay). Conversely, entering a literature value of 8.64 m/day as
+      m/s gives 8.64 * 86400 = 746496 m/day, causing instant drainage.
+    affected_components: [Block.cpp, Link.cpp]
+  remedy:
+    action: "Convert Ksat to m/day: multiply m/s by 86400"
+    tool_to_run: "convert_parameters.py --ksat-unit m/s"
+    manual_steps:
+      - "Check Ksat source units"
+      - "Convert: K_day = K_sec * 86400"
+      - "Verify: sand ~1-10 m/day, clay ~0.001 m/day"
+    prevention: "Use convert_parameters.py with explicit unit flags"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_012
+  stage: s1_data_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Evapotranspiration values are ~11x too high or too low"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Solar radiation in MJ/m^2/day instead of W/m^2"
+    explanation: >
+      OHQ Penman ET model expects solar radiation in W/m^2.
+      ERA5 and many datasets provide daily totals in MJ/m^2/day.
+      The conversion factor is 1 MJ/m^2/day = 10^6/(86400) W/m^2
+      = 11.57 W/m^2. Using MJ/m^2/day directly gives values ~11.6x
+      too low, resulting in underestimated ET.
+    affected_components: [Source.cpp]
+  remedy:
+    action: "Convert MJ/m^2/day to W/m^2 by multiplying by 11.57"
+    tool_to_run: "convert_forcing.py --solar-unit MJ/m2/day"
+    manual_steps:
+      - "Check solar radiation data units"
+      - "Convert: W/m^2 = MJ/m^2/day * 1e6 / 86400"
+      - "Verify: clear-sky noon peak ~800-1000 W/m^2"
+    prevention: "Always specify --solar-unit when converting"
+  severity: silent
+  cross_references: [dt_014]
+
+- id: dt_013
+  stage: s4_model_execution
+  failure_domain: runtime
+  symptom:
+    description: "Negative concentrations appear in output"
+    error_pattern: "concentration.*-[0-9]"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Numerical undershoot from explicit or semi-implicit time integration"
+    explanation: >
+      When reaction rates are fast relative to the timestep and c_n_weight
+      is less than 1, the solver can produce small negative concentrations.
+      This violates mass conservation and can cascade to produce NaN values
+      if the negative concentration enters a log or sqrt in a reaction
+      expression. OHQ does not enforce non-negativity constraints.
+    affected_components: [System.cpp, Block.cpp]
+  remedy:
+    action: "Use c_n_weight=1 and reduce initial_time_step"
+    tool_to_run: ""
+    manual_steps:
+      - "Set c_n_weight=1"
+      - "Reduce initial_time_step to 0.0001"
+      - "If persists, reduce reaction rates or increase half-saturation constants"
+    prevention: "Always use fully implicit scheme for reactive transport"
+  severity: degraded
+  cross_references: [dt_008]
+
+- id: dt_014
+  stage: s1_data_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "ET is unrealistically high (>50 mm/day) or model shows excessive water loss"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Relative humidity as percentage (0-100) instead of fraction (0-1)"
+    explanation: >
+      OHQ Penman ET calculation expects relative humidity as a fraction
+      (0-1). If provided as percentage (0-100), the vapor pressure deficit
+      calculation produces extremely large values, causing ET to be
+      grossly overestimated. The model runs without error.
+    affected_components: [Source.cpp]
+  remedy:
+    action: "Divide RH by 100 to convert from % to fraction"
+    tool_to_run: "convert_forcing.py --rh-unit percent"
+    manual_steps:
+      - "Check humidity data range"
+      - "If values are 0-100, divide by 100"
+      - "Verify: typical RH is 0.3-0.9 as fraction"
+    prevention: "Always specify --rh-unit when converting"
+  severity: silent
+  cross_references: [dt_012]
+
+- id: dt_015
+  stage: s4_model_execution
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "Binary fails to start with shared library errors"
+    error_pattern: "libOHQLib.so.*not found|libQt6Core.so.*not found|libgsl.so.*not found"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Missing runtime dependencies for the compiled binary"
+    explanation: >
+      OHQLibTest requires libOHQLib.so, Qt6Core, GSL, LAPACK, BLAS,
+      and Armadillo shared libraries at runtime. If any are not in
+      LD_LIBRARY_PATH, the binary fails immediately. This is common
+      when running from a different directory than the build folder.
+    affected_components: [system linker]
+  remedy:
+    action: "Set LD_LIBRARY_PATH to include the build directory"
+    tool_to_run: "run_ohq.py"
+    manual_steps:
+      - "Run: export LD_LIBRARY_PATH=/path/to/OHQLib/build:$LD_LIBRARY_PATH"
+      - "Or: sudo ldconfig after installing libraries"
+      - "Verify: ldd OHQLibTest (no 'not found' lines)"
+    prevention: "Add LD_LIBRARY_PATH export to shell profile"
+  severity: fatal
+  cross_references: []
+
+- id: dt_016
+  stage: s3_model_construction
+  failure_domain: parameter_format
+  symptom:
+    description: "Weir block type not found, model reports unknown type"
+    error_pattern: "type.*not found|unknown.*type.*weir"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "OHQ spells weir as 'wier' in its template definitions"
+    explanation: >
+      The standard English spelling is 'weir' but OHQ uses 'wier' in
+      its main_components.json template. Using 'weir' instead of 'wier'
+      causes a type lookup failure. This is a known quirk of the codebase.
+    affected_components: [Script.cpp, main_components.json]
+  remedy:
+    action: "Use 'wier' (OHQ spelling) instead of 'weir'"
+    tool_to_run: ""
+    manual_steps:
+      - "Replace 'weir' with 'wier' in all create link commands"
+      - "Verify available types by checking main_components.json"
+    prevention: "Always reference type names from the loaded templates"
+  severity: fatal
+  cross_references: []
+
+- id: dt_017
+  stage: s3_model_construction
+  failure_domain: silent_error
+  symptom:
+    description: "Reaction does not affect constituent concentrations"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Reaction parameter base_value set to 0"
+    explanation: >
+      In the .ohq examples, reaction parameters are created with
+      base_value=0 as placeholders. If these are not updated with
+      actual kinetic constants, the reaction rate expression evaluates
+      to zero and no reaction occurs. The model runs normally but
+      constituent concentrations remain unchanged.
+    affected_components: [RxnParameter.h, reaction.cpp]
+  remedy:
+    action: "Set non-zero base_value for all reaction parameters"
+    tool_to_run: ""
+    manual_steps:
+      - "Review all create reaction_parameter commands"
+      - "Set appropriate base_value from literature"
+      - "Typical: mu_H=6.0, K_s=20, K_o=0.2, mu_N=0.8"
+    prevention: "Never leave base_value=0 unless intentionally disabling"
+  severity: silent
+  cross_references: []
+
+- id: dt_018
+  stage: s1_data_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Diffusion appears too fast or too slow by factor of 86400"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Diffusion coefficient in m^2/s instead of m^2/day"
+    explanation: >
+      OHQ expects diffusion coefficients in m^2/day. Literature values
+      are typically in m^2/s (e.g., molecular diffusion ~1e-9 m^2/s).
+      Converting: 1e-9 m^2/s * 86400 = 8.64e-5 m^2/day. The example
+      files use 0.0017 m^2/day which includes turbulent mixing.
+      Using m^2/s values directly gives negligible diffusion.
+    affected_components: [constituent.cpp]
+  remedy:
+    action: "Multiply m^2/s values by 86400 to get m^2/day"
+    tool_to_run: ""
+    manual_steps:
+      - "Check diffusion coefficient units in source"
+      - "Convert: D_day = D_sec * 86400"
+      - "Typical OHQ range: 0.0001-0.01 m^2/day (includes turbulent)"
+    prevention: "Use representative values from OHQ examples as reference"
+  severity: silent
+  cross_references: [dt_005]

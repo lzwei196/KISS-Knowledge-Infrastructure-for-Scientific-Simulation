@@ -1,0 +1,494 @@
+# ROMS Diagnostic Triplets
+# Symptom → Diagnosis → Remedy
+# Each triplet identifies a common failure mode in ROMS setup and execution
+
+triplets:
+
+  - id: dt_001
+    stage: s2
+    failure_domain: unit_conversion
+    severity: silent
+    symptom:
+      description: "Domain floods unrealistically; freshwater budget is 1000x too high"
+      error_pattern: "rain values > 0.1 kg/m²/s or salinity drops to 0 within days"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Precipitation in mm/day not converted to kg/m²/s"
+      explanation: >
+        ROMS expects precipitation as kg/m²/s (equivalent to mm/s). ERA5 and
+        many reanalysis products provide mm/day or m/accumulation. Dividing by
+        86400 is required for mm/day. For mm/hr, divide by 3600.
+        1 mm water = 1 kg/m² since rho_water ≈ 1000 kg/m³.
+      affected_components: [rain, freshwater_flux, salinity]
+    remedy:
+      action: "Apply correct unit conversion: mm/day ÷ 86400 = kg/m²/s"
+      tool_to_run: "convert_forcing.py --precip-units mm/day"
+      manual_steps:
+        - "Check source precipitation units"
+        - "Verify rain max < 0.05 kg/m²/s in output forcing file"
+      prevention: "Always validate forcing ranges before running"
+    cross_references: [dt_007]
+
+  - id: dt_002
+    stage: s4
+    failure_domain: runtime
+    severity: fatal
+    symptom:
+      description: "Model blows up within first 10–100 time steps"
+      error_pattern: "BLOWUP in log file; NaN in velocity/temperature fields"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Baroclinic time step DT too large for grid resolution and depth"
+      explanation: >
+        The CFL condition requires dtfast < dx/sqrt(g*hmax). With dt = NDTFAST * dtfast,
+        if dt is too large for the minimum grid spacing and maximum depth, the
+        barotropic mode becomes unstable and blows up immediately.
+      affected_components: [dt, NDTFAST, grid_resolution, bathymetry]
+    remedy:
+      action: "Reduce DT or increase NDTFAST"
+      manual_steps:
+        - "Compute CFL: c = sqrt(9.81 * hmax), dtfast_max = dx_min / c"
+        - "Set DT ≤ NDTFAST * dtfast_max with safety factor of 0.5"
+        - "Typical: NDTFAST=30, dt=60-600s depending on resolution"
+      prevention: "Run CFL check before execution (run_roms.py does this)"
+    cross_references: [dt_013]
+
+  - id: dt_003
+    stage: s2
+    failure_domain: unit_conversion
+    severity: silent
+    symptom:
+      description: "Ocean cools unrealistically; SST drops far below observations"
+      error_pattern: "Shortwave radiation values are negative or near zero"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Shortwave radiation sign convention wrong (upward positive instead of downward)"
+      explanation: >
+        ROMS expects shortwave radiation as positive downward (into the ocean).
+        Some reanalysis products (ERA5 net fluxes) can have mixed sign conventions.
+        Negative shortwave means the ocean is emitting radiation instead of absorbing.
+      affected_components: [swrad, surface_heat_flux, temperature]
+    remedy:
+      action: "Flip sign of shortwave if source convention is upward positive"
+      tool_to_run: "convert_forcing.py (ensure_positive_down applied automatically)"
+      manual_steps:
+        - "Check: swrad should be positive during daytime, zero at night"
+        - "Typical range: 0–1000 W/m²"
+        - "Clip any small negative values to 0"
+      prevention: "Validate swrad range: min ≥ 0, max < 1400 W/m²"
+    cross_references: [dt_007]
+
+  - id: dt_004
+    stage: s3
+    failure_domain: unit_conversion
+    severity: silent
+    symptom:
+      description: "No tidal signal in model output despite tidal forcing enabled"
+      error_pattern: "Sea surface height shows no semidiurnal/diurnal oscillations"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Time units mismatch between tidal forcing file and TIME_REF in roms.in"
+      explanation: >
+        Tidal forcing times must be in seconds since the same reference date
+        as TIME_REF in roms.in. If the tidal file uses a different epoch or
+        units (days, hours), the forcing is applied at the wrong model time,
+        often producing no signal at all.
+      affected_components: [ocean_time, tidal_forcing, TIME_REF]
+    remedy:
+      action: "Ensure tidal forcing time units match TIME_REF"
+      manual_steps:
+        - "Check tidal file: ncdump -v time tidal_forcing.nc | head"
+        - "Verify TIME_REF in roms.in matches forcing time epoch"
+        - "Convert if needed: time_seconds = (time_days - ref_days) * 86400"
+      prevention: "Always verify time units before running"
+    cross_references: [dt_010]
+
+  - id: dt_005
+    stage: s0
+    failure_domain: unit_conversion
+    severity: fatal
+    symptom:
+      description: "All grid points treated as land; model produces no ocean output"
+      error_pattern: "mask_rho = 0 everywhere; zero ocean volume"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Bathymetry h is negative (negative = above sea level in ROMS convention)"
+      explanation: >
+        ROMS convention is h > 0 for depth below sea surface. Some bathymetry
+        sources (ETOPO1 elevation) use negative values for below-sea-level.
+        If h < 0 everywhere, the mask generator sets all points to land.
+      affected_components: [h, mask_rho, grid_file]
+    remedy:
+      action: "Take absolute value of bathymetry: h = abs(h)"
+      tool_to_run: "build_roms_grid.py (handles sign automatically)"
+      manual_steps:
+        - "Check: h values must be positive"
+        - "For ETOPO1 elevation: h = -elevation where elevation < 0"
+      prevention: "Validate grid: h.min() > 0 in water cells"
+    cross_references: []
+
+  - id: dt_006
+    stage: s3
+    failure_domain: parameter_format
+    severity: degraded
+    symptom:
+      description: "Boundary instabilities; waves propagating inward from open edges"
+      error_pattern: "Spurious oscillations near boundaries that grow over time"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Nudging time scale (Tnudg) too small, creating strong boundary forcing"
+      explanation: >
+        Tnudg in roms.in is specified in DAYS. Values < 1 day create very
+        strong nudging that acts like a hard wall, reflecting waves back into
+        the domain. Values > 180 days provide almost no boundary control.
+      affected_components: [Tnudg, boundary_conditions, LBC]
+    remedy:
+      action: "Set Tnudg between 3 and 30 days"
+      manual_steps:
+        - "Typical values: 10 days for temperature/salinity"
+        - "Use a sponge layer (SPONGE CPP flag) for additional damping"
+        - "Consider RadNud boundary type for best results"
+      prevention: "Check Tnudg is in days (not seconds or hours)"
+    cross_references: [dt_014]
+
+  - id: dt_007
+    stage: s2
+    failure_domain: unit_conversion
+    severity: silent
+    symptom:
+      description: "Unrealistic SST — too warm or too cold by 10–50°C"
+      error_pattern: "Surface temperature drifts far from observations within days"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Specific humidity (Qair) in wrong units (% instead of kg/kg)"
+      explanation: >
+        ROMS with BULK_FLUXES expects specific humidity in kg/kg (typical
+        range 0.001–0.020). If relative humidity (0–100%) is supplied
+        instead, latent heat flux is computed incorrectly, causing extreme
+        evaporative cooling or warming.
+      affected_components: [Qair, latent_heat_flux, SST]
+    remedy:
+      action: "Convert RH to specific humidity using psychrometric formula"
+      tool_to_run: "convert_forcing.py --humidity-type relative"
+      manual_steps:
+        - "Compute: es = 6.112 * exp(17.67 * Tair / (Tair + 243.5))"
+        - "e = (RH/100) * es"
+        - "q = 0.622 * e / (Pair - 0.378 * e)"
+        - "Verify: 0.001 < mean(Qair) < 0.020 kg/kg"
+      prevention: "Check Qair range before running"
+    cross_references: [dt_001, dt_003]
+
+  - id: dt_008
+    stage: s0
+    failure_domain: unit_conversion
+    severity: fatal
+    symptom:
+      description: "CFL violation immediately; model blows up at first time step"
+      error_pattern: "BLOWUP at step 1; extreme velocities"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Grid metrics pm/pn specified in meters instead of 1/meters"
+      explanation: >
+        pm and pn are INVERSE grid spacing (1/dx, 1/dy) with units 1/meters.
+        If grid spacing dx (meters) is stored instead, all spatial derivatives
+        are inverted, causing immediate instability.
+      affected_components: [pm, pn, grid_file, CFL]
+    remedy:
+      action: "Set pm = 1/dx, pn = 1/dy where dx,dy are in meters"
+      tool_to_run: "build_roms_grid.py (computes correctly)"
+      manual_steps:
+        - "Verify: pm values should be O(1e-4) for ~10km grid"
+        - "pm = 1/(R * cos(lat) * dlon_rad) for spherical grids"
+      prevention: "Check: 1e-6 < pm < 1e-1 for typical grids"
+    cross_references: [dt_002, dt_005]
+
+  - id: dt_009
+    stage: s2
+    failure_domain: unit_conversion
+    severity: silent
+    symptom:
+      description: "Air temperature 273°C too high; extreme evaporation"
+      error_pattern: "Tair values around 280–310 instead of 5–35"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Temperature still in Kelvin, not converted to Celsius"
+      explanation: >
+        ROMS expects air temperature (Tair) in degrees Celsius. ERA5 and most
+        reanalysis provide temperature in Kelvin. Forgetting to subtract 273.15
+        produces plausible but wildly wrong values.
+      affected_components: [Tair, sensible_heat_flux, latent_heat_flux]
+    remedy:
+      action: "Subtract 273.15 from Kelvin temperatures"
+      tool_to_run: "convert_forcing.py (auto-detects Kelvin if mean > 100)"
+      manual_steps:
+        - "If mean(Tair) > 100, data is in Kelvin"
+        - "Tair_C = Tair_K - 273.15"
+      prevention: "Validate: -50 < mean(Tair) < 50 °C"
+    cross_references: [dt_003, dt_007]
+
+  - id: dt_010
+    stage: s4
+    failure_domain: parameter_format
+    severity: fatal
+    symptom:
+      description: "NetCDF read error; cannot find variable in forcing file"
+      error_pattern: "GET_*FLD — cannot find variable in file"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Variable names in forcing file don't match varinfo.yaml definitions"
+      explanation: >
+        ROMS uses varinfo.yaml (or varinfo.dat) to map internal variable names
+        to NetCDF names. If the forcing file uses different names (e.g., 'u10'
+        instead of 'Uwind'), ROMS cannot find the data.
+      affected_components: [varinfo.yaml, forcing_file, NetCDF_names]
+    remedy:
+      action: "Rename variables in forcing file or edit varinfo.yaml"
+      manual_steps:
+        - "Check: ncdump -h roms_frc.nc to see variable names"
+        - "Compare against varinfo.yaml entries"
+        - "Use ncrename to fix: ncrename -v u10,Uwind roms_frc.nc"
+      prevention: "Use convert_forcing.py which creates correct names"
+    cross_references: [dt_004]
+
+  - id: dt_011
+    stage: s4
+    failure_domain: runtime
+    severity: fatal
+    symptom:
+      description: "MPI error at startup; all processes abort immediately"
+      error_pattern: "MPI_ABORT; wrong number of processes"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "NtileI × NtileJ does not equal the number of MPI processes"
+      explanation: >
+        ROMS requires exactly NtileI × NtileJ MPI processes. If mpirun -np N
+        doesn't match, the model cannot decompose the domain and aborts.
+      affected_components: [NtileI, NtileJ, mpirun, domain_decomposition]
+    remedy:
+      action: "Set NtileI × NtileJ equal to -np value"
+      manual_steps:
+        - "For -np 8: use NtileI=4, NtileJ=2 or NtileI=2, NtileJ=4"
+        - "Choose decomposition that minimizes halo communication"
+        - "For serial (romsS): NtileI=1, NtileJ=1"
+      prevention: "run_roms.py checks MPI consistency before launching"
+    cross_references: [dt_002]
+
+  - id: dt_012
+    stage: s2
+    failure_domain: unit_conversion
+    severity: silent
+    symptom:
+      description: "Atmospheric pressure forcing has no effect; sea level response absent"
+      error_pattern: "Surface pressure range unreasonably large (90000–110000)"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Air pressure in Pa instead of millibar (hPa)"
+      explanation: >
+        ROMS expects surface air pressure (Pair) in millibar (hPa). ERA5 and
+        most reanalysis provide pressure in Pa. Values around 101325 Pa must
+        be divided by 100 to get 1013.25 mb.
+      affected_components: [Pair, sea_level_pressure, inverse_barometer]
+    remedy:
+      action: "Divide Pa by 100 to get millibar"
+      tool_to_run: "convert_forcing.py (auto-detects Pa if mean > 10000)"
+      manual_steps:
+        - "If mean(Pair) > 10000, data is in Pa"
+        - "Pair_mb = Pair_Pa / 100"
+        - "Verify: 900 < mean(Pair) < 1100 mb"
+      prevention: "Validate pressure range in forcing file"
+    cross_references: [dt_007, dt_009]
+
+  - id: dt_013
+    stage: s0
+    failure_domain: parameter_format
+    severity: fatal
+    symptom:
+      description: "Extreme vertical stretching; very thin layers at surface or bottom"
+      error_pattern: "Layer thickness < 1 cm; vertical CFL violation"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "THETA_S or THETA_B out of recommended range"
+      explanation: >
+        THETA_S controls surface stretching (0 < θs ≤ 10) and THETA_B
+        controls bottom stretching (0 ≤ θb ≤ 4 for Vstretching=4). Values
+        near the extremes create very thin layers that violate CFL with
+        typical vertical velocities.
+      affected_components: [THETA_S, THETA_B, Vstretching, vertical_grid]
+    remedy:
+      action: "Use moderate stretching: THETA_S=3-7, THETA_B=0-2"
+      manual_steps:
+        - "Plot S-coordinate levels to inspect layer thickness"
+        - "Ensure minimum layer thickness > 1 m at deepest point"
+        - "Reduce THETA_S if surface layers too thin"
+        - "Reduce THETA_B if bottom layers too thin"
+      prevention: "Always visualize vertical grid before running"
+    cross_references: [dt_002, dt_008]
+
+  - id: dt_014
+    stage: s3
+    failure_domain: silent_error
+    severity: silent
+    symptom:
+      description: "Water column drifts from initial conditions despite boundary forcing"
+      error_pattern: "Interior temperature/salinity slowly diverges from observations over weeks"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Boundary conditions file does not cover full simulation period"
+      explanation: >
+        If the boundary file time range doesn't extend to the end of the
+        simulation, ROMS extrapolates the last boundary value indefinitely.
+        This causes the boundary forcing to become stale, and the interior
+        slowly drifts without constraint.
+      affected_components: [BRYNAME, boundary_time, simulation_period]
+    remedy:
+      action: "Extend boundary file to cover full simulation + buffer"
+      manual_steps:
+        - "Check: ncdump -v bry_time roms_bry.nc | tail"
+        - "Ensure last boundary time > end of simulation"
+        - "Add 1–2 extra time records beyond simulation end"
+      prevention: "Validate time coverage before running"
+    cross_references: [dt_006]
+
+  - id: dt_015
+    stage: s1
+    failure_domain: silent_error
+    severity: silent
+    symptom:
+      description: "BULK_FLUXES defined but precomputed fluxes also supplied — double-counted"
+      error_pattern: "Surface heat flux 2x too strong; extreme SST"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Both BULK_FLUXES CPP flag and precomputed flux forcing active"
+      explanation: >
+        When BULK_FLUXES is defined, ROMS computes air-sea fluxes internally
+        from atmospheric state variables (Tair, Uwind, etc.). If the forcing
+        file ALSO contains precomputed fluxes (shflux, swflux), they may be
+        added, effectively doubling the surface forcing.
+      affected_components: [BULK_FLUXES, surface_fluxes, CPP_flags]
+    remedy:
+      action: "With BULK_FLUXES, supply only atmospheric STATE variables, not fluxes"
+      manual_steps:
+        - "Remove shflux, swflux, sustr, svstr from forcing file"
+        - "Supply only: Uwind, Vwind, Tair, Pair, Qair, rain, swrad, lwrad"
+      prevention: "Check CPP flags before preparing forcing"
+    cross_references: [dt_003, dt_007]
+
+  - id: dt_016
+    stage: s3
+    failure_domain: unit_conversion
+    severity: silent
+    symptom:
+      description: "Initial temperature in Kelvin; model starts with unrealistic density"
+      error_pattern: "Initial temp values around 275–300 instead of 2–28°C"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Temperature from global source (HYCOM/GLORYS) not converted to Celsius"
+      explanation: >
+        Some global ocean products provide temperature in Kelvin. ROMS expects
+        Celsius. Starting with T=280K causes extreme density anomalies and
+        immediate instability or completely wrong circulation.
+      affected_components: [temp, initial_conditions, density]
+    remedy:
+      action: "Convert: temp_C = temp_K - 273.15"
+      manual_steps:
+        - "Check IC file: ncdump -v temp roms_ini.nc | head -20"
+        - "If values > 100, convert from Kelvin"
+      prevention: "Validate IC temperature range: -2 < temp < 35°C"
+    cross_references: [dt_009]
+
+  - id: dt_017
+    stage: s0
+    failure_domain: silent_error
+    severity: degraded
+    symptom:
+      description: "Pressure gradient errors in steep bathymetry regions"
+      error_pattern: "Spurious currents along steep slopes; unphysical upwelling"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Bathymetry r-factor (slope parameter) exceeds 0.2"
+      explanation: >
+        The r-factor = |h(i+1)-h(i)| / (h(i+1)+h(i)) measures bathymetric
+        steepness in sigma-coordinate models. Values > 0.2 cause significant
+        pressure gradient errors that manifest as spurious along-slope currents.
+      affected_components: [h, bathymetry, pressure_gradient]
+    remedy:
+      action: "Smooth bathymetry until r < 0.2 everywhere"
+      tool_to_run: "build_roms_grid.py (smoothing pass)"
+      manual_steps:
+        - "Apply Shapiro or Hanning filter iteratively"
+        - "Monitor r-factor convergence"
+        - "Preserve key bathymetric features (shelf break, canyons)"
+      prevention: "Check r-factor as part of grid generation"
+    cross_references: [dt_005, dt_008]
+
+  - id: dt_018
+    stage: s4
+    failure_domain: parameter_format
+    severity: fatal
+    symptom:
+      description: "Array bounds error at startup; Lm/Mm mismatch"
+      error_pattern: "SIGFPE or array index out of bounds"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "Lm and Mm in roms.in don't match grid file dimensions"
+      explanation: >
+        Lm and Mm in roms.in must equal the INTERIOR grid points (xi_rho - 2,
+        eta_rho - 2) since ROMS adds ghost points. If these don't match the
+        grid file, array allocation is wrong and crashes occur.
+      affected_components: [Lm, Mm, grid_dimensions, roms.in]
+    remedy:
+      action: "Set Lm = xi_rho - 2, Mm = eta_rho - 2 from grid file"
+      manual_steps:
+        - "Check: ncdump -h roms_grid.nc | grep xi_rho"
+        - "Lm = xi_rho_dim - 2"
+        - "Mm = eta_rho_dim - 2"
+      prevention: "Auto-read grid dimensions in roms.in comments"
+    cross_references: [dt_011]
+
+  - id: dt_019
+    stage: s1
+    failure_domain: silent_error
+    severity: silent
+    symptom:
+      description: "ANA_* flags override data files without warning"
+      error_pattern: "Forcing from files is ignored; analytical functions used instead"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Analytical CPP flags (ANA_SMFLUX, ANA_STFLUX, etc.) still defined"
+      explanation: >
+        When ANA_* flags are defined, ROMS uses analytical functions in
+        ROMS/Functionals/ instead of reading from NetCDF files. These flags
+        from an idealized test case may silently override realistic forcing.
+      affected_components: [ANA_SMFLUX, ANA_STFLUX, ANA_BTFLUX, CPP_flags]
+    remedy:
+      action: "Remove all ANA_* flags for realistic simulations"
+      manual_steps:
+        - "Comment out or #undef all ANA_* defines in header file"
+        - "Recompile after changing CPP flags"
+      prevention: "Review header file when switching from idealized to realistic"
+    cross_references: [dt_015]
+
+  - id: dt_020
+    stage: s2
+    failure_domain: unit_conversion
+    severity: silent
+    symptom:
+      description: "Wind stress too weak or too strong by orders of magnitude"
+      error_pattern: "Wind-driven currents absent or unrealistically fast"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Wind speed (m/s) supplied where wind stress (N/m²) expected, or vice versa"
+      explanation: >
+        Without BULK_FLUXES, ROMS expects wind STRESS (sustr/svstr in N/m²,
+        typical range 0–1). With BULK_FLUXES, it expects wind SPEED (Uwind/Vwind
+        in m/s, typical range 0–30). Supplying the wrong type produces wrong
+        surface forcing by 1–2 orders of magnitude.
+      affected_components: [Uwind, Vwind, sustr, svstr, BULK_FLUXES]
+    remedy:
+      action: "Match input type to CPP configuration"
+      manual_steps:
+        - "With BULK_FLUXES: supply Uwind/Vwind in m/s"
+        - "Without BULK_FLUXES: supply sustr/svstr in N/m²"
+        - "Conversion: tau = rho_air * Cd * |W| * W (Cd ≈ 1.3e-3)"
+      prevention: "Check CPP flags to determine expected input type"
+    cross_references: [dt_015]

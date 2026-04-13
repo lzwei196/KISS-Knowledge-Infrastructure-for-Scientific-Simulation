@@ -1,0 +1,225 @@
+model:
+  name: "LPJmL"
+  version: "6.0.0"
+  domain: "crop / dynamic global vegetation model (DGVM)"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/LPJmL/source/repo/bin/lpjml"
+  language: "C (with optional MPI parallelization)"
+  developer: "PIK (Potsdam Institute for Climate Impact Research)"
+  resolution: "0.5 degree global grid (~55 km)"
+  timestep: "daily (internal), monthly/annual (output)"
+
+inputs:
+  forcing:
+    - name: "temp"
+      unit: "deg C"
+      valid_range: [-60.0, 60.0]
+      description: "Mean daily temperature"
+    - name: "prec"
+      unit: "mm/day"
+      valid_range: [0.0, 500.0]
+      description: "Daily precipitation"
+    - name: "swdown"
+      unit: "W/m2"
+      valid_range: [0.0, 500.0]
+      description: "Shortwave downward radiation"
+    - name: "lwnet"
+      unit: "W/m2"
+      valid_range: [-200.0, 200.0]
+      description: "Net longwave radiation"
+    - name: "tmin"
+      unit: "deg C"
+      valid_range: [-60.0, 50.0]
+      description: "Daily minimum temperature"
+    - name: "tmax"
+      unit: "deg C"
+      valid_range: [-50.0, 60.0]
+      description: "Daily maximum temperature"
+    - name: "humid"
+      unit: "kg/kg"
+      valid_range: [0.0, 0.04]
+      description: "Specific humidity"
+    - name: "wind"
+      unit: "m/s"
+      valid_range: [0.0, 50.0]
+      description: "Wind speed"
+    - name: "co2"
+      unit: "ppm"
+      valid_range: [250.0, 1000.0]
+      description: "Annual atmospheric CO2 concentration"
+
+  static:
+    - name: "soil"
+      unit: "code (1-13)"
+      valid_range: [1, 13]
+      description: "Soil texture class (13-class USDA-based scheme)"
+    - name: "coord"
+      unit: "degrees"
+      description: "Grid cell coordinates (lon, lat)"
+    - name: "countrycode"
+      unit: "code"
+      description: "Country code per grid cell"
+    - name: "elevation"
+      unit: "m"
+      valid_range: [-500.0, 9000.0]
+      description: "Surface elevation"
+    - name: "drainage"
+      unit: "index"
+      description: "River routing drainage direction"
+    - name: "lakes"
+      unit: "fraction"
+      valid_range: [0.0, 1.0]
+      description: "Lake fraction per cell"
+
+  landuse:
+    - name: "landuse"
+      unit: "fraction"
+      valid_range: [0.0, 1.0]
+      description: "CFT fractions (64 bands: 16 CFTs x 2 water x 2 irrigation)"
+    - name: "fertilizer_nr"
+      unit: "gN/m2/yr"
+      valid_range: [0.0, 50.0]
+      description: "N fertilizer application rate per CFT"
+    - name: "manure_nr"
+      unit: "gN/m2/yr"
+      valid_range: [0.0, 30.0]
+      description: "Manure N application rate per CFT"
+    - name: "sdate"
+      unit: "DOY"
+      valid_range: [1, 365]
+      description: "Prescribed sowing dates per CFT"
+    - name: "crop_phu"
+      unit: "deg C days"
+      valid_range: [500.0, 5000.0]
+      description: "Phenological heat units per CFT"
+
+  parameters:
+    critical:
+      - name: "equilsoil"
+        valid_range: [0, 1]
+        description: "Soil carbon equilibration flag (spinup mode)"
+      - name: "landuse"
+        valid_range: ["no", "yes", "const", "all_crops"]
+        description: "Land use mode"
+      - name: "irrigation"
+        valid_range: ["no", "lim", "pot", "all"]
+        description: "Irrigation mode"
+      - name: "with_nitrogen"
+        valid_range: ["lim", "unlim"]
+        description: "Nitrogen limitation mode"
+      - name: "fire"
+        valid_range: ["no_fire", "fire", "spitfire"]
+        description: "Fire module selection"
+      - name: "sowing_date_option"
+        valid_range: ["no_fixed_sdate", "fixed_sdate", "prescribed_sdate"]
+        description: "Sowing date handling"
+
+outputs:
+  primary:
+    - name: "harvestc"
+      unit: "gC/m2/yr"
+      valid_range: [0.0, 2000.0]
+      description: "Total harvested carbon (divide by 0.45 * 0.01 for t DM/ha)"
+    - name: "pft_harvestc"
+      unit: "gC/m2/yr"
+      valid_range: [0.0, 2000.0]
+      description: "CFT-specific harvested carbon"
+    - name: "npp"
+      unit: "gC/m2/month"
+      valid_range: [-50.0, 500.0]
+      description: "Net primary production"
+    - name: "gpp"
+      unit: "gC/m2/month"
+      valid_range: [0.0, 1000.0]
+      description: "Gross primary production"
+    - name: "runoff"
+      unit: "mm/month"
+      valid_range: [0.0, 1000.0]
+      description: "Total runoff"
+    - name: "discharge"
+      unit: "hm3/day"
+      valid_range: [0.0, 100000.0]
+      description: "River discharge"
+    - name: "transp"
+      unit: "mm/month"
+      valid_range: [0.0, 300.0]
+      description: "Transpiration"
+    - name: "evap"
+      unit: "mm/month"
+      valid_range: [0.0, 300.0]
+      description: "Evaporation"
+    - name: "vegc"
+      unit: "gC/m2"
+      valid_range: [0.0, 30000.0]
+      description: "Vegetation carbon stock"
+    - name: "soilc"
+      unit: "gC/m2"
+      valid_range: [0.0, 50000.0]
+      description: "Soil organic carbon stock"
+  crop_specific:
+    - name: "sdate"
+      unit: "DOY"
+      valid_range: [1, 365]
+      description: "Actual sowing date"
+    - name: "hdate"
+      unit: "DOY"
+      valid_range: [1, 365]
+      description: "Actual harvest date"
+    - name: "growing_period"
+      unit: "days"
+      valid_range: [30, 365]
+      description: "Growing season length"
+    - name: "cftfrac"
+      unit: "fraction"
+      valid_range: [0.0, 1.0]
+      description: "Crop functional type area fraction"
+    - name: "irrig"
+      unit: "mm/month"
+      valid_range: [0.0, 500.0]
+      description: "Irrigation water applied"
+
+file_format:
+  name: "CLM (Climate data for LPJmL)"
+  header_version: 3
+  fields:
+    - "Header ID (char[7])"
+    - "Version (int)"
+    - "Order (int)"
+    - "Firstyear (int)"
+    - "Nyear (int)"
+    - "Firstcell (int)"
+    - "Ncell (int)"
+    - "Nbands (int)"
+    - "Cellsize_lon (float, typically 0.5)"
+    - "Cellsize_lat (float, typically 0.5)"
+    - "Datatype (int: 0=byte, 1=short, 2=int, 3=float, 4=double)"
+    - "Scalar (float)"
+    - "Nstep (int: 12=monthly, 365=daily)"
+
+unit_conversion_traps:
+  - from: "K"
+    to: "deg C"
+    formula: "T_C = T_K - 273.15"
+    variable: "temperature"
+  - from: "kg/m2/s"
+    to: "mm/day"
+    formula: "P * 86400"
+    variable: "precipitation"
+  - from: "J/m2/day"
+    to: "W/m2"
+    formula: "SW / 86400"
+    variable: "shortwave radiation"
+  - from: "gC/m2"
+    to: "t DM/ha"
+    formula: "/ 0.45 * 0.01"
+    variable: "harvest carbon to yield"
+  - from: "kg N/ha"
+    to: "gN/m2"
+    formula: "/ 10.0"
+    variable: "fertilizer"
+
+known_issues:
+  - "Wheat yield underestimation: PBIAS=-58.5% for China national average (sim=2183 vs obs=5267 kg/ha)"
+  - "Rice yield overestimation: PBIAS=+20.3% for China (sim=8239 vs obs=6850 kg/ha)"
+  - "Maize yield underestimation: PBIAS=-39.9% for China (sim=3584 vs obs=5965 kg/ha)"
+  - "Requires ~4000yr spinup for equilibrium soil carbon — computationally expensive"
+  - "Two-step simulation (spinup + transient) required — cannot run directly from cold start"

@@ -1,0 +1,79 @@
+{
+  "model_id": "17",
+  "model": "SWMM",
+  "domain": "urban",
+  "basin": "Wangjiaba (51030)",
+  "basin_area_km2": 30630,
+  "ki_path": "/mnt/disk1/Hydrocraft_server/models/SWMM/knowledge_infrastructure",
+  "test_status": "PASS",
+  "ki_generalized": true,
+  "binary_found": true,
+  "model_ran": true,
+  "output_verified": true,
+  "simulation_details": {
+    "description": "Synthetic 5 km2 urban subcatchment near Wangjiaba with CMFD daily rainfall",
+    "subcatchments": 5,
+    "junctions": 6,
+    "conduits": 6,
+    "outfalls": 1,
+    "total_area_ha": 500,
+    "avg_imperv_pct": 56,
+    "routing_method": "KINWAVE",
+    "infiltration_method": "GREEN_AMPT",
+    "flow_units": "CMS",
+    "simulation_period": "1981-01-01 to 1981-12-31",
+    "rainfall_source": "CMFD 0.25deg daily (grid cell 32.525N, 115.525E)",
+    "runtime_seconds": 4.2,
+    "total_steps": 1051199
+  },
+  "hydrology_results": {
+    "total_precipitation_mm": 829.5,
+    "total_infiltration_mm": 370.8,
+    "total_runoff_mm": 458.0,
+    "runoff_coefficient": 0.552,
+    "peak_outfall_flow_cms": 1.398,
+    "mean_outfall_flow_cms": 0.0741,
+    "outfall_volume_1e6_liters": 2289.9,
+    "runoff_continuity_error_pct": -0.0,
+    "routing_continuity_error_pct": 0.005,
+    "flooded_nodes": 0,
+    "surcharged_links": 0,
+    "flow_instability": "All links stable"
+  },
+  "metrics": {
+    "note": "No NSE/KGE computed \u2014 SWMM urban drainage model not comparable to Wangjiaba 30630 km2 rural basin observed Q",
+    "runoff_continuity_error_pct": 0.0,
+    "routing_continuity_error_pct": 0.005,
+    "water_balance_error_pct": 0.004
+  },
+  "ki_tools_used": [
+    "preflight_check.py \u2014 PASSED (pyswmm + swmm-toolkit installed)",
+    "s5_model_assembly/assemble_inp_file.py \u2014 assembled INP from CSVs (required fix for ROUTING_MODEL bug)",
+    "s6_execution/run_swmm.py \u2014 ran simulation (required workaround for sim.routing_error bug)",
+    "s6_execution/check_continuity_errors.py \u2014 parsed RPT (false-positive error detection)",
+    "s6_execution/extract_results.py \u2014 extracted results (fell back to RPT parsing)"
+  ],
+  "ki_tools_not_usable": [
+    "s3_rainfall_forcing/convert_vic_forcing_to_swmm.py \u2014 only supports VIC ASCII forcing, not CMFD NetCDF directly",
+    "s1_subcatchment_delineation/* \u2014 requires urban GIS data not available for Wangjiaba",
+    "s2_drainage_network/* \u2014 requires pipe network GIS data not available for Wangjiaba"
+  ],
+  "issues": [
+    "assemble_inp_file.py uses ROUTING_MODEL instead of FLOW_ROUTING \u2014 causes SWMM ERROR 205",
+    "run_swmm.py accesses sim.routing_error which does not exist in installed pyswmm \u2014 reports false failure (exit 2) even when simulation succeeds",
+    "check_continuity_errors.py detects false-positive ERROR from column header text containing word Error",
+    "extract_results.py pyswmm Output import path issue \u2014 falls back to RPT-only extraction",
+    "2-year DYNWAVE run timed out at 5 minutes \u2014 KI does not warn about long continuous simulations"
+  ],
+  "ki_gaps": [
+    "BUG: assemble_inp_file.py writes ROUTING_MODEL (SWMM 4.x syntax) instead of FLOW_ROUTING (SWMM 5.x). This is a blocking error for ALL new basins \u2014 the model cannot run until manually fixed. Fix: line ~9 in opts dict, change key from ROUTING_MODEL to FLOW_ROUTING.",
+    "BUG: run_swmm.py uses sim.routing_error, sim.runoff_error, sim.quality_error attributes that do not exist in pyswmm 2.x. These were removed/renamed. The tool reports exit code 2 (failure) even when the simulation completes successfully. Fix: use try/except or check pyswmm version.",
+    "BUG: check_continuity_errors.py false-positive on lines containing the word ERROR/Error in non-error contexts (e.g., column headers like \"Flow Balance Error\"). Fix: only match lines starting with ERROR or in specific sections.",
+    "GAP: No tool for converting raw CMFD/MSWX NetCDF to SWMM rainfall. convert_vic_forcing_to_swmm.py only handles VIC ASCII forcing files. For new basins without prior VIC runs, users must write custom code to extract rainfall from NetCDF.",
+    "GAP: No diagnostic triplet for ERROR 205 (invalid keyword in OPTIONS). This is the first error new users will encounter due to the ROUTING_MODEL bug.",
+    "GAP: SKILL.md example INP uses ROUTING_MODEL which propagates the bug to users who copy the example.",
+    "GAP: No guidance on continuous simulation performance \u2014 DYNWAVE with daily data over multi-year periods can take >10 min for small networks. Should recommend KINWAVE for continuous or suggest event-based approach.",
+    "GAP: No tool to auto-generate a synthetic urban network from basin properties (area, imperviousness, slope). Users must manually create all CSVs. A template generator would help for new-basin setup."
+  ],
+  "timestamp": "2026-04-02T15:08:31.203681"
+}

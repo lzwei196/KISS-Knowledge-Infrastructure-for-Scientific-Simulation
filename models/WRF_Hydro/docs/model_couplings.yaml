@@ -1,0 +1,218 @@
+# ============================================================================
+# Model Coupling Registry -- WRF-Hydro v5.2.0 Standalone
+# ============================================================================
+# Documents data flows between WRF-Hydro and other HydroCraft models.
+# ============================================================================
+
+couplings:
+
+  # --- VIC Forcing -> WRF-Hydro LDASIN ---
+  - id: "coupling_001"
+    name: "VIC forcing to WRF-Hydro LDASIN"
+    source_model: "VIC 5.1.0"
+    target_model: "WRF-Hydro v5.2.0"
+    direction: "VIC -> WRF-Hydro"
+    description: >
+      Reuse existing VIC 3-hourly ASCII forcing files as input to WRF-Hydro.
+      Requires temporal interpolation (3hr -> 1hr), unit conversions, spatial
+      interpolation (lat/lon -> LCC grid), and format conversion (ASCII -> NetCDF).
+    tool: "convert_forcing_to_ldasin"
+    tool_path: "tools/s8_forcing/convert_forcing_to_ldasin.py"
+
+    variables:
+      - source_variable: "col_0 (Temperature)"
+        source_unit: "deg C"
+        target_variable: "T2D"
+        target_unit: "K"
+        transformation: "T2D = T_C + 273.15"
+        validation: "T2D should be 230-330 K"
+        silent_failure: "If already in K, double-adding 273.15 gives ~550 K -> snow processes break"
+
+      - source_variable: "col_1 (Precipitation)"
+        source_unit: "mm/3hr (accumulated)"
+        target_variable: "RAINRATE"
+        target_unit: "mm/s = kg/m^2/s"
+        transformation: "RAINRATE = precip_mm3hr / 10800.0"
+        validation: "RAINRATE should be 0-0.01 mm/s normally, up to 0.05 in extreme events"
+        silent_failure: "If not divided by 10800, RAINRATE is 10800x too high -> immediate saturation (dt_011)"
+
+      - source_variable: "col_2 (Pressure)"
+        source_unit: "kPa"
+        target_variable: "PSFC"
+        target_unit: "Pa"
+        transformation: "PSFC = P_kPa * 1000.0"
+        validation: "PSFC should be 50000-110000 Pa"
+        silent_failure: "If not multiplied by 1000, PSFC ~100 Pa -> specific humidity computation gives NaN"
+
+      - source_variable: "col_3 (Shortwave radiation)"
+        source_unit: "W/m^2"
+        target_variable: "SWDOWN"
+        target_unit: "W/m^2"
+        transformation: "Direct (no conversion)"
+        validation: "SWDOWN should be 0-1200 W/m^2, 0 at night"
+        silent_failure: "If in J/m^2/day (PCSE convention), need to divide by 86400 (dt not present here but relevant for DSSAT coupling)"
+
+      - source_variable: "col_4 (Longwave radiation)"
+        source_unit: "W/m^2"
+        target_variable: "LWDOWN"
+        target_unit: "W/m^2"
+        transformation: "Direct (no conversion)"
+        validation: "LWDOWN should be 100-500 W/m^2"
+        silent_failure: "None (same units)"
+
+      - source_variable: "col_5 (Vapor pressure)"
+        source_unit: "kPa"
+        target_variable: "Q2D"
+        target_unit: "kg/kg"
+        transformation: "e_Pa = VP_kPa * 1000; q = 0.622 * e_Pa / (PSFC_Pa - 0.378 * e_Pa)"
+        validation: "Q2D should be 0.001-0.025 kg/kg"
+        silent_failure: "If VP passed directly as Q2D, values are ~100x wrong -> ET completely wrong (dt_012)"
+
+      - source_variable: "col_6 (Wind speed)"
+        source_unit: "m/s (scalar)"
+        target_variable: "U2D, V2D"
+        target_unit: "m/s (components)"
+        transformation: "U2D = wind * cos(45deg) = wind * 0.7071; V2D = wind * sin(45deg) = wind * 0.7071"
+        validation: "U2D, V2D should be 0-30 m/s"
+        silent_failure: "Using scalar wind as both U and V (without decomposition) gives sqrt(2)x total wind"
+
+    temporal:
+      source_timestep: "3-hourly (10800 s)"
+      target_timestep: "hourly (3600 s)"
+      interpolation_method: "Linear for continuous vars (T2D, PSFC, LWDOWN, Q2D, U2D, V2D); Step (constant) for RAINRATE, SWDOWN"
+      justification: "Step interpolation for precipitation preserves total accumulation. Linear interpolation for smooth variables avoids artificial discontinuities."
+
+    spatial:
+      source_grid: "Regular lat/lon (0.25 or 0.1 degree)"
+      target_grid: "Lambert Conformal Conic (1000 m cells)"
+      interpolation_method: "scipy.interpolate.griddata (linear + nearest fill)"
+      justification: "Linear interpolation between VIC cell centres; nearest-neighbor fill for LCC cells outside the VIC convex hull"
+
+  # --- CMFD -> WRF-Hydro LDASIN (direct, no VIC intermediate) ---
+  - id: "coupling_002"
+    name: "CMFD direct to WRF-Hydro LDASIN"
+    source_model: "CMFD (China Meteorological Forcing Dataset)"
+    target_model: "WRF-Hydro v5.2.0"
+    direction: "CMFD -> WRF-Hydro"
+    description: >
+      Convert CMFD 0.1-degree 3-hourly NetCDF forcing directly to LDASIN files,
+      bypassing VIC. This avoids the VIC forcing pipeline entirely. Requires
+      the same unit conversions as VIC coupling but reads NetCDF instead of ASCII.
+    tool: "(future tool: cmfd_to_ldasin.py)"
+    tool_path: "N/A (not yet implemented)"
+
+    variables:
+      - source_variable: "temp (CMFD)"
+        source_unit: "K"
+        target_variable: "T2D"
+        target_unit: "K"
+        transformation: "Direct (CMFD is already in K)"
+        silent_failure: "If converted to C first then back to K, round-trip error"
+
+      - source_variable: "prec (CMFD)"
+        source_unit: "mm/hr"
+        target_variable: "RAINRATE"
+        target_unit: "mm/s"
+        transformation: "RAINRATE = prec_mmhr / 3600.0"
+        silent_failure: "CMFD precip is mm/hr, NOT mm/3hr like VIC -> different divisor"
+
+      - source_variable: "pres (CMFD)"
+        source_unit: "Pa"
+        target_variable: "PSFC"
+        target_unit: "Pa"
+        transformation: "Direct"
+
+      - source_variable: "srad (CMFD)"
+        source_unit: "W/m^2"
+        target_variable: "SWDOWN"
+        target_unit: "W/m^2"
+        transformation: "Direct"
+
+      - source_variable: "lrad (CMFD)"
+        source_unit: "W/m^2"
+        target_variable: "LWDOWN"
+        target_unit: "W/m^2"
+        transformation: "Direct"
+
+      - source_variable: "shum (CMFD)"
+        source_unit: "kg/kg"
+        target_variable: "Q2D"
+        target_unit: "kg/kg"
+        transformation: "Direct (CMFD provides specific humidity directly)"
+
+      - source_variable: "wind (CMFD)"
+        source_unit: "m/s"
+        target_variable: "U2D, V2D"
+        target_unit: "m/s"
+        transformation: "U2D = wind * 0.7071; V2D = wind * 0.7071"
+
+  # --- WRF-Hydro -> CaMa-Flood ---
+  - id: "coupling_003"
+    name: "WRF-Hydro runoff to CaMa-Flood"
+    source_model: "WRF-Hydro v5.2.0"
+    target_model: "CaMa-Flood v4.20"
+    direction: "WRF-Hydro -> CaMa-Flood"
+    description: >
+      Use WRF-Hydro LDASOUT surface/subsurface runoff as input to CaMa-Flood
+      for higher-fidelity flood routing (floodplain inundation, river-floodplain
+      exchange). Alternative to WRF-Hydro's built-in diffusive wave routing.
+    tool: "(future tool: wrfhydro_to_cama.py)"
+    tool_path: "N/A (not yet implemented)"
+
+    variables:
+      - source_variable: "SFCRNOFF (LDASOUT)"
+        source_unit: "mm"
+        target_variable: "surface_runoff"
+        target_unit: "mm/s or m3/s"
+        transformation: "Divide by output_timestep_seconds, aggregate to CaMa grid resolution"
+
+      - source_variable: "UGDRNOFF (LDASOUT)"
+        source_unit: "mm"
+        target_variable: "subsurface_runoff"
+        target_unit: "mm/s or m3/s"
+        transformation: "Divide by output_timestep_seconds, aggregate to CaMa grid resolution"
+
+    spatial:
+      source_grid: "Lambert Conformal Conic (WRF-Hydro LSM grid, e.g., 1000 m)"
+      target_grid: "Regular lat/lon (CaMa-Flood, typically 0.25 or 15-arc-min)"
+      method: "Area-weighted aggregation via input matrix (inpmat), same approach as VIC->CaMa coupling"
+
+    justification: >
+      WRF-Hydro's diffusive wave gridded routing is adequate for channel flow but
+      does not simulate floodplain inundation dynamics. For flood mapping, coupling
+      WRF-Hydro runoff to CaMa-Flood provides flood depth, inundation fraction, and
+      river-floodplain exchange that WRF-Hydro alone cannot produce.
+
+  # --- WRF-Hydro vs VIC output comparison ---
+  - id: "coupling_004"
+    name: "WRF-Hydro vs VIC comparison"
+    source_model: "WRF-Hydro v5.2.0"
+    target_model: "VIC 5.1.0"
+    direction: "comparison (bidirectional)"
+    description: >
+      Compare WRF-Hydro and VIC outputs for the same basin and period to
+      evaluate model differences. Key comparison variables: runoff, ET, soil
+      moisture, discharge.
+    tool: "(future tool: compare_wrfhydro_vic.py)"
+    tool_path: "N/A (not yet implemented)"
+
+    comparison_variables:
+      - wrfhydro_variable: "SFCRNOFF + UGDRNOFF (LDASOUT)"
+        vic_variable: "OUT_RUNOFF + OUT_BASEFLOW (fluxes)"
+        unit: "mm/day"
+        notes: "WRF-Hydro is hourly, VIC is daily -> aggregate WRF-Hydro to daily"
+
+      - wrfhydro_variable: "ETRAN + EDIR + ECAN (LDASOUT)"
+        vic_variable: "OUT_EVAP (fluxes)"
+        unit: "mm/day"
+        notes: "WRF-Hydro separates ET components; VIC reports total"
+
+      - wrfhydro_variable: "SOIL_M (LDASOUT, 4 layers)"
+        vic_variable: "OUT_SOIL_MOIST (fluxes, 3 layers)"
+        unit: "mm or m3/m3"
+        notes: "Different layer definitions: WRF-Hydro 0.1/0.3/0.6/1.0 m; VIC user-defined"
+
+      - wrfhydro_variable: "streamflow (CHRTOUT at outlet)"
+        vic_variable: "discharge (routing output)"
+        unit: "m3/s"
+        notes: "Different routing methods: WRF-Hydro diffusive wave vs Lohmann unit hydrograph"

@@ -1,0 +1,564 @@
+# Alpine3D Diagnostic Triplets
+# Format: symptom → diagnosis → remedy
+# 18 entries covering unit conversion traps and configuration errors
+
+- id: dt_001
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Model crashes immediately or snow surface temperature approaches absolute zero.
+      Error log may show "T_CRAZY_MIN" filter triggered or segfault in energy balance.
+    error_pattern: "crazy temperature|T_CRAZY_MIN|segfault"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      Air temperature (TA) provided in Celsius instead of Kelvin. Alpine3D expects all
+      temperatures in SMET files to be in Kelvin. A value of 20 (°C) is interpreted as
+      20 K (-253°C), far below the T_CRAZY_MIN threshold (default 210 K).
+    explanation: >
+      MeteoIO reads raw values from SMET fields and passes them directly to SNOWPACK.
+      The min_max filter on TA (default range 240–320 K) will flag Celsius values as
+      nodata, leaving gaps that crash the interpolation or energy balance.
+    affected_components:
+      - convert_forcing_to_smet.py
+      - io.ini [Filters] section
+  remedy:
+    action: "Add 273.15 to all temperature values before writing SMET files"
+    tool_to_run: convert_forcing_to_smet
+    manual_steps:
+      - "Open the SMET file and check TA values: they should be 230–320 range"
+      - "If values are -40 to +40, they are in Celsius — add 273.15"
+      - "Also check TSS, TSG fields if present"
+    prevention: >
+      In convert_forcing_to_smet.py, validate that mean(TA) > 200 before writing.
+      Add assertion: assert ta_values.mean() > 200, "TA appears to be in Celsius"
+  severity: silent
+  cross_references: [dt_009]
+
+- id: dt_002
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Entire domain shows 100% relative humidity. Snowfall occurs every timestep even
+      when observations show clear sky. SWE accumulates unrealistically fast.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Relative humidity (RH) provided as percentage (0–100) instead of fraction (0–1).
+      The RH min_max filter clips values to max=1.0, so all values above 1 become 1.0
+      (saturated atmosphere).
+    explanation: >
+      With RH=1.0 everywhere, the dewpoint equals air temperature. The precipitation
+      phase algorithm sees constant saturation and generates precipitation at every
+      timestep where temperature is below the rain/snow threshold.
+    affected_components:
+      - convert_forcing_to_smet.py
+  remedy:
+    action: "Divide RH values by 100 if they are in percent range"
+    tool_to_run: convert_forcing_to_smet
+    manual_steps:
+      - "Check SMET file: RH values should be 0.0–1.0"
+      - "If values are 30–100, divide by 100"
+    prevention: >
+      Add check: if rh_values.max() > 1.5, assume percent and divide by 100.
+  severity: silent
+  cross_references: []
+
+- id: dt_003
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Wind speeds appear extremely high (>50 m/s regularly). Turbulent fluxes are
+      unrealistically large. Snow erosion is excessive. The VW min_max filter may
+      flag many values as nodata.
+    error_pattern: "wind.*nodata|VW.*filter"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Wind speed (VW) provided in km/h instead of m/s. A typical wind of 20 km/h
+      is interpreted as 20 m/s (72 km/h, near-gale force).
+    explanation: >
+      The VW filter range (default 0.2–50 m/s) will pass most km/h values but the
+      physics will compute vastly excessive sensible heat flux and snow erosion.
+    affected_components:
+      - convert_forcing_to_smet.py
+  remedy:
+    action: "Divide wind speed by 3.6 to convert km/h to m/s"
+    tool_to_run: convert_forcing_to_smet
+    manual_steps:
+      - "Check VW values: typical mountain values are 0–15 m/s"
+      - "If values are frequently >20, they may be in km/h"
+    prevention: >
+      Validate: assert vw_values.quantile(0.99) < 30, "VW may be in km/h"
+  severity: silent
+  cross_references: []
+
+- id: dt_004
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Wind direction values cluster near 0–6.28 instead of 0–360. Liston wind
+      interpolation produces incorrect terrain-adjusted wind fields. Wind patterns
+      show no correlation with topography.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Wind direction (DW) provided in radians instead of degrees. Alpine3D expects
+      meteorological convention: 0=N, 90=E, 180=S, 270=W.
+    explanation: >
+      All DW values in radians (0–2π ≈ 0–6.28) fall in the 0–6.28° range, meaning
+      the model sees nearly all wind coming from the North. The Liston wind
+      interpolation algorithm adjusts for terrain, but with wrong input directions
+      the corrections are meaningless.
+    affected_components:
+      - convert_forcing_to_smet.py
+  remedy:
+    action: "Convert radians to degrees: DW_deg = DW_rad * 180 / π"
+    tool_to_run: convert_forcing_to_smet
+    manual_steps:
+      - "Check DW values: should span 0–360"
+      - "If max(DW) < 7, values are likely in radians"
+    prevention: >
+      Add check: if dw_values.max() < 10, assume radians and convert.
+  severity: silent
+  cross_references: []
+
+- id: dt_005
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Precipitation is 1000x too high. SWE reaches tens of meters in the first week.
+      Lake and river flooding. Model may crash from excessive snow layers.
+    error_pattern: "too many elements|memory"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Precipitation (PSUM) provided in meters instead of mm (kg/m²). 1 mm of rain
+      input as 0.001 is correct, but 1 mm input as 1.0 m gives 1000x excess.
+    explanation: >
+      SMET PSUM field is in kg/m² which equals mm water equivalent. Some reanalysis
+      datasets (e.g., ERA5) provide precipitation in meters. The factor-1000 error
+      causes extreme snow accumulation.
+    affected_components:
+      - convert_forcing_to_smet.py
+  remedy:
+    action: "Multiply by 1000 if precipitation is in meters (m → mm)"
+    tool_to_run: convert_forcing_to_smet
+    manual_steps:
+      - "Check PSUM values: hourly values should typically be 0–10 mm"
+      - "If values are 0–0.01, they are likely in meters"
+    prevention: >
+      Validate: warn if max(PSUM) < 0.1 over a month (likely in meters).
+  severity: silent
+  cross_references: []
+
+- id: dt_006
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Atmospheric pressure ~1000 Pa instead of ~100000 Pa. The STD_PRESS spatial
+      interpolation produces incorrect barometric corrections. Turbulent flux
+      calculations are affected.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Pressure (P) provided in hPa (mbar) instead of Pa. Sea-level pressure is
+      ~1013 hPa = 101300 Pa.
+    explanation: >
+      With P=1013 Pa (instead of 101300), the air density computed by the model is
+      ~100x too low, causing sensible and latent heat fluxes to be underestimated.
+    affected_components:
+      - convert_forcing_to_smet.py
+  remedy:
+    action: "Multiply pressure by 100 to convert hPa to Pa"
+    tool_to_run: convert_forcing_to_smet
+    manual_steps:
+      - "Check P values: should be 50000–110000 Pa"
+      - "If values are 500–1100, they are in hPa"
+    prevention: >
+      Add check: if p_values.mean() < 2000, assume hPa and multiply by 100.
+  severity: silent
+  cross_references: []
+
+- id: dt_007
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Shortwave radiation values are tiny (0–30 instead of 0–1000). Snow never melts
+      in spring. Energy balance shows near-zero solar input.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Incoming shortwave radiation (ISWR) in MJ/m²/day instead of W/m². Typical
+      summer daily total is ~25 MJ/m²/day = ~290 W/m² average.
+    explanation: >
+      With ISWR=25 W/m² (instead of 290), the energy balance receives only 8.6%
+      of the actual solar forcing. Snow melt is severely underestimated.
+    affected_components:
+      - convert_forcing_to_smet.py
+  remedy:
+    action: "Convert MJ/m²/day to W/m²: multiply by 1e6/86400 = 11.574"
+    tool_to_run: convert_forcing_to_smet
+    manual_steps:
+      - "Check ISWR values: peak summer values should be 800–1200 W/m²"
+      - "If peak values are 20–35, they are in MJ/m²/day"
+    prevention: >
+      Validate: assert iswr_values.max() > 100, "ISWR appears to be in MJ/m²/day"
+  severity: silent
+  cross_references: [dt_008]
+
+- id: dt_008
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Longwave radiation values are tiny (5–30 instead of 150–400). The ILWR
+      generator kicks in constantly, overriding measurements. Surface temperature
+      drops unrealistically at night.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Incoming longwave radiation (ILWR) in MJ/m²/day instead of W/m². Typical
+      value is ~300 W/m² = ~26 MJ/m²/day.
+    explanation: >
+      With ILWR=26 W/m² instead of 300, the atmosphere appears almost transparent
+      to longwave radiation. The ALLSKY_LW generator may replace these values if
+      configured, masking the error for ILWR but not for stations with measurements.
+    affected_components:
+      - convert_forcing_to_smet.py
+  remedy:
+    action: "Convert MJ/m²/day to W/m²: multiply by 1e6/86400 = 11.574"
+    tool_to_run: convert_forcing_to_smet
+    manual_steps:
+      - "Check ILWR values: should be 150–400 W/m²"
+      - "If values are 10–35, they are in MJ/m²/day"
+    prevention: >
+      Validate: assert ilwr_values.mean() > 100, "ILWR appears to be in MJ/m²/day"
+  severity: silent
+  cross_references: [dt_007]
+
+- id: dt_009
+  stage: s2_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Initial snow height (HS) is 100x too large. Model initializes with 100+ m of snow.
+      Or HS is always near zero despite known snowpack.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Snow height (HS) provided in cm instead of meters. A 1 m snowpack entered as
+      100 (cm) becomes 100 m in the model.
+    explanation: >
+      HS in SMET is in meters. This field is used both for validation and, when
+      ENFORCE_MEASURED_SNOW_HEIGHTS=TRUE, to force the snow depth, making errors
+      catastrophic.
+    affected_components:
+      - convert_forcing_to_smet.py
+  remedy:
+    action: "Divide HS values by 100 to convert cm to m"
+    tool_to_run: convert_forcing_to_smet
+    manual_steps:
+      - "Check HS values: typical values are 0–5 m"
+      - "If values are 0–500, they are in cm"
+    prevention: >
+      Validate: assert hs_values.max() < 20, "HS appears to be in cm"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_010
+  stage: s3_initial_conditions
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Soil layers are absurdly thick (50–100 m) or paper thin (0.001 m when expecting
+      0.5 m). Snow layers have wrong thickness. Total column height is unrealistic.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Layer_Thick in .sno file is in wrong units. Alpine3D expects meters.
+      Common errors: cm (÷100), mm (÷1000), or feet (×0.3048).
+    explanation: >
+      Each layer's thickness (hl field) in the .sno file must be in meters. The sum
+      of all layer thicknesses must equal the total column height. Wrong thickness
+      causes element count explosion or impossibly thin elements that trigger the
+      MINIMUM_L_ELEMENT check.
+    affected_components:
+      - generate_sno_files.py
+  remedy:
+    action: "Ensure all Layer_Thick values are in meters"
+    tool_to_run: generate_sno_files
+    manual_steps:
+      - "Check .sno file: Layer_Thick for soil should be 0.1–2.0 m"
+      - "Sum of thicknesses should equal total column height"
+    prevention: >
+      Assert: 0.01 < layer_thick < 10.0 for each layer.
+  severity: silent
+  cross_references: [dt_011]
+
+- id: dt_011
+  stage: s3_initial_conditions
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Grain radius values in .sno file are 1000x too small or too large. Metamorphism
+      model produces unrealistic grain growth. Albedo parameterization gives wrong values.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Grain radius (rg) in .sno file must be in mm. Providing µm (÷1000) or m (×1000)
+      produces unrealistic snow microstructure.
+    explanation: >
+      Typical fresh snow grain radius is 0.1–0.3 mm, old snow 0.5–2.0 mm. Values in
+      µm (100–300) are 1000x too large in mm scale, causing the albedo model to
+      predict extremely low albedo (dark snow).
+    affected_components:
+      - generate_sno_files.py
+  remedy:
+    action: "Ensure rg is in mm. Convert µm: ÷1000. Convert m: ×1000"
+    tool_to_run: generate_sno_files
+    manual_steps:
+      - "Check rg values: should be 0.1–5.0 mm for snow"
+      - "If values are 100–5000, they are in µm"
+    prevention: >
+      Assert: 0.05 < rg < 10.0 for each layer.
+  severity: silent
+  cross_references: [dt_010]
+
+- id: dt_012
+  stage: s3_initial_conditions
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Soil density is 1000x too low (1.8 instead of 1800 kg/m³). Soil thermal
+      conductivity is wrong. Soil heat capacity is wrong. Ground temperature
+      evolution is unrealistic.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Soil density (Rho_S) in .sno file provided in g/cm³ instead of kg/m³.
+      Typical mineral soil density: 1.5–2.7 g/cm³ = 1500–2700 kg/m³.
+    explanation: >
+      With density 1.8 kg/m³ (instead of 1800), the soil has essentially no thermal
+      mass and heats/cools instantly with air temperature. Permafrost simulations
+      will show no permafrost. Soil temperature has no seasonal lag.
+    affected_components:
+      - generate_sno_files.py
+  remedy:
+    action: "Multiply soil density by 1000 to convert g/cm³ to kg/m³"
+    tool_to_run: generate_sno_files
+    manual_steps:
+      - "Check Rho_S values: should be 1000–2700 kg/m³"
+      - "If values are 1.0–2.7, they are in g/cm³"
+    prevention: >
+      Assert: rho_s > 500 for soil layers.
+  severity: silent
+  cross_references: []
+
+- id: dt_013
+  stage: s0_configuration
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Geothermal heat flux is 1000x too high. Soil bottom boundary melts snow from
+      below. Basal melt is dominant even in winter.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      GEO_HEAT parameter in [Snowpack] section provided in mW/m² instead of W/m².
+      Typical geothermal heat flux: 50–100 mW/m² = 0.05–0.1 W/m².
+    explanation: >
+      With GEO_HEAT=60 (mW/m² entered as W/m²), the basal heat flux is 1000x the
+      actual value, causing rapid melting from below.
+    affected_components:
+      - io.ini [Snowpack] section
+  remedy:
+    action: "Divide by 1000: GEO_HEAT = 0.06 (not 60)"
+    tool_to_run: null
+    manual_steps:
+      - "Check GEO_HEAT value: should be 0.01–0.15 W/m²"
+      - "If value is 10–150, it's in mW/m²"
+    prevention: >
+      Validate in run_alpine3d.py: warn if GEO_HEAT > 1.0
+  severity: silent
+  cross_references: []
+
+- id: dt_014
+  stage: s0_configuration
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Turbulent exchange is extremely high. Sensible and latent heat fluxes dominate
+      the energy balance. Snow sublimation is unrealistically high.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      ROUGHNESS_LENGTH in [Snowpack] section provided in mm instead of meters.
+      Typical snow roughness: 0.1–5 mm = 0.0001–0.005 m.
+    explanation: >
+      With ROUGHNESS_LENGTH=2.0 (mm entered as m), the surface roughness is 1000x
+      too large. The Monin-Obukhov turbulent flux parameterization scales with
+      ln(z/z0), so excessive roughness dramatically increases exchange coefficients.
+    affected_components:
+      - io.ini [Snowpack] section
+  remedy:
+    action: "Divide by 1000: ROUGHNESS_LENGTH = 0.002 (not 2.0)"
+    tool_to_run: null
+    manual_steps:
+      - "Check ROUGHNESS_LENGTH: should be 0.0001–0.01 m"
+      - "If value is 0.1–10, it may be in mm or cm"
+    prevention: >
+      Validate in run_alpine3d.py: warn if ROUGHNESS_LENGTH > 0.05
+  severity: silent
+  cross_references: []
+
+- id: dt_015
+  stage: s0_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Precipitation is either doubled or halved compared to observations. SWE
+      diverges from station data proportionally to simulation length.
+    error_pattern: ""
+    detection_method: statistical
+  diagnosis:
+    root_cause: >
+      Mismatch between CALCULATION_STEP_LENGTH (minutes) and PSUM::ARG1::PERIOD
+      (seconds). If the accumulation period is shorter than the timestep, precipitation
+      is undercounted. If longer, it may be double-counted.
+    explanation: >
+      The ACCUMULATE resampler sums precipitation over the specified period. If
+      CALCULATION_STEP_LENGTH=15 min, then PSUM::ARG1::PERIOD should be 900 s.
+      Setting PERIOD=1800 with a 15-min timestep means each timestep gets 30 min
+      of accumulated precip, doubling the input.
+    affected_components:
+      - io.ini [Interpolations1D] and [Snowpack] sections
+  remedy:
+    action: >
+      Ensure PSUM::ARG1::PERIOD (seconds) = CALCULATION_STEP_LENGTH (minutes) × 60.
+      Example: 15 min timestep → PERIOD = 900
+    tool_to_run: null
+    manual_steps:
+      - "Check CALCULATION_STEP_LENGTH in [Snowpack] (in minutes)"
+      - "Check PSUM::ARG1::PERIOD in [Interpolations1D] (in seconds)"
+      - "Verify: PERIOD = STEP × 60"
+    prevention: >
+      Validate in run_alpine3d.py: assert period == step_length * 60
+  severity: degraded
+  cross_references: []
+
+- id: dt_016
+  stage: s0_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Alpine3D runs but produces incorrect spatial patterns. Each grid cell behaves
+      as if it were an independent point simulation. Terrain radiation and spatial
+      interpolation are not working properly.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      ALPINE3D = FALSE in [SnowpackAdvanced] section. This flag must be TRUE when
+      running Alpine3D (it defaults to FALSE for standalone SNOWPACK).
+    explanation: >
+      When ALPINE3D=FALSE, SNOWPACK operates in point mode even though Alpine3D
+      is calling it. The distributed forcing and terrain effects are not properly
+      communicated to the snow model. Results will be physically incorrect.
+    affected_components:
+      - io.ini [SnowpackAdvanced] section
+  remedy:
+    action: "Set ALPINE3D = TRUE in [SnowpackAdvanced]"
+    tool_to_run: null
+    manual_steps:
+      - "Open io.ini"
+      - "Find [SnowpackAdvanced] section"
+      - "Set ALPINE3D = TRUE"
+    prevention: >
+      run_alpine3d.py validates this automatically before execution.
+  severity: silent
+  cross_references: []
+
+- id: dt_017
+  stage: s1_domain_setup
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Segmentation fault at startup. No meaningful error message. Crash occurs during
+      grid initialization before any timestep is computed.
+    error_pattern: "segfault|Segmentation fault|SIGSEGV"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      DEM and land-use grids have different dimensions (ncols, nrows) or different
+      spatial extent (xllcorner, yllcorner, cellsize). Alpine3D reads both grids
+      and indexes them by row/column, so a mismatch causes out-of-bounds access.
+    explanation: >
+      Both the DEM (.dem) and land-use (.lus) files must be ARC ASCII grids with
+      identical headers. Even a 1-cell difference causes undefined behavior.
+    affected_components:
+      - DEM and land-use grid files
+  remedy:
+    action: "Ensure DEM and land-use grids have identical ARC headers"
+    tool_to_run: null
+    manual_steps:
+      - "Compare headers of .dem and .lus files"
+      - "ncols, nrows, xllcorner, yllcorner, cellsize must be identical"
+      - "Regenerate land-use grid from DEM extent if needed"
+    prevention: >
+      run_alpine3d.py compares grid headers before execution.
+  severity: fatal
+  cross_references: [dt_018]
+
+- id: dt_018
+  stage: s1_domain_setup
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Spatial interpolation produces garbage values. Temperature lapse rate
+      corrections are wrong. Stations appear to be at wrong elevations. No crash
+      but results are physically meaningless.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      COORDSYS in io.ini does not match the actual coordinate system of the DEM.
+      For example, DEM is in UTM but COORDSYS=CH1903, or DEM is in WGS84 but
+      COORDSYS=UTM.
+    explanation: >
+      MeteoIO uses COORDSYS to convert between station coordinates and grid coordinates.
+      If the coordinate system is wrong, stations are placed at incorrect grid cells
+      and elevations, making all spatial interpolation incorrect.
+    affected_components:
+      - io.ini [Input] COORDSYS
+      - DEM file coordinate system
+  remedy:
+    action: "Verify COORDSYS matches the DEM's actual coordinate system"
+    tool_to_run: null
+    manual_steps:
+      - "Check DEM xllcorner/yllcorner values"
+      - "If values are ~46/~9 (lat/lon), use COORDSYS=WGS84 or LATLON"
+      - "If values are ~600000/~200000, likely CH1903"
+      - "If values are ~500000/~5000000, likely UTM"
+    prevention: >
+      run_alpine3d.py checks coordinate ranges against COORDSYS.
+  severity: silent
+  cross_references: [dt_017]

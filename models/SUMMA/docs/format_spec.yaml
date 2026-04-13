@@ -1,0 +1,342 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["hydrology"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "SUMMA (Structure for Unifying Multiple Modeling Alternatives)"
+  domain: "hydrology"
+  binary: "summa.exe"
+  binary_path: "/mnt/disk1/Hydrocraft_server/model/summa/bin/summa.exe"
+  language: "Fortran 90"
+  working_directory: "./"
+  invocation: "summa.exe -m fileManager.txt"
+  dependencies: "gfortran 6+, NetCDF-Fortran, LAPACK/BLAS"
+  notes: >
+    Multi-physics framework with 35 decision categories. Unlike fixed-physics
+    models, SUMMA lets you choose which equations to solve for each process
+    and systematically compare alternatives. Shares this philosophy with
+    Raven but at a lower level (equation-level vs model-level).
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "precipitation"
+      file: "forcing_YYYY.nc"
+      variable: "pptrate"
+      unit: "kg/m2/s"
+      valid_range: [0.0, 0.1]
+      format: "NetCDF; dimensions (time, hru)"
+      conversion_from_cmfd: "mm/3hr -> kg/m2/s: divide by 10800 (same as mm/s)"
+      bug_history: "Wrong divisor -> runoff 8x wrong with no error (dt_003)"
+
+    - name: "air_temperature"
+      file: "forcing_YYYY.nc"
+      variable: "airtemp"
+      unit: "K"
+      valid_range: [180.0, 340.0]
+      conversion_from_cmfd: "K -> K: no conversion (SUMMA uses Kelvin natively)"
+      notes: "Unlike most HydroCraft models, SUMMA expects KELVIN"
+
+    - name: "air_pressure"
+      file: "forcing_YYYY.nc"
+      variable: "airpres"
+      unit: "Pa"
+      valid_range: [50000, 110000]
+      conversion_from_cmfd: "Pa -> Pa: no conversion"
+      bug_history: "kPa instead of Pa -> ET 100x wrong (dt_004)"
+      notes: "Unlike Raven/VIC which use kPa, SUMMA expects Pa"
+
+    - name: "shortwave_radiation"
+      file: "forcing_YYYY.nc"
+      variable: "SWRadAtm"
+      unit: "W/m2"
+      valid_range: [0.0, 1400.0]
+
+    - name: "longwave_radiation"
+      file: "forcing_YYYY.nc"
+      variable: "LWRadAtm"
+      unit: "W/m2"
+      valid_range: [0.0, 600.0]
+
+    - name: "specific_humidity"
+      file: "forcing_YYYY.nc"
+      variable: "spechum"
+      unit: "kg/kg"
+      valid_range: [0.0, 0.04]
+
+    - name: "wind_speed"
+      file: "forcing_YYYY.nc"
+      variable: "windspd"
+      unit: "m/s"
+      valid_range: [0.0, 80.0]
+
+  parameters:
+    critical:
+      - name: "fileManager.txt"
+        description: "Master config pointing to all other files"
+        notes: >
+          Every path MUST be absolute — SUMMA Fortran resolves from CWD.
+          controlVersion MUST be 'SUMMA_FILE_MANAGER_V3.0.0'.
+          Directory paths must end with '/'. Always run validate_file_manager.py.
+
+      - name: "decisions"
+        file: "decisions.txt"
+        description: "35 categories of physics options (snow, soil, veg, radiation, groundwater)"
+        notes: >
+          SUMMA's unique feature. Some names use intentional abbreviations:
+          'itertive' (not iterative), 'numericl' (not numerical).
+          Invalid decision option causes STOP 30 (dt_009).
+
+      - name: "hruId consistency"
+        description: "ALL NetCDF files must have identical hruId values in identical order"
+        bug_history: >
+          Regenerating any one file (attributes, forcing, coldState, trialParams)
+          without the others causes immediate crashes (dt_005, dt_010).
+
+      - name: "Fortran path length"
+        description: "All file paths must be < 256 characters (CHARACTER(256))"
+        bug_history: "Silently truncated paths cause file-not-found or wrong file read (dt_002)"
+
+      - name: "soil_layer_count"
+        file: "trialParams.nc and coldState.nc"
+        description: "Number of soil layers must match between parameter and state files"
+        bug_history: "Mismatch causes fatal error (dt_006)"
+
+    decisions_key:
+      - name: "snowLayers"
+        options: ["jrdn1991", "CLM_2010"]
+        description: "Snow layer management algorithm"
+
+      - name: "soilCatTbl"
+        options: ["STAS", "STAS-RUC", "ROSETTA"]
+        description: "Soil category lookup table"
+
+      - name: "canopyEmis"
+        options: ["difTrans", "simplExp"]
+        description: "Canopy emissivity formulation"
+
+      - name: "snowDenNew"
+        options: ["hedAndPom", "anderson", "pahinger_2"]
+        description: "New snow density calculation"
+
+      - name: "groundwatr"
+        options: ["qTopmodl", "bigBuckt", "noXplict"]
+        description: "Groundwater model selection"
+
+  files:
+    required:
+      - name: "fileManager.txt"
+        description: "Master configuration file"
+        format: "Text; key-value pairs with absolute paths"
+        notes: "controlVersion MUST be 'SUMMA_FILE_MANAGER_V3.0.0'"
+
+      - name: "decisions.txt"
+        description: "Physics option selections (35 categories)"
+        format: "Text; decision_name option_name pairs"
+
+      - name: "attributes.nc"
+        description: "GRU/HRU attributes (area, elevation, latitude, longitude)"
+        format: "NetCDF; dimensions (hru, gru)"
+
+      - name: "forcing_YYYY.nc"
+        description: "Meteorological forcing (7 variables)"
+        format: "NetCDF; dimensions (time, hru)"
+
+      - name: "trialParams.nc"
+        description: "Trial parameter values per HRU"
+        format: "NetCDF; dimensions (hru, nSoil, nSnow)"
+
+      - name: "coldState.nc"
+        description: "Initial conditions for cold start"
+        format: "NetCDF; dimensions (hru, ifcToto, midToto, midSoil, scalarv)"
+
+      - name: "VEGPARM.TBL"
+        description: "Vegetation parameter lookup table"
+      - name: "SOILPARM.TBL"
+        description: "Soil parameter lookup table"
+      - name: "GENPARM.TBL"
+        description: "General parameter file"
+      - name: "MPTABLE.TBL"
+        description: "Noah-MP parameter table"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "total_runoff"
+      file: "output/*.nc"
+      variable: "averageRoutedRunoff or scalarTotalRunoff"
+      unit: "m/s"
+      valid_range: [0, null]
+      notes: "Routed or unrouted runoff depending on routing decision"
+
+    - name: "evapotranspiration"
+      variable: "scalarTotalET"
+      unit: "kg/m2/s"
+      valid_range: [0, null]
+
+    - name: "soil_moisture"
+      variable: "mLayerVolFracWat"
+      unit: "m3/m3"
+      valid_range: [0, 1.0]
+
+    - name: "snow_water_equivalent"
+      variable: "scalarSWE"
+      unit: "kg/m2"
+      valid_range: [0, 5000]
+
+    - name: "snow_depth"
+      variable: "scalarSnowDepth"
+      unit: "m"
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "path_missing"
+    triplet: "dt_001"
+    description: "Missing file referenced in fileManager.txt"
+    severity: "fatal"
+    fix: "Verify all paths with validate_file_manager.py"
+
+  - id: "path_truncation"
+    triplet: "dt_002"
+    description: "Fortran CHARACTER(256) silently truncates long paths"
+    severity: "fatal"
+    fix: "Keep all paths < 256 characters; use symlinks"
+
+  - id: "precip_divisor_wrong"
+    triplet: "dt_003"
+    description: "Precipitation divisor wrong — 8x runoff error"
+    severity: "silent"
+    fix: "Divide mm/3hr by 10800 to get kg/m2/s"
+
+  - id: "pressure_kpa_not_pa"
+    triplet: "dt_004"
+    description: "Pressure in kPa instead of Pa"
+    severity: "fatal"
+    fix: "Multiply kPa by 1000 for Pa"
+
+  - id: "hru_id_mismatch"
+    triplet: "dt_005"
+    description: "hruId values differ between forcing, attributes, and state files"
+    severity: "fatal"
+    fix: "Regenerate all files from same GRU/HRU definition"
+
+  - id: "soil_layer_mismatch"
+    triplet: "dt_006"
+    description: "Soil layer count mismatch between trialParams and coldState"
+    severity: "fatal"
+    fix: "Ensure both files use same nSoil dimension"
+
+  - id: "convergence_failure"
+    triplet: "dt_007"
+    description: "Numerical convergence failure during integration"
+    severity: "fatal"
+    fix: "Reduce timestep or change solver decision (itertive vs numericl)"
+
+  - id: "invalid_decision"
+    triplet: "dt_009"
+    description: "Invalid decision option name — STOP 30"
+    severity: "fatal"
+    fix: "Check decision name spelling (note: itertive, numericl are intentional)"
+
+  - id: "all_runoff_zero"
+    triplet: "dt_011"
+    description: "All runoff is zero despite non-zero forcing"
+    severity: "silent"
+    detection: "Check forcing units and soil parameters"
+
+  - id: "trial_params_ignored"
+    triplet: "dt_014"
+    description: "Trial parameters silently ignored if variable names do not match exactly"
+    severity: "silent"
+    fix: "Verify parameter names match SUMMA internal variable names exactly"
+
+  - id: "spinup_artifact"
+    triplet: "dt_015"
+    description: "Cold-start initial conditions produce 1-2 years of unrealistic output"
+    fix: "Add extra spinup years and discard in analysis; use 3-5 years for GW basins"
+
+  - id: "identical_physics_results"
+    triplet: "dt_017"
+    description: "Different decision options produce identical results"
+    severity: "silent"
+    detection: "Compare output arrays element-wise"
+    fix: "Verify that the decision change actually affects the active code path"
+
+# =========================================================================
+# EXPECTED RANGES
+# =========================================================================
+expected_ranges:
+  notes: >
+    SUMMA expected ranges depend heavily on which decisions are selected.
+    No single baseline exists. Compare with VIC output for the same basin.
+
+# =========================================================================
+# CALIBRATION REFERENCE
+# =========================================================================
+calibration_reference:
+  notes: >
+    SUMMA does not have built-in calibration. Use external optimization
+    (DDS, SCE) modifying trialParams.nc. The key value of SUMMA is
+    physics comparison, not traditional calibration.
+
+  physics_comparison_workflow:
+    description: >
+      Run multiple decision variants on the same basin and compare.
+      Use compare_physics.py to automate.
+    steps:
+      - "Create base fileManager.txt"
+      - "Define variation set (e.g., 3 snow options x 2 soil options)"
+      - "Run all variants"
+      - "Compare with plot_summa_results.py"
+
+  key_parameters:
+    - "k_soil (soil hydraulic conductivity)"
+    - "k_macropore (macropore conductivity)"
+    - "theta_sat (saturated water content)"
+    - "theta_res (residual water content)"
+    - "vGn_alpha, vGn_n (van Genuchten parameters)"
+    - "critSoilWilting, critSoilTranspire (ET thresholds)"
+    - "routingGammaShape, routingGammaScale (hillslope routing)"
+
+  target_metrics:
+    - "NSE > 0.5"
+    - "KGE > 0.5"
+    - "PBIAS < 25%"
+
+  warmup: "2-5 years depending on groundwater decision"
+
+# =========================================================================
+# UNIT CONVERSION TABLE
+# =========================================================================
+unit_conversions:
+  - variable: "precipitation"
+    source: "CMFD (mm/3hr or kg/m2/s)"
+    target: "SUMMA (kg/m2/s)"
+    operation: "divide mm/3hr by 10800"
+    trap_if_wrong: "Runoff 8x wrong (if mm/3hr used as kg/m2/s)"
+
+  - variable: "temperature"
+    source: "CMFD (K)"
+    target: "SUMMA (K)"
+    operation: "none (SUMMA uses Kelvin natively)"
+    notes: "Unlike VIC/Raven/wflow which need degC, SUMMA uses K"
+
+  - variable: "air_pressure"
+    source: "CMFD (Pa)"
+    target: "SUMMA (Pa)"
+    operation: "none"
+    notes: "Unlike Raven/VIC (kPa), SUMMA uses Pa"
+    trap_if_wrong: "If kPa provided, ET is 100x wrong"

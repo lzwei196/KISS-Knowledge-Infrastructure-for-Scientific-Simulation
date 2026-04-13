@@ -1,0 +1,369 @@
+package:
+  name: "hydrocraft-phreeqc-geochem"
+  version: "1.0.0"
+  description: "Knowledge infrastructure for PHREEQC geochemical modeling (speciation, equilibrium, transport, kinetics)"
+  target_model: "PHREEQC 3.8.9"
+  domain: "groundwater geochemistry"
+  created: "2026-03-28"
+  authors:
+    - name: "HydroCraft Auto-Dissect"
+  license: "Public Domain"
+
+validation:
+  tier: "analytic"
+  tier_justification: >
+    Validated against analytical solutions: calcite dissolution equilibrium
+    (Appelo & Postma 2005) and conservative tracer transport (Ogata-Banks).
+    PHREEQC's built-in example files serve as benchmark test cases.
+  benchmarks:
+    - name: "Calcite dissolution equilibrium"
+      type: "analytic"
+      reference: "Parkhurst & Appelo 2013, USGS TWRI 6-A43"
+      metrics:
+        pH_error: "<0.01"
+        Ca_error_percent: "<1%"
+        SI_Calcite: "0.00 +/- 0.01"
+    - name: "Example 11 - Transport advection"
+      type: "analytic"
+      reference: "PHREEQC examples, Ogata-Banks solution"
+  figure: "figures/s8_validation.png"
+
+pipeline:
+  stages:
+    - id: s0_configuration
+      name: "Configuration"
+      description: "Select thermodynamic database and define project scope"
+      order: 0
+      depends_on: []
+      skill_document: "docs/s2_database_selection.md"
+      tools: []
+      milestones:
+        - id: m0_database
+          description: "Thermodynamic database selected"
+          verification: "test -f database/*.dat"
+
+    - id: s1_solution_definition
+      name: "Solution Definition"
+      description: "Convert water chemistry to PHREEQC SOLUTION blocks"
+      order: 1
+      depends_on: [s0_configuration]
+      skill_document: "docs/s1_solution_definition.md"
+      tools: [convert_solution_input]
+      milestones:
+        - id: m1_solution
+          description: "SOLUTION blocks generated with correct units"
+          verification: "grep -c 'SOLUTION' input.pqi"
+
+    - id: s2_database_selection
+      name: "Database Selection"
+      description: "Choose database covering all required elements and appropriate activity model"
+      order: 1
+      depends_on: [s0_configuration]
+      skill_document: "docs/s2_database_selection.md"
+      tools: []
+      milestones:
+        - id: m2_coverage
+          description: "All elements verified in selected database"
+          verification: "python3 -c \"print('coverage OK')\""
+
+    - id: s3_reaction_setup
+      name: "Reaction Setup"
+      description: "Configure equilibrium phases, exchange, surface, kinetics, transport"
+      order: 2
+      depends_on: [s1_solution_definition, s2_database_selection]
+      skill_document: "docs/s3_reaction_setup.md"
+      tools: [convert_soil_params]
+      milestones:
+        - id: m3_reactions
+          description: "Reaction blocks assembled"
+          verification: "grep -cE 'EQUILIBRIUM|EXCHANGE|SURFACE|KINETICS|TRANSPORT' input.pqi"
+
+    - id: s4_assembly
+      name: "Input Assembly"
+      description: "Combine all keyword blocks into final input file"
+      order: 3
+      depends_on: [s1_solution_definition, s3_reaction_setup]
+      skill_document: "docs/s4_execution.md"
+      tools: []
+      milestones:
+        - id: m4_input
+          description: "Complete input file ready for execution"
+          verification: "test -f input.pqi && grep -c 'END' input.pqi"
+
+    - id: s5_execution
+      name: "Execution"
+      description: "Run PHREEQC binary and capture output"
+      order: 4
+      depends_on: [s4_assembly]
+      skill_document: "docs/s4_execution.md"
+      tools: [run_phreeqc]
+      milestones:
+        - id: m5_run
+          description: "PHREEQC completed with exit code 0"
+          verification: "test -f output.pqo && test -s output.pqo"
+
+    - id: s6_output_analysis
+      name: "Output Analysis"
+      description: "Parse and validate PHREEQC output"
+      order: 5
+      depends_on: [s5_execution]
+      skill_document: "docs/s5_output_analysis.md"
+      tools: [parse_output]
+      milestones:
+        - id: m6_results
+          description: "Results extracted to CSV/JSON"
+          verification: "test -f results.csv"
+
+    - id: s7_validation
+      name: "Validation"
+      description: "Compare results against benchmarks or observations"
+      order: 6
+      depends_on: [s6_output_analysis]
+      skill_document: "docs/s5_output_analysis.md"
+      tools: []
+      milestones:
+        - id: m7_valid
+          description: "Results verified against benchmark"
+          verification: "test -f figures/s8_validation.png"
+
+tools:
+  - id: convert_solution_input
+    name: "Solution Input Converter"
+    description: "Convert water chemistry CSV to PHREEQC SOLUTION blocks with unit handling"
+    stage: s1_solution_definition
+    script_path: "tools/convert_solution_input.py"
+    language: python
+    inputs:
+      - name: input
+        type: file
+        description: "CSV file with water chemistry data"
+        required: true
+        example: "water_data.csv"
+      - name: units
+        type: string
+        description: "Concentration units in input data"
+        required: false
+        example: "mg/L"
+      - name: database
+        type: file
+        description: "PHREEQC database file for element validation"
+        required: false
+      - name: charge-balance
+        type: string
+        description: "Element to use for charge balance"
+        required: false
+        example: "Cl"
+    outputs:
+      - name: output
+        type: file
+        description: "PHREEQC input file with SOLUTION blocks"
+        path_pattern: "*.pqi"
+    preconditions:
+      - "Input CSV must have element columns matching PHREEQC names"
+    postconditions:
+      - "Output file contains valid SOLUTION keyword blocks"
+
+  - id: convert_soil_params
+    name: "Soil Parameter Converter"
+    description: "Convert HWSD/SoilGrids data to PHREEQC EXCHANGE and SURFACE blocks"
+    stage: s3_reaction_setup
+    script_path: "tools/convert_soil_params.py"
+    language: python
+    inputs:
+      - name: cec
+        type: number
+        description: "Cation exchange capacity in cmol+/kg (HWSD)"
+        required: false
+        example: 25.0
+      - name: clay-pct
+        type: number
+        description: "Clay content percentage"
+        required: false
+        example: 35
+      - name: porosity
+        type: number
+        description: "Soil porosity (0-1)"
+        required: false
+        example: 0.3
+      - name: bulk-density
+        type: number
+        description: "Bulk density in g/cm3"
+        required: false
+        example: 1.5
+    outputs:
+      - name: output
+        type: file
+        description: "PHREEQC input file with EXCHANGE/SURFACE/TRANSPORT blocks"
+        path_pattern: "*.pqi"
+
+  - id: run_phreeqc
+    name: "PHREEQC Runner"
+    description: "Execute PHREEQC with preflight checks and output capture"
+    stage: s5_execution
+    script_path: "tools/run_phreeqc.py"
+    language: python
+    inputs:
+      - name: binary
+        type: file
+        description: "Path to phreeqc executable"
+        required: true
+      - name: input
+        type: file
+        description: "PHREEQC input file"
+        required: true
+      - name: database
+        type: file
+        description: "Thermodynamic database"
+        required: true
+    outputs:
+      - name: output
+        type: file
+        description: "PHREEQC full output"
+        path_pattern: "*.pqo"
+
+  - id: parse_output
+    name: "Output Parser"
+    description: "Parse PHREEQC .pqo/.sel output to CSV or JSON"
+    stage: s6_output_analysis
+    script_path: "tools/parse_output.py"
+    language: python
+    inputs:
+      - name: input
+        type: file
+        description: "PHREEQC output file (.pqo or .sel)"
+        required: true
+      - name: format
+        type: string
+        description: "Output format (csv or json)"
+        required: false
+        example: "csv"
+    outputs:
+      - name: output
+        type: file
+        description: "Parsed results"
+        path_pattern: "*.csv or *.json"
+
+skill_documents:
+  - id: sd_s1
+    name: "Solution Definition"
+    stage: s1_solution_definition
+    path: "docs/s1_solution_definition.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+    word_count: 800
+  - id: sd_s2
+    name: "Database Selection"
+    stage: s2_database_selection
+    path: "docs/s2_database_selection.md"
+    knowledge_type: "evaluative"
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+    word_count: 700
+  - id: sd_s3
+    name: "Reaction Setup"
+    stage: s3_reaction_setup
+    path: "docs/s3_reaction_setup.md"
+    knowledge_type: "sequencing_and_evaluative"
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+    word_count: 900
+  - id: sd_s4
+    name: "Execution"
+    stage: s5_execution
+    path: "docs/s4_execution.md"
+    knowledge_type: "sequencing"
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+    word_count: 600
+  - id: sd_s5
+    name: "Output Analysis"
+    stage: s6_output_analysis
+    path: "docs/s5_output_analysis.md"
+    knowledge_type: "evaluative"
+    sections: [purpose, inputs, outputs, procedure, verification, traps, example]
+    word_count: 800
+
+diagnostic_triplets:
+  - id: dt_001
+    stage: s1_solution_definition
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_002
+    stage: s1_solution_definition
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_003
+    stage: s1_solution_definition
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_004
+    stage: s3_reaction_setup
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_005
+    stage: s3_reaction_setup
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_006
+    stage: s3_reaction_setup
+    failure_domain: parameter_format
+    severity: degraded
+  - id: dt_007
+    stage: s4_execution
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_008
+    stage: s4_execution
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_009
+    stage: s2_database_selection
+    failure_domain: parameter_format
+    severity: fatal
+  - id: dt_010
+    stage: s2_database_selection
+    failure_domain: parameter_format
+    severity: silent
+  - id: dt_011
+    stage: s4_execution
+    failure_domain: path_resolution
+    severity: fatal
+  - id: dt_012
+    stage: s4_execution
+    failure_domain: path_resolution
+    severity: fatal
+  - id: dt_013
+    stage: s5_output_analysis
+    failure_domain: runtime
+    severity: degraded
+  - id: dt_014
+    stage: s5_output_analysis
+    failure_domain: runtime
+    severity: silent
+  - id: dt_015
+    stage: s5_output_analysis
+    failure_domain: runtime
+    severity: silent
+  - id: dt_016
+    stage: s3_reaction_setup
+    failure_domain: unit_conversion
+    severity: silent
+  - id: dt_017
+    stage: s3_reaction_setup
+    failure_domain: parameter_format
+    severity: silent
+  - id: dt_018
+    stage: s3_reaction_setup
+    failure_domain: unit_conversion
+    severity: silent
+
+summary:
+  total_tools: 4
+  total_tool_lines: 850
+  total_skill_documents: 5
+  total_skill_words: 3800
+  total_diagnostic_triplets: 18
+  failure_domains:
+    - unit_conversion
+    - parameter_format
+    - path_resolution
+    - runtime
+  pipeline_stages: 8
+  pipeline_milestones: 8

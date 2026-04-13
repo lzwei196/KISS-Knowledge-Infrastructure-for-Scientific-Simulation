@@ -1,0 +1,281 @@
+# format_spec.yaml — Machine-readable model format specification
+# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
+# Part of KDT Knowledge Infrastructure Tier B documentation
+#
+# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
+#   - Input ranges map to Level 1 check_value_range() calls
+#   - Output ranges map to Level 3 DOMAIN_CHECKS["groundwater"]
+#   - known_issues map to diagnostic triplets (triplets.yaml)
+
+model:
+  name: "ParFlow v3.13.0"
+  domain: "groundwater"
+  secondary_domains: ["surface_hydrology", "land_surface"]
+  binary: "parflow"
+  binary_path: "/mnt/disk1/Hydrocraft_server/model/parflow/install/bin/parflow"
+  language: "C/C++ with Fortran CLM"
+  python_interface: "pftools >= 1.3.14"
+  working_directory: "user-specified run directory"
+  mpi_required: true
+  notes: "Integrated surface-subsurface model solving 3D Richards equation + 2D overland flow + CLM land surface."
+
+# =========================================================================
+# INPUTS
+# =========================================================================
+inputs:
+
+  forcing:
+    - name: "precipitation"
+      file: "CLM PFB forcing files"
+      unit: "mm/s"
+      valid_range: [0.0, 0.05]
+      format: "ParFlow PFB binary (NX x NY per timestep)"
+      missing_value: null
+      conversion_from_cmfd: "CMFD mm/hr / 3600 -> mm/s. Using mm/hr directly gives 3600x too much rain."
+
+    - name: "air_temperature"
+      file: "CLM PFB forcing files"
+      unit: "K"
+      valid_range: [200.0, 330.0]
+      format: "ParFlow PFB binary"
+      conversion_from_cmfd: "CMFD already in K. Passing Celsius (e.g., 25) makes CLM think 25 K = -248 C."
+
+    - name: "shortwave_radiation"
+      file: "CLM PFB forcing files"
+      unit: "W/m2"
+      valid_range: [0.0, 1400.0]
+      format: "ParFlow PFB binary"
+
+    - name: "longwave_radiation"
+      file: "CLM PFB forcing files"
+      unit: "W/m2"
+      valid_range: [50.0, 600.0]
+      format: "ParFlow PFB binary"
+
+    - name: "atmospheric_pressure"
+      file: "CLM PFB forcing files"
+      unit: "Pa"
+      valid_range: [50000.0, 110000.0]
+      format: "ParFlow PFB binary"
+
+    - name: "specific_humidity"
+      file: "CLM PFB forcing files"
+      unit: "kg/kg"
+      valid_range: [0.0, 0.04]
+      format: "ParFlow PFB binary"
+
+    - name: "wind_speed_east"
+      file: "CLM PFB forcing files"
+      unit: "m/s"
+      valid_range: [-50.0, 50.0]
+      format: "ParFlow PFB binary"
+
+    - name: "wind_speed_north"
+      file: "CLM PFB forcing files"
+      unit: "m/s"
+      valid_range: [-50.0, 50.0]
+      format: "ParFlow PFB binary"
+
+  parameters:
+    critical:
+      - name: "hydraulic_conductivity"
+        file: "ParFlow key: Geom.{name}.Perm.Value"
+        description: "Saturated hydraulic conductivity"
+        valid_range: [1e-6, 0.1]
+        default: 0.001
+        unit: "m/hr"
+        bug_history: >
+          ParFlow K is in m/hr, NOT m/day or m/s. MODFLOW uses m/day (24x).
+          SI uses m/s (3600x smaller). Mixing units gives wrong flow rates
+          with no error message. Triplet dt_pf_001.
+
+      - name: "van_genuchten_alpha"
+        file: "ParFlow key: Geom.{name}.RelPerm.Alpha"
+        description: "van Genuchten alpha parameter"
+        valid_range: [0.5, 15.0]
+        default: 3.5
+        unit: "1/m"
+        bug_history: >
+          ParFlow uses alpha in 1/m, NOT 1/cm. Many soil databases report 1/cm.
+          Factor of 100 difference. Sandy loam: 0.075 (1/cm) = 7.5 (1/m).
+          Using 1/cm values makes soil appear 100x more retentive. Triplet dt_pf_005.
+
+      - name: "van_genuchten_n"
+        file: "ParFlow key: Geom.{name}.RelPerm.N"
+        description: "van Genuchten n parameter"
+        valid_range: [1.1, 4.0]
+        default: 2.0
+        unit: "dimensionless"
+
+      - name: "porosity"
+        file: "ParFlow key: Geom.{name}.Porosity.Value"
+        description: "Total porosity"
+        valid_range: [0.05, 0.60]
+        default: 0.35
+        unit: "fraction"
+
+      - name: "mannings_n"
+        file: "ParFlow key: Mannings.Geom.{name}.Value"
+        description: "Manning roughness coefficient for overland flow"
+        valid_range: [0.01, 0.4]
+        default: 0.05
+        unit: "s/m^(1/3)"
+
+      - name: "terrain_following_dz"
+        file: "ParFlow key: Cell.{k}.dzScale.Value"
+        description: "Layer thickness as fraction of total depth (TerrainFollowingGrid)"
+        valid_range: [0.0, 1.0]
+        unit: "fraction"
+        bug_history: >
+          When TerrainFollowingGrid=True, dz values are fractions of
+          ComputationalGrid.DZ (total depth). They must sum to 1.0.
+          Passing absolute thicknesses (e.g., 20m) as fractions creates
+          enormous cells and crashes. Triplet dt_pf_014.
+
+  files:
+    required:
+      - name: "run script (Python)"
+        description: "ParFlow key-based Python script generated by pftools"
+        format: "Python script using parflow.Run class"
+
+      - name: "slope_x.pfb"
+        description: "Topographic slope in x-direction"
+        format: "ParFlow PFB binary (NX x NY)"
+
+      - name: "slope_y.pfb"
+        description: "Topographic slope in y-direction"
+        format: "ParFlow PFB binary (NX x NY)"
+
+      - name: "indicator.pfb"
+        description: "3D subsurface indicator field (active/inactive)"
+        format: "ParFlow PFB binary (NX x NY x NZ)"
+
+    optional:
+      - name: "drv_clmin.dat"
+        description: "CLM driver input (when CLM is enabled)"
+        format: "Fortran namelist"
+
+      - name: "drv_vegm.dat"
+        description: "CLM vegetation map"
+        format: "Text (IGBP classes per grid cell)"
+
+      - name: "initial_pressure.pfb"
+        description: "3D initial pressure head field"
+        format: "ParFlow PFB binary"
+
+# =========================================================================
+# OUTPUTS
+# =========================================================================
+outputs:
+
+  primary:
+    - name: "pressure_head"
+      file: "{runname}.out.press.{timestep:05d}.pfb"
+      unit: "m (meters of water)"
+      valid_range: [-1000, 1000]
+      format: "ParFlow PFB binary (NX x NY x NZ)"
+      notes: "Negative = unsaturated (suction). Positive = saturated. Zero = water table."
+
+    - name: "saturation"
+      file: "{runname}.out.satur.{timestep:05d}.pfb"
+      unit: "fraction"
+      valid_range: [0.0, 1.0]
+      format: "ParFlow PFB binary (NX x NY x NZ)"
+      notes: "Use saturation >= 0.99 for water table detection, NOT pressure = 0."
+
+    - name: "clm_output"
+      file: "{runname}.out.clm_output.{timestep:05d}.C.pfb"
+      unit: "various (ET, runoff, snow, etc.)"
+      format: "ParFlow PFB binary"
+      notes: "Only present when CLM is enabled."
+
+  diagnostics:
+    - name: "convergence"
+      file: "kinsol.log"
+      check: "Newton iterations converge at each timestep"
+      notes: "KINSOL convergence failures indicate timestep too large or extreme parameter contrasts."
+
+    - name: "water_balance"
+      check: "Total water in = total water out + delta_storage"
+      notes: "Compute from pressure + saturation + porosity at each timestep."
+
+    - name: "water_table_depth"
+      check: "Physically plausible WT depth (1-30 m for most basins)"
+      notes: "Extract from saturation >= 0.99 contour, NOT pressure = 0."
+
+# =========================================================================
+# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
+# =========================================================================
+known_issues:
+  - id: "k_unit_error"
+    triplet: "dt_pf_001"
+    description: "K in m/day or m/s instead of m/hr — silent wrong flow rates"
+    affected_output: "All pressure and saturation outputs"
+    detection: "Flow rates 24x or 3600x too large/small"
+    fix: "Convert: K_m_hr = K_m_day / 24 = K_m_s * 3600"
+
+  - id: "clm_precip_unit"
+    triplet: "dt_pf_002"
+    description: "CLM precipitation in mm/hr instead of mm/s — 3600x too much rain"
+    affected_output: "Surface ponding, runoff, soil moisture"
+    detection: "Instant flooding, extreme ponding"
+    fix: "Divide CMFD mm/hr by 3600 to get mm/s"
+
+  - id: "pressure_not_pa"
+    triplet: "dt_pf_004"
+    description: "Pressure head in Pa instead of meters of water"
+    affected_output: "All subsurface flow"
+    detection: "Extreme pressure values (>1e5)"
+    fix: "Use meters of water. If Pa, divide by 9810."
+
+  - id: "alpha_unit_error"
+    triplet: "dt_pf_005"
+    description: "van Genuchten alpha in 1/cm instead of 1/m — 100x error"
+    affected_output: "Soil moisture retention, all flow"
+    detection: "Soil appears 100x more retentive than expected"
+    fix: "Multiply 1/cm values by 100 to get 1/m"
+
+  - id: "clm_temp_celsius"
+    triplet: "dt_pf_006"
+    description: "CLM temperature in Celsius instead of Kelvin"
+    affected_output: "All energy balance, ET, snow"
+    detection: "CLM thinks it is near absolute zero"
+    fix: "CMFD already stores K. Verify before processing."
+
+  - id: "tfg_dz_absolute"
+    triplet: "dt_pf_014"
+    description: "Terrain-following grid dz as absolute thickness instead of fraction"
+    affected_output: "Grid geometry, all outputs"
+    detection: "Enormous cell volumes, crash"
+    fix: "dz values must sum to 1.0 when TerrainFollowingGrid=True"
+
+  - id: "pfmg_extreme_k_contrast"
+    triplet: "dt_pf_022"
+    description: "HYPRE PFMG fails with K contrasts > 6 orders of magnitude"
+    affected_output: "Solver failure, no output"
+    detection: "HYPRE convergence failure"
+    fix: "Cap minimum K at 1e-5 m/hr or switch to MGSemi preconditioner"
+
+  - id: "mpi_topology_mismatch"
+    triplet: "dt_pf_023"
+    description: "MPI P*Q*R does not match -np; or NX/NY/NZ not divisible"
+    affected_output: "Fatal crash at startup"
+    detection: "ParFlow error about process topology"
+    fix: "Ensure -np = P*Q*R exactly and NX%P=0, NY%Q=0, NZ%R=0"
+
+  - id: "double_counting_vic_cama"
+    triplet: "dt_pf_050"
+    description: "ParFlow overland flow + CaMa-Flood for same basin = 2x discharge"
+    affected_output: "Downstream discharge"
+    detection: "~2x expected discharge"
+    fix: "Only one model routes surface water per basin"
+
+# =========================================================================
+# EXPECTED RANGES (Bengbu Basin reference)
+# =========================================================================
+expected_ranges:
+  bengbu_basin:
+    mean_recharge_mm_day: 0.578
+    wt_depth_range_m: [1, 10]
+    discharge_m3s: "physically plausible for basin area"
+    runtime_note: "Hours for medium basins with CLM enabled"

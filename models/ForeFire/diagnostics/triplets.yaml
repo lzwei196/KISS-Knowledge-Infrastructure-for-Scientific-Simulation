@@ -1,0 +1,465 @@
+# ============================================================================
+# ForeFire Diagnostic Triplets
+# ============================================================================
+# 18 diagnostic triplets covering 5 failure domains.
+# Generated during ForeFire knowledge dissection.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s1_landscape_data
+  failure_domain: unit_conversion
+  symptom:
+    description: "Fire starts but doesn't spread, or domain is microscopic/enormous."
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Coordinates in lon/lat degrees instead of UTM meters"
+    explanation: >
+      ForeFire expects all spatial coordinates in UTM meters. If the DEM and fuel map
+      are in geographic coordinates (lon/lat degrees), the domain will be tiny
+      (e.g., 8.7 x 41.9 meters instead of kilometers). Fire front nodes will be
+      outside the domain or the simulation will produce no meaningful spread.
+    affected_components: [convert_landscape_to_nc, data.nc]
+  remedy:
+    action: "Reproject DEM and fuel map to UTM before creating data.nc"
+    tool_to_run: convert_landscape_to_nc
+    manual_steps:
+      - "Check XHAT/YHAT values in data.nc — should be large numbers (100,000+) for UTM"
+      - "Use gdalwarp -t_srs EPSG:326XX to reproject source rasters"
+    prevention: "validate_outputs() checks coordinate magnitude"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_002
+  stage: s1_landscape_data
+  failure_domain: unit_conversion
+  symptom:
+    description: "Fire spreads much too fast or too slow. ROS off by 2-3x."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wind speed not in m/s — provided in km/h, mph, or knots"
+    explanation: >
+      ForeFire expects wind components (windU, windV) in meters per second.
+      ERA5 provides m/s, but weather station data is often in km/h or mph.
+      Wind speed enters the Rothermel ROS equation raised to power B (~0.54),
+      so a 2.2x error in wind (km/h vs m/s) produces ~1.5x error in ROS.
+    affected_components: [convert_landscape_to_nc, windU, windV]
+  remedy:
+    action: "Convert wind to m/s: km/h ÷ 3.6, mph × 0.44704, knots × 0.5144"
+    tool_to_run: convert_landscape_to_nc
+    manual_steps:
+      - "Check windU/windV values in data.nc — typical surface wind is 0-20 m/s"
+      - "If values > 30, likely in km/h; if values > 50, likely in ft/min"
+    prevention: "validate_outputs() warns if wind > 40 m/s"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s2_fuel_params
+  failure_domain: unit_conversion
+  symptom:
+    description: "Rothermel ROS is orders of magnitude wrong (100x too fast or slow)."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "fuels.csv in Imperial units for Rothermel model (double conversion)"
+    explanation: >
+      The Rothermel model code internally converts SI → Imperial for calculation:
+      Rhod × 0.06 (kg/m³ → lb/ft³), sd ÷ 3.28 (1/m → 1/ft), etc.
+      If fuels.csv already contains Imperial values, they get double-converted,
+      producing absurd ROS values. This is the #1 fuel configuration error.
+    affected_components: [convert_fuel_params, fuels.csv, Rothermel.cpp]
+  remedy:
+    action: "Ensure fuels.csv uses SI units (kg/m³, 1/m, m, kg/m², J/kg) for Rothermel"
+    tool_to_run: convert_fuel_params
+    manual_steps:
+      - "Check Rhod values: should be 400-900 kg/m³, NOT 25-55 lb/ft³"
+      - "Check sd values: should be 2000-12000 1/m, NOT 600-3500 1/ft"
+      - "Check e values: should be 0.1-3 m, NOT 0.3-10 ft"
+    prevention: "validate_outputs() checks Rhod > 100 (rules out lb/ft³)"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_004
+  stage: s2_fuel_params
+  failure_domain: unit_conversion
+  symptom:
+    description: "RothermelAndrews2018 produces zero ROS for all fuels."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Andrews2018 fuel table in SI units instead of Imperial"
+    explanation: >
+      Unlike the standard Rothermel model, RothermelAndrews2018 expects fuel
+      parameters directly in Imperial units (tons/acre, ft, 1/ft, lb/ft³, BTU/lb).
+      The model code converts m/s wind to ft/min but does NOT convert fuel params.
+      If fuel params are in SI, the calculation produces near-zero ROS.
+    affected_components: [convert_fuel_params, fuels.csv, RothermelAndrews2018.cpp]
+  remedy:
+    action: "Use Imperial units in fuels.csv for RothermelAndrews2018"
+    tool_to_run: convert_fuel_params
+    manual_steps:
+      - "Check fl1h_tac: should be 0.1-10 tons/acre"
+      - "Check fd_ft: should be 0.1-10 ft"
+      - "Check SAVcar_ftinv: should be 100-3500 1/ft"
+      - "Check H_BTUlb: should be 6000-9000 BTU/lb"
+    prevention: "Use --model andrews2018 flag in convert_fuel_params.py"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_005
+  stage: s2_fuel_params
+  failure_domain: unit_conversion
+  symptom:
+    description: "Ambient temperature in Celsius causes negative ignition energy, fire won't spread."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Ta (ambient temperature) in Celsius instead of Kelvin in fuels.csv"
+    explanation: >
+      The Balbi2020 model computes ignition energy as q = Cp*(Ti-Ta) + m*(Deltah+Cp*(373-Ta)).
+      If Ta=25 (Celsius) instead of Ta=298 (Kelvin), Ti-Ta becomes 575 instead of 302,
+      drastically changing the energy balance. For Rothermel, Ta doesn't affect ROS directly,
+      but Balbi2020 is very sensitive to it.
+    affected_components: [convert_fuel_params, fuels.csv, Balbi2020.cpp]
+  remedy:
+    action: "Ensure Ta and Ti are in Kelvin in fuels.csv"
+    tool_to_run: convert_fuel_params
+    manual_steps:
+      - "Check Ta: should be 280-320 K (not 7-47°C)"
+      - "Check Ti: should be 500-700 K (not 227-427°C)"
+    prevention: "validate_outputs() checks Ta > 200"
+  severity: silent
+  cross_references: []
+
+- id: dt_006
+  stage: s2_fuel_params
+  failure_domain: unit_conversion
+  symptom:
+    description: "Moisture of extinction mismatch: fire always spreads or never spreads."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "me as percentage for Rothermel (expects fraction) or fraction for Andrews (expects %)"
+    explanation: >
+      Rothermel model uses 'me' as fraction (0.3 = 30% moisture of extinction).
+      RothermelAndrews2018 uses 'Dme_pc' as percentage (30 = 30%).
+      If me=30 in Rothermel, the model thinks moisture of extinction is 3000%, and fire
+      always spreads regardless of fuel moisture. If Dme_pc=0.3 in Andrews, it thinks
+      extinction is at 0.3%, and fire never spreads.
+    affected_components: [convert_fuel_params, fuels.csv]
+  remedy:
+    action: "Use fraction (0-1) for Rothermel me, percentage (0-100) for Andrews Dme_pc"
+    tool_to_run: convert_fuel_params
+    manual_steps:
+      - "For Rothermel: check me values are 0.1-0.5"
+      - "For Andrews: check Dme_pc values are 10-50"
+    prevention: "validate_outputs() checks me range based on model"
+  severity: silent
+  cross_references: []
+
+# --- Data Format Errors ---
+
+- id: dt_007
+  stage: s1_landscape_data
+  failure_domain: data_format
+  symptom:
+    description: "NetCDF: Unknown file format error when loading data.nc"
+    error_pattern: "NetCDF: Unknown file format"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "data.nc is a Git LFS pointer file, not actual NetCDF binary"
+    explanation: >
+      The test data files in the ForeFire repository are stored with Git LFS.
+      If Git LFS is not installed or not pulled, the files are small ASCII pointer
+      files (~130 bytes) instead of actual binary NetCDF data.
+    affected_components: [data.nc, git_lfs]
+  remedy:
+    action: "Install Git LFS and pull data files"
+    tool_to_run: null
+    manual_steps:
+      - "Run: apt install git-lfs && git lfs install && git lfs pull"
+      - "Or download data.nc directly from GitHub web interface"
+      - "Verify: file data.nc should show 'NetCDF Data Format' not 'ASCII text'"
+    prevention: "The CMakeLists.txt runs check_all_lfs.bash at configure time"
+  severity: fatal
+  cross_references: []
+
+- id: dt_008
+  stage: s2_fuel_params
+  failure_domain: data_format
+  symptom:
+    description: "ForeFire crashes or reads wrong values from fuels.csv"
+    error_pattern: "segfault"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "fuels.csv uses comma delimiter instead of semicolon"
+    explanation: >
+      ForeFire expects semicolon-delimited CSV for fuel tables. If commas are used,
+      the parser reads the entire row as a single field, producing garbage values
+      or a crash when indexing into the fuel properties array.
+    affected_components: [fuels.csv, DataBroker.cpp]
+  remedy:
+    action: "Replace commas with semicolons in fuels.csv"
+    tool_to_run: convert_fuel_params
+    manual_steps:
+      - "Check delimiter: head -1 fuels.csv — fields should be separated by ;"
+      - "Convert: sed -i 's/,/;/g' fuels.csv"
+    prevention: "convert_fuel_params.py always writes semicolons"
+  severity: fatal
+  cross_references: []
+
+- id: dt_009
+  stage: s1_landscape_data
+  failure_domain: data_format
+  symptom:
+    description: "Fuel map values don't match fuels.csv indices, causing segfault or wrong fuel."
+    error_pattern: "segfault"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Fuel index in data.nc exceeds number of rows in fuels.csv"
+    explanation: >
+      The fuel layer in data.nc contains integer indices that reference rows in fuels.csv.
+      If the raster contains index 30 but fuels.csv only has 20 rows (indices 0-19),
+      the model reads beyond the fuel array, causing undefined behavior or segfault.
+    affected_components: [data.nc, fuels.csv, DataBroker.cpp]
+  remedy:
+    action: "Ensure fuel raster max index < number of rows in fuels.csv"
+    tool_to_run: convert_landscape_to_nc
+    manual_steps:
+      - "Check: python -c \"import netCDF4; print(netCDF4.Dataset('data.nc')['fuel'][:].max())\""
+      - "Compare with: wc -l fuels.csv (subtract 1 for header)"
+    prevention: "validate_outputs() cross-checks fuel range vs fuels.csv"
+  severity: fatal
+  cross_references: []
+
+# --- Configuration Errors ---
+
+- id: dt_010
+  stage: s3_simulation_script
+  failure_domain: configuration
+  symptom:
+    description: "No fire appears after startFire command."
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Ignition point outside domain bounds"
+    explanation: >
+      The startFire location must be within the FireDomain sw/ne bounds. When using
+      loadData[], the domain is created from the NetCDF extent. If ignition coordinates
+      are in a different reference frame (e.g., lon/lat vs UTM), the point falls outside.
+    affected_components: [simulation.ff, startFire]
+  remedy:
+    action: "Verify ignition coordinates are within domain bounds"
+    tool_to_run: null
+    manual_steps:
+      - "Check domain bounds from loadData output"
+      - "Verify ignition point is within those bounds"
+      - "Use startFire[lonlat=(...)] for lon/lat coordinates"
+    prevention: "ForeFire prints domain bounds; compare with ignition point"
+  severity: silent
+  cross_references: []
+
+- id: dt_011
+  stage: s3_simulation_script
+  failure_domain: configuration
+  symptom:
+    description: "Simulation runs but produces no fire spread (ROS = 0 everywhere)."
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Fuel type at ignition point is non-burnable (e=0)"
+    explanation: >
+      If the fuel index at the ignition location maps to a fuel type with zero
+      fuel depth (e=0), the Rothermel/Balbi models return ROS=0. The fire is
+      created but cannot propagate. This commonly happens when igniting on roads,
+      water, or urban areas.
+    affected_components: [fuels.csv, data.nc, startFire]
+  remedy:
+    action: "Check fuel type at ignition location; move ignition to burnable fuel"
+    tool_to_run: null
+    manual_steps:
+      - "Extract fuel index at ignition point from data.nc"
+      - "Check that fuel type has e > 0 in fuels.csv"
+      - "Move ignition point to a cell with burnable fuel"
+    prevention: "Preflight check of fuel at ignition location"
+  severity: silent
+  cross_references: []
+
+- id: dt_012
+  stage: s3_simulation_script
+  failure_domain: configuration
+  symptom:
+    description: "Simulation completes instantly with no time advancement."
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "step[dt=] or goTo[t=] not specified in script"
+    explanation: >
+      ForeFire processes commands sequentially. After startFire, the simulation
+      time is still t=0. Without a step[] or goTo[] command, no time advancement
+      occurs and the fire stays at its initial state.
+    affected_components: [simulation.ff]
+  remedy:
+    action: "Add step[dt=3600] or goTo[t=3600] after startFire"
+    tool_to_run: null
+    manual_steps:
+      - "Check .ff script has a step[] or goTo[] command after startFire"
+      - "Verify dt value is in seconds (3600 = 1 hour)"
+    prevention: "Template scripts include step[] by default"
+  severity: silent
+  cross_references: []
+
+# --- Build/Runtime Errors ---
+
+- id: dt_013
+  stage: s4_execution
+  failure_domain: build
+  symptom:
+    description: "error while loading shared libraries: libnetcdf_c++4.so"
+    error_pattern: "libnetcdf_c++4.so"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "NetCDF C++ library not installed"
+    explanation: >
+      ForeFire links against libnetcdf_c++4 for NetCDF I/O. If this library
+      is not installed, the binary cannot load at runtime.
+    affected_components: [forefire binary, system libraries]
+  remedy:
+    action: "Install NetCDF C++ development package"
+    tool_to_run: null
+    manual_steps:
+      - "Ubuntu/Debian: apt install libnetcdf-c++4-dev"
+      - "CentOS/RHEL: yum install netcdf-cxx4-devel"
+      - "Verify: ldd bin/forefire | grep netcdf"
+    prevention: "install-forefire.sh includes apt install"
+  severity: fatal
+  cross_references: []
+
+- id: dt_014
+  stage: s4_execution
+  failure_domain: build
+  symptom:
+    description: "CMake error: fatal error: netcdf file not found during build"
+    error_pattern: "fatal error.*netcdf"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "NetCDF development headers not installed"
+    explanation: >
+      The ForeFire source includes <netcdf> headers. Without the development
+      package (headers + libraries), compilation fails.
+    affected_components: [CMakeLists.txt, build system]
+  remedy:
+    action: "Install NetCDF C++ development package before building"
+    tool_to_run: null
+    manual_steps:
+      - "apt install libnetcdf-c++4-dev"
+      - "Or set NETCDF_HOME environment variable"
+    prevention: "CMakeLists.txt checks for NetCDF availability"
+  severity: fatal
+  cross_references: [dt_013]
+
+- id: dt_015
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "Simulation hangs indefinitely, never produces output."
+    error_pattern: ""
+    detection_method: timeout
+  diagnosis:
+    root_cause: "Balbi2020 solver non-convergence or extremely fine resolution"
+    explanation: >
+      The Balbi2020 model uses an iterative solver with max 40 iterations.
+      With extreme fuel parameters, it may not converge, causing repeated
+      recalculation. Also, very small spatialIncrement (<1m) with large domains
+      creates millions of fire nodes, making the simulation extremely slow.
+    affected_components: [Balbi2020.cpp, SimulationParameters]
+  remedy:
+    action: "Increase spatialIncrement, check fuel parameters, set timeout"
+    tool_to_run: run_forefire
+    manual_steps:
+      - "Try spatialIncrement=5 or larger"
+      - "Check fuel parameters for extreme values"
+      - "Use --timeout flag in run_forefire.py"
+    prevention: "Start with coarse resolution and refine"
+  severity: silent
+  cross_references: []
+
+# --- Model Physics Errors ---
+
+- id: dt_016
+  stage: s3_simulation_script
+  failure_domain: model_physics
+  symptom:
+    description: "Fire only spreads downwind, ignores slope effects."
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Flat altitude in data.nc (no elevation variation)"
+    explanation: >
+      If the altitude layer in data.nc is constant (flat terrain), the slope
+      factor φ_s = 0 in Rothermel. Only wind drives spread asymmetry.
+      This is correct for flat terrain but wrong if slope effects were expected.
+    affected_components: [data.nc, altitude layer]
+  remedy:
+    action: "Verify altitude layer has elevation variation matching real terrain"
+    tool_to_run: convert_landscape_to_nc
+    manual_steps:
+      - "Check altitude range: python -c \"import netCDF4; d=netCDF4.Dataset('data.nc'); print(d['altitude'][:].min(), d['altitude'][:].max())\""
+      - "If min==max, the DEM is flat; reload with correct elevation data"
+    prevention: "validate_outputs() warns if altitude range < 1m"
+  severity: silent
+  cross_references: []
+
+- id: dt_017
+  stage: s3_simulation_script
+  failure_domain: model_physics
+  symptom:
+    description: "Wind triggers have no effect on fire spread direction."
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "windReductionFactor set to 0, or wind trigger at wrong time"
+    explanation: >
+      If windReductionFactor=0, wind is completely suppressed in the Rothermel model.
+      Also, trigger[wind;...] only affects the simulation AFTER the trigger time.
+      If @t=3600 but simulation ends at t=2400, the wind change never takes effect.
+    affected_components: [simulation.ff, params.ff, windReductionFactor]
+  remedy:
+    action: "Check windReductionFactor > 0 and trigger time < simulation end time"
+    tool_to_run: null
+    manual_steps:
+      - "Verify windReductionFactor in params (should be 0.3-1.0)"
+      - "Verify trigger times are within simulation period"
+    prevention: "Use windReductionFactor=0.4 as default"
+  severity: silent
+  cross_references: []
+
+- id: dt_018
+  stage: s2_fuel_params
+  failure_domain: model_physics
+  symptom:
+    description: "Rothermel wind limit clamps ROS, fire is slower than expected in high winds."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Andrews/Cruz/Rothermel (2013) wind limit active when windReductionFactor < 1.0"
+    explanation: >
+      In Rothermel.cpp, when windReductionFactor < 1.0, the wind limit changes from
+      Uf = 0.9*Ir to Uf = 96.81*Ir^(1/3). This more restrictive limit caps the
+      effective wind speed, reducing ROS in high-wind scenarios. This is physically
+      correct but can be surprising if not expected.
+    affected_components: [Rothermel.cpp, windReductionFactor]
+  remedy:
+    action: "Set windReductionFactor=1.0 to use original wind limit, or accept Andrews limit"
+    tool_to_run: null
+    manual_steps:
+      - "Check params: setParameter[windReductionFactor=X]"
+      - "windReductionFactor < 1.0 → Andrews 2013 limit active"
+      - "windReductionFactor = 1.0 → original Rothermel limit"
+    prevention: "Document wind limit behavior in simulation notes"
+  severity: silent
+  cross_references: [dt_002]

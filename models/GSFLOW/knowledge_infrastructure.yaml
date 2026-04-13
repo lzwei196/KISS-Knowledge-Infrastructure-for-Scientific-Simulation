@@ -1,0 +1,216 @@
+package:
+  name: GSFLOW
+  version: "2.3.1"
+  domain: hydrology
+  description: >
+    Coupled Groundwater and Surface-Water Flow model integrating
+    PRMS-V (surface water) and MODFLOW-2005/NWT (groundwater).
+    Daily timestep, watershed-scale (km² to thousands km²).
+  authors:
+    - USGS (Markstrom, Niswonger, Regan, Prudic, Barlow)
+  license: Public Domain (USGS)
+  language: fortran
+  build_system: make (gfortran + gcc)
+  repository: https://github.com/rniswon/gsflow_v2
+  created: "2026-03-28"
+
+pipeline:
+  stages:
+    - id: s0_config
+      name: Configuration
+      description: Create GSFLOW control file with simulation settings
+      depends_on: []
+      knowledge_type: procedural
+      tools: [build_control_file.py]
+      milestones:
+        - id: m_s0_config
+          description: Control file created and validated
+          verification: "File contains model_mode, start_time, end_time; all #### delimiters present"
+
+    - id: s1_domain
+      name: Domain / Grid Setup
+      description: Delineate HRUs from DEM and basin shapefile, create MODFLOW grid
+      depends_on: []
+      knowledge_type: procedural
+      tools: []
+      milestones:
+        - id: m_s1_domain
+          description: HRU parameters and MODFLOW grid created
+          verification: "sum(hru_area) ≈ basin area; cascade network connected"
+
+    - id: s2_soil
+      name: Soil Parameters
+      description: Derive soil hydraulic properties from HWSD or SoilGrids
+      depends_on: [s1_domain]
+      knowledge_type: procedural
+      tools: [convert_soil_params.py]
+      milestones:
+        - id: m_s2_soil
+          description: Soil parameters written in PRMS format
+          verification: "soil_moist_max in 0.5-30 inches; soil_type in {1,2,3}"
+
+    - id: s3_vegetation
+      name: Vegetation / Land Cover
+      description: Classify land cover into PRMS vegetation types
+      depends_on: [s1_domain]
+      knowledge_type: procedural
+      tools: []
+      milestones:
+        - id: m_s3_vegetation
+          description: Vegetation parameters assigned per HRU
+          verification: "cov_type in {0,1,2,3,4}; covden in 0-1"
+
+    - id: s4_forcing
+      name: Meteorological Forcing
+      description: Convert CMFD/MSWX/ERA5 gridded data to PRMS .day files
+      depends_on: [s1_domain]
+      knowledge_type: procedural
+      tools: [convert_forcing_to_gsflow.py]
+      milestones:
+        - id: m_s4_forcing
+          description: Forcing .day files created with correct units
+          verification: "temp in valid range; precip ≥ 0; swrad ≥ 0; nhru columns per line"
+
+    - id: s5_parameters
+      name: Model Parameters
+      description: Assemble all parameter files with calibration defaults
+      depends_on: [s2_soil, s3_vegetation]
+      knowledge_type: procedural
+      tools: []
+      milestones:
+        - id: m_s5_parameters
+          description: All parameter files consistent and complete
+          verification: "Dimensions match across files; no missing required parameters"
+
+    - id: s6_run
+      name: Model Execution
+      description: Run the GSFLOW binary
+      depends_on: [s4_forcing, s5_parameters]
+      knowledge_type: procedural
+      tools: [run_gsflow.py]
+      milestones:
+        - id: m_s6_run
+          description: GSFLOW completed without fatal errors
+          verification: "Return code 0; listing file has no ERROR lines"
+
+    - id: s7_postprocess
+      name: Output Parsing
+      description: Extract discharge, soil moisture, ET from model output
+      depends_on: [s6_run]
+      knowledge_type: procedural
+      tools: [parse_gsflow_output.py]
+      milestones:
+        - id: m_s7_postprocess
+          description: Time series extracted to CSV
+          verification: "Correct date range; no negative streamflow; no constant values"
+
+    - id: s8_routing
+      name: River Routing (optional)
+      description: GSFLOW includes SFR routing; external routing not needed
+      depends_on: [s7_postprocess]
+      knowledge_type: procedural
+      tools: []
+      milestones:
+        - id: m_s8_routing
+          description: Streamflow at outlet extracted
+          verification: "basin_cfs values available at daily timestep"
+
+tools:
+  - name: convert_forcing_to_gsflow.py
+    path: tools/convert_forcing_to_gsflow.py
+    stage: s4_forcing
+    lines: 320
+    description: Convert CMFD/MSWX NetCDF forcing to PRMS .day files
+    inputs: [netcdf_forcing, basin_shapefile]
+    outputs: [tmax.day, tmin.day, precip.day, swrad.day]
+
+  - name: convert_soil_params.py
+    path: tools/convert_soil_params.py
+    stage: s2_soil
+    lines: 250
+    description: Convert HWSD soil data to PRMS parameter file
+    inputs: [hwsd_raster, basin_shapefile]
+    outputs: [soil.params]
+
+  - name: run_gsflow.py
+    path: tools/run_gsflow.py
+    stage: s6_run
+    lines: 180
+    description: Execute GSFLOW binary with pre/post validation
+    inputs: [gsflow_executable, control_file]
+    outputs: [model_outputs]
+
+  - name: parse_gsflow_output.py
+    path: tools/parse_gsflow_output.py
+    stage: s7_postprocess
+    lines: 280
+    description: Extract time series from GSFLOW output to CSV
+    inputs: [csv_output, statvar_output]
+    outputs: [extracted_timeseries.csv]
+
+  - name: build_control_file.py
+    path: tools/build_control_file.py
+    stage: s0_config
+    lines: 200
+    description: Generate GSFLOW control file from parameters
+    inputs: [configuration_dict]
+    outputs: [gsflow.control]
+
+skill_documents:
+  - name: Configuration
+    path: docs/01_configuration.md
+    stage: s0_config
+  - name: Domain Setup
+    path: docs/02_domain_setup.md
+    stage: s1_domain
+  - name: Forcing Preparation
+    path: docs/03_forcing_preparation.md
+    stage: s4_forcing
+  - name: Model Execution
+    path: docs/04_model_execution.md
+    stage: s6_run
+  - name: Output Parsing
+    path: docs/05_output_parsing.md
+    stage: s7_postprocess
+  - name: Soil Parameters
+    path: docs/06_soil_parameters.md
+    stage: s2_soil
+  - name: Vegetation Land Cover
+    path: docs/07_vegetation_landcover.md
+    stage: s3_vegetation
+
+diagnostics:
+  path: diagnostics/triplets.yaml
+  n_triplets: 18
+  failure_domains:
+    - unit_conversion
+    - parameter_format
+    - runtime
+    - path_resolution
+    - validation
+    - silent_error
+
+validation:
+  tier: real
+  note: >
+    Validated against real observed discharge at Bengbu station (51080) on the
+    Huai River, China. Lumped 1-HRU PRMS-only mode with CMFD 0.25deg forcing.
+    Uncalibrated model achieves KGE=0.36, r=0.48, PBIAS=-17%. NSE<0 expected
+    for uncalibrated lumped model on 121,330 km2 basin.
+  reference_case:
+    name: Bengbu (Huai River)
+    station: "51080"
+    location: Huai River, China
+    area_km2: 121330
+    period: "1981-1990"
+    metrics:
+      NSE: -0.5134
+      KGE: 0.3594
+      PBIAS: -17.42
+      r: 0.4774
+
+summary:
+  total_tools: 5
+  total_skill_documents: 7
+  total_triplets: 18
+  total_lines: ~1230

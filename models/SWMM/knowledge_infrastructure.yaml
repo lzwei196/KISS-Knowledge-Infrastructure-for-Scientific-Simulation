@@ -1,0 +1,1623 @@
+# ============================================================================
+# Knowledge Infrastructure — EPA SWMM 5.2
+# Storm Water Management Model
+# ============================================================================
+# Built using the Knowledge Dissection Toolkit v1.0
+# Model: EPA SWMM 5.2 (C engine via pyswmm + swmm-toolkit, INP text input)
+# Official repo: https://github.com/USEPA/SWMM (engine)
+# Python API: https://github.com/pyswmm/pyswmm
+# Documentation: https://www.epa.gov/water-research/storm-water-management-model-swmm
+# ============================================================================
+
+package:
+  name: "swmm-knowledge-infrastructure"
+  version: "1.0.0"
+  description: "Knowledge infrastructure for autonomous operation of EPA SWMM 5.2 for urban stormwater drainage, green infrastructure (LID), and urban flood modeling"
+  target_model: "EPA SWMM 5.2 (via pyswmm + swmm-toolkit)"
+  domain: "urban stormwater drainage, green infrastructure, urban flood modeling"
+  authors:
+    - "Jianyun Zhang Research Group (Knowledge Dissection)"
+  license: "CC-BY-4.0"
+
+# --- Pipeline definition ---
+pipeline:
+  stages:
+
+    # ===== STAGE 1: SUBCATCHMENT DELINEATION =====
+    - id: "s1_subcatchment_delineation"
+      name: "Subcatchment Delineation"
+      description: >
+        Delineate urban subcatchments from DEM and/or GIS land parcel data.
+        Compute subcatchment physical parameters (area, width, slope, percent
+        impervious, Manning's roughness for pervious/impervious surfaces).
+        Classify land use to assign infiltration method parameters (Horton,
+        Green-Ampt, or SCS CN). Validate that all subcatchments have a valid
+        outlet (junction, another subcatchment, or outfall).
+      order: 1
+      depends_on: []
+      skill_document: "docs/s1_subcatchment_delineation_skill.md"
+      tools:
+        - "delineate_subcatchments"
+        - "classify_land_use"
+        - "compute_subcatchment_params"
+        - "validate_subcatchments"
+      milestones:
+        - id: "m1_subcatchments_created"
+          description: "Subcatchment polygons generated with unique IDs and outlet assignments"
+          verification: "Each subcatchment has area > 0, a valid outlet node, and percent impervious in [0, 100]"
+        - id: "m1_land_use_classified"
+          description: "Land use classified and infiltration parameters assigned per subcatchment"
+          verification: "Every subcatchment has infiltration params matching the chosen method (Horton/GA/CN)"
+        - id: "m1_params_computed"
+          description: "Width, slope, roughness computed for all subcatchments"
+          verification: "Width = Area / longest_overland_flow_path (not arbitrary); slope > 0 for all subcatchments"
+        - id: "m1_validated"
+          description: "All subcatchments drain to a valid outlet"
+          verification: "No orphan subcatchments; outlet references resolve to existing junctions, subcatchments, or outfalls"
+
+    # ===== STAGE 2: DRAINAGE NETWORK =====
+    - id: "s2_drainage_network"
+      name: "Drainage Network Definition"
+      description: >
+        Define the pipe/channel drainage network: junctions (manholes),
+        conduits (pipes, open channels), outfalls, dividers, storage units,
+        pumps, orifices, and weirs. Import from GIS shapefiles or manual
+        definition. Assign cross-section geometry (CIRCULAR, RECT_OPEN,
+        TRAPEZOIDAL, IRREGULAR, etc.), Manning's roughness, invert
+        elevations, and lengths. Validate network connectivity (every node
+        reachable from at least one subcatchment, every path leads to an
+        outfall).
+      order: 2
+      depends_on: []
+      skill_document: "docs/s2_drainage_network_skill.md"
+      tools:
+        - "create_drainage_network"
+        - "import_network_from_gis"
+        - "define_cross_sections"
+        - "validate_network_connectivity"
+      milestones:
+        - id: "m2_junctions_defined"
+          description: "All junction nodes defined with invert elevations and max depths"
+          verification: "Junction invert elevations decrease in the downstream direction; max_depth > 0"
+        - id: "m2_conduits_defined"
+          description: "All conduits defined with geometry, roughness, and inlet/outlet nodes"
+          verification: "No zero-length conduits; Manning's n in [0.008, 0.06] for pipes; upstream invert >= downstream invert (no adverse slopes unless intended)"
+        - id: "m2_outfalls_exist"
+          description: "At least one outfall node defined as the system outlet"
+          verification: "Outfall exists and is reachable from every junction via conduit paths"
+        - id: "m2_connectivity_valid"
+          description: "Network is fully connected with no dead-end nodes (except outfalls)"
+          verification: "Graph traversal from every junction reaches an outfall; no isolated subgraphs"
+
+    # ===== STAGE 3: RAINFALL FORCING =====
+    - id: "s3_rainfall_forcing"
+      name: "Rainfall Forcing Preparation"
+      description: >
+        Create rainfall time series for SWMM rain gages. Supports three
+        input modes: (1) historical gauge data from CSV/station files,
+        (2) design storms (SCS Type I/IA/II/III, Chicago, constant
+        intensity), (3) conversion from VIC/MSWX gridded forcing to
+        SWMM-compatible point rainfall. Define rain gages and assign
+        them to subcatchments. Critical: rainfall FORMAT must match
+        the data — INTENSITY (rate in mm/hr or in/hr) vs VOLUME
+        (depth per interval in mm or in). Mismatch is a SILENT ERROR
+        producing wrong runoff volumes by orders of magnitude.
+      order: 3
+      depends_on: []
+      skill_document: "docs/s3_rainfall_forcing_skill.md"
+      tools:
+        - "create_rain_timeseries"
+        - "convert_vic_forcing_to_swmm"
+        - "generate_design_storm"
+        - "validate_rainfall_input"
+      milestones:
+        - id: "m3_timeseries_created"
+          description: "Rainfall time series files created in SWMM-compatible format"
+          verification: "File format matches SWMM expectations (DATE TIME VALUE or ordinal); values >= 0"
+        - id: "m3_raingages_defined"
+          description: "Rain gages defined with correct format (INTENSITY or VOLUME), interval, and data source"
+          verification: "RAINGAGE format matches time series data convention; interval matches data timestep"
+        - id: "m3_subcatchment_assignment"
+          description: "Every subcatchment is assigned to a rain gage"
+          verification: "No subcatchment references a non-existent rain gage"
+        - id: "m3_units_consistent"
+          description: "Rainfall units match FLOW_UNITS setting (mm for CMS, in for CFS)"
+          verification: "If FLOW_UNITS=CMS, rain depth is in mm; if FLOW_UNITS=CFS, rain depth is in inches"
+
+    # ===== STAGE 4: LID SETUP =====
+    - id: "s4_lid_setup"
+      name: "LID / Green Infrastructure Setup"
+      description: >
+        Define Low Impact Development (LID) controls: bioretention cells,
+        rain gardens, green roofs, infiltration trenches, permeable pavement,
+        rain barrels, rooftop disconnection, vegetative swales. Each LID
+        control has up to 8 parameter layers (Surface, Soil, Storage,
+        Drain, DrainMat, Pavement, Rooftop, Removal). Assign LID controls
+        to specific subcatchments with area, number of units, and routing
+        configuration. Validate physical consistency (WP < FC < porosity
+        for soil layers, drain offset < storage depth).
+      order: 4
+      depends_on: ["s1_subcatchment_delineation"]
+      skill_document: "docs/s4_lid_setup_skill.md"
+      tools:
+        - "create_lid_control"
+        - "assign_lid_to_subcatchment"
+        - "validate_lid_params"
+      milestones:
+        - id: "m4_lid_controls_defined"
+          description: "LID control types defined with valid layer parameters"
+          verification: "Each LID control has required layers for its type; soil WP < FC < porosity; void ratio > 0 for storage"
+        - id: "m4_lid_assigned"
+          description: "LID controls assigned to subcatchments with area and routing"
+          verification: "Total LID area per subcatchment does not exceed subcatchment area; LID outlet routing is valid"
+        - id: "m4_lid_validated"
+          description: "LID parameter physical consistency verified"
+          verification: "No LID soil params violate WP < FC < porosity; drain coefficient > 0 if underdrain exists; storage depth > 0"
+
+    # ===== STAGE 5: MODEL ASSEMBLY =====
+    - id: "s5_model_assembly"
+      name: "Model Assembly (INP File Generation)"
+      description: >
+        Assemble all components into a complete SWMM INP file. The INP
+        file is a plain-text file with bracketed section headers
+        ([TITLE], [OPTIONS], [SUBCATCHMENTS], [JUNCTIONS], [CONDUITS],
+        [XSECTIONS], [OUTFALLS], [RAINGAGES], [TIMESERIES], [LID_CONTROLS],
+        [LID_USAGE], [INFILTRATION], [REPORT], [MAP], etc.). Configure
+        simulation options: FLOW_UNITS (CFS or CMS — determines ENTIRE
+        unit system), FORCE_MAIN_EQUATION (H-W or D-W), LINK_OFFSETS
+        (DEPTH or ELEVATION), ALLOW_PONDING, routing model (STEADY,
+        KINWAVE, DYNWAVE), routing timestep, report timestep, start/end
+        dates. Validate the complete INP file for internal consistency.
+      order: 5
+      depends_on: ["s1_subcatchment_delineation", "s2_drainage_network", "s3_rainfall_forcing"]
+      skill_document: "docs/s5_model_assembly_skill.md"
+      tools:
+        - "assemble_inp_file"
+        - "configure_simulation_options"
+        - "validate_inp_file"
+      milestones:
+        - id: "m5_inp_created"
+          description: "Complete INP file generated with all required sections"
+          verification: "INP file parseable by swmm-api or pyswmm without errors; all required sections present"
+        - id: "m5_options_configured"
+          description: "Simulation options set with consistent units and valid timesteps"
+          verification: "FLOW_UNITS matches rainfall/pipe dimension units; routing timestep satisfies Courant condition for dynamic wave"
+        - id: "m5_inp_validated"
+          description: "INP file passes internal consistency checks"
+          verification: "All cross-references resolve (subcatchment outlets, conduit nodes, rain gage names); no duplicate IDs"
+
+    # ===== STAGE 6: EXECUTION =====
+    - id: "s6_execution"
+      name: "SWMM Execution and Results Extraction"
+      description: >
+        Run the SWMM simulation via pyswmm (Python API) or swmm-toolkit
+        (direct C library call). Extract results from the binary .out
+        file or via pyswmm's real-time access. Check continuity errors
+        (runoff and routing) — errors > 5% indicate model instability.
+        Extract node flooding, conduit surcharging, outfall discharge
+        time series, subcatchment runoff, LID performance.
+      order: 6
+      depends_on: ["s5_model_assembly"]
+      skill_document: "docs/s6_execution_skill.md"
+      tools:
+        - "run_swmm"
+        - "extract_results"
+        - "check_continuity_errors"
+      milestones:
+        - id: "m6_simulation_complete"
+          description: "SWMM simulation finishes without fatal errors"
+          verification: "pyswmm returns without exception; .rpt file generated; no 'ERROR' lines in .rpt"
+        - id: "m6_continuity_acceptable"
+          description: "Runoff and routing continuity errors within acceptable range"
+          verification: "Runoff continuity error < 5%; routing continuity error < 5% (< 1% for dynamic wave)"
+        - id: "m6_results_extracted"
+          description: "Key results extracted: outfall discharge, node flooding, conduit flow"
+          verification: "Time series arrays have correct length matching simulation period; discharge >= 0"
+
+    # ===== STAGE 7: MODEL COUPLING =====
+    - id: "s7_model_coupling"
+      name: "HydroCraft Model Coupling"
+      description: >
+        Couple SWMM with HydroCraft's VIC and CaMa-Flood models for
+        integrated rural-urban flood modeling. Four coupling pathways:
+        (1) VIC surface runoff → SWMM inflow at junctions (upstream
+        rural runoff entering urban drainage), (2) CaMa-Flood river
+        stage → SWMM outfall boundary conditions (backwater effects),
+        (3) SWMM overflow/outflow → CaMa-Flood lateral inflow (urban
+        drainage discharge to rivers), (4) VIC forcing → SWMM rainfall
+        (reuse VIC meteorological forcing for consistent precipitation).
+        All coupling requires careful unit conversion and datum alignment.
+      order: 7
+      depends_on: ["s6_execution"]
+      skill_document: "docs/s7_model_coupling_skill.md"
+      tools:
+        - "convert_vic_runoff_to_swmm_inflow"
+        - "convert_cama_stage_to_outfall_bc"
+        - "convert_swmm_outflow_to_cama_lateral"
+        - "validate_coupling_water_balance"
+      milestones:
+        - id: "m7_vic_to_swmm_inflow"
+          description: "VIC runoff + baseflow converted to SWMM junction inflow time series"
+          verification: "Units are m3/s (CMS) or ft3/s (CFS) matching FLOW_UNITS; total volume conserved within 1%"
+        - id: "m7_cama_to_outfall_bc"
+          description: "CaMa-Flood stage time series applied as SWMM outfall boundary condition"
+          verification: "Datum offset applied (SWMM local datum vs CaMa-Flood global datum); stage values physically reasonable"
+        - id: "m7_swmm_to_cama_lateral"
+          description: "SWMM outfall discharge converted to CaMa-Flood lateral inflow"
+          verification: "Units converted from SWMM FLOW_UNITS to CaMa-Flood m3/s; timestep interpolated if needed"
+        - id: "m7_water_balance_closed"
+          description: "Coupled system water balance verified"
+          verification: "Total inflow from VIC matches SWMM total inflow + direct rainfall; SWMM outflow matches CaMa lateral inflow within 2%"
+
+# --- Layer 1: Validated Tools ---
+tools:
+
+  # ===== S1: SUBCATCHMENT DELINEATION TOOLS =====
+
+  - id: "delineate_subcatchments"
+    name: "Delineate Urban Subcatchments"
+    description: >
+      Delineate subcatchments from DEM and optional GIS parcel/land use data.
+      For urban areas, subcatchments are typically defined by city blocks,
+      drainage districts, or sewer service areas rather than pure topographic
+      watersheds. Supports three methods: (1) DEM-based automatic delineation
+      using WhiteboxTools, (2) import from GIS polygons (parcels, drainage
+      districts), (3) Thiessen polygons around junction nodes. Outputs
+      subcatchment polygons with unique IDs, areas, and outlet node assignments.
+    stage: "s1_subcatchment_delineation"
+    script_path: "tools/s1_subcatchment_delineation/delineate_subcatchments.py"
+    language: "python"
+    inputs:
+      - name: "dem_path"
+        type: "file"
+        description: "Path to DEM raster (GeoTIFF). Required for topographic delineation."
+        required: false
+        example: "data/dem/urban_dem.tif"
+      - name: "parcel_shapefile"
+        type: "file"
+        description: "Path to GIS parcel/drainage district shapefile. Alternative to DEM-based delineation."
+        required: false
+        example: "data/gis/parcels.shp"
+      - name: "junction_coords"
+        type: "config"
+        description: "List of junction [id, lat, lon] for Thiessen polygon method."
+        required: false
+        example: '[["J1", 31.23, 121.47], ["J2", 31.24, 121.48]]'
+      - name: "method"
+        type: "string"
+        description: "Delineation method: 'dem', 'parcels', or 'thiessen'"
+        required: true
+        example: "parcels"
+      - name: "output_dir"
+        type: "directory"
+        description: "Output directory for subcatchment shapefile and attributes"
+        required: true
+        example: "outputs/swmm_run/subcatchments/"
+    outputs:
+      - name: "subcatchment_shapefile"
+        type: "file"
+        description: "Subcatchment polygon shapefile with ID, area, outlet fields"
+        path_pattern: "{output_dir}/subcatchments.shp"
+      - name: "subcatchment_csv"
+        type: "file"
+        description: "CSV with subcatchment attributes (area, outlet, centroid)"
+        path_pattern: "{output_dir}/subcatchments.csv"
+    preconditions:
+      - "At least one of dem_path, parcel_shapefile, or junction_coords is provided"
+      - "If using DEM method, DEM covers the urban study area"
+      - "Python environment has geopandas, rasterio, shapely installed"
+    postconditions:
+      - "Subcatchment shapefile exists with valid polygon geometries"
+      - "Every subcatchment has a unique ID and non-zero area"
+      - "All subcatchments together cover the study area without gaps"
+
+  - id: "classify_land_use"
+    name: "Classify Land Use and Assign Infiltration Parameters"
+    description: >
+      Classify land use within each subcatchment to determine percent
+      impervious, Manning's roughness, and infiltration parameters. Uses
+      land cover rasters (NLCD, GlobeLand30, or local urban land use maps).
+      Assigns infiltration parameters based on the chosen method: Horton
+      (MaxRate, MinRate, Decay, DryTime, MaxInfil), Green-Ampt (Suction,
+      Ksat, IMD), or SCS Curve Number (CN for pervious area). Impervious
+      percentage is the single most important SWMM parameter for runoff volume.
+    stage: "s1_subcatchment_delineation"
+    script_path: "tools/s1_subcatchment_delineation/classify_land_use.py"
+    language: "python"
+    inputs:
+      - name: "subcatchment_shapefile"
+        type: "file"
+        description: "Subcatchment polygon shapefile from delineate_subcatchments"
+        required: true
+        example: "outputs/swmm_run/subcatchments/subcatchments.shp"
+      - name: "landuse_raster"
+        type: "file"
+        description: "Land use/land cover raster (GeoTIFF)"
+        required: true
+        example: "data/landuse/urban_landuse.tif"
+      - name: "infiltration_method"
+        type: "string"
+        description: "Infiltration method: 'horton', 'green_ampt', or 'curve_number'"
+        required: true
+        example: "horton"
+      - name: "output_csv"
+        type: "file"
+        description: "Output CSV with land use classification and infiltration params"
+        required: true
+        example: "outputs/swmm_run/subcatchments/landuse_params.csv"
+    outputs:
+      - name: "landuse_params_csv"
+        type: "file"
+        description: "CSV with per-subcatchment: pct_imperv, N_imperv, N_perv, infiltration params"
+        path_pattern: "{output_csv}"
+    preconditions:
+      - "Subcatchment shapefile exists with valid polygon geometries"
+      - "Land use raster covers the study area"
+      - "Land use raster has a lookup table mapping pixel values to land use classes"
+    postconditions:
+      - "Every subcatchment has percent_impervious in [0, 100]"
+      - "Infiltration parameters are within physically valid ranges for the chosen method"
+      - "Manning's N values are appropriate: N_imperv in [0.011, 0.024], N_perv in [0.02, 0.80]"
+
+  - id: "compute_subcatchment_params"
+    name: "Compute Subcatchment Physical Parameters"
+    description: >
+      Compute subcatchment width, slope, and depression storage from DEM
+      and subcatchment geometry. Width = Area / longest_overland_flow_path
+      (the characteristic width, NOT an arbitrary value). Slope is the
+      average surface slope within the subcatchment. Depression storage
+      depth (Dstore) depends on land use: 1.3-2.5 mm for impervious,
+      2.5-7.6 mm for pervious surfaces (SWMM manual Table 3-2).
+      Width is the most commonly misconfigured SWMM parameter —
+      setting it too large produces artificially fast runoff response.
+    stage: "s1_subcatchment_delineation"
+    script_path: "tools/s1_subcatchment_delineation/compute_subcatchment_params.py"
+    language: "python"
+    inputs:
+      - name: "subcatchment_shapefile"
+        type: "file"
+        description: "Subcatchment polygon shapefile"
+        required: true
+      - name: "dem_path"
+        type: "file"
+        description: "DEM raster for slope calculation"
+        required: true
+      - name: "output_csv"
+        type: "file"
+        description: "Output CSV with computed parameters"
+        required: true
+    outputs:
+      - name: "params_csv"
+        type: "file"
+        description: "CSV with Width, Slope, Dstore_imperv, Dstore_perv per subcatchment"
+        path_pattern: "{output_csv}"
+    preconditions:
+      - "Subcatchment shapefile exists"
+      - "DEM covers all subcatchments"
+    postconditions:
+      - "Width > 0 for all subcatchments"
+      - "Slope > 0 for all subcatchments (flat areas get minimum 0.001)"
+      - "Width is approximately Area / longest_flow_path, NOT Area / sqrt(Area)"
+
+  - id: "validate_subcatchments"
+    name: "Validate Subcatchment Configuration"
+    description: >
+      Validate all subcatchment parameters before model assembly.
+      Checks: (1) every subcatchment has a valid outlet (junction,
+      subcatchment, or outfall that exists in the network), (2) no
+      circular drainage loops among subcatchments, (3) infiltration
+      parameters are within physical ranges for the chosen method,
+      (4) percent impervious + percent LID does not exceed 100%,
+      (5) subcatchment areas are physically reasonable (not 0, not
+      negative, total matches expected study area).
+    stage: "s1_subcatchment_delineation"
+    script_path: "tools/s1_subcatchment_delineation/validate_subcatchments.py"
+    language: "python"
+    inputs:
+      - name: "subcatchment_config"
+        type: "file"
+        description: "CSV or JSON with all subcatchment parameters"
+        required: true
+      - name: "node_list"
+        type: "file"
+        description: "CSV or JSON listing all junction/outfall node IDs"
+        required: true
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON report with pass/fail for each validation check"
+        path_pattern: ""
+    preconditions:
+      - "Subcatchment configuration exists with all required fields"
+      - "Node list exists from drainage network definition"
+    postconditions:
+      - "All validation checks pass: outlets exist, no loops, params in range"
+
+  # ===== S2: DRAINAGE NETWORK TOOLS =====
+
+  - id: "create_drainage_network"
+    name: "Create Drainage Network Manually"
+    description: >
+      Define the pipe/channel drainage network from manual specifications.
+      Creates junctions (with invert elevation, max depth, ponded area),
+      conduits (with inlet/outlet nodes, length, roughness, offsets),
+      outfalls (with boundary condition type: FREE, NORMAL, FIXED, TIDAL,
+      TIMESERIES), and optional elements (dividers, storage units, pumps,
+      orifices, weirs). All elevations must use a consistent datum.
+    stage: "s2_drainage_network"
+    script_path: "tools/s2_drainage_network/create_drainage_network.py"
+    language: "python"
+    inputs:
+      - name: "network_definition"
+        type: "config"
+        description: "JSON/YAML with junctions, conduits, outfalls definitions"
+        required: true
+        example: '{"junctions": [{"id": "J1", "elev": 10.0, "max_depth": 3.0}], "conduits": [{"id": "C1", "from": "J1", "to": "J2", "length": 100, "n": 0.013}]}'
+      - name: "output_dir"
+        type: "directory"
+        description: "Output directory for network data files"
+        required: true
+    outputs:
+      - name: "network_data"
+        type: "file"
+        description: "Network definition files (junctions.csv, conduits.csv, outfalls.csv)"
+        path_pattern: "{output_dir}/network_*.csv"
+    preconditions:
+      - "Network definition has at least one junction, one conduit, and one outfall"
+      - "All conduit from/to nodes exist in junction or outfall lists"
+    postconditions:
+      - "Every conduit connects two existing nodes"
+      - "At least one outfall is defined"
+      - "No duplicate node or link IDs"
+
+  - id: "import_network_from_gis"
+    name: "Import Drainage Network from GIS"
+    description: >
+      Import pipe network from GIS shapefiles (point layer for manholes/junctions,
+      line layer for pipes/conduits). Extracts invert elevations, pipe diameters,
+      materials (for roughness lookup), and connectivity from attribute tables.
+      Handles common GIS issues: disconnected segments, duplicate nodes,
+      missing attributes, Z-coordinate extraction.
+    stage: "s2_drainage_network"
+    script_path: "tools/s2_drainage_network/import_network_from_gis.py"
+    language: "python"
+    inputs:
+      - name: "junction_shapefile"
+        type: "file"
+        description: "Point shapefile with manhole/junction locations and attributes"
+        required: true
+        example: "data/gis/manholes.shp"
+      - name: "conduit_shapefile"
+        type: "file"
+        description: "Line shapefile with pipe/channel segments and attributes"
+        required: true
+        example: "data/gis/pipes.shp"
+      - name: "id_field"
+        type: "string"
+        description: "Attribute field name for unique IDs in junction shapefile"
+        required: true
+        example: "MANHOLE_ID"
+      - name: "elev_field"
+        type: "string"
+        description: "Attribute field name for invert elevation"
+        required: true
+        example: "INVERT_EL"
+      - name: "diameter_field"
+        type: "string"
+        description: "Attribute field name for pipe diameter (m or mm)"
+        required: true
+        example: "DIAMETER"
+      - name: "material_field"
+        type: "string"
+        description: "Attribute field for pipe material (for roughness lookup)"
+        required: false
+        example: "MATERIAL"
+      - name: "output_dir"
+        type: "directory"
+        description: "Output directory"
+        required: true
+    outputs:
+      - name: "network_data"
+        type: "file"
+        description: "Imported network data files"
+        path_pattern: "{output_dir}/network_*.csv"
+    preconditions:
+      - "Junction and conduit shapefiles exist with required attribute fields"
+      - "Pipe endpoints snap to junction locations (within tolerance)"
+    postconditions:
+      - "All conduits connect to existing junctions"
+      - "Invert elevations are in meters (converted from mm if needed)"
+      - "Diameters are in meters (converted from mm if needed)"
+
+  - id: "define_cross_sections"
+    name: "Define Conduit Cross-Sections"
+    description: >
+      Define cross-section geometry for each conduit. SWMM supports
+      standard shapes (CIRCULAR, RECT_CLOSED, RECT_OPEN, TRAPEZOIDAL,
+      TRIANGULAR, ARCH, PARABOLIC, POWER, etc.) and custom IRREGULAR
+      transects. For each conduit: shape, Geom1 (max height/diameter),
+      Geom2-4 (shape-specific), number of barrels. Standard pipe shapes
+      use Geom1=diameter in the unit system set by FLOW_UNITS.
+    stage: "s2_drainage_network"
+    script_path: "tools/s2_drainage_network/define_cross_sections.py"
+    language: "python"
+    inputs:
+      - name: "conduit_list"
+        type: "config"
+        description: "List of conduit IDs with their cross-section specifications"
+        required: true
+        example: '[{"id": "C1", "shape": "CIRCULAR", "geom1": 0.6}, {"id": "C2", "shape": "RECT_OPEN", "geom1": 1.0, "geom2": 2.0}]'
+      - name: "transect_definitions"
+        type: "config"
+        description: "Custom transect definitions for IRREGULAR cross-sections (optional)"
+        required: false
+      - name: "output_csv"
+        type: "file"
+        description: "Output CSV with cross-section data"
+        required: true
+    outputs:
+      - name: "xsections_csv"
+        type: "file"
+        description: "Cross-section definition file"
+        path_pattern: "{output_csv}"
+    preconditions:
+      - "All conduit IDs exist in the network definition"
+      - "Shape names are valid SWMM cross-section types"
+    postconditions:
+      - "Every conduit has a cross-section definition"
+      - "Geom1 > 0 for all conduits"
+      - "Dimensions are in the correct unit system (meters for CMS, feet for CFS)"
+
+  - id: "validate_network_connectivity"
+    name: "Validate Drainage Network Connectivity"
+    description: >
+      Validate the drainage network as a directed graph. Checks:
+      (1) every junction is reachable from at least one subcatchment,
+      (2) every junction can reach an outfall via conduit paths,
+      (3) no isolated subgraphs, (4) no zero-length conduits,
+      (5) conduit slopes are physically reasonable (warns on adverse
+      slopes which cause instability in dynamic wave routing),
+      (6) conduit capacity is sufficient for expected flows.
+    stage: "s2_drainage_network"
+    script_path: "tools/s2_drainage_network/validate_network_connectivity.py"
+    language: "python"
+    inputs:
+      - name: "network_dir"
+        type: "directory"
+        description: "Directory with network data files"
+        required: true
+      - name: "subcatchment_config"
+        type: "file"
+        description: "Subcatchment config with outlet assignments"
+        required: true
+    outputs:
+      - name: "connectivity_report"
+        type: "value"
+        description: "JSON report with connectivity analysis and issues"
+        path_pattern: ""
+    preconditions:
+      - "Network data files (junctions, conduits, outfalls) exist"
+      - "Subcatchment config exists with outlet assignments"
+    postconditions:
+      - "Network is fully connected to outfall(s)"
+      - "No zero-length conduits"
+
+  # ===== S3: RAINFALL FORCING TOOLS =====
+
+  - id: "create_rain_timeseries"
+    name: "Create Rainfall Time Series"
+    description: >
+      Create SWMM-compatible rainfall time series from historical gauge
+      data. Reads CSV/TSV with datetime and rainfall columns, converts to
+      SWMM TIMESERIES format. Handles timezone conversion, irregular
+      timesteps, and gap filling. Critically, outputs must specify whether
+      the data represents INTENSITY (rate, mm/hr) or VOLUME (depth per
+      interval, mm). SWMM's RAINGAGE FORMAT field must match.
+    stage: "s3_rainfall_forcing"
+    script_path: "tools/s3_rainfall_forcing/create_rain_timeseries.py"
+    language: "python"
+    inputs:
+      - name: "rainfall_csv"
+        type: "file"
+        description: "CSV with datetime and rainfall columns"
+        required: true
+        example: "data/rainfall/gauge_001.csv"
+      - name: "datetime_col"
+        type: "string"
+        description: "Column name for datetime"
+        required: true
+        example: "datetime"
+      - name: "value_col"
+        type: "string"
+        description: "Column name for rainfall value"
+        required: true
+        example: "rainfall_mm"
+      - name: "data_format"
+        type: "string"
+        description: "Input data format: 'intensity' (mm/hr) or 'volume' (mm/interval)"
+        required: true
+        example: "volume"
+      - name: "interval_minutes"
+        type: "number"
+        description: "Data recording interval in minutes"
+        required: true
+        example: "60"
+      - name: "output_file"
+        type: "file"
+        description: "Output SWMM time series file"
+        required: true
+    outputs:
+      - name: "timeseries_file"
+        type: "file"
+        description: "SWMM-compatible rainfall time series"
+        path_pattern: "{output_file}"
+    preconditions:
+      - "CSV file exists with datetime and rainfall columns"
+      - "Rainfall values are non-negative"
+    postconditions:
+      - "Output file has SWMM TIMESERIES format"
+      - "All rainfall values >= 0"
+      - "Datetime format matches SWMM expectations (MM/DD/YYYY HH:MM:SS)"
+
+  - id: "convert_vic_forcing_to_swmm"
+    name: "Convert VIC Forcing to SWMM Rainfall"
+    description: >
+      Convert VIC/HydroCraft forcing files (gridded, 3-hourly or hourly)
+      to SWMM rain gage time series. Maps VIC grid cells to SWMM rain
+      gages using nearest-neighbor or area-weighted assignment. Extracts
+      precipitation variable and converts units: VIC forcing stores
+      precipitation as mm/timestep (3-hourly) which must be converted
+      to mm/hr (INTENSITY) or kept as mm/interval (VOLUME) depending
+      on the SWMM RAINGAGE FORMAT setting.
+    stage: "s3_rainfall_forcing"
+    script_path: "tools/s3_rainfall_forcing/convert_vic_forcing_to_swmm.py"
+    language: "python"
+    inputs:
+      - name: "vic_forcing_dir"
+        type: "directory"
+        description: "Directory with VIC forcing ASCII files"
+        required: true
+        example: "outputs/vic_run/vic_temp/forcing/forcing_final"
+      - name: "forcing_prefix"
+        type: "string"
+        description: "VIC forcing file prefix"
+        required: true
+        example: "basin_0.25deg_"
+      - name: "subcatchment_shapefile"
+        type: "file"
+        description: "Subcatchment shapefile for spatial mapping"
+        required: true
+      - name: "vic_grid_nc"
+        type: "file"
+        description: "VIC grid NetCDF for coordinate mapping"
+        required: true
+        example: "outputs/vic_run/vic_temp/grid/basin_grid.nc"
+      - name: "output_format"
+        type: "string"
+        description: "Output format: 'intensity' (mm/hr) or 'volume' (mm/interval)"
+        required: true
+        example: "intensity"
+      - name: "output_dir"
+        type: "directory"
+        description: "Output directory for SWMM time series files"
+        required: true
+    outputs:
+      - name: "rain_timeseries"
+        type: "file"
+        description: "SWMM rainfall time series files (one per rain gage)"
+        path_pattern: "{output_dir}/rain_*.dat"
+      - name: "gage_mapping"
+        type: "file"
+        description: "CSV mapping rain gages to subcatchments"
+        path_pattern: "{output_dir}/gage_mapping.csv"
+    preconditions:
+      - "VIC forcing files exist and cover the simulation period"
+      - "VIC grid covers the SWMM study area"
+    postconditions:
+      - "Every subcatchment has an assigned rain gage"
+      - "Rainfall units match the specified output format"
+      - "Total precipitation volume is conserved (within 1%)"
+
+  - id: "generate_design_storm"
+    name: "Generate Design Storm Hyetograph"
+    description: >
+      Generate synthetic design storm rainfall time series for urban
+      drainage design scenarios. Supports SCS Type I, IA, II, III
+      distributions; Chicago design storm (alternating block method);
+      and constant intensity storms. User specifies return period,
+      duration, and total depth (from IDF curves). Output is a SWMM
+      TIMESERIES.
+    stage: "s3_rainfall_forcing"
+    script_path: "tools/s3_rainfall_forcing/generate_design_storm.py"
+    language: "python"
+    inputs:
+      - name: "storm_type"
+        type: "string"
+        description: "Storm type: 'scs_type_I', 'scs_type_II', 'chicago', 'constant'"
+        required: true
+        example: "scs_type_II"
+      - name: "total_depth_mm"
+        type: "number"
+        description: "Total rainfall depth in mm"
+        required: true
+        example: "100"
+      - name: "duration_hours"
+        type: "number"
+        description: "Storm duration in hours"
+        required: true
+        example: "24"
+      - name: "timestep_minutes"
+        type: "number"
+        description: "Output timestep in minutes"
+        required: true
+        example: "5"
+      - name: "peak_position"
+        type: "number"
+        description: "Peak position ratio (0-1) for Chicago storm (default 0.4)"
+        required: false
+        example: "0.4"
+      - name: "output_file"
+        type: "file"
+        description: "Output SWMM time series file"
+        required: true
+    outputs:
+      - name: "design_storm_file"
+        type: "file"
+        description: "SWMM-compatible design storm time series"
+        path_pattern: "{output_file}"
+    preconditions: []
+    postconditions:
+      - "Total depth sums to specified total_depth_mm (within 0.1%)"
+      - "All intensity values >= 0"
+      - "Peak intensity is at correct position for the storm type"
+
+  - id: "validate_rainfall_input"
+    name: "Validate Rainfall Input Data"
+    description: >
+      Validate rainfall time series and rain gage configuration for
+      consistency. Checks: (1) RAINGAGE FORMAT matches actual data
+      convention (INTENSITY vs VOLUME — SILENT ERROR if wrong),
+      (2) RAINGAGE INTERVAL matches data timestep, (3) rainfall
+      values are non-negative, (4) no excessive gaps, (5) units
+      are consistent with FLOW_UNITS setting.
+    stage: "s3_rainfall_forcing"
+    script_path: "tools/s3_rainfall_forcing/validate_rainfall_input.py"
+    language: "python"
+    inputs:
+      - name: "timeseries_files"
+        type: "config"
+        description: "List of rainfall time series file paths"
+        required: true
+      - name: "raingage_config"
+        type: "config"
+        description: "Rain gage definitions with FORMAT and INTERVAL fields"
+        required: true
+      - name: "flow_units"
+        type: "string"
+        description: "SWMM FLOW_UNITS setting (CFS or CMS)"
+        required: true
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON validation report"
+        path_pattern: ""
+    preconditions:
+      - "Time series files exist"
+      - "Rain gage configuration is defined"
+    postconditions:
+      - "FORMAT and data convention match"
+      - "All rainfall values >= 0"
+      - "No timestep gaps > 2x the recording interval"
+
+  # ===== S4: LID SETUP TOOLS =====
+
+  - id: "create_lid_control"
+    name: "Create LID Control Definition"
+    description: >
+      Define a Low Impact Development (LID) control type with its
+      physical parameters. SWMM supports 8 LID types: BC (bioretention),
+      RG (rain garden), GR (green roof), IT (infiltration trench),
+      PP (permeable pavement), RB (rain barrel), RD (rooftop disconnection),
+      VS (vegetative swale). Each type has specific parameter layers:
+      Surface (berm height, vegetation volume, roughness, slope),
+      Soil (thickness, porosity, field capacity, wilting point, Ksat,
+      suction head), Storage (height, void ratio, Ksat), Drain
+      (coefficient, exponent, offset, delay), Pavement (thickness,
+      void ratio, imperv fraction, Ksat, clog factor).
+    stage: "s4_lid_setup"
+    script_path: "tools/s4_lid_setup/create_lid_control.py"
+    language: "python"
+    inputs:
+      - name: "lid_type"
+        type: "string"
+        description: "LID type: BC, RG, GR, IT, PP, RB, RD, or VS"
+        required: true
+        example: "BC"
+      - name: "lid_name"
+        type: "string"
+        description: "Unique name for this LID control"
+        required: true
+        example: "Bioretention_Standard"
+      - name: "surface_params"
+        type: "config"
+        description: "Surface layer: {berm_height, veg_volume, roughness, slope, swale_side_slope}"
+        required: true
+        example: '{"berm_height": 150, "veg_volume": 0.1, "roughness": 0.1, "slope": 1.0}'
+      - name: "soil_params"
+        type: "config"
+        description: "Soil layer: {thickness, porosity, field_capacity, wilting_point, ksat, suction_head}"
+        required: false
+        example: '{"thickness": 600, "porosity": 0.5, "field_capacity": 0.2, "wilting_point": 0.1, "ksat": 25, "suction_head": 50}'
+      - name: "storage_params"
+        type: "config"
+        description: "Storage layer: {height, void_ratio, ksat, clog_factor}"
+        required: false
+        example: '{"height": 300, "void_ratio": 0.75, "ksat": 25}'
+      - name: "drain_params"
+        type: "config"
+        description: "Drain layer: {coefficient, exponent, offset, delay}"
+        required: false
+        example: '{"coefficient": 5.0, "exponent": 0.5, "offset": 100, "delay": 6}'
+      - name: "output_file"
+        type: "file"
+        description: "Output LID control definition file"
+        required: true
+    outputs:
+      - name: "lid_control_file"
+        type: "file"
+        description: "LID control definition in SWMM INP format"
+        path_pattern: "{output_file}"
+    preconditions:
+      - "LID type is a valid SWMM LID type"
+      - "Required layers for the LID type are provided"
+    postconditions:
+      - "Soil params satisfy: wilting_point < field_capacity < porosity"
+      - "Storage void_ratio in (0, 1)"
+      - "Drain offset < storage height (if both exist)"
+      - "All parameter values > 0 where physically required"
+
+  - id: "assign_lid_to_subcatchment"
+    name: "Assign LID Controls to Subcatchments"
+    description: >
+      Assign LID controls to specific subcatchments with area, number
+      of replicate units, initial saturation, and routing configuration.
+      The LID_USAGE section in SWMM links LID controls (defined globally)
+      to individual subcatchments. Total LID area per subcatchment must
+      not exceed the subcatchment area. LID outflow can be routed to
+      the subcatchment's pervious area, its outlet, or a specific node.
+    stage: "s4_lid_setup"
+    script_path: "tools/s4_lid_setup/assign_lid_to_subcatchment.py"
+    language: "python"
+    inputs:
+      - name: "lid_assignments"
+        type: "config"
+        description: "List of {subcatch_id, lid_name, number, area, width, init_sat, from_imperv, to_perv, rpt_file}"
+        required: true
+        example: '[{"subcatch_id": "S1", "lid_name": "Bioretention_Standard", "number": 5, "area": 50, "width": 10, "init_sat": 0, "from_imperv": 25, "to_perv": 0}]'
+      - name: "subcatchment_areas"
+        type: "config"
+        description: "Dict of subcatchment_id: total_area for validation"
+        required: true
+      - name: "output_file"
+        type: "file"
+        description: "Output LID usage definition file"
+        required: true
+    outputs:
+      - name: "lid_usage_file"
+        type: "file"
+        description: "LID usage assignments in SWMM INP format"
+        path_pattern: "{output_file}"
+    preconditions:
+      - "LID control names reference defined LID controls"
+      - "Subcatchment IDs reference existing subcatchments"
+    postconditions:
+      - "Total LID area per subcatchment <= subcatchment total area"
+      - "from_imperv percentages sum to <= 100% per subcatchment"
+      - "Initial saturation in [0, 100]"
+
+  - id: "validate_lid_params"
+    name: "Validate LID Parameters"
+    description: >
+      Validate all LID control definitions and usage assignments for
+      physical consistency. Checks: (1) soil WP < FC < porosity,
+      (2) storage void ratio in (0, 1), (3) drain offset < storage
+      height, (4) total LID area <= subcatchment area, (5) required
+      layers present for each LID type, (6) parameter values within
+      SWMM-documented ranges.
+    stage: "s4_lid_setup"
+    script_path: "tools/s4_lid_setup/validate_lid_params.py"
+    language: "python"
+    inputs:
+      - name: "lid_controls"
+        type: "config"
+        description: "All LID control definitions"
+        required: true
+      - name: "lid_usage"
+        type: "config"
+        description: "All LID usage assignments"
+        required: true
+      - name: "subcatchment_areas"
+        type: "config"
+        description: "Dict of subcatchment_id: total_area"
+        required: true
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON validation report"
+        path_pattern: ""
+    preconditions:
+      - "LID controls and usage are defined"
+    postconditions:
+      - "All physical consistency checks pass"
+
+  # ===== S5: MODEL ASSEMBLY TOOLS =====
+
+  - id: "assemble_inp_file"
+    name: "Assemble SWMM INP File"
+    description: >
+      Assemble all model components into a complete SWMM INP file.
+      Merges subcatchment, network, rainfall, LID, and configuration
+      data into the bracketed-section INP format. Section order in
+      the INP file follows SWMM conventions: [TITLE], [OPTIONS],
+      [EVAPORATION], [RAINGAGES], [SUBCATCHMENTS], [SUBAREAS],
+      [INFILTRATION], [LID_CONTROLS], [LID_USAGE], [JUNCTIONS],
+      [OUTFALLS], [CONDUITS], [XSECTIONS], [TRANSECTS], [TIMESERIES],
+      [REPORT], [TAGS], [MAP], [COORDINATES], [VERTICES],
+      [Polygons], [SYMBOLS]. Missing optional sections can be omitted.
+    stage: "s5_model_assembly"
+    script_path: "tools/s5_model_assembly/assemble_inp_file.py"
+    language: "python"
+    inputs:
+      - name: "subcatchment_data"
+        type: "file"
+        description: "Subcatchment configuration CSV/JSON"
+        required: true
+      - name: "network_data_dir"
+        type: "directory"
+        description: "Directory with network definition files"
+        required: true
+      - name: "rainfall_data_dir"
+        type: "directory"
+        description: "Directory with rainfall time series and gage config"
+        required: true
+      - name: "lid_data"
+        type: "file"
+        description: "LID controls and usage file (optional)"
+        required: false
+      - name: "options"
+        type: "config"
+        description: "Simulation options dict"
+        required: true
+        example: '{"FLOW_UNITS": "CMS", "INFILTRATION": "HORTON", "ROUTING_MODEL": "DYNWAVE"}'
+      - name: "output_inp"
+        type: "file"
+        description: "Output INP file path"
+        required: true
+    outputs:
+      - name: "inp_file"
+        type: "file"
+        description: "Complete SWMM INP file"
+        path_pattern: "{output_inp}"
+    preconditions:
+      - "Subcatchment, network, and rainfall data exist"
+      - "FLOW_UNITS is either CFS or CMS"
+    postconditions:
+      - "INP file contains all required sections"
+      - "All internal cross-references are valid"
+      - "File is parseable by pyswmm or swmm-api"
+
+  - id: "configure_simulation_options"
+    name: "Configure SWMM Simulation Options"
+    description: >
+      Set the [OPTIONS] section of the SWMM INP file. Critical settings:
+      FLOW_UNITS (CFS=US customary or CMS=SI metric — this single setting
+      determines the ENTIRE unit system for all inputs and outputs),
+      INFILTRATION (HORTON, GREEN_AMPT, or CURVE_NUMBER), ROUTING_MODEL
+      (STEADY, KINWAVE, or DYNWAVE), routing/reporting timesteps, and
+      simulation dates. For DYNWAVE: WET_STEP should be <= 30s, and must
+      satisfy Courant condition (dt <= dx/sqrt(g*h) for stability).
+      ALLOW_PONDING=YES prevents water loss at flooded nodes.
+    stage: "s5_model_assembly"
+    script_path: "tools/s5_model_assembly/configure_simulation_options.py"
+    language: "python"
+    inputs:
+      - name: "flow_units"
+        type: "string"
+        description: "Flow unit system: CFS (US) or CMS (SI)"
+        required: true
+        example: "CMS"
+      - name: "infiltration_method"
+        type: "string"
+        description: "Infiltration: HORTON, GREEN_AMPT, or CURVE_NUMBER"
+        required: true
+        example: "HORTON"
+      - name: "routing_model"
+        type: "string"
+        description: "Routing: STEADY, KINWAVE, or DYNWAVE"
+        required: true
+        example: "DYNWAVE"
+      - name: "start_date"
+        type: "string"
+        description: "Simulation start date MM/DD/YYYY"
+        required: true
+        example: "01/01/2010"
+      - name: "end_date"
+        type: "string"
+        description: "Simulation end date MM/DD/YYYY"
+        required: true
+        example: "12/31/2010"
+      - name: "wet_step"
+        type: "number"
+        description: "Wet weather routing timestep in seconds (default 30)"
+        required: false
+        example: "30"
+      - name: "dry_step"
+        type: "number"
+        description: "Dry weather routing timestep in seconds (default 3600)"
+        required: false
+        example: "3600"
+      - name: "report_step"
+        type: "string"
+        description: "Reporting timestep HH:MM:SS (default 00:05:00)"
+        required: false
+        example: "00:05:00"
+      - name: "allow_ponding"
+        type: "string"
+        description: "Allow ponding at nodes: YES or NO (default YES for continuous)"
+        required: false
+        example: "YES"
+      - name: "min_slope"
+        type: "number"
+        description: "Minimum conduit slope (default 0.001)"
+        required: false
+        example: "0.001"
+    outputs:
+      - name: "options_config"
+        type: "value"
+        description: "Validated options dict for INP assembly"
+        path_pattern: ""
+    preconditions:
+      - "FLOW_UNITS is CFS or CMS"
+      - "ROUTING_MODEL is STEADY, KINWAVE, or DYNWAVE"
+    postconditions:
+      - "All timestep values are positive"
+      - "Start date < end date"
+      - "Routing timestep is appropriate for routing model"
+
+  - id: "validate_inp_file"
+    name: "Validate SWMM INP File"
+    description: >
+      Validate a complete SWMM INP file for internal consistency before
+      running. Checks: (1) all subcatchment outlets exist as nodes,
+      (2) all conduit from/to nodes exist, (3) all rain gage references
+      resolve, (4) all LID control references resolve, (5) no duplicate
+      IDs across sections, (6) FLOW_UNITS is consistent with dimensional
+      inputs, (7) at least one outfall exists, (8) TIMESERIES referenced
+      by raingages exist, (9) cross-section shapes are valid.
+    stage: "s5_model_assembly"
+    script_path: "tools/s5_model_assembly/validate_inp_file.py"
+    language: "python"
+    inputs:
+      - name: "inp_file"
+        type: "file"
+        description: "Path to SWMM INP file"
+        required: true
+      - name: "strict_mode"
+        type: "string"
+        description: "If 'yes', warnings become errors (default 'no')"
+        required: false
+        example: "no"
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON report with errors, warnings, and info messages"
+        path_pattern: ""
+    preconditions:
+      - "INP file exists and is readable"
+    postconditions:
+      - "No fatal errors in validation report"
+      - "All cross-references resolve"
+
+  # ===== S6: EXECUTION TOOLS =====
+
+  - id: "run_swmm"
+    name: "Run SWMM Simulation"
+    description: >
+      Run a SWMM simulation using pyswmm (Python wrapper around the SWMM
+      C engine). The simulation reads the INP file, runs the hydraulic
+      and hydrologic computations, and produces a binary OUT file and a
+      text RPT (report) file. The RPT file contains summary statistics,
+      continuity errors, and any error/warning messages. pyswmm also
+      allows real-time result access during simulation for monitoring.
+    stage: "s6_execution"
+    script_path: "tools/s6_execution/run_swmm.py"
+    language: "python"
+    inputs:
+      - name: "inp_file"
+        type: "file"
+        description: "Path to SWMM INP file"
+        required: true
+        example: "outputs/swmm_run/model.inp"
+      - name: "rpt_file"
+        type: "file"
+        description: "Path for output RPT (report) file"
+        required: true
+        example: "outputs/swmm_run/model.rpt"
+      - name: "out_file"
+        type: "file"
+        description: "Path for output OUT (binary results) file"
+        required: true
+        example: "outputs/swmm_run/model.out"
+    outputs:
+      - name: "rpt_file"
+        type: "file"
+        description: "SWMM report file with summary and errors"
+        path_pattern: "{rpt_file}"
+      - name: "out_file"
+        type: "file"
+        description: "SWMM binary output file with time series results"
+        path_pattern: "{out_file}"
+    preconditions:
+      - "INP file exists and passes validation"
+      - "pyswmm is installed: pip install pyswmm"
+      - "Output directory exists and is writable"
+    postconditions:
+      - "RPT file exists and contains no ERROR lines"
+      - "OUT file exists and is non-empty"
+      - "Simulation completed without exceptions"
+
+  - id: "extract_results"
+    name: "Extract SWMM Simulation Results"
+    description: >
+      Extract time series results from the SWMM binary OUT file using
+      swmm-toolkit. Extracts: node results (depth, head, volume,
+      lateral_inflow, total_inflow, flooding), link results (flow,
+      depth, velocity, capacity), subcatchment results (rainfall,
+      snow_depth, losses, runoff), and system results (temperature,
+      rainfall, snow_depth, losses, runoff, dwf_inflow, gw_inflow,
+      rdii_inflow, direct_inflow, total_lateral, flooding, outflow,
+      storage, evap_rate). Outputs CSV or JSON.
+    stage: "s6_execution"
+    script_path: "tools/s6_execution/extract_results.py"
+    language: "python"
+    inputs:
+      - name: "out_file"
+        type: "file"
+        description: "SWMM binary OUT file"
+        required: true
+      - name: "extract_config"
+        type: "config"
+        description: "What to extract: {nodes: [id, ...], links: [id, ...], subcatchments: [id, ...], system: true}"
+        required: true
+        example: '{"nodes": ["J1", "OF1"], "links": ["C1"], "system": true}'
+      - name: "output_format"
+        type: "string"
+        description: "Output format: 'csv' or 'json'"
+        required: false
+        example: "csv"
+      - name: "output_dir"
+        type: "directory"
+        description: "Output directory for extracted results"
+        required: true
+    outputs:
+      - name: "result_files"
+        type: "file"
+        description: "Extracted result files (CSV or JSON)"
+        path_pattern: "{output_dir}/*_results.csv"
+    preconditions:
+      - "SWMM OUT file exists from a completed simulation"
+      - "Requested node/link/subcatchment IDs exist in the model"
+    postconditions:
+      - "Extracted time series cover the simulation period"
+      - "Flow values are non-negative (for links in flow direction)"
+
+  - id: "check_continuity_errors"
+    name: "Check Continuity Errors"
+    description: >
+      Parse the SWMM RPT file to extract runoff and routing continuity
+      errors. Runoff continuity error = (total_inflow - total_outflow -
+      storage_change) / total_inflow. Routing continuity error is the
+      same for the drainage network. Errors > 5% indicate model
+      instability (routing timestep too large, adverse slopes, or
+      numerical issues). For dynamic wave routing, errors > 1% should
+      be investigated. Also checks for node flooding and conduit
+      surcharging statistics.
+    stage: "s6_execution"
+    script_path: "tools/s6_execution/check_continuity_errors.py"
+    language: "python"
+    inputs:
+      - name: "rpt_file"
+        type: "file"
+        description: "SWMM RPT (report) file"
+        required: true
+    outputs:
+      - name: "continuity_report"
+        type: "value"
+        description: "JSON with runoff_error_pct, routing_error_pct, flooded_nodes, surcharged_conduits"
+        path_pattern: ""
+    preconditions:
+      - "RPT file exists from a completed simulation"
+    postconditions:
+      - "Continuity errors are parsed and reported"
+      - "Flooding and surcharging statistics are extracted"
+
+  # ===== S7: MODEL COUPLING TOOLS =====
+
+  - id: "convert_vic_runoff_to_swmm_inflow"
+    name: "Convert VIC Runoff to SWMM Junction Inflow"
+    description: >
+      Convert VIC surface runoff and baseflow output to SWMM external
+      inflow time series at junction nodes. VIC outputs runoff in mm/day
+      per grid cell; this must be converted to m3/s (volumetric flow rate)
+      using cell area: Q(m3/s) = runoff(mm/day) * cell_area(m2) / 86400000.
+      The converted inflow is assigned to SWMM junctions at the interface
+      between the rural VIC domain and the urban SWMM domain. This is a
+      SILENT ERROR if the unit conversion is wrong — flow magnitudes will
+      be off by orders of magnitude.
+    stage: "s7_model_coupling"
+    script_path: "tools/s7_model_coupling/convert_vic_runoff_to_swmm_inflow.py"
+    language: "python"
+    inputs:
+      - name: "vic_result_dir"
+        type: "directory"
+        description: "Directory with VIC flux output files"
+        required: true
+        example: "outputs/vic_run/vic_result"
+      - name: "vic_grid_nc"
+        type: "file"
+        description: "VIC grid NetCDF for cell area computation"
+        required: true
+      - name: "mapping_config"
+        type: "config"
+        description: "Mapping of VIC grid cells to SWMM junction IDs: [{vic_cell: 'lat_lon', junction: 'J1'}, ...]"
+        required: true
+      - name: "start_date"
+        type: "string"
+        description: "Start date YYYY-MM-DD"
+        required: true
+      - name: "end_date"
+        type: "string"
+        description: "End date YYYY-MM-DD"
+        required: true
+      - name: "flow_units"
+        type: "string"
+        description: "SWMM FLOW_UNITS (CFS or CMS)"
+        required: true
+      - name: "output_dir"
+        type: "directory"
+        description: "Output directory for SWMM inflow time series"
+        required: true
+    outputs:
+      - name: "inflow_timeseries"
+        type: "file"
+        description: "SWMM INFLOWS time series files (one per junction)"
+        path_pattern: "{output_dir}/inflow_*.dat"
+      - name: "inflows_inp_section"
+        type: "file"
+        description: "Ready-to-paste [INFLOWS] INP section"
+        path_pattern: "{output_dir}/inflows_section.txt"
+    preconditions:
+      - "VIC simulation completed successfully"
+      - "VIC grid cells in mapping_config exist and have runoff data"
+      - "Junction IDs in mapping_config exist in the SWMM model"
+    postconditions:
+      - "Inflow values are in correct units (m3/s for CMS, ft3/s for CFS)"
+      - "Total volume from VIC matches total SWMM inflow volume within 1%"
+      - "Time series cover the requested period"
+
+  - id: "convert_cama_stage_to_outfall_bc"
+    name: "Convert CaMa-Flood Stage to SWMM Outfall Boundary Condition"
+    description: >
+      Convert CaMa-Flood river water level (sfcelv or rivdph) to SWMM
+      outfall boundary condition time series. CaMa-Flood outputs water
+      surface elevation in meters above sea level (global datum). SWMM
+      outfalls reference a local datum. A datum offset must be computed
+      and applied. The outfall boundary type is set to TIMESERIES,
+      and the time series provides head values. This is critical for
+      modeling backwater effects when the receiving river floods.
+    stage: "s7_model_coupling"
+    script_path: "tools/s7_model_coupling/convert_cama_stage_to_outfall_bc.py"
+    language: "python"
+    inputs:
+      - name: "cama_output_dir"
+        type: "directory"
+        description: "CaMa-Flood output directory with sfcelv NetCDF files"
+        required: true
+        example: "model/cmf_v420_pkg/out/basin_run"
+      - name: "cama_grid_cell"
+        type: "config"
+        description: "CaMa-Flood grid cell [lat, lon] nearest to SWMM outfall"
+        required: true
+        example: "[31.23, 121.47]"
+      - name: "outfall_id"
+        type: "string"
+        description: "SWMM outfall node ID"
+        required: true
+        example: "OF1"
+      - name: "datum_offset_m"
+        type: "number"
+        description: "Offset from CaMa global datum to SWMM local datum (meters). SWMM_elev = CaMa_elev - offset."
+        required: true
+        example: "0.0"
+      - name: "start_year"
+        type: "number"
+        description: "Start year"
+        required: true
+      - name: "end_year"
+        type: "number"
+        description: "End year"
+        required: true
+      - name: "output_file"
+        type: "file"
+        description: "Output SWMM time series file for outfall BC"
+        required: true
+    outputs:
+      - name: "outfall_bc_timeseries"
+        type: "file"
+        description: "SWMM-compatible outfall boundary condition time series"
+        path_pattern: "{output_file}"
+    preconditions:
+      - "CaMa-Flood simulation completed with sfcelv output enabled"
+      - "CaMa grid cell is within CaMa-Flood simulation domain"
+      - "Datum offset is known (survey data or DEM comparison)"
+    postconditions:
+      - "Outfall stage values are physically reasonable (not negative for rivers)"
+      - "Time series timestep matches or is finer than SWMM routing timestep"
+      - "Datum offset is applied correctly"
+
+  - id: "convert_swmm_outflow_to_cama_lateral"
+    name: "Convert SWMM Outfall Discharge to CaMa-Flood Lateral Inflow"
+    description: >
+      Convert SWMM outfall discharge time series to CaMa-Flood lateral
+      inflow for urban-to-river coupling. SWMM outfall discharge is
+      extracted from simulation results and converted to the format
+      expected by CaMa-Flood's lateral inflow forcing. Units must be
+      converted from SWMM FLOW_UNITS to CaMa-Flood's m3/s. Temporal
+      aggregation from SWMM's fine timestep (seconds-minutes) to
+      CaMa-Flood's daily or sub-daily timestep may be needed.
+    stage: "s7_model_coupling"
+    script_path: "tools/s7_model_coupling/convert_swmm_outflow_to_cama_lateral.py"
+    language: "python"
+    inputs:
+      - name: "swmm_out_file"
+        type: "file"
+        description: "SWMM binary OUT file"
+        required: true
+      - name: "outfall_ids"
+        type: "config"
+        description: "List of SWMM outfall IDs to extract"
+        required: true
+        example: '["OF1", "OF2"]'
+      - name: "cama_grid_cells"
+        type: "config"
+        description: "Mapping of outfall IDs to CaMa grid cells: {OF1: [lat, lon]}"
+        required: true
+      - name: "flow_units"
+        type: "string"
+        description: "SWMM FLOW_UNITS for unit conversion"
+        required: true
+      - name: "cama_timestep"
+        type: "string"
+        description: "CaMa-Flood timestep: 'daily' or 'hourly'"
+        required: true
+        example: "daily"
+      - name: "output_dir"
+        type: "directory"
+        description: "Output directory for CaMa lateral inflow files"
+        required: true
+    outputs:
+      - name: "lateral_inflow_nc"
+        type: "file"
+        description: "CaMa-Flood lateral inflow NetCDF file"
+        path_pattern: "{output_dir}/swmm_lateral_inflow.nc"
+    preconditions:
+      - "SWMM simulation completed successfully"
+      - "Outfall IDs exist in the SWMM model"
+      - "CaMa grid cells are within CaMa-Flood domain"
+    postconditions:
+      - "Lateral inflow is in m3/s"
+      - "Total volume is conserved across unit/timestep conversion within 1%"
+
+  - id: "validate_coupling_water_balance"
+    name: "Validate Coupled System Water Balance"
+    description: >
+      Validate the water balance across the VIC-SWMM-CaMa coupled system.
+      Checks: (1) VIC total runoff volume entering SWMM matches SWMM
+      external inflow volume, (2) SWMM total outflow volume matches
+      CaMa-Flood lateral inflow volume, (3) SWMM internal water balance
+      (rainfall + external inflow = outflow + storage change + losses
+      + continuity error), (4) no mass creation or destruction at
+      coupling interfaces.
+    stage: "s7_model_coupling"
+    script_path: "tools/s7_model_coupling/validate_coupling_water_balance.py"
+    language: "python"
+    inputs:
+      - name: "vic_result_dir"
+        type: "directory"
+        description: "VIC result directory"
+        required: true
+      - name: "swmm_rpt_file"
+        type: "file"
+        description: "SWMM RPT file"
+        required: true
+      - name: "swmm_inflow_files"
+        type: "config"
+        description: "List of SWMM inflow time series file paths"
+        required: true
+      - name: "cama_lateral_file"
+        type: "file"
+        description: "CaMa lateral inflow file"
+        required: false
+      - name: "vic_grid_nc"
+        type: "file"
+        description: "VIC grid NetCDF for area computation"
+        required: true
+    outputs:
+      - name: "balance_report"
+        type: "value"
+        description: "JSON report with volume comparisons at each coupling interface"
+        path_pattern: ""
+    preconditions:
+      - "All component simulations have completed"
+      - "Inflow and outflow files exist"
+    postconditions:
+      - "Volume mismatch at each interface < 2%"
+      - "No unexplained mass creation or destruction"
+
+# --- Layer 2: Skill Documents ---
+skill_documents:
+  - id: "sd_s1"
+    name: "Subcatchment Delineation"
+    stage: "s1_subcatchment_delineation"
+    path: "docs/s1_subcatchment_delineation_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls, tools_reference]
+    word_count: 3000
+
+  - id: "sd_s2"
+    name: "Drainage Network Definition"
+    stage: "s2_drainage_network"
+    path: "docs/s2_drainage_network_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls, tools_reference]
+    word_count: 3200
+
+  - id: "sd_s3"
+    name: "Rainfall Forcing Preparation"
+    stage: "s3_rainfall_forcing"
+    path: "docs/s3_rainfall_forcing_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls, tools_reference]
+    word_count: 3500
+
+  - id: "sd_s4"
+    name: "LID / Green Infrastructure Setup"
+    stage: "s4_lid_setup"
+    path: "docs/s4_lid_setup_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls, tools_reference]
+    word_count: 3000
+
+  - id: "sd_s5"
+    name: "Model Assembly (INP File Generation)"
+    stage: "s5_model_assembly"
+    path: "docs/s5_model_assembly_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls, tools_reference]
+    word_count: 3200
+
+  - id: "sd_s6"
+    name: "SWMM Execution and Results Extraction"
+    stage: "s6_execution"
+    path: "docs/s6_execution_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls, tools_reference]
+    word_count: 2800
+
+  - id: "sd_s7"
+    name: "HydroCraft Model Coupling"
+    stage: "s7_model_coupling"
+    path: "docs/s7_model_coupling_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls, tools_reference]
+    word_count: 3500
+
+# --- Layer 3: Diagnostic Triplets ---
+# See diagnostics/triplets.yaml for full definitions
+diagnostic_triplets:
+  - id: "dt_001"
+    stage: "s6_execution"
+    failure_domain: "runtime"
+    severity: "degraded"
+  - id: "dt_002"
+    stage: "s6_execution"
+    failure_domain: "runtime"
+    severity: "fatal"
+  - id: "dt_003"
+    stage: "s6_execution"
+    failure_domain: "runtime"
+    severity: "degraded"
+  - id: "dt_004"
+    stage: "s5_model_assembly"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_005"
+    stage: "s1_subcatchment_delineation"
+    failure_domain: "parameter_format"
+    severity: "fatal"
+  - id: "dt_006"
+    stage: "s1_subcatchment_delineation"
+    failure_domain: "parameter_format"
+    severity: "degraded"
+  - id: "dt_007"
+    stage: "s2_drainage_network"
+    failure_domain: "parameter_format"
+    severity: "fatal"
+  - id: "dt_008"
+    stage: "s2_drainage_network"
+    failure_domain: "parameter_format"
+    severity: "fatal"
+  - id: "dt_009"
+    stage: "s3_rainfall_forcing"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_010"
+    stage: "s7_model_coupling"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_011"
+    stage: "s4_lid_setup"
+    failure_domain: "parameter_format"
+    severity: "degraded"
+  - id: "dt_012"
+    stage: "s5_model_assembly"
+    failure_domain: "parameter_format"
+    severity: "degraded"
+  - id: "dt_013"
+    stage: "s5_model_assembly"
+    failure_domain: "runtime"
+    severity: "fatal"
+  - id: "dt_014"
+    stage: "s2_drainage_network"
+    failure_domain: "parameter_format"
+    severity: "degraded"
+  - id: "dt_015"
+    stage: "s7_model_coupling"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_016"
+    stage: "s1_subcatchment_delineation"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_017"
+    stage: "s6_execution"
+    failure_domain: "runtime"
+    severity: "degraded"
+  - id: "dt_018"
+    stage: "s6_execution"
+    failure_domain: "dependency_mismatch"
+    severity: "fatal"
+  - id: "dt_019"
+    stage: "s4_lid_setup"
+    failure_domain: "parameter_format"
+    severity: "fatal"
+  - id: "dt_020"
+    stage: "s5_model_assembly"
+    failure_domain: "runtime"
+    severity: "fatal"
+
+# --- Summary statistics ---
+summary:
+  total_tools: 25
+  total_tool_lines: 0  # tools are stubs; implementation pending
+  total_skill_documents: 7
+  total_skill_words: 22200
+  total_diagnostic_triplets: 21
+  failure_domains:
+    - "runtime"
+    - "parameter_format"
+    - "silent_error"
+    - "dependency_mismatch"
+    - "unit_conversion"
+  pipeline_stages: 7
+  pipeline_milestones: 24

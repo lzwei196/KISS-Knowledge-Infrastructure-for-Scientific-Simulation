@@ -1,0 +1,539 @@
+# SNOWPACK Diagnostic Triplets
+# Each entry: symptom → diagnosis → remedy
+# 20 entries covering unit conversion, parameter format, path resolution,
+# runtime, dependency mismatch, and silent error domains.
+
+- id: dt_001
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Snowpack grows indefinitely. Surface temperature near absolute zero.
+      Outgoing longwave radiation is negligibly small (~0.3 W/m²).
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Air temperature provided in Celsius instead of Kelvin"
+    explanation: >
+      SNOWPACK expects TA in Kelvin. A Celsius value of 20 is interpreted as
+      20 K (−253°C). The energy balance produces extreme negative net radiation,
+      zero melt, and the snowpack accumulates without limit. No error is raised
+      because 20 K is a valid floating-point value.
+    affected_components: [Meteo, Snowpack, SurfaceFluxes]
+  remedy:
+    action: "Convert temperature from Celsius to Kelvin before writing SMET"
+    tool_to_run: convert_forcing.py
+    manual_steps:
+      - "Add 273.15 to all temperature fields: TA, TSG, TSS"
+      - "Verify: all TA values should be 200-340 K"
+    prevention: "convert_forcing.py with --source_temp_unit C applies the conversion automatically"
+  severity: silent
+  cross_references: []
+
+- id: dt_002
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Latent heat flux (ql) is systematically biased. Sublimation rates are
+      too high in winter. Snow disappears faster than expected.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Relative humidity provided as 0-100% instead of 0-1 fraction"
+    explanation: >
+      SNOWPACK expects RH as a decimal fraction. Values like 75 (meaning 75%)
+      are clamped to 1.0, so the model always sees saturated air. This causes
+      incorrect vapor pressure deficit calculations, systematically biasing
+      latent heat flux and sublimation.
+    affected_components: [Meteo, latent_heat, sublimation]
+  remedy:
+    action: "Divide RH by 100 to convert from percent to fraction"
+    tool_to_run: convert_forcing.py
+    manual_steps:
+      - "RH_fraction = RH_percent / 100.0"
+      - "Verify: 0.0 ≤ RH ≤ 1.0 in SMET file"
+    prevention: "convert_forcing.py with --source_rh_unit percent applies the conversion"
+  severity: silent
+  cross_references: []
+
+- id: dt_003
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Snow water equivalent (SWE) grows unrealistically fast. Annual SWE
+      accumulation is 10-100× higher than expected from precipitation records.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation rate/accumulation unit mismatch with timestep"
+    explanation: >
+      PSUM must be in kg/m² per timestep. If mm/day values are provided without
+      converting to the model timestep (e.g., hourly), each timestep receives
+      the full daily amount. For hourly timesteps, this is a 24× overestimate.
+      For mm provided as m (factor 1000 error), SWE is 1000× too high.
+    affected_components: [precipitation, SWE, mass_balance]
+  remedy:
+    action: "Convert precipitation rate to kg/m² per model timestep"
+    tool_to_run: convert_forcing.py
+    manual_steps:
+      - "mm/day to kg/m² per hour: divide by 24"
+      - "mm/day to kg/m² per 30min: divide by 48"
+      - "m to mm: multiply by 1000"
+    prevention: "convert_forcing.py with --source_precip_unit mm_per_day handles the conversion"
+  severity: silent
+  cross_references: []
+
+- id: dt_004
+  stage: s2_profile_setup
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      SNOWPACK crashes at initialization with error about negative porosity
+      or impossible element properties.
+    error_pattern: "negative porosity|Vol_Frac|impossible"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Volume fractions in .sno file do not sum to 1.0"
+    explanation: >
+      Each layer must satisfy Vol_Frac_I + Vol_Frac_W + Vol_Frac_V + Vol_Frac_S = 1.0.
+      If the sum exceeds 1.0, implied porosity becomes negative. If less than
+      1.0, there is undefined material in the layer. Both cases can crash the
+      finite element solver.
+    affected_components: [ElementData, SnowStation, initialization]
+  remedy:
+    action: "Recalculate volume fractions ensuring sum = 1.0 for every layer"
+    tool_to_run: build_sno_profile.py
+    manual_steps:
+      - "For each layer: θ_v = 1.0 - θ_i - θ_w - θ_s"
+      - "Verify: awk sum check on .sno file"
+    prevention: "build_sno_profile.py enforces the constraint with an assertion"
+  severity: fatal
+  cross_references: [dt_015]
+
+- id: dt_005
+  stage: s3_configuration
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Simulation runs extremely slowly (60× longer than expected).
+      Output file is enormous with far too many timesteps.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "CALCULATION_STEP_LENGTH set in minutes instead of seconds"
+    explanation: >
+      CALCULATION_STEP_LENGTH is in seconds. Setting 15 (intending 15 minutes)
+      actually sets a 15-second timestep. The simulation runs 60× more steps,
+      taking much longer and producing much more output. Results may be valid
+      but the run is needlessly slow.
+    affected_components: [SnowpackConfig, timestep]
+  remedy:
+    action: "Set CALCULATION_STEP_LENGTH = 900 for 15-minute timestep"
+    tool_to_run: generate_config.py
+    manual_steps:
+      - "Multiply desired minutes by 60 to get seconds"
+      - "Typical values: 60 (1 min), 300 (5 min), 900 (15 min)"
+    prevention: "generate_config.py validates that timestep is in plausible range (60-3600 s)"
+  severity: degraded
+  cross_references: []
+
+- id: dt_006
+  stage: s3_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Sensible and latent heat fluxes are systematically too high or too low.
+      Energy balance closure error is large. Snow melts too fast or too slowly.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "HEIGHT_OF_METEO_VALUES or HEIGHT_OF_WIND_VALUE incorrect"
+    explanation: >
+      SNOWPACK uses Monin-Obukhov similarity theory to extrapolate wind,
+      temperature, and humidity from measurement height to the surface. If
+      HEIGHT_OF_WIND_VALUE = 2 m but the anemometer is at 10 m, the wind
+      speed is underestimated, reducing turbulent fluxes. This causes
+      systematic bias in sensible heat, latent heat, and snow erosion.
+    affected_components: [Meteo, stability_corrections, turbulent_fluxes]
+  remedy:
+    action: "Set measurement heights to actual sensor installation heights"
+    tool_to_run: generate_config.py
+    manual_steps:
+      - "HEIGHT_OF_METEO_VALUES = actual T/RH sensor height (typically 2.0 m)"
+      - "HEIGHT_OF_WIND_VALUE = actual anemometer height (often 10.0 m)"
+    prevention: "generate_config.py accepts --height_meteo and --height_wind arguments"
+  severity: silent
+  cross_references: []
+
+- id: dt_007
+  stage: s3_configuration
+  failure_domain: silent_error
+  symptom:
+    description: >
+      Snow melts far too rapidly. Albedo appears to be zero or near-zero
+      even for fresh snow.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "SW_MODE = BOTH but RSWR column is missing/nodata in SMET"
+    explanation: >
+      When SW_MODE = BOTH, SNOWPACK computes albedo as RSWR/ISWR. If RSWR is
+      nodata (-999), the ratio is meaningless. Some versions interpret this as
+      albedo = 0, causing all shortwave radiation to be absorbed. This produces
+      extreme warming and rapid melt.
+    affected_components: [radiation, albedo, energy_balance]
+  remedy:
+    action: "Change SW_MODE to INCOMING if RSWR is not available"
+    tool_to_run: generate_config.py
+    manual_steps:
+      - "Check SMET fields: if RSWR is absent, use SW_MODE = INCOMING"
+      - "If ISWR is also absent, use SW_MODE = REFLECTED with RSWR"
+    prevention: "generate_config.py documentation warns about SW_MODE matching available data"
+  severity: silent
+  cross_references: [dt_010]
+
+- id: dt_008
+  stage: s3_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      Snowpack is extremely cold. Snow never melts even in summer.
+      Longwave radiation balance is severely negative.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "FORCING = ATMOS but ILWR (longwave radiation) is missing"
+    explanation: >
+      In ATMOS forcing mode, SNOWPACK uses the full energy balance including
+      incoming longwave radiation. If ILWR is missing (nodata), the model
+      assumes zero incoming longwave, creating a severe cold bias (net longwave
+      = -OLWR only). The snowpack cannot warm above deep-winter temperatures.
+    affected_components: [radiation, energy_balance, temperature_profile]
+  remedy:
+    action: "Either provide ILWR data or switch to MASSBAL forcing"
+    tool_to_run: ""
+    manual_steps:
+      - "Option 1: Estimate ILWR from air temperature and humidity"
+      - "Option 2: Use FORCING = MASSBAL (ignores radiation, simple mass balance)"
+    prevention: "Check that all required radiation fields are present before selecting ATMOS"
+  severity: degraded
+  cross_references: [dt_019]
+
+- id: dt_009
+  stage: s1_forcing_preparation
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      SNOWPACK crashes with extreme values or produces NaN.
+      Alternatively, some timesteps have physically impossible meteorological values.
+    error_pattern: "nan|inf|extreme value"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Nodata sentinel in SMET header does not match actual missing data marker"
+    explanation: >
+      SMET header declares nodata = -999, but actual missing values use -9999,
+      NaN, or blank cells. MeteoIO reads -9999 as a real data value (temperature
+      of -9999 K or wind of -9999 m/s). This can crash the solver or silently
+      corrupt turbulent flux calculations.
+    affected_components: [MeteoIO, SMET_reader, all_physics]
+  remedy:
+    action: "Ensure nodata sentinel in SMET header matches actual missing data marker"
+    tool_to_run: convert_forcing.py
+    manual_steps:
+      - "Check: grep -c '\\-9999' input/station.smet"
+      - "Replace all missing value representations with the declared nodata value"
+    prevention: "convert_forcing.py replaces NaN with the specified --nodata value"
+  severity: fatal
+  cross_references: []
+
+- id: dt_010
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Incoming shortwave radiation values are extremely high (>10000 W/m²)
+      or extremely low (<1 W/m² at midday).
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "ISWR in energy units (MJ/m²/day) instead of power (W/m²)"
+    explanation: >
+      SNOWPACK expects instantaneous radiation in W/m². ERA5 and some datasets
+      provide accumulated energy (J/m² or MJ/m²/day). Without conversion,
+      values are off by factors of 86400 (seconds/day) or 1e6 (MJ to J).
+    affected_components: [shortwave_radiation, albedo, energy_balance]
+  remedy:
+    action: "Convert MJ/m²/day to W/m²: multiply by 1e6/86400 = 11.574"
+    tool_to_run: convert_forcing.py
+    manual_steps:
+      - "W/m² = MJ/m²/day × 1e6 / 86400"
+      - "Verify: midday clear-sky ISWR should be 600-1200 W/m²"
+    prevention: "convert_forcing.py with --source_rad_unit MJ_per_m2_day handles conversion"
+  severity: silent
+  cross_references: [dt_011]
+
+- id: dt_011
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Incoming longwave radiation values are near zero or >10000 W/m².
+      Net longwave radiation is physically impossible.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "ILWR in energy units (MJ/m²/day) instead of W/m²"
+    explanation: >
+      Same as dt_010 but for longwave radiation. Typical ILWR is 200-400 W/m².
+      In MJ/m²/day, values are ~17-35, which interpreted as W/m² would give
+      severe cold bias.
+    affected_components: [longwave_radiation, energy_balance]
+  remedy:
+    action: "Convert ILWR units same as ISWR"
+    tool_to_run: convert_forcing.py
+    manual_steps:
+      - "W/m² = MJ/m²/day × 11.574"
+      - "Verify: ILWR should be 100-500 W/m²"
+    prevention: "convert_forcing.py applies same radiation conversion to both ISWR and ILWR"
+  severity: silent
+  cross_references: [dt_010]
+
+- id: dt_012
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Turbulent fluxes are 3-4× too high. Snow erosion is excessive.
+      Sensible heat dominates the energy balance unrealistically.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wind speed in km/h instead of m/s"
+    explanation: >
+      SNOWPACK expects wind in m/s. Wind of 36 km/h (moderate breeze) is
+      interpreted as 36 m/s (hurricane force). Turbulent transfer coefficients
+      scale with wind speed, so all fluxes are dramatically overestimated.
+    affected_components: [Meteo, stability_corrections, turbulent_fluxes, erosion]
+  remedy:
+    action: "Convert wind speed: m/s = km/h / 3.6"
+    tool_to_run: convert_forcing.py
+    manual_steps:
+      - "VW_ms = VW_kmh / 3.6"
+      - "Verify: typical VW should be 0-20 m/s for most stations"
+    prevention: "convert_forcing.py with --source_wind_unit km_per_h handles conversion"
+  severity: silent
+  cross_references: []
+
+- id: dt_013
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Measured snow depth (HS) is 100× larger than simulated.
+      Model vs observation comparison shows systematic offset.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Snow depth HS in cm instead of m"
+    explanation: >
+      SNOWPACK uses meters for all length scales. If HS observations are in cm,
+      a 150 cm snowpack is interpreted as 150 m. This primarily affects the HS
+      comparison but can also affect the model if HS is used for forcing
+      (e.g., HS-driven precipitation correction).
+    affected_components: [HS, forcing_correction]
+  remedy:
+    action: "Convert HS from cm to m: HS_m = HS_cm / 100"
+    tool_to_run: convert_forcing.py
+    manual_steps:
+      - "Divide HS values by 100"
+    prevention: "convert_forcing.py documents that HS must be in meters"
+  severity: silent
+  cross_references: []
+
+- id: dt_014
+  stage: s1_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Atmospheric pressure values appear unrealistic (e.g., 1013 Pa for
+      sea level instead of 101300 Pa).
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Pressure in hPa/mbar instead of Pa"
+    explanation: >
+      If pressure is used (optional), SNOWPACK expects Pa. Station data
+      commonly reports in hPa (= mbar). 1013 hPa interpreted as 1013 Pa
+      is 100× too low, affecting vapor pressure and density calculations.
+    affected_components: [atmospheric_pressure, vapor_pressure]
+  remedy:
+    action: "Convert pressure: Pa = hPa × 100"
+    tool_to_run: convert_forcing.py
+    manual_steps:
+      - "P_Pa = P_hPa × 100"
+      - "Verify: sea level ≈ 101325 Pa, high mountain ≈ 75000 Pa"
+    prevention: "convert_forcing.py documents pressure units"
+  severity: silent
+  cross_references: []
+
+- id: dt_015
+  stage: s2_profile_setup
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Soil column is unrealistically deep (50 m for what should be 50 cm).
+      Soil thermal response is extremely slow.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Layer_Thick in .sno file specified in cm instead of m"
+    explanation: >
+      All lengths in SNOWPACK are in meters. A 50 cm soil layer should be
+      Layer_Thick = 0.50, not 50. A 50 m thick layer has enormous thermal
+      mass and effectively decouples the soil from the atmosphere.
+    affected_components: [SnowStation, soil_heat, ground_heat_flux]
+  remedy:
+    action: "Convert layer thickness to meters: Layer_Thick_m = Layer_Thick_cm / 100"
+    tool_to_run: build_sno_profile.py
+    manual_steps:
+      - "Divide all Layer_Thick values by 100"
+    prevention: "build_sno_profile.py accepts --soil_depth in meters"
+  severity: silent
+  cross_references: [dt_004]
+
+- id: dt_016
+  stage: s5_production_run
+  failure_domain: path_resolution
+  symptom:
+    description: >
+      SNOWPACK crashes immediately with MeteoIO error about missing file.
+      Error message mentions "could not open" or "file not found".
+    error_pattern: "could not open|file not found|no such file"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "METEOPATH or SNOWPATH in config does not point to actual file location"
+    explanation: >
+      MeteoIO resolves file paths relative to the config file location (not
+      the working directory). If METEOPATH = ./input but the config is in a
+      different directory, the relative path resolves incorrectly.
+    affected_components: [MeteoIO, file_IO, initialization]
+  remedy:
+    action: "Use absolute paths or ensure relative paths are relative to config file location"
+    tool_to_run: generate_config.py
+    manual_steps:
+      - "Check: ls <METEOPATH>/<STATION>.smet"
+      - "Use absolute paths to avoid ambiguity"
+    prevention: "generate_config.py can accept absolute paths"
+  severity: fatal
+  cross_references: []
+
+- id: dt_017
+  stage: s7_binary_test
+  failure_domain: dependency_mismatch
+  symptom:
+    description: >
+      SNOWPACK binary fails to start. Dynamic linker error about missing
+      libmeteoio.so or version mismatch.
+    error_pattern: "libmeteoio|cannot open shared object|version"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "MeteoIO library version incompatible with compiled SNOWPACK"
+    explanation: >
+      SNOWPACK links against libmeteoio at compile time. If the runtime
+      library version differs (e.g., compiled against 2.10 but runtime has
+      2.9), symbol resolution fails. This also happens when MeteoIO is
+      installed in a non-standard location without proper LD_LIBRARY_PATH.
+    affected_components: [binary, linker, MeteoIO]
+  remedy:
+    action: "Rebuild SNOWPACK against the installed MeteoIO version"
+    tool_to_run: ""
+    manual_steps:
+      - "export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH"
+      - "Or rebuild: cd build && cmake .. && make"
+    prevention: "Build MeteoIO and SNOWPACK together from the bundled source"
+  severity: fatal
+  cross_references: []
+
+- id: dt_018
+  stage: s5_production_run
+  failure_domain: runtime
+  symptom:
+    description: >
+      Segmentation fault during simulation. Crash occurs after some snow
+      accumulation, not at initialization.
+    error_pattern: "Segmentation fault|SIGSEGV"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Zero-thickness snow layer created during simulation"
+    explanation: >
+      If MINIMUM_L_ELEMENT is set too small or layer merging logic encounters
+      an edge case, a layer with zero thickness can be created. This causes
+      division by zero in the finite element solver, leading to a segfault.
+    affected_components: [ElementData, Solver, layer_management]
+  remedy:
+    action: "Increase MINIMUM_L_ELEMENT in [SnowpackAdvanced]"
+    tool_to_run: generate_config.py
+    manual_steps:
+      - "Set MINIMUM_L_ELEMENT = 0.01 (default) or higher"
+      - "Set REDUCE_N_ELEMENTS = 2 or higher to limit layer count"
+    prevention: "generate_config.py sets safe defaults for layer management"
+  severity: fatal
+  cross_references: []
+
+- id: dt_019
+  stage: s5_production_run
+  failure_domain: silent_error
+  symptom:
+    description: >
+      Energy balance residual is large and negative. Snowpack stays
+      unrealistically cold. Melt onset is delayed by weeks.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "ILWR has a systematic offset or bias"
+    explanation: >
+      Incoming longwave radiation is the largest single energy input to
+      alpine snowpacks (often > ISWR in winter). A -20 W/m² bias in ILWR
+      shifts the entire energy balance cold, delaying melt onset and
+      underestimating peak SWE reduction. Unlike ISWR errors, ILWR bias
+      persists 24 hours/day.
+    affected_components: [longwave_radiation, energy_balance, melt]
+  remedy:
+    action: "Compare ILWR to station observations or parameterization from TA/RH"
+    tool_to_run: ""
+    manual_steps:
+      - "Estimate ILWR from TA and RH using Brutsaert (1975) or Dilley & O'Brien (1998)"
+      - "Compare to input ILWR — bias > 20 W/m² warrants correction"
+    prevention: "Cross-check ILWR against clear-sky and all-sky parameterizations"
+  severity: degraded
+  cross_references: [dt_008, dt_011]
+
+- id: dt_020
+  stage: s3_configuration
+  failure_domain: silent_error
+  symptom:
+    description: >
+      Simulated SWE is much higher than expected. Precipitation is being
+      counted twice. Snow depth grows faster than any single forcing term
+      can explain.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Both HS (snow depth) and PSUM (precipitation) provided, causing double-counting"
+    explanation: >
+      If the SMET file contains both measured HS and PSUM, and the config
+      uses HS for precipitation correction, new snow may be added from both
+      the PSUM field and the HS-derived increment. This double-counts
+      precipitation and inflates SWE.
+    affected_components: [precipitation, HS_correction, mass_balance]
+  remedy:
+    action: "Use either PSUM or HS-based precipitation, not both"
+    tool_to_run: ""
+    manual_steps:
+      - "Remove HS from SMET if using PSUM-based forcing"
+      - "Or remove PSUM if using HS-based precipitation detection"
+    prevention: "Document the forcing strategy clearly in the config"
+  severity: silent
+  cross_references: [dt_003]

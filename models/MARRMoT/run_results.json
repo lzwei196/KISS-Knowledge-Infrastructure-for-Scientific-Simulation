@@ -1,0 +1,34 @@
+{
+  "status": "success",
+  "model": "m_29_hymod_5p_5s (Python reimplementation)",
+  "theta": [
+    200.0,
+    1.5,
+    0.7,
+    0.15,
+    0.01
+  ],
+  "S0": [
+    100.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "basin": "Buffalo River near Flat Woods, Tennessee, USA",
+  "gauge_id": "3604000",
+  "n_timesteps": 1461,
+  "warmup_days": 365,
+  "metrics": {
+    "NSE": -0.0449,
+    "KGE": -0.2672,
+    "r": 0.1388,
+    "alpha": 0.292,
+    "beta": 1.6025,
+    "PBIAS": 60.25,
+    "RMSE": 6.3905
+  },
+  "water_balance_mm": 0.0,
+  "Q_sim_mean": 3.3565,
+  "Q_obs_mean": 2.0945
+}

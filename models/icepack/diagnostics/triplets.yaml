@@ -1,0 +1,517 @@
+# ============================================================================
+# icepack Diagnostic Triplets
+# ============================================================================
+# 20 diagnostic triplets covering 5 failure domains.
+# Generated during icepack knowledge dissection for HydroCraft platform.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s1_data_acquisition
+  failure_domain: unit_conversion
+  symptom:
+    description: "Velocity field near zero everywhere (~1e-8 m/yr). Solver converges but flow is negligible."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Velocity data left in m/s instead of converted to m/yr"
+    explanation: >
+      icepack expects velocity in meters per year (m/yr). MEaSUREs Antarctic data
+      is typically already in m/yr, but some sources provide m/s. If m/s values
+      are used directly, velocities are ~3.16e7 times too small, yielding
+      effectively zero flow.
+    affected_components: [convert_velocity_to_icepack, interpolate]
+  remedy:
+    action: "Multiply velocity by 3.15576e7 (seconds per year)"
+    tool_to_run: convert_velocity_to_icepack
+    manual_steps:
+      - "Check max velocity magnitude — should be 1–4000 m/yr for Antarctic ice streams"
+      - "If max velocity < 0.01 m/yr, likely still in m/s — multiply by 3.15576e7"
+    prevention: "validate_outputs() in convert_velocity_to_icepack checks for suspiciously low velocities"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_002
+  stage: s1_data_acquisition
+  failure_domain: unit_conversion
+  symptom:
+    description: "Velocity field enormous (>1e8 m/yr). Solver diverges immediately with ConvergenceError."
+    error_pattern: "ConvergenceError"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Velocity data in m/yr double-converted (multiplied by year factor twice)"
+    explanation: >
+      If data is already in m/yr and the conversion factor is applied again,
+      velocities become ~3.16e7 times too large. The nonlinear solver cannot
+      find a physical solution at these extreme strain rates.
+    affected_components: [convert_velocity_to_icepack]
+  remedy:
+    action: "Check source data units before applying conversion; skip conversion if already m/yr"
+    tool_to_run: convert_velocity_to_icepack
+    manual_steps:
+      - "Verify source data documentation for native velocity unit"
+      - "Check if max velocity > 15000 m/yr — if so, likely double-converted"
+    prevention: "validate_outputs() checks for unrealistically high velocities"
+  severity: crash
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s0_configuration
+  failure_domain: unit_conversion
+  symptom:
+    description: "Rate factor A is extremely small or large. Ice behaves as rigid solid or inviscid fluid."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature passed in Celsius instead of Kelvin to rate_factor()"
+    explanation: >
+      icepack.rate_factor(T) expects temperature in Kelvin. Passing -19°C as -19
+      (negative Kelvin) will produce nonsensical A values. Passing 254 (correct K)
+      gives A ≈ 3.5 MPa^-3 yr^-1 which is physically reasonable.
+    affected_components: [rate_factor, viscosity]
+  remedy:
+    action: "Convert temperature to Kelvin: T_K = T_C + 273.15"
+    tool_to_run: null
+    manual_steps:
+      - "Check T value — must be 200–273.15 K for glacier ice"
+      - "A(254 K) ≈ 3.5, A(263 K) ≈ 21, A(273 K) ≈ 100 MPa^-3 yr^-1"
+    prevention: "Add assertion: assert 200 < T < 274, 'Temperature must be in Kelvin'"
+  severity: silent
+  cross_references: []
+
+- id: dt_004
+  stage: s1_data_acquisition
+  failure_domain: unit_conversion
+  symptom:
+    description: "Ice thickness appears as fraction of a meter where it should be hundreds of meters."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Thickness data in km instead of meters"
+    explanation: >
+      Some datasets store ice thickness in kilometers. icepack expects meters.
+      Using km directly gives thickness of 0.5 where it should be 500 m, causing
+      the solver to compute unrealistically thin ice behavior.
+    affected_components: [convert_thickness_to_icepack]
+  remedy:
+    action: "Multiply thickness by 1000 to convert km → m"
+    tool_to_run: convert_thickness_to_icepack
+    manual_steps:
+      - "Check max thickness — Antarctic ice sheet max ~4700 m, Greenland ~3400 m"
+      - "If max thickness < 10, likely in km — multiply by 1000"
+    prevention: "validate_outputs() warns if max thickness < 1 m"
+  severity: silent
+  cross_references: []
+
+# --- Solver Convergence ---
+
+- id: dt_005
+  stage: s4_diagnostic_solve
+  failure_domain: solver_convergence
+  symptom:
+    description: "ConvergenceError: 'Minimization solver has invalid search direction'"
+    error_pattern: "invalid search direction"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Negative thickness or friction coefficient in input fields"
+    explanation: >
+      The Newton solver computes a search direction from the Hessian. If thickness
+      is negative anywhere, the action functional becomes ill-defined (negative
+      viscous energy), and the search direction points uphill instead of downhill.
+    affected_components: [FlowSolver, NewtonSolver]
+  remedy:
+    action: "Enforce h > 0 everywhere: h.interpolate(firedrake.max_value(h, 10.0))"
+    tool_to_run: null
+    manual_steps:
+      - "Check h.dat.data.min() — must be strictly positive"
+      - "Check friction C: must be non-negative"
+      - "Clamp: h = max(h, min_thickness) with min_thickness = 10 m"
+    prevention: "Always validate fields before passing to diagnostic_solve()"
+  severity: crash
+  cross_references: [dt_006]
+
+- id: dt_006
+  stage: s4_diagnostic_solve
+  failure_domain: solver_convergence
+  symptom:
+    description: "ConvergenceError: 'Newton search did not converge after 50 iterations!'"
+    error_pattern: "did not converge"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Poor initial velocity guess or ill-conditioned problem"
+    explanation: >
+      The Newton solver requires a reasonable initial guess. If the initial velocity
+      is far from the solution (e.g., zero everywhere for a fast-flowing glacier),
+      convergence may take more than 50 iterations or fail entirely.
+    affected_components: [FlowSolver, NewtonSolver, PETScSolver]
+  remedy:
+    action: "Use observed velocity as initial guess; or start from low-resolution solve"
+    tool_to_run: null
+    manual_steps:
+      - "Set initial velocity to observed: u0 = icepack.interpolate((vx, vy), V)"
+      - "Increase max_iterations: solver_params['max_iterations'] = 200"
+      - "Try icepack solver instead of PETSc: diagnostic_solver_type='icepack'"
+    prevention: "Always provide observed velocity as initial guess for real data"
+  severity: crash
+  cross_references: [dt_005]
+
+- id: dt_007
+  stage: s4_diagnostic_solve
+  failure_domain: solver_convergence
+  symptom:
+    description: "PETSc SNES diverges with negative line search step"
+    error_pattern: "DIVERGED_LINE_SEARCH"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Inconsistent boundary conditions or input fields"
+    explanation: >
+      The PETSc nonlinear solver failed to find a decreasing step direction.
+      This typically happens when Dirichlet boundary conditions conflict with
+      the physics (e.g., prescribing inflow on an outflow boundary) or when
+      fluidity/friction fields have extreme values.
+    affected_components: [PETScSolver]
+  remedy:
+    action: "Check boundary IDs and BCs; verify A and C are physically reasonable"
+    tool_to_run: null
+    manual_steps:
+      - "Print mesh.exterior_facets.unique_markers to verify boundary IDs"
+      - "Ensure dirichlet_ids are on inflow boundaries only"
+      - "Check A and C ranges: A should be 1–100, C should be 0.001–1.0"
+    prevention: "Plot velocity and boundary IDs before solving"
+  severity: crash
+  cross_references: [dt_005, dt_006]
+
+# --- Mesh and Geometry ---
+
+- id: dt_008
+  stage: s2_mesh_generation
+  failure_domain: mesh_geometry
+  symptom:
+    description: "ValueError: 'Input collection is not orientable!'"
+    error_pattern: "not orientable"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "GeoJSON features cannot be arranged in a consistent head-to-tail orientation"
+    explanation: >
+      icepack.meshing.normalize() tries all possible feature orientations but none
+      produce a valid loop. This usually means the features are disconnected or
+      have inconsistent topology.
+    affected_components: [icepack.meshing._reorient]
+  remedy:
+    action: "Verify GeoJSON features form a single closed loop with consistent connectivity"
+    tool_to_run: null
+    manual_steps:
+      - "Open GeoJSON in QGIS/geojson.io and visually check connectivity"
+      - "Ensure all endpoints are within snapping distance"
+      - "Simplify: use a single Polygon feature instead of multiple LineStrings"
+    prevention: "Use icepack.datasets.fetch_outline() which provides pre-validated outlines"
+  severity: crash
+  cross_references: [dt_009]
+
+- id: dt_009
+  stage: s2_mesh_generation
+  failure_domain: mesh_geometry
+  symptom:
+    description: "ValueError: 'No polygon contains all other polygons!'"
+    error_pattern: "No polygon contains"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Multiple loops in GeoJSON but none fully encloses the others"
+    explanation: >
+      icepack.meshing._find_bounding_feature() requires one outer loop that contains
+      all inner loops (holes). If the loops are separate regions rather than
+      outer/inner, this check fails.
+    affected_components: [icepack.meshing._reorder]
+  remedy:
+    action: "Ensure GeoJSON has one outer boundary and inner features are holes/islands"
+    tool_to_run: null
+    manual_steps:
+      - "Check that the largest polygon fully contains all smaller polygons"
+      - "If modeling separate regions, create separate meshes for each"
+    prevention: "Validate GeoJSON topology before mesh generation"
+  severity: crash
+  cross_references: [dt_008]
+
+- id: dt_010
+  stage: s2_mesh_generation
+  failure_domain: mesh_geometry
+  symptom:
+    description: "Out of memory during mesh generation. System kills process."
+    error_pattern: "Killed"
+    detection_method: process_exit
+  diagnosis:
+    root_cause: "lcar (characteristic element length) too small for domain size"
+    explanation: >
+      A glacier domain of 100 km × 100 km with lcar=100 m would generate ~1 million
+      triangles. The Firedrake FEM assembly can require 10–100× the mesh memory.
+    affected_components: [gmsh, firedrake]
+  remedy:
+    action: "Increase lcar — start with lcar = domain_size / 100"
+    tool_to_run: null
+    manual_steps:
+      - "For 50 km domain: start with lcar=1000 (50 elements per side)"
+      - "For testing: use lcar=5000–10000"
+      - "For publication: lcar=500–2000 depending on RAM"
+    prevention: "Estimate element count: n ≈ (L/lcar)² before meshing"
+  severity: crash
+  cross_references: []
+
+# --- Data Interpolation ---
+
+- id: dt_011
+  stage: s3_interpolation
+  failure_domain: data_interpolation
+  symptom:
+    description: "NaN values in interpolated FEM field. Solver crashes with 'nan in residual'."
+    error_pattern: "nan"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Raster data does not fully cover the mesh domain"
+    explanation: >
+      icepack.interpolate uses scipy RegularGridInterpolator which returns NaN for
+      mesh nodes outside the raster extent. Any NaN in thickness or velocity will
+      propagate through the solver and cause failure.
+    affected_components: [icepack.interpolate]
+  remedy:
+    action: "Ensure raster extent fully covers mesh; or fill gaps before interpolation"
+    tool_to_run: null
+    manual_steps:
+      - "Compare raster bounds vs mesh bounds"
+      - "If raster is smaller, either clip mesh or pad raster"
+      - "Check for NaN: np.any(np.isnan(h.dat.data))"
+    prevention: "Always check for NaN after interpolation"
+  severity: crash
+  cross_references: [dt_012]
+
+- id: dt_012
+  stage: s3_interpolation
+  failure_domain: data_interpolation
+  symptom:
+    description: "Interpolated fields are all zero or constant, ignoring spatial variation."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "CRS mismatch between raster and mesh — mesh coordinates don't overlap raster"
+    explanation: >
+      If the mesh is in EPSG:3031 (Antarctic stereographic) but the raster is in
+      EPSG:4326 (lat/lon), the mesh coordinates (e.g., x=500000, y=-1000000) will
+      be far outside the raster's [-180, 180] × [-90, 90] range, and the
+      interpolator returns boundary/fill values.
+    affected_components: [icepack.interpolate, rasterio]
+  remedy:
+    action: "Reproject raster to match mesh CRS using rasterio.warp"
+    tool_to_run: null
+    manual_steps:
+      - "Check raster CRS: rasterio.open(path).crs"
+      - "Check mesh coordinate range: mesh.coordinates.dat.data.min/max()"
+      - "Reproject: rasterio.warp.reproject() to target CRS"
+    prevention: "Always verify CRS consistency between data and mesh"
+  severity: silent
+  cross_references: [dt_011]
+
+# --- Physics / Modeling Errors ---
+
+- id: dt_013
+  stage: s4_diagnostic_solve
+  failure_domain: physics_error
+  symptom:
+    description: "IceStream model produces zero velocity on grounded ice even with realistic inputs."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Missing 'surface' argument — gravity term is zero"
+    explanation: >
+      IceStream.gravity() requires the surface elevation field. If 'surface' is
+      not passed, the driving stress ρ_I·g·h·∇s is zero, and the only non-trivial
+      solution is u=0. IceShelf does not need surface (buoyancy is computed from h).
+    affected_components: [IceStream.gravity, FlowSolver.diagnostic_solve]
+  remedy:
+    action: "Compute and pass surface: s = icepack.compute_surface(thickness=h, bed=b)"
+    tool_to_run: null
+    manual_steps:
+      - "Check that 'surface' kwarg is passed to diagnostic_solve()"
+      - "Verify s.dat.data is not all zero"
+    prevention: "Always include surface for IceStream and ShallowIce models"
+  severity: silent
+  cross_references: []
+
+- id: dt_014
+  stage: s5_prognostic_solve
+  failure_domain: physics_error
+  symptom:
+    description: "Thickness goes negative after a few time steps. Mass conservation violated."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Timestep dt too large for mesh resolution and velocity magnitude"
+    explanation: >
+      The Lax-Wendroff scheme is conditionally stable. If the Courant number
+      C = u·dt/dx exceeds ~1, the scheme becomes unstable and produces oscillations
+      that drive thickness negative. For |u|=1000 m/yr and dx=1000 m, dt must be < 1 yr.
+    affected_components: [LaxWendroff, ImplicitEuler]
+  remedy:
+    action: "Reduce dt so that Courant number < 1: dt < dx / max(|u|)"
+    tool_to_run: null
+    manual_steps:
+      - "Compute Courant: C = max_velocity * dt / min_element_size"
+      - "If C > 1, reduce dt accordingly"
+      - "Typical safe values: dt = 0.01–0.5 yr"
+    prevention: "Compute CFL condition before starting time stepping"
+  severity: silent
+  cross_references: []
+
+- id: dt_015
+  stage: s4_diagnostic_solve
+  failure_domain: physics_error
+  symptom:
+    description: "IceShelf velocity unrealistically high (>10000 m/yr) or low (<1 m/yr)."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Fluidity A in wrong units — not in icepack's MPa-yr system"
+    explanation: >
+      If A is computed manually in SI units (Pa^-3 s^-1) instead of using
+      icepack.rate_factor(), the value will be off by a factor of ~10^60
+      (year^4 × Pa^3/MPa^3). This produces completely unphysical velocities.
+    affected_components: [viscosity_depth_averaged]
+  remedy:
+    action: "Always use icepack.rate_factor(T) to compute A"
+    tool_to_run: null
+    manual_steps:
+      - "Check A value: icepack.rate_factor(254.15) ≈ 3.5"
+      - "Valid A range: 0.1–200 MPa^-3 yr^-1 for T in [230, 273] K"
+      - "If A << 0.01 or A >> 1000, units are wrong"
+    prevention: "Never compute A manually; always use icepack.rate_factor()"
+  severity: silent
+  cross_references: [dt_003]
+
+# --- Firedrake / Installation ---
+
+- id: dt_016
+  stage: s0_configuration
+  failure_domain: installation
+  symptom:
+    description: "ImportError: No module named 'firedrake'"
+    error_pattern: "No module named 'firedrake'"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Firedrake not installed or not in current Python environment"
+    explanation: >
+      Firedrake is icepack's core dependency but is not a standard pip package.
+      It requires its own installation script and creates a dedicated virtual
+      environment. icepack must be installed inside the Firedrake venv.
+    affected_components: [all]
+  remedy:
+    action: "Install Firedrake, then install icepack inside the Firedrake venv"
+    tool_to_run: null
+    manual_steps:
+      - "curl -O https://raw.githubusercontent.com/firedrakeproject/firedrake/master/scripts/firedrake-install"
+      - "python3 firedrake-install"
+      - "source firedrake/bin/activate"
+      - "cd /path/to/icepack && pip install -e ."
+    prevention: "Always activate Firedrake venv before running icepack"
+  severity: crash
+  cross_references: []
+
+- id: dt_017
+  stage: s0_configuration
+  failure_domain: installation
+  symptom:
+    description: "ImportError: No module named 'petsc4py' or 'ufl'"
+    error_pattern: "No module named"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "icepack installed outside the Firedrake virtual environment"
+    explanation: >
+      PETSc, UFL, and other Firedrake components are only available inside the
+      Firedrake venv. Installing icepack in a separate venv or system Python
+      will satisfy its requirements but not Firedrake's internal dependencies.
+    affected_components: [all]
+  remedy:
+    action: "Activate the Firedrake venv before installing/running icepack"
+    tool_to_run: null
+    manual_steps:
+      - "source /path/to/firedrake/bin/activate"
+      - "which python  # should point to firedrake venv"
+      - "pip install -e /path/to/icepack"
+    prevention: "Always work inside the Firedrake venv"
+  severity: crash
+  cross_references: [dt_016]
+
+# --- Boundary Conditions ---
+
+- id: dt_018
+  stage: s4_diagnostic_solve
+  failure_domain: boundary_conditions
+  symptom:
+    description: "Velocity is zero everywhere including where flow should occur."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "All boundary IDs assigned to dirichlet_ids with zero velocity BC"
+    explanation: >
+      If all boundaries are Dirichlet with u=0, the only solution is u=0 everywhere.
+      Ice shelves need at least one free (Neumann) boundary — the ice front —
+      where terminus stress drives the flow.
+    affected_components: [FlowSolver]
+  remedy:
+    action: "Only assign dirichlet_ids to inflow boundaries; leave ice front as free"
+    tool_to_run: null
+    manual_steps:
+      - "Check mesh.exterior_facets.unique_markers for available IDs"
+      - "Typically: ID 1 = inflow (Dirichlet), ID 2 = ice front (free)"
+      - "For IceStream with side walls: side_wall_ids for no-normal-flow"
+    prevention: "Always verify boundary ID assignment matches glacier geometry"
+  severity: silent
+  cross_references: [dt_007]
+
+- id: dt_019
+  stage: s4_diagnostic_solve
+  failure_domain: boundary_conditions
+  symptom:
+    description: "Flow direction is reversed — ice flows inward instead of toward calving front."
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Dirichlet boundary applied to wrong boundary segment"
+    explanation: >
+      In a rectangle mesh, boundary IDs are typically 1=left, 2=right, 3=bottom,
+      4=top. If the inflow is on the left (ID 1) but dirichlet_ids=[2], the solver
+      prescribes velocity on the outflow boundary, forcing reversed flow.
+    affected_components: [FlowSolver]
+  remedy:
+    action: "Verify which boundary ID corresponds to the physical inflow"
+    tool_to_run: null
+    manual_steps:
+      - "For RectangleMesh: ID 1=left (x=0), 2=right (x=Lx), 3=bottom, 4=top"
+      - "Plot mesh with boundary markers to visually verify"
+      - "Inflow = where velocity is prescribed; ice front = free boundary"
+    prevention: "Always plot mesh with labeled boundaries before solving"
+  severity: silent
+  cross_references: [dt_018]
+
+- id: dt_020
+  stage: s6_inverse_problem
+  failure_domain: optimization
+  symptom:
+    description: "Inverse problem returns nearly uniform parameter field with poor data fit."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Regularization weight (alpha) too large, suppressing spatial variability"
+    explanation: >
+      The regularization term penalizes gradients in the control field. If alpha is
+      too large relative to the misfit term, the optimizer returns a nearly constant
+      field to minimize regularization, ignoring the data.
+    affected_components: [StatisticsProblem, MaximumProbabilityEstimator]
+  remedy:
+    action: "Reduce regularization weight alpha by factors of 10 until spatial structure appears"
+    tool_to_run: null
+    manual_steps:
+      - "Try alpha values: 1e-1, 1e-2, 1e-3, 1e-4"
+      - "L-curve method: plot misfit vs regularization for different alpha"
+      - "Good alpha balances smooth field with low misfit"
+    prevention: "Always perform L-curve analysis when setting regularization weight"
+  severity: silent
+  cross_references: []

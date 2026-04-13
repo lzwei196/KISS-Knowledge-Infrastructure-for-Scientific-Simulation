@@ -1,0 +1,461 @@
+# ============================================================================
+# BMI Diagnostic Triplets
+# ============================================================================
+# 17 diagnostic triplets covering 5 failure domains.
+# Generated during BMI knowledge dissection for HydroCraft platform.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s5_model_coupling
+  failure_domain: unit_conversion
+  symptom:
+    description: "Coupled model produces values off by orders of magnitude. Output looks physically unreasonable."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Unit mismatch between coupled models — get_var_units() not checked before set_value()"
+    explanation: >
+      BMI does not automatically convert units between coupled models. If Model A
+      outputs precipitation in mm/day and Model B expects m/s, values will be
+      ~86,400,000x too large. The developer must check get_var_units() on both
+      the source output variable and the target input variable, then apply the
+      appropriate conversion factor.
+    affected_components: [bmi_runner, model_coupling]
+  remedy:
+    action: "Compare get_var_units() for source and target variables; apply conversion factor"
+    tool_to_run: bmi_runner
+    manual_steps:
+      - "Call get_var_units() on the output variable of model A"
+      - "Call get_var_units() on the input variable of model B"
+      - "If units differ, compute and apply conversion factor before set_value()"
+    prevention: "Always check units before first coupling exchange"
+  severity: silent
+  cross_references: [dt_002, dt_003]
+
+- id: dt_002
+  stage: s5_model_coupling
+  failure_domain: unit_conversion
+  symptom:
+    description: "Temperature coupling produces extreme values. Model crashes with NaN or infinity."
+    error_pattern: "NaN|inf|overflow"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Mixing Kelvin and Celsius without additive offset (273.15)"
+    explanation: >
+      Temperature conversions require an additive offset (K = degC + 273.15), not
+      just scaling. If one model outputs temperature in Kelvin and another expects
+      Celsius, simply passing values through set_value() produces temperatures off
+      by 273.15 degrees. This can cause numerical instabilities.
+    affected_components: [model_coupling, set_value]
+  remedy:
+    action: "Apply T_C = T_K - 273.15 or T_K = T_C + 273.15 before set_value()"
+    tool_to_run: bmi_runner
+    manual_steps:
+      - "Check source model: get_var_units('temperature') → 'K' or 'degC'"
+      - "Check target model: get_var_units('temperature') → 'K' or 'degC'"
+      - "If mismatch, add or subtract 273.15 before passing values"
+    prevention: "Implement unit-aware coupling layer"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s3_model_execution
+  failure_domain: unit_conversion
+  symptom:
+    description: "Model time seems to run 3600x too fast or too slow. End time reached almost instantly or never."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Time units mismatch between config and model — e.g., end_time in hours but model uses seconds"
+    explanation: >
+      BMI time is always a float, but the interpretation depends on get_time_units().
+      If the config specifies end_time=100 meaning 100 hours, but the model
+      interprets time in seconds (dt=1.0s), the model will run 100 seconds
+      instead of 360,000 seconds. Always check get_time_units() and convert.
+    affected_components: [bmi_runner, config_generator]
+  remedy:
+    action: "Check get_time_units() and convert end_time to model's time unit"
+    tool_to_run: bmi_runner
+    manual_steps:
+      - "Call get_time_units() to confirm the model's time unit"
+      - "Ensure end_time and dt in config match the model's time unit"
+      - "Common units: 's' (seconds), 'min', 'h' (hours), 'd' (days)"
+    prevention: "Log time units at initialization and warn if unexpected"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_004
+  stage: s5_model_coupling
+  failure_domain: unit_conversion
+  symptom:
+    description: "Precipitation flux is absurdly large or near zero in the receiving model."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Flux units not converted: mm/day vs m/s vs kg m-2 s-1"
+    explanation: >
+      Precipitation can be expressed as mm/day, m/s, or kg m-2 s-1.
+      1 mm/day = 1.157e-8 m/s = 1.157e-5 kg m-2 s-1.
+      Failing to convert between these units causes errors of 5-8 orders
+      of magnitude. BMI reports units via get_var_units() using UDUNITS
+      notation (e.g., "m s-1", "kg m-2 s-1").
+    affected_components: [model_coupling]
+  remedy:
+    action: "Convert flux units before set_value(); 1 mm/day = 1.157e-8 m/s"
+    tool_to_run: bmi_runner
+    manual_steps:
+      - "Check source model flux units with get_var_units()"
+      - "Check target model expected units"
+      - "Apply conversion: mm/day * (1/1000) * (1/86400) = m/s"
+    prevention: "Build unit conversion table for common flux variables"
+  severity: silent
+  cross_references: [dt_001]
+
+# --- Grid/Array (Configuration Errors) ---
+
+- id: dt_005
+  stage: s1_configuration_setup
+  failure_domain: grid_configuration
+  symptom:
+    description: "Output grid appears transposed — rows and columns are swapped."
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Grid shape specified in xy-order [nx, ny] instead of BMI's ij-order [ny, nx]"
+    explanation: >
+      BMI always uses ij-indexing (row-major). get_grid_shape() returns [ny, nx]
+      for a 2D grid. If a developer configures shape as [nx, ny] (xy-order),
+      the grid dimensions are swapped. This also affects spacing [dy, dx]
+      and origin [y0, x0] — all use ij-order in BMI.
+    affected_components: [config_generator, get_grid_shape]
+  remedy:
+    action: "Swap grid shape to [ny, nx], spacing to [dy, dx], origin to [y0, x0]"
+    tool_to_run: config_generator
+    manual_steps:
+      - "Check config: shape should be [rows, cols] = [ny, nx]"
+      - "Check spacing: should be [dy, dx]"
+      - "Check origin: should be [y0, x0]"
+    prevention: "config_generator.py logs ij-order convention on every run"
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_006
+  stage: s4_output_extraction
+  failure_domain: grid_configuration
+  symptom:
+    description: "get_value() crashes or returns corrupted data. Buffer overflow."
+    error_pattern: "segfault|BufferError|ValueError.*size"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "Destination array size does not match variable's actual size"
+    explanation: >
+      BMI get_value(name, dest) requires dest to be pre-allocated with the
+      correct size. The size is get_var_nbytes(name) / get_var_itemsize(name).
+      Passing an array of the wrong size causes buffer overflows in C/Fortran
+      or ValueErrors in Python.
+    affected_components: [output_extractor, get_value]
+  remedy:
+    action: "Always compute array size from get_var_nbytes/get_var_itemsize before allocating"
+    tool_to_run: output_extractor
+    manual_steps:
+      - "nbytes = bmi.get_var_nbytes(var_name)"
+      - "itemsize = bmi.get_var_itemsize(var_name)"
+      - "n_items = nbytes // itemsize"
+      - "dest = np.empty(n_items, dtype=float)"
+    prevention: "output_extractor.py computes size automatically"
+  severity: crash
+  cross_references: [dt_005]
+
+- id: dt_007
+  stage: s4_output_extraction
+  failure_domain: grid_configuration
+  symptom:
+    description: "2D array passed to get_value() — unexpected reshape or error."
+    error_pattern: "ValueError.*dimensions"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "BMI always uses flattened 1D arrays — 2D/3D arrays cause errors"
+    explanation: >
+      BMI specification requires all arrays to be flattened (1D). This avoids
+      row/column-major indexing issues when coupling models in different languages.
+      Passing a 2D numpy array to get_value() may work in some implementations
+      but is not guaranteed and can cause silent data corruption.
+    affected_components: [get_value, set_value, output_extractor]
+  remedy:
+    action: "Always use 1D arrays: dest = np.empty(n, dtype=float), then reshape after"
+    tool_to_run: output_extractor
+    manual_steps:
+      - "Create 1D array: dest = np.empty(grid_size, dtype=float)"
+      - "Call bmi.get_value(name, dest)"
+      - "Reshape after: grid_2d = dest.reshape(shape) using get_grid_shape()"
+    prevention: "Use output_extractor which handles array flattening"
+  severity: silent
+  cross_references: [dt_006]
+
+# --- Control Flow (Lifecycle Errors) ---
+
+- id: dt_008
+  stage: s3_model_execution
+  failure_domain: control_flow
+  symptom:
+    description: "Model crashes immediately on update() — variables not initialized."
+    error_pattern: "AttributeError|NoneType|uninitialized"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "update() called before initialize() — IRF order violated"
+    explanation: >
+      BMI requires strict Initialize → Run → Finalize ordering. Calling update()
+      before initialize() means model state arrays are not allocated, parameters
+      are not read, and initial conditions are not set. This causes
+      AttributeError (Python) or segfault (C/Fortran).
+    affected_components: [bmi_runner]
+  remedy:
+    action: "Always call initialize(config_file) before any update() or get_value() calls"
+    tool_to_run: bmi_runner
+    manual_steps:
+      - "Ensure bmi.initialize(config_file) is the first call"
+      - "Verify initialize completed without error before proceeding"
+    prevention: "bmi_runner.py enforces IRF order automatically"
+  severity: crash
+  cross_references: [dt_009]
+
+- id: dt_009
+  stage: s3_model_execution
+  failure_domain: control_flow
+  symptom:
+    description: "Segfault or use-after-free when accessing model data after run completes."
+    error_pattern: "segfault|SIGSEGV|use-after-free"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "get_value() or get_value_ptr() called after finalize() — memory already freed"
+    explanation: >
+      finalize() deallocates model memory and closes files. In C/Fortran BMI,
+      this frees the internal arrays. Any subsequent get_value() call accesses
+      freed memory (segfault). In Python, the arrays may become None.
+      get_value_ptr() is especially dangerous because it returns a reference
+      to internal memory that is invalidated by finalize().
+    affected_components: [bmi_runner, output_extractor]
+  remedy:
+    action: "Extract all needed data BEFORE calling finalize()"
+    tool_to_run: bmi_runner
+    manual_steps:
+      - "Complete all get_value() calls in the time loop"
+      - "Store results in external arrays/files"
+      - "Call finalize() only after all data is extracted"
+    prevention: "bmi_runner.py extracts data in the update loop, before finalize"
+  severity: crash
+  cross_references: [dt_008]
+
+- id: dt_010
+  stage: s3_model_execution
+  failure_domain: control_flow
+  symptom:
+    description: "Model runs forever — infinite loop in time stepping."
+    error_pattern: ""
+    detection_method: timeout
+  diagnosis:
+    root_cause: "get_current_time() never reaches end_time due to floating-point comparison"
+    explanation: >
+      If the loop condition is `while current_time != end_time`, floating-point
+      rounding may prevent exact equality. The model overshoots end_time by a
+      tiny epsilon and keeps running. Use `<` comparison, not `!=` or `==`.
+    affected_components: [bmi_runner, update_until]
+  remedy:
+    action: "Use 'while current_time < end_time' instead of '!= end_time'"
+    tool_to_run: bmi_runner
+    manual_steps:
+      - "Change loop condition to current_time < end_time"
+      - "Or use update_until(end_time) which handles this internally"
+    prevention: "bmi_runner.py uses < comparison by default"
+  severity: hang
+  cross_references: [dt_003]
+
+# --- Compliance (Implementation Errors) ---
+
+- id: dt_011
+  stage: s2_compliance_check
+  failure_domain: compliance
+  symptom:
+    description: "Model cannot be coupled — framework rejects it as non-compliant."
+    error_pattern: "NotImplementedError|BMI_FAILURE|missing.*function"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "Not all 31 BMI functions are implemented — even unused ones need stubs"
+    explanation: >
+      BMI specification requires ALL functions to be implemented, even for grid
+      types the model doesn't use. For example, a uniform rectilinear model
+      must still implement get_grid_face_nodes() — it should raise
+      NotImplementedError or return BMI_FAILURE. Frameworks check for method
+      existence before calling.
+    affected_components: [compliance_checker]
+  remedy:
+    action: "Add stub implementations for all unused BMI functions"
+    tool_to_run: compliance_checker
+    manual_steps:
+      - "Run compliance_checker.py to identify missing functions"
+      - "Add stub: def get_grid_face_nodes(self, grid, face_nodes): raise NotImplementedError"
+      - "Re-run compliance checker to verify 31/31 pass"
+    prevention: "Use bmi-python abstract base class as template — all methods pre-defined"
+  severity: crash
+  cross_references: [dt_012]
+
+- id: dt_012
+  stage: s2_compliance_check
+  failure_domain: compliance
+  symptom:
+    description: "get_var_location() returns invalid value — framework doesn't know where variable lives on grid."
+    error_pattern: "ValueError.*location"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "get_var_location() returns something other than 'node', 'edge', or 'face'"
+    explanation: >
+      BMI specifies only three valid return values for get_var_location():
+      'node', 'edge', or 'face'. Returning 'cell', 'center', 'vertex', or
+      other strings causes frameworks to reject the variable. For scalar
+      variables, the location is ignored but should still return 'node'.
+    affected_components: [compliance_checker, get_var_location]
+  remedy:
+    action: "Return one of: 'node', 'edge', 'face'"
+    tool_to_run: compliance_checker
+    manual_steps:
+      - "Check get_var_location() returns for all variables"
+      - "Replace 'cell' with 'face', 'vertex' with 'node'"
+      - "For scalar variables, return 'node'"
+    prevention: "Compliance checker validates return values"
+  severity: crash
+  cross_references: [dt_011]
+
+- id: dt_013
+  stage: s2_compliance_check
+  failure_domain: compliance
+  symptom:
+    description: "get_grid_type() returns unrecognized grid type — framework cannot interpret grid."
+    error_pattern: "ValueError.*grid.*type"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "Grid type string does not match one of the 7 valid BMI grid types"
+    explanation: >
+      Valid BMI grid types are: 'scalar', 'points', 'vector', 'unstructured',
+      'structured_quadrilateral', 'rectilinear', 'uniform_rectilinear'.
+      Returning 'regular', 'cartesian', 'mesh', or other strings causes
+      framework rejection. The string must match exactly (case-sensitive).
+    affected_components: [compliance_checker, get_grid_type]
+  remedy:
+    action: "Return one of the 7 valid grid type strings exactly"
+    tool_to_run: compliance_checker
+    manual_steps:
+      - "Check get_grid_type() return value"
+      - "Replace 'regular' with 'uniform_rectilinear'"
+      - "Replace 'cartesian' with 'uniform_rectilinear'"
+      - "Replace 'mesh' with 'unstructured'"
+    prevention: "Compliance checker validates grid type strings"
+  severity: crash
+  cross_references: [dt_011]
+
+# --- Data Exchange (Getter/Setter Errors) ---
+
+- id: dt_014
+  stage: s4_output_extraction
+  failure_domain: data_exchange
+  symptom:
+    description: "get_value_ptr() returns a reference but values change unexpectedly between reads."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "get_value_ptr() returns a live reference — values change when model updates"
+    explanation: >
+      Unlike get_value() which copies data, get_value_ptr() returns a reference
+      to the model's internal array. After update(), the referenced values
+      reflect the new model state. If you need a snapshot, use get_value()
+      or copy the ptr result immediately: snapshot = ptr.copy().
+    affected_components: [output_extractor, get_value_ptr]
+  remedy:
+    action: "Use get_value() for snapshots, or copy: data = bmi.get_value_ptr(name).copy()"
+    tool_to_run: output_extractor
+    manual_steps:
+      - "Replace get_value_ptr() with get_value() for time series extraction"
+      - "Or immediately copy: snapshot = bmi.get_value_ptr(name).copy()"
+    prevention: "output_extractor.py uses get_value() (copy) by default"
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_015
+  stage: s3_model_execution
+  failure_domain: data_exchange
+  symptom:
+    description: "set_value() appears to have no effect — model state doesn't change."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Setting a value on an output-only variable, or model recalculates the variable on next update()"
+    explanation: >
+      Some models recalculate state variables from scratch each time step,
+      overwriting any values set via set_value(). Check if the variable is
+      listed in get_input_var_names() — only input variables are guaranteed
+      to be settable. Output-only variables may silently ignore set_value().
+    affected_components: [bmi_runner, set_value]
+  remedy:
+    action: "Only set_value() on variables listed in get_input_var_names()"
+    tool_to_run: bmi_runner
+    manual_steps:
+      - "Call get_input_var_names() to get settable variables"
+      - "Verify your target variable is in the input list"
+      - "If not, the model doesn't support external forcing of that variable"
+    prevention: "bmi_runner validates variable names against input var list"
+  severity: silent
+  cross_references: [dt_014]
+
+- id: dt_016
+  stage: s3_model_execution
+  failure_domain: data_exchange
+  symptom:
+    description: "set_value_at_indices() corrupts neighboring values or causes crash."
+    error_pattern: "IndexError|segfault"
+    detection_method: runtime_error
+  diagnosis:
+    root_cause: "Indices in set_value_at_indices are out of range or use wrong indexing convention"
+    explanation: >
+      The inds array in set_value_at_indices() uses 0-based flat indexing into
+      the 1D flattened array. Passing 2D (row, col) indices, 1-based indices,
+      or indices >= grid_size causes out-of-bounds access. The src array must
+      have the same length as inds.
+    affected_components: [bmi_runner, set_value_at_indices]
+  remedy:
+    action: "Use 0-based flat indices; ensure len(src) == len(inds) and all inds < grid_size"
+    tool_to_run: bmi_runner
+    manual_steps:
+      - "Convert 2D indices to flat: idx = row * ncols + col"
+      - "Ensure all indices are >= 0 and < grid_size"
+      - "Ensure src and inds arrays have the same length"
+    prevention: "Validate indices before calling set_value_at_indices"
+  severity: crash
+  cross_references: [dt_015]
+
+- id: dt_017
+  stage: s1_configuration_setup
+  failure_domain: grid_configuration
+  symptom:
+    description: "Model uses 'years' as time unit — ambiguous and causes coupling errors."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "UDUNITS defines a year as 365.2422 days, but some models use 365 or 360 days"
+    explanation: >
+      BMI recommends avoiding 'years' as a time unit because it is ambiguous.
+      UDUNITS defines 1 year = 365.2422 days = 31,556,926 seconds, but many
+      geoscience models use 365-day years or 360-day years for simplicity.
+      When coupling models with different year definitions, accumulated time
+      drift can reach days per simulated year.
+    affected_components: [config_generator, get_time_units]
+  remedy:
+    action: "Use 's', 'h', or 'd' as time units instead of 'years'"
+    tool_to_run: config_generator
+    manual_steps:
+      - "Check get_time_units() — avoid 'years'"
+      - "Convert model time to seconds, hours, or days"
+      - "If years unavoidable, document which year definition (365/365.25/360 days)"
+    prevention: "config_generator warns when 'years' is used"
+  severity: silent
+  cross_references: [dt_003]

@@ -1,0 +1,460 @@
+# dfnWorks Diagnostic Triplets
+# 17 symptom -> diagnosis -> remedy entries for common failure modes
+# Covers: unit conversion traps, parameter format, runtime, path resolution, dependencies
+
+- id: dt_001
+  stage: s0_configuration
+  failure_domain: unit_conversion
+  symptom:
+    description: "Domain produces an enormous fracture network with millions of fractures, or fractures are microscopic relative to domain"
+    error_pattern: "nPoly exceeded|memory|Segmentation fault"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Domain size specified in kilometers or centimeters instead of meters"
+    explanation: >
+      dfnWorks uses meters for all spatial dimensions. A 10 km site entered as
+      domainSize=[10,10,10] creates a 10m domain (1000x too small). Conversely,
+      entering domainSize=[10000,10000,10000] when 10m was intended creates a
+      domain 1000x too large, requiring millions of fractures to achieve target p32.
+      This is the most common unit error in new setups.
+    affected_components: [domainSize, all_downstream_stages]
+  remedy:
+    action: "Verify domain dimensions are in meters; convert km to m (*1000) or cm to m (/100)"
+    tool_to_run: convert_fracture_input
+    manual_steps:
+      - "Check: DFN.params['domainSize']['value'] should be in meters"
+      - "For a 10 km site: [10000, 10000, depth_m], NOT [10, 10, depth]"
+      - "Verify h is also in meters and proportional to domain"
+    prevention: "Tool convert_fracture_input.py validates all lengths are in meters"
+  severity: silent
+  cross_references: [dt_004, dt_005]
+
+- id: dt_002
+  stage: s0_configuration
+  failure_domain: unit_conversion
+  symptom:
+    description: "Flow velocities are 6-7 orders of magnitude too high; breakthrough occurs in microseconds instead of days/years"
+    error_pattern: "velocity.*1e[+]|travel_time.*1e[-]"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Hydraulic conductivity K (m/s) used directly as permeability k (m^2)"
+    explanation: >
+      Field measurements often report hydraulic conductivity K in m/s, but dfnWorks
+      requires intrinsic permeability k in m^2. The conversion is k = K * mu / (rho * g).
+      For water at 20C: k = K * 8.9e-4 / (997 * 9.81) = K * 9.1e-8. A typical K of
+      1e-5 m/s gives k = 9.1e-13 m^2. Using K=1e-5 directly as k overestimates
+      permeability by a factor of ~1e7.
+    affected_components: [hy_params, dfnFlow, dfnTrans, graph_flow]
+  remedy:
+    action: "Convert K to k using k = K * mu / (rho * g)"
+    tool_to_run: convert_hydraulic_params
+    manual_steps:
+      - "python convert_hydraulic_params.py --K 1e-5 --output params.json"
+      - "Use the k_m2 value from output in hy_params"
+      - "For water at 20C: k = K * 9.1e-8"
+    prevention: "Tool convert_hydraulic_params.py performs conversion and warns if k > 1e-6 m^2"
+  severity: silent
+  cross_references: [dt_003, dt_005]
+
+- id: dt_003
+  stage: s3_flow
+  failure_domain: unit_conversion
+  symptom:
+    description: "Graph flow produces velocities that are 3-6 orders of magnitude too low or too high"
+    error_pattern: "velocity.*0\\.0|velocity.*1e[+]10"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Pressure boundary conditions in MPa or psi instead of Pa"
+    explanation: >
+      The graph-based flow solver (run_graph_flow) expects pressure in Pascals (Pa).
+      A 1 MPa pressure gradient should be entered as pressure_in=2e6, pressure_out=1e6
+      (not 2, 1). Using MPa directly produces pressures 1e6 too small, and velocities
+      1e6 too small. Similarly, using psi requires conversion: 1 psi = 6894.76 Pa.
+    affected_components: [run_graph_flow, graph_transport, effective_permeability]
+  remedy:
+    action: "Convert pressures to Pa: 1 MPa = 1e6 Pa, 1 psi = 6894.76 Pa"
+    tool_to_run: null
+    manual_steps:
+      - "G = DFN.run_graph_flow('left', 'right', 2e6, 1e6)  # Pa, not MPa"
+      - "For hydrostatic head: P = rho * g * h = 997 * 9.81 * depth_m"
+    prevention: "run_dfnworks.py validates that pressure_in > pressure_out"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_004
+  stage: s1_generation
+  failure_domain: parameter_format
+  symptom:
+    description: "LaGriT meshing crashes with degenerate triangles or zero-area elements"
+    error_pattern: "degenerate|zero area|ERROR.*mesh|LaGriT.*fail"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Mesh resolution h is larger than the smallest fracture radius"
+    explanation: >
+      The FRAM parameter h defines the minimum feature size in the mesh. If h is
+      larger than min_radius, small fractures cannot be resolved into triangles.
+      The meshing algorithm produces degenerate (zero-area) elements that crash
+      the flow solver. Rule: h must be less than 0.5 * min_radius.
+    affected_components: [mesh_network, LaGriT, dfnFlow]
+  remedy:
+    action: "Reduce h to be less than half the smallest fracture radius"
+    tool_to_run: null
+    manual_steps:
+      - "Check: h < 0.5 * min(min_radius across all families)"
+      - "For min_radius=1.0, use h <= 0.5 (ideally h=0.1)"
+      - "DFN.params['h']['value'] = 0.1"
+    prevention: "check_input() warns about h vs min_radius mismatch"
+  severity: fatal
+  cross_references: [dt_013]
+
+- id: dt_005
+  stage: s0_configuration
+  failure_domain: unit_conversion
+  symptom:
+    description: "Fracture apertures produce extremely low permeability; flow is essentially zero"
+    error_pattern: "aperture.*1e[-]|permeability.*1e[-]20"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Aperture specified in micrometers (um) without converting to meters"
+    explanation: >
+      dfnWorks aperture values must be in meters. A typical fracture aperture of
+      100 um should be entered as 1e-4 m. If 100 is entered directly (interpreted
+      as 100 m), the cubic law gives k = 100^2/12 = 833 m^2, which is absurdly
+      high. If 100e-6 is intended but 100 is used, the error is the opposite
+      direction. The cubic law k = b^2/12 amplifies aperture errors quadratically.
+    affected_components: [hy_params, aperture.dat, dfnFlow, dfnTrans]
+  remedy:
+    action: "Ensure aperture is in meters: 100 um = 1e-4 m, 1 mm = 1e-3 m"
+    tool_to_run: convert_hydraulic_params
+    manual_steps:
+      - "python convert_hydraulic_params.py --aperture 100 --aperture_unit um --cubic_law"
+      - "Use output k_m2 value in hy_params"
+    prevention: "convert_hydraulic_params.py accepts --aperture_unit flag"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_006
+  stage: s1_generation
+  failure_domain: runtime
+  symptom:
+    description: "Flow solver returns zero velocity everywhere; no particles reach outlet"
+    error_pattern: "velocity.*0\\.0|no.*particles|empty.*partime"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "No connected fracture path exists between inlet and outlet boundaries"
+    explanation: >
+      The DFN does not have a percolating cluster connecting the specified inflow
+      and outflow boundaries. This can happen when: (1) p32 is too low for the
+      domain size, (2) fractures are too small relative to domain, (3) wrong
+      boundary faces are specified, (4) keepOnlyLargestCluster removed the
+      connecting cluster. The percolation threshold depends on fracture size
+      distribution and domain geometry.
+    affected_components: [dfnFlow, graph_flow, dfnTrans, graph_transport]
+  remedy:
+    action: "Increase p32/nPoly, increase max_radius, or change boundary faces"
+    tool_to_run: null
+    manual_steps:
+      - "Check dfngen_logfile.txt for connectivity information"
+      - "Try: DFN.params['keepOnlyLargestCluster']['value'] = True to see if cluster exists"
+      - "Increase p32 by 50% and re-run"
+      - "Increase max_radius or add more fracture families"
+    prevention: "run_dfnworks.py checks connectivity before running flow"
+  severity: fatal
+  cross_references: [dt_007, dt_011]
+
+- id: dt_007
+  stage: s0_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: "Flow solution exists but particles are released at wrong face; breakthrough curve is wrong"
+    error_pattern: "unexpected.*boundary|wrong.*direction"
+    detection_method: visualization
+  diagnosis:
+    root_cause: "boundaryFaces or in-flow-boundary specification uses wrong convention"
+    explanation: >
+      dfnWorks boundaryFaces uses: [top, bottom, left_w, front_n, right_e, back_s].
+      DFNTrans in-flow-boundary uses 1-based: 1=top, 2=bottom, 3=left_w, 4=front_n,
+      5=right_e, 6=back_s. Graph flow uses strings: "left", "right", "top", "bottom",
+      "front", "back". Mixing conventions produces flow in the wrong direction.
+    affected_components: [boundaryFaces, DFNTrans, graph_flow]
+  remedy:
+    action: "Verify boundary convention matches the solver being used"
+    tool_to_run: null
+    manual_steps:
+      - "For left-to-right flow:"
+      - "  boundaryFaces = [0, 0, 1, 1, 0, 0]  (left and front enabled)"
+      - "  graph_flow: inflow='left', outflow='right'"
+      - "  DFNTrans: in-flow-boundary=3, out-flow-boundary=5"
+    prevention: "Verify with small test case before production run"
+  severity: degraded
+  cross_references: [dt_006]
+
+- id: dt_008
+  stage: s0_configuration
+  failure_domain: silent_error
+  symptom:
+    description: "Network has nearly random fracture orientations despite field data showing clear sets"
+    error_pattern: null
+    detection_method: visualization
+  diagnosis:
+    root_cause: "Fisher kappa parameter is too low"
+    explanation: >
+      The Fisher distribution parameter kappa controls orientation clustering.
+      kappa=0 is uniform random, kappa=1 is very broad scatter, kappa=100 is
+      nearly parallel. If kappa is set too low (e.g., kappa=0.1), fractures will
+      have nearly random orientations regardless of the specified mean orientation.
+      This produces unrealistic networks that overestimate connectivity.
+    affected_components: [fracture_families, network_connectivity, flow_paths]
+  remedy:
+    action: "Increase kappa to match observed orientation clustering"
+    tool_to_run: convert_fracture_input
+    manual_steps:
+      - "Use stereonet plot to visualize fracture poles"
+      - "Estimate kappa from data: kappa = (N-1)/(N-R) where R is resultant length"
+      - "Typical values: kappa=10 (moderate), kappa=50 (tight), kappa=100+ (very tight)"
+    prevention: "convert_fracture_input.py estimates kappa from orientation data"
+  severity: silent
+  cross_references: []
+
+- id: dt_009
+  stage: s1_generation
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "DFNGen exits immediately with version mismatch error"
+    error_pattern: "version mismatch|Required.*2\\.3|Installed"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Compiled DFNGen binary version does not match required version 2.3"
+    explanation: >
+      pydfnworks v2.10 requires DFNGen v2.3. If the binary was compiled from an
+      older source or the .dfngen_version file is missing, the version check fails.
+      This commonly happens after updating pydfnworks without recompiling DFNGen.
+    affected_components: [DFNGen, create_network]
+  remedy:
+    action: "Recompile DFNGen from the current source"
+    tool_to_run: null
+    manual_steps:
+      - "cd $dfnworks_PATH/DFNGen"
+      - "make clean && make"
+      - "Verify: cat .dfngen_version  (should show 2.3)"
+    prevention: "define_paths() checks version automatically on DFNWORKS initialization"
+  severity: fatal
+  cross_references: [dt_010]
+
+- id: dt_010
+  stage: s0_configuration
+  failure_domain: path_resolution
+  symptom:
+    description: "DFNWORKS initialization fails with path not found errors"
+    error_pattern: "not a valid path|not a directory|not an executable|dfnworks_PATH"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Missing or incorrect ~/.dfnworksrc configuration file"
+    explanation: >
+      dfnWorks requires paths to external executables (DFNGen, DFNTrans, LaGriT,
+      PFLOTRAN, FEHM) set either in ~/.dfnworksrc (JSON) or as environment variables.
+      If the file is missing or paths are incorrect, DFNWORKS() fails during
+      define_paths(). Graph-only mode still requires dfnworks_PATH and DFNGen/DFNTrans.
+    affected_components: [DFNWORKS.__init__, define_paths, all_stages]
+  remedy:
+    action: "Create or fix ~/.dfnworksrc with correct paths"
+    tool_to_run: null
+    manual_steps:
+      - "Create ~/.dfnworksrc with JSON format:"
+      - '  {"dfnworks_PATH": "/path/to/dfnWorks/", ...}'
+      - "Minimum required: dfnworks_PATH"
+      - "Test: python -c 'from pydfnworks import *; DFN = DFNWORKS(\"test\")'"
+    prevention: "Installation script should create ~/.dfnworksrc automatically"
+  severity: fatal
+  cross_references: [dt_009]
+
+- id: dt_011
+  stage: s1_generation
+  failure_domain: runtime
+  symptom:
+    description: "DFNGen runs for hours without completing; fracture count grows very slowly"
+    error_pattern: "rejection|retry|slow"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "p32 target is unreachable for the given domain size and fracture parameters"
+    explanation: >
+      When using stopCondition=1 (stop at p32 target), DFNGen keeps placing fractures
+      until p32 targets are met. If the target p32 is too high for the given max_radius
+      and domain size, the rejection rate becomes very high (>99%) as the domain fills up.
+      The algorithm slows exponentially. This also happens if max_radius is much smaller
+      than domain size (fractures are too small to contribute enough area).
+    affected_components: [DFNGen, create_network]
+  remedy:
+    action: "Reduce p32 targets, increase max_radius, or use stopCondition=0 with nPoly"
+    tool_to_run: null
+    manual_steps:
+      - "Start with lower p32 (e.g., 0.1) and increase gradually"
+      - "Ensure max_radius > domain_size / 10 for at least one family"
+      - "Switch to stopCondition=0 with explicit nPoly for predictable runtime"
+    prevention: "run_dfnworks.py checks feasibility before execution"
+  severity: degraded
+  cross_references: [dt_006]
+
+- id: dt_012
+  stage: s4_transport
+  failure_domain: unit_conversion
+  symptom:
+    description: "TDRW matrix diffusion produces extreme retardation; particles barely move"
+    error_pattern: "travel_time.*1e[+]15|matrix_diffusion.*extreme"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Matrix diffusivity specified in cm^2/s instead of m^2/s"
+    explanation: >
+      The TDRW (Time Domain Random Walk) method for matrix diffusion expects
+      diffusivity in m^2/s. Published values are often in cm^2/s. For molecular
+      diffusion of a tracer in rock matrix: D ~ 1e-10 m^2/s = 1e-6 cm^2/s.
+      Using cm^2/s value (e.g., 1e-6) as m^2/s gives D = 1e-6 m^2/s, which is
+      1e4 times too high, producing extreme matrix retardation.
+    affected_components: [graph_transport, DFNTrans_tdrw]
+  remedy:
+    action: "Convert diffusivity from cm^2/s to m^2/s by multiplying by 1e-4"
+    tool_to_run: null
+    manual_steps:
+      - "D_m2s = D_cm2s * 1e-4"
+      - "Typical rock matrix: D = 1e-10 to 1e-12 m^2/s"
+      - "DFN.run_graph_transport(G, N, 'partime', 'frac', tdrw_flag=True, matrix_diffusivity=1e-10)"
+    prevention: "Warn if diffusivity > 1e-8 m^2/s (likely wrong units)"
+  severity: silent
+  cross_references: [dt_002, dt_005]
+
+- id: dt_013
+  stage: s2_meshing
+  failure_domain: runtime
+  symptom:
+    description: "LaGriT exits with error about degenerate triangles or fails to merge meshes"
+    error_pattern: "LaGriT.*ERROR|degenerate.*triangle|merge.*fail|missing.*edges"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Nearly coplanar or very close fractures produce degenerate mesh elements"
+    explanation: >
+      When two fractures are nearly coplanar or their intersection line is very short
+      relative to h, LaGriT cannot produce quality triangles. The merge step may also
+      fail if fracture intersection edges are missing from the triangulation. This
+      commonly occurs with very dense networks (high p32) or when h is too large.
+    affected_components: [mesh_network, LaGriT, full_mesh.inp]
+  remedy:
+    action: "Reduce h, increase min_radius, or remove problematic fractures"
+    tool_to_run: null
+    manual_steps:
+      - "Reduce h to half its current value"
+      - "Set DFN.params['disableFram']['value'] = True for simpler meshing"
+      - "Check for missing edges: DFN.check_for_missing_edges()"
+      - "If persistent: use graph mode instead (no meshing needed)"
+    prevention: "Use graph mode for rapid prototyping; only mesh for full-physics runs"
+  severity: fatal
+  cross_references: [dt_004]
+
+- id: dt_014
+  stage: s2_meshing
+  failure_domain: silent_error
+  symptom:
+    description: "Flow solver produces NaN or infinite values; some cells have zero volume"
+    error_pattern: "NaN|inf|zero.*volume|singular.*matrix"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Zero-aperture fractures produce zero-volume Voronoi cells in the mesh"
+    explanation: >
+      During mesh volume correction (correct_uge_file), cell volumes are multiplied
+      by fracture aperture. If any fracture has aperture = 0, the corresponding cells
+      have zero volume, causing division-by-zero in the flow solver. This can happen
+      when hydraulic property assignment fails for some fractures or when aperture.dat
+      has missing values.
+    affected_components: [correct_uge_file, pflotran, fehm]
+  remedy:
+    action: "Check aperture.dat for zero values and assign minimum aperture"
+    tool_to_run: null
+    manual_steps:
+      - "import numpy as np"
+      - "a = np.loadtxt('aperture.dat')"
+      - "print(f'Zero apertures: {np.sum(a==0)}')"
+      - "a[a==0] = 1e-6  # Set minimum aperture of 1 um"
+      - "np.savetxt('aperture.dat', a)"
+    prevention: "assign_hydraulic_properties() should enforce minimum aperture"
+  severity: silent
+  cross_references: [dt_005]
+
+- id: dt_015
+  stage: s0_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: "DFNGen input file has wrong number of parameters for fracture families"
+    error_pattern: "Error.*nFam|mismatch.*family|array.*length"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Number of entries in per-family arrays does not match nFamEll/nFamRect"
+    explanation: >
+      When using the legacy input file format (not Python API), each per-family
+      parameter array (e.g., eRadii, eAspect, ekappa) must have exactly nFamEll
+      entries. If a family is added or removed without updating all arrays, DFNGen
+      reads wrong values or crashes. The Python API (add_fracture_family) avoids
+      this by managing arrays automatically.
+    affected_components: [DFNGen, input_file_parsing]
+  remedy:
+    action: "Use the Python API (add_fracture_family) instead of manual input files"
+    tool_to_run: null
+    manual_steps:
+      - "Preferred: Use DFN.add_fracture_family() for each family"
+      - "If using input files: verify all per-family arrays have same length"
+      - "Count: nFamEll arrays and nFamRect arrays separately"
+    prevention: "check_input() validates array lengths before writing clean input file"
+  severity: degraded
+  cross_references: []
+
+- id: dt_016
+  stage: s4_transport
+  failure_domain: silent_error
+  symptom:
+    description: "Breakthrough curve shows faster transport than expected; early arrivals dominate"
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Flux-weighted particle initialization biases towards fast flow paths"
+    explanation: >
+      When init_fluxw or flux_weight=yes is used, more particles are placed on
+      high-flux fractures. This produces a breakthrough curve that emphasizes fast
+      paths and underrepresents slow, tortuous paths. The curve shape is correct
+      for flux-averaged concentration but not for resident concentration. For
+      unbiased sampling of all paths, use init_nf (equal per fracture).
+    affected_components: [DFNTrans, graph_transport, breakthrough_curve]
+  remedy:
+    action: "Use init_nf for unbiased sampling; use flux_weight only for flux-averaged C"
+    tool_to_run: null
+    manual_steps:
+      - "DFNTrans: Set init_nf: yes and init_partn: 10"
+      - "Graph: DFN.run_graph_transport(G, N, ..., initial_positions='uniform')"
+      - "Compare both initializations to understand bias"
+    prevention: "Document which initialization was used alongside every breakthrough curve"
+  severity: silent
+  cross_references: []
+
+- id: dt_017
+  stage: s3_flow
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "PFLOTRAN crashes with input file parsing error or unknown keyword"
+    error_pattern: "PFLOTRAN.*ERROR|unknown.*keyword|input.*parse"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "PFLOTRAN input file format does not match installed PFLOTRAN version"
+    explanation: >
+      PFLOTRAN input syntax changes between major versions. The dfn_explicit.in file
+      must match the installed PFLOTRAN version. Common mismatches include deprecated
+      keywords (e.g., GRID vs STRUCTURED_GRID), changed units specifications, and
+      modified boundary condition syntax.
+    affected_components: [pflotran, dfn_explicit.in, dfn_flow]
+  remedy:
+    action: "Update PFLOTRAN input file to match installed version"
+    tool_to_run: null
+    manual_steps:
+      - "Check PFLOTRAN version: pflotran --version"
+      - "Compare input file syntax with PFLOTRAN documentation for that version"
+      - "Use dfnWorks example input files as templates"
+      - "Alternative: use graph-based flow to avoid PFLOTRAN dependency"
+    prevention: "Use graph mode for testing; only use PFLOTRAN for production runs"
+  severity: fatal
+  cross_references: [dt_010]

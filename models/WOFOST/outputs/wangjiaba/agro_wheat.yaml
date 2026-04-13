@@ -1,0 +1,121 @@
+- 1979-10-01:
+    CropCalendar:
+        crop_name: wheat
+        variety_name: Winter_wheat_101
+        crop_start_date: 1979-10-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 365
+    TimedEvents: null
+    StateEvents: null
+- 1980-10-01:
+    CropCalendar:
+        crop_name: wheat
+        variety_name: Winter_wheat_101
+        crop_start_date: 1980-10-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 365
+    TimedEvents: null
+    StateEvents: null
+- 1981-10-01:
+    CropCalendar:
+        crop_name: wheat
+        variety_name: Winter_wheat_101
+        crop_start_date: 1981-10-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 365
+    TimedEvents: null
+    StateEvents: null
+- 1982-10-01:
+    CropCalendar:
+        crop_name: wheat
+        variety_name: Winter_wheat_101
+        crop_start_date: 1982-10-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 365
+    TimedEvents: null
+    StateEvents: null
+- 1983-10-01:
+    CropCalendar:
+        crop_name: wheat
+        variety_name: Winter_wheat_101
+        crop_start_date: 1983-10-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 365
+    TimedEvents: null
+    StateEvents: null
+- 1984-10-01:
+    CropCalendar:
+        crop_name: wheat
+        variety_name: Winter_wheat_101
+        crop_start_date: 1984-10-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 365
+    TimedEvents: null
+    StateEvents: null
+- 1985-10-01:
+    CropCalendar:
+        crop_name: wheat
+        variety_name: Winter_wheat_101
+        crop_start_date: 1985-10-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 365
+    TimedEvents: null
+    StateEvents: null
+- 1986-10-01:
+    CropCalendar:
+        crop_name: wheat
+        variety_name: Winter_wheat_101
+        crop_start_date: 1986-10-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 365
+    TimedEvents: null
+    StateEvents: null
+- 1987-10-01:
+    CropCalendar:
+        crop_name: wheat
+        variety_name: Winter_wheat_101
+        crop_start_date: 1987-10-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 365
+    TimedEvents: null
+    StateEvents: null
+- 1988-10-01:
+    CropCalendar:
+        crop_name: wheat
+        variety_name: Winter_wheat_101
+        crop_start_date: 1988-10-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 365
+    TimedEvents: null
+    StateEvents: null
+- 1989-10-01:
+    CropCalendar:
+        crop_name: wheat
+        variety_name: Winter_wheat_101
+        crop_start_date: 1989-10-15
+        crop_start_type: sowing
+        crop_end_date:
+        crop_end_type: maturity
+        max_duration: 365
+    TimedEvents: null
+    StateEvents: null

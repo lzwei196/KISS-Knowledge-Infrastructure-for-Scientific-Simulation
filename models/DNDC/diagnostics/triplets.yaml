@@ -1,0 +1,384 @@
+triplets:
+  # ── Unit Conversion Traps ──────────────────────────────────────────────
+
+  - id: dt_001
+    stage: s1_climate_prep
+    failure_domain: unit_conversion
+    severity: silent
+    symptom: >
+      Simulated crop yield is near zero or the model reports permanent drought
+      stress even though precipitation inputs look reasonable in the source data.
+    diagnosis: >
+      Precipitation values were supplied in mm (the standard for most reanalysis
+      and station data) but DNDC expects precipitation in cm.  A 50 mm rain
+      event is read as 50 cm, which is physically impossible and may saturate
+      the profile, or conversely if the code path treats the number as-is the
+      magnitude is 10x too small once internal conversion kicks in.  The most
+      common variant: source data in mm was not divided by 10 before writing the
+      climate file.
+    remedy: >
+      Divide all precipitation values by 10 (mm -> cm) before writing the DNDC
+      climate input file.  Add an assertion: max daily precip should rarely
+      exceed 30 cm.  Use the convert_forcing_to_dndc tool with --precip-unit mm.
+
+  - id: dt_002
+    stage: s1_climate_prep
+    failure_domain: unit_conversion
+    severity: silent
+    symptom: >
+      Crop growth is drastically reduced or photosynthesis is near zero despite
+      realistic temperature and precipitation.  Alternatively, the model
+      produces unreasonably high biomass if radiation is too large.
+    diagnosis: >
+      Solar radiation was provided in W/m2 (instantaneous flux) instead of
+      MJ/m2/day (daily integral).  DNDC expects MJ/m2/day.  Typical clear-sky
+      W/m2 values (200-400) are an order of magnitude larger than reasonable
+      MJ/m2/day values (5-30).
+    remedy: >
+      Convert W/m2 to MJ/m2/day by multiplying by 0.0864 (= 86400 s/day /
+      1e6 J/MJ).  Validate that resulting values fall within 0-35 MJ/m2/day.
+
+  - id: dt_003
+    stage: s1_climate_prep
+    failure_domain: unit_conversion
+    severity: fatal
+    symptom: >
+      Model crashes immediately on first time step or produces temperatures
+      above 200 degrees in log output.
+    diagnosis: >
+      Temperature was supplied in Kelvin (e.g., 293 K) instead of degrees
+      Celsius.  DNDC expects degrees Celsius for both Tmax and Tmin.
+    remedy: >
+      Subtract 273.15 from all temperature values before writing the climate
+      file.  Assert that Tmin < Tmax and both fall within [-60, 60] C.
+
+  - id: dt_004
+    stage: s2_soil_prep
+    failure_domain: unit_conversion
+    severity: silent
+    symptom: >
+      Soil organic carbon decomposition rates are unrealistically high or the
+      model reports SOC values orders of magnitude above literature ranges.
+      Simulated N2O emissions may be 100x expected.
+    diagnosis: >
+      SOC was entered as a percentage (e.g., 2.5 meaning 2.5%) instead of
+      kgC/kg (e.g., 0.025).  DNDC expects SOC as a mass fraction (kgC/kg).
+    remedy: >
+      Divide SOC percentage values by 100 to convert to kgC/kg.  Validate
+      that SOC values fall within 0.001-0.30 kgC/kg for mineral soils.
+
+  - id: dt_005
+    stage: s2_soil_prep
+    failure_domain: unit_conversion
+    severity: silent
+    symptom: >
+      Drainage is extremely slow or extremely fast compared to expectations;
+      water table dynamics are unrealistic despite correct water table depth
+      settings.
+    diagnosis: >
+      Hydraulic conductivity was entered in cm/min (a common lab reporting
+      unit) instead of m/hr as DNDC expects.  cm/min and m/hr differ by a
+      factor of 0.6 (1 cm/min = 0.6 m/hr).
+    remedy: >
+      Convert hydraulic conductivity from cm/min to m/hr by multiplying by 0.6.
+      Typical Ksat for loam: 0.01-0.1 m/hr; for sand: 0.5-1.0 m/hr.
+
+  - id: dt_006
+    stage: s2_soil_prep
+    failure_domain: unit_conversion
+    severity: silent
+    symptom: >
+      Field capacity and wilting point behave unexpectedly; the model simulates
+      either waterlogged or bone-dry conditions that contradict the input values.
+    diagnosis: >
+      Field capacity and wilting point were entered as volumetric water content
+      (e.g., 0.33 m3/m3) but DNDC expects water-filled pore space (WFPS)
+      fractions (e.g., FC at WFPS = 0.66 for porosity 0.50).  WFPS = VWC /
+      porosity.
+    remedy: >
+      Divide volumetric water content by soil porosity to obtain WFPS.
+      FC_wfps = FC_vol / porosity.  WP_wfps = WP_vol / porosity.  Validate
+      that 0 < WP_wfps < FC_wfps < 1.0.
+
+  - id: dt_007
+    stage: s3_crop_management
+    failure_domain: unit_conversion
+    severity: silent
+    symptom: >
+      Fertilizer effect on crop yield is far too strong or too weak.  Simulated
+      N surplus is unrealistic.
+    diagnosis: >
+      Fertilizer amount was entered as total product mass (e.g., kgUrea/ha)
+      instead of kgN/ha for each individual N form.  DNDC expects the elemental
+      nitrogen mass per hectare for each fertilizer application event.
+    remedy: >
+      Convert fertilizer mass to elemental N: for urea multiply by 0.467
+      (46.7% N), for ammonium nitrate multiply by 0.340.  Enter each form
+      separately in kgN/ha.
+
+  - id: dt_008
+    stage: s6_output_analysis
+    failure_domain: unit_conversion
+    severity: silent
+    symptom: >
+      Reported yield is approximately half of expected values when compared to
+      field observations or census data in dry-matter terms.
+    diagnosis: >
+      DNDC reports grain yield in kgC/ha (carbon mass).  Users compare this
+      directly to dry matter yield without applying the carbon-to-dry-matter
+      conversion factor.  Dry matter is approximately 2x the carbon mass
+      (carbon fraction ~0.45 in grain).
+    remedy: >
+      Multiply DNDC output yield (kgC/ha) by 2.22 (= 1/0.45) for a more
+      precise dry-matter estimate, or by 2.0 as a common approximation.
+      Document which conversion factor is used.
+
+  # ── Parameter Format & Structure Traps ─────────────────────────────────
+
+  - id: dt_009
+    stage: s2_soil_prep
+    failure_domain: parameter_format
+    severity: fatal
+    symptom: >
+      Model crashes or produces a soil-profile error message during
+      initialization.  Log may reference "layer depth" or "profile depth".
+    diagnosis: >
+      The soil profile layers do not sum to exactly 2 m total depth.  DNDC
+      requires the complete soil column to be 2 m (200 cm) and will reject
+      or crash if layers sum to a different depth.
+    remedy: >
+      Ensure all soil layer thicknesses sum to exactly 200 cm (2.0 m).
+      Adjust the deepest layer thickness as a residual to enforce the 2 m
+      constraint.  Validate with: sum(layer_depths) == 200.
+
+  - id: dt_010
+    stage: s2_soil_prep
+    failure_domain: parameter_format
+    severity: silent
+    symptom: >
+      Water table simulation is the opposite of what was intended: the model
+      simulates a high water table when the user intended free drainage, or
+      vice versa.
+    diagnosis: >
+      The water table flag in DNDC uses reversed logic: 0 = water table IS
+      present (Yes), 1 = water table is NOT present (No).  Users commonly
+      assume 1 = Yes.
+    remedy: >
+      Set water_table_flag = 0 to enable water table simulation; set
+      water_table_flag = 1 to disable it (free drainage).  Always verify by
+      inspecting the .dnd XML for the correct Boolean interpretation.
+
+  - id: dt_011
+    stage: s1_climate_prep
+    failure_domain: parameter_format
+    severity: fatal
+    symptom: >
+      Model crashes or reads incorrect climate data for the first days of the
+      simulation.  Time series appears shifted.
+    diagnosis: >
+      The climate input file does not start at Julian day 1 (January 1).  DNDC
+      expects the first record to correspond to Jday 1 and reads sequentially.
+      A file starting at Jday 0 or at an arbitrary date will misalign all
+      climate forcing.
+    remedy: >
+      Ensure the climate file begins with Jday 1 data.  If the source data
+      starts mid-year, pad with synthetic or climatological values for days 1
+      through start_day-1.  Validate: first_record_jday == 1.
+
+  - id: dt_012
+    stage: s0_config
+    failure_domain: parameter_format
+    severity: fatal
+    symptom: >
+      Model produces a corrupted or unreadable .dnd file.  GUI may crash when
+      loading the file.  Certain simulation years contain garbage values.
+    diagnosis: >
+      The .dnd file time block structure was not built linearly.  DNDC expects
+      time blocks (year-by-year management sequences) to be written in strict
+      chronological order.  Programmatic generation that inserts years
+      out of order or duplicates a year produces a malformed file.
+    remedy: >
+      Build .dnd time blocks in strictly ascending chronological order
+      (year 1, year 2, ..., year N).  Never insert, delete, or reorder year
+      blocks after initial creation.  Validate with a sequential year-counter
+      check.
+
+  - id: dt_013
+    stage: s3_crop_management
+    failure_domain: parameter_format
+    severity: silent
+    symptom: >
+      Crop biomass parameters produce implausible LAI or harvest index.
+      The model may simulate yields 2x too high or too low relative to
+      literature parameterizations.
+    diagnosis: >
+      Crop biomass parameters (max biomass production, initial biomass) were
+      entered in kgDM/ha (dry matter) instead of kgC/ha.  DNDC internally
+      tracks carbon, so all biomass parameters must be in carbon units.
+    remedy: >
+      Multiply dry-matter biomass values by 0.45 (approximate C fraction of
+      plant tissue) to convert to kgC/ha.  Verify by comparing simulated
+      peak biomass to literature ranges in kgC/ha.
+
+  - id: dt_014
+    stage: s2_soil_prep
+    failure_domain: parameter_format
+    severity: degraded
+    symptom: >
+      After editing a heterogeneous soil profile, SOC pool fractions (labile,
+      resistant, humads, humus) silently reset to defaults.  Subsequent
+      simulation starts with wrong initial C pools.
+    diagnosis: >
+      The DNDC GUI resets SOC pool partitioning fractions to default values
+      when any soil property in a heterogeneous (multi-layer) profile is
+      edited.  The reset is silent and not logged.
+    remedy: >
+      After any soil edit in a heterogeneous profile, manually re-enter or
+      verify SOC pool fractions.  Better: script the .dnd file generation
+      to avoid GUI-induced resets.  Always diff the .dnd before and after
+      GUI edits.
+
+  # ── Path Resolution Traps ──────────────────────────────────────────────
+
+  - id: dt_015
+    stage: s0_config
+    failure_domain: path_resolution
+    severity: fatal
+    symptom: >
+      Model fails to find climate or soil input files.  Error message
+      references a path with mixed separators or backslash characters.
+    diagnosis: >
+      File paths in the .dnd configuration use Windows-style backslashes
+      (C:\data\climate.txt) but the runtime environment expects forward
+      slashes, or vice versa.  This is especially common when .dnd files
+      are prepared on Windows and run on Linux under Wine.
+    remedy: >
+      Normalize all paths in the .dnd file to use forward slashes (/).
+      On Linux/Wine, ensure paths are relative or use Unix-style absolute
+      paths.  Use the path normalization utility in the convert_forcing
+      tool.
+
+  - id: dt_016
+    stage: s5_execution
+    failure_domain: path_resolution
+    severity: fatal
+    symptom: >
+      Batch run fails even though individual .dnd files run correctly in
+      the GUI.  Error log shows "file not found" for .dnd paths.
+    diagnosis: >
+      The batch control file (.bat or batch list) contains paths that do
+      not match the internal paths stored in each .dnd file.  DNDC resolves
+      some paths relative to the .dnd file location and others relative to
+      the executable.
+    remedy: >
+      Ensure batch file paths are absolute and consistent with the paths
+      embedded inside each .dnd file.  Run a validation script that parses
+      each .dnd and confirms all referenced files exist at the stated paths.
+
+  - id: dt_017
+    stage: s5_execution
+    failure_domain: path_resolution
+    severity: fatal
+    symptom: >
+      DNDC fails to launch or immediately exits when run via Wine on Linux.
+      Wine log shows path translation errors or "file not found" for DLLs.
+    diagnosis: >
+      Wine drive mapping does not translate Unix paths correctly.  The DNDC
+      executable or its .dnd files reference Windows drive letters (e.g.,
+      C:\) that are not properly mapped in the Wine prefix, or the Z:\ drive
+      mapping to / has been removed.
+    remedy: >
+      Verify Wine drive mappings with 'wine winecfg'.  Ensure Z:\ maps to /.
+      Convert all .dnd paths to use the Wine drive prefix (e.g.,
+      Z:/home/user/data/).  Set WINEPREFIX explicitly before each run.
+
+  # ── Runtime Traps ──────────────────────────────────────────────────────
+
+  - id: dt_018
+    stage: s5_execution
+    failure_domain: runtime
+    severity: fatal
+    symptom: >
+      Model crashes with a segmentation fault or access violation during soil
+      water dynamics computation.  Crash occurs in the first few time steps.
+    diagnosis: >
+      The dynamic (adaptive) layer depth in the soil thermal/water solver is
+      set too small (e.g., < 1 cm), causing the numerical solver to create
+      an excessive number of sub-layers that overflow internal array bounds.
+    remedy: >
+      Set the minimum dynamic layer depth to at least 2 cm.  If high
+      resolution is needed, increase gradually and test stability.  Check the
+      .dnd file for the layer_min_depth parameter and ensure it is >= 0.02 m.
+
+  - id: dt_019
+    stage: s5_execution
+    failure_domain: runtime
+    severity: degraded
+    symptom: >
+      Model runs to completion but simulation time is 10-100x longer than
+      expected.  CPU usage is at 100% for extended periods.
+    diagnosis: >
+      The dynamic time-stepping in the soil water solver is thrashing due to
+      conflicting parameter settings (e.g., very high Ksat with very thin
+      layers, or extreme precipitation events with small convergence
+      tolerance).  The solver repeatedly halves the time step without
+      converging.
+    remedy: >
+      Review Ksat, layer depth, and convergence tolerance for consistency.
+      Increase minimum dynamic layer depth.  Consider capping extreme
+      precipitation events at physically reasonable daily maxima.
+
+  # ── Silent Error Traps ─────────────────────────────────────────────────
+
+  - id: dt_020
+    stage: s6_output_analysis
+    failure_domain: silent_error
+    severity: silent
+    symptom: >
+      Simulated annual N2O emissions are zero or near-zero despite
+      significant N fertilizer inputs and expected denitrification conditions.
+    diagnosis: >
+      DNDC may silently skip denitrification calculations if soil pH is
+      outside the valid range or if the anaerobic balloon fraction is
+      suppressed by incorrect WFPS parameterization.  No error is raised;
+      the pathway simply produces zero flux.
+    remedy: >
+      Verify soil pH is within 3.5-9.0.  Check that WFPS parameterization
+      allows anaerobic microsites to form (FC_wfps should be > 0.5 for
+      typical soils).  Compare simulated WFPS time series against expected
+      ranges.
+
+  - id: dt_021
+    stage: s6_output_analysis
+    failure_domain: silent_error
+    severity: silent
+    symptom: >
+      Output files contain plausible-looking numbers but cover fewer years
+      than specified in the simulation period.  No error or warning is
+      produced.
+    diagnosis: >
+      The climate file contains fewer days than the simulation period
+      requests.  DNDC silently truncates the simulation when climate data
+      runs out rather than raising an error.
+    remedy: >
+      Validate that the climate file contains at least (n_years * 365) records
+      (account for leap years if applicable).  Add a pre-run check that
+      compares climate file line count to expected simulation length.
+
+  - id: dt_022
+    stage: s3_crop_management
+    failure_domain: silent_error
+    severity: silent
+    symptom: >
+      Tillage or harvest events appear to have no effect on simulated SOC
+      or crop residue dynamics.  Management schedule seems to be ignored.
+    diagnosis: >
+      Management event dates fall outside the crop growing season or on
+      Julian days that do not exist in the climate record.  DNDC silently
+      skips events scheduled for dates beyond the available time series
+      without logging a warning.
+    remedy: >
+      Ensure all management event dates (planting, fertilization, tillage,
+      harvest) fall within Jday 1-365 and within the climate record period.
+      Cross-check event dates against the crop calendar for the target
+      region.

@@ -1,0 +1,145 @@
+model:
+  name: "OpenFOAM"
+  version: "dev"
+  domain: "Computational Fluid Dynamics / Hydraulics"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenFOAM/source/repo/platforms/linux64GccDPInt32Opt/bin/foamRun"
+  utilities:
+    - blockMesh
+    - checkMesh
+    - decomposePar
+    - reconstructPar
+    - foamToVTK
+    - setFields
+    - postProcess
+  solver_modules:
+    - incompressibleFluid
+    - fluid
+    - isothermalFluid
+    - incompressibleVoF
+    - compressibleVoF
+    - multiphaseEuler
+    - incompressibleDriftFlux
+    - solid
+    - solidDisplacement
+
+inputs:
+  forcing:
+    - name: "U"
+      description: "Velocity field (boundary and initial conditions)"
+      unit: "m/s"
+      format: "volVectorField (FoamFile ASCII/binary)"
+      valid_range: [-100, 100]
+    - name: "p"
+      description: "Pressure field (kinematic for incompressible)"
+      unit: "m^2/s^2"
+      format: "volScalarField (FoamFile ASCII/binary)"
+      valid_range: [-1e6, 1e6]
+    - name: "k"
+      description: "Turbulent kinetic energy"
+      unit: "m^2/s^2"
+      format: "volScalarField"
+      valid_range: [0, 1000]
+    - name: "epsilon"
+      description: "Turbulent dissipation rate"
+      unit: "m^2/s^3"
+      format: "volScalarField"
+      valid_range: [0, 1e6]
+    - name: "alpha.water"
+      description: "Volume fraction (VoF simulations)"
+      unit: "dimensionless"
+      format: "volScalarField"
+      valid_range: [0, 1]
+  parameters:
+    critical:
+      - name: "nu"
+        location: "constant/physicalProperties"
+        unit: "m^2/s"
+        valid_range: [1e-7, 1e-3]
+        description: "Kinematic viscosity. MUST be kinematic (nu=mu/rho), not dynamic."
+      - name: "deltaT"
+        location: "system/controlDict"
+        unit: "s"
+        valid_range: [1e-6, 1]
+        description: "Time step. Must satisfy CFL: Co = U*dt/dx < 1 for explicit schemes."
+      - name: "convertToMeters"
+        location: "system/blockMeshDict"
+        unit: "dimensionless"
+        valid_range: [1e-6, 1000]
+        description: "Scale factor for mesh vertex coordinates. 1=meters, 0.001=mm."
+      - name: "nOuterCorrectors"
+        location: "system/fvSolution"
+        unit: "dimensionless"
+        valid_range: [1, 100]
+        description: "PIMPLE outer loop iterations. 1=PISO, >1=PIMPLE."
+      - name: "gravity"
+        location: "constant/g"
+        unit: "m/s^2"
+        valid_range: [-9.81, 9.81]
+        description: "Gravity vector. Convention: (0 -9.81 0) for Y-up, (0 0 -9.81) for Z-up."
+    mesh:
+      - name: "blockMeshDict"
+        location: "system/blockMeshDict"
+        description: "Structured hex mesh definition: vertices, blocks, grading, boundary patches."
+      - name: "decomposeParDict"
+        location: "system/decomposeParDict"
+        description: "MPI domain decomposition. numberOfSubdomains must match mpirun -np."
+
+outputs:
+  primary:
+    - name: "U"
+      description: "Velocity vector field at each cell center"
+      unit: "m/s"
+      format: "volVectorField in time directories (e.g., 0.5/U)"
+      valid_range: [-100, 100]
+    - name: "p"
+      description: "Pressure field (kinematic for incompressible solvers)"
+      unit: "m^2/s^2"
+      format: "volScalarField in time directories"
+      valid_range: [-1e6, 1e6]
+    - name: "phi"
+      description: "Face volumetric flux"
+      unit: "m^3/s"
+      format: "surfaceScalarField in time directories"
+      valid_range: [-1e3, 1e3]
+    - name: "k"
+      description: "Turbulent kinetic energy (if turbulent)"
+      unit: "m^2/s^2"
+      format: "volScalarField"
+      valid_range: [0, 1000]
+    - name: "nut"
+      description: "Turbulent viscosity"
+      unit: "m^2/s"
+      format: "volScalarField"
+      valid_range: [0, 1]
+  structure:
+    description: "Each write produces a time-named directory (e.g., 0.1/, 0.2/) containing all field files."
+    time_control: "writeControl (timeStep|runTime|adjustableRunTime) + writeInterval in controlDict"
+
+case_structure:
+  - path: "0/"
+    description: "Initial and boundary conditions (U, p, k, epsilon, etc.)"
+  - path: "constant/"
+    description: "Time-invariant: polyMesh/, physicalProperties, momentumTransport"
+  - path: "system/"
+    description: "Solver config: controlDict, fvSchemes, fvSolution, blockMeshDict"
+
+dimension_system:
+  description: "7-element array: [kg m s K mol A cd]"
+  common:
+    kinematic_pressure: "[0 2 -2 0 0 0 0]"
+    dynamic_pressure: "[1 -1 -2 0 0 0 0]"
+    velocity: "[0 1 -1 0 0 0 0]"
+    kinematic_viscosity: "[0 2 -1 0 0 0 0]"
+    density: "[1 -3 0 0 0 0 0]"
+
+known_issues:
+  - id: "ut_001"
+    description: "Kinematic vs dynamic pressure mismatch crashes incompressible solvers"
+  - id: "ut_002"
+    description: "Dynamic viscosity (Pa.s) used instead of kinematic (m^2/s) gives wrong Re by ~1000x"
+  - id: "ut_003"
+    description: "convertToMeters forgotten produces silently wrong results"
+  - id: "ut_005"
+    description: "deltaT too large for mesh causes CFL violation and divergence"
+  - id: "ut_009"
+    description: "MPI np vs decomposeParDict mismatch causes immediate crash"

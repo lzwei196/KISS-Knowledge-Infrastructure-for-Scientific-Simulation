@@ -1,0 +1,206 @@
+model:
+  name: "HydroTrend"
+  version: "3.0.5"
+  domain: "Geomorphology / Fluvial Sediment Transport"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/HydroTrend/source/repo/_build/hydrotrend"
+  language: "C"
+  time_step: "daily"
+  spatial_scale: "lumped basin"
+  cli_usage: "hydrotrend --in-dir=./input --out-dir=./output --prefix=HYDRO"
+
+inputs:
+  forcing:
+    - name: "monthly_temperature"
+      unit: "degC"
+      description: "Monthly mean temperature (HYDRO.IN lines 12-23, column 2)"
+      valid_range: [-50, 50]
+    - name: "monthly_temperature_stddev"
+      unit: "degC"
+      description: "Within-month standard deviation of temperature (lines 12-23, column 3)"
+      valid_range: [0, 20]
+    - name: "monthly_precipitation"
+      unit: "mm"
+      description: "Monthly total precipitation (lines 12-23, column 4). Model divides by 1000 internally."
+      valid_range: [0, 2000]
+    - name: "monthly_precipitation_stddev"
+      unit: "mm"
+      description: "Standard deviation of monthly precipitation (lines 12-23, column 5)"
+      valid_range: [0, 500]
+    - name: "annual_precipitation"
+      unit: "m/yr"
+      description: "Annual precipitation sum (line 9). NO internal conversion — already in meters."
+      valid_range: [0.01, 15.0]
+    - name: "annual_temperature"
+      unit: "degC"
+      description: "Annual mean temperature start value (line 8)"
+      valid_range: [-30, 50]
+
+  parameters:
+    critical:
+      - name: "lapse_rate"
+        unit: "degC/km"
+        valid_range: [3.0, 12.0]
+        description: "Temperature lapse rate (line 24). Model divides by 1000. Use -9999 for default."
+      - name: "basin_length"
+        unit: "km"
+        valid_range: [1, 10000]
+        description: "River basin length (line 28). Model multiplies by 1000 to get meters."
+      - name: "basin_area"
+        unit: "km2"
+        description: "Cumulative basin area from hypsometry file (HYDRO0.HYPS)"
+        valid_range: [1, 1000000]
+      - name: "basin_relief"
+        unit: "m"
+        description: "Maximum elevation minus minimum elevation from hypsometry"
+        valid_range: [1, 9000]
+      - name: "sediment_formula"
+        unit: "flag"
+        valid_range: [0, 2]
+        description: "0=QRT, 1=ART, 2=BQART (line 42)"
+      - name: "lithology_factor"
+        unit: "dimensionless"
+        valid_range: [0.3, 3.0]
+        description: "BQART lithology factor B (line 43). Hard=0.3, weak=3.0."
+      - name: "anthropogenic_factor"
+        unit: "dimensionless"
+        valid_range: [0.5, 8.0]
+        description: "BQART human disturbance factor Eh (line 44)"
+      - name: "grain_size_proportions"
+        unit: "fractions"
+        description: "Fraction of sediment in each grain size (line 7). Must sum to 1.0."
+      - name: "glacier_ela"
+        unit: "m"
+        valid_range: [0, 9000]
+        description: "Starting glacier equilibrium line altitude (line 25)"
+      - name: "velocity_coeff"
+        unit: "dimensionless"
+        description: "River mouth velocity coefficient k (line 30). v=kQ^m"
+      - name: "velocity_exponent"
+        unit: "dimensionless"
+        description: "River mouth velocity exponent m (line 30)"
+      - name: "width_coeff"
+        unit: "dimensionless"
+        description: "River mouth width coefficient a (line 31). w=aQ^b"
+      - name: "width_exponent"
+        unit: "dimensionless"
+        description: "River mouth width exponent b (line 31)"
+    optional:
+      - name: "reservoir_volume"
+        unit: "km3"
+        valid_range: [0, 1000]
+        description: "Mean reservoir volume (line 29). 0 = no reservoir."
+      - name: "base_flow"
+        unit: "m3/s"
+        valid_range: [0, 10000]
+        description: "Constant annual base flow (line 11)"
+      - name: "groundwater_storage_max"
+        unit: "m3"
+        description: "Maximum groundwater storage (line 33)"
+      - name: "groundwater_storage_min"
+        unit: "m3"
+        description: "Minimum groundwater storage (line 33)"
+      - name: "hydraulic_conductivity"
+        unit: "mm/day"
+        valid_range: [1, 10000]
+        description: "Saturated hydraulic conductivity Ko (line 36). Model divides by 1000."
+      - name: "canopy_interception_alpha"
+        unit: "mm/d"
+        valid_range: [-1, 5]
+        description: "Canopy interception alpha (line 26a). Model divides by 1000."
+      - name: "evapotranspiration_alpha"
+        unit: "mm/d"
+        valid_range: [1, 30]
+        description: "Groundwater pole ET alpha (line 26b). Model divides by 1000."
+      - name: "bedload_rating"
+        unit: "dimensionless"
+        valid_range: [0.1, 10]
+        description: "Bedload rating term (line 27a). -9999 resets to 1.0."
+      - name: "delta_gradient"
+        unit: "m/m"
+        valid_range: [0.0001, 0.1]
+        description: "Delta plain gradient (line 27)"
+
+  files:
+    - name: "HYDRO.IN"
+      format: "47-line ASCII, one parameter per line"
+      required: true
+    - name: "HYDRO0.HYPS"
+      format: "ASCII elevation-area hypsometric curve"
+      required: true
+    - name: "HYDRO.CLIMATE"
+      format: "Daily T/P time series override"
+      required: false
+    - name: "HYDRO.QUAKE"
+      format: "Earthquake event specifications"
+      required: false
+
+outputs:
+  primary:
+    - name: "discharge"
+      file: "HYDROASCII.Q"
+      unit: "m3/s"
+      valid_range: [0, 100000]
+      description: "Daily water discharge at river mouth"
+    - name: "suspended_sediment"
+      file: "HYDROASCII.QS"
+      unit: "kg/s"
+      valid_range: [0, 100000]
+      description: "Daily suspended sediment load"
+    - name: "bedload"
+      file: "HYDROASCII.QB"
+      unit: "kg/s"
+      valid_range: [0, 10000]
+      description: "Daily bedload transport"
+    - name: "sediment_concentration"
+      file: "HYDROASCII.CS"
+      unit: "kg/m3"
+      valid_range: [0, 500]
+      description: "Daily suspended sediment concentration"
+    - name: "velocity_width_depth"
+      file: "HYDROASCII.VWD"
+      unit: "m/s, m, m"
+      description: "Daily velocity, width, depth (three columns)"
+  summary:
+    - name: "annual_summary"
+      file: "HYDRO.TRN1"
+      description: "Annual discharge statistics"
+    - name: "annual_peak"
+      file: "HYDRO.TRN2"
+      description: "Annual peak Q per outlet"
+    - name: "comprehensive_annual"
+      file: "HYDRO.TRN3"
+      description: "Multi-column annual data"
+
+unit_conversion_traps:
+  - parameter: "monthly_precipitation"
+    user_provides: "mm"
+    model_converts: "÷1000 to m"
+    trap: "Providing m instead of mm gives 1000x too small"
+  - parameter: "lapse_rate"
+    user_provides: "degC/km"
+    model_converts: "÷1000 to degC/m"
+    trap: "Providing degC/m instead of degC/km gives 1000x too small"
+  - parameter: "basin_length"
+    user_provides: "km"
+    model_converts: "×1000 to m"
+    trap: "Providing m instead of km gives 1000x too large"
+  - parameter: "annual_precipitation"
+    user_provides: "m/yr"
+    model_converts: "none"
+    trap: "Providing mm/yr instead of m/yr gives 1000x too large"
+  - parameter: "canopy_interception_alpha"
+    user_provides: "mm/d"
+    model_converts: "÷1000 to m/d"
+    trap: "Providing m/d gives 1000x too small"
+  - parameter: "hydraulic_conductivity"
+    user_provides: "mm/day"
+    model_converts: "÷1000 to m/day"
+    trap: "Providing m/day gives 1000x too small"
+
+known_issues:
+  - "ASCII output requires line 2 = ON or no text output is produced"
+  - "Grain size proportions (line 7) must sum exactly to 1.0 — model does not normalize"
+  - "BQART formula changes behavior at T=2°C threshold (doubles coefficient, drops T term)"
+  - "Hypsometry bin 0 must have area 0"
+  - "Reservoir trapping uses different formulas above/below 0.5 km³ (hard-coded cutoff)"
+  - "Depth coefficient is derived from velocity and width coefficients — do not set independently"

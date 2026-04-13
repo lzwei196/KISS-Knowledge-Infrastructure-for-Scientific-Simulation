@@ -1,0 +1,432 @@
+# CISM Diagnostic Triplets
+# 20 symptom -> diagnosis -> remedy entries
+# Covers: unit_conversion, parameter_format, runtime, io, solver
+
+- id: dt_001
+  stage: s2_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Ice sheet grows unbounded; ice volume increases monotonically without reaching steady state"
+    error_pattern: "ice_volume increasing linearly"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Surface mass balance (acab) provided in mm/yr instead of m/yr"
+    explanation: "CISM expects acab in meters per year. If mm/yr values (e.g., 300 mm/yr = 0.3 m/yr) are passed directly, the accumulation is 1000x too high, causing unbounded ice growth."
+    affected_components: [convert_forcing_to_cism, generate_input_nc]
+  remedy:
+    action: "Divide acab values by 1000 to convert mm/yr to m/yr"
+    tool_to_run: convert_forcing_to_cism
+    manual_steps:
+      - "Check max(abs(acab)) in input.nc; should be < 50 m/yr for Earth ice sheets"
+      - "If > 100, likely in mm/yr -- divide by 1000"
+    prevention: "validate_output() in generate_input_nc checks acab magnitude"
+  severity: silent
+  cross_references: [dt_008]
+
+- id: dt_002
+  stage: s3_config_generation
+  failure_domain: parameter_format
+  symptom:
+    description: "Ice exists but has zero velocity; no dynamics despite thick ice"
+    error_pattern: "max_velocity = 0.0"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "default_flwa set too small (e.g., 1e-25) or missing"
+    explanation: "The flow rate factor (flwa) controls ice softness. Values below ~1e-20 Pa^-n s^-1 make ice effectively rigid. Typical values: 1e-16 to 1e-17 for temperate ice."
+    affected_components: [generate_cism_config]
+  remedy:
+    action: "Set default_flwa to 1.0e-16 Pa^-n s^-1 (or 5.7e-18 for cold ice)"
+    tool_to_run: generate_cism_config
+    manual_steps:
+      - "Check [parameters] default_flwa in .config file"
+      - "Typical range: 1e-18 (cold) to 1e-15 (warm/streaming)"
+    prevention: "validate_params() checks flwa range"
+  severity: silent
+  cross_references: []
+
+- id: dt_003
+  stage: s2_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Basal temperature has wrong sign or magnitude; ice is too cold/warm at base"
+    error_pattern: "btemp values inverted or unreasonable"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Geothermal heat flux provided as positive instead of negative"
+    explanation: "CISM convention: negative geothermal = upward heat flux. Positive values would cool the base. Global GHF datasets typically use positive = upward (opposite convention)."
+    affected_components: [convert_forcing_to_cism, generate_cism_config]
+  remedy:
+    action: "Negate geothermal heat flux: geothermal = -abs(value)"
+    tool_to_run: generate_cism_config
+    manual_steps:
+      - "Check [parameters] geothermal in .config"
+      - "Should be negative (e.g., -42.0e-3 W/m^2)"
+      - "Also convert mW/m^2 to W/m^2 by dividing by 1000"
+    prevention: "generate_cism_config auto-negates positive values"
+  severity: silent
+  cross_references: []
+
+- id: dt_004
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "Temperature field blows up; NaN values appear in temp or enthalpy"
+    error_pattern: "NaN detected|SIGFPE|temperature exceeds"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Timestep (dt) too large for grid spacing, violating CFL condition"
+    explanation: "The SIA diffusion equation requires dt < dew^2 / (2*D_max) where D_max is the maximum ice diffusivity. Thin ice on steep slopes can make D_max very large."
+    affected_components: [generate_cism_config, run_cism]
+  remedy:
+    action: "Reduce dt by factor of 2-10; for 2km grid use dt <= 1.0 yr"
+    tool_to_run: generate_cism_config
+    manual_steps:
+      - "Halve dt and re-run"
+      - "If still unstable, halve again"
+      - "For diagnostic grid spacing 2000m, try dt=0.1"
+    prevention: "CFL check in preflight: dt < dew^2 / (2e6)"
+  severity: fatal
+  cross_references: [dt_010]
+
+- id: dt_005
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "CISM crashes at startup with Trilinos-related error when using dycore=2"
+    error_pattern: "Trilinos|undefined symbol|cannot find -lteuchos"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "which_ho_sparse=4 (Trilinos solver) but CISM built without Trilinos"
+    explanation: "The Trilinos solver (option 4) requires CISM compiled with CISM_USE_TRILINOS=ON. Without it, the Glissade PCG solver (option 3) should be used."
+    affected_components: [generate_cism_config, run_cism]
+  remedy:
+    action: "Set which_ho_sparse = 3 in [ho_options] for Glissade's built-in PCG solver"
+    tool_to_run: generate_cism_config
+    manual_steps:
+      - "Change which_ho_sparse = 3 in .config"
+      - "Or rebuild CISM with Trilinos if parallel solver needed"
+    prevention: "Default to which_ho_sparse=3 in config generator"
+  severity: fatal
+  cross_references: []
+
+- id: dt_006
+  stage: s1_input_generation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Ice velocities are orders of magnitude wrong; features are at wrong scale"
+    error_pattern: "velocity 1000x too high or too low"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Grid spacing (dew, dns) provided in kilometers instead of meters"
+    explanation: "CISM expects dew and dns in meters. If km values are used (e.g., 5 instead of 5000), the domain is 1000x smaller than intended, producing wildly wrong velocity magnitudes."
+    affected_components: [generate_input_nc, generate_cism_config]
+  remedy:
+    action: "Multiply dew and dns by 1000 to convert km to meters"
+    tool_to_run: generate_cism_config
+    manual_steps:
+      - "Check dew and dns in [grid] section"
+      - "Typical values: 500 to 50000 meters"
+      - "If < 100, likely in km -- multiply by 1000"
+    prevention: "validate_inputs() warns if dew < 10"
+  severity: silent
+  cross_references: []
+
+- id: dt_007
+  stage: s3_config_generation
+  failure_domain: parameter_format
+  symptom:
+    description: "Ice sheet is unrealistically thin with Glissade dycore"
+    error_pattern: "max_thickness much lower than expected"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "evolution=0 (pseudo-diffusion) used with dycore=2 (Glissade)"
+    explanation: "Pseudo-diffusion thickness evolution (option 0) is only compatible with the Glide SIA dycore. Glissade requires evolution=3 (incremental remapping) or 4 (FO upwind)."
+    affected_components: [generate_cism_config]
+  remedy:
+    action: "Set evolution = 3 (incremental remapping) when dycore=2"
+    tool_to_run: generate_cism_config
+    manual_steps:
+      - "Change evolution = 3 in [options] section"
+      - "Or use evolution = 4 for first-order upwind"
+    prevention: "generate_cism_config auto-corrects this combination"
+  severity: silent
+  cross_references: []
+
+- id: dt_008
+  stage: s2_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Excessive basal melt rate; ice base melts unrealistically fast"
+    error_pattern: "bmlt values in m/s instead of m/yr"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Basal melt rate (bmlt) in m/s (SI) instead of m/yr as expected by CISM output"
+    explanation: "Internal CISM uses SI (m/s) but output applies factor scyr=31536000 to convert to m/yr. If custom bmlt forcing is in m/s, it will be ~3e7x too large when interpreted as m/yr."
+    affected_components: [convert_forcing_to_cism]
+  remedy:
+    action: "Multiply m/s basal melt by scyr=31536000 to get m/yr, or divide m/yr by scyr for internal use"
+    tool_to_run: convert_forcing_to_cism
+    manual_steps:
+      - "Check bmlt values in input: should be 0.001-10 m/yr typically"
+      - "If > 1000, likely in m/s -- multiply by 31536000"
+    prevention: "validate_output checks bmlt range"
+  severity: silent
+  cross_references: [dt_001, dt_013]
+
+- id: dt_009
+  stage: s4_execution
+  failure_domain: io
+  symptom:
+    description: "Output NetCDF file exists but contains zero time steps"
+    error_pattern: "time dimension length = 0"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Output frequency in [CF output] exceeds total number of timesteps"
+    explanation: "If frequency=10000 but total steps = (tend-tstart)/dt = 5000, no output is ever written. CISM only writes when step_count mod frequency == 0."
+    affected_components: [generate_cism_config]
+  remedy:
+    action: "Set frequency <= (tend - tstart) / dt"
+    tool_to_run: generate_cism_config
+    manual_steps:
+      - "Calculate total_steps = (tend - tstart) / dt"
+      - "Set frequency to total_steps / desired_outputs"
+      - "Use frequency = 1 for debugging"
+    prevention: "validate_params() checks frequency vs total steps"
+  severity: silent
+  cross_references: []
+
+- id: dt_010
+  stage: s4_execution
+  failure_domain: solver
+  symptom:
+    description: "Higher-order solver fails to converge; Picard/JFNK iterations exhaust maxiter"
+    error_pattern: "Nonlinear solver did not converge|exceeded maxiter"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "JFNK (which_ho_nonlinear=1) struggles without good preconditioner"
+    explanation: "JFNK can be faster than Picard for well-conditioned problems but is less robust. For initial runs or ill-conditioned problems, Picard (option 0) is more reliable."
+    affected_components: [generate_cism_config, run_cism]
+  remedy:
+    action: "Set which_ho_nonlinear = 0 (Picard iteration) as first attempt"
+    tool_to_run: generate_cism_config
+    manual_steps:
+      - "Change which_ho_nonlinear = 0"
+      - "Increase glissade_maxiter to 500"
+      - "Reduce dt"
+      - "Try which_ho_precond = 2 (SIA-based)"
+    prevention: "Default to Picard in config generator"
+  severity: fatal
+  cross_references: [dt_004]
+
+- id: dt_011
+  stage: s3_config_generation
+  failure_domain: parameter_format
+  symptom:
+    description: "Temperature field is uniform at surface temperature everywhere; no thermal evolution"
+    error_pattern: "temp == artm everywhere and at all depths"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "temperature=0 in [options] sets ice temp to surface artm every timestep"
+    explanation: "Option 0 forces the entire ice column to the surface air temperature, overriding any thermal evolution. Use temperature=1 for prognostic thermodynamics."
+    affected_components: [generate_cism_config]
+  remedy:
+    action: "Set temperature = 1 in [options] for prognostic temperature evolution"
+    tool_to_run: generate_cism_config
+    manual_steps:
+      - "Change temperature = 1 in [options]"
+      - "temperature=2 holds initial temperature constant"
+      - "temperature=3 uses enthalpy formulation"
+    prevention: "Document default temperature=1 recommendation"
+  severity: silent
+  cross_references: []
+
+- id: dt_012
+  stage: s1_input_generation
+  failure_domain: parameter_format
+  symptom:
+    description: "Ice is floating where it should be grounded; marine margin artifacts"
+    error_pattern: "floating_mask nonzero on land"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Bed topography (topg) has wrong sign convention for areas below sea level"
+    explanation: "CISM convention: topg < 0 = below sea level, topg > 0 = above sea level. If this is reversed, the model thinks land areas are submarine and applies marine margin/floating ice physics."
+    affected_components: [generate_input_nc]
+  remedy:
+    action: "Check topg sign: negative values should correspond to ocean floor below sea level"
+    tool_to_run: generate_input_nc
+    manual_steps:
+      - "Plot topg field and verify coastal/ocean areas are negative"
+      - "If reversed, negate entire topg field"
+    prevention: "Sanity check topg statistics in validate_output()"
+  severity: silent
+  cross_references: []
+
+- id: dt_013
+  stage: s5_output_parsing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Parsed velocities are ~3e7x smaller than expected when comparing to observations"
+    error_pattern: "velocity values in range 1e-8 to 1e-5"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Reading raw Fortran arrays (m/s SI) instead of NetCDF output (m/yr with scyr factor)"
+    explanation: "Internal CISM stores velocity in m/s. NetCDF I/O applies factor=scyr (31536000) to output m/yr. If reading restart files or internal arrays directly, values are in m/s."
+    affected_components: [parse_cism_output]
+  remedy:
+    action: "Use NetCDF output (already in m/yr) not restart files for analysis"
+    tool_to_run: parse_cism_output
+    manual_steps:
+      - "If m/s values needed, divide m/yr by 31536000"
+      - "If m/yr values from restart, multiply m/s by 31536000"
+    prevention: "parse_cism_output reads from standard NetCDF output"
+  severity: silent
+  cross_references: [dt_008]
+
+- id: dt_014
+  stage: s3_config_generation
+  failure_domain: parameter_format
+  symptom:
+    description: "Config section parameters have no effect; model uses defaults instead of specified values"
+    error_pattern: "parameter values do not match config file"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Section name misspelled or wrong case; CISM silently ignores unknown sections"
+    explanation: "CISM config parser reads sections by exact name match. A typo (e.g., [Grid] vs [grid], [HO_options] vs [ho_options]) means the entire section is silently skipped."
+    affected_components: [generate_cism_config]
+  remedy:
+    action: "Check exact section names: [grid], [time], [options], [ho_options], [parameters], [CF default], [CF input], [CF output]"
+    tool_to_run: generate_cism_config
+    manual_steps:
+      - "Verify section names match CISM source code exactly"
+      - "Note: 'CF default', 'CF input', 'CF output' have spaces"
+      - "Note: lowercase for grid, time, options, parameters, ho_options"
+    prevention: "validate_config() checks section names against whitelist"
+  severity: silent
+  cross_references: []
+
+- id: dt_015
+  stage: s3_config_generation
+  failure_domain: parameter_format
+  symptom:
+    description: "No calving occurs; ice extends over open ocean with no mass loss"
+    error_pattern: "ice_mask extends far offshore"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "marine_margin=0 (do nothing at marine margins)"
+    explanation: "With marine_margin=0, CISM does not apply any calving criterion. Ice at marine margins simply thins but is never removed. Set marine_margin=3 for threshold-based calving."
+    affected_components: [generate_cism_config]
+  remedy:
+    action: "Set marine_margin = 3 in [options] for threshold calving"
+    tool_to_run: generate_cism_config
+    manual_steps:
+      - "Add marine_margin = 3 to [options] section"
+      - "For ice shelves, also check calving parameters"
+    prevention: "Recommend marine_margin=3 for marine-terminating ice sheets"
+  severity: silent
+  cross_references: [dt_012]
+
+- id: dt_016
+  stage: s1_input_generation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Grid coordinates and spacing are inconsistent; model runs but spatial scale is wrong"
+    error_pattern: "domain extent doesn't match expected area"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Grid spacing in km in config but coordinates in meters in NetCDF (or vice versa)"
+    explanation: "The NetCDF x1, y1 coordinates must be consistent with the dew, dns spacing in the config file. Both should be in meters."
+    affected_components: [generate_input_nc, generate_cism_config]
+  remedy:
+    action: "Ensure x1 = np.arange(ewn) * dew and y1 = np.arange(nsn) * dns, both in meters"
+    tool_to_run: generate_input_nc
+    manual_steps:
+      - "Check x1[:] spacing matches dew in config"
+      - "Check y1[:] spacing matches dns in config"
+    prevention: "generate_input_nc uses dew/dns for coordinate generation"
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_017
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "CISM crashes at initialization with sigma level error"
+    error_pattern: "sigma levels must be monotonically increasing|sigma error"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Custom sigma levels in [sigma] section are not monotonically increasing from 0 to 1"
+    explanation: "Sigma levels define the vertical coordinate: 0=surface, 1=base. They must be strictly increasing. If unspecified, CISM uses even spacing."
+    affected_components: [generate_cism_config]
+  remedy:
+    action: "Remove [sigma] section to use default even spacing, or fix values to be monotonic 0->1"
+    tool_to_run: generate_cism_config
+    manual_steps:
+      - "Check sigma_levels values are ordered 0.0, ..., 1.0"
+      - "Or remove [sigma] section entirely"
+    prevention: "generate_cism_config validates sigma ordering"
+  severity: fatal
+  cross_references: []
+
+- id: dt_018
+  stage: s4_execution
+  failure_domain: io
+  symptom:
+    description: "CISM crashes reading input file; time index error"
+    error_pattern: "NetCDF: Index exceeds dimension bound|time slice out of range"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "time = N in [CF input] exceeds number of time steps in input.nc"
+    explanation: "The time parameter in [CF input] is 1-based. If input.nc has only 1 time step, time must be 1. Setting time=2 or higher causes an out-of-bounds read."
+    affected_components: [generate_cism_config]
+  remedy:
+    action: "Set time = 1 in [CF input] (or verify input.nc has enough time steps)"
+    tool_to_run: generate_cism_config
+    manual_steps:
+      - "Run ncdump -h input.nc to check time dimension size"
+      - "Set time <= size of time dimension"
+    prevention: "preflight_check verifies time index vs input dimensions"
+  severity: fatal
+  cross_references: []
+
+- id: dt_019
+  stage: s4_execution
+  failure_domain: io
+  symptom:
+    description: "CISM crashes reading restart file; missing variable error"
+    error_pattern: "Variable .* not found in input|NetCDF: Variable not found"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Input/restart NetCDF is missing required variables for the chosen physics"
+    explanation: "Different physics options require different input variables. E.g., which_ho_babc=5 requires 'beta' in input, temperature=1 may need initial 'temp' field."
+    affected_components: [generate_input_nc]
+  remedy:
+    action: "Add missing variables to input.nc using generate_input_nc.py"
+    tool_to_run: generate_input_nc
+    manual_steps:
+      - "Check error message for which variable is missing"
+      - "Add that variable to input.nc with appropriate dimensions"
+      - "Common: beta (y0,x0), temp (level,y1,x1), kinbcmask (y0,x0)"
+    prevention: "generate_input_nc includes all commonly required variables"
+  severity: fatal
+  cross_references: []
+
+- id: dt_020
+  stage: s4_execution
+  failure_domain: io
+  symptom:
+    description: "CISM crashes with dimension mismatch between config and input NetCDF"
+    error_pattern: "dimension .* does not match|size mismatch"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "ewn/nsn in [grid] doesn't match x1/y1 dimensions in input.nc"
+    explanation: "The grid dimensions in the config file must exactly match the spatial dimensions in the input NetCDF. A mismatch causes a read error or memory corruption."
+    affected_components: [generate_input_nc, generate_cism_config]
+  remedy:
+    action: "Regenerate input.nc with matching dimensions, or update [grid] to match"
+    tool_to_run: generate_input_nc
+    manual_steps:
+      - "Run ncdump -h input.nc to see x1, y1 sizes"
+      - "Set ewn = x1 size, nsn = y1 size in [grid]"
+    prevention: "preflight_check compares config dims to input dims"
+  severity: fatal
+  cross_references: []

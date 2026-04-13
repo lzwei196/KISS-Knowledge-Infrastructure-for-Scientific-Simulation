@@ -1,0 +1,198 @@
+model:
+  name: "CLM5___CTSM"
+  full_name: "Community Land Model 5 / Community Terrestrial Systems Model"
+  version: "CTSM 5.4"
+  domain: "Biogeochemistry, Land Surface, Hydrology, Carbon-Nitrogen Cycling"
+  binary_path: "/home/server/cesm/scratch/test_clm5/bld/cesm.exe"
+  source_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/CLM5___CTSM/source/repo"
+  language: "Fortran 2003+"
+  build_system: "CIME (CMake 3.10+)"
+  parallelism: "MPI + OpenMP"
+
+inputs:
+  forcing:
+    - name: "PRECTmms"
+      description: "Total precipitation rate"
+      unit: "kg/m2/s"
+      valid_range: [0.0, 0.01]
+      notes: "Equivalent to mm/s. CMFD/ERA5 often in mm/day — divide by 86400"
+    - name: "TBOT"
+      description: "Atmospheric temperature at reference height"
+      unit: "K"
+      valid_range: [200.0, 330.0]
+      notes: "Must be Kelvin, not Celsius"
+    - name: "WIND"
+      description: "Wind speed at reference height"
+      unit: "m/s"
+      valid_range: [0.0, 50.0]
+    - name: "FSDS"
+      description: "Downward shortwave radiation"
+      unit: "W/m2"
+      valid_range: [0.0, 1400.0]
+    - name: "FLDS"
+      description: "Downward longwave radiation"
+      unit: "W/m2"
+      valid_range: [50.0, 600.0]
+      notes: "Must be downward, not net longwave"
+    - name: "QBOT"
+      description: "Specific humidity at reference height"
+      unit: "kg/kg"
+      valid_range: [0.0, 0.04]
+      notes: "Not relative humidity"
+    - name: "PSRF"
+      description: "Surface pressure"
+      unit: "Pa"
+      valid_range: [50000.0, 110000.0]
+
+  parameters:
+    critical:
+      - name: "medlynslope"
+        valid_range: [1.0, 15.0]
+        description: "Medlyn stomatal conductance slope parameter"
+        sensitivity: "High"
+      - name: "medlynintercept"
+        valid_range: [100.0, 40000.0]
+        description: "Minimum stomatal conductance (umol/m2/s)"
+        sensitivity: "Medium"
+      - name: "baseflow_scalar"
+        valid_range: [0.0001, 0.01]
+        description: "Subsurface drainage rate scalar"
+        sensitivity: "High"
+      - name: "fff"
+        valid_range: [0.02, 2.0]
+        description: "Decay factor of saturated hydraulic conductivity with depth"
+        sensitivity: "High"
+      - name: "deflmax"
+        valid_range: [0.0, 0.1]
+        description: "Maximum saturated fraction for surface runoff"
+        sensitivity: "Medium"
+      - name: "co2_ppmv"
+        valid_range: [280.0, 560.0]
+        description: "Atmospheric CO2 concentration"
+        sensitivity: "High"
+      - name: "finidat"
+        valid_range: null
+        description: "Initial conditions file path (critical for spinup)"
+        sensitivity: "Critical"
+      - name: "spinup_state"
+        valid_range: [0, 2]
+        description: "Accelerated decomposition mode (0=off, 1=on, 2=exit spinup)"
+        sensitivity: "Critical"
+
+  surface_data:
+    - name: "surfdata"
+      format: "NetCDF"
+      description: "Surface dataset with PFT fractions, soil texture, urban, lake, glacier"
+      notes: "PFT fractions must sum to 1.0 per grid cell"
+    - name: "domain"
+      format: "NetCDF"
+      description: "Domain file defining grid and land mask"
+    - name: "paramdata"
+      format: "NetCDF"
+      description: "CLM parameter file (clm5_params.c*)"
+
+outputs:
+  primary:
+    - name: "GPP"
+      description: "Gross Primary Production"
+      unit: "gC/m2/s"
+      valid_range: [0.0, 5.0e-5]
+      global_mean: "~120 PgC/yr"
+    - name: "NPP"
+      description: "Net Primary Production"
+      unit: "gC/m2/s"
+      valid_range: [-1.0e-5, 3.0e-5]
+    - name: "NEE"
+      description: "Net Ecosystem Exchange"
+      unit: "gC/m2/s"
+      valid_range: [-5.0e-5, 5.0e-5]
+    - name: "EFLX_LH_TOT"
+      description: "Total Latent Heat Flux"
+      unit: "W/m2"
+      valid_range: [-50.0, 500.0]
+    - name: "FSH"
+      description: "Sensible Heat Flux"
+      unit: "W/m2"
+      valid_range: [-100.0, 500.0]
+    - name: "QRUNOFF"
+      description: "Total Runoff (surface + subsurface)"
+      unit: "mm/s"
+      valid_range: [0.0, 0.01]
+      global_mean: "~40000 km3/yr"
+    - name: "H2OSOI"
+      description: "Volumetric Soil Moisture by Layer"
+      unit: "mm3/mm3"
+      valid_range: [0.0, 1.0]
+    - name: "TSOI"
+      description: "Soil Temperature by Layer"
+      unit: "K"
+      valid_range: [200.0, 350.0]
+    - name: "TOTSOMC"
+      description: "Total Soil Organic Carbon"
+      unit: "gC/m2"
+      valid_range: [0.0, 100000.0]
+      global_mean: "~1500 PgC"
+    - name: "TOTVEGC"
+      description: "Total Vegetation Carbon"
+      unit: "gC/m2"
+      valid_range: [0.0, 50000.0]
+      global_mean: "~350 PgC"
+    - name: "SNOW_DEPTH"
+      description: "Snow Depth"
+      unit: "m"
+      valid_range: [0.0, 10.0]
+    - name: "FSNO"
+      description: "Fraction of Ground Covered by Snow"
+      unit: "fraction"
+      valid_range: [0.0, 1.0]
+
+  output_format:
+    type: "NetCDF (history files)"
+    convention: "CF-1.0"
+    naming: "{casename}.clm2.h{N}.{date}.nc"
+    frequency: "configurable via hist_nhtfrq (default: monthly)"
+
+soil_layers:
+  count: 25
+  depth_m: 8.5
+  spacing: "exponential (1.75 cm top to 1.136 m bottom)"
+  notes: "External soil data (HWSD: 6 layers to 2m) requires careful interpolation"
+
+snow_layers:
+  max_count: 12
+  notes: "Dynamic layering based on snow depth"
+
+pft_types:
+  count: 78
+  notes: "78+ PFT/CFT types including natural vegetation and crops"
+
+calendar:
+  type: "noleap"
+  days_per_year: 365
+  notes: "Forcing with gregorian calendar causes date misalignment on leap years"
+
+known_issues:
+  - id: "dt_001"
+    severity: "silent"
+    description: "Precipitation mm/day used as kg/m2/s produces 86400x runoff error"
+  - id: "dt_002"
+    severity: "silent"
+    description: "Temperature in Celsius instead of Kelvin — meaningless energy fluxes"
+  - id: "dt_004"
+    severity: "silent"
+    description: "Relative humidity used as specific humidity — latent heat errors"
+  - id: "dt_007"
+    severity: "fatal"
+    description: "Calendar mismatch (noleap vs gregorian) causes date misalignment"
+  - id: "dt_009"
+    severity: "degraded"
+    description: "Insufficient spinup for BGC mode — 200-600 years needed"
+  - id: "dt_010"
+    severity: "fatal"
+    description: "Surface dataset file not found"
+  - id: "build_pio"
+    severity: "resolved"
+    description: "PIO build failed 3 times before succeeding on 4th attempt (2026-03-30)"
+  - id: "missing_inputdata"
+    severity: "blocking"
+    description: "CIME run blocked by missing CESM inputdata — no output produced"

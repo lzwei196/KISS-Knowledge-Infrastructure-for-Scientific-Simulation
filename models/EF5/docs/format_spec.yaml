@@ -1,0 +1,163 @@
+model:
+  name: "EF5"
+  version: "1.2.3"
+  full_name: "Ensemble Framework For Flash Flood Forecasting"
+  domain: "distributed hydrologic modeling / flash flood forecasting"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/EF5/source/repo/bin/ef5"
+  invocation: "ef5 [control.txt]"
+  language: "C++"
+  authors: "HyDROSLab, University of Oklahoma"
+
+inputs:
+  config:
+    - name: "control.txt"
+      format: "INI-style plain text"
+      description: "Single configuration file with all model settings"
+      required: true
+
+  basic_grids:
+    - name: "DEM"
+      format: "ASC/TIF"
+      unit: "meters"
+      description: "Digital Elevation Model"
+      required: true
+    - name: "DDM"
+      format: "ASC/TIF"
+      unit: "ESRI or TauDEM direction codes"
+      description: "Drainage Direction Map"
+      required: true
+    - name: "FAM"
+      format: "ASC/TIF"
+      unit: "cell count"
+      description: "Flow Accumulation Map"
+      required: true
+
+  forcing:
+    - name: "Precipitation"
+      unit: "mm/hr (rate)"
+      format: "ASC/BIF/TIF/TRMMRT/TRMMV7/MRMS"
+      valid_range: [0, 300]
+      description: "Gridded precipitation rate"
+      required: true
+    - name: "PET"
+      unit: "mm/hr (rate)"
+      format: "ASC/BIF/TIF"
+      valid_range: [0, 20]
+      description: "Potential evapotranspiration rate"
+      required: true
+    - name: "Temperature"
+      unit: "degC"
+      format: "ASC/BIF/TIF"
+      valid_range: [-60, 60]
+      description: "Air temperature (required for Snow-17)"
+      required: false
+
+  parameters:
+    critical:
+      - name: "WM"
+        model: "CREST"
+        unit: "mm"
+        valid_range: [20, 1000]
+        description: "Maximum soil water capacity"
+      - name: "B"
+        model: "CREST"
+        unit: "dimensionless"
+        valid_range: [0.01, 3.0]
+        description: "Variable infiltration curve exponent"
+      - name: "IM"
+        model: "CREST"
+        unit: "percent (0-100)"
+        valid_range: [0, 100]
+        description: "Impervious area fraction"
+      - name: "FC"
+        model: "CREST"
+        unit: "mm/hr"
+        valid_range: [0.1, 500]
+        description: "Saturated hydraulic conductivity (Ksat)"
+      - name: "KE"
+        model: "CREST"
+        unit: "dimensionless"
+        valid_range: [0.01, 2.0]
+        description: "Evaporation coefficient"
+      - name: "IWU"
+        model: "CREST"
+        unit: "percent of WM (0-100)"
+        valid_range: [0, 100]
+        description: "Initial soil water content"
+    routing:
+      - name: "ALPHA"
+        model: "KW"
+        valid_range: [0.1, 20]
+        description: "Q=alpha*A^beta power law coefficient"
+      - name: "BETA"
+        model: "KW"
+        valid_range: [0.3, 1.5]
+        description: "Q=alpha*A^beta power law exponent"
+      - name: "TH"
+        model: "KW/LR"
+        unit: "grid cells"
+        valid_range: [1, 10000]
+        description: "Channel initiation threshold"
+      - name: "COEM"
+        model: "LR"
+        valid_range: [10, 5000]
+        description: "Overland flow reservoir coefficient"
+      - name: "LEAKI"
+        model: "KW/LR"
+        valid_range: [0.0, 1.0]
+        description: "Interflow leakage rate"
+
+outputs:
+  primary:
+    - name: "Streamflow"
+      unit: "m^3/s (cms)"
+      format: "CSV time series / gridded ASC"
+      valid_range: [0, 1000000]
+      description: "Simulated discharge at gauge points"
+    - name: "Soil Moisture"
+      unit: "percent of WM"
+      format: "CSV time series / gridded ASC"
+      valid_range: [0, 100]
+      description: "Soil water content relative to capacity"
+  secondary:
+    - name: "Snow Water Equivalent"
+      unit: "mm"
+      format: "gridded ASC"
+      valid_range: [0, 5000]
+    - name: "Return Period"
+      unit: "years"
+      format: "gridded ASC"
+      valid_range: [0, 1000]
+    - name: "Inundation Depth"
+      unit: "meters"
+      format: "gridded ASC"
+      valid_range: [0, 50]
+
+  time_series_format:
+    header: "Time,Discharge(m^3 s^-1),Observed(m^3 s^-1),Precip(mm h^-1),PET(mm h^-1),SM(%),Fast Flow(mm*1000),Slow Flow(mm*1000)"
+    file_pattern: "ts.<gauge_name>.<model>.csv"
+    time_format: "YYYY-MM-DD HH:MM"
+    delimiter: ","
+
+water_balance_models:
+  - key: "CREST"
+    description: "Variable infiltration curve, dual-layer excess storage"
+  - key: "SAC"
+    description: "NWS Sacramento model, 5 soil zones"
+  - key: "HYMOD"
+    description: "Parsimonious conceptual model"
+  - key: "HP"
+    description: "Fully impervious (100% runoff)"
+
+routing_models:
+  - key: "LR"
+    description: "Dual reservoir (overland + interflow)"
+  - key: "KW"
+    description: "Kinematic wave Q=alpha*A^beta"
+
+known_issues:
+  - "Binary requires libproj.so.25 which may not be available on all systems"
+  - "Time unit 'm' means months, not minutes — use 'u' for minutes"
+  - "PET in mm/month with UNIT=mm/h silently overestimates evaporation 720x"
+  - "DDM encoding (ESRI vs TauDEM) mismatch silently routes water wrong direction"
+  - "EF5 does not auto-create output directories — mkdir -p required"

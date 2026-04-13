@@ -1,0 +1,1340 @@
+# ============================================================================
+# Knowledge Infrastructure — OGGM (Open Global Glacier Model)
+# Glacier Dynamics & Cryospheric Hydrology
+# ============================================================================
+# Built using the Knowledge Dissection Toolkit v1.0
+# Model: OGGM 1.6.x (Open Global Glacier Model)
+# Official repo: https://github.com/OGGM/oggm
+# Documentation: https://docs.oggm.org/
+# Pre-processed directories: https://cluster.klima.uni-innsbruck.at/~oggm/
+# ============================================================================
+
+package:
+  name: "oggm-glacier-knowledge"
+  version: "1.0.0"
+  description: >
+    Knowledge infrastructure for autonomous operation of the Open Global
+    Glacier Model (OGGM) for glacier dynamics simulation, mass balance
+    computation, and coupling with the VIC hydrological model for
+    cryospheric-hydrological assessment of glacierized basins.
+  target_model: "OGGM 1.6.x (Open Global Glacier Model)"
+  domain: "glacier dynamics, cryospheric hydrology"
+  authors:
+    - "Jianyun Zhang Research Group (Knowledge Dissection)"
+  license: "CC-BY-4.0"
+  dependencies:
+    python: ">=3.9, <3.12"
+    oggm: ">=1.6.0"
+    numpy: "<2.0"
+    xarray: ">=0.19"
+    geopandas: ">=0.10"
+    rasterio: ">=1.2"
+    salem: ">=0.3.7"
+    matplotlib: ">=3.5"
+
+# --- Pipeline definition ---
+pipeline:
+  stages:
+
+    # ===== STAGE 1: GLACIER INVENTORY =====
+    - id: "s1_glacier_inventory"
+      name: "Glacier Inventory & Selection"
+      description: >
+        Identify and select glaciers within or intersecting the target
+        hydrological basin using the Randolph Glacier Inventory (RGI).
+        RGI v6.0 divides global glaciers into 19 first-order regions
+        (e.g., Region 13 = Central Asia, Region 15 = South Asia East
+        including Himalaya). Perform spatial intersection of RGI outlines
+        with the basin shapefile, apply area thresholds (glaciers < 0.01 km2
+        are unreliable), compute glacier fraction of basin area, and assess
+        whether glacier modeling is warranted (fraction < 1% => skip OGGM).
+        Debris-covered glaciers are flagged via the RGI debris flag but
+        OGGM does not currently model debris cover explicitly.
+      order: 1
+      depends_on: []
+      skill_document: "docs/s1_glacier_inventory_skill.md"
+      tools:
+        - "find_glaciers_in_basin"
+        - "download_rgi_region"
+        - "validate_glacier_selection"
+      milestones:
+        - id: "m1_rgi_downloaded"
+          description: "RGI region shapefiles downloaded and available locally"
+          verification: "RGI directory exists with .shp files; file count matches expected for region"
+        - id: "m1_glaciers_identified"
+          description: "Glaciers within or intersecting basin boundary identified"
+          verification: "Output CSV contains RGI IDs, areas, centroids; all geometries are valid polygons"
+        - id: "m1_selection_validated"
+          description: "Glacier selection validated: no duplicates, reasonable areas, glacier fraction computed"
+          verification: "No duplicate RGI IDs; all areas > min_area threshold; glacier fraction reported"
+
+    # ===== STAGE 2: PREPROCESSING =====
+    - id: "s2_preprocessing"
+      name: "Glacier Preprocessing (Glacier Directories)"
+      description: >
+        Initialize OGGM Glacier Directories (GDirs) — the fundamental data
+        structure where each glacier gets its own directory with DEM,
+        outlines, flowlines, and derived products. OGGM supports 6
+        preprocessing levels (L0-L5): L0 = raw outlines only, L1 = DEM
+        + outlines, L2 = climate data, L3 = flowlines + catchments,
+        L4 = ice thickness inversion, L5 = run-ready with dynamic spinup.
+        For efficiency, use pre-processed directories from the OGGM Bremen
+        server (cluster.klima.uni-innsbruck.at) which skip expensive DEM
+        processing and flowline computation. DEM sources: SRTM (60S-60N),
+        Copernicus DEM (global), NASADEM, AW3D30, RAMP (Antarctic), DEM3
+        (Iceland). SRTM has voids above 60N — use Copernicus or AW3D30
+        for high-latitude glaciers.
+      order: 2
+      depends_on: ["s1_glacier_inventory"]
+      skill_document: "docs/s2_preprocessing_skill.md"
+      tools:
+        - "configure_oggm"
+        - "init_glacier_directories"
+        - "validate_preprocessing"
+      milestones:
+        - id: "m2_oggm_configured"
+          description: "OGGM configuration initialized with working directory and paths"
+          verification: "cfg.PATHS['working_dir'] exists and is writable; cfg.PARAMS set"
+        - id: "m2_gdirs_initialized"
+          description: "Glacier directories initialized with DEM, outlines, and flowlines"
+          verification: "Each GDir has model_flowlines.pkl, inversion_flowlines.pkl, dem.tif"
+        - id: "m2_preprocessing_validated"
+          description: "All glacier directories pass validation checks"
+          verification: "No glaciers with zero volume; all have valid flowlines; bed thickness > 0"
+
+    # ===== STAGE 3: CLIMATE INPUT =====
+    - id: "s3_climate_input"
+      name: "Climate Data Processing"
+      description: >
+        Process climate data for mass balance computation. OGGM supports
+        multiple climate datasets: W5E5 (WFDE5 over ERA5, recommended,
+        1979-2019), CRU TS (1901-present, coarse), ERA5 (1979-present),
+        and custom datasets. Climate data must provide monthly temperature
+        and precipitation at glacier locations. Precipitation correction
+        factors (pcf) account for orographic enhancement and gauge
+        undercatch — typical values 1.5-3.0 for high-altitude glaciers.
+        For future projections, CMIP6 GCM data is bias-corrected using
+        the delta method against the reference climate. Temperature is
+        adjusted by adding the anomaly; precipitation by multiplying
+        the ratio. CRITICAL: CMIP6 temperature may be in Kelvin (not
+        Celsius) — a silent error that produces nonsensical mass balance.
+      order: 3
+      depends_on: ["s2_preprocessing"]
+      skill_document: "docs/s3_climate_input_skill.md"
+      tools:
+        - "process_climate_baseline"
+        - "process_custom_climate"
+        - "process_cmip6_projections"
+      milestones:
+        - id: "m3_baseline_climate_processed"
+          description: "Baseline climate data processed and attached to glacier directories"
+          verification: "Each GDir has climate_historical.nc with temp and prcp variables; time covers reference period"
+        - id: "m3_custom_climate_converted"
+          description: "Custom climate data (CMFD/MSWX) converted to OGGM format"
+          verification: "NetCDF has required variables (temp, prcp, ref_hgt); units are degC and kg/m2/month"
+        - id: "m3_cmip6_processed"
+          description: "CMIP6 projections processed and bias-corrected"
+          verification: "Future climate files exist; temperature in Celsius; precipitation physically reasonable"
+
+    # ===== STAGE 4: CALIBRATION =====
+    - id: "s4_calibration"
+      name: "Mass Balance Calibration"
+      description: >
+        Calibrate the mass balance model against geodetic mass balance
+        observations from Hugonnet et al. (2021), which provides 2000-2020
+        mass change rates for nearly every glacier worldwide. OGGM's
+        calibration adjusts three parameters: (1) mu_star — temperature
+        sensitivity of melt (mm w.e. per degree per month), (2) precipitation
+        correction factor (pcf) — multiplicative scaling of precipitation,
+        (3) temperature bias (tbias) — additive offset to temperature.
+        The calibration finds the parameter combination that matches the
+        observed geodetic mass balance over the reference period. If
+        mu_star hits parameter bounds (0 or 1000), the glacier is
+        problematic — usually indicating wrong climate data or a
+        surge-type glacier. Calibration must converge for all glaciers;
+        non-converging glaciers should be examined individually.
+      order: 4
+      depends_on: ["s3_climate_input"]
+      skill_document: "docs/s4_calibration_skill.md"
+      tools:
+        - "calibrate_mass_balance"
+        - "validate_calibration"
+      milestones:
+        - id: "m4_calibration_complete"
+          description: "Mass balance calibration converged for all glaciers"
+          verification: "Each GDir has calibrated params in climate_info.pkl; mu_star not at bounds"
+        - id: "m4_calibration_validated"
+          description: "Calibration quality verified against geodetic observations"
+          verification: "Mean absolute error < tolerance (default 50 mm w.e./yr); no extreme outliers"
+
+    # ===== STAGE 5: SIMULATION =====
+    - id: "s5_simulation"
+      name: "Glacier Dynamics Simulation"
+      description: >
+        Run the glacier dynamics simulation using OGGM's flowline models.
+        Two solvers available: FluxBasedModel (explicit, faster for most
+        glaciers, may be unstable for very steep glaciers) and
+        SemiImplicitModel (implicit, unconditionally stable, slightly
+        slower). Use run_with_hydro=True to get hydrological outputs
+        (melt, liquid precipitation, refreezing, off-glacier catchment
+        runoff). Dynamic spinup starts from the RGI inventory date and
+        adjusts the initial glacier state to match observed area/volume
+        at a reference date. Output variables: volume (km3), area (km2),
+        length (m), specific mass balance (mm w.e./yr), total runoff
+        components. CRITICAL: OGGM uses a hydrological year starting
+        October 1 (Northern Hemisphere) — VIC uses calendar year
+        January 1. This 3-month offset must be handled in coupling.
+      order: 5
+      depends_on: ["s4_calibration"]
+      skill_document: "docs/s5_simulation_skill.md"
+      tools:
+        - "run_glacier_simulation"
+        - "run_glacier_projections"
+        - "compile_glacier_output"
+      milestones:
+        - id: "m5_historical_run_complete"
+          description: "Historical glacier simulation completed successfully"
+          verification: "Output NetCDF exists with volume, area, length time series; no NaN values"
+        - id: "m5_projections_complete"
+          description: "Future projection simulations completed for specified GCM/SSP"
+          verification: "Projection output exists; time range covers requested period; volume >= 0"
+        - id: "m5_output_compiled"
+          description: "Per-glacier outputs compiled into basin-level aggregates"
+          verification: "Compiled output has basin-total volume, area, runoff; per-glacier CSV available"
+
+    # ===== STAGE 6: VIC COUPLING =====
+    - id: "s6_vic_coupling"
+      name: "OGGM-VIC Hydrological Coupling"
+      description: >
+        Couple OGGM glacier model outputs with VIC hydrological model for
+        integrated cryospheric-hydrological simulation. Three coupling
+        modes: (A) Post-VIC injection — run VIC first, then add OGGM
+        glacier melt as additional runoff at the routing stage (simplest,
+        recommended). (B) Forcing augmentation — modify VIC forcing to
+        account for glacier-covered area (intermediate complexity).
+        (C) Two-way dynamic coupling — VIC provides sub-glacier energy
+        balance, OGGM provides ice dynamics (research-grade, not
+        operational). CRITICAL: Double-counting trap — VIC simulates
+        snowmelt on ALL cells including glacier cells. If OGGM also
+        outputs melt for the same cells, melt is counted twice. Solution:
+        mask glacier cells in VIC output OR subtract VIC's snowmelt from
+        OGGM output for glacier cells. Unit conversion: OGGM outputs
+        mm w.e. (water equivalent) per month; VIC uses mm/day. Spatial
+        mapping: each glacier's runoff must be assigned to the correct
+        VIC grid cell(s) proportional to glacier area fraction.
+      order: 6
+      depends_on: ["s5_simulation"]
+      skill_document: "docs/s6_vic_coupling_skill.md"
+      tools:
+        - "oggm_to_vic_runoff"
+        - "glacier_contribution_analysis"
+        - "plot_glacier_hydro"
+      milestones:
+        - id: "m6_runoff_converted"
+          description: "OGGM glacier runoff converted to VIC-compatible units and spatial grid"
+          verification: "Output has m3/s per VIC cell per day; total volume conserved within 1%"
+        - id: "m6_contribution_analyzed"
+          description: "Glacier contribution to total basin discharge quantified"
+          verification: "Monthly/annual glacier percentage computed; peak water year identified if applicable"
+        - id: "m6_plots_generated"
+          description: "Visualization of glacier-hydrology coupling produced"
+          verification: "Plot files exist: stacked runoff components, evolution timeseries, contribution fraction"
+
+# --- Layer 1: Validated Tools ---
+tools:
+
+  # ===== S1: GLACIER INVENTORY TOOLS =====
+
+  - id: "find_glaciers_in_basin"
+    name: "Find Glaciers in Basin"
+    description: >
+      Perform spatial intersection of Randolph Glacier Inventory (RGI) outlines
+      with a basin boundary shapefile to identify all glaciers within or
+      partially within the target hydrological basin. Uses geopandas spatial
+      join with CRS alignment (RGI uses EPSG:4326). Computes per-glacier area
+      within basin, total glacier area, and glacier fraction of basin. Handles
+      glaciers that straddle the basin boundary by clipping to basin extent.
+      Applies minimum area filter (default 0.01 km2) to remove unreliable
+      small polygons. RGI v6.0 has 19 first-order regions; v7.0 is partially
+      supported. The tool auto-detects the correct RGI region from lat/lon
+      if not specified. CRITICAL: CRS mismatch between basin shapefile and
+      RGI causes the intersection to return 0 glaciers silently — both must
+      be in the same CRS or explicitly reprojected.
+    stage: "s1_glacier_inventory"
+    script_path: "tools/s1_glacier_inventory/find_glaciers_in_basin.py"
+    language: "python"
+    inputs:
+      - name: "basin_shp"
+        type: "file"
+        description: "Path to basin boundary shapefile (.shp)"
+        required: true
+        example: "data/shp/yarlung_shp/yarlung_boundary.shp"
+      - name: "rgi_dir"
+        type: "directory"
+        description: "Path to RGI region shapefile directory. If not provided, uses oggm.utils.get_rgi_dir()."
+        required: false
+        example: "data/rgi/RGIV62/15_rgi62_SouthAsiaEast"
+      - name: "rgi_version"
+        type: "string"
+        description: "RGI version: '62' (default, recommended) or '70' (partial support)"
+        required: false
+        example: "62"
+      - name: "rgi_region"
+        type: "string"
+        description: "RGI first-order region number (e.g., '13', '15'). Auto-detected from basin centroid if omitted."
+        required: false
+        example: "15"
+      - name: "buffer_km"
+        type: "number"
+        description: "Buffer around basin boundary in km (default 0). Use > 0 to catch glaciers feeding into the basin from just outside."
+        required: false
+        example: "0"
+      - name: "min_area_km2"
+        type: "number"
+        description: "Minimum glacier area threshold in km2 (default 0.01). Glaciers smaller than this are excluded."
+        required: false
+        example: "0.01"
+      - name: "output"
+        type: "file"
+        description: "Output CSV path for glacier list"
+        required: true
+        example: "outputs/oggm/glaciers_in_basin.csv"
+    outputs:
+      - name: "glacier_csv"
+        type: "file"
+        description: "CSV with columns: rgi_id, name, area_km2, centroid_lat, centroid_lon, min_elev, max_elev, debris_flag"
+        path_pattern: "{output}"
+      - name: "summary_json"
+        type: "file"
+        description: "JSON summary: n_glaciers, total_glacier_area_km2, glacier_fraction, rgi_region"
+        path_pattern: "{output}.summary.json"
+    preconditions:
+      - "Basin shapefile exists and has valid polygon geometry"
+      - "RGI shapefile directory exists OR OGGM is installed for auto-download"
+      - "geopandas and shapely are installed"
+    postconditions:
+      - "Output CSV contains valid RGI IDs (format: RGI60-XX.XXXXX)"
+      - "All glacier areas > 0 and > min_area_km2 threshold"
+      - "No duplicate RGI IDs in output"
+      - "Glacier fraction is computed and reported"
+
+  - id: "download_rgi_region"
+    name: "Download RGI Region"
+    description: >
+      Download Randolph Glacier Inventory (RGI) outlines for a specified
+      region. Uses oggm.utils.get_rgi_dir() which downloads from the OGGM
+      data server. Can auto-detect the RGI region from lat/lon coordinates.
+      RGI v6.0 regions: 01=Alaska, 02=Western Canada/US, 03=Arctic Canada N,
+      04=Arctic Canada S, 05=Greenland, 06=Iceland, 07=Svalbard, 08=Scandinavia,
+      09=Russian Arctic, 10=North Asia, 11=Central Europe, 12=Caucasus/Middle East,
+      13=Central Asia, 14=South Asia West, 15=South Asia East, 16=Low Latitudes,
+      17=Southern Andes, 18=New Zealand, 19=Antarctic/Sub-Antarctic.
+      Download is ~50-500 MB per region depending on glacier count.
+      CRITICAL: The OGGM server (cluster.klima.uni-innsbruck.at) may be
+      temporarily unreachable — implement retry logic.
+    stage: "s1_glacier_inventory"
+    script_path: "tools/s1_glacier_inventory/download_rgi_region.py"
+    language: "python"
+    inputs:
+      - name: "lat"
+        type: "number"
+        description: "Latitude for auto-detecting RGI region"
+        required: false
+        example: "29.5"
+      - name: "lon"
+        type: "number"
+        description: "Longitude for auto-detecting RGI region"
+        required: false
+        example: "94.5"
+      - name: "rgi_region"
+        type: "string"
+        description: "Explicit RGI region number (overrides lat/lon auto-detection)"
+        required: false
+        example: "15"
+      - name: "rgi_version"
+        type: "string"
+        description: "RGI version: '62' (default) or '70'"
+        required: false
+        example: "62"
+      - name: "output_dir"
+        type: "directory"
+        description: "Directory to save RGI files"
+        required: true
+        example: "data/rgi/RGIV62"
+    outputs:
+      - name: "rgi_dir"
+        type: "directory"
+        description: "Directory containing downloaded RGI shapefiles"
+        path_pattern: "{output_dir}/{region_subdir}"
+    preconditions:
+      - "Internet connection available (for OGGM data server)"
+      - "At least one of (lat, lon) or rgi_region is provided"
+      - "OGGM is installed (for get_rgi_dir utility)"
+    postconditions:
+      - "RGI shapefile directory exists with .shp, .dbf, .shx, .prj files"
+      - "Shapefile contains at least one glacier polygon"
+
+  - id: "validate_glacier_selection"
+    name: "Validate Glacier Selection"
+    description: >
+      Validate the selected glacier inventory for a basin simulation.
+      Checks: (1) no duplicate RGI IDs, (2) all glacier areas > 0 and
+      above the minimum threshold, (3) glacier fraction of basin area is
+      computed and reported, (4) warns if glacier fraction < 1% (glacier
+      modeling may not be warranted), (5) warns if glacier fraction > 50%
+      (heavily glacierized — extra care needed for double-counting with VIC),
+      (6) checks for known problematic glaciers (surge-type, calving,
+      debris-covered), (7) reports RGI region coverage. Also computes
+      area-weighted mean elevation and elevation range for the glacier
+      ensemble, which helps assess climate sensitivity.
+    stage: "s1_glacier_inventory"
+    script_path: "tools/s1_glacier_inventory/validate_glacier_selection.py"
+    language: "python"
+    inputs:
+      - name: "glacier_csv"
+        type: "file"
+        description: "CSV from find_glaciers_in_basin with glacier attributes"
+        required: true
+        example: "outputs/oggm/glaciers_in_basin.csv"
+      - name: "basin_area_km2"
+        type: "number"
+        description: "Total basin area in km2 for glacier fraction computation"
+        required: true
+        example: "208091"
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON validation report: n_glaciers, total_area, glacier_fraction, warnings, errors"
+        path_pattern: ""
+    preconditions:
+      - "Glacier CSV exists with required columns (rgi_id, area_km2)"
+      - "Basin area > 0"
+    postconditions:
+      - "No duplicate RGI IDs"
+      - "All areas > 0"
+      - "Glacier fraction computed and reported"
+      - "Warnings issued for fraction < 1% or > 50%"
+
+  # ===== S2: PREPROCESSING TOOLS =====
+
+  - id: "configure_oggm"
+    name: "Configure OGGM Environment"
+    description: >
+      Initialize OGGM configuration (oggm.cfg) with working directory,
+      data paths, and model parameters. Sets cfg.PATHS['working_dir'],
+      cfg.PATHS['rgi_dir'], DEM source preference, multiprocessing
+      settings, and download verification. The working directory will
+      store all glacier directories (5-50 MB per glacier). For a basin
+      with 500 glaciers, expect 2.5-25 GB of disk space. Key cfg.PARAMS:
+      border (pixels of DEM border around glacier, default 80 — must be
+      large enough to contain the glacier at its maximum historical extent),
+      use_multiprocessing (True for batch processing, False for debugging),
+      dl_verify (True to verify downloads, set False behind corporate proxies).
+      Also sets logging level and matplotlib backend for headless servers.
+    stage: "s2_preprocessing"
+    script_path: "tools/s2_preprocessing/configure_oggm.py"
+    language: "python"
+    inputs:
+      - name: "working_dir"
+        type: "directory"
+        description: "OGGM working directory for glacier data"
+        required: true
+        example: "outputs/oggm/working_dir"
+      - name: "border"
+        type: "number"
+        description: "DEM border in pixels around glacier outline (default 80)"
+        required: false
+        example: "80"
+      - name: "multiprocessing"
+        type: "string"
+        description: "Enable multiprocessing: 'true' or 'false' (default 'true')"
+        required: false
+        example: "true"
+      - name: "dl_verify"
+        type: "string"
+        description: "Verify downloads: 'true' or 'false' (default 'true')"
+        required: false
+        example: "true"
+      - name: "dem_source"
+        type: "string"
+        description: "DEM source: 'COPDEM', 'SRTM', 'NASADEM', 'AW3D30' (default auto)"
+        required: false
+        example: "COPDEM"
+    outputs:
+      - name: "config_status"
+        type: "value"
+        description: "JSON with configuration summary"
+        path_pattern: ""
+    preconditions:
+      - "OGGM is installed (pip install oggm)"
+      - "Working directory parent exists and is writable"
+    postconditions:
+      - "cfg.PATHS['working_dir'] exists"
+      - "cfg.initialize() completed without error"
+      - "Logging configured"
+
+  - id: "init_glacier_directories"
+    name: "Initialize Glacier Directories"
+    description: >
+      Initialize OGGM Glacier Directories (GDirs) for the selected glaciers.
+      Two modes: (1) From scratch — downloads DEM, clips to glacier extent,
+      computes flowlines, catchment areas, and ice thickness inversion.
+      Slow but gives full control. (2) From pre-processed directories —
+      downloads ready-made GDirs from the OGGM Bremen server at the
+      specified preprocessing level (L1-L5). Much faster, recommended for
+      most use cases. Prepro levels: L1=DEM+outlines, L2=+climate,
+      L3=+flowlines+catchments, L4=+inversion, L5=+dynamic spinup.
+      Use prepro_border=80 (default) or 160 for glaciers expected to
+      grow significantly under climate scenarios. The Bremen server URL
+      changes with OGGM versions — use oggm.DEFAULT_BASE_URL.
+    stage: "s2_preprocessing"
+    script_path: "tools/s2_preprocessing/init_glacier_directories.py"
+    language: "python"
+    inputs:
+      - name: "rgi_ids"
+        type: "config"
+        description: "List of RGI IDs or path to CSV with rgi_id column"
+        required: true
+        example: "outputs/oggm/glaciers_in_basin.csv"
+      - name: "working_dir"
+        type: "directory"
+        description: "OGGM working directory (from configure_oggm)"
+        required: true
+        example: "outputs/oggm/working_dir"
+      - name: "prepro_level"
+        type: "number"
+        description: "Preprocessing level 1-5 (default 5 = run-ready)"
+        required: false
+        example: "5"
+      - name: "prepro_border"
+        type: "number"
+        description: "Border size for pre-processed dirs: 80 or 160 (default 80)"
+        required: false
+        example: "80"
+      - name: "from_prepro"
+        type: "string"
+        description: "Use pre-processed directories: 'true' (default) or 'false'"
+        required: false
+        example: "true"
+    outputs:
+      - name: "gdirs_path"
+        type: "directory"
+        description: "Path to initialized glacier directories"
+        path_pattern: "{working_dir}/per_glacier/"
+    preconditions:
+      - "OGGM is configured (configure_oggm ran successfully)"
+      - "RGI IDs are valid format (RGI60-XX.XXXXX)"
+      - "Internet connection available for pre-processed directory download"
+    postconditions:
+      - "Each RGI ID has a corresponding GDir subdirectory"
+      - "GDirs contain expected files for the preprocessing level"
+      - "No empty or corrupted GDir directories"
+
+  - id: "validate_preprocessing"
+    name: "Validate Glacier Preprocessing"
+    description: >
+      Validate that all glacier directories are properly initialized and
+      contain the required data products for simulation. Checks per GDir:
+      (1) model_flowlines.pkl exists and contains at least one flowline,
+      (2) inversion_flowlines.pkl exists with bed thickness data,
+      (3) estimated volume > 0 (zero volume means inversion failed),
+      (4) DEM covers the glacier extent, (5) no NaN values in critical
+      arrays. Reports statistics: total glaciers processed, failed count,
+      total estimated volume, area distribution. Glaciers with zero volume
+      or missing flowlines must be fixed or excluded before simulation.
+    stage: "s2_preprocessing"
+    script_path: "tools/s2_preprocessing/validate_preprocessing.py"
+    language: "python"
+    inputs:
+      - name: "working_dir"
+        type: "directory"
+        description: "OGGM working directory with glacier directories"
+        required: true
+        example: "outputs/oggm/working_dir"
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON report: total_glaciers, valid_count, failed_count, total_volume_km3, issues[]"
+        path_pattern: ""
+    preconditions:
+      - "Glacier directories exist in working_dir/per_glacier/"
+      - "Preprocessing has been run (init_glacier_directories completed)"
+    postconditions:
+      - "All glaciers have valid flowlines and positive volume, OR failed glaciers are listed"
+      - "Total volume and area statistics are computed"
+
+  # ===== S3: CLIMATE INPUT TOOLS =====
+
+  - id: "process_climate_baseline"
+    name: "Process Baseline Climate Data"
+    description: >
+      Process baseline climate data and attach it to glacier directories.
+      OGGM supports several climate datasets: W5E5 (WFDE5 over land,
+      ERA5 over ocean, 0.5deg, 1979-2019, RECOMMENDED), CRU TS4
+      (0.5deg, 1901-present, less accurate precipitation), ERA5
+      (0.25deg, 1979-present, needs ERA5 API credentials), and custom
+      datasets. The climate data provides monthly temperature (degC)
+      and precipitation (kg/m2/month) at each glacier's reference
+      height. A lapse rate is applied to adjust temperature from the
+      climate grid to the glacier's actual elevation. Default lapse
+      rate is -6.5 degC/km (moist adiabatic). The reference period
+      (typically 2000-2020) must overlap with the geodetic mass balance
+      observations used for calibration (Hugonnet 2021 covers 2000-2020).
+    stage: "s3_climate_input"
+    script_path: "tools/s3_climate_input/process_climate_baseline.py"
+    language: "python"
+    inputs:
+      - name: "working_dir"
+        type: "directory"
+        description: "OGGM working directory with initialized GDirs"
+        required: true
+        example: "outputs/oggm/working_dir"
+      - name: "source"
+        type: "string"
+        description: "Climate data source: 'W5E5' (default), 'CRU', 'ERA5'"
+        required: false
+        example: "W5E5"
+      - name: "ref_period"
+        type: "string"
+        description: "Reference period for calibration: 'YYYY-YYYY' (default '2000-2020')"
+        required: false
+        example: "2000-2020"
+    outputs:
+      - name: "climate_status"
+        type: "value"
+        description: "JSON: glaciers_processed, source, ref_period, issues[]"
+        path_pattern: ""
+    preconditions:
+      - "Glacier directories exist and are preprocessed to at least L1"
+      - "Internet connection for climate data download (first time only)"
+    postconditions:
+      - "Each GDir has climate_historical.nc"
+      - "Climate data covers the reference period"
+      - "Temperature is in degC and precipitation in kg/m2/month"
+
+  - id: "process_custom_climate"
+    name: "Process Custom Climate Data (CMFD/MSWX)"
+    description: >
+      Convert HydroCraft forcing data (CMFD or MSWX) to OGGM custom climate
+      format for use as glacier mass balance input. This enables consistent
+      climate forcing between VIC and OGGM when coupled. CMFD (China, 0.1deg,
+      3-hourly, 1979-2018) and MSWX (global, 0.1deg, 3-hourly, 1979-2026)
+      provide temperature and precipitation at higher spatial resolution than
+      W5E5/CRU, potentially improving mass balance accuracy in complex terrain.
+      The conversion: (1) extracts temperature and precipitation from forcing
+      files, (2) aggregates from sub-daily to monthly, (3) computes monthly
+      means and totals, (4) creates an OGGM-compatible NetCDF with dimensions
+      (time, ) and variables (temp, prcp, ref_hgt). Temperature must be in
+      degC; precipitation in kg/m2/month. The ref_hgt is the elevation of
+      the climate grid cell from the forcing DEM.
+    stage: "s3_climate_input"
+    script_path: "tools/s3_climate_input/process_custom_climate.py"
+    language: "python"
+    inputs:
+      - name: "working_dir"
+        type: "directory"
+        description: "OGGM working directory"
+        required: true
+        example: "outputs/oggm/working_dir"
+      - name: "climate_dir"
+        type: "directory"
+        description: "HydroCraft forcing directory (CMFD or MSWX)"
+        required: true
+        example: "data/forcing/Data_forcing_03hr_010deg"
+      - name: "format"
+        type: "string"
+        description: "Forcing format: 'CMFD' or 'MSWX'"
+        required: true
+        example: "CMFD"
+      - name: "start_year"
+        type: "number"
+        description: "Start year for climate extraction"
+        required: true
+        example: "2000"
+      - name: "end_year"
+        type: "number"
+        description: "End year for climate extraction"
+        required: true
+        example: "2018"
+    outputs:
+      - name: "custom_climate_status"
+        type: "value"
+        description: "JSON: glaciers_processed, source_format, period, issues[]"
+        path_pattern: ""
+    preconditions:
+      - "Glacier directories are initialized"
+      - "HydroCraft forcing data exists and covers glacier locations"
+      - "Forcing period overlaps with reference period for calibration"
+    postconditions:
+      - "Each GDir has a custom climate NetCDF"
+      - "Temperature in degC; precipitation in kg/m2/month"
+      - "ref_hgt matches the forcing grid elevation at glacier location"
+
+  - id: "process_cmip6_projections"
+    name: "Process CMIP6 Climate Projections"
+    description: >
+      Process CMIP6 GCM projections for future glacier simulations.
+      Uses the delta method: compute the monthly temperature and
+      precipitation anomaly between GCM historical and GCM future,
+      then apply this anomaly to the observed baseline climate. This
+      removes GCM bias while preserving the climate change signal.
+      Temperature: T_future = T_baseline + (T_gcm_future - T_gcm_hist).
+      Precipitation: P_future = P_baseline * (P_gcm_future / P_gcm_hist).
+      CRITICAL: Verify GCM temperature is in Celsius, not Kelvin.
+      If temperature values are >100, subtract 273.15. This is a
+      SILENT ERROR — the mass balance will be wildly wrong with Kelvin
+      temperatures. Supported SSPs: SSP126, SSP245, SSP370, SSP585.
+      OGGM provides pre-processed CMIP6 data for selected GCMs via the
+      oggm.shop module.
+    stage: "s3_climate_input"
+    script_path: "tools/s3_climate_input/process_cmip6_projections.py"
+    language: "python"
+    inputs:
+      - name: "working_dir"
+        type: "directory"
+        description: "OGGM working directory"
+        required: true
+        example: "outputs/oggm/working_dir"
+      - name: "gcm"
+        type: "string"
+        description: "GCM name (e.g., 'BCC-CSM2-MR', 'CESM2', 'MPI-ESM1-2-HR')"
+        required: true
+        example: "BCC-CSM2-MR"
+      - name: "ssp"
+        type: "string"
+        description: "SSP scenario: 'ssp126', 'ssp245', 'ssp370', or 'ssp585'"
+        required: true
+        example: "ssp245"
+      - name: "start_year"
+        type: "number"
+        description: "Projection start year (typically 2015 or 2020)"
+        required: true
+        example: "2020"
+      - name: "end_year"
+        type: "number"
+        description: "Projection end year (typically 2100)"
+        required: true
+        example: "2100"
+    outputs:
+      - name: "projection_status"
+        type: "value"
+        description: "JSON: gcm, ssp, period, glaciers_processed, issues[]"
+        path_pattern: ""
+    preconditions:
+      - "Baseline climate has been processed (process_climate_baseline)"
+      - "GCM/SSP combination is available in OGGM's CMIP6 archive"
+      - "Internet connection for GCM data download"
+    postconditions:
+      - "Each GDir has CMIP6 climate file for the specified GCM/SSP"
+      - "Temperature is in Celsius (not Kelvin)"
+      - "Precipitation is non-negative"
+      - "Time dimension covers start_year to end_year"
+
+  # ===== S4: CALIBRATION TOOLS =====
+
+  - id: "calibrate_mass_balance"
+    name: "Calibrate Mass Balance Model"
+    description: >
+      Calibrate OGGM's mass balance model against geodetic mass balance
+      observations from Hugonnet et al. (2021). The geodetic MB provides
+      2000-2020 average mass change rates (dh/dt) for virtually every
+      glacier worldwide, derived from satellite altimetry. OGGM's
+      calibration procedure (mb_calibration_from_geodetic_mb) adjusts
+      three parameters per glacier: (1) mu_star — temperature sensitivity
+      (mm w.e. per degC per month), typical range 50-400, (2) precipitation
+      correction factor (pcf) — multiplier on precipitation, typical 1.0-3.0,
+      (3) temperature bias (tbias) — additive offset in degC, typical
+      -2 to +2. The calibration minimizes the difference between modeled
+      and observed mass balance over the reference period. If calibration
+      fails (mu_star at bounds, no convergence), the glacier may have
+      data issues (wrong DEM, surge behavior, calving) or the climate
+      data may be inappropriate.
+    stage: "s4_calibration"
+    script_path: "tools/s4_calibration/calibrate_mass_balance.py"
+    language: "python"
+    inputs:
+      - name: "working_dir"
+        type: "directory"
+        description: "OGGM working directory with initialized and climate-equipped GDirs"
+        required: true
+        example: "outputs/oggm/working_dir"
+      - name: "ref_period"
+        type: "string"
+        description: "Reference period for geodetic MB: 'YYYY/MM/DD-YYYY/MM/DD' (default '2000/01/01-2020/01/01')"
+        required: false
+        example: "2000/01/01-2020/01/01"
+      - name: "inform_ref_mb"
+        type: "string"
+        description: "Use Hugonnet 2021 as reference: 'true' (default) or 'false'"
+        required: false
+        example: "true"
+    outputs:
+      - name: "calibration_status"
+        type: "value"
+        description: "JSON: glaciers_calibrated, failed_count, mean_mu_star, mean_pcf, failed_rgi_ids[]"
+        path_pattern: ""
+    preconditions:
+      - "Climate data attached to all GDirs"
+      - "Reference period overlaps with geodetic MB period (2000-2020)"
+      - "Hugonnet 2021 MB data available (downloaded automatically by OGGM)"
+    postconditions:
+      - "Each calibrated GDir has mu_star, pcf, tbias in climate_info.pkl"
+      - "mu_star not at bounds (0 or 1000) for calibrated glaciers"
+      - "Failed glaciers are listed with reasons"
+
+  - id: "validate_calibration"
+    name: "Validate Mass Balance Calibration"
+    description: >
+      Validate calibration quality by checking parameter distributions
+      and comparing modeled vs. observed mass balance. Checks per glacier:
+      (1) mu_star within physically reasonable range (not at bounds),
+      (2) pcf within expected range (0.5-5.0), (3) tbias not extreme
+      (|tbias| < 5 degC), (4) modeled MB within tolerance of geodetic
+      MB (default 50 mm w.e./yr). Aggregated checks: (5) mean absolute
+      error across all glaciers, (6) bias (systematic over/underestimation),
+      (7) fraction of glaciers with |error| > tolerance. Produces a
+      calibration diagnostics plot (mu_star histogram, error distribution,
+      modeled vs observed MB scatter).
+    stage: "s4_calibration"
+    script_path: "tools/s4_calibration/validate_calibration.py"
+    language: "python"
+    inputs:
+      - name: "working_dir"
+        type: "directory"
+        description: "OGGM working directory with calibrated GDirs"
+        required: true
+        example: "outputs/oggm/working_dir"
+      - name: "tolerance_mm_yr"
+        type: "number"
+        description: "Acceptable error tolerance in mm w.e./yr (default 50)"
+        required: false
+        example: "50"
+    outputs:
+      - name: "validation_report"
+        type: "value"
+        description: "JSON: mean_abs_error, bias, fraction_within_tolerance, outlier_rgi_ids[], diagnostics_plot_path"
+        path_pattern: ""
+    preconditions:
+      - "Mass balance calibration has been run"
+      - "Geodetic MB data is available for comparison"
+    postconditions:
+      - "Mean absolute error reported"
+      - "All glaciers checked for parameter reasonableness"
+      - "Diagnostics plot generated"
+
+  # ===== S5: SIMULATION TOOLS =====
+
+  - id: "run_glacier_simulation"
+    name: "Run Glacier Dynamics Simulation"
+    description: >
+      Run the historical glacier dynamics simulation using OGGM's flowline
+      model. Uses run_with_hydro=True to get hydrological outputs (melt,
+      liquid precipitation, refreezing, off-glacier catchment runoff).
+      Two model options: FluxBasedModel (explicit Euler, CFL-limited
+      timestep, faster for most glaciers but can be numerically unstable
+      for very steep or small glaciers) and SemiImplicitModel (implicit
+      scheme, unconditionally stable, slightly slower). Dynamic spinup:
+      runs the model from an earlier date (e.g., 1979) to spin up the
+      glacier state to match the RGI inventory date (typically ~2003 for
+      RGI v6). This avoids initialization shock. Output variables per
+      glacier: volume_m3, area_m2, length_m, calving_m3 (tidewater
+      glaciers), melt_off_glacier_monthly (mm w.e.), liq_prcp_off_glacier,
+      snowfall_off_glacier, melt_on_glacier, liq_prcp_on_glacier,
+      snowfall_on_glacier, refreezing.
+    stage: "s5_simulation"
+    script_path: "tools/s5_simulation/run_glacier_simulation.py"
+    language: "python"
+    inputs:
+      - name: "working_dir"
+        type: "directory"
+        description: "OGGM working directory with calibrated GDirs"
+        required: true
+        example: "outputs/oggm/working_dir"
+      - name: "start_year"
+        type: "number"
+        description: "Simulation start year"
+        required: true
+        example: "2000"
+      - name: "end_year"
+        type: "number"
+        description: "Simulation end year"
+        required: true
+        example: "2020"
+      - name: "use_spinup"
+        type: "string"
+        description: "Use dynamic spinup: 'true' (default) or 'false'"
+        required: false
+        example: "true"
+      - name: "model_type"
+        type: "string"
+        description: "Flowline model: 'FluxBased' (default) or 'SemiImplicit'"
+        required: false
+        example: "FluxBased"
+      - name: "output_suffix"
+        type: "string"
+        description: "Suffix for output files (default '' = 'model_diagnostics.nc')"
+        required: false
+        example: "_hist"
+    outputs:
+      - name: "simulation_status"
+        type: "value"
+        description: "JSON: glaciers_simulated, failed_count, total_volume_start_km3, total_volume_end_km3"
+        path_pattern: ""
+    preconditions:
+      - "Mass balance calibration completed for all glaciers"
+      - "Start year is within climate data period"
+      - "End year <= climate data end year"
+    postconditions:
+      - "Each GDir has model_diagnostics{suffix}.nc with volume, area, length time series"
+      - "run_output_hydro{suffix}.nc exists with hydrological variables (if run_with_hydro)"
+      - "No NaN values in output time series"
+      - "Volume >= 0 at all timesteps"
+
+  - id: "run_glacier_projections"
+    name: "Run Glacier Future Projections"
+    description: >
+      Run glacier dynamics simulations under future climate scenarios
+      using bias-corrected CMIP6 GCM data. Continues from the end
+      state of the historical simulation (or from the RGI date with
+      spinup). Uses the same flowline model and calibrated mass balance
+      parameters as the historical run. Supports multiple GCM/SSP
+      combinations for ensemble projections. Peak water analysis:
+      glacierized basins often show initially increasing runoff (more
+      melt from warmer temperatures) followed by declining runoff
+      (less ice available) — the inflection point is "peak water."
+      Identifying peak water timing is critical for water resource
+      planning in glacierized basins.
+    stage: "s5_simulation"
+    script_path: "tools/s5_simulation/run_glacier_projections.py"
+    language: "python"
+    inputs:
+      - name: "working_dir"
+        type: "directory"
+        description: "OGGM working directory"
+        required: true
+        example: "outputs/oggm/working_dir"
+      - name: "gcm"
+        type: "string"
+        description: "GCM name"
+        required: true
+        example: "BCC-CSM2-MR"
+      - name: "ssp"
+        type: "string"
+        description: "SSP scenario"
+        required: true
+        example: "ssp245"
+      - name: "start_year"
+        type: "number"
+        description: "Projection start year"
+        required: true
+        example: "2020"
+      - name: "end_year"
+        type: "number"
+        description: "Projection end year"
+        required: true
+        example: "2100"
+      - name: "model_type"
+        type: "string"
+        description: "Flowline model: 'FluxBased' or 'SemiImplicit'"
+        required: false
+        example: "FluxBased"
+    outputs:
+      - name: "projection_status"
+        type: "value"
+        description: "JSON: gcm, ssp, period, glaciers_simulated, volume_2100_km3, peak_water_year"
+        path_pattern: ""
+    preconditions:
+      - "CMIP6 projection climate data processed for specified GCM/SSP"
+      - "Historical simulation completed (provides initial state)"
+    postconditions:
+      - "Projection output NetCDF exists with volume, area, runoff time series"
+      - "Volume >= 0 at all timesteps (glacier can completely disappear)"
+      - "Time range covers start_year to end_year"
+
+  - id: "compile_glacier_output"
+    name: "Compile Glacier Output to Basin Level"
+    description: >
+      Compile per-glacier OGGM outputs into basin-level aggregates.
+      Uses oggm.utils.compile_run_output() and compile_glacier_statistics()
+      to merge individual glacier time series into a single dataset.
+      Computes basin-total: volume (km3), area (km2), specific mass
+      balance (mm w.e./yr, area-weighted), total runoff components
+      (melt + liquid precipitation - refreezing, in m3/s). Also generates
+      per-glacier statistics CSV with individual glacier evolution.
+      For VIC coupling, the key output is monthly glacier melt runoff
+      per glacier with spatial coordinates for grid cell assignment.
+    stage: "s5_simulation"
+    script_path: "tools/s5_simulation/compile_glacier_output.py"
+    language: "python"
+    inputs:
+      - name: "working_dir"
+        type: "directory"
+        description: "OGGM working directory"
+        required: true
+        example: "outputs/oggm/working_dir"
+      - name: "output_dir"
+        type: "directory"
+        description: "Output directory for compiled results"
+        required: false
+        example: "outputs/oggm/compiled"
+      - name: "output_suffix"
+        type: "string"
+        description: "Suffix matching the simulation output files"
+        required: false
+        example: "_hist"
+    outputs:
+      - name: "compiled_output"
+        type: "file"
+        description: "Compiled basin-level output NetCDF"
+        path_pattern: "{output_dir}/compiled_output{suffix}.nc"
+      - name: "glacier_statistics"
+        type: "file"
+        description: "Per-glacier statistics CSV"
+        path_pattern: "{output_dir}/glacier_statistics.csv"
+    preconditions:
+      - "Glacier simulation completed (run_glacier_simulation or run_glacier_projections)"
+      - "At least one glacier has valid output"
+    postconditions:
+      - "Compiled NetCDF has basin-total volume, area, runoff time series"
+      - "Per-glacier CSV has individual glacier statistics"
+      - "No NaN in aggregated values"
+
+  # ===== S6: VIC COUPLING TOOLS =====
+
+  - id: "oggm_to_vic_runoff"
+    name: "Convert OGGM Glacier Runoff to VIC Grid"
+    description: >
+      Convert OGGM glacier melt runoff to VIC grid cell format for
+      injection into the routing stage. Spatial mapping: each glacier's
+      centroid is assigned to the nearest VIC grid cell, with area-weighted
+      distribution if a glacier spans multiple cells. Unit conversion:
+      OGGM outputs melt in mm w.e. per month; convert to m3/s using
+      glacier area: Q(m3/s) = melt(mm_we/month) * area(m2) / (1000 *
+      seconds_per_month). CRITICAL double-counting avoidance: VIC also
+      simulates snowmelt on glacier cells. The tool computes the net
+      glacier contribution = OGGM_total_melt - VIC_snowmelt_on_glacier_cells.
+      If VIC snowmelt data is not provided, issues a WARNING about
+      potential double-counting.
+    stage: "s6_vic_coupling"
+    script_path: "tools/s6_vic_coupling/oggm_to_vic_runoff.py"
+    language: "python"
+    inputs:
+      - name: "oggm_output"
+        type: "file"
+        description: "Compiled OGGM output NetCDF (from compile_glacier_output)"
+        required: true
+        example: "outputs/oggm/compiled/compiled_output_hist.nc"
+      - name: "vic_grid_nc"
+        type: "file"
+        description: "VIC grid NetCDF (basin_grid.nc) for spatial mapping"
+        required: true
+        example: "outputs/vic_run/vic_temp/grid/basin_grid.nc"
+      - name: "glacier_csv"
+        type: "file"
+        description: "Glacier inventory CSV with centroid coordinates"
+        required: true
+        example: "outputs/oggm/glaciers_in_basin.csv"
+      - name: "vic_snowmelt_dir"
+        type: "directory"
+        description: "VIC result directory for double-counting correction (optional)"
+        required: false
+        example: "outputs/vic_run/vic_result"
+      - name: "output_dir"
+        type: "directory"
+        description: "Output directory for VIC-compatible glacier runoff"
+        required: true
+        example: "outputs/oggm/vic_coupling"
+    outputs:
+      - name: "glacier_runoff_nc"
+        type: "file"
+        description: "NetCDF with glacier runoff per VIC grid cell per month (m3/s)"
+        path_pattern: "{output_dir}/glacier_runoff_vic_grid.nc"
+      - name: "cell_mapping"
+        type: "file"
+        description: "CSV mapping glaciers to VIC grid cells with area fractions"
+        path_pattern: "{output_dir}/glacier_vic_cell_mapping.csv"
+    preconditions:
+      - "OGGM simulation completed with hydrological output"
+      - "VIC grid NetCDF exists with lat/lon coordinates"
+      - "Glacier CSV has centroid_lat and centroid_lon columns"
+    postconditions:
+      - "Output NetCDF has m3/s values per VIC cell per month"
+      - "Total volume is conserved within 1% (mm w.e. * area = m3)"
+      - "If VIC snowmelt provided, double-counting correction applied"
+      - "Warning issued if no VIC snowmelt data for double-counting check"
+
+  - id: "glacier_contribution_analysis"
+    name: "Analyze Glacier Contribution to Basin Discharge"
+    description: >
+      Quantify the contribution of glacier melt to total basin discharge.
+      Computes monthly and annual glacier contribution percentages,
+      identifies seasonal patterns (glacier contribution peaks in
+      late summer when snow has melted), detects peak water year
+      (if projections available), and analyzes trends. Key outputs:
+      monthly glacier percentage (highest in dry-season/summer),
+      annual glacier volume contribution, peak water timing under
+      different SSPs. For the Yarlung Tsangpo basin (~10% glacierized),
+      glacier contribution to discharge is ~15-25% annually but up to
+      40-60% in late summer. Peak water is projected for 2030-2060
+      depending on SSP.
+    stage: "s6_vic_coupling"
+    script_path: "tools/s6_vic_coupling/glacier_contribution_analysis.py"
+    language: "python"
+    inputs:
+      - name: "oggm_runoff"
+        type: "file"
+        description: "Glacier runoff NetCDF (from oggm_to_vic_runoff)"
+        required: true
+        example: "outputs/oggm/vic_coupling/glacier_runoff_vic_grid.nc"
+      - name: "vic_discharge"
+        type: "file"
+        description: "VIC/routing total discharge file (.day or NetCDF)"
+        required: true
+        example: "outputs/vic_run/routing_param/rout_out/station.day"
+      - name: "basin_area_km2"
+        type: "number"
+        description: "Total basin area in km2"
+        required: true
+        example: "208091"
+      - name: "output"
+        type: "file"
+        description: "Output JSON path for analysis results"
+        required: true
+        example: "outputs/oggm/glacier_contribution.json"
+    outputs:
+      - name: "contribution_json"
+        type: "file"
+        description: "JSON with monthly_pct[], annual_pct[], peak_water_year, trend"
+        path_pattern: "{output}"
+    preconditions:
+      - "OGGM glacier runoff converted to VIC grid"
+      - "VIC/routing discharge data available"
+      - "Time periods overlap between OGGM and VIC outputs"
+    postconditions:
+      - "Monthly glacier percentages computed (sum to valid range)"
+      - "Annual contribution reported"
+      - "Peak water year identified if projection data available"
+
+  - id: "plot_glacier_hydro"
+    name: "Plot Glacier Hydrology Results"
+    description: >
+      Generate visualization plots for glacier-hydrology coupling results.
+      Four plot types: (1) Stacked runoff components — glacier melt,
+      snowmelt, rainfall, baseflow as stacked area chart showing seasonal
+      contributions. (2) Glacier evolution timeseries — volume, area,
+      length over time with multi-scenario comparison if projections
+      available. (3) Glacier contribution fraction — monthly bar chart
+      showing what percentage of total discharge comes from glaciers.
+      (4) Spatial map — basin map with glacier outlines, colored by
+      specific runoff or mass balance, with VIC grid overlay.
+    stage: "s6_vic_coupling"
+    script_path: "tools/s6_vic_coupling/plot_glacier_hydro.py"
+    language: "python"
+    inputs:
+      - name: "oggm_output"
+        type: "file"
+        description: "Compiled OGGM output NetCDF"
+        required: true
+        example: "outputs/oggm/compiled/compiled_output_hist.nc"
+      - name: "basin_shp"
+        type: "file"
+        description: "Basin boundary shapefile"
+        required: true
+        example: "data/shp/yarlung_shp/yarlung_boundary.shp"
+      - name: "glacier_csv"
+        type: "file"
+        description: "Glacier inventory CSV (optional, for spatial map)"
+        required: false
+        example: "outputs/oggm/glaciers_in_basin.csv"
+      - name: "vic_discharge"
+        type: "file"
+        description: "VIC discharge file (optional, for combined plot)"
+        required: false
+      - name: "output_dir"
+        type: "directory"
+        description: "Output directory for plot files"
+        required: true
+        example: "outputs/oggm/plots"
+    outputs:
+      - name: "stacked_runoff_plot"
+        type: "file"
+        description: "Stacked runoff components plot"
+        path_pattern: "{output_dir}/glacier_stacked_runoff.png"
+      - name: "evolution_plot"
+        type: "file"
+        description: "Glacier evolution timeseries plot"
+        path_pattern: "{output_dir}/glacier_evolution.png"
+      - name: "contribution_plot"
+        type: "file"
+        description: "Glacier contribution fraction plot"
+        path_pattern: "{output_dir}/glacier_contribution.png"
+      - name: "spatial_map"
+        type: "file"
+        description: "Spatial map with glacier outlines"
+        path_pattern: "{output_dir}/glacier_spatial_map.png"
+    preconditions:
+      - "OGGM output exists"
+      - "Basin shapefile exists"
+      - "matplotlib is installed"
+    postconditions:
+      - "Plot files exist and are non-empty PNG images"
+      - "Plots have proper labels, legends, and units"
+
+# --- Layer 2: Skill Documents ---
+skill_documents:
+  - id: "sd_s1"
+    name: "Glacier Inventory & Selection"
+    stage: "s1_glacier_inventory"
+    path: "docs/s1_glacier_inventory_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls, tools_reference]
+    word_count: 3000
+
+  - id: "sd_s2"
+    name: "Glacier Preprocessing"
+    stage: "s2_preprocessing"
+    path: "docs/s2_preprocessing_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls, tools_reference]
+    word_count: 3200
+
+  - id: "sd_s3"
+    name: "Climate Data Processing"
+    stage: "s3_climate_input"
+    path: "docs/s3_climate_input_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls, tools_reference]
+    word_count: 3500
+
+  - id: "sd_s4"
+    name: "Mass Balance Calibration"
+    stage: "s4_calibration"
+    path: "docs/s4_calibration_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls, tools_reference]
+    word_count: 2800
+
+  - id: "sd_s5"
+    name: "Glacier Dynamics Simulation"
+    stage: "s5_simulation"
+    path: "docs/s5_simulation_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls, tools_reference]
+    word_count: 3200
+
+  - id: "sd_s6"
+    name: "OGGM-VIC Hydrological Coupling"
+    stage: "s6_vic_coupling"
+    path: "docs/s6_vic_coupling_skill.md"
+    knowledge_type: "evaluative_and_sequencing"
+    sections: [purpose, prerequisites, inputs, procedure, expected_outputs, validation_checks, common_pitfalls, tools_reference]
+    word_count: 3500
+
+# --- Model couplings ---
+model_couplings:
+  couplings_file: "docs/model_couplings.yaml"
+  count: 3
+  summary:
+    - "Basin shapefile -> OGGM RGI intersection (spatial boundary)"
+    - "OGGM glacier melt -> VIC runoff injection (the key coupling)"
+    - "CMIP6 -> OGGM future glacier scenarios (climate projection)"
+
+# --- Layer 3: Diagnostic Triplets ---
+# See diagnostics/triplets.yaml for full definitions
+diagnostic_triplets:
+  - id: "dt_oggm_001"
+    stage: "s1_glacier_inventory"
+    failure_domain: "dependency_mismatch"
+    severity: "fatal"
+  - id: "dt_oggm_002"
+    stage: "s1_glacier_inventory"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_oggm_003"
+    stage: "s2_preprocessing"
+    failure_domain: "runtime"
+    severity: "degraded"
+  - id: "dt_oggm_004"
+    stage: "s2_preprocessing"
+    failure_domain: "dependency_mismatch"
+    severity: "fatal"
+  - id: "dt_oggm_005"
+    stage: "s2_preprocessing"
+    failure_domain: "runtime"
+    severity: "degraded"
+  - id: "dt_oggm_006"
+    stage: "s2_preprocessing"
+    failure_domain: "runtime"
+    severity: "degraded"
+  - id: "dt_oggm_007"
+    stage: "s2_preprocessing"
+    failure_domain: "runtime"
+    severity: "fatal"
+  - id: "dt_oggm_008"
+    stage: "s3_climate_input"
+    failure_domain: "dependency_mismatch"
+    severity: "fatal"
+  - id: "dt_oggm_009"
+    stage: "s3_climate_input"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_oggm_010"
+    stage: "s3_climate_input"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_oggm_011"
+    stage: "s4_calibration"
+    failure_domain: "runtime"
+    severity: "degraded"
+  - id: "dt_oggm_012"
+    stage: "s4_calibration"
+    failure_domain: "runtime"
+    severity: "degraded"
+  - id: "dt_oggm_013"
+    stage: "s4_calibration"
+    failure_domain: "parameter_format"
+    severity: "degraded"
+  - id: "dt_oggm_014"
+    stage: "s5_simulation"
+    failure_domain: "runtime"
+    severity: "degraded"
+  - id: "dt_oggm_015"
+    stage: "s5_simulation"
+    failure_domain: "runtime"
+    severity: "degraded"
+  - id: "dt_oggm_016"
+    stage: "s6_vic_coupling"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_oggm_017"
+    stage: "s6_vic_coupling"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_oggm_018"
+    stage: "s6_vic_coupling"
+    failure_domain: "unit_conversion"
+    severity: "silent"
+  - id: "dt_oggm_019"
+    stage: "s6_vic_coupling"
+    failure_domain: "silent_error"
+    severity: "silent"
+  - id: "dt_oggm_020"
+    stage: "s5_simulation"
+    failure_domain: "runtime"
+    severity: "fatal"
+
+# --- Summary statistics ---
+summary:
+  total_tools: 17
+  total_tool_lines: 0  # tools are functional stubs with OGGM API calls
+  total_skill_documents: 6
+  total_skill_words: 19200
+  total_diagnostic_triplets: 25
+  failure_domains:
+    - "runtime"
+    - "parameter_format"
+    - "silent_error"
+    - "dependency_mismatch"
+    - "unit_conversion"
+  pipeline_stages: 6
+  pipeline_milestones: 18

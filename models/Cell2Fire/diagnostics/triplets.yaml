@@ -1,0 +1,444 @@
+# ============================================================================
+# Cell2Fire Diagnostic Triplets
+# ============================================================================
+# 18 diagnostic triplets covering 5 failure domains.
+# Generated during Cell2Fire knowledge dissection.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s2_weather_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Fire barely spreads. Burned area is tiny compared to expectations. ROS values near zero."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wind speed in m/s instead of km/h — 3.6× too low"
+    explanation: >
+      Cell2Fire expects wind speed in km/h for all fire models. Global meteorological
+      datasets (ERA5, GFS, station data) typically provide wind speed in m/s. Rate of
+      spread scales approximately linearly with wind speed, so m/s input produces fires
+      that spread roughly 3.6× too slowly.
+    affected_components: [convert_weather_to_c2f, Weather.csv]
+  remedy:
+    action: "Multiply wind speed by 3.6 in convert_weather_to_c2f.py"
+    tool_to_run: convert_weather_to_c2f
+    manual_steps:
+      - "Check max WS in Weather.csv — typical fire weather is 20-80 km/h"
+      - "If max WS < 15, values are likely in m/s — multiply by 3.6"
+    prevention: "auto_detect_and_convert() checks if max WS < 60 and converts"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_002
+  stage: s2_weather_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Fire spreads in completely wrong direction. Burned area shape is mirrored or rotated 180°."
+    error_pattern: null
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Wind direction in math convention (blowing TO) instead of meteorological (blowing FROM)"
+    explanation: >
+      Cell2Fire uses meteorological convention where WD indicates the direction the wind
+      is COMING FROM (e.g., 270° = wind from the west, fire spreads east). If the input
+      uses mathematical convention (direction wind is blowing TO), the fire will spread
+      in the opposite direction. Adding 180° and taking mod 360 corrects this.
+    affected_components: [convert_weather_to_c2f, Weather.csv]
+  remedy:
+    action: "Apply (WD + 180) % 360 in convert_weather_to_c2f.py"
+    tool_to_run: convert_weather_to_c2f
+    manual_steps:
+      - "Compare fire spread direction to expected wind-driven direction"
+      - "If fire spreads upwind, WD convention is likely inverted"
+    prevention: "Use --wd-conversion math_to_met flag"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s2_weather_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "FBP model produces extreme fire behavior even in mild weather. FFMC and ISI values explode."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Relative humidity as fraction (0-1) instead of percentage (0-100)"
+    explanation: >
+      Cell2Fire FBP model expects relative humidity as percentage (0-100). If RH is
+      provided as a fraction (e.g., 0.65 instead of 65%), the model interprets the air
+      as essentially 0% humidity. This causes FFMC to approach maximum (101), producing
+      extreme ISI and FWI values even in mild weather.
+    affected_components: [convert_weather_to_c2f, Weather.csv, FWI calculation]
+  remedy:
+    action: "Multiply RH by 100 if values are in 0-1 range"
+    tool_to_run: convert_weather_to_c2f
+    manual_steps:
+      - "Check max RH in Weather.csv — should be 30-100 for most conditions"
+      - "If max RH < 1.0, values are fraction — multiply by 100"
+    prevention: "auto_detect_and_convert() checks if max RH <= 1.0 and converts"
+  severity: silent
+  cross_references: [dt_001, dt_004]
+
+- id: dt_004
+  stage: s2_weather_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "FBP temperature-dependent calculations produce nonsensical results. Negative FFMC or extreme values."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature in Kelvin instead of Celsius"
+    explanation: >
+      Cell2Fire FBP model expects temperature in °C. ERA5 and some reanalysis products
+      provide temperature in Kelvin. A value of 293K (20°C) interpreted as 293°C would
+      produce physically impossible fire behavior indices.
+    affected_components: [convert_weather_to_c2f, Weather.csv]
+  remedy:
+    action: "Subtract 273.15 from temperature values"
+    tool_to_run: convert_weather_to_c2f
+    manual_steps:
+      - "Check TMP in Weather.csv — should be -40 to +50°C"
+      - "If TMP > 100, values are likely in Kelvin — subtract 273.15"
+    prevention: "auto_detect_and_convert() checks if max TMP > 100 and converts"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_005
+  stage: s1_landscape_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Slope factor wildly exaggerated. Fire accelerates unrealistically uphill."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Slope in percent rise instead of degrees"
+    explanation: >
+      Cell2Fire expects slope in degrees (0-90°). Some GIS tools output slope as
+      percent rise (e.g., 100% = 45°). A 30% slope (16.7°) interpreted as 30° would
+      produce a slope factor roughly 2× too large, causing unrealistic uphill fire spread.
+    affected_components: [slope.asc, convert_fuel_params]
+  remedy:
+    action: "Convert percent to degrees: degrees = atan(pct/100) × 180/π"
+    tool_to_run: convert_fuel_params
+    manual_steps:
+      - "Check slope values — max should be < 90°"
+      - "If max slope > 90, values are likely in percent"
+    prevention: "Verify slope raster range before running"
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_006
+  stage: s1_landscape_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Elevation-dependent slope calculation produces wrong values. Slope effect on fire spread incorrect."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Elevation in feet instead of meters"
+    explanation: >
+      Cell2Fire expects elevation in meters. If elevation is in feet, the slope
+      calculation (rise/run) will be 3.28× too large, producing exaggerated slope
+      effects on fire spread.
+    affected_components: [elevation.asc]
+  remedy:
+    action: "Multiply elevation values by 0.3048"
+    manual_steps:
+      - "Check elevation range — should match known terrain heights in meters"
+      - "If values seem ~3× too high, likely in feet"
+    prevention: "Compare DEM values to known heights in the region"
+  severity: silent
+  cross_references: [dt_005]
+
+# --- Input Format / Configuration Errors ---
+
+- id: dt_007
+  stage: s4_execution
+  failure_domain: input_format
+  symptom:
+    description: "Segmentation fault immediately after starting simulation. Core dump."
+    error_pattern: "Segmentation fault"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "Raster dimension mismatch — fuels, elevation, slope have different ncols/nrows"
+    explanation: >
+      Cell2Fire reads raster dimensions from the fuels file and assumes all other
+      rasters have identical dimensions. If elevation or slope has different ncols/nrows,
+      array access goes out of bounds causing a segfault.
+    affected_components: [all .asc files]
+  remedy:
+    action: "Ensure all ASC files have identical ncols, nrows, cellsize, and corner coordinates"
+    manual_steps:
+      - "Compare headers of all .asc files: head -6 *.asc"
+      - "Resample mismatched rasters to match fuels.asc"
+    prevention: "validate_instance_folder() checks raster alignment"
+  severity: crash
+  cross_references: [dt_008]
+
+- id: dt_008
+  stage: s4_execution
+  failure_domain: input_format
+  symptom:
+    description: "Fire never starts. All simulations show zero burned cells. No messages generated."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "All ignition attempts land on non-burnable cells (fuel code 0 or 91-99)"
+    explanation: >
+      Cell2Fire randomly selects ignition cells unless --ignitions is specified. If the
+      landscape has large non-burnable areas (water, urban, agriculture) coded as 0 or
+      91-99, random ignition may consistently land on these cells. Alternatively, the
+      Ignitions.csv may point to a non-burnable cell.
+    affected_components: [fuels.asc, Ignitions.csv, ignition selection]
+  remedy:
+    action: "Check fuel type at ignition locations. Use --ignitions with a known burnable cell."
+    manual_steps:
+      - "Create Ignitions.csv with Year,Ncell pointing to a known burnable cell"
+      - "Verify cell numbering: cell 1 = top-left corner, row-major order"
+    prevention: "Verify ignition cells are burnable before running"
+  severity: silent
+  cross_references: []
+
+- id: dt_009
+  stage: s4_execution
+  failure_domain: input_format
+  symptom:
+    description: "Only one simulation runs despite --nsims > 1. No parallelism observed."
+    error_pattern: null
+    detection_method: observation
+  diagnosis:
+    root_cause: "Binary compiled without OpenMP support or --nthreads not set"
+    explanation: >
+      Cell2Fire uses OpenMP for parallel simulation. If compiled without -fopenmp
+      (e.g., on macOS with Apple Clang), simulations run sequentially. The --nthreads
+      flag must also be set > 1 to enable parallelism.
+    affected_components: [makefile, compilation]
+  remedy:
+    action: "Recompile with g++ and -fopenmp. Set --nthreads N."
+    manual_steps:
+      - "Check compilation: make info"
+      - "Ensure g++ (not clang) is used"
+      - "Add --nthreads 4 (or more) to CLI"
+    prevention: "Use the official Makefile which includes -fopenmp"
+  severity: performance
+  cross_references: []
+
+- id: dt_010
+  stage: s4_execution
+  failure_domain: input_format
+  symptom:
+    description: "Cell2Fire crashes with 'Could not open directory' message."
+    error_pattern: "Could not open directory"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "Weather file path incorrect or Weathers/ directory missing when using --weather random"
+    explanation: >
+      When --weather random is specified, Cell2Fire looks for Weather*.csv files in
+      the Weathers/ subdirectory of the instance folder. If this directory doesn't
+      exist or contains no Weather*.csv files, the simulator fails.
+    affected_components: [Weather.csv, Weathers/ directory]
+  remedy:
+    action: "Create Weathers/ directory with Weather1.csv, Weather2.csv, etc."
+    manual_steps:
+      - "Use --weather rows (default) for single weather file"
+      - "Or create: instance/Weathers/Weather1.csv"
+    prevention: "validate_instance_folder() checks weather file existence"
+  severity: crash
+  cross_references: []
+
+# --- Scenario / Parameter Configuration ---
+
+- id: dt_011
+  stage: s4_execution
+  failure_domain: parameter_config
+  symptom:
+    description: "Burned area is 10× larger/smaller than expected for the same landscape and weather."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wrong --scenario value for Scott & Burgan model"
+    explanation: >
+      The --scenario flag (1, 2, or 3) controls fire weather severity thresholds in
+      the S&B model. Scenario 1 (low) uses high fuel moisture, resulting in slow spread.
+      Scenario 3 (extreme) uses low moisture, resulting in aggressive spread. The default
+      is 3. Using scenario 1 when conditions warrant 3 (or vice versa) can change burned
+      area by an order of magnitude.
+    affected_components: [--scenario flag, fuel moisture thresholds]
+  remedy:
+    action: "Match --scenario to actual fire weather conditions"
+    manual_steps:
+      - "Scenario 1: Mild conditions, high moisture"
+      - "Scenario 2: Moderate conditions"
+      - "Scenario 3: Extreme conditions, low moisture"
+    prevention: "Document scenario choice with fire weather data justification"
+  severity: silent
+  cross_references: [dt_012]
+
+- id: dt_012
+  stage: s4_execution
+  failure_domain: parameter_config
+  symptom:
+    description: "Extensive crown fire even in light fuel types. Fire intensity unrealistically high."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "--fmc (foliar moisture content) set too low"
+    explanation: >
+      The --fmc parameter controls foliar moisture content as a percentage (default 100%).
+      Lower values make crown fire initiation much easier. Setting --fmc 30 instead of
+      the intended 130 produces extreme crown fire behavior. The valid range is roughly
+      80-120% for live foliage.
+    affected_components: [--fmc flag, crown fire model]
+  remedy:
+    action: "Set --fmc to appropriate value (typically 80-120% for live foliage)"
+    manual_steps:
+      - "Review FMC value in the CLI command"
+      - "Summer foliage: 80-100%, spring: 100-130%"
+    prevention: "validate FMC range before running"
+  severity: silent
+  cross_references: [dt_011]
+
+- id: dt_013
+  stage: s4_execution
+  failure_domain: parameter_config
+  symptom:
+    description: "Fire stops after a few periods despite available fuel and weather data. Premature termination."
+    error_pattern: null
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "--max-fire-periods set too low or weather file too short"
+    explanation: >
+      Cell2Fire stops fire simulation when max-fire-periods is reached or when weather
+      data runs out (whichever comes first). If the weather file has only 5 hours but the
+      fire needs 24 hours to reach expected size, the simulation terminates early.
+    affected_components: [--max-fire-periods, Weather.csv length]
+  remedy:
+    action: "Extend weather file or increase --max-fire-periods"
+    manual_steps:
+      - "Check number of rows in Weather.csv vs. expected fire duration"
+      - "Set --max-fire-periods -1 for unlimited (limited by weather data)"
+    prevention: "Ensure weather covers entire expected fire duration"
+  severity: silent
+  cross_references: []
+
+# --- Output Interpretation ---
+
+- id: dt_014
+  stage: s5_output_analysis
+  failure_domain: output_interpretation
+  symptom:
+    description: "Burn probability map shows checkerboard pattern or unrealistic fire shapes."
+    error_pattern: null
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Fire-Period-Length too large relative to cell size, or ROS-Threshold too high"
+    explanation: >
+      If the fire time step (Fire-Period-Length) is too large, fire may skip cells,
+      creating discontinuous burn patterns. Similarly, if ROS-Threshold is set too high,
+      fire spread to cells with moderate ROS is suppressed, creating gaps.
+    affected_components: [--Fire-Period-Length, --ROS-Threshold]
+  remedy:
+    action: "Reduce Fire-Period-Length (default 1.0 min is usually fine) and ROS-Threshold"
+    manual_steps:
+      - "Try --Fire-Period-Length 0.5 for finer time resolution"
+      - "Check --ROS-Threshold (default 0.1 m/min is appropriate)"
+    prevention: "Use default values unless there is a specific reason to change"
+  severity: silent
+  cross_references: []
+
+- id: dt_015
+  stage: s5_output_analysis
+  failure_domain: output_interpretation
+  symptom:
+    description: "Ignition cell IDs in Ignitions.csv don't match expected locations on the map."
+    error_pattern: null
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Cell numbering confusion — 1-based vs 0-based, or column-major vs row-major"
+    explanation: >
+      Cell2Fire uses 1-based cell numbering in row-major order (left-to-right, top-to-bottom).
+      Cell 1 is the top-left corner. Cell ncols+1 is the first cell of the second row.
+      Using 0-based numbering or column-major ordering places the ignition in the wrong location.
+    affected_components: [Ignitions.csv]
+  remedy:
+    action: "Use 1-based, row-major cell IDs: cell = (row * ncols) + col + 1"
+    manual_steps:
+      - "For cell at row r, col c: cell_id = r * ncols + c + 1"
+      - "Row 0, Col 0 = Cell 1. Row 0, Col 1 = Cell 2."
+    prevention: "Verify ignition location in output grid"
+  severity: silent
+  cross_references: [dt_008]
+
+# --- Build / Compilation ---
+
+- id: dt_016
+  stage: s4_execution
+  failure_domain: build
+  symptom:
+    description: "Compilation fails with 'fatal error: boost/random.hpp: No such file or directory'"
+    error_pattern: "boost/random.hpp"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "Boost random library headers not installed"
+    explanation: >
+      Cell2Fire requires the Boost.Random library for random number generation.
+      On Debian/Ubuntu, this is provided by libboost-random-dev. On macOS, install
+      via Homebrew: brew install boost.
+    affected_components: [compilation, makefile]
+  remedy:
+    action: "Install boost: apt install libboost-random-dev (Linux) or brew install boost (macOS)"
+    manual_steps:
+      - "sudo apt install libboost-random-dev"
+      - "Re-run: make clean && make"
+    prevention: "Check dependencies before compilation"
+  severity: crash
+  cross_references: [dt_017]
+
+- id: dt_017
+  stage: s4_execution
+  failure_domain: build
+  symptom:
+    description: "Compilation fails with 'fatal error: tiffio.h: No such file or directory'"
+    error_pattern: "tiffio.h"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "libtiff development headers not installed"
+    explanation: >
+      Cell2Fire uses libtiff for reading GeoTIFF rasters. The development headers
+      are required for compilation. Without them, only ASC format rasters can be used
+      (but the code won't compile at all without the headers).
+    affected_components: [compilation, makefile]
+  remedy:
+    action: "Install libtiff: apt install libtiff-dev (Linux) or brew install libtiff (macOS)"
+    manual_steps:
+      - "sudo apt install libtiff-dev"
+      - "Re-run: make clean && make"
+    prevention: "Check dependencies before compilation"
+  severity: crash
+  cross_references: [dt_016]
+
+- id: dt_018
+  stage: s4_execution
+  failure_domain: output_format
+  symptom:
+    description: "Output folder has results/ directory inside results/ (nested). Some files in wrong location."
+    error_pattern: null
+    detection_method: observation
+  diagnosis:
+    root_cause: "Output folder path has trailing slash inconsistency or path not absolute"
+    explanation: >
+      Cell2Fire appends a path separator to the output folder if not present. If the
+      provided path already has a trailing slash plus internal path manipulation, output
+      files may end up in unexpected nested directories.
+    affected_components: [--output-folder path handling]
+  remedy:
+    action: "Use absolute paths without trailing slashes for --output-folder"
+    manual_steps:
+      - "Use: --output-folder /path/to/results (no trailing /)"
+      - "Verify output location after first simulation"
+    prevention: "Always use clean, absolute paths"
+  severity: minor
+  cross_references: []

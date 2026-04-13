@@ -1,0 +1,500 @@
+# openAMUNDSEN Diagnostic Triplets
+# 18 symptom → diagnosis → remedy entries
+# Each covers a specific failure mode encountered in openAMUNDSEN setup and execution
+
+- id: dt_001
+  stage: s2_meteo_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      All temperature values become NaN after input filtering. Snow never forms.
+      Model may run without error but produces zero SWE everywhere.
+    error_pattern: "all NaN"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature provided in Celsius (°C) instead of Kelvin (K)"
+    explanation: >
+      openAMUNDSEN expects temperature in Kelvin. The default input filter rejects
+      values outside 200-330 K. Celsius values (e.g., -10 to +30) are all below 200 K
+      threshold and silently replaced with NaN. No error is raised.
+    affected_components: [convert_meteo_forcing, interpolation]
+  remedy:
+    action: "Add 273.15 to all temperature values before input"
+    tool_to_run: convert_meteo_forcing.py --temp-unit celsius
+    manual_steps:
+      - "Check max temperature in input data"
+      - "If max temp < 100, values are in Celsius"
+      - "Apply: temp_K = temp_C + 273.15"
+    prevention: "validate_outputs() checks for temp < 200"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_002
+  stage: s2_meteo_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      SWE accumulates far too rapidly (e.g., 10,000+ kg/m² in one month) or
+      barely accumulates at all (< 1 kg/m² over entire winter).
+    error_pattern: "unrealistic SWE"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation unit mismatch: rate vs accumulation or wrong time scale"
+    explanation: >
+      CSV format expects precipitation as kg m⁻² per timestep (= mm per timestep).
+      NetCDF format expects kg m⁻² s⁻¹ (rate) with auto-conversion.
+      Common errors: providing mm/day for hourly timestep (24x too high),
+      providing kg m⁻² s⁻¹ in CSV mode (3600x too high),
+      or providing accumulated mm in NetCDF without units attribute.
+    affected_components: [convert_meteo_forcing, forcing]
+  remedy:
+    action: "Match precipitation units to format and timestep"
+    tool_to_run: convert_meteo_forcing.py --precip-unit mm_per_day
+    manual_steps:
+      - "For CSV hourly: precip should be mm/hour (0-20 typical)"
+      - "For CSV 3-hourly: precip should be mm/3h (0-50 typical)"
+      - "For NetCDF: use kg m⁻² s⁻¹ with units attribute set"
+      - "Check: daily sum should be 0-100 mm for most sites"
+    prevention: "Check daily precipitation totals after conversion"
+  severity: silent
+  cross_references: [dt_007]
+
+- id: dt_003
+  stage: s2_meteo_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Relative humidity is all NaN. Vapor pressure calculations return zero.
+      Latent heat flux and sublimation are incorrect.
+    error_pattern: "humidity NaN"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Relative humidity provided as fraction (0-1) instead of percent (0-100)"
+    explanation: >
+      openAMUNDSEN expects relative humidity in percent (0-100%). The default input
+      filter has min=1, max=100. Fraction values (0.0-1.0) are below the min=1
+      threshold and silently replaced with NaN.
+    affected_components: [convert_meteo_forcing, interpolation]
+  remedy:
+    action: "Multiply relative humidity by 100"
+    tool_to_run: convert_meteo_forcing.py --rh-unit fraction
+    manual_steps:
+      - "Check max relative humidity value"
+      - "If max <= 1.0, values are fractions"
+      - "Apply: rh_percent = rh_fraction * 100"
+    prevention: "validate_outputs() checks for rh_max <= 1.0"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_004
+  stage: s2_meteo_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Shortwave radiation values are unrealistically high (>10,000 W/m²) or
+      snow melts too fast/slow due to radiation imbalance.
+    error_pattern: "radiation out of range"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Shortwave radiation in energy units (J/m², MJ/m²/day) instead of power (W/m²)"
+    explanation: >
+      openAMUNDSEN expects instantaneous shortwave radiation in W m⁻². ERA5 provides
+      accumulated J m⁻² per timestep. MSWX and some datasets use MJ m⁻² day⁻¹.
+      Using energy values directly as power causes radiation 1000-86400x too high.
+    affected_components: [convert_meteo_forcing, radiation]
+  remedy:
+    action: "Convert energy to power: W/m² = J/(m²·seconds) or MJ/m²/day ÷ 0.0864"
+    tool_to_run: convert_meteo_forcing.py --sw-unit mj_m2_day
+    manual_steps:
+      - "Check max shortwave value"
+      - "If max > 1500, likely wrong units"
+      - "ERA5: divide J/m² by timestep_seconds"
+      - "MJ/m²/day: divide by 0.0864"
+    prevention: "Filter max=1500 W/m² catches most cases"
+  severity: silent
+  cross_references: []
+
+- id: dt_005
+  stage: s2_meteo_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Precipitation correction factors are too aggressive. Corrected precipitation
+      is 3-4x higher than raw input. Excessive snow accumulation at exposed sites.
+    error_pattern: "overcorrected precipitation"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Wind speed in km/h instead of m/s"
+    explanation: >
+      openAMUNDSEN expects wind speed in m/s. Wind-based precipitation corrections
+      (WMO, Kochendorfer) scale with wind speed. Using km/h (3.6x higher) causes
+      the correction factor to be much too large, especially at high wind speeds.
+      The filter clips at 50 m/s, but 50 km/h = 13.9 m/s passes the filter.
+    affected_components: [convert_meteo_forcing, precipitation_correction]
+  remedy:
+    action: "Divide wind speed by 3.6 to convert km/h to m/s"
+    tool_to_run: convert_meteo_forcing.py --wind-unit kmh
+    manual_steps:
+      - "Check typical wind speed values"
+      - "Mountain stations: 2-15 m/s typical, 7-50 km/h typical"
+      - "If values commonly > 20, likely km/h"
+    prevention: "validate_outputs() flags mean wind > 15 m/s"
+  severity: degraded
+  cross_references: []
+
+- id: dt_006
+  stage: s2_meteo_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Cloud fraction values inconsistent. Some timesteps treated as clear sky
+      when actually cloudy. Longwave radiation too low.
+    error_pattern: "cloud fraction inconsistency"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Cloud fraction auto-conversion from 0-1 to 0-100 fails"
+    explanation: >
+      openAMUNDSEN auto-converts cloud fraction from 0-1 to 0-100 only when
+      max(cloud_fraction) <= 1 AND len(data) > 10. Short time series, data with
+      max < 1 but some values > 1 (already percent), or data where units attribute
+      is not set to '1' may bypass the conversion.
+    affected_components: [forcing, radiation]
+  remedy:
+    action: "Explicitly multiply cloud fraction by 100 if data is 0-1"
+    manual_steps:
+      - "Check cloud fraction range in input data"
+      - "If max ≤ 1.0, multiply by 100 before input"
+      - "Do not rely on auto-conversion"
+    prevention: "Always convert to percent explicitly"
+  severity: silent
+  cross_references: []
+
+- id: dt_007
+  stage: s2_meteo_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      NetCDF precipitation is treated as accumulation (kg/m² per timestep) when
+      it is actually a rate (kg/m² s⁻¹). Precipitation is 3600x too low.
+    error_pattern: "near-zero precipitation"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "NetCDF precipitation variable missing units attribute"
+    explanation: >
+      openAMUNDSEN auto-converts precipitation rates (kg m⁻² s⁻¹) to accumulations
+      only when the NetCDF variable has units='kg m-2 s-1'. Without this attribute,
+      the values are treated as already being accumulations, resulting in
+      precipitation that is timestep_seconds times too low.
+    affected_components: [forcing]
+  remedy:
+    action: "Set units attribute on NetCDF precipitation variable"
+    manual_steps:
+      - "Open NetCDF: ds = xr.open_dataset('station.nc')"
+      - "Check: print(ds['pr'].attrs)"
+      - "If no units: ds['pr'].attrs['units'] = 'kg m-2 s-1'"
+      - "Re-save the file"
+    prevention: "Always verify NetCDF variable attributes"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_008
+  stage: s1_grid_setup
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Temperature interpolation produces unrealistic values. Lapse rate corrections
+      are orders of magnitude wrong. Valley stations show same temp as peaks.
+    error_pattern: "interpolation failure"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Station altitude in wrong unit (feet, km) instead of meters"
+    explanation: >
+      Station altitude is used for lapse rate corrections in temperature
+      interpolation. If altitude is in feet (3281 ft = 1000 m) or km (1.0 km),
+      the elevation difference calculation is wrong, producing incorrect
+      temperature gradients.
+    affected_components: [interpolation, stations.csv]
+  remedy:
+    action: "Convert station altitudes to meters"
+    manual_steps:
+      - "Check altitude values in stations.csv or NetCDF"
+      - "Alpine stations: 500-4000 m typical"
+      - "If values are 1600-13000, likely feet (divide by 3.281)"
+      - "If values are 0.5-4.0, likely km (multiply by 1000)"
+    prevention: "validate_inputs() flags altitude < 10 or > 9000"
+  severity: silent
+  cross_references: [dt_009]
+
+- id: dt_009
+  stage: s1_grid_setup
+  failure_domain: path_resolution
+  symptom:
+    description: >
+      Fatal error at initialization: 'DEM file not found' or
+      'FileNotFoundError: No such file or directory'.
+    error_pattern: "FileNotFoundError"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "DEM filename does not match config domain and resolution"
+    explanation: >
+      openAMUNDSEN constructs the DEM path as: {grids_dir}/dem_{domain}_{resolution}.asc
+      If the domain name or resolution in the config don't exactly match the filename,
+      the file is not found. Common issues: space in domain name, resolution as float
+      instead of int, case mismatch.
+    affected_components: [model.initialize, grid loading]
+  remedy:
+    action: "Ensure DEM filename exactly matches: dem_{domain}_{resolution}.asc"
+    manual_steps:
+      - "Check config: domain and resolution values"
+      - "Check filename: ls input/grid/dem_*.asc"
+      - "Rename file or update config to match"
+    prevention: "preflight_checks() validates DEM path"
+  severity: fatal
+  cross_references: []
+
+- id: dt_010
+  stage: s3_configuration
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Grid has only 1-2 cells. Model runs but produces meaningless results.
+      Or fatal error due to insufficient grid cells for interpolation.
+    error_pattern: "tiny grid"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Resolution specified in km instead of meters"
+    explanation: >
+      The config resolution parameter is in meters. Specifying 0.05 (km) instead
+      of 50 (m) creates a grid cell size of 0.05 m, which with a typical DEM extent
+      of ~10 km creates a 200,000×200,000 grid (OOM) or, if the DEM is already
+      at 50m, results in 1 cell.
+    affected_components: [configuration, grid]
+  remedy:
+    action: "Use resolution in meters (e.g., 50, not 0.05)"
+    manual_steps:
+      - "Check config: resolution value"
+      - "Typical values: 10, 25, 50, 100, 250"
+      - "Must match DEM cellsize exactly"
+    prevention: "preflight_checks() warns if resolution < 1"
+  severity: fatal
+  cross_references: []
+
+- id: dt_011
+  stage: s3_configuration
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Soil heat flux is 100x too high or too low. Ground heat contribution
+      to snowmelt is unrealistic.
+    error_pattern: "soil flux anomaly"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Soil thickness specified in cm instead of meters"
+    explanation: >
+      openAMUNDSEN expects soil layer thicknesses in meters. Using centimeters
+      (e.g., [10, 20, 40, 80] instead of [0.1, 0.2, 0.4, 0.8]) creates
+      unrealistically thick soil layers, affecting heat conduction calculations.
+    affected_components: [soil, heatconduction]
+  remedy:
+    action: "Divide soil thickness values by 100"
+    manual_steps:
+      - "Check config: soil.thickness values"
+      - "Typical values: [0.1, 0.2, 0.4, 0.8] meters"
+      - "If values are [10, 20, 40, 80], divide by 100"
+    prevention: "convert_soil_params.py validates thickness range"
+  severity: silent
+  cross_references: []
+
+- id: dt_012
+  stage: s3_configuration
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Initial snow density is unrealistically low (e.g., 0.3 kg/m³ instead
+      of 300 kg/m³). Snow depth calculations are 1000x too large.
+    error_pattern: "density anomaly"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Snow density in g/cm³ instead of kg/m³"
+    explanation: >
+      openAMUNDSEN uses kg/m³ for density internally. Fresh snow: 50-150 kg/m³,
+      old snow: 200-500 kg/m³, ice: 917 kg/m³. Using g/cm³ (0.05-0.5) creates
+      layers that are effectively massless.
+    affected_components: [snow model, density evolution]
+  remedy:
+    action: "Multiply density by 1000 to convert g/cm³ to kg/m³"
+    manual_steps:
+      - "Check any custom density initializations"
+      - "Typical new snow: 100 kg/m³"
+      - "Typical old snow: 350 kg/m³"
+    prevention: "Range check: density should be 30-917 kg/m³"
+  severity: silent
+  cross_references: []
+
+- id: dt_013
+  stage: s3_configuration
+  failure_domain: unit_conversion
+  symptom:
+    description: >
+      Interpolated temperatures are completely unrealistic. Mountain peaks show
+      temperatures thousands of degrees different from valleys. Or no temperature
+      gradient at all.
+    error_pattern: "lapse rate failure"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature lapse rate in K/km instead of K/m"
+    explanation: >
+      openAMUNDSEN expects lapse rates in K/m. Standard atmospheric lapse rate
+      is 0.0065 K/m (= 6.5 K/km). If 6.5 is entered directly, it means
+      6500 K/km — a 1000m elevation difference creates a 6500 K temperature
+      offset. The model does not validate lapse rate ranges.
+    affected_components: [interpolation, temperature]
+  remedy:
+    action: "Divide lapse rate by 1000 if values are O(1-10)"
+    manual_steps:
+      - "Check config: meteo.interpolation.temperature.lapse_rate"
+      - "Values should be O(0.001-0.01) K/m"
+      - "If values are O(1-10), divide by 1000"
+      - "Standard: [0.0026, 0.0035, 0.0047, 0.0056, 0.0060, 0.0064, 0.0065, 0.0062, 0.0054, 0.0041, 0.0032, 0.0025]"
+    prevention: "preflight_checks() warns if max |lapse_rate| > 0.1"
+  severity: silent
+  cross_references: []
+
+- id: dt_014
+  stage: s2_meteo_forcing
+  failure_domain: path_resolution
+  symptom:
+    description: >
+      Fatal error: 'No stations within grid extent' or stations plot far from
+      the DEM domain on a map.
+    error_pattern: "no stations in grid"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Station coordinates in projected CRS but config says WGS84, or vice versa"
+    explanation: >
+      In CSV mode, station coordinates in stations.csv must match the CRS specified
+      in input_data.meteo.crs. If stations.csv has UTM coordinates (e.g., x=682500,
+      y=5215000) but crs is set to epsg:4326 (lon/lat), the model interprets these
+      as longitude 682500° — far outside any grid.
+    affected_components: [forcing, coordinate_transform]
+  remedy:
+    action: "Set input_data.meteo.crs to match the actual CRS of station coordinates"
+    manual_steps:
+      - "Check stations.csv: x/y column values"
+      - "If values are O(1-180), likely WGS84 degrees → crs: 'epsg:4326'"
+      - "If values are O(100000-900000), likely UTM → crs: 'epsg:326XX'"
+      - "Or convert coordinates in stations.csv to WGS84"
+    prevention: "preflight_checks() cannot detect this — manual verification needed"
+  severity: fatal
+  cross_references: [dt_009, dt_017]
+
+- id: dt_015
+  stage: s3_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      ValueError or TypeError at configuration parsing: 'invalid frequency' or
+      'cannot convert timestep'.
+    error_pattern: "ValueError.*frequency"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Timestep specified as seconds/minutes/integer instead of pandas frequency string"
+    explanation: >
+      openAMUNDSEN uses pandas frequency strings for timestep. Valid examples:
+      'h' (hourly), '3h' (3-hourly), 'D' (daily), '30min' (30 minutes).
+      Invalid: 3600 (seconds), 60 (minutes), '1hour', 'hourly'.
+    affected_components: [configuration, conf.py]
+  remedy:
+    action: "Use pandas frequency string format"
+    manual_steps:
+      - "Hourly: timestep: h"
+      - "3-hourly: timestep: 3h"
+      - "30-minute: timestep: 30min"
+      - "Daily: timestep: D"
+    prevention: "preflight_checks() validates timestep parsing"
+  severity: fatal
+  cross_references: []
+
+- id: dt_016
+  stage: s5_execution
+  failure_domain: silent_error
+  symptom:
+    description: >
+      Model accuracy degrades significantly after switching snow model type
+      (multilayer ↔ cryolayers) while keeping the same calibrated parameters.
+    error_pattern: "accuracy degradation"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Snow model switch invalidates calibration parameters"
+    explanation: >
+      The multilayer and cryolayers models have different internal representations:
+      multilayer uses explicit thickness-based layers, cryolayers uses categorical
+      transitions (new snow → old snow → firn → ice). Parameters tuned for one
+      model are not transferable to the other. Albedo, thermal conductivity, and
+      compaction parameters all behave differently.
+    affected_components: [snow model, calibration]
+  remedy:
+    action: "Re-calibrate all snow parameters when switching model type"
+    manual_steps:
+      - "Document current calibrated parameter set"
+      - "Switch model type in config"
+      - "Re-run calibration with same observed data"
+      - "Verify NSE/KGE metrics are acceptable"
+    prevention: "Always calibrate for the specific snow model being used"
+  severity: degraded
+  cross_references: []
+
+- id: dt_017
+  stage: s4_model_init
+  failure_domain: runtime
+  symptom:
+    description: >
+      Fatal error during initialization: 'No meteorological stations within grid extent'
+      or empty station dataset.
+    error_pattern: "no.*stations.*within"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "All stations fall outside the model grid boundaries"
+    explanation: >
+      openAMUNDSEN requires at least one meteorological station within (or near)
+      the model grid extent. This fails when: (1) station CRS is wrong (dt_014),
+      (2) grid extent is too small, (3) bounds='grid' excludes all stations,
+      or (4) all stations are in the exclude list.
+    affected_components: [forcing, model.initialize]
+  remedy:
+    action: "Ensure at least one station falls within the grid or use bounds: global"
+    manual_steps:
+      - "Plot station locations and grid extent on a map"
+      - "Check coordinate systems match"
+      - "Try: bounds: global (uses all stations regardless of location)"
+      - "Or: extend_roi_with_stations: true"
+    prevention: "preflight_checks() validates station-grid overlap"
+  severity: fatal
+  cross_references: [dt_014]
+
+- id: dt_018
+  stage: s5_execution
+  failure_domain: silent_error
+  symptom:
+    description: >
+      Canopy interception is zero even in forested areas. Warning about missing
+      land cover classes in log output.
+    error_pattern: "land cover.*not found"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Canopy module enabled but no land cover classification grid provided"
+    explanation: >
+      The canopy module requires a land cover grid to identify forested pixels.
+      Without it, all pixels are treated as open terrain and canopy interception,
+      sublimation, and radiation modification are skipped. The model runs but
+      ignores forest effects.
+    affected_components: [canopy, landcover]
+  remedy:
+    action: "Either provide land cover grid or disable canopy module"
+    manual_steps:
+      - "Option 1: Set canopy.enabled: false in config"
+      - "Option 2: Provide land cover grid matching DEM extent/resolution"
+      - "Land cover grid uses integer class codes (CORINE, ESA CCI)"
+    prevention: "preflight_checks() warns if canopy enabled without land cover"
+  severity: degraded
+  cross_references: []

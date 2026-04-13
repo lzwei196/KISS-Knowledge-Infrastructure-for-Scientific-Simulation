@@ -1,0 +1,394 @@
+# SimPEG Diagnostic Triplets
+# Symptom → Diagnosis → Remedy for common failure modes
+# 18 entries covering 6 failure domains
+
+- id: dt_001
+  stage: s2_model_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Gravity anomaly is ~1000× too large or too small compared to expected values"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Density model in g/cm^3 (CGS) instead of kg/m^3 (SI), or vice versa"
+    explanation: "SimPEG gravity simulation expects density in kg/m^3 (SI). If density contrast is entered as 0.5 g/cm^3 instead of 500 kg/m^3, the anomaly will be 1000× too small. The simulation runs without error."
+    affected_components: [gravity.simulation.Simulation3DIntegral, model_map]
+  remedy:
+    action: "Convert density to kg/m^3 before creating model vector"
+    tool_to_run: "initialize_model.py --unit-system cgs"
+    manual_steps:
+      - "Multiply g/cm^3 values by 1000 to get kg/m^3"
+      - "Verify anomaly magnitude is physically reasonable (0.01-100 mGal for near-surface)"
+    prevention: "Always specify --unit-system when using initialize_model.py"
+  severity: silent
+  cross_references: []
+
+- id: dt_002
+  stage: s2_model_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "Magnetic anomaly is off by factor of ~12.57 (4π)"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Magnetic susceptibility in CGS system instead of SI"
+    explanation: "CGS susceptibility = SI susceptibility / (4π). Literature values often use CGS. If 0.01 CGS is used directly as SI, the anomaly will be 4π ≈ 12.57× too small."
+    affected_components: [magnetics.simulation.Simulation3DIntegral, chiMap]
+  remedy:
+    action: "Multiply CGS susceptibility by 4π to convert to SI"
+    tool_to_run: "initialize_model.py --property susceptibility --unit-system cgs"
+    manual_steps:
+      - "chi_SI = chi_CGS * 4 * np.pi"
+      - "Typical SI values: paramagnetic 1e-5 to 1e-3, ferromagnetic 1e-2 to 1"
+    prevention: "Check source of susceptibility values — geologic tables often use CGS"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s2_model_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "DC inversion recovers model that is the reciprocal of expected conductivity/resistivity"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Using resistivity (Ω·m) where conductivity (S/m) is expected, or vice versa"
+    explanation: "SimPEG DC simulation uses sigmaMap (conductivity) by default. If resistivity values are provided without a ReciprocalMap, the recovered model will be inverted."
+    affected_components: [dc.simulation.Simulation3DNodal, sigmaMap]
+  remedy:
+    action: "Use ReciprocalMap to convert between resistivity and conductivity"
+    tool_to_run: "initialize_model.py --property conductivity --map-type reciprocal"
+    manual_steps:
+      - "sigma = 1.0 / rho"
+      - "Or use maps.ReciprocalMap in the map chain"
+    prevention: "Always check whether simulation expects sigma or rho"
+  severity: silent
+  cross_references: []
+
+- id: dt_004
+  stage: s3_forward_modeling
+  failure_domain: unit_conversion
+  symptom:
+    description: "FDEM response has wrong phase or amplitude by large factor"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Frequency specified as angular frequency ω (rad/s) instead of f (Hz)"
+    explanation: "SimPEG FDEM expects frequency in Hz. If ω = 2πf is used, all frequencies are 2π ≈ 6.28× too high, shifting phase and amplitude."
+    affected_components: [frequency_domain.survey, frequency_domain.sources]
+  remedy:
+    action: "Divide angular frequency by 2π to get Hz"
+    tool_to_run: ""
+    manual_steps:
+      - "f_Hz = omega_rad_s / (2 * np.pi)"
+      - "Verify: 1 Hz FDEM source at 100m depth in 100 Ohm-m → skin depth ~159m"
+    prevention: "Always verify frequency units when importing from external codes"
+  severity: silent
+  cross_references: []
+
+- id: dt_005
+  stage: s1_mesh_survey
+  failure_domain: parameter_format
+  symptom:
+    description: "Active cells are inverted — model appears in air, air appears underground"
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Topography z-coordinate is depth (positive down) instead of elevation (positive up)"
+    explanation: "active_from_xyz expects elevation. If depth values are passed, cells above the true surface are marked active and cells below are marked as air."
+    affected_components: [discretize.utils.active_from_xyz, mesh]
+  remedy:
+    action: "Negate depth values to convert to elevation, or add reference datum"
+    tool_to_run: "build_mesh.py"
+    manual_steps:
+      - "elevation = -depth + surface_elevation"
+      - "Verify: active_cells.sum() should be < mesh.n_cells"
+      - "Plot active cells to confirm they are below topography"
+    prevention: "Always verify z-convention before passing topography"
+  severity: silent
+  cross_references: []
+
+- id: dt_006
+  stage: s3_forward_modeling
+  failure_domain: parameter_format
+  symptom:
+    description: "Predicted data magnitude or pattern does not match field measurements despite correct model"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Receiver component specification does not match actual field component measured"
+    explanation: "If survey measures Bz (vertical magnetic field) but simulation receiver is set to 'tmi' (total magnetic intensity) or 'bx', the predicted data will be for the wrong component. This is a silent mismatch."
+    affected_components: [receivers.Point, survey]
+  remedy:
+    action: "Verify receiver component matches the actual measurement type"
+    tool_to_run: ""
+    manual_steps:
+      - "Check survey documentation for measured component"
+      - "Set receivers.Point(locations, components='bz') or 'tmi' as appropriate"
+      - "Available components vary by method — check module documentation"
+    prevention: "Document the measured component in the survey metadata"
+  severity: silent
+  cross_references: []
+
+- id: dt_007
+  stage: s4_data_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Data misfit is astronomically large (>10^15) and inversion fails to converge"
+    error_pattern: ""
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Magnetic data provided in Tesla (T) instead of nanoTesla (nT)"
+    explanation: "1 nT = 1e-9 T. If data in T is used where nT is expected, the misfit is inflated by factor 10^18 (squared). The inversion cannot reduce this misfit."
+    affected_components: [data.Data, data_misfit.L2DataMisfit]
+  remedy:
+    action: "Convert data to nanoTesla by multiplying T values by 1e9"
+    tool_to_run: ""
+    manual_steps:
+      - "data_nT = data_T * 1e9"
+      - "Typical total field anomalies: 1-500 nT"
+    prevention: "Verify data unit before loading — check file headers"
+  severity: fatal
+  cross_references: [dt_002]
+
+- id: dt_008
+  stage: s5_inversion_setup
+  failure_domain: silent_error
+  symptom:
+    description: "Inversion converges but model is unrealistically smooth or blocky in certain regions"
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Default regularization alpha ratios do not account for non-uniform cell sizes"
+    explanation: "WeightedLeastSquares applies smoothness equally in all directions. On meshes with varying cell sizes (TreeMesh, stretched TensorMesh), default alphas over-smooth in refined regions and under-smooth in coarse regions."
+    affected_components: [regularization.WeightedLeastSquares, alpha_s, alpha_x, alpha_y, alpha_z]
+  remedy:
+    action: "Adjust alpha ratios based on cell size ratios in each direction"
+    tool_to_run: ""
+    manual_steps:
+      - "Scale alpha_x by (dx_min/dx_ref)^2 to normalize"
+      - "Use length_scale_x/y/z parameters in regularization"
+      - "Inspect regularization.W matrix for reasonableness"
+    prevention: "Always inspect model slices during inversion — don't just check phi_d"
+  severity: silent
+  cross_references: []
+
+- id: dt_009
+  stage: s2_model_parameters
+  failure_domain: numerical_stability
+  symptom:
+    description: "Linear solver crashes with singular matrix error, or NaN in predicted data"
+    error_pattern: "singular|LinAlgError|nan"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Air cell conductivity set to exactly 0 in InjectActiveCells"
+    explanation: "For DC/EM problems, zero conductivity creates a singular stiffness matrix. Even for gravity/magnetics this can cause numerical issues in regularization."
+    affected_components: [maps.InjectActiveCells, simulation]
+  remedy:
+    action: "Use a very small but nonzero value for air cells"
+    tool_to_run: "initialize_model.py"
+    manual_steps:
+      - "For conductivity: air_val = 1e-8 S/m (or np.log(1e-8) for log map)"
+      - "For resistivity: air_val = 1e8 Ohm-m"
+      - "Verify: model_map * m0 should have no zero entries"
+    prevention: "Never use 0 for air conductivity — use 1e-8 minimum"
+  severity: fatal
+  cross_references: [dt_003]
+
+- id: dt_010
+  stage: s4_data_preparation
+  failure_domain: numerical_stability
+  symptom:
+    description: "Inversion converges to noisy, non-physical model with extremely fine-scale structure"
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Data uncertainty (noise_floor) is zero or near-zero, giving infinite weight to noisy data"
+    explanation: "With noise_floor=0, data points near zero get standard_deviation ≈ 0, creating infinite data weights. The inversion overfits noise, producing artifacts."
+    affected_components: [data.Data, standard_deviation]
+  remedy:
+    action: "Set noise_floor to at least 1-5% of the data range"
+    tool_to_run: "run_simpeg.py --noise-floor VALUE"
+    manual_steps:
+      - "noise_floor = 0.01 * np.max(np.abs(dobs))  # 1% of max"
+      - "Or use absolute instrument precision"
+      - "Verify: data.standard_deviation has no zero/near-zero entries"
+    prevention: "Always set both relative_error AND noise_floor"
+  severity: degraded
+  cross_references: []
+
+- id: dt_011
+  stage: s1_mesh_survey
+  failure_domain: numerical_stability
+  symptom:
+    description: "Python process killed by OS, MemoryError, or system becomes unresponsive"
+    error_pattern: "MemoryError|Killed|OOM"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Mesh cell count too large for dense sensitivity matrix storage"
+    explanation: "For potential field methods, J matrix is dense: size nD × nM. With 1000 data and 1M cells, J = 8 GB. With store_sensitivities='ram', this is stored in memory."
+    affected_components: [simulation, sensitivity_path]
+  remedy:
+    action: "Use TreeMesh for adaptive refinement, or Dask for distributed computation"
+    tool_to_run: "build_mesh.py --mesh-type tree"
+    manual_steps:
+      - "Use store_sensitivities='forward_only' to avoid storing J"
+      - "Reduce core cell count or use coarser cells far from survey"
+      - "Use simpeg.dask for parallel tile-based computation"
+      - "Memory estimate: 8 * nD * nM bytes for dense J"
+    prevention: "Check memory budget: n_data * n_cells * 8 bytes < available RAM"
+  severity: fatal
+  cross_references: []
+
+- id: dt_012
+  stage: s1_mesh_survey
+  failure_domain: parameter_format
+  symptom:
+    description: "Tiled inversion produces discontinuities or artifacts at tile boundaries"
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "TileMap local-to-global index mapping is incorrect"
+    explanation: "When splitting a large problem into tiles, each tile has a local mesh. The TileMap must correctly map local cell indices to global mesh cells. Misalignment causes sensitivity from wrong cells."
+    affected_components: [maps.TileMap, dask]
+  remedy:
+    action: "Verify tile index mapping against global mesh"
+    tool_to_run: ""
+    manual_steps:
+      - "For each tile: assert np.all(tile_map * local_model == expected_global_model)"
+      - "Use discretize.utils.mesh_builder_xyz with proper overlap"
+      - "Check that tile boundaries overlap by at least 2 cell widths"
+    prevention: "Test TileMap on synthetic model before running full inversion"
+  severity: degraded
+  cross_references: [dt_011]
+
+- id: dt_013
+  stage: s6_inversion_execution
+  failure_domain: convergence
+  symptom:
+    description: "Data misfit (phi_d) barely decreases over iterations, model stays near starting model"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Initial trade-off parameter β is too large, over-weighting regularization"
+    explanation: "When β >> optimal, the objective function is dominated by phi_m. The optimizer keeps the model near the starting/reference model because reducing phi_d would require increasing phi_m too much."
+    affected_components: [directives.BetaEstimate_ByEig, inverse_problem.beta]
+  remedy:
+    action: "Reduce beta0_ratio in BetaEstimate_ByEig, or use more aggressive cooling"
+    tool_to_run: ""
+    manual_steps:
+      - "directives.BetaEstimate_ByEig(beta0_ratio=1e-2)  # was 1e0"
+      - "directives.BetaSchedule(coolingFactor=10, coolingRate=1)"
+      - "Or set beta manually: inv_prob.beta = estimated_value / 10"
+    prevention: "Monitor phi_d per iteration — it should decrease substantially"
+  severity: degraded
+  cross_references: [dt_014]
+
+- id: dt_014
+  stage: s6_inversion_execution
+  failure_domain: convergence
+  symptom:
+    description: "Model has extreme oscillations, non-physical spikes, or values at bounds"
+    error_pattern: ""
+    detection_method: visual_inspection
+  diagnosis:
+    root_cause: "Initial β too small or cooling too aggressive — model overfits from first iteration"
+    explanation: "When β << optimal, regularization has no effect. The optimizer minimizes phi_d alone, fitting noise and producing an unrealistically complex model."
+    affected_components: [directives.BetaEstimate_ByEig, directives.BetaSchedule]
+  remedy:
+    action: "Increase beta0_ratio or reduce cooling factor"
+    tool_to_run: ""
+    manual_steps:
+      - "directives.BetaEstimate_ByEig(beta0_ratio=1e2)"
+      - "directives.BetaSchedule(coolingFactor=2, coolingRate=1)"
+      - "Add model bounds: opt = ProjectedGNCG(upper=ub, lower=lb)"
+    prevention: "Start with conservative β and cool slowly"
+  severity: degraded
+  cross_references: [dt_013]
+
+- id: dt_015
+  stage: s5_inversion_setup
+  failure_domain: convergence
+  symptom:
+    description: "Model values exceed physical bounds despite bounds being set in model config"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Using unbounded optimizer (InexactGaussNewton) instead of bounded (ProjectedGNCG)"
+    explanation: "InexactGaussNewton ignores upper/lower bounds. Only ProjectedGNCG and ProjectedGradient enforce box constraints during optimization."
+    affected_components: [optimization.InexactGaussNewton, optimization.ProjectedGNCG]
+  remedy:
+    action: "Switch to ProjectedGNCG optimizer"
+    tool_to_run: "run_simpeg.py --bounds 'lo,hi'"
+    manual_steps:
+      - "opt = optimization.ProjectedGNCG(maxIter=30, upper=ub, lower=lb)"
+      - "Bounds must be in model space (log for log-parameterization)"
+    prevention: "Always use ProjectedGNCG when physical bounds are required"
+  severity: degraded
+  cross_references: [dt_014]
+
+- id: dt_016
+  stage: s7_output_analysis
+  failure_domain: silent_error
+  symptom:
+    description: "Exported model values are orders of magnitude different from expected physical property"
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Recovered model vector exported without inverse map transform"
+    explanation: "The recovered m is in model space (e.g., log-conductivity). Exporting m directly gives ln(σ) values, not σ. Must apply exp() for log parameterization."
+    affected_components: [model_map, parse_results.py]
+  remedy:
+    action: "Apply the forward map to convert model to physical property"
+    tool_to_run: "parse_results.py --model-config model_config.json"
+    manual_steps:
+      - "For log map: sigma = np.exp(m_recovered)"
+      - "For reciprocal: rho = 1.0 / m_recovered"
+      - "Or use: physical = model_map * m_recovered"
+    prevention: "Always record map_type in model_config.json and apply at export"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_017
+  stage: s6_inversion_execution
+  failure_domain: runtime
+  symptom:
+    description: "Each CG iteration takes minutes or hours, inversion appears hung"
+    error_pattern: ""
+    detection_method: timing
+  diagnosis:
+    root_cause: "Dense sensitivity computation without optimization (no Dask, no forward_only, no TreeMesh)"
+    explanation: "For potential field methods, each Jvec requires computing the full sensitivity row. Without store_sensitivities='forward_only' or Dask parallelization, this is O(nD × nM) per CG iteration."
+    affected_components: [simulation, store_sensitivities]
+  remedy:
+    action: "Use store_sensitivities='forward_only' or switch to Dask"
+    tool_to_run: ""
+    manual_steps:
+      - "sim = Simulation3DIntegral(..., store_sensitivities='forward_only')"
+      - "For repeated inversions: store_sensitivities='disk' with sensitivity_path"
+      - "For >500k cells: use simpeg.dask parallel simulation"
+    prevention: "Profile forward call time before starting inversion"
+  severity: degraded
+  cross_references: [dt_011]
+
+- id: dt_018
+  stage: s3_forward_modeling
+  failure_domain: runtime
+  symptom:
+    description: "ImportError or ModuleNotFoundError when running simulation"
+    error_pattern: "ImportError|ModuleNotFoundError|No module named"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Missing optional dependency not installed (choclo, dask, pymatsolver backend)"
+    explanation: "SimPEG core installs minimal dependencies. Features like Numba-optimized kernels (choclo), distributed computing (dask), or fast solvers (Pardiso via pymatsolver) require separate installation."
+    affected_components: [choclo, dask, pymatsolver]
+  remedy:
+    action: "Install the missing package"
+    tool_to_run: ""
+    manual_steps:
+      - "pip install choclo  # for gravity/magnetic Numba kernels"
+      - "pip install 'simpeg[dask]'  # for Dask support"
+      - "pip install pymatsolver  # for Pardiso solver"
+    prevention: "Install full extras: pip install 'simpeg[dask,choclo,plotting]'"
+  severity: fatal
+  cross_references: []

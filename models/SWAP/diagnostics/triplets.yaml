@@ -1,0 +1,447 @@
+# ============================================================================
+# SWAP Diagnostic Triplets
+# ============================================================================
+# 17 diagnostic triplets covering 6 failure domains.
+# Generated during SWAP v4.2.0 knowledge dissection for HydroCraft platform.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s1_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Extreme evapotranspiration, soil dries to wilting point immediately. ET values 100+ mm/d."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Radiation input in W/m² instead of kJ/m²/d — radiation approximately 200× too low or too high depending on direction"
+    explanation: >
+      SWAP expects solar radiation in kJ/m²/d in the .met file. CMFD and MSWX provide
+      radiation in W/m² (instantaneous). The correct conversion is W/m² × 86400/1000 = kJ/m²/d.
+      If W/m² values (0-400) are passed directly, SWAP interprets them as kJ/m²/d, which is
+      far too low (typical range is 2000-30000 kJ/m²/d). Internally SWAP multiplies by 1000
+      to get J/m²/d, giving values only 0-400000 J/m²/d instead of 2-30 MJ/m²/d.
+    affected_components: [convert_forcing_to_swap, readmeteo.f90]
+  remedy:
+    action: "Multiply W/m² by 86.4 (= 86400/1000) to get kJ/m²/d"
+    tool_to_run: convert_forcing_to_swap
+    manual_steps:
+      - "Check max Rad in .met file — should be 5000-35000 kJ/m²/d for mid-latitudes"
+      - "If max Rad < 500, values are likely in W/m² — multiply by 86.4"
+      - "If max Rad > 100000, values may be in J/m²/d — divide by 1000"
+    prevention: "validate_outputs() in convert_forcing_to_swap checks Rad range"
+  severity: silent
+  cross_references: [dt_002, dt_003]
+
+- id: dt_002
+  stage: s1_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Extreme evaporation, no soil moisture left. ET dominated by soil evaporation."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Humidity column contains relative humidity (0-1 or 0-100) instead of vapor pressure (kPa)"
+    explanation: >
+      SWAP .met Hum column expects actual vapor pressure in kPa (typically 0.3-5 kPa).
+      If relative humidity fraction (0-1) is used, SWAP interprets 0.7 as 0.7 kPa,
+      far below actual (~1.5 kPa), creating a huge vapor pressure deficit that drives
+      extreme evaporation. If RH percentage (0-100) is used, values of 70 are
+      interpreted as 70 kPa, which exceeds saturation, producing numerical issues.
+    affected_components: [convert_forcing_to_swap, penmon.f90]
+  remedy:
+    action: "Convert specific humidity to vapor pressure: e = q * P / (0.622 + 0.378*q)"
+    tool_to_run: convert_forcing_to_swap
+    manual_steps:
+      - "Check Hum values in .met file — should be 0.1-7 kPa for most climates"
+      - "If all Hum < 1.0 and > 0, likely relative humidity fraction — convert"
+      - "If all Hum 30-100, likely RH percentage — convert via Magnus formula"
+    prevention: "validate_outputs() checks for Hum < 0.01 or Hum > 10"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s1_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Soil always waterlogged, continuous runoff, groundwater at surface."
+    error_pattern: "overflow"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "MSWX 3-hourly rainfall passed as daily without aggregation — 8× too much rain per record"
+    explanation: >
+      MSWX provides precipitation in mm/3hr. There are 8 records per day.
+      SWAP expects mm/day in the .met Rain column. If each 3-hourly value
+      is written as a daily record, the model receives 8 separate days of
+      rainfall for each actual day, causing 8× too much precipitation.
+    affected_components: [convert_forcing_to_swap]
+  remedy:
+    action: "Sum all 8 three-hourly MSWX precipitation values to get daily total"
+    tool_to_run: convert_forcing_to_swap
+    manual_steps:
+      - "Check mean annual rainfall — should match climate normals for the site"
+      - "If annual total is 8× expected, MSWX records not aggregated"
+    prevention: "convert_forcing_to_swap sums sub-daily records before writing"
+  severity: silent
+  cross_references: [dt_001, dt_002]
+
+- id: dt_004
+  stage: s1_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Temperature sum for crop development never reached. Crops never emerge or mature."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature in Kelvin instead of Celsius — values ~293 instead of ~20"
+    explanation: >
+      SWAP expects temperature in °C. CMFD/MSWX provide temperature in K.
+      If not converted, Tmin/Tmax of ~280-300 K cause crop temperature sums to
+      accumulate at extreme rates (or SWAP crashes). The Penman-Monteith calculation
+      also uses temperature, producing wildly wrong ET.
+    affected_components: [convert_forcing_to_swap, readmeteo.f90]
+  remedy:
+    action: "Subtract 273.15 from temperature values"
+    tool_to_run: convert_forcing_to_swap
+    manual_steps:
+      - "Check Tmin/Tmax in .met file — should be -50..50°C"
+      - "If values are 230-320, they are in Kelvin — subtract 273.15"
+    prevention: "validate_outputs() checks temperature range"
+  severity: fatal
+  cross_references: []
+
+# --- Parameter Format Errors ---
+
+- id: dt_005
+  stage: s2_soil_parameters
+  failure_domain: parameter_format
+  symptom:
+    description: "All water drains instantly, no retention. Soil moisture drops to residual immediately."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Ksat in m/s instead of cm/d — value thousands of times too high"
+    explanation: >
+      SWAP KSATFIT and KSATEXM expect saturated hydraulic conductivity in cm/day.
+      If values from databases in m/s (e.g., 1e-5 m/s) are entered without conversion,
+      they are interpreted as 1e-5 cm/d, which is far too low. Conversely, if m/d is
+      used directly (e.g., 1.0 m/d), it is interpreted as 1.0 cm/d — 100× too low.
+    affected_components: [convert_soil_to_swap, readswap.f90]
+  remedy:
+    action: "Convert to cm/d: m/s × 8640000, m/d × 100, cm/hr × 24"
+    tool_to_run: convert_soil_to_swap
+    manual_steps:
+      - "Check KSATFIT values — sand: 100-1000 cm/d, clay: 0.1-10 cm/d"
+      - "If all KSATFIT < 0.001, values likely in m/s — multiply by 8.64e6"
+    prevention: "validate_outputs() checks Ksat against texture-typical ranges"
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_006
+  stage: s2_soil_parameters
+  failure_domain: parameter_format
+  symptom:
+    description: "SWAP crashes or produces NaN. Error in soil hydraulic calculations."
+    error_pattern: "NaN"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "ORES >= OSAT — residual water content exceeds or equals saturated content"
+    explanation: >
+      The van Genuchten water retention function requires ORES < OSAT strictly.
+      If parameters are entered in wrong order or from different sources with
+      inconsistent values, ORES >= OSAT causes division by zero in the
+      retention curve calculation.
+    affected_components: [convert_soil_to_swap, WC_K_models_04_11.f90]
+  remedy:
+    action: "Verify ORES < OSAT for every soil layer; typical: ORES=0.01-0.10, OSAT=0.35-0.55"
+    tool_to_run: convert_soil_to_swap
+    manual_steps:
+      - "Check MvG parameter table in .swp file"
+      - "Ensure column order matches: ORES OSAT ALFA NPAR KSATFIT LEXP ALFAW H_ENPR KSATEXM BDENS"
+    prevention: "convert_soil_to_swap validates ORES < OSAT before writing"
+  severity: fatal
+  cross_references: [dt_005]
+
+- id: dt_007
+  stage: s2_soil_parameters
+  failure_domain: parameter_format
+  symptom:
+    description: "Bulk density out of range warning or physically impossible soil properties."
+    error_pattern: "BDENS"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "Bulk density in g/cm³ instead of mg/cm³ (= kg/m³)"
+    explanation: >
+      SWAP BDENS range is 100-10000 mg/cm³ (equivalent to kg/m³). Common soil
+      bulk density is 1200-1600 kg/m³. If entered as g/cm³ (1.2-1.6), SWAP
+      clips to minimum 100, producing wrong heat capacity calculations.
+    affected_components: [convert_soil_to_swap]
+  remedy:
+    action: "If values in g/cm³, multiply by 1000 to get mg/cm³"
+    tool_to_run: convert_soil_to_swap
+    manual_steps:
+      - "Check BDENS values — should be 1000-1800 for most soils"
+      - "If BDENS < 10, values are in g/cm³ — multiply by 1000"
+    prevention: "validate_outputs() checks BDENS range"
+  severity: silent
+  cross_references: []
+
+# --- Path / File Errors ---
+
+- id: dt_008
+  stage: s4_execution
+  failure_domain: path_resolution
+  symptom:
+    description: "SWAP crashes with file-not-found error on Linux. Works on Windows."
+    error_pattern: "forrtl: severe (29): file not found"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "Uppercase characters in filenames or paths — Linux is case-sensitive"
+    explanation: >
+      SWAP on Windows is case-insensitive, so '283.MET' matches '283.met'.
+      On Linux, filenames must match exactly. The .swp file may reference
+      'METFIL' with different casing than the actual file on disk.
+    affected_components: [run_swap, readswap.f90]
+  remedy:
+    action: "Rename all files and references to lowercase"
+    tool_to_run: run_swap
+    manual_steps:
+      - "Run: ls -la *.* | grep -E '[A-Z]' to find uppercase files"
+      - "Rename: for f in *; do mv \"$f\" \"$(echo $f | tr 'A-Z' 'a-z')\"; done"
+      - "Update all filename references in .swp to lowercase"
+    prevention: "run_swap preflight checks for case mismatches"
+  severity: fatal
+  cross_references: []
+
+- id: dt_009
+  stage: s4_execution
+  failure_domain: path_resolution
+  symptom:
+    description: "SWAP cannot find swap.swp file. Immediate crash on startup."
+    error_pattern: "cannot open swap.swp"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "SWAP not run from the correct working directory"
+    explanation: >
+      SWAP always reads 'swap.swp' from the current working directory (CWD).
+      It does not accept command-line arguments for the config file path.
+      If run from the wrong directory, it cannot find the input file.
+    affected_components: [run_swap]
+  remedy:
+    action: "cd to the directory containing swap.swp before running the binary"
+    tool_to_run: run_swap
+    manual_steps:
+      - "cd /path/to/case/directory/"
+      - "ls swap.swp  # verify file exists"
+      - "/path/to/swap  # run from case directory"
+    prevention: "run_swap wrapper handles cd automatically"
+  severity: fatal
+  cross_references: [dt_008]
+
+# --- Runtime Errors ---
+
+- id: dt_010
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "SWAP takes extremely long or appears to hang. Timestep becomes tiny."
+    error_pattern: ""
+    detection_method: timeout
+  diagnosis:
+    root_cause: "Convergence failure in Richards' equation solver — DTMAX too large for soil type"
+    explanation: >
+      For clay soils with steep retention curves (low NPAR), the Richards'
+      equation solver requires small timesteps. If DTMAX is too large (e.g., 0.1d),
+      the solver backtracks repeatedly, reducing dt to DTMIN and iterating slowly.
+    affected_components: [soilwater.f90, headcalc.f90]
+  remedy:
+    action: "Reduce DTMAX to 0.01 or 0.005 for clay soils"
+    tool_to_run: null
+    manual_steps:
+      - "In .swp: set DTMAX = 0.01"
+      - "Increase MAXIT to 50 if needed"
+      - "For extreme cases: DTMAX = 0.001"
+    prevention: "Set DTMAX based on soil texture: sand=0.04, loam=0.02, clay=0.01"
+  severity: degraded
+  cross_references: [dt_011]
+
+- id: dt_011
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "Oscillating groundwater level, water table jumps between high and low values."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "GWLCONV convergence criterion too loose"
+    explanation: >
+      GWLCONV specifies the maximum allowed GWL change between timesteps (cm).
+      Default 100 cm is very loose. For cases with shallow water tables or
+      drainage, this allows the water table to jump unrealistically between steps.
+    affected_components: [calcgwl.f90, soilwater.f90]
+  remedy:
+    action: "Reduce GWLCONV to 1-10 cm"
+    tool_to_run: null
+    manual_steps:
+      - "In .swp: set GWLCONV = 10.0 (or 1.0 for high precision)"
+      - "May need to also reduce DTMAX"
+    prevention: "Use GWLCONV = 10.0 as standard for all new cases"
+  severity: degraded
+  cross_references: [dt_010]
+
+- id: dt_012
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "Fortran read error: 'list-directed I/O syntax error' during input parsing."
+    error_pattern: "forrtl: severe (59)"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "Wrong format in .met or .swp file — mismatched columns or delimiters"
+    explanation: >
+      SWAP uses Fortran list-directed read (READ *,) for .met files. This expects
+      comma-separated or space-separated values with consistent column count.
+      Extra columns, missing values, or tab characters can cause parse failures.
+    affected_components: [readmeteo.f90, readswap.f90]
+  remedy:
+    action: "Verify .met file format: comma-delimited, consistent column count per row"
+    tool_to_run: null
+    manual_steps:
+      - "Check .met file: head -15 file.met"
+      - "Verify 12 columns per data row"
+      - "Remove any tab characters: sed -i 's/\\t/,/g' file.met"
+      - "Ensure no blank lines between data rows"
+    prevention: "convert_forcing_to_swap writes consistent CSV format"
+  severity: fatal
+  cross_references: []
+
+# --- Dependency / Configuration Mismatch ---
+
+- id: dt_013
+  stage: s0_configuration
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "Crop growth produces zero biomass. DVS never advances."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "CROPSTART date is after the actual growing season, or TSTART is after CROPSTART"
+    explanation: >
+      If CROPSTART is set to May 1 but the simulation starts June 1, the first
+      crop emergence is missed. With CROPTYPE=2 (WOFOST), DVS advancement depends
+      on thermal time accumulation starting from CROPSTART. Missing early-season
+      warmth means the crop never matures.
+    affected_components: [cropgrowth.f90, readswap.f90]
+  remedy:
+    action: "Ensure TSTART <= CROPSTART and CROPSTART matches local growing season"
+    tool_to_run: null
+    manual_steps:
+      - "Check crop table in .swp: CROPSTART CROPEND CROPFIL CROPTYPE"
+      - "Verify simulation period covers entire crop cycle"
+    prevention: "Configuration validation checks date consistency"
+  severity: silent
+  cross_references: [dt_014]
+
+- id: dt_014
+  stage: s0_configuration
+  failure_domain: dependency_mismatch
+  symptom:
+    description: "Overlapping crop errors or unexpected bare soil periods."
+    error_pattern: "crop rotation"
+    detection_method: error_log
+  diagnosis:
+    root_cause: "Crop rotation dates overlap or have gaps not intended"
+    explanation: >
+      SWAP processes crops sequentially. If CROPEND of crop N overlaps CROPSTART
+      of crop N+1, behavior is undefined. Between crops (gap periods), soil is
+      treated as bare — this may be intentional (fallow) or a configuration error.
+    affected_components: [readswap.f90, cropgrowth.f90]
+  remedy:
+    action: "Ensure no overlap and intentional gaps between crops"
+    tool_to_run: null
+    manual_steps:
+      - "Sort crop table by CROPSTART"
+      - "Verify CROPEND(N) < CROPSTART(N+1) for all N"
+    prevention: "Configuration validation checks crop date ordering"
+  severity: degraded
+  cross_references: [dt_013]
+
+# --- Silent Errors (model runs, wrong results) ---
+
+- id: dt_015
+  stage: s2_soil_parameters
+  failure_domain: silent_error
+  symptom:
+    description: "Profile discretization mismatch — NCOMP × HCOMP ≠ HSUBLAY."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Inconsistent profile discretization table"
+    explanation: >
+      SWAP requires NCOMP × HCOMP = HSUBLAY for each sub-layer. If this
+      constraint is violated, the total profile depth will be wrong, and
+      compartment boundaries won't align with layer boundaries. SWAP may
+      not check this rigorously and produce subtly wrong results.
+    affected_components: [calcgrid.f90, readswap.f90]
+  remedy:
+    action: "Recalculate NCOMP = HSUBLAY / HCOMP for each sub-layer"
+    tool_to_run: null
+    manual_steps:
+      - "For each row: verify NCOMP × HCOMP = HSUBLAY"
+      - "Verify total depth = sum of all HSUBLAY values"
+    prevention: "Configuration validation checks arithmetic consistency"
+  severity: silent
+  cross_references: []
+
+- id: dt_016
+  stage: s1_met_forcing
+  failure_domain: silent_error
+  symptom:
+    description: "Wind-adjusted ET is wrong. Penman-Monteith produces unrealistic aerodynamic term."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "ALTW (wind measurement height) set incorrectly — default is 10m but data may be at 2m"
+    explanation: >
+      The Penman-Monteith equation adjusts wind speed from measurement height
+      (ALTW) to standard heights using log-profile equations. If ALTW=10m but
+      wind data is actually measured at 2m, the model under-adjusts the wind
+      speed, producing lower aerodynamic resistance and different ET.
+    affected_components: [penmon.f90]
+  remedy:
+    action: "Set ALTW to actual wind measurement height of the forcing dataset"
+    tool_to_run: null
+    manual_steps:
+      - "CMFD: ALTW = 10.0 (10m reference height)"
+      - "MSWX: ALTW = 10.0 (10m reference height)"
+      - "Local station: check metadata for anemometer height"
+    prevention: "Document ALTW for each forcing source in configuration"
+  severity: silent
+  cross_references: [dt_001, dt_002]
+
+- id: dt_017
+  stage: s2_soil_parameters
+  failure_domain: silent_error
+  symptom:
+    description: "Solute concentration vastly different from expected. Mass balance appears correct but values wrong."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Solute concentration in mg/L instead of mg/cm³ — 1000× difference"
+    explanation: >
+      SWAP expects solute concentrations in mg/cm³ (= mg/mL = g/L).
+      Literature and field data typically report mg/L (= mg/dm³ = μg/cm³).
+      1 mg/L = 0.001 mg/cm³. Entering mg/L values directly gives 1000×
+      too high concentrations.
+    affected_components: [solute.f90, readswap.f90]
+  remedy:
+    action: "Divide mg/L values by 1000 to get mg/cm³"
+    tool_to_run: null
+    manual_steps:
+      - "Check CPRE, CDRAIN, CIRRS values in .swp"
+      - "If values > 1.0, likely in mg/L — divide by 1000"
+      - "Typical CPRE for rainfall: 0.001-0.01 mg/cm³"
+    prevention: "Configuration validation checks concentration ranges"
+  severity: silent
+  cross_references: []

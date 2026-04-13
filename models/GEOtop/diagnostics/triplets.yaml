@@ -1,0 +1,441 @@
+# GEOtop Diagnostic Triplets
+# Symptom -> Diagnosis -> Remedy entries for common failures
+# 20 entries covering unit conversions, parameter format, file structure, runtime, initialization
+
+- id: dt_001
+  stage: s2_soil
+  failure_domain: unit_conversion
+  symptom:
+    description: "Richards equation solver diverges within first few time steps. Model crashes or produces NaN."
+    error_pattern: "not converging|diverge|NaN"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Soil layer thickness Dz provided in meters instead of millimeters"
+    explanation: "GEOtop expects Dz in mm. A 10cm layer should be 100, not 0.1. Sub-millimeter layers cause the solver to fail."
+    affected_components: [water.balance, Richards3D]
+  remedy:
+    action: "Multiply Dz values by 1000 if currently in meters, or by 10 if in centimeters"
+    tool_to_run: "convert_soil.py"
+    manual_steps:
+      - "Open soilXXXX.txt"
+      - "Check Dz column: values should be 10-500 (mm), not 0.01-0.5 (m)"
+      - "Multiply all Dz values by the appropriate factor"
+    prevention: "convert_soil.py validates that Dz >= 1 mm"
+  severity: fatal
+  cross_references: [dt_002, dt_003]
+
+- id: dt_002
+  stage: s2_soil
+  failure_domain: unit_conversion
+  symptom:
+    description: "Unrealistically fast or slow infiltration. Soil drains instantly or stays permanently saturated."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Hydraulic conductivity Kh/Kv in cm/day instead of m/s"
+    explanation: "HWSD reports Ksat in cm/day. GEOtop expects m/s. Factor is 8,640,000x. A typical sandy loam Ksat of 25 cm/day = 2.89E-06 m/s."
+    affected_components: [water.balance, Richards3D, Richards1D]
+  remedy:
+    action: "Convert Ksat from cm/day to m/s: divide by 86400 then by 100"
+    tool_to_run: "convert_soil.py"
+    manual_steps:
+      - "Check Kh/Kv values in soilXXXX.txt"
+      - "Should be in range 1E-7 to 1E-3"
+      - "If values are 1-1000, they are likely in cm/day"
+      - "Divide by 8640000 (= 86400 * 100)"
+    prevention: "convert_soil.py flags Kh > 0.01 m/s as unrealistic"
+  severity: silent
+  cross_references: [dt_001, dt_003]
+
+- id: dt_003
+  stage: s2_soil
+  failure_domain: unit_conversion
+  symptom:
+    description: "Soil moisture dynamics look wrong. Retention curve too flat or too steep."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Van Genuchten alpha in 1/cm instead of 1/mm"
+    explanation: "Literature and Rosetta report alpha in 1/cm. GEOtop expects 1/mm. Factor is 10x. Typical alpha for loam: 0.011 (1/cm) = 0.0011 (1/mm)."
+    affected_components: [water.balance, pedo.funct]
+  remedy:
+    action: "Divide alpha by 10 to convert from 1/cm to 1/mm"
+    tool_to_run: "convert_soil.py"
+    manual_steps:
+      - "Check alpha column in soilXXXX.txt"
+      - "Should be in range 0.0001 to 0.01 (1/mm)"
+      - "If values are 0.001 to 0.1, they are likely in 1/cm"
+      - "Divide by 10"
+    prevention: "convert_soil.py warns if alpha > 0.1"
+  severity: silent
+  cross_references: [dt_001, dt_002]
+
+- id: dt_004
+  stage: s4_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Total precipitation over simulation period is 1000x too high or too low."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation in wrong units (mm/hr, m/s, or mm/day instead of mm per time step)"
+    explanation: "GEOtop Iprec is total mm accumulated in each time step. If dt=900s and data is in mm/hr, multiply by 0.25. If data is in m/s, multiply by 1000*900."
+    affected_components: [meteodata, snow, water.balance]
+  remedy:
+    action: "Convert precipitation to mm per model time step"
+    tool_to_run: "convert_forcing.py"
+    manual_steps:
+      - "Determine source precipitation unit"
+      - "Calculate conversion factor based on model time step"
+      - "Apply: mm_per_step = rate * (dt_seconds / period_of_rate)"
+    prevention: "convert_forcing.py requires explicit --precip-unit flag"
+  severity: silent
+  cross_references: [dt_005, dt_006]
+
+- id: dt_005
+  stage: s4_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Evapotranspiration is near zero. Latent heat flux is negligible. Sensible heat unrealistically high."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Relative humidity provided as fraction (0-1) instead of percent (0-100)"
+    explanation: "GEOtop expects RelHum as 0-100 (percent). A value of 0.5 is interpreted as 0.5% humidity, making the atmosphere extremely dry."
+    affected_components: [energy.balance, vegetation, meteodata]
+  remedy:
+    action: "Multiply RelHum by 100 to convert from fraction to percent"
+    tool_to_run: "convert_forcing.py"
+    manual_steps:
+      - "Check RelHum column in meteoXXXX.txt"
+      - "If max value is ~1.0, it is in fraction"
+      - "Multiply all values by 100"
+    prevention: "convert_forcing.py warns if RelHum max <= 1.0"
+  severity: silent
+  cross_references: [dt_004, dt_007]
+
+- id: dt_006
+  stage: s4_forcing
+  failure_domain: parameter_format
+  symptom:
+    description: "Simulation runs but results shifted in time. Seasonal patterns misaligned."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Date format is MM/DD/YYYY instead of DD/MM/YYYY"
+    explanation: "GEOtop uses European date format (day first). Using American format causes months to be parsed as days and vice versa. Dates like 05/03/2009 become March 5 instead of May 3."
+    affected_components: [meteodata, times]
+  remedy:
+    action: "Reformat dates to DD/MM/YYYY hh:mm"
+    tool_to_run: "convert_forcing.py"
+    manual_steps:
+      - "Check date column in meteoXXXX.txt"
+      - "Verify day comes before month"
+      - "Reformat using: datetime.strftime('%d/%m/%Y %H:%M')"
+    prevention: "convert_forcing.py always writes DD/MM/YYYY format"
+  severity: silent
+  cross_references: [dt_019]
+
+- id: dt_007
+  stage: s4_forcing
+  failure_domain: parameter_format
+  symptom:
+    description: "Temperature or radiation is zero when it should not be. Flat forcing curves."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Missing values encoded as NaN, -999, or blank instead of -9999"
+    explanation: "GEOtop only recognizes -9999 as nodata. Other missing value representations are parsed as literal values (NaN may become 0, -999 is treated as a real value)."
+    affected_components: [meteodata, import_ascii]
+  remedy:
+    action: "Replace all missing values with -9999"
+    tool_to_run: "convert_forcing.py"
+    manual_steps:
+      - "Open meteoXXXX.txt"
+      - "Replace NaN, nan, -999, empty cells with -9999"
+      - "Ensure no blank cells in the CSV"
+    prevention: "convert_forcing.py replaces all NaN with -9999 on output"
+  severity: silent
+  cross_references: [dt_005, dt_016]
+
+- id: dt_008
+  stage: s3_vegetation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Canopy interception negligible or vegetation has no effect on energy balance."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "VegHeight provided in meters instead of millimeters"
+    explanation: "GEOtop expects VegHeight in mm. A 4 m tree should be 4000 mm. If set to 4, GEOtop treats it as 4 mm (effectively bare ground)."
+    affected_components: [vegetation, turbulence]
+  remedy:
+    action: "Multiply VegHeight by 1000 to convert from meters to millimeters"
+    tool_to_run: ""
+    manual_steps:
+      - "Check VegHeight in geotop.inpts"
+      - "Meadow: 300-600 mm, shrub: 1000-3000 mm, forest: 5000-30000 mm"
+      - "If values are < 10, likely in meters"
+    prevention: ""
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_009
+  stage: s5_parameters
+  failure_domain: parameter_format
+  symptom:
+    description: "Model fails to parse geotop.inpts. Error on first keyword or parameters have wrong values."
+    error_pattern: "error reading|unknown keyword"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Tab characters in geotop.inpts replaced by spaces"
+    explanation: "GEOtop's parser expects TAB characters between key, =, and value. Some text editors auto-convert tabs to spaces."
+    affected_components: [input, parameters]
+  remedy:
+    action: "Ensure geotop.inpts uses TAB characters for separation"
+    tool_to_run: ""
+    manual_steps:
+      - "Open geotop.inpts in editor that shows whitespace"
+      - "Verify tabs exist between key = value"
+      - "Use: sed -i 's/  */ /g' then manually re-add tabs, or use a template"
+    prevention: "Use the test case geotop.inpts as a template"
+  severity: fatal
+  cross_references: []
+
+- id: dt_010
+  stage: s1_domain
+  failure_domain: file_structure
+  symptom:
+    description: "Solar radiation too high. No topographic shading effects visible."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Horizon file missing or not found at configured path"
+    explanation: "When FlagSkyViewFactor=1 and HorizonMeteoStationFile is set, GEOtop expects horizon files. If missing, horizon angles default to 0 (no obstruction), over-predicting direct beam radiation."
+    affected_components: [radiation, energy.balance]
+  remedy:
+    action: "Generate horizon files or set FlagSkyViewFactor=0"
+    tool_to_run: ""
+    manual_steps:
+      - "Check if horizonXXXX.txt exists in sim directory"
+      - "If not needed, set FlagSkyViewFactor = 0"
+      - "If needed, generate from DEM using r.horizon in GRASS GIS"
+    prevention: "run_geotop.py checks for horizon files when FlagSkyViewFactor=1"
+  severity: silent
+  cross_references: [dt_011]
+
+- id: dt_011
+  stage: s1_domain
+  failure_domain: unit_conversion
+  symptom:
+    description: "Runoff too fast on steep slopes or too slow on gentle slopes."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Slope map in percent instead of degrees"
+    explanation: "GEOtop expects slope in degrees (0-90). A 100% slope = 45 degrees. Using percent values directly overpredicts slopes for steep terrain."
+    affected_components: [water.balance, supflow]
+  remedy:
+    action: "Convert slope from percent to degrees: atan(percent/100) * 180/pi"
+    tool_to_run: ""
+    manual_steps:
+      - "Check slope.txt values"
+      - "Degrees: 0-90 range; Percent: 0-inf range"
+      - "Convert: slope_deg = atan(slope_pct / 100) * 57.2958"
+    prevention: ""
+  severity: silent
+  cross_references: [dt_012, dt_013]
+
+- id: dt_012
+  stage: s1_domain
+  failure_domain: unit_conversion
+  symptom:
+    description: "Radiation pattern completely wrong. Shadows in wrong direction."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Aspect map in radians instead of degrees"
+    explanation: "GEOtop expects aspect in degrees from north clockwise (0-360). Using radians (0-2*pi) makes all aspects appear nearly flat."
+    affected_components: [radiation, energy.balance]
+  remedy:
+    action: "Convert from radians to degrees: multiply by 180/pi"
+    tool_to_run: ""
+    manual_steps:
+      - "Check aspect.txt values"
+      - "Should be 0-360 (degrees)"
+      - "If 0-6.28, multiply by 57.2958"
+    prevention: ""
+  severity: silent
+  cross_references: [dt_011]
+
+- id: dt_013
+  stage: s1_domain
+  failure_domain: file_structure
+  symptom:
+    description: "Segmentation fault or array bounds error on startup."
+    error_pattern: "segfault|SIGSEGV|array bounds"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Input maps have different grid dimensions (ncols, nrows, cellsize)"
+    explanation: "All ESRI ASCII maps must have identical grid specs. If dem.txt is 100x100 but slope.txt is 99x100, array indexing fails."
+    affected_components: [input, geomorphology]
+  remedy:
+    action: "Ensure all maps share identical ncols, nrows, xllcorner, yllcorner, cellsize"
+    tool_to_run: ""
+    manual_steps:
+      - "Compare headers of all .txt map files"
+      - "Re-derive slope/aspect from the same DEM"
+      - "Use same GDAL processing chain for all maps"
+    prevention: ""
+  severity: fatal
+  cross_references: [dt_010]
+
+- id: dt_014
+  stage: s2_soil
+  failure_domain: parameter_format
+  symptom:
+    description: "Model crashes immediately with soil-related error."
+    error_pattern: "theta|water content"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Residual water content (vwc_r) greater than or equal to saturated content (vwc_s)"
+    explanation: "Van Genuchten model requires theta_r < theta_s. If values are swapped or incorrect, the retention curve is undefined."
+    affected_components: [water.balance, pedo.funct]
+  remedy:
+    action: "Verify vwc_r < vwc_w < vwc_fc < vwc_s for all layers"
+    tool_to_run: "convert_soil.py"
+    manual_steps:
+      - "Check soil file columns are in correct order"
+      - "Verify no copy-paste errors in parameter values"
+    prevention: "convert_soil.py validates theta ordering"
+  severity: fatal
+  cross_references: [dt_001, dt_015]
+
+- id: dt_015
+  stage: s2_soil
+  failure_domain: parameter_format
+  symptom:
+    description: "Floating point exception in soil hydraulic calculations."
+    error_pattern: "FPE|floating point|division by zero"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Van Genuchten n parameter less than 1.0"
+    explanation: "The Van Genuchten model requires n > 1. The m parameter is computed as m = 1 - 1/n. If n <= 1, m is non-positive, causing division by zero or undefined behavior."
+    affected_components: [water.balance, pedo.funct]
+  remedy:
+    action: "Ensure n > 1.0 for all soil layers"
+    tool_to_run: "convert_soil.py"
+    manual_steps:
+      - "Check n column in soilXXXX.txt"
+      - "Typical range: 1.1 to 3.0"
+      - "If n = 1.0 or less, use a minimum of 1.05"
+    prevention: "convert_soil.py enforces n > 1.0"
+  severity: fatal
+  cross_references: [dt_014]
+
+- id: dt_016
+  stage: s4_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Shortwave radiation values unrealistically high (>2000 W/m2) or always zero."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Accumulated radiation (J/m2) not converted to instantaneous (W/m2)"
+    explanation: "ERA5 provides radiation as accumulated J/m2 over the forecast step. GEOtop expects instantaneous W/m2. Dividing by the time step in seconds converts correctly."
+    affected_components: [radiation, energy.balance]
+  remedy:
+    action: "Divide accumulated radiation by time step in seconds"
+    tool_to_run: "convert_forcing.py"
+    manual_steps:
+      - "Check if radiation values exceed 1400 W/m2 (solar constant)"
+      - "If values are in J/m2 (e.g., millions), divide by dt_seconds"
+      - "ERA5: divide by 3600 for hourly data"
+    prevention: "convert_forcing.py warns if Swglobal > 1400"
+  severity: silent
+  cross_references: [dt_004, dt_005]
+
+- id: dt_017
+  stage: s6_run
+  failure_domain: file_structure
+  symptom:
+    description: "Model cannot find input files despite them existing in the directory."
+    error_pattern: "cannot open|file not found"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Simulation directory path is relative, not absolute"
+    explanation: "GEOtop resolves file paths relative to the simulation directory. If the sim dir path is relative, the working directory at execution time affects path resolution."
+    affected_components: [input, import_ascii]
+  remedy:
+    action: "Always use absolute paths for the simulation directory"
+    tool_to_run: "run_geotop.py"
+    manual_steps:
+      - "Use: ./geotop /absolute/path/to/sim_dir"
+      - "Not: ./geotop sim_dir or ./geotop ../sim_dir"
+    prevention: "run_geotop.py converts paths to absolute before execution"
+  severity: fatal
+  cross_references: [dt_018]
+
+- id: dt_018
+  stage: s6_run
+  failure_domain: runtime
+  symptom:
+    description: "Model runs but produces no output files."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Output file paths in geotop.inpts point to non-existent directory"
+    explanation: "GEOtop does not create output directories automatically. If PointOutputFile = 'output-tabs/point' but output-tabs/ doesn't exist, output is silently skipped."
+    affected_components: [output]
+  remedy:
+    action: "Create output directories before running"
+    tool_to_run: "run_geotop.py"
+    manual_steps:
+      - "Read geotop.inpts for all output file paths"
+      - "Create the directories: mkdir -p output-tabs output-maps"
+    prevention: "run_geotop.py creates output directories before execution"
+  severity: fatal
+  cross_references: [dt_017]
+
+- id: dt_019
+  stage: s7_postprocess
+  failure_domain: parameter_format
+  symptom:
+    description: "Parsed output dates are wrong. Time series alignment with observations fails."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Output date parsing assumes MM/DD instead of DD/MM"
+    explanation: "GEOtop outputs dates in DD/MM/YYYY format. Pandas default parse assumes MM/DD. For ambiguous dates (e.g., 05/03/2009), the wrong month is assigned."
+    affected_components: [parse_output]
+  remedy:
+    action: "Use dayfirst=True when parsing dates with pandas"
+    tool_to_run: "parse_output.py"
+    manual_steps:
+      - "Use pd.to_datetime(dates, format='%d/%m/%Y %H:%M')"
+      - "Or: pd.to_datetime(dates, dayfirst=True)"
+    prevention: "parse_output.py uses explicit DD/MM/YYYY format string"
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_020
+  stage: s4_forcing
+  failure_domain: runtime
+  symptom:
+    description: "Energy balance not closing. Large residual between Rn and H+LE+G."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Both LWin and CloudTrans provided, causing double parameterization of longwave"
+    explanation: "When LWinParameterization > 0 and both LWin and CloudTrans are provided (not -9999), GEOtop may use LWin directly but also adjust it via cloud transmissivity, causing inconsistency."
+    affected_components: [radiation, energy.balance, clouds]
+  remedy:
+    action: "Provide either LWin OR CloudTrans, set the other to -9999"
+    tool_to_run: "convert_forcing.py"
+    manual_steps:
+      - "If measured LWin is available, set CloudTrans to -9999 for all rows"
+      - "If only CloudTrans is available, remove LWin column or set to -9999"
+      - "Set LWinParameterization = 4 for Brutsaert with Kimball correction"
+    prevention: "convert_forcing.py warns if both LWin and CloudTrans are present"
+  severity: degraded
+  cross_references: [dt_016]

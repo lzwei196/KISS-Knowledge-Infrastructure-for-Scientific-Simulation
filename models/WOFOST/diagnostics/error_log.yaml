@@ -1,0 +1,85 @@
+entries:
+- id: err_001
+  timestamp: '2026-03-19T12:54:04Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WOFOST
+    run_name: ''
+  stage: s3_weather_prep
+  failure_domain: unit_conversion
+  symptom:
+    description: Zero yield despite correct temp/rain — IRRAD 1000x too low
+    error_pattern: TWSO = 0
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: IRRAD must be J/m2/d not kJ — multiply SW by 86400 not 86.4
+    explanation: ''
+    affected_components: []
+  resolution:
+    action: IRRAD = shortwave_W_m2 * 86400
+    files_changed: []
+    prevention: Validate IRRAD 5e6-35e6 J/m2/d range
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_002
+  timestamp: '2026-03-20T08:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WOFOST
+    run_name: ''
+  stage: s3_weather_prep
+  failure_domain: unit_conversion
+  symptom:
+    description: Extreme water stress despite adequate rainfall — E0/ES0/ET0 values 10x too high because
+      Penman-Monteith output is in mm/day but PCSE expects cm/day
+    error_pattern: ET0 > 1.5
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: E0, ES0, ET0 must be in cm/day, not mm/day. PCSE DB stores values like 0.08-0.88 cm/d.
+      If computed from Hargreaves/PM in mm/day, values are 10x too high, causing extreme water stress.
+    explanation: PCSE WeatherDataContainer expects E0, ES0, ET0 in cm/day. Most external ET calculation
+      tools output mm/day. Must divide by 10. This affects WLP (water-limited potential production) mode
+      severely but does not affect PP (potential production) mode.
+    affected_components:
+    - convert_vic_to_pcse_weather.py
+  resolution:
+    action: Divide ET0 by 10 if computed in mm/day — ET0_cm = ET0_mm / 10. Validate range 0.01-1.5 cm/d.
+    files_changed:
+    - tools/s3_weather_prep/convert_vic_to_pcse_weather.py
+    prevention: convert_vic_to_pcse_weather.py auto-divides by 10 and validates range
+  severity: silent
+  promoted: false
+  promoted_as: ''
+- id: err_003
+  timestamp: '2026-03-20T08:00:00Z'
+  recorded_by: claude
+  run_context:
+    basin: bengbu
+    model: WOFOST
+    run_name: ''
+  stage: s1_crop_params
+  failure_domain: api_change
+  symptom:
+    description: Using YAMLCropDataProvider instead of fetch_cropdata from pcse.db gives less reliable
+      crop parameters. DB stores internally consistent parameters while YAML files may have version mismatches.
+    error_pattern: ''
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: PCSE DB (pcse.db from pcse.util) stores vetted crop parameters. YAMLCropDataProvider
+      loads from YAML files which may be outdated or inconsistent between crop param versions.
+    explanation: The PCSE database accessed via fetch_cropdata from pcse.db contains internally consistent
+      parameter sets that have been validated. After the IRRAD fix, using DB params gave wheat=3543 and
+      maize=6102 kg/ha matching DSSAT within 10%. YAML files gave different (sometimes wrong) results.
+    affected_components:
+    - load_crop_parameters.py
+  resolution:
+    action: Use fetch_cropdata from pcse.db (import pcse.util; data = pcse.util.WOFOST72SiteDataProvider)
+      instead of YAMLCropDataProvider for reliable parameters
+    files_changed: []
+    prevention: SKILL.md documents DB as preferred source
+  severity: degraded
+  promoted: false
+  promoted_as: ''

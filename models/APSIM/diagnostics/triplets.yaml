@@ -1,0 +1,459 @@
+# APSIM Diagnostic Triplets
+# Each triplet: symptom → diagnosis → remedy
+# Covers unit conversion traps, parameter errors, runtime failures, and silent errors
+
+- id: dt_001
+  stage: s2_weather
+  failure_domain: unit_conversion
+  symptom:
+    description: "Biomass production is 10-50x higher than expected. Grain yield exceeds 50 t/ha for wheat."
+    error_pattern: "AboveGround.Wt > 5000"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Solar radiation supplied in W/m² instead of MJ/m²/day"
+    explanation: >
+      ERA5 ssrd is in J/m²/day (divide by 1e6). CMFD srad is often in W/m²
+      (multiply by 0.0864). If radiation column values are 100-400 instead of
+      5-30, the units are wrong. APSIM interprets each value as MJ/m², so
+      200 W/m² becomes 200 MJ/m² — about 8x too much energy.
+    affected_components: [Weather, MicroClimate, Leaf, BiomassArbitration]
+  remedy:
+    action: "Convert radiation to MJ/m²/day before creating .met file"
+    tool_to_run: "convert_met.py"
+    manual_steps:
+      - "Check .met file: radn values should be 0-35 MJ/m²/day"
+      - "If values are 50-400, multiply by 0.0864 (W/m² → MJ/m²/day)"
+      - "If values are 1e6+, divide by 1e6 (J/m²/day → MJ/m²/day)"
+    prevention: "convert_met.py auto-detects and converts; validates range 0-40"
+  severity: fatal
+  cross_references: [dt_007]
+
+- id: dt_002
+  stage: s2_weather
+  failure_domain: silent_error
+  symptom:
+    description: "Germination timing is wrong. Soil temperatures unrealistic. Crops emerge too early or too late."
+    error_pattern: "Unexpected emergence date"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Missing tav and amp values in .met file header"
+    explanation: >
+      APSIM's CERES soil temperature model requires annual average temperature
+      (tav) and annual temperature amplitude (amp) in the .met header. Without
+      them, soil temperature defaults may be completely wrong for the site,
+      affecting germination, root growth, and decomposition.
+    affected_components: [CERESSoilTemperature, Phenology, Root]
+  remedy:
+    action: "Add tav and amp to .met file header"
+    tool_to_run: "convert_met.py"
+    manual_steps:
+      - "Compute tav = mean of all daily (maxt+mint)/2"
+      - "Compute amp = max(monthly_mean) - min(monthly_mean)"
+      - "Add lines: tav = XX.XX (oC) and amp = YY.YY (oC) to header"
+    prevention: "convert_met.py automatically computes and writes tav/amp"
+  severity: degraded
+  cross_references: []
+
+- id: dt_003
+  stage: s1_soil
+  failure_domain: parameter_format
+  symptom:
+    description: "APSIM crashes with water balance error. Negative soil water content. Simulation aborts immediately."
+    error_pattern: "Water content out of range|Negative water"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Soil water limits not ordered: AirDry ≤ LL15 ≤ DUL ≤ SAT violated"
+    explanation: >
+      APSIM requires strict ordering of water retention limits for each soil
+      layer. If DUL > SAT or LL15 > DUL, the water balance equations produce
+      negative or impossible water contents, causing immediate crash.
+    affected_components: [Physical, WaterBalance, SoilWater]
+  remedy:
+    action: "Reorder water limits to satisfy AirDry ≤ LL15 ≤ DUL ≤ SAT"
+    tool_to_run: "convert_soil.py"
+    manual_steps:
+      - "For each layer, verify: AirDry ≤ LL15 ≤ DUL ≤ SAT"
+      - "If violated, clamp values: SAT = max(DUL+0.01, SAT), etc."
+      - "Check all layers have same count in all arrays"
+    prevention: "convert_soil.py validates and auto-corrects ordering"
+  severity: fatal
+  cross_references: [dt_008, dt_009]
+
+- id: dt_004
+  stage: s3_assembly
+  failure_domain: path_resolution
+  symptom:
+    description: "APSIM fails with 'Could not find file' error at startup. Weather data not loaded."
+    error_pattern: "Could not find file|FileNotFoundException"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Weather file path in .apsimx uses %root% macro that doesn't resolve correctly"
+    explanation: >
+      The %root% macro in .apsimx files is replaced at runtime with the
+      directory containing the .apsimx file. If the .apsimx is moved to a
+      different directory without moving the .met file, or if the relative
+      path is wrong, the file cannot be found.
+    affected_components: [Weather, Simulation]
+  remedy:
+    action: "Fix the Weather.FileName path in the .apsimx JSON"
+    tool_to_run: "build_apsimx.py"
+    manual_steps:
+      - "Open .apsimx in text editor"
+      - "Find FileName entry under Weather node"
+      - "Verify %root% resolves to correct directory"
+      - "Or use absolute path for testing"
+    prevention: "run_apsim.py preflight checks verify .met file accessibility"
+  severity: fatal
+  cross_references: []
+
+- id: dt_005
+  stage: s3_assembly
+  failure_domain: unit_conversion
+  symptom:
+    description: "Plant population impossibly high. Extreme competition. All plants die immediately or LAI is astronomical."
+    error_pattern: "Population > 10000|LAI > 100"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Plant population specified in plants/ha instead of plants/m²"
+    explanation: >
+      APSIM expects plant population in plants/m². Agronomic literature often
+      reports plants/ha. 100 plants/m² = 1,000,000 plants/ha. Supplying
+      100,000 (intended as plants/ha) as plants/m² gives 10^9 plants/ha,
+      causing immediate resource competition and die-off.
+    affected_components: [Plant, SowingRule, Leaf, Root]
+  remedy:
+    action: "Divide population by 10000 to convert from plants/ha to plants/m²"
+    tool_to_run: "build_apsimx.py"
+    manual_steps:
+      - "Check sowing population: typical wheat = 100-250 plants/m²"
+      - "If value > 1000, it's likely plants/ha — divide by 10000"
+      - "Maize typical: 7-10 plants/m² (70,000-100,000 plants/ha)"
+    prevention: "build_apsimx.py validates population < 1000 plants/m²"
+  severity: fatal
+  cross_references: []
+
+- id: dt_006
+  stage: s5_output
+  failure_domain: unit_conversion
+  symptom:
+    description: "Reported yield appears 10x too low or 10x too high when compared to literature values."
+    error_pattern: "Yield comparison off by factor of 10"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "APSIM biomass outputs are in g/m², not kg/ha or t/ha"
+    explanation: >
+      All APSIM biomass variables (Grain.Wt, AboveGround.Wt, etc.) are
+      reported in g/m². Literature typically uses kg/ha or t/ha.
+      Conversion: g/m² × 10 = kg/ha; g/m² ÷ 100 = t/ha.
+      A wheat yield of 350 g/m² = 3500 kg/ha = 3.5 t/ha.
+    affected_components: [Report, DataStore]
+  remedy:
+    action: "Apply unit conversion when extracting results"
+    tool_to_run: "parse_output.py --convert-yield"
+    manual_steps:
+      - "For kg/ha: multiply g/m² by 10"
+      - "For t/ha: divide g/m² by 100"
+      - "Use --convert-yield flag to auto-add converted columns"
+    prevention: "parse_output.py --convert-yield adds _kg_ha and _t_ha columns"
+  severity: silent
+  cross_references: []
+
+- id: dt_007
+  stage: s2_weather
+  failure_domain: unit_conversion
+  symptom:
+    description: "All temperatures in .met file are around 280-310. Crops fail to develop normally."
+    error_pattern: "maxt > 100|mint > 100"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature supplied in Kelvin instead of Celsius"
+    explanation: >
+      ERA5 and some reanalysis products report temperature in Kelvin.
+      APSIM expects Celsius. 300 K = 27°C. If left unconverted, APSIM
+      interprets 300°C, causing thermal time to accumulate at extreme rates.
+    affected_components: [Weather, Phenology, MicroClimate]
+  remedy:
+    action: "Subtract 273.15 from temperature values"
+    tool_to_run: "convert_met.py"
+    manual_steps:
+      - "Check .met maxt/mint columns: values should be -30 to 50°C"
+      - "If values are 240-320, subtract 273.15"
+    prevention: "convert_met.py auto-detects K (values > 100) and converts"
+  severity: fatal
+  cross_references: [dt_001]
+
+- id: dt_008
+  stage: s1_soil
+  failure_domain: unit_conversion
+  symptom:
+    description: "Soil profile is only 15 cm deep instead of 150 cm. Roots hit bottom immediately. Severe water stress."
+    error_pattern: "Total depth < 300mm|RootingDepth limited"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Soil layer thickness in cm instead of mm"
+    explanation: >
+      APSIM expects Thickness array in mm. HWSD and SoilGrids report depths
+      in cm. A 30 cm layer entered as 30 (without conversion) becomes 30 mm
+      (3 cm). A 5-layer profile of [15,15,30,40,50] cm becomes 150 mm total
+      instead of 1500 mm.
+    affected_components: [Physical, Root, WaterBalance]
+  remedy:
+    action: "Multiply layer thickness by 10 to convert cm to mm"
+    tool_to_run: "convert_soil.py"
+    manual_steps:
+      - "Check Thickness array: values should be 100-300 mm typically"
+      - "If values are 10-30, they're in cm — multiply by 10"
+    prevention: "convert_soil.py converts cm → mm automatically"
+  severity: fatal
+  cross_references: [dt_003]
+
+- id: dt_009
+  stage: s1_soil
+  failure_domain: unit_conversion
+  symptom:
+    description: "APSIM crashes or produces zero drainage. Soil water balance fails."
+    error_pattern: "BD > 10|Invalid bulk density"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Bulk density in kg/m³ instead of g/cc"
+    explanation: >
+      SoilGrids reports BD in kg/m³ (e.g., 1400). APSIM expects g/cc (e.g., 1.4).
+      If 1400 is entered directly, APSIM may crash or produce nonsensical
+      water balance results since BD is used to compute porosity.
+    affected_components: [Physical, WaterBalance]
+  remedy:
+    action: "Divide bulk density by 1000 to convert kg/m³ to g/cc"
+    tool_to_run: "convert_soil.py"
+    manual_steps:
+      - "Check BD array: values should be 0.5-2.2 g/cc"
+      - "If values are 500-2200, divide by 1000"
+    prevention: "convert_soil.py auto-detects units > 100 and converts"
+  severity: fatal
+  cross_references: [dt_003]
+
+- id: dt_010
+  stage: s3_assembly
+  failure_domain: runtime
+  symptom:
+    description: "Simulation crashes with unhelpful error. 'Cannot find cultivar' or NullReferenceException on sowing."
+    error_pattern: "NullReferenceException|Cannot find cultivar|KeyNotFoundException"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Cultivar name does not match any entry in APSIM's resource database"
+    explanation: >
+      Cultivar names are case-sensitive and must match exactly. Common errors:
+      lowercase ('hartog' vs 'Hartog'), spaces ('Pioneer 3153' vs 'Pioneer_3153'),
+      or outdated names from older APSIM versions.
+    affected_components: [Plant, Phenology]
+  remedy:
+    action: "Use correct cultivar name from APSIM's built-in list"
+    tool_to_run: null
+    manual_steps:
+      - "Open APSIM GUI and browse crop model to see available cultivars"
+      - "Or grep source: grep -r 'Cultivar' Models/Resources/{Crop}.json"
+      - "Or check APSIM documentation for cultivar lists"
+      - "Cultivar names are case-sensitive: 'Hartog' not 'hartog'"
+    prevention: "Verify cultivar exists before building .apsimx"
+  severity: fatal
+  cross_references: []
+
+- id: dt_011
+  stage: s2_weather
+  failure_domain: unit_conversion
+  symptom:
+    description: "Rainfall is 1/8 of expected. Severe drought stress even in wet regions. Irrigation needed everywhere."
+    error_pattern: "Annual rain < 100mm in humid region"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Sub-daily rainfall (mm/3hr) not summed to daily totals"
+    explanation: >
+      CMFD and some ERA5 products provide rainfall at 3-hourly intervals.
+      APSIM requires daily totals. Using a single 3-hour interval as the
+      daily value gives approximately 1/8 of actual rainfall.
+    affected_components: [Weather, SoilWater]
+  remedy:
+    action: "Sum 8 three-hourly intervals to get daily rainfall"
+    tool_to_run: "convert_met.py"
+    manual_steps:
+      - "Group rainfall by date and sum all intervals"
+      - "Verify annual total makes sense for the climate zone"
+    prevention: "convert_met.py handles temporal aggregation from sub-daily sources"
+  severity: fatal
+  cross_references: [dt_001]
+
+- id: dt_012
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "Command 'apsim' not found. Or 'No suitable .NET runtime found'."
+    error_pattern: "command not found|No suitable .NET|dotnet not found"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "APSIM binary not built or .NET 8.0 runtime not installed"
+    explanation: >
+      APSIM requires .NET 8.0 runtime. The CLI binary is built to
+      APSIM.Cli/bin/Release/net8.0/apsim (no .exe extension on Linux).
+      On Linux, also requires libsqlite3.
+    affected_components: [CLI, Runtime]
+  remedy:
+    action: "Install .NET 8.0 and build APSIM"
+    tool_to_run: "run_apsim.py"
+    manual_steps:
+      - "Install .NET 8.0 SDK: sudo apt-get install dotnet-sdk-8.0"
+      - "Install SQLite: sudo apt-get install libsqlite3-dev"
+      - "Build: cd ApsimX && dotnet build -c Release -f net8.0"
+      - "Binary at: APSIM.Cli/bin/Release/net8.0/apsim"
+    prevention: "run_apsim.py checks binary existence in preflight"
+  severity: fatal
+  cross_references: []
+
+- id: dt_013
+  stage: s4_execution
+  failure_domain: path_resolution
+  symptom:
+    description: "Weather data shows constant default values. Or error: 'Cannot read met file'."
+    error_pattern: "Cannot read|Invalid met file|constant temperature"
+    detection_method: log_match
+  diagnosis:
+    root_cause: ".met file path not correctly resolved from .apsimx location"
+    explanation: >
+      APSIM resolves relative paths from the .apsimx file's directory.
+      The %root% macro is replaced with this directory. If files are
+      rearranged or the .apsimx is run from a different working directory
+      than expected, paths break.
+    affected_components: [Weather, Simulation]
+  remedy:
+    action: "Verify .met file path resolves correctly"
+    tool_to_run: "run_apsim.py"
+    manual_steps:
+      - "Check Weather.FileName in .apsimx JSON"
+      - "Replace %root% with .apsimx directory and verify file exists"
+      - "Consider using absolute paths for debugging"
+    prevention: "run_apsim.py preflight checks resolve and verify all .met paths"
+  severity: fatal
+  cross_references: [dt_004]
+
+- id: dt_014
+  stage: s4_execution
+  failure_domain: runtime
+  symptom:
+    description: "Database locked error. Cannot write output. Simulation hangs or fails."
+    error_pattern: "database is locked|SQLite busy|SQLITE_BUSY"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Previous run left .db-wal and .db-shm lock files"
+    explanation: >
+      SQLite uses Write-Ahead Logging (WAL). If a previous APSIM run
+      crashed, the WAL and SHM files may persist, preventing new writes.
+      Also occurs if another process has the .db file open.
+    affected_components: [DataStore, Storage]
+  remedy:
+    action: "Remove stale lock files or the entire .db"
+    tool_to_run: null
+    manual_steps:
+      - "Delete simulation.db-wal and simulation.db-shm"
+      - "If persists, delete simulation.db entirely (output will be recreated)"
+      - "Ensure no other process has the .db open"
+    prevention: "run_apsim.py warns about existing lock files in preflight"
+  severity: degraded
+  cross_references: []
+
+- id: dt_015
+  stage: s5_output
+  failure_domain: silent_error
+  symptom:
+    description: "Report table exists but has zero rows. No output data despite successful simulation."
+    error_pattern: "n_rows = 0|Empty report"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Report.EventNames not triggering during simulation"
+    explanation: >
+      The Report model writes data only when its EventNames fire.
+      '[Clock].DoReport' fires daily. If using a custom event that never
+      fires (wrong event name, or crop not sown so crop events don't occur),
+      no rows are written.
+    affected_components: [Report, Clock]
+  remedy:
+    action: "Check Report.EventNames in .apsimx"
+    tool_to_run: null
+    manual_steps:
+      - "Ensure EventNames contains '[Clock].DoReport' for daily output"
+      - "For crop events (e.g., Harvesting), verify the crop was actually sown"
+      - "Check _Messages table for simulation errors"
+    prevention: "build_apsimx.py uses '[Clock].DoReport' by default"
+  severity: silent
+  cross_references: []
+
+- id: dt_016
+  stage: s1_soil
+  failure_domain: parameter_format
+  symptom:
+    description: "Array index out of bounds error. Mismatched layer counts between soil components."
+    error_pattern: "IndexOutOfRangeException|array length mismatch"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "Different number of layers in Physical, Chemical, Organic, and WaterBalance arrays"
+    explanation: >
+      All soil arrays (Thickness, BD, LL15, DUL, SAT, SWCON, PH, Carbon, etc.)
+      must have the same number of elements. If Physical has 7 layers but
+      Chemical has 6, APSIM crashes when accessing the 7th layer.
+    affected_components: [Soil, Physical, Chemical, Organic, WaterBalance]
+  remedy:
+    action: "Ensure all soil arrays have identical length"
+    tool_to_run: "convert_soil.py"
+    manual_steps:
+      - "Check array lengths in all soil children"
+      - "Pad shorter arrays with reasonable values for deeper layers"
+      - "Or trim longer arrays to match the shortest"
+    prevention: "convert_soil.py generates all arrays from same layer data"
+  severity: fatal
+  cross_references: [dt_003]
+
+- id: dt_017
+  stage: s6_validation
+  failure_domain: silent_error
+  symptom:
+    description: "Validation metrics look terrible despite correct setup. R² near 0, huge PBIAS."
+    error_pattern: "R2 < 0.3|PBIAS > 50"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Comparing APSIM g/m² directly to literature t/ha without conversion"
+    explanation: >
+      APSIM yield of 350 g/m² compared to observed 3.5 t/ha. If both are
+      treated as the same unit, the sim/obs ratio is 100:1 and all metrics
+      fail. Must convert g/m² ÷ 100 = t/ha before comparison.
+    affected_components: [Validation]
+  remedy:
+    action: "Convert APSIM output to same units as observations"
+    tool_to_run: "parse_output.py --convert-yield"
+    manual_steps:
+      - "Check units of both datasets"
+      - "Convert APSIM: g/m² × 10 = kg/ha, g/m² ÷ 100 = t/ha"
+      - "Re-compute metrics with aligned units"
+    prevention: "parse_output.py --convert-yield adds converted columns"
+  severity: silent
+  cross_references: [dt_006]
+
+- id: dt_018
+  stage: s2_weather
+  failure_domain: unit_conversion
+  symptom:
+    description: "Vapor pressure deficit calculations wrong. ET estimates too high or low."
+    error_pattern: "VPD unrealistic|ET > 20mm/day"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Vapor pressure in kPa instead of hPa"
+    explanation: >
+      APSIM expects VP in hPa. ERA5 often provides vapor pressure in kPa.
+      2.0 kPa = 20 hPa. If 2.0 is passed as hPa (very low VP), VPD is
+      overestimated, inflating evapotranspiration.
+    affected_components: [Weather, MicroClimate, Leaf]
+  remedy:
+    action: "Multiply vapor pressure by 10 to convert kPa to hPa"
+    tool_to_run: "convert_met.py"
+    manual_steps:
+      - "Check VP column: should be 5-40 hPa for most climates"
+      - "If values are 0.5-4.0, they're in kPa — multiply by 10"
+    prevention: "convert_met.py flags VP outside 1-60 hPa range"
+  severity: degraded
+  cross_references: [dt_001, dt_007]

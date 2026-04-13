@@ -1,0 +1,504 @@
+# ============================================================================
+# EF5 Diagnostic Triplets
+# ============================================================================
+# 20 diagnostic triplets covering 5 failure domains.
+# Generated during EF5 knowledge dissection for HydroCraft platform.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s2_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Extreme flooding everywhere. Simulated streamflow 3x–1000x too high."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation rate units mismatch — UNIT=mm/h but data is mm/3h or mm/day"
+    explanation: >
+      EF5 interprets forcing values according to UNIT= in the PrecipForcing block.
+      If files contain mm/3hr accumulations but UNIT=mm/h, EF5 treats each value as
+      an hourly rate, effectively tripling the input precipitation. For mm/day data
+      with UNIT=mm/h, precipitation is 24x too high.
+    affected_components: [PrecipForcing, convert_forcing_to_ef5]
+  remedy:
+    action: "Set UNIT= to match actual file contents, or pre-convert to mm/h"
+    tool_to_run: convert_forcing_to_ef5
+    manual_steps:
+      - "Check a sample forcing file: max precip rate should be < 100 mm/hr"
+      - "Verify UNIT= in control.txt matches source data documentation"
+      - "For CMFD: UNIT=mm/h (native mm/hr). For TRMM V7: UNIT=mm/3h"
+    prevention: "validate_outputs() in convert_forcing_to_ef5.py checks for unrealistic max values"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_002
+  stage: s2_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Very dry simulation. Near-zero streamflow despite rainy season."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "PET units wrong — mm/month treated as mm/hr (720x too high) causing extreme evaporation"
+    explanation: >
+      If PET data is in mm/month but UNIT=mm/h in PETForcing block, EF5 reads
+      monthly totals as hourly rates. A typical 150 mm/month PET becomes 150 mm/hr,
+      which exceeds any precipitation, so all water evaporates.
+    affected_components: [PETForcing, convert_forcing_to_ef5]
+  remedy:
+    action: "Set UNIT=mm/m for monthly PET data, or pre-convert to mm/hr rate"
+    tool_to_run: convert_forcing_to_ef5
+    manual_steps:
+      - "Check PET values: if max > 20 mm/hr, units are likely monthly or daily"
+      - "For monthly PET: use UNIT=mm/m and FREQ=m"
+      - "For daily PET: use UNIT=mm/d and FREQ=d"
+    prevention: "Cross-check PET against reference climatology for the region"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s2_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "TIMESTEP=5m runs incredibly slowly or produces wrong results. 5 minutes expected but 5 months used."
+    error_pattern: ""
+    detection_method: runtime_anomaly
+  diagnosis:
+    root_cause: "EF5 time unit 'm' means months, not minutes. Minutes = 'u'"
+    explanation: >
+      EF5 uses non-standard time unit codes: y=year, m=month, d=day, h=hour,
+      u=minute, s=second. TIMESTEP=5m means 5 MONTHS, not 5 minutes.
+      This is a common trap for users accustomed to standard time notation.
+    affected_components: [Task, TIMESTEP, FREQ]
+  remedy:
+    action: "Use 'u' for minutes: TIMESTEP=5u, FREQ=5u"
+    manual_steps:
+      - "Replace all 'm' time units intended as minutes with 'u'"
+      - "TIMESTEP=5u = 5 minutes, TIMESTEP=1h = 1 hour"
+      - "Verify FREQ in forcing sections also uses correct time codes"
+    prevention: "run_ef5.py preflight check warns when TIMESTEP ends with 'm'"
+  severity: silent
+  cross_references: []
+
+- id: dt_004
+  stage: s2_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Snow-17 never produces melt. Snow accumulates indefinitely."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Temperature in Kelvin instead of Celsius. EF5 expects degC."
+    explanation: >
+      Snow-17 uses temperature relative to a melt base temperature (MBASE, typically ~0°C).
+      If temperature is input in Kelvin (~273+), the model sees extreme positive
+      temperatures but the internal melt calculation still works on the assumption
+      of Celsius, leading to either excessive melt or (if MBASE is not adjusted)
+      no melt at all because the comparison logic fails.
+    affected_components: [TempForcing, Snow17Model]
+  remedy:
+    action: "Convert temperature to Celsius: T_C = T_K - 273.15"
+    manual_steps:
+      - "Check temperature values: should be -40 to +50°C for most regions"
+      - "If min temp > 200, data is likely in Kelvin"
+      - "Use UNIT=C for temperature-based PET (auto-converts)"
+    prevention: "Check temperature range in forcing data before running"
+  severity: silent
+  cross_references: []
+
+- id: dt_005
+  stage: s3_parameters
+  failure_domain: unit_conversion
+  symptom:
+    description: "CREST IM parameter has no effect, or model acts as 100% impervious."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "IM grid in 0-1 range multiplied by scalar that's also small, or IM > 100"
+    explanation: >
+      CREST IM (impervious area) is specified as 0-100 (percentage) in the config.
+      If no grid is provided, the scalar is divided by 100 internally.
+      If a grid IS provided, the scalar acts as a multiplier on grid values.
+      Grid in 0-1 range * scalar=5 = effective IM 0-5% (too low).
+      Grid in 0-100 range * scalar=5 = effective IM up to 500% (clamped to 100%).
+    affected_components: [CRESTModel, InitializeParameters]
+  remedy:
+    action: "Ensure IM grid is in 0-100 range with scalar=1.0, or 0-1 range with scalar=100"
+    manual_steps:
+      - "Check IM grid values: gdalinfo -stats im.tif"
+      - "If max ~1.0: grid is fractional, set IM scalar to convert to %"
+      - "If max ~100: grid is percentage, keep IM=1.0 or small"
+    prevention: "convert_params_to_ef5 outputs IM in 0-100 range"
+  severity: silent
+  cross_references: []
+
+# --- Configuration Errors ---
+
+- id: dt_006
+  stage: s4_config
+  failure_domain: configuration
+  symptom:
+    description: "EF5 prints startup banner then exits immediately with no error."
+    error_pattern: "No execute section"
+    detection_method: log_inspection
+  diagnosis:
+    root_cause: "Missing [Execute] section or TASK= line in control file"
+    explanation: >
+      EF5 requires an [Execute] section listing which tasks to run.
+      Without it, the program parses the config, finds nothing to execute,
+      and exits cleanly with no error message.
+    affected_components: [ExecuteConfigSection, ExecutionController]
+  remedy:
+    action: "Add [Execute] section with TASK= referencing the task block name"
+    manual_steps:
+      - "Add to control.txt: [Execute]\\nTASK=RunFF"
+      - "Verify task name matches a defined [Task NAME] block"
+    prevention: "run_ef5.py preflight checks for [Execute] section"
+  severity: obvious
+  cross_references: []
+
+- id: dt_007
+  stage: s4_config
+  failure_domain: configuration
+  symptom:
+    description: "Water flows in wrong direction. Downstream areas receive no runoff."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "DDM direction encoding mismatch — ESRIDDM=true but DDM uses TauDEM codes (or vice versa)"
+    explanation: >
+      ESRI uses power-of-2 encoding (1,2,4,8,16,32,64,128) while TauDEM uses
+      sequential (1-8). If ESRIDDM is set incorrectly, flow direction codes are
+      misinterpreted and water routes to wrong neighboring cells.
+    affected_components: [BasicConfigSection, BasicGrids]
+  remedy:
+    action: "Toggle ESRIDDM=true/false to match DDM source"
+    manual_steps:
+      - "Check DDM values: if max is 128, it's ESRI format (ESRIDDM=true)"
+      - "If max is 8, it's TauDEM format (ESRIDDM=false)"
+      - "Common values: ESRI={1,2,4,8,16,32,64,128}, TauDEM={1,2,3,4,5,6,7,8}"
+    prevention: "Validate DDM values match expected encoding before running"
+  severity: silent
+  cross_references: []
+
+- id: dt_008
+  stage: s4_config
+  failure_domain: configuration
+  symptom:
+    description: "Gauge output is empty or gauge not found in domain."
+    error_pattern: "not found"
+    detection_method: log_inspection
+  diagnosis:
+    root_cause: "Gauge LAT/LON swapped, or coordinates outside DEM extent"
+    explanation: >
+      EF5 Gauge blocks specify LON (longitude) and LAT (latitude) separately.
+      If coordinates are swapped (LON gets latitude value), the gauge projects
+      to a location outside the DEM domain. EF5 may silently skip the gauge.
+    affected_components: [GaugeConfigSection, LoadProjection]
+  remedy:
+    action: "Verify LON is longitude (-180 to 180) and LAT is latitude (-90 to 90)"
+    manual_steps:
+      - "Check: LON should be the E-W coordinate (e.g., -97 for Oklahoma, 117 for China)"
+      - "Check: LAT should be the N-S coordinate (e.g., 35 for Oklahoma, 33 for China)"
+      - "Verify coordinates are within DEM bounding box"
+    prevention: "run_ef5.py preflight validates gauge coordinates against DEM extent"
+  severity: obvious
+  cross_references: []
+
+- id: dt_009
+  stage: s4_config
+  failure_domain: configuration
+  symptom:
+    description: "EF5 cannot find precipitation files. All precipitation reads as zero."
+    error_pattern: "not found"
+    detection_method: log_inspection
+  diagnosis:
+    root_cause: "NAME pattern in PrecipForcing doesn't match actual filenames"
+    explanation: >
+      The NAME field uses date placeholders (YYYY, MM, DD, HH, UU, SS) that EF5
+      expands for each timestep. If the pattern doesn't match file naming convention,
+      files are not found and precipitation defaults to zero.
+    affected_components: [PrecipForcing, PrecipReader]
+  remedy:
+    action: "Match NAME pattern exactly to filenames in LOC directory"
+    manual_steps:
+      - "List actual files: ls /data/precip/ | head"
+      - "Set NAME= to match with date placeholders"
+      - "Example: files named 'rain_2009060112.tif' → NAME=rain_YYYYMMDDHH.tif"
+    prevention: "run_ef5.py preflight checks that at least one file matches the NAME pattern"
+  severity: obvious
+  cross_references: []
+
+# --- Spatial Data Errors ---
+
+- id: dt_010
+  stage: s1_basic
+  failure_domain: spatial
+  symptom:
+    description: "Gauge snaps to wrong cell. Reported contributing area doesn't match expected."
+    error_pattern: "area"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "SELFFAM mismatch — FAM includes/excludes current cell but config says opposite"
+    explanation: >
+      SELFFAM=true means the lowest FAM value is 1 (cell counts itself).
+      SELFFAM=false means the lowest is 0. If this is set wrong, EF5's area-matching
+      algorithm for gauge snapping may be off by one cell, placing the gauge on a
+      tributary instead of the main channel.
+    affected_components: [BasicConfigSection, CarveBasin]
+  remedy:
+    action: "Check minimum FAM value: if min=1, use SELFFAM=true; if min=0, use SELFFAM=false"
+    manual_steps:
+      - "gdalinfo -stats FAM.tif | grep Min"
+      - "If Min=1.0: SELFFAM=true"
+      - "If Min=0.0: SELFFAM=false"
+    prevention: "Verify basin area at gauge matches BASINAREA within 10%"
+  severity: silent
+  cross_references: []
+
+- id: dt_011
+  stage: s1_basic
+  failure_domain: spatial
+  symptom:
+    description: "Routing produces wrong distances and travel times. Velocities unrealistic."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "DEM elevation in feet instead of meters"
+    explanation: >
+      EF5 computes slopes from DEM values assuming meters. If the DEM is in feet,
+      slopes are 3.28x too steep, which affects kinematic wave routing speeds
+      and travel times through the watershed.
+    affected_components: [BasicGrids, KinematicRoute]
+  remedy:
+    action: "Convert DEM to meters: DEM_m = DEM_ft × 0.3048"
+    manual_steps:
+      - "Check DEM values: typical US elevation 0-4000m; if values reach 14000+, likely feet"
+      - "gdal_calc.py -A DEM.tif --outfile=DEM_m.tif --calc='A*0.3048'"
+    prevention: "Validate DEM range against known elevation for the region"
+  severity: silent
+  cross_references: []
+
+# --- Parameter Errors ---
+
+- id: dt_012
+  stage: s3_parameters
+  failure_domain: parameters
+  symptom:
+    description: "Flat hydrograph with no response to rainfall events."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "WM (max soil water capacity) too high — all precipitation infiltrates"
+    explanation: >
+      CREST WM controls how much water the soil column can hold. If WM is very high
+      (>1000mm), the variable infiltration curve allows nearly all precipitation to
+      infiltrate, producing no surface runoff. Combined with low FC (Ksat), interflow
+      is also minimal.
+    affected_components: [CRESTModel, WaterBalanceInt]
+  remedy:
+    action: "Reduce WM scalar or check WM grid values"
+    manual_steps:
+      - "Typical WM: 50-500mm for most soils"
+      - "Check: gdalinfo -stats wm.tif — mean should be 100-300mm"
+      - "If using scalar multiplier on grid, try reducing to 0.5"
+    prevention: "validate_param_grid checks WM range in convert_params_to_ef5"
+  severity: silent
+  cross_references: [dt_013]
+
+- id: dt_013
+  stage: s3_parameters
+  failure_domain: parameters
+  symptom:
+    description: "Excessive flashy response. Every rain event produces immediate large peak."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "WM too low, or IM too high — soil saturates instantly, everything becomes overland flow"
+    explanation: >
+      Very low WM (<20mm) means the soil column fills up almost immediately.
+      High IM (>30%) means a large fraction of rainfall bypasses infiltration entirely.
+      Both produce excessive direct runoff with minimal baseflow.
+    affected_components: [CRESTModel, WaterBalanceInt]
+  remedy:
+    action: "Increase WM, reduce IM, or increase FC to allow more infiltration"
+    manual_steps:
+      - "Increase WM scalar to 2.0-5.0 if using grid, or set WM=200-400 if uniform"
+      - "Reduce IM to <10% for rural basins"
+      - "Increase FC to allow subsurface flow"
+    prevention: "Start calibration with physically reasonable prior parameters"
+  severity: silent
+  cross_references: [dt_012]
+
+- id: dt_014
+  stage: s3_parameters
+  failure_domain: parameters
+  symptom:
+    description: "Kinematic wave routing produces zero or NaN streamflow."
+    error_pattern: "nan"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "ALPHA or BETA routing parameter is zero or negative"
+    explanation: >
+      KW routing uses Q = alpha * A^beta. If alpha=0, all discharge is zero.
+      If beta is negative, the power function can produce NaN for certain
+      cross-sectional areas. Both ALPHA and BETA must be positive.
+    affected_components: [KinematicRoute, RouteInt]
+  remedy:
+    action: "Set ALPHA > 0 (typical 1-10) and BETA > 0 (typical 0.5-1.0)"
+    manual_steps:
+      - "Check KWParamSet: ALPHA should be 1-10, BETA should be 0.5-1.0"
+      - "For Manning's: alpha ≈ 1/n * R^(2/3) * S^(1/2) / A^(beta-1)"
+    prevention: "Validate routing parameters are physically plausible before running"
+  severity: obvious
+  cross_references: []
+
+- id: dt_015
+  stage: s3_parameters
+  failure_domain: parameters
+  symptom:
+    description: "All grid cells treated as channel cells, or no channel cells at all."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "TH (channel threshold) too low or too high"
+    explanation: >
+      TH defines how many upstream cells are needed for a cell to be classified as
+      a channel. TH=1 means every cell is a channel (no hillslope routing).
+      TH=10000 on a small basin means no cells are channels.
+    affected_components: [KinematicRoute, InitializeParameters]
+  remedy:
+    action: "Set TH based on basin size: typically 5-100 cells"
+    manual_steps:
+      - "TH=5-10 for small basins (<100 km²)"
+      - "TH=50-100 for medium basins (100-10000 km²)"
+      - "TH=100+ for continental scale"
+    prevention: "Check FAM histogram to set reasonable TH"
+  severity: silent
+  cross_references: []
+
+# --- Runtime Errors ---
+
+- id: dt_016
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "EF5 crashes with segmentation fault during simulation."
+    error_pattern: "Segmentation fault"
+    detection_method: log_inspection
+  diagnosis:
+    root_cause: "Grid dimension mismatch between DEM, DDM, FAM, or forcing grids"
+    explanation: >
+      If DEM has 500×300 cells but DDM has 501×300, array index calculations
+      in the routing code can go out of bounds, causing a segfault.
+      Similarly, if forcing grids have different extent than basic grids,
+      spatial lookup can fail.
+    affected_components: [BasicGrids, PrecipReader]
+  remedy:
+    action: "Ensure all grids have identical dimensions and extent"
+    manual_steps:
+      - "Compare: gdalinfo DEM.tif DDM.tif FAM.tif — Size must match"
+      - "Check: xllcorner, yllcorner, cellsize must be identical"
+      - "Re-derive DDM and FAM from the same DEM"
+    prevention: "Preflight check in run_ef5.py validates grid dimensions"
+  severity: obvious
+  cross_references: []
+
+- id: dt_017
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "EF5 runs but output directory is empty. No time series written."
+    error_pattern: ""
+    detection_method: file_check
+  diagnosis:
+    root_cause: "OUTPUT path in Task section doesn't exist or has wrong permissions"
+    explanation: >
+      EF5 does not create the output directory automatically. If the specified
+      OUTPUT path doesn't exist, output files silently fail to write.
+    affected_components: [TaskConfigSection, Simulator]
+  remedy:
+    action: "Create the output directory before running: mkdir -p /path/to/output/"
+    manual_steps:
+      - "Check OUTPUT= path in [Task] section"
+      - "mkdir -p that directory"
+      - "Verify write permissions"
+    prevention: "run_ef5.py preflight creates output directory if needed"
+  severity: obvious
+  cross_references: []
+
+- id: dt_018
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "Calibration runs extremely slowly, never converges."
+    error_pattern: ""
+    detection_method: runtime_anomaly
+  diagnosis:
+    root_cause: "Preload forcings not cached — re-reading grids every iteration"
+    explanation: >
+      DREAM calibration runs thousands of iterations. Without PRELOAD_FILE,
+      EF5 re-reads all forcing grids from disk each iteration. With preloading,
+      forcings are cached to a binary file on first iteration.
+    affected_components: [Simulator, PreloadForcings]
+  remedy:
+    action: "Set PRELOAD_FILE in Task section for calibration runs"
+    manual_steps:
+      - "Add to [Task]: PRELOAD_FILE=/path/to/output/califorcings.bin"
+      - "EF5 creates the file on first run if it doesn't exist"
+      - "Subsequent iterations read from binary cache (much faster)"
+    prevention: "Always set PRELOAD_FILE for CALI_DREAM and CALI_ARS tasks"
+  severity: performance
+  cross_references: []
+
+- id: dt_019
+  stage: s6_output
+  failure_domain: validation
+  symptom:
+    description: "NSE looks good but PBIAS > 50%. Timing correct but volume very wrong."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Observed data in different units (cfs vs cms) or different datum"
+    explanation: >
+      EF5 outputs streamflow in m³/s (cms). USGS gauge data is typically in
+      cubic feet per second (cfs). 1 cfs = 0.0283168 cms. If observed data
+      is in cfs but compared directly to cms output, there is a 35x magnitude
+      difference that NSE partially compensates via mean subtraction but PBIAS catches.
+    affected_components: [parse_ef5_output, alignment]
+  remedy:
+    action: "Convert observed data: Q_cms = Q_cfs × 0.0283168"
+    manual_steps:
+      - "Check observed data units from gauge metadata"
+      - "If USGS: likely cfs — multiply by 0.0283168"
+      - "If GRDC: already cms"
+    prevention: "Always verify observed data units before computing metrics"
+  severity: silent
+  cross_references: []
+
+- id: dt_020
+  stage: s3_parameters
+  failure_domain: parameters
+  symptom:
+    description: "Node Soil Moisture warnings at startup. 'SM greater than WM' messages."
+    error_pattern: "Node Soil Moisture"
+    detection_method: log_inspection
+  diagnosis:
+    root_cause: "IWU (initial water %) is too high, or WM grid has very low values"
+    explanation: >
+      Initial soil moisture is computed as IWU * WM / 100. If IWU=80 and WM at a
+      cell is 50mm, initial SM = 40mm which is fine. But if IWU=100 and WM varies
+      spatially, some cells may have SM > WM due to floating point or grid value
+      interactions, triggering the warning and potential instability.
+    affected_components: [CRESTModel, InitializeParameters]
+  remedy:
+    action: "Reduce IWU to 50 or lower for initial runs; increase WM minimum"
+    manual_steps:
+      - "Set IWU=50 for a moderate initialization"
+      - "Check WM grid minimum: gdalinfo -stats wm.tif"
+      - "If WM minimum < 10, increase WM scalar"
+    prevention: "Use state files from a spin-up run instead of IWU for warm starts"
+  severity: warning
+  cross_references: [dt_012, dt_013]

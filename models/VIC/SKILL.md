@@ -12,6 +12,33 @@
 >
 > Before starting, run: `python preflight_check.py` (in this KI directory)
 > to verify that the model binary/package and required data are available.
+>
+> **DEBUGGING PROTOCOL** — When something goes wrong, follow this order:
+> 1. **Check triplets** — `diagnostics/triplets.yaml` may already cover this error
+> 2. **Read official docs** — The model's own documentation for expected formats/units
+> 3. **Find working examples** — Check `outputs/` or the model's shipped test data
+> 4. **Fix the tool** — With knowledge of what "correct" looks like
+>
+> Do NOT write custom debug scripts. The answers are in the docs and examples.
+
+---
+
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+VIC forcing tools are in `s2_forcing/` in this KI:
+- `s2_forcing/forcing_1d.py` — Consolidates regional CMFD/MSWX into 1D NetCDF per variable
+- `s2_forcing/process_forcing.py` — Generates per-cell VIC ASCII forcing (3-hourly, 7 columns)
+- `s2_forcing/forcing_nasa_power.py` — NASA POWER API fallback for non-CMFD/MSWX regions
+
+### Soil properties
+
+**Data Sources**: Use `from ki_tools_common.soil_utils import lookup_hwsd` for soil properties.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
+See `data_ki/HWSD/SKILL.md` for soil property documentation.
 
 ---
 

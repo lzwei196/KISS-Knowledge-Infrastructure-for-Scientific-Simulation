@@ -1,0 +1,472 @@
+# ============================================================================
+# CLASSIC Diagnostic Triplets
+# ============================================================================
+# 18 diagnostic triplets covering 5 failure domains.
+# Generated during CLASSIC knowledge dissection.
+# ============================================================================
+
+# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+
+- id: dt_001
+  stage: s1_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Soil temperatures unrealistically high (~300 K). Energy balance completely wrong. Sensible heat flux negative in summer."
+    error_pattern: "TBAR > 200"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Air temperature in Kelvin instead of Celsius — CLASSIC driver expects deg C"
+    explanation: >
+      CLASSIC's meteorological driver expects air temperature in degrees Celsius.
+      Internally the model converts to Kelvin. If the forcing file provides temperature
+      in Kelvin (e.g., 293 K), the model treats it as 293 deg C, resulting in extreme
+      temperatures that cascade through the entire energy balance.
+    affected_components: [convert_forcing_to_classic, metModule]
+  remedy:
+    action: "Subtract 273.15 from temperature values in forcing file"
+    tool_to_run: convert_forcing_to_classic
+    manual_steps:
+      - "Check max temperature in tmp.nc — should be < 60 deg C"
+      - "If values > 100, they are in Kelvin — subtract 273.15"
+    prevention: "validate_outputs() in convert_forcing_to_classic checks for T > 100"
+  severity: silent
+  cross_references: [dt_002]
+
+- id: dt_002
+  stage: s1_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Runoff is 86400x too high. Water balance completely broken. Flooding at every timestep."
+    error_pattern: "overflow"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Precipitation in mm/day instead of kg m-2 s-1"
+    explanation: >
+      CLASSIC expects precipitation as a rate in kg m-2 s-1. If forcing data is in
+      mm/day (common in reanalysis products), each timestep receives 86400 times too
+      much precipitation. 1 mm/day = 1/86400 kg/m2/s = 1.157e-5 kg/m2/s.
+    affected_components: [convert_forcing_to_classic, pre.nc]
+  remedy:
+    action: "Divide precipitation by 86400 to convert from mm/day to kg/m2/s"
+    tool_to_run: convert_forcing_to_classic
+    manual_steps:
+      - "Check max precip in pre.nc — should be < 0.1 kg/m2/s (~360 mm/hr)"
+      - "If max > 1.0, values are likely in mm/day — divide by 86400"
+      - "If max > 100, values are likely in mm/hr — divide by 3600"
+    prevention: "validate_outputs() checks for precip > 0.1"
+  severity: silent
+  cross_references: [dt_001]
+
+- id: dt_003
+  stage: s1_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Evapotranspiration 1000x too high. Soil dries out immediately. Unrealistic latent heat flux."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Specific humidity in g/kg instead of kg/kg"
+    explanation: >
+      CLASSIC expects specific humidity in kg/kg (dimensionless mass ratio).
+      Some datasets provide humidity in g/kg. If 10 g/kg is read as 10 kg/kg,
+      the atmosphere appears extremely moist, driving massive evaporation.
+    affected_components: [convert_forcing_to_classic, spfh.nc]
+  remedy:
+    action: "Divide specific humidity by 1000 to convert g/kg to kg/kg"
+    tool_to_run: convert_forcing_to_classic
+    manual_steps:
+      - "Check max spfh in spfh.nc — should be < 0.04 kg/kg"
+      - "If max > 1.0, values are in g/kg — divide by 1000"
+    prevention: "validate_outputs() checks for QA > 0.06"
+  severity: silent
+  cross_references: []
+
+- id: dt_004
+  stage: s1_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Atmospheric pressure unrealistically low. Wrong air density. Turbulent fluxes computed incorrectly."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Pressure in hPa or kPa instead of Pa"
+    explanation: >
+      CLASSIC expects surface pressure in Pascals (Pa). Standard sea-level pressure
+      is ~101325 Pa. If data is in hPa (1013.25) or kPa (101.325), the model
+      computes air density 100x or 1000x too low, affecting all turbulent flux
+      calculations.
+    affected_components: [convert_forcing_to_classic, pres.nc]
+  remedy:
+    action: "Multiply by 100 (hPa) or 1000 (kPa) to convert to Pa"
+    tool_to_run: convert_forcing_to_classic
+    manual_steps:
+      - "Check pressure range in pres.nc — should be 30000-110000 Pa"
+      - "If max < 2000, values are in hPa — multiply by 100"
+      - "If max < 200, values are in kPa — multiply by 1000"
+    prevention: "validate_outputs() checks for pressure < 30000"
+  severity: silent
+  cross_references: []
+
+- id: dt_005
+  stage: s1_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Model reads wrong dates. Seasonal cycle shifted or absent. Wrong year in output."
+    error_pattern: "time"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Time encoding uses CF 'days since' instead of CLASSIC's 'day as %Y%m%d.%f'"
+    explanation: >
+      CLASSIC uses a non-standard time encoding where the time value is YYYYMMDD.f
+      (e.g., 20010615.5 = noon June 15 2001). Standard CF convention uses 'days since
+      reference_date'. If CF-encoded times are read directly, the model interprets
+      them as dates in the year 0 or produces garbage dates.
+    affected_components: [convert_forcing_to_classic, all met files]
+  remedy:
+    action: "Rewrite time axis to YYYYMMDD.f format with units 'day as %Y%m%d.%f'"
+    tool_to_run: convert_forcing_to_classic
+    manual_steps:
+      - "ncdump -v time file.nc | head -20"
+      - "Time values should be > 18000000 (year 1800+)"
+      - "If values are small (< 100000), they are days-since — must convert"
+    prevention: "create_classic_met_nc() always writes correct time encoding"
+  severity: critical
+  cross_references: []
+
+- id: dt_006
+  stage: s2_soil_init
+  failure_domain: unit_conversion
+  symptom:
+    description: "Soil hydraulic properties wrong. Infiltration/drainage rates unrealistic. Sand content appears as 0."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Soil texture as fraction (0-1) instead of percentage (0-100)"
+    explanation: >
+      CLASSIC expects SAND, CLAY, ORGM as percentages (0-100). Some global soil
+      datasets (HWSD, SoilGrids) provide texture as mass fractions (0-1). If 0.65
+      (65% sand) is read as 0.65%, the soil is treated as nearly pure silt with
+      completely wrong hydraulic properties.
+    affected_components: [convert_soil_to_classic, init_file]
+  remedy:
+    action: "Multiply soil texture values by 100"
+    tool_to_run: convert_soil_to_classic
+    manual_steps:
+      - "Check SAND values in init file — mineral soils should have SAND 0-100"
+      - "If max SAND < 1.0, values are fractions — multiply by 100"
+    prevention: "validate_inputs() checks for max SAND < 1.0"
+  severity: silent
+  cross_references: []
+
+- id: dt_007
+  stage: s2_soil_init
+  failure_domain: unit_conversion
+  symptom:
+    description: "Carbon pools 1000x too large. Soil respiration enormous. NEP hugely negative."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Carbon pool initialization in gC/m2 instead of kgC/m2"
+    explanation: >
+      CLASSIC stores all carbon pools (gleafmas, stemmass, rootmass, litrmass,
+      soilcmas) in kgC/m2. Literature values are often reported in gC/m2 or
+      tC/ha. If 5000 gC/m2 is entered as 5000 kgC/m2, the pool is 1000x too
+      large, causing extreme respiration rates.
+    affected_components: [convert_soil_to_classic, init_file]
+  remedy:
+    action: "Divide carbon pool values by 1000 (gC to kgC) or by 100 (tC/ha to kgC/m2)"
+    tool_to_run: convert_soil_to_classic
+    manual_steps:
+      - "Typical soilcmas: 1-30 kgC/m2 (temperate), up to 100 kgC/m2 (peatlands)"
+      - "Typical stemmass: 0-20 kgC/m2 (forests)"
+      - "If values > 1000, likely in gC/m2"
+    prevention: "convert_soil_to_classic initializes with reasonable defaults"
+  severity: silent
+  cross_references: []
+
+# --- Configuration Errors ---
+
+- id: dt_008
+  stage: s3_configuration
+  failure_domain: configuration
+  symptom:
+    description: "Model crashes immediately with 'ZRFM < vegetation height' or similar error."
+    error_pattern: "ZRFM"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Reference height (ZRFM or ZRFH) set lower than vegetation canopy height"
+    explanation: >
+      CLASSIC requires the forcing reference height to be above the vegetation
+      canopy. For forests with 20+ m canopy, ZRFM=10 will cause a crash. The
+      model cannot compute surface-atmosphere exchange when the reference level
+      is within the canopy.
+    affected_components: [job_options_file, ZRFM, ZRFH]
+  remedy:
+    action: "Increase ZRFM and ZRFH to be above maximum vegetation height"
+    tool_to_run: null
+    manual_steps:
+      - "For forests: set ZRFH = ZRFM = 40-50 m"
+      - "For grassland: ZRFH = ZRFM = 10-40 m is fine"
+      - "For GCM data: use model lowest level height"
+    prevention: "Always check PFT heights vs reference heights before running"
+  severity: critical
+  cross_references: []
+
+- id: dt_009
+  stage: s3_configuration
+  failure_domain: configuration
+  symptom:
+    description: "Init file gets overwritten. Original initialization state lost after first run."
+    error_pattern: ""
+    detection_method: file_modification
+  diagnosis:
+    root_cause: "rs_file_to_overwrite points to same file as init_file"
+    explanation: >
+      CLASSIC writes restart data by overwriting the file specified in
+      rs_file_to_overwrite. If this is the same as init_file, the original
+      initialization is destroyed. Subsequent runs start from the end state
+      of the previous run instead of the intended initial state.
+    affected_components: [job_options_file]
+  remedy:
+    action: "Copy init_file to a separate restart file before running"
+    tool_to_run: null
+    manual_steps:
+      - "cp init_file.nc rsFile.nc"
+      - "Set rs_file_to_overwrite = 'rsFile.nc' in job options"
+    prevention: "Always use separate init and restart file paths"
+  severity: critical
+  cross_references: []
+
+- id: dt_010
+  stage: s3_configuration
+  failure_domain: configuration
+  symptom:
+    description: "Newton-Raphson iteration diverges. Surface temperature oscillates wildly. Model crashes with NaN."
+    error_pattern: "NaN"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "ITC, ITCG, or ITG set to 2 (Newton-Raphson) instead of 1 (bisection)"
+    explanation: >
+      The Newton-Raphson iteration scheme (ITC/ITCG/ITG=2) has known instabilities
+      and convergence failures in CLASSIC. The bisection method (=1) is slower but
+      always converges. The CLASSIC documentation explicitly warns against using
+      Newton-Raphson.
+    affected_components: [job_options_file, energBalVegSolve, energBalNoVegSolve]
+  remedy:
+    action: "Set ITC = 1, ITCG = 1, ITG = 1 in job options"
+    tool_to_run: null
+    manual_steps:
+      - "Edit job options file"
+      - "Change ITC, ITCG, ITG from 2 to 1"
+    prevention: "Template file already uses 1; don't change to 2"
+  severity: critical
+  cross_references: []
+
+# --- Dimension Mismatch ---
+
+- id: dt_011
+  stage: s3_configuration
+  failure_domain: dimension_mismatch
+  symptom:
+    description: "Segmentation fault on model startup. Array bounds violation in initialization."
+    error_pattern: "SIGSEGV"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "PFT count mismatch between run_parameters (ican/icc) and init_file dimensions"
+    explanation: >
+      The run_parameters namelist specifies ican (CLASS PFTs) and icc (CTEM PFTs).
+      These MUST match the dimensions in the initialization file. If the params say
+      ican=4, icc=9 but the init file has ic=5, icc=12 (e.g., shrubs+peatlands config),
+      array accesses go out of bounds.
+    affected_components: [run_parameters, init_file, classicParams]
+  remedy:
+    action: "Ensure ican and icc in run_parameters match ic and icc dimensions in init_file"
+    tool_to_run: null
+    manual_steps:
+      - "ncdump -h init_file.nc | grep 'ic\\|icc' to check dimensions"
+      - "Compare with ican and icc in run_parameters namelist"
+      - "Use matching template: standard (4/9), peatlands, or shrubs"
+    prevention: "Always use corresponding pairs of init_file and run_parameters"
+  severity: critical
+  cross_references: []
+
+# --- Missing Data / File Issues ---
+
+- id: dt_012
+  stage: s1_met_forcing
+  failure_domain: missing_data
+  symptom:
+    description: "Model starts but produces no output. Appears to hang or run indefinitely with no progress."
+    error_pattern: ""
+    detection_method: timeout
+  diagnosis:
+    root_cause: "Meteorological forcing starts at wrong timestep (not hour 0, minute 0, day 1)"
+    explanation: >
+      CLASSIC requires the first timestep to be at 0 hours, 0 minutes, day 1 of the
+      start year. In main.f90, the model looks for this specific timestep to initialize
+      various variables. If the first timestep is, e.g., 06:00 or day 2, the model
+      may produce weird behavior or fail silently.
+    affected_components: [metModule, main.f90]
+  remedy:
+    action: "Ensure meteorological data starts exactly at 00:00 on January 1 of readMetStartYear"
+    tool_to_run: convert_forcing_to_classic
+    manual_steps:
+      - "ncdump -v time met_file.nc | head -5"
+      - "First time value should be YYYY0101.0 (midnight Jan 1)"
+    prevention: "convert_forcing_to_classic ensures correct start timestep"
+  severity: critical
+  cross_references: []
+
+- id: dt_013
+  stage: s4_execution
+  failure_domain: missing_data
+  symptom:
+    description: "No gridcells found. Model exits immediately with message about no valid points."
+    error_pattern: "No valid gridcells"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Specified coordinates do not match any grid cell in the initialization file"
+    explanation: >
+      When running CLASSIC with lon/lat coordinates, the model searches the init_file
+      for the nearest grid cell. If the specified coordinates are far from any grid
+      cell in the file (e.g., providing lat=45 for a file containing only lat=-35),
+      no valid points are found.
+    affected_components: [CLASSIC.F90, modelStateDrivers]
+  remedy:
+    action: "Use coordinates that match the init_file grid, or use 0/0 for whole domain"
+    tool_to_run: null
+    manual_steps:
+      - "ncdump -v lat,lon init_file.nc to check available coordinates"
+      - "Use matching lon/lat or 0/0 shorthand"
+    prevention: "For site-level (single point), always use 0/0"
+  severity: critical
+  cross_references: []
+
+# --- Output Issues ---
+
+- id: dt_014
+  stage: s5_output
+  failure_domain: output
+  symptom:
+    description: "Annual output files exist but monthly/daily files are empty or missing."
+    error_pattern: ""
+    detection_method: file_check
+  diagnosis:
+    root_cause: "Monthly/daily output start year (JMOSTY/JDSTY) is after the simulation end year"
+    explanation: >
+      CLASSIC only writes monthly output starting from JMOSTY. If the simulation runs
+      1991-2000 but JMOSTY=2001, no monthly output is produced. Similarly for daily
+      output with JDSTY/JDENDY.
+    affected_components: [job_options_file, outputManager]
+  remedy:
+    action: "Set JMOSTY within the simulation period (readMetStartYear to readMetEndYear)"
+    tool_to_run: null
+    manual_steps:
+      - "Check simulation years in job options"
+      - "Set JMOSTY <= readMetStartYear (or first year of interest)"
+    prevention: "Always verify output year ranges match simulation period"
+  severity: medium
+  cross_references: []
+
+- id: dt_015
+  stage: s5_output
+  failure_domain: output
+  symptom:
+    description: "Carbon flux outputs (GPP, NPP, NEP) are all zero despite vegetation being present."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "ctem_on = .false. (physics-only mode) but expecting biogeochemistry outputs"
+    explanation: >
+      When ctem_on is set to .false., CLASSIC runs CLASS physics only. Carbon flux
+      variables (GPP, NPP, NEP, Ra, Rh) are not computed. The output files may be
+      created but contain zeros. LAI and canopy mass follow prescribed seasonal cycles
+      instead of being dynamically simulated.
+    affected_components: [job_options_file, ctemDriver]
+  remedy:
+    action: "Set ctem_on = .true. in job options for carbon cycle simulation"
+    tool_to_run: null
+    manual_steps:
+      - "Verify ctem_on = .true. in job options"
+      - "Ensure CO2File is specified and exists"
+      - "Ensure init_file has CTEM variables (fcancmx, gleafmas, etc.)"
+    prevention: "Use ctem_on = .true. for any carbon-related analysis"
+  severity: medium
+  cross_references: []
+
+- id: dt_016
+  stage: s5_output
+  failure_domain: output
+  symptom:
+    description: "NEP does not equal GPP - Ra - Rh. Carbon budget does not close."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "spinfast > 1 accelerates soil carbon decomposition, breaking the carbon balance"
+    explanation: >
+      When spinfast > 1, CLASSIC artificially accelerates soil carbon pool
+      decomposition to speed up spinup. This means Rh is artificially enhanced
+      and the standard carbon balance (NEP = GPP - Ra - Rh) does not hold.
+      Set spinfast = 1 for any run where carbon budget closure is expected.
+    affected_components: [job_options_file, heterotrophicRespirationMod]
+  remedy:
+    action: "Set spinfast = 1 for transient runs and budget analysis"
+    tool_to_run: null
+    manual_steps:
+      - "spinfast > 1 is only for spin-up"
+      - "Final spin-up and all transient runs must use spinfast = 1"
+    prevention: "Always check spinfast before analyzing carbon budgets"
+  severity: medium
+  cross_references: []
+
+# --- Compilation / Runtime ---
+
+- id: dt_017
+  stage: s4_execution
+  failure_domain: compilation
+  symptom:
+    description: "Linker error: cannot find -lnetcdff. Compilation fails at link stage."
+    error_pattern: "cannot find -lnetcdff"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "NetCDF Fortran development library not installed"
+    explanation: >
+      CLASSIC requires the netCDF Fortran library (libnetcdff) for reading/writing
+      netCDF files. The development package includes headers and .so files needed
+      for linking. Without it, the linker fails to find the netCDF Fortran symbols.
+    affected_components: [Makefile, fileIOModule]
+  remedy:
+    action: "Install libnetcdff-dev and verify with nf-config"
+    tool_to_run: null
+    manual_steps:
+      - "sudo apt install libnetcdff-dev"
+      - "nf-config --all  # verify installation"
+      - "make clean mode=serial && make mode=serial"
+    prevention: "Check dependencies before first compilation"
+  severity: critical
+  cross_references: []
+
+- id: dt_018
+  stage: s1_met_forcing
+  failure_domain: unit_conversion
+  symptom:
+    description: "Shortwave radiation has negative values. NaN appears in temperature calculations."
+    error_pattern: "NaN"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Night-time shortwave not clipped to zero after temporal interpolation"
+    explanation: >
+      When interpolating coarser-resolution forcing (e.g., 3-hourly) to the model
+      timestep (30 min), linear interpolation across the day-night boundary can
+      produce small negative shortwave values. These negative values can cause
+      numerical issues in the radiation calculations.
+    affected_components: [convert_forcing_to_classic, dswrf.nc]
+  remedy:
+    action: "Apply np.maximum(sw, 0.0) after any temporal interpolation"
+    tool_to_run: convert_forcing_to_classic
+    manual_steps:
+      - "Check min shortwave in dswrf.nc — must be >= 0"
+      - "If negative values exist, clip to zero"
+    prevention: "convert_forcing_to_classic applies SW >= 0 clipping by default"
+  severity: silent
+  cross_references: []

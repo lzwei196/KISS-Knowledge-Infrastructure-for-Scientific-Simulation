@@ -1,0 +1,143 @@
+model:
+  name: "CISM"
+  full_name: "Community Ice Sheet Model"
+  version: "2.1"
+  domain: "cryosphere -- land ice dynamics (ice sheets, ice shelves, glaciers)"
+  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/CISM/source/repo/builds/mpi/cism_driver/cism_driver"
+  language: "Fortran 90"
+  build_system: "CMake"
+  dynamical_cores:
+    - name: "Glide"
+      dycore_id: 0
+      description: "Shallow Ice Approximation (SIA), serial only"
+    - name: "Glissade"
+      dycore_id: 2
+      description: "Higher-order solver, supports MPI parallelism and Trilinos"
+
+inputs:
+  config:
+    format: "INI-style .config file"
+    key_sections: ["grid", "time", "options", "ho_options", "parameters", "CF input", "CF output"]
+  forcing:
+    - name: "topg"
+      unit: "m"
+      description: "Bedrock topography (negative below sea level)"
+      dimensions: "(y1, x1)"
+      valid_range: [-5000, 5000]
+    - name: "thk"
+      unit: "m"
+      description: "Initial ice thickness"
+      dimensions: "(y1, x1)"
+      valid_range: [0, 5000]
+    - name: "artm"
+      unit: "deg C"
+      description: "Annual mean surface air temperature"
+      dimensions: "(y1, x1)"
+      valid_range: [-60, 20]
+    - name: "acab"
+      unit: "m/yr"
+      description: "Surface mass balance (accumulation - ablation)"
+      dimensions: "(y1, x1)"
+      valid_range: [-10, 10]
+    - name: "beta"
+      unit: "Pa yr/m"
+      description: "Basal traction coefficient (staggered grid)"
+      dimensions: "(y0, x0)"
+      valid_range: [0, 1.0e+6]
+    - name: "bheatflx"
+      unit: "W/m^2"
+      description: "Basal heat flux (negative = upward)"
+      dimensions: "(y1, x1)"
+      valid_range: [-0.2, 0]
+  parameters:
+    critical:
+      - name: "default_flwa"
+        section: "[parameters]"
+        valid_range: [1.0e-18, 1.0e-15]
+        default: 1.0e-16
+        unit: "Pa^-n s^-1"
+        description: "Ice softness / flow rate factor"
+      - name: "flow_enhancement_factor"
+        section: "[parameters]"
+        valid_range: [0.5, 5.0]
+        default: 1.0
+        unit: "dimensionless"
+        description: "Multiplier on flow rate factor"
+      - name: "geothermal"
+        section: "[parameters]"
+        valid_range: [-0.1, -0.02]
+        default: -0.042
+        unit: "W/m^2"
+        description: "Geothermal heat flux (NEGATIVE = upward)"
+      - name: "ice_limit"
+        section: "[parameters]"
+        valid_range: [0.1, 100]
+        default: 1.0
+        unit: "m"
+        description: "Minimum ice thickness for dynamics"
+      - name: "dt"
+        section: "[time]"
+        valid_range: [0.01, 10]
+        default: 1.0
+        unit: "years"
+        description: "Dynamic timestep"
+
+outputs:
+  primary:
+    - name: "thk"
+      unit: "m"
+      description: "Ice thickness"
+      dimensions: "(time, y1, x1)"
+      valid_range: [0, 5000]
+    - name: "usurf"
+      unit: "m"
+      description: "Upper ice surface elevation"
+      dimensions: "(time, y1, x1)"
+      valid_range: [0, 5000]
+    - name: "uvel"
+      unit: "m/yr"
+      description: "x-velocity"
+      dimensions: "(time, level, y0, x0)"
+      valid_range: [-5000, 5000]
+    - name: "vvel"
+      unit: "m/yr"
+      description: "y-velocity"
+      dimensions: "(time, level, y0, x0)"
+      valid_range: [-5000, 5000]
+    - name: "velnorm"
+      unit: "m/yr"
+      description: "Velocity magnitude"
+      dimensions: "(time, level, y0, x0)"
+      valid_range: [0, 5000]
+    - name: "temp"
+      unit: "deg C"
+      description: "Ice temperature"
+      dimensions: "(time, level, y1, x1)"
+      valid_range: [-60, 0]
+  diagnostics:
+    - name: "iarea"
+      unit: "km^2"
+      description: "Total ice area"
+      dimensions: "(time)"
+    - name: "imass"
+      unit: "kg"
+      description: "Total ice mass"
+      dimensions: "(time)"
+    - name: "ivol"
+      unit: "km^3"
+      description: "Total ice volume"
+      dimensions: "(time)"
+
+known_issues:
+  - id: "dt_001"
+    description: "SMB in mm/yr instead of m/yr causes unbounded ice growth"
+    remedy: "Divide by 1000; CISM expects meters/year"
+  - id: "dt_003"
+    description: "Positive geothermal value reverses heat flux direction"
+    remedy: "CISM convention: negative = upward heat flux"
+  - id: "dt_005"
+    description: "Zero velocity with dycore=2 and which_ho_sparse=4 without Trilinos"
+    remedy: "Set which_ho_sparse=3 (Glissade PCG)"
+  - id: "dt_006"
+    description: "Grid spacing in km instead of m produces wrong velocity pattern"
+    remedy: "dew/dns must be in meters"

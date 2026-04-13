@@ -1,0 +1,611 @@
+Water surface is above the top of layer 2 in segment 2 at day 1.000
+
+ ************* Subtract layer 2 at Julian day = 2.461 NIT = 391  IZMIN =21  WaterBody =    1 *************
+
+ ************* Subtract layer 3 at Julian day = 3.861 NIT = 685  IZMIN =21  WaterBody =    1 *************
+
+ ************* Subtract layer 4 at Julian day = 5.234 NIT = 1009  IZMIN =21  WaterBody =    1 *************
+Computational warning at Julian day = 5.542 at segment 2
+timestep = 125.146 water surface deviation [Z] = 68.557 m  layer thickness = -67.547 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 5.542 at iteration 1118
+Computational warning at Julian day = 5.542
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 5.621 at segment 2
+timestep = 187.199 water surface deviation [Z] = 14.685 m  layer thickness = -13.675 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 5.621 at iteration 1220
+Computational warning at Julian day = 5.621
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 5.684 at segment 2
+timestep = 324.988 water surface deviation [Z] = 6.613 m  layer thickness = -5.603 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 5.684 at iteration 1317
+Computational warning at Julian day = 5.684
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 5.731 at segment 2
+timestep = 172.758 water surface deviation [Z] = 6.041 m  layer thickness = -5.031 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 5.731 at iteration 1409
+Computational warning at Julian day = 5.731
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 5.860 at segment 2
+timestep = 99.162 water surface deviation [Z] = 3.414 m  layer thickness = -2.404 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 5.860 at iteration 1553
+Computational warning at Julian day = 5.860
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 5.906 at segment 2
+timestep = 281.653 water surface deviation [Z] = 25.317 m  layer thickness = -24.307 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 5.906 at iteration 1646
+Computational warning at Julian day = 5.906
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 5.981 at segment 3
+timestep = 242.566 water surface deviation [Z] = 42.913 m  layer thickness = -41.903 m
+Negative surface layer thickness in segment 3
+  time step reduced to .100 s on day 5.981 at iteration 1770
+Computational warning at Julian day = 5.981
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.024 at segment 2
+timestep = 80.407 water surface deviation [Z] = 59.134 m  layer thickness = -58.124 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.024 at iteration 1862
+Computational warning at Julian day = 6.024
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.186 at segment 2
+timestep = 212.220 water surface deviation [Z] = 50.403 m  layer thickness = -49.393 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.186 at iteration 2059
+Computational warning at Julian day = 6.186
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.261 at segment 2
+timestep = 235.307 water surface deviation [Z] = 2.654 m  layer thickness = -1.644 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.261 at iteration 2175
+Computational warning at Julian day = 6.261
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.292 at segment 2
+timestep = 142.918 water surface deviation [Z] = 23.285 m  layer thickness = -22.275 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.292 at iteration 2260
+Computational warning at Julian day = 6.292
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.326 at segment 2
+timestep = 250.699 water surface deviation [Z] = 7.241 m  layer thickness = -6.231 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.326 at iteration 2346
+Computational warning at Julian day = 6.326
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.358 at segment 2
+timestep = 238.545 water surface deviation [Z] = 27.111 m  layer thickness = -26.101 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.358 at iteration 2432
+Computational warning at Julian day = 6.358
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.397 at segment 2
+timestep = 148.377 water surface deviation [Z] = 3.222 m  layer thickness = -2.212 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.397 at iteration 2523
+Computational warning at Julian day = 6.397
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.435 at segment 2
+timestep = 212.313 water surface deviation [Z] = 42.548 m  layer thickness = -41.538 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.435 at iteration 2614
+Computational warning at Julian day = 6.435
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+
+ ************* Subtract layer 5 at Julian day = 6.436 NIT = 2648  IZMIN =4  WaterBody =    1 *************
+Computational warning at Julian day = 6.474 at segment 2
+timestep = 299.907 water surface deviation [Z] = 33.368 m  layer thickness = -32.358 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.474 at iteration 2703
+Computational warning at Julian day = 6.474
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.506 at segment 2
+timestep = 247.857 water surface deviation [Z] = 9.770 m  layer thickness = -8.760 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.506 at iteration 2789
+Computational warning at Julian day = 6.506
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.538 at segment 3
+timestep = 85.131 water surface deviation [Z] = 3.054 m  layer thickness = -2.044 m
+Negative surface layer thickness in segment 3
+  time step reduced to .100 s on day 6.538 at iteration 2876
+Computational warning at Julian day = 6.538
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.606 at segment 2
+timestep = 239.573 water surface deviation [Z] = 53.870 m  layer thickness = -52.860 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.606 at iteration 2989
+Computational warning at Julian day = 6.606
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.648 at segment 2
+timestep = 291.429 water surface deviation [Z] = 42.739 m  layer thickness = -41.729 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.648 at iteration 3079
+Computational warning at Julian day = 6.648
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.681 at segment 3
+timestep = 164.202 water surface deviation [Z] = 202.848 m  layer thickness = -201.838 m
+Negative surface layer thickness in segment 3
+  time step reduced to .100 s on day 6.681 at iteration 3166
+Computational warning at Julian day = 6.681
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.711 at segment 2
+timestep = 225.324 water surface deviation [Z] = 47.657 m  layer thickness = -46.647 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.711 at iteration 3252
+Computational warning at Julian day = 6.711
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.746 at segment 3
+timestep = 116.872 water surface deviation [Z] = 25.362 m  layer thickness = -24.352 m
+Negative surface layer thickness in segment 3
+  time step reduced to .100 s on day 6.746 at iteration 3339
+Computational warning at Julian day = 6.746
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.781 at segment 3
+timestep = 58.172 water surface deviation [Z] = 154.591 m  layer thickness = -153.581 m
+Negative surface layer thickness in segment 3
+  time step reduced to .100 s on day 6.781 at iteration 3429
+Computational warning at Julian day = 6.781
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.813 at segment 2
+timestep = 107.167 water surface deviation [Z] = 17.474 m  layer thickness = -16.464 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.813 at iteration 3516
+Computational warning at Julian day = 6.813
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.841 at segment 2
+timestep = 194.215 water surface deviation [Z] = 46.913 m  layer thickness = -45.903 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.841 at iteration 3600
+Computational warning at Julian day = 6.841
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.867 at segment 3
+timestep = 225.324 water surface deviation [Z] = 2.104 m  layer thickness = -1.094 m
+Negative surface layer thickness in segment 3
+  time step reduced to .100 s on day 6.867 at iteration 3683
+Computational warning at Julian day = 6.867
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.895 at segment 2
+timestep = 225.324 water surface deviation [Z] = 28.344 m  layer thickness = -27.334 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.895 at iteration 3768
+Computational warning at Julian day = 6.895
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.945 at segment 2
+timestep = 202.218 water surface deviation [Z] = 3.167 m  layer thickness = -2.157 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.945 at iteration 3875
+Computational warning at Julian day = 6.945
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 6.995 at segment 2
+timestep = 227.102 water surface deviation [Z] = 8.338 m  layer thickness = -7.328 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 6.995 at iteration 3976
+Computational warning at Julian day = 6.995
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 7.028 at segment 2
+timestep = 247.857 water surface deviation [Z] = 37.649 m  layer thickness = -36.639 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 7.028 at iteration 4062
+Computational warning at Julian day = 7.028
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 7.091 at segment 2
+timestep = 71.651 water surface deviation [Z] = 97.429 m  layer thickness = -96.419 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 7.091 at iteration 4191
+Computational warning at Julian day = 7.091
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 7.171 at segment 2
+timestep = 345.167 water surface deviation [Z] = 45.559 m  layer thickness = -44.549 m
+Negative surface layer thickness in segment 2
+  time step reduced to .100 s on day 7.171 at iteration 4302
+Computational warning at Julian day = 7.171
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 7.201 at segment 4
+timestep = 65.721 water surface deviation [Z] = 1.871 m  layer thickness = -.861 m
+Negative surface layer thickness in segment 4
+  time step reduced to .100 s on day 7.201 at iteration 4389
+Computational warning at Julian day = 7.201
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 7.229 at segment 3
+timestep = 167.034 water surface deviation [Z] = 4.493 m  layer thickness = -3.483 m
+Negative surface layer thickness in segment 3
+  time step reduced to .100 s on day 7.229 at iteration 4473
+Computational warning at Julian day = 7.229
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 7.286 at segment 4
+timestep = 273.477 water surface deviation [Z] = 1.935 m  layer thickness = -.925 m
+Negative surface layer thickness in segment 4
+  time step reduced to .100 s on day 7.286 at iteration 4575
+Computational warning at Julian day = 7.286
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 7.327 at segment 3
+timestep = 144.875 water surface deviation [Z] = 16.176 m  layer thickness = -15.166 m
+Negative surface layer thickness in segment 3
+  time step reduced to .100 s on day 7.327 at iteration 4667
+Computational warning at Julian day = 7.327
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 7.365 at segment 4
+timestep = 77.746 water surface deviation [Z] = 7.238 m  layer thickness = -6.228 m
+Negative surface layer thickness in segment 4
+  time step reduced to .100 s on day 7.365 at iteration 4759
+Computational warning at Julian day = 7.365
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 7.417 at segment 3
+timestep = 177.229 water surface deviation [Z] = 29.277 m  layer thickness = -28.267 m
+Negative surface layer thickness in segment 3
+  time step reduced to .100 s on day 7.417 at iteration 4859
+Computational warning at Julian day = 7.417
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+
+ ************* Subtract layer 6 at Julian day = 7.417 NIT = 4874  IZMIN =4  WaterBody =    1 *************
+
+                  Subtract segments 2 through 3
+
+ ************* Subtract layer 7 at Julian day = 9.278 NIT = 5341  IZMIN =23  WaterBody =    1 *************
+Computational warning at Julian day = 9.954 at segment 5
+timestep = 246.325 water surface deviation [Z] = 1.170 m  layer thickness = -.160 m
+Negative surface layer thickness in segment 5
+  time step reduced to .100 s on day 9.954 at iteration 5488
+Computational warning at Julian day = 9.954
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 10.062 at segment 5
+timestep = 147.134 water surface deviation [Z] = 5.346 m  layer thickness = -4.336 m
+Negative surface layer thickness in segment 5
+  time step reduced to .100 s on day 10.062 at iteration 5597
+Computational warning at Julian day = 10.062
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 10.146 at segment 4
+timestep = 397.116 water surface deviation [Z] = 1.043 m  layer thickness = -.033 m
+Negative surface layer thickness in segment 4
+  time step reduced to .100 s on day 10.146 at iteration 5698
+Computational warning at Julian day = 10.146
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 10.208 at segment 6
+timestep = 160.119 water surface deviation [Z] = 3.905 m  layer thickness = -2.895 m
+Negative surface layer thickness in segment 6
+  time step reduced to .100 s on day 10.208 at iteration 5794
+Computational warning at Julian day = 10.208
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 10.276 at segment 5
+timestep = 219.313 water surface deviation [Z] = 3.869 m  layer thickness = -2.859 m
+Negative surface layer thickness in segment 5
+  time step reduced to .100 s on day 10.276 at iteration 5893
+Computational warning at Julian day = 10.276
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 10.405 at segment 6
+timestep = 155.926 water surface deviation [Z] = 1.308 m  layer thickness = -.298 m
+Negative surface layer thickness in segment 6
+  time step reduced to .100 s on day 10.405 at iteration 6043
+Computational warning at Julian day = 10.405
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 10.448 at segment 5
+timestep = 266.814 water surface deviation [Z] = 2.682 m  layer thickness = -1.672 m
+Negative surface layer thickness in segment 5
+  time step reduced to .100 s on day 10.448 at iteration 6133
+Computational warning at Julian day = 10.448
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 10.485 at segment 5
+timestep = 272.643 water surface deviation [Z] = 1.464 m  layer thickness = -.454 m
+Negative surface layer thickness in segment 5
+  time step reduced to .100 s on day 10.485 at iteration 6221
+Computational warning at Julian day = 10.485
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+
+ ************* Subtract layer 8 at Julian day = 10.562 NIT = 6336  IZMIN =6  WaterBody =    1 *************
+
+                  Subtract segments 4 through 5
+
+ ************* Subtract layer 9 at Julian day = 11.842 NIT = 6620  IZMIN =21  WaterBody =    1 *************
+
+ ************* Subtract layer 10 at Julian day = 12.843 NIT = 6839  IZMIN =10  WaterBody =    1 *************
+Computational warning at Julian day = 13.348 at segment 9
+timestep = 230.408 water surface deviation [Z] = 2.443 m  layer thickness = -1.433 m
+Negative surface layer thickness in segment 9
+  time step reduced to .100 s on day 13.348 at iteration 6991
+Computational warning at Julian day = 13.348
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 13.423 at segment 10
+timestep = 228.219 water surface deviation [Z] = 3.091 m  layer thickness = -2.081 m
+Negative surface layer thickness in segment 10
+  time step reduced to .100 s on day 13.423 at iteration 7091
+Computational warning at Julian day = 13.423
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 13.526 at segment 10
+timestep = 309.015 water surface deviation [Z] = 1.619 m  layer thickness = -.609 m
+Negative surface layer thickness in segment 10
+  time step reduced to .100 s on day 13.526 at iteration 7236
+Computational warning at Julian day = 13.526
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 13.573 at segment 10
+timestep = 329.898 water surface deviation [Z] = 1.232 m  layer thickness = -.222 m
+Negative surface layer thickness in segment 10
+  time step reduced to .100 s on day 13.573 at iteration 7327
+Computational warning at Julian day = 13.573
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 13.648 at segment 10
+timestep = 137.287 water surface deviation [Z] = 1.858 m  layer thickness = -.848 m
+Negative surface layer thickness in segment 10
+  time step reduced to .100 s on day 13.648 at iteration 7438
+Computational warning at Julian day = 13.648
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+
+ ************* Subtract layer 11 at Julian day = 13.696 NIT = 7536  IZMIN =10  WaterBody =    1 *************
+
+                  Subtract segments 6 through 9
+
+ ************* Subtract layer 12 at Julian day = 14.633 NIT = 7752  IZMIN =21  WaterBody =    1 *************
+Computational warning at Julian day = 15.244 at segment 11
+timestep = 294.737 water surface deviation [Z] = 1.586 m  layer thickness = -.576 m
+Negative surface layer thickness in segment 11
+  time step reduced to .100 s on day 15.244 at iteration 7976
+Computational warning at Julian day = 15.244
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 15.379 at segment 11
+timestep = 359.904 water surface deviation [Z] = 1.094 m  layer thickness = -.084 m
+Negative surface layer thickness in segment 11
+  time step reduced to .100 s on day 15.379 at iteration 8120
+Computational warning at Julian day = 15.379
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 15.538 at segment 11
+timestep = 195.208 water surface deviation [Z] = 3.014 m  layer thickness = -2.004 m
+Negative surface layer thickness in segment 11
+  time step reduced to .100 s on day 15.538 at iteration 8285
+Computational warning at Julian day = 15.538
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+
+ ************* Subtract layer 13 at Julian day = 15.574 NIT = 8373  IZMIN =12  WaterBody =    1 *************
+Computational warning at Julian day = 15.584 at segment 10
+timestep = 185.368 water surface deviation [Z] = 1.499 m  layer thickness = -.489 m
+Negative surface layer thickness in segment 10
+  time step reduced to .100 s on day 15.584 at iteration 8378
+Computational warning at Julian day = 15.584
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 15.708 at segment 11
+timestep = 157.855 water surface deviation [Z] = 12.843 m  layer thickness = -11.833 m
+Negative surface layer thickness in segment 11
+  time step reduced to .100 s on day 15.708 at iteration 8523
+Computational warning at Julian day = 15.708
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 15.784 at segment 10
+timestep = 187.068 water surface deviation [Z] = 1.669 m  layer thickness = -.659 m
+Negative surface layer thickness in segment 10
+  time step reduced to .100 s on day 15.784 at iteration 8638
+Computational warning at Julian day = 15.784
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 15.824 at segment 10
+timestep = 231.513 water surface deviation [Z] = 3.366 m  layer thickness = -2.356 m
+Negative surface layer thickness in segment 10
+  time step reduced to .100 s on day 15.824 at iteration 8727
+Computational warning at Julian day = 15.824
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 15.871 at segment 11
+timestep = 225.564 water surface deviation [Z] = 1.542 m  layer thickness = -.532 m
+Negative surface layer thickness in segment 11
+  time step reduced to .100 s on day 15.871 at iteration 8818
+Computational warning at Julian day = 15.871
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 15.946 at segment 11
+timestep = 141.293 water surface deviation [Z] = 1.171 m  layer thickness = -.161 m
+Negative surface layer thickness in segment 11
+  time step reduced to .100 s on day 15.946 at iteration 8941
+Computational warning at Julian day = 15.946
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 15.991 at segment 11
+timestep = 216.912 water surface deviation [Z] = 1.208 m  layer thickness = -.198 m
+Negative surface layer thickness in segment 11
+  time step reduced to .100 s on day 15.991 at iteration 9032
+Computational warning at Julian day = 15.991
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 16.151 at segment 11
+timestep = 212.454 water surface deviation [Z] = 5.360 m  layer thickness = -4.350 m
+Negative surface layer thickness in segment 11
+  time step reduced to .100 s on day 16.151 at iteration 9209
+Computational warning at Julian day = 16.151
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 16.194 at segment 10
+timestep = 305.901 water surface deviation [Z] = 10.144 m  layer thickness = -9.134 m
+Negative surface layer thickness in segment 10
+  time step reduced to .100 s on day 16.194 at iteration 9300
+Computational warning at Julian day = 16.194
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 16.262 at segment 12
+timestep = 136.626 water surface deviation [Z] = 1.141 m  layer thickness = -.131 m
+Negative surface layer thickness in segment 12
+  time step reduced to .100 s on day 16.262 at iteration 9412
+Computational warning at Julian day = 16.262
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 16.292 at segment 12
+timestep = 164.136 water surface deviation [Z] = 1.372 m  layer thickness = -.362 m
+Negative surface layer thickness in segment 12
+  time step reduced to .100 s on day 16.292 at iteration 9497
+Computational warning at Julian day = 16.292
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+
+ ************* Subtract layer 14 at Julian day = 16.402 NIT = 9668  IZMIN =12  WaterBody =    1 *************
+
+                  Subtract segments 10 through 11
+
+ ************* Subtract layer 15 at Julian day = 17.213 NIT = 9914  IZMIN =36  WaterBody =    1 *************
+
+ ************* Subtract layer 16 at Julian day = 17.887 NIT = 10121  IZMIN =36  WaterBody =    1 *************
+Computational warning at Julian day = 18.230 at segment 12
+timestep = 253.957 water surface deviation [Z] = 1.194 m  layer thickness = -.184 m
+Negative surface layer thickness in segment 12
+  time step reduced to .100 s on day 18.230 at iteration 10227
+Computational warning at Julian day = 18.230
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 18.321 at segment 13
+timestep = 124.510 water surface deviation [Z] = 1.787 m  layer thickness = -.777 m
+Negative surface layer thickness in segment 13
+  time step reduced to .100 s on day 18.321 at iteration 10352
+Computational warning at Julian day = 18.321
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 18.377 at segment 13
+timestep = 211.044 water surface deviation [Z] = 7.816 m  layer thickness = -6.806 m
+Negative surface layer thickness in segment 13
+  time step reduced to .100 s on day 18.377 at iteration 10447
+Computational warning at Julian day = 18.377
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 18.429 at segment 13
+timestep = 275.719 water surface deviation [Z] = 1.961 m  layer thickness = -.951 m
+Negative surface layer thickness in segment 13
+  time step reduced to .100 s on day 18.429 at iteration 10541
+Computational warning at Julian day = 18.429
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+
+ ************* Subtract layer 17 at Julian day = 18.473 NIT = 10634  IZMIN =13  WaterBody =    1 *************
+
+                  Subtract segments 12 through 12
+
+ ************* Subtract layer 18 at Julian day = 19.506 NIT = 10952  IZMIN =24  WaterBody =    1 *************
+
+ ************* Subtract layer 19 at Julian day = 20.655 NIT = 11717  IZMIN =16  WaterBody =    1 *************
+Computational warning at Julian day = 21.081 at segment 16
+timestep = 220.625 water surface deviation [Z] = 1.502 m  layer thickness = -.492 m
+Negative surface layer thickness in segment 16
+  time step reduced to .100 s on day 21.081 at iteration 11943
+Computational warning at Julian day = 21.081
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 21.213 at segment 16
+timestep = 223.947 water surface deviation [Z] = 1.368 m  layer thickness = -.358 m
+Negative surface layer thickness in segment 16
+  time step reduced to .100 s on day 21.213 at iteration 12074
+Computational warning at Julian day = 21.213
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 21.351 at segment 16
+timestep = 288.655 water surface deviation [Z] = 1.164 m  layer thickness = -.154 m
+Negative surface layer thickness in segment 16
+  time step reduced to .100 s on day 21.351 at iteration 12208
+Computational warning at Julian day = 21.351
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 21.466 at segment 16
+timestep = 241.462 water surface deviation [Z] = 1.396 m  layer thickness = -.386 m
+Negative surface layer thickness in segment 16
+  time step reduced to .100 s on day 21.466 at iteration 12332
+Computational warning at Julian day = 21.466
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 21.557 at segment 16
+timestep = 253.304 water surface deviation [Z] = 1.119 m  layer thickness = -.109 m
+Negative surface layer thickness in segment 16
+  time step reduced to .100 s on day 21.557 at iteration 12469
+Computational warning at Julian day = 21.557
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 21.746 at segment 16
+timestep = 244.812 water surface deviation [Z] = 1.235 m  layer thickness = -.225 m
+Negative surface layer thickness in segment 16
+  time step reduced to .100 s on day 21.746 at iteration 12673
+Computational warning at Julian day = 21.746
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+
+ ************* Subtract layer 20 at Julian day = 21.803 NIT = 12780  IZMIN =24  WaterBody =    1 *************
+
+                  Subtract segments 13 through 15
+
+ ************* Subtract layer 21 at Julian day = 22.674 NIT = 13086  IZMIN =24  WaterBody =    1 *************
+
+ ************* Subtract layer 22 at Julian day = 23.340 NIT = 13356  IZMIN =36  WaterBody =    1 *************
+Computational warning at Julian day = 23.662 at segment 19
+timestep = 227.683 water surface deviation [Z] = 1.867 m  layer thickness = -.857 m
+Negative surface layer thickness in segment 19
+  time step reduced to .100 s on day 23.662 at iteration 13487
+Computational warning at Julian day = 23.662
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+Computational warning at Julian day = 23.718 at segment 19
+timestep = 169.232 water surface deviation [Z] = 2.602 m  layer thickness = -1.592 m
+Negative surface layer thickness in segment 19
+  time step reduced to .100 s on day 23.718 at iteration 13583
+Computational warning at Julian day = 23.718
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+
+ ************* Subtract layer 23 at Julian day = 23.893 NIT = 13783  IZMIN =36  WaterBody =    1 *************
+
+                  Subtract segments 16 through 18
+
+ ************* Subtract layer 24 at Julian day = 24.388 NIT = 13988  IZMIN =36  WaterBody =    1 *************
+
+ ************* Subtract layer 25 at Julian day = 24.832 NIT = 14176  IZMIN =36  WaterBody =    1 *************
+Computational warning at Julian day = 25.174 at segment 22
+timestep = 217.293 water surface deviation [Z] = 1.583 m  layer thickness = -.573 m
+Negative surface layer thickness in segment 22
+  time step reduced to .100 s on day 25.174 at iteration 14338
+Computational warning at Julian day = 25.174
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+
+ ************* Subtract layer 26 at Julian day = 25.241 NIT = 14446  IZMIN =22  WaterBody =    1 *************
+
+                  Subtract segments 19 through 21
+
+ ************* Subtract layer 27 at Julian day = 25.644 NIT = 14644  IZMIN =36  WaterBody =    1 *************
+
+ ************* Subtract layer 28 at Julian day = 26.018 NIT = 14832  IZMIN =36  WaterBody =    1 *************
+
+ ************* Subtract layer 29 at Julian day = 26.303 NIT = 14977  IZMIN =25  WaterBody =    1 *************
+
+                  Subtract segments 22 through 24
+
+ ************* Subtract layer 30 at Julian day = 26.618 NIT = 15140  IZMIN =36  WaterBody =    1 *************
+
+ ************* Subtract layer 31 at Julian day = 26.852 NIT = 15262  IZMIN =36  WaterBody =    1 *************
+
+ ************* Subtract layer 32 at Julian day = 27.052 NIT = 15373  IZMIN =36  WaterBody =    1 *************
+
+ ************* Subtract layer 33 at Julian day = 27.220 NIT = 15472  IZMIN =36  WaterBody =    1 *************
+
+ ************* Subtract layer 34 at Julian day = 27.354 NIT = 15552  IZMIN =36  WaterBody =    1 *************
+
+                  Subtract segments 25 through 25
+Computational warning at Julian day = 27.453 at segment 31
+timestep = 161.901 water surface deviation [Z] = 1.184 m  layer thickness = -.174 m
+Negative surface layer thickness in segment 31
+  time step reduced to .100 s on day 27.453 at iteration 15613
+Computational warning at Julian day = 27.453
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+
+ ************* Subtract layer 35 at Julian day = 27.469 NIT = 15691  IZMIN =36  WaterBody =    1 *************
+
+                  Subtract segments 26 through 30
+
+ ************* Subtract layer 36 at Julian day = 27.569 NIT = 15753  IZMIN =36  WaterBody =    1 *************
+
+ ************* Subtract layer 37 at Julian day = 27.659 NIT = 15807  IZMIN =36  WaterBody =    1 *************
+Computational warning at Julian day = 27.733 at segment 32
+timestep = 155.106 water surface deviation [Z] = 2.959 m  layer thickness = -1.949 m
+Negative surface layer thickness in segment 32
+  time step reduced to .100 s on day 27.733 at iteration 15854
+Computational warning at Julian day = 27.733
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+
+ ************* Subtract layer 38 at Julian day = 27.740 NIT = 15922  IZMIN =33  WaterBody =    1 *************
+
+                  Subtract segments 31 through 31
+
+ ************* Subtract layer 39 at Julian day = 27.805 NIT = 15966  IZMIN =36  WaterBody =    1 *************
+
+ ************* Subtract layer 40 at Julian day = 27.861 NIT = 16001  IZMIN =36  WaterBody =    1 *************
+Computational warning at Julian day = 27.896 at segment 32
+timestep = 94.946 water surface deviation [Z] = 2.351 m  layer thickness = -1.341 m
+Negative surface layer thickness in segment 32
+  time step reduced to .100 s on day 27.896 at iteration 16024
+Computational warning at Julian day = 27.896
+ timestep = .090 sec: DLT<DLTMIN set DLT=DLTMIN
+
+ ************* Subtract layer 41 at Julian day = 27.896 NIT = 16065  IZMIN =33  WaterBody =    1 *************
+
+                  Subtract segments 32 through 32
+
+ ************* Subtract layer 42 at Julian day = 27.929 NIT = 16113  IZMIN =36  WaterBody =    1 *************
+
+ ************* Subtract layer 43 at Julian day = 27.953 NIT = 16127  IZMIN =36  WaterBody =    1 *************
+
+ ************* Subtract layer 44 at Julian day = 27.969 NIT = 16138  IZMIN =36  WaterBody =    1 *************
+
+                  Subtract segments 33 through 35
+
+ ************* Subtract layer 45 at Julian day = 27.974 NIT = 16142  IZMIN =36  WaterBody =    1 *************
+Computational warning at Julian day = 27.981 at segment 36
+timestep = .100 water surface deviation [Z] = 1.010 m  layer thickness = -.000 m

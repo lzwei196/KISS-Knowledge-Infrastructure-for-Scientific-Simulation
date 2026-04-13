@@ -1,8 +1,8 @@
 # Knowledge Dissection Toolkit — Changelog
 
-## v5.0.1 (2026-04-12) — "SUMMA Deep Dive"
+## v5.0.1 (2026-04-13) — "SUMMA Deep Dive"
 
-Post-release patch: 7 bugs fixed in SUMMA KI through systematic source-code analysis + Bengbu revalidation. New cross-model pattern for land cover classification mismatch.
+Post-release patch: 8 bugs fixed in SUMMA KI through systematic source-code analysis + Bengbu revalidation. Final result: **NSE=0.393, r=0.652, PBIAS=-15%** (uncalibrated, Bengbu 1981-1985). New cross-model patterns for land cover classification mismatch and mixed output units.
 
 ### Fixed: SUMMA KI (7 bugs, 6 new triplets, 1 new tool)
 

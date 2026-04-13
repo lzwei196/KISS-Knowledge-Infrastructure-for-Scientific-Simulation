@@ -688,6 +688,45 @@ triplets:
     severity: "silent"
     cross_references: ["dt_003", "cm_001"]
 
+  - id: dt_025
+    stage: "s6_execution"
+    failure_domain: "unit_conversion"
+    symptom:
+      description: "SUMMA appears to produce zero runoff (PBIAS=-99.9%) despite correct precipitation and ET. Water balance appears to have a 1000 mm/yr gap."
+      error_pattern: "PBIAS.*-99|runoff.*0 mm|RainPlusMelt.*1 mm"
+      detection_method: "output_check"
+    diagnosis:
+      root_cause: "SUMMA output variables use MIXED UNITS: some in kg/m²/s (=mm/s), others in m/s. A factor of 1000 difference."
+      explanation: >
+        SUMMA's computFlux.f90 divides throughfall (kg/m²/s) by iden_water (1000 kg/m³) to
+        get RainPlusMelt in m/s. Other variables like scalarThroughfallRain and scalarTotalET
+        remain in kg/m²/s. When computing discharge Q=runoff×area, the correct formula is
+        Q(m³/s) = scalarTotalRunoff(m/s) × HRUarea(m²) — NO division by 1000.
+        If you divide by 1000 (assuming kg/m²/s), Q is 1000x too low.
+
+        Variables in m/s:  scalarTotalRunoff, scalarRainPlusMelt, scalarInfiltration,
+                           scalarSoilDrainage, scalarSurfaceRunoff, averageRoutedRunoff
+        Variables in kg/m²/s: scalarThroughfallRain, scalarThroughfallSnow, scalarTotalET,
+                              scalarCanopyEvaporation, scalarGroundEvaporation, pptrate
+
+        This cost 2 days of debugging (2026-04-11 to 2026-04-12). The model was producing
+        realistic runoff (508 mm/yr) the entire time.
+      affected_components:
+        - "parse_summa_output.py discharge calculation"
+        - "Any post-processing that converts runoff to m³/s"
+    remedy:
+      action: "Check the 'units' attribute of each output variable. Use Q = scalarTotalRunoff(m/s) × area(m²). Do NOT divide by 1000."
+      tool_to_run: ""
+      manual_steps:
+        - "ncdump -h output.nc | grep 'units' to see m s-1 vs kg m-2 s-1"
+        - "For Q: Q_m3s = scalarTotalRunoff * HRUarea (both in SI, result is m³/s)"
+        - "For water balance: convert all to mm/yr using the correct factor per unit"
+        - "  kg/m²/s → mm/yr: multiply by 86400 × 365"
+        - "  m/s → mm/yr: multiply by 86400 × 365 × 1000"
+      prevention: "Always check units attribute before computing. Add unit check to parse_summa_output.py."
+    severity: "silent"
+    cross_references: ["cm_001"]
+
   - id: dt_024
     stage: "s1_domain_setup"
     failure_domain: "classification_mismatch"

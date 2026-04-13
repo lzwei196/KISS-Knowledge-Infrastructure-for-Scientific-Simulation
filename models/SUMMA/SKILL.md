@@ -123,7 +123,20 @@ Reference values from SOILPARM.TBL: Sand=-3.524, Loamy Sand=-3.475, Loam=-1.112,
 
 **Positive values cause NaN** in the Richards equation solver (`soil_utils.f90:volFracLiq`).
 
-### 3. Unit Conversions (Silent Error Zone)
+### 3. CRITICAL: Output Mixed Units (dt_025 — cost 2 days to find)
+
+SUMMA output variables use **two different unit systems in the same file**:
+
+| Unit | Variables | mm/yr conversion |
+|------|-----------|-----------------|
+| **m/s** | scalarTotalRunoff, scalarRainPlusMelt, scalarInfiltration, scalarSoilDrainage, scalarSurfaceRunoff, averageRoutedRunoff | × 86400 × 365 × **1000** |
+| **kg/m²/s** | scalarThroughfallRain, scalarTotalET, pptrate, scalarCanopyEvaporation, scalarGroundEvaporation | × 86400 × 365 |
+
+**Discharge: Q(m³/s) = scalarTotalRunoff(m/s) × HRUarea(m²).** Do NOT divide by 1000.
+
+**Sign convention:** Negative ET = evaporation (water leaving surface). Positive = condensation.
+
+### 4. Input Unit Conversions (Silent Error Zone)
 
 | Variable | VIC Unit | SUMMA Unit | Conversion | If wrong |
 |----------|----------|------------|------------|----------|

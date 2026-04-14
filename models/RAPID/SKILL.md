@@ -32,6 +32,16 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: This model takes runoff from upstream hydrological models (VIC, mHM, etc.) as input.
+See `data_ki/ObservedQ/SKILL.md` for observed discharge validation data.
+
+
 ## Overview
 
 RAPID computes discharge and water volume across entire river networks using the

@@ -32,6 +32,17 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
+See `data_ki/HWSD/SKILL.md` for soil property documentation.
+See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
+
+
 ## Overview
 
 CWatM (Community Water Model) is an open-source, spatially distributed hydrological model that simulates the terrestrial water cycle at global and regional scales on a daily time step. Developed and maintained by IIASA's Water Security Research Group, CWatM integrates surface water, groundwater, snow/ice processes, water demand, and reservoir operations into a comprehensive water resources assessment framework.

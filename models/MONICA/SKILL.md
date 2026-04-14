@@ -40,6 +40,18 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
+See `data_ki/HWSD/SKILL.md` for soil property documentation.
+See `data_ki/FAOSTAT/SKILL.md` for crop yield observations.
+See `data_ki/SPAM/SKILL.md` for gridded yield data.
+
+
 ## Overview
 
 MONICA is a dynamic, process-based simulation model that describes the transport

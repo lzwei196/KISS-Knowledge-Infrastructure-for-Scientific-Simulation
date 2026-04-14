@@ -32,6 +32,16 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
+See `data_ki/FLUXNET/SKILL.md` for eddy covariance flux observations.
+
+
 ## Overview
 
 This knowledge infrastructure enables autonomous land surface simulation using Noah-MP

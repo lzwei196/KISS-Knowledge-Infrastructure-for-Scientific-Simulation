@@ -28,6 +28,16 @@ description: Climate change impact assessment using CMIP6 data. Two extraction p
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: Framework models use data from the coupled models.
+See `data_ki/CMIP6/SKILL.md` for CMIP6 projection data documentation.
+
+
 
 
 # Climate Change Projection — Knowledge Infrastructure

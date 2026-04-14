@@ -32,6 +32,17 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for meteorological forcing documentation.
+See `data_ki/HWSD/SKILL.md` for soil property documentation.
+See `data_ki/RISMA/SKILL.md` for soil moisture observations.
+
+
 ## Overview
 
 This knowledge infrastructure enables autonomous simulation of vadose zone water, solute, and heat transport using SWAP (Soil-Water-Atmosphere-Plant) on any field site worldwide, **without manual data preparation**. The 5 validated tools replace the standard manual SWAP workflow with a Python pipeline that integrates with HydroCraft's forcing, soil, and observation infrastructure.

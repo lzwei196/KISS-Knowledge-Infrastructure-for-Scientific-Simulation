@@ -34,6 +34,18 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for atmospheric forcing documentation.
+See `data_ki/SNOTEL/SKILL.md` for snow observations.
+See `data_ki/BedMachine/SKILL.md` for ice topography.
+See `data_ki/MEaSUREs/SKILL.md` for ice velocity.
+
+
 ## Overview
 
 SNOWPACK is a multi-purpose 1D snow and land-surface model developed at WSL/SLF

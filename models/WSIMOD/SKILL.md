@@ -33,6 +33,17 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: Input from upstream hydrological models.
+See `data_ki/GRanD/SKILL.md` for dam/reservoir database.
+See `data_ki/HydroLAKES/SKILL.md` for lake morphometry.
+
+
 ## 1. Overview
 
 WSIMOD is a Python framework for simulating water quantity and quality across the

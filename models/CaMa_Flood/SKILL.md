@@ -80,6 +80,10 @@ Stage 4: Post-process      tools/parse_cama_output.py
 
 ## Data Preparation
 
+**Data Validation Reference**: See `data_ki/ObservedQ/SKILL.md` for observed discharge validation data.
+See `data_ki/ChinaDEM/SKILL.md` for DEM and river network data.
+
+
 ### Input Runoff Requirements
 
 CaMa-Flood accepts gridded runoff on a regular lat/lon grid as NetCDF:

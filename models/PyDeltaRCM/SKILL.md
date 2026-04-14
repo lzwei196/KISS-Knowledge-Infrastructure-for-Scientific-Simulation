@@ -34,6 +34,16 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for meteorological forcing documentation.
+See `data_ki/USGS_Sediment/SKILL.md` for suspended sediment observations.
+
+
 ## Overview
 
 PyDeltaRCM is a computationally efficient, open-source numerical delta model based on the original DeltaRCM (Reduced-Complexity Model) design by Man Liang (Liang et al., 2015). It simulates river delta formation and evolution through:

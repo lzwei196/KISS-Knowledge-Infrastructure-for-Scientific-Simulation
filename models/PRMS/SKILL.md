@@ -32,6 +32,17 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
+See `data_ki/HWSD/SKILL.md` for soil property documentation.
+See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
+
+
 ## Overview
 
 This knowledge infrastructure enables autonomous simulation of watershed hydrology using the USGS Precipitation-Runoff Modeling System (PRMS) v5.1.0 on any basin, **without manual data preparation**. The 5 validated tools replace the standard manual PRMS workflow with a Python pipeline that integrates directly with HydroCraft's forcing, soil, and routing infrastructure.

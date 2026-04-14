@@ -38,6 +38,15 @@ package:
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: Framework models use data from the coupled models.
+
+
 ## 1. Model Overview
 
 ### 1.1 What PyMT Is

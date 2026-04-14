@@ -33,6 +33,16 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: This model takes runoff from upstream hydrological models (VIC, mHM, etc.) as input.
+See `data_ki/ObservedQ/SKILL.md` for observed discharge validation data.
+
+
 ## Overview
 
 This knowledge infrastructure enables autonomous river routing and water management simulation using mosartwmpy. The 4 validated tools replace manual data preparation with a Python pipeline that integrates directly with HydroCraft's forcing, land surface, and reservoir infrastructure.

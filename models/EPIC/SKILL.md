@@ -7,400 +7,411 @@
 > 3. If still failing, report the error to the user with full details
 >
 > You MUST NOT substitute a simplified Python formula, regression equation,
-> or hand-coded approximation in place of the real model.
->
+> or hand-coded approximation in place of the real model. Doing so produces
+> scientifically invalid results and defeats the purpose of the KI.
 >
 > Before starting, run: `python preflight_check.py` (in this KI directory)
 > to verify that the model binary/package and required data are available.
 >
-> **DEBUGGING PROTOCOL** — When something goes wrong, follow this order:
+> **DEBUGGING PROTOCOL** — When something goes wrong (model crashes, wrong output,
+> unexpected values), follow this order. Do NOT skip steps or write debug scripts:
 > 1. **Check triplets** — `diagnostics/triplets.yaml` may already cover this error
-> 2. **Read official docs** — The model's own documentation for expected formats/units
-> 3. **Find working examples** — Check `outputs/` or the model's shipped test data
-> 4. **Fix the tool** — With knowledge of what "correct" looks like
+> 2. **Read official docs** — Check the model's own documentation (PDF manual, README,
+>    official examples) for expected input formats, variable names, and units
+> 3. **Find working examples** — Look in `examples/` for previous successful runs of
+>    this model, or check if the model ships with test/example data
+> 4. **Fix the tool** — Now that you know what "correct" looks like, make targeted fixes
 >
-> Do NOT write custom debug scripts. The answers are in the docs and examples.
+> Resist the urge to write diagnostic/debug Python scripts. The answers are almost
+> always in the official docs and working examples, not in reverse-engineering the binary.
 
-# EPIC (Geo-EPIC) Crop Model — Knowledge Infrastructure
+# EPIC (Environmental Policy Integrated Climate) Crop & Field Model — Knowledge Infrastructure
 
-**Package**: `hydrocraft-epic-crop` v1.0.0
-**Model**: EPIC 1102 via Geo-EPIC-win toolkit
-**Source**: https://github.com/smarsGroup/geo_epic_win
-**Domain**: Crop growth simulation and yield estimation
-**Last updated**: 2026-03-28
-**Stats**: 4 tools | 7 skill documents | 18 diagnostic triplets | ~1,600 lines of validated Python
+**Package**: `hydrocraft-epic-crop` v2.0.0
+**Model**: EPIC 0810 (Linux ELF binary, Intel Fortran 2010 build)
+**Source**: USDA-ARS / Texas A&M BREC EPIC distribution
+**Binary**: `/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/EPIC/source/repo/epic0810.x`
+**Domain**: Field-scale crop growth, soil water/nutrient cycling, erosion, management
+**Last updated**: 2026-04-14
+**Stats**: 4 tools | 6 skill documents | 18 diagnostic triplets
 
 ---
 
 ## Overview
 
-EPIC (Environmental Policy Integrated Climate) is a field-scale crop growth simulation model
-developed by USDA. The Geo-EPIC toolkit (geo_epic_win) extends EPIC to geospatial scales,
-enabling simulation of crop growth across large geographies (states, counties) by leveraging
-remote sensing and geospatial databases. It includes modules for weather data acquisition,
-soil data fetching from SSURGO/ISRIC, operation schedule management, and calibration.
+EPIC (Environmental Policy Integrated Climate, originally Erosion Productivity
+Impact Calculator) is a field-scale, daily time-step model developed by USDA-ARS
+to simulate plant growth, soil water and nutrient dynamics, erosion, tillage,
+and management on a single homogeneous field. The dissected binary `epic0810.x`
+is the EPIC0810 release (Intel Fortran build, 2010), distributed as a stripped
+Linux ELF executable with no Wine dependency.
 
 **What EPIC simulates**:
-- Crop growth and development (phenology, biomass accumulation, LAI)
-- Yield estimation for 60+ crop types
-- Soil water balance (infiltration, evapotranspiration, drainage)
-- Nitrogen and phosphorus cycling
-- Erosion (wind and water)
-- Tillage and management effects
-- Irrigation scheduling (auto-irrigation option)
+- Plant growth and yield for ~100 crop types via a unified phenology / radiation-use efficiency model
+- Daily soil water balance (Hargreaves/Penman PET, Curve Number runoff, Green-Ampt, percolation)
+- Soil nitrogen and phosphorus cycling (mineralization, nitrification, denitrification, uptake)
+- Wind and water erosion (USLE family, MUSI, RUSLE, MUSLE, MUSS, MUST)
+- Carbon cycling (Izaurralde C/N pools)
+- Tillage, fertilizer, irrigation, pesticide, harvest operations
 - Multi-year crop rotations
+- Weather generation from monthly statistics (WXGEN) when daily weather is unavailable
 
-**Key difference from other models**: EPIC operates at field/site scale (not gridded).
-Geo-EPIC provides the geospatial framework to run many sites in parallel with
-automated input generation from remote sensing and national databases.
+**Key features that distinguish epic0810 from later releases**:
+- Uses `RUN0810.SUM` not `RUN1102.SUM`
+- Reads `SOIL38K.DAT` not `SOIL35K.DAT`
+- Strict numeric format on SOL files — alphabetic structure codes (`A`, `B`, `C`, `D`)
+  in soil-structure rows must be replaced with numeric zeros
+- File name table (`EPICFILE.DAT`) still references `PARM1102.DAT`, `MLRN1102.DAT`,
+  `CMOD1102.DAT`, `PRNT1102.DAT` — file names are not version-locked
 
 ---
 
 ## Installation
 
-### Python Package
+The EPIC binary is shipped pre-compiled. No build step required.
 
 ```bash
-conda create --name epic_env python=3.11
-conda activate epic_env
-pip install git+https://github.com/smarsGroup/geo_epic_win.git
+chmod +x /home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/EPIC/source/repo/epic0810.x
+file /home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/EPIC/source/repo/epic0810.x
+# ELF 64-bit LSB executable, x86-64, dynamically linked, stripped
 ```
 
-### EPIC Binary
-
-The EPIC executable (EPIC1102.exe) is bundled with the package in the assets directory.
-On Linux, the toolkit applies `chmod +x` automatically. The binary is a Windows PE
-executable that may require Wine on Linux, or the toolkit handles cross-platform execution.
-
-```
-Binary:      src/geoEpic/assets/workspace_win/model/EPIC1102.exe
-Version:     EPIC 1102
-Config:      EPICCONT.DAT, EPICFILE.DAT, EPICRUN.DAT, PRNT1102.DAT
-Crop DB:     CROPCOM.DAT (60+ crop parameterizations)
-Parameters:  PARM.DAT (112 global parameters + 60 crop-specific)
-```
-
-### Key Dependencies
-
-```
-numpy<2.0.0, pandas>=2.2.0, geopandas==1.0.1, xarray==2024.7.0,
-scipy==1.14.0, scikit-learn==1.5.1, matplotlib==3.9.2,
-rasterio, netCDF4, ruamel.yaml==0.17, earthengine-api==1.0.0,
-SALib==1.5.1, pydap==3.4.1, lmdb, redis, pebble
-```
-
-### CLI Entry Point
-
+Required Python dependencies for the KI tools:
 ```bash
-geo_epic <command> [options]
+pip install numpy pandas matplotlib pyyaml
+```
+
+The example/template files live in:
+```
+/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/EPIC/source/repo/epic1102_example_files_20221002/
 ```
 
 ---
 
-## Pipeline (7 stages)
+## Pipeline (6 stages)
 
-| # | Stage | Tool(s) | Description |
-|---|-------|---------|-------------|
-| 0 | Configuration | (manual) | Create config.yml, define experiment, region, model path |
-| 1 | Weather | `convert_weather_to_dly` | Fetch/convert weather data to EPIC .DLY format |
-| 2 | Soil | `convert_soil_to_sol` | Fetch SSURGO/ISRIC soil data, write .SOL and .SIT files |
-| 3 | Operations | (manual/OPC tools) | Create/edit .OPC files for crop management schedules |
-| 4 | Workspace | `run_epic_workspace` | Assemble workspace, link files, generate EPICRUN.DAT |
-| 5 | Execution | `run_epic_workspace` | Run EPIC binary for all sites in parallel |
-| 6 | Output | `parse_epic_output` | Parse ACY/DGN files, extract yield and biomass |
+| # | Stage | Tool | Purpose |
+|---|-------|------|---------|
+| 0 | Workspace prep | `tools/run_epic_workspace.py` (setup_workspace) | Copy template files, fix SOIL38K alias, sanitize SOL alpha codes |
+| 1 | Weather conversion | `tools/convert_forcing_to_dly.py` | CMFD/MSWX/NASA POWER → EPIC `.DLY` (year, month, day, srad, tmax, tmin, prcp, rh, ws) + `.WP1` monthly stats + `.WND` wind stats |
+| 2 | Soil conversion | `tools/convert_soil_to_sol.py` | HWSD + ROSETTA → EPIC `.SOL` (header, albedo/hyd-grp, 19 properties × 6 layers) |
+| 3 | Site / OPC update | `tools/run_epic_workspace.py` (update_site) | Modify `.SIT` lat/lon/elev and `.OPC` operation dates |
+| 4 | Execution | `tools/run_epic_workspace.py` (run) | Update `EPICCONT.DAT`/`EPICRUN.DAT`, copy template, execute binary |
+| 5 | Output parsing | `tools/parse_epic_output.py` | Parse `.ACY`, `.DGN`, `.ANN`, `.OUT` to pandas DataFrames |
 
 ---
 
 ## File Formats
 
-### DLY (Daily Weather) — Input
+### EPICCONT.DAT — Simulation Control (line 1)
 
-Fixed-width Fortran format: `%6d%4d%4d%6.2f%6.2f%6.2f%6.2f%6.2f%6.2f`
+Fixed-width: `[NBYR:4][IYR:4][IMO:4][IDA:4][NGN:4]...`
 
-| Column | Width | Variable | Unit | Description |
-|--------|-------|----------|------|-------------|
-| 1 | 6 | year | - | 4-digit year |
-| 2 | 4 | month | - | Month (1-12) |
-| 3 | 4 | day | - | Day (1-31) |
-| 4 | 6 | srad | MJ/m2/day | Solar radiation |
-| 5 | 6 | tmax | deg C | Maximum temperature |
-| 6 | 6 | tmin | deg C | Minimum temperature |
+| Cols | Variable | Meaning |
+|------|----------|---------|
+| 1–4 | NBYR | Number of years to simulate |
+| 5–8 | IYR | Start year (4-digit) |
+| 9–12 | IMO | Start month (1-12) |
+| 13–16 | IDA | Start day (1-31) |
+
+Example: `  15 1930   1   1   3 2345   0   0   1   4   0   0   0   0   0   0   0   0   0   0`
+(15 years starting Jan 1 1930)
+
+### EPICRUN.DAT — Per-Run Site Selection
+
+Format: `{site_id_padded_9} {NSIT} {NWP1} {NWND} {NWP5} {NSOL} {NOPS} {NDLY}/`
+
+The seven integers are 1-indexed line numbers into the corresponding `*COM.DAT`
+or `*USEL.DAT` list files (SITECOM, WPM1USEL, WINDUSEL, WPM5US, SOILCOM, OPSCCOM,
+WDLSTCOM). Trailing `/` is required by Fortran namelist read.
+
+### EPICFILE.DAT — Logical→Physical File Map
+
+```
+ FSITE    SITECOM.DAT       <- list of .SIT files
+ FWPM1    WPM1USEL.DAT      <- list of monthly weather (.WP1) files
+ FWPM5    WPM5US.DAT        <- monthly weather variability
+ FWIND    WINDUSEL.DAT      <- wind direction/speed climatology
+ FCROP    CROPCOM.DAT       <- crop parameter database
+ FTILL    TILLCOM.DAT       <- tillage equipment database
+ FPEST    PESTCOM.DAT       <- pesticide database
+ FFERT    FERT2012.DAT      <- fertilizer database
+ FSOIL    SOILCOM.DAT       <- list of .SOL files
+ FOPSC    OPSCCOM.DAT       <- list of .OPC files
+ FPARM    PARM1102.DAT      <- 112 global parameters (NOT 0810-named, name unchanged)
+ FMLRN    MLRN1102.DAT      <- machine learning (legacy stub)
+ FPRNT    PRNT1102.DAT      <- output type toggles
+ FCMOD    CMOD1102.DAT      <- crop modification overrides
+ FWLST    WDLSTCOM.DAT      <- list of .DLY files
+```
+
+### .DLY — Daily Weather Input
+
+Fixed-width Fortran format: `(I6,2I4,6F6.2)`
+
+| Col | Width | Variable | Unit | Description |
+|-----|-------|----------|------|-------------|
+| 1 | 6 | year | – | 4-digit year |
+| 2 | 4 | month | – | 1–12 |
+| 3 | 4 | day | – | 1–31 |
+| 4 | 6 | srad | MJ/m²/day | Solar radiation |
+| 5 | 6 | tmax | °C | Max temperature |
+| 6 | 6 | tmin | °C | Min temperature |
 | 7 | 6 | prcp | mm/day | Precipitation |
 | 8 | 6 | rh | fraction (0-1) | Relative humidity |
 | 9 | 6 | ws | m/s | Wind speed |
 
-**Example line**: `  1922   1   1  10.7  8.33 -3.33  0.00  0.71  2.08`
+Example record: `  1922   1   1  10.7  8.33 -3.33  0.00  0.71  2.08`
 
-The last line of the DLY file contains station metadata:
-`STATION = name  STA ID = id  STATE = st  CO = county  LAT = lat  LONG = lon  ELEV = elev  Y-M-D end_date`
+The file ends with one metadata line:
+`STATION = NCRDU  STA ID = 317079  STATE = NC  CO = wake  LAT = 35.87  LONG = -78.78  ELEV =  133.5  Y-M-D 1995-12-31`
 
-### WP1 (Monthly Weather Statistics) — Generated from DLY
+### .WP1 — Monthly Weather Statistics (14 × 12 = 168 values)
 
-14 parameters x 12 months: OBMX, OBMN, RST2, OBSL, RH, UAVO, SDTMX, SDTMN,
-RST2_std, DAYP, RST3, PRW1, PRW2, WI
+Generated from a multi-year .DLY by computing monthly OBMX, OBMN, RST2 (rain),
+OBSL (sunshine), RH, UAVO (wind), SDTMX, SDTMN, RST2 std, DAYP, RST3, PRW1, PRW2, WI.
 
-### SOL (Soil Profile) — Input
+### .WND — Wind direction/speed climatology
 
-Fixed-width format (`%8.3f` per value), 42 lines minimum:
+16 wind directions × 12 months of frequency, plus 12 monthly average wind speeds.
 
-| Line | Content |
-|------|---------|
-| 1 | Soil ID header |
-| 2 | Albedo (8.3f), Hydrological group (A=1, B=2, C=3, D=4) |
-| 3 | Number of layers after split (typically 10) |
-| 4-22 | 19 soil properties, one row per property, columns = layers |
+### .SOL — Soil Profile (Strict numeric — no alphabetic structure codes)
 
-**Soil Layer Properties (19 rows)**:
-1. Layer_depth (cm)
-2. Bulk_Density (g/cm3)
-3. Wilting_capacity (fraction)
-4. Field_Capacity (fraction)
-5. Sand_content (%)
-6. Silt_content (%)
-7. N_concen (mg/kg)
-8. pH
-9. Sum_Bases (meq/100g)
-10. Organic_Carbon (%)
-11. Calcium_Carbonate (%)
-12. Cation_exchange (meq/100g)
-13. Coarse_Fragment (%)
-14. Saturated_conductivity (mm/hr)
-15-19. Additional properties (pkrz, rsd, BD_dry, psp, Ksat)
+Line 1: header text (free format, ignored by binary)
+Line 2: 10 site-level reals (8.2f each):
+  `albedo  hyd_grp  depth  min_thick  spl_factor  rcr  cn2  ridge  rsd  zsr`
+Line 3: 10 reals — additional site parameters
+Lines 4–46+: 19 soil-property rows, one row per property, columns = layers (6)
 
-### SIT (Site Information) — Input
+**Soil layer properties order** (each 6 values, `(6F8.2)` or `(6F8.3)`):
+1. Layer depth from surface (m)
+2. Bulk density (g/cm³)
+3. Wilting point (m³/m³)
+4. Field capacity (m³/m³)
+5. Sand (%)
+6. Silt (%)
+7. Initial soil water (m³/m³)
+8. Soil organic N concentration (g/t)
+9. pH
+10. Sum of bases (cmol/kg)
+11. Organic C (%)
+12. CaCO₃ (%)
+13. CEC (cmol/kg)
+14. Coarse fragments (%)
+15. Initial NO₃ (g/t)
+16. Initial labile P (g/t)
+17. Crop residue (t/ha)
+18. Bulk density (oven-dry)
+19. Saturated hydraulic conductivity (mm/h)
 
-| Line | Content |
-|------|---------|
-| 1 | Description text |
-| 2 | Prototype name |
-| 3 | Site ID |
-| 4 | Lat(8.2f) Lon(8.2f) Elev_m(8.2f) ... |
-| 5 | ... Slope_length_m(8.2f) Slope_steepness(8.2f) ... |
-| 6-7 | Additional parameters |
+**CRITICAL TRAP**: Some EPIC1102 example SOL files contain rows with alphabetic
+structure codes (`A`, `B`, `C`, `D`) — for example line 48 of `umstead.SOL`:
+`       A       A       A       A       A       A`. The EPIC0810 binary
+**rejects these with `forrtl: severe (64): input conversion error`**.
+Replace every alphabetic token with a numeric zero (`    0.00`) before running.
+The setup_workspace tool does this automatically.
 
-### OPC (Operation Schedule) — Input
+### .OPC — Operation Schedule
 
-Fixed-width format with 15 columns:
+Fixed-width 15-column table; columns 1–7 are integers, 8–15 are reals.
 
-| Column | Width | Variable | Description |
-|--------|-------|----------|-------------|
-| Yid | 3 | Year ID | Relative year (1 = start_year) |
-| Mn | 3 | Month | 1-12 |
-| Dy | 3 | Day | 1-31 |
-| CODE | 5 | Op code | Operation type (see below) |
-| TRAC | 5 | Tractor | Equipment ID |
-| CRP | 5 | Crop | Crop code from CROPCOM.DAT |
-| XMTU | 5 | Context | Fertilizer/pesticide/layer ID |
-| OPV1-8 | 8 each | Params | Operation-specific parameters |
+| Cols | Variable | Description |
+|------|----------|-------------|
+| 1–3 | Yid | Relative year (1 = first year) |
+| 4–6 | Mn | Month |
+| 7–9 | Dy | Day |
+| 10–14 | CODE | Operation type code |
+| 15–19 | TRAC | Equipment ID |
+| 20–24 | CRP | Crop code from CROPCOM.DAT |
+| 25–29 | XMTU | Context (fert ID, layer, etc.) |
+| 30+ | OPV1..OPV8 | 8.2f each — operation parameters |
 
-**Key Operation Codes**:
-- 2, 3, 4, 146: Planting (OPV1 = PHU thermal units)
-- 650: Harvest
-- 71: Fertilizer application (XMTU = fert ID, OPV1 = rate kg/ha)
-- 72: Auto-irrigation activation
-- 41: Residue management
-- 9: Fallow
+Operation codes:
+- `2`, `3`, `4`, `146`: Planting (OPV1 = potential heat units, °C·day)
+- `650`: Harvest
+- `71`: Fertilizer application (XMTU=fert ID, OPV1=rate kg/ha)
+- `72`: Auto-irrigation activation
+- `41`: Residue management
+- `9`: Fallow
 
-### ACY (Annual Crop Yield) — Output
+### .SIT — Site information
 
-Whitespace-delimited, skip first 10 rows. Key columns: YR, CPNM, YLDG, YLDF, BIOM, ...
+7 lines of metadata: title, prototype name, site ID, then site reals
+(lat, lon, elevation, slope length, slope steepness, etc.).
 
-### DGN (Daily General) — Output
+---
 
-Whitespace-delimited, skip first 10 rows. Key columns: Y, M, D, BIOM, RW, LAI, WS, ...
-Above-ground biomass: AGB = BIOM - RW
+## Output File Formats
+
+### `<run>.OUT` — General output (always produced)
+
+Multi-section ASCII report with header, parameter listing, weather summary,
+crop summary, annual rotation table. Best read line-by-line.
+
+### `<run>.ACY` — Annual Crop Yield
+
+Skip first 10 header lines, then whitespace-delimited columns:
+`YR RT# CPNM YLDG YLDF WCYD HI BIOM RW YLN YLP YLC FTN FTP IRGA IRDL WUEF GSET CAW CRF CQV COST COOP RYLG RYLF PSTF WS NS PS KS TS AS SS PPOP IPLD IGMD IHVD`
+
+Key variables: YLDG (grain yield t/ha), BIOM (above-ground biomass t/ha),
+HI (harvest index), WUEF (water use efficiency), WS/NS/PS (water/N/P stress days).
+
+### `<run>.DGN` — Daily General
+
+Skip first 10 header lines, columns:
+`Y M D PDSW TMX TMN RAD PRCP VPD PET ET PEP EP Q CN SSF PRK QDRN IRGA QIN PRKN TNO3 NO31 PRK1 LN31 HUI LAI BIOM YLDF UNO3 LSN LMN BMN HSN HPN TWN`
+
+Key variables: Q (runoff mm), ET (mm), LAI, BIOM (t/ha), HUI (heat unit index 0–1).
+
+### `<run>.ANN` — Annual summary
+
+Skip first 10 header lines:
+`RUN YR AP15 PMTE TMX TMN PRCP IRGA PET ET Q DN LIME DN2O FULU`
+
+### Other output files (toggled by PRNT1102.DAT)
+
+`.ACM` (annual C/N mass), `.DHS` (daily hydrology), `.DWC` (daily water chem),
+`.MFS`/`.MPS` (monthly summaries), `.SOT` (soil organic turnover), `.MCM`,
+`.SCO`, `.DTP`, `.SUM`, `.DPS`, `.ACO`, `.DSL`, `.MWC`, `.ABR`, `.ATG`, `.MSW`,
+`.APS`, `.DGZ`, `.DNC`, `.ASL`, `.DDN`.
 
 ---
 
 ## Unit Trap Table
 
-| Variable | Source Unit | EPIC Unit | Conversion | Trap |
-|----------|-----------|-----------|------------|------|
-| Solar radiation (Daymet) | W/m2 | MJ/m2/day | srad * dayl / 1e6 | Omitting dayl gives ~86x overestimate |
-| Solar radiation (GridMET) | W/m2 | MJ/m2/day | srad * 0.0864 | Using W/m2 directly → unrealistic values |
-| Temperature (GridMET) | K | deg C | T - 273.15 | Kelvin in DLY → crash or unrealistic growth |
-| Temperature (CMFD) | K | deg C | T - 273.15 | Same as above |
-| Precipitation (CMFD 3hr) | mm/3hr | mm/day | sum 8 timesteps | Must aggregate, not average |
-| Relative humidity (Daymet) | vapor pressure (Pa) | fraction (0-1) | rh_vappr formula | Wrong formula → RH > 1 or < 0 |
-| Relative humidity (GridMET) | % (rmax, rmin) | fraction (0-1) | avg(rmax,rmin)/100 | Forgetting /100 → RH=70 not 0.70 |
-| Wind speed | m/s | m/s | None | No conversion needed |
-| Soil bulk density | g/cm3 | g/cm3 | None | Using kg/m3 → 1000x error |
-| Layer depth (SSURGO) | cm | cm | None | Using inches → 2.54x error |
-| Hydraulic conductivity | um/s (SSURGO) | mm/hr | ksat * 3.6 | SSURGO ksat in um/s, EPIC expects mm/hr |
-| Organic matter → OC | % OM | % OC | OM / 1.724 | Van Bemmelen factor, not direct copy |
-| Fertilizer rate | kg/ha | kg/ha | None | lb/ac → kg/ha requires * 1.121 |
-| Elevation | m | m | None | Using ft → 0.3048x error in weather gen |
-| PHU (thermal units) | deg C-day | deg C-day | None | Wrong PHU → crop never matures or matures early |
-| Slope steepness | fraction | fraction | None | Using degrees or % without conversion |
+| Variable | Source unit | EPIC unit | Conversion | Trap |
+|----------|-------------|-----------|------------|------|
+| Solar radiation (Daymet) | W/m² | MJ/m²/day | `srad * dayl / 1e6` | Omitting daylength gives ~86× overestimate |
+| Solar radiation (CMFD) | W/m² (3-h mean) | MJ/m²/day | `mean(W/m²) * 86400 / 1e6` | Using 3-hr instantaneous → ~24× over/under |
+| Temperature (CMFD) | K | °C | `T - 273.15` | Kelvin in DLY → impossible PET, model crashes |
+| Precipitation (CMFD 3h) | mm/3h | mm/day | `sum(8 timesteps)` | Mean instead of sum → 8× under |
+| Relative humidity (NASA POWER) | % | fraction (0-1) | `RH / 100` | Forgetting /100 → RH=70 not 0.70, vapour-deficit blows up |
+| Wind speed | m/s | m/s | none | – |
+| Wind speed (NASA POWER 10m) | m/s @ 10m | m/s @ 10m | none | EPIC expects 10m height; converting to 2m corrupts ET |
+| Soil bulk density | g/cm³ | g/cm³ | none | Using kg/m³ → 1000× error |
+| Layer depth (HWSD) | cm | m | `cm/100` | EPIC0810 SOL row 1 expects metres, not centimetres |
+| Saturated K (ROSETTA) | cm/day | mm/h | `cm/day * 10/24` | Wrong factor → infinite percolation |
+| Organic matter → OC | % OM | % OC | `OM / 1.724` | Van Bemmelen factor, not a direct copy |
+| Fertilizer rate | kg/ha N | kg/ha element | none | If using NH₄-N table, must convert from compound to element |
+| Elevation | m | m | none | Using ft → 0.3048× error in WXGEN |
+| PHU (potential heat units) | °C·day | °C·day | accumulate Tavg-Tbase | Wrong PHU → crop never matures or matures early |
+| Slope steepness | fraction (m/m) | fraction | none | Using degrees or % without conversion |
+| CMFD lat/lon | 0.1° China grid | EPIC site degrees | direct | Out-of-domain → silent zero forcing |
 
 ---
 
-## Workspace Structure
+## Workspace Layout (after run_epic_workspace.setup)
 
 ```
-workspace_root/
-├── config.yml            # Main configuration (YAML)
-├── info.csv              # Site list: SiteID, soil, dly, opc, lat, lon
-├── model/                # EPIC executable + config files
-│   ├── EPIC1102.exe      # Binary
-│   ├── EPICCONT.DAT      # Control parameters (duration, start date)
-│   ├── EPICFILE.DAT      # Logical→physical file mapping
-│   ├── EPICRUN.DAT       # Run configuration
-│   ├── PRNT1102.DAT      # Output type toggles
-│   ├── CROPCOM.DAT       # Crop parameter database (60+ crops)
-│   ├── PARM.DAT          # Model parameters (112 global + 60 crop)
-│   ├── FERT2012.DAT      # Fertilizer database
-│   ├── PESTCOM.DAT       # Pesticide database
-│   └── ...               # Other DAT files
-├── weather/              # .DLY daily weather files
-├── soil/                 # .SOL soil profile files
-├── sites/                # .SIT site information files
-├── opc/                  # .OPC operation schedule files
-│   └── crop_templates/   # Template OPC files + MAPPING
-├── output/               # Simulation outputs (.ACY, .DGN, etc.)
-└── log/                  # Execution logs
-```
-
----
-
-## Configuration Reference (config.yml)
-
-```yaml
-EXPName: Project Name              # Experiment name
-Region: Region name                # Study region
-Area_of_Interest: AOI              # Area description
-
-EPICModel: ./model/EPIC1102.exe    # Path to EPIC binary
-start_date: '2000-01-01'           # Simulation start (YYYY-MM-DD)
-duration: 6                        # Simulation years
-output_types:                      # Output file types to enable
-  - ACY                            # Annual crop yield
-  - DGN                            # Daily general output
-log_dir: ./log                     # Log directory
-output_dir: ./output               # Output directory
-
-weather_dir: ./weather             # DLY file directory
-soil_dir: ./soil                   # SOL file directory
-site_dir: ./sites                  # SIT file directory
-opc_dir: ./opc                     # OPC file directory
-
-run_info: ./info.csv               # Site list CSV
-select: Range(0, 1)                # Site selection filter
-timeout: 30                        # Per-site timeout (seconds)
+/tmp/epic_workspace_<uuid>/
+├── epic0810.x                 # binary
+├── EPICCONT.DAT               # control (start year, duration)
+├── EPICRUN.DAT                # run line
+├── EPICFILE.DAT               # logical→physical file map
+├── PARM1102.DAT               # 112 global parameters
+├── PRNT1102.DAT               # output toggles
+├── CROPCOM.DAT, FERT2012.DAT, ...   # databases
+├── SITECOM.DAT, SOILCOM.DAT, OPSCCOM.DAT, WDLSTCOM.DAT  # list files
+├── WPM1USEL.DAT, WPM5US.DAT, WINDUSEL.DAT  # weather climatology
+├── SOIL35K.DAT, SOIL38K.DAT   # soil database (38K is alias of 35K)
+├── umstead.SIT, umstead.SOL, umstead.OPC  # site files
+├── NCRDU.DLY                  # daily weather
+└── umstead_0.OUT/.ACY/.DGN/.ANN/...  # outputs after run
 ```
 
 ---
 
 ## Tool Reference
 
-| Tool | Script | Purpose |
-|------|--------|---------|
-| Weather Converter | `tools/convert_weather_to_dly.py` | NASA POWER/CMFD/MSWX → EPIC .DLY format |
-| Soil Converter | `tools/convert_soil_to_sol.py` | HWSD/SoilGrids/SSURGO → EPIC .SOL + .SIT |
-| Execution Wrapper | `tools/run_epic_workspace.py` | Configure and run EPIC binary |
-| Output Parser | `tools/parse_epic_output.py` | Parse .ACY/.DGN to CSV/DataFrame |
+| Tool | Purpose | Key entry points |
+|------|---------|------------------|
+| `tools/convert_forcing_to_dly.py` | Build `.DLY`, `.WP1`, `.WND` from CMFD/MSWX/NASA POWER | `convert(source, lat, lon, year1, year2, out_dir)` |
+| `tools/convert_soil_to_sol.py` | Build `.SOL` from HWSD + ROSETTA | `convert(lat, lon, sol_path)` |
+| `tools/run_epic_workspace.py` | Setup workspace, run binary, collect outputs | `setup_workspace`, `run`, `sanitize_sol` |
+| `tools/parse_epic_output.py` | Parse `.ACY`, `.DGN`, `.ANN` to pandas | `parse_acy`, `parse_dgn`, `parse_ann` |
 
----
-
-## Calibration
-
-EPIC calibration uses PyGMO (Particle Swarm Optimization or Differential Evolution):
-
-1. Define workspace with multiple sites
-2. Write `@workspace.logger` function to compute per-site metrics
-3. Write `@workspace.objective` function to aggregate metrics
-4. Load Parm or CropCom object
-5. Call `parm.set_sensitive([param_list])` for parameters to calibrate
-6. Create optimization problem: `workspace.make_problem(parm)`
-7. Run optimizer (PSO, DE)
-
-**Sensitive Parameters** (from PARM.sens):
-- PARM values: 112 global parameters controlling erosion, hydrology, N/P cycling
-- SCRP values: 60 crop-specific parameters (30 per set)
-- CROPCOM parameters: per-crop growth coefficients
-
----
-
-## Output File Types (PRNT1102.DAT toggles)
-
-| Extension | Description |
-|-----------|-------------|
-| ACY | Annual crop yield (default ON) |
-| DGN | Daily general output (default ON) |
-| ACM | Annual carbon/nitrogen mass |
-| DHS | Daily hydrology summary |
-| DWC | Daily water chemistry |
-| MFS | Monthly field summary |
-| MPS | Monthly plant summary |
-| ANN | Annual summary |
-| SOT | Soil organic turnover |
-| MCM | Monthly carbon mass |
-| SCO | Scenario comparison |
-| DTP | Daily topsoil |
-| OUT | General output |
-| SUM | Summary |
-| DHY | Daily hydrology |
-| DPS | Daily plant summary |
+All tools share the validate→process→validate pattern. Forcing converter calls
+`ki_tools_common.load_forcing.load_daily_forcing` so CMFD/MSWX/NASA POWER all work
+through one entry point. Soil converter calls `ki_tools_common.soil_utils.lookup_hwsd`
++ `rosetta_vgn`.
 
 ---
 
 ## Quick Start
 
 ```python
-from geoEpic.core import Workspace
-from geoEpic.io import DLY, SOL, SIT, OPC, ACY, DGN
+from tools.run_epic_workspace import setup_workspace, run, collect_outputs
+from tools.parse_epic_output import parse_acy, parse_dgn
 
-# 1. Create workspace
-ws = Workspace('config.yml')
+# 1. Build a clean workspace from the templates
+ws = setup_workspace("/tmp/epic_run1")
 
-# 2. Load/edit weather
-dly = DLY.load('weather/site1.DLY')
-print(dly.data.head())
+# 2. (optional) Update site coordinates / start year / duration
+#    (here we accept the umstead defaults)
 
-# 3. Load/edit soil
-sol = SOL.load('soil/site1.SOL')
-print(sol.data)
+# 3. Run the binary
+result = run(ws, site_id="umstead_0", timeout=300)
+assert result["status"] == "completed", result
 
-# 4. Load/edit operations
-opc = OPC.load('opc/site1.OPC')
-opc.edit_plantation_date('2020-05-01', crop_code=2)  # Corn
-opc.save('opc/site1.OPC')
-
-# 5. Run all sites
-ws.run()
-
-# 6. Parse outputs
-acy = ACY('output/site1.ACY')
-yield_data = acy.get_var('YLDG')
-dgn = DGN('output/site1.DGN')
-biomass = dgn.get_var('BIOM')
+# 4. Parse outputs
+acy = parse_acy(f"{ws}/umstead_0.ACY")     # pandas DataFrame
+dgn = parse_dgn(f"{ws}/umstead_0.DGN")
+print("Mean LAI:", dgn["LAI"].mean())
+print("Mean ET:", dgn["ET"].mean(), "mm/day")
 ```
 
 ---
 
-## Execution Details
+## Calibration Notes
 
-The EPIC binary runs per-site in a temporary cache directory:
+EPIC has 112 global parameters in PARM1102.DAT and 60+ crop-specific rows in
+CROPCOM.DAT. Common targets:
 
-1. Model directory copied to `/dev/shm/geo_epic_{user}/{uuid}/` (RAM-backed)
-2. Weather (.DLY, .WP1, .WND) written as `1.DLY`, `1.WP1`, `1.WND`
-3. Site files (.SIT, .SOL, .OPC) copied
-4. EPICRUN.DAT updated: `{site_id} 1  0  0  0  1  1  1/`
-5. Binary executed with stdin piped
-6. Outputs collected from cache to `output_dir`
+- PARM(1)–PARM(5): Erosion/runoff coefficients
+- PARM(20)–PARM(30): N/P cycling
+- PARM(34): Heat unit scheduling
+- CROPCOM HI: harvest index
+- CROPCOM WA: radiation use efficiency
+- CROPCOM DMLA: maximum LAI
 
-**EPICCONT.DAT line 1**: `[duration:4][start_year:4][start_month:4][start_day:4]`
+Use SALib or PyGMO with `parse_acy()` as the objective function reader.
 
 ---
 
-## Data Sources Integration
+## Source Code & References
 
-| Source | Tool | Variables | Coverage |
-|--------|------|-----------|----------|
-| Daymet | `weather/daymet.py` | prcp, tmax, tmin, srad, vp, dayl | North America |
-| GridMET | `weather/download_daily.py` | tmax, tmin, srad, prcp, rh, wind | CONUS |
-| NASA POWER | external | All met variables | Global |
-| SSURGO/SDA | `soil/sda.py` | Full soil profile | USA |
-| ISRIC/SoilGrids | `spatial/isric.py` | Global soil properties | Global |
-| Google Earth Engine | `gee/*.py` | Satellite indices, weather | Global |
-| AgERA5 | `spatial/agera5.py` | Agro-meteorological data | Global |
+- USDA-ARS / Texas A&M AgriLife BREC: https://epicapex.tamu.edu/
+- EPIC user manual (PDF): EPIC1102 user manual is the closest published reference;
+  most file formats are unchanged from 0810
+- Williams, J.R. (1995): "The EPIC Model" in *Computer Models of Watershed Hydrology*
+- Geo-EPIC toolkit (geospatial wrapper, Python): https://github.com/smarsGroup/geo_epic_win
+
+---
+
+## Data Preparation
+
+**Forcing**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for
+unified CMFD / MSWX / NASA POWER access. EPIC needs daily timestep; the converter
+aggregates 3-hourly CMFD by `sum(prcp)`, `mean(temp/srad/rh/ws)`.
+
+**Soil**: Use `from ki_tools_common.soil_utils import lookup_hwsd, rosetta_vgn`.
+The HWSD lookup returns sand/clay/silt/OM/bulk_density/CEC/pH/CaCO3 per layer,
+and ROSETTA returns van Genuchten + Ksat. Map these into the EPIC 19-property
+profile via the helper in `tools/convert_soil_to_sol.py`.
+
+**Land cover**: EPIC uses its own crop codes (CROPCOM.DAT). For multi-crop
+sites use a separate `.OPC` per cropping system; for natural vegetation
+the umstead 80-year mixed pine/hardwood OPC is a good template.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md`, `data_ki/HWSD/SKILL.md`,
+`data_ki/FAOSTAT/SKILL.md`, `data_ki/SPAM/SKILL.md`.
+
+---
+
+## Known Limitations of EPIC0810
+
+- No LULCC dynamics; one crop/rotation per simulation
+- Single-point field scale (no spatial interaction)
+- Strict Fortran fixed-format I/O (no error tolerance for malformed inputs)
+- WXGEN weather generator works only with `.WP1`/`.WND`/`.WP5` databases
+- Does not model perennial reseeding without explicit OPC events

@@ -33,6 +33,17 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
+See `data_ki/HWSD/SKILL.md` for soil property documentation.
+See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
+
+
 ## Overview
 
 LISFLOOD is a spatially distributed, physically-based rainfall-runoff model developed by the European Commission Joint Research Centre (EC-JRC). It is the core hydrological model behind the European Flood Awareness System (EFAS) and the Global Flood Awareness System (GloFAS). The model simulates the full terrestrial water cycle including snow accumulation/melt, soil moisture dynamics (3-layer Van Genuchten), groundwater (2-box), surface and channel routing (kinematic wave), lake/reservoir operations, and water use/abstraction.

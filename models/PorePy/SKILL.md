@@ -36,6 +36,18 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for recharge forcing documentation.
+See `data_ki/GLHYMPS/SKILL.md` for hydrogeology data.
+See `data_ki/FanWTD/SKILL.md` for water table depth.
+See `data_ki/GRACE/SKILL.md` for GRACE TWS validation data.
+
+
 ## 1  Overview
 
 PorePy is a simulation tool for multiphysics processes in fractured and deformable

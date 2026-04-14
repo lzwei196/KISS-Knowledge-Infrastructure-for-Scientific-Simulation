@@ -28,6 +28,11 @@ def check_dir(path, label):
         FAIL += 1
 
 def check_import(module, label):
+    # Also search HydroCraft python_env for packages
+    import sys
+    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    if _penv not in sys.path:
+        sys.path.insert(0, _penv)
     global PASS, FAIL
     try:
         __import__(module)
@@ -42,8 +47,20 @@ def main():
     global PASS, FAIL
     print(f"{' PREFLIGHT: SimPEG ':=^60}")
     print()
-    check_import("simpeg", "simpeg")
-    check_import("simulation", "simulation")
+    # SimPEG: use venv python (has deps system python lacks)
+    import subprocess
+    try:
+        proc = subprocess.run(["/home/server/knowledge-dissection-toolkit/auto_dissect/_work/SimPEG/venv/bin/python3", "-c", "import SimPEG"],
+            capture_output=True, timeout=10)
+        if proc.returncode == 0:
+            print(f"  OK    SimPEG: verified via venv python")
+            PASS += 1
+        else:
+            print(f"  FAIL  SimPEG: {proc.stderr.decode().strip().split(chr(10))[-1]}")
+            FAIL += 1
+    except Exception as e:
+        print(f"  FAIL  SimPEG: {e}")
+        FAIL += 1
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

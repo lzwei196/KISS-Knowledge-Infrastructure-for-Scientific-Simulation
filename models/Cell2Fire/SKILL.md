@@ -32,6 +32,16 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for weather forcing documentation.
+See `data_ki/MTBS/SKILL.md` for fire perimeter observations.
+
+
 ## Overview
 
 Cell2Fire W is a large-scale, grid-based, wildfire spread simulator written in C++ with OpenMP

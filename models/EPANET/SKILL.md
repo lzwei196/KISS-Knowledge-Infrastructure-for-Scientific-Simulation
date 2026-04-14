@@ -33,6 +33,16 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for rainfall forcing documentation.
+See `data_ki/SWMM_Benchmarks/SKILL.md` for drainage test cases.
+
+
 ## Overview
 
 EPANET performs extended-period simulation of hydraulic and water quality behavior within pressurized drinking water distribution pipe networks. It models pipes, nodes (junctions), pumps, valves, storage tanks, and reservoirs. EPANET tracks:

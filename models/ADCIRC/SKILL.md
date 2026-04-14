@@ -32,6 +32,17 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for atmospheric forcing documentation.
+See `data_ki/NOAA_Tides/SKILL.md` for tidal observation data.
+See `data_ki/NDBC/SKILL.md` for wave buoy observations.
+
+
 ## Overview
 
 This knowledge infrastructure enables autonomous simulation of coastal ocean circulation, storm surge, and tidal dynamics using ADCIRC (ADvanced CIRCulation model). The 4 validated tools cover the core pipeline from meteorological forcing conversion through output extraction, replacing manual Fortran-era workflows with a Python pipeline that integrates with HydroCraft's coastal modeling infrastructure.

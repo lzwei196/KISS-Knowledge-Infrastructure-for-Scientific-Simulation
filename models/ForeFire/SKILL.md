@@ -32,6 +32,16 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for weather forcing documentation.
+See `data_ki/MTBS/SKILL.md` for fire perimeter observations.
+
+
 ## Overview
 
 This knowledge infrastructure enables autonomous wildfire spread simulation using ForeFire, an open-source C++ wildfire simulation engine. The tools replace manual data preparation with a Python pipeline that handles landscape data ingestion, fuel parameter configuration, simulation execution, and output parsing.

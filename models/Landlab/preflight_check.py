@@ -28,6 +28,11 @@ def check_dir(path, label):
         FAIL += 1
 
 def check_import(module, label):
+    # Also search HydroCraft python_env for packages
+    import sys
+    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    if _penv not in sys.path:
+        sys.path.insert(0, _penv)
     global PASS, FAIL
     try:
         __import__(module)
@@ -42,11 +47,9 @@ def main():
     global PASS, FAIL
     print(f"{' PREFLIGHT: Landlab ':=^60}")
     print()
-    check_import("landlab", "landlab")
-    check_import("RasterModelGrid", "RasterModelGrid")
-    check_import("FlowAccumulator", "FlowAccumulator")
-    check_import("write_esri_ascii", "write_esri_ascii")
-    check_import("wrap_as_bmi", "wrap_as_bmi")
+    # Landlab is in python_env — check package + key submodules
+    check_import("landlab", "Landlab")
+    check_import("landlab.grid", "Landlab grid module")
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

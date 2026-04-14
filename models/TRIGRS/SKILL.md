@@ -32,6 +32,16 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for meteorological forcing documentation.
+See `data_ki/USGS_Sediment/SKILL.md` for suspended sediment observations.
+
+
 ## Overview
 
 This knowledge infrastructure enables autonomous simulation of rainfall-induced shallow landslide susceptibility using TRIGRS (Transient Rainfall Infiltration and Grid-Based Regional Slope-Stability Analysis). The 5 validated tools replace the manual GIS + command-line TRIGRS workflow with a Python pipeline that automates grid preparation, parameter assignment, execution, and output parsing.

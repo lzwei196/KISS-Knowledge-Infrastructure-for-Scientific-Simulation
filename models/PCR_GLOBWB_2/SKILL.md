@@ -32,6 +32,17 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
+See `data_ki/HWSD/SKILL.md` for soil property documentation.
+See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
+
+
 ## Overview
 
 This knowledge infrastructure enables autonomous simulation of global/regional hydrology using PCR-GLOBWB 2 (PCRaster Global Water Balance model version 2) developed at Utrecht University. PCR-GLOBWB 2 is a grid-based global hydrological and water resources model that simulates the terrestrial water cycle at 5 arcmin (~10 km) or 30 arcmin (~50 km) resolution.

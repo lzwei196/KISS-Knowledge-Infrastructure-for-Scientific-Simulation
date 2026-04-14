@@ -33,6 +33,17 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for atmospheric forcing documentation.
+See `data_ki/NOAA_Tides/SKILL.md` for tidal observation data.
+See `data_ki/NDBC/SKILL.md` for wave buoy observations.
+
+
 ## Overview
 
 This knowledge infrastructure enables autonomous generation, I/O, and analysis of spectral ocean wave data for SWAN (Simulating WAves Nearshore) using the PySWaN Python package. The toolbox provides Python classes for three spectral representations (0D parametric, 1D frequency, 2D frequency-direction) and read/write functions for all major SWAN spectral file formats.

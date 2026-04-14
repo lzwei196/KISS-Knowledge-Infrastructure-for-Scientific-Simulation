@@ -28,6 +28,11 @@ def check_dir(path, label):
         FAIL += 1
 
 def check_import(module, label):
+    # Also search HydroCraft python_env for packages
+    import sys
+    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    if _penv not in sys.path:
+        sys.path.insert(0, _penv)
     global PASS, FAIL
     try:
         __import__(module)
@@ -42,10 +47,7 @@ def main():
     global PASS, FAIL
     print(f"{' PREFLIGHT: PySWMM ':=^60}")
     print()
-    check_import("pyswmm", "pyswmm")
-    check_import("Simulation", "Simulation")
-    check_import("Output", "Output")
-    check_import("csv", "csv")
+    check_import("pyswmm", "PySWMM (pyswmm)")
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

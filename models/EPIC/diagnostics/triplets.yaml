@@ -1,402 +1,178 @@
-# ============================================================================
-# EPIC Diagnostic Triplets
-# ============================================================================
-# 18 diagnostic triplets covering 5 failure domains.
-# Generated during EPIC (Geo-EPIC) knowledge dissection.
-# ============================================================================
+triplets:
+  - id: T01
+    symptom: |
+      forrtl: severe (29): file not found, unit 39, file ./fort.39
+      Earlier message: "File SOIL38K.DAT IS MISSING."
+    diagnosis: |
+      EPIC0810 looks for SOIL38K.DAT, but the EPIC1102 example bundle ships SOIL35K.DAT.
+      The file format is identical; only the file name changed between releases.
+    remedy: |
+      In your workspace: cp SOIL35K.DAT SOIL38K.DAT
+      run_epic_workspace.setup_workspace() does this automatically.
 
-# --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
+  - id: T02
+    symptom: |
+      forrtl: severe (64): input conversion error, unit 24, file <site>.SOL
+    diagnosis: |
+      The .SOL file contains alphabetic structure codes (e.g. "A B C D" rows)
+      that the EPIC0810 Fortran reader rejects when reading numeric F8.2 fields.
+    remedy: |
+      Run sanitize_sol(sol_path) in tools/run_epic_workspace.py — it replaces
+      every alpha token with "0.00" while preserving column widths. The header
+      line (line 1) is left as free text.
 
-- id: dt_001
-  stage: s1_weather
-  failure_domain: unit_conversion
-  symptom:
-    description: "Solar radiation values in DLY are 10-80x too high (e.g., 500-2000 MJ/m2/day). Crop matures extremely early with abnormally high biomass."
-    error_pattern: "peak biomass > 50 t/ha"
-    detection_method: value_comparison
-  diagnosis:
-    root_cause: "Solar radiation left in W/m2 instead of converted to MJ/m2/day"
-    explanation: >
-      EPIC expects srad in MJ/m2/day. Daymet provides instantaneous W/m2 that must
-      be multiplied by dayl (seconds) and divided by 1e6. GridMET provides daily mean
-      W/m2 that must be multiplied by 0.0864 (= 86400 / 1e6). Omitting the conversion
-      gives values 10-86x too high.
-    affected_components: [convert_weather_to_dly, DLY]
-  remedy:
-    action: "Apply correct conversion: Daymet srad*dayl/1e6, GridMET srad*0.0864"
-    manual_steps:
-      - "Check max srad in DLY file — should be < 35 MJ/m2/day for most locations"
-      - "If srad > 50, values are likely in W/m2 — apply conversion factor"
-    prevention: "validate_outputs() checks srad range before writing DLY"
-  severity: silent
+  - id: T03
+    symptom: |
+      Binary hangs forever and prints "FORTRAN PAUSE\nPAUSE prompt>"
+    diagnosis: |
+      EPIC0810 hits a Fortran PAUSE statement on a non-fatal warning (e.g. missing
+      optional file) and waits for keyboard ENTER from stdin.
+    remedy: |
+      Always invoke with stdin closed: subprocess.run([bin], cwd=ws,
+      stdin=subprocess.DEVNULL, stdout=PIPE, stderr=PIPE, timeout=600)
 
-- id: dt_002
-  stage: s1_weather
-  failure_domain: unit_conversion
-  symptom:
-    description: "Temperature values in DLY are > 200 degC. EPIC crashes or produces nonsensical results."
-    error_pattern: "tmax > 200"
-    detection_method: value_comparison
-  diagnosis:
-    root_cause: "Temperature data in Kelvin (K) not converted to Celsius (degC)"
-    explanation: >
-      GridMET and CMFD provide temperature in Kelvin. EPIC expects degrees Celsius.
-      300 K = 27 degC. If Kelvin values are written directly to DLY, EPIC sees
-      temperatures of 270-310 degC which are physically impossible.
-    affected_components: [convert_weather_to_dly, DLY]
-  remedy:
-    action: "Subtract 273.15 from all temperature values"
-    manual_steps:
-      - "Check tmax values in DLY — should be -50 to 55 degC"
-      - "If tmax > 200, data is in Kelvin — subtract 273.15"
-    prevention: "validate_outputs() flags tmax > 60"
-  severity: silent
+  - id: T04
+    symptom: |
+      OUT file is < 2 KB, no annual data, no error message.
+    diagnosis: |
+      EPICRUN.DAT line is missing the trailing "/" required by the namelist read,
+      or the site_id column is not exactly 9 chars wide.
+    remedy: |
+      Format must be: "{site_id:>9s} {NSIT:3d} {NWP1:3d} {NWND:3d} {NWP5:3d}
+      {NSOL:3d} {NOPS:3d} {NDLY:3d}/" — note the trailing slash.
 
-- id: dt_003
-  stage: s1_weather
-  failure_domain: unit_conversion
-  symptom:
-    description: "Relative humidity in DLY is 50-100 instead of 0.5-1.0. EPIC reads extremely high humidity, abnormal ET computation."
-    error_pattern: "rh > 1.0"
-    detection_method: value_comparison
-  diagnosis:
-    root_cause: "Relative humidity provided as percentage (0-100%) instead of fraction (0-1)"
-    explanation: >
-      EPIC expects RH as a fraction (0.0-1.0). NASA POWER and GridMET provide RH
-      as percentage (0-100%). If 70% is written as 70.0 instead of 0.70, EPIC
-      interprets this incorrectly. Note: Daymet provides vapor pressure (Pa), not RH,
-      which needs the rh_vappr formula conversion.
-    affected_components: [convert_weather_to_dly, DLY]
-  remedy:
-    action: "Divide RH by 100 if values are in percentage"
-    manual_steps:
-      - "Check max rh in DLY — should be 0.0-1.0"
-      - "If rh > 1.5, values are percentage — divide by 100"
-    prevention: "Auto-fix in convert_weather_to_dly.py detects and corrects"
-  severity: silent
+  - id: T05
+    symptom: |
+      <site>.ACY and <site>.DGN files exist but have only 11 lines (header only).
+    diagnosis: |
+      The output-type toggles in PRNT1102.DAT are 0 for these extensions, or the
+      site never triggered a harvest event (forest sites produce no .ACY rows by design).
+    remedy: |
+      For empty .ACY: check OPC for harvest operation code 650. For empty .DGN:
+      verify the daily print toggle row in PRNT1102.DAT. Use parse_out_annual_table()
+      to scrape annual values from the .OUT report instead.
 
-- id: dt_004
-  stage: s1_weather
-  failure_domain: unit_conversion
-  symptom:
-    description: "Precipitation in DLY is 8x too low. Crop shows extreme water stress. Very low yield."
-    error_pattern: "WS > 0.5 in DGN"
-    detection_method: value_comparison
-  diagnosis:
-    root_cause: "Hourly/3-hourly precipitation averaged instead of summed to daily"
-    explanation: >
-      When converting hourly or 3-hourly precipitation to daily, the correct operation
-      is SUM (not MEAN). CMFD provides mm/3hr, so daily = sum of 8 timesteps.
-      NASA POWER provides mm/hr, so daily = sum of 24 values. Using mean() instead
-      of sum() gives precipitation that is 8x or 24x too low.
-    affected_components: [convert_weather_to_dly]
-  remedy:
-    action: "Use sum() not mean() for precipitation aggregation"
-    manual_steps:
-      - "Verify annual total precipitation — should be 200-2000 mm for most ag regions"
-      - "If annual total < 100 mm, precipitation was likely averaged not summed"
-  severity: silent
+  - id: T06
+    symptom: |
+      ANN file shows all-zero precipitation/ET despite .DLY having data.
+    diagnosis: |
+      EPICCONT.DAT start year is outside the .DLY date range, so EPIC falls back
+      to the WXGEN weather generator with empty .WP1 statistics.
+    remedy: |
+      Set EPICCONT.DAT IYR to a year that exists in your .DLY file. The
+      update_epiccont() helper takes start_year and validates against the range.
 
-- id: dt_005
-  stage: s2_soil
-  failure_domain: unit_conversion
-  symptom:
-    description: "Soil bulk density = 1400 in SOL file. EPIC treats soil as extremely dense, no root growth."
-    error_pattern: "bulk density > 10"
-    detection_method: value_comparison
-  diagnosis:
-    root_cause: "Bulk density in kg/m3 instead of g/cm3"
-    explanation: >
-      EPIC expects bulk density in g/cm3 (typical range 0.8-1.8). Some databases
-      provide BD in kg/m3 (800-1800). Writing 1400 kg/m3 as 1400 g/cm3 is physically
-      impossible and prevents root growth.
-    affected_components: [convert_soil_to_sol, SOL]
-  remedy:
-    action: "Divide by 1000 to convert kg/m3 to g/cm3"
-    manual_steps:
-      - "Check BD values in SOL — should be 0.5-2.5 g/cm3"
-      - "If BD > 5, values are likely kg/m3"
-  severity: silent
+  - id: T07
+    symptom: |
+      forrtl: severe error during model startup; OUT file shows year 1 day 1 only.
+    diagnosis: |
+      tmax < tmin in one or more rows of the .DLY file (forcing converter bug).
+    remedy: |
+      Add `assert (data["tmax"] >= data["tmin"]).all()` to the forcing converter.
+      Most often caused by swapped tmin/tmax columns when reading source NetCDF.
 
-- id: dt_006
-  stage: s2_soil
-  failure_domain: unit_conversion
-  symptom:
-    description: "Organic carbon values in SOL are 1.7x too high. Excessive nutrient mineralization, unrealistic N supply."
-    error_pattern: "OC > 6% in all layers"
-    detection_method: value_comparison
-  diagnosis:
-    root_cause: "Organic Matter (OM%) used directly as Organic Carbon (OC%) without Van Bemmelen conversion"
-    explanation: >
-      Many soil databases report Organic Matter (OM%). EPIC uses Organic Carbon (OC%).
-      The Van Bemmelen factor: OC = OM / 1.724. If OM is used directly as OC, carbon
-      content is overestimated by 72%, leading to excessive N mineralization.
-    affected_components: [convert_soil_to_sol, SOL]
-  remedy:
-    action: "Divide OM% by 1.724 to get OC%"
-    manual_steps:
-      - "Verify source data reports OC or OM"
-      - "If OM, apply: OC = OM / 1.724"
-  severity: silent
+  - id: T08
+    symptom: |
+      ACY rows show YLDG=0 every year for a clearly cropped site.
+    diagnosis: |
+      The Potential Heat Units (PHU) in the OPC planting row (column OPV1)
+      are wrong, so the crop never reaches maturity within the season.
+    remedy: |
+      Compute PHU as sum of (Tavg - Tbase) between planting and observed maturity
+      from the .DLY file. For corn Tbase=8 °C, typical PHU = 1500–2000 °C·day.
 
-- id: dt_007
-  stage: s2_soil
-  failure_domain: unit_conversion
-  symptom:
-    description: "Saturated hydraulic conductivity in SOL is 0.001-0.01 mm/hr. Soil never drains, permanent waterlogging."
-    error_pattern: "aeration stress > 0.5"
-    detection_method: value_comparison
-  diagnosis:
-    root_cause: "SSURGO ksat in um/s not converted to mm/hr"
-    explanation: >
-      SSURGO reports saturated hydraulic conductivity in micrometers per second (um/s).
-      EPIC expects mm/hr. Conversion: mm/hr = um/s * 3.6. If um/s values (0.1-100)
-      are used directly as mm/hr, the actual ksat is 3.6x too low.
-    affected_components: [convert_soil_to_sol, SOL]
-  remedy:
-    action: "Multiply SSURGO ksat by 3.6 to convert um/s to mm/hr"
-    manual_steps:
-      - "Check ksat values in SOL — sandy soils should be 50-500 mm/hr, clay 0.1-10 mm/hr"
-  severity: silent
+  - id: T09
+    symptom: |
+      ANN ET > PRCP for several years; soil dries out completely.
+    diagnosis: |
+      Relative humidity in .DLY is in percent (0–100) instead of fraction (0–1).
+      EPIC interprets RH=70 as "RH = 7000%" and the vapor pressure deficit
+      explodes, driving PET to absurd values.
+    remedy: |
+      Divide RH by 100 in the forcing converter. Add a range check
+      `assert data["rh"].max() < 1.5` to validate_forcing_dict().
 
-- id: dt_008
-  stage: s2_soil
-  failure_domain: unit_conversion
-  symptom:
-    description: "SoilGrids data values are 10-100x too large in SOL file. BD=140, Sand=400, pH=65."
-    error_pattern: "BD > 100 or Sand > 100"
-    detection_method: value_comparison
-  diagnosis:
-    root_cause: "SoilGrids raw values not scaled by their respective factors"
-    explanation: >
-      SoilGrids stores values with scale factors: bdod in cg/cm3 (/100), sand in g/kg (/10),
-      phh2o as pH*10 (/10), soc in dg/kg (/100), cec in mmol/kg (/10), cfvo in cm3/dm3 (/10).
-      Omitting any of these conversions produces nonsensical soil properties.
-    affected_components: [convert_soil_to_sol]
-  remedy:
-    action: "Apply SoilGrids scale factors before writing SOL"
-    manual_steps:
-      - "Check all soil properties are in expected physical ranges"
-      - "bdod /100, sand|silt|clay /10, phh2o /10, soc /100, cec /10, cfvo /10"
-  severity: silent
+  - id: T10
+    symptom: |
+      LAI in DGN goes negative or NaN; OUT file mentions "CROP NOT FOUND".
+    diagnosis: |
+      The crop code in the OPC planting row doesn't exist in CROPCOM.DAT.
+    remedy: |
+      Look up the crop code in CROPCOM.DAT (column CPNM). For corn, code is 2;
+      for switchgrass, 22; for natural mixed forest, 38.
 
-# --- Parameter / Format Errors ---
+  - id: T11
+    symptom: |
+      Yield is reasonable but ET is implausibly low (< 200 mm/yr in temperate climate).
+    diagnosis: |
+      Solar radiation in .DLY is in W/m² instead of MJ/m²/day. PET is then
+      ~24× too low and the model becomes water-limited.
+    remedy: |
+      Convert: srad_MJ = srad_Wm2 * 0.0864 (for daily mean) or
+      srad_Wm2 * dayl_seconds / 1e6 for Daymet.
 
-- id: dt_009
-  stage: s3_operations
-  failure_domain: parameter_format
-  symptom:
-    description: "EPIC produces zero yield for all years despite correct weather and soil. Biomass grows but no grain."
-    error_pattern: "YLDG = 0 in ACY"
-    detection_method: value_comparison
-  diagnosis:
-    root_cause: "PHU (Potential Heat Units) too high — crop never reaches physiological maturity"
-    explanation: >
-      PHU in the OPC file determines when the crop matures. If PHU is set too high
-      for the climate (e.g., 2500 for corn in northern Iowa where only 1600 thermal
-      units accumulate), the crop never completes its lifecycle and produces zero grain yield.
-    affected_components: [OPC, CROPCOM]
-  remedy:
-    action: "Reduce PHU to match regional thermal accumulation"
-    manual_steps:
-      - "Calculate actual growing-season thermal units from DLY: sum(max(0, (tmax+tmin)/2 - base_temp))"
-      - "Set PHU to 85-95% of actual thermal units"
-      - "Corn base temp = 10 degC, Soybean base temp = 10 degC"
-  severity: silent
+  - id: T12
+    symptom: |
+      Soil water never drains; runoff = 0 every storm.
+    diagnosis: |
+      Saturated hydraulic conductivity in row 19 of SOL is in cm/day instead of mm/h.
+      A typical loam Ksat of 5 mm/h becomes 5 cm/day = 0.21 mm/h, ~24× too low.
+    remedy: |
+      Multiply Ksat_cm_per_day * 10 / 24 to get mm/h.
 
-- id: dt_010
-  stage: s3_operations
-  failure_domain: parameter_format
-  symptom:
-    description: "Crop yield is very low despite adequate weather. EPIC simulates a very short growing season."
-    error_pattern: "biomass peak very early in DGN"
-    detection_method: value_comparison
-  diagnosis:
-    root_cause: "PHU too low — crop matures too early before accumulating sufficient biomass"
-    explanation: >
-      If PHU is set too low (e.g., 800 for corn which needs 1600+), the crop reaches
-      maturity in 40-60 days instead of 120+. The result is a small, stunted crop
-      with very low yield.
-    affected_components: [OPC]
-  remedy:
-    action: "Increase PHU to match regional values"
-    manual_steps:
-      - "Check DGN for when peak biomass occurs — should be ~120 days after planting for corn"
-      - "Increase PHU incrementally until maturity timing matches expectations"
-  severity: silent
+  - id: T13
+    symptom: |
+      Bulk density row in SOL has values like 1440 instead of 1.44.
+    diagnosis: |
+      Bulk density in kg/m³ instead of g/cm³.
+    remedy: |
+      Divide by 1000.
 
-- id: dt_011
-  stage: s4_execution
-  failure_domain: path_resolution
-  symptom:
-    description: "EPIC uses weather generator instead of observed weather. Output shows unrealistic year-to-year variability."
-    error_pattern: "simulated weather doesn't match DLY"
-    detection_method: value_comparison
-  diagnosis:
-    root_cause: "WDLSTCOM.DAT does not point to correct DLY file, or DLY date range doesn't cover simulation period"
-    explanation: >
-      If EPIC cannot find the DLY file referenced in WDLSTCOM.DAT, or the DLY file
-      doesn't cover the simulation period in EPICCONT.DAT, EPIC falls back to its
-      built-in weather generator using WP1 monthly statistics. This can produce
-      significantly different results from observed weather.
-    affected_components: [WDLSTCOM.DAT, DLY, EPICCONT.DAT]
-  remedy:
-    action: "Verify WDLSTCOM.DAT references correct DLY file and dates align"
-    manual_steps:
-      - "Check WDLSTCOM.DAT contains: 1.DLY"
-      - "Verify 1.DLY exists in run directory"
-      - "Verify DLY date range covers EPICCONT.DAT start_date + duration"
-  severity: silent
+  - id: T14
+    symptom: |
+      Layer depth row in SOL has values like 5, 15, 30, 60 — runoff and percolation are wild.
+    diagnosis: |
+      Layer depths in cm instead of metres.
+    remedy: |
+      Divide by 100. EPIC0810 expects metres in the layer depth row.
 
-- id: dt_012
-  stage: s4_execution
-  failure_domain: path_resolution
-  symptom:
-    description: "EPIC crashes with file not found error. No output files produced."
-    error_pattern: "EPIC returns non-zero exit code"
-    detection_method: exit_code
-  diagnosis:
-    root_cause: "One or more COM.DAT reference files point to missing input files"
-    explanation: >
-      EPIC reads file paths from SITECOM.DAT, SOILCOM.DAT, OPSCCOM.DAT, WDLSTCOM.DAT,
-      and WPM1USEL.DAT. If any referenced file (.SIT, .SOL, .OPC, .DLY) doesn't exist
-      in the run directory, EPIC crashes.
-    affected_components: [workspace setup, file references]
-  remedy:
-    action: "Verify all referenced files exist in the run directory"
-    manual_steps:
-      - "For each COM.DAT file, read the filename referenced inside"
-      - "Verify that file exists in the same directory"
-  severity: fatal
+  - id: T15
+    symptom: |
+      Crop matures in 30 days; harvest yields ~0.
+    diagnosis: |
+      PHU set too low (e.g. 200 °C·day) — crop sprints through phenology
+      and never accumulates biomass.
+    remedy: |
+      Use realistic PHU per crop: corn 1500, wheat 1700, soybean 1500,
+      switchgrass 2000.
 
-- id: dt_013
-  stage: s4_execution
-  failure_domain: runtime
-  symptom:
-    description: "EPIC executable fails with 'Exec format error' or 'Permission denied' on Linux."
-    error_pattern: "exec format error"
-    detection_method: exit_code
-  diagnosis:
-    root_cause: "EPIC1102.exe is a Windows PE binary being run natively on Linux"
-    explanation: >
-      The Geo-EPIC-win package bundles a Windows executable (EPIC1102.exe). On Linux,
-      this cannot run natively. It requires Wine (Windows compatibility layer) or a
-      Linux-compiled version of EPIC.
-    affected_components: [EPIC1102.exe]
-  remedy:
-    action: "Install Wine or obtain Linux-compiled EPIC binary"
-    manual_steps:
-      - "sudo apt install wine64"
-      - "Replace ./EPIC1102.exe invocation with: wine ./EPIC1102.exe"
-      - "Or compile EPIC from Fortran source for Linux"
-  severity: fatal
+  - id: T16
+    symptom: |
+      Same workspace produces different results on repeat runs.
+    diagnosis: |
+      Stale output files from a previous run aren't being deleted; EPIC0810
+      appends rather than overwrites some output files (notably .ACY in append mode).
+    remedy: |
+      Before re-running: rm -f workspace/<site_id>.* (then run again).
+      Or use a fresh setup_workspace() into a new temp dir.
 
-- id: dt_014
-  stage: s4_execution
-  failure_domain: runtime
-  symptom:
-    description: "EPIC simulation runs forever, never completes. Process killed by timeout."
-    error_pattern: "timeout"
-    detection_method: timeout
-  diagnosis:
-    root_cause: "EPIC is waiting for interactive input that is not provided via stdin"
-    explanation: >
-      Some EPIC versions prompt for input during execution. The Geo-EPIC toolkit
-      pipes newlines to stdin to handle these prompts. If the prompts change or
-      EPIC is stuck in a loop, the process hangs until timeout.
-    affected_components: [EPIC binary, stdin handling]
-  remedy:
-    action: "Increase timeout or check EPIC version compatibility"
-    manual_steps:
-      - "Try running EPIC manually in terminal to see prompts"
-      - "Ensure stdin piping sends correct responses"
-      - "Increase timeout in config.yml if simulation is legitimately slow"
-  severity: fatal
+  - id: T17
+    symptom: |
+      EPIC0810 segfaults at startup with no Fortran error.
+    diagnosis: |
+      Workspace is missing one of the database files: CROPCOM.DAT, FERT2012.DAT,
+      TILLCOM.DAT, PESTCOM.DAT, or PARM1102.DAT. The Fortran open succeeds
+      (file is auto-created empty) but the read fails.
+    remedy: |
+      Verify all REQUIRED_TEMPLATE_FILES are present:
+      `python tools/run_epic_workspace.py --workspace ws` will validate.
 
-# --- Data Quality / Dependency Errors ---
-
-- id: dt_015
-  stage: s3_operations
-  failure_domain: parameter_format
-  symptom:
-    description: "Fertilizer application has no effect. Crop shows nitrogen stress despite applied N."
-    error_pattern: "NS > 0.3 in DGN despite fertilizer in OPC"
-    detection_method: value_comparison
-  diagnosis:
-    root_cause: "Fertilizer rate in lb/ac instead of kg/ha, giving ~50% of intended amount"
-    explanation: >
-      EPIC expects fertilizer rates in kg/ha. US agricultural data often reports
-      in lb/acre. 1 lb/ac = 1.121 kg/ha. If 200 lb/ac is entered as 200 kg/ha,
-      the actual application is about 89% of intended. For smaller rates, the
-      relative error is more significant.
-    affected_components: [OPC file, fertilizer application]
-  remedy:
-    action: "Convert lb/ac to kg/ha by multiplying by 1.121"
-    manual_steps:
-      - "Verify fertilizer rate units in OPC"
-      - "US data: multiply lb/ac by 1.121"
-  severity: silent
-
-- id: dt_016
-  stage: s5_output
-  failure_domain: dependency_mismatch
-  symptom:
-    description: "ACY file parsing fails with 'could not convert string to float'. Columns misaligned."
-    error_pattern: "ValueError: could not convert"
-    detection_method: exception
-  diagnosis:
-    root_cause: "EPIC version difference causes different column layout in ACY file"
-    explanation: >
-      Different EPIC versions (e.g., 1102 vs 0810) may have different column counts
-      or header formats in output files. The parser expects 10 skip rows and specific
-      column names. A version mismatch shifts columns.
-    affected_components: [parse_epic_output, ACY/DGN]
-  remedy:
-    action: "Inspect ACY file header manually and adjust skip rows or column names"
-    manual_steps:
-      - "Open ACY file in text editor"
-      - "Count header rows before data"
-      - "Verify column names match expected format"
-  severity: fatal
-
-- id: dt_017
-  stage: s0_config
-  failure_domain: parameter_format
-  symptom:
-    description: "SiteID truncated in EPICRUN.DAT. Wrong site's files loaded. Output files have wrong name."
-    error_pattern: "output filename mismatch"
-    detection_method: file_check
-  diagnosis:
-    root_cause: "SiteID exceeds 9 characters — EPIC's Fortran format truncates it"
-    explanation: >
-      EPIC internally uses 9-character site identifiers (Fortran CHARACTER*9).
-      If SiteID in info.csv is longer (e.g., 'COUNTY_12345'), it gets truncated
-      to 'COUNTY_12', causing file reference mismatches.
-    affected_components: [info.csv, EPICRUN.DAT]
-  remedy:
-    action: "Keep SiteID to 9 alphanumeric characters maximum"
-    manual_steps:
-      - "Check all SiteID values in info.csv"
-      - "Truncate or abbreviate IDs exceeding 9 characters"
-  severity: fatal
-
-- id: dt_018
-  stage: s2_soil
-  failure_domain: parameter_format
-  symptom:
-    description: "Wilting capacity exceeds field capacity in SOL file. EPIC produces negative available water."
-    error_pattern: "wilting > field capacity"
-    detection_method: value_comparison
-  diagnosis:
-    root_cause: "Pedotransfer function produced inconsistent water retention values"
-    explanation: >
-      When estimating soil hydraulic properties from texture using pedotransfer
-      functions, edge cases (very sandy or very clayey soils) can produce wilting
-      capacity >= field capacity. EPIC requires WC < FC < porosity.
-    affected_components: [convert_soil_to_sol, SOL]
-  remedy:
-    action: "Enforce WC < FC constraint: FC = max(FC, WC + 0.05)"
-    manual_steps:
-      - "Check all layers: Wilting_capacity < Field_Capacity"
-      - "If violated, set FC = WC + 0.05 as minimum"
-  severity: silent
+  - id: T18
+    symptom: |
+      Wind speed in .DLY printed as "***" or model crashes on day 1.
+    diagnosis: |
+      Wind speed exceeds the F6.2 column width (i.e. > 99.99 m/s) due to
+      forcing units in km/h or mph not converted.
+    remedy: |
+      km/h → m/s: divide by 3.6. mph → m/s: multiply by 0.44704.
+      Add range check `assert (0 <= ws).all() and (ws < 50).all()`.

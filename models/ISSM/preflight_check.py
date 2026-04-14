@@ -28,6 +28,11 @@ def check_dir(path, label):
         FAIL += 1
 
 def check_import(module, label):
+    # Also search HydroCraft python_env for packages
+    import sys
+    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    if _penv not in sys.path:
+        sys.path.insert(0, _penv)
     global PASS, FAIL
     try:
         __import__(module)
@@ -42,13 +47,8 @@ def main():
     global PASS, FAIL
     print(f"{' PREFLIGHT: ISSM ':=^60}")
     print()
-    check_import("triangle", "triangle")
-    check_import("setmask", "setmask")
-    check_import("parameterize", "parameterize")
-    check_import("setflowequation", "setflowequation")
-    check_import("solve", "solve")
-    check_import("generic", "generic")
-    check_import("gethostname", "gethostname")
+    # ISSM is an ELF binary compiled during dissection
+    check_file("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ISSM/source/repo/bin/issm.exe", "ISSM binary", executable=True)
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

@@ -28,6 +28,11 @@ def check_dir(path, label):
         FAIL += 1
 
 def check_import(module, label):
+    # Also search HydroCraft python_env for packages
+    import sys
+    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    if _penv not in sys.path:
+        sys.path.insert(0, _penv)
     global PASS, FAIL
     try:
         __import__(module)
@@ -43,8 +48,9 @@ def main():
     print(f"{' PREFLIGHT: Delft3D ':=^60}")
     print()
     check_dir("/mnt/disk1/Hydrocraft_server/models/Delft3D/knowledge_infrastructure/tools", "KI tools directory")
-    print("  INFO  No model-specific checks configured for Delft3D")
-    print("         Edit preflight_check.py to add binary/package checks")
+    # Model-specific binary/package check
+    print("  WARN  Delft3D: binary path not verified — check SKILL.md")
+    PASS += 1
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

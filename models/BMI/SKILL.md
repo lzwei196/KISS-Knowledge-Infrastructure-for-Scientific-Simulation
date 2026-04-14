@@ -34,6 +34,15 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: Framework models use data from the coupled models.
+
+
 ## Overview
 
 The Basic Model Interface (BMI) is a **standardized set of control and query functions** that, when added to a software element such as a numerical model or dataset, makes that software easier to couple with other BMI-enabled software. BMI is developed and maintained by CSDMS (Community Surface Dynamics Modeling System) under NSF funding.

@@ -8,7 +8,7 @@ Wraps the cism_driver executable with:
   3. Post-run output validation (output NetCDF exists, has expected vars)
 
 CRITICAL:
-  - Binary path: typically builds/serial/cism_driver/cism_driver
+  - Binary path: typically builds/mpi/cism_driver/cism_driver
   - Config file must end in .config
   - Input NetCDF must exist and match grid dimensions in config
   - For MPI runs: mpirun -n <nproc> cism_driver config.config

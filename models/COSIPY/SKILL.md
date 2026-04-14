@@ -33,6 +33,18 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for atmospheric forcing documentation.
+See `data_ki/SNOTEL/SKILL.md` for snow observations.
+See `data_ki/BedMachine/SKILL.md` for ice topography.
+See `data_ki/MEaSUREs/SKILL.md` for ice velocity.
+
+
 ## Overview
 
 This knowledge infrastructure enables autonomous simulation of glacier and snowpack energy and mass balance using COSIPY. The tools convert meteorological forcing data, configure simulation parameters, execute the model, and parse outputs — all without manual intervention.

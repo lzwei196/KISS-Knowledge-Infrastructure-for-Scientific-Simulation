@@ -32,6 +32,17 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for meteorological forcing documentation.
+See `data_ki/HWSD/SKILL.md` for soil property documentation.
+See `data_ki/RISMA/SKILL.md` for soil moisture observations.
+
+
 ## Overview
 
 This knowledge infrastructure enables autonomous simulation of agricultural field processes

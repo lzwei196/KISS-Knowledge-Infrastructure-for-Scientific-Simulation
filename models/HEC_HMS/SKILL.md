@@ -32,6 +32,17 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
+See `data_ki/HWSD/SKILL.md` for soil property documentation.
+See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
+
+
 ## Overview
 
 This knowledge infrastructure enables autonomous rainfall-runoff simulation using HEC-HMS methodology on any gauged basin, **without the proprietary HEC-HMS GUI**. The 6 validated Python tools implement the core HEC-HMS algorithms (SCS-CN loss, SCS Unit Hydrograph transform, Muskingum routing, linear reservoir baseflow) and integrate with HydroCraft's forcing, soil, and observation infrastructure.

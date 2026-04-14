@@ -23,6 +23,16 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: This model takes runoff from upstream hydrological models (VIC, mHM, etc.) as input.
+See `data_ki/ObservedQ/SKILL.md` for observed discharge validation data.
+
+
 <!-- NOTE: Mac development paths below are stale on the server. Use /mnt/disk1/Hydrocraft_server/ paths instead. -->
 
 # VIC Routing汇流模型运行指南

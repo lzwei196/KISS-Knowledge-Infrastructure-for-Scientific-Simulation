@@ -47,12 +47,12 @@ def main():
         # Load GDirs
         per_glacier = working_dir / 'per_glacier'
         rgi_ids = []
+        import re as _re
+        _pat = _re.compile(r"^RGI\d+-\d+\.\d{5}$")
         if per_glacier.exists():
-            for region_dir in per_glacier.iterdir():
-                if region_dir.is_dir():
-                    for gdir in region_dir.iterdir():
-                        if gdir.is_dir():
-                            rgi_ids.append(gdir.name)
+            for pth in per_glacier.rglob("*"):
+                if pth.is_dir() and _pat.match(pth.name):
+                    rgi_ids.append(pth.name)
 
         gdirs = workflow.init_glacier_directories(rgi_ids, reset=False)
         print(f"Compiling output for {len(gdirs)} glaciers...")

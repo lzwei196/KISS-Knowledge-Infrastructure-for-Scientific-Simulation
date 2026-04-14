@@ -84,6 +84,15 @@ cd /path/to/WRF/source/repo
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for boundary condition forcing.
+
+
 ## Pipeline Architecture
 
 The WRF real-data workflow has **9 stages** from raw global data to verified output.

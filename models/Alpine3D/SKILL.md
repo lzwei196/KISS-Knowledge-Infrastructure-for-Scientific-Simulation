@@ -32,6 +32,18 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for atmospheric forcing documentation.
+See `data_ki/SNOTEL/SKILL.md` for snow observations.
+See `data_ki/BedMachine/SKILL.md` for ice topography.
+See `data_ki/MEaSUREs/SKILL.md` for ice velocity.
+
+
 ## Overview
 
 Alpine3D is a spatially distributed, three-dimensional model for analyzing and predicting
@@ -97,7 +109,7 @@ make -j$(nproc) && sudo make install
 ### Binary Location
 
 After build: `alpine3d/build/bin/alpine3d`
-After install: `$(prefix)/bin/alpine3d` (default `/usr/local/bin/alpine3d`)
+After install: `/usr/local/bin/alpine3d` or current location: `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Alpine3D/source/repo/Source/alpine3d/bin/alpine3d`
 
 ### Test
 

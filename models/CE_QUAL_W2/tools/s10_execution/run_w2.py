@@ -18,7 +18,7 @@ Post-run checks:
 
 Usage:
     python run_w2.py --run_dir /path/to/run \
-        --binary /path/to/w2.exe \
+        --binary /path/to/w2_v5 \
         --timeout 7200
 """
 
@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 
 
-W2_BINARY_DEFAULT = "/mnt/disk1/Hydrocraft_server/model/ce_qual_w2/bin/w2.exe"
+W2_BINARY_DEFAULT = "/mnt/disk1/Hydrocraft_server/model/ce_qual_w2/bin/w2_v5"
 
 
 def preflight_checks(run_dir, binary):
@@ -193,7 +193,7 @@ def process(args):
 def main():
     parser = argparse.ArgumentParser(description="Run CE-QUAL-W2")
     parser.add_argument("--run_dir", required=True, help="Directory with w2_con.npt and all input files")
-    parser.add_argument("--binary", default=W2_BINARY_DEFAULT, help="Path to w2.exe")
+    parser.add_argument("--binary", default=W2_BINARY_DEFAULT, help="Path to w2_v5")
     parser.add_argument("--timeout", type=int, default=7200, help="Timeout in seconds (default: 7200)")
     args = parser.parse_args()
     sys.exit(process(args))

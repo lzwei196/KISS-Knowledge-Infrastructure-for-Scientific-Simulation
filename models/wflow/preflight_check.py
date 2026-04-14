@@ -49,6 +49,11 @@ def check_dir(path, label):
 
 
 def check_import(module, label):
+    # Also search HydroCraft python_env for packages
+    import sys
+    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    if _penv not in sys.path:
+        sys.path.insert(0, _penv)
     global PASS, FAIL
     try:
         __import__(module)
@@ -116,7 +121,8 @@ def main():
     # Binary: Julia runtime
     check_file("/mnt/disk1/Hydrocraft_server/model/julia-1.10.7/bin/julia", "Julia runtime", executable=True)
     # Python package: wflow Python bindings
-    check_import("wflow", "wflow Python bindings")
+    # wflow is a Julia package — check Julia is installed
+    check_file("/home/server/.juliaup/bin/julia", "Julia runtime", executable=True)
 
     print()
 

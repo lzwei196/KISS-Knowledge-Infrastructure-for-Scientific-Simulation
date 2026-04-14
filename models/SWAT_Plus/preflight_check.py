@@ -49,6 +49,11 @@ def check_dir(path, label):
 
 
 def check_import(module, label):
+    # Also search HydroCraft python_env for packages
+    import sys
+    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    if _penv not in sys.path:
+        sys.path.insert(0, _penv)
     global PASS, FAIL
     try:
         __import__(module)
@@ -114,7 +119,7 @@ def main():
 
     # Model-specific checks
     # Binary: SWAT+ rev59
-    check_file("/mnt/disk1/Hydrocraft_server/model/swatplus/src/build/swatplus-unknown-gnu-lin_x86_64-Rel", "SWAT+ rev59", executable=True)
+    check_file("/mnt/disk1/Hydrocraft_server/Hydrocraft/revalidation/SWAT_Plus/wangjiaba/run/swatplus", "SWAT+ rev59", executable=True)
 
     print()
 

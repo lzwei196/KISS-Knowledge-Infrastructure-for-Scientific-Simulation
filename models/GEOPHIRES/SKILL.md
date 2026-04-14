@@ -32,6 +32,15 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/DTB/SKILL.md` for depth-to-bedrock data.
+
+
 ## 1. What GEOPHIRES Does
 
 GEOPHIRES is a free, open-source geothermal techno-economic simulator that combines:

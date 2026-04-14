@@ -32,6 +32,18 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for recharge forcing documentation.
+See `data_ki/GLHYMPS/SKILL.md` for hydrogeology data.
+See `data_ki/FanWTD/SKILL.md` for water table depth.
+See `data_ki/GRACE/SKILL.md` for GRACE TWS validation data.
+
+
 ## Overview
 
 This knowledge infrastructure enables autonomous simulation of subsurface flow and transport through discrete fracture networks (DFNs) using dfnWorks. The 4 validated tools replace manual input-file preparation with a Python pipeline that integrates fracture network generation, meshing, flow simulation, and particle tracking.

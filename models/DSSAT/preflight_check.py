@@ -49,6 +49,11 @@ def check_dir(path, label):
 
 
 def check_import(module, label):
+    # Also search HydroCraft python_env for packages
+    import sys
+    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    if _penv not in sys.path:
+        sys.path.insert(0, _penv)
     global PASS, FAIL
     try:
         __import__(module)
@@ -118,7 +123,7 @@ def main():
     # Directory: Chinese cultivar library
     check_dir("/home/server/DSSAT/Data/Genotype/China", "Chinese cultivar library")
     # File: DSSAT support files
-    check_file("/home/server/DSSAT/Data/StandardData/MODEL.ERR", "DSSAT support files")
+    check_file("/home/server/DSSAT/Data/MODEL.ERR", "DSSAT support files")
 
     print()
 

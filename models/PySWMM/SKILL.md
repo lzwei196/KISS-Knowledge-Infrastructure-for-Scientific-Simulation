@@ -30,6 +30,16 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for rainfall forcing documentation.
+See `data_ki/SWMM_Benchmarks/SKILL.md` for drainage test cases.
+
+
 ## 1. Overview
 
 PySWMM is a Python interface to the EPA Storm Water Management Model (SWMM5),

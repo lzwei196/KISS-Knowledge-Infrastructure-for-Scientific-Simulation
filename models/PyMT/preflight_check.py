@@ -28,6 +28,11 @@ def check_dir(path, label):
         FAIL += 1
 
 def check_import(module, label):
+    # Also search HydroCraft python_env for packages
+    import sys
+    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    if _penv not in sys.path:
+        sys.path.insert(0, _penv)
     global PASS, FAIL
     try:
         __import__(module)
@@ -42,14 +47,23 @@ def main():
     global PASS, FAIL
     print(f"{' PREFLIGHT: PyMT ':=^60}")
     print()
-    check_import("pymt", "pymt")
-    check_import("MODELS", "MODELS")
-    check_import("failures", "failures")
-    check_import("Cem", "Cem")
-    check_import("ModelName", "ModelName")
-    check_import("Waves", "Waves")
-    check_import("NcPortPrinter", "NcPortPrinter")
-    check_import("dataset_from_bmi_grid", "dataset_from_bmi_grid")
+    # PyMT in dissection venv
+    import sys
+    sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PyMT/venv/lib/python3.12/site-packages")
+    # PyMT: use venv python (has deps system python lacks)
+    import subprocess
+    try:
+        proc = subprocess.run(["/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PyMT/venv/bin/python3", "-c", "import pymt"], 
+            capture_output=True, timeout=10)
+        if proc.returncode == 0:
+            print(f"  OK    PyMT (pymt): verified via venv python")
+            PASS += 1
+        else:
+            print(f"  FAIL  PyMT (pymt): {proc.stderr.decode().strip().split(chr(10))[-1]}")
+            FAIL += 1
+    except Exception as e:
+        print(f"  FAIL  PyMT (pymt): {e}")
+        FAIL += 1
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

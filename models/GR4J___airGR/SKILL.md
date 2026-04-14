@@ -32,6 +32,17 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
+See `data_ki/HWSD/SKILL.md` for soil property documentation.
+See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
+
+
 ## Overview
 
 This knowledge infrastructure enables fully autonomous simulation of catchment rainfall-runoff processes using the GR4J model (Perrin et al., 2003) implemented in the airGR R package. The 4 validated Python tools replace manual R workflow steps with a Python pipeline that integrates directly with HydroCraft's forcing, routing, and calibration infrastructure.

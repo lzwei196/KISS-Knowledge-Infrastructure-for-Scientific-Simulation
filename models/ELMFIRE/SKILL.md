@@ -32,6 +32,16 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for weather forcing documentation.
+See `data_ki/MTBS/SKILL.md` for fire perimeter observations.
+
+
 ## Overview
 
 This knowledge infrastructure enables autonomous wildfire spread simulation using ELMFIRE on any landscape, **without manual data preparation**. The 4 validated tools replace the standard shell-script workflow with a Python pipeline that generates GeoTIFF inputs, configures Fortran namelists, executes the model, and parses outputs.

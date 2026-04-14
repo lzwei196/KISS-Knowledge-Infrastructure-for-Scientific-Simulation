@@ -48,6 +48,16 @@ products are:
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: ESMF is a coupling framework — data flows through the models it couples.
+See `data_ki/CMFD/SKILL.md` for forcing data used by coupled models.
+
+
 ## 2. Installation
 
 ### 2.1 Prerequisites

@@ -1,0 +1,77 @@
+# APEX 1501 — diagnostic triplets (symptom → cause → remedy).
+# Consult this file FIRST when apex1501 misbehaves. Patterns are matched as
+# substrings against stderr / EPICERR.DAT / *.OUT contents.
+triplets:
+  - id: file_missing_uppercase
+    symptom: "File ... IS MISSING"
+    cause: |
+      apex1501 reads filenames literally from APEXFILE.DAT and *LIST.DAT. On
+      Linux the filesystem is case-sensitive, so SITE01.SIT (uppercase) and
+      SITE01.sit (lowercase) are different files. APEX silently exits 0
+      after this error.
+    remedy: |
+      Rename all per-subarea files on disk to UPPERCASE extensions (.SIT,
+      .SUB, .SOL, .OPC/.MGT, .WP1, .WND, .DLY) and verify the *LIST.DAT
+      entries match exactly.
+
+  - id: lwe_dat_missing
+    symptom: "forrtl: severe (24): end-of-file during read, unit 22"
+    cause: |
+      Pre-1501 APEXFILE.DAT lacks the 'FLWE LWE.DAT' line. The 1501 binary
+      requires an LWE.DAT entry (for the Long-term Water-Erosion module),
+      and EOFs at unit 22 (APEXFILE) when it's missing.
+    remedy: |
+      Append a line `FLWE     LWE.DAT` to APEXFILE.DAT and `touch LWE.DAT`
+      in the workspace. The example dataset already ships with both.
+
+  - id: sub_too_short
+    symptom: "MAIN_1501.f90:2858"
+    cause: |
+      apex1501 reads beyond the 12 documented lines of *.SUB and EOFs if
+      the file has fewer than 22 lines.
+    remedy: |
+      Pad the *.SUB file with rows of '0.00' until it has 22 lines. The
+      shipped SUBA01.SUB template already has the required padding.
+
+  - id: weather_units_srad
+    symptom: "ET implausibly low" or "WYLD too high"
+    cause: |
+      SRAD provided in W/m² instead of MJ/m²/day. APEX expects MJ/m²/day.
+      A typical mid-latitude daily value is 10–25 MJ/m²/day, NOT 200–300.
+    remedy: |
+      Multiply W/m² by 0.0864 to get MJ/m²/day. s2_convert_forcing.py
+      already applies this conversion when reading from CMFD/MSWX/POWER.
+
+  - id: zero_exit_silent_crash
+    symptom: "exit code 0 but RUN1501.SUM missing or empty"
+    cause: |
+      apex1501 returns 0 even on Fortran severe errors. Never trust the
+      exit code; always check that RUN1501.SUM was written and look at
+      EPICERR.DAT for the real diagnostic.
+    remedy: |
+      s6_run_apex.py already verifies RUN1501.SUM exists and is non-empty
+      after every invocation, and surfaces EPICERR.DAT in the exception
+      message.
+
+  - id: ngn_weather_mismatch
+    symptom: "weather generator spinning random sequence"
+    cause: |
+      NGN in APEXCONT.DAT controls which weather variables are GENERATED
+      (digits 1=PRCP, 2=TMAX, 3=TMIN, 4=SRAD, 5=WIND, 6=RH). If a digit
+      lists a variable but that column is also populated in *.DLY, APEX
+      may use the generator and ignore the file.
+    remedy: |
+      To read all variables from *.DLY, set NGN=0 in APEXCONT.DAT. To
+      use the validated default of NGN=2345 (generate srad/temps/wind),
+      leave the corresponding *.DLY columns blank.
+
+  - id: hwsd_lookup_failed
+    symptom: "HWSD raster lookup failed"
+    cause: |
+      Either the HWSD raster path is wrong, the lat/lon falls outside the
+      raster bounds, or rasterio is not installed in the active environment.
+    remedy: |
+      Verify HWSD raster path with `ls /mnt/disk1/Hydrocraft_server/data`,
+      ensure -180<=lon<=180 and -60<=lat<=85, and `pip install rasterio`
+      if missing. lookup_hwsd falls back to texture defaults so soil build
+      will still proceed but with imprecise numbers.

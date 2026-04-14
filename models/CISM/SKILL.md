@@ -34,6 +34,18 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for atmospheric forcing documentation.
+See `data_ki/SNOTEL/SKILL.md` for snow observations.
+See `data_ki/BedMachine/SKILL.md` for ice topography.
+See `data_ki/MEaSUREs/SKILL.md` for ice velocity.
+
+
 ## Overview
 
 CISM (Community Ice Sheet Model) is a parallel, thermomechanical ice sheet model developed
@@ -91,7 +103,7 @@ cmake \
 make -j$(nproc)
 ```
 
-**Binary**: `builds/serial/cism_driver/cism_driver`
+**Binary**: `builds/mpi/cism_driver/cism_driver`
 
 ### Dependencies
 
@@ -342,7 +354,7 @@ cd ../../tests/dome
 python3 dome.py   # Creates dome.nc
 
 # 3. Run CISM
-../../builds/serial/cism_driver/cism_driver dome.config
+../../builds/mpi/cism_driver/cism_driver dome.config
 
 # 4. Parse output
 python3 ../../ki/tools/parse_cism_output.py --input dome.out.nc --output dome_results.csv

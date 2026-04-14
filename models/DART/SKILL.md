@@ -34,6 +34,28 @@
 
 ---
 
+## Data Preparation
+
+### Input data
+
+**Input Source**: DART is a data assimilation framework — it ingests observations to update model states.
+The observation source depends on the coupled model (discharge for hydrology, temperature for lakes, etc.).
+
+**Data Validation Reference**: See `data_ki/ObservedQ/SKILL.md` for discharge observations.
+See `data_ki/FLUXNET/SKILL.md` for flux tower observations.
+See  for flux tower observations.
+
+
+
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: Framework models use data from the coupled models.
+
+
 ## Overview
 
 DART is an open-source community facility for ensemble data assimilation (DA)

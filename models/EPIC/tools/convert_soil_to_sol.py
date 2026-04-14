@@ -1,387 +1,161 @@
 #!/usr/bin/env python3
 """
-Convert HWSD / SoilGrids soil data to EPIC .SOL and .SIT file formats.
+Convert HWSD soil + ROSETTA van Genuchten parameters into an EPIC0810 .SOL file.
 
-Pipeline: HWSD raster or SoilGrids CSV → layer interpolation → .SOL + .SIT
-Pattern:  validate inputs → process → validate outputs
-
-Supports:
-  - HWSD (Harmonized World Soil Database) raster
-  - SoilGrids CSV exports (from ISRIC)
-  - Generic CSV with soil layer properties
+Pattern: validate inputs -> lookup HWSD -> rosetta_vgn -> assemble 19-property
+profile -> write fixed-width 6-layer SOL -> sanitize alpha codes.
 """
 
 import os
 import sys
-import argparse
 import numpy as np
-import pandas as pd
-from pathlib import Path
+
+# 6 layer thicknesses in metres (cumulative depth from surface).
+# These match the standard HWSD 6-layer convention.
+DEFAULT_LAYER_DEPTHS_M = [0.05, 0.15, 0.30, 0.60, 1.00, 1.50]
 
 
-# ---------------------------------------------------------------------------
-# EPIC SOL format specification
-# ---------------------------------------------------------------------------
-SOL_PROPERTIES = [
-    "Layer_depth",         # cm
-    "Bulk_Density",        # g/cm3
-    "Wilting_capacity",    # fraction (m3/m3)
-    "Field_Capacity",      # fraction (m3/m3)
-    "Sand_content",        # %
-    "Silt_content",        # %
-    "N_concen",            # mg/kg (ppm)
-    "pH",                  # pH units
-    "Sum_Bases",           # meq/100g
-    "Organic_Carbon",      # %
-    "Calcium_Carbonate",   # %
-    "Cation_exchange",     # meq/100g
-    "Coarse_Fragment",     # %
-    "Sat_conductivity",    # mm/hr
-    "pkrz",                # linear parameter
-    "rsd",                 # residual water content
-    "BD_dry",              # g/cm3
-    "psp",                 # pore size parameter
-    "Ksat_2",              # mm/hr (duplicate)
-]
-
-# Hydrological group mapping
-HYDGRP_MAP = {"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0,
-              "A/D": 1.0, "B/D": 2.0, "C/D": 3.0}
-
-# Default layer depths for EPIC (10 layers, cm)
-DEFAULT_LAYERS_CM = [18, 28, 52, 77, 101, 126, 152, 178, 203, 229]
-
-SOL_FMT = "%8.3f"
+def _try_lookup_hwsd(lat: float, lon: float):
+    try:
+        from ki_tools_common.soil_utils import lookup_hwsd, rosetta_vgn
+    except ImportError as e:
+        raise ImportError(
+            "ki_tools_common.soil_utils is required. Add the kdt-release path to PYTHONPATH."
+        ) from e
+    soil = lookup_hwsd(lat, lon)
+    vgn = rosetta_vgn(soil["sand"], soil["clay"])
+    return soil, vgn
 
 
-def validate_inputs(soil_data: pd.DataFrame, source: str) -> list:
-    """Validate raw soil input data."""
+def build_profile(soil: dict, vgn: dict,
+                  layer_depths_m: list = None) -> dict:
+    """
+    Build 19 EPIC soil properties × N layers from HWSD + ROSETTA outputs.
+
+    Returns dict {property_name: list[float]} length len(layer_depths_m).
+    """
+    if layer_depths_m is None:
+        layer_depths_m = DEFAULT_LAYER_DEPTHS_M
+    n_layers = len(layer_depths_m)
+
+    sand = float(soil.get("sand", 40.0))
+    silt = float(soil.get("silt", 40.0))
+    clay = float(soil.get("clay", 20.0))
+    bd = float(soil.get("bulk_density", 1.4))
+    om = float(soil.get("organic_matter", 1.0))
+    ph = float(soil.get("ph", 6.5))
+    cec = float(soil.get("cec", 12.0))
+    caco3 = float(soil.get("caco3", 0.0))
+
+    oc = om / 1.724  # Van Bemmelen factor
+
+    fc = float(vgn.get("field_capacity", 0.30))
+    wp = float(vgn.get("wilting_point", 0.12))
+    ksat_mmhr = float(vgn.get("ksat_mmhr", 10.0))
+
+    rep = lambda x: [float(x)] * n_layers
+    profile = {
+        "Layer_depth_m":          list(layer_depths_m),
+        "Bulk_density":           rep(bd),
+        "Wilting_point":          rep(wp),
+        "Field_capacity":         rep(fc),
+        "Sand_pct":               rep(sand),
+        "Silt_pct":               rep(silt),
+        "Initial_soil_water":     rep(fc * 0.8),
+        "Organic_N_g_t":          rep(oc * 100.0),
+        "pH":                     rep(ph),
+        "Sum_bases":              rep(cec * 0.6),
+        "Organic_C_pct":          rep(oc),
+        "CaCO3_pct":              rep(caco3),
+        "CEC":                    rep(cec),
+        "Coarse_frag_pct":        rep(0.0),
+        "Initial_NO3_g_t":        rep(5.0),
+        "Initial_labile_P_g_t":   rep(15.0),
+        "Crop_residue_t_ha":      rep(0.0),
+        "BD_dry":                 rep(bd),
+        "Ksat_mmhr":              rep(ksat_mmhr),
+    }
+    return profile
+
+
+def write_sol(profile: dict, sol_path: str, soil_name: str = "HWSD_SOIL",
+              soil_order: str = "INCEPTISOL", albedo: float = 0.20,
+              hyd_grp: int = 2, lat: float = 0.0, slope_pct: float = 1.0) -> None:
+    """
+    Write an EPIC0810-compatible SOL file with all numeric tokens
+    (no alphabetic structure codes).
+
+    Layout:
+      Line 1: free-text header
+      Line 2: 10 site-level reals (8.2f)
+      Line 3: 10 site-level reals (8.2f)
+      Lines 4-22: 19 property rows × N layers (8.2f each)
+    """
+    n_layers = len(profile["Layer_depth_m"])
+
+    with open(sol_path, "w") as f:
+        f.write(f"{soil_name:25s}{soil_order}\n")
+
+        # Site reals row 1: albedo  hyd_grp  depth(m)  min_thick  spl  rcr  cn2  ridge  rsd  zsr
+        row1 = [albedo, float(hyd_grp), float(profile["Layer_depth_m"][-1]),
+                50.0, 100.0, 75.0, 25.0, 50.0, 0.0, 0.0]
+        f.write("".join(f"{v:8.2f}" for v in row1) + "\n")
+
+        # Site reals row 2: more parameters (slope length, steepness, ...)
+        row2 = [10.00, 3.00, 100.00, 1.00, slope_pct, 0.10, 1.00, 0.04, 0.50, 0.00]
+        f.write("".join(f"{v:8.2f}" for v in row2) + "\n")
+
+        property_order = [
+            "Layer_depth_m", "Bulk_density", "Wilting_point", "Field_capacity",
+            "Sand_pct", "Silt_pct", "Initial_soil_water", "Organic_N_g_t",
+            "pH", "Sum_bases", "Organic_C_pct", "CaCO3_pct", "CEC",
+            "Coarse_frag_pct", "Initial_NO3_g_t", "Initial_labile_P_g_t",
+            "Crop_residue_t_ha", "BD_dry", "Ksat_mmhr",
+        ]
+        for prop in property_order:
+            vals = profile[prop]
+            f.write("".join(f"{v:8.2f}" for v in vals) + "\n")
+
+
+def validate_sol(sol_path: str) -> list:
+    """Open the SOL we just wrote and check for any alpha tokens."""
     errors = []
-
-    if soil_data.empty:
-        errors.append("ERROR: Soil data is empty")
-        return errors
-
-    # Check for physically unreasonable values
-    if "Bulk_Density" in soil_data.columns:
-        bd = soil_data["Bulk_Density"]
-        if bd.min() < 0.5 or bd.max() > 2.5:
-            errors.append(
-                f"WARNING: Bulk density range [{bd.min():.2f}, {bd.max():.2f}] "
-                f"outside normal range [0.5, 2.5] g/cm3"
-            )
-
-    if "Sand_content" in soil_data.columns and "Silt_content" in soil_data.columns:
-        total = soil_data["Sand_content"] + soil_data["Silt_content"]
-        if total.max() > 105:  # allow small tolerance
-            errors.append(
-                f"WARNING: Sand + Silt = {total.max():.1f}% > 100% in some layers"
-            )
-
-    if "pH" in soil_data.columns:
-        ph = soil_data["pH"]
-        if ph.min() < 3.0 or ph.max() > 10.0:
-            errors.append(
-                f"WARNING: pH range [{ph.min():.1f}, {ph.max():.1f}] "
-                f"outside normal range [3, 10]"
-            )
-
+    if not os.path.exists(sol_path):
+        return [f"ERROR: {sol_path} not produced"]
+    import re
+    with open(sol_path) as f:
+        for i, line in enumerate(f, start=1):
+            if i == 1:
+                continue
+            if re.search(r"[A-Za-z]", line):
+                errors.append(f"ERROR: alpha character on line {i}: {line.rstrip()}")
     return errors
 
 
-def convert_hwsd_to_layers(hwsd_record: dict) -> pd.DataFrame:
-    """
-    Convert a single HWSD grid cell record to EPIC soil layers.
-
-    HWSD provides topsoil (0-30 cm) and subsoil (30-100 cm) properties.
-    We interpolate to 10 EPIC layers.
-
-    HWSD units → EPIC units:
-      T_BULK_DENSITY: kg/dm3 = g/cm3 (same)
-      T_SAND, T_SILT, T_CLAY: % (same)
-      T_PH_H2O: pH (same)
-      T_OC: % (same)
-      T_CEC_SOIL: cmol(+)/kg = meq/100g (same)
-      T_GRAVEL: % vol (same)
-      T_REF_BULK_DENSITY: kg/dm3 = g/cm3 (same)
-
-    CRITICAL: HWSD gives Organic Carbon directly as %, NOT Organic Matter.
-    If source gives OM%, convert: OC% = OM% / 1.724 (Van Bemmelen factor)
-    """
-    layers = []
-    for i, depth in enumerate(DEFAULT_LAYERS_CM):
-        # Determine if topsoil (< 30 cm) or subsoil
-        prefix = "T_" if depth <= 30 else "S_"
-
-        layer = {
-            "Layer_depth": depth,
-            "Bulk_Density": hwsd_record.get(f"{prefix}BULK_DENSITY", 1.40),
-            "Sand_content": hwsd_record.get(f"{prefix}SAND", 40.0),
-            "Silt_content": hwsd_record.get(f"{prefix}SILT", 30.0),
-            "pH": hwsd_record.get(f"{prefix}PH_H2O", 6.5),
-            "Organic_Carbon": hwsd_record.get(f"{prefix}OC", 1.0),
-            "Cation_exchange": hwsd_record.get(f"{prefix}CEC_SOIL", 15.0),
-            "Coarse_Fragment": hwsd_record.get(f"{prefix}GRAVEL", 5.0),
-            "BD_dry": hwsd_record.get(f"{prefix}REF_BULK_DENSITY", 1.35),
-        }
-
-        # Estimate missing properties using pedotransfer functions
-        sand = layer["Sand_content"]
-        clay = 100 - sand - layer["Silt_content"]
-
-        # Wilting point (Saxton & Rawls, 2006)
-        layer["Wilting_capacity"] = max(0.04, 0.09878 + 0.002135 * clay
-                                        - 0.0004434 * sand)
-
-        # Field capacity
-        layer["Field_Capacity"] = max(
-            layer["Wilting_capacity"] + 0.05,
-            0.2576 - 0.002 * sand + 0.0036 * clay
-        )
-
-        # Saturated hydraulic conductivity (mm/hr) from sand content
-        # Cosby et al. (1984): log10(Ksat) = -0.6 + 0.0126*sand - 0.0064*clay
-        log_ksat = -0.6 + 0.0126 * sand - 0.0064 * clay
-        layer["Sat_conductivity"] = 10 ** log_ksat * 25.4  # in/hr to mm/hr
-        layer["Ksat_2"] = layer["Sat_conductivity"]
-
-        # Defaults for less common properties
-        layer["N_concen"] = max(50, layer["Organic_Carbon"] * 800)
-        layer["Sum_Bases"] = max(0, layer["Cation_exchange"] * 0.6)
-        layer["Calcium_Carbonate"] = hwsd_record.get(f"{prefix}CACO3", 0.0)
-        layer["pkrz"] = 0.0
-        layer["rsd"] = max(0.01, layer["Wilting_capacity"] * 0.5)
-        layer["psp"] = 0.0
-
-        layers.append(layer)
-
-    return pd.DataFrame(layers)
-
-
-def convert_soilgrids_csv(csv_path: str) -> pd.DataFrame:
-    """
-    Convert SoilGrids CSV export to EPIC soil layers.
-
-    SoilGrids units → EPIC units:
-      bdod: cg/cm3 → g/cm3: divide by 100
-      sand, silt, clay: g/kg → %: divide by 10
-      phh2o: pH*10 → pH: divide by 10
-      soc: dg/kg → %: divide by 100 (dg/kg = 0.1 g/kg)
-      cec: mmol(c)/kg → meq/100g: divide by 10
-      cfvo: cm3/dm3 → %: divide by 10
-    """
-    df = pd.read_csv(csv_path)
-
-    # SoilGrids depths: 0-5, 5-15, 15-30, 30-60, 60-100, 100-200 cm
-    sg_depths = [5, 15, 30, 60, 100, 200]
-
-    layers = []
-    for i, depth in enumerate(DEFAULT_LAYERS_CM):
-        # Find closest SoilGrids layer
-        sg_idx = min(range(len(sg_depths)),
-                     key=lambda j: abs(sg_depths[j] - depth))
-        row = df.iloc[sg_idx] if sg_idx < len(df) else df.iloc[-1]
-
-        # UNIT CONVERSIONS — critical!
-        layer = {
-            "Layer_depth": depth,
-            "Bulk_Density": row.get("bdod", 140) / 100.0,    # cg/cm3 → g/cm3
-            "Sand_content": row.get("sand", 400) / 10.0,     # g/kg → %
-            "Silt_content": row.get("silt", 300) / 10.0,     # g/kg → %
-            "pH": row.get("phh2o", 65) / 10.0,               # pH*10 → pH
-            "Organic_Carbon": row.get("soc", 100) / 100.0,   # dg/kg → %
-            "Cation_exchange": row.get("cec", 150) / 10.0,   # mmol/kg → meq/100g
-            "Coarse_Fragment": row.get("cfvo", 50) / 10.0,   # cm3/dm3 → %
-        }
-
-        sand = layer["Sand_content"]
-        clay = 100 - sand - layer["Silt_content"]
-
-        layer["Wilting_capacity"] = max(0.04, 0.09878 + 0.002135 * clay
-                                        - 0.0004434 * sand)
-        layer["Field_Capacity"] = max(
-            layer["Wilting_capacity"] + 0.05,
-            0.2576 - 0.002 * sand + 0.0036 * clay
-        )
-        log_ksat = -0.6 + 0.0126 * sand - 0.0064 * clay
-        layer["Sat_conductivity"] = 10 ** log_ksat * 25.4
-        layer["Ksat_2"] = layer["Sat_conductivity"]
-        layer["N_concen"] = max(50, layer["Organic_Carbon"] * 800)
-        layer["Sum_Bases"] = max(0, layer["Cation_exchange"] * 0.6)
-        layer["Calcium_Carbonate"] = 0.0
-        layer["BD_dry"] = layer["Bulk_Density"] * 0.95
-        layer["pkrz"] = 0.0
-        layer["rsd"] = max(0.01, layer["Wilting_capacity"] * 0.5)
-        layer["psp"] = 0.0
-
-        layers.append(layer)
-
-    return pd.DataFrame(layers)
-
-
-def validate_outputs(layers: pd.DataFrame) -> list:
-    """Validate soil layers before writing SOL file."""
-    errors = []
-
-    # Layer depths must be monotonically increasing
-    depths = layers["Layer_depth"].values
-    if not all(depths[i] < depths[i + 1] for i in range(len(depths) - 1)):
-        errors.append("ERROR: Layer depths must be monotonically increasing")
-
-    # Bulk density range
-    bd = layers["Bulk_Density"]
-    if bd.min() < 0.3 or bd.max() > 2.65:
-        errors.append(
-            f"WARNING: Bulk density [{bd.min():.2f}, {bd.max():.2f}] "
-            f"outside physical range. Check units (must be g/cm3, not kg/m3)."
-        )
-
-    # Wilting < Field Capacity < 1.0
-    if (layers["Wilting_capacity"] >= layers["Field_Capacity"]).any():
-        errors.append("ERROR: Wilting capacity >= Field capacity in some layers")
-
-    # Sand + Silt <= 100
-    total = layers["Sand_content"] + layers["Silt_content"]
-    if total.max() > 100.5:
-        errors.append(f"ERROR: Sand + Silt = {total.max():.1f}% > 100%")
-
-    # Ksat > 0
-    if (layers["Sat_conductivity"] <= 0).any():
-        errors.append("WARNING: Saturated conductivity <= 0 in some layers")
-
-    return errors
-
-
-def write_sol(layers: pd.DataFrame, output_path: str,
-              soil_id: str = "SOIL001",
-              albedo: float = 0.13, hydgrp: str = "B"):
-    """Write EPIC .SOL file in fixed-width format."""
-    num_layers = len(layers)
-    hydgrp_code = HYDGRP_MAP.get(hydgrp.upper(), 2.0)
-
-    lines = []
-
-    # Line 1: Soil ID
-    lines.append(f"ID: {soil_id}")
-
-    # Line 2: Albedo and hydrological group
-    line2 = f"{albedo:8.3f}{hydgrp_code:8.3f}"
-    line2 += " " * (80 - len(line2))
-    lines.append(line2)
-
-    # Line 3: Number of layers
-    line3 = f"{num_layers:8.3f}"
-    line3 += " " * (80 - len(line3))
-    lines.append(line3)
-
-    # Lines 4-22: Property rows (19 properties, each row has num_layers columns)
-    for prop in SOL_PROPERTIES:
-        row_values = layers[prop].values
-        line = "".join(f"{v:8.3f}" for v in row_values)
-        lines.append(line)
-
-    # Pad to at least 42 lines
-    while len(lines) < 42:
-        lines.append(" " * 80)
-
-    with open(output_path, "w") as f:
-        f.write("\n".join(lines) + "\n")
-
-    print(f"Wrote {num_layers}-layer SOL to {output_path}")
-
-
-def write_sit(output_path: str, site_id: str = "SITE001",
-              lat: float = 35.0, lon: float = -78.0, elev: float = 100.0,
-              slope_length: float = 50.0, slope_steepness: float = 0.01,
-              description: str = "EPIC simulation site"):
-    """Write EPIC .SIT file."""
-    lines = []
-
-    # Line 1: Description
-    lines.append(f"{description:<80s}")
-
-    # Line 2: Prototype
-    lines.append(f"{site_id}.SIT" + " " * (80 - len(f"{site_id}.SIT")))
-
-    # Line 3: Site ID
-    lines.append(f"ID: {site_id}" + " " * (80 - len(f"ID: {site_id}")))
-
-    # Line 4: Lat, Lon, Elevation, other params
-    line4 = (f"{lat:8.2f}{lon:8.2f}{elev:8.2f}"
-             f"{'':8s}{'':8s}{'':8s}{'':8s}{'':8s}{'':8s}{'':8s}{'':8s}")
-    lines.append(line4)
-
-    # Line 5: Slope parameters
-    line5 = " " * 48 + f"{slope_length:8.1f}{slope_steepness:8.2f}"
-    lines.append(line5)
-
-    # Line 6: Empty
-    lines.append(" " * 80)
-
-    # Line 7: Flags
-    lines.append("   0   0   0   0   0  21   0  10  22   0   0")
-
-    with open(output_path, "w") as f:
-        f.write("\n".join(lines) + "\n")
-
-    print(f"Wrote SIT to {output_path}")
+def convert(lat: float, lon: float, sol_path: str,
+            soil_name: str = None, slope_pct: float = 1.0) -> dict:
+    """Top-level pipeline: HWSD lookup -> ROSETTA -> write SOL -> validate."""
+    soil, vgn = _try_lookup_hwsd(lat, lon)
+    profile = build_profile(soil, vgn)
+    name = soil_name or f"hwsd_{lat:.2f}_{lon:.2f}"
+    write_sol(profile, sol_path, soil_name=name,
+              hyd_grp=int(soil.get("hyd_group", 2)),
+              lat=lat, slope_pct=slope_pct)
+    errors = validate_sol(sol_path)
+    if errors:
+        raise ValueError(f"SOL validation failed: {errors}")
+    return {"sol": sol_path, "n_layers": len(profile["Layer_depth_m"]), "soil": soil}
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Convert soil data to EPIC .SOL and .SIT formats"
-    )
-    parser.add_argument("--source", choices=["hwsd", "soilgrids", "csv"],
-                        required=True, help="Soil data source")
-    parser.add_argument("--input", required=True,
-                        help="Input file path")
-    parser.add_argument("--output-dir", required=True,
-                        help="Output directory for .SOL and .SIT files")
-    parser.add_argument("--site-id", default="SITE001",
-                        help="Site identifier (max 9 chars)")
-    parser.add_argument("--lat", type=float, required=True)
-    parser.add_argument("--lon", type=float, required=True)
-    parser.add_argument("--elev", type=float, default=100.0,
-                        help="Elevation in meters")
-    parser.add_argument("--hydgrp", default="B",
-                        help="Hydrological group (A/B/C/D)")
-
-    args = parser.parse_args()
-    os.makedirs(args.output_dir, exist_ok=True)
-
-    # Step 1: Convert to layers
-    if args.source == "hwsd":
-        # Read HWSD record (simplified — in practice use rasterio)
-        import json
-        with open(args.input) as f:
-            record = json.load(f)
-        layers = convert_hwsd_to_layers(record)
-    elif args.source == "soilgrids":
-        layers = convert_soilgrids_csv(args.input)
-    elif args.source == "csv":
-        layers = pd.read_csv(args.input)
-
-    # Step 2: Validate inputs
-    input_errors = validate_inputs(layers, args.source)
-    for e in input_errors:
-        print(e)
-
-    # Step 3: Validate outputs
-    output_errors = validate_outputs(layers)
-    for e in output_errors:
-        print(e)
-
-    if any("ERROR" in e for e in output_errors):
-        print("FATAL: Soil validation failed.")
-        sys.exit(1)
-
-    # Step 4: Write files
-    sol_path = os.path.join(args.output_dir, f"{args.site_id}.SOL")
-    sit_path = os.path.join(args.output_dir, f"{args.site_id}.SIT")
-
-    write_sol(layers, sol_path, soil_id=args.site_id, hydgrp=args.hydgrp)
-    write_sit(sit_path, site_id=args.site_id,
-              lat=args.lat, lon=args.lon, elev=args.elev)
+    import argparse, json
+    p = argparse.ArgumentParser()
+    p.add_argument("--lat", type=float, required=True)
+    p.add_argument("--lon", type=float, required=True)
+    p.add_argument("--out", required=True)
+    args = p.parse_args()
+    result = convert(args.lat, args.lon, args.out)
+    print(json.dumps(result, indent=2, default=str))
 
 
 if __name__ == "__main__":

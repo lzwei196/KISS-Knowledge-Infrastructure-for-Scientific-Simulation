@@ -33,6 +33,16 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for meteorological forcing documentation.
+See `data_ki/USGS_Sediment/SKILL.md` for suspended sediment observations.
+
+
 ## Overview
 
 Landlab is an open-source Python package for numerical modeling of Earth surface

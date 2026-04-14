@@ -1,0 +1,18 @@
+model: ANUGA
+validation_mode: analytical
+comparison_type: analytical
+no_observation: true   # no gauged dataset; do not retry as failed gauge comparison
+
+triplets:
+  - name: dam_break_wet
+    variable: stage
+    unit: m
+    benchmark: Stoker wet-bed Riemann solution
+    reference_module: anuga_validation_tests.analytical_exact.dam_break_wet.analytical_dam_break_wet
+    reference_function: vec_dam_break
+    numerical_driver: diagnostics/run_dam_break_wet.py
+    domain: 1000 m x 5 m rectangular channel, dx=1 m
+    initial: h_left=10 m, h_right=1 m, elevation=0, friction=0
+    finaltime_s: 50
+    sample: centerline y=0, 100 points across x in [-400, 400]
+    metrics: [nse, r, kge]

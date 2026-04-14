@@ -1,5 +1,17 @@
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
+
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
+See `data_ki/HWSD/SKILL.md` for soil property documentation.
+See `data_ki/FAOSTAT/SKILL.md` for crop yield observations.
+See `data_ki/SPAM/SKILL.md` for gridded yield data.
+
 > You MUST run the **actual model binary or package** described in this document.
 > If the model fails to import, compile, or execute, you MUST:
 > 1. Check `diagnostics/triplets.yaml` for a matching error pattern

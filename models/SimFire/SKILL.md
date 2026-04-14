@@ -32,6 +32,16 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for weather forcing documentation.
+See `data_ki/MTBS/SKILL.md` for fire perimeter observations.
+
+
 ## Overview
 
 SimFire is a Python-based wildfire simulation framework built on the **Rothermel Surface Fire Spread Model** (USDA Forest Service RMRS-GTR-371). It uses PyGame for real-time visualization and supports three terrain/fuel data modes:

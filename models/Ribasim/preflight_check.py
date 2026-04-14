@@ -28,6 +28,11 @@ def check_dir(path, label):
         FAIL += 1
 
 def check_import(module, label):
+    # Also search HydroCraft python_env for packages
+    import sys
+    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    if _penv not in sys.path:
+        sys.path.insert(0, _penv)
     global PASS, FAIL
     try:
         __import__(module)
@@ -42,11 +47,8 @@ def main():
     global PASS, FAIL
     print(f"{' PREFLIGHT: Ribasim ':=^60}")
     print()
-    check_import("ribasim", "ribasim")
-    check_import("xarray", "xarray")
-    check_import("Model", "Model")
-    check_import("Point", "Point")
-    check_import("geopandas", "geopandas")
+    # Ribasim is a Julia package — check Julia is installed
+    check_file("/home/server/.juliaup/bin/julia", "Julia runtime", executable=True)
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

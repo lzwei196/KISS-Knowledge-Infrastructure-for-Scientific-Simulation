@@ -525,6 +525,8 @@ def main():
     parser = argparse.ArgumentParser(description='Derive CRHM parameters from global datasets')
     parser.add_argument('--hru_config', required=True, help='HRU config JSON from S1')
     parser.add_argument('--output', required=True, help='Output derived parameters JSON')
+    parser.add_argument('--basin_lat', type=float, default=None, help='Basin center latitude (fallback for HWSD lookup)')
+    parser.add_argument('--basin_lon', type=float, default=None, help='Basin center longitude (fallback for HWSD lookup)')
     args = parser.parse_args()
 
     with open(args.hru_config) as f:
@@ -533,7 +535,37 @@ def main():
     hrus = cfg['hrus']
     nhru = cfg['nhru']
     basin_area = cfg['basin_area_km2']
+
+    # Determine basin center for HWSD fallback
+    # Priority: CLI args > HRU config lat/lon > shapefile centroid
+    if args.basin_lat is not None and args.basin_lon is not None:
+        default_lat, default_lon = args.basin_lat, args.basin_lon
+    else:
+        # Try to compute from HRU centroids if available
+        hru_lats = [h.get('center_lat', h.get('mean_lat')) for h in hrus]
+        hru_lons = [h.get('center_lon', h.get('mean_lon')) for h in hrus]
+        valid_lats = [x for x in hru_lats if x is not None]
+        valid_lons = [x for x in hru_lons if x is not None]
+        if valid_lats and valid_lons:
+            default_lat = np.mean(valid_lats)
+            default_lon = np.mean(valid_lons)
+        else:
+            # Last resort: use elevation range midpoint from config
+            elev_range = cfg.get('elevation_range_m', [0, 0])
+            default_lat = 50.0  # will be overridden by --basin_lat
+            default_lon = -115.0
+            warnings.warn(f"No HRU lat/lon found and --basin_lat/lon not provided. "
+                          f"Using default ({default_lat}, {default_lon}) for HWSD lookup. "
+                          f"This WILL give wrong soil types! Pass --basin_lat --basin_lon.")
+
     print(f"Deriving parameters for {nhru} HRUs, basin area {basin_area:.1f} km²")
+    print(f"  HWSD lookup location: ({default_lat:.2f}, {default_lon:.2f})")
+
+    # Do ONE HWSD lookup at basin center (all HRUs share same HWSD cell at this resolution)
+    basin_soil_type, basin_soil_info = lookup_soil_type(default_lat, default_lon)
+    texture_name = CRHM_SOIL.get(basin_soil_type, {}).get('name', '?')
+    print(f"  HWSD soil: type={basin_soil_type} ({texture_name}), "
+          f"sand={basin_soil_info.get('sand','?')}%, clay={basin_soil_info.get('clay','?')}%")
 
     # Per-HRU soil parameters
     soil_types = []
@@ -545,14 +577,17 @@ def main():
     sdmaxs = []
 
     for hru in hrus:
-        lat = hru.get('center_lat', hru.get('mean_lat', 51.0))
-        lon = hru.get('center_lon', hru.get('mean_lon', -115.0))
+        lat = hru.get('center_lat', hru.get('mean_lat', default_lat))
+        lon = hru.get('center_lon', hru.get('mean_lon', default_lon))
         lc = hru.get('land_cover_name', 'grassland')
         slope = hru.get('mean_slope_deg', 10.0)
         elev = hru.get('mean_elevation_m', 1000)
 
-        # Soil type from HWSD
-        st, soil_info = lookup_soil_type(lat, lon)
+        # Soil type from HWSD — use basin-level lookup if HRU has no unique coordinates
+        if lat == default_lat and lon == default_lon:
+            st = basin_soil_type  # reuse basin lookup, don't re-query
+        else:
+            st, _ = lookup_soil_type(lat, lon)
 
         # Derive soil storage params using Fang et al. (2013) method
         soil_params = derive_soil_params(st, lc, mean_elevation_m=elev, slope_deg=slope)

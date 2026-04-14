@@ -54,15 +54,15 @@ def main():
         cfg.PARAMS['store_model_geometry'] = True
         cfg.PARAMS['dl_verify'] = False
 
-        # Load GDirs
+        # Load GDirs — OGGM layout nests per_glacier/RGIxx-NN/RGIxx-NN.YY/RGIxx-NN.YYZZZ/
+        import re as _re
         per_glacier = working_dir / 'per_glacier'
         rgi_ids = []
+        _pat = _re.compile(r'^RGI\d+-\d+\.\d{5}$')
         if per_glacier.exists():
-            for region_dir in per_glacier.iterdir():
-                if region_dir.is_dir():
-                    for gdir in region_dir.iterdir():
-                        if gdir.is_dir():
-                            rgi_ids.append(gdir.name)
+            for p in per_glacier.rglob('*'):
+                if p.is_dir() and _pat.match(p.name):
+                    rgi_ids.append(p.name)
 
         gdirs = workflow.init_glacier_directories(rgi_ids, reset=False)
         print(f"Simulating {len(gdirs)} glaciers...")

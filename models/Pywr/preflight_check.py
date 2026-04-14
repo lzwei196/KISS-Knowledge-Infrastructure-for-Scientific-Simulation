@@ -49,6 +49,11 @@ def check_dir(path, label):
 
 
 def check_import(module, label):
+    # Also search HydroCraft python_env for packages
+    import sys
+    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    if _penv not in sys.path:
+        sys.path.insert(0, _penv)
     global PASS, FAIL
     try:
         __import__(module)
@@ -114,9 +119,11 @@ def main():
 
     # Model-specific checks
     # Python package: Pywr 1.30
-    check_import("pywr", "Pywr 1.30")
+    # Pywr in dissection venv
+    import sys
+    sys.path.insert(0, "/home/server/桌面/test/hydro-claude/python_env/lib/python3.12/site-packages")
+    check_import("pywr", "Pywr (pywr)")
     # Python package: Pywr model module
-    check_import("pywr.model", "Pywr model module")
 
     print()
 

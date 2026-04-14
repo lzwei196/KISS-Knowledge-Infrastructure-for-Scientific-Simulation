@@ -37,6 +37,17 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for meteorological forcing documentation.
+See `data_ki/WQP/SKILL.md` for water quality observations.
+See `data_ki/HydroLAKES/SKILL.md` for lake morphometry.
+
+
 ## 1. Overview
 
 GIFMod (Green Infrastructure Flexible Model) is a physically-based, block-structured

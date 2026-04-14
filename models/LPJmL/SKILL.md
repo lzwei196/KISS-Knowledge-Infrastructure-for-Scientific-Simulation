@@ -34,6 +34,18 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
+See `data_ki/HWSD/SKILL.md` for soil property documentation.
+See `data_ki/FAOSTAT/SKILL.md` for crop yield observations.
+See `data_ki/SPAM/SKILL.md` for gridded yield data.
+
+
 ## Overview
 
 LPJmL (Lund-Potsdam-Jena managed Land) is a process-based dynamic global vegetation model that simulates vegetation dynamics, carbon and nitrogen cycling, hydrology, and crop yields on a global 0.5-degree grid. It integrates natural vegetation, managed grasslands, and 12+ crop functional types (CFTs) including temperate cereals, rice, maize, tropical cereals, pulses, roots, oil crops, and sugarcane.

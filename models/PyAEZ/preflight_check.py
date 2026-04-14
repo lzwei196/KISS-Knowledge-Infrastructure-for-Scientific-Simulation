@@ -28,6 +28,11 @@ def check_dir(path, label):
         FAIL += 1
 
 def check_import(module, label):
+    # Also search HydroCraft python_env for packages
+    import sys
+    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    if _penv not in sys.path:
+        sys.path.insert(0, _penv)
     global PASS, FAIL
     try:
         __import__(module)
@@ -42,11 +47,23 @@ def main():
     global PASS, FAIL
     print(f"{' PREFLIGHT: PyAEZ ':=^60}")
     print()
-    check_import("pyaez", "pyaez")
-    check_import("often", "often")
-    check_import("GDAL", "GDAL")
-    check_import("ClimateRegime", "ClimateRegime")
-    check_import("gdal", "gdal")
+    # PyAEZ in dissection venv
+    import sys
+    sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PyAEZ/venv/lib/python3.12/site-packages")
+    # PyAEZ: use venv python (has deps system python lacks)
+    import subprocess
+    try:
+        proc = subprocess.run(["/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PyAEZ/venv/bin/python3", "-c", "import pyaez"], 
+            capture_output=True, timeout=10)
+        if proc.returncode == 0:
+            print(f"  OK    PyAEZ (pyaez): verified via venv python")
+            PASS += 1
+        else:
+            print(f"  FAIL  PyAEZ (pyaez): {proc.stderr.decode().strip().split(chr(10))[-1]}")
+            FAIL += 1
+    except Exception as e:
+        print(f"  FAIL  PyAEZ (pyaez): {e}")
+        FAIL += 1
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

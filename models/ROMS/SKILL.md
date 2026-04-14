@@ -31,6 +31,17 @@
 
 ---
 
+## Data Preparation
+
+### Forcing data
+
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+
+**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for atmospheric forcing documentation.
+See `data_ki/NOAA_Tides/SKILL.md` for tidal observation data.
+See `data_ki/NDBC/SKILL.md` for wave buoy observations.
+
+
 ## 1. Overview
 
 ROMS (Regional Ocean Modeling System) solves the free-surface, hydrostatic,

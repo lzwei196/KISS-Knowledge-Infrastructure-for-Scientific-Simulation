@@ -1,0 +1,203 @@
+# DayCent diagnostic triplets — symptom -> diagnosis -> remedy
+# Each entry is keyed by an integer id and contains the three required fields.
+# Symptoms are written as substrings that often appear in DayCent stderr/stdout.
+
+- id: 1
+  stage: s2_weather
+  failure_domain: unit_conversion
+  severity: silent
+  symptom: "Soil moisture saturated every day; runoff in summary.out > 100 cm/yr."
+  diagnosis: "Precipitation in the .wth file is in mm/day instead of cm/day."
+  remedy: "Re-run convert_forcing_to_daycent.py — its validate_outputs() checks annual precip is 5–500 cm/yr. Manually verify column 7 of the .wth file is in cm/day, not mm/day."
+
+- id: 2
+  stage: s2_weather
+  failure_domain: unit_conversion
+  severity: silent
+  symptom: "All daily Tmin and Tmax appear ~270 in summary.out."
+  diagnosis: "Temperature columns 5/6 of the .wth file are in Kelvin (CMFD raw)."
+  remedy: "Subtract 273.15 from columns 5 and 6. The converter does this automatically when mean(T) > 150."
+
+- id: 3
+  stage: s2_weather
+  failure_domain: parameter_format
+  severity: silent
+  symptom: "DayCent runs but Tmin > Tmax in stdout summary."
+  diagnosis: "Columns 5 and 6 in the .wth file are swapped (Tmax in col 5, Tmin in col 6)."
+  remedy: "Check the load_daily_forcing dict keys: 'tmin' must go to col 5, 'tmax' to col 6. The converter validates mean(Tmin) < mean(Tmax)."
+
+- id: 4
+  stage: s2_weather
+  failure_domain: parameter_format
+  severity: fatal
+  symptom: "DayCent stops with 'unable to read line N of weather file'."
+  diagnosis: "A .wth row has wrong number of columns or non-numeric content."
+  remedy: "Run `awk '{print NF}' wooster.wth | sort -u` — every row should have 7 fields. Check for stray header lines or comma decimal separators (locale issue: run with LC_ALL=C)."
+
+- id: 5
+  stage: s1_site_setup
+  failure_domain: parameter_format
+  severity: fatal
+  symptom: "DayCent crashes during initialisation with 'cannot find <site>.100'."
+  diagnosis: "The schedule file's third line names a site .100 file that is not in the run directory or library path."
+  remedy: "Either copy <site>.100 into the run directory or run with `-l /path/to/100/lib`. Check the third line of the .sch file matches your filename exactly (case-sensitive)."
+
+- id: 6
+  stage: s1_site_setup
+  failure_domain: unit_conversion
+  severity: silent
+  symptom: "soils.in column 3 (bulk density) values are 1230, 1300, 1340."
+  diagnosis: "Bulk density was written in kg/m³ instead of g/cm³."
+  remedy: "Divide by 1000. convert_soil_to_daycent.py auto-detects values > 100 and converts."
+
+- id: 7
+  stage: s1_site_setup
+  failure_domain: parameter_format
+  severity: fatal
+  symptom: "DayCent runs but ANPP is 0 every year."
+  diagnosis: "soils.in root-fraction column (col 7) sums to 0, so no roots can extract water."
+  remedy: "Check sum(col 7) ~ 1.0. The convert_soil_to_daycent.py validator warns when out of [0.95, 1.05]."
+
+- id: 8
+  stage: s1_site_setup
+  failure_domain: parameter_format
+  severity: silent
+  symptom: "Wilting point > field capacity in soils.in."
+  diagnosis: "Column 4 (FC) and column 5 (WP) are swapped or ROSETTA returned absurd values for a sandy soil."
+  remedy: "Validator raises 'FC <= WP' before the file is used. Re-check the ROSETTA inputs (sand+clay should be ≤ 1)."
+
+- id: 9
+  stage: s3_equilibrium
+  failure_domain: runtime
+  severity: degraded
+  symptom: "ACEQ run reaches the maximum block count without convergence."
+  diagnosis: "Climate cycle in the .wth file is too short or has unrepresentative trend; SOM cannot stabilise."
+  remedy: "Provide a 30+ year detrended climate cycle. Increase the +N value on the ACEQ line in the schedule. Re-check soils.in for unrealistic Ksat or root distribution."
+
+- id: 10
+  stage: s3_equilibrium
+  failure_domain: silent_error
+  severity: silent
+  symptom: "Equilibrium produces SOM C of 1500 g/m² in a temperate humid site."
+  diagnosis: "Initial SOM pools in <site>.100 (som1ci, som2ci, som3ci) were not adjusted from a desert template."
+  remedy: "Use 100_Files/site_template_rev491.100 as the base and edit only what you need. Check that strucc, metabc, som1c, som2c, som3c are non-zero and sum to a plausible total."
+
+- id: 11
+  stage: s4_treatment
+  failure_domain: dependency_mismatch
+  severity: fatal
+  symptom: "Treatment run fails immediately with 'cannot read binary file base'."
+  diagnosis: "Base history was not run before treatment, or `-e base` does not match the actual filename produced by the previous step."
+  remedy: "Check that base.bin exists in the run directory and is non-empty. Run `ls -la *.bin` between steps. The run_daycent.py wrapper enforces the correct order."
+
+- id: 12
+  stage: s4_treatment
+  failure_domain: silent_error
+  severity: silent
+  symptom: "Treatment harvest.csv is empty."
+  diagnosis: "outfiles.in still has `harvest.csv` set to 0, OR there are no HARV events in the schedule."
+  remedy: "Set the harvest.csv toggle to 1 in outfiles.in before the treatment run. Verify the .sch file has HARV lines for the period you care about."
+
+- id: 13
+  stage: s4_treatment
+  failure_domain: parameter_format
+  severity: silent
+  symptom: "Treatment run uses the wrong climate years."
+  diagnosis: "The .sch file's `Weather choice` line points to a .wth file that does not span the treatment period; DayCent silently recycles the available years."
+  remedy: "Make sure the .wth file covers Schedule Start..Schedule End. The wrapper run_daycent.py does not check this — verify manually."
+
+- id: 14
+  stage: s5_extraction
+  failure_domain: parameter_format
+  severity: silent
+  symptom: "DDlist100 produces a .lis file with fewer columns than requested."
+  diagnosis: "One or more variable names in the var-list file are misspelled; DDlist100 silently drops unknown names."
+  remedy: "Compare your varlist against the canonical names in DayCent_Manual_full_02.06.2024.pdf (search for 'List of Output Variables'). Common typos: aglivec instead of aglivc, somc instead of somsc."
+
+- id: 15
+  stage: s5_extraction
+  failure_domain: parameter_format
+  severity: degraded
+  symptom: "parse_daycent_output.py says 'too few lines for .lis format'."
+  diagnosis: "DDlist100 was given the wrong bin root (e.g. 'eq' instead of 'cb_nt') and produced an almost-empty .lis."
+  remedy: "Check that the bin_root passed to DDlist100 corresponds to the .bin file you actually want to extract. Run `file *.bin` to see what you have."
+
+- id: 16
+  stage: s5_extraction
+  failure_domain: silent_error
+  severity: silent
+  symptom: "metrics.json shows pearson_r ~ 0 with very large RMSE."
+  diagnosis: "Time matching mismatch: observed series uses calendar year but the simulated 'time' column is decimal year, so nearest-year matching is picking the wrong rows."
+  remedy: "Check both 'time' columns in head -2 of the .lis and the obs CSV. parse_daycent_output.py uses ±1 year tolerance — narrow this if your obs are mid-year."
+
+- id: 17
+  stage: s5_extraction
+  failure_domain: dependency_mismatch
+  severity: fatal
+  symptom: "DDlist100 segfaults or 'cannot open binary file'."
+  diagnosis: "Trying to extract from a .bin produced by a different revision of DDcentEVI; binary format is not stable across revisions."
+  remedy: "Use the matching DDlist100 version (rev 491 binary needs DDlist100_rev491). The two ship together in Linux_Version_491/."
+
+- id: 18
+  stage: s2_weather
+  failure_domain: silent_error
+  severity: silent
+  symptom: "Annual precipitation in summary.out is exactly 1/10 of expected."
+  diagnosis: "Converter divided cm/day inputs by 10 a second time. The auto-detect heuristic flagged a unit conversion that wasn't needed."
+  remedy: "Bypass the heuristic: pre-divide your inputs to cm/day yourself, or use a forcing source whose units are unambiguous (NASA POWER returns mm/day reliably)."
+
+- id: 19
+  stage: s3_equilibrium
+  failure_domain: runtime
+  severity: fatal
+  symptom: "DDcentEVI reports 'Negative pool detected, simulation aborted'."
+  diagnosis: "A SOM or N pool went negative due to a parameter inconsistency — usually epnfa/epnfs (atmospheric N inputs) too low, or fix.100 mismatched with site.100."
+  remedy: "Verify fix.100 is the rev 491 version (in 100_Files/). Increase epnfa to 0.05–0.10 g N/m²/yr if your site is N-limited."
+
+- id: 20
+  stage: s4_treatment
+  failure_domain: parameter_format
+  severity: silent
+  symptom: "Crop yield (cgrain) is reasonable but cumulative SOC drops faster than expected."
+  diagnosis: "OMAD (organic amendment) lines in the schedule reference an event name not present in omad.100, so the model adds zero amendment but does not warn."
+  remedy: "grep the OMAD event name from the schedule against omad.100 — every OMAD line must reference an omad.100 entry by name."
+
+- id: 21
+  stage: s2_weather
+  failure_domain: dependency_mismatch
+  severity: fatal
+  symptom: "convert_forcing_to_daycent.py --source nasa_power fails with curl exit 35, SSL_ERROR_SYSCALL, or requests.exceptions.SSLError on power.larc.nasa.gov."
+  diagnosis: "The host firewall or proxy blocks outbound TLS to power.larc.nasa.gov. NASA POWER is unreachable from this environment even though other hosts (google.com) respond. This is an environmental constraint, not a KI bug, and cannot be fixed by retrying."
+  remedy: "Do not retry. Switch to --source fluxnet for FLUXNET tower tasks (works offline from the site's FULLSET_DD.csv) or --source cmfd for Chinese sites. NASA POWER is not a viable fallback on this host."
+
+- id: 22
+  stage: s2_weather
+  failure_domain: parameter_format
+  severity: fatal
+  symptom: "convert_forcing_to_daycent.py --source mswx fails with FileNotFoundError inside /mnt/disk1/.../Data_forcing_03hr_010deg/P/P_YYYY.nc."
+  diagnosis: "MSWX default path was mis-set to the CMFD root, and MSWX is not actually deployed on this host. --source mswx pointed at CMFD files and inherited the CMFD layout expectations."
+  remedy: "If MSWX is truly needed, set --forcing-dir /path/to/mswx explicitly. For most tasks, use --source fluxnet (FLUXNET CSV) or --source cmfd (if the site is inside China)."
+
+- id: 23
+  stage: s2_weather
+  failure_domain: parameter_format
+  severity: fatal
+  symptom: "convert_forcing_to_daycent.py --source cmfd fails or returns empty arrays for a non-China latitude/longitude (e.g. DE-Tha 50.96N 13.57E, Wooster 40.78N 81.93W)."
+  diagnosis: "CMFD covers the China domain only (~70E-140E, ~15N-55N). Querying it outside this window either returns no grid cell or raises FileNotFoundError on per-year NetCDFs. validate_inputs now hard-refuses CMFD for lon outside 70-140E."
+  remedy: "Use --source fluxnet with the tower's FULLSET_DD.csv for FLUXNET sites, or --source nasa_power for global coverage (only if the host can reach power.larc.nasa.gov — see triplet 21)."
+
+- id: 24
+  stage: s0_configuration
+  failure_domain: dependency_mismatch
+  severity: fatal
+  symptom: "Task asks for DayCent at a forest flux site (e.g. DE-Tha Norway spruce); tree.100 in WoosterExampleLinux is 0 bytes and no forest .sch template exists."
+  diagnosis: "The public WoosterExampleLinux bundle ships an empty tree.100 — the TREE submodel cannot run without a populated parameter library, and CSU NREL distributes tree.100 separately."
+  remedy: "Either obtain a populated tree.100 from CSU NREL and supply a forest .sch, or substitute a grassland (GRASS/GRAS1) parameterisation and explicitly flag this as a coarse surrogate in the run report. Do not fabricate tree parameters."
+
+- id: 25
+  stage: s5_extraction
+  failure_domain: parameter_format
+  severity: degraded
+  symptom: "User asked for 'daily GPP' but few_outvars.txt lists agcprd/bgcprd/cgrain/somsc — none labeled GPP."
+  diagnosis: "DayCent reports daily net C production as `cprodc` in summary.out (when few_outfiles.in is used). The .lis pathway via DDlist100 does not give a ready daily GPP variable; agcprd+bgcprd in the .lis is annualised for most configurations."
+  remedy: "For daily GPP validation, parse summary.out's cprodc column directly instead of running DDlist100. The SKILL.md 'Mapping DayCent outputs to FLUXNET variables' table lists the canonical mappings."

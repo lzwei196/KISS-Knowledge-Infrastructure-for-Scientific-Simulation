@@ -73,7 +73,7 @@ This knowledge infrastructure enables autonomous 2D reservoir simulation using C
 ### Binary
 
 ```
-CE-QUAL-W2:  model/ce_qual_w2/bin/w2.exe    (TO BE COMPILED)
+CE-QUAL-W2:  /mnt/disk1/Hydrocraft_server/model/ce_qual_w2/bin/w2_v5
 Source:      model/ce_qual_w2/src/            (TO BE CLONED from GitHub)
 Repository:  https://github.com/EnvironmentalSystems/CE-QUAL-W2
 ```
@@ -86,7 +86,7 @@ git clone https://github.com/EnvironmentalSystems/CE-QUAL-W2.git model/ce_qual_w
 
 # Compile (exact steps depend on repo structure)
 cd model/ce_qual_w2/src
-gfortran -O2 -ffree-line-length-none -o ../bin/w2.exe *.f90
+gfortran -O2 -ffree-line-length-none -o ../bin/w2_v5 *.f90
 # Or if Makefile exists: make
 
 # Dependencies
@@ -383,7 +383,7 @@ models/CE_QUAL_W2/knowledge_infrastructure/
     triplets.yaml                 # 25 diagnostic triplets
 
 model/ce_qual_w2/
-  bin/w2.exe                     # CE-QUAL-W2 executable (TO BE COMPILED)
+  bin/w2_v5                     # CE-QUAL-W2 executable (TO BE COMPILED)
   src/                           # Fortran source (TO BE CLONED)
   examples/                      # Reference examples
   docs/                          # User manual PDF

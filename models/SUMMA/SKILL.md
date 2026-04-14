@@ -126,19 +126,31 @@ python tools/s4_parameters/set_trial_parameters.py \
   --from_hwsd
 ```
 
-**Pipeline**: HWSD raster → sand/clay% → USDA texture class → ROSETTA lookup table (Schaap 2001) → 5 core vGn parameters + derived FC/WP from the vGn curve:
+**Pipeline**: HWSD raster → sand/clay% → USDA texture class → ROSETTA vGn → 5 core parameters + derived FC/WP:
 
-| Parameter | Source | Method |
+```python
+from ki_tools_common.soil_utils import lookup_hwsd, rosetta_vgn
+
+soil = lookup_hwsd(lat, lon)
+vgn = rosetta_vgn(soil['sand'], soil['clay'])
+# Returns: theta_r, theta_s, alpha_1_per_m, n, ksat_cm_day, field_capacity, wilting_point
+```
+
+| SUMMA parameter | From `rosetta_vgn()` | Note |
 |---|---|---|
-| theta_res, theta_sat, alpha, n, Ksat | ROSETTA table | Per texture class |
-| fieldCapacity | vGn curve | θ(ψ = -3.36 m = -33 kPa) |
-| critSoilWilting | vGn curve | θ(ψ = -152.9 m = -1500 kPa) |
-| critSoilTranspire | Derived | Midpoint(WP, FC) |
-| heightCanopyTop/Bottom | VEGPARM.TBL | ZTOPV/ZBOTV per vegTypeIndex |
+| `theta_res` | `vgn['theta_r']` | Residual water content |
+| `theta_sat` | `vgn['theta_s']` | Saturated water content |
+| `vGn_alpha` | **`-vgn['alpha_1_per_m']`** | **MUST be negative** (matric head convention) |
+| `vGn_n` | `vgn['n']` | Shape parameter |
+| `k_soil` | `vgn['ksat_m_s']` | Already in m/s |
+| `fieldCapacity` | `vgn['field_capacity']` | θ at -33 kPa |
+| `critSoilWilting` | `vgn['wilting_point']` | θ at -1500 kPa |
+| `critSoilTranspire` | Midpoint(WP, FC) | Derived |
+| `heightCanopyTop/Bottom` | VEGPARM.TBL | ZTOPV/ZBOTV per vegTypeIndex |
 
-**DO NOT mix Saxton-Rawls with ROSETTA** — they give inconsistent theta_res vs wilting point, causing SUMMA paramCheck failures (dt_026).
+**DO NOT mix Saxton-Rawls with ROSETTA** — they give inconsistent theta_res vs wilting point, causing SUMMA paramCheck failures (dt_026). Use `rosetta_vgn()` exclusively.
 
-**vGn_alpha sign**: SUMMA uses **negative** alpha (matric head convention). ROSETTA table already has negative values. Sand=-3.524, Loam=-1.112, Clay=-1.496. Positive values cause NaN.
+**vGn_alpha sign**: SUMMA uses **negative** alpha (matric head convention). Negate the value from `rosetta_vgn()`: `alpha = -vgn['alpha_1_per_m']`. Positive values cause NaN.
 
 ### 3. CRITICAL: Output Mixed Units (dt_025 — cost 2 days to find)
 

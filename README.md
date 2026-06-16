@@ -1,10 +1,10 @@
-# Knowledge Dissection Toolkit (KDT) v4.0
+# KISS — Knowledge Infrastructure for Scientific Simulation
 
-**Systematic extraction of operational knowledge from Earth science models.**
+**Structured operational knowledge that lets AI agents run Earth science models autonomously.**
 
 ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![License MIT](https://img.shields.io/badge/License-MIT-green)
-![Version 4.0](https://img.shields.io/badge/Version-4.0.0-orange)
+![KI Packages 123](https://img.shields.io/badge/KI%20Packages-123-orange)
 
 > *"Real Binary, Real Grid, Real Data"*
 
@@ -14,11 +14,11 @@
 
 ## Table of Contents
 
-1. [What is KDT?](#what-is-kdt)
+1. [What is Knowledge Infrastructure?](#what-is-knowledge-infrastructure)
 2. [Key Contributions](#key-contributions)
 3. [Demonstration](#demonstration)
 4. [Quick Start](#quick-start)
-5. [The 9-Stage Dissection Pipeline](#the-9-stage-dissection-pipeline)
+5. [What a KI Package Contains](#what-a-ki-package-contains)
 6. [The 3-Step Validation Protocol](#the-3-step-validation-protocol)
 7. [Package Structure](#package-structure)
 8. [Shared Library (ki_tools_common)](#shared-library-ki_tools_common)
@@ -26,14 +26,15 @@
 10. [Examples](#examples)
 11. [The Preflight Checklist](#the-preflight-checklist)
 12. [Anti-Patterns](#anti-patterns)
-13. [Results](#results)
-14. [Citation](#citation)
-15. [License](#license)
-16. [Acknowledgments](#acknowledgments)
+13. [Model KI Examples](#model-ki-examples)
+14. [Results](#results)
+15. [Citation](#citation)
+16. [License](#license)
+17. [Acknowledgments](#acknowledgments)
 
 ---
 
-## What is KDT?
+## What is Knowledge Infrastructure?
 
 ### The Problem
 
@@ -46,18 +47,29 @@ mailing list archives, doctoral theses, and the minds of experienced
 practitioners.
 
 When this knowledge is missing or wrong, models produce incorrect results --
-*silently*. Our analysis of 97 Earth science models found that **37% of all
+*silently*. Across the 123 Earth science models packaged in KISS, **37% of all
 errors are silent**: the model runs without any error message but produces
 scientifically wrong output. The dominant source is unit mismatches.
 
 ### The Solution
 
-KDT systematically extracts operational knowledge from Earth science models and
-packages it into structured **Knowledge Infrastructure (KI)** that enables AI
-agents -- or any new user -- to run models autonomously. Each KI package
-contains executable data preparation tools, comprehensive documentation (the
-SKILL.md), and structured error knowledge (diagnostic triplets) that capture
-the lessons learned during dissection.
+**Knowledge Infrastructure (KI)** is structured, machine-readable operational
+knowledge for a model -- packaged so that an AI agent, or any new user, can run
+the model autonomously on a new basin or dataset. Each KI package contains:
+
+- **Executable data preparation tools** -- Python scripts that turn raw forcing,
+  soil, vegetation, and topography data into exactly the inputs the model expects.
+- **Comprehensive documentation (the SKILL.md)** -- a single operational
+  reference covering identity, inputs, build, execution, outputs, unit
+  conversions, diagnostics, and limitations.
+- **Structured error knowledge (diagnostic triplets)** -- symptom, diagnosis,
+  remedy for every failure mode encountered, reusable across models and
+  transferable to AI agents.
+- **Preflight validation** -- range and unit checks that catch the silent errors
+  before the model ever runs.
+
+KISS ships 123 such packages plus the shared library, validators, and templates
+needed to build and verify them.
 
 ### The Core Insight
 
@@ -65,21 +77,19 @@ The most dangerous class of model errors is not the crash -- it is the silent
 wrong answer. The canonical example: the CMFD forcing dataset stores
 precipitation as `kg/m2/s`, but is widely documented as `mm/day`. The
 difference is a factor of 86,400. Models read near-zero rainfall, produce
-near-zero runoff, and run to completion without any warning. KDT specifically
+near-zero runoff, and run to completion without any warning. KI specifically
 targets these silent errors through unit discovery, preflight validation, and
 progressive data replacement testing.
 
 ### Philosophy
 
-KDT is built on three non-negotiable principles:
+Every KI package is built on three non-negotiable principles:
 
 1. **Real Binary** -- Run the actual model software (compiled Fortran binary,
    native package), not a Python surrogate or analytic reimplementation. The
    goal is to capture the knowledge needed to operate the *real* model.
-
 2. **Real Grid** -- Run models in their intended distributed/gridded mode, not
    as lumped basin averages. Gridded forcing data exists; use it.
-
 3. **Real Data** -- Validate with independently prepared forcing and observation
    data, not developer-bundled test cases. Developer data proves the binary
    works; your own data proves the knowledge infrastructure works.
@@ -90,14 +100,22 @@ KDT is built on three non-negotiable principles:
 
 | Contribution | Description |
 |---|---|
-| **9-stage dissection pipeline** | Structured process from source code acquisition to validated knowledge infrastructure (s0 Acquire through s8 Validation) |
+| **123 validated KI packages** | Complete knowledge infrastructure across 15 Earth science domains, producing 650+ diagnostic triplets |
 | **3-step validation protocol** | Developer data test, progressive data replacement, full autonomous run -- isolates silent errors systematically |
 | **Shared utility library** | `ki_tools_common` with 8 modules consolidating patterns from 435+ model tool scripts: unit conversions, humidity, NetCDF handling, metrics, validation, I/O helpers, forcing source metadata |
 | **Forcing preflight validator** | `preflight_forcing.py` catches unit mismatches before model execution by checking physical ranges and auto-detecting data sources |
 | **Cal/val split enforcement** | `standard_calval.py` and `check_calval_split.py` prevent data leakage in calibrated models |
 | **14-section SKILL.md template** | Standardized documentation format capturing all operational knowledge needed to run a model |
 | **Diagnostic triplet system** | Structured error knowledge: symptom, diagnosis, remedy -- reusable across models and transferable to AI agents |
-| **Validated on 97 models** | Applied across 15 Earth science domains, producing 650+ diagnostic triplets |
+
+---
+
+## Demonstration
+
+A live deployment of KISS knowledge infrastructure is available at
+[Geoforgehhu.com](https://Geoforgehhu.com), where AI agents drive the packaged
+models end to end -- preparing data, running the real binaries, and interpreting
+results.
 
 ---
 
@@ -106,8 +124,8 @@ KDT is built on three non-negotiable principles:
 ### Installation
 
 ```bash
-git clone https://github.com/[repo]/knowledge-dissection-toolkit.git
-cd knowledge-dissection-toolkit/ki_tools_common
+git clone https://github.com/lzwei196/KISS---Knowledge-Infrastructure-for-Scientific-Simulation.git
+cd KISS---Knowledge-Infrastructure-for-Scientific-Simulation/ki_tools_common
 pip install -e .            # minimal (numpy only)
 pip install -e ".[all]"     # with xarray, netCDF4, geopandas, scipy
 pip install -e ".[dev]"     # adds pytest for running tests
@@ -166,44 +184,34 @@ pytest tests/ -v
 
 ---
 
-## The 9-Stage Dissection Pipeline
+## What a KI Package Contains
 
-KDT processes each model through nine stages, from source code to validated
-knowledge infrastructure.
+Every KI package follows the same structure so that an agent can read one and
+operate any model the same way. A package bundles:
 
-```
-s0 Acquire --> s1 Pipeline Map --> s2 Unit Discovery --> s3 Tool Generation
-  --> s4 Skill Documentation --> s5 Triplet Construction --> s6 Assembly
-  --> s7 Binary Test --> s8 Validation
-```
+- **`SKILL.md`** -- the 14-section operational reference (identity, description,
+  inputs, build, execution, outputs, tools, unit conversions, diagnostics,
+  coupling, results, limitations, spinup, references).
+- **`tools/*.py`** -- validated data preparation scripts (grid, soil, vegetation,
+  forcing, routing, etc.) that produce the model's exact input formats.
+- **`diagnostics/triplets.yaml`** -- structured error knowledge captured as
+  symptom / diagnosis / remedy triplets.
+- **`knowledge_infrastructure.yaml`** -- a machine-readable manifest of the
+  pipeline structure, variable list, and tool inventory.
+- **Preflight checks** -- physical-range and unit validation for the forcing the
+  model consumes.
 
-| Stage | Name | Purpose | Key Output | Typical Duration |
-|:-----:|------|---------|------------|:----------------:|
-| s0 | **Acquire** | Clone source code, detect language and build system | `probe_report.json` | Minutes |
-| s1 | **Pipeline Map** | Scan I/O operations, extract workflow from docs | `knowledge_infrastructure.yaml` | Minutes |
-| s2 | **Unit Discovery** | Identify all variables, their units, and required conversions | Unit conversion table | 1--4 hours |
-| s3 | **Tool Generation** | Create Python scripts for data preparation | `ki/tools/*.py` (3+ scripts) | 2--8 hours |
-| s4 | **Skill Documentation** | Write SKILL.md with all 14 required sections | `ki/SKILL.md` + docs | 1--3 hours |
-| s5 | **Triplet Construction** | Capture error knowledge as structured triplets | `ki/diagnostics/triplets.yaml` | 1--2 hours |
-| s6 | **Assembly** | Package into final KI structure, verify consistency | Complete `ki/` directory | 30 minutes |
-| s7 | **Binary Test** | Build model and run developer example | Binary test passed | 1--8 hours |
-| s8 | **Validation** | Progressive data replacement + full autonomous run | Production validated | 2--16 hours |
-
-Stages s0--s1 are automated Python scripts that can run in parallel across many
-models. Stages s2--s8 require deeper analysis and are guided by an AI agent or
-human expert with full filesystem access. Total time per model is approximately
-1--3 days for an experienced operator, depending on model complexity.
-
-For the complete guide, see [`pipeline/PIPELINE_GUIDE.md`](pipeline/PIPELINE_GUIDE.md).
-For writing effective agent prompts, see [`pipeline/AGENT_PROMPT_GUIDE.md`](pipeline/AGENT_PROMPT_GUIDE.md).
+The validation status of each package is labelled `binary_only`,
+`partial_replacement`, `full_replacement`, or `production_validated` so that
+users know exactly how far each model has been verified.
 
 ---
 
 ## The 3-Step Validation Protocol
 
-A model is NOT validated just because it runs with developer-provided test data.
-A model is validated when it produces reasonable results using ONLY data prepared
-by the autonomous pipeline.
+A KI package is NOT validated just because the model runs with
+developer-provided test data. It is validated when the model produces reasonable
+results using ONLY data prepared by the package's own tools.
 
 **Step 1: Developer Data Test** -- Run with bundled example data. Proves the
 binary works. Does NOT prove your tools can prepare correct inputs.
@@ -236,11 +244,11 @@ For the full protocol, see [`VALIDATION_PROTOCOL.md`](VALIDATION_PROTOCOL.md).
 ## Package Structure
 
 ```
-kdt-release/
+kiss-release/
   README.md                          This file
   CHANGELOG.md                       Version history
   VALIDATION_PROTOCOL.md             3-step validation methodology
-  PREFLIGHT.md                       Pre-dissection checklist and unit traps
+  PREFLIGHT.md                       Preflight checklist and unit traps
   LICENSE                            MIT License
   pyproject.toml                     Package metadata and dependencies
   ki_tools_common/                   Shared utility library
@@ -260,19 +268,16 @@ kdt-release/
     preflight_forcing.py               Pre-simulation forcing data checker (1,144 lines)
     check_calval_split.py              Data leakage detector (559 lines)
     standard_calval.py                 Cal/val period helper with scipy.optimize wrapper
-  pipeline/
-    PIPELINE_GUIDE.md                  Full 9-stage pipeline documentation
-    AGENT_PROMPT_GUIDE.md              Guide for writing AI agent dissection prompts
-    DATA_REGISTRY_GUIDE.md             Institutional dataset management
   templates/
     SKILL_TEMPLATE.md                  14-section model documentation template
     knowledge_infrastructure_template.yaml   KI package schema
-    stage_log_template.json            Stage completion tracking
+    stage_log_template.json            Completion tracking
     triplets_template.yaml             Diagnostic triplet format
     validation_sheet_template.md       Standardized validation report
   examples/
     unit_conversion_example.py         Self-contained unit conversion walkthrough
     validation_example.py              Metrics computation and cal/val split demo
+  models/                            Complete KI packages (see Model KI Examples)
 ```
 
 ---
@@ -371,21 +376,20 @@ For the full module reference, see [`ki_tools_common/README.md`](ki_tools_common
 
 ## Templates
 
-KDT provides five templates for standardizing model documentation:
+KISS provides five templates for standardizing model documentation:
 
 | Template | Purpose | Sections |
 |----------|---------|----------|
 | [`SKILL_TEMPLATE.md`](templates/SKILL_TEMPLATE.md) | Primary operational documentation for a model | 14 sections: identity, description, inputs, build, execution, outputs, tools, unit conversions, diagnostics, coupling, results, limitations, spinup, references |
 | [`knowledge_infrastructure_template.yaml`](templates/knowledge_infrastructure_template.yaml) | Machine-readable KI package schema | Pipeline structure, variable list, tool inventory |
-| [`stage_log_template.json`](templates/stage_log_template.json) | Pipeline stage completion tracking | Status, metrics, timestamps for s0--s8 |
+| [`stage_log_template.json`](templates/stage_log_template.json) | KI build completion tracking | Status, metrics, timestamps |
 | [`triplets_template.yaml`](templates/triplets_template.yaml) | Diagnostic error knowledge format | Error symptom, root cause diagnosis, remedy |
 | [`validation_sheet_template.md`](templates/validation_sheet_template.md) | Standardized model performance report | Hydrographs, metrics tables, data provenance |
 
 **Using templates for your own models**: Copy the SKILL_TEMPLATE.md into your
-model's `ki/` directory and fill in all 14 sections as you progress through the
-9-stage pipeline. The unit conversion table (Section 8) and diagnostic triplets
-(Section 9) are the most critical sections -- they capture the knowledge that
-prevents silent errors.
+model's `ki/` directory and fill in all 14 sections. The unit conversion table
+(Section 8) and diagnostic triplets (Section 9) are the most critical sections --
+they capture the knowledge that prevents silent errors.
 
 ---
 
@@ -420,8 +424,9 @@ Key takeaway: **always report separate calibration and validation metrics.**
 
 ## The Preflight Checklist
 
-Before dissecting a new model, read [`PREFLIGHT.md`](PREFLIGHT.md). It takes
-two minutes and prevents the errors that took weeks to find across 97 models.
+Before deploying a KI package on a new basin, read
+[`PREFLIGHT.md`](PREFLIGHT.md). It takes two minutes and prevents the errors
+that took weeks to find across 123 models.
 
 ### The #1 Silent Error: Unit Mismatches
 
@@ -446,7 +451,7 @@ Each model expects different units. There is no single conversion factor:
 | kg/m2/s native (land surface models) | x1 (no conversion) |
 | m/day | x86.4 |
 
-### Real Unit Errors Discovered During Dissection
+### Real Unit Errors Discovered During Packaging
 
 | Model Type | Error | Impact |
 |------------|-------|--------|
@@ -467,35 +472,29 @@ See [`PREFLIGHT.md`](PREFLIGHT.md).
 ## Anti-Patterns
 
 Seven documented failure modes from the validation protocol. Each was observed
-in practice across the 97-model dissection effort.
+in practice while building and validating the 123 KI packages.
 
 1. **"It works with test data, ship it."** Developer data proves the binary
    works, NOT the knowledge infrastructure. You must complete all three
    validation steps.
-
 2. **"I replaced everything at once and it works."** You got lucky. If it had
    failed, you would have no idea which component caused the failure. Always
    replace one input at a time.
-
 3. **"The results are different but the model runs."** Different *how*? 10%
    different is calibration. 10x different is a unit error. 1000x different is
    a column mapping bug. Always quantify and explain the difference.
-
 4. **"I'll calibrate it later."** Calibration fixes PARAMETERS, not DATA
    PREPARATION bugs. If forcing has wrong units, calibration will compensate
    by producing wrong parameters. The model will "work" on the calibration
    period but fail on any new period. Fix the data first, calibrate later.
-
 5. **"The model doesn't have a [basin] example."** Then BUILD one. That is the
    entire point of the knowledge infrastructure -- to enable running any model
    on any basin autonomously.
-
 6. **"The binary won't build, I'll write a Python surrogate."** No. A Python
    reimplementation proves the MATH works, not that your pipeline can drive the
    REAL MODEL. Analytic surrogates are only acceptable when the source code is
    genuinely unavailable (proprietary, dead link) and the user has explicitly
    approved the fallback.
-
 7. **"I'll run it lumped to save time."** Models designed for distributed/
    gridded application MUST be run distributed. Gridded forcing data exists.
    Running a gridded model as a lumped basin average wastes the spatial
@@ -503,9 +502,9 @@ in practice across the 97-model dissection effort.
 
 ---
 
-## Model KI Examples (Full Knowledge Infrastructure)
+## Model KI Examples
 
-Three complete KI packages are included as reproducible examples. Each contains
+Several complete KI packages are included as reproducible examples. Each contains
 validated tools, diagnostic triplets, operational documentation, and preflight checks.
 
 | Model | Domain | KI Contents | Key Workflow |
@@ -513,7 +512,7 @@ validated tools, diagnostic triplets, operational documentation, and preflight c
 | **VIC 5.1.0** | Distributed hydrology | SKILL.md + 10 tools (grid, soil, veg, forcing) + preflight | Basin → Grid → Soil → Veg → Forcing → VIC Run |
 | **Lohmann Routing** | Channel discharge | SKILL.md + 2 tools (VIC preprocessing, routing params) + preflight | VIC Output → 22→7 cols → Flow direction → UH → Discharge |
 | **CaMa-Flood 4.20** | River routing + flood | SKILL.md + 2 tools (VIC→NetCDF, date processing) + preflight | VIC Output → NetCDF → Map regionalization → Hydrodynamics |
-| **DSSAT 4.8.5** | Crop simulation | SKILL.md + 9 tools + 1752-line triplets + 9 stage docs + workflow | Weather → Soil → Cultivar → FileX → Run → Parse yields |
+| **DSSAT 4.8.5** | Crop simulation | SKILL.md + 9 tools + 1752-line triplets + workflow | Weather → Soil → Cultivar → FileX → Run → Parse yields |
 
 ### Using These KI Packages
 
@@ -531,7 +530,8 @@ VIC+Routing and VIC+CaMa-Flood workflow walkthroughs.
 
 ### Summary Statistics
 
-KDT has been applied to **97 Earth science models** across **15 domains**:
+KISS provides knowledge infrastructure for **123 Earth science models** across
+**15 domains**:
 
 | Domain | Count |
 |--------|:-----:|
@@ -565,7 +565,7 @@ KDT has been applied to **97 Earth science models** across **15 domains**:
 
 - **37% of all errors are silent** -- the model runs without error but produces
   scientifically wrong results.
-- **Unit mismatches are the #1 silent error**, affecting every model dissected.
+- **Unit mismatches are the #1 silent error**, affecting every model packaged.
 - **Fixed-width column misalignment** is the #2 silent error in Fortran models.
 - **Data leakage** (calibrating and validating on the same period) was found in
   5+ models, inflating NSE by approximately 0.10--0.15.
@@ -575,15 +575,15 @@ KDT has been applied to **97 Earth science models** across **15 domains**:
 The most impactful single finding: CMFD daily precipitation is documented as
 `mm/day` in many community resources, but the actual NetCDF attribute is
 `kg/m2/s`. The difference is a factor of 86,400. This error was propagated
-silently through multiple models, causing near-zero simulated runoff. KDT's
-unit audit across all 97 models found and fixed two additional instances of
-this specific error in production tool scripts.
+silently through multiple models, causing near-zero simulated runoff. A unit
+audit across all KI packages found and fixed two additional instances of this
+specific error in production tool scripts.
 
 ---
 
 ## Citation
 
-If you use KDT or the KISS knowledge-infrastructure packages in your research, please cite:
+If you use the KISS knowledge-infrastructure packages in your research, please cite:
 
 ```bibtex
 @article{li2026kiss,
@@ -602,7 +602,6 @@ If you use KDT or the KISS knowledge-infrastructure packages in your research, p
 ## License
 
 MIT License. Copyright (c) 2026 Jianyun Zhang Research Group, Hohai University.
-
 See [`LICENSE`](LICENSE) for the full text.
 
 ---
@@ -610,11 +609,10 @@ See [`LICENSE`](LICENSE) for the full text.
 ## Acknowledgments
 
 - **GeoForge platform** ([Geoforgehhu.com](https://Geoforgehhu.com)) --
-  Demonstration and deployment infrastructure for KDT-generated knowledge
-  infrastructure.
+  Demonstration and deployment infrastructure for KISS knowledge infrastructure.
 - **Hohai University** -- Institutional support and computational resources.
-- **Jianyun Zhang Research Group** -- Development, testing, and validation
-  across 97 Earth science models.
+- **Jianyun Zhang and Junliang Jin Research Group** -- Development, testing, and validation
+  across 123 Earth science models.
 
 ---
 

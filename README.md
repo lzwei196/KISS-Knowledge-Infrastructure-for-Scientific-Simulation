@@ -590,9 +590,7 @@ If you use KDT in your research, please cite:
   title   = {KISS - Knowledge Infrastructure for Scientific Simulation},
   author  = {Li, Ziwei et al.},
   journal = {[Journal]},
-  year    = {2026},
-  note    = {Software available at https://github.com/[repo]}
-}
+  year    = {2026}}
 ```
 
 ---

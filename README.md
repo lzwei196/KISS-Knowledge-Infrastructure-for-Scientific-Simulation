@@ -583,14 +583,18 @@ this specific error in production tool scripts.
 
 ## Citation
 
-If you use KDT in your research, please cite:
+If you use KDT or the KISS knowledge-infrastructure packages in your research, please cite:
 
 ```bibtex
-@article{Li et al 2026,
-  title   = {KISS - Knowledge Infrastructure for Scientific Simulation},
-  author  = {Li, Ziwei et al.},
-  journal = {[Journal]},
-  year    = {2026}}
+@article{li2026kiss,
+  title         = {KISS - Knowledge Infrastructure for Scientific Simulation: A Scaffolding for Agentic Earth Science},
+  author        = {Li, Ziwei and Zhu, Liujun and Liu, Yuchen and Zhao, Yichen and Li, Birk and Wu, Ruiqi and Jin, Junliang and Zhang, Jianyun},
+  journal       = {arXiv preprint arXiv:2605.17856},
+  year          = {2026},
+  eprint        = {2605.17856},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2605.17856}
+}
 ```
 
 ---

@@ -8,7 +8,7 @@
 
 > *"Real Binary, Real Grid, Real Data"*
 
-**Demonstration**: [https://hydrocraft.ai](https://hydrocraft.ai)
+**Demonstration**: [https://Geoforgehhu.com](https://Geoforgehhu.com)
 
 ---
 
@@ -98,17 +98,6 @@ KDT is built on three non-negotiable principles:
 | **14-section SKILL.md template** | Standardized documentation format capturing all operational knowledge needed to run a model |
 | **Diagnostic triplet system** | Structured error knowledge: symptom, diagnosis, remedy -- reusable across models and transferable to AI agents |
 | **Validated on 97 models** | Applied across 15 Earth science domains, producing 650+ diagnostic triplets |
-
----
-
-## Demonstration
-
-The [HydroCraft platform](https://hydrocraft.ai) demonstrates KDT applied to
-real models at scale. Visitors can browse the 97 dissected models with domain
-classification and validation status, view standardized validation sheets with
-hydrographs and cal/val metrics, and compare models side-by-side on the same
-basin. HydroCraft uses KDT-generated knowledge infrastructure to autonomously
-prepare inputs, execute models, and evaluate outputs.
 
 ---
 
@@ -597,8 +586,8 @@ this specific error in production tool scripts.
 If you use KDT in your research, please cite:
 
 ```bibtex
-@article{zhang2026kdt,
-  title   = {Knowledge Dissection Toolkit},
+@article{Li et al 2026,
+  title   = {KISS - Knowledge Infrastructure for Scientific Simulation},
   author  = {Li, Ziwei et al.},
   journal = {[Journal]},
   year    = {2026},
@@ -618,7 +607,7 @@ See [`LICENSE`](LICENSE) for the full text.
 
 ## Acknowledgments
 
-- **HydroCraft platform** ([hydrocraft.ai](https://hydrocraft.ai)) --
+- **GeoForge platform** ([Geoforgehhu.com](https://Geoforgehhu.com)) --
   Demonstration and deployment infrastructure for KDT-generated knowledge
   infrastructure.
 - **Hohai University** -- Institutional support and computational resources.

@@ -4,7 +4,8 @@
 
 ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![License MIT](https://img.shields.io/badge/License-MIT-green)
-![KI Packages 123](https://img.shields.io/badge/KI%20Packages-123-orange)
+![KI Packages 453](https://img.shields.io/badge/KI%20Packages-453-orange)
+![Shipped here 127](https://img.shields.io/badge/Shipped%20here-127-yellow)
 
 > *"Real Binary, Real Grid, Real Data"*
 
@@ -15,22 +16,20 @@
 ## Table of Contents
 
 1. [What is Knowledge Infrastructure?](#what-is-knowledge-infrastructure)
-2. [Key Contributions](#key-contributions)
-3. [Demonstration](#demonstration)
-4. [Quick Start](#quick-start)
-5. [What a KI Package Contains](#what-a-ki-package-contains)
-6. [The 3-Step Validation Protocol](#the-3-step-validation-protocol)
-7. [Package Structure](#package-structure)
-8. [Shared Library (ki_tools_common)](#shared-library-ki_tools_common)
-9. [Templates](#templates)
-10. [Examples](#examples)
-11. [The Preflight Checklist](#the-preflight-checklist)
-12. [Anti-Patterns](#anti-patterns)
-13. [Model KI Examples](#model-ki-examples)
-14. [Results](#results)
-15. [Citation](#citation)
-16. [License](#license)
-17. [Acknowledgments](#acknowledgments)
+2. [What This Repository Contains](#what-this-repository-contains)
+3. [Key Contributions](#key-contributions)
+4. [Demonstration](#demonstration)
+5. [Quick Start](#quick-start)
+6. [What a KI Package Contains](#what-a-ki-package-contains)
+7. [The 3-Step Validation Protocol](#the-3-step-validation-protocol)
+8. [Repository Layout](#repository-layout)
+9. [The Preflight Checklist](#the-preflight-checklist)
+10. [Anti-Patterns](#anti-patterns)
+11. [Model KI Examples](#model-ki-examples)
+12. [Results](#results)
+13. [Citation](#citation)
+14. [License](#license)
+15. [Acknowledgments](#acknowledgments)
 
 ---
 
@@ -47,8 +46,8 @@ mailing list archives, doctoral theses, and the minds of experienced
 practitioners.
 
 When this knowledge is missing or wrong, models produce incorrect results --
-*silently*. Across the 123 Earth science models packaged in KISS, **37% of all
-errors are silent**: the model runs without any error message but produces
+*silently*. In the 123-model study reported in the KISS paper, **37% of all
+errors were silent**: the model runs without any error message but produces
 scientifically wrong output. The dominant source is unit mismatches.
 
 ### The Solution
@@ -67,9 +66,6 @@ the model autonomously on a new basin or dataset. Each KI package contains:
   transferable to AI agents.
 - **Preflight validation** -- range and unit checks that catch the silent errors
   before the model ever runs.
-
-KISS ships 123 such packages plus the shared library, validators, and templates
-needed to build and verify them.
 
 ### The Core Insight
 
@@ -96,17 +92,55 @@ Every KI package is built on three non-negotiable principles:
 
 ---
 
+## What This Repository Contains
+
+This repository publishes the **KI packages** -- the operational knowledge
+itself. It ships **127 complete packages**, drawn from a working library that
+now stands at **453**.
+
+| | Full KI library | Shipped in this repository |
+|---|:---:|:---:|
+| KI packages | 453 | 127 |
+| `SKILL.md` operational references | 2,021 docs | 127 |
+| Diagnostic triplets | 5,268 | ~2,266 |
+| Tool scripts | 1,742 | 1,036 |
+| `preflight_check.py` | 334 | 125 |
+| `format_spec.yaml` | 238 | 102 |
+| `knowledge_infrastructure.yaml` | — | 115 |
+| `REFERENCES.md` | — | 102 |
+
+Library counts are from the model registry as of **2026-08-11**. The KISS paper
+(arXiv 2605.17856) describes the 123-package release; this repository tracks the
+library as it currently stands.
+
+> **Note on the shared library.** The KI packages were authored against a shared
+> helper library, `ki_tools_common` (unit conversions, humidity, forcing loaders,
+> soil utilities, metrics). **That library is not distributed as source in this
+> repository** -- 123 of the 127 shipped `SKILL.md` files reference it, so
+> `from ki_tools_common... import ...` lines in the documentation will not resolve
+> against a fresh clone. An archived snapshot is retained in
+> [`kdt-release.zip`](kdt-release.zip). Every other part of a KI package -- the
+> operational documentation, format specifications, diagnostic triplets, and the
+> model-specific tools -- stands on its own.
+>
+> **Note on portability.** The packages were authored against the development
+> server and carry absolute paths (`/mnt/disk1/Hydrocraft_server/...`) to
+> binaries, forcing archives, and DEMs. Expect to repoint them at your own data
+> before running -- see [Quick Start](#quick-start) step 4.
+
+---
+
 ## Key Contributions
 
 | Contribution | Description |
 |---|---|
-| **123 validated KI packages** | Complete knowledge infrastructure across 15 Earth science domains, producing 650+ diagnostic triplets |
+| **453 KI packages** | Knowledge infrastructure spanning 37 domain tags, carrying 5,268 diagnostic triplets and 1,742 tool scripts; 127 published here |
 | **3-step validation protocol** | Developer data test, progressive data replacement, full autonomous run -- isolates silent errors systematically |
-| **Shared utility library** | `ki_tools_common` with 8 modules consolidating patterns from 435+ model tool scripts: unit conversions, humidity, NetCDF handling, metrics, validation, I/O helpers, forcing source metadata |
-| **Forcing preflight validator** | `preflight_forcing.py` catches unit mismatches before model execution by checking physical ranges and auto-detecting data sources |
-| **Cal/val split enforcement** | `standard_calval.py` and `check_calval_split.py` prevent data leakage in calibrated models |
-| **14-section SKILL.md template** | Standardized documentation format capturing all operational knowledge needed to run a model |
+| **14-section SKILL.md format** | Standardized documentation capturing all operational knowledge needed to run a model |
 | **Diagnostic triplet system** | Structured error knowledge: symptom, diagnosis, remedy -- reusable across models and transferable to AI agents |
+| **Machine-readable format specs** | `format_spec.yaml` pins exact input/output file layouts, including fixed-width column positions |
+| **Per-model preflight checks** | `preflight_check.py` catches unit and range errors before the binary runs |
+| **Real-binary validation record** | 387 packages carry a path to an actual compiled binary; 2,568 recorded test runs across 154 scored models |
 
 ---
 
@@ -121,66 +155,60 @@ results.
 
 ## Quick Start
 
-### Installation
+The KI packages are documentation and tooling, not an installable Python
+distribution. To use one, point an agent at it.
+
+### 1. Get the packages
 
 ```bash
 git clone https://github.com/lzwei196/KISS---Knowledge-Infrastructure-for-Scientific-Simulation.git
-cd KISS---Knowledge-Infrastructure-for-Scientific-Simulation/ki_tools_common
-pip install -e .            # minimal (numpy only)
-pip install -e ".[all]"     # with xarray, netCDF4, geopandas, scipy
-pip install -e ".[dev]"     # adds pytest for running tests
+cd KISS---Knowledge-Infrastructure-for-Scientific-Simulation
+ls models/            # 127 KI packages
 ```
 
-### Example 1: Unit Conversion
+### 2. Read a package
 
-```python
-from ki_tools_common import units
-
-# Convert CMFD precipitation from kg/m2/s to mm/day
-precip_mmday = units.kgm2s_to_mmday(0.00003)       # -> 2.592 mm/day
-
-# Universal dispatcher -- works with scalars and numpy arrays
-temp_k = units.convert(25.0, 'C', 'K', 'temperature')   # -> 298.15
-precip = units.convert(1.0, 'kg/m2/s', 'mm/day', 'precipitation')  # -> 86400.0
-
-# Look up conversion factors for specific data sources
-from ki_tools_common.forcing_sources import get_conversion_factor
-factor = get_conversion_factor('CMFD', 'prec', 'mm/day')  # -> 86400.0
-```
-
-### Example 2: Forcing Preflight Check
+Every package leads with its operational reference:
 
 ```bash
-# Auto-detect data source and check all variables against physical ranges
-python validators/preflight_forcing.py /path/to/forcing/ --source auto
+cat models/VIC/SKILL_en.md            # 14-section operational reference
+cat models/DSSAT/diagnostics/triplets.yaml   # symptom / diagnosis / remedy
+cat models/SHAW/knowledge_infrastructure.yaml # machine-readable manifest
 ```
 
-The preflight validator catches the most common silent error -- unit
-mismatches -- before the model ever runs.
-
-### Example 3: Metrics with Cal/Val Split
-
-```python
-from ki_tools_common.metrics import all_metrics
-from validators.standard_calval import compute_calval_metrics
-
-# All standard metrics in one call
-m = all_metrics(obs, sim)
-print(f"NSE={m['NSE']:.3f}  KGE={m['KGE']:.3f}  PBIAS={m['PBIAS']:.1f}%")
-
-# Separate calibration and validation period metrics
-calval = compute_calval_metrics(dates, obs, sim)
-# Returns: {'calibration': {NSE, KGE, PBIAS, r, n},
-#           'validation':  {NSE, KGE, PBIAS, r, n},
-#           'full':        {NSE, KGE, PBIAS, r, n}}
-```
-
-### Running Tests
+### 3. Drive it with an agent
 
 ```bash
-cd ki_tools_common
-pytest tests/ -v
+cp -r models/VIC /your/project/ki/
+cp CLAUDE_TEMPLATE.md /your/project/CLAUDE.md
 ```
+
+Then prompt the agent:
+
+> *"Read `ki/VIC/SKILL_en.md` and run a VIC simulation for the Bengbu basin."*
+
+The agent reads the SKILL.md, calls the packaged tools to prepare inputs, runs
+the real binary, and interprets the output. See
+[`AGENT_SERVICE_GUIDE.md`](AGENT_SERVICE_GUIDE.md) for full deployment walkthroughs
+(VIC+Routing, VIC+CaMa-Flood) and [`DEPLOYMENT.md`](DEPLOYMENT.md) for
+infrastructure setup.
+
+### 4. Adapt the paths, then preflight
+
+**The packages are authored against the development server, not against a fresh
+clone.** All 127 packages contain absolute paths such as
+`/mnt/disk1/Hydrocraft_server/...` for binaries, forcing archives, and DEMs, and
+the 125 `preflight_check.py` scripts take no command-line arguments -- they check
+a hardcoded environment. Read them as executable specifications of *what must be
+present and in what units*, and repoint them at your own data before running:
+
+```bash
+grep -rn "/mnt/disk1\|/home/server" models/VIC/    # find what needs repointing
+sed -n '1,60p' models/VIC/preflight_check.py       # see what it verifies
+```
+
+Preflight is the cheapest place to catch the errors described in
+[The Preflight Checklist](#the-preflight-checklist).
 
 ---
 
@@ -198,8 +226,12 @@ operate any model the same way. A package bundles:
   symptom / diagnosis / remedy triplets.
 - **`knowledge_infrastructure.yaml`** -- a machine-readable manifest of the
   pipeline structure, variable list, and tool inventory.
-- **Preflight checks** -- physical-range and unit validation for the forcing the
-  model consumes.
+- **`format_spec.yaml`** -- exact input/output file layouts, including
+  fixed-width column positions for Fortran models.
+- **`preflight_check.py`** -- physical-range and unit validation for the forcing
+  the model consumes.
+- **`docs/REFERENCES.md`** -- literature and source-code references backing the
+  operational claims.
 
 The validation status of each package is labelled `binary_only`,
 `partial_replacement`, `full_replacement`, or `production_validated` so that
@@ -237,196 +269,49 @@ reasonableness checks. This proves the knowledge infrastructure works.
 **Validation status labels**: `binary_only` | `partial_replacement` |
 `full_replacement` | `production_validated`
 
-For the full protocol, see [`VALIDATION_PROTOCOL.md`](VALIDATION_PROTOCOL.md).
-
 ---
 
-## Package Structure
+## Repository Layout
 
 ```
-kiss-release/
+.
   README.md                          This file
-  CHANGELOG.md                       Version history
-  VALIDATION_PROTOCOL.md             3-step validation methodology
-  PREFLIGHT.md                       Preflight checklist and unit traps
   LICENSE                            MIT License
-  pyproject.toml                     Package metadata and dependencies
-  ki_tools_common/                   Shared utility library
-    __init__.py
-    units.py                           Unit conversions (40+ constants, 30+ functions)
-    humidity.py                        Tetens saturation vapour pressure, RH/q, VPD
-    netcdf_utils.py                    Coordinate detection, subsetting, basin masking
-    validation.py                      Physical range checks with unit-trap hints
-    metrics.py                         NSE, KGE, PBIAS, RMSE, Pearson r (NaN-safe)
-    io_helpers.py                      Standard JSON output, date parsing, obs readers
-    forcing_sources.py                 CMFD/MSWX/ERA5/FLUXNET variable metadata
-    pyproject.toml                     Library-specific dependencies
-    README.md                          Module documentation
-    tests/
-      test_units.py                    45 unit tests for critical conversions
-  validators/
-    preflight_forcing.py               Pre-simulation forcing data checker (1,144 lines)
-    check_calval_split.py              Data leakage detector (559 lines)
-    standard_calval.py                 Cal/val period helper with scipy.optimize wrapper
-  templates/
-    SKILL_TEMPLATE.md                  14-section model documentation template
-    knowledge_infrastructure_template.yaml   KI package schema
-    stage_log_template.json            Completion tracking
-    triplets_template.yaml             Diagnostic triplet format
-    validation_sheet_template.md       Standardized validation report
-  examples/
-    unit_conversion_example.py         Self-contained unit conversion walkthrough
-    validation_example.py              Metrics computation and cal/val split demo
-  models/                            Complete KI packages (see Model KI Examples)
+  CHANGELOG.md                       Version history
+  VERSION                            Release version
+  AGENT_SERVICE_GUIDE.md             Deploying KI with an agent service
+  DEPLOYMENT.md                      Infrastructure setup guide
+  CLAUDE_TEMPLATE.md                 Master agent instruction file template
+  kdt-release.zip                    Archived shared-library snapshot (see note above)
+  revalidation_3x3_results.xlsx      3x3 revalidation: 25 models, 254 runs
+  models/                            127 KI packages
+    VIC/
+      SKILL_en.md                      Operational reference
+      preflight_check.py               Forcing range/unit checks
+      s1_grid/ s2_forcing/ s3_soil/ s4_veg/   Pipeline stages
+      docs/                            References and stage documentation
+    DSSAT/
+      SKILL.md
+      knowledge_infrastructure.yaml
+      diagnostics/triplets.yaml
+      tools/                           Data preparation scripts
+      workflow/
+    ...                                125 more
 ```
 
----
-
-## Shared Library (ki_tools_common)
-
-The shared library consolidates code patterns found duplicated across 435+
-model tool scripts into 8 tested modules.
-
-### units -- Unit Conversions
-
-The most impactful module. Contains 40+ named constants, 30+ conversion
-functions, and a universal `convert()` dispatcher.
-
-```python
-from ki_tools_common.units import (
-    kgm2s_to_mmday,          # 86400.0
-    kelvin_to_celsius,        # -273.15
-    pa_to_hpa,                # /100
-    wm2_to_mjm2day,           # radiation
-    convert,                  # universal dispatcher
-)
-
-# Named functions for the most critical conversions
-precip = kgm2s_to_mmday(2.315e-5)          # -> 2.0 mm/day
-temp = kelvin_to_celsius(293.15)            # -> 20.0 degC
-
-# Universal dispatcher handles any registered conversion
-convert(300.0, 'W/m2', 'MJ/m2/day', 'radiation')  # -> 25.92
-convert(101325.0, 'Pa', 'atm', 'pressure')         # -> 1.0
-```
-
-### humidity -- Vapour Pressure and Humidity
-
-One canonical Tetens implementation, replacing 17 independent versions found
-across model tools.
-
-```python
-from ki_tools_common.humidity import (
-    saturation_vapor_pressure,   # Tetens formula
-    specific_humidity_to_rh,     # q -> RH conversion
-    vpd_from_temp_rh,            # vapour pressure deficit
-    dewpoint_from_rh,            # dewpoint temperature
-)
-
-es = saturation_vapor_pressure(temp_c=20.0)         # -> 23.39 hPa
-rh = specific_humidity_to_rh(q=0.01, temp_k=293.15, pres_pa=101325.0)
-vpd = vpd_from_temp_rh(temp_c=25.0, rh=60.0)       # hPa
-```
-
-### metrics -- Performance Evaluation
-
-All standard hydrological metrics, NaN-safe, with monthly aggregation.
-
-```python
-from ki_tools_common.metrics import all_metrics, monthly_metrics
-
-m = all_metrics(obs, sim)
-# Returns: {'NSE': ..., 'KGE': ..., 'PBIAS': ..., 'RMSE': ..., 'r': ...}
-
-m_monthly = monthly_metrics(obs, sim, dates)
-# Same metrics on monthly aggregated values (reduces noise)
-```
-
-### validation -- Range Checks and Unit-Trap Detection
-
-Automatically detects whether data is likely in the wrong units by comparing
-against physical ranges.
-
-```python
-from ki_tools_common.validation import validate_forcing_ranges
-
-# Catches: precipitation still in kg/m2/s, temperature in C when K expected
-warnings = validate_forcing_ranges({
-    'temperature': temp_array,
-    'precipitation': precip_array,
-})
-```
-
-### forcing_sources -- Data Source Metadata
-
-Conversion factor lookup for CMFD, MSWX, ERA5, and FLUXNET datasets.
-
-```python
-from ki_tools_common.forcing_sources import get_conversion_factor
-
-get_conversion_factor('CMFD', 'prec', 'mm/day')   # -> 86400.0
-get_conversion_factor('CMFD', 'prec', 'mm/hr')    # -> 3600.0
-get_conversion_factor('CMFD', 'prec', 'm/day')    # -> 86.4
-get_conversion_factor('ERA5', 'tp', 'mm/day')      # accumulated -> mm/day
-```
-
-For the full module reference, see [`ki_tools_common/README.md`](ki_tools_common/README.md).
-
----
-
-## Templates
-
-KISS provides five templates for standardizing model documentation:
-
-| Template | Purpose | Sections |
-|----------|---------|----------|
-| [`SKILL_TEMPLATE.md`](templates/SKILL_TEMPLATE.md) | Primary operational documentation for a model | 14 sections: identity, description, inputs, build, execution, outputs, tools, unit conversions, diagnostics, coupling, results, limitations, spinup, references |
-| [`knowledge_infrastructure_template.yaml`](templates/knowledge_infrastructure_template.yaml) | Machine-readable KI package schema | Pipeline structure, variable list, tool inventory |
-| [`stage_log_template.json`](templates/stage_log_template.json) | KI build completion tracking | Status, metrics, timestamps |
-| [`triplets_template.yaml`](templates/triplets_template.yaml) | Diagnostic error knowledge format | Error symptom, root cause diagnosis, remedy |
-| [`validation_sheet_template.md`](templates/validation_sheet_template.md) | Standardized model performance report | Hydrographs, metrics tables, data provenance |
-
-**Using templates for your own models**: Copy the SKILL_TEMPLATE.md into your
-model's `ki/` directory and fill in all 14 sections. The unit conversion table
-(Section 8) and diagnostic triplets (Section 9) are the most critical sections --
-they capture the knowledge that prevents silent errors.
-
----
-
-## Examples
-
-### unit_conversion_example.py
-
-Demonstrates five capabilities in a self-contained script (no external data):
-direct conversion functions, the universal `convert()` dispatcher with numpy
-array support, unit-trap validation that catches data in the wrong units,
-forcing source registry lookups, and humidity conversions.
-
-```bash
-python examples/unit_conversion_example.py
-```
-
-### validation_example.py
-
-Demonstrates the metrics and cal/val split workflow: generates 10 years of
-synthetic discharge data, computes full-period metrics (NSE, KGE, PBIAS, RMSE,
-r), applies a proper cal/val split (5-year calibration, 4-year validation,
-1-year spinup discarded), and shows how full-period metrics inflate apparent
-skill by 0.10--0.15 NSE compared to validation-only metrics.
-
-```bash
-python examples/validation_example.py
-```
-
-Key takeaway: **always report separate calibration and validation metrics.**
+Package contents vary by model: not every package has reached the same
+completeness. Across the 127 shipped packages, 127 carry a `SKILL.md`,
+125 a `preflight_check.py`, 118 a `triplets.yaml`, 115 a
+`knowledge_infrastructure.yaml`, and 102 each a `format_spec.yaml` and a
+`REFERENCES.md`.
 
 ---
 
 ## The Preflight Checklist
 
-Before deploying a KI package on a new basin, read
-[`PREFLIGHT.md`](PREFLIGHT.md). It takes two minutes and prevents the errors
-that took weeks to find across 123 models.
+Before deploying a KI package on a new basin, run the package's
+`preflight_check.py` and read its unit conversion section. It takes two minutes
+and prevents the errors that took weeks to find.
 
 ### The #1 Silent Error: Unit Mismatches
 
@@ -463,16 +348,16 @@ Each model expects different units. There is no single conversion factor:
 | BGC model | Solar radiation MJ/m2/day not converted to W/m2 (x11.574) | Cold bias |
 | Routing model | mm/timestep not converted to mm/s rate | Discharge off by timestep ratio |
 
-The full checklist also covers Fortran traps, column alignment, coupling traps,
-spatial traps, domain-specific traps, platform traps, and spinup requirements.
-See [`PREFLIGHT.md`](PREFLIGHT.md).
+Beyond units, the per-model diagnostic triplets also cover Fortran traps, column
+alignment, coupling traps, spatial traps, domain-specific traps, platform traps,
+and spinup requirements.
 
 ---
 
 ## Anti-Patterns
 
 Seven documented failure modes from the validation protocol. Each was observed
-in practice while building and validating the 123 KI packages.
+in practice while building and validating the KI packages.
 
 1. **"It works with test data, ship it."** Developer data proves the binary
    works, NOT the knowledge infrastructure. You must complete all three
@@ -509,16 +394,18 @@ validated tools, diagnostic triplets, operational documentation, and preflight c
 
 | Model | Domain | KI Contents | Key Workflow |
 |-------|--------|-------------|-------------|
-| **VIC 5.1.0** | Distributed hydrology | SKILL.md + 10 tools (grid, soil, veg, forcing) + preflight | Basin → Grid → Soil → Veg → Forcing → VIC Run |
+| **VIC 5.1.0** | Distributed hydrology | SKILL.md + 22 scripts (grid, forcing, soil, veg, calibration, plotting) + preflight | Basin → Grid → Soil → Veg → Forcing → VIC Run |
 | **Lohmann Routing** | Channel discharge | SKILL.md + 2 tools (VIC preprocessing, routing params) + preflight | VIC Output → 22→7 cols → Flow direction → UH → Discharge |
 | **CaMa-Flood 4.20** | River routing + flood | SKILL.md + 2 tools (VIC→NetCDF, date processing) + preflight | VIC Output → NetCDF → Map regionalization → Hydrodynamics |
-| **DSSAT 4.8.5** | Crop simulation | SKILL.md + 9 tools + 1752-line triplets + workflow | Weather → Soil → Cultivar → FileX → Run → Parse yields |
+| **DSSAT 4.8.5** | Crop simulation | SKILL.md + tools + 1,789-line triplets + workflow | Weather → Soil → Cultivar → FileX → Run → Parse yields |
+| **SHAW** | Soil heat & water | SKILL.md + 7 pipeline stages + VIC coupling + preflight | Site → Weather → Plant → Initial conditions → Run |
+| **SUMMA 3.x** | Modular hydrology | SKILL.md + decision configuration + ROSETTA soil params | GRU/HRU → Decisions → Trial params → Two-phase run |
 
 ### Using These KI Packages
 
 1. Copy `models/<Name>/` into your project
 2. Use `CLAUDE_TEMPLATE.md` as your master instruction file
-3. Point your agent at the model: *"Read `models/VIC/SKILL.md` and run a simulation for Bengbu"*
+3. Point your agent at the model: *"Read `models/VIC/SKILL_en.md` and run a simulation for Bengbu"*
 4. The agent reads SKILL.md, calls validated tools, runs the binary, interprets results
 
 See [`AGENT_SERVICE_GUIDE.md`](AGENT_SERVICE_GUIDE.md) for the full deployment guide with
@@ -528,43 +415,68 @@ VIC+Routing and VIC+CaMa-Flood workflow walkthroughs.
 
 ## Results
 
-### Summary Statistics
+### Library Coverage
 
-KISS provides knowledge infrastructure for **123 Earth science models** across
-**15 domains**:
+Knowledge infrastructure now spans **453 packages** across **37 domain tags**,
+grouped below into domain families (registry snapshot, 2026-08-11):
 
-| Domain | Count |
+| Domain family | Count |
 |--------|:-----:|
-| Hydrology | 27 |
-| Ocean | 8 |
-| Cryosphere | 7 |
-| Crop | 7 |
-| Fire | 5 |
-| Groundwater | 5 |
-| Biogeochemistry | 6 |
-| Geomorphology | 4 |
-| Water quality | 5 |
-| Urban | 3 |
-| Framework | 6 |
-| Atmospheric | 4 |
-| Routing | 5 |
-| Lake | 3 |
-| Geophysics | 2 |
+| Atmosphere & atmospheric chemistry | 68 |
+| Data infrastructure | 62 |
+| Hydrology & water resources | 59 |
+| Ocean & coastal | 47 |
+| Flood & hydrodynamics | 29 |
+| Cryosphere | 20 |
+| Biogeochemistry | 18 |
+| Crop & agriculture | 18 |
+| Calibration & data assimilation | 16 |
+| Groundwater & subsurface | 16 |
+| Soil & land surface | 16 |
+| Geomorphology & sediment | 14 |
+| Water quality | 14 |
+| Earth system & frameworks | 13 |
+| Energy | 11 |
+| Human systems & health | 8 |
+| Wildfire | 8 |
+| Geophysics | 6 |
+| Urban | 5 |
+| Lake | 2 |
+| Other / uncategorized | 3 |
+
+By package kind: **404 models**, **29 libraries**, **19 datasets**, 1 duplicate.
 
 ### Validation Coverage
 
-- **55 models** validated with real observations (discharge, soil moisture,
-  GPP, temperature, etc.)
-- **42 models** validated with analytic benchmarks or developer test cases
-- **77 models** running actual compiled binaries (Fortran, C, C++)
-- **650+ diagnostic triplets** extracted, with top 20 universal traps
-  identified
-- **127 validation sheets** produced in standardized format
+Validation tier as recorded in the model registry, across all 453 packages:
+
+| Tier | Count |
+|------|:-----:|
+| `tested` | 281 |
+| `validated` | 85 |
+| `analytic` | 33 |
+| `failed` | 21 |
+| `not_runnable` | 10 |
+| `real` | 7 |
+| `binary_exists` | 7 |
+| `runs` | 1 |
+| unset | 8 |
+
+Supporting evidence in the registry:
+
+- **387 packages** carry a path to an actual compiled binary (Fortran, C, C++).
+- **2,568 recorded test runs** across **154 models** with at least one scorecard
+  (299 scorecards total); **139 models** carry a recorded best NSE.
+- **5,268 diagnostic triplets** extracted across the library.
+- **334 packages** ship a preflight check; **238** ship a machine-readable
+  `format_spec.yaml`.
+- **3x3 revalidation**: 25 models, 254 runs, 49% consistent
+  ([`revalidation_3x3_results.xlsx`](revalidation_3x3_results.xlsx)).
 
 ### Key Findings
 
-- **37% of all errors are silent** -- the model runs without error but produces
-  scientifically wrong results.
+- **37% of all errors are silent** (123-model study, KISS paper) -- the model
+  runs without error but produces scientifically wrong results.
 - **Unit mismatches are the #1 silent error**, affecting every model packaged.
 - **Fixed-width column misalignment** is the #2 silent error in Fortran models.
 - **Data leakage** (calibrating and validating on the same period) was found in
@@ -612,7 +524,7 @@ See [`LICENSE`](LICENSE) for the full text.
   Demonstration and deployment infrastructure for KISS knowledge infrastructure.
 - **Hohai University** -- Institutional support and computational resources.
 - **Jianyun Zhang and Junliang Jin Research Group** -- Development, testing, and validation
-  across 123 Earth science models.
+  across the KI library.
 
 ---
 

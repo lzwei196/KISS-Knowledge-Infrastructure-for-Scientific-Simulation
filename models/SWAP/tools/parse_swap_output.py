@@ -46,56 +46,132 @@ def validate_inputs(work_dir, outfil):
     print(f"[OK] Found SWAP output files in {work_dir}")
 
 
+# result.blc is a two-column INPUT | OUTPUT table, one block per balance
+# period. Each row carries a label in the left-hand margin and its values in
+# fixed PLANT / SNOW / POND / SOIL sub-columns, e.g.
+#
+#   Gross Rainfall     83.72                         |
+#                                                    | Interception       5.43
+#   SSDI                                        0.00 | Plant Transpiration    76.55
+#
+# The old split key (a "Water balance" + "components" phrase) appears NOWHERE
+# in SWAP 4.2.0 output, so the split matched nothing, parse_blc returned [],
+# and water_balance.csv was never written (dt_019). Periods are delimited by
+# the `Period             :` line instead.
+BLC_INPUT_LABELS = {
+    "Gross Rainfall": "rain_cm",
+    "Nett Rainfall": "nett_rain_cm",
+    "Gross Irrigation": "gross_irrigation_cm",
+    "Nett Irrigation": "nett_irrigation_cm",
+    "Snowfall": "snowfall_cm",
+    "Runon": "runon_cm",
+    "Inundation": "inundation_cm",
+    "Infiltr. Soil Surf.": "infiltration_cm",
+    "Exfiltr. Soil Surf.": "exfiltration_in_cm",
+    "Upward seepage": "upward_seepage_cm",
+    "Initially Present": "initial_storage_cm",
+    "SSDI": "ssdi_cm",
+}
+BLC_OUTPUT_LABELS = {
+    "Interception": "interception_cm",
+    "Plant Transpiration": "transpiration_cm",
+    "Soil Evaporation": "soil_evaporation_cm",
+    "Runoff": "runoff_cm",
+    "Sublimation": "sublimation_cm",
+    "Downward seepage": "downward_seepage_cm",
+    "Finally present": "final_storage_cm",
+}
+# Rows that carry a value but are neither INPUT nor OUTPUT specific.
+BLC_TAIL_LABELS = {
+    "Storage Change": "storage_change_cm",
+    "Balance Deviation": "balance_deviation_cm",
+}
+
+
+def _blc_numbers(text):
+    """Pull the floats out of one half of a .blc row."""
+    return [float(v) for v in re.findall(r"-?\d+\.\d+", text)]
+
+
 def parse_blc(filepath):
     """
-    Parse detailed yearly water balance (.blc) file.
+    Parse the detailed water balance (.blc) file.
 
-    Returns list of dicts, one per balance period, with components in cm.
+    Returns one dict per balance period with components in cm, including
+    `balance_deviation_cm` so a non-closing balance is visible downstream.
     """
     if not os.path.isfile(filepath):
         return []
 
-    with open(filepath, "r") as f:
+    with open(filepath, "r", encoding="latin-1") as f:
         content = f.read()
 
     balances = []
-    # Split by balance periods (separated by horizontal rules)
-    periods = content.split("Water balance components")
+    # Each period block opens with `Period             :  YYYY-MM-DD  until ...`
+    blocks = re.split(r"^Period[ \t]*:", content, flags=re.MULTILINE)
 
-    for period_text in periods[1:]:  # Skip header
+    for block in blocks[1:]:
+        header, _, body = block.partition("\n")
         balance = {}
 
-        # Extract year/period
-        year_match = re.search(r"(\d{4})", period_text)
-        if year_match:
-            balance["year"] = int(year_match.group(1))
+        span = re.findall(r"(\d{4}-\d{2}-\d{2})", header)
+        if span:
+            balance["period_start"] = span[0]
+            balance["year"] = int(span[0][:4])
+        if len(span) > 1:
+            balance["period_end"] = span[1]
 
-        # Extract components using pattern: "Component name : value"
-        patterns = {
-            "rain": r"Rain \+ snow\s*:\s*([\d.]+)",
-            "irrigation": r"Irrigation\s*:\s*([\d.]+)",
-            "runon": r"Runon\s*:\s*([\d.]+)",
-            "bottom_flux_in": r"Bottom flux\s*:\s*([\d.]+)",
-            "interception": r"Interception\s*:\s*([\d.]+)",
-            "runoff": r"Runoff\s*:\s*([\d.]+)",
-            "transpiration": r"Transpiration\s*:\s*([\d.]+)",
-            "soil_evaporation": r"Soil evaporation\s*:\s*([\d.]+)",
-            "crack_flux": r"Crack flux\s*:\s*([\d.]+)",
-            "drainage": r"Drainage level \d+\s*:\s*([\d.]+)",
-        }
+        depth = re.search(r"Depth soil profile[ \t]*:[ \t]*([\d.]+)", body)
+        if depth:
+            balance["profile_depth_cm"] = float(depth.group(1))
 
-        for key, pattern in patterns.items():
-            match = re.search(pattern, period_text)
-            if match:
-                balance[key] = float(match.group(1))
+        for raw_line in body.splitlines():
+            if raw_line.startswith("="):
+                continue
+            left, sep, right = raw_line.partition("|")
 
-        # Sum lines
-        sum_matches = re.findall(r"Sum\s*:\s*([\d.]+)", period_text)
-        if len(sum_matches) >= 2:
-            balance["sum_in"] = float(sum_matches[0])
-            balance["sum_out"] = float(sum_matches[1])
+            if sep:
+                halves = ((left, BLC_INPUT_LABELS), (right, BLC_OUTPUT_LABELS))
+            else:
+                halves = ((left, BLC_TAIL_LABELS),)
 
-        if balance:
+            for half, label_map in halves:
+                stripped = half.strip()
+                if not stripped:
+                    continue
+                for label, key in label_map.items():
+                    if not stripped.startswith(label):
+                        continue
+                    nums = _blc_numbers(stripped[len(label):])
+                    if nums:
+                        # Sum the PLANT/SNOW/POND/SOIL sub-columns: SWAP only
+                        # ever populates one of them per row, except for
+                        # Balance Deviation where the worst case is what matters.
+                        if key == "balance_deviation_cm":
+                            balance[key] = max(nums, key=abs)
+                        else:
+                            balance[key] = sum(nums)
+                    break
+
+            # `Sum` appears once per half of the totals row.
+            if sep and left.strip().startswith("Sum"):
+                nums_in = _blc_numbers(left)
+                nums_out = _blc_numbers(right)
+                if nums_in:
+                    balance["sum_in_cm"] = round(sum(nums_in), 3)
+                if nums_out:
+                    balance["sum_out_cm"] = round(sum(nums_out), 3)
+
+            # Drainage systems are numbered: `- system 1     0.00 | ...  22.11`
+            m = re.match(r"^-[ \t]*system[ \t]*(\d+)", left.strip())
+            if m and sep:
+                nums_out = _blc_numbers(right)
+                if nums_out:
+                    balance["drainage_cm"] = balance.get("drainage_cm", 0.0) \
+                        + sum(nums_out)
+
+        if len(balance) > 2:
+            balance.setdefault("drainage_cm", 0.0)
             balances.append(balance)
 
     return balances
@@ -114,7 +190,7 @@ def parse_inc(filepath):
     header_found = False
     headers = []
 
-    with open(filepath, "r") as f:
+    with open(filepath, "r", encoding="latin-1") as f:
         for line in f:
             line = line.strip()
             # Skip comment lines
@@ -124,22 +200,28 @@ def parse_inc(filepath):
             # Try to detect header line
             if not header_found and any(kw in line.lower() for kw in
                                          ["date", "daynr", "rain"]):
-                # Parse header
-                headers = re.split(r"\s{2,}|\t|,", line)
-                headers = [h.strip() for h in headers if h.strip()]
+                headers = [h.strip() for h in line.split(",") if h.strip()]
                 header_found = True
                 continue
 
             if header_found:
-                values = line.split()
+                # .inc rows are COMMA-separated and blank-padded, e.g.
+                #   2001-01-01 ,  1,     1,   0.07300, ... ,          ,   0.01421
+                # Splitting on whitespace makes token[1] the bare ',' after the
+                # date and shifts every subsequent field by one (dt_019).
+                values = [v.strip() for v in line.split(",")]
                 if len(values) >= 3:
                     record = {}
                     for i, val in enumerate(values):
-                        if i < len(headers):
-                            try:
-                                record[headers[i]] = float(val)
-                            except ValueError:
-                                record[headers[i]] = val
+                        if i >= len(headers):
+                            break
+                        if val == "":
+                            record[headers[i]] = ""   # e.g. an absent Gwl
+                            continue
+                        try:
+                            record[headers[i]] = float(val)
+                        except ValueError:
+                            record[headers[i]] = val
                     records.append(record)
 
     return records
@@ -147,45 +229,60 @@ def parse_inc(filepath):
 
 def parse_vap(filepath):
     """
-    Parse soil profiles (.vap) file.
+    Parse the soil profiles (.vap) file.
 
-    Returns list of profile snapshots, each with depth arrays.
+    The file is a flat, comma-separated table whose real column header is
+
+        date, depth, wcontent, phead, hconduc, drainage, rootext,
+        waterflux, temp, solute1, solute2, soluteflux, top, bottom, day, dcum
+
+    preceded by a units line. There is no `dd-Mon-yyyy` block marker — the
+    old date-marker hunt matched nothing, so every profile was dropped. The
+    units line also contains `ºC` (0xBA), which raises UnicodeDecodeError on
+    a default UTF-8 open, so the file must be read as latin-1 (dt_019).
+
+    Returns a flat list of row dicts, one per depth per date.
     """
     if not os.path.isfile(filepath):
         return []
 
-    profiles = []
-    current_profile = None
+    rows = []
+    headers = []
 
-    with open(filepath, "r") as f:
+    with open(filepath, "r", encoding="latin-1") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("*") or line.startswith("!"):
-                # Check for date marker
-                date_match = re.search(r"(\d{2})-(\w{3})-(\d{4})", line)
-                if date_match:
-                    if current_profile and current_profile["data"]:
-                        profiles.append(current_profile)
-                    current_profile = {
-                        "date": line,
-                        "data": [],
-                    }
                 continue
 
-            if current_profile is not None:
-                values = line.split()
-                if len(values) >= 2:
-                    try:
-                        row = [float(v) for v in values]
-                        current_profile["data"].append(row)
-                    except ValueError:
-                        # Header line within profile
-                        current_profile["headers"] = values
+            fields = [v.strip() for v in line.split(",")]
 
-    if current_profile and current_profile["data"]:
-        profiles.append(current_profile)
+            if not headers:
+                # The header row is the one naming the date and depth columns;
+                # the units line above it holds no column names.
+                lowered = [v.lower() for v in fields]
+                if "date" in lowered and "depth" in lowered:
+                    headers = lowered
+                continue
 
-    return profiles
+            if len(fields) < 3:
+                continue
+
+            record = {}
+            for i, val in enumerate(fields):
+                if i >= len(headers):
+                    break
+                if val == "":
+                    record[headers[i]] = ""
+                    continue
+                try:
+                    record[headers[i]] = float(val)
+                except ValueError:
+                    record[headers[i]] = val
+            if record:
+                rows.append(record)
+
+    return rows
 
 
 def parse_swap_csv(filepath):
@@ -254,16 +351,26 @@ def generate_summary(work_dir, outfil, balances, inc_records):
     }
 
     if balances:
-        total_rain = sum(b.get("rain", 0) for b in balances)
+        total_rain = sum(b.get("rain_cm", 0) for b in balances)
+        # ET follows the dag: transpiration + soil evaporation + interception.
         total_et = sum(
-            b.get("transpiration", 0) + b.get("soil_evaporation", 0)
+            b.get("transpiration_cm", 0) + b.get("soil_evaporation_cm", 0)
+            + b.get("interception_cm", 0)
             for b in balances
         )
-        total_drain = sum(b.get("drainage", 0) for b in balances)
+        total_irrig = sum(b.get("gross_irrigation_cm", 0) for b in balances)
+        total_drain = sum(b.get("drainage_cm", 0) for b in balances)
+        worst_dev = max((abs(b.get("balance_deviation_cm", 0.0))
+                         for b in balances), default=0.0)
         summary["total_rainfall_cm"] = round(total_rain, 2)
+        summary["total_irrigation_cm"] = round(total_irrig, 2)
         summary["total_et_cm"] = round(total_et, 2)
         summary["total_drainage_cm"] = round(total_drain, 2)
+        summary["max_abs_balance_deviation_cm"] = round(worst_dev, 4)
         summary["years"] = [b.get("year") for b in balances]
+        if worst_dev > 0.01:
+            print(f"WARNING: water balance does not close — worst period "
+                  f"deviation {worst_dev:.4f} cm")
 
     return summary
 
@@ -308,11 +415,22 @@ def main():
     blc_path = os.path.join(args.work_dir, args.outfil + ".blc")
     balances = parse_blc(blc_path)
     if balances:
+        # Union of keys — SWAP omits rows (e.g. drainage systems) per case.
+        fieldnames = []
+        for b in balances:
+            for k in b:
+                if k not in fieldnames:
+                    fieldnames.append(k)
         write_summary_csv(
             os.path.join(args.output_dir, "water_balance.csv"),
             balances,
+            fieldnames=fieldnames,
         )
         print(f"  Parsed {len(balances)} water balance periods from .blc")
+    elif os.path.isfile(blc_path):
+        print(f"ERROR: {blc_path} exists but no balance periods were parsed",
+              file=sys.stderr)
+        sys.exit(1)
 
     inc_path = os.path.join(args.work_dir, args.outfil + ".inc")
     inc_records = parse_inc(inc_path)
@@ -326,7 +444,17 @@ def main():
     vap_path = os.path.join(args.work_dir, args.outfil + ".vap")
     profiles = parse_vap(vap_path)
     if profiles:
-        print(f"  Parsed {len(profiles)} soil profile snapshots from .vap")
+        write_summary_csv(
+            os.path.join(args.output_dir, "soil_profiles.csv"),
+            profiles,
+        )
+        n_dates = len({r.get("date") for r in profiles})
+        print(f"  Parsed {len(profiles)} soil profile rows "
+              f"({n_dates} snapshots) from .vap")
+    elif os.path.isfile(vap_path):
+        print(f"ERROR: {vap_path} exists but no profile rows were parsed",
+              file=sys.stderr)
+        sys.exit(1)
 
     # Check for native CSV output
     csv_path = os.path.join(args.work_dir, args.outfil + ".csv")

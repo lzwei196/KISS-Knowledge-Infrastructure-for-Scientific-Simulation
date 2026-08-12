@@ -1,0 +1,424 @@
+template_version: "3.5"
+
+identity:
+  model_id: "HydroTrend"
+  scientific_reference_version: "HydroTrend v3.0 (Kettner & Syvitski 2008); BQART sediment-flux relation per Syvitski & Milliman 2007"
+  implementation:
+    id: "hydrotrend-3.0"
+    version: "3.0.5"
+    provenance: "C (ANSI-standard) with built-in CSDMS BMI; csdms-contrib/hydrotrend release; epoch/year driver in hydrotrend.c."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c"
+  license: "MIT"
+  repo_url: "https://github.com/csdms-contrib/hydrotrend"
+
+boundary:
+  scope_in:
+    - "Climate-driven daily water balance at a single river outlet (rain runoff, snow/nival melt, glacial icemelt, evapotranspiration, groundwater baseflow)"
+    - "Stochastic daily weather generation from monthly climate statistics and multi-epoch climate trends"
+    - "Snow/ice/glacier accumulation and melt with lapse-rate elevation dependence over a hypsometric curve"
+    - "Long-term suspended sediment load and bedload via empirical formulas (QRT / ART / BQART)"
+    - "Reservoir trapping efficiency and multi-outlet delta sediment distribution"
+    - "Hydraulic geometry (velocity, width, depth) from discharge; earthquake-driven sediment pulse decay"
+  scope_out:
+    - "Spatially distributed / gridded routing — model is lumped at the basin outlet"
+    - "Explicit channel-network routing"
+    - "Mechanistic (process-based) sediment transport — load is an empirical relation"
+    - "In-delta and marine basin processes downstream of the river apex"
+    - "Leap years — every year is forced to 365 days"
+  spatial: "0-D point"
+  temporal: "daily"
+  closure: "mass-balance"
+  notes: "Lumped 1-D/1.5D basin from headwaters to a single river mouth (or multi-outlet delta). Water-balance closure Q = Q_rain + Q_nival + Q_ice - Q_ET +/- Q_groundwater is enforced daily to a fractional tolerance (masscheck ~1e-5); precipitation mass balance is separately checked. Suspended sediment is NOT mass-conserved mechanistically — it is an empirical rating whose long-term mean is normalized to BQART/ART/QRT; grain-size proportions are taken as given (the model does not renormalize them). No surface energy-balance closure."
+
+inputs:
+  forcing:
+    - {category: "climate", name: "Monthly mean temperature (12 months)", unit: "degC", source_kind: "forcing", model_input_format: "{PREFIX}.IN lines 12-23, field 2 of 5"}
+    - {category: "climate", name: "Monthly temperature std dev (12 months)", unit: "degC", source_kind: "forcing", model_input_format: "{PREFIX}.IN lines 12-23, field 3 of 5", notes: "Near-zero std collapses the stochastic weather generator to a flat hydrograph"}
+    - {category: "climate", name: "Monthly total precipitation (12 months)", unit: "mm", source_kind: "forcing", model_input_format: "{PREFIX}.IN lines 12-23, field 4 of 5", notes: "Divided by 1000 to m internally; supplying m instead of mm gives 1000x-low discharge"}
+    - {category: "climate", name: "Monthly precipitation std dev (12 months)", unit: "mm", source_kind: "forcing", model_input_format: "{PREFIX}.IN lines 12-23, field 5 of 5"}
+    - {category: "climate", name: "Annual temperature trend (T_start, T_change, T_std)", unit: "degC, degC/yr, degC", source_kind: "forcing", model_input_format: "{PREFIX}.IN line 8"}
+    - {category: "climate", name: "Annual precipitation trend (P_start, P_change, P_std)", unit: "m/yr, m/yr^2, m/yr", source_kind: "forcing", model_input_format: "{PREFIX}.IN line 9", notes: "NO internal conversion; annual P is m/yr here while monthly P is mm — supplying mm/yr gives 1000x-high discharge"}
+    - {category: "climate", name: "Optional daily climate override (T, P time series)", unit: "degC, m/day", source_kind: "forcing", model_input_format: "{PREFIX}.CLIMATE", notes: "Overrides the stochastic weather generator when present"}
+  parameters:
+    - {category: "morphology", name: "Hypsometry (elevation vs cumulative area)", unit: "m, km2", source_kind: "dataset_lookup", model_input_format: "{PREFIX}0.HYPS", notes: "Must be monotonically increasing in both columns, first-bin area 0; defines basin area, relief, and snow/ice/lapse zones. Area in km2 (m2 inflates Qs ~1000x via A^0.5)"}
+    - {category: "morphology", name: "Basin (river) length", unit: "km", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 31", notes: "Multiplied by 1000 to m internally"}
+    - {category: "morphology", name: "Delta plain gradient", unit: "m/m", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 29"}
+    - {category: "sediment", name: "Lithology factor B (L)", unit: "-", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 46", notes: "BQART range ~0.3-3.0; multiplicative on long-term sediment load"}
+    - {category: "sediment", name: "Anthropogenic factor Eh", unit: "-", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 47", notes: "BQART range ~0.5-8.0; soil-erosion/management term"}
+    - {category: "sediment", name: "Number of grain sizes", unit: "-", source_kind: "user_provided", model_input_format: "{PREFIX}.IN line 6, range 1-10"}
+    - {category: "sediment", name: "Grain-size proportions", unit: "fraction", source_kind: "user_provided", model_input_format: "{PREFIX}.IN line 7", notes: "Must sum to exactly 1.0; model does NOT renormalize"}
+    - {category: "sediment", name: "Bedload rating term", unit: "-", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 30", notes: "Sentinel -9999 resets to 1.0"}
+    - {category: "sediment", name: "Sediment filter", unit: "-", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 44, range 0-0.9"}
+    - {category: "snow_glacier", name: "Lapse rate", unit: "degC/km", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 24", notes: "Divided by 1000 to degC/m internally; sentinel -9999 triggers global default. Positive value => T decreases with altitude"}
+    - {category: "snow_glacier", name: "Glacier ELA change", unit: "m/yr", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 25 (second field)"}
+    - {category: "evaporation", name: "Dry-precipitation evaporation fraction", unit: "-", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 26, range 0-1"}
+    - {category: "evaporation", name: "Canopy interception alpha/beta", unit: "mm/d, -", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 27", notes: "alpha divided by 1000 to m/d internally"}
+    - {category: "evaporation", name: "Evapotranspiration alpha/beta", unit: "mm/d, -", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 28", notes: "alpha divided by 1000 to m/d internally"}
+    - {category: "groundwater", name: "Groundwater storage max/min", unit: "m3", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 36"}
+    - {category: "groundwater", name: "Subsurface storm flow coefficient/exponent", unit: "-", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 38"}
+    - {category: "groundwater", name: "Saturated hydraulic conductivity Ko", unit: "mm/day", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 39", notes: "Divided by 1000 to m/day internally"}
+    - {category: "groundwater", name: "Constant annual baseflow", unit: "m3/s", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 11", notes: "baseflowtot per epoch must be < epoch-mean discharge Qbartotal, else fatal"}
+    - {category: "hydraulics", name: "Velocity coefficient k and exponent m", unit: "m/s, -", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 33"}
+    - {category: "hydraulics", name: "Width coefficient a and exponent b", unit: "m, -", source_kind: "calibrated", model_input_format: "{PREFIX}.IN line 34", notes: "Depth derived: depcof=1/(velcof*widcof), deppow=1-velpow-widpow; exponents must satisfy m+b+f=1"}
+    - {category: "reservoir", name: "Reservoir volume and parameter-type flag", unit: "km3, flag", source_kind: "user_provided", model_input_format: "{PREFIX}.IN line 32", notes: "Volume 0 = no reservoir; a/altitude or d/drainage-area flag"}
+  initial_conditions:
+    - {category: "groundwater", name: "Initial groundwater storage", unit: "m3", source_kind: "user_provided", model_input_format: "{PREFIX}.IN line 37", notes: "Must lie between GW_min and GW_max; carried across years via gwlast"}
+    - {category: "snow_glacier", name: "Starting glacier ELA", unit: "m", source_kind: "user_provided", model_input_format: "{PREFIX}.IN line 25 (first field)"}
+  boundary_conditions:
+    - {category: "control", name: "Sediment-formula selection (0=QRT / 1=ART / 2=BQART)", unit: "-", source_kind: "user_provided", model_input_format: "{PREFIX}.IN line 45"}
+    - {category: "control", name: "ASCII output flag (ON/OFF)", unit: "-", source_kind: "user_provided", model_input_format: "{PREFIX}.IN line 2", notes: "OFF writes only the binary .DIS; no human-readable output"}
+    - {category: "control", name: "Number of outlets and outlet fractions", unit: "-", source_kind: "user_provided", model_input_format: "{PREFIX}.IN lines 41-42", notes: "Outlet fractions must sum to 1 for multi-outlet deltas"}
+    - {category: "control", name: "Event specification (events/yr or Qpeak threshold)", unit: "-", source_kind: "user_provided", model_input_format: "{PREFIX}.IN line 43 (n# or q#)"}
+    - {category: "forcing_external", name: "Optional earthquake events (year, energy, distance, duration)", unit: "-", source_kind: "user_provided", model_input_format: "{PREFIX}.QUAKE"}
+    - {category: "control", name: "River mouth longitude/latitude", unit: "decimal degrees", source_kind: "user_provided", model_input_format: "{PREFIX}.IN line 40", notes: "Latitude + basin Tbar select the climate-zone ART/QRT coefficient lookup"}
+
+processes:
+  modules:
+    - {name: "StochasticWeatherGenerator", role: "process_solver", brief: "Generates annual/monthly stochastic T and P realizations from monthly climate statistics and epoch trends, then distributes to daily T and P at the river mouth and per elevation bin with lapse-rate and std correction (Tmaxstd/Pmaxstd sigma caps, +/-5 sigma acceptance window)."}
+    - {name: "HypsometryFreezingLine", role: "process_solver", brief: "Computes per-elevation-bin temperature and the Freezing Line Altitude index used to partition daily precipitation into rain / snow / ice elevation zones."}
+    - {name: "GlacialMelt", role: "process_solver", brief: "Glacier accumulation/ablation, ELA tracking, and glacier area via volume-area scaling; produces icemelt discharge Qice and glacier sediment. Runs BEFORE snow and rain each day to fix glaciated area."}
+    - {name: "Snowmelt", role: "process_solver", brief: "Degree-day snowmelt (hardwired melt rate) and snow storage per elevation bin per day; produces nival discharge Qnival and inter-annual snow carryover."}
+    - {name: "RainfallRunoffGroundwater", role: "process_solver", brief: "Infiltration / saturation-excess rainfall-runoff producing Qrain and subsurface storm flow Qss; manages the groundwater storage pool and baseflow; a fraction of melt is routed to groundwater."}
+    - {name: "Evapotranspiration", role: "process_solver", brief: "Removes water via dry-evaporation fraction, canopy interception (alpha,beta), and evapotranspiration (alpha,beta)."}
+    - {name: "FlowIntegration", role: "integrator", brief: "Sums Qrain+Qice+Qnival+Qss+Qexceedgw into daily total discharge, applies epoch-mean baseflow rescaling, finds annual peak flood Qpeak, and enforces water and precipitation mass-balance to tolerance."}
+    - {name: "HydraulicGeometry", role: "process_solver", brief: "Computes river-mouth velocity v=kQ^m, width w=aQ^b, and derived depth from daily discharge."}
+    - {name: "SedimentCoefficientSelector", role: "allocator", brief: "Selects the BQART/ART/QRT sediment-formula coefficients from river-mouth latitude and basin mean temperature (climate-zone lookup)."}
+    - {name: "SedimentMeanNormalization", role: "allocator", brief: "Computes the proportionality constant matching the sum of daily suspended load to the long-term mean Qsbar (BQART/ART/QRT), folding in glacier-derived sediment."}
+    - {name: "SuspendedSedimentRating", role: "process_solver", brief: "Daily suspended load Qs = decay*Psi*(scaled)*(Q/Qbar)^C (Morehead 2003 lognormal rating) and concentration Cs; applies reservoir trapping efficiency and earthquake decay multiplier."}
+    - {name: "BedloadComputation", role: "process_solver", brief: "Bedload Qb from rating term, channel slope, and discharge (transport efficiency and angle-of-repose constants); -9999 rating resets to 1.0."}
+    - {name: "ReservoirTrapping", role: "optional_module", brief: "Reservoir trapping efficiency TE reducing long-term sediment: Brown's method for <0.5 km3, Vorosmarty's method for >=0.5 km3 (hard cutoff)."}
+    - {name: "MultiOutletDelta", role: "optional_module", brief: "Partitions discharge and sediment across multiple delta outlets by user fractions with a sediment filter; optional per-event shuffling."}
+    - {name: "EarthquakeSedimentPulse", role: "optional_module", brief: "Earthquake-driven sediment pulse with linear temporal decay; multiplies daily Qs without entering the water balance."}
+  internal_edges:
+    - {from: "Inputs", to: "StochasticWeatherGenerator", kind: "consumes_input", brief: "Monthly climate statistics and epoch trends drive weather generation."}
+    - {from: "Inputs", to: "HypsometryFreezingLine", kind: "consumes_input", brief: "Hypsometric curve sets elevation bins, basin area and relief."}
+    - {from: "StochasticWeatherGenerator", to: "Tdaily_Pdaily", kind: "writes_state", brief: "Daily T and P at mouth and per elevation bin."}
+    - {from: "Tdaily_Pdaily", to: "HypsometryFreezingLine", kind: "reads_state", brief: "Per-bin temperature sets the freezing-line altitude index."}
+    - {from: "HypsometryFreezingLine", to: "FLAindex", kind: "writes_state", brief: "Freezing-line index partitions precipitation into rain/snow/ice."}
+    - {from: "GlacialMelt", to: "glacier_area", kind: "writes_state", brief: "Glaciated area set before snow/rain area partition."}
+    - {from: "glacier_area", to: "Snowmelt", kind: "reads_state", brief: "Snow module reads glaciated area to define snow area."}
+    - {from: "GlacialMelt", to: "Qice", kind: "writes_state", brief: "Daily icemelt discharge."}
+    - {from: "Snowmelt", to: "Qnival", kind: "writes_state", brief: "Daily snowmelt discharge and snow carryover."}
+    - {from: "RainfallRunoffGroundwater", to: "Qrain", kind: "writes_state", brief: "Daily rain-runoff discharge and subsurface storm flow."}
+    - {from: "RainfallRunoffGroundwater", to: "groundwater_storage", kind: "writes_state", brief: "Updates the groundwater pool; excess spills to flow."}
+    - {from: "Evapotranspiration", to: "RainfallRunoffGroundwater", kind: "invokes", brief: "ET and interception remove water before runoff/GW partition."}
+    - {from: "Qice", to: "FlowIntegration", kind: "reads_state", brief: "Icemelt summed into daily total discharge."}
+    - {from: "Qnival", to: "FlowIntegration", kind: "reads_state", brief: "Snowmelt summed into daily total discharge."}
+    - {from: "Qrain", to: "FlowIntegration", kind: "reads_state", brief: "Rain-runoff summed into daily total discharge."}
+    - {from: "groundwater_storage", to: "FlowIntegration", kind: "reads_state", brief: "Baseflow and groundwater exceedance feed the total."}
+    - {from: "FlowIntegration", to: "Qsumtot", kind: "writes_state", brief: "Daily total discharge and annual peak flood."}
+    - {from: "Qsumtot", to: "HydraulicGeometry", kind: "reads_state", brief: "Velocity/width/depth computed from daily discharge."}
+    - {from: "Inputs", to: "SedimentCoefficientSelector", kind: "consumes_input", brief: "River-mouth latitude and basin Tbar select sediment-formula coefficients."}
+    - {from: "FlowIntegration", to: "SedimentMeanNormalization", kind: "invokes", brief: "Epoch-mean discharge enables matching daily Qs to the long-term mean."}
+    - {from: "GlacialMelt", to: "SedimentMeanNormalization", kind: "reads_state", brief: "Glacier-derived sediment folded into the long-term sediment mean."}
+    - {from: "SedimentMeanNormalization", to: "Qsbar_scale", kind: "writes_state", brief: "Proportionality constant scaling the daily suspended-load rating."}
+    - {from: "SedimentCoefficientSelector", to: "SedimentMeanNormalization", kind: "invokes", brief: "Selected BQART/ART/QRT coefficients set the long-term mean Qsbar being matched."}
+    - {from: "Qsbar_scale", to: "SuspendedSedimentRating", kind: "reads_state", brief: "Scales the daily suspended-load rating curve."}
+    - {from: "Qsumtot", to: "SuspendedSedimentRating", kind: "reads_state", brief: "Daily Qs uses daily and mean discharge in the Morehead rating."}
+    - {from: "ReservoirTrapping", to: "SuspendedSedimentRating", kind: "invokes", brief: "Trapping efficiency TE reduces the long-term sediment mean."}
+    - {from: "EarthquakeSedimentPulse", to: "SuspendedSedimentRating", kind: "invokes", brief: "Seismic decay multiplier scales daily Qs."}
+    - {from: "SuspendedSedimentRating", to: "Qs", kind: "writes_state", brief: "Daily suspended load and concentration Cs."}
+    - {from: "Qsumtot", to: "BedloadComputation", kind: "reads_state", brief: "Bedload from discharge, slope, and rating term."}
+    - {from: "BedloadComputation", to: "Qb", kind: "writes_state", brief: "Daily bedload flux."}
+    - {from: "Qs", to: "MultiOutletDelta", kind: "reads_state", brief: "Suspended load partitioned across delta outlets."}
+    - {from: "Qsumtot", to: "MultiOutletDelta", kind: "reads_state", brief: "Discharge partitioned across delta outlets by fraction."}
+    - {from: "Qsumtot", to: "Outputs", kind: "produces_output", brief: "Daily water discharge Q."}
+    - {from: "Qs", to: "Outputs", kind: "produces_output", brief: "Daily suspended load Qs and concentration Cs."}
+    - {from: "Qb", to: "Outputs", kind: "produces_output", brief: "Daily bedload Qb."}
+    - {from: "HydraulicGeometry", to: "Outputs", kind: "produces_output", brief: "Daily velocity, width, depth."}
+
+states:
+  variables:
+    - {name: "groundwater_storage", unit: "m3", role: "prognostic"}
+    - {name: "gwlast", unit: "m3", role: "accumulator"}
+    - {name: "snowpack", unit: "m water-equivalent", role: "prognostic"}
+    - {name: "snow_carryover", unit: "m3", role: "accumulator"}
+    - {name: "glacier_mass_storage", unit: "m water-equivalent", role: "prognostic"}
+    - {name: "glacier_area", unit: "m2", role: "diagnostic"}
+    - {name: "ELA", unit: "m", role: "prognostic"}
+    - {name: "FLAindex", unit: "elevbin index", role: "diagnostic"}
+    - {name: "Tdaily_Pdaily", unit: "degC, m/day", role: "diagnostic"}
+    - {name: "Qice", unit: "m3/s", role: "diagnostic"}
+    - {name: "Qnival", unit: "m3/s", role: "diagnostic"}
+    - {name: "Qrain", unit: "m3/s", role: "diagnostic"}
+    - {name: "Qss", unit: "m3/s", role: "diagnostic"}
+    - {name: "Qexceedgw", unit: "m3/s", role: "diagnostic"}
+    - {name: "Qsumtot", unit: "m3/s", role: "prognostic"}
+    - {name: "Qpeak", unit: "m3/s", role: "diagnostic"}
+    - {name: "Qbartotal", unit: "m3/s", role: "accumulator"}
+    - {name: "Qsbar_scale", unit: "-", role: "accumulator"}
+    - {name: "flood_shoulder_wrap", unit: "m3/s", role: "accumulator"}
+    - {name: "Qs", unit: "kg/s", role: "prognostic"}
+    - {name: "Qb", unit: "kg/s", role: "prognostic"}
+    - {name: "Cs", unit: "kg/m3", role: "diagnostic"}
+    - {name: "TE", unit: "-", role: "diagnostic"}
+    - {name: "sediment_pulse_decay", unit: "-", role: "prognostic"}
+  provenance: "populated"
+
+outputs:
+  - var: "Q"
+    validation_rank: 1
+    unit: "m3/s"
+    description: "Daily water discharge at the river mouth (BMI: channel_exit_water__volume_flow_rate)"
+    emitted_in: "{PREFIX}ASCII.Q"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Daily timestep with a stochastic weather generator and fixed 365-day year; sub-daily and exact-date events not resolvable. Lumped outlet — compare at the basin outlet gauge only."]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["For multi-decadal/paleo runs, compare decadal/annual means or trends rather than inter-annual correlation, since daily realizations are stochastic."]
+      detrending_options: ["none", "decadal_mean"]
+  - var: "Qs"
+    validation_rank: 2
+    unit: "kg/s"
+    description: "Daily suspended sediment flux at the river mouth (BMI: channel_exit_water_sediment~suspended__mass_flow_rate)"
+    emitted_in: "{PREFIX}ASCII.QS"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Suspended load is an empirical long-term rating (Morehead 2003) normalized to a BQART/ART/QRT mean; daily values carry stochastic lognormal variability and should be compared as load-vs-discharge rating or aggregated, not point-by-point."]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["magnitude_accuracy", "trend_match"]
+          determining_metric: "pbias"
+          caveats: ["Long-term mean sediment load is the calibration target; multi-year mean Qs is the defensible comparison."]
+      detrending_options: ["none", "decadal_mean"]
+  - var: "Qb"
+    validation_rank: 3
+    unit: "kg/s"
+    description: "Daily bedload flux at the river mouth (BMI: channel_exit_water_sediment~bedload__mass_flow_rate)"
+    emitted_in: "{PREFIX}ASCII.QB"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Bedload field measurements are rare and uncertain; compare order-of-magnitude long-term means, not daily series."]
+      detrending_options: ["none", "decadal_mean"]
+  - var: "Cs"
+    validation_rank: 4
+    unit: "kg/m3"
+    description: "Daily suspended sediment concentration at the river mouth (BMI: channel_exit_water_sediment~suspended__mass_concentration); typical 0.001-100 kg/m3"
+    emitted_in: "{PREFIX}ASCII.CS"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Concentration = Qs/Q; inherits the empirical sediment-rating variability. Hyperpycnal threshold ~40 kg/m3 is a hardwired plume-behavior flag, not a clamp on Cs."]
+      detrending_options: ["none"]
+  - var: "velocity_width_depth"
+    validation_rank: 5
+    unit: "m/s, m, m"
+    description: "River-mouth flow velocity, channel width, and channel depth from Leopold-Maddock hydraulic geometry (BMI: channel_exit_water_flow__speed, channel_exit_water_x-section__width, channel_exit_water_x-section__depth)"
+    emitted_in: "{PREFIX}ASCII.VWD"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Diagnostic power-law functions of discharge (v=kQ^m, w=aQ^b, depth derived); accuracy is bounded by the user-supplied hydraulic-geometry coefficients, not independent physics."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "basin_relief_R"
+      to: "Qs"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "BQART"
+      citations: ["syvitski2007_bqart_dominance", "kettner2008_hydrotrend_v3"]
+    - from: "basin_area_A"
+      to: "Qs"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "BQART (Qs proportional to A^0.5)"
+      citations: ["syvitski2007_bqart_dominance", "kettner2008_hydrotrend_v3"]
+    - from: "lithology_factor_B"
+      to: "Qs"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "BQART"
+      citations: ["syvitski2007_bqart_dominance"]
+    - from: "water_discharge_Q"
+      to: "Qs"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "BQART (Qs proportional to Q^0.31, sub-linear)"
+      citations: ["syvitski2007_bqart_dominance", "kettner2008_hydrotrend_v3"]
+    - from: "temperature_T"
+      to: "Qs"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "boundary_forcing"
+      applicability: "BQART (linear T term for T>=2C; coefficient doubled below)"
+      citations: ["syvitski2007_bqart_dominance", "kettner2008_po_lgm"]
+    - from: "anthropogenic_factor_Eh"
+      to: "Qs"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "BQART"
+      citations: ["syvitski2007_bqart_dominance", "syvitski2005_human_impact_flux"]
+    - from: "reservoir_trapping_efficiency_Te"
+      to: "Qs"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "structural"
+      citations: ["syvitski2005_human_impact_flux", "kettner2008_hydrotrend_v3"]
+    - from: "precipitation"
+      to: "Q"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      citations: ["syvitski1998_hydrotrend_original", "kettner2008_po_lgm"]
+    - from: "temperature_T"
+      to: "Q"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      applicability: "glaciated/snow-fed basins (controls snow/glacier melt partition and ET)"
+      citations: ["syvitski1998_hydrotrend_original", "kettner2008_po_lgm"]
+    - from: "glacier_equilibrium_line_altitude_ELA"
+      to: "Q"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "glaciated basins"
+      citations: ["kettner2008_hydrotrend_v3", "kettner2008_po_lgm"]
+  citation_index:
+    syvitski2007_bqart_dominance:
+      short_citation: "Syvitski & Milliman 2007"
+      doi: "10.1086/509246"
+      note: "BQART relation calibrated on 488 rivers (explains 96% of between-river sediment-load variance); variance partition geology ~65% / climate ~14% / anthropogenic ~16%. Strongest sensitivity-ranking source for the BQART module."
+    kettner2008_hydrotrend_v3:
+      short_citation: "Kettner & Syvitski 2008"
+      doi: "10.1016/j.cageo.2008.02.008"
+      note: "HydroTrend v3.0 structure paper; enumerates the >40 climate/basin/glacier/lithology/reservoir parameters driving discharge and sediment outputs."
+    syvitski1998_hydrotrend_original:
+      short_citation: "Syvitski, Morehead & Nicholson 1998"
+      doi: "10.1016/S0098-3004(97)00083-6"
+      note: "Original HydroTrend formulation; establishes precipitation and temperature as the primary climatic drivers of synthetic daily discharge."
+    kettner2008_po_lgm:
+      short_citation: "Kettner & Syvitski 2008 (Po LGM)"
+      doi: "10.1002/9781444303131.ch7"
+      note: "21-kyr Po River application; temperature and precipitation (and consequent glacier/vegetation change) are dominant paleo-controls on discharge and sediment flux."
+    syvitski2005_human_impact_flux:
+      short_citation: "Syvitski, Vorosmarty, Kettner & Green 2005"
+      doi: "10.1126/science.1109454"
+      note: "Global 4462-river application; reservoir trapping (Te) and the anthropogenic soil-erosion B-factor identified as high-leverage controls on delivered sediment load."
+
+safety:
+  hazards:
+    - id: "monthly_precip_meters_not_mm"
+      kind: "weather_file_semantic"
+      description: "Monthly precipitation (HYDRO.IN lines 12-23) authored in m instead of mm; divided by 1000 internally => ~1000x-low discharge, baseflow only. (ht_001)"
+      severity: "silent"
+    - id: "annual_precip_mm_not_meters"
+      kind: "weather_file_semantic"
+      description: "Annual precipitation (line 9) authored in mm/yr instead of m/yr (no internal conversion) => ~1000x-high discharge, yearly extreme flooding. (ht_002)"
+      severity: "silent"
+    - id: "lapse_rate_per_meter_not_per_km"
+      kind: "weather_file_semantic"
+      description: "Lapse rate (line 24) in degC/m instead of degC/km; divided by 1000 internally => no altitude temperature variation, negligible snow/ice melt. (ht_003)"
+      severity: "silent"
+    - id: "hypsometry_area_m2_not_km2"
+      kind: "soil_semantic"
+      description: "Hypsometry area in m2 instead of km2 => A 1e6 too large; since Qs proportional to A^0.5, sediment load ~1000x too high. (ht_014)"
+      severity: "silent"
+    - id: "basin_length_m_not_km"
+      kind: "weather_file_semantic"
+      description: "Basin length (line 31) in meters instead of km; multiplied by 1000 internally => 1000x-too-large length and unrealistic travel times. (ht_004)"
+      severity: "degraded"
+    - id: "ksat_canopy_et_m_per_day_not_mm"
+      kind: "weather_file_semantic"
+      description: "Saturated hydraulic conductivity (line 39) or canopy/ET alpha (lines 27-28) in m/day instead of mm/day; divided by 1000 => negligible subsurface flow / interception / ET. (ht_005, ht_006)"
+      severity: "silent"
+    - id: "temperature_kelvin_not_celsius"
+      kind: "weather_file_semantic"
+      description: "Reanalysis (ERA5/CMFD) temperature left in Kelvin instead of degC (273.15 offset) => Tbar ~290 degC, corrupting lapse-rate, melt, and the BQART temperature term."
+      severity: "silent"
+    - id: "grain_fractions_not_summing_to_one"
+      kind: "soil_semantic"
+      description: "Grain-size proportions (line 7) do not sum to exactly 1.0; the model does NOT renormalize, so sum>1 inflates and sum<1 loses sediment mass. (ht_008)"
+      severity: "silent"
+    - id: "monthly_climate_block_column_shift"
+      kind: "parser_semantic"
+      description: "Monthly climate block (lines 12-23) with wrong field/month count; each line needs exactly 5 fields and 12 months, else all subsequent parameter reads shift. (ht_009)"
+      severity: "fatal_or_silent"
+    - id: "near_zero_climate_std_flat_hydrograph"
+      kind: "weather_file_semantic"
+      description: "Near-zero monthly T_std/P_std collapses the stochastic weather generator to near-constant daily values, producing a flat hydrograph with no seasonal cycle. (ht_015)"
+      severity: "degraded"
+    - id: "nan_in_sediment_rating"
+      kind: "numerical_instability"
+      description: "NaN in Qs when Qbar=0 (division by zero), a negative base raised to a fractional power, or an extreme rating exponent from log10 of a tiny Qsbar. (ht_011)"
+      severity: "fatal"
+    - id: "zero_qbar_arid_or_trapped_snow"
+      kind: "control_semantic"
+      description: "Unrealistically low/zero mean discharge when P<=ET (arid), precipitation negligible, or all precipitation falls as snow that never melts (ELA too low or lapse rate wrong). (ht_012)"
+      severity: "degraded"
+    - id: "baseflow_exceeds_mean_discharge"
+      kind: "control_semantic"
+      description: "Constant baseflow (line 11) per epoch exceeding the epoch-mean discharge Qbartotal is a fatal error in the baseflow rescaling step."
+      severity: "fatal"
+    - id: "long_run_memory_exhaustion"
+      kind: "numerical_instability"
+      description: "Very long simulations (>10000 yr) with many grain sizes, or a hypsometry bin count mismatching the data, exhaust the per-year preallocated random arrays (maxran 2200) => segfault/memory error. (ht_013)"
+      severity: "fatal"
+    - id: "ascii_flag_off_empty_output"
+      kind: "control_semantic"
+      description: "ASCII output flag (line 2) OFF writes only the binary .DIS; combined with a missing trailing '/' or absent output dir, the run appears to succeed but produces no human-readable output. (ht_010)"
+      severity: "silent"
+    - id: "bqart_2C_threshold_discontinuity"
+      kind: "control_semantic"
+      description: "BQART has a hard threshold at Tbar=2 degC: below it the coefficient doubles and the temperature term is dropped, so basins near 2 degC show a step change in sediment load (intended glacial-erosion behavior). (ht_016)"
+      severity: "warning"
+    - id: "reservoir_TE_method_switch_at_half_km3"
+      kind: "control_semantic"
+      description: "Trapping efficiency uses Brown's method for <0.5 km3 and Vorosmarty's for >=0.5 km3; the hard cutoff produces a discontinuity that may not match published Brune curves. (ht_017)"
+      severity: "warning"
+  validation_limits:
+    - "Recommended for rivers longer than ~100 km and basins smaller than ~75,000 km2 (empirical-relation calibration domain)."
+    - "Lumped at a single outlet — cannot resolve spatially distributed runoff or in-channel network routing."
+    - "Daily output timestep cannot resolve sub-daily flood dynamics; fixed 365-day year (no leap days)."
+    - "Sediment load is empirical, not mechanistic — not a process-based morphodynamic transport model."
+  warnings:
+    - "Annual outputs are not independent across years: a 50-day flood-shoulder wrap and inter-annual groundwater (gwlast) and snow carryover couple consecutive years."
+    - "Each epoch is run in a 5-pass loop (mean-Q, daily-Q+baseflow, mean-Qs, Qs normalization, daily-Qs+output); daily Qs is implicitly conditioned on epoch-mean discharge, so it is not a single forward pass."
+    - "Fixed RNG seed makes a given input deterministic; changing only the run length still reuses the seeded draw sequence."
+  assumptions:
+    - statement: "The model is lumped at a single basin outlet (0-D point in space, 1-D vertical via the hypsometric curve); no distributed or channel-network routing."
+      scope: "spatial structure of all outputs (Q, Qs, Qb, Cs, VWD)"
+      source: "CSDMS Model:HydroTrend wiki (Spatial and temporal scale) and Kettner & Syvitski 2008"
+      status: "adopted"
+    - statement: "Water balance closes daily (Q = Q_rain + Q_nival + Q_ice - Q_ET +/- Q_groundwater) to a fractional tolerance; suspended sediment is an empirical rating normalized to a long-term BQART/ART/QRT mean and is NOT mechanistically mass-conserved (grain fractions taken as supplied)."
+      scope: "closure semantics for discharge vs sediment"
+      source: "CSDMS Model_help:HydroTrend (Primary Equations) and HydroTrend v3.0 source mass-balance check (masscheck)"
+      status: "adopted"
+    - statement: "Comparisons against multi-decadal/national aggregate records use detrended/decadal-mean modes, because the stochastic weather generator and empirical long-term sediment rating target the mean, not inter-annual realization-level correlation."
+      scope: "outputs.observability comparison modes for aggregate time series"
+      source: "Kettner & Syvitski 2008 (Po LGM paleo application) and BQART long-term calibration in Syvitski & Milliman 2007"
+      status: "tentative"
+    - statement: "Positive lapse rate means temperature decreases with altitude (standard ~6.5 degC/km); sentinel -9999 triggers an internal global default."
+      scope: "snow/ice/glacier elevation partitioning"
+      source: "HydroTrend v3.0 source (hydroweather/hydrohypsom) and CSDMS Model_help input guidance"
+      status: "adopted"

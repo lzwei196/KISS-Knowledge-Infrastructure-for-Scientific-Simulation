@@ -251,6 +251,8 @@ def setup_soybean(
     output_dir: Optional[str] = None,
     use_npkgrids: bool = True,
     fert_n: Optional[float] = None,
+    shaw_planting_doy: Optional[int] = None,
+    run_model: bool = True,
     **kwargs,
 ) -> Dict[str, Any]:
     """Set up and optionally run a DSSAT CROPGRO-Soybean experiment.
@@ -309,8 +311,11 @@ def setup_soybean(
         cul_info = {"name": cultivar, "region": "unknown", "maturity_group": -1,
                     "plant_doy": 150}
 
-    # Get planting DOY
-    planting_doy = get_planting_doy(cultivar, lat)
+    # Get planting DOY — SHAW thermal trigger overrides climatological default
+    if shaw_planting_doy is not None:
+        planting_doy = int(shaw_planting_doy)
+    else:
+        planting_doy = get_planting_doy(cultivar, lat)
 
     # Get fertilizer rate
     if fert_n is not None:
@@ -369,8 +374,8 @@ def setup_soybean(
         "summary": None,
     }
 
-    # Run DSSAT if weather file was provided
-    if weather_file and os.path.isfile(weather_file):
+    # Run DSSAT if weather file was provided and run_model=True
+    if run_model and weather_file and os.path.isfile(weather_file):
         logger.info("Running DSSAT CROPGRO-Soybean...")
         run_result = run_dssat(workdir)
         result["run_result"] = run_result

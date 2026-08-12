@@ -76,6 +76,14 @@ def main():
     parser.add_argument("--wtd_raster", type=str, default=None,
                         help="Water table depth raster (m) for initial heads")
     parser.add_argument("--nlayers", type=int, default=3, choices=[2, 3])
+    parser.add_argument("--ic_wtd_clip", type=float, nargs=2, default=(1.0, 5.0),
+                        metavar=("MIN_M", "MAX_M"),
+                        help="Clamp the WTD raster to this depth range BEFORE it "
+                             "becomes the initial head (SKILL.md Key Lesson #6, "
+                             "validated Bengbu recipe: 1-5 m). Fan/Reinecke WTD is "
+                             "a coarse equilibrium mean and is often far deeper "
+                             "than the Layer-1 thickness, which starts the top "
+                             "layer dry (triplet dt_mf6_011).")
     parser.add_argument("--output_dir", type=Path, required=True)
     parser.add_argument("--basin_name", type=str, default="basin")
     args = parser.parse_args()
@@ -145,7 +153,20 @@ def main():
         wtd = resample_raster_to_grid(args.wtd_raster, lats, lons)
         wtd[np.isnan(wtd)] = 5.0  # default 5m below surface
         wtd = np.clip(wtd, 0.0, total_depth - 1.0)
-        strt = top - wtd
+        # KDT FIX (2026-07-27): SKILL.md "Key Lessons Learned" #6 (validated
+        # Bengbu recipe) requires the Fan/Reinecke WTD to be CLAMPED before it
+        # becomes the initial head — "Initial heads must be within layer bounds:
+        # clamping WTD to 1-5 m prevents starting heads below cell bottom". The
+        # tool did not implement it, so wherever Fan WTD exceeds the Layer-1
+        # thickness (e.g. 23 m on the Garonne floodplain, vs 1.7 m observed —
+        # Fan is a coarse equilibrium MEAN, biased deep in humid lowlands) the
+        # top layer started dry (triplet dt_mf6_011).
+        lo, hi = args.ic_wtd_clip
+        wtd_ic = np.clip(wtd, lo, hi)
+        logger.info("IC water-table depth clamped to [%.1f, %.1f] m "
+                    "(raw Fan WTD range %.1f-%.1f m)", lo, hi,
+                    float(np.nanmin(wtd)), float(np.nanmax(wtd)))
+        strt = top - wtd_ic
     else:
         # Default: water table at 5m below surface
         strt = top - 5.0
@@ -156,6 +177,12 @@ def main():
 
     # Expand to 3D (nlay × nrow × ncol) — FloPy requires per-layer starting heads
     strt = np.broadcast_to(strt, (args.nlayers, nrow, ncol)).copy()
+
+    # KDT FIX: the bound check above only used the DEEPEST layer bottom, so a
+    # per-layer starting head could still sit below its OWN cell bottom and
+    # start that layer dry. Clamp every layer to its own bottom.
+    for k in range(args.nlayers):
+        strt[k] = np.maximum(strt[k], botm[k] + 0.5)
 
     # Save outputs
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -195,3 +222,17 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # KDT FIX (2026-08-11, frenchpiezo network run) — SEGFAULT AT EXIT.
+    # This tool writes all six .npy outputs plus layer_summary.json and prints
+    # its summary, and only THEN dies with SIGSEGV (returncode 139 / -11) while
+    # the interpreter tears down the rasterio/GDAL + xarray stack. Reproduced
+    # deterministically on the Aquitaine 44x40 grid (MERIT DEM mosaic + Fan WTD):
+    # every documented output present and correct, rc 139. Any caller that
+    # checks the return code — which the KI pipeline must, since a genuine
+    # failure here silently produces no layers — treats a completely successful
+    # build as a hard failure. Flush and exit explicitly once the tool's
+    # contract is met so the process reports the truth.
+    import os as _os
+    sys.stdout.flush()
+    sys.stderr.flush()
+    _os._exit(0)

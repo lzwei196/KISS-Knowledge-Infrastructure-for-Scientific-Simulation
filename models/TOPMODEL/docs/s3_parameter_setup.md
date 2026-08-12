@@ -25,7 +25,7 @@ Map soil and land cover properties to TOPMODEL's parameter space.
 | # | Name | Unit | Range | Description |
 |---|------|------|-------|-------------|
 | 1 | szm | m | 0.001–0.1 | Exponential decline of transmissivity with depth |
-| 2 | t0 | m/hr | 0.1–100 | Saturated transmissivity at surface |
+| 2 | t0 | ln(m/hr) | -1 to 9 | ln(T0): natural log of saturated surface transmissivity. Binary computes szq=exp(t0+log(dt)-TL) (topmodel.c:837-840). NOT linear T0. |
 | 3 | td | hr | 1–100 | Unsaturated zone time delay |
 | 4 | chv | m/hr | 1000–5000 | Channel flow velocity |
 | 5 | rv | m/hr | 500–5000 | Overland flow velocity |
@@ -46,7 +46,7 @@ Map soil and land cover properties to TOPMODEL's parameter space.
    - Use HWSD soil texture class as guide
 
 2. **Estimate t0 from hydraulic conductivity**:
-   - t0 = Ksat × soil_depth (approximate)
+   - T0 = Ksat × soil_depth (approximate), then set t0 = ln(T0)  # binary exponentiates t0
    - Ksat from HWSD or SoilGrids
    - Convert Ksat to m/hr if given in cm/day: × 1/(240)
 
@@ -95,7 +95,7 @@ Map soil and land cover properties to TOPMODEL's parameter space.
 # Bengbu basin - reasonable starting parameters
 params = {
     'szm': 0.04,      # moderate for mixed soils
-    't0': 10.0,       # m/hr, moderate transmissivity
+    't0': 5.0,        # ln(T0); exp(5)=148 m/hr transmissivity (t0 is LN-scale)
     'td': 30.0,       # hr, moderate delay
     'chv': 3600.0,    # 1 m/s channel velocity
     'rv': 1800.0,     # 0.5 m/s overland velocity

@@ -1,0 +1,208 @@
+schema_version: 1
+model_id: MOSART
+domain: hydrology
+generated_by: "self-improve session (Claude Opus 4.8) — validation-convention Step-B, general schema"
+generated_at: 2026-07-09
+
+# Grounded ONLY in locally-fetched full texts. MOSART is a river-routing model; the gauge-comparable
+# headline quantity is DISCHARGE / streamflow. Numeric PASS tiers come from the domain streamflow
+# convention Moriasi et al. 2007 (Table 4, monthly time step), which is REPRODUCED verbatim in the
+# open-access multi-site SWAT evaluation of Chandra et al. 2019 (Gomti basin) -> both fetched, both cited.
+# MOSART's own benchmark papers (Li et al. 2015 global streamflow; Xu et al. 2022 E3SM two-way coupling)
+# report correlation / R2 / RMSE only (no NSE/PBIAS tier), so they enter as SUPPORTIVE context, not as
+# pass bands. STORAGE quantities (routing STORAGE_LIQ vs GRACE TWS; reservoir WRM_STORAGE) and the
+# managed WRM_SUPPLY aggregate have NO cited numeric skill tier in the fetched set -> null bands +
+# confidence <= 0.4 (honest data-gaps; NEVER used to loosen the gate). Bands are plain numbers read via
+# `direction` (see VALIDATION_CONVENTION_SCHEMA.md).
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual   # user-downloaded full text in paper_cache
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_2013.23153.txt
+  swat_gomti2019:
+    doi: 10.1007/s13201-019-1013-x
+    title: "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India"
+    venue: "Applied Water Science"
+    year: 2019
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1007_s13201-019-1013-x.txt
+  mosart_li2015:
+    doi: 10.1175/jhm-d-14-0079.1
+    title: "Evaluating Global Streamflow Simulations by a Physically Based Routing Model Coupled to a Land Surface Model"
+    venue: "Journal of Hydrometeorology"
+    year: 2015
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1175_jhm-d-14-0079.1.txt
+  mosart_e3sm2022:
+    doi: 10.1029/2021ms002772
+    title: "Development of Land-River Two-Way Hydrologic Coupling for Floodplain Inundation in E3SM"
+    venue: "Journal of Advances in Modeling Earth Systems (JAMES)"
+    year: 2022
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1029_2021ms002772.txt
+  hydrology_3models2014:
+    doi: 10.3390/hydrology1010020
+    title: "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT"
+    venue: "Hydrology"
+    year: 2014
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.3390_hydrology1010020.txt
+
+validation:
+
+  # ===================== DISCHARGE / point time series (well grounded) =====================
+  - canonical_quantity: discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        cites: [moriasi2007, swat_gomti2019]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        cites: [moriasi2007, swat_gomti2019]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "RMSE-to-obs-stddev ratio; Moriasi Table 4 pairs with NSE (satisfactory RSR <= 0.70, good <= 0.60, very good <= 0.50). Informative, co-reported with NSE."
+        cites: [moriasi2007]
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "MOSART benchmark skill is reported as correlation/R2, not NSE. Li 2015 monthly streamflow R2 = 0.83-0.87 across global main-channel gauges; Xu 2022 E3SM finds correlation > 0.9 at large basins (Amazon, Mississippi, Yangtze, Mackenzie)."
+        cites: [mosart_li2015, mosart_e3sm2022]
+    validated_when: "NSE >= 0.50 AND |PBIAS| <= 25% (Moriasi 2007 streamflow 'satisfactory', monthly time step; reproduced by Chandra 2019 multi-site SWAT)"
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Moriasi 2007 Table 4 (monthly streamflow): Very good NSE 0.75-1.00 / |PBIAS|<10 / RSR<0.50;
+      Good NSE 0.65-0.75 / |PBIAS| 10-15 / RSR 0.50-0.60; Satisfactory NSE 0.50-0.65 / |PBIAS| 15-25 /
+      RSR 0.60-0.70. Chandra 2019 quotes it verbatim: "satisfactory ... if NSE > 0.50 and RSR <= 0.70,
+      and if PBIAS +/-25% for streamflow ... value greater than 0.75 (good simulation)". Hydrology-1010020
+      corroborates (PBIAS<15, NSE>0.69 as good). This keeps the dag determining_metric (nse) as headline.
+      MOSART's own benchmarks (Li 2015, Xu 2022) report R2/correlation only, hence r is SUPPORTIVE, not a
+      pass band. With water_management.enabled, compare against naturalized obs or run unregulated
+      (dag caveat). Daily-step runs are typically poorer than monthly (Moriasi note) — bands are the
+      monthly convention.
+
+  # ===================== DISCHARGE / spatial (multi-gauge) time series =====================
+  - canonical_quantity: discharge
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        cites: [moriasi2007, swat_gomti2019]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        cites: [moriasi2007, swat_gomti2019]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Multi-gauge MOSART evaluation is scored by correlation/R2: Li 2015 global main-channel monthly R2 0.83-0.87; Xu 2022 GSIM multi-station monthly correlation > 0.9 at major basins. No spatial-field NSE tier is reported, so per-gauge Moriasi tiers are applied across stations."
+        cites: [mosart_li2015, mosart_e3sm2022]
+    validated_when: "Per-gauge NSE >= 0.50 AND |PBIAS| <= 25% across the station set (Moriasi 2007 streamflow 'satisfactory'; Chandra 2019 applies it multisite)"
+    evidence_strength: strong
+    confidence: 0.72
+    notes: >-
+      Same Moriasi 2007 monthly streamflow tiers, applied per gauge across a multi-station comparison
+      (Chandra 2019 is itself a multisite Gomti-basin evaluation). Confidence slightly reduced vs the
+      single-station block because the field lacks a distinct spatial-field skill tier for routed
+      discharge; the convention is transferred per-station. Requires consistent network construction
+      across resolutions (dag caveat).
+
+  # ===================== WATER SUPPLY (managed) / regional aggregate (data-gap tier) =====================
+  - canonical_quantity: discharge
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no fetched paper gives a numeric bias tier for aggregated managed water supply/withdrawals; the Moriasi streamflow PBIAS tier is NOT transferred here (different, management-driven quantity)"
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "WRM_SUPPLY is delivered supply governed by ISTARF/allocation rules and prescribed demand, not emergent routing; observed deliveries are aggregated and management-driven, so only aggregate magnitude/trend is comparable (dag caveat). No fetched benchmark reports a supply-bias threshold."
+        cites: []
+    validated_when: "UNRESOLVED — no cited bias tier for managed water-supply aggregates; treat as data-gap, contextualize only, never loosen"
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      WRM_SUPPLY (dag determining_metric pbias) is a water-management output, not natural streamflow.
+      The MOSART-WM description papers (Voisin 2013 HESS-17-3605; Voisin 2015 HESS-19-63) present the
+      supply/allocation mechanism but no cited numeric supply-bias skill tier is in the fetched set, so
+      the band is null per the no-fabrication rule. Do NOT reuse the Moriasi streamflow PBIAS band for a
+      managed quantity. A dedicated MOSART-WM supply/withdrawal validation is needed (see
+      deferred_paywalled).
+
+  # ===================== TERRESTRIAL/ROUTING WATER STORAGE vs GRACE / spatial (data-gap) =====================
+  - canonical_quantity: water_storage
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no cited numeric r/NSE threshold for routing storage vs total-water-storage anomalies in the fetched set; compare anomalies (not absolute storage)"
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED — no cited skill tier for STORAGE_LIQ vs GRACE TWS anomaly; data-gap, contextualize only"
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      STORAGE_LIQ (channel+subnetwork+hillslope routing storage, BMI surface_water_amount) is bound to
+      total-water-storage / GRACE anomalies (tws_anomaly_cm, lwe_thickness_cm) with dag/obs_map metric r.
+      GRACE measures a broader column than routing storage alone, so only anomalies are comparable
+      (dag caveat). None of the fetched MOSART benchmarks report a storage-skill tier -> null band,
+      confidence 0.3. (No channel-velocity variable has an obs binding in this KI, so no velocity block
+      is emitted.)
+
+  # ===================== RESERVOIR STORAGE / point time series (data-gap) =====================
+  - canonical_quantity: reservoir_storage
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no cited numeric skill tier for per-reservoir storage in the fetched set; ISTARF release rules approximate operations"
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED — no cited per-reservoir storage skill tier; data-gap, contextualize only"
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      WRM_STORAGE (BMI reservoir_water_amount) is compared per reservoir; ISTARF/generic release rules
+      approximate operations and will not match individual dam decisions exactly (dag caveat). No fetched
+      paper provides a reservoir-storage validation threshold -> null band, confidence 0.3. A reservoir-
+      operations benchmark reporting storage NSE/PBIAS is needed (see deferred_paywalled).
+
+deferred_paywalled:
+  - ref: "Voisin et al. 2013 (HESS-17-3605) / Voisin et al. 2015 (HESS-19-63) report the MOSART-WM supply-allocation mechanism but no numeric supply/withdrawal skill tier; a dedicated managed-supply validation (reporting supply PBIAS/NSE vs observed deliveries) is still required"
+    doi: 10.5194/hess-19-63-2015
+    needed_for: [discharge]
+  - ref: "A MOSART reservoir-storage / GRACE total-water-storage benchmark reporting per-reservoir storage NSE/PBIAS and routing-storage vs TWS-anomaly correlation tiers"
+    doi: unknown_not_fetched
+    needed_for: [reservoir_storage, water_storage]

@@ -1,0 +1,456 @@
+template_version: "3.5"
+
+identity:
+  model_id: "LPJmL"
+  scientific_reference_version: "LPJmL 6.0.0 (LPJmL4 lineage; Schaphoff et al. 2018 GMD model description, von Bloh et al. 2018 GMD nitrogen cycle)"
+  implementation:
+    id: "lpjml-600"
+    version: "6.0.0"
+    provenance: "C (optional MPI parallelization); PIK (Potsdam Institute for Climate Impact Research) LPJmL source from github.com/PIK-LPJmL/LPJmL."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c"
+  license: "AGPL-3.0-only"
+  repo_url: "https://github.com/PIK-LPJmL/LPJmL"
+
+boundary:
+  scope_in:
+    - "Carbon cycle (GPP, NPP, autotrophic and heterotrophic respiration; vegetation/soil/litter carbon pools)"
+    - "Nitrogen cycle (deposition, fertilizer/manure, biological N fixation, leaching, denitrification, N2O)"
+    - "Terrestrial water balance (soil moisture by layer, evapotranspiration, runoff, percolation)"
+    - "Lateral river routing, reservoir operations, and irrigation demand/supply"
+    - "Crop production by crop functional type (sowing, phenology, harvested carbon, growing season)"
+    - "Natural vegetation dynamics (establishment, light competition, mortality, land-use change, timber/biomass harvest)"
+    - "Soil energy balance, soil temperature, freeze/thaw and permafrost dynamics, snow"
+    - "Process-based fire disturbance and emissions (SPITFIRE)"
+  scope_out:
+    - "Coupled atmosphere — climate enters one-way as prescribed forcing, no biosphere-to-atmosphere feedback"
+    - "Sub-grid land heterogeneity finer than the 0.5-degree cell"
+    - "Sub-daily resolution of energy and water processes"
+  spatial: "distributed-stream"
+  temporal: "daily"
+  closure: "both"
+  notes: "Mass-balance closure is enforced for carbon, water, and (when the nitrogen cycle is active) nitrogen via compile-time CHECK_BALANCE accounting, with violations aborting the run. An enthalpy-based soil thermal scheme provides a soil energy balance with freeze/thaw, but there is no coupled surface-atmosphere energy closure. Each 0.5-degree cell simulates multiple stand types (natural, cropland, grassland, biomass plantations) simultaneously, internally consistent through shared water/carbon/energy fluxes, and cells are laterally coupled within a timestep through the river-routing discharge queue."
+
+inputs:
+  forcing:
+    - {category: forcing, name: "temp (mean daily air temperature)", unit: "deg C", source_kind: forcing, model_input_format: "CLM binary (clm_id 1) or NetCDF"}
+    - {category: forcing, name: "prec (precipitation)", unit: "mm/day (daily) or mm/month (monthly)", source_kind: forcing, model_input_format: "CLM binary (clm_id 2)", notes: "Frequency must match nstep (365 daily vs 12 monthly); mismatch silently multiplies water input."}
+    - {category: forcing, name: "swdown (shortwave downward radiation)", unit: "W/m2", source_kind: forcing, model_input_format: "CLM binary (clm_id 3)"}
+    - {category: forcing, name: "lwnet (net longwave radiation)", unit: "W/m2", source_kind: forcing, model_input_format: "CLM binary (clm_id 4)"}
+    - {category: forcing, name: "tmin (daily minimum temperature)", unit: "deg C", source_kind: forcing, model_input_format: "CLM binary (clm_id 9)"}
+    - {category: forcing, name: "tmax (daily maximum temperature)", unit: "deg C", source_kind: forcing, model_input_format: "CLM binary (clm_id 10)"}
+    - {category: forcing, name: "tamp (diurnal temperature range)", unit: "deg C", source_kind: forcing, model_input_format: "CLM binary (clm_id 11)", notes: "Used with CRU-style forcing."}
+    - {category: forcing, name: "wetdays (wet-day frequency)", unit: "days/month", source_kind: forcing, model_input_format: "CLM binary (clm_id 12)", notes: "Drives stochastic daily precipitation distribution for monthly forcing."}
+    - {category: forcing, name: "humid (specific humidity)", unit: "kg/kg", source_kind: forcing, model_input_format: "CLM binary (clm_id 14)"}
+    - {category: forcing, name: "wind (wind speed)", unit: "m/s", source_kind: forcing, model_input_format: "CLM binary (clm_id 15)"}
+    - {category: forcing, name: "co2 (atmospheric CO2 concentration)", unit: "ppm", source_kind: forcing, model_input_format: "annual time series text/CLM (clm_id 5)", notes: "Time-varying atmospheric driver of CO2 fertilization; file must span spinup-cycling years plus the transient period or getco2() aborts."}
+  parameters:
+    - {category: parameters, name: "soil texture class", unit: "code (1-13 USDA scheme)", source_kind: dataset_lookup, model_input_format: "CLM binary (clm_id 41)", notes: "13-class USDA texture scheme, each mapping to Ks, w_pwp, w_fc, w_sat; code 0 = no-data and the cell is skipped. A 14-ID variant adds a 'clay (light)' class; 13-class is canonical for this input."}
+    - {category: parameters, name: "soil pH", unit: "pH", source_kind: dataset_lookup, model_input_format: "CLM binary (clm_id 46)"}
+    - {category: parameters, name: "PFT / CFT coefficients", unit: "various", source_kind: calibrated, model_input_format: "par/*.cjson parameter includes", notes: "Photosynthesis (alpha_a, lambda), allometry (k_allom), phenology, mortality (k_mort1), LAI (laimax), turnover coefficients for 9 natural PFTs and 16 crop functional types (rainfed + irrigated)."}
+    - {category: parameters, name: "grid coordinates", unit: "degrees", source_kind: dataset_lookup, model_input_format: "CLM binary (clm_id 43)"}
+    - {category: parameters, name: "land fraction per cell", unit: "fraction", source_kind: dataset_lookup, model_input_format: "CLM binary (clm_id 44)"}
+    - {category: parameters, name: "country code", unit: "code", source_kind: dataset_lookup, model_input_format: "CLM binary (clm_id 45)"}
+    - {category: parameters, name: "surface elevation", unit: "m", source_kind: dataset_lookup, model_input_format: "CLM binary (clm_id 39)"}
+    - {category: parameters, name: "river drainage direction", unit: "index", source_kind: dataset_lookup, model_input_format: "CLM binary (clm_id 37)", notes: "Drainage network required when river routing is enabled."}
+    - {category: parameters, name: "lake fraction", unit: "fraction", source_kind: dataset_lookup, model_input_format: "CLM binary (clm_id 36)"}
+    - {category: parameters, name: "reservoir information", unit: "capacity / year", source_kind: dataset_lookup, model_input_format: "CLM binary (clm_id 40)"}
+  initial_conditions:
+    - {category: initial_conditions, name: "restart state (soil C/N, vegetation, soil moisture, thermal, river storage, phenology)", unit: "binary pools", source_kind: derived, model_input_format: "binary restart file (*.lpj)", notes: "Spinup writes the restart (~year 1700); the transient run reads it. Inspect with bin/lpjprint. Required for land-use transient runs."}
+  boundary_conditions:
+    - {category: boundary_conditions, name: "landuse (CFT area fractions)", unit: "fraction", source_kind: user_provided, model_input_format: "CLM binary (clm_id 6, 64 bands: 16 rainfed + 16 irrigated + irrigation systems)"}
+    - {category: boundary_conditions, name: "N fertilizer application rate", unit: "gN/m2/yr", source_kind: user_provided, model_input_format: "CLM binary (clm_id 18)"}
+    - {category: boundary_conditions, name: "manure N application rate", unit: "gN/m2/yr", source_kind: user_provided, model_input_format: "CLM binary (clm_id 19)"}
+    - {category: boundary_conditions, name: "prescribed sowing dates", unit: "DOY", source_kind: user_provided, model_input_format: "CLM binary (clm_id 25)"}
+    - {category: boundary_conditions, name: "crop phenological heat units (PHU)", unit: "deg C days", source_kind: user_provided, model_input_format: "CLM binary (clm_id 26)"}
+    - {category: boundary_conditions, name: "tillage practice", unit: "binary", source_kind: user_provided, model_input_format: "CLM binary (clm_id 7)"}
+    - {category: boundary_conditions, name: "residue left on field", unit: "fraction", source_kind: user_provided, model_input_format: "CLM binary (clm_id 8)"}
+    - {category: boundary_conditions, name: "nitrogen-limitation switch (with_nitrogen: no / lim / unlim)", unit: "option", source_kind: user_provided, model_input_format: "lpjml_config.cjson"}
+    - {category: boundary_conditions, name: "irrigation mode (no / lim / pot / all)", unit: "option", source_kind: user_provided, model_input_format: "lpjml_config.cjson"}
+    - {category: boundary_conditions, name: "fire module selector (no_fire / fire Glob-FIRM / spitfire)", unit: "option", source_kind: user_provided, model_input_format: "lpjml_config.cjson"}
+    - {category: boundary_conditions, name: "river routing and reservoir switch", unit: "option", source_kind: user_provided, model_input_format: "lpjml_config.cjson"}
+    - {category: boundary_conditions, name: "spinup / restart control (equilsoil, FROM_RESTART)", unit: "option", source_kind: user_provided, model_input_format: "lpjml_config.cjson / preprocessor macro", notes: "equilsoil=true only during spinup; must be false in the transient run."}
+
+processes:
+  modules:
+    - {name: "climate", role: driver, brief: "Reads and buffers daily/monthly forcing (temp, prec, radiation, wind, CO2), interpolates monthly to daily, and feeds dailyclimate() into each cell update."}
+    - {name: "photosynthesis", role: process_solver, brief: "Farquhar/Collatz coupled C3-C4 photosynthesis computing gross assimilation with Rubisco- and light-limited rates and the CO2 fertilization response."}
+    - {name: "canopy_conductance", role: process_solver, brief: "Bisection solve (water_stressed) balancing stomatal conductance against soil-water supply to downscale potential to actual photosynthesis and transpiration."}
+    - {name: "soil_hydrology", role: process_solver, brief: "Infiltration, percolation, layered water-holding over 6 soil layers, interception, snow accumulation/melt, runoff and seepage."}
+    - {name: "soil_thermal", role: process_solver, brief: "Enthalpy-based soil temperature and freeze/thaw scheme tracking volumetric enthalpy and ice content per layer; bidirectionally coupled to hydrology via percolation energy."}
+    - {name: "soil_carbon", role: process_solver, brief: "Litter decomposition and soil organic matter turnover (littersom) producing heterotrophic respiration and updating carbon/nitrogen pools."}
+    - {name: "nitrogen_cycle", role: process_solver, brief: "Soil N transformations — mineralization, nitrification/denitrification (N2O), volatilization, BNF, leaching, plant uptake — coupled to soil moisture and temperature.", applicability: "with_nitrogen != no"}
+    - {name: "npp_allocation", role: allocator, brief: "GSI phenology, net primary production (NPP = GPP - respiration) and allocation of biomass increment to leaves/roots/sapwood per PFT/CFT."}
+    - {name: "vegetation_dynamics", role: process_solver, brief: "Annual establishment, light competition, turnover and mortality reshaping the PFT list."}
+    - {name: "spitfire_fire", role: optional_module, brief: "Process-based fire (Nesterov index, fire probability, firepft) computing burnt area, fire carbon and trace-gas emissions, mutating vegetation and litter pools.", applicability: "fire = spitfire"}
+    - {name: "crop_management", role: optional_module, brief: "Managed-land stands, sowing/harvest date determination, 16 rainfed + 16 irrigated CFT bands, crop NPP/harvest and irrigation demand.", applicability: "land use enabled"}
+    - {name: "river_routing", role: integrator, brief: "Lateral river routing via the discharge queue (drain, extflow) and reservoir storage/release redistributing water for irrigation across cells.", applicability: "river_routing enabled"}
+    - {name: "balance_check", role: integrator, brief: "Per-cell and global carbon/water/nitrogen balance accounting; violations abort the run with the errmsg.h error codes (4=carbon, 5=water, 37=nitrogen)."}
+    - {name: "time_loop", role: driver, brief: "Main program loop (iterate -> iterateyear -> update_daily_cell): spinup then transient years, one-day stepping over all grid cells, orchestrating every module."}
+  internal_edges:
+    - {from: "Inputs", to: "climate", kind: consumes_input, brief: "climate module reads the forcing files (temp, prec, radiation, wind, CO2)"}
+    - {from: "climate", to: "photosynthesis", kind: invokes, brief: "daily temperature, PAR and CO2 drive the Farquhar assimilation rate"}
+    - {from: "photosynthesis", to: "canopy_conductance", kind: invokes, brief: "potential GPP/conductance is the upper bound the water-stress bisection downscales"}
+    - {from: "canopy_conductance", to: "soil_hydrology", kind: reads_state, brief: "reads soil water fraction (soil.w) to limit transpiration supply"}
+    - {from: "canopy_conductance", to: "soil_hydrology", kind: writes_state, brief: "actual transpiration withdraws water from soil layers"}
+    - {from: "soil_hydrology", to: "soil_thermal", kind: writes_state, brief: "percolation carries energy (perc_energy) into the enthalpy update — hydro-thermal coupling"}
+    - {from: "soil_thermal", to: "soil_hydrology", kind: writes_state, brief: "freeze/thaw sets ice content, reducing liquid water available for flow"}
+    - {from: "photosynthesis", to: "npp_allocation", kind: invokes, brief: "daily GPP accumulates into biomass increment for NPP and allocation"}
+    - {from: "soil_carbon", to: "soil_thermal", kind: reads_state, brief: "decomposition rate uses soil temperature via Q10 response"}
+    - {from: "soil_carbon", to: "soil_hydrology", kind: reads_state, brief: "decomposition moisture modifier reads soil water"}
+    - {from: "soil_carbon", to: "nitrogen_cycle", kind: writes_state, brief: "mineralization releases N into soil NO3/NH4 pools"}
+    - {from: "nitrogen_cycle", to: "npp_allocation", kind: reads_state, brief: "plant N uptake limits NPP and allocation (N-limitation)"}
+    - {from: "npp_allocation", to: "vegetation_dynamics", kind: invokes, brief: "annual carbon balance drives establishment, light competition and turnover"}
+    - {from: "vegetation_dynamics", to: "soil_carbon", kind: writes_state, brief: "mortality and turnover transfer biomass to litter pools"}
+    - {from: "spitfire_fire", to: "climate", kind: reads_state, brief: "Nesterov fire index built from daily temperature and precipitation"}
+    - {from: "spitfire_fire", to: "soil_carbon", kind: reads_state, brief: "fuel load read from litter carbon pools"}
+    - {from: "spitfire_fire", to: "vegetation_dynamics", kind: writes_state, brief: "fire mortality removes live PFT biomass and emits fire carbon"}
+    - {from: "soil_hydrology", to: "river_routing", kind: invokes, brief: "runoff and seepage feed the cell discharge queue routed downstream"}
+    - {from: "river_routing", to: "crop_management", kind: invokes, brief: "reservoir release supplies irrigation water to managed stands, cross-cell"}
+    - {from: "crop_management", to: "soil_hydrology", kind: writes_state, brief: "irrigation application adds water to crop-stand soil layers"}
+    - {from: "crop_management", to: "npp_allocation", kind: invokes, brief: "sowing/harvest dates gate crop phenology and harvested-carbon output"}
+    - {from: "time_loop", to: "climate", kind: invokes, brief: "each day calls dailyclimate() to advance forcing"}
+    - {from: "time_loop", to: "balance_check", kind: invokes, brief: "after each cell/year, carbon-water-nitrogen balances are checked; failure aborts"}
+    - {from: "balance_check", to: "Outputs", kind: produces_output, brief: "global flux totals written to globalflux.csv each year"}
+    - {from: "crop_management", to: "Outputs", kind: produces_output, brief: "per-CFT harvested carbon (pft_harvestc) emitted annually"}
+    - {from: "time_loop", to: "Outputs", kind: produces_output, brief: "annual/monthly variables and restart (.lpj) files emitted via the output registry"}
+
+states:
+  variables:
+    - {name: "soil.w (soil water per layer)", unit: "fraction of water-holding capacity", role: prognostic}
+    - {name: "soil.w_fw (free water above field capacity)", unit: "mm", role: prognostic}
+    - {name: "soil.temp (soil layer temperature)", unit: "deg C", role: prognostic}
+    - {name: "soil.enth (volumetric enthalpy)", unit: "J/m3", role: prognostic}
+    - {name: "soil.ice_depth / ice_fw (frozen soil water)", unit: "mm", role: prognostic}
+    - {name: "soil.snowpack", unit: "mm SWE", role: prognostic}
+    - {name: "soil.NO3 / NH4 (mineral nitrogen pools)", unit: "gN/m2", role: prognostic}
+    - {name: "soil cpool / litter (soil and litter carbon/nitrogen pools)", unit: "gC, gN /m2", role: prognostic}
+    - {name: "Pft.vegc (vegetation carbon per PFT)", unit: "gC/m2", role: prognostic}
+    - {name: "Pft.fpc (foliar projective cover)", unit: "fraction", role: prognostic}
+    - {name: "Pft.lai (leaf area index)", unit: "m2/m2", role: diagnostic}
+    - {name: "Pft.bm_inc (biomass increment)", unit: "gC/m2", role: accumulator}
+    - {name: "Pft.phen (phenological state / accumulated heat units)", unit: "fraction / deg C days", role: prognostic}
+    - {name: "Stand.frac (stand fraction)", unit: "0..1", role: prognostic}
+    - {name: "Cell.discharge (routed water queue)", unit: "hm3", role: prognostic}
+    - {name: "reservoir storage", unit: "hm3", role: prognostic}
+    - {name: "Climbuf / gdd (climate buffer, growing-degree-days)", unit: "deg C days", role: accumulator}
+    - {name: "Nesterov fire index", unit: "index", role: accumulator}
+  provenance: "populated"
+
+outputs:
+  - var: "pft_harvestc"
+    validation_rank: 4
+    unit: "gC/m2/yr"
+    description: "Crop-functional-type harvested carbon (excludes residuals); 32 bands = 16 rainfed + 16 irrigated CFTs. Convert to dry-matter yield via /0.45*0.01 (t DM/ha)."
+    emitted_in: "pft_harvestc.bin (output registry, annual)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "National/regional yield aggregates carry a technology trend a weather-driven process model cannot reproduce; compare detrended trends, not inter-annual r."
+            - "Convert harvested carbon to t DM/ha (/0.45*0.01) and use pft_harvestc (residual-excluded), not harvestc."
+            - "Map LPJmL CFTs to reported crops via the landusemap band ordering."
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats:
+            - "Gridded yield products are growing-season climatologies; align CFT mapping and irrigation status."
+      detrending_options: ["decadal_mean", "linear_residual", "first_difference"]
+  - var: "npp"
+    validation_rank: 2
+    unit: "gC/m2/month"
+    description: "Net primary production."
+    emitted_in: "npp.bin (output registry, monthly)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Compare against upscaled/remote-sensing NPP climatologies."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Eddy-flux-derived NPP carries partitioning uncertainty."]
+      detrending_options: ["none"]
+  - var: "gpp"
+    validation_rank: 3
+    unit: "gC/m2/month"
+    description: "Gross primary production."
+    emitted_in: "gpp.bin (output registry, monthly)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Compare against upscaled/remote-sensing GPP climatologies."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Flux-tower GPP is a partitioning product, not a direct observation."]
+      detrending_options: ["none"]
+  - var: "discharge"
+    validation_rank: 1
+    unit: "hm3/day"
+    description: "River discharge at the cell, produced by lateral routing through the drainage network."
+    emitted_in: "discharge.bin (output registry, monthly aggregation)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Requires river routing enabled and a correct drainage network; gauge cell must align with the routed channel."
+            - "Reservoir operations alter the regulated regime."
+      detrending_options: ["none"]
+  - var: "runoff"
+    validation_rank: 5
+    unit: "mm/month"
+    description: "Total runoff (surface + lateral + seepage) generated per cell."
+    emitted_in: "runoff.bin (output registry, monthly)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Local runoff is best evaluated as basin aggregate via discharge; per-cell runoff products are model-derived."]
+      detrending_options: ["none"]
+  - var: "transp"
+    validation_rank: 6
+    unit: "mm/month"
+    description: "Plant transpiration component of evapotranspiration."
+    emitted_in: "transp.bin (output registry, monthly)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Evapotranspiration observation products report total ET, not transpiration alone; sum transp+evap+interc for comparison."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Eddy-covariance latent heat is total ET, not transpiration alone."]
+      detrending_options: ["none"]
+  - var: "vegc"
+    validation_rank: 7
+    unit: "gC/m2"
+    description: "Vegetation carbon stock."
+    emitted_in: "vegc.bin (output registry, annual)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Compare against biomass-carbon maps; above-ground vs total-biomass definitions must be matched."]
+      detrending_options: ["none"]
+  - var: "soilc"
+    validation_rank: 8
+    unit: "gC/m2"
+    description: "Soil organic carbon stock (equilibrated during spinup)."
+    emitted_in: "soilc.bin (output registry, annual)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats:
+            - "Strongly dependent on spinup equilibration; un-equilibrated soil C is invalid."
+            - "Match the integration depth of the soil-carbon observation product."
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "alpha_a (intrinsic quantum/light-use efficiency)"
+      to: "GPP"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      citations: ["schaphoff2018_lpjml4_description", "schaphoff2018_lpjml4_evaluation", "forkel2019_lpjml_satellite_constraint"]
+    - from: "nitrogen fertiliser / N input"
+      to: "crop_yield (pft_harvestc)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "management"
+      applicability: "with_nitrogen enabled"
+      citations: ["vonbloh2018_lpjml5_nitrogen"]
+    - from: "laimax (maximum leaf area index)"
+      to: "crop_yield (pft_harvestc)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      citations: ["vonbloh2018_lpjml5_nitrogen", "schaphoff2018_lpjml4_evaluation"]
+    - from: "k_mort1 (mortality rate coefficient)"
+      to: "vegetation_carbon"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      citations: ["braakhekke2019_lpjml_forest_plantations", "forkel2019_lpjml_satellite_constraint"]
+    - from: "tau_sapwood (sapwood turnover time)"
+      to: "vegetation_carbon_turnover"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      citations: ["braakhekke2019_lpjml_forest_plantations", "forkel2019_lpjml_satellite_constraint"]
+    - from: "lrmax (maximum leaf-to-root mass ratio)"
+      to: "NPP"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "tropical plantation FPFT"
+      citations: ["braakhekke2019_lpjml_forest_plantations"]
+    - from: "E_max (maximum water transport / transpiration capacity)"
+      to: "NPP"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "tropical plantation FPFT"
+      citations: ["braakhekke2019_lpjml_forest_plantations"]
+    - from: "k_allom1 / k_allom3 (allometric coefficients)"
+      to: "stemwood_carbon"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      citations: ["braakhekke2019_lpjml_forest_plantations"]
+    - from: "phenology parameters (GDD / heat-unit / photoperiod thresholds)"
+      to: "FAPAR"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      citations: ["forkel2019_lpjml_satellite_constraint", "schaphoff2018_lpjml4_description"]
+    - from: "carbon turnover / allocation parameters"
+      to: "vegetation_carbon"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      citations: ["forkel2019_lpjml_satellite_constraint"]
+    - from: "precipitation / temperature climate forcing"
+      to: "NPP"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      applicability: "water-limited regions"
+      citations: ["schaphoff2018_lpjml4_evaluation"]
+    - from: "soil water-holding capacity"
+      to: "transpiration"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      citations: ["schaphoff2018_lpjml4_description"]
+  citation_index:
+    schaphoff2018_lpjml4_description:
+      short_citation: "Schaphoff et al. 2018 (Part 1)"
+      doi: "10.5194/gmd-11-1343-2018"
+      note: "LPJmL4 model description; defines the photosynthesis/allocation/phenology/hydrology parameterisation."
+    schaphoff2018_lpjml4_evaluation:
+      short_citation: "Schaphoff et al. 2018 (Part 2)"
+      doi: "10.5194/gmd-11-1377-2018"
+      note: "LPJmL4 evaluation; attributes productivity and water balance to climate forcing and photosynthesis parameters."
+    vonbloh2018_lpjml5_nitrogen:
+      short_citation: "von Bloh et al. 2018"
+      doi: "10.5194/gmd-11-2789-2018"
+      note: "Nitrogen cycle in LPJmL5.0; N availability/fertiliser and laimax scaling control crop productivity."
+    forkel2019_lpjml_satellite_constraint:
+      short_citation: "Forkel et al. 2019"
+      doi: "10.1038/s41598-019-55187-7"
+      note: "Multi-satellite constraint of LPJmL; phenology/light-use control FAPAR/GPP, turnover/mortality control vegetation carbon."
+    braakhekke2019_lpjml_forest_plantations:
+      short_citation: "Braakhekke et al. 2019"
+      doi: "10.5194/esd-10-617-2019"
+      note: "Bayesian (MCMC) calibration of 15 LPJmL plantation parameters; k_mort1 deviates most strongly from prior."
+
+safety:
+  hazards:
+    - id: "temp_kelvin_silent"
+      kind: "weather_file_semantic"
+      description: "Temperature supplied in Kelvin is interpreted as deg C (~300 deg C); photosynthesis and all vegetation processes fail with no error."
+      severity: "silent"
+    - id: "precip_kgm2s_silent"
+      kind: "weather_file_semantic"
+      description: "Precipitation in kg/m2/s is 86400x too small, producing extreme drought and near-zero NPP."
+      severity: "silent"
+    - id: "precip_monthly_in_daily_config"
+      kind: "weather_file_semantic"
+      description: "Monthly-total precipitation fed to a daily (nstep=365) configuration delivers ~30x too much water, triggering water-balance failure (ERROR005)."
+      severity: "fatal_or_silent"
+    - id: "swdown_jm2day_silent"
+      kind: "weather_file_semantic"
+      description: "Shortwave radiation in J/m2/day is 86400x too large, inflating GPP and exploding vegetation carbon."
+      severity: "silent"
+    - id: "fertilizer_unit_silent"
+      kind: "control_semantic"
+      description: "Fertilizer in kgN/ha instead of gN/m2 is 10x too small; fertilization has no detectable effect on yield."
+      severity: "silent"
+    - id: "soil_fraction_scale_silent"
+      kind: "soil_semantic"
+      description: "Soil texture fractions in 0-1 instead of 0-100% classify all cells as sand, giving fast drainage and low water retention."
+      severity: "silent"
+    - id: "co2_year_coverage_fatal"
+      kind: "control_semantic"
+      description: "CO2 time series that does not span the spinup-cycling years plus the transient period aborts in getco2() (ERROR015)."
+      severity: "fatal"
+    - id: "missing_from_restart_landuse"
+      kind: "control_semantic"
+      description: "A transient land-use run started without FROM_RESTART / restart file runs natural spinup instead, producing no crop output."
+      severity: "silent"
+    - id: "carbon_balance_violation"
+      kind: "numerical_instability"
+      description: "Carbon inputs/outputs failing to balance within tolerance under CHECK_BALANCE terminate the run (ERROR004)."
+      severity: "fatal"
+    - id: "water_balance_violation"
+      kind: "numerical_instability"
+      description: "Water inputs exceeding physical capacity (usually wrong precipitation units) cause negative soil moisture and abort (ERROR005)."
+      severity: "fatal"
+    - id: "pft_band_ordering_silent"
+      kind: "parser_semantic"
+      description: "Reading the wrong band of the 32-band pft_harvestc output (16 rainfed + 16 irrigated, ordered by landusemap) yields zero or wrong crop yields."
+      severity: "silent"
+    - id: "yield_carbon_not_converted"
+      kind: "parser_semantic"
+      description: "Treating harvested carbon (gC/m2) as t/ha without the /0.45*0.01 conversion makes yields ~100x off; using harvestc (residual-inclusive) instead of pft_harvestc also biases yield."
+      severity: "silent"
+    - id: "equilsoil_no_convergence"
+      kind: "numerical_instability"
+      description: "Insufficient nequilsoil calls or too-short equilsoil interval prevents soil carbon from equilibrating, producing an endless/invalid spinup."
+      severity: "degraded"
+  validation_limits:
+    - "Global 0.5-degree gridded DGVM, not a field-scale crop model; point/plot observations require aggregation to the cell."
+    - "Daily timestep cannot resolve sub-daily energy and water processes."
+    - "Requires a multi-century natural-vegetation spinup to equilibrate soil carbon and vegetation; results before equilibration are invalid."
+    - "National yield aggregates contain a technology trend that a weather-driven process model cannot reproduce."
+    - "Plausibility envelopes: global NPP ~50-70 GtC/yr, global discharge ~35000-45000 km3/yr; wheat 2-8, maize 3-12, rice 3-10 t/ha."
+  warnings:
+    - "equilsoil must be set false in the transient run; leaving it true is extremely slow and destroys the soil carbon pool."
+    - "For crop-yield validation use pft_harvestc (excludes residuals), not harvestc (includes residuals)."
+    - "pft_harvestc has 32 bands ordered by landusemap; verify cftfrac>0 and CFT name mapping before reading yield."
+    - "Nitrogen limitation is only represented when the nitrogen cycle is enabled; with_nitrogen=no removes N constraint on production."
+  assumptions:
+    - statement: "Each 0.5-degree cell simulates multiple stand types simultaneously, internally consistent through shared water, carbon, nitrogen and energy fluxes; cells are laterally coupled within a timestep through the river-routing discharge queue."
+      scope: "spatial geometry and inter-cell coupling"
+      source: "Schaphoff et al. 2018 GMD 11:1343 (model description)"
+      status: "adopted"
+    - statement: "Mass-balance closure is enforced for carbon, water and (when active) nitrogen via compile-time CHECK_BALANCE accounting; violations abort the run."
+      scope: "conservation / closure"
+      source: "LPJmL errmsg.h error codes and CHECK_BALANCE behavior in source and docs"
+      status: "adopted"
+    - statement: "Atmospheric pressure is treated as a globally constant 1.0e5 Pa with no elevation/pressure correction in the Farquhar photosynthesis solver."
+      scope: "photosynthesis kinetics"
+      source: "src/lpj/photosynthesis.c hardcoded constants"
+      status: "adopted"
+    - statement: "An enthalpy-based soil thermal scheme provides a soil energy balance with freeze/thaw, but there is no coupled surface-atmosphere energy closure."
+      scope: "energy closure"
+      source: "Schaphoff et al. 2018 GMD 11:1343 (energy balance / permafrost section); update_soil_thermal_state in source"
+      status: "adopted"

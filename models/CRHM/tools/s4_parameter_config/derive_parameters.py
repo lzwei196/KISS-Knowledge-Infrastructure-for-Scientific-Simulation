@@ -78,6 +78,12 @@ USDA_TO_CRHM = {
     'silt': 5,  # map silt to silt loam (closest)
 }
 
+# PBSM `fetch` range as declared in Classpbsm.cpp: <300.0 to 10000.0> m.
+# Anything written outside it is clamped by CRHM without a message, so the
+# .prj and the run disagree (dt_006).
+PBSM_FETCH_MIN = 300
+PBSM_FETCH_MAX = 10000
+
 # Rooting depth by land cover (m)
 ROOTING_DEPTH = {
     'open_prairie': 0.5,
@@ -399,18 +405,44 @@ def derive_pbsm_params(hrus):
     n = len(hrus)
     fetch = []
     distrib = []
+    adjusted = []
 
     for h in hrus:
         lc = h.get('land_cover_name', 'grassland')
         # Fetch distance from land cover (Fang: 300m for mountain)
         # Open terrain: longer fetch. Forest: short fetch (trees block wind)
+        #
+        # The keys must cover the land-cover NAMES create_hru_config.py actually
+        # emits. 'crop_stubble', 'bare_ground' and 'alpine_tundra' were missing,
+        # so every stubble/bare HRU silently fell through to the 300 m MOUNTAIN
+        # MINIMUM -- on the Hulunbuir steppe that was 52% of the domain, capping
+        # blowing-snow transport on the flattest, most wind-exposed surface in
+        # the run. ('grassland'/'cropland'/'alpine'/'bare'/'mixed_forest' are
+        # kept for hand-written configs; they are not names s1 produces.)
         fetch_lookup = {
-            'alpine': 300, 'bare': 500, 'open_prairie': 2000,
-            'grassland': 1000, 'cropland': 1500, 'shrub': 500,
+            'alpine': 300, 'alpine_tundra': 1500, 'bare': 500, 'bare_ground': 2000,
+            'open_prairie': 2000, 'grassland': 1000,
+            'cropland': 1500, 'crop_stubble': 1000, 'shrub': 500,
             'coniferous_forest': 300, 'deciduous_forest': 300,  # minimum
             'mixed_forest': 300, 'water': 3000, 'wetland': 1000,
         }
-        fetch.append(fetch_lookup.get(lc, 300))
+        # This PBSM-specific table stays AUTHORITATIVE over the HRU's own
+        # fetch_m (which s1 sets for general landscape description): it is the
+        # one referenced to Fang et al. (2013) and it respects ClassPBSM.cpp's
+        # 300 m floor. The HRU's own fetch is used only when the land-cover
+        # name is unknown here, and then it is `pbsm_fetch_m` -- the field s1
+        # already forced into the declared range -- with the raw landscape
+        # `fetch_m` as the fallback for configs written before s1 emitted it.
+        # Values are clamped into the declared PBSM range and the adjustment is
+        # REPORTED: CRHM clamps out-of-range parameters SILENTLY (dt_006), so
+        # s1's 50 m forest fetch became 300 m with nobody told.
+        f = fetch_lookup.get(lc)
+        if f is None:
+            f = h.get('pbsm_fetch_m') or h.get('fetch_m') or PBSM_FETCH_MIN
+        clamped = min(float(PBSM_FETCH_MAX), max(float(PBSM_FETCH_MIN), float(f)))
+        if clamped != float(f):
+            adjusted.append((h.get('hru_id', len(fetch) + 1), lc, float(f), clamped))
+        fetch.append(clamped)
 
         # distrib: snow redistribution fraction
         # Positive = receives blown snow, negative = loses snow
@@ -430,6 +462,43 @@ def derive_pbsm_params(hrus):
                 distrib[i] = 1.0  # sheltered — sink (receives blown snow)
             else:
                 distrib[i] = 0.0  # neutral
+
+    # EXPOSURE fallback for FLAT terrain. The elevation rule above needs >200 m
+    # of relief between HRUs, so on a prairie/steppe -- the landscape PBSM was
+    # actually built for -- it leaves every distrib at 0, i.e. NO inter-HRU
+    # transport at all: blowing snow can then only sublimate in place, never
+    # relocate. On the Prairies redistribution is driven by EXPOSURE (open,
+    # short-vegetation source -> tall/sheltered sink), not by elevation. Applied
+    # ONLY when the elevation rule found no sink, so every validated mountain
+    # basin keeps byte-identical parameters.
+    if not any(d > 0 for d in distrib) and n > 1:
+        def _shelter(h):
+            """Higher = better snow trap (tall canopy / short blowing fetch)."""
+            return (float(h.get('veg_height_m', 0.3)),
+                    -float(h.get('fetch_m') or 1000))
+        ranked = sorted(range(n), key=lambda i: _shelter(hrus[i]), reverse=True)
+        sinks = [i for i in ranked
+                 if hrus[i].get('has_canopy')
+                 or float(hrus[i].get('veg_height_m', 0.3)) >= 1.0]
+        if not sinks:                       # wholly treeless: the shortest-fetch
+            sinks = [ranked[0]]             # (most sheltered) unit traps the drift
+        # Weight sinks by area so a small shelter belt cannot absorb the whole
+        # domain's drift, and normalise to 1.0 (mass conservation: what leaves
+        # the source HRUs is exactly what the sink HRUs receive).
+        wts = [max(float(hrus[i].get('area_km2', 1.0)), 1e-6) for i in sinks]
+        tot = sum(wts)
+        for i, w in zip(sinks, wts):
+            distrib[i] = round(w / tot, 4)
+
+    if adjusted:
+        for hru_id, lc, raw, clamped in adjusted:
+            warnings.warn(
+                f"HRU {hru_id} ({lc}): fetch {raw:g} m is outside the declared "
+                f"PBSM range <{PBSM_FETCH_MIN} to {PBSM_FETCH_MAX}>; derived as "
+                f"{clamped:g} m. CRHM would have clamped it silently.")
+
+    assert all(PBSM_FETCH_MIN <= f <= PBSM_FETCH_MAX for f in fetch), \
+        "derived fetch outside the range PBSM declares"
 
     return {'fetch': fetch, 'distrib': distrib}
 
@@ -527,6 +596,13 @@ def main():
     parser.add_argument('--output', required=True, help='Output derived parameters JSON')
     parser.add_argument('--basin_lat', type=float, default=None, help='Basin center latitude (fallback for HWSD lookup)')
     parser.add_argument('--basin_lon', type=float, default=None, help='Basin center longitude (fallback for HWSD lookup)')
+    parser.add_argument('--forcing_source', default='nasa_power',
+                        choices=['nasa_power', 'cmfd', 'mswx', 'station'],
+                        help='Forcing source driving the .obs (sets catchadjust: '
+                             'reanalysis=0, station gauge=3 Smith-Alter)')
+    parser.add_argument('--forcing_elev_m', type=float, default=None,
+                        help='Elevation of the forcing grid cell / station (m). '
+                             'Becomes obs_elev. Default: lowest HRU elevation.')
     args = parser.parse_args()
 
     with open(args.hru_config) as f:
@@ -607,7 +683,14 @@ def main():
               f"gw_max={soil_params['gw_max']:.0f}, Sdmax={soil_params.get('Sdmax', 0):.0f}")
 
     # Obs module parameters (Fang 2013: lapse 0.75°C/100m, precip elev adj)
-    obs_params = derive_obs_params(hrus)
+    # forcing_source/forcing_elev_m were supported by derive_obs_params() but
+    # unreachable from the CLI, so every run silently got the NASA-POWER default
+    # and obs_elev = lowest HRU. For a gridded source (CMFD/MSWX) the reference
+    # elevation is the FORCING CELL's elevation, which on the Tibetan Plateau
+    # differs from the valley HRU by >1000 m -- i.e. a >7 C lapse error.
+    obs_params = derive_obs_params(hrus,
+                                   forcing_source=args.forcing_source,
+                                   forcing_elev_m=args.forcing_elev_m)
     print(f"\n  obs: lapse=0.75°C/100m, obs_elev={obs_params['obs_elev']:.0f}m, "
           f"catchadjust={obs_params['catchadjust'][0]}, snow_rain={obs_params['snow_rain_determination'][0]}")
 

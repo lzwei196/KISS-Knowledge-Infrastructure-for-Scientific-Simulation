@@ -76,6 +76,16 @@ def validate_inputs(args):
 
 def build_sowing_manager(args):
     """Build a Manager script for sowing rules."""
+    # Optional fertiliser-at-sowing snippet (applied in the same Manager that sows,
+    # so --fertilise-at-sowing actually puts N in the ground rather than only
+    # adding an unused Fertiliser node).
+    fert_link = ""
+    fert_apply = ""
+    if args.fertilise_at_sowing:
+        fert_link = "\n        [Link] Models.Fertiliser Fertiliser;"
+        fert_apply = (f'\n                    Fertiliser.Apply(amount: {float(args.fertilise_at_sowing)}, '
+                      f'type: "{args.fertilise_type or "NO3N"}");')
+
     if args.auto_sow:
         # Automatic sowing based on rainfall trigger
         window_start = args.sow_window_start or "1-May"
@@ -89,17 +99,20 @@ def build_sowing_manager(args):
 
         script = f"""using Models.PMF;
 using Models.Core;
+using Models.Climate;
+using Models.Utilities;
+using APSIM.Shared.Utilities;
 using System;
 
 namespace Models
 {{
     [Serializable]
-    public class SowingRule : Model
+    public class Script : Model
     {{
         [Link] Clock Clock;
         [Link] Summary Summary;
         [Link] Plant Crop;
-        [Link] Models.Climate.Weather Weather;
+        [Link] Models.Climate.Weather Weather;{fert_link}
 
         [Description("Start of sowing window")]
         public string StartDate {{ get; set; }} = "{window_start}";
@@ -110,19 +123,36 @@ namespace Models
         [Description("Days to accumulate rain")]
         public int RainDays {{ get; set; }} = {rain_days};
 
+        // Accumulated rainfall over the trigger window. The parameter is
+        // documented (and named) as a CUMULATIVE rainfall over RainDays, but the
+        // previous implementation declared cumulativeRain, never filled it, and
+        // sowed on the first day with Rain >= RainTrigger/RainDays — a
+        // single-day threshold ~RainDays times smaller than the stated trigger,
+        // so the crop went in on the first drizzle of the window instead of
+        // after a genuine sowing rain. Models.Utilities.Accumulator is the
+        // mechanism the shipped Examples/Wheat.apsimx "Sow using a variable
+        // rule" manager uses for exactly this.
+        private Accumulator accumulatedRain;
+
+        [EventSubscribe("StartOfSimulation")]
+        private void OnSimulationCommencing(object sender, EventArgs e)
+        {{
+            accumulatedRain = new Accumulator(this, "[Weather].Rain", RainDays > 0 ? RainDays : 1);
+        }}
+
         [EventSubscribe("DoManagement")]
         private void OnDoManagement(object sender, EventArgs e)
         {{
-            if (!Crop.IsAlive && DateUtilities.WithinDates(StartDate, Clock.Today, EndDate))
+            accumulatedRain.Update();
+
+            if (!Crop.IsAlive && DateUtilities.WithinDates(StartDate, Clock.Today, EndDate)
+                && accumulatedRain.Sum >= RainTrigger)
             {{
-                double cumulativeRain = 0;
-                // Simple rain check
-                if (Weather.Rain >= RainTrigger / RainDays)
-                {{
-                    Crop.Sow(cultivar: "{cultivar}", population: {pop},
-                             depth: {depth}, rowSpacing: {row_spacing});
-                    Summary.WriteMessage(this, "Sowing on " + Clock.Today.ToString(), MessageType.Information);
-                }}
+                Crop.Sow(cultivar: "{cultivar}", population: {pop},
+                         depth: {depth}, rowSpacing: {row_spacing});{fert_apply}
+                Summary.WriteMessage(this, "Sowing on " + Clock.Today.ToString()
+                    + " (accumulated rain " + accumulatedRain.Sum.ToString("F1") + " mm over "
+                    + RainDays.ToString() + " d)", MessageType.Information);
             }}
         }}
     }}
@@ -130,6 +160,15 @@ namespace Models
     else:
         # Fixed date sowing
         sow_date = args.sowing_date or "2000-05-15"
+        # Recurring month/day: a fixed sowing date must fire EVERY simulated year,
+        # not only in the literal year given. Comparing Clock.Today to a single
+        # DateTime(year,month,day) sows the crop exactly once (in that one year)
+        # and leaves every other year unsown -> all-zero multi-year yields.
+        try:
+            _parts = sow_date.split('-')
+            sow_month = int(_parts[1]); sow_day = int(_parts[2])
+        except (IndexError, ValueError):
+            sow_month, sow_day = 5, 15
         pop = args.population or 100
         depth = args.sowing_depth or 30
         cultivar = args.cultivar or "Hartog"
@@ -142,21 +181,21 @@ using System;
 namespace Models
 {{
     [Serializable]
-    public class SowingRule : Model
+    public class Script : Model
     {{
         [Link] Clock Clock;
         [Link] Summary Summary;
-        [Link] Plant Crop;
+        [Link] Plant Crop;{fert_link}
 
         [EventSubscribe("DoManagement")]
         private void OnDoManagement(object sender, EventArgs e)
         {{
-            if (Clock.Today == new DateTime({sow_date.replace('-',',')}))
+            if (Clock.Today.Month == {sow_month} && Clock.Today.Day == {sow_day})
             {{
                 if (!Crop.IsAlive)
                 {{
                     Crop.Sow(cultivar: "{cultivar}", population: {pop},
-                             depth: {depth}, rowSpacing: {row_spacing});
+                             depth: {depth}, rowSpacing: {row_spacing});{fert_apply}
                 }}
             }}
         }}
@@ -164,9 +203,14 @@ namespace Models
 }}"""
 
     return {
+        # The serialized property is CodeArray (string[]). "Code" is [JsonIgnore]
+        # in ApsimX, so writing "Code" silently leaves a BLANK manager (no script,
+        # no events fire, no error) — the crop is never sown.
         "$type": "Models.Manager, Models",
-        "Code": script,
+        "CodeArray": script.split("\n"),
+        "Parameters": [],
         "Name": "SowingRule",
+        "Enabled": True,
         "Children": [],
     }
 
@@ -180,7 +224,7 @@ using System;
 namespace Models
 {{
     [Serializable]
-    public class HarvestRule : Model
+    public class Script : Model
     {{
         [Link] Plant Crop;
         [Link] Summary Summary;
@@ -200,9 +244,12 @@ namespace Models
 }}"""
 
     return {
+        # See note in build_sowing_manager: must use CodeArray, not Code.
         "$type": "Models.Manager, Models",
-        "Code": script,
+        "CodeArray": script.split("\n"),
+        "Parameters": [],
         "Name": "HarvestRule",
+        "Enabled": True,
         "Children": [],
     }
 
@@ -218,10 +265,11 @@ def build_report(crop):
             f"[{crop}].Phenology.CurrentPhaseName",
             f"[{crop}].AboveGround.Wt",
             f"[{crop}].Grain.Wt",
+            f"[{crop}].Grain.Total.Wt",
             f"[{crop}].Leaf.LAI",
-            f"[{crop}].Root.RootingDepth",
+            # Root rooting depth property is .Root.Depth (not .RootingDepth)
+            f"[{crop}].Root.Depth",
             f"[{crop}].Total.Wt",
-            "[Soil].Water.ESW as ESW",
             "[Weather].Rain",
             "[Weather].MaxT",
             "[Weather].MinT",
@@ -269,32 +317,43 @@ def process(args):
             "Children": [],
         }
 
-    # Weather path — use %root% relative
+    # Weather path — use an ABSOLUTE path. NOTE: in ApsimX the %root% macro
+    # expands to the directory of the apsim *binary* (PathUtilities.GetAbsolutePath
+    # replaces %root% with the assembly directory), NOT the directory containing
+    # the .apsimx file. So "%root%/weather/site.met" resolves under the install
+    # dir and fails with "Cannot find weather file". An absolute path always
+    # resolves regardless of where the .apsimx lives.
     if args.met_file:
-        met_abs = os.path.abspath(args.met_file)
-        output_dir = os.path.dirname(os.path.abspath(args.output))
-        try:
-            met_rel = os.path.relpath(met_abs, output_dir)
-            met_path = f"%root%/{met_rel}"
-        except ValueError:
-            met_path = met_abs
+        met_path = os.path.abspath(args.met_file)
     else:
-        met_path = "%root%/weather.met"
+        met_path = os.path.abspath("weather.met")
 
     # Build simulation tree
     zone_children = [
         build_report(crop),
         soil,
         {
+            # ResourceName is the bare crop name (e.g. "Wheat"); "Plant(Wheat)"
+            # is not a valid resource key and yields an unresolved/empty crop.
             "$type": f"Models.PMF.Plant, Models",
-            "ResourceName": f"Plant({crop})",
+            "ResourceName": crop,
             "Name": crop,
             "Children": [],
         },
         {
+            # Initial residue type/mass are required — an empty InitialResidueType
+            # throws "Could not find residue type ''" at startup.
             "$type": "Models.Surface.SurfaceOrganicMatter, Models",
             "ResourceName": "SurfaceOrganicMatter",
             "Name": "SurfaceOrganicMatter",
+            "SurfOM": [],
+            "Canopies": [],
+            "InitialResidueName": f"{crop.lower()}_stubble",
+            "InitialResidueType": crop.lower(),
+            "InitialResidueMass": 500.0,
+            "InitialStandingFraction": 0.0,
+            "InitialCPR": 0.0,
+            "InitialCNR": 100.0,
             "Children": [],
         },
         build_sowing_manager(args),
@@ -304,7 +363,11 @@ def process(args):
     # Add fertiliser at sowing if requested
     if args.fertilise_at_sowing:
         zone_children.append({
+            # ResourceName "Fertiliser" loads the FertiliserType Definitions
+            # (NO3N, UreaN, ...). Without it, Apply() throws "unknown fertiliser
+            # type" because the definition list is empty.
             "$type": "Models.Fertiliser, Models",
+            "ResourceName": "Fertiliser",
             "Name": "Fertiliser",
             "Children": [],
         })
@@ -334,6 +397,13 @@ def process(args):
                         "Children": [],
                     },
                     {
+                        # Required: arbitrates crop water/N uptake across zones.
+                        # Without it the crop cannot extract water/N and growth fails.
+                        "$type": "Models.Soils.Arbitrator.SoilArbitrator, Models",
+                        "Name": "SoilArbitrator",
+                        "Children": [],
+                    },
+                    {
                         "$type": "Models.Summary, Models",
                         "Name": "Summary",
                         "Children": [],
@@ -354,7 +424,17 @@ def process(args):
                         "SoilHeatFluxFraction": 0.4,
                         "NightInterceptionFraction": 0.5,
                         "ReferenceHeight": 2.0,
-                        "Children": [],
+                        "Children": [
+                            {
+                                # MicroClimate has a required [Link] ICalculateEo;
+                                # supply the atmospheric-potential-Eo calculator as a
+                                # child (shipped files get it via a load-time converter,
+                                # which does not fire for an already-current Version).
+                                "$type": "Models.AtmosphericPotentialEvaporation, Models",
+                                "Name": "AtmosphericPotentialEvaporation",
+                                "Children": [],
+                            },
+                        ],
                     },
                     {
                         "$type": "Models.Core.Zone, Models",

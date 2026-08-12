@@ -1,21 +1,34 @@
 #!/usr/bin/env python3
 """
-convert_wind_to_simfire.py — Convert external wind data to SimFire wind arrays.
+convert_wind_to_simfire.py — Convert external wind data to SimFire spatial
+wind arrays (ft/min, degrees).
 
-Reads wind speed and direction from CSV, NetCDF, or constant values and converts
-them to SimFire-compatible numpy arrays in the correct units.
+⚠️ SCOPE: This tool produces .npy spatial wind arrays in the units that
+SimFire's Rothermel **internals** use (ft/min). These arrays are NOT
+consumed by the standard `wind.simple` or `wind.perlin` YAML paths —
+those paths take *mph scalars* in the YAML and apply `mph_to_ftpm`
+themselves (config.py:860 and :897-901). Use these arrays only for:
+  - the CFD wind path
+  - custom layer injection where you bypass the YAML-driven wind setup
+For the simple/perlin YAML paths, just write the mph value directly.
+See `docs/s3_wind_setup.md` for the canonical config recipe.
 
-CRITICAL UNIT CONVERSIONS:
-  - Wind speed: SimFire expects ft/min internally.
-    - From mph: multiply by 88
-    - From m/s: multiply by 196.85
-    - From km/h: multiply by 54.68
-  - Wind direction: SimFire expects degrees (0=North, 90=East, 180=South, 270=West).
-    Meteorological convention: direction wind blows FROM.
+CRITICAL UNIT CONVERSIONS (this tool writes ft/min arrays):
+  - From mph: multiply by 88
+  - From m/s: multiply by 196.85
+  - From km/h: multiply by 54.68
+  - From knots: multiply by 101.27
+
+WIND DIRECTION CONVENTION:
+  - SimFire's Rothermel uses **degrees clockwise from N, "TO direction"**
+    (rothermel.py:104). `direction=90` means wind blowing TOWARD East.
+  - If your source data is in meteorological "from" convention, add 180
+    (mod 360) before writing the array.
 
 Output:
   - wind_speed.npy: float array of wind speeds in ft/min, shape (H, W)
-  - wind_direction.npy: float array of wind directions in degrees, shape (H, W)
+  - wind_direction.npy: float array of wind directions in degrees ("TO"
+    convention), shape (H, W)
   - wind_metadata.json: source info, conversion applied, statistics
 
 Usage:

@@ -739,3 +739,143 @@ triplets:
       affected_components: [select_model_template.py]
     remedy:
       action: "Use hand-crafted per-model templates validated against Raven v4.1 binary. Generic template generation needs version-awareness."
+
+  - id: dt_rav_034
+    severity: major
+    failure_domain: output_convention
+    stage: s7
+    symptom:
+      description: "External NSE/KGE differ from Raven's own Diagnostics.csv, and the paired obs column in Hydrographs.csv sits one row BELOW the raw gauge value for the same calendar date — a silent one-timestep lag in every externally scored metric"
+      error_pattern: "[NONE]"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Hydrographs.csv is PERIOD-ENDING (RavenUsersManual v4.1, 'Output files': 'reports period-ending time-averaged flows for the preceding time step ... the initial flow conditions at the start of the first time step are included'), while :ObservationData input has been period-STARTING since v2.7. So the row stamped date d holds the flow of calendar day d-1, and row 0 is only the initial condition. Joining a calendar-dated gauge series on Raven's raw date label pairs sim(day d) with obs(day d-1). Verified at Tangnaihai: raw gauge 2011-12-31=277 appears in the Hydrographs row stamped 2012-01-01."
+      affected_components: [parse_raven_output.py, any run script with its own read_hydrograph helper]
+    remedy:
+      action: "Use parse_raven_output.load_discharge_series() (or parse_hydrographs(date_convention='period_ending')), which shifts the stamp back one timestep and drops the initial-condition row. Proof of correctness: after the shift, Raven's own '(observed)' column equals the raw gauge file on identical calendar dates (3286 days, max abs diff 0.0). At Tangnaihai/UBC the fix moved held-out NSE 0.6222 -> 0.6253 and made the external number reproduce Raven's internal pairing. NEVER hand-roll a Hydrographs reader in a run script."
+
+  - id: dt_rav_035
+    severity: major
+    failure_domain: water_balance
+    stage: s7
+    symptom:
+      description: "validate_water_balance reports a huge closure FAIL (e.g. residual 76.7% of P, dS numerically equal to cumulative ET) on a run whose native 'MB Error [mm]' column closes to machine zero"
+      error_pattern: "residual_pct|FAIL"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "WatershedStorage.csv 'Total [mm]' is not physical storage: it also contains the 'Cum. Losses to Atmosphere' ACCUMULATOR (6744.8 of 6828.6 mm after 12 alpine years at Tangnaihai). Taking dS = delta(Total) therefore double-counts ET and produces a bogus residual. The checker fault is post-processing, not a model or unit error."
+      affected_components: [parse_raven_output.py, run-script water-balance helpers]
+    remedy:
+      action: "Use parse_raven_output.compute_water_balance(): P/ET/Q from Cum. Inputs / Cum. Losses to Atmosphere / Cum. Outflow, and dS from the PHYSICAL stores only (exclude every 'Cum.*', 'Total', 'MB Error' and the period-ending rainfall/snowfall rate columns). At Tangnaihai this turned FAIL/76.7% into PASS/0.0% (P 8877.1, ET 6744.8, Q 2213.5, dS -81.2 mm) and it cross-checks against Raven's own MB Error (-1.8e-12 mm). Always report raven_mb_error_mm alongside: if THAT is large the fault really is in the model/config."
+
+  - id: dt_rav_036
+    severity: major
+    failure_domain: experiment_design
+    stage: s8
+    symptom:
+      description: "Multi-emulation study reports 'best of N emulations' held-out NSE, but the winner was chosen using that same held-out window (or Raven's full-obs-period Diagnostics.csv, which spans it)"
+      error_pattern: "[NONE]"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Model-structure choice is a tuning decision. Raven's Diagnostics.csv NASH_SUTCLIFFE is computed over the entire :ObservationData record, so ranking on it — or on the validation-window score — leaks the held-out period into selection and makes the reported number optimistically biased rather than a clean out-of-sample estimate."
+      affected_components: [run_ensemble_comparison.py, multi-emulation run scripts]
+    remedy:
+      action: "Rank on the CALIBRATION-window score (parse_raven_output.select_best_member(members, cal_key='cal'); run_ensemble_comparison now sets stats['rank_basis']='calibration_window_nse' when members carry cal scores) and report the held-out score OF THE CAL-SELECTED MEMBER. At Tangnaihai both rules pick ubc (cal NSE 0.728, next gr4j 0.619), so the held-out 0.625 is a genuine out-of-sample number; state the selection rule in the record either way."
+
+  - id: dt_rav_037
+    severity: fatal
+    failure_domain: output_parsing
+    stage: s6
+    symptom:
+      description: "run_raven.py returns diagnostics:{} and every DDS iteration reports the same objective, so 'calibrated' output is byte-identical to the defaults"
+      error_pattern: "[NONE]"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Two independent bugs in the same reader. (1) FILENAME: Raven prefixes output with :RunName, so a multi-emulation study writes <RunName>_Diagnostics.csv (tangnaihai_ubc_Diagnostics.csv); the tool only looked for Diagnostics.csv and <basin>_Diagnostics.csv. (2) PARSE: Diagnostics.csv is COLUMN-oriented (header 'observed_data_series,filename,DIAG_NASH_SUTCLIFFE,...' + one data row per series), but the tool parsed it row-wise as name,value — parts[1] is the .rvt FILENAME, so float() always failed and the dict came back empty. calibrate_raven_dds.py had a private copy of the same broken parse, so its objective silently scored the -999 sentinel on every trial."
+      affected_components: [run_raven.py, calibrate_raven_dds.py]
+    remedy:
+      action: "run_raven.find_diagnostics_file() globs *Diagnostics.csv as a fallback; extract_diagnostics() reads the header row and maps header->value, exposing both DIAG_NASH_SUTCLIFFE and bare NASH_SUTCLIFFE. calibrate_raven_dds.py now IMPORTS extract_diagnostics instead of keeping its own copy — one reader for the KI."
+
+  - id: dt_rav_038
+    severity: fatal
+    failure_domain: calibration
+    stage: s9
+    symptom:
+      description: "DDS runs to completion and reports a best parameter set, but the hydrograph is unchanged: some templates (ubc, mohyse, hypr) had no calibration set at all, and sac_sma/hymod/hmets sets named parameters that build_rvp_parameters.py never writes"
+      error_pattern: "No calibration parameters defined for template"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "CALIBRATION_PARAMS was written from the literature parameter names (SAC_UZTWM, HYMOD_CMAX, ...) rather than from the .rvp this KI actually generates (SAC_PERC_ALPHA, POROSITY, PDM_B, ...). update_rvp_parameter() cannot write a name that is absent from the .rvp, so those DDS dimensions were no-ops — indistinguishable from a converged calibration."
+      affected_components: [calibrate_raven_dds.py]
+    remedy:
+      action: "Added ubc/mohyse/hypr sets and corrected sac_sma/hymod to the emitted names; added UNIVERSAL_PARAMS (PET_CORRECTION, MELT_FACTOR, DD_MELT_TEMP, RAINSNOW_TEMP) to every template; and added resolve_calibration_set(), which intersects the set with rvp_parameter_names() and REPORTS the dropped names as skipped_parameters_absent_from_rvp. A template with no writable parameter now errors instead of pretending to calibrate."
+
+  - id: dt_rav_039
+    severity: fatal
+    failure_domain: process_selection
+    stage: s0
+    symptom:
+      description: "Every emulation calibrates to a large negative NSE in a cold, high-elevation basin; simulated runoff has a hard floor far above the observed mean no matter what parameters DDS picks"
+      error_pattern: "[NONE]"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Appendix F prescribes temperature-index PET (PET_OUDIN / PET_HAMON / PET_MOHYSE) for most emulations. With no radiation term these collapse at high elevation: at Tangnaihai (mean HRU elevation 4128 m) they gave 59-299 mm/yr PET versus 726 mm/yr from PET_PRIESTLEY_TAYLOR on identical CMFD forcing, leaving a ~440 mm/yr floor under simulated runoff against ~170 mm/yr observed — an empty feasible set, so the failure looks like bad calibration but is a process-selection fault."
+      affected_components: [select_model_template.py]
+    remedy:
+      action: "select_model_template.py --pet_method auto (the DEFAULT) substitutes PET_PRIESTLEY_TAYLOR for any TEMPERATURE_INDEX_PET reference, records the substitution in the JSON 'pet' block and in a comment in the .rvi, and --pet_method template restores Appendix F verbatim. Requires radiation/humidity/wind in the .rvt (convert_forcing_to_rvt.py --include_full_forcing)."
+
+  - id: dt_rav_040
+    severity: fatal
+    failure_domain: forcing_distribution
+    stage: s0
+    symptom:
+      description: "An elevation-band .rvh built by s1 makes no difference to the result: snow accumulation, melt timing and the seasonal hydrograph are identical to a single lumped HRU, and cold-region emulations (HBV-EC, HMETS) calibrate to large negative NSE in an alpine basin"
+      error_pattern: "[NONE]"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Raven defaults orocorr_temp / orocorr_precip / orocorr_PET to OROCORR_NONE (ParseInput.cpp:260-262) and select_model_template.py never emitted an :OroTempCorrect or :OroPrecipCorrect directive. With no directive CModel::CorrectTemp is a no-op, so EVERY HRU is forced with the gauge's own temperature and precipitation regardless of its ELEVATION attribute. At Tangnaihai five bands spanning 3217-5776 m (2559 m of relief, gauge reference 4128 m) all saw one identical series, removing the accumulation/melt gradient that drives a snow-fed hydrograph. The elevation-band HRU strategy was silently inert — the run succeeds, nothing warns."
+      affected_components: [select_model_template.py, build_rvh_from_shapefile.py]
+    remedy:
+      action: "select_model_template.py --orographic auto (the DEFAULT) reads the HRU elevations from the staged .rvh and, when relief >= 100 m, emits ':OroTempCorrect OROCORR_SIMPLELAPSE' and ':OroPrecipCorrect OROCORR_SIMPLELAPSE'. Raven then declares ADIABATIC_LAPSE and PRECIP_LAPSE required, so build_rvp_parameters.py emits them automatically (it queries the binary via :CreateRVPTemplate) and calibrate_raven_dds.py calibrates them via SHARED_PARAMS. Use --orographic none to force the old lumped-forcing behaviour. NOTE: :OroPETCorrect does NOT accept OROCORR_SIMPLELAPSE (ParseInput.cpp case 18 takes only HBV/PRMS/UBCWM/NONE) — emitting it aborts the parse; leave PET correction at its default."
+
+  - id: dt_rav_041
+    severity: major
+    failure_domain: forcing
+    stage: s0
+    symptom:
+      description: "Raven_errors.txt says 'SW_RADIA data supplied at gauge <name> but will not be used due to choice of forcing generation algorithm'; a radiation-based PET over-evaporates and the calibrator has to push PET_CORRECTION to its lower bound to compensate"
+      error_pattern: "will not be used due to choice of forcing generation algorithm"
+      detection_method: log_parse
+    diagnosis:
+      root_cause: "Raven's default is SW_RAD_DEFAULT with CLOUDCOV_NONE: it computes CLEAR-SKY shortwave from latitude and date and applies no cloud attenuation, discarding any :Data SHORTWAVE present in the .rvt. Once s0 substitutes a radiation-based PET (dt_rav_039), potential evaporation is therefore driven by clear-sky radiation on every single day including overcast monsoon days. The run succeeds and the warning is easy to miss."
+      affected_components: [select_model_template.py]
+    remedy:
+      action: "resolve_sw_radiation() in select_model_template.py emits ':SWRadiationMethod SW_RAD_DATA' whenever the resolved PET method consumes radiation AND the .rvt carries :Data SHORTWAVE. Raven then uses the supplied (CMFD/MSWX) shortwave and sets cloud correction to NONE itself (ParseInput.cpp:3696). The decision is reported in the s0 JSON 'sw_radiation' block."
+
+  - id: dt_rav_043
+    severity: major
+    failure_domain: calibration
+    stage: s9
+    symptom:
+      description: "In a snow-dominated basin the calibrated hydrograph has the wrong seasonal shape (melt too early/late, spring peak wrong magnitude) even though DDS reports a converged best objective; the reported skipped_parameters_absent_from_rvp list contains MELT_FACTOR and/or DD_MELT_TEMP"
+      error_pattern: "[NONE]"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "The shared degree-day melt parameters (MELT_FACTOR, DD_MELT_TEMP) only exist for templates that use POTMELT_DEGREE_DAY. UBC (POTMELT_UBCWM), HMETS (POTMELT_HMETS) and HBV-EC (POTMELT_HBV) each expose a DIFFERENT melt parameterisation — RAIN_MELT_MULT/CONV_MELT_MULT/COND_MELT_MULT/CC_DECAY_COEFF, MIN_MELT_FACTOR/MAX_MELT_FACTOR/DD_AGGRADATION/REFREEZE_FACTOR, MELT_FACTOR/MIN_MELT_FACTOR/REFREEZE_FACTOR/HBV_MELT_FOR_CORR. Those were absent from CALIBRATION_PARAMS, so the DOMINANT process in a cold basin was left entirely at its default while DDS tuned soil parameters around it."
+      affected_components: [calibrate_raven_dds.py]
+    remedy:
+      action: "Each template's own melt controls were added to CALIBRATION_PARAMS. Widening the search space REQUIRES widening the DDS budget with it (Tolson & Shoemaker 2007): measured for ubc at Tangnaihai with 16 free parameters, 250 iterations gave cal NSE 0.730 / held-out 0.548 / PBIAS +16.5% (DDS buys hydrograph shape with volume bias) while 1000 iterations gave cal NSE 0.762 / held-out 0.627 / PBIAS +1.1%. If a wider parameter set generalises WORSE, raise --n_iterations before removing parameters."
+
+  - id: dt_rav_044
+    severity: fatal
+    failure_domain: ki_integrity
+    stage: all
+    symptom:
+      description: "diagnostics/triplets.yaml documents a defect as fixed, and a prior run's result.json reports the metric that fix produced, but the tool no longer contains the fix: s0 rejects --pet_method, s9 rejects --seed/--cal_start/--cal_end and errors with 'No calibration parameters defined for template: ubc', and 'from parse_raven_output import load_discharge_series' raises ImportError"
+      error_pattern: "unrecognized arguments: --pet_method|--cal_start|cannot import name 'load_discharge_series'"
+      detection_method: exception
+    diagnosis:
+      root_cause: "The KNOWLEDGE (triplets, notes, result.json) and the CODE are promoted through different paths. A review/rollback reverted the canonical tools to a pre-fix snapshot while leaving triplets.yaml and the recorded metrics in place, so the KI advertised a capability it no longer had. Encountered 2026-07-27: dt_rav_034 through dt_rav_039 were all documented as fixed, all were absent from the tools, and the canonical tree was byte-identical to .kdt_snapshots/pre_test_Raven_20260726T164044Z."
+      affected_components: [select_model_template.py, calibrate_raven_dds.py, parse_raven_output.py, run_raven.py]
+    remedy:
+      action: "FIRST ACTION on this KI: verify the code matches the claims. Run `diff -r .kdt_snapshots/<latest>/tools <ki>/tools` and, for each triplet whose remedy names a CLI flag or function, check it is actually there — e.g. `grep -c 'add_argument(\"--cal_start' tools/s9_calibration/calibrate_raven_dds.py` and `python -c \"import sys;sys.path.insert(0,'tools/s7_output');import parse_raven_output as p;p.load_discharge_series\"`. Do NOT trust a triplet's 'fixed' state or a prior result.json metric as evidence that the tool can reproduce it."

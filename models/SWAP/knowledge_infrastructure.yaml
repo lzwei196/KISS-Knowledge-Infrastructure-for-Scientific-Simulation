@@ -116,7 +116,7 @@ tools:
       - name: forcing_dir
         type: file
         required: true
-        example: "/mnt/disk1/Hydrocraft_server/data/forcing/Data_forcing_01dy_010deg/"
+        example: "/media/server/hc_ssd/forcing/Data_forcing_01dy_010deg/"
       - name: lat
         type: number
         required: true

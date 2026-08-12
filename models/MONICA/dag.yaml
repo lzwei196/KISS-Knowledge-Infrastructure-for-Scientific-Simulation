@@ -1,0 +1,516 @@
+template_version: "3.5"
+
+identity:
+  model_id: "MONICA"
+  scientific_reference_version: "MONICA 3.6.x (ZALF; MOdel of Nitrogen and Carbon dynamics in Agro-ecosystems; Nendel et al. 2011, Ecological Modelling)"
+  implementation:
+    id: "monica-zalf"
+    version: "3.6.56"
+    provenance: "C++17; ZALF (zalf-rpm/monica) standalone monica-run binary wrapping the core soil-plant C/N/water modules; thin Python orchestration binding."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c++"
+  license: "MPL-2.0"
+  repo_url: "https://github.com/zalf-rpm/monica"
+
+boundary:
+  scope_in:
+    - "Coupled daily turnover of carbon, nitrogen and water in a 1-D agro-ecosystem soil-plant column"
+    - "Soil water balance (capacity-based): infiltration, interception, evaporation, transpiration, percolation, surface runoff, capillary rise"
+    - "Soil heat conduction (per-layer temperature) with snow-cover and frost effects"
+    - "Soil organic matter C/N turnover (AOM/SMB/SOM multi-pool) with mineralisation, nitrification, denitrification, N2O"
+    - "Crop growth: thermal-sum phenology, radiation-driven assimilation, organ-based biomass partitioning, N demand/uptake, water/N/heat/oxygen/frost stress, yield"
+    - "Nitrate solute transport and leaching following the water fluxes"
+  scope_out:
+    - "Lateral (multi-column) water and solute transport — single 1-D column per run"
+    - "Spatial grid / multi-cell coupling"
+    - "Atmospheric feedback — weather is prescribed forcing, not simulated"
+    - "Management as a decision process — sowing/fertilisation/irrigation/tillage/harvest are prescribed worksteps"
+  spatial: "1-D column"
+  temporal: "daily"
+  closure: "mass-balance"
+  notes: "Mass-balance closure applies to water, carbon, and nitrogen over the 1 m² surface × 2 m / 20-layer column, with groundwater as the lower boundary (capillary rise in, percolation/recharge out). Soil water uses a capacity approach (saturation/field-capacity/wilting-point), not Richards. Reference ET0 is FAO Penman-Monteith (a demand-side flux), not a closed surface energy budget; canopy/soil energy balance is not solved."
+
+inputs:
+  forcing:
+    - {category: forcing, name: "tavg", unit: "degC", source_kind: forcing, model_input_format: "climate.csv column (semicolon-separated, 2 header rows: names + units)"}
+    - {category: forcing, name: "tmin", unit: "degC", source_kind: forcing, model_input_format: "climate.csv column"}
+    - {category: forcing, name: "tmax", unit: "degC", source_kind: forcing, model_input_format: "climate.csv column"}
+    - {category: forcing, name: "globrad", unit: "MJ m-2 d-1", source_kind: forcing, model_input_format: "climate.csv column", notes: "Drives photosynthesis directly; the model reads the value as-is, so non-MJ units (J cm-2, W m-2) silently inflate yield. netRadiation = globrad*(1-albedo)."}
+    - {category: forcing, name: "wind", unit: "m s-1", source_kind: forcing, model_input_format: "climate.csv column", notes: "Enters FAO Penman-Monteith ET0; a hardcoded minimum windspeed of 0.5 m/s is enforced internally."}
+    - {category: forcing, name: "precip", unit: "mm d-1", source_kind: forcing, model_input_format: "climate.csv column"}
+    - {category: forcing, name: "relhumid", unit: "% (0-100)", source_kind: forcing, model_input_format: "climate.csv column", notes: "Passed to the moisture module as relhumid/100; if absent the orchestrator substitutes a -1.0 sentinel the module must interpret."}
+    - {category: forcing, name: "sunhours", unit: "h", source_kind: forcing, model_input_format: "climate.csv column (optional)", notes: "Used when globrad is unavailable."}
+    - {category: forcing, name: "vappd", unit: "kPa", source_kind: forcing, model_input_format: "climate.csv column (optional)"}
+    - {category: forcing, name: "atmospheric CO2 concentration", unit: "ppm", source_kind: forcing, model_input_format: "supplied per-day in the climate/env map", notes: "Drives photosynthesis; when not supplied it is generated from a hardcoded per-RCP logistic+seasonal-sine fit (default RCP8.5)."}
+    - {category: forcing, name: "atmospheric O3 concentration", unit: "ppb", source_kind: forcing, model_input_format: "supplied per-day in the env map (optional; drives O3-impact module)"}
+  parameters:
+    - {category: parameters, name: "crop species parameters", unit: "-", source_kind: dataset_lookup, model_input_format: "species include-from-file JSON (merged with cultivar at runtime)", notes: "Includes pc_MaxAssimilationRate (15-60 µmol m-2 s-1), pc_StageTemperatureSum[] (degC d), base/heat-stress phase temperature sums, specificLeafArea, assimilate-partitioning fractions, N-concentration thresholds."}
+    - {category: parameters, name: "crop cultivar parameters", unit: "-", source_kind: dataset_lookup, model_input_format: "cultivar include-from-file JSON", notes: "Cultivar-specific traits (e.g. vernalisation requirement, LT50 frost tolerance, rooting depth 0.5-2.0 m) merged over the species defaults."}
+    - {category: parameters, name: "residue parameters (residueParams)", unit: "-", source_kind: dataset_lookup, model_input_format: "crop JSON"}
+    - {category: parameters, name: "Kc factor per development stage", unit: "-", source_kind: calibrated, model_input_format: "crop JSON", notes: "Crop coefficient relating actual crop ET to reference ET0; range ~0.3-1.3."}
+    - {category: parameters, name: "soil hydraulic parameters (field capacity, wilting point, saturation)", unit: "m3 m-3", source_kind: derived, model_input_format: "derived by pedotransfer functions from texture, OM and bulk density, per layer", notes: "Field capacity 0.10-0.45, wilting point 0.04-0.20."}
+    - {category: parameters, name: "soil texture (sand/clay fractions or KA5 class)", unit: "fraction 0-1", source_kind: dataset_lookup, model_input_format: "SoilProfileParameters[] layer entry in site.json", notes: "Drives PTF-derived hydraulics; expected as fractions, not percent."}
+    - {category: parameters, name: "soil bulk density (SoilRawDensity)", unit: "kg m-3", source_kind: dataset_lookup, model_input_format: "SoilProfileParameters[] layer entry", notes: "Plausible range 500-2000 kg m-3."}
+    - {category: parameters, name: "soil organic carbon (initial SOC per layer)", unit: "% (mass)", source_kind: dataset_lookup, model_input_format: "SoilProfileParameters[] layer entry; SOC = SOM × 0.58"}
+    - {category: parameters, name: "soil pH per layer", unit: "-", source_kind: dataset_lookup, model_input_format: "SoilProfileParameters[] layer entry"}
+    - {category: parameters, name: "layer thickness", unit: "m", source_kind: user_provided, model_input_format: "SoilProfileParameters[] layer entry", notes: "20 layers × 0.1 m to 2 m; supplied in metres."}
+    - {category: parameters, name: "ps_MicrobialUtilizationEfficiency", unit: "-", source_kind: calibrated, model_input_format: "soil organic parameters", notes: "Default 0.5, range 0.3-0.7."}
+    - {category: parameters, name: "snowRetainedWaterToSnowRatio", unit: "-", source_kind: calibrated, model_input_format: "soil/snow parameters", notes: "Range 0.0-0.5."}
+    - {category: parameters, name: "site latitude", unit: "decimal degrees", source_kind: user_provided, model_input_format: "site.json (required)"}
+    - {category: parameters, name: "site slope / elevation (HeightNN)", unit: "m/m, m", source_kind: user_provided, model_input_format: "site.json (defaults 0)"}
+    - {category: parameters, name: "albedo", unit: "-", source_kind: default, model_input_format: "environment parameter", notes: "Applied inline as netRadiation = globrad*(1 - albedo)."}
+  initial_conditions:
+    - {category: initial_conditions, name: "initial soil water content per layer", unit: "m3 m-3", source_kind: user_provided, model_input_format: "site/soil JSON state at simulation start"}
+    - {category: initial_conditions, name: "initial soil mineral N (NO3, NH4) per layer", unit: "kg N m-3", source_kind: user_provided, model_input_format: "site/soil JSON state at start"}
+    - {category: initial_conditions, name: "initial soil organic matter pools per layer", unit: "kg C / kg N m-3", source_kind: derived, model_input_format: "initialised from SOC and OM partitioning at start"}
+    - {category: initial_conditions, name: "initial soil temperature per layer", unit: "degC", source_kind: user_provided, model_input_format: "soil temperature initialisation"}
+  boundary_conditions:
+    - {category: boundary_conditions, name: "groundwater depth / table", unit: "m", source_kind: user_provided, model_input_format: "measured series or annual sinusoid (min/max/month) in site/env JSON", notes: "Lower boundary; negative computed sinusoidal depths are clamped to a hardcoded 20.0 m (effectively no groundwater)."}
+    - {category: boundary_conditions, name: "atmospheric N deposition (NDeposition)", unit: "kg N ha-1 yr-1", source_kind: user_provided, model_input_format: "site.json (default 30)"}
+    - {category: boundary_conditions, name: "sowing workstep", unit: "date", source_kind: user_provided, model_input_format: "crop.json cropRotation[] Sowing (with is-winter-crop flag)"}
+    - {category: boundary_conditions, name: "mineral fertilisation workstep", unit: "kg N ha-1", source_kind: user_provided, model_input_format: "crop.json cropRotation[] MineralFertilization; N partitioning from fert-params"}
+    - {category: boundary_conditions, name: "organic fertilisation workstep", unit: "kg FM ha-1", source_kind: user_provided, model_input_format: "crop.json cropRotation[] OrganicFertilization"}
+    - {category: boundary_conditions, name: "irrigation workstep", unit: "mm", source_kind: user_provided, model_input_format: "crop.json cropRotation[] Irrigation; or automatic via AutoIrrigationParams"}
+    - {category: boundary_conditions, name: "tillage workstep", unit: "m (depth)", source_kind: user_provided, model_input_format: "crop.json cropRotation[] Tillage"}
+    - {category: boundary_conditions, name: "harvest workstep", unit: "date / trigger", source_kind: user_provided, model_input_format: "crop.json cropRotation[] AutomaticHarvest"}
+    - {category: boundary_conditions, name: "model option switches", unit: "boolean / mode", source_kind: user_provided, model_input_format: "sim.json (NitrogenResponseOn, WaterDeficitResponseOn, UseAutomaticIrrigation, UseNMinMineralFertilisingMethod, UseSecondaryYields, EmergenceFloodingControlOn, EmergenceMoistureControlOn)", notes: "Structural switches selecting which stress responses and management automations are active."}
+
+processes:
+  modules:
+    - {name: "MonicaModel", role: "driver", brief: "Top-level daily orchestrator: step() runs cropStep() then generalStep(); owns the soil column and all process modules; manages CO2/O3/groundwater forcing, fertiliser/irrigation/tillage events and stress accumulators."}
+    - {name: "CropModule", role: "process_solver", brief: "Crop growth: thermal-sum phenology (stages 0-7), radiation-use assimilation/photosynthesis, organ-based biomass partitioning, N demand/uptake, transpiration and water-uptake deficit, frost/heat/N/oxygen stress; emits LAI, height, biomass, yield."}
+    - {name: "SoilMoisture", role: "process_solver", brief: "Capacity-based water balance: interception, infiltration, percolation, capillary rise, surface runoff/storage; FAO Penman-Monteith ET0 and actual evaporation/transpiration; integrates the Snow and Frost components."}
+    - {name: "SnowComponent", role: "process_solver", brief: "Snow accumulation/melt: snow water equivalent, depth, density, refreeze and retention; snow cover treated as present at depth >= 0.01 m."}
+    - {name: "FrostComponent", role: "process_solver", brief: "Soil frost/thaw depth and its reduction of hydraulic conductivity."}
+    - {name: "SoilTemperature", role: "process_solver", brief: "Per-layer soil heat conduction; surface and layer temperatures driven by tmin/tmax/globrad with snow-cover damping."}
+    - {name: "SoilOrganic", role: "process_solver", brief: "C/N turnover across AOM/SMB/SOM pools: mineralisation, nitrification, denitrification, N2O (STICS-based), CO2 evolution; consumes soil temperature, moisture and organic inputs."}
+    - {name: "SoilTransport", role: "process_solver", brief: "Nitrate solute transport and leaching through the column following the water fluxes."}
+    - {name: "SoilColumn", role: "integrator", brief: "Central layered soil data structure holding per-layer water, temperature, C and N state; mediates fertiliser application, AOM pools, irrigation and delayed/top-dressing dosing."}
+    - {name: "CultivationMethod", role: "driver", brief: "Prescribed management schedule (sowing, harvest, tillage, fertilisation, irrigation worksteps) that drives MonicaModel each day."}
+    - {name: "photosynthesis-FvCB", role: "optional_module", brief: "Farquhar-von Caemmerer-Berry biochemical photosynthesis alternative used by some crop configurations.", applicability: "FvCB photosynthesis configurations only"}
+    - {name: "O3-impact", role: "optional_module", brief: "Ozone impact on assimilation, driven by atmospheric O3 concentration.", applicability: "when AtmO3 forcing supplied"}
+  internal_edges:
+    - {from: "Climate", to: "MonicaModel", kind: "consumes_input", brief: "Per-day tmin/tavg/tmax/precip/wind/globrad/relhumid/CO2/O3/et0 from the climate map."}
+    - {from: "MonicaModel", to: "CropModule", kind: "invokes", brief: "cropStep() runs crop processes first when a crop is planted."}
+    - {from: "MonicaModel", to: "SoilTemperature", kind: "invokes", brief: "generalStep() runs soil heat conduction."}
+    - {from: "MonicaModel", to: "SoilMoisture", kind: "invokes", brief: "generalStep() runs the water balance (relhumid/100, et0 passed in)."}
+    - {from: "MonicaModel", to: "SoilOrganic", kind: "invokes", brief: "generalStep() runs C/N turnover after temperature/moisture."}
+    - {from: "MonicaModel", to: "SoilTransport", kind: "invokes", brief: "generalStep() runs solute transport after the organic step."}
+    - {from: "MonicaModel", to: "SoilColumn", kind: "writes_state", brief: "Applies delayed/top-dressing fertiliser and resets AOM pools before process steps."}
+    - {from: "CultivationMethod", to: "MonicaModel", kind: "invokes", brief: "Management worksteps drive each daily step."}
+    - {from: "CropModule", to: "SoilMoisture", kind: "writes_state", brief: "Sets percentage soil coverage, driving the evaporation split and runoff factor (bidirectional same-day coupling)."}
+    - {from: "SoilTemperature", to: "SoilMoisture", kind: "reads_state", brief: "Soil/surface temperature feeds snow melt, frost and ET partitioning."}
+    - {from: "SnowComponent", to: "SoilMoisture", kind: "writes_state", brief: "Snow melt water and SWE feed the surface water balance."}
+    - {from: "FrostComponent", to: "SoilMoisture", kind: "writes_state", brief: "Frost depth reduces hydraulic conductivity."}
+    - {from: "SnowComponent", to: "SoilTemperature", kind: "writes_state", brief: "Snow cover damps the surface temperature."}
+    - {from: "SoilMoisture", to: "SoilOrganic", kind: "reads_state", brief: "Layer water content controls mineralisation/denitrification rates."}
+    - {from: "SoilTemperature", to: "SoilOrganic", kind: "reads_state", brief: "Soil temperature controls C/N turnover kinetics."}
+    - {from: "SoilMoisture", to: "SoilTransport", kind: "reads_state", brief: "Water fluxes drive nitrate transport and leaching."}
+    - {from: "SoilOrganic", to: "SoilTransport", kind: "writes_state", brief: "Mineral N (NO3) produced/consumed by the organic module is the transported solute."}
+    - {from: "SoilColumn", to: "CropModule", kind: "reads_state", brief: "Crop reads per-layer water/N for uptake and transpiration deficit."}
+    - {from: "CropModule", to: "SoilColumn", kind: "writes_state", brief: "Crop water and N uptake remove water/mineral N from layers."}
+    - {from: "CropModule", to: "MonicaModel", kind: "reads_state", brief: "Daily N/water/heat/oxygen stress reductions are pulled into accumulated stress integrals."}
+    - {from: "CropModule", to: "Outputs", kind: "produces_output", brief: "Yield, AbBiom, LAI, Height, GPP/NPP, N uptake, stress factors."}
+    - {from: "SoilMoisture", to: "Outputs", kind: "produces_output", brief: "Mois, Infilt, RunOff, Act_ET, ET0, SnowD, FrostD, Recharge, Groundw."}
+    - {from: "SoilOrganic", to: "Outputs", kind: "produces_output", brief: "SOC, NO3, NH4, Nmin, Denit, N2O, NEE/NEP/Rh."}
+    - {from: "SoilTransport", to: "Outputs", kind: "produces_output", brief: "NLeach (nitrate leaching at the lower boundary)."}
+    - {from: "SoilTemperature", to: "Outputs", kind: "produces_output", brief: "STemp, SurfTemp."}
+
+states:
+  variables:
+    - {name: "soil water content per layer", unit: "m3 m-3", role: prognostic}
+    - {name: "soil temperature per layer", unit: "degC", role: prognostic}
+    - {name: "snow water equivalent / depth / density", unit: "mm / m / kg m-3", role: prognostic}
+    - {name: "frost / thaw depth", unit: "m", role: prognostic}
+    - {name: "surface water storage", unit: "mm", role: prognostic}
+    - {name: "soil organic matter pools (AOM_Fast, AOM_Slow, SMB_Fast, SMB_Slow, SOM_Fast, SOM_Slow) per layer", unit: "kg C / kg N m-3", role: prognostic}
+    - {name: "soil mineral N pools (NO3, NH4) per layer", unit: "kg N m-3", role: prognostic}
+    - {name: "crop phenological stage", unit: "0-7", role: prognostic}
+    - {name: "accumulated temperature sum (TempSum)", unit: "degC d", role: accumulator}
+    - {name: "crop organ biomass (root, leaf, shoot, storage, structure)", unit: "kg DM ha-1", role: prognostic}
+    - {name: "above-ground / below-ground biomass", unit: "kg DM ha-1", role: prognostic}
+    - {name: "leaf area index (LAI)", unit: "m2 m-2", role: diagnostic}
+    - {name: "crop height", unit: "m", role: diagnostic}
+    - {name: "rooting depth", unit: "m", role: prognostic}
+    - {name: "crop / tissue N content", unit: "kg N ha-1", role: prognostic}
+    - {name: "accumulated stress integrals (N, water, heat, oxygen)", unit: "-", role: accumulator}
+    - {name: "cumulative N uptake (SumNUp)", unit: "kg N ha-1", role: accumulator}
+    - {name: "atmospheric CO2 / O3 concentration", unit: "ppm / ppb", role: diagnostic}
+    - {name: "groundwater depth", unit: "m", role: diagnostic}
+  provenance: "populated"
+
+outputs:
+  - var: "Yield"
+    validation_rank: 1
+    unit: "kg DM ha-1"
+    description: "Harvested marketable dry-matter yield."
+    emitted_in: "MONICA output CSV (crop/harvest events)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [magnitude_accuracy, temporal_pattern_match]
+          determining_metric: "pbias"
+          caveats: ["Point/plot trial yields compare directly; convert DM to fresh weight where obs are fresh."]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: [magnitude_accuracy]
+          determining_metric: "pbias"
+          caveats: ["Single-season plot yield."]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: [trend_match, magnitude_accuracy]
+          determining_metric: "pbias"
+          caveats: ["National/provincial yield aggregates carry a technology trend a weather-driven point model cannot reproduce; detrend before comparing. Point simulation must be representative-aggregated to the region first."]
+      detrending_options: [none, linear_residual, decadal_mean]
+  - var: "LAI"
+    validation_rank: 2
+    unit: "m2 m-2"
+    description: "Leaf area index."
+    emitted_in: "MONICA output CSV (daily/crop events)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy, timing_accuracy]
+          determining_metric: "nse"
+          caveats: ["Compare against destructive or remote-sensed LAI at the plot; peak timing is informative for phenology."]
+      detrending_options: [none]
+  - var: "Stage"
+    validation_rank: 5
+    unit: "0-7"
+    description: "Phenological development stage."
+    emitted_in: "MONICA output CSV (daily)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, timing_accuracy]
+          determining_metric: "nse"
+          caveats: ["Compare stage-transition DOY (emergence, flowering, maturity) against phenological observations. Only stage-transition timing is compared; magnitude of the 0-7 index itself is not a meaningful target."]
+      detrending_options: [none]
+  - var: "Act_ET"
+    validation_rank: 3
+    unit: "mm"
+    description: "Actual evapotranspiration."
+    emitted_in: "MONICA output CSV (daily)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["Compare against eddy-covariance / lysimeter ET at the column location."]
+      detrending_options: [none]
+  - var: "Mois"
+    validation_rank: 6
+    unit: "m3 m-3"
+    description: "Volumetric soil moisture per layer."
+    emitted_in: "MONICA output CSV (daily, per layer 1-20)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["Match the observed sensor depth to the corresponding model layer."]
+      detrending_options: [none]
+  - var: "NLeach"
+    validation_rank: 7
+    unit: "kg N ha-1"
+    description: "Nitrogen (nitrate) leaching below the root zone / lower boundary."
+    emitted_in: "MONICA output CSV (daily/yearly)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [magnitude_accuracy, temporal_pattern_match]
+          determining_metric: "nse"
+          caveats: ["Compare against lysimeter/suction-cup leachate fluxes; cumulative annual loads are more robust than daily."]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: [magnitude_accuracy]
+          determining_metric: "pbias"
+          caveats: ["Seasonal/annual cumulative leaching."]
+      detrending_options: [none]
+  - var: "N2O"
+    validation_rank: 8
+    unit: "kg N ha-1"
+    description: "Nitrous oxide emissions from nitrification/denitrification."
+    emitted_in: "MONICA output CSV (daily)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [magnitude_accuracy, temporal_pattern_match]
+          determining_metric: "nse"
+          caveats: ["Chamber flux measurements are episodic and noisy; cumulative seasonal flux comparison is more defensible than daily matching."]
+      detrending_options: [none]
+  - var: "SOC"
+    validation_rank: 4
+    unit: "% (kg C kg-1)"
+    description: "Soil organic carbon per layer."
+    emitted_in: "MONICA output CSV (per layer 1-6)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [magnitude_accuracy, temporal_pattern_match, trend_match]
+          determining_metric: "pbias"
+          caveats: ["SOC change is slow; long-term-experiment decadal change is the meaningful signal."]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: [magnitude_accuracy]
+          determining_metric: "pbias"
+          caveats: ["Match measured horizon to the corresponding model SOC layer."]
+      detrending_options: [none, decadal_mean]
+  - var: "SumNUp"
+    validation_rank: 9
+    unit: "kg N ha-1"
+    description: "Cumulative crop nitrogen uptake."
+    emitted_in: "MONICA output CSV (crop/harvest events)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: [magnitude_accuracy]
+          determining_metric: "pbias"
+          caveats: ["Compare against measured crop N offtake at harvest."]
+      detrending_options: [none]
+  - var: "GPP"
+    validation_rank: 10
+    unit: "kg C ha-1"
+    description: "Gross primary production."
+    emitted_in: "MONICA output CSV (daily)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["Compare against eddy-covariance partitioned GPP at flux towers."]
+      detrending_options: [none]
+
+influence:
+  edges:
+    - from: "stageTempSum (cumulative development-stage temperature sums)"
+      to: "Yield"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "across crops"
+      citations: ["specka2015_monica_param_sensitivity", "specka2019_monica_temporal_sa"]
+    - from: "stageTempSum (cumulative temperature sums)"
+      to: "Stage"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["nendel2011_monica_model", "specka2015_monica_param_sensitivity"]
+    - from: "beginSensPhaseHeatStress / endSensPhaseHeatStress (heat-stress phase temperature sums)"
+      to: "Yield"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "winter wheat (EFAST)"
+      citations: ["specka2019_monica_temporal_sa"]
+    - from: "endSensPhaseHeatStress / beginSensPhaseHeatStress"
+      to: "above-ground biomass"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "winter wheat (EFAST)"
+      citations: ["specka2019_monica_temporal_sa"]
+    - from: "specificLeafArea (canopy interception / leaf area)"
+      to: "above-ground biomass"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["specka2015_monica_param_sensitivity", "specka2019_monica_temporal_sa"]
+    - from: "assimPartitioningStage1leaf (assimilate partitioning to leaf)"
+      to: "above-ground biomass"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "early growth stages"
+      citations: ["specka2019_monica_temporal_sa"]
+    - from: "maxAssimRate (maximum assimilation rate)"
+      to: "above-ground biomass"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["specka2019_monica_temporal_sa", "specka2015_monica_param_sensitivity"]
+    - from: "vernReq2 (vernalisation temperature requirement)"
+      to: "Yield"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "winter wheat"
+      citations: ["specka2019_monica_temporal_sa"]
+    - from: "NConcAGB (N concentration in above-ground biomass)"
+      to: "above-ground biomass N"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["specka2019_monica_temporal_sa"]
+    - from: "stageKcFactor (crop coefficient Kc per stage)"
+      to: "Act_ET"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["specka2019_monica_temporal_sa"]
+    - from: "daylengthReq (day-length requirement)"
+      to: "Act_ET"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["specka2019_monica_temporal_sa"]
+    - from: "baseTemp (base temperature for assimilation per stage)"
+      to: "soil moisture"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["specka2019_monica_temporal_sa"]
+    - from: "soil organic carbon (topsoil SOC)"
+      to: "Yield"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "topsoil horizon dominant"
+      citations: ["gasanov2020_monica_soil_sobol"]
+    - from: "clay fraction (topsoil)"
+      to: "Yield"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "topsoil horizon dominant"
+      citations: ["gasanov2020_monica_soil_sobol"]
+    - from: "bulk density (topsoil)"
+      to: "Yield"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["gasanov2020_monica_soil_sobol"]
+    - from: "soil C:N ratio (topsoil)"
+      to: "Yield"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["gasanov2020_monica_soil_sobol"]
+    - from: "soil pH"
+      to: "Yield"
+      sensitivity_grade: LOW
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["gasanov2020_monica_soil_sobol"]
+    - from: "sand fraction"
+      to: "Yield"
+      sensitivity_grade: LOW
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["gasanov2020_monica_soil_sobol"]
+  citation_index:
+    specka2015_monica_param_sensitivity:
+      short_citation: "Specka et al. 2015"
+      doi: "10.1016/j.eja.2015.08.004"
+      note: "Morris + extended-FAST GSA of 117 MONICA parameters across six crops; temperature sums and leaf-area/canopy-interception parameters most sensitive for above-ground biomass."
+    specka2019_monica_temporal_sa:
+      short_citation: "Specka et al. 2019"
+      doi: "10.3390/agriculture9020037"
+      note: "Time-dependent Morris + EFAST SA of ~200 parameters for winter wheat (grainYield, AGB, N_AGB, ETa, soil moisture, N_min); heat-stress phase, vernalisation, temperature sums, specificLeafArea, Kc dominant."
+    gasanov2020_monica_soil_sobol:
+      short_citation: "Gasanov et al. 2020"
+      doi: "10.1007/978-3-030-50436-6_54"
+      note: "Sobol total-order GSA of six soil parameters on yield (Russian Chernozem); topsoil SOC, clay, bulk density carry the highest indices."
+    nendel2011_monica_model:
+      short_citation: "Nendel et al. 2011"
+      doi: "10.1016/j.ecolmodel.2011.02.018"
+      note: "Foundational MONICA description: thermal-sum phenology, radiation/temperature-driven assimilation, critical-N concept, soil C/N pools."
+
+safety:
+  hazards:
+    - id: "globrad_unit_inflation"
+      kind: "weather_file_semantic"
+      description: "globrad supplied in J cm-2 or W m-2 instead of MJ m-2 d-1 is read as-is, silently inflating PAR and yield ~12-100x."
+      severity: "silent"
+    - id: "relhumid_fraction_vs_percent"
+      kind: "weather_file_semantic"
+      description: "relative humidity as fraction [0-1] instead of percent corrupts Penman-Monteith VPD, giving ET0~0 and false water stress (TraDef stuck at 1.0)."
+      severity: "silent"
+    - id: "wind_kmh_vs_ms"
+      kind: "weather_file_semantic"
+      description: "wind in km h-1 instead of m s-1 enters Penman-Monteith directly, a 3.6x ET overestimate that dries soil too fast."
+      severity: "silent"
+    - id: "precip_m_vs_mm"
+      kind: "weather_file_semantic"
+      description: "precipitation in m d-1 instead of mm d-1 gives 1000x rainfall, waterlogging and oxygen-stress crop death."
+      severity: "silent"
+    - id: "layer_thickness_cm_vs_m"
+      kind: "soil_semantic"
+      description: "soil layer thickness in cm instead of m (e.g. 30 read as 30 m) makes the water balance nonsensical and can produce negative soil moisture / crash."
+      severity: "fatal"
+    - id: "bulk_density_gcm3_vs_kgm3"
+      kind: "soil_semantic"
+      description: "SoilRawDensity in g cm-3 instead of kg m-3 (1.4 read as near-zero density) corrupts porosity and the PTF-derived hydraulics."
+      severity: "silent"
+    - id: "soc_gkg_vs_percent"
+      kind: "soil_semantic"
+      description: "SoilOrganicCarbon in g kg-1 instead of % (15 g kg-1 = 1.5% read as 15%) drives extreme SOC decomposition rates."
+      severity: "silent"
+    - id: "texture_percent_vs_fraction"
+      kind: "soil_semantic"
+      description: "Sand/Clay given as percent instead of fraction [0-1] yields wrong PTF field-capacity / wilting-point."
+      severity: "silent"
+    - id: "fertiliser_product_vs_N"
+      kind: "control_semantic"
+      description: "mineral fertiliser given as kg product ha-1 instead of kg N ha-1 inflates N surplus and leaching ~3-5x (N partitioning lives in fert-params, not the amount field)."
+      severity: "silent"
+    - id: "ndeposition_daily_vs_annual"
+      kind: "control_semantic"
+      description: "NDeposition given as a daily rate instead of annual (kg N ha-1 yr-1) deposits 365x background N and runaway leaching."
+      severity: "silent"
+    - id: "vappd_mmHg_vs_kPa"
+      kind: "weather_file_semantic"
+      description: "vapour pressure deficit in mm Hg instead of kPa scales the aerodynamic ET term incorrectly."
+      severity: "silent"
+    - id: "winter_crop_flag_mismatch"
+      kind: "control_semantic"
+      description: "is-winter-crop flag inconsistent with sowing season prevents vernalisation, giving failed/late development or crop death."
+      severity: "degraded"
+    - id: "automatic_harvest_never_triggers"
+      kind: "control_semantic"
+      description: "AutomaticHarvest latest-date set before maturity, or cultivar StageTemperatureSum too large for the available degree-days, leaves the crop unharvested with no yield."
+      severity: "degraded"
+  validation_limits:
+    - "1-D point/profile representation only — no lateral hydrology or spatial routing; not applicable where multi-cell coupling matters."
+    - "Daily time step cannot resolve sub-daily processes (e.g. diurnal flux dynamics)."
+    - "Capacity-based (non-Richards) soil water; percolation via empirical texture-dependent rate, so saturated/perched-water dynamics are approximate."
+    - "Crop and soil parameters are calibrated per crop/region; uncalibrated cultivar-climate combinations (e.g. mismatched vernalisation) degrade predictions."
+    - "Reference-ET / Kc demand approach, not a closed surface energy budget."
+  warnings:
+    - "When relhumid or et0 is absent the orchestrator substitutes a -1.0 sentinel the moisture module must interpret; missing humidity collapses computed ET."
+    - "Penman-Monteith ET0 enforces a hardcoded minimum windspeed of 0.5 m/s, bounding the aerodynamic term at low wind."
+    - "Negative computed sinusoidal groundwater depths are clamped to a hardcoded 20.0 m (treated as effectively no groundwater)."
+    - "When atmospheric CO2 is not supplied it is synthesised from a hardcoded per-RCP logistic+seasonal fit defaulting to RCP8.5, which can silently set the CO2 forcing."
+    - "Water balance failure to close usually traces to a soil parameter error (bulk density / field capacity) or a column shallower than 2 m truncating percolation."
+  assumptions:
+    - statement: "Geometry is a single 1-D vertical soil-plant column (1 m² surface, 2 m depth, 20 × 0.1 m layers); no lateral transport."
+      scope: "all simulations"
+      source: "MONICA documentation overview (zalf-rpm/monica-documentation) and Nendel et al. 2011 (doi:10.1016/j.ecolmodel.2011.02.018)"
+      status: adopted
+    - statement: "Mass-balance closure holds for water, carbon and nitrogen over the column with groundwater as lower boundary; there is no closed surface energy balance (ET is a Penman-Monteith demand calculation)."
+      scope: "water / C / N accounting"
+      source: "MONICA soil_moisture documentation and SoilMoisture / SoilOrganic / SoilTransport module behaviour in the source"
+      status: adopted
+    - statement: "Soil water uses a capacity approach (saturation/field-capacity/wilting-point from texture, OM, bulk density) rather than Richards, with empirical percolation (lambda = 1.15*fs^2 + 0.1*fc + 0.35*fu)."
+      scope: "soil moisture module"
+      source: "MONICA soil_moisture documentation (zalf-rpm/monica-documentation, model_science/soil_processes/soil_moisture)"
+      status: adopted
+    - statement: "Crop development is governed by accumulated thermal sums (degree-days) across stages 0-7, with radiation-driven assimilation modulated by temperature, water, N, heat, oxygen and frost stress."
+      scope: "crop growth module"
+      source: "MONICA crop_processes documentation and Nendel et al. 2011 (doi:10.1016/j.ecolmodel.2011.02.018)"
+      status: adopted
+    - statement: "Atmospheric CO2 is treated as a time-varying forcing; absent an external series it is generated from an embedded per-RCP curve (default RCP8.5)."
+      scope: "CO2 forcing"
+      source: "CO2ForDate logic in the MONICA core source (monica-model.cpp)"
+      status: tentative

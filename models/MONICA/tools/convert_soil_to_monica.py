@@ -284,8 +284,13 @@ def build_site_json(layers, args):
             "NDeposition": [args.n_deposition or 30, "kg N ha-1 y-1"],
             "MaxMineralLayerDepth": 2.0,
             "AtmosphericCO2": [args.co2 or 412, "ppm"],
+            "pwpFcSatFunction": "Wessolek2009",
+            # SoilProfileParameters MUST be nested here, not at the root level.
+            # Root-level placement causes std::out_of_range crash (exit -6)
+            # because MONICA's C++ reader only populates the soil vector from
+            # SiteParameters.SoilProfileParameters, never from the root.
+            "SoilProfileParameters": layers,
         },
-        "SoilProfileParameters": layers,
         "SoilTemperatureParameters": ["include-from-file", "general/soil-temperature.json"],
         "EnvironmentParameters": {
             "WindSpeedHeight": [2.5, "m"],

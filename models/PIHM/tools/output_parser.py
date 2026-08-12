@@ -81,9 +81,54 @@ def validate_inputs(args):
         sys.exit(1)
 
 
+def _candidate_is_sane(fpath, fsize, n):
+    """Check that interpreting fpath as records of [double time][n doubles]
+    yields monotonic, uniformly-spaced, plausible timestamps.
+
+    MM-PIHM writes each output record as an 8-byte double timestamp (seconds
+    since 1970-01-01 UTC) followed by n float64 values, so record_size =
+    8 * (n + 1). A spurious n that merely divides the file (e.g. n=1, n=3)
+    will decode the wrong bytes as a timestamp and fail the year/delta sanity
+    checks below, which is how we disambiguate the true element count.
+    """
+    record_size = 8 * (n + 1)
+    if record_size <= 0 or fsize % record_size != 0:
+        return False
+    n_records = fsize // record_size
+    if n_records < 1:
+        return False
+    sample = min(n_records, 6)
+    times = []
+    with open(fpath, "rb") as f:
+        for r in range(sample):
+            f.seek(r * record_size)
+            ts_bytes = f.read(8)
+            if len(ts_bytes) < 8:
+                return False
+            ts = struct.unpack("d", ts_bytes)[0]
+            # Plausible epoch-seconds window: 1990-01-01 .. 2100-01-01
+            if not (631152000.0 <= ts <= 4102444800.0):
+                return False
+            times.append(ts)
+    # Require strictly increasing, uniform spacing (allow tiny float jitter)
+    if len(times) >= 2:
+        deltas = [times[i + 1] - times[i] for i in range(len(times) - 1)]
+        if any(d <= 0 for d in deltas):
+            return False
+        if max(deltas) - min(deltas) > 1.0:
+            return False
+    return True
+
+
 def detect_dimensions(input_dir, project):
-    """Detect number of elements and river segments from output file sizes."""
-    # Try reading a known element file to detect nelem
+    """Detect number of elements and river segments from output file sizes.
+
+    Binary record layout is [float64 timestamp][float64 value x n], so the
+    record size is 8*(n+1) bytes. Pure file-size division is ambiguous (many
+    n divide the file), so we pick the SMALLEST n whose decoded timestamps are
+    sane and uniformly spaced (see _candidate_is_sane). This avoids the old
+    bug where a 4-byte-int32 assumption matched a spurious n (e.g. n=3).
+    """
     nelem = 0
     nriver = 0
 
@@ -95,30 +140,17 @@ def detect_dimensions(input_dir, project):
             if fsize == 0:
                 continue
 
-            # Read first record to determine n
-            with open(fpath, "rb") as f:
-                # First 4 bytes: timestamp (int32)
-                ts_bytes = f.read(4)
-                if len(ts_bytes) < 4:
+            for n in range(1, 100001):
+                if 8 * (n + 1) > fsize:
+                    break
+                if fsize % (8 * (n + 1)) != 0:
                     continue
-                ts = struct.unpack("i", ts_bytes)[0]
-
-                # Read remaining doubles until next timestamp marker
-                # Record size = 4 (int) + n * 8 (doubles)
-                # Try to figure out n from file size and assuming uniform records
-                # Total records * (4 + n*8) = fsize
-                # Try n from 1 to 10000
-                remaining = fsize - 4
-                # Read all remaining bytes of first record
-                # We need to find n such that fsize % (4 + n*8) == 0
-                for n in range(1, 10001):
-                    record_size = 4 + n * 8
-                    if fsize % record_size == 0:
-                        if vtype == "elem" and nelem == 0:
-                            nelem = n
-                        elif vtype == "river" and nriver == 0:
-                            nriver = n
-                        break
+                if _candidate_is_sane(fpath, fsize, n):
+                    if vtype == "elem" and nelem == 0:
+                        nelem = n
+                    elif vtype == "river" and nriver == 0:
+                        nriver = n
+                    break
 
     return nelem, nriver
 
@@ -126,11 +158,13 @@ def detect_dimensions(input_dir, project):
 def read_binary_output(filepath, n_columns):
     """Read a PIHM binary output file.
 
-    Format: [int32 timestamp] [float64 val1] [float64 val2] ... [float64 valN]
-    Repeated for each output timestep.
+    Format: [float64 timestamp][float64 val1][float64 val2] ... [float64 valN]
+    repeated for each output timestep. The timestamp is an 8-byte double
+    holding seconds since 1970-01-01 UTC (NOT a 4-byte int), so record_size =
+    8 * (n_columns + 1).
     """
     records = []
-    record_size = 4 + n_columns * 8  # int32 + n * float64
+    record_size = 8 + n_columns * 8  # float64 time + n * float64
 
     fsize = os.path.getsize(filepath)
     if fsize == 0:
@@ -147,14 +181,14 @@ def read_binary_output(filepath, n_columns):
             if len(data) < record_size:
                 break
 
-            ts = struct.unpack("i", data[:4])[0]
-            values = struct.unpack(f"{n_columns}d", data[4:])
+            ts = struct.unpack("d", data[:8])[0]
+            values = struct.unpack(f"{n_columns}d", data[8:])
 
-            # Convert Unix timestamp to datetime
+            # Convert Unix timestamp (seconds since 1970, as double) to datetime
             try:
                 dt = datetime.utcfromtimestamp(ts)
                 dt_str = dt.strftime("%Y-%m-%d %H:%M")
-            except (OSError, ValueError):
+            except (OSError, ValueError, OverflowError):
                 dt_str = str(ts)
 
             records.append({"time": dt_str, "timestamp": ts, "values": list(values)})

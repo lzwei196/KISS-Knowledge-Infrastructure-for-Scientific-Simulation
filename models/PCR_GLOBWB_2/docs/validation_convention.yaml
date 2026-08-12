@@ -1,0 +1,311 @@
+schema_version: 1
+model_id: PCR_GLOBWB_2
+domain: hydrology
+generated_by: "self-improve session (Claude Opus 4.8) — Step-B validation-convention build, general schema"
+generated_at: 2026-07-09
+
+# Grounded ONLY in locally-fetched OA full texts. HEADLINE numeric bands come from the domain
+# threshold convention Moriasi et al. 2015 (Trans. ASABE) — the reproduced streamflow tier table
+# (satisfactory NSE > 0.50, |PBIAS| <= 15%, R2 > 0.60) and its EPIC/APEX runoff criteria
+# (NSE >= 0.55, |PBIAS| within 20%). PCR-GLOBWB-specific skill for discharge / TWS / ET / runoff
+# is taken from fetched benchmark evaluations (Sutanudjaja hyper-res 2023; Beck 10-model runoff 2017;
+# Muller Schmied WaterGAP 2021; Scanlon-group GRACE-amplitude 2019; Lopez ET-calibration 2017) and
+# the model-description paper (Sutanudjaja 2018). Net: discharge = strong (cited tier + 2 GHM
+# benchmarks); runoff = moderate (transferred tier + PCR-GLOBWB r benchmark); TWS-vs-GRACE and ET
+# have benchmark SKILL numbers but NO field-wide pass tier -> null bands, confidence <= 0.4;
+# groundwater storage and SWE are structurally limited / data-thin -> null bands, weak.
+# Bands are plain numbers read via `direction` (see VALIDATION_CONVENTION_SCHEMA.md).
+
+references:
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_trans.58.10715.txt
+  pcrglobwb2:
+    doi: 10.5194/gmd-11-2429-2018
+    title: "PCR-GLOBWB 2: a 5 arcmin global hydrological and water resources model"
+    venue: "Geosci. Model Dev."
+    year: 2018
+    oa: gold
+    resolves: https://gmd.copernicus.org/articles/11/2429/2018/
+  hyperres2023:
+    doi: 10.5194/hess-27-1383-2023
+    title: "Hyper-resolution PCR-GLOBWB: opportunities and challenges from refining model spatial resolution to 1 km"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2023
+    oa: gold
+    resolves: https://hess.copernicus.org/articles/27/1383/2023/
+  beck2017:
+    doi: 10.5194/hess-21-2881-2017
+    title: "Global evaluation of runoff from 10 state-of-the-art hydrological models"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2017
+    oa: gold
+    resolves: https://hess.copernicus.org/articles/21/2881/2017/
+  watergap2021:
+    doi: 10.5194/gmd-14-1037-2021
+    title: "The global water resources and use model WaterGAP v2.2d: model description and evaluation"
+    venue: "Geosci. Model Dev."
+    year: 2021
+    oa: gold
+    resolves: https://gmd.copernicus.org/articles/14/1037/2021/
+  graceampl2019:
+    doi: 10.1029/2018gl081836
+    title: "Tracking Seasonal Fluctuations in Land Water Storage Using Global Models and GRACE Satellites"
+    venue: "Geophysical Research Letters"
+    year: 2019
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1029_2018gl081836.txt
+  lopez2017:
+    doi: 10.5194/hess-21-3125-2017
+    title: "Calibration of a large-scale hydrological model using satellite-based soil moisture and evapotranspiration products"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2017
+    oa: gold
+    resolves: https://hess.copernicus.org/articles/21/3125/2017/
+
+validation:
+
+  # ===================== DISCHARGE / point time series (well grounded) =====================
+  - canonical_quantity: discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5, good: 10, satisfactory: 15}
+        pass_band: satisfactory
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          Uncalibrated default global PCR-GLOBWB is skill-limited at gauge scale: the hyper-resolution
+          evaluation reports a median GRDC KGE of ~0.38 across European stations (Sutanudjaja et al.
+          2023), and the comparable global GHM WaterGAP reaches a median NSE (KGE) of 0.52 (0.61) with
+          NSE < 0 at 259 stations (Muller Schmied et al. 2021). Knoben et al. (2019), used in the
+          hyper-res paper, note KGE >= -0.41 as the threshold above which a model beats the mean-flow
+          benchmark. These fix the realistic uncalibrated skill envelope; KGE informs but does not decide.
+        cites: [hyperres2023, watergap2021]
+    validated_when: "NSE > 0.50 AND |PBIAS| <= 15% (Moriasi et al. 2015 watershed-scale streamflow 'satisfactory' criteria; R2 > 0.60 co-required in source)"
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Moriasi et al. 2015: model performance is "satisfactory for flow simulations if ... NSE > 0.50,
+      and PBIAS <= +/-15% for watershed-scale models" (good NSE > 0.70, very good > 0.80; PBIAS good
+      +/-10, very good +/-5). Cell discharge must be matched to the gauge's contributing LDD cell.
+      The default global run is uncalibrated, so passing NSE > 0.50 at an arbitrary gauge is NOT
+      guaranteed (median European KGE ~0.38); calibration or a benchmark basin is expected before this
+      gate is met.
+
+  # ===================== RUNOFF / gridded spatial time series (transferred tier) ==============
+  - canonical_quantity: runoff
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {good: 0.65, satisfactory: 0.55}
+        pass_band: satisfactory
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: 20}
+        pass_band: satisfactory
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          Benchmark PCR-GLOBWB runoff skill against observed catchment runoff signatures: mean monthly
+          temporal correlation r_mon = 0.58 (climatological r = 0.73, daily r = 0.34) across 966
+          catchments (Beck et al. 2017, Table 5). Correlation is the field's headline runoff-timing
+          metric; a categorical CSI is inappropriate for continuous gridded runoff (supersedes the dag
+          determining_metric csi for this shape).
+        cites: [beck2017]
+    validated_when: "NSE >= 0.55 AND |PBIAS| within 20% (Moriasi et al. 2015 EPIC/APEX runoff / water-yield satisfactory calibration criteria, transferred to gridded runoff)"
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Moriasi et al. 2015 EPIC/APEX table: runoff/water-yield "satisfactory" at R2 >= 0.60, NSE >= 0.55,
+      PBIAS within 20%. These are watershed water-yield criteria transferred to gridded runoff, hence
+      moderate/confidence 0.55. Gridded runoff references (e.g. GRUN) carry their own model structure —
+      treat as a soft reference. The dag determining_metric (csi) is superseded here in favour of
+      NSE/PBIAS/correlation, per Beck et al. 2017 practice.
+
+  # ===================== EVAPOTRANSPIRATION / gridded spatial time series (skill, no tier) ====
+  - canonical_quantity: evapotranspiration
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no field-wide pass tier for satellite-ET spatial-temporal skill in the fetched set; benchmark skill reported as R2/RRMSE, not NSE"
+        cites: []
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          Hyper-resolution PCR-GLOBWB evaluated against GLEAM actual ET reports a median R2 of 0.97
+          (median RRMSE 0.66) (Sutanudjaja et al. 2023, Table 2) — i.e. ET spatio-temporal pattern is
+          well reproduced. This is achieved BENCHMARK skill, not a validation threshold. GLEAM ET is
+          itself model-derived; compare patterns and seasonal magnitude (soft reference).
+        cites: [hyperres2023]
+    validated_when: "UNRESOLVED numeric tier — no cited satellite-ET pass threshold; benchmark skill R2 ~0.97 vs GLEAM (Sutanudjaja 2023) contextualizes but does not set a gate"
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      Two fetched sources bear on ET: Sutanudjaja et al. 2023 (median R2 0.97, RRMSE 0.66 vs GLEAM) and
+      Lopez et al. 2017, which calibrates PCR-GLOBWB on GLEAM ET + ESA-CCI soil moisture and obtains
+      "reasonable discharge estimates (NSE values from 0.5 to 0.75)". Neither states a field-wide ET
+      pass tier, so the headline NSE band is null (confidence 0.4). The dag determining_metric (csi) is
+      inappropriate for continuous ET; r/R2 vs GLEAM is the reported convention.
+
+  # ===================== GROUNDWATER STORAGE / point time series (structural ceiling) =========
+  - canonical_quantity: storage
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no cited NSE threshold for groundwater storage-anomaly vs observed head in the fetched set"
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          PCR-GLOBWB 2 represents groundwater as a single linear-reservoir store (S3) with a recession
+          coefficient and NO lateral flow between cells (Sutanudjaja et al. 2018; net recharge Q23 feeds
+          S3, drained by the groundwater recession constant). Comparison to observed piezometric head is
+          therefore only meaningful as a storage anomaly, not absolute head, and interannual/absolute
+          head skill is structurally capped by the missing lateral groundwater dynamics — a model-
+          structure ceiling, not a KI defect.
+        cites: [pcrglobwb2]
+    validated_when: "UNRESOLVED — no cited groundwater storage-anomaly threshold; low temporal NSE routes to acquire_data / data-ceiling (single linear reservoir, no lateral flow), NOT fix_ki"
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      storGroundwater (S3) is a lumped single linear reservoir; the model-description paper documents no
+      lateral groundwater flow. No fetched paper gives a numeric head/storage-anomaly skill tier, so the
+      band is null (confidence 0.35, must never loosen the gate). The nse structural-ceiling secondary
+      (cited to Sutanudjaja 2018) tells the gate a failing head NSE is a data/structure ceiling.
+
+  # ===================== TWS / gridded spatial time series vs GRACE (skill, no tier) ==========
+  - canonical_quantity: tws
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no field-wide TWS-vs-GRACE pass tier; benchmark median R2 ~0.71 (r ~0.84) reported by Sutanudjaja 2023 is achieved skill, not a threshold"
+        cites: []
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          Hyper-resolution PCR-GLOBWB vs GRACE reports a median R2 of 0.71 (RRMSE ~1.0) for total water
+          storage (Sutanudjaja et al. 2023, Table 2), i.e. correlation r ~0.84 — dominated by the
+          seasonal cycle. Scanlon-group analysis shows PCR-GLOBWB agrees better with GRACE seasonal
+          amplitudes than most models but that global models generally UNDERESTIMATE seasonal amplitudes
+          in tropical/semiarid basins and can overestimate in northern basins (graceampl2019); inter-
+          annual anomaly skill is weak and can be negative in some basins. Seasonal r is the usual TWS
+          convention; no universal pass tier exists.
+        cites: [hyperres2023, graceampl2019]
+    validated_when: "UNRESOLVED numeric tier — TWS-vs-GRACE evaluated by seasonal correlation + amplitude ratio (no field pass threshold); benchmark median R2 ~0.71 (Sutanudjaja 2023) contextualizes only"
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      GRACE provides total-storage ANOMALIES; compare detrended/de-meaned anomalies, not absolute
+      storage. Seasonal amplitude is well captured (PCR-GLOBWB among the better models per graceampl2019)
+      but interannual skill is weak/negative in some basins (e.g. Amazon, Niger). No cited numeric pass
+      tier -> null band, confidence 0.4.
+
+  # ===================== TWS / regional (basin-aggregate) time series vs GRACE ================
+  - canonical_quantity: tws
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no cited basin-aggregate TWS-vs-GRACE pass tier; basin-averaging raises skill vs the gridded shape but no threshold is published"
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          Basin-averaged TWS anomalies are the standard GRACE comparison unit and are more skilful than
+          per-cell fields; WaterGAP (a comparable global GHM) evaluates NSE of basin-average TWS anomalies
+          against GRACE mascon solutions (Muller Schmied et al. 2021, Sect. 6.2.3), and PCR-GLOBWB shows
+          good seasonal-amplitude agreement at basin scale (graceampl2019). Seasonal storage remains
+          poorly captured in cold/snow-dominated regions. No universal NSE pass tier is published for
+          basin TWS.
+        cites: [watergap2021, graceampl2019]
+    validated_when: "UNRESOLVED numeric tier — basin-average TWS-vs-GRACE judged by seasonal correlation/NSE + amplitude ratio; no cited pass threshold"
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      Basin-averaged TWS anomaly. Skill is higher than the gridded shape but still no published pass
+      tier -> null band, confidence 0.4. Cold-region seasonal storage (snow) is the weakest regime.
+
+  # ===================== SNOW WATER EQUIVALENT / gridded spatial time series (data-thin) =======
+  - canonical_quantity: swe
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no cited SWE validation threshold in the fetched set"
+        cites: []
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          PCR-GLOBWB uses a simple degree-day snow module (Sutanudjaja et al. 2018); snow can accumulate
+          indefinitely on permanent-ice / high-latitude cells, so SWE evaluation should avoid permanent-
+          ice cells. Mechanism documented; no numeric SWE skill tier in the fetched set.
+        cites: [pcrglobwb2]
+    validated_when: "UNRESOLVED — no cited SWE threshold; degree-day snow with indefinite polar accumulation, treat off-glacier cells only"
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      None of the fetched papers report a SWE validation tier. Band null per the no-fabrication rule
+      (must not loosen the gate). A dedicated SWE benchmark (e.g. vs GlobSnow / in-situ SWE) is needed
+      to raise this above weak.
+
+deferred_paywalled:
+  - ref: "Scanlon et al. 2018/2019 GRACE-model global TWS trend/anomaly intercomparison with explicit correlation/NSE tiers (beyond the amplitude analysis of graceampl2019)"
+    doi: unknown_not_fetched
+    needed_for: [tws]
+  - ref: "A dedicated PCR-GLOBWB groundwater-head / water-table evaluation reporting NSE/RMSE tiers vs observed piezometry (e.g. de Graaf 2017 lateral-GW head validation)"
+    doi: 10.1016/j.advwatres.2017.01.011
+    needed_for: [storage]
+  - ref: "A global SWE benchmark reporting per-basin SWE RMSE/correlation for global hydrological models (e.g. GlobSnow/ESA-CCI SWE evaluations)"
+    doi: unknown_not_fetched
+    needed_for: [swe]

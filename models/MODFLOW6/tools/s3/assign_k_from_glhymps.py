@@ -249,3 +249,17 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # KDT FIX (2026-08-11, frenchpiezo network run) — SEGFAULT AT EXIT, same
+    # failure as s2/build_layers_from_global.py. This tool writes k/k33/sy/ss/
+    # icelltype/porosity .npy + k_summary.json and prints its summary, then dies
+    # with SIGSEGV (returncode 139/-11) while the interpreter tears down the
+    # geopandas/GDAL + xarray stack. Reproduced on the Aquitaine 44x40 grid:
+    # 2570 GLHYMPS polygons read, Layer 2 K 0.0001-25.55 m/day written correctly,
+    # rc 139. A caller that checks the return code (the KI pipeline must, or a
+    # genuine GLHYMPS failure silently becomes default K) would discard a
+    # perfectly good K field and fall back to alluvial defaults. Exit explicitly
+    # once the tool's documented contract is met.
+    import os as _os
+    sys.stdout.flush()
+    sys.stderr.flush()
+    _os._exit(0)

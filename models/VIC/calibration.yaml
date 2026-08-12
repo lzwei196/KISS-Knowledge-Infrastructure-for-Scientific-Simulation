@@ -1,0 +1,617 @@
+template_version: "calib-0.1"
+model_id: VIC
+identity:
+  domain: hydrology
+  case_id: "SITE:tangnaihai"
+  binding: "VIC 5.1.0 classic driver (water-balance mode, 3-hourly) + Lohmann route_1.0"
+  site: "唐乃亥 Tangnaihai, upper Yellow River source region, Qinghai (100.1537E, 35.5162N)"
+  obs_source: cn_vic_lohmann_tangnaihai
+  validated_run_id: VIC_20260709T175707Z
+  baseline_run: "calib/reference_run.json — nse 0.632305283775393 (cal 0.6455 / val 0.6188), pbias +16.75%, UNCALIBRATED defaults"
+  # CASE RESOLUTION.  The dispatch record carries obs_id `bengbu_51080`, which is a
+  # DB-wide default written onto every row of this model's case table, NOT this case's
+  # gauge — the case is resolved from `primary_executed_location` / calib/reference_run.json
+  # (case_id SITE:tangnaihai, validated_run_id VIC_20260709T175707Z) and from the only
+  # VIC driver on disk that scores that case, models/VIC/run_and_score_tangnaihai.py.
+  # Bengbu 51080 is a Huai-basin gauge on a different river system entirely and no VIC
+  # artifact for it exists under outputs/tangnaihai/.  tools/calib_run.py PINS the scored
+  # gauge to the station resolved below and exits nonzero if the obs file it opens does
+  # not carry that station — scoring another site is fail-closed, not silently possible.
+  case_id_note: >
+    obs_id bengbu_51080 in the dispatch record is a stale DB default; the executed +
+    validated obs for this case is the CNGF 唐乃亥 daily discharge series (station 40100350).
+
+# ---------------------------------------------------------------------------
+# OBS CONTRACT — the full envelope tools/calib_run.py READS AND ASSERTS on every eval.
+# It is not a comment: load_obs() checks each field below against the file it actually
+# opened and exits nonzero WITHOUT writing metrics on any mismatch, so a swapped,
+# re-issued or corrupted series for the same station can never be scored silently, and
+# `__kdt__.scored_obs` is built from the SAME resolved values (station code + name read
+# out of the file, the file path opened, the split window actually paired) rather than
+# from a literal.
+# ---------------------------------------------------------------------------
+obs_contract:
+  dataset: "CNGF (china_gaugeflux) — 黄河 daily discharge txt"
+  file: "/mnt/datasets/china_water_level/黄河txt/唐乃亥.txt"
+  format: "tab-separated; header stcd/dates/z/Q/name; dates are Y-M-D (unpadded)"
+  station_code: 40100350          # `stcd`; must be the ONLY station in the file
+  station_name: "唐乃亥"           # `name`
+  variable: Q
+  units: "m3 s-1"
+  missing_sentinel: -99           # rows with Q <= -90 are dropped before anything else
+  gauge_lon: 100.1537             # snapped pour point of the validated delineation
+  gauge_lat: 35.5162
+  routed_station_id: TNH          # the Lohmann station whose .day hydrograph is scored
+  # Per-split envelope of the VALID (Q > -90) series. Exact integers: the CNGF Q column
+  # is integer m3/s, so n_days / sum / min / max are exact fingerprints of the series.
+  envelope:
+    calibration:
+      period: ["2007-01-01", "2011-12-31"]
+      n_days: 1826
+      contiguous_daily: true
+      q_min: 117.0
+      q_max: 2680.0
+      q_sum: 1198400.0
+      q_mean: 656.297918949
+    holdout:
+      period: ["2012-01-01", "2016-12-31"]
+      n_days: 1827
+      contiguous_daily: true
+      q_min: 121.0
+      q_max: 3350.0
+      q_sum: 1115040.0
+      q_mean: 610.311986864
+    _both:
+      period: ["2007-01-01", "2016-12-31"]
+      n_days: 3653
+      contiguous_daily: true
+      q_min: 117.0
+      q_max: 3350.0
+      q_sum: 2313440.0
+      q_mean: 633.298658637
+
+# ---------------------------------------------------------------------------
+# RUN-HEALTH DIAGNOSTICS the driver requires (fail-closed: absent/None => no metrics,
+# nonzero exit; never defaulted to a passing value).
+#   n_cells        : flux files vic_classic.exe wrote, must EQUAL the row count of the
+#                    injected soil table (251) — a partial domain is a failed eval.
+#   flux_records   : every flux file must carry exactly one record per simulated day.
+#   routed_days    : the routed .day series must cover the whole simulated window.
+#   paired_days    : obs/sim pairs on the split must equal obs_contract.envelope.n_days.
+# ---------------------------------------------------------------------------
+run_health:
+  required: [n_cells, flux_records, routed_days, paired_days]
+  n_cells_expected_from: "row count of outputs/tangnaihai/vic_temp/soil/SOIL_PARAM_COMPLETE.txt (251)"
+
+# ---------------------------------------------------------------------------
+# The KI regenerates SOIL_PARAM_COMPLETE.txt / vic_veg_param_final.txt / the global
+# param file from its s1..s7 tools on every full run, and the routed discharge that
+# is actually scored is produced by a SECOND binary (route_1.0/src/rout) downstream
+# of vic_classic.exe. A value written by the kit into a soil file before the run
+# would be silently regenerated away, and no generic address kind reaches the
+# Lohmann stage. => runner mode. tools/calib_run.py injects, reads back, runs the
+# real binaries, and echoes __kdt__.applied_params.
+# ---------------------------------------------------------------------------
+injection:
+  mode: runner
+
+targets:
+  # OUT_DISCHARGE is dag.outputs validation_rank 1; its point_time_series obs_shape
+  # declares metric_families [temporal_pattern_match, magnitude_accuracy] with
+  # determining_metric nse. Inside VIC the var is lake-module-only, so basin
+  # discharge at the gauge is the Lohmann-routed OUT_RUNOFF + OUT_BASEFLOW — the
+  # same construction the validated real_case run scored.
+  - var: OUT_DISCHARGE
+    weight: 1.0
+
+# ---------------------------------------------------------------------------
+# POOL. Seeded from dag.yaml influence.edges with sensitivity_grade HIGH/MEDIUM and
+# lever_type: parameter. Sepulveda et al. 2022 (DELSA, 5574 VIC cells) names exactly
+# 12 dominant parameters — INFILT, Ds, DsMAX, Ws, Expt2, Depth2, Depth3, NEW_ALB,
+# ALB_THA, ALB_AA, LAI, Rmin — all 12 are in this pool; Depth1 is added on Gou 2020
+# (Chinese basins). No literature-supported edge is pruned: the kit's Morris screen
+# confirms or demotes each ON THIS SITE, literature is only the prior.
+#
+# ERROR MODE THIS POOL MUST BE ABLE TO CLOSE: the uncalibrated run has PBIAS +16.75%
+# (val +22.0%) — the basin sheds too much water — with r = 0.849 already good. That is
+# a VOLUME bias, not a shape error, so the pool deliberately spans BOTH the
+# runoff-generation levers (binfilt, expt, depths) AND the levers that can remove
+# water without touching the hydrograph shape: the ET side (lai_scale, rmin_scale,
+# depth2) and the snow-energy side (albedo constants, which live in a file the base
+# run does not even emit and which calib_run.py creates).
+#
+# EXCLUDED, on purpose:
+#   * PREC / AIR_TEMP / SWDOWN+LWDOWN edges — lever_type: boundary_forcing, not
+#     parameters. Tuning them is forcing bias-correction, not model calibration, and
+#     dag.influence._caveat already flags these three edges as graded on mechanistic
+#     dominance rather than variance-based SA.
+#   * fcanopy — HIGH for OUT_SWE (Bennett 2018) but the KI's veg parameter file is
+#     written without an FCAN block (VEGPARAM_FCAN is absent from the global param),
+#     so there is no token in the effective artifact to address. C1/C3 honesty:
+#     declaring it would be a dangling address.
+# ---------------------------------------------------------------------------
+parameters:
+
+  # ---------------- runoff generation (soil param file, cols 5-8) -------------
+  - name: binfilt
+    description: "Variable-infiltration-capacity shape parameter b_infilt; larger => less infiltration, more fast runoff."
+    type: continuous
+    units: "dimensionless"
+    default: 0.3
+    range: [0.001, 0.5]
+    hard_bounds: [0.001, 0.5]
+    transform: log
+    scope: per-cell
+    zone_key: gridcel
+    tie: soil_uniform          # one basin-wide value written to every cell row
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - demaria2007_vic_monte_carlo
+      - gou2020_vic_china_calibration
+      - sepulveda2022_vic_hydroclimatic_gradient
+    address:                    # runner mode: documentation of the effective token
+      kind: table_cell
+      file: "outputs/tangnaihai/vic_temp/soil/SOIL_PARAM_COMPLETE.txt"
+      row: "*"                  # all 251 cell rows (tie: soil_uniform)
+      col: 4                    # 0-indexed; VIC classic 3-layer soil col 5 = infilt
+      delimiter: " "
+
+  - name: expt_scale
+    description: "Multiplier on the per-cell Brooks-Corey drainage exponent expt (all 3 layers). Applied to the KI-derived per-cell values, which are heterogeneous, so the lever is a scale, not an absolute."
+    type: continuous
+    units: "dimensionless (multiplier)"
+    default: 1.0
+    range: [0.5, 1.8]
+    hard_bounds: [0.5, 1.8]     # per-cell expt is 9.97-16.08, so this keeps expt in
+                                # [4.99, 28.9]; VIC requires expt > 3 (asserted in calib_run)
+    transform: log
+    scope: per-cell
+    zone_key: gridcel
+    tie: soil_uniform
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - demaria2007_vic_monte_carlo
+      - sepulveda2022_vic_hydroclimatic_gradient
+    address:
+      kind: table_cell
+      file: "outputs/tangnaihai/vic_temp/soil/SOIL_PARAM_COMPLETE.txt"
+      row: "*"
+      col: "9,10,11"            # expt[1..3]
+      delimiter: " "
+
+  # ---------------- ARNO baseflow (soil param file, cols 6-8) ----------------
+  - name: Ds
+    description: "Fraction of Dsmax at which the non-linear ARNO baseflow branch begins."
+    type: continuous
+    units: "fraction"
+    default: 0.02
+    range: [0.0001, 1.0]
+    hard_bounds: [0.0001, 1.0]
+    transform: log
+    scope: per-cell
+    zone_key: gridcel
+    tie: soil_uniform
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - demaria2007_vic_monte_carlo
+      - sepulveda2022_vic_hydroclimatic_gradient
+    address:
+      kind: table_cell
+      file: "outputs/tangnaihai/vic_temp/soil/SOIL_PARAM_COMPLETE.txt"
+      row: "*"
+      col: 5
+      delimiter: " "
+
+  - name: Dsmax
+    description: "Maximum baseflow velocity out of the bottom soil layer."
+    type: continuous
+    units: "mm/day"
+    default: 10.0
+    range: [0.1, 30.0]
+    hard_bounds: [0.1, 30.0]
+    transform: log
+    scope: per-cell
+    zone_key: gridcel
+    tie: soil_uniform
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - demaria2007_vic_monte_carlo
+      - sepulveda2022_vic_hydroclimatic_gradient
+    address:
+      kind: table_cell
+      file: "outputs/tangnaihai/vic_temp/soil/SOIL_PARAM_COMPLETE.txt"
+      row: "*"
+      col: 6
+      delimiter: " "
+
+  - name: Ws
+    description: "Fraction of maximum bottom-layer soil moisture at which the non-linear baseflow branch begins."
+    type: continuous
+    units: "fraction"
+    default: 0.7
+    range: [0.2, 1.0]
+    hard_bounds: [0.2, 1.0]
+    transform: identity
+    scope: per-cell
+    zone_key: gridcel
+    tie: soil_uniform
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    cite:
+      - demaria2007_vic_monte_carlo
+      - sepulveda2022_vic_hydroclimatic_gradient
+    address:
+      kind: table_cell
+      file: "outputs/tangnaihai/vic_temp/soil/SOIL_PARAM_COMPLETE.txt"
+      row: "*"
+      col: 7
+      delimiter: " "
+
+  # ---------------- soil column geometry (soil param file, cols 23-25) -------
+  # depth changes rescale init_moist (cols 19-21) by depth_new/depth_old so the
+  # initial volumetric water fraction is preserved and never exceeds porosity.
+  #
+  # RANGES ARE CHOSEN SO THAT THE WHOLE BOX IS FEASIBLE, not merely so that each
+  # parameter is individually plausible.  The `constraints` block below requires
+  # depth1 + depth2 + depth3 <= 3.9 (VIC's thermal damping depth dp is 4.0 m in every
+  # cell of this soil table) and depth1 <= depth2.  The earlier ranges
+  # (0.05-0.30 / 0.10-2.00 / 0.30-3.50) admitted the corner 0.30+2.00+3.50 = 5.80 m,
+  # which read_soilparam.c rejects, and the corner depth1=0.30 > depth2=0.10, which
+  # inverts the 3-layer conceptualization.  A Morris screen samples exactly those
+  # corners, so most screen trajectories died and the kit recorded no finite losses.
+  # With the ranges below, max(depth1+depth2+depth3) = 0.15 + 1.50 + 2.20 = 3.85 m
+  # and max(depth1) = 0.15 = min(depth2): every point of the box is feasible and the
+  # constraints are retained only as a backstop.  Defaults (0.1 / 0.3 / 1.5) unchanged.
+  - name: depth1
+    description: "Thickness of soil layer 1 (thin surface layer controlling fast runoff and bare-soil evaporation)."
+    type: continuous
+    units: "m"
+    default: 0.1
+    range: [0.05, 0.15]
+    hard_bounds: [0.05, 0.15]
+    transform: identity
+    scope: per-cell
+    zone_key: gridcel
+    tie: soil_uniform
+    activation: always
+    expected_sensitivity: medium
+    confidence: medium
+    cite:
+      - gou2020_vic_china_calibration
+    address:
+      kind: table_cell
+      file: "outputs/tangnaihai/vic_temp/soil/SOIL_PARAM_COMPLETE.txt"
+      row: "*"
+      col: 22
+      delimiter: " "
+
+  - name: depth2
+    description: "Thickness of soil layer 2 — the dominant root-zone store; controls both runoff generation and total ET (Sepulveda 2022 ranks Depth2 for OUT_RUNOFF and OUT_EVAP)."
+    type: continuous
+    units: "m"
+    default: 0.3
+    range: [0.15, 1.50]
+    hard_bounds: [0.15, 1.50]
+    transform: log
+    scope: per-cell
+    zone_key: gridcel
+    tie: soil_uniform
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - gou2020_vic_china_calibration
+      - sepulveda2022_vic_hydroclimatic_gradient
+    address:
+      kind: table_cell
+      file: "outputs/tangnaihai/vic_temp/soil/SOIL_PARAM_COMPLETE.txt"
+      row: "*"
+      col: 23
+      delimiter: " "
+
+  - name: depth3
+    description: "Thickness of soil layer 3 — the baseflow reservoir; sets recession volume and low-flow persistence."
+    type: continuous
+    units: "m"
+    default: 1.5
+    range: [0.30, 2.20]
+    hard_bounds: [0.30, 2.20]
+    transform: log
+    scope: per-cell
+    zone_key: gridcel
+    tie: soil_uniform
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    cite:
+      - sepulveda2022_vic_hydroclimatic_gradient
+      - gou2020_vic_china_calibration
+    address:
+      kind: table_cell
+      file: "outputs/tangnaihai/vic_temp/soil/SOIL_PARAM_COMPLETE.txt"
+      row: "*"
+      col: 24
+      delimiter: " "
+
+  # ---------------- evapotranspiration levers (veg param + veg library) ------
+  - name: lai_scale
+    description: "Multiplier on every monthly LAI value in the VIC veg parameter file (LAI_SRC = FROM_VEGPARAM). The primary ET / canopy-interception lever and, with fcanopy unavailable, the only canopy control on snow interception."
+    type: continuous
+    units: "dimensionless (multiplier)"
+    default: 1.0
+    range: [0.4, 2.0]
+    hard_bounds: [0.4, 2.0]
+    transform: log
+    scope: per-zone
+    zone_key: veg_class
+    tie: veg_uniform            # one scale applied to all classes/months/cells
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - sepulveda2022_vic_hydroclimatic_gradient
+      - bennett2018_vic_colorado_global_sensitivity
+    address:
+      kind: table_cell
+      file: "outputs/tangnaihai/vic_temp/veg/vic_veg_param_final.txt"
+      row: "*"                  # every 12-value monthly-LAI line
+      col: "0..11"
+      delimiter: "\t"
+
+  - name: rmin_scale
+    description: "Multiplier on the minimum stomatal resistance Rmin of every class in the VIC vegetation library; raises Rmin => suppresses transpiration."
+    type: continuous
+    units: "dimensionless (multiplier)"
+    default: 1.0
+    range: [0.5, 2.5]
+    hard_bounds: [0.5, 2.5]
+    transform: log
+    scope: per-zone
+    zone_key: veg_class
+    tie: veg_uniform
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    cite:
+      - sepulveda2022_vic_hydroclimatic_gradient
+    address:
+      kind: table_cell
+      file: "data/vic_param/veglib.LDAS"
+      row: "*"                  # all 14 class rows (header line skipped)
+      col: 3                    # 0-indexed: Class OvrStry Rarc Rmin ...
+      delimiter: "\t"
+
+  # ---------------- snow energetics (VIC CONSTANTS file) ---------------------
+  # Tangnaihai is a 3000-4500 m snowmelt-driven headwater; Bennett 2018 finds the
+  # snow-dominated cells are the most sensitive in the whole basin and that both ET
+  # and runoff respond to albedo. These three keys are read by the classic driver's
+  # CONSTANTS block (get_global_param.c:406 -> get_parameters.c) and are used by
+  # snow_albedo() even with FULL_ENERGY FALSE. The KI's config_paths.create_global_param()
+  # emits no CONSTANTS line, so calib_run.py writes the file and appends the line.
+  - name: new_snow_albedo
+    description: "SNOW_NEW_SNOW_ALB — albedo of fresh snow."
+    type: continuous
+    units: "fraction"
+    default: 0.85
+    range: [0.70, 0.95]
+    hard_bounds: [0.70, 0.95]
+    transform: identity
+    scope: global
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - sepulveda2022_vic_hydroclimatic_gradient
+      - bennett2018_vic_colorado_global_sensitivity
+    address:
+      kind: text_token
+      file: "vic_constants.txt"          # created per-eval by tools/calib_run.py
+      pattern: "^SNOW_NEW_SNOW_ALB\\s+(\\S+)"
+
+  - name: snow_alb_accum_a
+    description: "SNOW_ALB_ACCUM_A — coefficient of the cold-snow (accumulation-season) albedo decay curve alb = A * B^(age^0.58)."
+    type: continuous
+    units: "fraction"
+    default: 0.94
+    range: [0.85, 0.99]
+    hard_bounds: [0.85, 0.99]
+    transform: identity
+    scope: global
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - bennett2018_vic_colorado_global_sensitivity
+      - sepulveda2022_vic_hydroclimatic_gradient
+    address:
+      kind: text_token
+      file: "vic_constants.txt"
+      pattern: "^SNOW_ALB_ACCUM_A\\s+(\\S+)"
+
+  # The upper bound is the LOWER bound of snow_alb_accum_a, not an independent guess:
+  # the constraint snow_alb_thaw_a <= snow_alb_accum_a must hold everywhere in the box,
+  # and a thaw base above 0.85 would mean a melting pack darkening no faster than a cold
+  # one. With range [0.70, 0.95] a quarter of the box corners violated the constraint,
+  # which is what a Morris screen samples. VIC's default 0.82 is comfortably interior.
+  - name: snow_alb_thaw_a
+    description: "SNOW_ALB_THAW_A — coefficient of the melting-snow albedo decay curve; sets how fast the spring pack darkens and therefore the freshet timing and volume."
+    type: continuous
+    units: "fraction"
+    default: 0.82
+    range: [0.70, 0.85]
+    hard_bounds: [0.70, 0.85]
+    transform: identity
+    scope: global
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - bennett2018_vic_colorado_global_sensitivity
+      - sepulveda2022_vic_hydroclimatic_gradient
+    address:
+      kind: text_token
+      file: "vic_constants.txt"
+      pattern: "^SNOW_ALB_THAW_A\\s+(\\S+)"
+
+  # ---------------- Lohmann channel routing (rout_global.txt) -----------------
+  # ADDED 2026-07-10 after the 哈尔滨 real case (dt_vic_028).  Until then this pool
+  # contained NO routing parameter, and tools/calib_run.py cached <STA>.uh_s precisely
+  # because "velocity/diffusion ... none of which this contract calibrates".  That is a
+  # structural blind spot: at a large basin these two dominate NSE and NOTHING in the
+  # soil pool can substitute for them.
+  #
+  # Two facts make them cheap AND safe to include:
+  #   * They affect only route_1.0/src/rout, never vic_classic.exe.  One eval is ~7 s for
+  #     866 cells, against ~13 min for a VIC re-run.  Any evaluator that re-runs VIC to
+  #     change velocity wastes ~99% of its budget.  calib_run.py's uh_s cache is keyed on
+  #     (velocity, diffusivity) as of the 2026-07-10 driver repair — it previously was not,
+  #     and an unkeyed cache makes the perturbation silently do nothing.  calib_run.py still
+  #     re-runs VIC on every eval: correct, but ~99% wasted when only these two move.
+  #   * `rout` renormalises UH_S (unit_hyd_routines.f) — measured: every one of the 251 cell
+  #     rows sums to 1.0 +/- 2e-7 — so per-cell mass is conserved and both are ESSENTIALLY
+  #     timing levers: they move NSE/KGE/r strongly and PBIAS only marginally.  NOT bit-
+  #     identical, as this comment claimed before 2026-07-10: measured on the calibration
+  #     split, (v,D) 1.5/800 -> 0.5/2500 moves NSE +0.2203 but PBIAS only -0.117 pp (11.855
+  #     -> 11.738).  Two finite-window effects, neither a mass leak: the hydrograph shifts
+  #     across the scoring-window edges, and a slower celerity leaves more water still in
+  #     transit at the end of the simulated record (full-sim routed volume -0.141%; the last
+  #     60 days carry +6.4% more flow).  So they still cannot LAUNDER a volume bias — 0.117
+  #     pp against a +16.75% PBIAS is ~0.7% of it — but "a volume bias can never be blamed
+  #     on them" is an approximation, not an identity.  Do not use PBIAS invariance as a
+  #     unit test for the routing injection; use NSE/r movement, which is ~1000x larger.
+  #
+  # PREFER IDENTIFICATION OVER OPTIMISATION.  s5_routing/run_routing.py pins velocity from
+  # the observed lag-correlation alone (bisect until basin_mean_uh_lag == the observed lag
+  # on the CAL window).  That costs zero objective evaluations and yields a value checkable
+  # against a measurement rather than against the score.  Calibrate these two only to
+  # refine an already-identified value.
+  - name: rout_velocity
+    description: "Lohmann wave celerity in the linearised Saint-Venant channel routing. In a large flat basin this is an EFFECTIVE basin residence time (hillslope + floodplain + wetland + reservoir storage), not a channel celerity, and the identified value may fall well below any physical channel speed."
+    type: continuous
+    units: "m s-1"
+    default: 1.5
+    range: [0.10, 3.0]
+    hard_bounds: [0.05, 5.0]
+    transform: log            # uh_lag ~ 1/velocity, so the response is log-linear
+    scope: global
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - lohmann1996_large_scale_horizontal_routing
+    address:                    # runner mode: documentation of the effective token
+      kind: runner
+      file: "<workdir>/run/routing/rout_global.txt"
+      note: >
+        The scalar velocity line — the 3rd line of the velocity block, read by rout.f only
+        when the velocity-file flag on the preceding line is .false. tools/calib_run.py
+        writes it via inject_rout_global() and reads it back before any binary runs. It also
+        keys the <STA>.uh_s cache on (velocity, diffusivity): rout copies a supplied uh_s
+        verbatim and never evaluates the kernel MAKE_UHM built from these two values, so an
+        unkeyed cache would make this lever pass read-back and change nothing.
+  - name: rout_diffusivity
+    description: "Lohmann diffusivity. Broadens the impulse response but ALSO advances its peak, so raising it is not a substitute for lowering velocity (at 哈尔滨 D=4000 scored worse than D=800 at every velocity tested)."
+    type: continuous
+    units: "m2 s-1"
+    default: 800.0
+    range: [200.0, 4000.0]
+    hard_bounds: [50.0, 10000.0]
+    transform: log
+    scope: global
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    cite:
+      - lohmann1996_large_scale_horizontal_routing
+    address:
+      kind: runner
+      file: "<workdir>/run/routing/rout_global.txt"
+      note: >
+        The scalar diffusion line — the 3rd line of the diff block, read by rout.f only when
+        the diff-file flag on the preceding line is .false. Injected, read back and used as
+        part of the uh_s cache key by tools/calib_run.py, exactly as rout_velocity is.
+
+# ---------------------------------------------------------------------------
+# Hard feasibility — checked on the named vector BEFORE any binary runs (C5).
+# ---------------------------------------------------------------------------
+constraints:
+  # VIC places thermal nodes down to the damping depth dp = 4.0 m (soil col 27) and
+  # read_soilparam.c errors if the soil column reaches it. Keep total depth clear of dp.
+  - "depth1 + depth2 + depth3 <= 3.9"
+  # Layer 1 is the thin surface layer of the VIC 3-layer conceptualization; a layer 1
+  # thicker than the root-zone layer 2 inverts the intended structure.
+  - "depth1 <= depth2"
+  # snow_utility.c:253-263 -> albedo = new_snow_albedo * A^(age^B), so ACCUM_A / THAW_A
+  # are the BASES of a decay curve (both < 1), not albedos: an aged pack is already
+  # darker than fresh snow by construction and no `A <= new_snow_albedo` relation is
+  # meaningful. The one real ordering is that a melting pack darkens FASTER than a cold
+  # one, i.e. the thaw base must not exceed the accumulation base (VIC defaults: 0.82 < 0.94).
+  - "snow_alb_thaw_a <= snow_alb_accum_a"
+
+# ---------------------------------------------------------------------------
+# HOW to run + score one candidate. cwd is ki_path.
+# tools/calib_run.py reads KDT_CALIB_PARAMS, injects into per-eval copies of the soil /
+# veg / veglib / constants files, verifies each value by reading it back out of the
+# artifact the binary consumes, runs vic_classic.exe then route_1.0/src/rout, scores the
+# routed hydrograph against the 唐乃亥 gauge, and emits __kdt__.applied_params (every
+# handed key, frozen ones included) plus __kdt__.case_id / scored_obs / run_health.
+#
+# case_id and scored_obs are DERIVED, not labelled: the station code and name are read
+# back out of the obs file that was opened (read-only) and looked up in the driver's
+# station->case map, and the routed station + cell come from the staloc line rout
+# consumed. Every obs_contract field above is asserted; any mismatch, any short domain,
+# any truncated flux file, any short routed series => no metrics file + nonzero exit
+# (the kit scores that candidate +inf). Nothing is defaulted to a passing value.
+# ---------------------------------------------------------------------------
+runner:
+  kind: subprocess
+  command: ["/usr/bin/python3", "tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]
+  metrics_file: "{metrics_json}"
+  timeout: 1800          # measured: calibration split ~4.5 min, holdout split ~7.5 min
+
+strategy:
+  cost_class: expensive           # ~2.5 min CPU per eval (251 cells x 7 yr x 3-hourly) + Lohmann routing
+  default_algorithm: dds          # single scalarized objective, cheap-ish per eval, no gradients
+  max_evaluations: 150
+  staged: true                    # Morris-screen the 13-param pool, then calibrate few, then escalate
+  staged_start: 3
+  staged_step: 2
+  screen_trajectories: 4
+
+  holdout:
+    kind: years
+    protocol: blocked_temporal
+    grouping_key: calendar_year
+    generalization_axis: time
+    fraction: 0.5                 # 5 held-out years of the 10 scored years
+    calibration_period: ["2007-01-01", "2011-12-31"]
+    holdout_period:     ["2012-01-01", "2016-12-31"]
+    rationale: >
+      obs_shape is point_time_series at a single gauge, so the only defensible
+      generalization axis is time and the split must be CONTIGUOUS (blocked), never
+      random days — adjacent days of a daily hydrograph are strongly autocorrelated
+      and a random split leaks the recession limb of every event into both sets.
+      The periods are inherited verbatim from the validated real_case run, which
+      shifted off the KDT standard 1980/1981-85/1986-90 window because the 唐乃亥
+      record is -99 for 1986 and 1988-2006; 2007-2016 is the first contiguous
+      fully-observed decade. Nothing has ever been tuned on 2012-2016, so the
+      published val NSE 0.6188 remains a true out-of-sample number and the
+      calibrated holdout score is directly comparable to it. Spinup: the holdout
+      split re-runs 2005-01-01..2016-12-31 (identical to the validated recipe) and
+      scores only 2012-2016, so the held-out score is not confounded by a shorter
+      warm-up; the calibration split runs 2005-01-01..2011-12-31 with the same
+      2005-2006 spinup and scores 2007-2011 (verified to reproduce the published
+      nse_cal 0.6455 / kge_cal 0.7752 exactly).
+    cite:
+      - klemes1986_operational_testing
+      - arsenault2018_calibration_data_length
+    confidence: high

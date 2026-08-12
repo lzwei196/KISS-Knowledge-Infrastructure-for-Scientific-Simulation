@@ -148,8 +148,16 @@ def parse_mptable_usgs(tbl_path):
 
 
 def build_soil_properties(geo_em_path, output_path,
-                          soilparm_tbl=None, mptable_tbl=None):
-    """Build soil_properties.nc."""
+                          soilparm_tbl=None, mptable_tbl=None, refkdt=0.8):
+    """Build soil_properties.nc.
+
+    refkdt : uniform REFKDT (infiltration vs surface-runoff split), the #1
+             calibration knob. Default 0.8 is mountain/semi-arid tuned. For
+             HUMID / FLAT basins (e.g. tropical plateau, plain) use 3.0 per
+             SKILL.md's humid-basin recipe — 0.8 over-produces flashy surface
+             runoff peaks there (Balsas 2026-07: REFKDT=0.8 gave sim std 5x obs,
+             NSE=-18 despite r=0.68).
+    """
     if soilparm_tbl is None:
         soilparm_tbl = DEFAULT_SOILPARM
     if mptable_tbl is None:
@@ -187,7 +195,7 @@ def build_soil_properties(geo_em_path, output_path,
     # 2D arrays
     slope    = np.full((sn, we), 0.1,  dtype=np.float32)
     refdk    = np.zeros((sn, we), dtype=np.float32)
-    refkdt   = np.full((sn, we), 0.8,  dtype=np.float32)  # Mountain basin optimized (was 3.0)
+    refkdt   = np.full((sn, we), float(refkdt),  dtype=np.float32)  # default 0.8 mountain; 3.0 for humid/flat (SKILL humid recipe)
     rsurfexp = np.full((sn, we), 5.0,  dtype=np.float32)
 
     # Vegetation arrays
@@ -289,6 +297,9 @@ def main():
                         help="Path to SOILPARM.TBL")
     parser.add_argument("--mptable_tbl", default=str(DEFAULT_MPTABLE),
                         help="Path to MPTABLE.TBL")
+    parser.add_argument("--refkdt", type=float, default=0.8,
+                        help="Uniform REFKDT (infiltration/surface-runoff split). "
+                             "Default 0.8 (mountain/semi-arid). Use 3.0 for humid/flat basins.")
     args = parser.parse_args()
 
     build_soil_properties(
@@ -296,6 +307,7 @@ def main():
         output_path=args.output_path,
         soilparm_tbl=args.soilparm_tbl,
         mptable_tbl=args.mptable_tbl,
+        refkdt=args.refkdt,
     )
 
 

@@ -130,15 +130,34 @@ def _write_wheat(f, sy, ey):
 
 
 def _write_rice(f, sy, ey):
-    """Single rice paddy."""
+    """Single paddy rice — uses :RICE: class-path notation (bare 'RICE' is abstract and crashes).
+    Irrigation events simulate paddy flooding (required for LDNDC water balance).
+    Schedule: China single-season rice, transplant ~May, harvest ~Oct.
+    """
     for yr in range(sy, ey + 1):
-        f.write(f'        <event type="till" time="{yr}-04-15"><till depth="0.15" /></event>\n')
-        f.write(f'        <event type="plant" time="{yr}-05-01">\n')
-        f.write('            <plant type="RICE"><crop initialbiomass="50.0" /></plant>\n')
+        # Land preparation + pre-flood
+        f.write(f'        <event type="till" time="{yr}-04-20"><till depth="0.15" /></event>\n')
+        f.write(f'        <event type="irrigate" time="{yr}-04-28"><irrigate amount="60.0" /></event>\n')
+        f.write(f'        <event type="irrigate" time="{yr}-05-01"><irrigate amount="60.0" /></event>\n')
+        f.write(f'        <event type="irrigate" time="{yr}-05-04"><irrigate amount="60.0" /></event>\n')
+        # Transplant + basal N
+        f.write(f'        <event type="plant" time="{yr}-05-08">\n')
+        f.write('            <plant type=":RICE:"><crop initialbiomass="50.0" /></plant>\n')
         f.write("        </event>\n")
-        f.write(f'        <event type="fertilize" time="{yr}-05-05"><fertilize type="urea" amount="80" depth="0.05" /></event>\n')
-        f.write(f'        <event type="fertilize" time="{yr}-06-20"><fertilize type="urea" amount="40" depth="0.05" /></event>\n')
-        f.write(f'        <event type="harvest" time="{yr}-10-10"><harvest name="RICE" remains="0.50" /></event>\n')
+        f.write(f'        <event type="fertilize" time="{yr}-05-09"><fertilize type="urea" amount="80" depth="0.02" /></event>\n')
+        # Growing season irrigation (every 3 days, 45mm — paddy ponding)
+        import datetime
+        d = datetime.date(yr, 5, 10)
+        end = datetime.date(yr, 9, 10)
+        while d <= end:
+            f.write(f'        <event type="irrigate" time="{d.isoformat()}"><irrigate amount="45.0" /></event>\n')
+            d += datetime.timedelta(days=3)
+        # Topdress N at tillering and panicle
+        f.write(f'        <event type="fertilize" time="{yr}-06-20"><fertilize type="urea" amount="60" depth="0.02" /></event>\n')
+        f.write(f'        <event type="fertilize" time="{yr}-07-25"><fertilize type="urea" amount="40" depth="0.02" /></event>\n')
+        # Harvest (no irrigation after Sep 10 → field drains before harvest)
+        f.write(f'        <event type="harvest" time="{yr}-10-08"><harvest name=":RICE:" remains="0.50" /></event>\n')
+        f.write(f'        <event type="till" time="{yr}-10-20"><till depth="0.10" /></event>\n')
 
 
 def _write_forest(f, sy, ey):

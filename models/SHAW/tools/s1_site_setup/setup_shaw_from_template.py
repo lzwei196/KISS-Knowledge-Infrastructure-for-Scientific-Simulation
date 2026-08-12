@@ -224,6 +224,20 @@ def update_sit_file(sit_path: Path, **kwargs):
                     parts[6] = f'{prop["ksat"]:.1f}'
                 if 'bd' in prop:
                     parts[7] = f'{prop["bd"]:.1f}'
+                # cols 10-11: QUARTZ and BPAR — if not supplied, derive from texture
+                if 'quartz' in prop:
+                    if len(parts) > 10:
+                        parts[10] = f'{prop["quartz"]:.3f}'
+                elif 'sand' in prop and len(parts) > 10:
+                    sand = prop['sand']
+                    parts[10] = f'{min(0.85, max(0.10, sand / 100.0 * 0.9 + 0.10)):.3f}'
+                if 'bpar' in prop:
+                    if len(parts) > 11:
+                        parts[11] = f'{prop["bpar"]:.2f}'
+                elif 'sand' in prop and 'clay' in prop and len(parts) > 11:
+                    sand, clay = prop['sand'], prop['clay']
+                    bpar = max(2.0, min(12.0, 3.10 + 0.157 * clay - 0.003 * sand))
+                    parts[11] = f'{bpar:.2f}'
                 lines[soil_start + j] = ' ' + '  '.join(parts) + '\n'
 
     # Plant parameters (Line 8 for canopy models)
@@ -236,6 +250,63 @@ def update_sit_file(sit_path: Path, **kwargs):
         f.writelines(lines)
 
     print(f"  Updated {sit_path.name} with site-specific parameters")
+
+
+def fix_bpar_quartz_from_texture(sit_path: Path) -> int:
+    """
+    Recompute BPAR and QUARTZ from sand/clay already in each soil node line.
+
+    The Compton template ships with physically wrong defaults (BPAR≈30, QUARTZ≈8.5)
+    that suppress freeze-thaw simulation.  Correct values are:
+      BPAR   = 3.10 + 0.157×clay − 0.003×sand   (Rawls et al. 1982, clamped 2–12)
+      QUARTZ = min(0.85, max(0.10, sand/100 × 0.9 + 0.10))
+
+    .sit soil node format: DEPTH SAND SILT CLAY OM KSAT BD THETA TINIT BCAP QUARTZ BPAR
+    Indices (0-based):       0     1    2    3   4   5    6    7     8     9    10     11
+
+    Returns the number of soil nodes updated.
+    """
+    lines = sit_path.read_text().splitlines()
+    new_lines = list(lines)
+    n_updated = 0
+
+    for i, line in enumerate(lines):
+        parts = line.split()
+        if len(parts) < 12:
+            continue
+        # Soil-node depth tokens are always written with a decimal point
+        # ("0.00", "0.02", ...). Require the '.' so we do NOT match control
+        # lines whose first token is a bare integer — e.g. Line D
+        # "0 0 0 11 0 0.001 1 ..." (NPLANT NSP NR NS ...) whose leading "0"
+        # also parses as depth 0.0 and would otherwise be clobbered.
+        if '.' not in parts[0]:
+            continue
+        try:
+            depth = float(parts[0])
+        except ValueError:
+            continue
+        if not (0.0 <= depth <= 4.0):
+            continue
+        try:
+            sand = float(parts[1].rstrip('.'))
+            clay = float(parts[3].rstrip('.'))
+        except (ValueError, IndexError):
+            continue
+        if not (0 <= sand <= 100 and 0 <= clay <= 100):
+            continue
+
+        bpar   = max(2.0, min(12.0, 3.10 + 0.157 * clay - 0.003 * sand))
+        quartz = min(0.85, max(0.10, sand / 100.0 * 0.9 + 0.10))
+
+        parts[10] = f'{quartz:.3f}'
+        parts[11] = f'{bpar:.2f}'
+        new_lines[i] = ' ' + '  '.join(parts)
+        n_updated += 1
+
+    if n_updated > 0:
+        sit_path.write_text('\n'.join(new_lines) + '\n')
+
+    return n_updated
 
 
 def update_inp_file(inp_path: Path, case_name: str, **kwargs):

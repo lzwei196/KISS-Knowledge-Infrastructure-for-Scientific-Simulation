@@ -24,6 +24,25 @@ from pathlib import Path
 import numpy as np
 
 
+def open_dataset_robust(path: str):
+    """Open a netCDF trying the default backend then h5netcdf then netcdf4.
+
+    The shared HydroCraft python_env has a broken netCDF4 read path on this host
+    (OSError -101 HDF error) while h5netcdf reads the same files fine. parse_output.py
+    uses the same fallback; run_cosipy must too, otherwise its preflight/output
+    validation aborts the run before COSIPY ever starts (verified 2026-06-21).
+    """
+    import xarray as xr
+    last = None
+    for engine in (None, "h5netcdf", "netcdf4"):
+        try:
+            return xr.open_dataset(path) if engine is None else xr.open_dataset(path, engine=engine)
+        except Exception as e:  # noqa: BLE001
+            last = e
+            continue
+    raise last
+
+
 def load_toml(path: str) -> dict:
     """Load a TOML configuration file.
 
@@ -47,11 +66,27 @@ def load_toml(path: str) -> dict:
         return tomllib.load(f)
 
 
-def validate_config(config_path: str) -> list:
+def _resolve_data_path(data_path: str, source_dir: str = ".") -> str:
+    """Resolve a (possibly relative) config data_path against source_dir.
+
+    COSIPY runs with cwd=source_dir, so a relative data_path like "./data/" in
+    config.toml is relative to source_dir — NOT to wherever run_cosipy.py was
+    invoked from. The preflight validators must use the same base, otherwise
+    they report spurious 'Input file not found' errors when run_cosipy is
+    invoked from the KI directory with --source-dir pointing elsewhere
+    (verified 2026-06-22 Mt Fidelity run).
+    """
+    if os.path.isabs(data_path):
+        return data_path
+    return os.path.normpath(os.path.join(source_dir, data_path))
+
+
+def validate_config(config_path: str, source_dir: str = ".") -> list:
     """Validate config.toml parameters.
 
     Args:
         config_path: Path to config.toml.
+        source_dir: COSIPY source dir (base for relative data_path).
 
     Returns:
         List of error/warning messages.
@@ -78,7 +113,7 @@ def validate_config(config_path: str) -> list:
             issues.append(f"ERROR: time_start ({ts}) >= time_end ({te})")
 
     if "FILENAMES" in cfg:
-        data_path = cfg["FILENAMES"].get("data_path", "./data/")
+        data_path = _resolve_data_path(cfg["FILENAMES"].get("data_path", "./data/"), source_dir)
         input_nc = cfg["FILENAMES"].get("input_netcdf", "")
         full_input = os.path.join(data_path, "input", input_nc)
         if not os.path.exists(full_input):
@@ -132,7 +167,7 @@ def validate_constants(constants_path: str) -> list:
     return issues
 
 
-def validate_input_data(config_path: str, constants_path: str) -> list:
+def validate_input_data(config_path: str, constants_path: str, source_dir: str = ".") -> list:
     """Validate input netCDF data ranges and consistency.
 
     Args:
@@ -153,7 +188,7 @@ def validate_input_data(config_path: str, constants_path: str) -> list:
     except Exception as e:
         return [f"WARNING: Cannot load config for data validation: {e}"]
 
-    data_path = cfg.get("FILENAMES", {}).get("data_path", "./data/")
+    data_path = _resolve_data_path(cfg.get("FILENAMES", {}).get("data_path", "./data/"), source_dir)
     input_nc = cfg.get("FILENAMES", {}).get("input_netcdf", "")
     full_input = os.path.join(data_path, "input", input_nc)
 
@@ -161,7 +196,7 @@ def validate_input_data(config_path: str, constants_path: str) -> list:
         return [f"ERROR: Input file not found: {full_input}"]
 
     try:
-        ds = xr.open_dataset(full_input)
+        ds = open_dataset_robust(full_input)
     except Exception as e:
         return [f"ERROR: Cannot open input file: {e}"]
 
@@ -262,6 +297,16 @@ def run_model(source_dir: str, config_path: str, constants_path: str,
     print(f"Running: {' '.join(cmd)}")
     print(f"Working directory: {source_dir}")
 
+    # Work around the broken python_env netCDF4 backend (OSError -101 HDF error):
+    # prepend the bundled sitecustomize shim onto PYTHONPATH and flag it so COSIPY's
+    # default-engine xr.open_dataset / to_netcdf route through h5netcdf. The shim is
+    # a no-op unless COSIPY_FORCE_H5NETCDF=1. See tools/_netcdf_shim/sitecustomize.py.
+    env = os.environ.copy()
+    shim_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_netcdf_shim")
+    if os.path.isdir(shim_dir):
+        env["PYTHONPATH"] = shim_dir + os.pathsep + env.get("PYTHONPATH", "")
+        env["COSIPY_FORCE_H5NETCDF"] = "1"
+
     start_time = time.time()
 
     try:
@@ -271,6 +316,7 @@ def run_model(source_dir: str, config_path: str, constants_path: str,
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
         elapsed = time.time() - start_time
 
@@ -299,11 +345,12 @@ def run_model(source_dir: str, config_path: str, constants_path: str,
         }
 
 
-def validate_output(config_path: str) -> list:
+def validate_output(config_path: str, source_dir: str = ".") -> list:
     """Validate model output after execution.
 
     Args:
         config_path: Path to config.toml.
+        source_dir: COSIPY source dir (base for relative data_path).
 
     Returns:
         List of validation messages.
@@ -316,7 +363,7 @@ def validate_output(config_path: str) -> list:
     except Exception:
         return ["WARNING: Cannot validate output"]
 
-    data_path = cfg.get("FILENAMES", {}).get("data_path", "./data/")
+    data_path = _resolve_data_path(cfg.get("FILENAMES", {}).get("data_path", "./data/"), source_dir)
     output_dir = os.path.join(data_path, "output")
 
     if not os.path.exists(output_dir):
@@ -328,7 +375,7 @@ def validate_output(config_path: str) -> list:
         return ["ERROR: No output netCDF files found"]
 
     for nc_file in nc_files:
-        ds = xr.open_dataset(str(nc_file))
+        ds = open_dataset_robust(str(nc_file))
 
         expected_vars = ["MB", "SNOWHEIGHT", "TS", "ALBEDO"]
         for var in expected_vars:
@@ -362,9 +409,9 @@ def main():
     # Preflight checks
     print("\n--- Preflight Checks ---")
 
-    config_issues = validate_config(args.config)
+    config_issues = validate_config(args.config, args.source_dir)
     constants_issues = validate_constants(args.constants)
-    data_issues = validate_input_data(args.config, args.constants)
+    data_issues = validate_input_data(args.config, args.constants, args.source_dir)
 
     all_issues = config_issues + constants_issues + data_issues
     errors = [i for i in all_issues if i.startswith("ERROR")]
@@ -398,7 +445,7 @@ def main():
 
     # Validate output
     print("\n--- Output Validation ---")
-    output_issues = validate_output(args.config)
+    output_issues = validate_output(args.config, args.source_dir)
     for issue in output_issues:
         print(f"  {issue}")
 

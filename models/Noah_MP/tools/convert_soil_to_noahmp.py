@@ -122,42 +122,81 @@ def validate_inputs(args):
 
 
 def classify_usda_texture(sand_pct, clay_pct):
-    """Classify soil texture from sand and clay percentages using USDA triangle."""
+    """Classify soil texture from sand and clay percentages using the USDA triangle.
+
+    Rewritten 2026-08-02 against the USDA-NRCS Soil Survey Manual class
+    definitions.  The previous cascade got three boundaries wrong, and each one
+    lands on a DIFFERENT NoahmpTable soil row (so SMCMAX/BEXP/DKSAT change --
+    all dag-listed HIGH/MEDIUM sensitivity levers for LH and runoff):
+
+      * sandy clay was gated behind ``clay >= 40``; the class starts at
+        clay >= 35, so clay 35-40 with sand >= 45 was returned as sandy clay loam.
+      * sandy clay loam omitted the ``silt < 28`` side of the class, so e.g.
+        sand 47 / clay 21 / silt 32 (a LOAM, and the real HWSD texture at the
+        US-MMS flux tower) was returned as sandy clay loam -- ISLTYP 7 instead
+        of 6, BEXP 7.12 instead of 5.25, DKSAT 6.3e-6 instead of 3.47e-6.
+      * ``sand >= 43 -> sandy_loam`` ignored the silt limb, so sand 45 /
+        clay 15 / silt 40 (a LOAM) came back sandy loam.
+
+    Fixed again 2026-08-02: the rewrite above still evaluated the
+    ``27 <= clay < 40`` loam belt BEFORE the sandy clay loam test, so the
+    sandy-clay-loam wedge with clay >= 27 was returned as clay loam.  Sandy clay
+    loam is "20 to 35 percent clay, less than 28 percent silt, and more than 45
+    percent sand" (USDA-NRCS; 310 CMR 15.244), which overlaps the clay-loam clay
+    range on 27-35% clay -- the two are separated by SAND (clay loam is 20-45%
+    sand), not by clay.  Example: sand 50 / clay 30 / silt 20 returned clay loam
+    (ISLTYP 9: BEXP 8.52, DKSAT 2.45e-6) instead of sandy clay loam (ISLTYP 7:
+    BEXP 7.12, DKSAT 6.30e-6).  The sandy clay loam test now precedes the belt.
+
+    The class tests below are mutually exclusive and ordered coarse->fine, the
+    conventional way to evaluate the triangle.
+    """
+    sand_pct = float(sand_pct)
+    clay_pct = float(clay_pct)
     silt_pct = 100.0 - sand_pct - clay_pct
 
-    if clay_pct >= 40:
-        if sand_pct >= 45:
-            return "sandy_clay"
-        elif silt_pct >= 40:
-            return "silty_clay"
-        else:
-            return "clay"
-    elif clay_pct >= 27:
-        if sand_pct >= 45:
-            return "sandy_clay_loam"
-        elif sand_pct < 20:
-            return "silty_clay_loam"
-        else:
-            return "clay_loam"
-    elif clay_pct >= 20 and sand_pct >= 45:
-        return "sandy_clay_loam"
-    elif silt_pct >= 80:
-        return "silt"
-    elif silt_pct >= 50:
-        return "silt_loam"
-    elif clay_pct < 7 and sand_pct > 85:
-        if sand_pct >= 90:
-            return "sand"
-        else:
-            return "loamy_sand"
-    elif sand_pct >= 85:
+    # Sand limb.  The two limb boundaries use DIFFERENT clay weights: the
+    # sand/loamy-sand line is silt + 1.5*clay = 15, the loamy-sand/sandy-loam
+    # line is silt + 2*clay = 30 (USDA-NRCS).  Using 1.5 on the lower line
+    # contradicted the sandy_loam test below (which already requires
+    # silt + 2*clay >= 30) and stole that wedge -- e.g. sand 72 / clay 3 /
+    # silt 25 (silt + 2*clay = 31, a SANDY LOAM) came back loamy sand,
+    # ISLTYP 2 instead of 3.
+    if silt_pct + 1.5 * clay_pct < 15.0:
         return "sand"
-    elif sand_pct >= 70:
+    if silt_pct + 2.0 * clay_pct < 30.0:
         return "loamy_sand"
-    elif sand_pct >= 43:
+    if ((7.0 <= clay_pct < 20.0 and sand_pct > 52.0 and silt_pct + 2.0 * clay_pct >= 30.0) or
+            (clay_pct < 7.0 and silt_pct < 50.0 and silt_pct + 2.0 * clay_pct >= 30.0)):
         return "sandy_loam"
-    else:
+
+    # Clay corner
+    if clay_pct >= 40.0:
+        if silt_pct >= 40.0:
+            return "silty_clay"
+        if sand_pct > 45.0:
+            return "sandy_clay"
+        return "clay"
+    if clay_pct >= 35.0 and sand_pct > 45.0:
+        return "sandy_clay"
+
+    # Loam belt.  Sandy clay loam FIRST: it shares the 27-35% clay band with
+    # clay loam and is distinguished by sand > 45 / silt < 28, so the belt test
+    # below would otherwise claim it.
+    if 20.0 <= clay_pct < 35.0 and silt_pct < 28.0 and sand_pct > 45.0:
+        return "sandy_clay_loam"
+    if 27.0 <= clay_pct < 40.0:
+        if sand_pct <= 20.0:
+            return "silty_clay_loam"
+        return "clay_loam"
+    if silt_pct >= 80.0 and clay_pct < 12.0:
+        return "silt"
+    if (silt_pct >= 50.0 and 12.0 <= clay_pct < 27.0) or (50.0 <= silt_pct < 80.0 and clay_pct < 12.0):
+        return "silt_loam"
+    if 7.0 <= clay_pct < 27.0 and 28.0 <= silt_pct < 50.0 and sand_pct <= 52.0:
         return "loam"
+
+    return "loam"
 
 
 def read_hwsd_at_point(hwsd_path, lat, lon):

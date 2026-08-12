@@ -1,0 +1,741 @@
+template_version: "3.5"
+
+identity:
+  model_id: "Landlab"
+  scientific_reference_version: "Landlab 2.x component-based Earth-surface-dynamics framework (Hobley et al. 2017 ESurf 5:21-46; Barnhart et al. 2020 Landlab v2.0 ESurf 8:379-397)"
+  implementation:
+    id: "landlab"
+    version: "2.10.1"
+    provenance: "Python with Cython kernels; CSDMS / CU Boulder, U. Washington, Tulane (Landlab Development Team); composable process components on a shared model grid."
+  ki_class: "hybrid_or_framework"
+  is_family_dag: false
+  language: "python"
+  license: "MIT"
+  repo_url: "https://github.com/landlab/landlab"
+
+boundary:
+  scope_in:
+    - "Landscape evolution at catchment-to-landscape scale (slope-area, concavity, steepness, relief, hypsometry)"
+    - "Flow routing and drainage accumulation (D8, D-infinity, MFD, priority-flood)"
+    - "Detachment-limited fluvial erosion (stream power E = K A^m S^n)"
+    - "Transport-limited erosion-deposition and bedrock-alluvium coupling (ErosionDeposition / SPACE)"
+    - "Hillslope sediment transport (linear and nonlinear/depth-dependent diffusion)"
+    - "Soil production by exponential weathering (P = P0 exp(-H/H*))"
+    - "Tectonic forcing (uplift, faulting) and lithospheric flexural isostasy"
+    - "Event-scale overland flow (kinematic-wave Manning and de Almeida 2012 shallow water)"
+    - "Annual sediment yield via detachment-limited stream power"
+  scope_out:
+    - "Does NOT produce a daily discharge hydrograph; not applicable to gauge-discharge streamflow benchmarks"
+    - "surface_water__discharge from FlowAccumulator is steady-state Q = drainage_area * uniform runoff_rate, not a time series"
+    - "No internal unit enforcement (unit-agnostic); consistency is the user's responsibility"
+    - "OverlandFlow shallow-water solver: structured RasterModelGrid only, stable mainly in low-relief terrain"
+    - "SPACE (transport-limited) is unsuitable for annual sediment yield on real DEMs (use detachment-limited stream power instead)"
+  spatial: "2-D grid"
+  temporal: "annual"
+  closure: "mass-balance"
+  notes: "Mass-balance closure applies to the sediment/soil/bedrock columns (topographic__elevation = bedrock__elevation + soil__depth) and to fluvial sediment routing in the ErosionDeposition/SPACE components. The validated workflow this dag describes (slope-area, concavity, steepness, relief, sediment yield at steady state) is landscape evolution: components run on a user-chosen explicit time step in YEARS (e.g. 500 yr/step over 2 Myr) over geologic timescales — hence temporal: annual as the dominant grain. The overland-flow components are a secondary, event-scale capability (seconds-to-hours) with internal adaptive sub-stepping. Landlab performs no internal unit checking, so dimensional consistency across all parameters and the timestep is an external invariant, not a closure the code guarantees. Spatial form is 2-D over a grid (raster/hex/Voronoi/network/icosphere); individual columns behave as 1-D soil/bedrock stacks."
+
+inputs:
+  forcing:
+    - category: forcing
+      name: "initial topography / DEM (topographic__elevation)"
+      unit: "m"
+      source_kind: dataset_lookup
+      model_input_format: "node field topographic__elevation on the model grid (read from gridded elevation; must be projected to a metric CRS)"
+      notes: "Bottom-to-top node ordering; NoData must be masked and set to a closed boundary; elevation in meters (feet inflates slopes ~3.28x)."
+    - category: forcing
+      name: "rainfall / runoff (water__unit_flux_in)"
+      unit: "m/s"
+      source_kind: forcing
+      model_input_format: "node field water__unit_flux_in consumed by FlowAccumulator (scalar or time series)"
+      notes: "Must be m/s; mm/hr or mm/day inflate discharge by ~3.6e6x. For landscape-evolution runs commonly a uniform runoff_rate."
+  parameters:
+    - category: parameter
+      name: "K_sp (stream-power erodibility)"
+      unit: "length^(1-2*m_sp) / time (e.g. 1/yr at m_sp=0.5, n_sp=1.0)"
+      source_kind: calibrated
+      model_input_format: "StreamPowerEroder coefficient in E = K A^m S^n"
+      notes: "Units depend on m_sp,n_sp; a K calibrated for one exponent set is dimensionally invalid for another. Default 0.001 is dimensionally ambiguous and application-specific."
+    - category: parameter
+      name: "m_sp (drainage-area exponent)"
+      unit: "dimensionless"
+      source_kind: calibrated
+      model_input_format: "StreamPowerEroder area exponent in E = K A^m S^n"
+      notes: "Typical 0.3-0.7; m_sp/n_sp ratio sets steady-state concavity (theta = m/n). Default 0.5."
+    - category: parameter
+      name: "n_sp (slope exponent)"
+      unit: "dimensionless"
+      source_kind: calibrated
+      model_input_format: "StreamPowerEroder slope exponent in E = K A^m S^n"
+      notes: "Typical 0.7-2.0. Default 1.0."
+    - category: parameter
+      name: "linear_diffusivity (D)"
+      unit: "m^2/yr (when dt in yr)"
+      source_kind: calibrated
+      model_input_format: "LinearDiffuser hillslope transport coefficient q = -D grad(z)"
+      notes: "Must share time units with dt; literature m^2/s values need conversion. Default 0.01."
+    - category: parameter
+      name: "v_s (effective settling velocity)"
+      unit: "m/yr (landscape-evolution timescale)"
+      source_kind: calibrated
+      model_input_format: "ErosionDeposition/SPACE deposition term controlling transport-vs-detachment regime"
+      notes: "Sets deposition length scale; b->0.5 (detachment-limited) at high v_s, b->1.0 (transport-limited) at low v_s. Default 1.0."
+    - category: parameter
+      name: "K_sed / K_br (SPACE alluvium / bedrock erodibility)"
+      unit: "length^(1-2*m) / time"
+      source_kind: calibrated
+      model_input_format: "SPACE two-layer erodibility coefficients"
+      notes: "Bedrock vs alluvium erodibility in the SPACE bedrock-alluvium law."
+    - category: parameter
+      name: "H_star (alluvial cover decay depth)"
+      unit: "m"
+      source_kind: calibrated
+      model_input_format: "SPACE bedrock-cover effect via exp(-H/H*)"
+      notes: "Sets how alluvial thickness shields bedrock from erosion."
+    - category: parameter
+      name: "soil_production_maximum_rate (P0)"
+      unit: "m/yr"
+      source_kind: calibrated
+      model_input_format: "ExponentialWeatherer maximum production in P = P0 exp(-H/H*)"
+    - category: parameter
+      name: "soil_production_decay_depth (H*)"
+      unit: "m"
+      source_kind: calibrated
+      model_input_format: "ExponentialWeatherer weathering decay depth"
+    - category: parameter
+      name: "mannings_n (overland-flow roughness)"
+      unit: "s/m^(1/3)"
+      source_kind: calibrated
+      model_input_format: "OverlandFlow / KinwaveOverlandFlowModel Manning roughness"
+      notes: "Manning n (0.01-0.1), NOT Chezy C; confusing the two inverts/rescales velocity. Default 0.03."
+  initial_conditions:
+    - category: initial_condition
+      name: "soil__depth (initial regolith thickness)"
+      unit: "m"
+      source_kind: dataset_lookup
+      model_input_format: "node field soil__depth at simulation start"
+      notes: "Must be meters (HWSD cm read as m collapses weathering and SPACE). For SPACE concavity tests initialize > 0 (e.g. 2 m) or SPACE falls back to bedrock-only mode."
+    - category: initial_condition
+      name: "bedrock__elevation"
+      unit: "m"
+      source_kind: derived
+      model_input_format: "node field bedrock__elevation = topographic__elevation - soil__depth"
+      notes: "SPACE/ErosionDeposition auto-create this if absent and maintain the topo = bedrock + soil invariant."
+  boundary_conditions:
+    - category: boundary_condition
+      name: "grid type and geometry"
+      unit: "n/a"
+      source_kind: user_provided
+      model_input_format: "grid class (RasterModelGrid/HexModelGrid/VoronoiDelaunayGrid/NetworkModelGrid/IcosphereGlobalGrid) with shape and xy_spacing in meters"
+      notes: "xy_spacing must be meters; degrees (unreprojected WGS84) inflate slopes ~1e5x."
+    - category: boundary_condition
+      name: "timestep dt"
+      unit: "yr (landscape evolution) | s (overland flow)"
+      source_kind: user_provided
+      model_input_format: "dt argument to each component's run_one_step(dt)"
+      notes: "Must share time units with all rate parameters; mismatch (s vs yr) rescales all rates by ~3.15e7."
+    - category: boundary_condition
+      name: "boundary-node status (status_at_node)"
+      unit: "n/a (NodeStatus code)"
+      source_kind: user_provided
+      model_input_format: "per-node BC: CORE / FIXED_VALUE / FIXED_GRADIENT / LOOPED / CLOSED, set before component instantiation"
+      notes: "At least one open (FIXED_VALUE) outlet required or drainage_area=0. closed_all_but_outlet for watershed sediment-yield; open_all for DEM slope-area clips."
+    - category: boundary_condition
+      name: "uplift_rate (tectonic forcing)"
+      unit: "m/yr"
+      source_kind: user_provided
+      model_input_format: "applied in the user time loop as z[core_nodes] += uplift_rate * dt before flow routing"
+      notes: "Only core nodes uplifted; never fixed-value boundary nodes."
+    - category: boundary_condition
+      name: "runoff_rate (steady-state discharge scaling)"
+      unit: "m/yr (or m/s)"
+      source_kind: user_provided
+      model_input_format: "FlowAccumulator multiplier: steady-state Q = drainage_area * runoff_rate"
+      notes: "Must be consistent with the basin (e.g. Q_mean*3.156e7/(A_basin*1e6)) or SPACE SSC-Q rating curves are wrong."
+    - category: boundary_condition
+      name: "flow-routing / depression-handling method"
+      unit: "n/a"
+      source_kind: user_provided
+      model_input_format: "FlowAccumulator flow_director choice (D8/Dinf/MFD) and optional depression_finder (DepressionFinderAndRouter / PriorityFloodFlowRouter)"
+      notes: "Depression routing is not automatic; real DEMs need it or flow stalls at pits."
+
+processes:
+  modules:
+    - name: "FlowDirector"
+      role: process_solver
+      brief: "Computes flow__receiver_node, flow__link_to_receiver_node, and topographic__steepest_slope from topographic__elevation using single (D8/steepest) or multiple (MFD/D-infinity) receiver schemes."
+    - name: "FlowAccumulator"
+      role: integrator
+      brief: "Runs the configured FlowDirector, builds flow__upstream_node_order (Braun-Willett stack), and accumulates drainage_area and surface_water__discharge; optionally invokes a depression finder."
+    - name: "DepressionFinderAndRouter"
+      role: optional_module
+      brief: "Identifies closed depressions/lakes, sets flood_status_code, and reroutes flow across filled depressions so accumulation is continuous on real DEMs."
+      applicability: "real DEMs with pits; priority-flood variant for large grids"
+    - name: "StreamPowerEroder"
+      role: process_solver
+      brief: "Detachment-limited fluvial incision E = K A^m S^n - threshold via implicit Braun-Willett/Brent Cython solver; updates topographic__elevation in upstream order. Used for annual sediment-yield via detachment-limited stream power."
+    - name: "FastscapeEroder"
+      role: process_solver
+      brief: "FastSCAPE O(n) implicit stream-power solver; same detachment-limited E = K A^m S^n physics as StreamPowerEroder with a different (Fastscape) solver."
+      applicability: "alternate stream-power solver for the same A^m S^n incision physics"
+    - name: "StreamPowerSmoothThreshold"
+      role: process_solver
+      brief: "Smooth-threshold stream-power formulation; A^m S^n incision with a continuously-differentiable erosion threshold instead of a hard cutoff."
+      applicability: "alternate stream-power threshold formulation"
+    - name: "ErosionDeposition"
+      role: process_solver
+      brief: "Davy & Lague 2009 transport-limited erosion-deposition with explicit sediment mass balance (sediment__influx/outflux, soil__depth)."
+    - name: "Space"
+      role: process_solver
+      brief: "Shobe et al. 2017 two-layer bedrock-alluvium erosion-deposition coupling soil and bedrock; partitions erosion by alluvial cover exp(-H/H*)."
+      applicability: "bedrock-alluvium landscape evolution; not for annual sediment yield on real DEMs (transport-limited, ~2.7% export efficiency)"
+    - name: "LinearDiffuser"
+      role: process_solver
+      brief: "Linear hillslope soil creep q = -D grad(z); explicit scheme with internal CFL sub-stepping."
+    - name: "DepthDependentDiffuser"
+      role: process_solver
+      brief: "Depth-dependent hillslope sediment-flux law: soil creep modulated by regolith thickness (transport scales with soil__depth)."
+      applicability: "nonlinear hillslope transport"
+    - name: "TaylorNonlinearHillslopeFlux"
+      role: process_solver
+      brief: "Critical-slope nonlinear hillslope sediment-flux law (Taylor-expansion of the Andrews-Bucknam flux); transport diverges as gradient approaches the critical slope."
+      applicability: "nonlinear hillslope transport"
+    - name: "ExponentialWeatherer"
+      role: process_solver
+      brief: "Soil production P = P0 exp(-H/H*) converting bedrock to soil__depth as a function of current soil thickness."
+    - name: "OverlandFlow"
+      role: process_solver
+      brief: "Kinematic-wave (Manning) and de Almeida et al. 2012 shallow-water surface-water routing producing surface_water__depth and discharge; explicit adaptive-timestep solver keeping Froude <= 1."
+      applicability: "event-scale hydrology; de Almeida solver is RasterModelGrid-only and most stable in low-relief terrain"
+    - name: "NormalFault"
+      role: process_solver
+      brief: "Tectonic normal-fault throw applied as forcing that perturbs topographic__elevation across the hanging-wall block."
+      applicability: "tectonic faulting forcing"
+    - name: "Flexure"
+      role: process_solver
+      brief: "Lithospheric flexural-isostatic deflection (Airy/elastic, gFlex backend) applied as forcing under surface and tectonic loads."
+      applicability: "flexural isostasy forcing"
+    - name: "Lithology"
+      role: optional_module
+      brief: "Tracks spatially/depth-varying rock properties (erodibility, soil production) supplying fields to erosion components as bedrock converts to soil."
+    - name: "ModelGrid"
+      role: integrator
+      brief: "Central data structure holding nodes/links/cells, geometry, status_at_node boundary conditions, and the named shared fields (at_node/at_link) through which all components exchange state; field-based coupling is the framework's coupling mechanism."
+  internal_edges:
+    - from: "uplift_rate"
+      to: "topographic__elevation"
+      kind: writes_state
+      brief: "User-loop tectonic forcing applied to core nodes before flow routing."
+    - from: "topographic__elevation"
+      to: "FlowDirector"
+      kind: reads_state
+      brief: "FlowDirector reads node elevations to compute steepest descent."
+    - from: "FlowDirector"
+      to: "FlowAccumulator"
+      kind: invokes
+      brief: "FlowAccumulator runs the configured FlowDirector each step and reads its receiver array."
+    - from: "FlowAccumulator"
+      to: "DepressionFinderAndRouter"
+      kind: invokes
+      brief: "Optionally invokes the depression finder to route across pits before accumulation."
+    - from: "water__unit_flux_in"
+      to: "FlowAccumulator"
+      kind: consumes_input
+      brief: "Local runoff field scales accumulated steady-state discharge."
+    - from: "FlowAccumulator"
+      to: "drainage_area"
+      kind: writes_state
+      brief: "Writes drainage_area, surface_water__discharge, and flow__upstream_node_order."
+    - from: "DepressionFinderAndRouter"
+      to: "flood_status_code"
+      kind: writes_state
+      brief: "Writes lake/flood status consumed by erosion components."
+    - from: "drainage_area"
+      to: "StreamPowerEroder"
+      kind: reads_state
+      brief: "Stream-power incision reads upstream area as the discharge proxy; FlowAccumulator MUST run first."
+    - from: "flow__upstream_node_order"
+      to: "StreamPowerEroder"
+      kind: reads_state
+      brief: "Brent-method implicit solve sweeps nodes in topological order."
+    - from: "flood_status_code"
+      to: "StreamPowerEroder"
+      kind: reads_state
+      brief: "When erode_flooded_nodes is False, flooded nodes are excluded from incision."
+    - from: "StreamPowerEroder"
+      to: "topographic__elevation"
+      kind: writes_state
+      brief: "Lowers elevation by computed incision in place."
+    - from: "drainage_area"
+      to: "FastscapeEroder"
+      kind: reads_state
+      brief: "FastSCAPE solver reads upstream area as the discharge proxy for A^m S^n incision; FlowAccumulator MUST run first."
+    - from: "FastscapeEroder"
+      to: "topographic__elevation"
+      kind: writes_state
+      brief: "Lowers elevation by the FastSCAPE-solved detachment-limited incision in place."
+    - from: "drainage_area"
+      to: "StreamPowerSmoothThreshold"
+      kind: reads_state
+      brief: "Smooth-threshold stream-power reads upstream area for the A^m S^n incision term."
+    - from: "StreamPowerSmoothThreshold"
+      to: "topographic__elevation"
+      kind: writes_state
+      brief: "Lowers elevation by the smooth-threshold incision in place."
+    - from: "drainage_area"
+      to: "ErosionDeposition"
+      kind: reads_state
+      brief: "Transport-limited law uses area/discharge for transport capacity."
+    - from: "ErosionDeposition"
+      to: "soil__depth"
+      kind: writes_state
+      brief: "Updates sediment thickness via erosion/deposition mass balance."
+    - from: "ErosionDeposition"
+      to: "sediment__influx"
+      kind: produces_output
+      brief: "Writes sediment influx/outflux flux fields."
+    - from: "soil__depth"
+      to: "Space"
+      kind: reads_state
+      brief: "SPACE reads regolith thickness to partition bedrock vs alluvial erosion."
+    - from: "Space"
+      to: "bedrock__elevation"
+      kind: writes_state
+      brief: "Lowers bedrock and re-syncs topographic__elevation = bedrock + soil."
+    - from: "topographic__elevation"
+      to: "LinearDiffuser"
+      kind: reads_state
+      brief: "Hillslope diffuser reads elevation gradients (independent of flow routing)."
+    - from: "LinearDiffuser"
+      to: "topographic__elevation"
+      kind: writes_state
+      brief: "Diffuses (smooths) elevation in place over dt with internal CFL sub-stepping."
+    - from: "topographic__elevation"
+      to: "DepthDependentDiffuser"
+      kind: reads_state
+      brief: "Depth-dependent diffuser reads elevation gradients; flux also depends on soil__depth."
+    - from: "DepthDependentDiffuser"
+      to: "topographic__elevation"
+      kind: writes_state
+      brief: "Applies depth-modulated hillslope creep to elevation in place."
+    - from: "topographic__elevation"
+      to: "TaylorNonlinearHillslopeFlux"
+      kind: reads_state
+      brief: "Critical-slope nonlinear flux reads elevation gradients."
+    - from: "TaylorNonlinearHillslopeFlux"
+      to: "topographic__elevation"
+      kind: writes_state
+      brief: "Applies critical-slope nonlinear hillslope flux to elevation in place."
+    - from: "soil__depth"
+      to: "ExponentialWeatherer"
+      kind: reads_state
+      brief: "Soil production P = P0 exp(-H/H*) depends on current soil thickness."
+    - from: "ExponentialWeatherer"
+      to: "soil__depth"
+      kind: writes_state
+      brief: "Adds bedrock-to-soil production to regolith thickness."
+    - from: "Lithology"
+      to: "StreamPowerEroder"
+      kind: produces_output
+      brief: "Supplies spatially varying K_sp erodibility field to erosion components."
+    - from: "topographic__elevation"
+      to: "OverlandFlow"
+      kind: reads_state
+      brief: "Shallow-water solver reads bed elevation to compute water-surface gradients."
+    - from: "OverlandFlow"
+      to: "surface_water__depth"
+      kind: writes_state
+      brief: "Writes evolving flow depth and discharge."
+    - from: "NormalFault"
+      to: "topographic__elevation"
+      kind: writes_state
+      brief: "Applies fault throw as tectonic forcing on the surface."
+    - from: "Flexure"
+      to: "topographic__elevation"
+      kind: writes_state
+      brief: "Applies flexural-isostatic deflection under loads."
+    - from: "StreamPowerEroder"
+      to: "Outputs"
+      kind: produces_output
+      brief: "Final landscape topography and derived slope-area metrics (concavity, steepness, relief, sediment yield)."
+
+states:
+  variables:
+    - name: "topographic__elevation"
+      unit: "m"
+      role: prognostic
+    - name: "bedrock__elevation"
+      unit: "m"
+      role: prognostic
+    - name: "soil__depth"
+      unit: "m"
+      role: prognostic
+    - name: "drainage_area"
+      unit: "m^2"
+      role: diagnostic
+    - name: "surface_water__discharge"
+      unit: "m^3/s"
+      role: diagnostic
+    - name: "topographic__steepest_slope"
+      unit: "dimensionless"
+      role: diagnostic
+    - name: "flow__receiver_node"
+      unit: "node ID"
+      role: diagnostic
+    - name: "flow__upstream_node_order"
+      unit: "node ID order"
+      role: diagnostic
+    - name: "flood_status_code"
+      unit: "status code"
+      role: diagnostic
+    - name: "sediment__influx"
+      unit: "m^3/s"
+      role: diagnostic
+    - name: "sediment__outflux"
+      unit: "m^3/s"
+      role: diagnostic
+    - name: "surface_water__depth"
+      unit: "m"
+      role: prognostic
+    - name: "soil_production__rate"
+      unit: "m/yr"
+      role: diagnostic
+    - name: "status_at_node"
+      unit: "NodeStatus code"
+      role: diagnostic
+  provenance: "populated"
+
+outputs:
+  - var: "topographic__elevation"
+    validation_rank: 4
+    unit: "m"
+    description: "Final land-surface elevation of the evolved landscape (node field)."
+    emitted_in: "Landlab grid field at_node; written to ESRI ASCII (.asc) / NetCDF (.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats:
+            - "Compare against a DEM in the same metric CRS and vertical unit; Landlab stores nodes bottom-to-top."
+            - "Absolute elevation match is rarely meaningful; topographic-derivative metrics (slope-area, hypsometry) are the defensible targets."
+      detrending_options: ["none", "linear_residual"]
+  - var: "concavity (theta)"
+    validation_rank: 5
+    unit: "dimensionless"
+    description: "Slope-area concavity index theta = -d(logS)/d(logA); at steady state expected to approach m_sp/n_sp."
+    emitted_in: "derived metric from slope-area regression on the grid"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Use a 2-D spatial gradient |grad z| (not D8 receiver slope on a depression-filled DEM) and bin in log-spaced area bins."
+            - "Single-outlet boundary on a DEM clip depresses theta; use open_all boundaries for slope-area on clips."
+      detrending_options: ["none"]
+  - var: "steepness (ks)"
+    validation_rank: 6
+    unit: "dimensionless (channel steepness index)"
+    description: "Channel steepness index from the slope-area regression."
+    emitted_in: "derived metric from slope-area regression"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Sensitive to grid cell width unless K*v0^m is held constant; report with the reference drainage area."
+      detrending_options: ["none"]
+  - var: "relief"
+    validation_rank: 7
+    unit: "m"
+    description: "Max-minus-min elevation over core nodes; landscape relief at steady state."
+    emitted_in: "derived metric over core nodes"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Compare against relief computed over the same domain extent and resolution."
+      detrending_options: ["none"]
+  - var: "sediment_yield"
+    validation_rank: 1
+    unit: "t/km^2/yr"
+    description: "Annual catchment sediment yield via detachment-limited stream power (E = K_sp A^m S^n converted by bulk density)."
+    emitted_in: "derived metric (detachment-limited stream-power export)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Use detachment-limited stream power, NOT SPACE, for annual sediment yield on real DEMs (SPACE transport-limited export is ~2.7% of gross erosion)."
+            - "Requires consistent bulk density and runoff_rate calibrated to the basin."
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Multi-year yield records carry land-use and reservoir-trapping signals a process model cannot reproduce; compare decadal means / trends, not inter-annual r."
+      detrending_options: ["none", "decadal_mean"]
+  - var: "sediment__outflux (SPACE Qs)"
+    validation_rank: 2
+    unit: "m^3/s (or kg/s)"
+    description: "Sediment flux out of a node; the Qs in the SPACE Qs-Q rating relationship."
+    emitted_in: "Landlab grid field at_node (SPACE / ErosionDeposition)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Fit log(Qs) vs log(Q) directly (Qs ~ Q^b); do NOT fit SSC = Qs/Q vs Q, which is always negatively sloped."
+            - "Defensible exponent range b in [0.35, 1.20] reflects detachment-limited (b~0.5) to transport-limited (b~1.0) regimes."
+      detrending_options: ["none"]
+  - var: "soil__depth"
+    validation_rank: 8
+    unit: "m"
+    description: "Regolith/soil thickness above bedrock (node field)."
+    emitted_in: "Landlab grid field at_node"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats:
+            - "Soil-depth observations must be in meters; ensure HWSD-style cm inputs were converted."
+      detrending_options: ["none"]
+  - var: "surface_water__discharge (steady-state)"
+    validation_rank: 3
+    unit: "m^3/s"
+    description: "Steady-state discharge Q = drainage_area * runoff_rate from FlowAccumulator; NOT a hydrograph time series."
+    emitted_in: "Landlab grid field at_node (FlowAccumulator)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats:
+            - "This is a steady-state spatial field, not a gauge hydrograph; do not compare against a daily discharge time series."
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "K_sp (stream-power fluvial erodibility)"
+      to: "topographic__elevation / channel-metric objective function"
+      sensitivity_grade: "HIGH"
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "fluvial / stream-power erosion; higher in steep high-relief terrain"
+      citations: ["barnhart2020_landlab_morris_sensitivity_part1", "barnhart2020_landlab_calibration_part2"]
+    - from: "K_sp (fluvial erodibility)"
+      to: "channel steepness index (k_sn)"
+      sensitivity_grade: "HIGH"
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["litwin2025_diffusion_channel_steepness"]
+    - from: "linear_diffusivity (D, hillslope/regolith transport)"
+      to: "channel steepness index (k_sn) / hillslope relief"
+      sensitivity_grade: "HIGH"
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["litwin2025_diffusion_channel_steepness"]
+    - from: "linear_diffusivity (D)"
+      to: "topographic objective function (overall misfit)"
+      sensitivity_grade: "MEDIUM"
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "important only for select outputs; lower overall than channel-erosion parameters"
+      citations: ["barnhart2020_landlab_morris_sensitivity_part1"]
+    - from: "m_sp (drainage-area exponent)"
+      to: "channel steepness / concavity / topography"
+      sensitivity_grade: "MEDIUM"
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["litwin2025_diffusion_channel_steepness", "barnhart2019_terrainbento_landlab"]
+    - from: "n_sp (slope exponent)"
+      to: "channel steepness index (k_sn)"
+      sensitivity_grade: "MEDIUM"
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["litwin2025_diffusion_channel_steepness"]
+    - from: "grid cell width / resolution (v0)"
+      to: "channel steepness index (k_sn)"
+      sensitivity_grade: "MEDIUM"
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "steepness drifts with cell width unless K*v0^m held constant"
+      citations: ["litwin2025_diffusion_channel_steepness"]
+    - from: "sediment transport-law choice"
+      to: "sediment yield (Qs)"
+      sensitivity_grade: "HIGH"
+      basis: cross_family_model_literature
+      lever_type: structural
+      applicability: "cross-family (CAESAR-Lisflood) Morris SA; order-of-magnitude yield differences"
+      citations: ["skinner2018_lem_morris_global_sa"]
+    - from: "lateral erosion rate"
+      to: "internal geomorphic change / sediment yield"
+      sensitivity_grade: "MEDIUM"
+      basis: cross_family_model_literature
+      lever_type: parameter
+      citations: ["skinner2018_lem_morris_global_sa"]
+    - from: "critical slope / slope-failure threshold"
+      to: "internal geomorphic change"
+      sensitivity_grade: "MEDIUM"
+      basis: cross_family_model_literature
+      lever_type: parameter
+      citations: ["skinner2018_lem_morris_global_sa"]
+    - from: "erosion threshold (threshold_sp)"
+      to: "channel erosion / topography"
+      sensitivity_grade: "LOW"
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["barnhart2020_landlab_morris_sensitivity_part1", "barnhart2019_terrainbento_landlab"]
+    - from: "initial and boundary conditions / initial topography"
+      to: "topographic objective function"
+      sensitivity_grade: "LOW"
+      basis: literature_quantitative
+      lever_type: structural
+      citations: ["barnhart2020_landlab_morris_sensitivity_part1"]
+    - from: "grain size"
+      to: "sediment yield / model functions"
+      sensitivity_grade: "LOW"
+      basis: cross_family_model_literature
+      lever_type: parameter
+      citations: ["skinner2018_lem_morris_global_sa"]
+  citation_index:
+    barnhart2020_landlab_morris_sensitivity_part1:
+      short_citation: "Barnhart et al. 2020 (Part 1)"
+      doi: "10.1029/2018JF004961"
+      note: "Method of Morris global SA on the Landlab/terrainbento LEM hierarchy; fluvial-erosion parameters consistently most influential, hillslope diffusivity select-output only, IC/BC low sensitivity."
+    barnhart2020_landlab_calibration_part2:
+      short_citation: "Barnhart et al. 2020 (Part 2)"
+      doi: "10.1029/2018JF004963"
+      note: "Calibration/validation of the Landlab/terrainbento hierarchy; fluvial erodibility and m/n exponents are leading calibratable controls."
+    barnhart2019_terrainbento_landlab:
+      short_citation: "Barnhart et al. 2019"
+      doi: "10.5194/gmd-12-1267-2019"
+      note: "terrainbento 1.0 (28 Landlab model programs); defines the K, diffusivity, m/n, threshold parameter set governing simulated topography."
+    litwin2025_diffusion_channel_steepness:
+      short_citation: "Litwin et al. 2025"
+      doi: "10.5194/esurf-13-277-2025"
+      note: "SPLD model in Landlab; increasing hillslope diffusivity systematically raises channel steepness, strongest at small n; grid cell width affects steepness unless K*v0^m fixed."
+    skinner2018_lem_morris_global_sa:
+      short_citation: "Skinner et al. 2018"
+      doi: "10.5194/gmd-11-4873-2018"
+      note: "Morris global SA on CAESAR-Lisflood (cross-family LEM); sediment-transport-formula choice by far the most sensitive control on sediment yield."
+
+safety:
+  hazards:
+    - id: "rainfall_unit_inflates_discharge"
+      kind: weather_file_semantic
+      description: "water__unit_flux_in supplied in mm/hr or mm/day instead of m/s inflates discharge by ~3.6e6x, causing runaway erosion; Landlab does not check units."
+      severity: silent
+    - id: "diffusivity_time_unit_mismatch"
+      kind: numerical_instability
+      description: "LinearDiffuser D in m^2/s while dt is in years flattens hillslopes within one step (effective D*dt enormous)."
+      severity: silent
+    - id: "K_sp_exponent_mismatch"
+      kind: coefficient_runtime_silent_fallback
+      description: "K_sp reused across different m_sp/n_sp exponents; units of K depend on m,n so erosion is off by orders of magnitude."
+      severity: silent
+    - id: "grid_spacing_in_degrees"
+      kind: soil_semantic
+      description: "Grid xy_spacing in degrees (unreprojected WGS84 DEM) makes dx ~0.0003 and slopes ~1e5x too steep."
+      severity: silent
+    - id: "timestep_time_unit_mismatch"
+      kind: control_semantic
+      description: "dt in seconds while K/D/uplift are per-year (or vice versa) rescales all rates by ~3.15e7; no internal check exists."
+      severity: silent
+    - id: "soil_depth_cm_as_m"
+      kind: soil_semantic
+      description: "Soil depth in cm used as meters collapses ExponentialWeatherer production to ~0 so SPACE cannot erode bedrock."
+      severity: silent
+    - id: "elevation_feet_as_m"
+      kind: soil_semantic
+      description: "Elevation in feet with meter spacing makes slopes and erosion ~3.28x too high."
+      severity: silent
+    - id: "manning_chezy_confusion"
+      kind: coefficient_runtime_silent_fallback
+      description: "Manning n confused with Chezy C in overland-flow components inverts/rescales velocity by 500-5000x."
+      severity: silent
+    - id: "dem_nodata_not_closed"
+      kind: weather_file_semantic
+      description: "DEM NoData (-9999) not masked as closed boundary is treated as very low elevation, so D8 routing converges flow into NoData regions."
+      severity: degraded
+    - id: "all_boundaries_closed"
+      kind: control_semantic
+      description: "All grid boundaries closed leaves no outlet; drainage_area=0 everywhere and erosion never occurs."
+      severity: fatal
+    - id: "no_depression_routing"
+      kind: control_semantic
+      description: "Real DEM with pits and no DepressionFinder/PriorityFlood routing stalls D8 flow at pits, creating artificial plateaus."
+      severity: degraded
+    - id: "diffusion_cfl_violation"
+      kind: numerical_instability
+      description: "External sub-stepping or very high D defeats LinearDiffuser internal sub-stepping (D*dt/dx^2 >= 0.15), producing checkerboard/NaN oscillation."
+      severity: degraded
+    - id: "erosion_before_flowaccumulator"
+      kind: control_semantic
+      description: "Erosion component run before FlowAccumulator in the time loop reads uninitialized zero drainage_area, so no erosion occurs."
+      severity: fatal
+    - id: "field_at_wrong_grid_element"
+      kind: parser_semantic
+      description: "Field added at the wrong grid element (cell vs node vs link) raises FieldError or silently reads all-zeros."
+      severity: fatal_or_silent
+    - id: "space_used_for_annual_sediment_yield"
+      kind: control_semantic
+      description: "SPACE (transport-limited) used for annual sediment yield on a real DEM returns near-zero export (~2.7% efficiency); detachment-limited stream power is required instead."
+      severity: silent
+  validation_limits:
+    - "Does not produce a daily discharge hydrograph; not applicable to gauge-discharge streamflow benchmarks (use a hydrologic model)."
+    - "surface_water__discharge from FlowAccumulator is steady-state, not a time series."
+    - "OverlandFlow de Almeida shallow-water solver operates on RasterModelGrid only and is most stable in low-relief terrain; instabilities arise on steep landscapes."
+    - "SPACE is a geologic-timescale landscape-evolution model and is structurally unsuited to annual sediment-yield estimation on real DEMs."
+    - "Unit-agnostic: no internal dimensional checking, so all dimensional correctness is external to the model."
+  warnings:
+    - "FlowAccumulator must run before any erosion component each timestep, and again after erosion changes topography."
+    - "Set boundary-node status before component instantiation; at least one open (FIXED_VALUE) outlet is required."
+    - "Only core nodes should be uplifted; uplifting fixed-value boundary nodes corrupts the outlet condition."
+    - "Components couple only through shared named grid fields; a component that mutates topographic__elevation directly can silently break the topo = bedrock + soil invariant maintained by SPACE/ErosionDeposition."
+    - "For slope-area concavity use a 2-D spatial gradient and log-area binning, and open_all boundaries on DEM clips; D8 receiver slope on a depression-filled DEM collapses the regression."
+    - "Fit SPACE Qs-Q as log(Qs) vs log(Q) directly; fitting SSC=Qs/Q vs Q yields a spurious always-negative exponent."
+  assumptions:
+    - statement: "This dag describes the validated landscape-evolution workflow (flow routing -> stream-power/SPACE erosion -> hillslope diffusion -> weathering) composed from Landlab components, not the full ~60-component framework."
+      scope: "scope and module selection"
+      source: "Landlab User Guide (components) and Hobley et al. 2017 ESurf 5:21-46"
+      status: adopted
+    - statement: "The dominant temporal grain is annual: the validated workflow steps in years (e.g. 500 yr/step over 2 Myr) over geologic landscape-evolution timescales; the event-scale overland-flow components are a secondary capability."
+      scope: "temporal scale"
+      source: "Landlab User Guide and Hobley et al. 2017 ESurf 5:21-46"
+      status: adopted
+    - statement: "Geometry is treated as 2-D over a model grid with 1-D vertical soil/bedrock columns (topographic__elevation = bedrock__elevation + soil__depth)."
+      scope: "geometry / closure"
+      source: "Landlab grid User Guide and SPACE/ErosionDeposition component field invariant"
+      status: adopted
+    - statement: "Mass-balance closure holds for the sediment/soil/bedrock columns and fluvial sediment routing; there is no internal unit or energy-balance closure (the framework is unit-agnostic)."
+      scope: "closure"
+      source: "Landlab components User Guide; component _info field metadata"
+      status: adopted
+    - statement: "soil_production__rate (m/yr) is the standard ExponentialWeatherer output field (the P in P = P0 exp(-H/H*)); it is reported in the docs output table though not enumerated among the source-level grid state fields."
+      scope: "states / ExponentialWeatherer output grounding"
+      source: "Landlab ExponentialWeatherer component documentation"
+      status: tentative
+    - statement: "v_s is interpreted in m/yr at landscape-evolution timescales, despite the calibration table listing m/s, because the validated SPACE configuration uses v_s = 5 m/yr."
+      scope: "ErosionDeposition/SPACE settling velocity units"
+      source: "Landlab ErosionDeposition/SPACE component documentation and the validated SPACE configuration"
+      status: tentative
+    - statement: "Annual sediment yield is obtained via detachment-limited stream power (E = K_sp A^m S^n), and SPACE is reserved for transport-limited landscape evolution."
+      scope: "sediment-yield methodology"
+      source: "Shobe et al. 2017 SPACE (GMD) vs Whipple & Tucker 1999 stream-power incision (JGR)"
+      status: adopted

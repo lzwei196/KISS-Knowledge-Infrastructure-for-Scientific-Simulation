@@ -28,11 +28,16 @@ def check_dir(path, label):
         FAIL += 1
 
 def check_import(module, label):
-    # Also search HydroCraft python_env for packages
+    # NOTE 2026-08-09: this used to sys.path.INSERT(0) the shared HydroCraft
+    # python_env in front of everything, which SHADOWS the SimFire venv with a
+    # different, older dependency set — every import then failed with
+    #   ImportError: cannot import name 'Sequence' from 'collections'
+    # i.e. the preflight reported the whole stack broken while the venv was
+    # fine. Append instead, so the venv always wins.
     import sys
     _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
     if _penv not in sys.path:
-        sys.path.insert(0, _penv)
+        sys.path.append(_penv)
     global PASS, FAIL
     try:
         __import__(module)
@@ -47,11 +52,59 @@ def main():
     global PASS, FAIL
     print(f"{' PREFLIGHT: SimFire ':=^60}")
     print()
-    # SimFire in dissection venv
+    # SimFire lives in the dissection venv, not the shared HydroCraft python_env.
+    # NOTE 2026-08-09: this file previously did not PARSE — an orphan indented
+    # print() on the line after sys.path.insert raised IndentationError, so
+    # `python preflight_check.py` (which SKILL.md tells you to run FIRST) always
+    # died before printing anything. Rebuilt as a real check.
     import sys
-    sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/SimFire/venv/lib/python3.12/site-packages")
-        print("  WARN  SimFire: svglib dependency missing in venv — game module broken but fire sim may work")
-    PASS += 1
+    venv_sp = ("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/"
+               "SimFire/venv/lib/python3.12/site-packages")
+    if venv_sp not in sys.path:
+        sys.path.insert(0, venv_sp)
+
+    check_dir(venv_sp, "SimFire venv site-packages")
+    check_import("simfire.sim.simulation", "SimFire package")
+    # Hard runtime deps that are NOT in the venv as shipped and that the
+    # operational path needs (verified 2026-08-09):
+    #   rasterio  — georeferencing the LandFire raster for perimeter scoring
+    #   xarray    — imported eagerly by ki_tools_common/__init__
+    #   zarr>=3,<3.2 — geotiff -> tifffile.aszarr; zarr<3 AND zarr>=3.2 both
+    #                  raise "zarr X < 3 is not supported" (3.2 dropped
+    #                  zarr.core.chunk_grids.RegularChunkGrid)
+    check_import("rasterio", "rasterio (LandFire georeferencing)")
+    check_import("xarray", "xarray (ki_tools_common import chain)")
+    check_import("geopandas", "geopandas (MTBS perimeters)")
+    try:
+        import zarr
+        from zarr.core.chunk_grids import RegularChunkGrid  # noqa: F401
+        print(f"  OK    zarr {zarr.__version__} compatible with tifffile.aszarr")
+        PASS += 1
+    except Exception as exc:
+        print(f"  FAIL  zarr/tifffile incompatibility: {exc}")
+        print("         Fix: pip install 'zarr>=3,<3.2'")
+        FAIL += 1
+
+    check_file(
+        "/mnt/disk1/Hydrocraft_server/data/obs/fire_perimeters/mtbs/"
+        "mtbs_perims/mtbs_perims_DD.shp",
+        "MTBS fire perimeters (validation obs)",
+    )
+
+    # LandFire Product Service v2 (the legacy GPServer endpoint is retired).
+    try:
+        import requests
+        s = requests.Session()
+        s.trust_env = False   # lfps.usgs.gov fails TLS through the proxy
+        r = s.get("https://lfps.usgs.gov/api/products", timeout=60)
+        n = len(r.json().get("products", []))
+        print(f"  OK    LFPS v2 reachable ({n} products)")
+        PASS += 1
+    except Exception as exc:
+        print(f"  FAIL  LFPS v2 unreachable: {exc}")
+        print("         Operational terrain/fuel cannot be downloaded. See dt_020.")
+        FAIL += 1
+
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

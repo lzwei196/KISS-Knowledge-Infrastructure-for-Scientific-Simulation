@@ -99,8 +99,32 @@ def process(args):
     tstop = parse_datetime(args.end_date)
 
     # --- Compute stable timestep ---
+    # dt_009: the CFL limit is set by the DEEPEST standing water in the domain, not by a
+    # nominal 10 m flood. A coastal/fjord domain whose bed reaches -135 m carries
+    # h = zsini - bed = 135 m of water from t=0, where dx/sqrt(g*h) is 2.7 s, not 10.1 s —
+    # so a hard-coded h_max=10 writes a dt ~4x above the true limit. Read the real
+    # bathymetry from s2's topobathy_summary.json whenever it is available.
     g = 9.81
-    h_max = 10.0  # Assumed max flood depth
+    h_max = 10.0  # fallback: assumed max flood depth
+    h_max_source = "default (assumed 10 m flood depth)"
+    if getattr(args, "h_max", None) is not None:
+        h_max = float(args.h_max)
+        h_max_source = "--h_max"
+    elif args.topobathy_dir:
+        summary_file = Path(args.topobathy_dir) / "topobathy_summary.json"
+        if summary_file.exists():
+            try:
+                with open(summary_file) as f:
+                    tb = json.load(f)
+                elev_min = tb.get("elevation_min")
+                if elev_min is not None:
+                    h_std = float(args.zsini) - float(elev_min)   # standing water depth
+                    h_max = max(10.0, h_std)
+                    h_max_source = (f"topobathy_summary.json (elevation_min={float(elev_min):.1f} m, "
+                                    f"zsini={float(args.zsini):.2f} m)")
+            except Exception as e:
+                logger.warning(f"Could not read {summary_file} for CFL h_max: {e}")
+    logger.info(f"CFL h_max = {h_max:.1f} m from {h_max_source}")
     dt_cfl = dx / np.sqrt(g * h_max)
     dt = max(0.5, min(dt_cfl * 0.75, 30.0))  # Safety factor 0.75
 
@@ -147,7 +171,13 @@ def process(args):
     lines.append(f"tstop          = {tstop_str}")
     lines.append(f"dt             = {dt}")
     lines.append(f"dtout          = {args.dtout:.1f}")
-    lines.append(f"dthisout       = {min(args.dtout, 600.0):.1f}")
+    lines.append(f"dthisout       = {min(args.dtout, args.dthisout):.1f}")
+    # dtmaxout controls the hmax/zsmax ("maximum-over-window") fields that s8 needs.
+    # Setting it to the FULL simulation length gives exactly one hmax field covering the
+    # whole event, which is what extract_sfincs_results.py reads (dt_v007).
+    if args.dtmaxout is not None:
+        dtmaxout = args.dtmaxout if args.dtmaxout > 0 else (tstop - tstart).total_seconds()
+        lines.append(f"dtmaxout       = {dtmaxout:.1f}")
     lines.append("")
 
     # Physics
@@ -158,8 +188,12 @@ def process(args):
         lines.append(f"manning        = {args.manning:.4f}")
     lines.append(f"zsini          = {args.zsini:.2f}")
     lines.append(f"qinf           = {args.qinf:.2f}")
-    lines.append("advection      = 0")
-    lines.append("alpha          = 0.75")
+    # advection: 0 = friction-dominated (pluvial/overland, SFINCS default here);
+    # 1 = include the momentum advection terms — needed for FLUVIAL reaches where the
+    # velocity head is not negligible (Fraser at 2-3 m/s), otherwise a constriction
+    # builds an unphysically deep backwater.
+    lines.append(f"advection      = {int(args.advection)}")
+    lines.append(f"alpha          = {args.alpha:.2f}")
     lines.append("")
 
     # Subgrid / topobathy
@@ -268,9 +302,25 @@ if __name__ == "__main__":
     parser.add_argument("--src_file", default=None, help="Path to sfincs.src")
     parser.add_argument("--dis_file", default=None, help="Path to sfincs.dis")
     parser.add_argument("--obs_file", default=None, help="Path to sfincs.obs")
-    parser.add_argument("--dtout", type=float, default=3600.0, help="Output interval (seconds)")
+    parser.add_argument("--dtout", type=float, default=3600.0, help="Map output interval (seconds)")
+    parser.add_argument("--dthisout", type=float, default=600.0,
+                        help="Observation-point (sfincs_his.nc) output interval in seconds. "
+                             "The written value is min(dtout, dthisout).")
+    parser.add_argument("--dtmaxout", type=float, default=None,
+                        help="Interval (s) for the hmax/zsmax maximum fields. Pass 0 for "
+                             "'one field over the whole simulation' (what s8 expects). "
+                             "Omit to leave dtmaxout out of sfincs.inp entirely.")
     parser.add_argument("--zsini", type=float, default=0.0, help="Initial water level (m)")
     parser.add_argument("--qinf", type=float, default=0.0, help="Infiltration rate (mm/hr)")
+    parser.add_argument("--advection", type=int, default=0, choices=[0, 1],
+                        help="0 = friction-dominated (pluvial, default); 1 = include "
+                             "momentum advection (fluvial reaches with fast flow)")
+    parser.add_argument("--alpha", type=float, default=0.75,
+                        help="SFINCS CFL safety factor for its adaptive timestep")
+    parser.add_argument("--h_max", type=float, default=None,
+                        help="Max water depth (m) used for the CFL timestep. Default: "
+                             "derived from --topobathy_dir/topobathy_summary.json "
+                             "(zsini - elevation_min), else 10 m.")
     parser.add_argument("--output_dir", required=True, help="Output directory")
     args = parser.parse_args()
 

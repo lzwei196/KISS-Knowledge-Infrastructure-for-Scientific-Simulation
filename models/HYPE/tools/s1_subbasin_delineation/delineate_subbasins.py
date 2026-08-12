@@ -97,12 +97,26 @@ def create_subbasins_from_basin(basin_shp, n_subbasins, output_dir):
                       minx + (j + 1) * dx, miny + (i + 1) * dy)
             intersection = basin_geom.intersection(cell)
             if not intersection.is_empty and intersection.area > 0:
+                from shapely.geometry import Polygon, MultiPolygon, GeometryCollection
+                # Keep only polygon parts (edge intersections can produce LineStrings)
+                if isinstance(intersection, (Polygon, MultiPolygon)):
+                    poly = intersection
+                elif isinstance(intersection, GeometryCollection):
+                    polys = [g for g in intersection.geoms if isinstance(g, (Polygon, MultiPolygon))]
+                    if not polys:
+                        continue
+                    from shapely.ops import unary_union
+                    poly = unary_union(polys)
+                    if poly.is_empty or poly.area == 0:
+                        continue
+                else:
+                    continue
                 subbasins.append({
                     'SUBID': subid,
-                    'geometry': intersection,
-                    'AREA': intersection.area * 111000 * 111000 * np.cos(np.radians((miny + maxy) / 2)),
-                    'LATITUDE': intersection.centroid.y,
-                    'LONGITUDE': intersection.centroid.x,
+                    'geometry': poly,
+                    'AREA': poly.area * 111000 * 111000 * np.cos(np.radians((miny + maxy) / 2)),
+                    'LATITUDE': poly.centroid.y,
+                    'LONGITUDE': poly.centroid.x,
                 })
                 subid += 1
 

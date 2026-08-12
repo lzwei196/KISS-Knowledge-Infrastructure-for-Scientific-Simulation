@@ -1,165 +1,252 @@
 model:
-  name: "CREST"
-  full_name: "Coupled Routing and Excess STorage"
-  framework: "EF5 (Ensemble Framework For Flash Flood Forecasting) v1.2.3"
-  domain: "distributed hydrological modeling"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/CREST/source/repo/build/ef5"
-  language: "C++ (C++11, OpenMP)"
-  config_format: "INI-style control file (control.txt)"
-
+  name: CREST
+  full_name: Coupled Routing and Excess STorage
+  framework: EF5 (Ensemble Framework For Flash Flood Forecasting) v1.2.3
+  domain: flood
+  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/CREST/source/repo/build/ef5
+  language: C++ (C++11, OpenMP)
+  config_format: INI-style control file (control.txt)
+  ki_version: 1.1.0
+  kdt_version: 5.1.2
 inputs:
   forcing:
-    - name: "precipitation"
-      unit: "mm/h"
-      config_key: "PrecipForcing"
-      formats: ["ASC", "BIF", "TIF", "TRMMRT", "TRMMV7", "MRMS"]
-      valid_range: [0.0, 300.0]
-      description: "Gridded precipitation rate"
-    - name: "potential_evapotranspiration"
-      unit: "mm/h"
-      config_key: "PETForcing"
-      formats: ["ASC", "BIF", "TIF"]
-      valid_range: [0.0, 20.0]
-      description: "Gridded PET rate; can also accept temperature (C) for internal PET calculation"
+  - name: precipitation
+    unit: mm/h
+    config_key: PrecipForcing
+    formats:
+    - ASC
+    - BIF
+    - TIF
+    - TRMMRT
+    - TRMMV7
+    - MRMS
+    valid_range:
+    - 0.0
+    - 300.0
+    description: Gridded precipitation rate
+  - name: potential_evapotranspiration
+    unit: mm/h
+    config_key: PETForcing
+    formats:
+    - ASC
+    - BIF
+    - TIF
+    valid_range:
+    - 0.0
+    - 20.0
+    description: Gridded PET rate; can also accept temperature (C) for internal PET
+      calculation
   grids:
-    - name: "DEM"
-      unit: "meters"
-      config_key: "DEM"
-      description: "Digital elevation model"
-    - name: "DDM"
-      unit: "direction_code"
-      config_key: "DDM"
-      description: "Drainage direction map (ESRI 1-128 or TauDEM 1-8 encoding)"
-    - name: "FAM"
-      unit: "cell_count"
-      config_key: "FAM"
-      description: "Flow accumulation map"
+  - name: DEM
+    unit: meters
+    config_key: DEM
+    description: Digital elevation model
+  - name: DDM
+    unit: direction_code
+    config_key: DDM
+    description: Drainage direction map (ESRI 1-128 or TauDEM 1-8 encoding)
+  - name: FAM
+    unit: cell_count
+    config_key: FAM
+    description: Flow accumulation map
   parameters:
     critical:
-      - name: "WM"
-        unit: "mm"
-        valid_range: [50.0, 500.0]
-        description: "Maximum soil water capacity (depth-integrated pore space)"
-      - name: "B"
-        unit: "dimensionless"
-        valid_range: [0.1, 2.0]
-        description: "Variable infiltration curve exponent (Xinanjiang/VIC-style)"
-      - name: "IM"
-        unit: "percent"
-        valid_range: [0.0, 100.0]
-        description: "Impervious area ratio; divided by 100 internally when no im_grid"
-      - name: "KE"
-        unit: "dimensionless"
-        valid_range: [0.1, 1.5]
-        description: "PET to actual ET multiplier"
-      - name: "FC"
-        unit: "mm/hr"
-        valid_range: [0.1, 50.0]
-        description: "Saturated hydraulic conductivity (Ksat)"
-      - name: "IWU"
-        unit: "percent"
-        valid_range: [0.0, 100.0]
-        description: "Initial soil water as percentage of WM"
+    - name: WM
+      unit: mm
+      valid_range:
+      - 50.0
+      - 500.0
+      description: Maximum soil water capacity (depth-integrated pore space)
+    - name: B
+      unit: dimensionless
+      valid_range:
+      - 0.1
+      - 2.0
+      description: Variable infiltration curve exponent (Xinanjiang/VIC-style)
+    - name: IM
+      unit: percent
+      valid_range:
+      - 0.0
+      - 100.0
+      description: Impervious area ratio; divided by 100 internally when no im_grid
+    - name: KE
+      unit: dimensionless
+      valid_range:
+      - 0.1
+      - 1.5
+      description: PET to actual ET multiplier
+    - name: FC
+      unit: mm/hr
+      valid_range:
+      - 0.1
+      - 50.0
+      description: Saturated hydraulic conductivity (Ksat)
+    - name: IWU
+      unit: percent
+      valid_range:
+      - 0.0
+      - 100.0
+      description: Initial soil water as percentage of WM
     routing_linear_reservoir:
-      - name: "COEM"
-        unit: "dimensionless"
-        valid_range: [100.0, 5000.0]
-        description: "Overland Manning coefficient multiplier"
-      - name: "RIVER"
-        unit: "dimensionless"
-        valid_range: [100.0, 10000.0]
-        description: "Channel Manning coefficient multiplier"
-      - name: "UNDER"
-        unit: "dimensionless"
-        valid_range: [10.0, 5000.0]
-        description: "Interflow speed multiplier"
-      - name: "LEAKO"
-        unit: "dimensionless"
-        valid_range: [0.0, 1.0]
-        description: "Overland reservoir leak rate"
-      - name: "LEAKI"
-        unit: "dimensionless"
-        valid_range: [0.0, 1.0]
-        description: "Interflow reservoir leak rate"
-      - name: "TH"
-        unit: "cells"
-        valid_range: [1.0, 500.0]
-        description: "Channel threshold (FAM cells to define river)"
+    - name: COEM
+      unit: dimensionless
+      valid_range:
+      - 100.0
+      - 5000.0
+      description: Overland Manning coefficient multiplier
+    - name: RIVER
+      unit: dimensionless
+      valid_range:
+      - 100.0
+      - 10000.0
+      description: Channel Manning coefficient multiplier
+    - name: UNDER
+      unit: dimensionless
+      valid_range:
+      - 10.0
+      - 5000.0
+      description: Interflow speed multiplier
+    - name: LEAKO
+      unit: dimensionless
+      valid_range:
+      - 0.0
+      - 1.0
+      description: Overland reservoir leak rate
+    - name: LEAKI
+      unit: dimensionless
+      valid_range:
+      - 0.0
+      - 1.0
+      description: Interflow reservoir leak rate
+    - name: TH
+      unit: cells
+      valid_range:
+      - 1.0
+      - 500.0
+      description: Channel threshold (FAM cells to define river)
     routing_kinematic_wave:
-      - name: "UNDER"
-        unit: "dimensionless"
-        valid_range: [0.1, 10.0]
-        description: "Interflow speed multiplier"
-      - name: "LEAKI"
-        unit: "dimensionless"
-        valid_range: [0.0, 1.0]
-        description: "Interflow leak rate"
-      - name: "TH"
-        unit: "cells"
-        valid_range: [1.0, 500.0]
-        description: "Channel threshold"
-      - name: "ALPHA"
-        unit: "dimensionless"
-        valid_range: [0.1, 10.0]
-        description: "Channel rating curve coefficient (Q = alpha * A^beta)"
-      - name: "BETA"
-        unit: "dimensionless"
-        valid_range: [0.1, 2.0]
-        description: "Channel rating curve exponent"
-      - name: "ALPHA0"
-        unit: "dimensionless"
-        valid_range: [0.1, 10.0]
-        description: "Overland routing alpha"
-
+    - name: UNDER
+      unit: dimensionless
+      valid_range:
+      - 0.1
+      - 10.0
+      description: Interflow speed multiplier
+    - name: LEAKI
+      unit: dimensionless
+      valid_range:
+      - 0.0
+      - 1.0
+      description: Interflow leak rate
+    - name: TH
+      unit: cells
+      valid_range:
+      - 1.0
+      - 500.0
+      description: Channel threshold
+    - name: ALPHA
+      unit: dimensionless
+      valid_range:
+      - 0.1
+      - 10.0
+      description: Channel rating curve coefficient (Q = alpha * A^beta)
+    - name: BETA
+      unit: dimensionless
+      valid_range:
+      - 0.1
+      - 2.0
+      description: Channel rating curve exponent
+    - name: ALPHA0
+      unit: dimensionless
+      valid_range:
+      - 0.1
+      - 10.0
+      description: Overland routing alpha
 outputs:
   primary:
-    - name: "streamflow"
-      unit: "m3/s"
-      config_key: "STREAMFLOW"
-      valid_range: [0.0, 100000.0]
-      description: "Simulated discharge at each grid cell or gauge"
-    - name: "soil_moisture"
-      unit: "percent"
-      config_key: "SOILMOISTURE"
-      valid_range: [0.0, 100.0]
-      description: "Soil moisture as percentage of WM"
+  - name: streamflow
+    unit: m3/s
+    config_key: STREAMFLOW
+    valid_range:
+    - 0.0
+    - 100000.0
+    description: Simulated discharge at each grid cell or gauge
+  - name: soil_moisture
+    unit: percent
+    config_key: SOILMOISTURE
+    valid_range:
+    - 0.0
+    - 100.0
+    description: Soil moisture as percentage of WM
+  - name: flood_depth
+    canonical_id: flood_depth
+    unit: m
+  - name: water_surface_elevation
+    canonical_id: water_surface_elevation
+    unit: m
+  - name: inundation_extent
+    canonical_id: inundation_extent
+    unit: km2
   secondary:
-    - name: "fast_flow"
-      unit: "mm*1000"
-      description: "Overland excess flow component"
-    - name: "slow_flow"
-      unit: "mm*1000"
-      description: "Interflow component"
+  - name: fast_flow
+    unit: mm*1000
+    description: Overland excess flow component
+  - name: slow_flow
+    unit: mm*1000
+    description: Interflow component
   optional_grids:
-    - name: "PRECIP"
-      unit: "mm"
-    - name: "PET"
-      unit: "mm"
-    - name: "RETURNPERIOD"
-      unit: "years"
-    - name: "SNOWWATER"
-      unit: "mm"
-    - name: "INUNDATION"
-      unit: "m"
-
+  - name: PRECIP
+    unit: mm
+  - name: PET
+    unit: mm
+  - name: RETURNPERIOD
+    unit: years
+  - name: SNOWWATER
+    unit: mm
+  - name: INUNDATION
+    unit: m
 validation:
   bengbu:
-    basin: "Bengbu (51080), Huai River"
+    basin: Bengbu (51080), Huai River
     area_km2: 121330
-    period: "1981-1985"
-    status: "production_validated"
+    period: 1981-1985
+    status: production_validated
   wangjiaba:
-    basin: "Wangjiaba (51030), Huai River"
+    basin: Wangjiaba (51030), Huai River
     area_km2: 30630
-    calibration_period: "1961-1975"
-    validation_period: "1976-1990"
+    calibration_period: 1961-1975
+    validation_period: 1976-1990
     metrics:
-      calibration: {NSE: 0.707, KGE: 0.761, PBIAS_pct: 4.5}
-      validation: {NSE: 0.675, KGE: 0.795, PBIAS_pct: 11.6}
-
+      calibration:
+        NSE: 0.707
+        KGE: 0.761
+        PBIAS_pct: 4.5
+      validation:
+        NSE: 0.675
+        KGE: 0.795
+        PBIAS_pct: 11.6
 known_issues:
-  - "EF5 TIF reader returns incorrect values for rasterio-generated GeoTIFFs; use ASC format"
-  - "DEM-derived routing network disconnects at coarse resolution for large flat basins"
-  - "IM parameter trap: scalar IM divided by 100 internally (IM=5 means 5%); with im_grid, scalar is multiplier"
-  - "WM in meters instead of mm causes instant saturation or model crash"
-  - "FC in mm/day instead of mm/hr makes infiltration 24x too high"
+- EF5 TIF reader returns incorrect values for rasterio-generated GeoTIFFs; use ASC
+  format
+- 'EF5 v1.2.3 -p flag (DEM-from-scratch processor) is in argument parser but not
+  implemented in ProcessDEM(); silently exits with no output. Use tools/prepare_basic_grids.py
+  instead.'
+- 'Externally-prepared DDM/FAM (e.g. via wflow pcraster ldd_create) often have unfilled
+  sinks and disconnected routing topology; symptom is "Walked N out of M nodes" with
+  N << M and zero discharge. Remedy: regenerate via tools/prepare_basic_grids.py.'
+- 'IM parameter trap: scalar IM divided by 100 internally (IM=5 means 5%); with im_grid,
+  scalar is multiplier'
+- WM in meters instead of mm causes instant saturation or model crash
+- FC in mm/day instead of mm/hr makes infiltration 24x too high
+- 'EF5 v1.2.3 LR (Linear Reservoir) routing produces Discharge=0.00 in the SIMU
+  output CSV regardless of basin water balance. LinearRoute.cpp Route() has
+  `discharge` in signature but never assigns to it; only KinematicRoute.cpp
+  populates the discharge vector. For obs-validated runs use ROUTING=KW.
+  Verified at Bengbu (LR sim_Q=0 → KW sim_Q max=652 m³/s, r=0.57) and Nuxia
+  (LR sim_Q=0 → KW sim_Q max=2364 m³/s, r=0.80) on 2026-04-29.'
+- 'Snow contribution to Yarlung Tsangpo discharge is small for total annual
+  volume — monsoon liquid precipitation dominates. Earlier internal note
+  attributing zero discharge at Nuxia to "snowmelt-dominated runoff" was
+  incorrect; the cause was the LR routing bug above. Snow-17 is still
+  recommended for high-elevation basins where seasonal snowpack timing
+  matters for peak-flow forecasting, but is NOT required for credible total
+  Q at gauges in the Yarlung Tsangpo / Brahmaputra system.'

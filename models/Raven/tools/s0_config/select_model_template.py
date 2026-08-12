@@ -74,7 +74,7 @@ TEMPLATES = {
         "soil_model": "SOIL_MULTILAYER 4",
         "routing": "ROUTE_NONE",
         "catchment_route": "ROUTE_DUMP",
-        "evaporation": "PET_DATA",
+        "evaporation": "PET_OUDIN",  # manual F.4/F.11 says PET_DATA; needs :Data PET in .rvt (Gauge.cpp:279)
         "parameters": {
             "GR4J_X1": {"default": 350.0, "min": 1.0, "max": 1500.0, "unit": "mm", "desc": "Production store capacity"},
             "GR4J_X2": {"default": 0.0, "min": -10.0, "max": 5.0, "unit": "mm/d", "desc": "Groundwater exchange coefficient"},
@@ -110,8 +110,9 @@ TEMPLATES = {
             "Percolation": "PERC_CONSTANT FAST_RESERVOIR SLOW_RESERVOIR",
             "Baseflow": "BASE_POWER_LAW FAST_RESERVOIR SURFACE_WATER",
             "Baseflow_2": "BASE_LINEAR SLOW_RESERVOIR SURFACE_WATER",
-            "LateralEquilibrate": "RAVEN_DEFAULT AllHRUs FAST_RESERVOIR 1.0",
-            "LateralEquilibrate_2": "RAVEN_DEFAULT AllHRUs SLOW_RESERVOIR 1.0",
+            # LateralEquilibrate dropped: names HRU group AllHRUs, which needs
+            # :DefineHRUGroups in .rvi + :HRUGroup membership in .rvh. Neither tool
+            # emits them, so Raven aborts at ParseInput.cpp:3078. No-op when lumped.
         },
         "aliases": {
             "FAST_RESERVOIR": "SOIL[1]",
@@ -120,7 +121,7 @@ TEMPLATES = {
         "soil_model": "SOIL_MULTILAYER 3",
         "routing": "ROUTE_NONE",
         "catchment_route": "ROUTE_TRI_CONVOLUTION",
-        "evaporation": "PET_FROMMONTHLY",
+        "evaporation": "PET_OUDIN",  # manual F.2 says PET_FROMMONTHLY; needs :MonthlyAveEvaporation (Gauge.cpp:242)
         "parameters": {
             "MELT_FACTOR": {"default": 4.0, "min": 1.0, "max": 8.0, "unit": "mm/d/degC", "desc": "Degree-day snowmelt factor"},
             "REFREEZE_FACTOR": {"default": 2.0, "min": 0.0, "max": 5.0, "unit": "mm/d/degC", "desc": "Refreezing factor"},
@@ -243,7 +244,7 @@ TEMPLATES = {
         "soil_model": "SOIL_MULTILAYER 7",
         "routing": "ROUTE_NONE",
         "catchment_route": "ROUTE_DUMP",
-        "evaporation": "PET_DATA",
+        "evaporation": "PET_OUDIN",  # manual F.4/F.11 says PET_DATA; needs :Data PET in .rvt (Gauge.cpp:279)
         "parameters": {
             "SAC_UZTWM": {"default": 50.0, "min": 1.0, "max": 150.0, "unit": "mm", "desc": "Upper zone tension water max"},
             "SAC_UZFWM": {"default": 40.0, "min": 1.0, "max": 150.0, "unit": "mm", "desc": "Upper zone free water max"},
@@ -329,7 +330,7 @@ TEMPLATES = {
         "soil_model": "SOIL_MULTILAYER 6",
         "routing": "ROUTE_NONE",
         "catchment_route": "ROUTE_DUMP",
-        "evaporation": "PET_MONTHLY_FACTOR",
+        "evaporation": "PET_OUDIN",  # manual F.1 says PET_MONTHLY_FACTOR; needs :MonthlyAveEvaporation (Gauge.cpp:242)
         "parameters": {
             "UBC_P0AGEN": {"default": 12.0, "min": 1.0, "max": 30.0, "unit": "d", "desc": "Gradient time constant"},
         },
@@ -347,16 +348,16 @@ TEMPLATES = {
         "snow_capable": True,
         "soil_layers": 3,
         "processes": {
-            "Precipitation": "PRECIP_RAVEN",
+            "Precipitation": "PRECIP_RAVEN ATMOS_PRECIP MULTIPLE",
             "SnowBalance": "SNOBAL_HBV MULTIPLE MULTIPLE",
             "Infiltration": "INF_HBV PONDED_WATER MULTIPLE",
             "SoilEvaporation": "SOILEVAP_HBV SOIL[0] ATMOSPHERE",
             "Percolation": "PERC_LINEAR SOIL[0] SOIL[1]",
             "Baseflow": "BASE_LINEAR SOIL[0] SURFACE_WATER",
-            "Baseflow2": "BASE_POWER_LAW SOIL[1] SURFACE_WATER",
+            "Baseflow_2": "BASE_POWER_LAW SOIL[1] SURFACE_WATER",
         },
         "soil_model": "SOIL_MULTILAYER 3",
-        "routing": "ROUTE_DIFFUSIVE_WAVE",
+        "routing": "ROUTE_NONE",  # ROUTE_DIFFUSIVE_WAVE needs :ChannelProfile in .rvp
         "catchment_route": "ROUTE_TRI_CONVOLUTION",
         "evaporation": "PET_PRIESTLEY_TAYLOR",
         "parameters": {
@@ -404,10 +405,187 @@ def validate_inputs(args):
     return {"status": "ok"}
 
 
+def read_hru_elevations(rvh_path):
+    """Return the list of HRU elevations (m) declared in a .rvh file."""
+    elevs = []
+    if not (rvh_path and os.path.isfile(rvh_path)):
+        return elevs
+    in_hrus = False
+    cols = None
+    for raw in open(rvh_path):
+        s = raw.strip()
+        if s.startswith(":HRUs"):
+            in_hrus = True
+            continue
+        if s.startswith(":EndHRUs"):
+            break
+        if not in_hrus or not s or s.startswith("#"):
+            continue
+        toks = [t.strip() for t in s.split(",")]
+        if s.startswith(":Attributes"):
+            cols = toks  # toks[0] == ":Attributes"; HRU id occupies that slot
+            continue
+        if s.startswith(":Units") or s.startswith(":"):
+            continue
+        if cols and "ELEVATION" in cols:
+            j = cols.index("ELEVATION")
+            if j < len(toks):
+                try:
+                    elevs.append(float(toks[j]))
+                except ValueError:
+                    pass
+    return elevs
+
+
+def resolve_pet_method(tmpl, rvt_path, pet_method="auto"):
+    """Decide the :Evaporation method actually written to the .rvi.
+
+    Appendix-F reference for most emulations is PET_OUDIN, a temperature-index
+    formula with no radiation term. In a cold HIGH-ELEVATION basin Oudin
+    systematically UNDER-estimates PET, so the calibrator has to buy the
+    missing evaporation back through soil parameters (dt_rav_039). When the
+    forcing .rvt actually carries SHORTWAVE, Priestley-Taylor is the physically
+    grounded choice and is used instead.
+
+    pet_method: "auto" (default), "template" (keep Appendix F verbatim), or an
+    explicit Raven method name (e.g. PET_HARGREAVES).
+    """
+    reference = tmpl["evaporation"]
+    if pet_method and pet_method not in ("auto", "template"):
+        return pet_method, reference, True, f"explicitly requested {pet_method}"
+    if pet_method == "template":
+        return reference, reference, False, "Appendix-F reference kept verbatim"
+
+    has_shortwave = False
+    if rvt_path and os.path.isfile(rvt_path):
+        try:
+            head = open(rvt_path, errors="ignore").read(400000)
+            has_shortwave = ":Data SHORTWAVE" in head or ":Data SW_RADIA" in head
+        except Exception:
+            has_shortwave = False
+
+    if reference == "PET_OUDIN" and has_shortwave:
+        return ("PET_PRIESTLEY_TAYLOR", reference, True,
+                "forcing carries SHORTWAVE; Oudin has no radiation term and "
+                "under-estimates PET in cold high-elevation basins (dt_rav_039)")
+    return reference, reference, False, (
+        "no SHORTWAVE in forcing — temperature-index reference retained"
+        if reference == "PET_OUDIN" else "template reference requires no substitution")
+
+
+# PET methods that consume net radiation, and therefore care which shortwave
+# the model uses.
+_RADIATION_PET = ("PET_PRIESTLEY_TAYLOR", "PET_PENMAN_MONTEITH",
+                  "PET_PENMAN_COMBINATION", "PET_TURC_1961", "PET_MAKKINK_1957")
+
+
+def resolve_sw_radiation(pet_resolved, rvt_path):
+    """Decide whether Raven should USE the shortwave supplied in the .rvt.
+
+    Raven's default is SW_RAD_DEFAULT: it computes clear-sky shortwave from
+    latitude and date and, with the default CLOUDCOV_NONE, applies NO cloud
+    attenuation. Any :Data SHORTWAVE in the .rvt is then silently discarded --
+    Raven says so ("SW_RADIA data supplied at gauge ... but will not be used
+    due to choice of forcing generation algorithm") but the run still succeeds.
+    For a radiation-based PET that means potential evaporation is driven by
+    clear-sky radiation every single day, which over-evaporates a cloudy
+    monsoon-fed alpine basin (dt_rav_041).
+
+    :SWRadiationMethod SW_RAD_DATA makes Raven use the measured/reanalysis
+    shortwave actually present in the forcing (and sets cloud correction to
+    NONE itself, ParseInput.cpp:3696).
+    """
+    if pet_resolved not in _RADIATION_PET:
+        return {"applied": False, "reason": f"{pet_resolved} does not use radiation"}
+    has_shortwave = False
+    if rvt_path and os.path.isfile(rvt_path):
+        try:
+            head = open(rvt_path, errors="ignore").read(400000)
+            has_shortwave = ":Data SHORTWAVE" in head or ":Data SW_RADIA" in head
+        except Exception:
+            has_shortwave = False
+    if not has_shortwave:
+        return {"applied": False,
+                "reason": "no SHORTWAVE in the .rvt — Raven's clear-sky estimate is all there is"}
+    return {"applied": True, "method": "SW_RAD_DATA",
+            "reason": "forcing supplies SHORTWAVE; without SW_RAD_DATA Raven "
+                      "discards it and drives PET with clear-sky radiation (dt_rav_041)"}
+
+
+def resolve_orographic(elevations, gauge_elev=None, mode="auto", min_relief_m=100.0):
+    """Decide whether the .rvi needs orographic (lapse) corrections.
+
+    Raven defaults orocorr_temp / orocorr_precip / orocorr_PET to OROCORR_NONE
+    (ParseInput.cpp:260-262). With no :OroTempCorrect directive EVERY HRU is
+    forced with the gauge's own temperature regardless of its ELEVATION, so an
+    elevation-band .rvh built by s1 is SILENTLY INERT: five bands spanning
+    2.5 km of relief see one identical temperature and one identical
+    precipitation series. In a snow-dominated alpine basin that removes the
+    accumulation/melt gradient that drives the hydrograph (dt_rav_040).
+
+    OROCORR_SIMPLELAPSE lapses temperature by ADIABATIC_LAPSE [C/km] and
+    precipitation by PRECIP_LAPSE [mm/d/km] against the gauge reference
+    elevation (OrographicCorrections.cpp:32, :223). Both globals are declared
+    required by Raven once the directive is present, so s2 emits them
+    automatically and s9 can calibrate them.
+
+    NOTE: :OroPETCorrect does NOT accept OROCORR_SIMPLELAPSE (ParseInput.cpp
+    case 18 takes only HBV/PRMS/UBCWM/NONE), so PET correction is left at its
+    default; PET is already recomputed per HRU from the lapsed temperature.
+    """
+    relief = (max(elevations) - min(elevations)) if len(elevations) > 1 else 0.0
+    if mode == "none":
+        return {"applied": False, "method": None, "relief_m": round(relief, 1),
+                "reason": "disabled by --orographic none"}
+    if mode == "simple" or (mode == "auto" and relief >= min_relief_m):
+        return {"applied": True, "method": "OROCORR_SIMPLELAPSE",
+                "relief_m": round(relief, 1), "n_hrus": len(elevations),
+                "gauge_elevation_m": gauge_elev,
+                "reason": f"HRU relief {relief:.0f} m >= {min_relief_m:.0f} m — "
+                          "without lapse correction every band shares one forcing"}
+    return {"applied": False, "method": None, "relief_m": round(relief, 1),
+            "reason": f"HRU relief {relief:.0f} m < {min_relief_m:.0f} m — lumped forcing is adequate"}
+
+
+def read_gauge_elevation(rvt_path):
+    """Reference elevation of the forcing gauge declared in the .rvt."""
+    if not (rvt_path and os.path.isfile(rvt_path)):
+        return None
+    for raw in open(rvt_path, errors="ignore"):
+        s = raw.strip()
+        if s.startswith(":Elevation"):
+            try:
+                return float(s.split()[1])
+            except (IndexError, ValueError):
+                return None
+        if s.startswith(":Data"):
+            break
+    return None
+
+
 def generate_rvi_content(template_name, basin_name, start_date="2000-01-01",
-                          end_date="2010-12-31", timestep="1.0"):
-    """Generate .rvi file content from a template."""
+                          end_date="2010-12-31", timestep="1.0",
+                          pet_method="auto", orographic="auto", run_dir=None):
+    """Generate .rvi file content from a template.
+
+    Returns (content, meta) where meta records the PET and orographic decisions.
+    """
     tmpl = TEMPLATES[template_name]
+    rvh_path = os.path.join(run_dir, f"{basin_name}.rvh") if run_dir else None
+    rvt_path = os.path.join(run_dir, f"{basin_name}.rvt") if run_dir else None
+
+    pet_resolved, pet_reference, pet_substituted, pet_reason = resolve_pet_method(
+        tmpl, rvt_path, pet_method)
+    oro = resolve_orographic(read_hru_elevations(rvh_path),
+                             read_gauge_elevation(rvt_path), orographic)
+    sw = resolve_sw_radiation(pet_resolved, rvt_path)
+    meta = {
+        "pet": {"requested": pet_method, "template_reference": pet_reference,
+                "resolved": pet_resolved, "substituted": pet_substituted,
+                "reason": pet_reason},
+        "orographic": oro,
+        "sw_radiation": sw,
+    }
 
     lines = []
     lines.append(f"# Raven .rvi file — {tmpl['full_name']} emulation")
@@ -423,15 +601,21 @@ def generate_rvi_content(template_name, basin_name, start_date="2000-01-01",
     lines.append("")
 
     # Evaporation and snow — template-specific methods per Appendix F
-    lines.append(f":Evaporation     {tmpl['evaporation']}")
-    lines.append(f":OW_Evaporation  {tmpl['evaporation']}")
+    if pet_substituted:
+        lines.append(f"# :Evaporation substituted: Appendix-F reference is "
+                     f"{pet_reference}. {pet_reason}. --pet_method template restores it.")
+    lines.append(f":Evaporation     {pet_resolved}")
+    lines.append(f":OW_Evaporation  {pet_resolved}")
+    if sw.get("applied"):
+        lines.append(f"# {sw['reason']}")
+        lines.append(f":SWRadiationMethod {sw['method']}")
 
     # Template-specific RainSnowFraction (manual Appendix F)
     rain_snow_map = {
         "ubc": "RAINSNOW_UBCWM",
         "hbv_ec": "RAINSNOW_HBV",
-        "mohyse": "RAINSNOW_DATA",
-        "sac_sma": "RAINSNOW_DATA",
+        "mohyse": "RAINSNOW_DINGMAN",  # manual F.6 says RAINSNOW_DATA; needs :Data SNOWFALL (Gauge.cpp:111)
+        "sac_sma": "RAINSNOW_DINGMAN",  # manual F.11 says RAINSNOW_DATA; needs :Data SNOWFALL (Gauge.cpp:111)
         "hymod": "RAINSNOW_THRESHOLD",
     }
     rain_snow = rain_snow_map.get(template_name, "RAINSNOW_DINGMAN")
@@ -445,6 +629,17 @@ def generate_rvi_content(template_name, basin_name, start_date="2000-01-01",
     }
     melt_method = melt_map.get(template_name, "POTMELT_DEGREE_DAY")
     lines.append(f":PotentialMeltMethod {melt_method}")
+
+    # Orographic corrections — REQUIRED whenever the .rvh has elevation bands.
+    # Raven's default is OROCORR_NONE, which silently forces every band with
+    # the gauge's own temperature/precipitation (dt_rav_040).
+    if oro.get("applied"):
+        lines.append(f"# Orographic lapse ON: {oro['reason']} "
+                     f"(gauge ref {oro.get('gauge_elevation_m')} m, "
+                     f"{oro.get('n_hrus')} HRUs). ADIABATIC_LAPSE / PRECIP_LAPSE "
+                     f"are emitted by s2 and calibrated by s9.")
+        lines.append(f":OroTempCorrect   {oro['method']}")
+        lines.append(f":OroPrecipCorrect {oro['method']}")
     lines.append("")
 
     # Extra options (e.g., :AllowSoilOverfill for HMETS, :DirectEvaporation for MOHYSE)
@@ -481,7 +676,9 @@ def generate_rvi_content(template_name, basin_name, start_date="2000-01-01",
     lines.append(":EvaluationMetrics NASH_SUTCLIFFE KLING_GUPTA PCT_BIAS RMSE")
     lines.append(":WriteHydrographs")
     lines.append(":WriteForcingFunctions")
-    lines.append(":WriteNetcdfFormat yes")
+    # NOTE: Raven.exe is built WITHOUT NetCDF (-Dnetcdf disabled in Makefile).
+    # Emitting :WriteNetcdfFormat yes makes CustomOutput write 0-byte .nc files
+    # and suppresses the CSV equivalents. Leave it off so CustomOutput -> CSV.
     lines.append(":SilentMode")
     lines.append(f":RunName          {basin_name}_{template_name}")
     lines.append("")
@@ -491,7 +688,7 @@ def generate_rvi_content(template_name, basin_name, start_date="2000-01-01",
     lines.append(":CustomOutput DAILY AVERAGE AET BY_BASIN")
     lines.append("")
 
-    return "\n".join(lines)
+    return "\n".join(lines), meta
 
 
 def process(args):
@@ -525,13 +722,19 @@ def process(args):
     template_name = args.template
     tmpl = TEMPLATES[template_name]
 
-    # Generate .rvi file
-    rvi_content = generate_rvi_content(
+    # Generate .rvi file. The .rvh / .rvt already staged in --output_dir tell us
+    # the basin's relief and whether radiation forcing exists, so the PET and
+    # orographic decisions are made from the ACTUAL site, not from a default.
+    rvi_content, rvi_meta = generate_rvi_content(
         template_name, args.basin_name,
         start_date=args.start_date or "2000-01-01",
         end_date=args.end_date or "2010-12-31",
         timestep=args.timestep or "1.0",
+        pet_method=getattr(args, "pet_method", "auto"),
+        orographic=getattr(args, "orographic", "auto"),
+        run_dir=args.output_dir,
     )
+    results.update(rvi_meta)
 
     os.makedirs(args.output_dir, exist_ok=True)
     rvi_path = os.path.join(args.output_dir, f"{args.basin_name}.rvi")
@@ -589,6 +792,14 @@ def main():
     parser.add_argument("--start_date", type=str, default="2000-01-01", help="Simulation start date (YYYY-MM-DD)")
     parser.add_argument("--end_date", type=str, default="2010-12-31", help="Simulation end date (YYYY-MM-DD)")
     parser.add_argument("--timestep", type=str, default="1.0", help="Timestep in days (default: 1.0)")
+    parser.add_argument("--pet_method", type=str, default="auto",
+                        help="PET method: auto (substitute Oudin->Priestley-Taylor when "
+                             "SHORTWAVE forcing exists), template (Appendix F verbatim), "
+                             "or an explicit Raven method name")
+    parser.add_argument("--orographic", type=str, default="auto",
+                        choices=["auto", "none", "simple"],
+                        help="Orographic lapse corrections: auto (on when the .rvh has "
+                             "relief >= 100 m), simple (force on), none (force off)")
     parser.add_argument("--list", action="store_true", help="List all available templates and exit")
 
     args = parser.parse_args()

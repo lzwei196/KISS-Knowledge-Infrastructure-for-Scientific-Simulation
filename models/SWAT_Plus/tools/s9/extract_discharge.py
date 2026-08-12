@@ -10,8 +10,15 @@ Description:  Extract daily discharge from channel_sd_day.txt or channel_day.txt
 SWAT+ channel output stores flo_out in ha-m/day. This tool converts to m³/s:
     Q_m3s = flo_out_ham_day * 10000 / 86400
 
-The outlet is auto-detected as the channel with the highest gis_id
-(SWAT+ convention: highest ID = most downstream).
+The outlet is auto-detected by TOPOLOGY, in order of preference:
+  1. The channel that routes to nothing in channel.con (out_tot == 0). In
+     SWAT+ the terminal channel is the basin outlet regardless of its gis_id.
+  2. Fallback: the channel carrying the largest mean flo_out (the outlet
+     necessarily integrates all upstream flow).
+The old "highest gis_id" heuristic was WRONG for HydroCraft VIC-grid surrogate
+topologies where every grid channel routes to cha1 (gis_id=1): the highest-id
+channels are headwaters with flo_out≈0, producing PBIAS≈-99.99% (see the two
+conflicting prior Bengbu verifications). Topology detection fixes this.
 
 Usage:
     python extract_discharge.py \
@@ -45,7 +52,47 @@ logger = logging.getLogger(__name__)
 HAM_DAY_TO_M3S = 10000.0 / 86400.0  # 1 ha-m = 10000 m³; 1 day = 86400 s
 
 
-def parse_channel_day(filepath, outlet_gis_id=None):
+def detect_outlet_from_con(txtinout_dir):
+    """Detect the basin outlet channel id from channel.con topology.
+
+    The outlet is the channel that routes to nothing (out_tot == 0). Returns
+    the integer gis_id of the unique outlet, or None if channel.con is absent,
+    unparseable, or has multiple terminal channels (ambiguous -> let caller
+    fall back to max-flow detection).
+    """
+    if txtinout_dir is None:
+        return None
+    con = Path(txtinout_dir) / "channel.con"
+    if not con.exists():
+        return None
+    try:
+        lines = con.read_text().strip().split('\n')
+        header = lines[1].split()
+        i_id = header.index('id') if 'id' in header else 0
+        i_gis = header.index('gis_id') if 'gis_id' in header else i_id
+        i_out = header.index('out_tot')
+    except (IndexError, ValueError):
+        return None
+    terminals = []
+    for line in lines[2:]:
+        p = line.split()
+        if len(p) <= max(i_out, i_gis):
+            continue
+        try:
+            if int(p[i_out]) == 0:
+                terminals.append(int(p[i_gis]))
+        except ValueError:
+            continue
+    if len(terminals) == 1:
+        logger.info(f"Outlet from channel.con topology (out_tot=0): gis_id={terminals[0]}")
+        return terminals[0]
+    if len(terminals) > 1:
+        logger.warning(f"channel.con has {len(terminals)} terminal channels "
+                       f"{terminals} — falling back to max-flow detection")
+    return None
+
+
+def parse_channel_day(filepath, outlet_gis_id=None, txtinout_dir=None):
     """
     Parse SWAT+ channel_day.txt or channel_sd_day.txt.
 
@@ -95,9 +142,14 @@ def parse_channel_day(filepath, outlet_gis_id=None):
     df = pd.DataFrame(records)
     logger.info(f"Parsed {len(df)} records, {df['gis_id'].nunique()} channels")
 
-    # Select outlet
+    # Select outlet — topology first, then max mean flo_out, NEVER highest gis_id
     if outlet_gis_id is None:
-        outlet_gis_id = df['gis_id'].max()
+        outlet_gis_id = detect_outlet_from_con(txtinout_dir)
+    if outlet_gis_id is None:
+        mean_flow = df.groupby('gis_id')['flo_out'].mean()
+        outlet_gis_id = int(mean_flow.idxmax())
+        logger.info(f"Outlet by max mean flo_out: gis_id={outlet_gis_id} "
+                    f"(mean={mean_flow.max():.2f} ha-m/day)")
     logger.info(f"Outlet channel: gis_id={outlet_gis_id}")
 
     df_out = df[df['gis_id'] == outlet_gis_id].copy()
@@ -161,7 +213,8 @@ def main():
     logger.info(f"Reading: {chan_file}")
 
     # Extract
-    daily = parse_channel_day(chan_file, outlet_gis_id=args.outlet_gis_id)
+    daily = parse_channel_day(chan_file, outlet_gis_id=args.outlet_gis_id,
+                              txtinout_dir=txtinout)
 
     # Save
     out_path = Path(args.output_csv)

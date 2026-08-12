@@ -18,6 +18,7 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -265,6 +266,8 @@ def main():
         )
         if result.get('valid', False):
             print("[convert_grid] SUCCESS")
+            sys.stdout.flush(); sys.stderr.flush()
+            os._exit(0)
         else:
             print("[convert_grid] VALIDATION FAILED")
             sys.exit(1)

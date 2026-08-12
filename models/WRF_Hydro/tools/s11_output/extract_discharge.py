@@ -95,6 +95,86 @@ def find_outlet_feature(run_dir, pattern="*.CHRTOUT_DOMAIN1"):
     return idx
 
 
+def find_gauge_feature(run_dir, gauge_lat, gauge_lon, min_order=1,
+                       pattern="*.CHRTOUT_DOMAIN1"):
+    """
+    Select the CHRTOUT feature CLOSEST to the gauge coordinates, restricted to
+    Strahler order >= min_order so the search cannot snap onto a headwater
+    tributary. This is the correct extraction when a gauge location is known
+    (SKILL.md 'How to Correctly Extract Discharge'): with gridded diffusive-wave
+    routing every channel cell on the lower main stem carries nearly the same
+    discharge and argmax(streamflow) wanders km along the stem, whereas the
+    gauge-matched cell is stable and physically at the gauge.
+    """
+    run_dir = Path(run_dir)
+    files = sorted(run_dir.glob(pattern)) or sorted(run_dir.glob("*.CHRTOUT_GRID1"))
+    if not files:
+        raise FileNotFoundError(f"No CHRTOUT files in {run_dir}")
+    f = files[min(len(files) - 1, len(files) // 2)]
+
+    if USE_NC4:
+        ds = nc4_Dataset(str(f), 'r')
+        lat = np.asarray(ds.variables['latitude'][:]).ravel()
+        lon = np.asarray(ds.variables['longitude'][:]).ravel()
+        order = (np.asarray(ds.variables['order'][:]).ravel()
+                 if 'order' in ds.variables else np.full(lat.shape, min_order))
+        ds.close()
+    else:
+        ds = xr.open_dataset(f)
+        lat = ds['latitude'].values.ravel()
+        lon = ds['longitude'].values.ravel()
+        order = (ds['order'].values.ravel()
+                 if 'order' in ds else np.full(lat.shape, min_order))
+        ds.close()
+
+    # --- FLOW GUARD (Berounka/Tangnaihai): on a coarse routing grid the channel
+    # cell nearest the gauge can be a disconnected order-1/2 stub carrying ZERO
+    # discharge; distance-only selection then returns an all-zero series
+    # (sim_mean=0, r=NaN, pbias=-100). Require the chosen feature to carry flow.
+    # Sample mean streamflow over non-spinup files.
+    first_year = files[0].name[:4]
+    sample = [g for g in files if g.name[:4] != first_year] or files
+    sample = sample[:: max(1, len(sample) // 15)][:15]
+    qsum = np.zeros(lat.shape, dtype=float); nq = 0
+    for g in sample:
+        try:
+            if USE_NC4:
+                dsg = nc4_Dataset(str(g), 'r')
+                qg = np.asarray(dsg.variables['streamflow'][:]).ravel().astype(float)
+                dsg.close()
+            else:
+                dsg = xr.open_dataset(g)
+                qg = dsg['streamflow'].values.ravel().astype(float); dsg.close()
+            qg = np.where(np.isfinite(qg) & (qg > 0), qg, 0.0)
+            qsum = qsum + qg; nq += 1
+        except Exception:
+            continue
+    meanq = qsum / max(nq, 1)
+    flow_min = max(1e-3, 1e-3 * float(np.nanmax(meanq)))
+    has_flow = meanq > flow_min
+
+    elig = np.where((order >= min_order) & has_flow)[0]
+    if elig.size == 0:
+        logger.warning(f"No flow-carrying feature with order>={min_order} "
+                       f"(max order present={int(np.nanmax(order))}); relaxing order filter")
+        elig = np.where(has_flow)[0]
+    if elig.size == 0:
+        logger.warning("No feature carries flow; falling back to nearest of all features")
+        elig = np.arange(lat.size)
+
+    R = 6371.0  # km
+    dlat = np.radians(lat[elig] - gauge_lat)
+    dlon = np.radians(lon[elig] - gauge_lon)
+    a = (np.sin(dlat / 2.0) ** 2 +
+         np.cos(np.radians(gauge_lat)) * np.cos(np.radians(lat[elig])) *
+         np.sin(dlon / 2.0) ** 2)
+    dist = 2.0 * R * np.arcsin(np.sqrt(a))
+    k = int(elig[int(np.argmin(dist))])
+    logger.info(f"Gauge match: idx={k}, order={int(order[k])} (>= {min_order}), "
+                f"dist={float(dist.min()):.2f} km, lat={lat[k]:.4f} lon={lon[k]:.4f}")
+    return k
+
+
 def extract_daily_discharge(run_dir, feature_idx, pattern="*.CHRTOUT_DOMAIN1",
                             start_year=None, end_year=None):
     """
@@ -176,6 +256,12 @@ def main():
     parser.add_argument('--output_csv', required=True, help='Output CSV path (date, Q_sim)')
     parser.add_argument('--outlet_idx', type=int, default=None,
                         help='Outlet feature index (auto-detected if omitted)')
+    parser.add_argument('--gauge_lat', type=float, default=None,
+                        help='Gauge latitude; select nearest feature (with --min_order)')
+    parser.add_argument('--gauge_lon', type=float, default=None,
+                        help='Gauge longitude; select nearest feature (with --min_order)')
+    parser.add_argument('--min_order', type=int, default=1,
+                        help='Minimum Strahler order for gauge-matched feature selection')
     parser.add_argument('--obs_csv', default=None,
                         help='Observed discharge file for comparison (HydroCraft format)')
     parser.add_argument('--start_year', type=int, default=None)
@@ -189,6 +275,9 @@ def main():
     # Find outlet
     if args.outlet_idx is not None:
         outlet_idx = args.outlet_idx
+    elif args.gauge_lat is not None and args.gauge_lon is not None:
+        outlet_idx = find_gauge_feature(run_dir, args.gauge_lat, args.gauge_lon,
+                                        min_order=args.min_order)
     else:
         outlet_idx = find_outlet_feature(run_dir)
 

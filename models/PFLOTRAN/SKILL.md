@@ -23,10 +23,12 @@
 
 # PFLOTRAN Knowledge Infrastructure
 
-**Package**: hydrocraft-pflotran-subsurface v1.0.0
-**Domain**: Groundwater flow and reactive transport
+**Package**: hydrocraft-pflotran-subsurface v1.1.0
+**Domain**: Groundwater flow and reactive transport; 1D vadose zone soil moisture
 **Model**: PFLOTRAN (Parallel Flow and Transport)
-**Stats**: 4 tools, 5 skill documents, 18 diagnostic triplets
+**Stats**: 4 tools, 5 skill documents, 26 diagnostic triplets
+**Last updated**: 2026-04-30 — added 1D vadose zone / FLUXNET SWC validation workflow
+  (3-site campaign: CN-Din, CN-Qia, CN-HaM; best result NSE=0.471 at CN-HaM v2)
 
 ---
 
@@ -508,7 +510,210 @@ For groundwater models, use:
 
 ---
 
-## 10. Coupling Points
+## 10. 1D Vadose Zone Column — FLUXNET SWC Validation Workflow
+
+Use this workflow to validate PFLOTRAN Richards-equation physics against
+FLUXNET tower soil moisture observations (SWC_F_MDS_1). Validated against
+3 Chinese FLUXNET sites (CN-Din, CN-Qia, CN-HaM).
+
+### 10.1 Site Pre-screening (run before any model setup)
+
+```python
+import csv, numpy as np
+from datetime import datetime
+
+rows = list(csv.DictReader(open('FULLSET_DD.csv')))
+sub  = [r for r in rows if start_year <= int(r['TIMESTAMP'][:4]) <= end_year]
+
+p_vals  = [float(r['P_F']) for r in sub]
+et_vals = [max(0, float(r['LE_F_MDS'])*86400/2.45e6) for r in sub]
+ta_vals = [float(r['TA_F_MDS']) for r in sub if float(r['TA_F_MDS']) > -9990]
+swc_valid = [float(r['SWC_F_MDS_1']) for r in sub if float(r['SWC_F_MDS_1']) > -9990]
+
+# Screening criteria:
+swc_coverage = len(swc_valid) / len(sub)       # must be > 0.90
+p_mean = np.mean(p_vals)                        # must be > ET mean
+min_ta = min(ta_vals) if ta_vals else -99       # freeze risk if < -5°C
+neg_months = sum(
+    np.mean([p for p,d in zip(p_vals,sub) if int(d['TIMESTAMP'][4:6])==m]) <
+    np.mean([e for e,d in zip(et_vals,sub) if int(d['TIMESTAMP'][4:6])==m])
+    for m in range(1,13))
+phi_est = np.percentile(swc_valid, 95) / 0.95 / 100.0   # porosity estimate
+
+# Max consecutive dry days (crash risk predictor for shallow root zone)
+max_dry = 0; cur = 0
+for p in p_vals:
+    cur = (cur+1) if p < 0.1 else 0
+    max_dry = max(max_dry, cur)
+```
+
+**Site suitability table:**
+
+| Criterion | Suitable | Marginal | Unsuitable |
+|-----------|----------|----------|------------|
+| SWC coverage | > 90% | 70–90% | < 70% |
+| Neg P-ET months | ≤ 3 | 4–6 | > 6 |
+| Min temperature | > -5°C | -5 to -20°C | < -20°C |
+| P/ET annual ratio | > 1.5 | 1.0–1.5 | < 1.0 |
+| Max monsoon P / mean ET | < 2 | 2–3 | > 3 (see dt_026) |
+| phi_est vs HWSD phi | within 15% | 15–30% diff | > 30% (override) |
+
+**Pre-screened Chinese sites:**
+
+| Site | Ecosystem | Suitability | Notes |
+|------|-----------|-------------|-------|
+| CN-HaM | Alpine meadow, Qinghai | ✅ Suitable | Override phi→0.60; NSE=0.47 achieved |
+| CN-Din | Subtropical forest | ⚠️ Marginal | RZ=2.0m; NSE=-0.17 (bias from P-ET deficit treatment) |
+| CN-Qia | Plantation forest | ❌ Unsuitable | Monsoon regime; structural +54% wet bias (dt_026) |
+| CN-Cha | Temperate forest, Jilin | ❌ Unsuitable | 9/12 months ET>P; min T=-25.7°C |
+
+### 10.2 Soil Properties (HWSD lookup + corrections)
+
+```python
+# Run the KI tool first
+run_cmd(
+    f"python {KI_TOOLS}/convert_soil_to_pflotran.py "
+    f"--hwsd-csv {HWSD_CSV} --glhymps-shp {GLHYMPS_SHP} "
+    f"--lat {lat} --lon {lon} --output {mat_json}",
+    "convert_soil"
+)
+
+# MANDATORY post-processing patches:
+with open(mat_json) as f:
+    data = json.load(f)
+
+# Patch 1: alpha unit correction (tool divides by 9804, should be 98.04)
+if not data.get("alpha_unit_patch_v1"):
+    for mat in data["materials"]:
+        mat["vg_alpha_Pa"] *= 100.0
+    data["alpha_unit_patch_v1"] = True   # idempotency guard (dt_023)
+
+# Patch 2: bedrock K floor
+for mat in data["materials"]:
+    if mat["name"] == "bedrock" and mat["permeability_m2"] < 1e-20:
+        mat["permeability_m2"] = 1e-14
+
+with open(mat_json, "w") as f:
+    json.dump(data, f, indent=2)
+
+# Patch 3: organic soil porosity override (dt_024)
+# If site is alpine meadow > 2500m AND phi_est > HWSD phi * 1.1:
+if phi_est > top["porosity"] * 1.10:
+    print(f"WARNING: Overriding HWSD phi={top['porosity']:.3f} → {phi_est:.3f}")
+    top["porosity"] = min(phi_est, 0.70)   # cap at physical maximum
+    # Do NOT save override back to materials.json — document it in the run log
+```
+
+### 10.3 Forcing and ET Sink Deck Setup
+
+```python
+# Forcing from FLUXNET daily:
+for row in csv.DictReader(open(FLUXNET_DD)):
+    p_mm   = float(row["P_F"])              # mm/day
+    le_wm2 = float(row["LE_F_MDS"])         # W/m²
+    et_mm  = max(0.0, le_wm2 * 86400.0 / 2.45e6)  # mm/day
+
+    # Top BC: precipitation only (ALWAYS positive — no P-ET)
+    net_ms = max(0.0, p_mm) / (1000.0 * 86400.0)   # m/s
+
+    # ET sink rate (positive value; negate when writing to deck)
+    et_ms  = et_mm / (1000.0 * 86400.0)             # m/s = m³/s for 1m² col
+```
+
+**COLD-SEASON / WINTER WINDOWS — gate precip by temperature (dt_027).**
+RICHARDS mode is isothermal: NO snowpack, NO soil-freeze. If the scoring window
+is sub-zero (high-altitude or winter), feeding precip straight to the top BC
+applies SNOW as liquid recharge → a spurious SWC rise that anti-correlates with
+the (frozen, slowly-draining) obs. Add a degree-day snow gate BEFORE building
+the top-BC LIST, and wire the hydrostatic DATUM so the top cell starts at the
+observed wetness (removes the cold-start transient):
+
+```python
+snowpack = 0.0
+for date, p_mm, t in zip(dates, precip, tmean):
+    if t < 0.0:                                   # snow: no infiltration
+        snowpack += p_mm; infil_mm = 0.0
+    else:                                         # rain + melt infiltrate
+        melt = min(snowpack, 2.0*max(0.0, t)); snowpack -= melt
+        infil_mm = p_mm + melt
+    net_ms = infil_mm / (1000.0 * 86400.0)
+# Initial datum for target top-cell SWC = s*phi (vG inverse):
+#   Pc = ((Se**(-1/m))-1)**(1/n)/alpha ; head=Pc/9804 ; DATUM = z_top - head
+```
+
+Validated: SMAP L4 sm_rootzone at CN-HaM 2019 (obs only 2019-01-01..01-19, a
+deep-winter window). Snow gating + IC datum 0.645 m flipped r from -0.83 to
++0.84, PBIAS -11% → +0.8%. NOTE the obs over a frozen window is near-constant
+(std 0.107% VWC), so NSE is denominator-collapsed and STRUCTURALLY INVALID —
+score with magnitude_accuracy (PBIAS), not NSE (dt_027).
+
+**Root zone depth selection** (dt_020):
+
+```python
+# Choose ROOT_ZONE_DEPTH based on site hydrology:
+if max_dry_days > 20:
+    ROOT_ZONE_DEPTH = 2.0   # full column; very dry site
+elif max_dry_days > 10:
+    ROOT_ZONE_DEPTH = 1.5   # subtropical/temperate forest default
+else:
+    ROOT_ZONE_DEPTH = 1.0   # alpine meadow or mild dry season
+```
+
+**Characteristic curves** — SMOOTH placement is CRITICAL (dt_019):
+
+```
+CHARACTERISTIC_CURVES cc_soil
+  SATURATION_FUNCTION VAN_GENUCHTEN      ← NO SMOOTH here
+    ALPHA {alpha:.6e}
+    M {m:.4f}d0
+    LIQUID_RESIDUAL_SATURATION {Sr:.3f}d0
+  /
+  PERMEABILITY_FUNCTION MUALEM_VG_LIQ
+    M {m:.4f}d0
+    LIQUID_RESIDUAL_SATURATION {Sr:.3f}d0
+    SMOOTH                                ← ONLY here
+  /
+END
+```
+
+### 10.4 HDF5 Extraction
+
+```python
+# ALWAYS import in this order (dt_025):
+import netCDF4   # first — initializes HDF5 in compatible state
+import h5py      # second
+
+# Shape handling (dt_022):
+with h5py.File(h5_file, "r") as f:
+    for key in sorted(f.keys()):
+        if not key.startswith("Time:"): continue
+        day = float(key.replace("Time:","").replace("d","").strip())
+        sat = np.array(f[key]["Liquid_Saturation"], dtype=float).flatten()
+        top_swc = float(sat[-1]) * phi   # top cell = last index = highest z
+```
+
+### 10.5 Metrics and Interpretation
+
+```python
+R    = float(np.corrcoef(obs, sim)[0, 1])
+NSE  = float(1 - np.sum((obs-sim)**2) / np.sum((obs-np.mean(obs))**2))
+RMSE = float(np.sqrt(np.mean((obs-sim)**2)))
+PBIAS= float(100 * (np.sum(sim) - np.sum(obs)) / np.sum(obs))
+
+# If R > 0.6 but NSE < 0 — decompose:
+sigma_obs = np.std(obs); mu_obs = np.mean(obs); mu_sim = np.mean(sim)
+alpha = np.std(sim) / sigma_obs
+beta  = (mu_sim - mu_obs) / sigma_obs
+print(f"NSE = 2αR - α² - β² = {2*alpha*R:.3f} - {alpha**2:.3f} - {beta**2:.3f} = {NSE:.3f}")
+# β² > 0.5 → bias dominates; fix PBIAS before re-running
+```
+
+**NSE < 0 diagnosis decision tree:**
+- |PBIAS| > 25% → fix bias first (root zone depth, phi override)
+- |PBIAS| < 10% but NSE < 0 → variability mismatch (α far from 1.0)
+- Site is subtropical monsoon → structural bias, see dt_026
+
+## 11. Coupling Points
 
 | Coupled Model | Interface | Direction |
 |---|---|---|

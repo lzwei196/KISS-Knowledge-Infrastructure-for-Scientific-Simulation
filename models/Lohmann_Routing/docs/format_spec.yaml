@@ -1,0 +1,147 @@
+# format_spec.yaml — Lohmann Routing Model
+# Hand-augmented 2026-04-26 from SKILL.md (auto-extractor missed
+# the variable section). Re-run pipeline1 after edits.
+
+model:
+  name: Lohmann Routing Model
+  domain: routing
+  secondary_domains:
+  - hydrology
+  binary: rout
+  binary_path: /mnt/disk1/Hydrocraft_server/model/route_1.0/src/rout
+  language: Fortran77
+  execution: ./rout rout_global.txt
+  working_directory: routing_param/ (with vic_in/ symlink to VIC fluxes)
+  validated_tool: tools/run_lohmann_routing.py
+
+inputs:
+  forcing:
+  - name: surface_runoff
+    file: vic_in/fluxes_<lat>_<lon>
+    column: 6
+    unit: mm/day
+    valid_range: [0.0, 500.0]
+    format: ASCII column-aligned (preprocessed from VIC 22-col fluxes to 7-col)
+    silent_error: VIC raw fluxes_*.txt has 22 columns; routing requires 7-column preprocessed format. Failure to preprocess produces wrong column reads.
+  - name: baseflow
+    file: vic_in/fluxes_<lat>_<lon>
+    column: 7
+    unit: mm/day
+    valid_range: [0.0, 100.0]
+    format: ASCII column-aligned
+    notes: Combined with surface_runoff inside the routing module to give total runoff per cell per day.
+
+  static:
+  - name: flow_direction
+    file: flow_direction.txt
+    unit: D8_code
+    valid_range: [1, 128]
+    format: ASCII grid; D8 codes 1/2/4/8/16/32/64/128 = E/SE/S/SW/W/NW/N/NE
+    notes: Generated from DEM via skills/routing-run/s5_routing_param/run_build_routing_new.py
+  - name: fraction
+    file: fraction.txt
+    unit: fraction
+    valid_range: [0.0, 1.0]
+    format: ASCII grid; fraction of cell that drains to gauge (basin mask × area weight)
+  - name: xmask
+    file: xmask.txt
+    unit: m
+    valid_range: [0.0, 100000.0]
+    format: ASCII grid; cell length in flow direction (cell-size × cos(lat) for irregular grids)
+  - name: unit_hydrograph
+    file: uh.txt
+    unit: dimensionless
+    format: ASCII; 1-day-step UH; convolves with cell runoff to produce gauge response
+  - name: velocity
+    parameter: 1.5
+    unit: m/s
+    valid_range: [0.5, 5.0]
+    format: scalar (default 1.5 m/s) or per-cell ASCII grid
+    notes: Channel routing velocity; sensitive parameter for peak timing.
+  - name: station_location
+    file: staloc.txt
+    unit: lat,lon
+    format: ASCII; first line = station name + coordinates; second line MUST be "NONE"
+    silent_error: staloc.txt missing the "NONE" sentinel line crashes the binary with "ERROR reading station file"
+
+outputs:
+  primary:
+  - name: discharge_daily
+    canonical_id: discharge
+    file: <station_name>.day
+    unit: m3/s
+    valid_range: [0.0, 50000.0]
+    format: ASCII; columns = year month day discharge_m3s
+    aggregation: daily (one row per day of simulation period)
+    notes: Primary routing output. Compare against gauge observations.
+  - name: discharge_monthly
+    canonical_id: discharge
+    file: <station_name>.month
+    unit: m3/s
+    valid_range: [0.0, 30000.0]
+    format: ASCII; columns = year month discharge_m3s
+    aggregation: monthly mean
+  - name: discharge_yearly
+    canonical_id: discharge
+    file: <station_name>.year
+    unit: m3/s
+    valid_range: [0.0, 30000.0]
+    format: ASCII; columns = month discharge_m3s (climatological yearly cycle)
+    aggregation: long-term-mean monthly cycle across all simulation years
+  - name: discharge_daily_mm
+    canonical_id: discharge_mm
+    file: <station_name>.day_mm
+    unit: mm/day
+    format: ASCII; columns = year month day discharge_mm
+    notes: Same as discharge_daily but normalized by basin area to mm/day.
+  - name: discharge_monthly_mm
+    canonical_id: discharge_mm
+    file: <station_name>.month_mm
+    unit: mm/day
+    format: ASCII; columns = year month discharge_mm
+  - name: end_of_month
+    canonical_id: discharge
+    file: <station_name>.end_of_month
+    unit: m3/s
+    format: ASCII; instantaneous discharge at end of each month
+
+known_issues:
+- id: 1
+  description: Discharge values extremely large (tens of thousands m³/s)
+  affected_output: discharge_daily, discharge_monthly
+  detection: monthly discharge >> reasonable basin yield
+  fix: Almost always a fraction.txt unit issue (got km² instead of fraction) or VIC fluxes still in mm/timestep instead of mm/day. Run preprocess_vic_for_routing.py first.
+
+- id: 2
+  description: Negative or zero discharge values
+  affected_output: discharge_daily
+  detection: discharge < 0 in output
+  fix: Usually a flow_direction.txt error — D8 codes that point off-grid create sink loops. Re-run flow direction with `run_build_routing_new.py`.
+
+- id: 3
+  description: ERROR reading station file
+  affected_output: simulation aborts
+  detection: stdout shows "ERROR" in the first second of run
+  fix: staloc.txt MUST have exactly 2 lines — first = "name lat lon", second = "NONE" sentinel.
+
+- id: 4
+  description: Stale unit hydrograph cache produces wrong peaks
+  affected_output: discharge_daily peak timing wrong by hours-to-days
+  detection: peak shape not matching observation peaks
+  fix: Delete *.uh_s files in routing_param/ before re-running; UH gets cached and stale across basins.
+
+- id: 5
+  description: Fortran path length limit (~72 chars)
+  affected_output: simulation aborts with "STOP" or path-truncation error
+  detection: working directory path > 72 chars
+  fix: Use symlinks to shorten path; rout_global.txt uses relative paths.
+
+unit_conversions:
+- name: vic_runoff_timestep_to_daily
+  from_unit: mm/timestep
+  to_unit: mm/day
+  formula: mm_day = mm_timestep × (timesteps_per_day)
+  notes: VIC default timestep is daily (1) so this is usually 1×; check VIC global_param if different.
+- name: vic_22col_to_7col
+  description: Pre-processing step to extract just the runoff and baseflow from VIC's 22-column flux output to a 7-column format Lohmann reads
+  formula: see skills/routing-run/preprocess_vic_for_routing.py

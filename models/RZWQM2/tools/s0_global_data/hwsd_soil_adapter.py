@@ -42,7 +42,7 @@ import io
 LAT = ""
 LON = ""
 HWSD_RASTER = "/mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img"
-HWSD_MDB = "/mnt/disk1/Hydrocraft_server/data/forcing/huaihe_raw/soil/HWSD.mdb"
+HWSD_MDB = "/media/server/hc_ssd/forcing/huaihe_raw/soil/HWSD.mdb"
 NUM_HORIZONS = "6"
 
 # ---------------------------------------------------------------------------

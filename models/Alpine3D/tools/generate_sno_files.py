@@ -81,7 +81,14 @@ SOIL_TYPES = {
     },
 }
 
-# Default soil layer thicknesses (m) from surface to bottom
+# Default soil layer thicknesses (m), listed SURFACE -> BOTTOM (thin at the
+# surface where the diurnal wave lives, thick at depth).
+#
+# NOTE: SNOWPACK reads .sno layers BOTTOM -> TOP (SmetIO.cc: "Layer %d from
+# bottom"), so process() reverses this list before writing. Emitting it in
+# surface-first order — as this tool used to — put the 5 cm skin layer at the
+# bottom of the column and the 85 cm layer at the soil surface, which
+# destroys the near-surface ground heat flux the snow energy balance needs.
 DEFAULT_LAYER_THICKNESSES = {
     1: [2.0],
     2: [0.5, 1.5],
@@ -175,7 +182,7 @@ def estimate_soil_temperature(altitude, month):
 
 def write_sno_file(filepath, station_id, latitude, longitude, altitude,
                    profile_date, soil_layers, snow_layers=None, soil_albedo=0.2,
-                   bare_soil_z0=0.02):
+                   bare_soil_z0=0.02, easting=None, northing=None, epsg=None):
     """Write a single .sno file in SMET format.
 
     Args:
@@ -183,19 +190,44 @@ def write_sno_file(filepath, station_id, latitude, longitude, altitude,
             thickness, temperature, vol_frac_ice, vol_frac_water,
             vol_frac_voids, vol_frac_soil, rho_s, conduc_s, heat_capac_s
         snow_layers: optional list of dicts with snow layer properties
+        easting/northing/epsg: if all given, the projected-coordinate SMET
+            location keys are written instead of latitude/longitude. SMET
+            accepts either pair; writing PROJECTED metres into `latitude`
+            and `longitude` (which the tool used to do) makes MeteoIO reject
+            the profile with "invalid latitude".
+
+    FIELD LAYOUT IS POSITIONAL. SNOWPACK's SmetIO::readSnowCover parses the
+    layer columns by index (see snowpack/plugins/SmetIO.cc ~line 417-457):
+      hl tl phiIce phiWater phiVoids phiSoil SoilRho SoilK SoilC
+      rg rb dd sp mk hr ne CDot metamo                    -> 18 numeric columns
+    The canonical header (SmetIO.cc line 121 / 723) names them
+      "... rg rb dd sp mk mass_hoar ne CDot metamo".
+    The previous version of this tool emitted "... mk hr CDot metamo" — it
+    both used the wrong name for mass_hoar AND omitted `ne` (number of
+    finite elements per layer), so every subsequent column was read one
+    position early: CDot was read as `ne`, giving ne=0 elements and a
+    degenerate/unusable initial profile.
     """
     n_snow = len(snow_layers) if snow_layers else 0
     n_soil = len(soil_layers)
 
     fields = ("timestamp Layer_Thick T Vol_Frac_I Vol_Frac_W Vol_Frac_V "
-              "Vol_Frac_S Rho_S Conduc_S HeatCapac_S rg rb dd sp mk hr CDot metamo")
+              "Vol_Frac_S Rho_S Conduc_S HeatCapac_S rg rb dd sp mk "
+              "mass_hoar ne CDot metamo")
+
+    use_proj = easting is not None and northing is not None and epsg is not None
 
     with open(filepath, "w") as f:
         f.write("SMET 1.1 ASCII\n")
         f.write("[HEADER]\n")
         f.write(f"station_id       = {station_id}\n")
-        f.write(f"latitude         = {latitude:.6f}\n")
-        f.write(f"longitude        = {longitude:.6f}\n")
+        if use_proj:
+            f.write(f"easting          = {easting:.2f}\n")
+            f.write(f"northing         = {northing:.2f}\n")
+            f.write(f"epsg             = {int(epsg)}\n")
+        else:
+            f.write(f"latitude         = {latitude:.6f}\n")
+            f.write(f"longitude        = {longitude:.6f}\n")
         f.write(f"altitude         = {altitude:.1f}\n")
         f.write(f"nodata           = -999\n")
         f.write(f"ProfileDate      = {profile_date}\n")
@@ -204,10 +236,13 @@ def write_sno_file(filepath, station_id, latitude, longitude, altitude,
         f.write(f"SlopeAzi         = 0.00\n")
         f.write(f"nSoilLayerData   = {n_soil}\n")
         f.write(f"nSnowLayerData   = {n_snow}\n")
-        f.write(f"SoilAlb          = {soil_albedo}\n")
+        # Key names below MUST match SmetIO::get_doubleval lookups exactly
+        # ("SoilAlbedo", "CanopyLeafAreaIndex") — the short forms "SoilAlb"
+        # and "CanopyLAI" this tool used to write are not recognised.
+        f.write(f"SoilAlbedo       = {soil_albedo}\n")
         f.write(f"BareSoil_z0      = {bare_soil_z0}\n")
         f.write(f"CanopyHeight     = 0.00\n")
-        f.write(f"CanopyLAI        = 0.00\n")
+        f.write(f"CanopyLeafAreaIndex = 0.00\n")
         f.write(f"CanopyDirectThroughfall = 1.00\n")
         f.write(f"WindScalingFactor = 1.00\n")
         f.write(f"ErosionLevel     = 0\n")
@@ -233,7 +268,8 @@ def write_sno_file(filepath, station_id, latitude, longitude, altitude,
                 f"{layer.get('dd', 0.0):.4f}",
                 f"{layer.get('sp', 1.0):.4f}",
                 f"{layer.get('mk', 0)}",
-                f"{layer.get('hr', 0.0):.6f}",
+                f"{layer.get('mass_hoar', layer.get('hr', 0.0)):.6f}",
+                f"{layer.get('ne', 1)}",
                 f"{layer.get('CDot', 0.0):.6f}",
                 f"{layer.get('metamo', 0.0):.6f}",
             ]
@@ -258,7 +294,8 @@ def write_sno_file(filepath, station_id, latitude, longitude, altitude,
                     f"{layer.get('dd', 0.5):.4f}",
                     f"{layer.get('sp', 0.5):.4f}",
                     f"{layer.get('mk', 0)}",
-                    f"{layer.get('hr', 0.0):.6f}",
+                    f"{layer.get('mass_hoar', layer.get('hr', 0.0)):.6f}",
+                    f"{layer.get('ne', 1)}",
                     f"{layer.get('CDot', 0.0):.6f}",
                     f"{layer.get('metamo', 0.0):.6f}",
                 ]
@@ -312,14 +349,18 @@ def process(args):
         print("WARNING: Soil density < 100 kg/m³ — did you use g/cm³?", file=sys.stderr)
         soil_props["density"] *= 1000
 
-    # Layer thicknesses
+    # Layer thicknesses. DEFAULT_LAYER_THICKNESSES is surface->bottom; SNOWPACK
+    # reads .sno layers bottom->top, so reverse before writing.
     n_layers = args.n_soil_layers
     if n_layers in DEFAULT_LAYER_THICKNESSES:
-        thicknesses = DEFAULT_LAYER_THICKNESSES[n_layers]
+        thicknesses = list(reversed(DEFAULT_LAYER_THICKNESSES[n_layers]))
     else:
         # Equal thickness layers
         total_depth = 2.0  # m
         thicknesses = [total_depth / n_layers] * n_layers
+
+    # Optional projected-coordinate metadata for the SMET location keys.
+    epsg = args.epsg
 
     os.makedirs(args.output, exist_ok=True)
 
@@ -345,17 +386,29 @@ def process(args):
             easting = xll + (col + 0.5) * cellsize
             northing = yll + (nrows - row - 0.5) * cellsize
 
-            # Station ID from grid position
-            station_id = f"{row}_{col}"
+            # --- .sno FILE NAME (Alpine3D convention, NOT free-form) --------
+            # Alpine3D builds the name it looks for in SnowpackInterface.cc:
+            #   per-pixel  GRID_sno = <ix>_<iy>_<EXPERIMENT>      (line ~1260)
+            #   per-class  LUS_sno  = <EXPERIMENT>_<landuse_code> (line ~1259)
+            # where ix is the COLUMN and iy the ROW COUNTED FROM THE BOTTOM
+            # (MeteoIO grids are south-up), and EXPERIMENT is [Output]::
+            # EXPERIMENT. The old `<row>_<col>.sno` name matched neither, so
+            # Alpine3D found no initial profile and aborted.
+            iy = nrows - 1 - row          # row index from the bottom
+            if args.naming == "landuse":
+                station_id = f"{args.experiment}_{args.landuse_code}"
+            else:
+                station_id = f"{col}_{iy}_{args.experiment}"
 
             # Estimate soil temperature
             t_soil = estimate_soil_temperature(altitude, month)
 
-            # Build soil layers
+            # Build soil layers (bottom -> top, matching `thicknesses`)
             soil_layers = []
+            n_thick = len(thicknesses)
             for i, thick in enumerate(thicknesses):
-                # Temperature increases slightly with depth
-                layer_t = t_soil + 0.5 * (i + 1)
+                # Warmer at depth: i=0 is the DEEPEST layer.
+                layer_t = t_soil + 0.5 * (n_thick - i)
 
                 water_frac = soil_props["water_fraction"]
                 soil_frac = soil_props["soil_fraction"]
@@ -376,18 +429,24 @@ def process(args):
                     "heat_capac_s": soil_props["heat_capacity"],
                 })
 
-            # Convert to lat/lon for SMET if coordinates are projected
-            # (simplified — assumes coordinates are already in WGS84 or will be
-            # converted by MeteoIO via COORDSYS setting)
             filepath = os.path.join(args.output, f"{station_id}.sno")
+            if os.path.exists(filepath) and args.naming == "landuse":
+                # landuse naming yields ONE profile per class, not per pixel
+                n_skipped += 1
+                continue
             write_sno_file(
                 filepath=filepath,
                 station_id=station_id,
-                latitude=easting,  # Will be interpreted based on COORDSYS
-                longitude=northing,
+                # Projected DEM coordinates go in easting/northing/epsg — they
+                # are NOT latitude/longitude (see write_sno_file docstring).
+                latitude=args.latitude,
+                longitude=args.longitude,
                 altitude=altitude,
                 profile_date=profile_date,
                 soil_layers=soil_layers,
+                easting=easting if epsg else None,
+                northing=northing if epsg else None,
+                epsg=epsg,
             )
 
             n_written += 1
@@ -426,6 +485,29 @@ def main():
                         help="Custom soil volumetric water content (0–1)")
     parser.add_argument("--soil-solid-fraction", type=float, default=None,
                         help="Custom soil solid fraction (0–1)")
+
+    # --- Alpine3D .sno naming (see process() for the convention) -----------
+    parser.add_argument("--experiment", default="sim",
+                        help="[Output]::EXPERIMENT from io.ini. Alpine3D looks for "
+                             "'<col>_<row_from_bottom>_<EXPERIMENT>.sno' (pixel) or "
+                             "'<EXPERIMENT>_<landuse_code>.sno' (landuse).")
+    parser.add_argument("--naming", default="pixel", choices=["pixel", "landuse"],
+                        help="pixel: one .sno per grid cell named <ix>_<iy>_<EXPERIMENT>. "
+                             "landuse: a single .sno per land-use class named "
+                             "<EXPERIMENT>_<code> (default Alpine3D fallback). "
+                             "(default: pixel)")
+    parser.add_argument("--landuse-code", type=int, default=10851,
+                        help="Land-use (PREVAH) code used by --naming landuse "
+                             "(default: 10851 = alpine grassland/tundra)")
+    # SMET location keys
+    parser.add_argument("--epsg", type=int, default=None,
+                        help="EPSG code of the DEM's projected CRS. When given, "
+                             "each .sno carries easting/northing/epsg (correct for a "
+                             "projected DEM) instead of latitude/longitude.")
+    parser.add_argument("--latitude", type=float, default=0.0,
+                        help="Site latitude (WGS84), used only when --epsg is absent")
+    parser.add_argument("--longitude", type=float, default=0.0,
+                        help="Site longitude (WGS84), used only when --epsg is absent")
 
     args = parser.parse_args()
 

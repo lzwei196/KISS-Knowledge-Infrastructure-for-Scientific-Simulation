@@ -268,11 +268,21 @@ def extract_harvest_summary(harvest_result):
         n_components = [event.get(c, 0) for c in ["stem_N", "leaf_N", "dead_N", "sorg_N"]]
         event["total_N"] = sum(n_components)
 
-        # Stress and efficiency
-        for metric in ["water_stress_days", "nitrogen_stress_days",
-                       "water_productivity", "harvest_index"]:
-            if metric in row and pd.notna(row[metric]):
-                event[metric] = float(row[metric])
+        # Stress and efficiency. The harvest.dlf column headers emitted by the
+        # log-std.dai 'harvest' log use the short names WStress/NStress/WP_ET/HI,
+        # so map those onto the documented long-form keys (the SKILL.md output
+        # table calls them water_stress_days / harvest_index etc.).
+        alias = {
+            "water_stress_days": ["water_stress_days", "WStress"],
+            "nitrogen_stress_days": ["nitrogen_stress_days", "NStress"],
+            "water_productivity": ["water_productivity", "WP_ET"],
+            "harvest_index": ["harvest_index", "HI"],
+        }
+        for metric, candidates in alias.items():
+            for col in candidates:
+                if col in row and pd.notna(row[col]):
+                    event[metric] = float(row[col])
+                    break
 
         events.append(event)
 

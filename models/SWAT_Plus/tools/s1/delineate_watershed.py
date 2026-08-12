@@ -38,6 +38,10 @@ OUTLET_LAT = 0.0
 OUTLET_LON = 0.0
 STREAM_THRESHOLD_KM2 = 25.0
 OUTPUT_DIR = ""
+# snap_pour_points only ever moves the outlet toward HIGHER flow accumulation,
+# i.e. downstream. A large radius silently drags the pour point past the next
+# confluence and inflates the basin (dt_008). 0.01 deg ~ 1 km.
+SNAP_DIST_DEG = 0.01
 
 # CLI override
 if len(sys.argv) >= 5:
@@ -47,6 +51,8 @@ if len(sys.argv) >= 5:
     OUTPUT_DIR = sys.argv[4]
 if len(sys.argv) >= 6:
     STREAM_THRESHOLD_KM2 = float(sys.argv[5])
+if len(sys.argv) >= 7:
+    SNAP_DIST_DEG = float(sys.argv[6])
 
 # ---------------------------------------------------------------------------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -80,13 +86,14 @@ def process():
 
     Uses WhiteboxTools (preferred) or pysheds as fallback.
     """
-    output_dir = Path(OUTPUT_DIR)
+    output_dir = Path(OUTPUT_DIR).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         import whitebox
         wbt = whitebox.WhiteboxTools()
         wbt.set_verbose_mode(True)
+        wbt.set_working_dir(str(output_dir))
 
         dem = str(Path(DEM_PATH).resolve())
         filled = str(output_dir / "dem_filled.tif")
@@ -128,7 +135,7 @@ def process():
 
         # Snap pour point
         snapped = str(output_dir / "outlet_snapped.shp")
-        wbt.snap_pour_points(outlet_path, facc, snapped, snap_dist=0.15)
+        wbt.snap_pour_points(outlet_path, facc, snapped, snap_dist=SNAP_DIST_DEG)
 
         # Watershed delineation
         watershed_raster = str(output_dir / "watershed.tif")
@@ -153,6 +160,23 @@ def process():
         # Pysheds fallback would go here
         raise NotImplementedError("pysheds fallback not yet implemented")
 
+    # Report the delineated area and the SNAPPED outlet so the caller can catch
+    # dt_008 (outlet on the wrong stream / dragged past a confluence) instead of
+    # silently simulating the wrong basin.
+    area_km2 = None
+    snap_lat = snap_lon = None
+    try:
+        import geopandas as gpd
+        ws = gpd.read_file(str(output_dir / "watershed.shp"))
+        area_km2 = float(ws.to_crs("EPSG:6933").area.sum() / 1e6)
+        pt = gpd.read_file(snapped).to_crs("EPSG:4326").geometry.iloc[0]
+        snap_lat, snap_lon = float(pt.y), float(pt.x)
+        logger.info(f"Delineated area: {area_km2:.1f} km2; snapped outlet "
+                    f"({snap_lat:.5f}, {snap_lon:.5f}) from requested "
+                    f"({OUTLET_LAT:.5f}, {OUTLET_LON:.5f})")
+    except Exception as e:
+        logger.warning(f"Could not compute delineated area: {e}")
+
     result = {
         "status": "success",
         "watershed_shp": str(output_dir / "watershed.shp"),
@@ -160,6 +184,10 @@ def process():
         "streams_shp": str(output_dir / "streams.shp"),
         "outlet_lat": OUTLET_LAT,
         "outlet_lon": OUTLET_LON,
+        "snapped_outlet_lat": snap_lat,
+        "snapped_outlet_lon": snap_lon,
+        "snap_dist_deg": SNAP_DIST_DEG,
+        "delineated_area_km2": area_km2,
         "stream_threshold_km2": STREAM_THRESHOLD_KM2
     }
     return result

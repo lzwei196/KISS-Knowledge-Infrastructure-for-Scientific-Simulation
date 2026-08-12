@@ -5,11 +5,17 @@ run_simfire.py — Execution wrapper for SimFire wildfire simulation.
 Creates or modifies a SimFire YAML config, runs the simulation via Python API,
 and captures outputs (fire maps, GIF, spread graph, statistics).
 
-CRITICAL NOTES:
-  - Headless mode MUST be true for server/batch runs (no display available).
-  - Wind speed in config is in ft/min, NOT mph or m/s.
+CRITICAL NOTES (verified against simfire 2.0.1 source + official MITRE docs):
+  - Headless mode MUST be true for server/batch runs; ALSO set
+    SDL_VIDEODRIVER=dummy in the environment to suppress PyGame display init.
+  - YAML wind.simple.speed is in **mph**, NOT ft/min. The loader at
+    config.py:860 calls mph_to_ftpm internally. Same for
+    wind.perlin.speed.range_min/max (config.py:897-901).
+  - YAML wind.simple.direction is degrees clockwise from N, "TO direction"
+    (90 = wind blows TOWARD east). NOT the meteorological "from" convention.
+    See rothermel.py:104.
   - Moisture is a FRACTION (0.03 = 3%), not a percentage.
-  - Pixel scale is in FEET per pixel.
+  - Pixel scale is in FEET per pixel (area.pixel_scale).
   - Operational area height/width is in METERS (not feet).
 
 Output:

@@ -27,6 +27,7 @@ import logging
 import json
 from pathlib import Path
 from datetime import datetime, timedelta
+import numpy as np
 
 FORCING_SOURCE = "csv"  # cmfd, mswx, csv, nasa_power
 FORCING_DIR = ""
@@ -43,6 +44,13 @@ if len(sys.argv) >= 6:
     END_DATE = sys.argv[5]
 if len(sys.argv) >= 7:
     OUTPUT_DIR = sys.argv[6]
+# SWAT+ binds spatial objects to weather BY NAME: hru.con / rout_unit.con carry a
+# `wst` column written by s2/generate_hru_from_global.py (staNN). If S3 invents its
+# own p%06d names, weather-sta.cli never matches and the objects get no weather.
+# 7th arg lets the caller pass the names S2 already declared (dt_040).
+STATION_NAMES = []
+if len(sys.argv) >= 8:
+    STATION_NAMES = json.loads(sys.argv[7])
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -107,74 +115,79 @@ def process():
     hmd_files = []
     wnd_files = []
 
+    # ROOT-CAUSE FIX (2026-06-05, Xixian run): the previous CMFD/MSWX path was a
+    # non-functional stub — it opened NetCDFs but then appended HARDCODED constants
+    # (precip=0.0, tmax=25, tmin=15, slr=15, hmd=0.65, wnd=2.5) for every day, so
+    # every produced .pcp/.tmp was physically meaningless (Xixian came out at
+    # ~130 mm/yr). The KI's own canonical loader, ki_tools_common.load_forcing,
+    # already reads CMFD/MSWX/NASA-POWER correctly (3-hourly -> daily aggregation,
+    # K->C, kg/m2/s->mm/day). Delegate to it instead of re-implementing badly.
+    from ki_tools_common.load_forcing import load_daily_forcing_points
+    # ki_tools_common.terrain exports get_terrain(), NOT point_elevation. The old
+    # `from ... import point_elevation` raised ImportError, the bare except swallowed
+    # it, and EVERY station in EVERY basin was written with elev=0.0 — 1000 m
+    # mountain stations placed at sea level, which biases PET and snowmelt.
+    from ki_tools_common.terrain import get_terrain
+
+    def _es_pa(tc):
+        # Saturation vapour pressure (Pa), Alduchov-Eskridge over water
+        return 610.94 * np.exp(17.625 * tc / (tc + 243.04))
+
+    # One pass over the CMFD monthly NetCDFs for ALL stations (see
+    # load_daily_forcing_points docstring): a per-station loop re-inflates the
+    # whole lat/lon slab and costs ~214 s per station-year.
+    fdir_arg = FORCING_DIR if (FORCING_DIR and Path(FORCING_DIR).exists()) else None
+    forcings = load_daily_forcing_points(FORCING_SOURCE,
+                                         [(lat, lon) for lat, lon in STATION_COORDS],
+                                         start.year, end.year, forcing_dir=fdir_arg)
+
     for idx, (lat, lon) in enumerate(STATION_COORDS):
-        station_name = f"p{idx+1:06d}"
-        elev = 0.0  # Would be extracted from DEM in full implementation
-
-        # Generate daily date sequence
-        n_days = (end - start).days + 1
-        dates = [start + timedelta(days=d) for d in range(n_days)]
-
-        # Extract data from CMFD NetCDF (search Prec/, Temp/, SRad/, SHum/, Wind/ subdirs)
-        pcp_data, tmp_data, slr_data, hmd_data, wnd_data = [], [], [], [], []
-        cmfd_read_ok = False
+        station_name = (STATION_NAMES[idx] if idx < len(STATION_NAMES)
+                        else f"p{idx+1:06d}")
         try:
-            import xarray as xr
-            forcing_path = Path(FORCING_DIR) if 'FORCING_DIR' in dir() else Path(output_dir).parent.parent / "forcing"
-            # Try common CMFD locations
-            for fdir in [forcing_path, Path("/mnt/disk1/Hydrocraft_server/data/forcing/Data_forcing_03hr_010deg")]:
-                if not (fdir / "Prec").exists():
-                    continue
-                for d in dates:
-                    yr, mo = d.year, d.month
-                    jday = d.timetuple().tm_yday
-                    # Read one day from each variable
-                    day_vals = {"prec": 0.0, "tmax": 25.0, "tmin": 15.0, "srad": 15.0, "hmd": 0.65, "wind": 2.5}
-                    for subdir, pattern in [("Prec","prec"), ("Temp","temp"), ("SRad","srad"), ("SHum","shum"), ("Wind","wind")]:
-                        sd = fdir / subdir
-                        nc_files = sorted(sd.glob(f"*{yr}{mo:02d}*")) if sd.exists() else []
-                        if nc_files and not cmfd_read_ok:
-                            # Read once per month, cache
-                            ds = xr.open_dataset(nc_files[0])
-                            dvar = [v for v in ds.data_vars if pattern in v.lower()] or list(ds.data_vars)
-                            glats = ds['lat'].values if 'lat' in ds else ds['latitude'].values
-                            glons = ds['lon'].values if 'lon' in ds else ds['longitude'].values
-                            li = int(np.argmin(np.abs(glats - lat)))
-                            lo = int(np.argmin(np.abs(glons - lon)))
-                            ts = ds[dvar[0]][:, li, lo].values
-                            # Store for this month
-                            if not hasattr(d, '_cmfd_cache'):
-                                d._cmfd_cache = {}
-                            d._cmfd_cache[pattern] = ts
-                            ds.close()
-                    # Aggregate 3-hourly to daily
-                    day_in_month = d.day - 1
-                    s, e = day_in_month * 8, (day_in_month + 1) * 8
-                    try:
-                        if hasattr(dates[0], '_cmfd_cache'):
-                            cache = dates[0]._cmfd_cache
-                        else:
-                            cache = {}
-                    except:
-                        cache = {}
-                    pcp_data.append({"year": yr, "jday": jday, "value": 0.0})
-                    tmp_data.append({"year": yr, "jday": jday, "tmax": 25.0, "tmin": 15.0})
-                    slr_data.append({"year": yr, "jday": jday, "value": 15.0})
-                    hmd_data.append({"year": yr, "jday": jday, "value": 0.65})
-                    wnd_data.append({"year": yr, "jday": jday, "value": 2.5})
-                cmfd_read_ok = True
-                break
-        except Exception as ex:
-            logger.warning(f"CMFD read failed for station ({lat},{lon}): {ex}")
+            elev = float(get_terrain(lat, lon)["elevation"])
+        except Exception as e:
+            logger.warning(f"get_terrain failed at ({lat},{lon}): {e}")
+            elev = 0.0
+        if elev == 0.0:
+            logger.warning(f"station {station_name} ({lat:.3f},{lon:.3f}) has elev=0.0 m "
+                           f"— check the terrain lookup before trusting PET/snowmelt")
 
-        if not cmfd_read_ok:
-            # Fallback to placeholder data (agent should install xarray or provide VIC forcing)
-            logger.warning(f"Using placeholder weather data for station ({lat},{lon}). Install xarray and point --forcing_dir to CMFD for real data.")
-            pcp_data = [{"year": d.year, "jday": d.timetuple().tm_yday, "value": 0.0} for d in dates]
-            tmp_data = [{"year": d.year, "jday": d.timetuple().tm_yday, "tmax": 25.0, "tmin": 15.0} for d in dates]
-            slr_data = [{"year": d.year, "jday": d.timetuple().tm_yday, "value": 15.0} for d in dates]
-            hmd_data = [{"year": d.year, "jday": d.timetuple().tm_yday, "value": 0.65} for d in dates]
-            wnd_data = [{"year": d.year, "jday": d.timetuple().tm_yday, "value": 2.5} for d in dates]
+        fc = forcings[idx]
+        fdates = fc["dates"]
+        precip = np.asarray(fc["precip_mm"], dtype=float)
+        tmax = np.asarray(fc["temp_max_c"], dtype=float)
+        tmin = np.asarray(fc["temp_min_c"], dtype=float)
+        srad = np.asarray(fc.get("srad_wm2", [np.nan] * len(fdates)), dtype=float)
+        wind = np.asarray(fc.get("wind_ms", [np.nan] * len(fdates)), dtype=float)
+        shum = np.asarray(fc.get("shum_kgkg", [np.nan] * len(fdates)), dtype=float)
+        pres = np.asarray(fc.get("pres_pa", [np.nan] * len(fdates)), dtype=float)
+
+        # Derived: solar W/m2 -> MJ/m2/day; specific humidity -> RH fraction
+        slr_mj = srad * 0.0864
+        tmean = (tmax + tmin) / 2.0
+        with np.errstate(invalid="ignore", divide="ignore"):
+            e_act = shum * pres / (0.622 + 0.378 * shum)
+            rh = np.clip(e_act / _es_pa(tmean), 0.05, 1.0)
+
+        def _clean(v, fill):
+            return fill if (v is None or not np.isfinite(v)) else float(v)
+
+        pcp_data, tmp_data, slr_data, hmd_data, wnd_data = [], [], [], [], []
+        for i, d in enumerate(fdates):
+            yr = d.year
+            jday = d.timetuple().tm_yday
+            pcp_data.append({"year": yr, "jday": jday, "value": max(0.0, _clean(precip[i], 0.0))})
+            tmp_data.append({"year": yr, "jday": jday,
+                             "tmax": _clean(tmax[i], 25.0), "tmin": _clean(tmin[i], 15.0)})
+            slr_data.append({"year": yr, "jday": jday, "value": _clean(slr_mj[i], 15.0)})
+            hmd_data.append({"year": yr, "jday": jday, "value": _clean(rh[i], 0.65)})
+            wnd_data.append({"year": yr, "jday": jday, "value": _clean(wind[i], 2.5)})
+
+        logger.info(f"Loaded {len(pcp_data)} days for station {station_name} "
+                    f"({lat:.3f},{lon:.3f}) from {FORCING_SOURCE}: "
+                    f"mean precip {np.nanmean(precip)*365:.0f} mm/yr, "
+                    f"Tmax {np.nanmean(tmax):.1f} Tmin {np.nanmean(tmin):.1f} C")
 
         # Write individual station files
         pcp_name = f"{station_name}.pcp"
@@ -214,7 +227,7 @@ def process():
     return {
         "status": "success",
         "n_stations": len(STATION_COORDS),
-        "n_days": n_days,
+        "n_days": (end - start).days + 1,
         "period": f"{START_DATE} to {END_DATE}",
         "files_created": {
             "pcp": pcp_files,

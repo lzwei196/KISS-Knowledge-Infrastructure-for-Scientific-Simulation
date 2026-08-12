@@ -76,13 +76,32 @@ def validate_inputs(args):
         if "path_static" not in content and "path_forcing" not in content:
             warnings.append("TOML may be missing input paths (path_static, path_forcing)")
 
-        # Check referenced files exist
+        # Check referenced files exist.
+        #
+        # Wflow.jl resolves input.path_static / input.path_forcing relative to
+        # the TOP-LEVEL `dir_input`, which is itself relative to the TOML's own
+        # directory (see Wflow.jl `Config`, and the shipped developer example
+        # where dir_input = "data/input" and path_static =
+        # "staticmaps-moselle.nc" resolve to data/input/staticmaps-moselle.nc).
+        # Joining path_static straight onto dirname(toml) ignores dir_input and
+        # hard-FAILS every TOML written in the standard upstream layout — this
+        # tool refused to run Deltares' own example with "Static maps file not
+        # found: <toml_dir>/staticmaps-moselle.nc" (2026-08-08).  dir_input is
+        # optional and defaults to the TOML's directory.
         import re
+        toml_base = os.path.dirname(os.path.abspath(args.toml))
+        dir_in_match = re.search(r'^\s*dir_input\s*=\s*"([^"]+)"', content,
+                                 re.MULTILINE)
+        input_base = toml_base
+        if dir_in_match:
+            d = dir_in_match.group(1)
+            input_base = d if os.path.isabs(d) else os.path.join(toml_base, d)
+
         static_match = re.search(r'path_static\s*=\s*"([^"]+)"', content)
         if static_match:
             static_path = static_match.group(1)
             if not os.path.isabs(static_path):
-                static_path = os.path.join(os.path.dirname(args.toml), static_path)
+                static_path = os.path.join(input_base, static_path)
             if not os.path.exists(static_path):
                 errors.append(f"Static maps file not found: {static_path}")
 
@@ -90,7 +109,7 @@ def validate_inputs(args):
         if forcing_match:
             forcing_path = forcing_match.group(1)
             if not os.path.isabs(forcing_path):
-                forcing_path = os.path.join(os.path.dirname(args.toml), forcing_path)
+                forcing_path = os.path.join(input_base, forcing_path)
             if not os.path.exists(forcing_path):
                 errors.append(f"Forcing file not found: {forcing_path}")
 
@@ -164,22 +183,28 @@ def process(args, warnings, julia_bin):
                     "path": fpath,
                     "size_mb": round(os.path.getsize(fpath) / 1e6, 1),
                 }
-        # Also check configured output dir
+        # Also check the configured output DIRECTORY. Wflow.jl writes every
+        # output (netcdf_grid / netcdf_scalar / csv / outstates) into the
+        # top-level `dir_output`, relative to the TOML's own directory; the
+        # per-block `path = "..."` keys are FILE names inside it, not
+        # directories, so globbing them as a dir silently found nothing.
         import re
         with open(toml_path) as f:
             toml_content = f.read()
-        out_match = re.search(r'\[output\].*?path\s*=\s*"([^"]+)"', toml_content, re.DOTALL)
-        if out_match:
-            out_dir = out_match.group(1)
+        dir_out_match = re.search(r'^\s*dir_output\s*=\s*"([^"]+)"', toml_content,
+                                  re.MULTILINE)
+        if dir_out_match:
+            out_dir = dir_out_match.group(1)
             if not os.path.isabs(out_dir):
                 out_dir = os.path.join(toml_dir, out_dir)
-            if os.path.exists(out_dir):
-                for fpath in glob.glob(os.path.join(out_dir, "*.nc")):
-                    fname = os.path.basename(fpath)
-                    output_files[fname] = {
-                        "path": fpath,
-                        "size_mb": round(os.path.getsize(fpath) / 1e6, 1),
-                    }
+            if os.path.isdir(out_dir):
+                for pat in ("*.nc", "*.csv"):
+                    for fpath in glob.glob(os.path.join(out_dir, pat)):
+                        fname = os.path.basename(fpath)
+                        output_files[fname] = {
+                            "path": fpath,
+                            "size_mb": round(os.path.getsize(fpath) / 1e6, 1),
+                        }
 
         return {
             "status": status,

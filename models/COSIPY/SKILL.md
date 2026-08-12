@@ -367,6 +367,86 @@ python COSIPY.py -s path/to/slurm_config.toml
 
 ---
 
+## Non-Glacier (Point / Seasonal-Snow) Runs & Environment Notes
+
+COSIPY ships glacier-centric. The following were discovered while verifying it as a
+seasonal-snow point model against SNOTEL SWE (passing result: r=0.80, NSE=0.64,
+KGE=0.76, PBIAS=4.7%). Encode them so they are not rediscovered.
+
+### Environment (REQUIRED) — netCDF4 backend is broken; use the h5netcdf shim
+- The shared `python_env` netCDF4 backend is broken on this host
+  (`OSError -101: NetCDF: HDF error`). As of 2026-06-21 it can no longer even
+  *write* a multi-variable file with the netcdf4 engine, and it fails to *read*
+  the COSIPY forcing/output files (libnetcdf 4.9.3 / HDF5 1.14.6). The
+  `h5netcdf` engine reads and writes the same files fine.
+- The old advice to use a dedicated venv `auto_dissect/_work/COSIPY/venv` is
+  STALE — that venv no longer exists. Do NOT look for it.
+- **The fix is built into the tools — just run the system `python3`:**
+  - `tools/run_cosipy.py` injects `tools/_netcdf_shim/sitecustomize.py` onto
+    `PYTHONPATH` and sets `COSIPY_FORCE_H5NETCDF=1` for the COSIPY subprocess, so
+    COSIPY's default-engine `xr.open_dataset` / `to_netcdf` route through
+    h5netcdf transparently — no edit to the model source. h5netcdf accepts
+    COSIPY's `zlib`/`complevel` encoding keys directly.
+  - `tools/run_cosipy.py` validation and `tools/parse_output.py` both open
+    datasets via an engine-fallback helper (default -> h5netcdf -> netcdf4).
+  - If the python_env netCDF4 backend is ever repaired, the shim becomes a
+    no-op automatically (it only activates when `COSIPY_FORCE_H5NETCDF=1`).
+- COSIPY source dir on this host: `/mnt/disk1/Hydrocraft_server/models/COSIPY/source/repo`
+  (pass it as `run_cosipy.py --source-dir`). COSIPY reads input from
+  `<data_path>/input/<input_netcdf>` and writes to `<data_path>/output/`.
+
+### SNOTEL observations (no reader tool exists)
+- `data_ki/SNOTEL/SKILL.md` is referenced above but there is NO SNOTEL obs-reader
+  tool in this KI. Parse NRCS SNOTEL CSV directly:
+  - Skip `#`-prefixed comment/header lines.
+  - SWE is in INCHES -> multiply by 25.4 to get mm before passing to
+    `parse_output.compare_to_obs()`.
+- Niwot Ridge SNOTEL (#663) is absent from the on-disk 50-station subset; the
+  nearest available proxy is Grizzly Peak (#505), 39.646 N, -105.869 E, 3386 m.
+
+### Point / seasonal-snow run recipe
+`convert_static.py` requires a glacier shapefile and has no point path. Instead:
+1. Build a 1x1 `MASK=1` static column (single cell).
+2. Supply site geometry through the forcing tool:
+   `convert_forcing.py --source nasa_power --start YYYY-MM-DD --end YYYY-MM-DD \
+      --lat <lat> --lon <lon> --hgt <site_elev_m> --slope <deg> --aspect <deg>`
+   NOTE: `--hgt` defaults to 5000.0 m (glacier altitude) and MUST be overridden
+   for point sites.
+3. In `constants.toml` set `initial_snowheight_constant = 0.2` and a thick ice
+   base (`initial_glacier_height` ~= 70 m) to avoid the `surfaceTemperature.py`
+   IndexError on thin/ablated columns (see triplet dt_021).
+4. Derive SWE for comparison with `parse_output.derive_swe()` — requires
+   `full_field` output so LAYER_HEIGHT / LAYER_RHO are present.
+
+### Comparing against SNOW DEPTH (not SWE) — direct SNOWHEIGHT path
+When the obs is a snow-DEPTH series (cm), compare it directly to the model's
+`SNOWHEIGHT` (m) — no SWE derivation and NO `full_field` needed (faster):
+`parse_output.py --mode compare --variable SNOWHEIGHT --obs-scale 0.01` converts
+obs cm -> m. dag variable = `SNOWHEIGHT`, obs_shape = `point_time_series`
+(NSE/KGE/r/PBIAS all valid per dag).
+
+### Canadian Historical Daily Snow Depth Database (no obs-reader tool exists)
+- Path: `/home/server/桌面/数据/Canadian Historical Daily Snow Depth Database/Canadian-Historical-Snow-Depth-Dataset-2019-Update.nc`
+  (5719 stations, daily `snd` in **cm**, dims (time, station_id); read with
+  `engine='h5netcdf'` — the netcdf4 backend is broken, see dt_022).
+- There is NO obs-reader tool in this KI; extract one station's `snd` to a
+  `Date,snd` CSV (select by `station_id`), then feed `parse_output --mode compare`.
+- VALIDATED point (2026-06-22): station `117CA90` GLACIER NP MT FIDELITY
+  (51.23 N, -117.72 E, 1875 m) — deep alpine seasonal snow, full coverage
+  WY2001-2014. Daily NASA POWER forcing 2009-2014, the point-snow constants
+  template, `mult_factor_RRR = 1.7` (orographic undercatch) -> overall
+  NSE 0.892 / KGE 0.829 / r 0.952 / PBIAS -1.5% (cal WY2011-12 NSE 0.890,
+  val WY2013-14 NSE 0.890). The default `mult_factor_RRR = 2.0` over-accumulates
+  here (PBIAS +16%); 1.7 zeroes the bias. Skip WY2010 as spinup (eval-start
+  2010-08-01).
+
+### run_cosipy preflight path resolution (dt_023)
+`run_cosipy.py` is meant to be invoked from the KI dir with `--source-dir <repo>`.
+The preflight now resolves a relative config `data_path` ("./data/") against
+`--source-dir` (where COSIPY runs), not against the caller cwd. Older copies
+falsely reported "Input file not found"; if seen, use an absolute data_path or
+run from inside the source dir.
+
 ## References
 
 - Sauter, T., & Arndt, A. (2020). COSIPY v1.3 — An open-source coupled snowpack and ice surface energy and mass balance model. *Geoscientific Model Development*, 13, 5645-5662. doi:10.5194/gmd-13-5645-2020

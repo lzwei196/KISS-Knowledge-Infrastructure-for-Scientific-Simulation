@@ -1,0 +1,780 @@
+{
+  "APEXCONT": {
+    "params": [
+      {
+        "position": 1,
+        "name": "NBYR",
+        "description": "Number of  Years for Simulation Duration",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 2,
+        "name": "IYR",
+        "description": "Beginning Year of Simulation",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 1,
+        "name": "IMO",
+        "description": "Beginning Month of Simulation",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 4,
+        "name": "IDA",
+        "description": "Beginning Day of Simulation",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 5,
+        "name": "IPD",
+        "description": "Print Code for Type of Output",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 6,
+        "name": "NGN0",
+        "description": "Input Code for Weather Variables",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 7,
+        "name": "IGN",
+        "description": "Number of Times Random Number Generator Cycles Before Simula",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 8,
+        "name": "IGS0",
+        "description": "Day Weather Generator Stops Generating Daily Weather",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 9,
+        "name": "LPYR",
+        "description": "Leap Year Considered (Range: 0-1)",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 10,
+        "name": "IET",
+        "description": "Potential Evapotranspiration Equation Code",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 11,
+        "name": "ISCN",
+        "description": "Stochastic CN Estimator Code",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 12,
+        "name": "ITYP",
+        "description": "Peak Rate Estimate Code",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 13,
+        "name": "ISTA",
+        "description": "Static Soil Code",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 14,
+        "name": "IHUS",
+        "description": "Automatic Heat Unit Scheduling",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 15,
+        "name": "NVCN0",
+        "description": "Non-varying CN-CN2 Used (Range: 0-4)",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 16,
+        "name": "INFL",
+        "description": "Runoff (Q) Estimation Methodology (Range: 0-4)",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 17,
+        "name": "MASP",
+        "description": "Pesticide Output in Mass and Concentration (Range: 0-1)",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 18,
+        "name": "IERT",
+        "description": "Enrichment Ratio Method",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 19,
+        "name": "LBP",
+        "description": "Soluble Phosphorus Runoff Estimate Equation  (Range: 0-2)",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 20,
+        "name": "NUPC",
+        "description": "N and P plant uptake concentration code (Range: 0-1)",
+        "line": "LINE 1:           FORMAT:  FREE FORMAT-  FIELD (INTEGER)"
+      },
+      {
+        "position": 1,
+        "name": "MNUL",
+        "description": "Manure application code",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 2,
+        "name": "LPD",
+        "description": "Day of year to trigger lagoon pumping  (Range: 0-365)",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 3,
+        "name": "MSCP",
+        "description": "Interval for solid manure scraping (d)  (Range: 0-365)",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 4,
+        "name": "ISLF",
+        "description": "Slope length / steepness factor",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 5,
+        "name": "NAQ",
+        "description": "Air Quality Analysis   (Range: 0-1)",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 6,
+        "name": "IHY",
+        "description": "Flood Routing  (Range: 0-2)",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 7,
+        "name": "ICO2",
+        "description": "Atmospheric CO2   (Range: 0-2)",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 8,
+        "name": "ISW",
+        "description": "Field Capacity/Wilting Point Estimation   (Range: 0-5)",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 9,
+        "name": "IGMX",
+        "description": "Number of times generator seeds are initialized for a site  ",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 10,
+        "name": "IDIR",
+        "description": "Data Directory (Range: 0-1)",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 11,
+        "name": "IMW0",
+        "description": "Minimum Interval between auto mow",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 12,
+        "name": "IOX",
+        "description": "O2 \u2013 depth function  (Range: 0-1)",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 13,
+        "name": "IDNT",
+        "description": "Denitrification subprogram (Range: 0-1)",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 14,
+        "name": "IAZM",
+        "description": "Latitude source (Range: 0-1)",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 15,
+        "name": "IPAT",
+        "description": "Auto-Phosphorus Switch  (Range: 0-1)",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 16,
+        "name": "IHRD",
+        "description": "Grazing Mode  (Range: 0-2)",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 17,
+        "name": "IWTB",
+        "description": "Duration of antecedent period for rainfall and PET accumulat",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 18,
+        "name": "IKAT",
+        "description": "Auto-Potasium Switch (Range: 0-1)",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 19,
+        "name": "NSTP",
+        "description": "Real time day of year(Range: 0-365)",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 20,
+        "name": "IPRK",
+        "description": "Select method to calculate percolation. IPRK = 0 FOR HPERC (",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 21,
+        "name": "ICP",
+        "description": "Subprogram to simulate mineralization and immobilization of ",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 22,
+        "name": "NTV",
+        "description": "0 For original APEX NITVOL EQS; > 0 For Izaurralde revised N",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 23,
+        "name": "IREM",
+        "description": "SSK for Water Erosion Setting (Range: 0-1)",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 24,
+        "name": "IHAY",
+        "description": "IHAY for no hay feeding",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 25,
+        "name": "ISAP",
+        "description": "Double variable (isa/ipcd) to print daily balances using SR ",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 26,
+        "name": "IMF",
+        "description": "Flag to anable MODFLOW simulations",
+        "line": "LINE 2             FORMAT:  FREE FORMAT - FIELD (INTEGER)"
+      },
+      {
+        "position": 1,
+        "name": "RFN0",
+        "description": "Average concentration of nitrogen in rainfall  (ppm)",
+        "line": "LINE 3             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 2,
+        "name": "CO20",
+        "description": "Carbon dioxide concentration in atmosphere (ppm)",
+        "line": "LINE 3             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 3,
+        "name": "CQN0",
+        "description": "Concentration of NO3-N in irrigation water in ppm (ppm)  (Ra",
+        "line": "LINE 3             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 4,
+        "name": "PSTX",
+        "description": "Pest damage scaling factor (Range: 0-10)",
+        "line": "LINE 3             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 5,
+        "name": "YWI",
+        "description": "Number years of maximum monthly 0.5 hour rainfall available.",
+        "line": "LINE 3             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 6,
+        "name": "BTA",
+        "description": "COEF (0-1) governing wet-dry probabilities given days of rai",
+        "line": "LINE 3             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 7,
+        "name": "EXPK",
+        "description": "Parameter used to modify exponential rainfall amount distrib",
+        "line": "LINE 3             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 8,
+        "name": "QG",
+        "description": "Channel Capacity Flow Rate",
+        "line": "LINE 3             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 9,
+        "name": "QCF",
+        "description": "Exponent in watershed area flow rate equation (Range: 0.4-0.",
+        "line": "LINE 3             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 10,
+        "name": "CHSO",
+        "description": "Average upland slope (m/m) in watershed (Range: 0.001-0.7)",
+        "line": "LINE 3             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 1,
+        "name": "BWD",
+        "description": "Channel bottom width/depth in m/m; Channel flow rate (QG) > ",
+        "line": "LINE 4             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 2,
+        "name": "FCW",
+        "description": "Floodplain width/channel width in m/m  (Range: 2-50)",
+        "line": "LINE 4             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 3,
+        "name": "FPSC",
+        "description": "Floodplain saturated hydraulic conductivity adjustment facto",
+        "line": "LINE 4             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 4,
+        "name": "GWS0",
+        "description": "Maximum ground water storage in mm  (Range: 5-200)",
+        "line": "LINE 4             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 5,
+        "name": "RFT0",
+        "description": "Ground water residence time in days (Range: 0-365)",
+        "line": "LINE 4             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 6,
+        "name": "RFP0",
+        "description": "Return Flow / (Return Flow + Deep Percolation) (Range: 0-1) ",
+        "line": "LINE 4             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 7,
+        "name": "SAT0",
+        "description": "Saturated Conductivity adjustment factor",
+        "line": "LINE 4             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 8,
+        "name": "FL0",
+        "description": "Field length (if wind erosion is to be considered) in kilome",
+        "line": "LINE 4             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 9,
+        "name": "FW0",
+        "description": "Field width (if wind erosion is to be considered) in kilomet",
+        "line": "LINE 4             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 10,
+        "name": "ANG0",
+        "description": "Clockwise angle of field length from north (if wind erosion ",
+        "line": "LINE 4             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO  DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 1,
+        "name": "UXP",
+        "description": "Power Parameter of Modified Exponential Distribution of Wind",
+        "line": "LINE 5             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO   DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 2,
+        "name": "DIAM",
+        "description": "Soil Particle Diameter(if wind erosion is to be considered)",
+        "line": "LINE 5             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO   DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 3,
+        "name": "ACW",
+        "description": "Wind Erosion Adjustment Factor",
+        "line": "LINE 5             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO   DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 4,
+        "name": "GZL0",
+        "description": "Grazing limit  (t/ha)",
+        "line": "LINE 5             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO   DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 5,
+        "name": "RTN0",
+        "description": "Number of years of cultivation at start of simulation",
+        "line": "LINE 5             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO   DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 6,
+        "name": "BXCT",
+        "description": "Linear coefficient of change in rainfall from east to west (",
+        "line": "LINE 5             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO   DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 7,
+        "name": "BYCT",
+        "description": "Linear coefficient of change in rainfall from south to north",
+        "line": "LINE 5             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO   DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 8,
+        "name": "DTHY",
+        "description": "Time interval for flood routing (hours)(Range: 0.5-12)",
+        "line": "LINE 5             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO   DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 9,
+        "name": "QTH",
+        "description": "Routing Threshold (mm) \u2013 VSC routing used when QVOL>QTH   (R",
+        "line": "LINE 5             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO   DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 10,
+        "name": "STND",
+        "description": "VSC Routing used when reach storage > STND (Range: 0-200000)",
+        "line": "LINE 5             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO   DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 1,
+        "name": "DRV",
+        "description": "Equation for Water Erosion   (Range: 0-7)",
+        "line": "LINE 6             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 2,
+        "name": "PCO0",
+        "description": "Fraction of subareas controlled by ponds  (Range: 0-1)",
+        "line": "LINE 6             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 3,
+        "name": "RCC0",
+        "description": "Reach channel USLE C factor",
+        "line": "LINE 6             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 4,
+        "name": "CSLT",
+        "description": "Salt Concentration in Irrigation Water (ppm)",
+        "line": "LINE 6             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 5,
+        "name": "CPV0",
+        "description": "Fraction inflow partitioned to verticle crack or pipe flow  ",
+        "line": "LINE 6             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 6,
+        "name": "CPH0",
+        "description": "Fraction inflow partitioned to horizontal crack or pipe flow",
+        "line": "LINE 6             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 7,
+        "name": "DZDN",
+        "description": "Layer thickness for differential eq soln to gas diff eqs(m)",
+        "line": "LINE 6             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 8,
+        "name": "DTG",
+        "description": "Time interval for gas diff eqs (h)",
+        "line": "LINE 6             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 9,
+        "name": "QPQ",
+        "description": "Ratio volume before time to peak (t_p) to total volume of un",
+        "line": "LINE 6             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO DECIMAL PLACES (FLOATING)"
+      },
+      {
+        "position": 10,
+        "name": "WND_OP",
+        "description": "Flag for wind erosion method",
+        "line": "LINE 6             FORMAT:  FREE FORMAT - INCLUDING  UP TO TWO DECIMAL PLACES (FLOATING)"
+      }
+    ],
+    "description": "Control file \u2014 simulation settings"
+  },
+  "OPC_MANAGEMENT": {
+    "columns": [
+      "YEAR",
+      "MONTH",
+      "DAY",
+      "TILLAGE ID",
+      "MACHINE ID",
+      "PLANT ID",
+      "OPV",
+      "OPV1",
+      "OPV2"
+    ],
+    "description": "Operations schedule file",
+    "notes": "Col 4=TILLAGE_ID (from TILLTABLE), Col 6=PLANT_ID (from CROPCOM.DAT), Col 7=OPV, Col 8=OPV1, Col 9=OPV2"
+  },
+  "SOIL_SOL": {
+    "fields": [
+      {
+        "row": 4,
+        "field": "File Name:",
+        "description": "TX357.SOL"
+      },
+      {
+        "row": 13,
+        "field": "# LAYER:",
+        "description": "1"
+      }
+    ],
+    "total_rows": 2
+  },
+  "SITE_SIT": {
+    "fields": [
+      {
+        "row": 2,
+        "field": "File Name:",
+        "description": "SIT0014.SIT"
+      },
+      {
+        "row": 11,
+        "field": "1",
+        "description": "YLAT"
+      },
+      {
+        "row": 12,
+        "field": "2",
+        "description": "XLOG"
+      },
+      {
+        "row": 13,
+        "field": "3",
+        "description": "ELEV"
+      },
+      {
+        "row": 14,
+        "field": "4",
+        "description": "APM"
+      },
+      {
+        "row": 15,
+        "field": "5",
+        "description": "CO2X"
+      },
+      {
+        "row": 16,
+        "field": "6",
+        "description": "CQNX"
+      },
+      {
+        "row": 17,
+        "field": "7",
+        "description": "RFNX"
+      },
+      {
+        "row": 18,
+        "field": "8",
+        "description": "UPR"
+      },
+      {
+        "row": 19,
+        "field": "9",
+        "description": "UNR"
+      },
+      {
+        "row": 20,
+        "field": "10",
+        "description": "FIR0"
+      },
+      {
+        "row": 23,
+        "field": "1",
+        "description": "DUMMY"
+      },
+      {
+        "row": 24,
+        "field": "2",
+        "description": "DUMMY"
+      },
+      {
+        "row": 25,
+        "field": "3",
+        "description": "DUMMY"
+      },
+      {
+        "row": 26,
+        "field": "4",
+        "description": "DUMMY"
+      },
+      {
+        "row": 27,
+        "field": "5",
+        "description": "DUMMY"
+      },
+      {
+        "row": 28,
+        "field": "6",
+        "description": "GWSP"
+      },
+      {
+        "row": 29,
+        "field": "7",
+        "description": "DUMMY"
+      },
+      {
+        "row": 30,
+        "field": "8",
+        "description": "DUMMY"
+      },
+      {
+        "row": 31,
+        "field": "9",
+        "description": "BCHL"
+      },
+      {
+        "row": 32,
+        "field": "10",
+        "description": "BCHS"
+      },
+      {
+        "row": 38,
+        "field": "1",
+        "description": "WP1"
+      },
+      {
+        "row": 39,
+        "field": "2",
+        "description": "WP2"
+      },
+      {
+        "row": 40,
+        "field": "3",
+        "description": "WP3"
+      },
+      {
+        "row": 41,
+        "field": "4",
+        "description": "WP4"
+      },
+      {
+        "row": 42,
+        "field": "5",
+        "description": "WP5"
+      },
+      {
+        "row": 43,
+        "field": "6",
+        "description": "WP6"
+      },
+      {
+        "row": 44,
+        "field": "7",
+        "description": "WP7"
+      },
+      {
+        "row": 45,
+        "field": "8",
+        "description": "WP8"
+      },
+      {
+        "row": 46,
+        "field": "9",
+        "description": "WP9"
+      }
+    ],
+    "total_rows": 41
+  },
+  "OUTPUT_ACY": {
+    "columns": [
+      "SA#",
+      "ID",
+      "YR",
+      "YR#",
+      "CPNM",
+      "YLDG",
+      "YLDF",
+      "BIOM",
+      "WS",
+      "NS",
+      "PS",
+      "KS",
+      "TS",
+      "AS",
+      "SS",
+      "ZNO3",
+      "ZQP",
+      "AP15",
+      "ZOC",
+      "OCPD",
+      "RSDP",
+      "ARSD",
+      "IRGA",
+      "FN",
+      "FP",
+      "FNMN",
+      "FNMA",
+      "FNO",
+      "FPL",
+      "FPO",
+      "YTHS",
+      "YWTH"
+    ],
+    "description": "Annual crop yield output"
+  },
+  "SITE_LIST": {
+    "header": [
+      "SITE LIST FILE (SITE*.DAT)"
+    ]
+  },
+  "MNGT_LIST": {
+    "header": [
+      "OPSC FILE FILE (OPSC*.DAT)"
+    ]
+  },
+  "SOLC_LIST": {
+    "header": [
+      "SOIL LIST FILE (SOIL*.DAT)"
+    ]
+  },
+  "WDLY_LIST": {
+    "header": [
+      "DAILY WEATHER LIST FILE (WDLST"
+    ]
+  },
+  "WPM1_LIST": {
+    "header": [
+      "WEATHER LIST FILE (WPM1*.DAT)"
+    ]
+  },
+  "WIND_LIST": {
+    "header": [
+      "WIND LIST FILE (WIND*.DAT)"
+    ]
+  },
+  "SUBA_LIST": {
+    "header": [
+      "SUBAREAS LIST FILE (SITE*.DAT)"
+    ]
+  }
+}

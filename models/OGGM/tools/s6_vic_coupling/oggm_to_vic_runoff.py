@@ -82,13 +82,22 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load VIC grid
+    # Load VIC grid — supports both lat/lon and y/x coordinate names
     print(f"Loading VIC grid: {args.vic_grid_nc}")
     vic_ds = xr.open_dataset(args.vic_grid_nc)
-    vic_lats = vic_ds['lat'].values.flatten()
-    vic_lons = vic_ds['lon'].values.flatten()
+    lat_coord = 'lat' if 'lat' in vic_ds.coords else 'y'
+    lon_coord = 'lon' if 'lon' in vic_ds.coords else 'x'
+    lat_1d = vic_ds[lat_coord].values.flatten()
+    lon_1d = vic_ds[lon_coord].values.flatten()
+    # Build full 2D lat/lon arrays for all valid (masked) cells
+    mask = vic_ds['mask'].values if 'mask' in vic_ds else np.ones((len(lat_1d), len(lon_1d)))
+    lon_2d, lat_2d = np.meshgrid(lon_1d, lat_1d)
+    mask_flat = mask.flatten()
+    vic_lats = lat_2d.flatten()[mask_flat == 1]
+    vic_lons = lon_2d.flatten()[mask_flat == 1]
+    cell_indices = np.where(mask_flat == 1)[0]  # flat indices into the 2D grid
     n_vic_cells = len(vic_lats)
-    print(f"VIC grid: {n_vic_cells} cells")
+    print(f"VIC grid: {n_vic_cells} valid cells (from {len(lat_1d)}×{len(lon_1d)} domain)")
     vic_ds.close()
 
     # Load glacier inventory

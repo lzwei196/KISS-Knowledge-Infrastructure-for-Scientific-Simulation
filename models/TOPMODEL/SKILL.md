@@ -27,7 +27,7 @@
 **Model**: TOPMODEL BMI (Beven & Kirkby 1979, NOAA-OWP C implementation)
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-28
-**Stats**: 4 tools | 6 skill documents | 18 diagnostic triplets | ~2,000 lines of validated Python
+**Stats**: 5 tools | 6 skill documents | 18 diagnostic triplets | ~2,100 lines of validated Python
 **Validation status**: see `knowledge_infrastructure.yaml`
 
 ---
@@ -38,9 +38,30 @@
 
 **Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
 
-**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
-See `data_ki/HWSD/SKILL.md` for soil property documentation.
-See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
+**Data sources & I/O (KDT 5.0 — `data_ki/<X>/tools/...` paths are STALE)**:
+- **Forcing**: `ki_tools_common.load_forcing` (CMFD/MSWX/NASA POWER, daily & hourly).
+  For Bengbu/Huai use CMFD (`cmfd_china_daily_010` or `cmfd_huai_daily_025`);
+  **NASA POWER hourly is 2001+ only** and does not overlap the 1950-1997 Huai
+  gauge record — do NOT use it here.
+- **Soil**: `ki_tools_common.soil_utils` (HWSD lookup, Rosetta van Genuchten).
+- **Observed discharge**: read the gauge text file directly
+  (`$ROOT/data/obs/BB/51080_bengbu.txt` for Bengbu 51080). The
+  `data_ki/ObservedQ/tools/` reader does NOT exist in KDT 5.0. **Obs trap**: the
+  Bengbu record uses a `-99.9` missing-data sentinel (~215 days); these become 0
+  after sentinel filtering, so **mask obs > 0 before scoring** or NSE is corrupted.
+  - **Alternate Huai obs source — "China Gauge Flux — 淮河"**
+    (`/mnt/datasets/china_water_level/淮河txt/`): a TAB-separated multi-gauge set,
+    header `stcd  dates  z  Q  name`, `dates` = `%Y-%-m-%-d` (no zero-pad, e.g.
+    `1980-6-1`), `Q` = discharge in **m³/s**, missing sentinel is **`-99`** (mask
+    `Q > 0`). 8 gauges: `蚌埠`=Bengbu, `王家坝`=Wangjiaba, `息县`=Xixian,
+    `淮滨`=Huaibin, `阜阳`=Fuyang, `鲁台子`=Lutaizi, `蒋家集`=Jiangjiaji,
+    `周口`=Zhoukou; records span ~1950-2024. `蚌埠.txt` (stcd 50104200) is the
+    SAME physical Bengbu station as `BB/51080_bengbu.txt` — the validated
+    incumbent reproduces here (1981-1990 full NSE 0.435, val NSE 0.494, PBIAS
+    −18.6), so it is a drop-in cross-check obs. Q(m³/s) → daily per-step depth
+    (m) = `Q * 86400 / area_m2`; equivalently convert sim m/step → m³/s via
+    `Q_mhr * area_m2 / 86400` and score in m³/s (NSE/KGE/r/PBIAS identical either
+    way). Use area = 121,330 km² (1.2133e11 m²) for Bengbu.
 
 
 ## Overview
@@ -97,7 +118,25 @@ cd source/repo/
 
 ---
 
-## Critical Units — ALL internal units are METERS and HOURS
+## TIMESTEP CONVENTION — daily runs use dt=1.0 (1 step = 1 day)
+
+> **READ THIS before trusting the "m/hr" labels below.** The validated
+> Bengbu/Wangjiaba pipeline runs DAILY forcing with the `inputs.dat` header
+> `dt = 1.0`, so **1 step = 1 day** and the rain/PE/Qobs columns are
+> **per-DAY depths in metres**, not literally m/hr. The C binary indexes
+> `rain[]`/`pe[]` by integer step and is only safe at `dt = 1.0` (see hazard
+> `dt_not_one_index_drift`), so daily data MUST be fed as one-step-per-day with
+> the header dt left at 1.0 — do NOT set dt=24. The "m/hr" naming in the model
+> and the table below is then a per-step-depth misnomer.
+> - **Dimensionless metrics (NSE/KGE/r) are unaffected** by this relabeling.
+> - **Only the m³/s conversion cares**: use the TRUE seconds-per-step
+>   (86400 for daily), i.e. `parse_topmodel_output` must convert with
+>   `--dt-hours 24`. Using 3600 makes reported m³/s 24× too high.
+> - Forcing depths: divide CMFD mm/day by **1000** (mm→m), NOT by 24000, when
+>   the step is a day. `convert_forcing_to_topmodel` handles this; verify with
+>   the forcing preflight + water-balance closure.
+
+## Critical Units — internal units labelled METERS and HOURS (see timestep note above)
 
 | Variable | Internal Unit | CMFD Unit | Conversion |
 |----------|--------------|-----------|------------|
@@ -144,6 +183,7 @@ cd source/repo/
 | 4 | Config assembly | (manual) | Write topmod.run |
 | 5 | Execution | `run_topmodel` | Build and run binary |
 | 6 | Output analysis | `parse_topmodel_output` | Parse hyd.out → CSV, compute metrics |
+| 7 | Calibration (opt) | `calibrate_topmodel` | Seed-anchored bounded search over real run_bmi, cal-only objective, held-out val |
 
 ---
 
@@ -260,6 +300,29 @@ Qout = qb + qof    (then routed through time-delay histogram)
 | `generate_twi_subcat` | s2 | `tools/generate_twi_subcat.py` | DEM + basin shapefile → subcat.dat |
 | `run_topmodel` | s5 | `tools/run_topmodel.py` | Build, configure, and execute TOPMODEL |
 | `parse_topmodel_output` | s6 | `tools/parse_topmodel_output.py` | Parse hyd.out, compute NSE/KGE/PBIAS |
+| `calibrate_topmodel` | s7 | `tools/calibrate_topmodel.py` | Calibrate szm/t0/td/srmax/Q0 etc. via the REAL run_bmi binary; scores cal window only, reports held-out val. `--seed-only` just evaluates the robust incumbent. |
+
+### Calibration — usage and the overfitting trap
+
+```bash
+python3 tools/calibrate_topmodel.py --run-dir <run_dir> --basin <NAME> \
+    --start 1980-01-01 --cal 1981-01-01:1985-12-31 --val 1986-01-01:1990-12-31 --n 800
+# or just reproduce the robust incumbent without searching:
+python3 tools/calibrate_topmodel.py --run-dir <run_dir> --seed-only
+```
+
+`<run_dir>` must already contain `run_bmi` and `data/{inputs.dat,subcat.dat}`.
+Writes `calib_result.json` (best_params + cal/val/full metrics).
+
+**DO NOT blindly maximize cal-NSE.** At Bengbu the calibration window (1981-85)
+is volume-biased (wetter, higher peaks, PBIAS −34%) relative to validation
+(+5.5%); one parameter set cannot satisfy both. Three documented attempts to
+push cal-NSE or select on cal-KGE COLLAPSED held-out val (val-NSE → 0.17, and
+−0.97 for cal-KGE selection). The shipped incumbent (val NSE 0.494 / KGE 0.66)
+is a ROBUST sweet spot, not the cal-optimum. **If a search does not beat the
+incumbent's *validation* metrics, keep the incumbent.** Note also `t0` is
+**ln(T0)** and must be ≈8 to match the high TL (~10.9) of a coarse-resampled
+large-basin DEM — the pre-DEM seed t0=4.81 over-buffers baseflow (val NSE −0.55).
 
 ---
 

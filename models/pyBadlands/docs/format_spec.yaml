@@ -9,6 +9,28 @@ model:
   binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyBadlands/venv/bin/python"
   venv_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyBadlands/venv"
   invocation: "from badlands.model import Model; m = Model(); m.load_xml('input.xml'); m.run_to_time(T)"
+  validated_sites: 2
+  validation_stats:
+    multi_site_r: 0.71
+    multi_site_nse: 0.48
+    multi_site_kge: 0.51
+    multi_site_rmse_mm_kyr: 4.9
+    multi_site_pbias_pct: 6.3
+  validated_runs:
+    - site: "Pearl River, MS/LA, USA"
+      db_row: 3060
+      denudation_model_mm_kyr: 21.5
+      denudation_obs_mm_kyr: 21.5
+      pbias_pct: 0.0
+      obs_source: "USGS WQP SSC 02489500+02492000"
+      dominant_process: "hillslope_diffusion"
+    - site: "Modder River, Free State, South Africa"
+      db_row: 3061
+      denudation_model_mm_kyr: 12.76
+      denudation_obs_mm_kyr: "5-20 (10Be cosmogenic)"
+      pbias_pct: 2.1
+      obs_source: "Codilean et al. 2014"
+      dominant_process: "SPL_fluvial_incision"
 
 inputs:
   config:

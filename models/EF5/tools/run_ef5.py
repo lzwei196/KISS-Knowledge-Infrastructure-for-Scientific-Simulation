@@ -229,6 +229,45 @@ def preflight_check(control_path, binary_path):
 # ---------------------------------------------------------------------------
 # Execution
 # ---------------------------------------------------------------------------
+def resolve_shared_libs(binary_path):
+    """Find directories that satisfy ef5's 'not found' shared libraries.
+
+    The ef5 binary is linked against libtiff/libgeotiff/libproj that live in
+    conda envs on this server, not on the default loader path — a fresh shell
+    gets `error while loading shared libraries: libproj.so.25` (exit 127).
+    We parse `ldd` for unresolved libs, then search a set of known conda-env
+    lib dirs (and any dir already supplying a *resolved* ef5 dependency) for a
+    file of that soname, and return the dirs to prepend to LD_LIBRARY_PATH.
+    """
+    try:
+        ldd = subprocess.run(["ldd", binary_path], capture_output=True, text=True, timeout=30)
+    except Exception:
+        return []
+    missing, known_dirs = [], set()
+    for line in ldd.stdout.splitlines():
+        line = line.strip()
+        if "=> not found" in line:
+            missing.append(line.split("=>")[0].strip())
+        elif "=> /" in line:  # an already-resolved dep tells us a good lib dir
+            known_dirs.add(os.path.dirname(line.split("=>")[1].strip().split(" (")[0]))
+    if not missing:
+        return []
+    search = list(known_dirs) + [
+        "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/lib",
+    ]
+    # Add all conda env lib dirs as a last resort
+    import glob
+    search += sorted(glob.glob("/home/server/miniconda3/envs/*/lib"))
+    found = []
+    for soname in missing:
+        for d in search:
+            if os.path.exists(os.path.join(d, soname)):
+                if d not in found:
+                    found.append(d)
+                break
+    return found
+
+
 def run_ef5(binary_path, control_path, timeout=3600, cwd=None):
     """
     Run EF5 binary and capture output.
@@ -242,6 +281,13 @@ def run_ef5(binary_path, control_path, timeout=3600, cwd=None):
     print(f"Running: {' '.join(cmd)}")
     print(f"Working directory: {cwd}")
 
+    env = os.environ.copy()
+    lib_dirs = resolve_shared_libs(binary_path)
+    if lib_dirs:
+        existing = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = ":".join(lib_dirs + ([existing] if existing else []))
+        print(f"[run_ef5] LD_LIBRARY_PATH += {':'.join(lib_dirs)}")
+
     start = time.time()
     try:
         result = subprocess.run(
@@ -250,6 +296,7 @@ def run_ef5(binary_path, control_path, timeout=3600, cwd=None):
             text=True,
             timeout=timeout,
             cwd=cwd,
+            env=env,
         )
         elapsed = time.time() - start
         return result.returncode, result.stdout, result.stderr, elapsed

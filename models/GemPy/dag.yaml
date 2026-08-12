@@ -1,0 +1,520 @@
+# GemPy — Layer-0 scientific-knowledge dag (draft v2, GemPy/20260627_w18)
+template_version: "3.5"
+
+identity:
+  model_id: GemPy
+  long_name: "GemPy — 3D Implicit Structural Geological Modeler"
+  domain: "3D structural geology / geophysical forward modeling"
+  ki_class: hybrid_or_framework        # NOT forward_model in the hydrologic sense; see NOTES (v3.3/3.5 template is forward_model-shaped and fits GemPy only loosely)
+  language: python
+  license: "EUPL-1.2"
+  repo_url: "github.com/cgre-aachen/gempy"
+  scientific_reference_version: "GemPy v3 implicit potential-field geomodeling (Lajaunie 1997 / Calcagno 2008 universal cokriging), de la Varga et al. 2019 stochastic formulation"
+  implementation:
+    id: gempy-v3
+    version: "3.x (gempy_engine 2026.0.1a2.dev0)"
+    provenance: "Python; multi-package — gempy high-level API/data classes wrapping the gempy_engine NumPy/PyTorch cokriging numerics that perform the actual computation"
+  is_family_dag: false
+
+boundary:
+  scope_in:
+    - "Construction of complex 3D structural geological models from interface points + orientation data"
+    - "Folds, fault networks, unconformities, multiple conformal stratigraphic layers, intrusions, pinchouts"
+    - "Stochastic / probabilistic modeling of parameter and model (geometry/topology) uncertainty"
+    - "Cross-section / geological-map generation and topology analysis"
+    - "Forward gravity / magnetic response from the 3D geology (optional)"
+  scope_out:
+    - "Non-geological domains (library is purpose-built for structural geology)"
+    - "Explicit temporal / process dynamics — models are static 3D structural representations; stratigraphic age is encoded only as structural-group ordering, not a simulated time axis"
+  spatial: "3-D"
+  temporal: null
+  _reason_temporal: "GemPy is a static 3D spatial interpolator; none of the enum values (sub-hourly|hourly|daily|seasonal|event|annual) apply. No time-stepping exists."
+  closure: none
+  notes: "Closure is geometric, not physical: the model solves a universal cokriging interpolation for a scalar potential field whose isosurfaces are geological interfaces. No mass-balance or energy-balance budget is enforced. Coordinates are internally auto-rescaled into a ~unit cube before kriging, so the default kriging range (1.7) is in rescaled space, not physical distance (precision degrades for extents > ~1e6 m)."
+
+inputs:
+  forcing: []
+  _reason_forcing: "Static spatial interpolator — no time-varying drivers are consumed per timestep."
+  parameters:
+    - category: parameters
+      name: "surface_points (interface contact points)"
+      unit: "meters (project CRS)"
+      source_kind: "user geological observation data"
+      model_input_format: "X,Y,Z per formation interface point (CSV with formation label)"
+      notes: "Primary kriging value constraints; min 1 surface point per surface, faults need >=2 per side of the fault trace. CSV formation column must be named 'formation' or all points collapse to a single Default surface."
+    - category: parameters
+      name: "orientations (dip/polarity gradient constraints)"
+      unit: "gradient components dimensionless (-1..1); or azimuth/dip in degrees + polarity"
+      source_kind: "user geological observation data"
+      model_input_format: "X,Y,Z + G_x,G_y,G_z unit gradient vector, or azimuth(0-360°)/dip(0-90° from horizontal)/polarity(±1) converted via G_x=sin(dip)sin(az)·pol, G_y=sin(dip)cos(az)·pol, G_z=cos(dip)·pol"
+      notes: "Derivative constraints on the scalar field; each structural group needs >=1 orientation. Gradient must be unit length (|G|=1) or cokriging is biased."
+    - category: parameters
+      name: "nugget_surface_points"
+      unit: dimensionless
+      source_kind: "model default / user override"
+      model_input_format: "scalar Tikhonov regularization (default 0.00002)"
+    - category: parameters
+      name: "nugget_orientations"
+      unit: dimensionless
+      source_kind: "model default / user override"
+      model_input_format: "scalar Tikhonov regularization (default 0.01)"
+    - category: parameters
+      name: "kriging_range"
+      unit: "dimensionless (rescaled unit-cube space)"
+      source_kind: "hardcoded model default"
+      model_input_format: "covariance correlation length (default 1.7); coupled to data extent via the auto-rescaling Transform"
+    - category: parameters
+      name: "covariance_scale (c_o)"
+      unit: dimensionless
+      source_kind: "hardcoded model default"
+      model_input_format: "covariance amplitude (default 10.0)"
+    - category: parameters
+      name: "covariance/kernel function"
+      unit: "-"
+      source_kind: "model default (construction-path dependent)"
+      model_input_format: "cubic (from_args default) | exponential (raw dataclass default) | Matern 5/2"
+      notes: "Default differs by construction path (cubic vs exponential) — a documented ambiguity, see safety.hazards."
+    - category: parameters
+      name: "universal drift degree (uni_degree)"
+      unit: dimensionless
+      source_kind: "hardcoded model default"
+      model_input_format: "polynomial trend degree (default 1; sets n_uni_eq = number_dimensions)"
+    - category: parameters
+      name: "sigmoid_slope"
+      unit: dimensionless
+      source_kind: "hardcoded model default"
+      model_input_format: "soft-segmentation steepness (default 5e6 -> near-hard lithology boundaries)"
+    - category: parameters
+      name: "per-unit densities / magnetic susceptibilities"
+      unit: "kg/m^3 ; SI susceptibility"
+      source_kind: "user geophysical assignment (optional)"
+      model_input_format: "scalar per structural element; only used by the optional geophysics forward module"
+  initial_conditions: []
+  _reason_initial_conditions: "Static model; no time-stepping and no initial state to carry forward."
+  boundary_conditions:
+    - category: boundary_conditions
+      name: "model extent"
+      unit: "meters (project CRS)"
+      source_kind: "user run configuration"
+      model_input_format: "[x_min,x_max,y_min,y_max,z_min,z_max]; requires z_min < z_max"
+    - category: boundary_conditions
+      name: "grid type"
+      unit: "-"
+      source_kind: "user run configuration (structural switch)"
+      model_input_format: "OCTREE | DENSE | CUSTOM | SECTIONS | TOPOGRAPHY | CENTERED (multiple can be active)"
+    - category: boundary_conditions
+      name: "octree refinement level"
+      unit: dimensionless
+      source_kind: "user run configuration"
+      model_input_format: "integer 1-8 (4 testing, 6 production, 8 high-detail); too low misses thin layers/narrow faults"
+    - category: boundary_conditions
+      name: "dense grid resolution"
+      unit: "cells"
+      source_kind: "user run configuration"
+      model_input_format: "[nx,ny,nz]; O(n^3) memory, keep under ~10M cells"
+    - category: boundary_conditions
+      name: "structural_mapping (map_stack_to_surfaces / stack order)"
+      unit: "-"
+      source_kind: "user run configuration (structural switch)"
+      model_input_format: "series/group -> tuple of surfaces; index 0 = youngest; order sets erosion/onlap priority"
+    - category: boundary_conditions
+      name: "structural relation type per group"
+      unit: "-"
+      source_kind: "user run configuration (structural switch)"
+      model_input_format: "ERODE (younger truncates older, default) | ONLAP (younger terminates against older) | FAULT (surface acts as fault plane)"
+    - category: boundary_conditions
+      name: "fault_relations matrix"
+      unit: "-"
+      source_kind: "user run configuration"
+      model_input_format: "boolean n_groups x n_groups, ASYMMETRIC; [i,j]=True means fault i displaces group j"
+    - category: boundary_conditions
+      name: "compute backend"
+      unit: "-"
+      source_kind: "user run configuration (structural switch)"
+      model_input_format: "NumPy (default, CPU) | PyTorch (GPU + autodiff for probabilistic modeling / nugget optimization)"
+    - category: boundary_conditions
+      name: "topography (optional)"
+      unit: "meters elevation"
+      source_kind: "user run configuration"
+      model_input_format: "DEM (GeoTIFF/ASCII) or generated fractal surface; units must match model meters"
+
+processes:
+  modules:
+    - name: data_preprocess
+      role: driver
+      brief: "Rescales/centers surface points & orientations via Transform, builds ref-rest pairs and nugget vectors, prepares the interpolation grid and fault values (assembles SolverInput)."
+    - name: kernel_constructor
+      role: process_solver
+      brief: "Assembles the universal cokriging system: covariance matrix A (from the chosen covariance function) plus polynomial drift, and the b RHS from orientation gradient constraints."
+    - name: kernel_functions
+      role: process_solver
+      brief: "Library of covariance functions (cubic, exponential, Matern 5/2) with their first/second derivatives used in the kriging kernel."
+    - name: solver
+      role: process_solver
+      brief: "Solves A w = b for kriging weights (numpy direct, CG/GMRES, pykeops, or torch) and optionally reports matrix condition number."
+    - name: interp_single
+      role: integrator
+      brief: "Per-structural-group cokriging: obtains weights then drives evaluation of the scalar potential field and its gradient; manages weight caching."
+    - name: evaluator
+      role: process_solver
+      brief: "Evaluates the kriging solution at arbitrary grid points (generic numpy/torch or symbolic pykeops) to produce scalar field, gradient, and interface iso-values, chunked by evaluation_chunk_size."
+    - name: activator
+      role: process_solver
+      brief: "Soft sigmoid segmentation converting the continuous scalar field into a discrete lithology-id block, using scalar values at interfaces as sigmoid edges (sigmoid_slope sharpness)."
+    - name: multi_scalar_field_manager
+      role: integrator
+      brief: "Loops over structural groups/stacks, applies erode/onlap/fault stack relations and masking, and combines per-group fields into the final lithology and fault blocks."
+    - name: faults
+      role: optional_module
+      brief: "Handles fault stacks: offsets downstream stacks' fields by fault scalar values, resolves fault-fault/fault-formation ordering via the faults_relations matrix, finite-fault segmentation."
+    - name: octrees_topology
+      role: allocator
+      brief: "Adaptive octree refinement: flags boundary/curvature voxels and generates the next-level refined grid for variable-resolution interpolation."
+    - name: dual_contouring
+      role: process_solver
+      brief: "Extracts triangulated iso-surfaces (vertices + edges) from the scalar field on the octree grid via dual contouring + fancy triangulation."
+    - name: geophysics_forward
+      role: optional_module
+      brief: "Forward-models gravity and total-magnetic-intensity responses from the 3D lithology block given a tz/magnetic kernel and per-unit densities/susceptibilities."
+    - name: optimize_nuggets
+      role: optional_module
+      brief: "PyTorch-autodiff loop tuning per-point nugget effects to improve cokriging conditioning (loss = condition_number - lambda*||nugget||)."
+    - name: weights_cache
+      role: driver
+      brief: "Persists/reuses kriging weight vectors keyed by model_name + stack number, validated by computation timestamp (see stale-reuse hazard)."
+    - name: topology
+      role: optional_module
+      brief: "Computes the adjacency/topology graph (edges + counts) between geologic regions of the lithology block."
+  internal_edges:
+    - {from: Inputs, to: data_preprocess, kind: consumes_input, brief: "interface XYZ points fed as kriging value constraints"}
+    - {from: Inputs, to: data_preprocess, kind: consumes_input, brief: "dip/polarity gradient vectors fed as derivative constraints"}
+    - {from: data_preprocess, to: Transform, kind: reads_state, brief: "applies centering + 1/(2*range) rescaling into unit-cube space"}
+    - {from: data_preprocess, to: SolverInput, kind: writes_state, brief: "produces sp_internal (ref-rest, nugget), ori_internal, grid, fault values"}
+    - {from: data_preprocess, to: kernel_constructor, kind: invokes, brief: "SolverInput passed to build the cokriging system"}
+    - {from: kernel_constructor, to: kernel_functions, kind: invokes, brief: "selects covariance function (default cubic) and its derivatives"}
+    - {from: kernel_constructor, to: A_matrix, kind: writes_state, brief: "yields covariance + drift system matrix"}
+    - {from: kernel_constructor, to: b_vector, kind: writes_state, brief: "orientation gradient constraints assembled into RHS"}
+    - {from: A_matrix, to: solver, kind: reads_state, brief: "A sent to kernel_reduction"}
+    - {from: b_vector, to: solver, kind: reads_state, brief: "b sent to kernel_reduction"}
+    - {from: solver, to: weights, kind: writes_state, brief: "solves A w = b for kriging weights"}
+    - {from: weights, to: weights_cache, kind: writes_state, brief: "weights stored keyed by model_name.stack_number"}
+    - {from: weights_cache, to: interp_single, kind: reads_state, brief: "cached weights reused if timestamp validity holds"}
+    - {from: multi_scalar_field_manager, to: interp_single, kind: invokes, brief: "iterates stacks, calling cokrig per structural group"}
+    - {from: interp_single, to: evaluator, kind: invokes, brief: "weights evaluated over grid for scalar field + gradient"}
+    - {from: weights, to: evaluator, kind: reads_state, brief: "kriging weights consumed to evaluate the system"}
+    - {from: evaluator, to: scalar_field, kind: writes_state, brief: "produces interpolated potential field Z(x)"}
+    - {from: evaluator, to: scalar_field_gradient, kind: writes_state, brief: "produces analytical scalar-field gradient gx/gy/gz"}
+    - {from: evaluator, to: scalar_field_at_surface_points, kind: writes_state, brief: "Z value at each interface = iso-surface levels (sigmoid edges)"}
+    - {from: scalar_field, to: activator, kind: reads_state, brief: "continuous field segmented into lithology ids"}
+    - {from: scalar_field_at_surface_points, to: activator, kind: reads_state, brief: "interface scalar values used as sigmoid edges"}
+    - {from: activator, to: values_block, kind: writes_state, brief: "soft sigmoid yields per-cell lithology-id block (per group)"}
+    - {from: values_block, to: multi_scalar_field_manager, kind: reads_state, brief: "per-group blocks combined under stack relations"}
+    - {from: faults, to: multi_scalar_field_manager, kind: writes_state, brief: "fault scalar values offset/modify downstream stack fields"}
+    - {from: multi_scalar_field_manager, to: mask_matrix, kind: writes_state, brief: "erode/onlap/fault relations build per-group masks"}
+    - {from: multi_scalar_field_manager, to: lith_block, kind: writes_state, brief: "combined masked scalar fields -> final lithology block"}
+    - {from: multi_scalar_field_manager, to: fault_block, kind: writes_state, brief: "fault-region id block from FAULT-type stacks"}
+    - {from: interp_single, to: octrees_topology, kind: invokes, brief: "boundary/curvature voxels -> next refined octree grid"}
+    - {from: octrees_topology, to: InterpolationInput_grid, kind: writes_state, brief: "sets temp refined grid for next octree level"}
+    - {from: scalar_field, to: dual_contouring, kind: reads_state, brief: "iso-surfaces extracted from refined scalar field"}
+    - {from: dual_contouring, to: vertices_edges, kind: writes_state, brief: "triangulated surface meshes per formation"}
+    - {from: lith_block, to: geophysics_forward, kind: reads_state, brief: "densities mapped to ids -> forward gravity/magnetics"}
+    - {from: geophysics_forward, to: Outputs, kind: produces_output, brief: "forward-modeled gravity / TMI response"}
+    - {from: lith_block, to: topology, kind: reads_state, brief: "region adjacency graph computed from block"}
+    - {from: topology, to: Outputs, kind: produces_output, brief: "topology edges + counts"}
+    - {from: optimize_nuggets, to: SolverInput, kind: writes_state, brief: "autodiff updates per-point nuggets to improve conditioning"}
+    - {from: lith_block, to: Outputs, kind: produces_output, brief: "discretized 3D lithology block"}
+    - {from: vertices_edges, to: Outputs, kind: produces_output, brief: "surface meshes assembled into Solutions"}
+    - {from: scalar_field, to: Outputs, kind: produces_output, brief: "interpolated scalar potential field"}
+
+states:
+  _note: "GemPy is a static implicit geomodeler with NO temporal/time-stepping dynamics. There are no time-evolving prognostic states; every variable below is DIAGNOSTIC — derived per compute_model call with no inter-call carryover (the optional weight cache is the only persistence, and is keyed on a mutable string, see safety). surface_points/orientations are user INPUT DATA, not model states, and are intentionally listed under inputs.parameters, not here."
+  variables:
+    - name: scalar_field
+      role: diagnostic
+      unit: "dimensionless (potential)"
+      description: "Interpolated 3D scalar/potential field per structural group; isosurfaces define geological interfaces. The core implicit field."
+      provenance: "gempy_engine/core/data/exported_fields.py (ExportedFields._scalar_field)"
+    - name: scalar_field_gradient
+      role: diagnostic
+      unit: "dimensionless / model length"
+      description: "Analytical gradient (gx,gy,gz = dZ/dx,dy,dz) of the scalar field."
+      provenance: "gempy_engine/core/data/exported_fields.py (_gx_field/_gy_field/_gz_field)"
+    - name: scalar_field_at_surface_points
+      role: diagnostic
+      unit: "dimensionless (potential)"
+      description: "Scalar value at each interface point = iso-surface levels / sigmoid edges used for segmentation."
+      provenance: "gempy_engine ExportedFields._scalar_field_at_surface_points"
+    - name: weights
+      role: diagnostic
+      unit: "dimensionless"
+      description: "Dual-kriging solution vector w = A^{-1} b per stack; cached by key model_name.stack_number."
+      provenance: "gempy_engine/API/interp_single/_interp_scalar_field.py + modules/solver"
+    - name: A_matrix
+      role: diagnostic
+      unit: "dimensionless"
+      description: "Cokriging covariance/drift system matrix assembled by kernel_constructor."
+      provenance: "gempy_engine/modules/kernel_constructor"
+    - name: b_vector
+      role: diagnostic
+      unit: "dimensionless"
+      description: "RHS of the kriging system: orientation gradient constraints."
+      provenance: "gempy_engine/modules/kernel_constructor (_b_vector_assembler)"
+    - name: lith_block
+      role: diagnostic
+      unit: "categorical (lithology id, dimensionless)"
+      description: "Discretized 3D volumetric block assigning a formation/lithology id to each grid cell — the final segmented geologic block."
+      provenance: "gempy_engine raw_arrays_solution + _multi_scalar_field_manager"
+    - name: fault_block
+      role: diagnostic
+      unit: "categorical (fault-region id, dimensionless)"
+      description: "Per-cell fault-region id block from FAULT-type stacks."
+      provenance: "gempy_engine _multi_scalar_field_manager"
+    - name: mask_matrix
+      role: diagnostic
+      unit: "boolean"
+      description: "Per-group active masks from erode/onlap/fault stack relations."
+      provenance: "gempy_engine _masking_ops"
+    - name: values_block
+      role: diagnostic
+      unit: "categorical (unit id, dimensionless)"
+      description: "Per-group unit-id block before cross-stack combination (output of soft segmentation)."
+      provenance: "gempy_engine activator / soft_segment"
+    - name: vertices_edges
+      role: diagnostic
+      unit: "meters (vertices) / index (edges)"
+      description: "Triangulated iso-surface meshes per formation (vertices Nx3 + triangle simplices) from dual contouring."
+      provenance: "gempy_engine dual_contouring"
+    - name: Transform
+      role: diagnostic
+      unit: "dimensionless scaling"
+      description: "Coordinate centering + per-axis 1/(2*range) rescaling into ~unit cube before kriging; couples data extent to the default kriging range."
+      provenance: "gempy_engine/core/data/transforms.py"
+    - name: SolverInput
+      role: diagnostic
+      unit: "mixed"
+      description: "Preprocessed solver input bundle: sp_internal (ref-rest relation, nugget), ori_internal (gradients), grid, fault values."
+      provenance: "gempy_engine data_preprocess_interface + SolverInput"
+    - name: InterpolationInput_grid
+      role: diagnostic
+      unit: "meters"
+      description: "Evaluation grid (regular/octree/custom/sections/centered/topography subgrids); mutated per octree level during refinement."
+      provenance: "gempy_engine InterpolationInput.grid / octrees_topology"
+
+outputs:
+  - var: lith_block
+    validation_rank: 1
+    unit: "categorical / dimensionless (lithology id)"
+    description: "Discretized 3D volumetric lithology block — formation id per grid cell."
+    emitted_in: "Solutions.raw_arrays.lith_block"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: spatial_snapshot
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match]
+          determining_metric: "csi"
+          caveats: ["Lithology ids are categorical labels; pattern/adjacency agreement, not magnitude error, is the meaningful metric."]
+      detrending_options: [none]
+  - var: scalar_field
+    validation_rank: 2
+    unit: "dimensionless (potential)"
+    description: "Interpolated 3D scalar/potential field whose isosurfaces define geological interfaces (one per structural group)."
+    emitted_in: "Solutions.octrees_output / ExportedFields.scalar_field"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: spatial_snapshot
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match]
+          determining_metric: "csi"
+          caveats: ["Potential field is dimensionless and defined up to the chosen drift/rescaling; only relative isosurface geometry is comparable."]
+      detrending_options: [none]
+  - var: surfaces_and_sections
+    validation_rank: 3
+    unit: "meters (mesh geometry); categorical (map/section lithology)"
+    description: "Triangulated surface meshes (vertices/edges), 2D cross-sections, and geological maps."
+    emitted_in: "Solutions.dc_meshes (vertices/edges); gempy_viewer matplotlib/PyVista renderers"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: spatial_snapshot
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match]
+          determining_metric: "csi"
+          caveats: ["Meshes may be non-watertight near faults/pinchouts (extraction artifact); prefer the block model for quantitative geometry comparison."]
+      detrending_options: [none]
+  - var: uncertainty_distribution
+    validation_rank: 4
+    unit: "dimensionless (Shannon information entropy / probability)"
+    description: "Per-cell probability / information-entropy fields from stochastic (ensemble) modeling — quantifies geometry/topology uncertainty."
+    emitted_in: "ensemble of Solutions (PyTorch backend stochastic runs)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: spatial_snapshot
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match]
+          determining_metric: "csi"
+          caveats: ["Derived from an ensemble, not a single deterministic field; comparison is against entropy/uncertainty maps, not point lithology."]
+      detrending_options: [none]
+  - var: geophysics_forward
+    validation_rank: 5
+    unit: "mGal (gravity) / nT (total magnetic intensity)"
+    description: "Forward-modeled gravity and TMI response from the 3D lithology block (optional, CENTERED grid)."
+    emitted_in: "Solutions.fw_gravity / Solutions.fw_magnetic"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: spatial_snapshot
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match, magnitude_accuracy]
+          determining_metric: "csi"
+          caveats: ["Forward response depends on per-unit density/susceptibility assignment; comparison only meaningful when those are constrained."]
+        - obs_shape: point_snapshot
+          comparison_mode: scalar_comparison
+          metric_families: [magnitude_accuracy]
+          determining_metric: "pbias"
+          caveats: ["Single-station gravity/magnetic value comparison."]
+      detrending_options: [none]
+  - var: topology
+    validation_rank: 6
+    unit: "categorical (adjacency graph)"
+    description: "Adjacency/topology graph (edges + counts) between geologic regions."
+    emitted_in: "Solutions topology_edges / topology_count (gempy_plugins)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: categorical_event
+          comparison_mode: categorical_event_comparison
+          metric_families: [event_detection]
+          determining_metric: "csi"
+          caveats: ["Compared as graph-structure agreement (region adjacency match), not numeric error."]
+      detrending_options: [none]
+
+influence:
+  _caveat: "GemPy sensitivity literature is entropy/ensemble-spread (Bayesian) based, NOT variance-based: no published Sobol S_t / Morris / EFAST indices exist for the model. Per the influence HIGH-grade standard (which requires a quantitative variance-based index meeting a stated threshold), every edge below is backed only by qualitative 'dominant control'/'highest entropy' language and is therefore graded MEDIUM at most with basis: literature_qualitative. Treat grades as ensemble-spread dominance rankings, not numeric sensitivity indices."
+  edges:
+    - from: "interface_points_z_position"
+      to: "lithology_geometry"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["delavarga2019_gempy1_stochastic", "delavarga2016_bayesian_inference"]
+    - from: "interface_points_z_position"
+      to: "information_entropy_uncertainty"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "stochastic ensembles"
+      citations: ["wellmann2012_information_entropy", "schaaf2021_abc_topology"]
+    - from: "orientation_data_dip_azimuth"
+      to: "lithology_geometry"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["delavarga2019_gempy1_stochastic", "delavarga2016_bayesian_inference"]
+    - from: "orientation_data_dip_azimuth"
+      to: "information_entropy_uncertainty"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "stochastic ensembles"
+      citations: ["delavarga2016_bayesian_inference", "schaaf2021_abc_topology"]
+    - from: "fault_interface_lateral_location"
+      to: "information_entropy_uncertainty"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "fault zones"
+      citations: ["schaaf2021_abc_topology"]
+    - from: "fault_interface_lateral_location"
+      to: "model_topology"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "faulted models"
+      citations: ["schaaf2021_abc_topology"]
+    - from: "grid_resolution"
+      to: "model_topology"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["schaaf2021_abc_topology", "wellmann2012_information_entropy"]
+    - from: "density_assignment"
+      to: "gravity_forward_response"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "geophysics forward / inversion"
+      citations: ["delavarga2019_gempy1_stochastic"]
+  citation_index:
+    delavarga2019_gempy1_stochastic:
+      short_citation: "de la Varga, Schaaf & Wellmann 2019"
+      doi: "10.5194/gmd-12-1-2019"
+      note: "GemPy 1.0 foundational paper; stochastic/Bayesian forward modeling propagating interface/orientation uncertainty to geometry, topology and gravity (no variance-based SA indices)."
+    wellmann2012_information_entropy:
+      short_citation: "Wellmann & Regenauer-Lieb 2012"
+      doi: "10.1016/j.tecto.2011.05.001"
+      note: "Shannon information entropy as a per-cell uncertainty/quality measure for 3D geological models."
+    schaaf2021_abc_topology:
+      short_citation: "Schaaf, de la Varga, Wellmann & Bond 2021"
+      doi: "10.5194/gmd-14-3899-2021"
+      note: "ABC + topology constraints in GemPy 2.1; reports ensemble Shannon entropy highest around faults — qualitative dominance, not a numeric index."
+    delavarga2016_bayesian_inference:
+      short_citation: "de la Varga & Wellmann 2016"
+      doi: "10.1190/INT-2015-0188.1"
+      note: "Structural geomodeling framed as Bayesian inference; prior interface/orientation uncertainty propagates to posterior geometry."
+
+safety:
+  hazards:
+    - {id: coords_km_not_m, kind: input_unit_semantic, description: "Coordinates supplied in km but read as m, compressing all geology into a tiny cube (paper-thin layers).", severity: silent}
+    - {id: azimuth_radians_not_degrees, kind: input_unit_semantic, description: "Azimuth in radians treated as degrees, rotating/inverting structure.", severity: silent}
+    - {id: dip_from_vertical_not_horizontal, kind: input_unit_semantic, description: "Dip measured from vertical instead of horizontal; surfaces inverted (anticlines look like synclines).", severity: silent}
+    - {id: polarity_sign_flipped, kind: input_unit_semantic, description: "Flipped polarity reverses the gradient and scalar-field ordering, inverting stratigraphic stack and fault-offset direction.", severity: silent}
+    - {id: z_extent_inverted, kind: extent_semantic, description: "z_min > z_max yields an invalid-extent error / empty grid.", severity: fatal}
+    - {id: gradient_not_normalized, kind: input_semantic, description: "Non-unit gradient vectors get extra cokriging weight, biasing the scalar field (asymmetric surfaces from symmetric data).", severity: degraded}
+    - {id: nugget_too_large, kind: regularization_semantic, description: "Nugget > 0.1 over-smooths surfaces so they no longer honor input data points.", severity: degraded}
+    - {id: nugget_too_small_singular, kind: numerical_instability, description: "Nugget < 1e-8 (or near-coincident points) makes the covariance matrix singular -> LinAlgError / NaN.", severity: fatal}
+    - {id: mixed_crs, kind: coordinate_reference_semantic, description: "Mixed CRS (e.g. WGS84 degrees + UTM meters) distorts geometry ~1e5x on one axis.", severity: silent}
+    - {id: topography_unit_mismatch, kind: input_unit_semantic, description: "Topography in feet read as meters clips through subsurface formations (~3.28x too high).", severity: silent}
+    - {id: structural_group_order_wrong, kind: structural_config_semantic, description: "Groups ordered bottom-up instead of youngest-first produce geologically impossible erosion/cross-cutting.", severity: silent}
+    - {id: fault_relation_missing, kind: structural_config_semantic, description: "set_is_fault marks geometry but a missing fault_relations entry means the fault is visible yet produces no layer offset.", severity: silent}
+    - {id: octree_refinement_too_low, kind: grid_resolution_semantic, description: "Octree refinement (=4) minimum cell size exceeds thin-layer thickness; thin layers (<~10 m) dropped from the block model.", severity: degraded}
+    - {id: dense_grid_oom, kind: grid_resolution_semantic, description: "Oversized DENSE grid (e.g. 200^3 = 8M cells x float64 x surfaces) exhausts RAM during compute_model.", severity: fatal}
+    - {id: mesh_extraction_artifacts_near_faults, kind: mesh_extraction_artifact, description: "Dual-contouring degenerate triangles at sharp scalar-field gradients (faults/pinchouts) yield holes/self-intersections; mesh artifact, not interpolation error.", severity: degraded}
+    - {id: formation_column_unnamed, kind: parser_semantic, description: "CSV formation column not named 'formation' so all points collapse into a single Default surface.", severity: silent}
+    - {id: stale_weights_cache_reuse, kind: coefficient_runtime_silent_fallback, description: "WeightCache keyed on mutable model_name string (default '') and validated by timestamp, NOT a data hash; stale kriging weights can be silently reused across different models.", severity: silent}
+    - {id: global_backend_switch_side_effect, kind: numerical_instability, description: "change_backend_gempy flips numpy<->pytorch dtype/device process-wide; selecting PyTorch for one model changes numerical backend state for all models in-process.", severity: degraded}
+    - {id: kernel_function_default_ambiguity, kind: coefficient_runtime_silent_fallback, description: "InterpolationOptions.from_args defaults kernel=cubic but the raw KernelOptions dataclass defaults exponential; the actual covariance function used depends on the construction path and is undocumented.", severity: silent}
+    - {id: compute_model_at_grid_mutation, kind: control_semantic, description: "compute_model_at silently calls set_custom_grid(reset=True), mutating the model grid; repeated calls accumulate grid side-effects.", severity: silent}
+  validation_limits:
+    - "Static structural interpolator: cannot simulate geological evolution through time; stratigraphic age is encoded only as structural-group order, not a simulated time axis."
+    - "Geometric interpolation only — no physical conservation law (mass/energy) is enforced."
+    - "Interpolation requires BOTH surface points and orientation data; under-constrained inputs yield non-unique geometry."
+    - "Default kriging range (1.7) is calibrated to auto-rescaled unit-cube coordinates; extents > ~1e6 m risk precision loss."
+    - "Octree refinement is a resolution/cost tradeoff; layers thinner than the minimum cell size are structurally unresolvable."
+    - "Extracted meshes are not guaranteed watertight near faults/pinchouts; use the block model for quantitative analysis."
+  warnings:
+    - "Structural-group order is youngest-first (index 0 = youngest/top); listing bottom-up produces impossible erosion patterns."
+    - "Fault geometry (set_is_fault) is distinct from fault displacement (fault_relations matrix); both must be set or the fault produces no offset."
+    - "Orientation gradients must be unit length (|G|=1) or cokriging is biased toward larger-magnitude orientations."
+    - "Nugget regularization has a narrow safe window: too large over-smooths (misses data), too small makes the covariance matrix singular."
+    - "Default octree refinement (4) drops thin layers; raise to 6-8 for production detail (watching memory)."
+  assumptions:
+    - statement: "Geologically significant interfaces are isosurfaces of the interpolated scalar potential field (implicit-modeling assumption)."
+      scope: "whole model"
+      source: "GemPy theory docs — universal cokriging method (Lajaunie 1997 / Calcagno 2008)"
+      status: adopted
+    - statement: "Closure is geometric, not physical: no mass-balance or energy-balance budget is enforced."
+      scope: "whole model"
+      source: "GemPy docs boundary description"
+      status: adopted
+    - statement: "Coordinates are auto-rescaled into a ~unit cube before kriging, so the default range (1.7) is meaningful only in rescaled space; data extent and kriging range are implicitly coupled."
+      scope: "interpolation numerics"
+      source: "gempy_engine transforms.py (Transform) behavior and docs"
+      status: adopted
+    - statement: "Model is static: there is no time axis or evolving state; stratigraphic age is represented solely by structural-group ordering."
+      scope: "whole model"
+      source: "GemPy docs boundary scope_out"
+      status: adopted
+    - statement: "All model states are diagnostic (recomputed per compute_model call) with no inter-call carryover except the optional weight cache."
+      scope: "state semantics"
+      source: "gempy_engine ExportedFields / Solutions / WeightCache structure"
+      status: adopted

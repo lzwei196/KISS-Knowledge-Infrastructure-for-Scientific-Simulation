@@ -9,8 +9,19 @@ from pathlib import Path
 # =========================
 # 1) 配置
 # =========================
-BASIN_SHP = Path(r"/mnt/disk1/Hydrocraft_server/data/shp/xixian_025deg_shp/xixian_boundary_shp/xixian_boundary.shp")     # 息县流域边界
-OUT_GRID_NC = Path(r"/mnt/disk1/Hydrocraft_server/outputs/xixian_rerun_71379b42/vic_temp/grid/grid_xixian_rerun_71379b42_025deg.nc")
+import os as _os
+# --- Basin configuration via environment (KDT 2026-07-09) -------------------
+# These used to be hard-coded per basin and rewritten in place by regex from
+# config_paths.py (which pointed at copies OUTSIDE this KI). Every stage script
+# now honours VIC_BASIN_NAME / VIC_BASIN_SHP / VIC_OUT_ROOT, falling back to
+# the previous hard-coded defaults when unset.
+_BASIN = _os.environ.get("VIC_BASIN_NAME", "xixian_rerun_71379b42")
+_OUT_ROOT = Path(_os.environ.get("VIC_OUT_ROOT", "/mnt/disk1/Hydrocraft_server/outputs"))
+
+BASIN_SHP = Path(_os.environ.get(
+    "VIC_BASIN_SHP",
+    r"/mnt/disk1/Hydrocraft_server/data/shp/xixian_025deg_shp/xixian_boundary_shp/xixian_boundary.shp"))
+OUT_GRID_NC = _OUT_ROOT / _BASIN / "vic_temp" / "grid" / f"grid_{_BASIN}_025deg.nc"
 
 RES = 0.25  # 目标分辨率（度）
 # 全局锚点：让 0.25°格网中心点对齐到 (-180+RES/2, 90-RES/2) 的标准全球网格

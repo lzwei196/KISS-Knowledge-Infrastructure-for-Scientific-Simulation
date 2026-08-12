@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PyMT/venv/bin/python
 """Couple two PyMT BMI models and run a linked simulation.
 
 Purpose:

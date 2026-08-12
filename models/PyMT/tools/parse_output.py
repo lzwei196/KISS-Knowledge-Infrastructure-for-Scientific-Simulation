@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PyMT/venv/bin/python
 """Parse PyMT model output variables and export to CSV.
 
 Purpose:

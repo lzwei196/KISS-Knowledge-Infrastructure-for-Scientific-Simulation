@@ -1,0 +1,260 @@
+model:
+  name: MARRMoT Knowledge Infrastructure
+  domain: hydrology
+  binary_path: ''
+  language: unknown
+inputs:
+  forcing:
+  - name: Precipitation
+    unit: mm/d
+    format: ''
+    source: skill_md
+  - name: Temperature
+    unit: deg C
+    format: ''
+    source: skill_md
+  - name: Precip
+    unit: mm/d
+    format: ''
+    source: skill_md
+outputs:
+  primary:
+  - name: PET
+    unit: mm/d
+    format: ''
+    source: skill_md
+  - name: Temperature
+    unit: deg C
+    format: ''
+    source: skill_md
+  - name: Streamflow
+    unit: mm/d
+    format: ''
+    source: skill_md
+  - name: Runoff
+    unit: unknown
+    format: ''
+    source: skill_md
+known_issues:
+- id: dt_001
+  description: '{''description'': ''Simulated streamflow is 3-8x too high compared
+    to observed. Runoff ratio exceeds 1.0.'', ''error_pattern'': ''Q_mean > 50 mm/d'',
+    ''detection_method'': ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Precipitation from CMFD is in mm/3h but treated
+    as mm/d.'', ''explanation'': ''CMFD provides 3-hourly precipitation accumulations.
+    Each daily value should be the sum of 8 sub-daily values.'
+  detection: '{''root_cause'': ''Precipitation from CMFD is in mm/3h but treated as
+    mm/d.'', ''explanation'': ''CMFD provides 3-hourly precipitation accumulations.
+    Each daily value should be the sum of 8 sub-daily values.'
+  fix: '{''action'': ''Sum 8 consecutive 3-hourly values to get daily total.'', ''tool_to_run'':
+    ''convert_forcing.py --format cmfd'', ''manual_steps'': [''Load all 8 sub-daily
+    values per day'', ''Sum to get daily total: '
+- id: dt_002
+  description: '{''description'': ''Precipitation near zero. Simulated Q is essentially
+    zero throughout.'', ''error_pattern'': ''P_mean < 0.001 mm/d'', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''ERA5 precipitation in kg/m2/s not multiplied
+    by 86400.'', ''explanation'': ''ERA5 total precipitation (tp) is provided in kg/m2/s
+    (equivalent to mm/s). A typical value is ~5e-5 kg/m2/s whi'
+  detection: '{''root_cause'': ''ERA5 precipitation in kg/m2/s not multiplied by 86400.'',
+    ''explanation'': ''ERA5 total precipitation (tp) is provided in kg/m2/s (equivalent
+    to mm/s). A typical value is ~5e-5 kg/m2/s whi'
+  fix: '{''action'': ''Multiply ERA5 tp by 86400 to convert kg/m2/s to mm/d.'', ''tool_to_run'':
+    ''convert_forcing.py --format era5'', ''manual_steps'': [''Check ERA5 variable
+    units in metadata: should be kg/m2/s or m'','
+- id: dt_003
+  description: '{''description'': ''Precipitation 1000x too low. Q near zero despite
+    wet climate.'', ''error_pattern'': ''P_mean < 0.01 mm/d'', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Precipitation in m/d not converted to mm/d.'',
+    ''explanation'': ''Some GCM outputs and ERA5 monthly products provide precipitation
+    in meters per day. A typical value of 0.003 m/d should be'
+  detection: '{''root_cause'': ''Precipitation in m/d not converted to mm/d.'', ''explanation'':
+    ''Some GCM outputs and ERA5 monthly products provide precipitation in meters per
+    day. A typical value of 0.003 m/d should be'
+  fix: '{''action'': ''Multiply precipitation by 1000 to convert m/d to mm/d.'', ''tool_to_run'':
+    ''convert_forcing.py'', ''manual_steps'': [''Check source metadata for precipitation
+    units'', ''If m/d: multiply by 1000'', '
+- id: dt_004
+  description: '{''description'': ''Actual evapotranspiration exceeds precipitation.
+    Stores drain rapidly to zero.'', ''error_pattern'': ''Ea_mean > P_mean'', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Net radiation (W/m2 or MJ/m2/d) passed as PET
+    instead of actual PET in mm/d.'', ''explanation'': ''MARRMoT expects pre-computed
+    potential evapotranspiration in mm/d (typically 0.5-8 mm/d).'
+  detection: '{''root_cause'': ''Net radiation (W/m2 or MJ/m2/d) passed as PET instead
+    of actual PET in mm/d.'', ''explanation'': ''MARRMoT expects pre-computed potential
+    evapotranspiration in mm/d (typically 0.5-8 mm/d).'
+  fix: '{''action'': ''Compute PET from radiation using Penman-Monteith or Hargreaves,
+    not pass radiation directly.'', ''tool_to_run'': ''convert_forcing.py'', ''manual_steps'':
+    [''Check if PET column contains radiation'
+- id: dt_005
+  description: '{''description'': ''PET ~30x too high in some months. Actual ET unrealistically
+    large.'', ''error_pattern'': ''PET values 30-200 mm/d in some months'', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Monthly PET values not divided by days in month.'',
+    ''explanation'': ''Monthly PET data (e.g., from CRU or Thornthwaite tables) gives
+    total monthly PET in mm/month. If used directly as mm/'
+  detection: '{''root_cause'': ''Monthly PET values not divided by days in month.'',
+    ''explanation'': ''Monthly PET data (e.g., from CRU or Thornthwaite tables) gives
+    total monthly PET in mm/month. If used directly as mm/'
+  fix: '{''action'': ''Divide monthly PET by the number of days in each month.'',
+    ''tool_to_run'': ''convert_forcing.py'', ''manual_steps'': [''Identify monthly
+    PET values (they will be 30-200 range)'', ''Divide each by d'
+- id: dt_006
+  description: '{''description'': ''Snow models produce zero snow. All precipitation
+    is rain even in winter.'', ''error_pattern'': ''Snow fraction = 0 despite cold
+    climate'', ''detection_method'': ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Temperature in Kelvin not converted to Celsius.'',
+    ''explanation'': ''ERA5 temperature (t2m) is in Kelvin (e.g., 273-300 K). Snow/rain
+    partitioning models (HBV, alpine models) use a thresh'
+  detection: '{''root_cause'': ''Temperature in Kelvin not converted to Celsius.'',
+    ''explanation'': ''ERA5 temperature (t2m) is in Kelvin (e.g., 273-300 K). Snow/rain
+    partitioning models (HBV, alpine models) use a thresh'
+  fix: '{''action'': ''Subtract 273.15 from Kelvin temperature values.'', ''tool_to_run'':
+    ''convert_forcing.py --format era5'', ''manual_steps'': [''Check temperature range:
+    if 250-320, likely Kelvin'', ''Subtract 273.15'
+- id: dt_007
+  description: '{''description'': ''Temperature-dependent processes behave incorrectly.
+    Degree-day melt unrealistic.'', ''error_pattern'': ''Temperature values 32-100
+    range'', ''detection_method'': ''value_comparison''}'
+  affected_output: "{'root_cause': 'Temperature in Fahrenheit not converted to Celsius.',\
+    \ 'explanation': 'US-sourced datasets sometimes provide temperature in Fahrenheit.\
+    \ 70\xB0F (21\xB0C) passed as 70\xB0C produces massive snowm"
+  detection: "{'root_cause': 'Temperature in Fahrenheit not converted to Celsius.',\
+    \ 'explanation': 'US-sourced datasets sometimes provide temperature in Fahrenheit.\
+    \ 70\xB0F (21\xB0C) passed as 70\xB0C produces massive snowm"
+  fix: '{''action'': ''Convert Fahrenheit to Celsius: C = (F - 32) * 5/9.'', ''tool_to_run'':
+    ''convert_forcing.py'', ''manual_steps'': [''If temperature values are 32-100
+    range, likely Fahrenheit'', ''Apply conversion: ('
+- id: dt_008
+  description: '{''description'': ''Model storage never fills or drains unrealistically
+    fast. Smax appears wrong.'', ''error_pattern'': ''Smax < 1 mm or Smax > 10000
+    mm'', ''detection_method'': ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Storage parameter in m or cm instead of mm.'',
+    ''explanation'': ''MARRMoT storage parameters (Smax, x1, x3) are in mm. HWSD soil
+    depth is in cm; SoilGrids may be in mm. If a 1.5 m soil dep'
+  detection: '{''root_cause'': ''Storage parameter in m or cm instead of mm.'', ''explanation'':
+    ''MARRMoT storage parameters (Smax, x1, x3) are in mm. HWSD soil depth is in cm;
+    SoilGrids may be in mm. If a 1.5 m soil dep'
+  fix: '{''action'': ''Verify source units. Convert cm to mm (*10), m to mm (*1000).'',
+    ''tool_to_run'': ''convert_parameters.py'', ''manual_steps'': [''Check HWSD/SoilGrids
+    documentation for depth units'', ''If cm: multi'
+- id: dt_009
+  description: '{''description'': ''All fluxes (Q, Ea) are 24x too large or 24x too
+    small.'', ''error_pattern'': ''Q_mean inconsistent with water balance'', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''delta_t set to 24 (hours) instead of 1 (day)
+    for daily forcing.'', ''explanation'': "MARRMoT''s delta_t is in days. Setting
+    delta_t=24 tells the model each timestep is 24 days long, causin'
+  detection: '{''root_cause'': ''delta_t set to 24 (hours) instead of 1 (day) for
+    daily forcing.'', ''explanation'': "MARRMoT''s delta_t is in days. Setting delta_t=24
+    tells the model each timestep is 24 days long, causin'
+  fix: '{''action'': ''Set delta_t = 1 for daily data. For hourly data, use delta_t
+    = 1/24.'', ''tool_to_run'': ''run_marrmot.py --delta-t 1'', ''manual_steps'':
+    [''Verify forcing timestep matches delta_t'', ''Daily data:'
+- id: dt_010
+  description: '{''description'': ''NSE is extremely negative (< -100). PBIAS > 10000%.
+    Obs and sim on different scales.'', ''error_pattern'': ''NSE << -1'', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Observed streamflow in m3/s compared directly
+    to simulated mm/d.'', ''explanation'': ''MARRMoT outputs streamflow in mm/d. Observed
+    gauge data is typically in m3/s. For a 1000 km2 catchmen'
+  detection: '{''root_cause'': ''Observed streamflow in m3/s compared directly to
+    simulated mm/d.'', ''explanation'': ''MARRMoT outputs streamflow in mm/d. Observed
+    gauge data is typically in m3/s. For a 1000 km2 catchmen'
+  fix: '{''action'': ''Convert observed m3/s to mm/d: Q_mm = Q_m3s * 86400 / (A_km2
+    * 1e6) * 1000.'', ''tool_to_run'': ''parse_output.py --obs-unit m3_s --area-km2
+    1000'', ''manual_steps'': [''Determine catchment area u'
+- id: dt_011
+  description: '{''description'': ''Evaporation unrealistically high or low. Temperature-dependent
+    processes wrong.'', ''error_pattern'': ''Ea values track temperature pattern,
+    not seasonal PET pattern'', ''detection_method'': ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Climate array columns in wrong order: [P, T,
+    Ep] instead of [P, Ep, T].'', ''explanation'': ''MARRMoT expects input_climate
+    = [P, Ep, T]. If columns are swapped to [P, T, Ep], the model us'
+  detection: '{''root_cause'': ''Climate array columns in wrong order: [P, T, Ep]
+    instead of [P, Ep, T].'', ''explanation'': ''MARRMoT expects input_climate = [P,
+    Ep, T]. If columns are swapped to [P, T, Ep], the model us'
+  fix: '{''action'': ''Verify column order is [P, Ep, T]. Check header in CSV output.'',
+    ''tool_to_run'': ''convert_forcing.py'', ''manual_steps'': [''Open forcing CSV
+    and check column headers'', ''Must be: date, P_mm_d, '
+- id: dt_012
+  description: '{''description'': "MATLAB/Octave crashes with ''Index exceeds array
+    dimensions'' error.", ''error_pattern'': ''error:.*index.*out of bound|Index exceeds'',
+    ''detection_method'': ''log_match''}'
+  affected_output: '{''root_cause'': "S0 vector length does not match model''s numStores.",
+    ''explanation'': ''Each model has a fixed number of stores (e.g., HyMOD has 5).
+    S0 must have exactly that many elements. If S0 is too '
+  detection: '{''root_cause'': "S0 vector length does not match model''s numStores.",
+    ''explanation'': ''Each model has a fixed number of stores (e.g., HyMOD has 5).
+    S0 must have exactly that many elements. If S0 is too '
+  fix: '{''action'': ''Set S0 to have exactly m.numStores elements.'', ''tool_to_run'':
+    ''convert_parameters.py'', ''manual_steps'': ["Check model''s numStores: m = feval(''model'');
+    m.numStores", ''Ensure len(S0) == numSt'
+- id: dt_013
+  description: '{''description'': ''Water balance error > 10 mm. Solver fallback warnings
+    in console output.'', ''error_pattern'': ''warning:.*fsolve|warning:.*lsqnonlin|water
+    balance.*[1-9]\\d'', ''detection_method'': ''log_match''}'
+  affected_output: '{''root_cause'': ''Newton-Raphson solver fails to converge on
+    stiff ODE system.'', ''explanation'': ''Some parameter combinations create stiff
+    ODEs (e.g., very large Smax with near-zero initial storage, or e'
+  detection: '{''root_cause'': ''Newton-Raphson solver fails to converge on stiff
+    ODE system.'', ''explanation'': ''Some parameter combinations create stiff ODEs
+    (e.g., very large Smax with near-zero initial storage, or e'
+  fix: '{''action'': ''Increase resnorm_maxiter to 12+. Check 5th output (solverSteps)
+    for diagnostics.'', ''tool_to_run'': ''run_marrmot.py --solver-maxiter 12'', ''manual_steps'':
+    [''Increase solver_opts.resnorm_maxit'
+- id: dt_014
+  description: '{''description'': ''Model completes successfully but total water balance
+    is several mm off.'', ''error_pattern'': ''waterBalance > 1.0'', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Water balance check is informational only,
+    not enforced.'', ''explanation'': ''MARRMoT prints a water balance summary to
+    the console but does not stop execution if the balance is violated.'
+  detection: '{''root_cause'': ''Water balance check is informational only, not enforced.'',
+    ''explanation'': ''MARRMoT prints a water balance summary to the console but does
+    not stop execution if the balance is violated.'
+  fix: '{''action'': ''Always check water balance output. If > 1 mm, increase solver
+    iterations.'', ''tool_to_run'': '''', ''manual_steps'': [''Check 4th output of
+    get_output(): waterBalance'', ''If |waterBalance| > 1 mm:'
+- id: dt_015
+  description: '{''description'': ''Hydrograph peak timing is shifted. Unit hydrograph
+    appears too wide or narrow.'', ''error_pattern'': ''Peak Q offset by multiple
+    days'', ''detection_method'': ''user_report''}'
+  affected_output: '{''root_cause'': ''Unit hydrograph time base does not account
+    for delta_t.'', ''explanation'': ''MARRMoT unit hydrograph functions (uh_1_half
+    through uh_8_delay) distribute flow over a number of timesteps. T'
+  detection: '{''root_cause'': ''Unit hydrograph time base does not account for delta_t.'',
+    ''explanation'': ''MARRMoT unit hydrograph functions (uh_1_half through uh_8_delay)
+    distribute flow over a number of timesteps. T'
+  fix: '{''action'': ''Rescale UH time base parameter when changing delta_t: maxbas_new
+    = maxbas / delta_t.'', ''tool_to_run'': '''', ''manual_steps'': [''Identify which
+    parameter controls UH time base'', ''If switching f'
+- id: dt_016
+  description: '{''description'': "Octave error: ''optim'' package not found. Calibration
+    fails.", ''error_pattern'': ''error:.*optim.*not found|pkg.*load.*optim'', ''detection_method'':
+    ''log_match''}'
+  affected_output: '{''root_cause'': ''GNU Octave optim package not installed.'',
+    ''explanation'': "MARRMoT''s calibrate() method and some solver fallbacks require
+    the optim package (provides fsolve, lsqnonlin). The MARRMoT_mod'
+  detection: '{''root_cause'': ''GNU Octave optim package not installed.'', ''explanation'':
+    "MARRMoT''s calibrate() method and some solver fallbacks require the optim package
+    (provides fsolve, lsqnonlin). The MARRMoT_mod'
+  fix: '{''action'': ''Install optim package: pkg install -forge optim'', ''tool_to_run'':
+    '''', ''manual_steps'': [''In Octave: pkg install -forge optim'', ''Verify: pkg
+    load optim (should not error)'', ''Alternatively: ap'
+- id: dt_017
+  description: '{''description'': ''Python BMI bridge fails: oct2py import error or
+    Octave not found.'', ''error_pattern'': ''ModuleNotFoundError.*oct2py|Oct2PyError'',
+    ''detection_method'': ''log_match''}'
+  affected_output: '{''root_cause'': ''oct2py not installed or Octave not in PATH.'',
+    ''explanation'': ''The Python BMI interface requires oct2py which bridges Python
+    and Octave. oct2py requires Octave to be installed and acces'
+  detection: '{''root_cause'': ''oct2py not installed or Octave not in PATH.'', ''explanation'':
+    ''The Python BMI interface requires oct2py which bridges Python and Octave. oct2py
+    requires Octave to be installed and acces'
+  fix: '{''action'': ''pip install oct2py; ensure Octave is in PATH.'', ''tool_to_run'':
+    '''', ''manual_steps'': [''pip install oct2py'', ''Verify Octave: octave --version'',
+    ''If not installed: apt install octave''], ''preve'
+unit_conversions: []

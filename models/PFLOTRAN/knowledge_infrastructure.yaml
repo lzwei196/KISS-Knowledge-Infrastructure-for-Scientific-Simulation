@@ -1,8 +1,39 @@
 package:
   created: '2026-03-25T03:48:03.884497'
-  domain: groundwater
+  updated: '2026-04-30'
+  domain: groundwater, vadose_zone_soil_moisture
   name: PFLOTRAN
-  version: auto-generated
+  version: v1.1.0
+  changelog:
+    - version: v1.1.0
+      date: '2026-04-30'
+      changes:
+        - Added 8 new diagnostic triplets (dt_019–dt_026) from FLUXNET SWC validation
+        - Added 1D vadose zone FLUXNET validation workflow to SKILL.md (Section 10)
+        - Updated s3_forcing_boundary_conditions.md with ET SOURCE_SINK pattern
+        - Updated s7_output_analysis.md with 1D column HDF5 extraction and FLUXNET metrics
+        - Validated sites: CN-HaM (NSE=0.471), CN-Din (NSE=-0.174), CN-Qia (unsuitable)
+  triplet_count: 26
+  validated_cases:
+    - site: CN-HaM
+      location: Haibei alpine meadow, Qinghai, 37.6N 101.3E
+      period: 2002-2004
+      config: NXYZ 1 1 40, phi=0.60 override, RZ=1.0m, SEEPAGE bottom BC
+      metrics: {R: 0.773, NSE: 0.471, PBIAS: "+0.1%", RMSE: "10.3%"}
+      status: production_validated
+    - site: CN-Din
+      location: Dinghushan subtropical forest, Guangdong, 23.2N 112.5E
+      period: 2003-2005
+      config: NXYZ 1 1 40, phi=0.43, RZ=2.0m, SEEPAGE bottom BC
+      metrics: {R: 0.761, NSE: -0.174, PBIAS: "+22.2%", RMSE: "5.98%"}
+      status: binary_validated
+    - site: CN-Qia
+      location: Qianyanzhou plantation forest, Jiangxi, 26.7N 115.1E
+      period: 2003-2005
+      config: NXYZ 1 1 40, phi=0.43, RZ=1.0m, SEEPAGE bottom BC
+      metrics: {R: 0.575, NSE: -2.06, PBIAS: "+54.2%", RMSE: "10.1%"}
+      status: unsuitable_monsoon_regime
+      note: Structural wet bias from monsoon convective P; see dt_026
 pipeline:
   stages:
   - depends_on: []

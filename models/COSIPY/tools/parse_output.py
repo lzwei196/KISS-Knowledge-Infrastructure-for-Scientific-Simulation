@@ -33,6 +33,101 @@ MASS_VARS = ["MB", "surfMB", "intMB", "SNOWFALL", "RAIN", "Q", "EVAPORATION",
              "SUBLIMATION", "CONDENSATION", "DEPOSITION", "REFREEZE", "surfM", "subM"]
 STATE_VARS = ["SNOWHEIGHT", "TOTALHEIGHT", "TS", "ALBEDO", "LAYERS", "Z0"]
 
+# Pore-close density [kg m^-3]: layers below this are snow/firn, above are ice.
+# Matches constants.toml snow_ice_threshold; used to isolate the seasonal
+# snowpack water equivalent (SWE) from the underlying glacier ice.
+SNOW_ICE_THRESHOLD = 900.0
+
+
+def open_dataset(path: str) -> xr.Dataset:
+    """Open a COSIPY netCDF, trying the netCDF4 backend then h5netcdf.
+
+    Some HydroCraft python environments have a broken netCDF4/HDF5 read path
+    (OSError -101 HDF error) while h5netcdf reads the same file fine. Try both.
+    """
+    for engine in (None, "h5netcdf", "netcdf4"):
+        try:
+            return xr.open_dataset(path) if engine is None else xr.open_dataset(path, engine=engine)
+        except Exception:
+            continue
+    # Last attempt: let the default raise a clear error
+    return xr.open_dataset(path)
+
+
+def derive_swe(ds: xr.Dataset, lat=None, lon=None) -> pd.Series:
+    """Derive snow water equivalent (m w.e.) time series from layer fields.
+
+    SWE = sum over snow layers (density < SNOW_ICE_THRESHOLD) of
+          LAYER_HEIGHT [m] * LAYER_RHO [kg m^-3] / 1000  ->  m w.e.
+
+    Requires full_field output (LAYER_HEIGHT, LAYER_RHO). Returns a time-indexed
+    Series. This is the physically exact snowpack SWE, excluding glacier ice.
+    """
+    if "LAYER_HEIGHT" not in ds or "LAYER_RHO" not in ds:
+        raise KeyError("LAYER_HEIGHT/LAYER_RHO not in output — run with full_field=true")
+    sub = ds
+    if lat is not None and lon is not None:
+        sub = ds.sel(lat=lat, lon=lon, method="nearest")
+    elif "lat" in ds.dims and "lon" in ds.dims:
+        sub = ds.isel(lat=0, lon=0)
+    H = np.asarray(sub["LAYER_HEIGHT"].values, dtype=float)  # (time, layer)
+    R = np.asarray(sub["LAYER_RHO"].values, dtype=float)
+    snow = (R < SNOW_ICE_THRESHOLD) & np.isfinite(R) & np.isfinite(H)
+    swe = np.nansum(np.where(snow, H * R, 0.0), axis=1) / 1000.0
+    return pd.Series(swe, index=pd.DatetimeIndex(sub["time"].values), name="SWE")
+
+
+def compare_to_obs(sim: pd.Series, obs_csv: str, obs_col: str,
+                   date_col: str = "Date", obs_scale: float = 1.0,
+                   obs_offset: float = 0.0, comment: str = "#",
+                   eval_start: str = None, eval_end: str = None,
+                   cal_start: str = None, cal_end: str = None,
+                   val_start: str = None, val_end: str = None) -> dict:
+    """Align a simulated daily series with an observation CSV and score it.
+
+    Uses ki_tools_common.metrics (NSE/KGE/r/PBIAS) — the shared HydroCraft
+    metric implementation. obs values are scaled/offset into the sim units
+    (e.g. SNOTEL SWE inches -> metres w.e. via obs_scale=0.0254).
+    """
+    from ki_tools_common.metrics import nse, kge, pbias, pearson_r
+
+    obs = pd.read_csv(obs_csv, comment=comment)
+    obs[date_col] = pd.to_datetime(obs[date_col])
+    obs = obs.set_index(date_col)[obs_col].apply(pd.to_numeric, errors="coerce")
+    obs = obs * obs_scale + obs_offset
+
+    sim_d = sim.copy()
+    sim_d.index = pd.DatetimeIndex(sim_d.index).normalize()
+    sim_d = sim_d[~sim_d.index.duplicated(keep="last")]
+
+    def _metrics(a_obs, a_sim):
+        df = pd.DataFrame({"obs": a_obs, "sim": a_sim}).dropna()
+        if len(df) < 3:
+            return {"n": len(df)}
+        return {
+            "n": int(len(df)),
+            "nse": float(nse(df["obs"].values, df["sim"].values)),
+            "kge": float(kge(df["obs"].values, df["sim"].values)),
+            "r": float(pearson_r(df["obs"].values, df["sim"].values)),
+            "pbias": float(pbias(df["obs"].values, df["sim"].values)),
+        }
+
+    joined = pd.DataFrame({"sim": sim_d}).join(pd.DataFrame({"obs": obs}), how="inner")
+    if eval_start or eval_end:
+        joined = joined.loc[eval_start:eval_end]
+
+    out = {"overall": _metrics(joined["obs"], joined["sim"]),
+           "period": (str(joined.index.min())[:10], str(joined.index.max())[:10])}
+    if cal_start or cal_end:
+        c = joined.loc[cal_start:cal_end]
+        out["cal"] = {**_metrics(c["obs"], c["sim"]),
+                      "period": (str(c.index.min())[:10], str(c.index.max())[:10])}
+    if val_start or val_end:
+        v = joined.loc[val_start:val_end]
+        out["val"] = {**_metrics(v["obs"], v["sim"]),
+                      "period": (str(v.index.min())[:10], str(v.index.max())[:10])}
+    return out
+
 
 def validate_input(input_path: str) -> bool:
     """Validate input file exists and is a valid netCDF.
@@ -286,17 +381,53 @@ def main():
     parser = argparse.ArgumentParser(description="Parse COSIPY output")
     parser.add_argument("-i", "--input", required=True, help="Input COSIPY output netCDF")
     parser.add_argument("-o", "--output", default=None, help="Output CSV file (optional)")
-    parser.add_argument("--mode", default="summary", choices=["summary", "timeseries", "both"])
+    parser.add_argument("--mode", default="summary",
+                        choices=["summary", "timeseries", "both", "compare"])
     parser.add_argument("--lat", type=float, default=None, help="Latitude for point extraction")
     parser.add_argument("--lon", type=float, default=None, help="Longitude for point extraction")
     parser.add_argument("--domain-mean", action="store_true", help="Compute domain average")
+    # --- compare mode (validate SWE/snow-height against an obs CSV) ---
+    parser.add_argument("--variable", default="SWE",
+                        help="Quantity to compare: SWE (derived) or SNOWHEIGHT")
+    parser.add_argument("--obs-csv", default=None, help="Observation CSV path")
+    parser.add_argument("--obs-col", default=None, help="Observation column name")
+    parser.add_argument("--date-col", default="Date", help="Date column in obs CSV")
+    parser.add_argument("--obs-scale", type=float, default=1.0,
+                        help="Multiply obs by this to reach sim units (e.g. 0.0254 in->m)")
+    parser.add_argument("--obs-offset", type=float, default=0.0)
+    parser.add_argument("--eval-start", default=None)
+    parser.add_argument("--eval-end", default=None)
+    parser.add_argument("--cal-start", default=None)
+    parser.add_argument("--cal-end", default=None)
+    parser.add_argument("--val-start", default=None)
+    parser.add_argument("--val-end", default=None)
     args = parser.parse_args()
 
     # Validate input
     validate_input(args.input)
 
-    # Open dataset
-    ds = xr.open_dataset(args.input)
+    # Open dataset (robust to broken netCDF4 backend)
+    ds = open_dataset(args.input)
+
+    if args.mode == "compare":
+        import json
+        if args.variable.upper() == "SWE":
+            sim = derive_swe(ds, lat=args.lat, lon=args.lon)
+        else:
+            tsdf = extract_timeseries(ds, lat=args.lat, lon=args.lon,
+                                      domain_mean=args.domain_mean)
+            sim = tsdf[args.variable]
+        result = compare_to_obs(
+            sim, args.obs_csv, args.obs_col, date_col=args.date_col,
+            obs_scale=args.obs_scale, obs_offset=args.obs_offset,
+            eval_start=args.eval_start, eval_end=args.eval_end,
+            cal_start=args.cal_start, cal_end=args.cal_end,
+            val_start=args.val_start, val_end=args.val_end)
+        print(json.dumps(result, indent=2))
+        if args.output:
+            sim.to_csv(args.output)
+        ds.close()
+        return
 
     # Get info
     info = get_dataset_info(ds)

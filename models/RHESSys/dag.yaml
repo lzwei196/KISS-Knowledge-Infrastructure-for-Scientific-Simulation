@@ -1,0 +1,550 @@
+template_version: "3.5"
+
+identity:
+  model_id: "RHESSys"
+  scientific_reference_version: "RHESSys 7.4 (Tague & Band 2004 Earth Interactions object-oriented C/water/N cycling framework)"
+  implementation:
+    id: "rhessys-7.4"
+    version: "7.4 (binary rhessys7.4)"
+    provenance: "C implementation of RHESSys 7.4 shipped from github.com/RHESSys/RHESSys; couples TOPMODEL-concept hydrology with Biome-BGC ecophysiology."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c"
+  license: ""
+  license_reason: "license not declared upstream; CSDMS lists Other/uncertain"
+  repo_url: "https://github.com/RHESSys/RHESSys"
+
+boundary:
+  scope_in:
+    - "Daily coupled water, carbon and nitrogen cycling at watershed scale"
+    - "Soil moisture redistribution, runoff production, saturated subsurface throughflow, overland flow"
+    - "Evapotranspiration (interception, soil/litter evaporation, canopy transpiration)"
+    - "Snowpack energy-balance accumulation and melt"
+    - "Vegetation dynamics: photosynthesis, respiration, carbon allocation, phenology, mortality (Biome-BGC ecophysiology)"
+    - "Nitrogen cycling: mineralization, nitrification, denitrification, plant-microbe N competition, dissolved NO3/DON/NH4 export"
+    - "Lateral redistribution of water and dissolved nutrients (TOPMODEL or explicit flow-table routing)"
+    - "Stream-network routing of streamflow and dissolved solutes"
+  scope_out:
+    - "Fixed regular-grid discretization (uses nested hierarchy of arbitrarily-shaped surface elements instead)"
+    - "Sub-daily meteorological forcing (daily forcing timestep)"
+    - "Channel hydraulics / 2-D inundation"
+    - "Coupled fire spread unless optional WMFire is enabled"
+  spatial: "distributed-stream"
+  temporal: "daily"
+  closure: "mass-balance"
+  notes: "Mass-balance closure applies to water and to carbon/nitrogen pools across the nested World > Basin > Hillslope > Zone > Patch > Stratum hierarchy. Vertical per-patch water balance is computed first, then lateral subsurface routing overwrites patch saturation-deficit state (ordering coupling). Snowpack and canopy energy balances are computed (net radiation, surface heat flux, sublimation), but the daily ET path is a demand-side flux calculation rather than a single closed surface energy budget; energy is not conserved as a global closure term. Hourly timestep is supported but daily is the operational default."
+
+inputs:
+  forcing:
+    - {category: "atmosphere", name: "rain (precipitation, rain+snow)", unit: "m/day", source_kind: "forcing", model_input_format: ".rain ASCII daily series referenced by base-station file", notes: "MUST be m/day, not mm/day; mm/day silently inflates all water fluxes ~1000x (dt_001)."}
+    - {category: "atmosphere", name: "tmax (daily maximum temperature)", unit: "degC", source_kind: "forcing", model_input_format: ".tmax ASCII daily series", notes: "Celsius, not Kelvin (dt_003). Day-to-day tmax-tmin range drives MTCLIM/Bristow-Campbell cloud correction; a constant range disables it (dt_020)."}
+    - {category: "atmosphere", name: "tmin (daily minimum temperature)", unit: "degC", source_kind: "forcing", model_input_format: ".tmin ASCII daily series"}
+    - {category: "atmosphere", name: "relative_humidity", unit: "fraction (0-1)", source_kind: "forcing", model_input_format: ".relative_humidity ASCII daily series (optional)", notes: "Fraction not percent; % input must be divided by 100."}
+    - {category: "atmosphere", name: "wind", unit: "m/s", source_kind: "forcing", model_input_format: ".wind ASCII daily series (optional)"}
+    - {category: "atmosphere", name: "Kdown_direct", unit: "W/m^2 (direct-beam shortwave)", source_kind: "forcing", model_input_format: "base-station daily sequence (optional)", notes: "Must be supplied together with Kdown_diffuse; supplying only one makes RHESSys zero both and recompute clear-sky radiation, causing vegetation collapse in humid climates (dt_019)."}
+    - {category: "atmosphere", name: "Kdown_diffuse", unit: "W/m^2 (diffuse shortwave)", source_kind: "forcing", model_input_format: "base-station daily sequence, paired with Kdown_direct"}
+    - {category: "atmosphere", name: "daytime_rain_duration", unit: "hours (internally x3600 to seconds)", source_kind: "forcing", model_input_format: "base-station non-critical daily sequence (optional)", notes: "If absent, rain_duration defaults to 86400 s (all day) for any precip, zeroing transpiration on every rainy day (dt_022)."}
+    - {category: "atmosphere", name: "CO2 / N deposition (NO3, NH4) / atmospheric transmissivity / cloud fraction", unit: "varies (ppm; kgN/m^2; fraction)", source_kind: "forcing", model_input_format: "optional base-station daily sequences", notes: "Optional atmospheric drivers when corresponding climate sequences are provided."}
+  parameters:
+    - {category: "soil", name: "Ksat_0 (surface saturated hydraulic conductivity)", unit: "m/day", source_kind: "calibrated", model_input_format: "soil_*.def", notes: "Range 0.001-100; cm/hr input must be x0.24 (dt_005). Very-high calibration sensitivity."}
+    - {category: "soil", name: "m (transmissivity decay parameter)", unit: "m", source_kind: "calibrated", model_input_format: "soil_*.def", notes: "Range 0.01-20; controls exponential decay of transmissivity with depth (TOPMODEL)."}
+    - {category: "soil", name: "porosity_0", unit: "m^3/m^3", source_kind: "calibrated", model_input_format: "soil_*.def", notes: "Range 0.2-0.7; >1.0 (percent) crashes the model (dt_006)."}
+    - {category: "soil", name: "porosity_decay", unit: "1/m", source_kind: "calibrated", model_input_format: "soil_*.def"}
+    - {category: "soil", name: "pore_size_index (Brooks-Corey)", unit: "dimensionless", source_kind: "calibrated", model_input_format: "soil_*.def", notes: "Range 0.1-0.8."}
+    - {category: "soil", name: "psi_air_entry (air-entry pressure)", unit: "m head", source_kind: "calibrated", model_input_format: "soil_*.def", notes: "Range 0.01-3.0; kPa input must be /9.81 (dt_010)."}
+    - {category: "soil", name: "soil_depth", unit: "m", source_kind: "calibrated", model_input_format: "soil_*.def", notes: "Range 0.5-5.0; cm input gives unrealistically deep soil (dt_004)."}
+    - {category: "vegetation", name: "epc.max_lai", unit: "m^2/m^2", source_kind: "calibrated", model_input_format: "veg_*.def", notes: "Range 1-12; maximum leaf area index."}
+    - {category: "vegetation", name: "epc.proj_sla (specific leaf area)", unit: "m^2/kgC", source_kind: "calibrated", model_input_format: "veg_*.def"}
+    - {category: "vegetation", name: "epc.leaf_turnover", unit: "1/day", source_kind: "calibrated", model_input_format: "veg_*.def", notes: "Range 0.0001-0.01."}
+    - {category: "vegetation", name: "epc.livewood_turnover", unit: "1/day", source_kind: "calibrated", model_input_format: "veg_*.def"}
+    - {category: "vegetation", name: "epc.height_to_stem_coef", unit: "m/(kgC/m^2)", source_kind: "calibrated", model_input_format: "veg_*.def"}
+    - {category: "vegetation", name: "epc.allocation_flag", unit: "integer 1-3", source_kind: "calibrated", model_input_format: "veg_*.def", notes: "Carbon allocation strategy selector."}
+    - {category: "vegetation", name: "epc.veg_type", unit: "integer (1=tree,2=grass)", source_kind: "calibrated", model_input_format: "veg_*.def"}
+    - {category: "groundwater", name: "sat_to_gw_coeff (gw1, saturation-to-groundwater fraction)", unit: "fraction 0-0.5", source_kind: "calibrated", model_input_format: "hillslope/groundwater def, -gw mode"}
+    - {category: "groundwater", name: "gw_loss_coeff (gw2, groundwater recession)", unit: "fraction 0-0.5", source_kind: "calibrated", model_input_format: "hillslope/groundwater def, -gw mode"}
+    - {category: "climate", name: "lapse_rate / atm_trans_lapse_rate / dewpoint_lapse_rate", unit: "C/m (temperature); dimensionless", source_kind: "calibrated", model_input_format: "zone.def", notes: "Temperature/transmissivity lapse rates for topographic downscaling."}
+    - {category: "landuse", name: "impervious_fraction / irrigation / fertilizer_NO3 / fertilizer_NH4", unit: "0-1; m/day; kgN/m^2/yr", source_kind: "dataset_lookup", model_input_format: "lu_*.def", notes: "Land-use management parameters; fertilizer/irrigation only when landuse layer active."}
+  initial_conditions:
+    - {category: "hydrologic_state", name: "sat_deficit / unsat_storage / rz_storage / detention_store", unit: "m", source_kind: "user_provided", model_input_format: ".world per-patch object values", notes: "Hydrologic stores reach equilibrium quickly relative to BGC."}
+    - {category: "hydrologic_state", name: "snowpack.water_equivalent_depth", unit: "m", source_kind: "user_provided", model_input_format: ".world per-patch object value"}
+    - {category: "carbon_nitrogen_state", name: "initial soil/litter/canopy C and N pools (soil_cs.*, litter_cs.*, cs.leafc, cs.frootc, leafn, frootn)", unit: "kgC/m^2 or kgN/m^2", source_kind: "user_provided", model_input_format: ".world per-stratum/patch object values", notes: "g/m^2 instead of kg/m^2 causes 1000x runaway growth (dt_009). BGC pools require 200-500 yr spin-up to steady state (dt_012)."}
+    - {category: "carbon_nitrogen_state", name: "cs.leafc_transfer / cs.leafc_store (leaf expansion budgets)", unit: "kgC/m^2", source_kind: "user_provided", model_input_format: ".world per-stratum object values", notes: "For deciduous dormant-season start, cs.leafc_transfer (=max_lai/proj_sla) must be set, not only leafc_store, else Year 1 has no leaves."}
+  boundary_conditions:
+    - {category: "domain_structure", name: "worldfile (.world)", unit: "n/a", source_kind: "user_provided", model_input_format: "hierarchical text; 'value variable_name' pairs per object", notes: "Whitespace/ordering-sensitive; misalignment causes silent misassignment or segfault (dt_011). Fixed per-level variable counts (17/18/22/47/71 for basin/hillslope/zone/patch/stratum)."}
+    - {category: "domain_structure", name: "worldfile header (.hdr)", unit: "n/a", source_kind: "user_provided", model_input_format: "maps definition IDs to .def files and lists base-station filenames", notes: "Every base-station filename used must be listed here."}
+    - {category: "routing", name: "flow table (.flow)", unit: "gamma fraction; edge length m", source_kind: "user_provided", model_input_format: "patch-to-patch connectivity (used with -r)", notes: "Every worldfile patch must appear; ID mismatch segfaults during routing init (dt_015)."}
+    - {category: "control", name: "TEC file (temporal event control)", unit: "n/a", source_kind: "user_provided", model_input_format: "scheduled events: print_*_on/off, redefine_world, output_current_state", notes: "Events scheduled before -st start date are ignored, producing empty output (dt_014)."}
+    - {category: "control", name: "base station file", unit: "n/a", source_kind: "user_provided", model_input_format: "links climate files; base_station_ID, x/y/z elevation, effective_lai, screen_height, daily sequences", notes: "Defines which optional daily climate sequences are present."}
+    - {category: "mode_switch", name: "run mode flags (-r explicit routing, -g C/N cycling, -gw groundwater, -b basin output, -p patch output, -DLIU_NETCDF_READER compile-time NetCDF)", unit: "n/a", source_kind: "user_provided", model_input_format: "command-line / compile-time switches", notes: "Without -g only hydrology runs and vegetation is static; without -r TOPMODEL hillslope redistribution is used; NetCDF forcing requires the compile-time reader flag (dt_016)."}
+    - {category: "calibration", name: "sensitivity multipliers (-s m_mult Ksat_mult, -sv vertical, -svalt pore_size/psi_air_entry)", unit: "dimensionless scalars", source_kind: "user_provided", model_input_format: "command-line multipliers on soil parameters", notes: "Never set to 0 (zeros Ksat or m -> division-by-zero / infinite loop, dt_013)."}
+
+processes:
+  modules:
+    - {name: "WorldHierarchyDriver", role: "driver", brief: "main.c plus basin/hillslope/zone/patch/canopy_stratum _daily_F nested loop; descends the spatial hierarchy each timestep and dispatches all process calls."}
+    - {name: "ClimateMet", role: "process_solver", brief: "Atmospheric pressure, lapse-rate adjustment of T/precip, saturation vapor pressure and VPD (MTN-Clim topographic downscaling); writes zone-level met state."}
+    - {name: "Radiation", role: "process_solver", brief: "Direct/diffuse shortwave and PAR fluxes, Lstar longwave, canopy shading, surface heat flux, subsurface temperature; clear-sky fallback when Kdown inputs incomplete."}
+    - {name: "Infiltration", role: "process_solver", brief: "Green-Ampt infiltration (compute_infiltration.c) with hardcoded wetting-front suction = 0.76 x psi_air_entry."}
+    - {name: "VerticalSoilWater", role: "process_solver", brief: "Unsaturated-zone drainage, field/layer capacity, capillary rise, soil water potential, update_soil_moisture; vertical 1-D per-patch water balance."}
+    - {name: "SubsurfaceRouting", role: "integrator", brief: "TOPMODEL wetness-index redistribution (default) or explicit flow-table lateral routing of saturation deficit across patches at hillslope scale (compute_subsurface_routing.c).", applicability: "explicit flow-table path when -r supplied; TOPMODEL otherwise"}
+    - {name: "StreamRouting", role: "integrator", brief: "Aggregates patch return/base flow into streamflow and routes dissolved solutes through the channel network (compute_stream_routing.c)."}
+    - {name: "Snowpack", role: "process_solver", brief: "Energy-balance SWE accumulation/melt, snow interception, sublimation, snow-covered fraction (snowpack_daily_F.c)."}
+    - {name: "ET", role: "process_solver", brief: "Penman-Monteith transpiration and evaporation partitioning with aerodynamic and stomatal-conductance curves (vpd, lwp, tmin, tavg, co2, apar)."}
+    - {name: "Photosynthesis", role: "process_solver", brief: "Farquhar net photosynthesis driven by absorbed PAR, conductance and temperature (compute_farq_psn.c)."}
+    - {name: "CarbonNitrogenBGC", role: "process_solver", brief: "Biome-BGC C/N cycling: maintenance and growth respiration, CENTURY-style SOIL1-4 decomposition, nitrification, denitrification, N leaching, plant-microbe sminn competition.", applicability: "active in C/N cycling (-g) mode"}
+    - {name: "CarbonAllocationGrowth", role: "allocator", brief: "Partitions NPP among leaf/froot/stem/cpool pools per epc allocation strategy (allocate_daily_growth, allocate_annual_growth).", applicability: "active in C/N cycling (-g) mode"}
+    - {name: "Phenology", role: "process_solver", brief: "Leaf-on/off timing (static, Jolly dynamic bioclimatic index, or drought), litterfall and rooting-depth update.", applicability: "active in C/N cycling (-g) mode"}
+    - {name: "Mortality", role: "optional_module", brief: "Transfers live biomass to litter/CWD decomposition pools (update_mortality, branch/litter_soil_mortality)."}
+    - {name: "Groundwater", role: "process_solver", brief: "sat_to_gw_coeff routes saturation excess to deep groundwater storage; gw_loss_coeff governs daily groundwater recession/loss.", applicability: "active when -gw supplied"}
+    - {name: "Fire", role: "optional_module", brief: "Optional WMFire spread coupling consuming vegetation and litter C and N (compute_fire_effects.c).", applicability: "optional WMFire coupling"}
+    - {name: "TECEventControl", role: "driver", brief: "Temporal event control parser; triggers output events, redefine-world and thinning; gates whether output is produced (dt_014)."}
+  internal_edges:
+    - {from: "WorldHierarchyDriver", to: "ClimateMet", kind: "invokes", brief: "zone_daily_F invokes met/VPD computation before descending to patches."}
+    - {from: "Climate", to: "ClimateMet", kind: "consumes_input", brief: "tmax/tmin/rain/humidity/wind daily forcing read and lapse-adjusted to each zone."}
+    - {from: "ClimateMet", to: "Radiation", kind: "invokes", brief: "air temperature/pressure feed radiative and longwave flux computation."}
+    - {from: "ClimateMet", to: "ET", kind: "writes_state", brief: "VPD and saturation vapor pressure written to zone met state, read by Penman-Monteith."}
+    - {from: "Climate", to: "Radiation", kind: "consumes_input", brief: "Kdown_direct/diffuse (or clear-sky fallback) and tmax-tmin range drive shortwave partitioning and cloud correction."}
+    - {from: "Radiation", to: "Photosynthesis", kind: "produces_output", brief: "absorbed PAR (APAR) drives Farquhar photosynthesis."}
+    - {from: "Radiation", to: "Snowpack", kind: "produces_output", brief: "net shortwave/longwave drives the snowmelt energy budget."}
+    - {from: "Radiation", to: "ET", kind: "produces_output", brief: "net radiation (Lstar/Kstar) is the energy term in Penman-Monteith."}
+    - {from: "WorldHierarchyDriver", to: "Infiltration", kind: "invokes", brief: "patch_daily_F invokes the vertical hydrology chain."}
+    - {from: "Snowpack", to: "Infiltration", kind: "produces_output", brief: "snowmelt and snow throughfall become infiltration / detention input."}
+    - {from: "Infiltration", to: "VerticalSoilWater", kind: "writes_state", brief: "infiltrated water increments rz_storage and reduces detention_store."}
+    - {from: "VerticalSoilWater", to: "SubsurfaceRouting", kind: "writes_state", brief: "patch sat_deficit and unsat_storage are the state redistributed laterally."}
+    - {from: "SubsurfaceRouting", to: "VerticalSoilWater", kind: "writes_state", brief: "lateral Qout overwrites patch sat_deficit AFTER the vertical cycle (key ordering coupling)."}
+    - {from: "SubsurfaceRouting", to: "Groundwater", kind: "writes_state", brief: "saturation excess routed to deep groundwater storage when -gw active."}
+    - {from: "Groundwater", to: "StreamRouting", kind: "produces_output", brief: "groundwater recession/loss contributes to baseflow."}
+    - {from: "SubsurfaceRouting", to: "StreamRouting", kind: "produces_output", brief: "patch return/base flow aggregated into streamflow."}
+    - {from: "VerticalSoilWater", to: "ET", kind: "reads_state", brief: "root-zone water potential limits stomatal conductance and transpiration."}
+    - {from: "VerticalSoilWater", to: "CarbonNitrogenBGC", kind: "reads_state", brief: "soil moisture (S, sat_deficit) controls decomposition, nitrification and denitrification rates."}
+    - {from: "Photosynthesis", to: "CarbonAllocationGrowth", kind: "produces_output", brief: "net photosynthate (psn) is the NPP input to daily allocation."}
+    - {from: "CarbonAllocationGrowth", to: "Phenology", kind: "writes_state", brief: "allocated leaf/froot C updates LAI and litterfall pools."}
+    - {from: "Photosynthesis", to: "ET", kind: "reads_state", brief: "stomatal conductance shared between CO2 assimilation and H2O transpiration."}
+    - {from: "CarbonNitrogenBGC", to: "Photosynthesis", kind: "writes_state", brief: "leaf N from uptake sets Vmax / Rubisco capacity for next-day photosynthesis."}
+    - {from: "Photosynthesis", to: "CarbonNitrogenBGC", kind: "produces_output", brief: "potential N uptake demand drives resolve_sminn_competition partitioning."}
+    - {from: "CarbonNitrogenBGC", to: "SubsurfaceRouting", kind: "writes_state", brief: "DOC/DON/NO3/NH4 mineral and dissolved pools become lateral solute fluxes."}
+    - {from: "Snowpack", to: "ET", kind: "reads_state", brief: "snow sublimation competes with soil/litter evaporation for available energy."}
+    - {from: "Mortality", to: "CarbonNitrogenBGC", kind: "writes_state", brief: "dead biomass transferred into litter and CWD decomposition pools."}
+    - {from: "Fire", to: "CarbonNitrogenBGC", kind: "writes_state", brief: "fire effects consume vegetation and litter C and N (optional WMFire)."}
+    - {from: "WorldHierarchyDriver", to: "SubsurfaceRouting", kind: "invokes", brief: "hillslope_daily_F invokes lateral routing after all patches cycle."}
+    - {from: "TECEventControl", to: "Outputs", kind: "invokes", brief: "print_*_on events gate which hierarchy levels emit output and when."}
+    - {from: "StreamRouting", to: "Outputs", kind: "produces_output", brief: "streamflow and streamflow_N written to basin output (key validation variables)."}
+    - {from: "CarbonNitrogenBGC", to: "Outputs", kind: "produces_output", brief: "denitrif/nitrif/N_leached/psn surfaced to patch and basin output."}
+
+states:
+  variables:
+    - {name: "rz_storage", unit: "m", role: "prognostic"}
+    - {name: "unsat_storage", unit: "m", role: "prognostic"}
+    - {name: "sat_deficit", unit: "m", role: "prognostic"}
+    - {name: "sat_deficit_z (water-table depth)", unit: "m", role: "diagnostic"}
+    - {name: "detention_store (surface ponding)", unit: "m", role: "prognostic"}
+    - {name: "snowpack.water_equivalent_depth (SWE)", unit: "m", role: "prognostic"}
+    - {name: "field_capacity", unit: "m", role: "diagnostic"}
+    - {name: "S (relative soil saturation)", unit: "dimensionless", role: "diagnostic"}
+    - {name: "gw.storage (hillslope groundwater)", unit: "m", role: "prognostic"}
+    - {name: "gw.NO3 (groundwater nitrate)", unit: "kgN", role: "prognostic"}
+    - {name: "Qout (subsurface lateral outflow)", unit: "m/m^2/day", role: "diagnostic"}
+    - {name: "soil_cs.* (soil carbon pools SOIL1-4)", unit: "kgC/m^2", role: "prognostic"}
+    - {name: "soil_ns.* (soil nitrogen pools; sminn, nitrate)", unit: "kgN/m^2", role: "prognostic"}
+    - {name: "litter_cs.* / litter_ns.* (litter C and N pools)", unit: "kgC/m^2 or kgN/m^2", role: "prognostic"}
+    - {name: "cs.* canopy carbon stores (leafc, frootc, live/deadstemc, cpool)", unit: "kgC/m^2", role: "prognostic"}
+    - {name: "cs.leafc_transfer / cs.leafc_store (leaf expansion budgets)", unit: "kgC/m^2", role: "prognostic"}
+    - {name: "ns.* canopy nitrogen stores (leafn, frootn, retransn, npool)", unit: "kgN/m^2", role: "prognostic"}
+    - {name: "epv.* ecophysiological vars (proj_lai, all_lai, height, rootzone.depth)", unit: "varies (m^2/m^2; m)", role: "diagnostic"}
+    - {name: "DOC_Qout / DON_Qout / NO3_Qout / NH4_Qout (dissolved lateral solute fluxes)", unit: "kg/m^2/day", role: "diagnostic"}
+    - {name: "phen.* phenology state (gwseasonday, leaf-on/off timing)", unit: "day-of-year", role: "prognostic"}
+    - {name: "Tsoil (soil temperature profile)", unit: "degC", role: "diagnostic"}
+    - {name: "preday_sat_deficit / preday_unsat_storage / preday_rz_storage", unit: "m", role: "prognostic"}
+  provenance: "populated"
+
+outputs:
+  - var: "streamflow"
+    validation_rank: 1
+    unit: "m/day (depth per unit basin area)"
+    description: "Total basin streamflow as water depth per area; convert to m^3/s via Q = streamflow * basin_area / 86400."
+    emitted_in: "basin daily output"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Output is m/day/m^2 not m^3/s; must convert with basin area before gauge comparison (dt_002)."
+            - "Comparing a small RHESSys domain against a large-basin gauge via specific discharge assumes uniform runoff generation over the full gauge drainage area."
+      detrending_options: ["none"]
+  - var: "evaporation"
+    validation_rank: 3
+    unit: "m/day"
+    description: "Total surface/soil/litter evaporation."
+    emitted_in: "basin/patch daily output"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["ET partitioning (evap vs transpiration) is model-specific; total ET is more robustly comparable than the partition."]
+      detrending_options: ["none"]
+  - var: "transpiration (sat + unsat zone)"
+    validation_rank: 5
+    unit: "m/day"
+    description: "Canopy transpiration drawn from saturated and unsaturated zones."
+    emitted_in: "basin/patch daily output"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Known forcing-config failure modes (dt_019, dt_021, dt_022) can drive transpiration to zero on rainy/cloudy days; verify forcing before trusting low transpiration."
+      detrending_options: ["none"]
+  - var: "snowpack.water_equivalent_depth"
+    validation_rank: 4
+    unit: "m"
+    description: "Snow water equivalent per patch."
+    emitted_in: "patch daily output"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "timing_accuracy", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Snowmelt timing is sensitive to the temperature interpolation / lapse-rate choice."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Patch-level SWE compares to gridded SWE only where the patch tessellation aligns with the product footprint."]
+      detrending_options: ["none"]
+  - var: "lai (proj_lai / effective_lai)"
+    validation_rank: 6
+    unit: "m^2/m^2"
+    description: "Projected / effective leaf area index of the canopy stratum."
+    emitted_in: "stratum/patch daily output"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Requires multi-century BGC spin-up; un-spun-up runs give LAI=0 or runaway growth (dt_012)."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Compare against remote-sensing LAI only where stratum tessellation aligns with the gridded product."]
+      detrending_options: ["none"]
+  - var: "cs.net_psn (net photosynthesis / NPP proxy)"
+    validation_rank: 7
+    unit: "kgC/m^2/day"
+    description: "Net photosynthesis at the canopy stratum."
+    emitted_in: "stratum daily growth output"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Eddy-covariance GPP/NEE comparison requires matching the model's net-photosynthesis definition to the flux-tower partitioning."]
+      detrending_options: ["none"]
+  - var: "streamflow_NO3 / streamflow_DON"
+    validation_rank: 2
+    unit: "kgN/m^2/day"
+    description: "Nitrate and dissolved organic nitrogen export in streamflow."
+    emitted_in: "basin daily output"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Dissolved-N export depends on spun-up BGC pools and on N-deposition/fertilizer forcing being supplied."]
+      detrending_options: ["none"]
+  - var: "soil_cs.totalc / litter_cs.totalc"
+    validation_rank: 8
+    unit: "kgC/m^2"
+    description: "Total soil and litter carbon pools."
+    emitted_in: "patch daily/yearly output"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Soil carbon is a slow pool reflecting 200-500 yr spin-up state, not weather-driven inter-annual variability."]
+      detrending_options: ["none"]
+  - var: "sat_deficit / unsat_storage / rz_storage / theta (soil moisture)"
+    validation_rank: 9
+    unit: "m (storage) or dimensionless (relative saturation)"
+    description: "Patch-level subsurface water storage / relative saturation state."
+    emitted_in: "patch daily output"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Point soil-moisture sensors sample a depth/volume that may not match the patch root-zone definition."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "Ksat_0 (surface saturated hydraulic conductivity)"
+      to: "streamflow"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["mengistu2016_rhessys_patch_resolution", "tague2004_rhessys_model"]
+    - from: "m (transmissivity decay with depth)"
+      to: "streamflow"
+      sensitivity_grade: "LOW"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["mengistu2016_rhessys_patch_resolution"]
+    - from: "soil_depth"
+      to: "streamflow"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["tague2004_rhessys_model", "tague2012_rhessys_param_input_uncertainty"]
+    - from: "bypass_flow_coefficient"
+      to: "streamflow"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["smith2022_rhessys_morris_decision"]
+    - from: "gw_loss_coeff (gw2, hillslope groundwater recession)"
+      to: "streamflow"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "low flows / -gw mode"
+      citations: ["smith2022_rhessys_morris_decision", "tague2004_rhessys_model"]
+    - from: "sat_to_gw_coeff (gw1, saturation-to-groundwater fraction)"
+      to: "streamflow"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "-gw mode"
+      citations: ["smith2022_rhessys_morris_decision", "tague2004_rhessys_model"]
+    - from: "patch_resolution (spatial discretization)"
+      to: "streamflow"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "structural"
+      applicability: "always"
+      citations: ["mengistu2016_rhessys_patch_resolution"]
+    - from: "vegetation_interception_storage_capacity"
+      to: "streamflow"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "low flows"
+      citations: ["smith2022_rhessys_morris_decision"]
+    - from: "max_stomatal_conductance"
+      to: "streamflow"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "high/flood flows"
+      citations: ["smith2022_rhessys_morris_decision"]
+    - from: "max_stomatal_conductance"
+      to: "transpiration"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["smith2022_rhessys_morris_decision"]
+    - from: "precipitation_input (spatial extrapolation)"
+      to: "streamflow"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      applicability: "always"
+      citations: ["tague2012_rhessys_param_input_uncertainty"]
+    - from: "precipitation_input (spatial extrapolation)"
+      to: "evapotranspiration"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      applicability: "always"
+      citations: ["tague2012_rhessys_param_input_uncertainty"]
+    - from: "soil_parameters"
+      to: "evapotranspiration"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "semi-arid catchments"
+      citations: ["tague2012_rhessys_param_input_uncertainty"]
+    - from: "air_temperature_input (interpolation method / lapse rate)"
+      to: "snowmelt"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      applicability: "rain-snow zone"
+      citations: ["garcia2013_rhessys_temperature", "tague2012_rhessys_param_input_uncertainty"]
+    - from: "air_temperature_input (interpolation method / lapse rate)"
+      to: "streamflow"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      applicability: "rain-snow basin"
+      citations: ["garcia2013_rhessys_temperature"]
+    - from: "air_temperature_input (interpolation method / lapse rate)"
+      to: "transpiration"
+      sensitivity_grade: "LOW"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      applicability: "always"
+      citations: ["garcia2013_rhessys_temperature"]
+    - from: "air_temperature_input (interpolation method / lapse rate)"
+      to: "NPP"
+      sensitivity_grade: "LOW"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      applicability: "always"
+      citations: ["garcia2013_rhessys_temperature"]
+  _caveat: "RHESSys forcing/structural drivers (precipitation spatial extrapolation, air-temperature interpolation, soil depth) are mechanistically dominant but the available literature (tague2012, garcia2013, tague2004) characterizes them only qualitatively as uncertainty sources / method comparisons, with no variance-based sensitivity index; they are therefore capped at MEDIUM despite likely high real-world influence. Quantitative Morris-ranked edges (smith2022, mengistu2016) retain HIGH."
+  citation_index:
+    smith2022_rhessys_morris_decision:
+      short_citation: "Smith et al. 2022"
+      doi: "10.5194/hess-26-2519-2022"
+      note: "Method of Morris global SA on RHESSys; bypass-flow, hillslope groundwater and saturation-to-groundwater coefficients dominate streamflow; interception elevates low-flow sensitivity, stomatal conductance high-flow sensitivity."
+    mengistu2016_rhessys_patch_resolution:
+      short_citation: "Mengistu et al. 2016"
+      doi: "10.4236/ojmh.2016.62007"
+      note: "Monte-Carlo calibration; Ksat0 (k) exerts stronger control on NSE than m; calibrated k, m and streamflow strongly depend on patch resolution."
+    tague2004_rhessys_model:
+      short_citation: "Tague & Band 2004"
+      doi: "10.1175/1087-3562(2004)8<1:RRHSSO>2.0.CO;2"
+      note: "Foundational RHESSys description; establishes Ksat0, m, soil depth and groundwater bypass/recession coefficients as primary streamflow controls."
+    garcia2013_rhessys_temperature:
+      short_citation: "Garcia et al. 2013"
+      doi: "10.1002/wrcr.20140"
+      note: "Five temperature interpolation/lapse-rate methods; snowmelt and rain-snow-zone streamflow sensitive to temperature input, transpiration/NPP modest."
+    tague2012_rhessys_param_input_uncertainty:
+      short_citation: "Tague et al. 2012"
+      doi: "10.1007/s10021-012-9545-z"
+      note: "Precipitation extrapolation and soil parameters strongly shape runoff and ET in a semi-arid urbanizing catchment."
+
+safety:
+  hazards:
+    - id: "precip_units_m_per_day"
+      kind: "weather_file_semantic"
+      description: "Precipitation supplied in mm/day instead of m/day inflates all water fluxes ~1000x."
+      severity: "silent"
+    - id: "temperature_kelvin_not_celsius"
+      kind: "weather_file_semantic"
+      description: "Temperature in Kelvin instead of Celsius causes catastrophic ET and instant soil drying."
+      severity: "silent"
+    - id: "kdown_direct_without_diffuse_clearsky_fallback"
+      kind: "weather_file_semantic"
+      description: "Kdown_direct supplied without Kdown_diffuse makes RHESSys zero both and recompute clear-sky radiation, giving every day maximum radiation and collapsing vegetation in 3-5 yr in humid climates."
+      severity: "degraded"
+    - id: "constant_tmax_tmin_range_breaks_cloud_correction"
+      kind: "weather_file_semantic"
+      description: "tmax/tmin built as tavg +/- fixed offset gives constant diurnal range, disabling MTCLIM/Bristow-Campbell cloud correction (same clear-sky fraction daily)."
+      severity: "degraded"
+    - id: "missing_daytime_rain_duration_zeros_transpiration"
+      kind: "weather_file_semantic"
+      description: "Without a daytime_rain_duration sequence, rain_duration defaults to 86400 s (all day) for any precip, zeroing transpiration on every rainy day (3-10x low annual transpiration in monsoon climates)."
+      severity: "silent"
+    - id: "soil_depth_cm_not_m"
+      kind: "soil_semantic"
+      description: "Soil depth in cm instead of m gives unrealistically deep soil; model never saturates and baseflow dominates for decades."
+      severity: "silent"
+    - id: "ksat_cmhr_not_mday"
+      kind: "soil_semantic"
+      description: "Ksat in cm/hr instead of m/day (factor 0.24) produces a flashy hydrograph with no baseflow."
+      severity: "silent"
+    - id: "porosity_percent_gt_one_crash"
+      kind: "soil_semantic"
+      description: "Porosity in percent (>1.0) instead of fraction causes division errors / NaN crash."
+      severity: "fatal"
+    - id: "psi_air_entry_kpa_not_m"
+      kind: "soil_semantic"
+      description: "psi_air_entry in kPa instead of m head (factor 9.81) distorts the water-retention curve."
+      severity: "silent"
+    - id: "slope_aspect_radians_not_degrees"
+      kind: "soil_semantic"
+      description: "Slope/aspect in radians (<6.28) instead of degrees wrecks radiation partitioning and lateral routing (dt_007)."
+      severity: "silent"
+    - id: "area_km2_not_m2"
+      kind: "soil_semantic"
+      description: "Patch/zone area in km^2 instead of m^2 makes all area-weighted fluxes 1e6 too small (dt_008)."
+      severity: "silent"
+    - id: "cn_pools_g_not_kg_per_m2"
+      kind: "initial_condition_semantic"
+      description: "Initial C/N pools in g/m^2 instead of kg/m^2 cause 1000x runaway growth or enormous soil carbon."
+      severity: "silent"
+    - id: "missing_bgc_spinup"
+      kind: "initial_condition_semantic"
+      description: "BGC mode (-g) without 200-500 yr spin-up: vegetation dies (LAI=0) or allocation crashes in the first year."
+      severity: "silent"
+    - id: "deciduous_dormant_start_no_leafc_transfer"
+      kind: "initial_condition_semantic"
+      description: "Deciduous dormant-season start with only cs.leafc_store set (not cs.leafc_transfer) gives no leaves in Year 1 because annual allocation has not yet run."
+      severity: "silent"
+    - id: "worldfile_value_name_misalignment"
+      kind: "parser_semantic"
+      description: "Worldfile value/name ordering, blank lines or tab/space issues misalign the value-name parser, causing wrong parameter assignment or segfault; fixed per-level variable counts must match."
+      severity: "fatal_or_silent"
+    - id: "flowtable_patch_id_mismatch_segfault"
+      kind: "control_semantic"
+      description: "Flow table (-r) patch IDs not matching worldfile patch IDs cause a segfault during routing initialization."
+      severity: "fatal"
+    - id: "tec_print_events_before_start_date_no_output"
+      kind: "control_semantic"
+      description: "TEC print events scheduled before the -st start date are ignored, producing empty or no output files."
+      severity: "silent"
+    - id: "zero_sensitivity_multiplier_div_by_zero"
+      kind: "control_semantic"
+      description: "Sensitivity multiplier set to 0 via -s/-sv zeros Ksat or m, causing division-by-zero / infinite loop in drainage routines."
+      severity: "fatal"
+    - id: "canopy_cover_fraction_sum_gt_one"
+      kind: "control_semantic"
+      description: "Canopy stratum cover fractions summing >1.0 per patch over-count interception and break the water balance (dt_017)."
+      severity: "silent"
+    - id: "inconsistent_soil_params_negative_sat_deficit"
+      kind: "numerical_instability"
+      description: "Inconsistent soil params (high Ksat with low porosity, small m with deep soil) cause negative saturation deficit / NaN propagation and growing water-balance residual (dt_018)."
+      severity: "fatal"
+    - id: "rhessys74_canopy_stratum_line1160_trans_zero_bug"
+      kind: "numerical_instability"
+      description: "RHESSys 7.4 source bug in canopy_stratum_daily_F.c (zeros the wrong rnet_evap term) drives transpiration to exactly zero on any day with negative daytime net radiation; requires a source patch and recompile."
+      severity: "degraded"
+  validation_limits:
+    - "Daily forcing timestep cannot resolve sub-daily storm or diurnal-flux processes."
+    - "Comparing a small RHESSys domain against a large full-basin gauge via specific discharge assumes uniform runoff generation over the full gauge drainage area; calibrating to a full-basin gauge corrects basin-average response, not sub-basin physics."
+    - "Without -g the model runs hydrology only with static vegetation; carbon/nitrogen outputs are not meaningful."
+    - "NetCDF gridded forcing is unavailable unless the binary was compiled with the NetCDF reader (otherwise only ASCII forcing)."
+  warnings:
+    - "Hydrologic stores reach equilibrium quickly, but BGC pools (soil C, litter C, plant N) require centuries of spin-up; trust C/N outputs only from a spun-up state saved via the TEC output_current_state event."
+    - "Lateral subsurface routing overwrites each patch's vertical-cycle saturation-deficit state after patch_daily_F runs; debugging patch water balance must account for this within-day ordering."
+    - "Plant-microbe mineral-N competition (resolve_sminn_competition) couples canopy N-uptake demand across strata to patch-level soil N; isolated stratum analysis can mislead."
+  assumptions:
+    - statement: "RHESSys is point/quasi-distributed over a nested World > Basin > Hillslope > Zone > Patch > Stratum hierarchy of arbitrarily-shaped surface elements, not a regular grid."
+      scope: "spatial discretization"
+      source: "Tague & Band 2004 (Earth Interactions) and RHESSys wiki Spatial-Input-Requirements"
+      status: "adopted"
+    - statement: "Lateral hydrology uses TOPMODEL wetness-index redistribution by default and explicit DHSVM-style patch-to-patch flow-table routing when -r is supplied."
+      scope: "subsurface/overland routing"
+      source: "RHESSys wiki About-RHESSys (Beven & Kirkby 1979; Wigmosta et al. 1994)"
+      status: "adopted"
+    - statement: "Mass-balance closure holds for water and for C/N pools; the daily ET path is a demand-side flux calculation, so no global surface energy budget is conserved as a closure term despite snowpack/canopy energy computations."
+      scope: "conservation / closure"
+      source: "WBAL/ET and snowpack module behavior in RHESSys source and docs"
+      status: "adopted"
+    - statement: "Ecophysiology (photosynthesis, respiration, allocation, decomposition) is adapted from Biome-BGC with CENTURY-style soil organic-matter pools."
+      scope: "carbon/nitrogen process representation"
+      source: "Tague & Band 2004; Running & Coughlan 1988 / Running & Hunt 1993 (cited in RHESSys docs)"
+      status: "adopted"
+    - statement: "Several physical constants (SOIL1-4 C:N ratios, RAD2PAR=0.5, growth-respiration coefficients, KELVIN=273.16, Green-Ampt wetting-front = 0.76 x psi_air_entry) are compiled in and not exposed in .def files."
+      scope: "hardcoded coefficients"
+      source: "include/phys_constants.h and hydro/compute_infiltration.c in RHESSys source"
+      status: "adopted"

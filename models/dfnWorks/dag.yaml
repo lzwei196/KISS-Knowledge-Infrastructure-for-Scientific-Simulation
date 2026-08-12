@@ -1,0 +1,419 @@
+template_version: "3.5"
+
+identity:
+  model_id: "dfnWorks"
+  scientific_reference_version: "dfnWorks discrete fracture network framework (Hyman et al. 2015, Computers & Geosciences 84:10-19), graph-mode flow/transport branch (dfnGraph, v2.2+)"
+  implementation:
+    id: "dfnworks-v2100"
+    version: "v2.10.0 (DFNGen v2.3, DFNTrans, pydfnworks driver)"
+    provenance: "C++ (DFNGen generator), C (DFNTrans particle tracker), Python (pydfnworks driver + self-contained dfnGraph flow/transport solver); LANL EES-16. Full-physics meshing (LaGriT) and flow (PFLOTRAN/FEHM) are external binaries invoked by pydfnworks."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c++/c/python"
+  license: "LGPL-3.0 / GPL-2.0 (LANL LA-CC-17-027)"
+  repo_url: "https://github.com/lanl/dfnWorks"
+
+boundary:
+  scope_in:
+    - "Stochastic and deterministic generation of 3D discrete fracture networks in fractured rock"
+    - "Conforming Delaunay meshing of the fracture network via FRAM + LaGriT (full-physics path)"
+    - "Steady-state single-phase subsurface flow through the network (PFLOTRAN/FEHM full-physics, or self-contained graph-based pipe-network solver)"
+    - "Lagrangian particle-tracking of advective solute transport, producing travel-time/breakthrough distributions"
+    - "Upscaling of the DFN flow solution to equivalent continuum (ECPM/UDFM) properties for basin-scale coupling"
+  scope_out:
+    - "Matrix (rock-block) flow is not solved; matrix diffusion enters only as a TDRW post-process retardation, not a solved field"
+    - "Longitudinal dispersion, sorption, and other retention processes are added by post-processing trajectories, not solved by the tracker"
+    - "Reactive/multiphase chemistry is delegated to the external PFLOTRAN solver, not the dfnWorks core"
+    - "No native meteorological forcing or transient hydrologic state vector"
+  spatial: "3-D"
+  temporal: "event"
+  closure: "mass-balance"
+  notes: "Flow solutions are locally mass-conserving (control-volume finite volume in full-physics; Laplacian L*p=b with conserved edge fluxes in graph mode), which is what makes particle tracking well-posed. There is no transient hydrologic timestepping: 'time' enters only as particle travel time (seconds) in the transport stage. Graph mode assumes 1-D flow along intersection segments with complete mixing at intersections and systematically differs (~30%) from full-physics; the two modes' breakthrough and effective-permeability outputs should not be cross-compared directly."
+
+inputs:
+  forcing: []
+  parameters:
+    - {category: domain, name: "domainSize", unit: "m", source_kind: user_provided, model_input_format: "dfnGen input .dat ([x,y,z], centered at origin)", notes: "All spatial dimensions strictly in meters (SI); km/cm inputs silently produce explosive or microscopic networks."}
+    - {category: domain, name: "domainSizeIncrease", unit: "m", source_kind: user_provided, model_input_format: "dfnGen input .dat", notes: "Oversize generation buffer; fractures are generated in the buffered domain then truncated to domainSize, which sets boundary-face flags."}
+    - {category: mesh, name: "h", unit: "m", source_kind: user_provided, model_input_format: "dfnGen input .dat", notes: "Minimum feature size; simultaneously the FRAM rejection threshold and the LaGriT mesh resolution. Must be < 0.5*min_radius (recommended < 0.1) and > 1e-3*min_radius."}
+    - {category: family, name: "fracture shape", unit: "enum", source_kind: user_provided, model_input_format: "ell | rect | poly per family", notes: "Elliptical, rectangular, or polygonal planar fractures."}
+    - {category: family, name: "size distribution (edistr/rdistr)", unit: "enum", source_kind: user_provided, model_input_format: "1=lognormal, 2=truncated power-law, 3=exponential, 4=constant", notes: "Selector per family; TPL exponent alpha, min/max radius, log_mean/log_std, or exp_mean parameterize the chosen law."}
+    - {category: family, name: "min_radius / max_radius", unit: "m", source_kind: user_provided, model_input_format: "dfnGen input .dat per family"}
+    - {category: family, name: "Fisher kappa (ekappa/rkappa)", unit: "dimensionless", source_kind: user_provided, model_input_format: "von Mises-Fisher concentration per family", notes: "Controls orientation clustering: ~0 random, high nearly parallel. Too low overestimates connectivity."}
+    - {category: family, name: "orientation (theta/phi trend & plunge, or dip/strike)", unit: "degrees", source_kind: user_provided, model_input_format: "spherical pole per family", notes: "Model default unit is degrees."}
+    - {category: family, name: "aspect ratio (easpect/raspect)", unit: "dimensionless", source_kind: user_provided, model_input_format: "dfnGen input .dat per family"}
+    - {category: family, name: "p32 targets (e_p32Targets/r_p32Targets)", unit: "1/m", source_kind: user_provided, model_input_format: "fracture surface area per domain volume per family", notes: "Fracture intensity; typical field range 0.01-10 /m. Used when stopCondition=1."}
+    - {category: family, name: "famProb / probability", unit: "dimensionless", source_kind: user_provided, model_input_format: "relative family probability (used when stopCondition=0)"}
+    - {category: hydraulic, name: "permeability k", unit: "m^2", source_kind: calibrated, model_input_format: "hy_variable=permeability; constant/correlated/semi-correlated hy_function", notes: "Intrinsic permeability (NOT hydraulic conductivity K m/s). Cubic-law default k=b^2/12. Calibrated range 1e-15 to 1e-8 m^2; highest-sensitivity parameter."}
+    - {category: hydraulic, name: "aperture b", unit: "m", source_kind: calibrated, model_input_format: "hy_variable=aperture; constant/correlated/semi-correlated", notes: "Calibrated range 1e-6 to 1e-2 m. Cubic law amplifies aperture error quadratically into permeability. v2.6+ supports stress-field-based hydraulic aperture."}
+    - {category: hydraulic, name: "transmissivity T", unit: "m^2/s", source_kind: calibrated, model_input_format: "hy_variable=transmissivity", notes: "Under-documented input path; only permeability is exercised in worked examples."}
+    - {category: fluid, name: "fluid_viscosity", unit: "Pa.s", source_kind: default, model_input_format: "graph_flow run argument", notes: "Hardcoded model default 8.9e-4 (water ~20C) when caller does not override; governs Darcy flux = (k/mu)*(dp/L)."}
+    - {category: fluid, name: "fluid_density", unit: "kg/m^3", source_kind: user_provided, model_input_format: "DFNTrans control (e.g. 997.73)"}
+    - {category: transport, name: "matrix_porosity", unit: "dimensionless", source_kind: calibrated, model_input_format: "TDRW input (optional)", notes: "Calibrated range 0.001-0.3; only used when tdrw_flag enabled."}
+    - {category: transport, name: "matrix_diffusivity", unit: "m^2/s", source_kind: calibrated, model_input_format: "TDRW input (optional)", notes: "Calibrated range 1e-12 to 1e-9 m^2/s; cm^2/s confusion gives 1e4x retardation."}
+    - {category: graph, name: "phi (graph-flow velocity porosity)", unit: "dimensionless", source_kind: default, model_input_format: "graph_flow run argument", notes: "Hardcoded default 1; edge velocity = flux/phi, so default makes velocity equal Darcy flux and directly scales travel times if not overridden."}
+  initial_conditions:
+    - {category: rng, name: "seed", unit: "n/a", source_kind: user_provided, model_input_format: "dfnGen input .dat (non-negative int)", notes: "seed>0 reproducible; seed==0 substitutes a clock-based seed at runtime, making every run a different network."}
+  boundary_conditions:
+    - {category: stop, name: "stopCondition", unit: "enum", source_kind: user_provided, model_input_format: "0=stop at nPoly, 1=stop at p32 targets (default 1)"}
+    - {category: stop, name: "nPoly", unit: "count", source_kind: user_provided, model_input_format: "total fractures to accept (when stopCondition=0)"}
+    - {category: connectivity, name: "boundaryFaces", unit: "6 binary flags", source_kind: user_provided, model_input_format: "[top,bottom,left_w,front_n,right_e,back_s] connectivity enforcement", notes: "Needs >=1 inflow and >=1 outflow face. Three distinct face conventions across subsystems: positional list (dfnGen), string names ('left'/'right'/...) (graph flow), 1-based index (1=top..6=back) (DFNTrans)."}
+    - {category: connectivity, name: "keepOnlyLargestCluster / keepIsolatedFractures / removeFracturesLessThan / disableFram", unit: "switches", source_kind: user_provided, model_input_format: "cluster/isolation filtering and FRAM control flags"}
+    - {category: flow_bc, name: "pressure_in / pressure_out", unit: "Pa", source_kind: user_provided, model_input_format: "Dirichlet inlet/outlet boundary pressure (graph flow); PFLOTRAN *.ex boundary files (full-physics)", notes: "Pascals required; MPa/psi confusion shifts graph-flow velocities by orders of magnitude. Solver requires pressure_in > pressure_out."}
+    - {category: transport, name: "nparticles", unit: "count", source_kind: user_provided, model_input_format: "DFNTrans / graph transport control"}
+    - {category: transport, name: "tdrw_flag", unit: "bool", source_kind: user_provided, model_input_format: "enable time-domain-random-walk matrix diffusion"}
+    - {category: transport, name: "particle release weighting (flux_weight / init_nf / init_partn)", unit: "switch", source_kind: user_provided, model_input_format: "flux-weighted vs equal-per-fracture sampling", notes: "Flux-weighting biases breakthrough toward fast paths; init_nf gives unbiased per-fracture sampling."}
+    - {category: transport, name: "control_planes", unit: "m + direction", source_kind: user_provided, model_input_format: "intermediate breakthrough plane positions"}
+
+processes:
+  modules:
+    - {name: "DFNGen", role: "process_solver", brief: "C++ stochastic fracture network generator: samples radii/orientations per family, places ellipse/rectangle/polygon fractures, runs FRAM rejection, truncates to domain, clusters connectivity, and writes geometry/intersection/connectivity output."}
+    - {name: "Distributions", role: "process_solver", brief: "Samples fracture radii from lognormal/truncated-power-law/exponential/constant laws and orientations from the von Mises-Fisher (Fisher kappa) distribution."}
+    - {name: "InsertShape", role: "allocator", brief: "Builds candidate ellipse/rectangle/polygon polygons from sampled radii and orientations, placing translations and normals; handles user-defined deterministic fractures."}
+    - {name: "FRAM", role: "process_solver", brief: "Feature Rejection Algorithm for Meshing: tests each candidate fracture's intersections against the accepted set, rejects geometry finer than h, and conditions intersections so the network is meshable."}
+    - {name: "DomainTruncation", role: "process_solver", brief: "Clips accepted fractures to domainSize and sets the per-fracture boundary-face flags used later for inlet/outlet assignment."}
+    - {name: "ClusterGroups", role: "integrator", brief: "Maintains fracture connectivity clusters by union/merge of groupNum as intersections are accepted."}
+    - {name: "RemoveFractures", role: "optional_module", brief: "Prunes isolated fractures, keeps only the largest percolating cluster, and removes fractures below a size threshold (optional)."}
+    - {name: "AssignHydraulicProperties", role: "allocator", brief: "Assigns per-fracture permeability k, aperture b, and transmissivity T from the chosen hy_function (constant/correlated/semi-correlated), with cubic law k=b^2/12."}
+    - {name: "LaGriTMeshing", role: "process_solver", brief: "External LaGriT conforming Delaunay triangulation resolving fracture intersections; emits Voronoi control volumes for finite-volume flow.", applicability: "full-physics path only"}
+    - {name: "PFLOTRAN_FEHM_Flow", role: "process_solver", brief: "External finite-volume/finite-element steady-state Darcy flow solver on the DFN mesh; produces pressure and velocity fields.", applicability: "full-physics path only"}
+    - {name: "GraphFlow", role: "process_solver", brief: "Self-contained graph-mode solver: builds the intersection graph, assigns edge conductances C=k*A/(mu*L), solves the Laplacian L*p=b for node pressures, and computes edge fluxes/velocities without external meshing or PFLOTRAN.", applicability: "graph mode"}
+    - {name: "DFNTrans", role: "process_solver", brief: "C Lagrangian particle tracker: reconstructs the local velocity field from full-physics Darcy fluxes and advects particles inlet-to-outlet, writing travel times and fracture sequences.", applicability: "full-physics path only"}
+    - {name: "GraphTransport", role: "process_solver", brief: "Graph-mode particle advection using edge velocity=flux/phi, with optional control planes; emits travel times and fracture sequences.", applicability: "graph mode"}
+    - {name: "TDRW", role: "optional_module", brief: "Time-domain random walk matrix-diffusion extension: adds matrix residence time from matrix porosity and diffusivity, retarding and broadening breakthrough.", applicability: "when tdrw_flag enabled"}
+    - {name: "Upscaling", role: "process_solver", brief: "Maps the DFN flow solution to an equivalent porous medium (ECPM/UDFM) continuum grid, producing an upscaled permeability tensor and porosity for basin-scale coupling.", applicability: "full-physics path"}
+    - {name: "PostProcessing", role: "integrator", brief: "Computes breakthrough curves, travel-time statistics, effective permeability k_eff=Q*mu*L/(A*dP), and flow-channeling (dQ) metrics from transport output."}
+  internal_edges:
+    - {from: "Distributions", to: "InsertShape", kind: "invokes", brief: "sampled radii/orientations build candidate polygons"}
+    - {from: "seed", to: "Distributions", kind: "consumes_input", brief: "RNG seed; seed==0 replaced by clock at runtime"}
+    - {from: "InsertShape", to: "FRAM", kind: "invokes", brief: "each candidate polygon enters intersection checking / FRAM"}
+    - {from: "h", to: "FRAM", kind: "consumes_input", brief: "h is the minimum-feature rejection threshold"}
+    - {from: "FRAM", to: "ClusterGroups", kind: "writes_state", brief: "accepted intersections set/merge fracture cluster groupNum"}
+    - {from: "FRAM", to: "DomainTruncation", kind: "invokes", brief: "accepted fracture is clipped to domain and boundary faces flagged"}
+    - {from: "DomainTruncation", to: "discrete fracture network", kind: "writes_state", brief: "truncated fractures with boundary-face flags accumulate into the network"}
+    - {from: "ClusterGroups", to: "RemoveFractures", kind: "reads_state", brief: "groupNum used to keep the largest percolating cluster"}
+    - {from: "RemoveFractures", to: "discrete fracture network", kind: "writes_state", brief: "pruned final fracture set"}
+    - {from: "DFNGen", to: "discrete fracture network", kind: "writes_state", brief: "generation pipeline produces the carried network geometry/topology"}
+    - {from: "discrete fracture network", to: "AssignHydraulicProperties", kind: "reads_state", brief: "per-fracture k/b/T assigned over the accepted fractures"}
+    - {from: "discrete fracture network", to: "LaGriTMeshing", kind: "reads_state", brief: "full-physics path meshes the network"}
+    - {from: "discrete fracture network", to: "GraphFlow", kind: "reads_state", brief: "graph mode builds the intersection graph directly, bypassing meshing"}
+    - {from: "AssignHydraulicProperties", to: "GraphFlow", kind: "writes_state", brief: "edge aperture/perm drives edge conductance C=k*A/(mu*L)"}
+    - {from: "AssignHydraulicProperties", to: "PFLOTRAN_FEHM_Flow", kind: "writes_state", brief: "per-fracture permeability feeds the full-physics Darcy solve"}
+    - {from: "LaGriTMeshing", to: "intersection graph / mesh", kind: "writes_state", brief: "conforming Delaunay mesh with Voronoi volumes"}
+    - {from: "intersection graph / mesh", to: "PFLOTRAN_FEHM_Flow", kind: "reads_state", brief: "meshed network is the full-physics flow domain"}
+    - {from: "pressure_in / pressure_out", to: "GraphFlow", kind: "consumes_input", brief: "Dirichlet BCs on inlet/outlet nodes of the Laplacian system"}
+    - {from: "fluid_viscosity", to: "GraphFlow", kind: "consumes_input", brief: "flux = (k/mu)*(dp/length)"}
+    - {from: "GraphFlow", to: "steady-state flow field", kind: "writes_state", brief: "node pressures (Pa) and edge fluxes/velocities"}
+    - {from: "PFLOTRAN_FEHM_Flow", to: "steady-state flow field", kind: "writes_state", brief: "mesh pressure and Darcy velocity fields"}
+    - {from: "steady-state flow field", to: "GraphTransport", kind: "reads_state", brief: "edge velocity=flux/phi advects graph-mode particles"}
+    - {from: "steady-state flow field", to: "DFNTrans", kind: "reads_state", brief: "full-physics velocity field reconstructed and tracked"}
+    - {from: "TDRW", to: "particle ensemble", kind: "writes_state", brief: "matrix-diffusion residence time retards and broadens particle arrivals"}
+    - {from: "GraphTransport", to: "particle ensemble", kind: "writes_state", brief: "advected particles accumulate travel time and fracture sequence"}
+    - {from: "DFNTrans", to: "particle ensemble", kind: "writes_state", brief: "advected particles accumulate travel time and fracture sequence"}
+    - {from: "particle ensemble", to: "PostProcessing", kind: "reads_state", brief: "travel times feed breakthrough curves, stats, channeling metrics"}
+    - {from: "PostProcessing", to: "Outputs", kind: "produces_output", brief: "breakthrough CDF, travel-time statistics, k_eff, flow-channeling density"}
+    - {from: "steady-state flow field", to: "Upscaling", kind: "reads_state", brief: "full-physics flow solution mapped to ECPM/UDFM continuum properties"}
+    - {from: "Upscaling", to: "Outputs", kind: "produces_output", brief: "upscaled permeability tensor and porosity for basin-scale coupling"}
+
+states:
+  variables:
+    - {name: "discrete fracture network", unit: "geometry (m) + per-fracture k(m^2)/b(m)/T(m^2/s)", role: "diagnostic"}
+    - {name: "intersection graph / mesh", unit: "topology", role: "diagnostic"}
+    - {name: "steady-state flow field", unit: "node pressure Pa; edge flux m^3/s; velocity m/s", role: "diagnostic"}
+    - {name: "particle ensemble", unit: "travel time s; fracture sequence", role: "accumulator"}
+    - {name: "liquid_pressure", unit: "Pa", role: "diagnostic"}
+    - {name: "velocity_field", unit: "m/s", role: "diagnostic"}
+    - {name: "particle_position", unit: "m", role: "prognostic"}
+    - {name: "fracture cluster groupNum", unit: "cluster id", role: "diagnostic"}
+  provenance: "populated"
+
+outputs:
+  - var: "particle_travel_time"
+    validation_rank: 1
+    unit: "s"
+    description: "Per-particle advective travel time from inlet to outlet through the resolved DFN flow field"
+    emitted_in: "partime / partime.dat"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Compare against tracer-test breakthrough at a monitoring point; mode-dependent (graph vs full-physics differ ~30%) and stochastic across generation seeds, so ensemble comparison is preferred over single-realization match."]
+      detrending_options: ["none"]
+  - var: "breakthrough_curve"
+    validation_rank: 2
+    unit: "cumulative arrival fraction vs s"
+    description: "Cumulative particle-arrival CDF; characteristic early arrivals plus power-law late-time tailing"
+    emitted_in: "derived in s5 post-processing from partime"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Tracer-test breakthrough CDF; particle-release weighting (flux vs equal) shifts the curve, so the initialization must match the observed sampling. Late-time tail shape is the diagnostic feature."]
+        - obs_shape: "categorical_event"
+          comparison_mode: "categorical_event_comparison"
+          metric_families: ["event_detection"]
+          determining_metric: "csi"
+          caveats: ["First-arrival / breakthrough-detection framing when only arrival timing class is observed."]
+      detrending_options: ["none"]
+  - var: "travel_time_statistics"
+    validation_rank: 3
+    unit: "s"
+    description: "Median, mean, std, CV, percentiles (p5/p50/p95), and tailing ratio of the travel-time distribution"
+    emitted_in: "derived in s5 post-processing"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy", "ranking_quality"]
+          determining_metric: "spearman"
+          caveats: ["Median/percentile travel time vs tracer-test summary statistics; ensemble-mean over seeds recommended."]
+      detrending_options: ["none"]
+  - var: "effective_permeability"
+    validation_rank: 4
+    unit: "m^2"
+    description: "Upscaled network permeability k_eff = Q*mu*L/(A*dP)"
+    emitted_in: "derived in s5 post-processing"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Compare against block-scale permeability from packer/pumping tests; should fall between min and max single-fracture permeability and be consistent with cubic-law estimate. Mode-dependent."]
+      detrending_options: ["none"]
+  - var: "flow_channeling_metric"
+    validation_rank: 5
+    unit: "dimensionless"
+    description: "Flow-channeling density (dQ); fraction of total flow carried by the top fraction of fractures (top 10% typically carry >50%)"
+    emitted_in: "derived in s5 post-processing"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Rarely directly observed; primarily an internal structural diagnostic. Comparable only where channeling fraction is inferred from tracer or flow-logging data."]
+      detrending_options: ["none"]
+  - var: "fracture_network_geometry"
+    validation_rank: 6
+    unit: "radii/coords m"
+    description: "Accepted fracture radii, unit normals, centroids, and intersection segments defining the generated network"
+    emitted_in: "radii_Final.dat / normal_vectors.dat / translations.dat / intersection_list.dat / connectivity.dat"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy", "ranking_quality"]
+          determining_metric: "spearman"
+          caveats: ["Aggregate statistics (P32 intensity, size-distribution moments, orientation density) vs borehole/outcrop fracture mapping; individual fracture positions are stochastic and not point-matchable."]
+      detrending_options: ["none"]
+  - var: "upscaled_continuum_properties"
+    validation_rank: 7
+    unit: "permeability tensor m^2; porosity dimensionless"
+    description: "ECPM/UDFM equivalent porous-medium permeability tensor (3x3 per cell) and fracture porosity for basin-scale coupling"
+    emitted_in: "upscaled permeability tensor / ECPM PFLOTRAN input (full-physics)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Upscaled tensor should be symmetric positive definite and grid-convergent; comparison is against continuum-scale effective-property estimates, not direct field measurement."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "fracture_density_P32"
+      to: "particle_travel_time"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["murph2024_dfn_sensitivity_stochasticity", "sherman2020_fracture_density_transport", "hyman2019_structural_transport_linking"]
+    - from: "fracture_density_P32"
+      to: "flow_channeling_metric"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["sherman2020_fracture_density_transport"]
+    - from: "fracture_density_P32"
+      to: "effective_permeability"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "near percolation threshold"
+      citations: ["dedreuzy2012_fracture_heterogeneity_flow", "hyman2019_structural_transport_linking"]
+    - from: "fracture_aperture"
+      to: "effective_permeability"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["dedreuzy2012_fracture_heterogeneity_flow"]
+    - from: "fracture_aperture_permeability"
+      to: "breakthrough_curve"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["murph2024_dfn_sensitivity_stochasticity"]
+    - from: "in_fracture_aperture_variability"
+      to: "particle_travel_time"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "km-scale networks with stochastic in-fracture aperture field"
+      citations: ["makedonska2016_internal_aperture_transport"]
+    - from: "in_fracture_aperture_variability"
+      to: "flow_channeling_metric"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["makedonska2016_internal_aperture_transport", "dedreuzy2012_fracture_heterogeneity_flow"]
+    - from: "in_fracture_aperture_variability"
+      to: "effective_permeability"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "near percolation threshold"
+      citations: ["dedreuzy2012_fracture_heterogeneity_flow"]
+    - from: "network_topology_connectivity"
+      to: "particle_travel_time"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "structural"
+      applicability: "equal-intensity networks with differing backbone topology"
+      citations: ["hyman2019_structural_transport_linking"]
+    - from: "fracture_radius_length_distribution"
+      to: "effective_permeability"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["hyman2019_structural_transport_linking", "dedreuzy2012_fracture_heterogeneity_flow"]
+    - from: "fracture_orientation"
+      to: "flow_channeling_metric"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["hyman2019_structural_transport_linking"]
+  citation_index:
+    murph2024_dfn_sensitivity_stochasticity:
+      short_citation: "Murph et al. 2024"
+      doi: "10.1029/2023JH000113"
+      note: "Variance-based sensitivity analysis for DFN simulations separating epistemic input uncertainty (density, permeability/aperture) from intrinsic generation stochasticity; formal attribution of breakthrough-time QoI uncertainty."
+    sherman2020_fracture_density_transport:
+      short_citation: "Sherman et al. 2020"
+      doi: "10.1029/2019JB018547"
+      note: "dfnWorks study: low fracture density drives strong channelization, longer/more tortuous paths, delayed transport and heavy late-time tailing."
+    hyman2019_structural_transport_linking:
+      short_citation: "Hyman et al. 2019"
+      doi: "10.1029/2018JB016553"
+      note: "Equal-intensity DFNs with differing topology/backbone show markedly different first-passage and breakthrough; topology controls transport beyond intensity alone."
+    makedonska2016_internal_aperture_transport:
+      short_citation: "Makedonska et al. 2016"
+      doi: "10.1016/j.advwatres.2016.06.010"
+      note: "Log-normal in-fracture aperture variability significantly alters travel-time distributions and enhances channeling at km scale."
+    dedreuzy2012_fracture_heterogeneity_flow:
+      short_citation: "de Dreuzy et al. 2012"
+      doi: "10.1029/2012JB009461"
+      note: "In-fracture aperture heterogeneity reduces effective network permeability and intensifies channeling, strongest near percolation threshold."
+
+safety:
+  hazards:
+    - id: "domain_size_unit_meters"
+      kind: "control_semantic"
+      description: "domainSize authored in km or cm instead of meters produces a million-fracture explosion or a microscopic domain (segfault/out-of-memory) (dt_001)."
+      severity: "silent"
+    - id: "permeability_vs_conductivity"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Hydraulic conductivity K (m/s) used directly as intrinsic permeability k (m^2) overestimates velocity by ~7 orders of magnitude; correct conversion k=K*mu/(rho*g)~K*9.1e-8 for water at 20C (dt_002)."
+      severity: "silent"
+    - id: "pressure_unit_pascals"
+      kind: "control_semantic"
+      description: "Graph-flow pressure boundary conditions entered in MPa or psi instead of Pa shift velocities by 3-6 orders of magnitude (dt_003)."
+      severity: "silent"
+    - id: "aperture_unit_meters"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Aperture in micrometers without conversion to meters; cubic law k=b^2/12 amplifies the error quadratically into near-zero permeability and flow (dt_005)."
+      severity: "silent"
+    - id: "matrix_diffusivity_unit"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "TDRW matrix diffusivity in cm^2/s instead of m^2/s is off by 1e4, producing extreme matrix retardation (dt_012)."
+      severity: "silent"
+    - id: "mesh_h_vs_min_radius"
+      kind: "numerical_instability"
+      description: "Mesh resolution h larger than the smallest fracture radius yields degenerate/zero-area LaGriT elements and a meshing crash; require h < 0.5*min_radius (dt_004)."
+      severity: "fatal"
+    - id: "degenerate_coplanar_mesh"
+      kind: "numerical_instability"
+      description: "Nearly coplanar or very close fractures, or an intersection short relative to h, produce degenerate LaGriT triangles and mesh merge/missing-edge failures (common at high p32 or large h); reduce h, increase min_radius, prune problematic fractures, or use graph mode (dt_013)."
+      severity: "fatal"
+    - id: "no_percolating_path"
+      kind: "control_semantic"
+      description: "No connected fracture path between inlet and outlet faces (low p32, small fractures, wrong boundary faces, or largest-cluster pruning) gives zero velocity and no particle arrivals (dt_006)."
+      severity: "fatal"
+    - id: "boundary_face_convention_mismatch"
+      kind: "control_semantic"
+      description: "Three boundary-face conventions coexist (positional list, graph-flow string names, 1-based DFNTrans index); mixing them releases flow at the wrong face and corrupts the breakthrough curve (dt_007)."
+      severity: "degraded"
+    - id: "fisher_kappa_too_low"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Fisher kappa set too low gives near-random orientations and overestimates network connectivity despite clustered field data (dt_008)."
+      severity: "silent"
+    - id: "zero_aperture_cells"
+      kind: "numerical_instability"
+      description: "Zero-aperture fractures produce zero-volume Voronoi cells, causing division-by-zero (NaN/inf) in the flow solver; enforce a minimum aperture (dt_014)."
+      severity: "silent"
+    - id: "p32_target_unreachable"
+      kind: "control_semantic"
+      description: "p32 target unreachable for the domain size / max_radius drives >99% rejection and effectively non-terminating generation (dt_011)."
+      severity: "degraded"
+    - id: "subthreshold_edge_drop"
+      kind: "numerical_instability"
+      description: "Graph-flow edges with pressure drop <= 1e-16 Pa are silently removed from the directed flow graph before transport, dropping near-stagnant connections."
+      severity: "silent"
+    - id: "flux_weighted_release_bias"
+      kind: "control_semantic"
+      description: "Flux-weighted particle initialization biases breakthrough toward fast flow paths (correct for flux-averaged C, not resident concentration); init_nf gives unbiased per-fracture sampling (dt_016)."
+      severity: "silent"
+    - id: "per_family_array_mismatch"
+      kind: "parser_semantic"
+      description: "Per-family array lengths not matching nFamEll/nFamRect in the legacy input format make DFNGen read wrong values or crash (dt_015)."
+      severity: "degraded"
+  validation_limits:
+    - "Graph mode assumes 1-D flow along intersection segments with complete mixing at intersections and no matrix diffusion (except via the TDRW extension); it systematically differs ~30% from full-physics and is intended for sensitivity/UQ/screening, not detailed spatial prediction."
+    - "dfnTrans solves only advective transport; dispersion, sorption, and matrix diffusion are not native solved processes and must be added by post-processing or the TDRW extension."
+    - "Steady-state flow only; no transient hydrologic timestepping of a state vector."
+    - "Matrix (rock-block) flow is not represented; the model resolves the fracture continuum only."
+    - "Particle tracking requires locally mass-conserving (control-volume/finite-volume) flow solutions; Galerkin finite-element flow solutions are unsuitable."
+  warnings:
+    - "graph-flow default phi=1 makes edge velocity equal Darcy flux; if not overridden it directly scales all particle travel times."
+    - "seed==0 substitutes a clock-based seed at runtime, so identical inputs yield a different network and divergent travel-time distributions across runs; cross-run validation requires seed>0."
+    - "Graph mode and full-physics mode give systematically different breakthrough and effective-permeability results (~30%) and should not be cross-compared directly."
+    - "PFLOTRAN recommended over FEHM when the network exceeds O(1000) fractures."
+    - "full_mesh.uge cell volumes are not correct as emitted and must be converted (convert_uge) before use in PFLOTRAN flow."
+  assumptions:
+    - statement: "The principal carried state is steady-state spatial structure (network geometry + flow field); time enters only as particle travel time, so the model is treated as event/steady-state rather than transient."
+      scope: "temporal representation of the whole workflow"
+      source: "dfnWorks dfnTrans documentation (dfnworks.lanl.gov/dfntrans.html) and Hyman et al. 2015 framework paper"
+      status: "adopted"
+    - statement: "Mass-balance closure is on water flux; particle tracking relies on locally mass-conserving control-volume flow, and there is no surface energy budget."
+      scope: "closure"
+      source: "dfnWorks dfnFlow/dfnTrans documentation (locally mass-conserving control-volume flow solutions)"
+      status: "adopted"
+    - statement: "The HydroCraft-exercised binding is the graph-mode flow/transport path (self-contained, no external LaGriT/PFLOTRAN); full-physics modules are present but external and not in-repo for numerics."
+      scope: "which implementation branch this dag primarily describes"
+      source: "pydfnworks dfnGraph package (graph_flow.py, graph_transport.py) in the dfnWorks source repo"
+      status: "tentative"
+    - statement: "Solute is a non-reactive conservative tracer represented as indivisible passive particles that do not interact with one another or the fracture network."
+      scope: "transport process semantics"
+      source: "dfnWorks dfnTrans documentation (dfnworks.lanl.gov/dfntrans.html)"
+      status: "adopted"

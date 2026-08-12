@@ -28,10 +28,14 @@ import argparse
 import sys
 import os
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date as date_cls
 from pathlib import Path
 
 import numpy as np
+
+from ki_tools_common.load_forcing import load_daily_forcing
+
+REAL_SOURCES = ("cmfd", "mswx", "nasa_power", "gswp3")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -44,10 +48,13 @@ KJ_FACTOR = 1000.0  # kJ → J or W*s/d / 1000
 def validate_inputs(source, forcing_dir, lat, lon, start, end):
     """Pre-flight validation of inputs."""
     errors = []
-    if source not in ("cmfd", "mswx"):
-        errors.append(f"Unknown source '{source}'. Must be 'cmfd' or 'mswx'.")
-    if not os.path.isdir(forcing_dir):
+    if source not in REAL_SOURCES:
+        errors.append(f"Unknown source '{source}'. Must be one of {REAL_SOURCES}.")
+    # nasa_power is fetched live and needs no local directory.
+    if forcing_dir and not os.path.isdir(forcing_dir):
         errors.append(f"Forcing directory not found: {forcing_dir}")
+    if source in ("cmfd", "mswx", "gswp3") and not forcing_dir:
+        errors.append(f"--forcing-dir is required for source '{source}'")
     if not (-90 <= lat <= 90):
         errors.append(f"Latitude {lat} out of range [-90, 90]")
     if not (-180 <= lon <= 360):
@@ -100,95 +107,145 @@ def radiation_wm2_to_kjm2d(rad_wm2):
     return np.asarray(rad_wm2) * SEC_PER_DAY / KJ_FACTOR
 
 
-def read_cmfd_daily(forcing_dir, lat, lon, start, end):
+def read_real_forcing(source, forcing_dir, lat, lon, start, end):
     """
-    Read CMFD V2.0 daily forcing data.
+    Load a real daily forcing series through the shared KDT reader.
 
-    CMFD provides: prec (mm/day), temp (K), srad (W/m²), lrad (W/m²),
-    wind (m/s), pres (Pa), shum (kg/kg).
+    Replaces a hand-rolled NetCDF path that read each variable into a LOCAL
+    `data` name, never assigned it back into `result`, and never created the
+    'temp_k'/'shum'/'pres' keys its own conversions were gated on — so every
+    CMFD .met it produced was 100% NaN and passed validation because
+    np.nanmax range checks ignore NaN (dt_020).
 
-    Returns dict of daily arrays.
+    Returns the SWAP .met column dict.
     """
-    try:
-        import netCDF4 as nc
-    except ImportError:
-        print("ERROR: netCDF4 required. Install with: pip install netCDF4", file=sys.stderr)
+    kwargs = {}
+    if forcing_dir:
+        kwargs["forcing_dir"] = forcing_dir
+
+    print(f"[RUN] load_daily_forcing(source={source}, lat={lat}, lon={lon}, "
+          f"{start.year}-{end.year})")
+    raw = load_daily_forcing(
+        source, lat, lon, start.year, end.year,
+        variables=["tmin", "tmax", "prcp", "srad", "wind", "rh", "pres", "shum"],
+        **kwargs
+    )
+
+    frame = _as_column_dict(raw)
+    dates_all = frame["dates"]
+
+    # Clip to the requested window
+    keep = [i for i, d in enumerate(dates_all) if start.date() <= d <= end.date()]
+    if not keep:
+        print(f"ERROR: {source} returned no days inside {start:%Y-%m-%d}.."
+              f"{end:%Y-%m-%d}", file=sys.stderr)
         sys.exit(1)
 
-    # CMFD directory structure: Data_forcing_01dy_010deg/
-    # Files organized by variable and year
-    forcing_dir = Path(forcing_dir)
+    def col(*names, required=True):
+        for n in names:
+            if n in frame and frame[n] is not None:
+                return np.asarray(frame[n], dtype=float)[keep]
+        if required:
+            print(f"ERROR: {source} forcing has none of {names} "
+                  f"(available: {sorted(frame)})", file=sys.stderr)
+            sys.exit(1)
+        return None
 
-    n_days = (end - start).days + 1
-    dates = [start + timedelta(days=i) for i in range(n_days)]
+    dates = [dates_all[i] for i in keep]
+    n_days = len(dates)
 
-    # Initialize arrays
-    result = {
-        "dates": dates,
-        "rad": np.full(n_days, np.nan),     # Will be kJ/m²/d
-        "tmin": np.full(n_days, np.nan),     # °C
-        "tmax": np.full(n_days, np.nan),     # °C
-        "hum": np.full(n_days, np.nan),      # kPa (vapor pressure)
-        "wind": np.full(n_days, np.nan),     # m/s
-        "rain": np.full(n_days, np.nan),     # mm/d
-        "etref": np.full(n_days, -99.9),     # mm/d (not provided by CMFD)
-        "wet": np.full(n_days, 0.0),         # fraction
+    tmin = col("tmin", "tmin_c", "tasmin")
+    tmax = col("tmax", "tmax_c", "tasmax")
+    rain = col("prcp", "precip", "precip_mm", "pr", "rain")
+    wind = col("wind", "wind_speed", "sfcwind", "ws10m")
+    srad = col("srad", "rsds", "swdown", "solar")
+
+    # Radiation -> kJ/m2/d, dispatched on magnitude:
+    #   MJ/m2/d ~ 5-30, W/m2 daily mean ~ 50-350, kJ/m2/d ~ 5e3-3e4
+    rad_mean = float(np.nanmean(srad))
+    if rad_mean < 60.0:
+        rad = srad * 1000.0                       # MJ/m2/d
+    elif rad_mean < 600.0:
+        rad = radiation_wm2_to_kjm2d(srad)        # W/m2 daily mean
+    else:
+        rad = srad                                # already kJ/m2/d
+    print(f"[INFO] Radiation input mean {rad_mean:.1f} -> "
+          f"{float(np.nanmean(rad)):.0f} kJ/m2/d")
+
+    # Humidity -> actual vapour pressure (kPa)
+    shum = col("shum", "spfh", "huss", required=False)
+    pres = col("pres", "ps", "psurf", required=False)
+    rh = col("rh", "hurs", "relhum", required=False)
+    if shum is not None and pres is not None:
+        hum = specific_humidity_to_vapor_pressure(shum, pres)
+    elif rh is not None:
+        rh_frac = rh / 100.0 if np.nanmax(rh) > 1.5 else rh
+        hum = saturation_vapor_pressure(0.5 * (tmin + tmax)) * rh_frac
+    else:
+        print("ERROR: forcing provides neither (shum, pres) nor rh — actual "
+              "vapour pressure cannot be derived", file=sys.stderr)
+        sys.exit(1)
+
+    return {
+        "dates": [datetime(d.year, d.month, d.day) for d in dates],
+        "rad": np.asarray(rad, dtype=float),
+        "tmin": np.asarray(tmin, dtype=float),
+        "tmax": np.asarray(tmax, dtype=float),
+        "hum": np.asarray(hum, dtype=float),
+        "wind": np.asarray(wind, dtype=float),
+        "rain": np.asarray(rain, dtype=float),
+        "etref": np.full(n_days, -99.9),
+        "wet": np.where(np.asarray(rain) > 0,
+                        np.minimum(np.asarray(rain) / 50.0, 1.0), 0.0),
     }
 
-    # Try to find and read NetCDF files for each variable
-    # CMFD naming convention varies; try common patterns
-    var_map = {
-        "srad": ("rad", lambda x: radiation_wm2_to_kjm2d(x)),
-        "temp": ("temp_k", None),
-        "wind": ("wind", None),
-        "pres": ("pres", None),
-        "shum": ("shum", None),
-        "prec": ("rain", None),
-    }
 
-    # For each year in the range, attempt to read data
-    for year in range(start.year, end.year + 1):
-        year_start = max(start, datetime(year, 1, 1))
-        year_end = min(end, datetime(year, 12, 31))
+def _as_column_dict(raw):
+    """
+    Normalise whatever load_daily_forcing returned into
+    {'dates': [date, ...], '<var>': array, ...}.
+    """
+    if hasattr(raw, "to_dict") and hasattr(raw, "columns"):   # DataFrame
+        frame = {c: raw[c].to_numpy() for c in raw.columns}
+        if "dates" not in frame:
+            if "date" in frame:
+                frame["dates"] = frame.pop("date")
+            elif "time" in frame:
+                frame["dates"] = frame.pop("time")
+            else:
+                frame["dates"] = raw.index.to_numpy()
+    elif isinstance(raw, dict):
+        frame = dict(raw)
+        for alt in ("date", "time", "dates"):
+            if alt in frame:
+                frame["dates"] = frame.pop(alt)
+                break
+    else:
+        print(f"ERROR: unexpected load_daily_forcing return type: {type(raw)}",
+              file=sys.stderr)
+        sys.exit(1)
 
-        # Find files for this year
-        patterns = [
-            f"*{year}*.nc",
-            f"*{year}*.nc4",
-        ]
+    if "dates" not in frame:
+        print(f"ERROR: forcing has no date axis (keys: {sorted(frame)})",
+              file=sys.stderr)
+        sys.exit(1)
 
-        for var_name, (key, transform) in var_map.items():
-            for pattern in patterns:
-                matches = list(forcing_dir.glob(f"**/{var_name}*{year}*"))
-                if matches:
-                    try:
-                        ds = nc.Dataset(str(matches[0]))
-                        # Find nearest grid point
-                        lats = ds.variables.get("lat", ds.variables.get("latitude", None))
-                        lons = ds.variables.get("lon", ds.variables.get("longitude", None))
-                        if lats is not None and lons is not None:
-                            lat_idx = np.argmin(np.abs(np.array(lats[:]) - lat))
-                            lon_idx = np.argmin(np.abs(np.array(lons[:]) - lon))
-                            data = ds.variables[var_name][:, lat_idx, lon_idx]
-                            if transform:
-                                data = transform(data)
-                        ds.close()
-                    except Exception as e:
-                        print(f"Warning: Could not read {var_name} for {year}: {e}")
-                    break
-
-    # Convert temperature K → °C (use daily mean as both Tmin and Tmax if only mean available)
-    # In practice, CMFD provides mean temp — we estimate Tmin/Tmax with ±3°C offset
-    if "temp_k" in result:
-        t_mean = result["temp_k"] - KELVIN_OFFSET
-        result["tmin"] = t_mean - 3.0  # Approximate
-        result["tmax"] = t_mean + 3.0  # Approximate
-
-    # Convert specific humidity + pressure → vapor pressure (kPa)
-    if "shum" in result and "pres" in result:
-        result["hum"] = specific_humidity_to_vapor_pressure(result["shum"], result["pres"])
-
-    return result
+    normalised = []
+    for d in frame["dates"]:
+        if isinstance(d, str):
+            normalised.append(datetime.strptime(d[:10], "%Y-%m-%d").date())
+        elif hasattr(d, "date") and not isinstance(d, date_cls):
+            normalised.append(d.date())
+        elif isinstance(d, date_cls):
+            normalised.append(d)
+        else:                                  # numpy datetime64
+            normalised.append(
+                datetime.utcfromtimestamp(
+                    np.datetime64(d, "s").astype("int64")
+                ).date()
+            )
+    frame["dates"] = normalised
+    return frame
 
 
 def generate_synthetic_met(lat, lon, start, end, station_name="SYN"):
@@ -296,6 +353,24 @@ def validate_outputs(output_path, data):
     errors = []
     warnings = []
 
+    # NaN is a HARD failure and must be checked before any range test:
+    # np.nanmax/np.nanmin silently ignore NaN, so an all-NaN column passes
+    # every range comparison below and SWAP receives a file of blanks (dt_020).
+    for key in ("rad", "tmin", "tmax", "hum", "wind", "rain"):
+        col = np.asarray(data[key], dtype=float)
+        n_nan = int(np.count_nonzero(~np.isfinite(col)))
+        if n_nan:
+            errors.append(
+                f"Column '{key}' has {n_nan}/{col.size} non-finite values "
+                f"({100.0 * n_nan / max(col.size, 1):.1f}%) — the forcing "
+                f"reader did not populate it"
+            )
+    if errors:
+        for e in errors:
+            print(f"ERROR: {e}", file=sys.stderr)
+        print(f"[FAIL] Output validation failed with {len(errors)} errors")
+        return False
+
     # Check radiation range
     rad = data["rad"]
     if np.any(rad < 0):
@@ -347,8 +422,12 @@ def validate_outputs(output_path, data):
 
 def main():
     parser = argparse.ArgumentParser(description="Convert forcing data to SWAP .met format")
-    parser.add_argument("--source", choices=["cmfd", "mswx", "synthetic"], default="synthetic",
-                        help="Forcing data source")
+    parser.add_argument("--source",
+                        choices=list(REAL_SOURCES) + ["synthetic"],
+                        required=True,
+                        help="Forcing data source. 'synthetic' is a fabricated "
+                             "series for smoke tests only and must be chosen "
+                             "explicitly — it is never a fallback.")
     parser.add_argument("--forcing-dir", type=str, default="",
                         help="Path to forcing data directory")
     parser.add_argument("--lat", type=float, required=True, help="Latitude (degrees N)")
@@ -363,19 +442,22 @@ def main():
     end = datetime.strptime(args.end, "%Y-%m-%d")
 
     if args.source == "synthetic":
-        print(f"Generating synthetic forcing for lat={args.lat}, lon={args.lon}")
-        data = generate_synthetic_met(args.lat, args.lon, start, end, args.station_name)
-    elif args.source == "cmfd":
-        validate_inputs(args.source, args.forcing_dir, args.lat, args.lon, start, end)
-        data = read_cmfd_daily(args.forcing_dir, args.lat, args.lon, start, end)
-    elif args.source == "mswx":
-        validate_inputs(args.source, args.forcing_dir, args.lat, args.lon, start, end)
-        # MSWX reader would go here — similar structure to CMFD
-        print("MSWX reader not yet implemented, falling back to synthetic")
-        data = generate_synthetic_met(args.lat, args.lon, start, end, args.station_name)
+        print("*" * 78)
+        print("WARNING: --source synthetic generates FABRICATED weather. "
+              "Any metric computed")
+        print("         from a run driven by it is meaningless. Smoke tests only.")
+        print("*" * 78)
+        data = generate_synthetic_met(args.lat, args.lon, start, end,
+                                      args.station_name)
+    else:
+        validate_inputs(args.source, args.forcing_dir, args.lat, args.lon,
+                        start, end)
+        data = read_real_forcing(args.source, args.forcing_dir, args.lat,
+                                 args.lon, start, end)
 
     write_met_file(args.output, args.station_name, args.lat, args.lon, data)
-    validate_outputs(args.output, data)
+    if not validate_outputs(args.output, data):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

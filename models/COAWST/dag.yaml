@@ -1,0 +1,486 @@
+template_version: "3.5"
+
+identity:
+  model_id: "COAWST"
+  scientific_reference_version: "COAWST v3.8 (Coupled-Ocean-Atmosphere-Wave-Sediment Transport modeling system; Warner et al. 2010, Ocean Modelling)"
+  implementation:
+    id: "coawst-v38"
+    version: "v3.8"
+    provenance: "Fortran 90; USGS (John C. Warner, Woods Hole) coupled binary coawstM joining ROMS ocean, SWAN waves, WRF atmosphere, WW3 open-ocean waves, and USGS Community Sediment Models via the MCT coupler with SCRIP-weighted regridding."
+  ki_class: "hybrid_or_framework"
+  is_family_dag: false
+  language: "fortran"
+  license: "CC0-1.0"
+  repo_url: "https://github.com/DOI-USGS/COAWST"
+
+boundary:
+  scope_in:
+    - "Two-way coupled coastal-ocean circulation (3D temperature, salinity, velocity, free surface) via ROMS"
+    - "Nearshore spectral wind-wave evolution and wave-current interaction via SWAN"
+    - "Mesoscale atmospheric forcing and air-sea feedback via WRF"
+    - "Wave-current driven sediment resuspension, transport, and bed morphodynamics"
+    - "Storm-event coastal response: surge, barrier-island breaching, salt-marsh erosion/accretion, estuary response"
+  scope_out:
+    - "Component-internal physics not declared at the coupling level (each component's own reference governs)"
+    - "Global/open-ocean-only circulation without a regional grid"
+    - "Sub-grid land-surface hydrology except where WRF-Hydro is coupled"
+    - "Single-physics (uncoupled) use is a degenerate configuration, not the framework's scope"
+  spatial: "3-D"
+  temporal: "sub-hourly"
+  closure: "both"
+  notes: "ROMS conserves mass (volume/tracer) and momentum on a split-explicit free surface; the barotropic mode is sub-cycled NDTFAST times per baroclinic DT. Air-sea energy closure holds only when bulk fluxes (COARE) or WRF coupling supplies the surface heat/momentum budget; with prescribed-flux forcing the surface budget is imposed, not closed. Inter-component exchange is conservative only to the accuracy of the SCRIP remap weights between non-coincident component grids. Sediment bed mass is conserved within the morphodynamic accounting when the sediment module is active."
+
+inputs:
+  forcing:
+    - {category: atmosphere, name: "Uwind / Vwind (10 m wind components)", unit: "m/s", source_kind: forcing, model_input_format: "ROMS atmospheric forcing NetCDF (xi_rho x eta_rho x time)", notes: "Drives wind stress directly (prescribed) or via COARE bulk fluxes when BULK_FLUXES is defined."}
+    - {category: atmosphere, name: "Tair (air temperature)", unit: "degC", source_kind: forcing, model_input_format: "ROMS forcing NetCDF", notes: "Expected in Celsius; Kelvin input silently drives runaway heat flux under BULK_FLUXES."}
+    - {category: atmosphere, name: "Pair (sea-level air pressure)", unit: "mb", source_kind: forcing, model_input_format: "ROMS forcing NetCDF", notes: "mb (hPa); Pa input must be divided by 100."}
+    - {category: atmosphere, name: "Qair (specific humidity)", unit: "kg/kg", source_kind: forcing, model_input_format: "ROMS forcing NetCDF", notes: "Specific humidity, not relative humidity; valid 0.0001-0.04 kg/kg."}
+    - {category: atmosphere, name: "rain (precipitation)", unit: "kg/m2/s", source_kind: forcing, model_input_format: "ROMS forcing NetCDF", notes: "Internal flux unit kg/m2/s; mm/day must be divided by 86400."}
+    - {category: atmosphere, name: "swrad (shortwave radiation)", unit: "W/m2", source_kind: forcing, model_input_format: "ROMS forcing NetCDF", notes: "Converted internally to temperature flux by dividing by rho0*Cp."}
+    - {category: atmosphere, name: "lwrad (longwave radiation)", unit: "W/m2", source_kind: forcing, model_input_format: "ROMS forcing NetCDF"}
+    - {category: ocean_lateral, name: "lateral open-boundary temp/salt/u/v/zeta time series", unit: "degC, PSU, m/s, m", source_kind: forcing, model_input_format: "ROMS boundary NetCDF (boundary x s_rho x time)", notes: "Must be on the correct Arakawa-C stagger for each variable."}
+    - {category: tides, name: "tidal elevation/current constituents (Eamp, Ephase, Cangle, Cphase)", unit: "m, deg, deg, deg", source_kind: forcing, model_input_format: "ROMS tidal forcing NetCDF (xi x eta x tide_period)"}
+    - {category: rivers, name: "river discharge", unit: "m3/s", source_kind: forcing, model_input_format: "ROMS river point-source NetCDF/CSV", notes: "m3/s; m3/day must be divided by 86400 or estuary salinity is wrong."}
+    - {category: waves_bc, name: "open-boundary wave spectra / parameters", unit: "m, s, deg", source_kind: forcing, model_input_format: "SWAN boundary spectral input", notes: "Supplied when SWAN is the wave component on a regional grid."}
+  parameters:
+    - {category: vertical_coordinate, name: "theta_s (surface S-coordinate stretching)", unit: "dimensionless", source_kind: calibrated, model_input_format: "ocean.in THETA_S keyword", notes: "Range 0.1-10.0; high sensitivity on thermocline resolution."}
+    - {category: vertical_coordinate, name: "theta_b (bottom S-coordinate stretching)", unit: "dimensionless", source_kind: calibrated, model_input_format: "ocean.in THETA_B keyword", notes: "Range 0.0-4.0."}
+    - {category: vertical_coordinate, name: "Tcline (thermocline stretching depth)", unit: "m", source_kind: calibrated, model_input_format: "ocean.in TCLINE keyword", notes: "Range 10-300 m."}
+    - {category: numerics, name: "VISC2 (horizontal Laplacian viscosity)", unit: "m2/s", source_kind: calibrated, model_input_format: "ocean.in VISC2 keyword", notes: "Range 1-100 m2/s."}
+    - {category: numerics, name: "TNU2 (horizontal tracer diffusion)", unit: "m2/s", source_kind: calibrated, model_input_format: "ocean.in TNU2 keyword", notes: "Range 0-50 m2/s."}
+    - {category: bottom_boundary, name: "rdrg2 (quadratic bottom drag coefficient)", unit: "dimensionless", source_kind: calibrated, model_input_format: "ocean.in RDRG2 keyword", notes: "Range 1e-4 to 1e-2; high sensitivity on bottom stress."}
+    - {category: bottom_boundary, name: "Zob (bottom roughness length)", unit: "m", source_kind: calibrated, model_input_format: "ocean.in ZOB keyword", notes: "Range 0.001-0.1 m, used with LOG_PROFILE."}
+    - {category: nudging, name: "Znudg (free-surface nudging timescale)", unit: "day", source_kind: calibrated, model_input_format: "ocean.in ZNUDG keyword", notes: "Range 0.01-30 day."}
+    - {category: nudging, name: "Tnudg (tracer nudging timescale)", unit: "day", source_kind: calibrated, model_input_format: "ocean.in TNUDG keyword", notes: "Range 1-360 day."}
+    - {category: physical_constants, name: "rho0 (Boussinesq reference seawater density)", unit: "kg/m3", source_kind: default, model_input_format: "mod_scalars.F hardcoded", notes: "Default 1025.0; used in wind-stress and heat-flux unit conversions."}
+    - {category: physical_constants, name: "Cp (specific heat of seawater)", unit: "J/kg/degC", source_kind: default, model_input_format: "mod_scalars.F hardcoded", notes: "Default 3985.0; pairs with rho0 in heat-flux to temperature-flux conversion."}
+    - {category: physical_constants, name: "g (gravitational acceleration)", unit: "m/s2", source_kind: default, model_input_format: "mod_scalars.F hardcoded", notes: "Default 9.81 (set to 1.0 in non-dimensional test configs)."}
+    - {category: bathymetry, name: "h (bottom depth)", unit: "m", source_kind: dataset_lookup, model_input_format: "ROMS grid NetCDF variable h", notes: "Positive down (depth below MSL); GEBCO/ETOPO must be negated. rx0 should be < 0.2 to avoid spurious slope currents."}
+    - {category: grid_metrics, name: "grid metrics (pm, pn, angle, f, mask_rho)", unit: "1/m, rad, 1/s, 0/1", source_kind: dataset_lookup, model_input_format: "ROMS grid NetCDF (xi_rho x eta_rho)"}
+  initial_conditions:
+    - {category: ocean_state, name: "initial temp / salt", unit: "degC, PSU", source_kind: dataset_lookup, model_input_format: "ROMS initial NetCDF (xi x eta x s_rho)", notes: "Must lie in EOS-valid range (T -2..40 degC, S 0..42 PSU); fill values (9999) produce NaN density."}
+    - {category: ocean_state, name: "initial u / v / ubar / vbar", unit: "m/s", source_kind: dataset_lookup, model_input_format: "ROMS initial NetCDF"}
+    - {category: ocean_state, name: "initial zeta (free surface)", unit: "m", source_kind: dataset_lookup, model_input_format: "ROMS initial NetCDF", notes: "With WET_DRY, must give h+zeta>Dcrit on intended wet cells to avoid checkerboard oscillation."}
+    - {category: sediment_state, name: "initial sediment bed (thickness, fractions)", unit: "m, fraction", source_kind: dataset_lookup, model_input_format: "ROMS sediment IC NetCDF", notes: "Active only when the sediment module is enabled."}
+    - {category: restart, name: "restart record (NRREC)", unit: "index", source_kind: user_provided, model_input_format: "ocean.in NRREC / restart NetCDF", notes: "Must match restart file time record or the simulation clock misaligns."}
+  boundary_conditions:
+    - {category: numerics, name: "DT (baroclinic timestep)", unit: "s", source_kind: user_provided, model_input_format: "ocean.in DT keyword", notes: "Range 1-300 s; bound by CFL on the barotropic substep."}
+    - {category: numerics, name: "NDTFAST (barotropic:baroclinic substep ratio)", unit: "count", source_kind: user_provided, model_input_format: "ocean.in NDTFAST keyword", notes: "Range 10-60; barotropic dt = DT/NDTFAST must satisfy CFL < ~0.7."}
+    - {category: vertical_coordinate, name: "Vtransform (S-coordinate transformation type)", unit: "code", source_kind: user_provided, model_input_format: "ocean.in Vtransform (1 or 2)", notes: "V2 recommended."}
+    - {category: vertical_coordinate, name: "Vstretching (S-coordinate stretching function)", unit: "code", source_kind: user_provided, model_input_format: "ocean.in Vstretching (1-5)", notes: "V4 recommended."}
+    - {category: surface_flux_method, name: "BULK_FLUXES (bulk vs prescribed surface flux)", unit: "switch", source_kind: user_provided, model_input_format: "application CPP header flag", notes: "If defined, fluxes computed from atmospheric variables via COARE; otherwise prescribed sustr/svstr/shflux/swrad expected. Mismatch silently zeroes forcing."}
+    - {category: masking, name: "WET_DRY (dynamic wet/dry masking)", unit: "switch", source_kind: user_provided, model_input_format: "application CPP header flag"}
+    - {category: open_boundary, name: "RadNud open-boundary scheme + obcfac", unit: "scheme, factor", source_kind: user_provided, model_input_format: "ocean.in LBC / OBCFAC keyword", notes: "obcfac range 0-10; too small reflects, too large ignores boundary data."}
+    - {category: time_reference, name: "TIME_REF (model time epoch)", unit: "date", source_kind: user_provided, model_input_format: "ocean.in TIME_REF keyword", notes: "Must match forcing time units epoch or interpolation extrapolates / yields NaN."}
+    - {category: coupling, name: "coupling interval (TI_OCN2WAV etc.)", unit: "s", source_kind: user_provided, model_input_format: "coupling.in", notes: "Must be an integer multiple of every coupled component timestep."}
+    - {category: parallel_decomposition, name: "NtileI x NtileJ tiling and node allocation", unit: "count", source_kind: user_provided, model_input_format: "ocean.in / coupling.in", notes: "NtileI x NtileJ must equal NnodesOCN or MPI deadlocks."}
+    - {category: wave_spectral_resolution, name: "SWAN spectral resolution (direction / frequency bins)", unit: "count", source_kind: user_provided, model_input_format: "swan.in CIRCLE command", notes: "Recommend >=36 directions, >=31 frequencies (0.04-1.0 Hz) to resolve swell."}
+
+processes:
+  modules:
+    - {name: "ROMS-Nonlinear-Driver", role: "driver", brief: "ROMS_initialize/run/finalize plus main3d/main2d split-explicit barotropic-baroclinic time-stepping engine (mode-splitting)."}
+    - {name: "Step2D-Barotropic", role: "integrator", brief: "step2d.F fast barotropic mode (NDTFAST substeps); evolves zeta, ubar, vbar under free-surface gravity-wave CFL."}
+    - {name: "Step3D-Momentum", role: "process_solver", brief: "step3d_uv.F + pre_step3d.F slow baroclinic 3D momentum: advection, Coriolis, baroclinic pressure gradient (prsgrd)."}
+    - {name: "Step3D-Tracers", role: "process_solver", brief: "step3d_t.F advection-diffusion of temp/salt/passive tracers; MPDATA and horizontal mixing (t3dmix)."}
+    - {name: "EOS-rho_eos", role: "process_solver", brief: "Nonlinear UNESCO equation of state producing density anomaly rho; feeds the pressure gradient and buoyancy."}
+    - {name: "Vertical-Mixing-GLS-LMD", role: "process_solver", brief: "GLS (k-epsilon/k-omega) or LMD-KPP (lmd_skpp/bkpp/swfrac) closures producing Akv/Akt turbulent viscosity/diffusivity."}
+    - {name: "Bulk-Flux-COARE", role: "process_solver", brief: "bulk_flux.F COARE air-sea latent/sensible/longwave fluxes from atmospheric forcing.", applicability: "BULK_FLUXES defined"}
+    - {name: "BBL-Bottom-Boundary-Layer", role: "process_solver", brief: "bbl.F (mb/sg/ssw) wave-current bottom stress coupling SWAN wave orbital velocity to bottom drag."}
+    - {name: "WEC-Wave-Effect-on-Currents", role: "process_solver", brief: "wec_stokes/wec_roller/wec_dissip + radiation_stress inject SWAN wave forcing as Stokes drift and momentum source.", applicability: "wave coupling active"}
+    - {name: "SWAN-WaveModel", role: "optional_module", brief: "Third-generation spectral wind-wave action-balance solver (separate Fortran component) producing HSIGN/RTP/dissipation exchanged via MCT.", applicability: "wave component = SWAN"}
+    - {name: "WRF-Atmosphere", role: "optional_module", brief: "WRF atmospheric component (wrf_init/run/finalize) supplying wind/heat/moisture flux when atmosphere coupling is on.", applicability: "ATM coupling active"}
+    - {name: "Sediment-SedBed", role: "optional_module", brief: "sediment.F + mod_sedbed/mod_sediment cohesive and noncohesive transport, bed evolution, morphodynamics.", applicability: "sediment module enabled"}
+    - {name: "Vegetation-Marsh", role: "optional_module", brief: "vegetation.F + marsh_dynamics.F flexible-vegetation drag and marsh wave attenuation modifying drag and wave dissipation.", applicability: "vegetation/marsh enabled"}
+    - {name: "Biology", role: "optional_module", brief: "biology.F NPZD/Fennel/EcoSim biogeochemistry advected as extra tracers.", applicability: "biology enabled"}
+    - {name: "Nesting", role: "integrator", brief: "nesting.F two-way/composite/refined ROMS grid nesting exchanging state across nested grids each substep.", applicability: "nested grids"}
+    - {name: "MCT-Coupler", role: "driver", brief: "Model Coupling Toolkit GlobalSegMap/AttrVect/Router exchange with SCRIP regridding between ROMS/SWAN/WRF/WW3 grids."}
+  internal_edges:
+    - {from: "Inputs", to: "Bulk-Flux-COARE", kind: "consumes_input", brief: "atmospheric forcing (Uwind,Vwind,Tair,Pair,Qair,swrad,lwrad,rain) feeds the air-sea flux solver."}
+    - {from: "Bulk-Flux-COARE", to: "Step3D-Momentum", kind: "invokes", brief: "surface wind stress (sustr,svstr) and net heat/freshwater flux drive momentum and tracers."}
+    - {from: "EOS-rho_eos", to: "rho", kind: "writes_state", brief: "density anomaly computed from temp/salt."}
+    - {from: "rho", to: "Step3D-Momentum", kind: "reads_state", brief: "baroclinic pressure gradient (prsgrd) consumes density."}
+    - {from: "Step2D-Barotropic", to: "zeta", kind: "writes_state", brief: "fast-mode update of free surface and 2D velocity."}
+    - {from: "zeta", to: "Step3D-Momentum", kind: "reads_state", brief: "free surface sets the moving S-coordinate layer depths used by the 3D solve (set_depth ordering dependency)."}
+    - {from: "Step3D-Momentum", to: "u", kind: "writes_state", brief: "baroclinic 3D velocity update."}
+    - {from: "Vertical-Mixing-GLS-LMD", to: "Akv", kind: "writes_state", brief: "turbulent viscosity/diffusivity coefficients."}
+    - {from: "Akv", to: "Step3D-Tracers", kind: "reads_state", brief: "vertical tracer diffusion uses Akt/Akv."}
+    - {from: "Step3D-Tracers", to: "temp", kind: "writes_state", brief: "temp/salt/bio tracer update."}
+    - {from: "SWAN-WaveModel", to: "MCT-Coupler", kind: "produces_output", brief: "HSIGN,RTP,WLEN,QB,UBOT,DISSURF/DISBOT/DISWCAP,TMBOT exported wave-to-ocean."}
+    - {from: "MCT-Coupler", to: "WEC-Wave-Effect-on-Currents", kind: "invokes", brief: "wave fields drive radiation_stress and Stokes drift."}
+    - {from: "WEC-Wave-Effect-on-Currents", to: "u", kind: "writes_state", brief: "wave-induced Stokes drift and radiation-stress forcing added to ocean momentum (u_stokes / ru,rv)."}
+    - {from: "MCT-Coupler", to: "SWAN-WaveModel", kind: "invokes", brief: "DEPTH,WLEV,VELX,VELY,ZO exported ocean-to-wave (currents and water level modulate waves)."}
+    - {from: "SWAN-WaveModel", to: "BBL-Bottom-Boundary-Layer", kind: "consumes_input", brief: "wave orbital velocity (UBOT/TMBOT) enhances bottom drag."}
+    - {from: "BBL-Bottom-Boundary-Layer", to: "Step3D-Momentum", kind: "invokes", brief: "wave-current bottom stress (bustr,bvstr) applied to momentum."}
+    - {from: "WRF-Atmosphere", to: "MCT-Coupler", kind: "produces_output", brief: "atmospheric fluxes/winds exported atmosphere-to-ocean when ATM coupling active."}
+    - {from: "MCT-Coupler", to: "Bulk-Flux-COARE", kind: "invokes", brief: "WRF-supplied fluxes replace bulk-flux/file forcing at the coupling interval."}
+    - {from: "BBL-Bottom-Boundary-Layer", to: "Sediment-SedBed", kind: "invokes", brief: "bottom stress drives sediment suspension and deposition."}
+    - {from: "Sediment-SedBed", to: "bed_thickness", kind: "writes_state", brief: "bed evolution updates sediment bed thickness and morphology (cumulative bed change)."}
+    - {from: "Vegetation-Marsh", to: "BBL-Bottom-Boundary-Layer", kind: "invokes", brief: "vegetation drag modifies bottom roughness/stress."}
+    - {from: "Vegetation-Marsh", to: "SWAN-WaveModel", kind: "produces_output", brief: "VEGDENS,VEGDIAM,VEGHGHT exported for wave attenuation (DISVEG)."}
+    - {from: "Step3D-Tracers", to: "Biology", kind: "invokes", brief: "biology advances bio tracers after physical transport."}
+    - {from: "Nesting", to: "u", kind: "writes_state", brief: "two-way nesting exchanges and feeds back nested-grid state (u/v/t/zeta)."}
+    - {from: "ROMS-Nonlinear-Driver", to: "Outputs", kind: "produces_output", brief: "main3d writes history/average/restart NetCDF each NHIS/NAVG/NRST interval."}
+
+states:
+  variables:
+    - {name: "zeta", unit: "m", role: "prognostic"}
+    - {name: "ubar", unit: "m/s", role: "prognostic"}
+    - {name: "vbar", unit: "m/s", role: "prognostic"}
+    - {name: "u", unit: "m/s", role: "prognostic"}
+    - {name: "v", unit: "m/s", role: "prognostic"}
+    - {name: "temp", unit: "degC", role: "prognostic"}
+    - {name: "salt", unit: "PSU", role: "prognostic"}
+    - {name: "rho", unit: "kg/m3", role: "diagnostic"}
+    - {name: "W", unit: "m3/s", role: "diagnostic"}
+    - {name: "Akv", unit: "m2/s", role: "diagnostic"}
+    - {name: "Akt", unit: "m2/s", role: "diagnostic"}
+    - {name: "tke", unit: "m2/s2", role: "prognostic"}
+    - {name: "gls", unit: "m3/s2", role: "prognostic"}
+    - {name: "u_stokes", unit: "m/s", role: "diagnostic"}
+    - {name: "Hz", unit: "m", role: "diagnostic"}
+    - {name: "AC2 (SWAN wave action density spectrum)", unit: "m2/Hz/rad", role: "prognostic"}
+    - {name: "bed_thickness", unit: "m", role: "prognostic"}
+  provenance: "populated"
+
+outputs:
+  - var: "zeta"
+    validation_rank: 2
+    unit: "m"
+    description: "Free-surface elevation (water level / storm surge)."
+    emitted_in: "*_his_*.nc / *_avg_*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Tide-gauge water level mixes tidal, surge, and steric signal; harmonic separation often needed.", "Surge timing depends on coupled wind-stress and drag parameterization."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Peak-surge field comparison is sensitive to landfall timing/track."]
+      detrending_options: ["none"]
+  - var: "temp"
+    validation_rank: 3
+    unit: "degC"
+    description: "Potential temperature, including sea-surface temperature at the top S-level."
+    emitted_in: "*_his_*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Buoy/CTD SST compared against the top S-coordinate level, not a fixed depth."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Satellite SST is a skin temperature; model top-level is a bulk temperature - a cool-skin offset applies."]
+      detrending_options: ["none"]
+  - var: "salt"
+    validation_rank: 4
+    unit: "PSU"
+    description: "Salinity."
+    emitted_in: "*_his_*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Estuarine salinity is highly sensitive to river-discharge units and mixing closure."]
+      detrending_options: ["none"]
+  - var: "u"
+    validation_rank: 5
+    unit: "m/s"
+    description: "Eastward 3D baroclinic velocity component (on the u-grid)."
+    emitted_in: "*_his_*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["ADCP currents must be matched to model depth level and rotated from the curvilinear grid angle."]
+      detrending_options: ["none"]
+  - var: "v"
+    validation_rank: 6
+    unit: "m/s"
+    description: "Northward 3D baroclinic velocity component (on the v-grid)."
+    emitted_in: "*_his_*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Same grid-angle rotation caveat as u; longshore current sign depends on wave-current coupling."]
+      detrending_options: ["none"]
+  - var: "Hsig"
+    validation_rank: 1
+    unit: "m"
+    description: "Significant wave height from the coupled wave model (SWAN HSIGN)."
+    emitted_in: "*_his_*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Wave-buoy Hs depends on adequate SWAN spectral resolution (>=36 dir, >=31 freq) and on current/water-level coupling."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Altimeter swath Hs gives spatial snapshots along-track only."]
+      detrending_options: ["none"]
+  - var: "bed_thickness"
+    validation_rank: 7
+    unit: "m"
+    description: "Sediment bed thickness / cumulative morphodynamic bed change."
+    emitted_in: "*_his_*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Pre/post-storm bathymetric survey difference; net erosion/accretion pattern, not absolute bed level."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Requires the sediment module enabled; bed change controlled by wave propagation and shelf width."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "plant density"
+      to: "wave_dissipation"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "vegetation/marsh module"
+      citations: ["kalra2017_vegetation_sensitivity"]
+    - from: "plant density"
+      to: "turbulent_kinetic_energy"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "vegetation/marsh module"
+      citations: ["kalra2017_vegetation_sensitivity"]
+    - from: "plant height"
+      to: "turbulent_kinetic_energy"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "vegetation/marsh module"
+      citations: ["kalra2017_vegetation_sensitivity"]
+    - from: "plant diameter"
+      to: "turbulent_kinetic_energy"
+      sensitivity_grade: LOW
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "vegetation/marsh module"
+      citations: ["kalra2017_vegetation_sensitivity"]
+    - from: "drag-coefficient / sea-surface roughness parameterization"
+      to: "wind_stress"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "air-sea coupled typhoon configuration"
+      citations: ["wu2020_dragcoef_typhoon"]
+    - from: "drag-coefficient / sea-surface roughness parameterization"
+      to: "hurricane_intensity"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "air-sea coupled typhoon configuration"
+      citations: ["wu2020_dragcoef_typhoon"]
+    - from: "drag-coefficient / sea-surface roughness parameterization"
+      to: "storm_surge"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "air-sea coupled typhoon configuration"
+      citations: ["wu2020_dragcoef_typhoon"]
+    - from: "sea_surface_temperature (ocean-atmosphere coupling)"
+      to: "hurricane_intensity"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "tropical-cyclone hindcast"
+      citations: ["warner2010_coawst_development", "zambon2014_ivan_coupling"]
+    - from: "ocean-atmosphere coupling"
+      to: "atmospheric_boundary_layer_stress"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "coupled vs uncoupled experiment"
+      citations: ["warner2010_coawst_development"]
+    - from: "wave-current interaction"
+      to: "significant_wave_height"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "inlet/estuary storm configuration"
+      citations: ["warner2010_coawst_development", "olabarrieta2011_willapa_wec"]
+    - from: "wave-current interaction"
+      to: "current_velocity"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "inlet/estuary storm configuration"
+      citations: ["olabarrieta2011_willapa_wec"]
+    - from: "wave-current interaction"
+      to: "water_elevation"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "inlet/estuary storm configuration"
+      citations: ["olabarrieta2011_willapa_wec"]
+    - from: "wave propagation"
+      to: "sediment_resuspension"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "shelf sediment-transport configuration"
+      citations: ["warner2010_coawst_development"]
+  citation_index:
+    warner2010_coawst_development:
+      short_citation: "Warner et al. 2010"
+      doi: "10.1016/j.ocemod.2010.07.010"
+      note: "Foundational COAWST paper; storm hindcast shows hurricane intensity highly sensitive to SST, ocean coupling reduces ABL stress, wave coupling increases bottom stress, sediment resuspension controlled by wave propagation/shelf width (coupling experiments, not variance-based GSA)."
+    zambon2014_ivan_coupling:
+      short_citation: "Zambon et al. 2014"
+      doi: "10.1007/s10236-014-0777-7"
+      note: "Hurricane Ivan increasing-coupling-complexity hindcast; full coupling cools SST and improves intensity, modest track change (coupling experiment)."
+    olabarrieta2011_willapa_wec:
+      short_citation: "Olabarrieta et al. 2011"
+      doi: "10.1029/2011JC007387"
+      note: "Willapa Bay vortex-force wave-current coupling; isolating wind/tide/WEC terms shows currents and water elevation strongly modified (process experiment)."
+    kalra2017_vegetation_sensitivity:
+      short_citation: "Kalra et al. 2017"
+      doi: "10.5194/gmd-10-4511-2017"
+      note: "Formal global SA (effectively subsampled quadratures) of the COAWST vegetation module; plant density dominant for wave dissipation and TKE, height secondary, diameter weak."
+    wu2020_dragcoef_typhoon:
+      short_citation: "Wu et al. 2020"
+      doi: "10.1175/JTECH-D-19-0006.1"
+      note: "COAWST drag/roughness-scheme intercomparison for Typhoons Haima and Nida; momentum roughness scheme strongly controls wind stress, intensity, surge (scheme intercomparison, not variance-based index)."
+
+safety:
+  hazards:
+    - id: "tair_kelvin_not_celsius"
+      kind: "weather_file_semantic"
+      description: "Atmospheric temperature supplied in Kelvin not Celsius; under BULK_FLUXES drives SST to ~300 degC and corrupts heat fluxes."
+      severity: "silent"
+      triplet: "dt_001"
+    - id: "wind_stress_pa_not_m2s2"
+      kind: "weather_file_semantic"
+      description: "Prescribed wind stress in Pa not divided by rho0 (~1025); currents ~1000x too strong and the run blows up."
+      severity: "fatal_or_silent"
+      triplet: "dt_002"
+    - id: "forcing_time_ref_mismatch"
+      kind: "control_semantic"
+      description: "Forcing time units not aligned with ocean.in TIME_REF; ROMS extrapolates or uses wrong-season forcing, producing NaN or unphysical fields."
+      severity: "fatal"
+      triplet: "dt_003"
+    - id: "precip_mmday_not_kgm2s"
+      kind: "weather_file_semantic"
+      description: "Precipitation in mm/day instead of kg/m2/s makes freshwater flux ~10^6x too high and salinity collapses to zero."
+      severity: "silent"
+      triplet: "dt_008"
+    - id: "humidity_rh_not_specific"
+      kind: "weather_file_semantic"
+      description: "Relative humidity (%) used in place of specific humidity (kg/kg) makes latent-heat/evaporation flux ~4000x wrong."
+      severity: "silent"
+      triplet: "dt_015"
+    - id: "wave_direction_degrees_not_radians"
+      kind: "weather_file_semantic"
+      description: "Wave direction in meteorological degrees (from, CW from north) instead of ROMS radians (to, CCW from east) reverses wave-current forcing."
+      severity: "silent"
+      triplet: "dt_011"
+    - id: "bathymetry_sign_convention"
+      kind: "soil_semantic"
+      description: "GEBCO/ETOPO bathymetry not negated to ROMS positive-down convention; ocean cells get h<0, masked as land, immediate crash."
+      severity: "fatal"
+      triplet: "dt_007"
+    - id: "bathymetry_rx0_too_steep"
+      kind: "soil_semantic"
+      description: "Bathymetry rx0 (Beckmann-Haidvogel number) > 0.2 in sigma coordinates causes spurious slope currents and pressure-gradient errors."
+      severity: "degraded"
+      triplet: "dt_016"
+    - id: "ic_ts_out_of_eos_range"
+      kind: "initial_condition_semantic"
+      description: "Initial T/S outside EOS-valid range (T -2..40 degC, S 0..42 PSU) or fill values (9999) yield NaN density and blowup."
+      severity: "fatal"
+      triplet: "dt_012"
+    - id: "wetdry_zeta_inconsistent"
+      kind: "initial_condition_semantic"
+      description: "WET_DRY enabled with initial zeta below Dcrit on shallow cells causes checkerboard wet/dry oscillation."
+      severity: "degraded"
+      triplet: "dt_017"
+    - id: "cfl_barotropic_blowup"
+      kind: "numerical_instability"
+      description: "Barotropic timestep DT/NDTFAST violating CFL < ~0.7 causes immediate BLOWUP with exponential velocity/SSH growth."
+      severity: "fatal"
+      triplet: "dt_005"
+    - id: "bc_wrong_arakawa_stagger"
+      kind: "parser_semantic"
+      description: "Boundary data on the wrong Arakawa-C stagger (rho vs u/v dims) interpolates to wrong locations, producing edge stripe artifacts."
+      severity: "silent"
+      triplet: "dt_009"
+    - id: "restart_nrrec_time_mismatch"
+      kind: "control_semantic"
+      description: "NRREC not matching the restart file time record misaligns the simulation clock and time-dependent forcing on restart."
+      severity: "fatal"
+      triplet: "dt_013"
+    - id: "bulk_fluxes_flag_forcing_mismatch"
+      kind: "control_semantic"
+      description: "BULK_FLUXES CPP flag inconsistent with the forcing variable set; mismatched variables are silently ignored, leaving zero surface forcing."
+      severity: "silent"
+      triplet: "dt_006"
+    - id: "coupling_interval_non_integer"
+      kind: "control_semantic"
+      description: "Coupling interval not an integer multiple of all component timesteps; exchanges are missed and stale data is reused, causing stepping artifacts."
+      severity: "degraded"
+      triplet: "dt_010"
+    - id: "mpi_tiling_node_mismatch"
+      kind: "control_semantic"
+      description: "NtileI x NtileJ not equal to NnodesOCN; processes wait on non-existent partners and the run deadlocks at startup with no error."
+      severity: "fatal"
+      triplet: "dt_004"
+    - id: "swan_spectral_resolution_too_coarse"
+      kind: "control_semantic"
+      description: "SWAN spectral grid below ~24 directions / ~25 frequencies leaks energy between spectral peaks, missing swell and biasing wave period."
+      severity: "degraded"
+      triplet: "dt_014"
+  validation_limits:
+    - "Component-internal physics is governed by each component model's own reference; COAWST adds only the inter-component exchange and feedback."
+    - "Terrain-following S-coordinate degrades over steep topography (rx0 control); not suited to abrupt bathymetric steps without smoothing."
+    - "Coupling conservation is only as accurate as the SCRIP remap weights between non-coincident component grids."
+    - "Daily/coarse atmospheric forcing cannot resolve the sub-hourly air-sea feedback that drives rapid storm intensification."
+  warnings:
+    - "rho_eos must run before diag/prsgrd and set_depth before the 3D solve each step; this ordering is an implicit hard dependency not enforced by the namelist."
+    - "When wave coupling is active, ocean momentum silently depends on SWAN via Stokes-drift and radiation-stress arrays even though this is not visible from ROMS docs alone."
+    - "Sanity envelopes for QC: SST -2..35 degC, salinity 0..42 PSU, sea level +/-2 m (tidal/surge), currents < ~2 m/s, Tair -60..50 degC, Pair 850..1100 mb, swrad 0..1400 W/m2."
+  assumptions:
+    - statement: "The dag describes the coupled coawstM binding (ROMS+SWAN+WRF via MCT); component-internal science is referenced, not re-enumerated, at the COAWST level."
+      scope: "whole framework"
+      source: "USGS COAWST science page and CSDMS Model:COAWST metadata"
+      status: "adopted"
+    - statement: "Ocean state is Boussinesq with reference density rho0=1025 kg/m3 and specific heat Cp=3985 J/kg/degC for flux-to-state-flux conversions."
+      scope: "ROMS ocean component"
+      source: "ROMS mod_scalars.F constants (rho0, Cp)"
+      status: "adopted"
+    - statement: "Mass/momentum closure is on a split-explicit free surface with the barotropic mode sub-cycled NDTFAST times per baroclinic DT; surface energy closure holds only when bulk-flux/WRF coupling supplies the budget."
+      scope: "ocean dynamics + air-sea coupling"
+      source: "ROMS main3d.F step2d/step3d structure and bulk_flux.F (COARE)"
+      status: "adopted"
+    - statement: "Two-way feedback (not one-way forcing) is assumed: ocean and waves evolve and feed back to the atmosphere through MCT exchange."
+      scope: "coupling configuration"
+      source: "USGS COAWST coupling/two-way feedback documentation"
+      status: "adopted"

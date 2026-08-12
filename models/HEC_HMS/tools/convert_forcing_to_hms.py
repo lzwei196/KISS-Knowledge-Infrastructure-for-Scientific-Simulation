@@ -137,7 +137,10 @@ def read_cmfd_forcing(forcing_dir, bounds, start_date, end_date):
                 continue
 
             try:
-                ds = xr.open_dataset(nc_file)
+                try:
+                    ds = xr.open_dataset(nc_file, engine="h5netcdf")
+                except Exception:
+                    ds = xr.open_dataset(nc_file)
                 # Handle different coordinate names
                 lon_name = "lon" if "lon" in ds.dims else "longitude"
                 lat_name = "lat" if "lat" in ds.dims else "latitude"
@@ -184,6 +187,11 @@ def convert_units(data_dict):
     if "prec" in data_dict:
         prec = data_dict["prec"].values.copy()
         prec = np.maximum(prec, 0.0)  # No negative precipitation
+        # dt_101: actual CMFD NetCDF precip is a RATE in kg/m2/s (= mm/s),
+        # NOT mm/day as some docs state. Detect by magnitude and convert.
+        if np.nanmean(prec) < 0.1:
+            prec = prec * 86400.0
+            print("[convert_units] Precip rate kg/m2/s detected -> x86400 to mm/day")
         converted["prec_mm"] = prec
         print(f"[convert_units] Precip: mean={np.nanmean(prec):.2f} mm/day, "
               f"max={np.nanmax(prec):.1f} mm/day")

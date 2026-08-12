@@ -61,9 +61,55 @@ def validate_inputs(args):
         sys.exit(1)
 
 
+class CaseInsensitiveDict(dict):
+    """dict whose string keys match regardless of case.
+
+    MeteoIO's Config reader is case-insensitive for BOTH section names and
+    keys, so `[SNOWPACKADVANCED]`, `[SnowpackAdvanced]` and `[snowpackadvanced]`
+    are the same section to Alpine3D. The validator used a plain dict with the
+    literal spelling "SnowpackAdvanced", so a config that spelled the section
+    any other way silently skipped the dt_016 ALPINE3D=TRUE check and reported
+    "ALPINE3D key not found" on a file that sets it correctly — a false alarm
+    that is worse than no check, because it trains the user to ignore it.
+    """
+
+    def __init__(self, *a, **kw):
+        super().__init__()
+        self._lower = {}
+        if a or kw:
+            for k, v in dict(*a, **kw).items():
+                self[k] = v
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        if isinstance(key, str):
+            self._lower[key.lower()] = key
+
+    def __getitem__(self, key):
+        if isinstance(key, str) and not super().__contains__(key):
+            real = self._lower.get(key.lower())
+            if real is not None:
+                return super().__getitem__(real)
+        return super().__getitem__(key)
+
+    def __contains__(self, key):
+        if isinstance(key, str) and key.lower() in self._lower:
+            return True
+        return super().__contains__(key)
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+
 def parse_ini_file(filepath):
-    """Parse an INI-style configuration file into sections and key-value pairs."""
-    config = {}
+    """Parse an INI-style configuration file into sections and key-value pairs.
+
+    Section names and keys are matched case-insensitively, as MeteoIO does.
+    """
+    config = CaseInsensitiveDict()
     current_section = None
 
     with open(filepath, "r") as f:
@@ -84,7 +130,7 @@ def parse_ini_file(filepath):
             if line.startswith("[") and line.endswith("]"):
                 current_section = line[1:-1].strip()
                 if current_section not in config:
-                    config[current_section] = {}
+                    config[current_section] = CaseInsensitiveDict()
                 continue
 
             # Key-value pair

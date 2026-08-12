@@ -49,7 +49,9 @@ def main():
     print()
     check_dir("/mnt/disk1/Hydrocraft_server/models/PIHM/knowledge_infrastructure/tools", "KI tools directory")
     # Model-specific binary/package check
-    check_file("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PIHM/source/repo/pihm", "PIHM binary", executable=True)
+    _model_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _binary = os.path.join(_model_root, "source", "repo", "pihm")
+    check_file(_binary, "PIHM binary", executable=True)
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

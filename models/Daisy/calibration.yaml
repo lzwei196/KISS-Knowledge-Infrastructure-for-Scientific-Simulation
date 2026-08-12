@@ -1,0 +1,116 @@
+template_version: "calib-0.1"
+model_id: Daisy
+identity:
+  domain: agrohydrology
+  binding: daisy-cpp-7.1.4         # University of Copenhagen Daisy v7.1.4 C++ binary; canonical single 1-D column, SVAT engaged via Bioclimate (deBruin87 ET / Makkink reference)
+
+# Calibrate toward the model's primary, gate-valid water-balance flux. Daily
+# Actual Evapotranspiration (field_water.dlf) at a point_time_series obs (FLUXNET
+# US-Ne3 energy-balance-closed LE_CORR) carries metric_families
+# [magnitude_accuracy, temporal_pattern_match] -> objectives NSE-loss (shape) +
+# PBIAS-loss (volume), scalarized over the single target var. The validated real
+# case scored NSE 0.651 / KGE 0.727 / PBIAS -2.41 at US-Ne3 2005; calibration
+# tunes the three parameters below to improve and generalise that fit.
+targets:
+  - var: Evapotranspiration       # must exist verbatim in dag.outputs (unit mm, field_water.dlf)
+    weight: 1.0
+
+# --- The FEW most ET-sensitive, identifiable crop parameters (avoid equifinality) ---
+# Daily Actual ET = soil evaporation + canopy transpiration, set by (a) how fast
+# leaf area builds (transpiring surface), (b) how that canopy intercepts the
+# evaporative demand, and (c) how deep the roots reach for water under dry-down.
+# The three parameters below span those three DISTINCT levers so the search is
+# well-posed:
+#   * SpLAI  -> specific leaf area at emergence -> early LAI build-up -> the
+#              transpiring-surface lever (peak-season ET magnitude + green-up timing)
+#   * EPext  -> canopy extinction coefficient for potential ET -> partition of the
+#              evaporative demand into transpiration vs. bare-soil evaporation
+#   * MaxPen -> maximum root penetration depth -> plant-available water under
+#              mid-season dry-down -> late-season ET recession (NSE/shape lever)
+# Held at their validated defaults (NOT freed) to keep the search identifiable:
+#   the van Genuchten-Mualem soil hydraulics (Theta_sat/alpha/n/K_sat in
+#   usne3_soil.dai), the SVAT/PET method (deBruin87), management (sow/harvest
+#   dates, N rate) and all carbon/nitrogen pools. Freeing those alongside the
+#   crop levers introduces ET equifinality (codex pitfall: over-parameterization).
+#
+# ADDRESS MECHANISM. Every parameter is the lone `(<name>  <value>)` token in the
+# canonical Lisp-like crop deck calibration_assets/crop_params.dai. The kit's
+# text_token applicator replaces the single numeric capture group in place
+# (round-trippable, one match guaranteed: comments in that file deliberately avoid
+# the `(<name> <value>)` shape). tools/calib_run.py reads back those SAME tokens
+# and runs Daisy with the resulting "Ne3 Maize" crop, so write-then-read agrees.
+# The unedited defaults equal the validated "Silage Maize" parent defaults, so a
+# 0-edit run reproduces the real-case recipe exactly (C7 no-op baseline).
+parameters:
+  - name: SpLAI
+    description: "Specific leaf area index at emergence (canopy LAI build-up rate); the dominant transpiring-surface / peak-ET-magnitude lever. Validated default 0.010 (Silage Maize parent)."
+    type: continuous
+    units: "(m^2 leaf)/(g leaf DM)"
+    default: 0.010
+    range: [0.005, 0.020]         # plausible C4 maize specific-leaf-area span; halving/doubling early LAI
+    transform: log                # strictly-positive scale lever spanning ~1 order -> log search
+    scope: global                 # single 1-D column / one crop instance
+    tie: null
+    activation: always
+    address:
+      kind: text_token
+      root: "/mnt/disk1/Hydrocraft_server/models/Daisy/knowledge_infrastructure"
+      file: "calibration_assets/crop_params.dai"
+      pattern: "\\(SpLAI\\s+([0-9.eE+-]+)\\)"
+
+  - name: EPext
+    description: "Canopy radiation/extinction coefficient for potential ET; partitions evaporative demand between transpiration and bare-soil evaporation. Validated default 0.50."
+    type: continuous
+    units: "-"
+    default: 0.50
+    range: [0.30, 0.80]           # physical extinction-coefficient range for a row/cereal canopy
+    transform: identity
+    scope: global
+    tie: null
+    activation: always
+    address:
+      kind: text_token
+      root: "/mnt/disk1/Hydrocraft_server/models/Daisy/knowledge_infrastructure"
+      file: "calibration_assets/crop_params.dai"
+      pattern: "\\(EPext\\s+([0-9.eE+-]+)\\)"
+
+  - name: MaxPen
+    description: "Maximum root penetration depth (cm); sets plant-available water under mid-season dry-down -> late-season ET recession (shape/NSE lever). Validated default 120 cm (rooting depth capped by soil MaxRootingDepth 150 cm)."
+    type: continuous
+    units: "cm"
+    default: 120.0
+    range: [60.0, 200.0]          # shallow-rooted to deep-rooted maize; >150 clamped by usne3_soil MaxRootingDepth
+    transform: identity
+    scope: global
+    tie: null
+    activation: always
+    address:
+      kind: text_token
+      root: "/mnt/disk1/Hydrocraft_server/models/Daisy/knowledge_infrastructure"
+      file: "calibration_assets/crop_params.dai"
+      pattern: "\\(MaxPen\\s+([0-9.eE+-]+)\\)"
+
+# No cross-parameter constraints: the three levers are physically independent
+# (leaf-area rate, canopy extinction, rooting depth) with no ordering relation.
+constraints: []
+
+# --- HOW to run+score one candidate, programmatically (NOT a claude agent) ---
+# tools/calib_run.py seeds a workdir from calibration_assets/ (always re-copying
+# the kit-edited crop_params.dai), runs Daisy (real v7.1.4 binary) for a 1-yr
+# spinup + maize target year per scored year, parses daily Actual ET from
+# field_water.dlf, aligns it to the FLUXNET US-Ne3 LE_CORR-derived daily obs and
+# returns NSE/KGE/PBIAS/r/RMSE via ki_tools_common.metrics.all_metrics (the
+# dag-gated family). It honours env KDT_CALIB_SPLIT (calibration|holdout).
+runner:
+  kind: subprocess
+  command: ["/mnt/disk1/Hydrocraft_server/python_env/bin/python", "tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]
+  metrics_file: "{metrics_json}"
+  timeout: 600                     # one 2-yr Daisy sim ~1.5 s; calibration split (2 yrs) ~3-4 s
+
+strategy:
+  cost_class: cheap                # a single 2-yr Daisy run is ~1.5 s
+  default_algorithm: dds           # single scalarized objective (one var) -> DDS
+  max_evaluations: 200
+  holdout:                         # MANDATORY (C6) — validate on a held-out year
+    kind: years
+    fraction: 0.33                 # calib years 2005,2007 vs independent holdout 2003; calib_run.py owns the split via KDT_CALIB_SPLIT

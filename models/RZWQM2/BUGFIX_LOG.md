@@ -144,7 +144,7 @@
 ## HWSD Soil Adapter
 
 - **File**: `tools/s0_global_data/hwsd_soil_adapter.py` (new tool)
-- **Data**: HWSD China raster at `/mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img`, lookup via `/mnt/disk1/Hydrocraft_server/data/forcing/huaihe_raw/soil/HWSD.mdb`
+- **Data**: HWSD China raster at `/mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img`, lookup via `/media/server/hc_ssd/forcing/huaihe_raw/soil/HWSD.mdb`
 - **Requires**: `mdbtools` system package (apt install mdbtools)
 - **Flow**: lat/lon → raster pixel → MU_GLOBAL code → mdb-export HWSD_DATA → sand/clay/BD/OC/pH → texture defaults → 6 RZWQM2 horizons
 - **Impact**: Siping maize yield jumped from 1,904 kg/ha (Ohio soil) to **5,908 kg/ha** (HWSD soil). LAI from 2.13 to **4.05**. The soil was the primary limitation.

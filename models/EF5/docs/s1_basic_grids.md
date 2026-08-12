@@ -21,26 +21,60 @@ Prepare the three foundational geospatial grids that EF5 requires: Digital Eleva
 
 ## Procedure
 
-### Option A: Generate from DEM using EF5 built-in processor
+### Option A (Recommended, KDT 5.1.2): KI's `prepare_basic_grids` tool
 
 ```bash
-# EF5 has a built-in DEM processor (-z DEM, -d DDM output, -a FAM output, -p pit-fill)
-ef5 -z input_DEM.tif -d DDM.tif -a FAM.tif -p
+python tools/prepare_basic_grids.py \
+    --dem raw_DEM.tif \
+    --out-dir basin/grids/ \
+    --bbox 113.0 31.5 117.5 33.5 \
+    --method breach \
+    --out-format asc \
+    --expected-outlet 117.35 33.05
 ```
 
-### Option B: Use HydroSHEDS pre-processed grids
+The tool runs WhiteboxTools `BreachDepressionsLeastCost` → `D8Pointer (ESRI)` →
+`D8FlowAccumulation (cells, +1 for SELFFAM=true)`, writes ASC outputs (EF5's
+TIF reader has known bugs with rasterio-generated GeoTIFFs), and verifies:
+- DDM unique values are subset of {0, 1, 2, 4, 8, 16, 32, 64, 128}
+- DDM sinks < 1% of basin
+- DEM/DDM/FAM share extent, transform, CRS
+- FAM at expected outlet is non-trivial (not 1)
+
+If `--expected-outlet` is supplied, the tool reports FAM at that cell (and
+its 3×3 max), so you can confirm the upstream basin connects to the gauge
+**before running EF5**.
+
+### Option B: HydroSHEDS pre-processed grids
 
 1. Download HydroSHEDS DEM, flow direction, and flow accumulation at desired resolution
 2. Clip to basin extent
-3. Convert flow direction to ESRI 8-direction encoding if needed
-4. Write as ASC or float32 GeoTIFF
+3. **Verify** flow direction is ESRI 8-direction encoding (1, 2, 4, 8, 16, 32, 64, 128)
+   — HydroSHEDS uses ESRI by default, but always check: `gdalinfo -mm flow_dir.tif`
+4. Write as ASC. Confirm SELFFAM convention matches your `[Basic]` setting.
 
-### Option C: Use GIS tools (ArcGIS/QGIS)
+### Option C: External D8 tools (TauDEM / ArcGIS / QGIS)
 
-1. Fill sinks in DEM
-2. Compute flow direction (D8 algorithm) → export as ESRI grid
-3. Compute flow accumulation → export as ESRI grid
-4. Verify direction encoding matches ESRIDDM setting
+1. Fill sinks in DEM (do NOT skip — unfilled sinks are the #1 cause of
+   "Walked N out of M" routing failures)
+2. Compute flow direction (D8 algorithm) → export as ESRI grid (NOT TauDEM 1-8!)
+3. Compute flow accumulation → export as ESRI grid; **add +1 if SELFFAM=true**
+4. Verify direction encoding matches `ESRIDDM` setting in control.txt
+
+### `ef5 -p` is not a working option in v1.2.3
+
+EF5 v1.2.3's argument parser accepts `-p` (process DEM from scratch), and prior
+versions of this KI documented it as a fallback. **`-p` is not implemented in
+this build** — `src/DEMProcessor.cpp:23` only handles mode=2 (`-s`, FAM from
+existing DDM). Mode=1 falls through silently with no output.
+
+```bash
+# This DOES work (recompute FAM from a known-good DDM):
+ef5 -z DEM.tif -d DDM.tif -a FAM.tif -s
+
+# This does NOT (silently exits with no output):
+# ef5 -z DEM.tif -d DDM.tif -a FAM.tif -p
+```
 
 ### Configuration in control.txt
 

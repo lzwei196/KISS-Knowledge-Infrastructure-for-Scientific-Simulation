@@ -1,0 +1,384 @@
+template_version: "3.5"
+
+identity:
+  model_id: "SimPEG"
+  scientific_reference_version: "SimPEG gradient-based geophysical simulation/inversion framework (Cockett et al. 2015; Heagy et al. 2017 EM extension)"
+  implementation:
+    id: "simpeg"
+    version: "0.25.x"
+    provenance: "Python; open-source SimPEG library (simpeg.xyz / github.com/simpeg/simpeg), built on discretize (finite-volume meshes) and pymatsolver (linear solvers)."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "python"
+  license: "MIT"
+  repo_url: "https://github.com/simpeg/simpeg"
+
+boundary:
+  scope_in:
+    - "Forward simulation of geophysical responses (gravity, magnetics, DC resistivity, IP/SIP, self-potential, FDEM, TDEM, natural-source/MT, VRM, seismic straight-ray tomography, Richards-equation unsaturated flow)"
+    - "Gradient-based deterministic inversion / parameter estimation for subsurface physical properties (Tikhonov and sparse-norm regularization)"
+    - "Computation of sensitivities (Jvec/Jtvec) driving the inverse problem"
+    - "Joint / multiphysics inversion"
+  scope_out:
+    - "Stochastic / Bayesian (MCMC) inversion (framework is deterministic, gradient-based by design)"
+    - "Mesh generation itself (delegated to the external discretize package)"
+    - "Linear-algebra solvers (delegated to the external pymatsolver package)"
+    - "Statistical / regression surrogates of the physics"
+  spatial: "3-D"
+  temporal: "static"
+  closure: "none"
+  notes: "Spatial support spans 1-D/2-D/2.5-D/3-D finite-volume meshes (TensorMesh, OcTree/QuadTree TreeMesh, CylindricalMesh, SimplexMesh) depending on method; 3-D is the primary case. Temporal grain is method-dependent: static/steady-state for potential fields and DC, per-frequency for FDEM, time-stepping for TDEM and Richards flow; the inversion itself is an iterative Gauss-Newton outer loop with beta cooling, NOT a wall-clock time integration. 'closure' is `none` in the mass/energy-balance sense: SimPEG discretizes the governing PDEs (Maxwell's equations, Poisson/potential-field equations, Richards equation) on a finite-volume mesh and exposes the forward operator and its derivatives; mass conservation applies only inside the Richards-flow module."
+
+inputs:
+  forcing:
+    - category: "source_excitation"
+      name: "EM source frequencies / time channels / waveform"
+      unit: "Hz (FDEM) or s (TDEM time gates)"
+      source_kind: "user_provided"
+      model_input_format: "Source/Receiver objects within the Survey"
+      notes: "EM methods only. FDEM expects ordinary frequency f in Hz, NOT angular frequency omega (rad/s); f = omega/(2*pi). Wrong unit corrupts phase/amplitude silently."
+    - category: "source_excitation"
+      name: "inducing geomagnetic field (amplitude, inclination, declination)"
+      unit: "nT, degrees"
+      source_kind: "user_provided"
+      model_input_format: "magnetics survey source definition"
+      notes: "Magnetics only; total-field anomalies are typically 1-500 nT."
+  parameters:
+    - category: "physical_property"
+      name: "subsurface physical-property model (density / susceptibility / conductivity / resistivity / chargeability / velocity)"
+      unit: "kg/m^3, SI, S/m, Ohm*m, V/V, m/s"
+      source_kind: "user_provided"
+      model_input_format: "model vector over active mesh cells, shape (n_active,)"
+      notes: "SI units are mandatory: density kg/m^3 (not g/cm^3; x1000), susceptibility SI (not CGS; x4*pi), conductivity S/m. Values are in MODEL space AFTER the map (e.g. ln(sigma) under ExpMap), not directly in physical-property space."
+    - category: "background"
+      name: "background physical-property value"
+      unit: "model space"
+      source_kind: "user_provided"
+      model_input_format: "scalar in model space"
+      notes: "For a log map the background is ln(sigma), not sigma."
+    - category: "numerical"
+      name: "air / inactive-cell physical-property value"
+      unit: "S/m or Ohm*m"
+      source_kind: "default"
+      model_input_format: "InjectActiveCells inactive value"
+      notes: "Must be a small nonzero value (1e-8 S/m / 1e8 Ohm*m, or ln(1e-8) under a log map); exactly 0 yields a singular stiffness matrix."
+    - category: "regularization"
+      name: "regularization weights alpha_s / alpha_x,y,z, depth weighting, sensitivity weighting"
+      unit: "dimensionless"
+      source_kind: "calibrated"
+      model_input_format: "regularization-object weights / UpdateSensitivityWeights"
+      notes: "alpha_s (smallness, closeness-to-reference) vs alpha_x/y/z (smoothness); depth weighting counters potential-field kernel decay with depth. Default ratios assume ~uniform cells and need scaling on TreeMesh / stretched TensorMesh."
+  initial_conditions:
+    - category: "starting_model"
+      name: "starting model m0"
+      unit: "model space"
+      source_kind: "user_provided"
+      model_input_format: "vector (n_active,)"
+      notes: "The Gauss-Newton iteration begins here; an over-large beta can leave the recovered model stuck near m0."
+    - category: "reference_model"
+      name: "reference model m_ref"
+      unit: "model space"
+      source_kind: "user_provided"
+      model_input_format: "vector (n_active,)"
+      notes: "Enters the smallness term; biases the recovery toward known geology where data are uninformative."
+  boundary_conditions:
+    - category: "mesh"
+      name: "finite-volume mesh discretization (cell counts, padding, mesh type)"
+      unit: "m / cells"
+      source_kind: "user_provided"
+      model_input_format: "discretize TensorMesh / TreeMesh / CylindricalMesh"
+      notes: "Core region must extend >=2-3x target depth beyond the survey footprint with geometric padding (factor 1.3-1.5); TreeMesh recommended for large 3-D problems."
+    - category: "survey_geometry"
+      name: "survey sources/receivers, locations, and measured component"
+      unit: "m"
+      source_kind: "user_provided"
+      model_input_format: "Survey object (Sources + Receivers)"
+      notes: "z is ELEVATION (positive up), not depth. Receiver component (e.g. bz / tmi / bx) must match the actually measured field, else predicted data are silently wrong."
+    - category: "topography"
+      name: "topography / active-cell definition"
+      unit: "m elevation"
+      source_kind: "user_provided"
+      model_input_format: "active_from_xyz -> active cells"
+      notes: "Elevation positive up; passing depth (positive down) inverts air vs active cells."
+    - category: "observed_data"
+      name: "observed geophysical data (dobs) with uncertainties"
+      unit: "method-specific (mGal, nT, Ohm*m, A/m, V/m^2, T/s, ...)"
+      source_kind: "user_provided"
+      model_input_format: "Data(survey, dobs, standard_deviation)"
+      notes: "std = sqrt(noise_floor^2 + (relative_error*|dobs|)^2); noise_floor must be >0 (about 1-5% of |d|) to avoid overfitting noise. Magnetics in nT not T (Tesla inflates misfit ~1e18)."
+    - category: "method_selection"
+      name: "geophysical method and model map type"
+      unit: "categorical"
+      source_kind: "user_provided"
+      model_input_format: "method string + Map class"
+      notes: "method in {gravity, magnetics, dc, ip, fdem, tdem, mt, seismic, flow}; map in {identity, exp/log, reciprocal}. DC defaults to sigmaMap (conductivity); supplying resistivity needs ReciprocalMap."
+    - category: "model_bounds"
+      name: "model upper / lower bounds"
+      unit: "model space"
+      source_kind: "user_provided"
+      model_input_format: "ProjectedGNCG upper / lower"
+      notes: "Bounds are enforced only by the bounded optimizer (ProjectedGNCG); InexactGaussNewton ignores them."
+    - category: "inversion_schedule"
+      name: "trade-off schedule (beta0_ratio, coolingFactor) and iteration limits (maxIter, maxIterCG)"
+      unit: "dimensionless"
+      source_kind: "calibrated"
+      model_input_format: "directives + optimization configuration"
+      notes: "BetaEstimate_ByEig sets the initial beta; BetaSchedule cools it each outer iteration; target is Phi_d ~= nD (chi-squared criterion)."
+
+processes:
+  modules:
+    - name: "mesh"
+      role: "allocator"
+      brief: "discretize finite-volume mesh (TensorMesh regular grid, TreeMesh/OcTree adaptive refinement, CylindricalMesh axisymmetric, SimplexMesh unstructured) defining cells, origin, and active-cell set all simulations operate on."
+    - name: "maps"
+      role: "allocator"
+      brief: "Composable parameter transforms (IdentityMap, ExpMap/LogMap, ReciprocalMap, InjectActiveCells, TileMap, ChiMap, Wires) translating the inversion model-space vector to physical properties on the full mesh."
+    - name: "survey"
+      role: "allocator"
+      brief: "Method-specific Sources and Receivers encoding acquisition geometry, source excitation, and measured field components."
+    - name: "simulation"
+      role: "process_solver"
+      brief: "Forward operator: Simulation3DIntegral (gravity/magnetics, dense sensitivity, no PDE solve) or PDE-based nodal/cell-centered simulations (DC/EM, sparse factorization-dominated systems). Exposes dpred, fields, and Jvec/Jtvec sensitivities."
+    - name: "data_misfit"
+      role: "process_solver"
+      brief: "L2DataMisfit forms the weighted data-misfit term Phi_d = ||W(dpred - dobs)||^2 from the simulation, observed data, and uncertainties."
+    - name: "regularization"
+      role: "process_solver"
+      brief: "Model-norm term Phi_m: WeightedLeastSquares Tikhonov (alpha_s smallness + alpha_x/y/z smoothness) or Sparse (L0/L1 compact-body) regularization on the mesh."
+    - name: "optimization"
+      role: "integrator"
+      brief: "Gauss-Newton minimizer: InexactGaussNewton (unbounded) or ProjectedGNCG (bounded), with maxIter / maxIterCG / tolCG, minimizing Phi_d + beta*Phi_m."
+    - name: "directives"
+      role: "optional_module"
+      brief: "Inversion-control directives: BetaEstimate_ByEig, BetaSchedule (cooling), TargetMisfit, UpdateIRLS, UpdateSensitivityWeights, UpdatePreconditioner, SaveOutputEveryIteration."
+    - name: "inverse_problem"
+      role: "driver"
+      brief: "BaseInvProblem assembles data misfit + regularization + optimizer into a single objective Phi(m) = Phi_d + beta*Phi_m."
+    - name: "inversion"
+      role: "integrator"
+      brief: "BaseInversion.run(m0) executes the iterative Gauss-Newton / beta-cooling outer loop applying directives until the target misfit is reached."
+  internal_edges:
+    - {from: "mesh", to: "maps", kind: "invokes", brief: "Mesh active-cell count sets map dimensions (InjectActiveCells n_active -> n_cells)."}
+    - {from: "maps", to: "simulation", kind: "invokes", brief: "Map chain converts the model vector to physical property consumed by the forward operator."}
+    - {from: "survey", to: "simulation", kind: "invokes", brief: "Source/receiver geometry and measured components define the forward operator."}
+    - {from: "simulation", to: "dpred", kind: "produces_output", brief: "sim.dpred(m) computes predicted geophysical data."}
+    - {from: "simulation", to: "fields", kind: "writes_state", brief: "sim.fields(m) stores the full PDE field solution on the mesh (DC/EM)."}
+    - {from: "simulation", to: "data_misfit", kind: "invokes", brief: "L2DataMisfit calls the simulation at each objective evaluation."}
+    - {from: "data_misfit", to: "phi_d", kind: "writes_state", brief: "Forms weighted data misfit Phi_d from dpred, dobs, and uncertainties."}
+    - {from: "regularization", to: "phi_m", kind: "writes_state", brief: "Forms model norm Phi_m (smallness + smoothness or sparse)."}
+    - {from: "data_misfit", to: "inverse_problem", kind: "invokes", brief: "Phi_d term assembled into the objective."}
+    - {from: "regularization", to: "inverse_problem", kind: "invokes", brief: "Phi_m term assembled into the objective."}
+    - {from: "optimization", to: "inverse_problem", kind: "invokes", brief: "Gauss-Newton optimizer attached to minimize Phi_d + beta*Phi_m."}
+    - {from: "directives", to: "beta", kind: "writes_state", brief: "BetaEstimate_ByEig sets the initial beta; BetaSchedule cools it each iteration."}
+    - {from: "directives", to: "inversion", kind: "invokes", brief: "TargetMisfit / UpdateIRLS / UpdateSensitivityWeights control the iterative loop."}
+    - {from: "inverse_problem", to: "inversion", kind: "invokes", brief: "BaseInversion.run(m0) executes the GN/beta-cooling loop on the assembled objective."}
+    - {from: "inversion", to: "m", kind: "writes_state", brief: "Updates the model vector m at each Gauss-Newton iteration."}
+    - {from: "inversion", to: "simulation", kind: "invokes", brief: "Re-invokes dpred and Jvec/Jtvec sensitivities each iteration."}
+    - {from: "maps", to: "m", kind: "reads_state", brief: "Applies the (inverse) map to m for physical-property interpretation."}
+    - {from: "inversion", to: "Outputs", kind: "produces_output", brief: "Returns the recovered model m, mapped back to physical property for export."}
+
+states:
+  variables:
+    - {name: "m", unit: "model space (e.g. ln(S/m), kg/m^3)", role: "prognostic"}
+    - {name: "phi_d", unit: "dimensionless (target ~= nD)", role: "diagnostic"}
+    - {name: "phi_m", unit: "dimensionless (model norm)", role: "diagnostic"}
+    - {name: "beta", unit: "dimensionless (trade-off)", role: "prognostic"}
+    - {name: "dpred", unit: "method-specific (mGal, nT, Ohm*m, ...)", role: "diagnostic"}
+    - {name: "fields", unit: "mesh field values (potentials / E / H / pressure head)", role: "diagnostic"}
+  provenance: "populated"
+
+outputs:
+  - var: "recovered_model"
+    validation_rank: 1
+    unit: "model space (e.g. ln(S/m); kg/m^3 under identity map)"
+    description: "Recovered model vector, one value per active mesh cell, in model space; returned by the inversion."
+    emitted_in: "BaseInversion.run(m0) return value"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Deterministic inversions are non-unique and resolution-limited; recovered structure depends on regularization, depth/sensitivity weighting, and reference model.", "Compare in physical-property space (after inverse map), not raw model space."]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Point comparison (e.g. against a borehole/well-log property) is limited by inversion smoothing and cell resolution near the sample."]
+      detrending_options: ["none"]
+  - var: "physical_property"
+    validation_rank: 2
+    unit: "kg/m^3 (density), S/m (conductivity), SI (susceptibility), Ohm*m (resistivity), V/V (chargeability)"
+    description: "Recovered model transformed back to physical-property space via the forward map (model_map * m_recovered)."
+    emitted_in: "model-map application to recovered_model"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Must apply the inverse map before interpretation (e.g. exp(m) for a log map); raw model values are orders of magnitude off."]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Non-unique; constrained best near survey coverage and away from padding cells."]
+      detrending_options: ["none"]
+  - var: "predicted_data"
+    validation_rank: 3
+    unit: "method-specific (mGal, nT, Ohm*m, A/m, V/m^2, T/s)"
+    description: "Forward response (dpred) of the recovered (or forward) model at the survey receivers."
+    emitted_in: "sim.dpred(model)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Potential-field / DC data are a single-instant spatial anomaly map over the survey footprint."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["For EM the 'series' is across frequencies (FDEM) or time gates (TDEM) at a station, not wall-clock time."]
+      detrending_options: ["none"]
+  - var: "fields"
+    validation_rank: 4
+    unit: "mesh-based field values (potentials, E/H fields, pressure head)"
+    description: "Full PDE field solution on the mesh for DC/EM/flow methods (optional diagnostic)."
+    emitted_in: "sim.fields(m)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Internal field solution; rarely measured directly and method-specific."]
+      detrending_options: ["none"]
+
+influence:
+  _caveat: "No global-sensitivity study (Sobol/Morris/EFAST/variance-based) specific to SimPEG exists; SimPEG is a simulation/inversion framework, not a calibrated forward model. All edges describe the algorithmic/qualitative role of inversion-control levers (trade-off beta, data uncertainties, depth/sensitivity weighting, regularization alpha, reference model, mesh, source frequency/waveform) established in the cited inversion literature, NOT quantitative parameter-sensitivity indices. No edge can therefore be graded HIGH from this literature; all grades are MEDIUM with basis=literature_qualitative."
+  edges:
+    - from: "trade_off_parameter_beta"
+      to: "recovered_model"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "structural"
+      applicability: "always"
+      citations: ["cockett2015_simpeg_framework", "heagy2017_simpeg_em_framework"]
+    - from: "data_uncertainties_noise_floor"
+      to: "recovered_model"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "structural"
+      applicability: "always"
+      citations: ["cockett2015_simpeg_framework", "heagy2017_simpeg_em_framework", "heagy2019_aem_simpeg"]
+    - from: "depth_weighting_exponent"
+      to: "recovered_model_depth_distribution"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "potential fields (gravity/magnetics)"
+      citations: ["li_oldenburg1998_3d_gravity", "li_oldenburg1996_3d_magnetic"]
+    - from: "sensitivity_weighting"
+      to: "recovered_model_structure_location"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["cockett2015_simpeg_framework", "li_oldenburg1996_3d_magnetic"]
+    - from: "smoothness_regularization_weights_alpha"
+      to: "recovered_model_smoothness"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["li_oldenburg1996_3d_magnetic", "cockett2015_simpeg_framework"]
+    - from: "reference_model"
+      to: "recovered_model"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["li_oldenburg1996_3d_magnetic", "cockett2015_simpeg_framework"]
+    - from: "mesh_discretization"
+      to: "predicted_data"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "structural"
+      applicability: "always"
+      citations: ["heagy2017_simpeg_em_framework", "cockett2015_simpeg_framework"]
+    - from: "source_frequency_waveform_geometry"
+      to: "predicted_data"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      applicability: "electromagnetics (FDEM/TDEM/MT/AEM)"
+      citations: ["heagy2017_simpeg_em_framework", "heagy2019_aem_simpeg"]
+  citation_index:
+    cockett2015_simpeg_framework:
+      short_citation: "Cockett et al. 2015"
+      doi: "10.1016/j.cageo.2015.09.015"
+      note: "Foundational SimPEG paper; defines the gradient-based inverse problem Phi = Phi_d + beta*Phi_m and the controls on recovered models."
+    heagy2017_simpeg_em_framework:
+      short_citation: "Heagy et al. 2017"
+      doi: "10.1016/j.cageo.2017.06.018"
+      note: "Extends SimPEG to electromagnetics (FDEM/TDEM); sensitivities, data uncertainties, frequency/waveform, and mesh controls."
+    li_oldenburg1998_3d_gravity:
+      short_citation: "Li & Oldenburg 1998"
+      doi: "10.1190/1.1444302"
+      note: "Introduces depth weighting in Tikhonov-regularized 3-D gravity inversion; underlies SimPEG potential-field weighting."
+    li_oldenburg1996_3d_magnetic:
+      short_citation: "Li & Oldenburg 1996"
+      doi: "10.1190/1.1443968"
+      note: "3-D magnetic inversion; depth/sensitivity weighting, reference (smallness) and smoothness regularization."
+    heagy2019_aem_simpeg:
+      short_citation: "Heagy et al. 2019"
+      doi: "10.1080/08123985.2019.1583538"
+      note: "SimPEG airborne EM; recovered conductivity sensitive to assigned data uncertainties, system geometry, and regularization."
+
+safety:
+  hazards:
+    - {id: "gravity_density_cgs_vs_si", kind: "control_semantic", description: "Density supplied in g/cm^3 (CGS) where kg/m^3 (SI) is expected -> gravity anomaly silently ~1000x off.", severity: "silent"}
+    - {id: "magnetic_susceptibility_cgs_vs_si", kind: "control_semantic", description: "Magnetic susceptibility in CGS instead of SI (CGS = SI/4*pi) -> amplitude off by ~12.57x.", severity: "silent"}
+    - {id: "dc_resistivity_vs_conductivity_map", kind: "control_semantic", description: "Resistivity (Ohm*m) supplied where conductivity (sigmaMap) is expected -> recovered model is the reciprocal; use ReciprocalMap.", severity: "silent"}
+    - {id: "fdem_frequency_vs_angular_frequency", kind: "control_semantic", description: "FDEM frequency given as angular omega (rad/s) instead of f (Hz) -> phase/amplitude off by 2*pi.", severity: "silent"}
+    - {id: "topography_elevation_datum_inverted", kind: "control_semantic", description: "Topography passed as depth (positive down) instead of elevation (positive up) -> air/active cells inverted.", severity: "silent"}
+    - {id: "receiver_component_mismatch", kind: "control_semantic", description: "Receiver component (tmi/bx) does not match the measured field (bz) -> predicted data silently wrong despite a correct model.", severity: "silent"}
+    - {id: "magnetic_data_tesla_vs_nanotesla", kind: "control_semantic", description: "Magnetic data in Tesla instead of nanoTesla -> data misfit inflated ~1e18; inversion cannot converge.", severity: "fatal"}
+    - {id: "alpha_ratios_nonuniform_cells", kind: "control_semantic", description: "Default regularization alpha ratios ignore non-uniform cell sizes (TreeMesh / stretched TensorMesh) -> over- or under-smoothed regions.", severity: "silent"}
+    - {id: "air_cell_zero_conductivity_singular", kind: "numerical_instability", description: "Air/inactive-cell conductivity set to exactly 0 in InjectActiveCells -> singular stiffness matrix / NaN; use 1e-8 S/m minimum.", severity: "fatal"}
+    - {id: "noise_floor_zero_overfit", kind: "numerical_instability", description: "Data noise_floor zero/near-zero gives near-infinite weight to small data -> overfits noise into non-physical fine-scale structure.", severity: "degraded"}
+    - {id: "tilemap_local_global_index_mismatch", kind: "control_semantic", description: "Incorrect TileMap local-to-global index mapping -> tile-boundary discontinuities/artifacts in the recovered sensitivity/model.", severity: "degraded"}
+    - {id: "beta_too_large_underfit", kind: "control_semantic", description: "Initial trade-off beta too large -> Phi_d barely decreases; model stuck near the starting model (under-fit).", severity: "degraded"}
+    - {id: "beta_too_small_overfit", kind: "control_semantic", description: "Initial beta too small or cooling too aggressive -> oscillating, overfit, non-physical model.", severity: "degraded"}
+    - {id: "unbounded_optimizer_ignores_bounds", kind: "control_semantic", description: "Unbounded InexactGaussNewton ignores model bounds -> values exceed physical limits; use ProjectedGNCG for bounded problems.", severity: "degraded"}
+    - {id: "export_without_inverse_map", kind: "control_semantic", description: "Recovered model exported without the inverse map (e.g. ln(sigma) reported as sigma) -> values orders of magnitude off.", severity: "silent"}
+  validation_limits:
+    - "Deterministic gradient-based (Tikhonov/sparse) inverse problem: solution is non-unique and depends on regularization, reference model, and starting model; not a full Bayesian uncertainty quantification."
+    - "Forward-modeling accuracy is bounded by the finite-volume mesh; the core region must extend >=2-3x target depth with adequate padding to avoid boundary artifacts."
+    - "Potential-field (gravity/magnetic) kernels decay rapidly with depth; without depth weighting recovered structure clusters near the surface and depth is poorly resolved."
+    - "EM modules assume the quasi-static approximation; Richards-flow recovery is conditioned on the chosen water-retention model (e.g. Haverkamp, van Genuchten)."
+    - "Recovered model resolution is limited by survey coverage and mesh cell size; deep/poorly-covered regions revert toward the reference model."
+  warnings:
+    - "The recovered model vector is in MODEL space (post-map); apply the inverse map before interpreting it as a physical property."
+    - "Inversion target is the chi-squared data misfit Phi_d ~= nD; a mis-scheduled beta over- or under-fits relative to this target."
+    - "Default regularization alpha ratios assume approximately uniform cells; scale alpha (or use length_scale_x/y/z) on TreeMesh / stretched meshes."
+    - "Model bounds are honored only by ProjectedGNCG; InexactGaussNewton silently ignores them."
+  assumptions:
+    - statement: "Inversion is deterministic and gradient-based (Tikhonov/sparse); recovered models are non-unique and controlled by the trade-off beta, data uncertainties, regularization weights, and reference/starting model."
+      scope: "all inversion methods"
+      source: "Cockett et al. 2015, Computers & Geosciences 85 (DOI 10.1016/j.cageo.2015.09.015)"
+      status: "adopted"
+    - statement: "All physical properties and survey quantities use SI conventions (density kg/m^3, susceptibility SI, conductivity S/m, frequency in Hz, magnetic data in nT); model-space values may additionally be log/reciprocal-transformed by the chosen map."
+      scope: "inputs and outputs across methods"
+      source: "SimPEG documentation (docs.simpeg.xyz) and SimPEG KI unit-convention diagnostics"
+      status: "adopted"
+    - statement: "Governing PDEs (Maxwell's equations, Poisson/potential-field equations, Richards equation) are discretized by the finite-volume method on discretize meshes; forward accuracy and resolvable detail depend on mesh design."
+      scope: "forward simulation"
+      source: "Heagy et al. 2017, Computers & Geosciences 107 (DOI 10.1016/j.cageo.2017.06.018)"
+      status: "adopted"
+    - statement: "The inversion stopping criterion is the target data misfit Phi_d ~= nD reached via BetaEstimate_ByEig initialization and BetaSchedule cooling."
+      scope: "inversion control"
+      source: "Cockett et al. 2015, Computers & Geosciences 85 (DOI 10.1016/j.cageo.2015.09.015)"
+      status: "adopted"

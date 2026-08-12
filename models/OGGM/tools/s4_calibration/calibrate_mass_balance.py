@@ -38,18 +38,20 @@ def main():
             cfg.initialize(logging_level='WARNING')
             cfg.PATHS['working_dir'] = str(working_dir)
 
-        # Load GDirs
+        # Load GDirs — 4-level nesting: per_glacier/RGIxx-NN/RGIxx-NN.YY/RGIxx-NN.YYZZZ/
         per_glacier = working_dir / 'per_glacier'
         rgi_ids = []
         if per_glacier.exists():
-            for region_dir in per_glacier.iterdir():
+            for region_dir in sorted(per_glacier.iterdir()):
                 if region_dir.is_dir():
-                    for gdir in region_dir.iterdir():
-                        if gdir.is_dir():
-                            rgi_ids.append(gdir.name)
+                    for sub_dir in sorted(region_dir.iterdir()):
+                        if sub_dir.is_dir():
+                            for gdir_path in sorted(sub_dir.iterdir()):
+                                if gdir_path.is_dir():
+                                    rgi_ids.append(gdir_path.name)
 
         if not rgi_ids:
-            print("ERROR: No glacier directories found")
+            print("ERROR: No glacier directories found in per_glacier/")
             sys.exit(1)
 
         gdirs = workflow.init_glacier_directories(rgi_ids, reset=False)
@@ -62,14 +64,12 @@ def main():
             print("Running geodetic MB calibration (Hugonnet 2021)...")
             workflow.execute_entity_task(
                 tasks.mb_calibration_from_geodetic_mb, gdirs,
-                informed_ref_mb=True,
                 ref_period=args.ref_period
             )
         else:
             print("Running standard MB calibration...")
             workflow.execute_entity_task(
                 tasks.mb_calibration_from_geodetic_mb, gdirs,
-                informed_ref_mb=False,
                 ref_period=args.ref_period
             )
 

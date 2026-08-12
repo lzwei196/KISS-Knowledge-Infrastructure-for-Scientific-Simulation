@@ -360,14 +360,20 @@ export MONICA_PARAMETERS=$(pwd)/../../monica-parameters
 
 See `diagnostics/triplets.yaml` for the full set. Key entries:
 
-| ID    | Symptom                              | Root cause                           |
-|-------|--------------------------------------|--------------------------------------|
-| dt_01 | Yield is 10–100× too high            | globrad in J cm⁻² not MJ m⁻² d⁻¹   |
-| dt_02 | Zero crop growth                     | MONICA_PARAMETERS not set            |
-| dt_03 | Negative soil moisture               | Thickness in cm instead of m         |
-| dt_04 | Unrealistic ET                       | Wind in km h⁻¹ instead of m s⁻¹     |
-| dt_05 | JSON parse error                     | Trailing comma or missing bracket    |
-| dt_06 | N leaching 10× too high             | NDeposition daily not yearly         |
+| ID    | Symptom                              | Root cause                                          |
+|-------|--------------------------------------|-----------------------------------------------------|
+| dt_01 | Yield is 10–100× too high            | globrad in J cm⁻² not MJ m⁻² d⁻¹                  |
+| dt_02 | Zero crop growth                     | MONICA_PARAMETERS not set                           |
+| dt_03 | Negative soil moisture               | Thickness in cm instead of m                        |
+| dt_04 | Unrealistic ET                       | Wind in km h⁻¹ instead of m s⁻¹                    |
+| dt_05 | JSON parse error                     | Trailing comma or missing bracket                   |
+| dt_06 | N leaching 10× too high             | NDeposition daily not yearly                        |
+| dt_18 | Crash exit -6, no output             | SoilProfileParameters at root not in SiteParameters |
+| dt_19 | Zero yield, 0s elapsed               | csv-separator mismatch (tool outputs ";", default ",") |
+| dt_20 | UnicodeDecodeError in soil tool      | Passing .bil raster to --format hwsd (needs CSV)    |
+| dt_21 | PBIAS < -40% for China wheat         | UseAutomaticIrrigation false (rainfed vs irrigated) |
+| dt_22 | CMFD yields 26% above NASA POWER     | Higher observed radiation in CMFD → more GPP        |
+| dt_23 | Henan -13% despite irrigation        | HWSD 80% sand ≠ cultivated Fluvisol texture         |
 
 ---
 
@@ -378,3 +384,120 @@ See `diagnostics/triplets.yaml` for the full set. Key entries:
 - **Yield comparison**: FAO, USDA NASS, national statistics
 - **Carbon flux**: eddy covariance towers (NEE, GPP, Rh)
 - **Water balance**: lysimeter data, soil moisture sensors, recharge estimates
+
+---
+
+## China Multi-Site Workflow (CMFD forcing)
+
+Validated on 5 provinces (Hebei, Shandong, Henan, Jiangsu, Anhui), winter wheat,
+1991–2000. PBIAS range: -13% to +20% vs. provincial reference yields.
+
+### Step-by-step
+
+**1. Extract CMFD point data**
+
+CMFD daily files only have mean temperature (`temp`, K). Derive Tmin/Tmax from
+3-hourly files (`Data_forcing_03hr_010deg/Temp/temp_CMFD_..._YYYYMM.nc`, 8 steps/day):
+
+```python
+# Per month, per year:
+data = ds.variables['temp'][:, ilat, ilon]  # shape (n_3hr,) in K
+tmin = [float(data[d*8:(d+1)*8].min()) - 273.15 for d in range(ndays)]
+tmax = [float(data[d*8:(d+1)*8].max()) - 273.15 for d in range(ndays)]
+```
+
+Daily srad (W/m²) → MJ/m²/day: `× 86400 / 1e6 = × 0.0864`
+Daily prec (kg/m²/s) → mm/day: `× 86400`
+
+Write intermediate CSV with columns:
+`date, tavg_C, tmin_C, tmax_C, wind_ms, globrad_MJm2, precip_mm, relhumid_pct`
+
+**2. Convert to MONICA climate.csv**
+
+```bash
+python convert_climate_to_monica.py \
+  --input cmfd_raw.csv --format generic_csv \
+  --output climate.csv \
+  --date-col date --tavg-col tavg_C --tmin-col tmin_C --tmax-col tmax_C \
+  --wind-col wind_ms --globrad-col globrad_MJm2 \
+  --precip-col precip_mm --relhumid-col relhumid_pct
+```
+
+⚠️ Output uses **semicolon (`;`)** as delimiter. Update sim.json:
+```json
+"climate.csv-options": { "no-of-climate-file-header-lines": 2, "csv-separator": ";" }
+```
+
+**3. Generate site.json from HWSD**
+
+First look up MU_GLOBAL from `data/soil/HWSD_RASTER/hwsd.bil` (rasterio), then
+extract T_SAND/T_CLAY/T_OC/T_BULK_DENSITY/T_PH_H2O from `data/soil/HWSD_DATA.csv`
+(open with `encoding='latin-1'`).
+
+Write a 1-row CSV with T_* columns → pass to `convert_soil_to_monica.py --format hwsd`.
+
+⚠️ **Site.json structure bug (fixed in tool)**: the tool previously emitted
+`SoilProfileParameters` at the JSON root. It must be nested inside `SiteParameters`
+or MONICA crashes with `std::out_of_range` (exit -6). This is fixed in the tool
+as of 2026-04-30. If using an older version, apply the fix manually.
+
+After generating, merge onto the working template (preserves `SoilTemperatureParameters`,
+`SoilOrganicParameters`, etc.) and set correct latitude.
+
+**4. Irrigation settings for China wheat**
+
+```json
+"UseAutomaticIrrigation": true,
+"AutoIrrigationParams": {
+    "irrigationParameters": { "nitrateConcentration": [0, "mg dm-3"] },
+    "amount": [50, "mm"],
+    "trigger_if_nFC_below_%": [55, "%"],
+    "calc_nFC_until_depth_m": [0.6, "m"]
+}
+```
+
+Also relax AutomaticHarvest precip conditions (original too strict for China):
+```json
+"max-3d-precip-sum": 25,
+"max-curr-day-precip": 5
+```
+
+### Validated performance (5 sites, default parameters)
+
+| Province | Lat   | PBIAS (sim DM vs. prov. ref FW) | Irrigation/yr |
+|----------|-------|----------------------------------|---------------|
+| Hebei    | 38.5° | +5.8%                           | 150 mm        |
+| Shandong | 36.5° | +10.3%                          | 128 mm        |
+| Henan    | 34.0° | -13.3% (sandy HWSD, see dt_23) | 111 mm        |
+| Jiangsu  | 33.5° | +19.7%                          | 78 mm         |
+| Anhui    | 32.5° | +16.4%                          | 83 mm         |
+
+### Unit notes for output comparison
+
+MONICA yields are **kg DM ha⁻¹**. National/provincial statistics are **kg FW ha⁻¹**
+at ~12% harvest moisture.
+
+Conversion: `yield_FW = yield_DM ÷ 0.88` (÷ (1 − 0.12))
+
+CMFD forcing gives ~26% higher yields than NASA POWER at the same site (higher
+observed radiation → more photosynthesis).
+
+⚠️ **Comparison-scale gate (driven by obs_shape, NOT by the forcing product).** A
+single 1-D MONICA column represents ONE productive, managed field — not a province
+and not a nation. When the observation is a `regional_aggregate_time_series`
+(FAOSTAT national means, provincial yearbook means), the dag
+(`outputs.Yield.observability`) declares ONLY [magnitude_accuracy, trend_match]
+valid and REQUIRES the point sim to be representative-aggregated to the region
+before scoring (see triplet dt_24). Raw NSE/KGE/r (temporal_pattern_match) are
+structurally invalid for this obs_shape and must NOT gate a retry.
+  - Compare a single-province point against the matching PROVINCIAL reference
+    (e.g. Shandong wheat ≈ 4200 kg ha⁻¹ FW → PBIAS +10.3%, table above), NEVER
+    against the national FAOSTAT mean — a single irrigated high-yield province
+    overshoots the national aggregate by +40–45% (structural scale mismatch, the
+    irrigated mirror of dt_21’s rainfed undershoot; not a model/unit error).
+  - To compare against the national aggregate honestly, area-weight several
+    province point runs into one series and detrend BOTH sim and obs first
+    (the national series carries a multi-decade technology trend a weather-driven
+    point cannot reproduce).
+  - This applies to BOTH NASA POWER and CMFD forcing — it is a property of the
+    obs_shape, not of the radiation product.

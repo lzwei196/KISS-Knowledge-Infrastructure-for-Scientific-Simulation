@@ -1,0 +1,282 @@
+schema_version: 1
+model_id: SimFire
+domain: hazard
+generated_by: "self-improve session (Claude Opus 4.8) — validation-convention Step-B, wildfire-spread"
+generated_at: 2026-07-09
+
+# WILDFIRE-SPREAD validation convention for SimFire (Rothermel surface-fire cellular model;
+# outputs a final burned/unburned BurnStatus grid, total burned area, and per-pixel rate of spread).
+# Grounded ONLY in six locally-fetched OA full texts. The field judges a simulated fire map
+# validated by SPATIAL-OVERLAP agreement against an observed perimeter, using the Sorensen (Dice)
+# coefficient and Cohen's kappa — SimFire's own native metrics. Giannaros et al. 2020 (operational
+# WRF-Fire/IRIS) reproduces the Landis-&-Koch agreement tier applied to fire burned areas
+# (SC/KC: (0.4,0.6]=moderate, (0.6,0.8]=substantial, (0.8,1]=near-perfect) and uses SC/KC>=0.40 as
+# the operational acceptance threshold. Peterson (HFire) treats SC<0.8 as "relatively poor" and
+# SC>0.9 as high agreement. Jahdi 2015 (FARSITE calibration, 4 fires) and Zhou 2024 (FARSITE
+# benchmark, 2 real fires) supply achieved-skill anchors. Rate of spread is graded on ERROR/BIAS
+# with a cited +/-35% agreement standard (Gale & Cary 2025, after Cruz & Alexander 2013); NSE is NOT
+# the ROS convention. Total burned-area magnitude has NO cited numeric percent tolerance -> null band.
+# fire_perimeter_length has has_obs_binding=false in the dag and is NOT graded (no block).
+# Bands are plain numbers read via `direction` (see VALIDATION_CONVENTION_SCHEMA.md).
+
+references:
+  giannaros2020:
+    doi: 10.3390/atmos11111264
+    title: "Performance Evaluation of an Operational Rapid Response Fire Spread Forecasting System (IRIS/WRF-Fire)"
+    venue: "Atmosphere"
+    year: 2020
+    oa: gold
+    resolves: https://www.mdpi.com/2073-4433/11/11/1264
+  jahdi2015:
+    doi: 10.5194/nhess-15-443-2015
+    title: "Calibration of FARSITE simulator in northern Iranian forests"
+    venue: "Nat. Hazards Earth Syst. Sci."
+    year: 2015
+    oa: gold
+    resolves: https://nhess.copernicus.org/articles/15/443/2015/
+  zhou2024:
+    doi: 10.3390/fire7040141
+    title: "Comparing Accuracy of Wildfire Spread Prediction Models under Different Data Deficiency Conditions"
+    venue: "Fire"
+    year: 2024
+    oa: gold
+    resolves: https://www.mdpi.com/2571-6255/7/4/141
+  peterson_hfire:
+    doi: 10.2737/psw-rp-259
+    title: "Using HFire for spatial modeling of fire in shrublands"
+    venue: "USDA Forest Service Research Paper PSW-RP-259"
+    year: 2013
+    oa: manual
+    resolves: https://www.fs.usda.gov/research/treesearch/45939
+  gale2025:
+    doi: 10.1016/j.envsoft.2025.106436
+    title: "Evaluating Australian forest fire rate of spread models using VIIRS satellite observations"
+    venue: "Environmental Modelling & Software"
+    year: 2025
+    oa: gold
+    resolves: https://doi.org/10.1016/j.envsoft.2025.106436
+  kochanski2013:
+    doi: 10.5194/gmd-6-1109-2013
+    title: "Evaluation of WRF-SFIRE performance with field observations from the FireFlux experiment"
+    venue: "Geosci. Model Dev."
+    year: 2013
+    oa: gold
+    resolves: https://gmd.copernicus.org/articles/6/1109/2013/
+
+validation:
+
+  # ===================== FIRE MAP / spatial overlap (well grounded, cited tier table) =====================
+  - canonical_quantity: fire_extent
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: sorensen              # Sorensen-Dice coefficient = 2TP/(2TP+FP+FN); SimFire native metric
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.6, satisfactory: 0.4}
+        pass_band: satisfactory
+        band_note: >-
+          Landis-&-Koch agreement tier reproduced by Giannaros 2020 for fire burned areas:
+          "(0.4, 0.6] values indicate moderate agreement, (0.6, 0.8] ... substantial agreement, and
+          (0.8, 1] ... near-perfect agreement"; the operational acceptance was "KC and SC ... exceed
+          the threshold value of 0.40, which indicates at least moderate agreement". Peterson (HFire)
+          corroborates: SC<0.8 "relatively poor", SC>0.9 high agreement.
+        cites: [giannaros2020, peterson_hfire]
+      - metric: kappa                 # Cohen's kappa; SimFire native metric, chance-corrected agreement
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.6, satisfactory: 0.4}
+        pass_band: satisfactory
+        band_note: >-
+          Same Landis-&-Koch tier applied to KC by Giannaros 2020 (>=0.40 = at least moderate). Jahdi
+          2015 calibrated FARSITE achieved kappa 0.75-0.91 on best fuel-model fits across 4 wildfires.
+        cites: [giannaros2020, jahdi2015]
+    secondary_metrics:
+      - metric: csi                   # dag determining_metric; Critical Success Index == Jaccard == IoU
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          CSI (threat score) is mathematically identical to the Jaccard/IoU index TP/(TP+FP+FN); it is
+          the Dice-equivalent of the Sorensen headline (Dice = 2*Jaccard/(1+Jaccard)). The fire-spread
+          literature (FARSITE, HFire, operational WRF-Fire) reports Sorensen + Cohen's kappa, not CSI,
+          for perimeter agreement, so CSI is retained as informative only. Zhou 2024 full-input FARSITE
+          on two real fires reached Jaccard 0.42-0.44 (Sorensen 0.59-0.61), the realistic operational
+          ceiling under complete, correct input.
+        cites: [zhou2024]
+      - metric: commission_error      # native metric = simulation overestimation fraction (b/(a+b))
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [jahdi2015]
+      - metric: omission_error        # native metric = simulation underestimation fraction (c/(a+c))
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [jahdi2015]
+    validated_when: "Sorensen >= 0.4 AND Cohen's kappa >= 0.4 (at least moderate spatial agreement vs the observed perimeter, Giannaros 2020 operational threshold); good = 0.6 (substantial), very_good = 0.8 (near-perfect)."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Headline supersedes the dag determining_metric (csi) with its Dice-equivalent Sorensen coefficient
+      plus Cohen's kappa, which ARE SimFire's native validation metrics and the field standard for
+      fire-perimeter agreement (Jahdi 2015; Peterson HFire; Giannaros 2020). Compared maps must share
+      grid size and georeferencing (dag caveat) — a size mismatch is a hard failure, not a score.
+      fire_perimeter_length (dag var, has_obs_binding=false) is intentionally NOT given a block.
+
+  # ===================== FIRE MAP / per-pixel categorical detection (same comparison) =====================
+  - canonical_quantity: fire_extent
+    obs_shape: categorical_event
+    headline_metrics:
+      - metric: sorensen
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.8, good: 0.6, satisfactory: 0.4}
+        pass_band: satisfactory
+        band_note: >-
+          Per-pixel burned/not-burned confusion matrix vs an observed perimeter; same Sorensen/kappa
+          agreement tier as the spatial_snapshot block (Giannaros 2020: SC/KC>=0.40 = at least moderate).
+        cites: [giannaros2020, peterson_hfire]
+    secondary_metrics:
+      - metric: csi                   # dag determining_metric; == Jaccard == IoU of the burned mask
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          CSI == Jaccard == IoU; Zhou 2024 full-input FARSITE Jaccard 0.42-0.44 on two real fires is
+          the operational ceiling. Reported as informative; the graded convention is Sorensen/kappa.
+        cites: [zhou2024]
+      - metric: pod                   # probability of detection = A/(A+B)
+        direction: maximize
+        status: supportive
+        ceiling_reason: null
+        cites: [gale2025]
+      - metric: far                   # false alarm rate = C/(A+C)
+        direction: minimize
+        status: supportive
+        ceiling_reason: null
+        cites: [gale2025]
+    validated_when: "Sorensen >= 0.4 (at least moderate per-pixel agreement vs the observed perimeter, Giannaros 2020); POD/FAR reported as supporting hit/miss diagnostics (Gale & Cary 2025 definitions, no cited numeric target)."
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      Same underlying comparison as fire_extent/spatial_snapshot; kept as a distinct block because the
+      dag declares a categorical_event obs_shape. Sensitive to ignition placement and pixel_scale
+      (dag caveat). No cited POD/FAR numeric threshold exists, so those stay supportive.
+
+  # ===================== BURNED AREA / scalar magnitude (no cited % tolerance) =====================
+  - canonical_quantity: burned_area
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias                 # dag determining_metric (magnitude) for total burned area
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: >-
+          No fetched paper gives a numeric percent tolerance for TOTAL burned-area magnitude. The field
+          reports over/under-estimation via the Overestimation Index (OI, range -1..+1; Giannaros 2020,
+          "positive (negative) values indicating overestimation (underestimation)") but sets no acceptance
+          band; area agreement is judged jointly with the Sorensen/kappa spatial-overlap metrics.
+        cites: []
+    secondary_metrics:
+      - metric: overestimation_index  # OI, Giannaros 2020 / Salis; documented magnitude-bias metric
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: >-
+          OI quantifies burned-area over/under-prediction (range -1..+1); operational fires are typically
+          overestimated (OI>0, e.g. 0.06-0.45 in Giannaros 2020) because suppression is not modelled.
+          Documented but NOT numerically bounded by any fetched paper.
+        cites: [giannaros2020]
+    validated_when: "UNRESOLVED numeric threshold — total burned-area magnitude has no cited percent tolerance; use the Sorensen/kappa spatial-overlap block as the graded convention, with OI as a bias diagnostic."
+    evidence_strength: weak
+    confidence: 0.4
+    notes: >-
+      Total area is derived as burned_pixels x pixel_scale^2 and is acutely sensitive to a correct
+      pixel_scale and ft2->acres conversion (dag caveat: an unmatched pixel_scale biases area 2-10x).
+      Band is null per the no-fabrication rule and MUST NOT be used to loosen the gate; a cited
+      burned-area percent-error convention would be needed to raise this above weak.
+
+  # ===================== RATE OF SPREAD / time series (cited +/-35% error standard) =====================
+  - canonical_quantity: rate_of_spread
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias                 # mean bias percent error of head-fire ROS
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: 35}
+        pass_band: satisfactory
+        band_note: >-
+          Gale & Cary 2025: "we also calculated the proportion of predictions within +/-35% of observed
+          values, which is considered a reasonable standard for ROS model accuracy (Cruz and Alexander,
+          2013)". Cited +/-35% agreement interval (primary source Cruz & Alexander 2013, paywalled).
+        cites: [gale2025]
+    secondary_metrics:
+      - metric: nse                   # dag determining_metric; superseded — not the ROS convention
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          The head-fire ROS literature evaluates skill with MAE, MBE, MBPE, RMSE and the +/-35%
+          agreement proportion (Gale & Cary 2025), not NSE. NSE is not a reported ROS validation metric;
+          retained as informative only. SimFire has no calibrated/validated ROS series of its own.
+        cites: [gale2025]
+      - metric: rmse
+        direction: minimize
+        unit: km/hr
+        status: supportive
+        ceiling_reason: >-
+          Best-performing empirical model (Vesta Mk2) RMSE 1.26 km/hr, MAE 0.90, MBPE 32.4% vs 102
+          VIIRS-inferred ROS observations (Gale & Cary 2025); WRF-SFIRE reproduced the FireFlux head-fire
+          ROS exactly (1.61 m/s) (Kochanski 2013). Magnitude context; no cited RMSE acceptance tier.
+        cites: [gale2025, kochanski2013]
+    validated_when: "|PBIAS| (mean bias percent error of head-fire ROS) <= 35% (Gale & Cary 2025 / Cruz & Alexander 2013 reasonable-standard interval); NSE not required (superseded — not the ROS convention)."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Supersedes the dag determining_metric (nse) with the field's magnitude/bias convention, per the
+      GLM-AED precedent for a superseding headline. Defensible only where an observed/reference head-fire
+      ROS series exists (dag caveat). Kochanski 2013 (WRF-SFIRE/FireFlux) corroborates that a Rothermel
+      spread rate can match observations point-for-point; Gale & Cary 2025 supplies the cited error band.
+
+  # ===================== RATE OF SPREAD / representative snapshot =====================
+  - canonical_quantity: rate_of_spread
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: 35}
+        pass_band: satisfactory
+        band_note: >-
+          Same +/-35% ROS-accuracy standard as the time-series block (Gale & Cary 2025, after Cruz &
+          Alexander 2013). Applied to a representative head-fire ROS vs a measured spread rate.
+        cites: [gale2025]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: km/hr
+        status: supportive
+        ceiling_reason: >-
+          Benchmark absolute error for good ROS models is ~0.9-1.3 km/hr (Gale & Cary 2025); WRF-SFIRE
+          matched the FireFlux ROS exactly (Kochanski 2013). No cited RMSE acceptance tier.
+        cites: [gale2025, kochanski2013]
+    validated_when: "|PBIAS| of a representative head-fire ROS <= 35% vs a measured spread rate (Gale & Cary 2025 / Cruz & Alexander 2013)."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      Sensitive to wind/moisture unit conventions and to the ft/min -> m/s or chains/hr conversions
+      (dag caveat). The +/-35% interval is the single cited numeric ROS-accuracy convention available.
+
+deferred_paywalled:
+  - ref: "Cruz & Alexander 2013 — primary source of the +/-35% ROS-accuracy standard (reproduced by Gale & Cary 2025)"
+    doi: unknown_not_fetched
+    needed_for: [rate_of_spread]
+  - ref: "Zhou et al. — On the parametric uncertainty quantification of the Rothermel's rate of spread model"
+    doi: 10.1016/j.apm.2016.06.026
+    needed_for: [rate_of_spread]
+  - ref: "Global sensitivity analysis for uncertainty quantification in fire spread models"
+    doi: 10.1016/j.envsoft.2021.105110
+    needed_for: [rate_of_spread]
+  - ref: "Sensitivity of a surface fire spread model and associated fire behaviour fuel models to changes in live fuel moisture"
+    doi: 10.1071/wf06077
+    needed_for: [rate_of_spread]
+  - ref: "Quantifying parametric uncertainty in the Rothermel model"
+    doi: 10.1071/wf07070
+    needed_for: [rate_of_spread]

@@ -97,10 +97,13 @@ def generate_chicago_storm(total_depth_mm, duration_hr, timestep_min, r=0.4):
         dt = abs(t - peak_time)
         intensities[i] = np.exp(-a * (dt / duration_hr) ** 1.5)
 
-    # Normalize to match total depth
+    # Normalize to match total depth.
+    # current_total = sum(raw_shape) * timestep_hr  (units: hours, since raw is dimensionless)
+    # normalization_factor = total_depth_mm / current_total  (units: mm/hr)
+    # Do NOT divide by timestep_hr again — current_total already absorbs it.
     current_total = np.sum(intensities) * timestep_hr
     if current_total > 0:
-        intensities = intensities * (total_depth_mm / current_total) / timestep_hr
+        intensities = intensities * (total_depth_mm / current_total)
 
     return intensities
 
@@ -127,10 +130,10 @@ def generate_triangular_storm(total_depth_mm, duration_hr, timestep_min, peak_ra
     for i in range(peak_idx, n_steps):
         intensities[i] = 1.0 - (i - peak_idx) / (n_steps - peak_idx)
 
-    # Normalize to total depth
+    # Normalize to total depth (same fix as Chicago: no extra / timestep_hr)
     current_total = np.sum(intensities) * timestep_hr
     if current_total > 0:
-        intensities = intensities * (total_depth_mm / current_total) / timestep_hr
+        intensities = intensities * (total_depth_mm / current_total)
 
     return intensities
 

@@ -1,129 +1,170 @@
 model:
-  name: "SimPEG"
-  full_name: "Simulation and Parameter Estimation in Geophysics"
-  domain: "geophysics (forward modeling and inversion)"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/SimPEG/venv/bin/python"
-  version: "0.1.dev1"
-  language: "Python"
-  license: "MIT"
-  repository: "https://github.com/simpeg/simpeg"
-
+  name: SimPEG
+  full_name: Simulation and Parameter Estimation in Geophysics
+  domain: geophysics
+  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/SimPEG/venv/bin/python
+  version: 0.1.dev1
+  language: Python
+  license: MIT
+  repository: https://github.com/simpeg/simpeg
 supported_methods:
-  - gravity
-  - magnetics
-  - dc
-  - ip
-  - fdem
-  - tdem
-  - mt
-  - seismic
-  - flow
-
+- gravity
+- magnetics
+- dc
+- ip
+- fdem
+- tdem
+- mt
+- seismic
+- flow
 inputs:
   forcing:
-    - name: "survey_locations"
-      unit: "meters (SI)"
-      format: "CSV (x, y, z) — elevation, not depth"
-      description: "Receiver (and transmitter) positions"
-    - name: "observed_data"
-      unit: "method-dependent (mGal, nT, Ohm-m, V/m, etc.)"
-      format: "CSV or numpy array"
-      description: "Field measurements to invert"
-    - name: "topography"
-      unit: "meters (elevation above reference datum)"
-      format: "CSV (x, y, z)"
-      description: "Surface topography for active cell determination"
+  - name: survey_locations
+    unit: meters (SI)
+    format: "CSV (x, y, z) \u2014 elevation, not depth"
+    description: Receiver (and transmitter) positions
+  - name: observed_data
+    unit: method-dependent (mGal, nT, Ohm-m, V/m, etc.)
+    format: CSV or numpy array
+    description: Field measurements to invert
+  - name: topography
+    unit: meters (elevation above reference datum)
+    format: CSV (x, y, z)
+    description: Surface topography for active cell determination
   parameters:
     critical:
-      - name: "beta0_ratio"
-        valid_range: [0.01, 100.0]
-        description: "Initial trade-off parameter ratio (data fit vs regularization)"
-      - name: "coolingFactor"
-        valid_range: [2, 10]
-        description: "Rate of beta decrease per iteration"
-      - name: "alpha_s"
-        valid_range: [0.0001, 100.0]
-        description: "Smallness regularization weight"
-      - name: "alpha_x"
-        valid_range: [0.0001, 100.0]
-        description: "X-smoothness regularization weight"
-      - name: "alpha_y"
-        valid_range: [0.0001, 100.0]
-        description: "Y-smoothness regularization weight"
-      - name: "alpha_z"
-        valid_range: [0.0001, 100.0]
-        description: "Z-smoothness regularization weight"
-      - name: "maxIter"
-        valid_range: [10, 50]
-        description: "Maximum inversion iterations"
-      - name: "maxIterCG"
-        valid_range: [10, 100]
-        description: "CG iterations per Gauss-Newton step"
-      - name: "relative_error"
-        valid_range: [0.01, 0.20]
-        description: "Relative data uncertainty (fraction, not percentage)"
-      - name: "noise_floor"
-        valid_range: [0.0001, null]
-        description: "Absolute data uncertainty floor (same units as data)"
+    - name: beta0_ratio
+      valid_range:
+      - 0.01
+      - 100.0
+      description: Initial trade-off parameter ratio (data fit vs regularization)
+    - name: coolingFactor
+      valid_range:
+      - 2
+      - 10
+      description: Rate of beta decrease per iteration
+    - name: alpha_s
+      valid_range:
+      - 0.0001
+      - 100.0
+      description: Smallness regularization weight
+    - name: alpha_x
+      valid_range:
+      - 0.0001
+      - 100.0
+      description: X-smoothness regularization weight
+    - name: alpha_y
+      valid_range:
+      - 0.0001
+      - 100.0
+      description: Y-smoothness regularization weight
+    - name: alpha_z
+      valid_range:
+      - 0.0001
+      - 100.0
+      description: Z-smoothness regularization weight
+    - name: maxIter
+      valid_range:
+      - 10
+      - 50
+      description: Maximum inversion iterations
+    - name: maxIterCG
+      valid_range:
+      - 10
+      - 100
+      description: CG iterations per Gauss-Newton step
+    - name: relative_error
+      valid_range:
+      - 0.01
+      - 0.2
+      description: Relative data uncertainty (fraction, not percentage)
+    - name: noise_floor
+      valid_range:
+      - 0.0001
+      - null
+      description: Absolute data uncertainty floor (same units as data)
     mesh:
-      - name: "nx"
-        valid_range: [10, 500]
-        description: "Core mesh cells in X direction"
-      - name: "ny"
-        valid_range: [10, 500]
-        description: "Core mesh cells in Y direction"
-      - name: "nz"
-        valid_range: [5, 200]
-        description: "Core mesh cells in Z direction"
-      - name: "padding"
-        valid_range: [3, 20]
-        description: "Number of padding cells per side"
-      - name: "pad_factor"
-        valid_range: [1.2, 2.0]
-        description: "Geometric growth factor for padding cells"
-
+    - name: nx
+      valid_range:
+      - 10
+      - 500
+      description: Core mesh cells in X direction
+    - name: ny
+      valid_range:
+      - 10
+      - 500
+      description: Core mesh cells in Y direction
+    - name: nz
+      valid_range:
+      - 5
+      - 200
+      description: Core mesh cells in Z direction
+    - name: padding
+      valid_range:
+      - 3
+      - 20
+      description: Number of padding cells per side
+    - name: pad_factor
+      valid_range:
+      - 1.2
+      - 2.0
+      description: Geometric growth factor for padding cells
 outputs:
   primary:
-    - name: "recovered_model"
-      unit: "model-space (may require map transform to physical property)"
-      format: "numpy array (nC,)"
-      description: "Inverted model vector"
-    - name: "predicted_data"
-      unit: "same as observed data"
-      format: "numpy array (nD,)"
-      description: "Forward-modeled data from recovered model"
-    - name: "phi_d"
-      unit: "dimensionless (normalized misfit)"
-      description: "Data misfit at convergence"
-    - name: "phi_m"
-      unit: "dimensionless"
-      description: "Model regularization term at convergence"
+  - name: recovered_model
+    unit: model-space (may require map transform to physical property)
+    format: numpy array (nC,)
+    description: Inverted model vector
+  - name: predicted_data
+    unit: same as observed data
+    format: numpy array (nD,)
+    description: Forward-modeled data from recovered model
+  - name: phi_d
+    unit: dimensionless (normalized misfit)
+    description: Data misfit at convergence
+  - name: phi_m
+    unit: dimensionless
+    description: Model regularization term at convergence
+  - name: subsurface_resistivity
+    canonical_id: subsurface_resistivity
+    unit: ohm.m
+  - name: hydraulic_conductivity
+    canonical_id: hydraulic_conductivity
+    unit: m/s
+  - name: porosity
+    canonical_id: porosity
+    unit: fraction
   gravity:
-    - name: "gz"
-      unit: "mGal (1e-5 m/s^2)"
-      valid_range: [-1000, 1000]
-      description: "Vertical gravity anomaly"
+  - name: gz
+    unit: mGal (1e-5 m/s^2)
+    valid_range:
+    - -1000
+    - 1000
+    description: Vertical gravity anomaly
   magnetics:
-    - name: "tmi"
-      unit: "nT (1e-9 T)"
-      valid_range: [-5000, 5000]
-      description: "Total magnetic intensity anomaly"
+  - name: tmi
+    unit: nT (1e-9 T)
+    valid_range:
+    - -5000
+    - 5000
+    description: Total magnetic intensity anomaly
   dc_resistivity:
-    - name: "apparent_resistivity"
-      unit: "Ohm-m"
-      valid_range: [0.01, 100000]
-      description: "Apparent resistivity from DC measurements"
-
+  - name: apparent_resistivity
+    unit: Ohm-m
+    valid_range:
+    - 0.01
+    - 100000
+    description: Apparent resistivity from DC measurements
 known_issues:
-  - id: "dt_001"
-    description: "Gravity density units: g/cm^3 vs kg/m^3 causes 1000x error"
-  - id: "dt_002"
-    description: "Magnetic susceptibility CGS vs SI causes 4pi factor error"
-  - id: "dt_003"
-    description: "DC resistivity vs conductivity: model is reciprocal"
-  - id: "dt_009"
-    description: "Air cell conductivity=0 causes singular matrix"
-  - id: "dt_010"
-    description: "noise_floor=0 causes overfit and artifacts"
-  - id: "dt_011"
-    description: "Large meshes with dense J matrix cause OOM"
+- id: dt_001
+  description: 'Gravity density units: g/cm^3 vs kg/m^3 causes 1000x error'
+- id: dt_002
+  description: Magnetic susceptibility CGS vs SI causes 4pi factor error
+- id: dt_003
+  description: 'DC resistivity vs conductivity: model is reciprocal'
+- id: dt_009
+  description: Air cell conductivity=0 causes singular matrix
+- id: dt_010
+  description: noise_floor=0 causes overfit and artifacts
+- id: dt_011
+  description: Large meshes with dense J matrix cause OOM

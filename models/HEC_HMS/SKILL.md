@@ -373,7 +373,7 @@ End:
 ### 1. Convert forcing data
 ```bash
 python3 ki/tools/convert_forcing_to_hms.py \
-  --forcing_dir /mnt/disk1/Hydrocraft_server/data/forcing/huai/Data_forcing_01dy_025deg/ \
+  --forcing_dir /media/server/hc_ssd/forcing/huai/Data_forcing_01dy_025deg/ \
   --basin_shp /mnt/disk1/Hydrocraft_server/data/shp/bengbu_shp/bengbu_clip.shp \
   --start_date 1980-01-01 --end_date 1990-12-31 \
   --output_dir ./forcing_out/

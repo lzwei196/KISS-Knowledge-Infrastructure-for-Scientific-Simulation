@@ -231,6 +231,26 @@ DHSVM uses a non-standard date format: `MM/DD/YYYY-HH` (no minutes/seconds in
 the config, though output includes :MM:SS). Using ISO format or DD/MM/YYYY causes
 the parser to misinterpret dates silently.
 
+### 6.9 Basin suitability gate (domain of validity)
+
+DHSVM is a high-resolution (30-150 m grid), physically-based DISTRIBUTED model for
+STEEP, MOUNTAINOUS watersheds. Its core physics — topographically-driven subsurface
+lateral flow and energy-balance snow — assume real relief and an unregulated channel
+network. Before building inputs for a new basin, CHECK and REJECT if any hold:
+
+- **Low relief**: basin relief (max-min DEM elevation) < ~300 m. Without slope-driven
+  gradients the subsurface routing is meaningless.
+- **Too large for native resolution**: area >> ~10,000 km^2. At 30-150 m a 121,000 km^2
+  basin is 10^7-10^8 cells — computationally infeasible and not what DHSVM is for.
+- **Regulated lowland plain**: dams/sluices/diversions dominate the hydrograph (e.g.
+  managed plains); DHSVM has no reservoir-operations module.
+
+**Worked REJECT example — Huai basin:** ~121,000 km^2, DEM 34-238 m (relief ~200 m),
+flat regulated lowland plain. This is OUTSIDE DHSVM's declared domain. Do NOT attempt a
+DHSVM run here. Either (a) remap the obs to a steep headwater sub-basin (relief > 500 m,
+area < a few thousand km^2) that lies within the native domain, or (b) stop and record a
+wrong-domain SKIP — the verification target is incompatible with the model.
+
 ---
 
 ## 7. Input File Format

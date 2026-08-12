@@ -1,0 +1,289 @@
+template_version: "calib-0.1"
+model_id: CaMa_Flood
+identity:
+  domain: hydrology
+  binding: cmf_v420_local_inertial      # CaMa-Flood v4.20, local-inertial river+floodplain routing
+
+# ---------------------------------------------------------------------------
+# Injection mode. RUNNER (not applicator): the KI regenerates input_cmf.nam on every
+# MAIN_cmf call (the run script writes the namelist inline, once per simulated year), and
+# several tuned parameters live in BINARY map files the Fortran reads (rivman/rivwth/rivhgt/
+# fldhgt) — a value written before the run would be overwritten, and a central applicator
+# can't edit a binary map or a regenerated namelist. tools/calib_run.py injects each lever
+# the model's own way, reads it back from the effective artifact, and echoes
+# __kdt__.applied_params (+ case_id / scored_obs) for the kit's requested-vs-applied diff.
+# ---------------------------------------------------------------------------
+injection:
+  mode: runner
+
+# The dag output(s) this calibration targets. outflw is the primary validation variable
+# (validation_rank 1); its point_time_series obs at Jinghong 允景洪 determines nse.
+targets:
+  - var: outflw
+    weight: 1.0
+
+# ---------------------------------------------------------------------------
+# Parameter POOL — seeded from dag.yaml influence.edges (HIGH + MEDIUM sensitivity_grade;
+# see the "SEED" comment on each param for the exact edge + citations carried into `cite`).
+# Literature is the PRIOR; every lever below was VERIFIED against the v4.20 source to reach
+# the SCORED routing, not assumed from a namelist knob (e.g. the channel Manning used by the
+# routing is rivman.bin — the &NPARAM PMANRIV is inert for the main channel — so it is
+# injected into the binary map, not the namelist). Residual/low-confidence params stay in the
+# pool for the kit's Morris screen; none are pruned.
+#
+# RANGES ARE LITERATURE-GROUNDED AND CLAMP-FREE. Sources, per param `cite`:
+#   * Manning defaults come from the model's OWN code: cmf_ctrl_nmlist_mod.F90:215-216 and
+#     gosh/options_full.sh:200-201 set PMANRIV=0.03, PMANFLD=0.10; rivman.bin ships uniform 0.03.
+#   * Channel width/depth are empirical power laws of climatological Q (dag param notes:
+#     W=WC*Q^WP WC=2.50 WP=0.60 WMIN=5.0; H=HC*Q^HP HC=0.10 HP=0.50 HMIN=1.0). WMIN/HMIN are
+#     applied ONLY at map-preparation (calc_rivwth), NOT at runtime: READ_TOPO_BIN loads
+#     rivwth/rivhgt/rivman verbatim and cmf_ctrl_maps_mod.F90:642,647 use them directly
+#     (D2RIVSTOMAX=len*wth*hgt, D2RIVELV=elevtn-hgt) with no re-clamp. Verified: a multiplied
+#     map value is consumed EXACTLY as written, so every range below applies clamp-free at
+#     BOTH bounds (confirmed by the range-bound read-back commissioning — applied==requested
+#     at lo and hi for all six levers).
+#   * Ranges are the CALIBRATION bands other studies vary these levers over, kept strictly
+#     inside the physically-valid region: channel Manning ~0.02-0.07 (Chow natural-channel band
+#     around the model default 0.03), floodplain Manning ~0.06-0.20 (vegetated floodplain band
+#     around default 0.10), width/depth multiplicative factors ~x0.5-2/x0.5-3 (channel-geometry
+#     power-law uncertainty is large per jiang2024_conus_resolution), and a runoff bias factor
+#     x0.5-2 (runoff-input deviation dominates uncertainty per zhou2021_ffa_uncertainty).
+# ---------------------------------------------------------------------------
+parameters:
+
+  # ---- HIGH sensitivity: lateral runoff forcing (the dag's only HIGH edge) ----
+  # SEED: influence.edge "lateral runoff forcing -> outflw" (HIGH); cites zhou2021_ffa_uncertainty,
+  #       yamazaki2011_camaflood_floodplain.
+  - name: runoff_scale
+    description: >
+      Multiplicative bias/volume correction on the lateral runoff forcing (dimensionless).
+      CaMa applies runoff/DROFUNIT (cmf_ctrl_forcing_mod.F90); injected as
+      DROFUNIT = 86400000 / runoff_scale, so it scales inflow volume linearly (no floor/clamp —
+      a pure divisor on the namelist token). Dominant lever for discharge magnitude / annual
+      volume: runoff-input deviation is the largest single contributor to CaMa uncertainty
+      (zhou2021, >80% for depth/area). On THIS well-behaved Lancang VIC->CaMa forcing the
+      default (scale 1.0) already reproduces the hydrograph shape (r 0.92) but under-delivers
+      volume (PBIAS ~ -26%: sim mean ~1304 vs obs ~1759 m3/s), so the optimum sits modestly
+      above 1 (~1.3-1.4). Range x0.5-2.0 is a standard runoff bias-correction band (brackets
+      the optimum with wide margin) and applies exactly at both bounds.
+    type: continuous
+    units: dimensionless
+    default: 1.0
+    range: [0.5, 2.0]
+    hard_bounds: [0.5, 2.0]
+    transform: log
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: high
+    cite: ["zhou2021_ffa_uncertainty", "yamazaki2011_camaflood_floodplain"]
+    confidence: high
+    address:                      # RUNNER mode: documentation of where it is written
+      kind: namelist
+      file: "<workdir>/out/input_cmf.nam"
+      group: NFORCE
+      key: DROFUNIT
+      note: "applied as DROFUNIT = 86400000 / runoff_scale"
+
+  # ---- MEDIUM: channel Manning's n (outflw magnitude, peak attenuation, lag; sfcelv) ----
+  # SEED: influence.edge "PMANRIV (channel Manning's n) -> outflw" (MEDIUM);
+  #       cites yamazaki2011_camaflood_floodplain, yamazaki2013_local_inertial.
+  - name: manning_river
+    description: >
+      River-channel Manning's roughness (s/m^1/3), the primary attenuation/timing lever.
+      Written UNIFORM into rivman.bin — the routing (cmf_calc_outflw_mod.F90) uses D2RIVMAN
+      read verbatim from that map; the &NPARAM PMANRIV token is inert for the main channel (it
+      is set to the same value only for path-output parity). Default 0.03 (cmf_ctrl_nmlist_mod
+      .F90:215). Range 0.02-0.07 is Chow's natural-channel roughness band centred on the model
+      default; the map value is consumed exactly (no runtime clamp), so both bounds apply as
+      requested.
+    type: continuous
+    units: "s.m^-1/3"
+    default: 0.03
+    range: [0.02, 0.07]
+    hard_bounds: [0.02, 0.07]
+    transform: log
+    scope: global
+    tie: null
+    activation: always
+    prior: [0.025, 0.045]
+    expected_sensitivity: medium
+    cite: ["yamazaki2011_camaflood_floodplain", "yamazaki2013_local_inertial"]
+    confidence: medium
+    address:
+      kind: api
+      file: "<workdir>/map/rivman.bin"
+      note: "float32 grid rewritten uniform to this value on valid land cells (sentinel -9999 preserved)"
+
+  # ---- MEDIUM: floodplain Manning's n (overbank floodplain outflow term) ----
+  # SEED: paired with the PMANRIV edge (Manning family; yamazaki2011 floodplain scheme). PMANFLD
+  #       is a real, non-inert namelist lever (used directly in the floodplain-outflow term).
+  - name: manning_flood
+    description: >
+      Floodplain Manning's roughness (s/m^1/3). Used directly in the floodplain-outflow term
+      (cmf_calc_outflw_mod.F90 PMANFLD**2 ...); controls overbank routing speed during floods.
+      Default 0.10 (cmf_ctrl_nmlist_mod.F90:216). Range 0.06-0.20 is the vegetated-floodplain
+      roughness band around the default; a plain namelist scalar, consumed exactly at both bounds.
+    type: continuous
+    units: "s.m^-1/3"
+    default: 0.10
+    range: [0.06, 0.20]
+    hard_bounds: [0.06, 0.20]
+    transform: log
+    scope: global
+    tie: null
+    activation: always
+    prior: [0.08, 0.14]
+    expected_sensitivity: medium
+    cite: ["yamazaki2011_camaflood_floodplain"]
+    confidence: medium
+    address:
+      kind: namelist
+      file: "<workdir>/out/input_cmf.nam"
+      group: NPARAM
+      key: PMANFLD
+
+  # ---- MEDIUM: channel width (outflw fluctuation / peak attenuation; fldare) ----
+  # SEED: influence.edge "channel width (rivwth) -> outflw" (MEDIUM); cites yamazaki2011_camaflood_floodplain,
+  #       plus "channel parameters (width/depth power-law family) -> outflw" (jiang2024_conus_resolution).
+  - name: rivwth_scale
+    description: >
+      Multiplier on the channel-width map rivwth_gwdlr.bin (D2RIVWTH). Preserves the derived
+      width spatial structure while correcting the width power-law family (W=WC*Q^WP, WC=2.50,
+      WP=0.60) as a single identifiable factor; wider channels carry more in-channel flow
+      before overbank. WMIN=5.0 is applied only at map preparation, not at runtime (READ_TOPO_BIN
+      loads the map verbatim), so a multiplier x0.5-2.0 — the channel-geometry uncertainty band
+      (jiang2024) — applies exactly at both bounds.
+    type: continuous
+    units: dimensionless
+    default: 1.0
+    range: [0.5, 2.0]
+    hard_bounds: [0.5, 2.0]
+    transform: log
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: medium
+    cite: ["yamazaki2011_camaflood_floodplain", "jiang2024_conus_resolution"]
+    confidence: medium
+    address:
+      kind: api
+      file: "<workdir>/map/rivwth_gwdlr.bin"
+      note: "float32 grid multiplied by this factor on valid cells"
+
+  # ---- MEDIUM: channel bank height / depth (outflw fluctuation, peak attenuation; fldare) ----
+  # SEED: influence.edge "channel bank height / depth (rivhgt) -> outflw" (MEDIUM);
+  #       cites yamazaki2011_camaflood_floodplain (+ depth power-law family, jiang2024_conus_resolution).
+  - name: rivhgt_scale
+    description: >
+      Multiplier on the channel-depth map rivhgt.bin (D2RIVHGT -> rivstomax = len*wth*hgt and
+      rivelv = elevtn - hgt). Corrects the depth power-law family (H=HC*Q^HP, HC=0.10, HP=0.50)
+      as one factor; a multiplier is the effective lever a power-law regeneration cannot be (it
+      would re-clip at HMIN). Sets bankfull storage / overbank onset, so it shapes peak
+      attenuation. HMIN=1.0 is a map-prep floor only; the runtime reads rivhgt.bin verbatim
+      (cmf_ctrl_maps_mod.F90:642,647), so the multiplier x0.5-3.0 — depth being the classic,
+      wide-uncertainty channel-geometry calibration lever (jiang2024) — applies clamp-free at
+      both bounds.
+    type: continuous
+    units: dimensionless
+    default: 1.0
+    range: [0.5, 3.0]
+    hard_bounds: [0.5, 3.0]
+    transform: log
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: medium
+    cite: ["yamazaki2011_camaflood_floodplain", "jiang2024_conus_resolution"]
+    confidence: medium
+    address:
+      kind: api
+      file: "<workdir>/map/rivhgt.bin"
+      note: "float32 grid multiplied by this factor on valid cells"
+
+  # ---- LOW (screenable): sub-grid floodplain topography (fldare / sfcelv) ----
+  # SEED: floodplain scheme (yamazaki2011); weak for point discharge but kept for the Morris residual screen.
+  - name: fldhgt_scale
+    description: >
+      Multiplier on the sub-grid floodplain elevation profile fldhgt.bin (10 layers, D2FLDHGT ->
+      SET_FLDSTG). Controls floodplain storage-elevation and thus inundation area / water level.
+      Weakest of the pool for point discharge; kept for the Morris residual screen. Range x0.5-2.0
+      (moderate profile perturbation); read verbatim at runtime, so it applies exactly at both bounds.
+    type: continuous
+    units: dimensionless
+    default: 1.0
+    range: [0.5, 2.0]
+    hard_bounds: [0.5, 2.0]
+    transform: log
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: low
+    cite: ["yamazaki2011_camaflood_floodplain"]
+    confidence: low
+    address:
+      kind: api
+      file: "<workdir>/map/fldhgt.bin"
+      note: "float32 grid (nlfp=10 layers) multiplied by this factor on valid cells"
+
+# No hard inter-parameter ordering relations (all levers are independent scalars / scales).
+constraints: []
+
+# ---------------------------------------------------------------------------
+# HOW to run+score ONE candidate, programmatically (NOT a claude agent).
+# subprocess: runs tools/calib_run.py, which injects the KDT_CALIB_PARAMS vector the model's
+# own way, runs the real MAIN_cmf via the KI's run_cama.py, and writes gate-valid metrics to
+# {metrics_json}. Honors KDT_CALIB_SPLIT ("calibration"|"holdout") for the temporal block.
+# The scored gauge/obs is PINNED to the target case inside calib_run.py (no env can redirect it).
+# ---------------------------------------------------------------------------
+runner:
+  kind: subprocess
+  command: ["python3", "tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]
+  metrics_file: "{metrics_json}"
+  timeout: 1200          # soft hint; ~110 s/eval observed (18 sim years, 34x54 grid, per-year MAIN_cmf calls).
+
+strategy:
+  cost_class: expensive           # one full eval ~110 s (continuous 1968-1985 run, per-year restart chaining)
+  default_algorithm: dds          # cheap single-objective (nse-driven); DDS
+  max_evaluations: 150
+  staged: true                    # sensitivity-screen -> calibrate-few -> escalate
+  staged_start: 3                 # start with the 3 highest-expected-sensitivity levers (runoff_scale, manning_river, rivhgt_scale)
+  staged_step: 1
+  holdout:                        # MANDATORY
+    kind: years
+    protocol: blocked_temporal
+    grouping_key: date
+    generalization_axis: temporal
+    fraction: 0.375
+    rationale: >
+      Sim 1968-1985; the first 2 years (1968-1969) are cold-start spin-up (not scored). The
+      obs-overlapping years 1970-1985 are split blocked-temporally at 1980: calibrate on
+      1970-1979 (10 yr), hold out 1980-1985 (6 yr; ~0.375). A contiguous multi-year block
+      respects inter-annual + daily autocorrelation. tools/calib_run.py honors KDT_CALIB_SPLIT
+      to score the requested block (split_year=1980).
+    cite: ["klemes1986_split_sample"]
+    confidence: medium
+
+# ---------------------------------------------------------------------------
+# Scored case (what calibration reproduces + improves):
+#   case_id     : SITE:jinghong
+#   basin/gauge : Jinghong 允景洪 (station 90243100), Lancang R. (upper Mekong), drainage
+#                 ~142,695 km² (gauge allocated to the unit-catchment cell whose CaMa uparea
+#                 matches the drainage area — 142,368 km² at cell 22.125N/100.625E — NOT the
+#                 naive nearest cell, which snaps to a downstream mega-cell).
+#   forcing     : Lancang VIC->CaMa runoff (map/jinghong_15min regionalized from glb_15min;
+#                 yearly NetCDFs jinghong_runoff_1d_YYYY.nc built by the KI's own
+#                 prepare_runoff_input.py + configure_simulation.py, one-time prepare), 1968-1985.
+#   obs         : /mnt/datasets/china_water_level/澜沧江txt/允景洪.txt (Q m3/s, 1970-1985).
+#   metric      : nse (dag determining_metric for outflw point_time_series), + kge/pbias/rmse/r.
+# The scored gauge/obs/lat/lon/area are HARD-PINNED constants in calib_run.py (no overridable
+# env can redirect scoring to another gauge); scored_obs in __kdt__ is DERIVED from the same
+# resolved obs path + matched cell that were actually scored, so it cannot diverge from the run.
+# Commissioning (default vs perturbed, separate workdirs) — injection reaches the scored run,
+# and every param's read-back == requested at BOTH range bounds (clamp-free):
+#   default  {runoff_scale:1.0, manning_river:0.03, ...}          -> nse 0.686, pbias -25.8%, r 0.918
+#   perturbed{runoff_scale:1.35, manning_river:0.045, rivhgt_scale:1.2} -> nse ~0.84, pbias ~0%, r ~0.92
+#   (see the calib_dev commissioning log). The metric MOVES with the injected params (the
+#   volume lever closes the -26% bias while the excellent timing r~0.92 is preserved),
+#   confirming the levers reach the scored routing.
+# ---------------------------------------------------------------------------

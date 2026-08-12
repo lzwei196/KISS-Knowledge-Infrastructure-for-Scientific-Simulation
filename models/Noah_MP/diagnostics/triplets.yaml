@@ -1,366 +1,716 @@
-# Noah-MP Diagnostic Triplets
-# Each entry: symptom → diagnosis → remedy
-# Organized by failure domain: unit_conversion, parameter, runtime, forcing, output, silent
-
 triplets:
+- id: dt_001
+  stage: s4_forcing
+  severity: silent
+  domain: unit_conversion
+  symptom: 'Model crashes with NaN in saturation vapor pressure calculation, or skin
+    temperature drops to ~0 K. Stderr shows floating-point exception.
 
-  # ============================================================
-  # UNIT CONVERSION TRAPS (silent — model runs but wrong results)
-  # ============================================================
+    '
+  diagnosis: "T2D forcing is in Celsius instead of Kelvin. When T_C ~ 25\xB0C is interpreted\
+    \ as 25 K (-248\xB0C), the Tetens/Magnus formula for saturation vapor pressure\
+    \ computes exp(negative_large), producing NaN or underflow.\n"
+  affected_components:
+  - AtmosForcingMod.F90
+  - VaporPressureSaturationMod.F90
+  - HumiditySaturationMod.F90
+  remedy:
+    manual: Add 273.15 to all T2D values in LDASIN files
+    prevention: Validate T2D range [200, 340] K before running model
+  cross_references:
+  - dt_004
+  - dt_005
+- id: dt_002
+  stage: s4_forcing
+  severity: silent
+  domain: unit_conversion
+  symptom: 'Soil moisture instantly saturates. Surface runoff is extreme (>100 mm/day).
+    SMOIS hits SMCMAX within first few timesteps. Snow accumulates unrealistically.
 
-  - id: dt_001
-    stage: s4_forcing
-    severity: silent
-    domain: unit_conversion
-    symptom: >
-      Model crashes with NaN in saturation vapor pressure calculation, or skin
-      temperature drops to ~0 K. Stderr shows floating-point exception.
-    diagnosis: >
-      T2D forcing is in Celsius instead of Kelvin. When T_C ~ 25°C is interpreted
-      as 25 K (-248°C), the Tetens/Magnus formula for saturation vapor pressure
-      computes exp(negative_large), producing NaN or underflow.
-    affected_components:
-      - AtmosForcingMod.F90
-      - VaporPressureSaturationMod.F90
-      - HumiditySaturationMod.F90
-    remedy:
-      manual: "Add 273.15 to all T2D values in LDASIN files"
-      prevention: "Validate T2D range [200, 340] K before running model"
-    cross_references: [dt_004, dt_005]
+    '
+  diagnosis: 'RAINRATE is in mm/hr instead of mm/s (3600x too high). At 1 mm/hr input
+    interpreted as 1 mm/s, the model receives 3600 mm/hr = 86.4 m/day of precipitation,
+    flooding the soil column instantly.
 
-  - id: dt_002
-    stage: s4_forcing
-    severity: silent
-    domain: unit_conversion
-    symptom: >
-      Soil moisture instantly saturates. Surface runoff is extreme (>100 mm/day).
-      SMOIS hits SMCMAX within first few timesteps. Snow accumulates unrealistically.
-    diagnosis: >
-      RAINRATE is in mm/hr instead of mm/s (3600x too high). At 1 mm/hr input
-      interpreted as 1 mm/s, the model receives 3600 mm/hr = 86.4 m/day of
-      precipitation, flooding the soil column instantly.
-    affected_components:
-      - ForcingVarInTransferMod.F90
-      - WaterMainMod.F90
-      - SoilWaterMainMod.F90
-    remedy:
-      manual: "Divide RAINRATE by 3600 to convert mm/hr to mm/s"
-      prevention: "Validate RAINRATE < 0.03 mm/s (108 mm/hr, extreme threshold)"
-    cross_references: [dt_001, dt_003]
+    '
+  affected_components:
+  - ForcingVarInTransferMod.F90
+  - WaterMainMod.F90
+  - SoilWaterMainMod.F90
+  remedy:
+    manual: Divide RAINRATE by 3600 to convert mm/hr to mm/s
+    prevention: Validate RAINRATE < 0.03 mm/s (108 mm/hr, extreme threshold)
+  cross_references:
+  - dt_001
+  - dt_003
+- id: dt_003
+  stage: s4_forcing
+  severity: silent
+  domain: unit_conversion
+  symptom: "Latent heat flux (LH) is extremely high (>1000 W/m\xB2). Soil dries out\
+    \ unrealistically fast. ET exceeds precipitation by 10x+.\n"
+  diagnosis: 'Q2D is relative humidity (0-100%) instead of specific humidity (kg/kg).
+    When RH=70 is interpreted as q=70 kg/kg, the surface-to-air moisture gradient
+    is enormous, driving extreme evaporation.
 
-  - id: dt_003
-    stage: s4_forcing
-    severity: silent
-    domain: unit_conversion
-    symptom: >
-      Latent heat flux (LH) is extremely high (>1000 W/m²). Soil dries out
-      unrealistically fast. ET exceeds precipitation by 10x+.
-    diagnosis: >
-      Q2D is relative humidity (0-100%) instead of specific humidity (kg/kg).
-      When RH=70 is interpreted as q=70 kg/kg, the surface-to-air moisture
-      gradient is enormous, driving extreme evaporation.
-    affected_components:
-      - ForcingVarInTransferMod.F90
-      - PsychrometricVariableMod.F90
-      - SurfaceEnergyFluxVegetatedMod.F90
-    remedy:
-      manual: "Convert RH to specific humidity: q = 0.622*e/(P-0.378*e) where e = RH/100 * es(T)"
-      prevention: "Validate Q2D < 0.04 kg/kg"
-    cross_references: [dt_001, dt_005]
+    '
+  affected_components:
+  - ForcingVarInTransferMod.F90
+  - PsychrometricVariableMod.F90
+  - SurfaceEnergyFluxVegetatedMod.F90
+  remedy:
+    manual: 'Convert RH to specific humidity: q = 0.622*e/(P-0.378*e) where e = RH/100
+      * es(T)'
+    prevention: Validate Q2D < 0.04 kg/kg
+  cross_references:
+  - dt_001
+  - dt_005
+- id: dt_004
+  stage: s4_forcing
+  severity: silent
+  domain: unit_conversion
+  symptom: 'Energy balance has systematic negative bias. Surface temperature is anomalously
+    low. Negative SWDOWN values in nighttime output diagnostics.
 
-  - id: dt_004
-    stage: s4_forcing
-    severity: silent
-    domain: unit_conversion
-    symptom: >
-      Energy balance has systematic negative bias. Surface temperature is
-      anomalously low. Negative SWDOWN values in nighttime output diagnostics.
-    diagnosis: >
-      SWDOWN has negative values from temporal interpolation of 3-hourly data.
-      Negative shortwave creates an energy sink, cooling the surface. The model
-      does not clip SWDOWN internally.
-    affected_components:
-      - SurfaceRadiationMod.F90
-      - SurfaceAlbedoMod.F90
-    remedy:
-      manual: "Clip SWDOWN to max(0, SWDOWN) during forcing conversion"
-      prevention: "Always validate SWDOWN >= 0 in all LDASIN files"
-    cross_references: [dt_001]
+    '
+  diagnosis: 'SWDOWN has negative values from temporal interpolation of 3-hourly data.
+    Negative shortwave creates an energy sink, cooling the surface. The model does
+    not clip SWDOWN internally.
 
-  - id: dt_005
-    stage: s4_forcing
-    severity: silent
-    domain: unit_conversion
-    symptom: >
-      All turbulent fluxes (HFX, LH) are systematically too low or too high
-      by a factor of ~10. Bowen ratio appears normal but magnitudes are wrong.
-    diagnosis: >
-      PSFC is in hPa (millibars) instead of Pa. Since air density = P/(R*T),
-      wrong pressure by 100x causes 100x error in density, which scales all
-      turbulent flux computations. The ratio of fluxes stays correct so the
-      Bowen ratio appears normal.
-    affected_components:
-      - PsychrometricVariableMod.F90
-      - ResistanceAboveCanopyMostMod.F90
-    remedy:
-      manual: "Multiply PSFC by 100 to convert hPa to Pa"
-      prevention: "Validate PSFC in range [40000, 110000] Pa"
-    cross_references: [dt_003]
+    '
+  affected_components:
+  - SurfaceRadiationMod.F90
+  - SurfaceAlbedoMod.F90
+  remedy:
+    manual: Clip SWDOWN to max(0, SWDOWN) during forcing conversion
+    prevention: Always validate SWDOWN >= 0 in all LDASIN files
+  cross_references:
+  - dt_001
+- id: dt_005
+  stage: s4_forcing
+  severity: silent
+  domain: unit_conversion
+  symptom: 'All turbulent fluxes (HFX, LH) are systematically too low or too high
+    by a factor of ~10. Bowen ratio appears normal but magnitudes are wrong.
 
-  # ============================================================
-  # PARAMETER / CONFIGURATION TRAPS
-  # ============================================================
+    '
+  diagnosis: 'PSFC is in hPa (millibars) instead of Pa. Since air density = P/(R*T),
+    wrong pressure by 100x causes 100x error in density, which scales all turbulent
+    flux computations. The ratio of fluxes stays correct so the Bowen ratio appears
+    normal.
 
-  - id: dt_006
-    stage: s2_soil
-    severity: fatal
-    domain: parameter
-    symptom: >
-      Model crashes in soil temperature/moisture solver with array bounds error
-      or produces nonsensical soil profiles (warm at depth, cold at surface).
-    diagnosis: >
-      ZSOIL values are positive instead of negative. Noah-MP convention is
-      ZSOIL measured downward from surface as negative values: [-0.1, -0.4, -1.0, -2.0].
-      DZS (thickness) is positive. Mixing conventions corrupts layer ordering.
-    affected_components:
-      - SoilSnowTemperatureMainMod.F90
-      - SoilWaterDiffusionRichardsMod.F90
-    remedy:
-      manual: "Ensure ZSOIL values are negative (downward from surface)"
-      prevention: "Validate all(ZSOIL < 0) and all(DZS > 0)"
-    cross_references: [dt_010]
+    '
+  affected_components:
+  - PsychrometricVariableMod.F90
+  - ResistanceAboveCanopyMostMod.F90
+  remedy:
+    manual: Multiply PSFC by 100 to convert hPa to Pa
+    prevention: Validate PSFC in range [40000, 110000] Pa
+  cross_references:
+  - dt_003
+- id: dt_006
+  stage: s2_soil
+  severity: fatal
+  domain: parameter
+  symptom: 'Model crashes in soil temperature/moisture solver with array bounds error
+    or produces nonsensical soil profiles (warm at depth, cold at surface).
 
-  - id: dt_007
-    stage: s3_vegetation
-    severity: silent
-    domain: parameter
-    symptom: >
-      All grid cells behave as bare soil. No canopy interception, transpiration,
-      or photosynthesis. LAI appears correct but vegetation fraction is zero.
-    diagnosis: >
-      VEGFRA in the setup file is in fraction (0-1) instead of percentage (0-100).
-      The HRLDAS driver divides VEGFRA by 100 if max > 1.0. If VEGFRA=0.65 (fraction),
-      it stays as-is but is treated as 0.65% vegetation cover, effectively bare soil.
-    affected_components:
-      - NoahmpDriverMainMod.F90 (VEGFRA processing)
-      - CanopyHydrologyMod.F90
-    remedy:
-      manual: "Multiply VEGFRA by 100 if values are in 0-1 range"
-      prevention: "Check max(VEGFRA); if < 1.0, likely needs ×100"
-    cross_references: [dt_012]
+    '
+  diagnosis: 'ZSOIL values are positive instead of negative. Noah-MP convention is
+    ZSOIL measured downward from surface as negative values: [-0.1, -0.4, -1.0, -2.0].
+    DZS (thickness) is positive. Mixing conventions corrupts layer ordering.
 
-  - id: dt_008
-    stage: s5_parameters
-    severity: silent
-    domain: parameter
-    symptom: >
-      Vegetation parameters don't match expected land cover. Forest grid cells
-      have grassland parameters (low height, different albedo). Runoff behavior
-      is inconsistent with land cover map.
-    diagnosis: >
-      MMINLU attribute in HRLDAS setup file doesn't match the section in
-      NoahmpTable.TBL. USGS has 27 classes, MODIS has 20 classes. Type 7 in
-      USGS is Grassland but in MODIS is Open Shrubland.
-    affected_components:
-      - NoahmpReadTableMod.F90
-      - ConfigVarInTransferMod.F90
-    remedy:
-      manual: "Verify MMINLU in setup NetCDF matches NoahmpTable.TBL classification"
-      prevention: "ncdump -h setup_file | grep MMINLU; compare to table header"
-    cross_references: [dt_007]
+    '
+  affected_components:
+  - SoilSnowTemperatureMainMod.F90
+  - SoilWaterDiffusionRichardsMod.F90
+  remedy:
+    manual: Ensure ZSOIL values are negative (downward from surface)
+    prevention: Validate all(ZSOIL < 0) and all(DZS > 0)
+  cross_references:
+  - dt_010
+- id: dt_007
+  stage: s3_vegetation
+  severity: silent
+  domain: parameter
+  symptom: 'All grid cells behave as bare soil. No canopy interception, transpiration,
+    or photosynthesis. LAI appears correct but vegetation fraction is zero.
 
-  - id: dt_009
-    stage: s0_config
-    severity: silent
-    domain: parameter
-    symptom: >
-      Output timeseries shows periodic artifacts or jumps in forcing-sensitive
-      variables. Forcing appears to skip or repeat values at regular intervals.
-    diagnosis: >
-      forcing_timestep is not an integer multiple of noah_timestep. The model
-      reads forcing every forcing_timestep seconds but integrates at noah_timestep.
-      If not evenly divisible, the forcing read timing drifts, causing interpolation
-      artifacts.
-    affected_components:
-      - NoahmpDriverMainMod.F90 (time loop)
-      - NoahmpReadForcingMod.F90
-    remedy:
-      manual: "Set forcing_timestep as integer multiple of noah_timestep"
-      prevention: "Validate: forcing_timestep % noah_timestep == 0"
-    cross_references: []
+    '
+  diagnosis: 'VEGFRA in the setup file is in fraction (0-1) instead of percentage
+    (0-100). The HRLDAS driver divides VEGFRA by 100 if max > 1.0. If VEGFRA=0.65
+    (fraction), it stays as-is but is treated as 0.65% vegetation cover, effectively
+    bare soil.
 
-  - id: dt_010
-    stage: s2_soil
-    severity: silent
-    domain: parameter
-    symptom: >
-      Zero surface runoff everywhere despite heavy precipitation. All water
-      infiltrates. Baseflow index is 1.0.
-    diagnosis: >
-      All grid cells classified as Sand (ISLTYP=1) with DKSAT=1.76e-4 m/s.
-      Sandy soil has extremely high infiltration capacity, so all precipitation
-      infiltrates and appears as subsurface runoff only.
-    affected_components:
-      - SoilWaterMainMod.F90
-      - RunoffSurfaceTopModelMod.F90
-    remedy:
-      manual: "Verify ISLTYP classification against known soil texture maps"
-      prevention: "Cross-check ISLTYP distribution against HWSD/SoilGrids"
-    cross_references: [dt_006, dt_011]
+    '
+  affected_components:
+  - NoahmpDriverMainMod.F90 (VEGFRA processing)
+  - CanopyHydrologyMod.F90
+  remedy:
+    manual: Multiply VEGFRA by 100 if values are in 0-1 range
+    prevention: "Check max(VEGFRA); if < 1.0, likely needs \xD7100"
+  cross_references:
+  - dt_012
+- id: dt_008
+  stage: s5_parameters
+  severity: silent
+  domain: parameter
+  symptom: 'Vegetation parameters don''t match expected land cover. Forest grid cells
+    have grassland parameters (low height, different albedo). Runoff behavior is inconsistent
+    with land cover map.
 
-  - id: dt_011
-    stage: s2_soil
-    severity: silent
-    domain: parameter
-    symptom: >
-      Soil moisture permanently near saturation. Surface runoff is dominant
-      (>90% of total). Very little baseflow.
-    diagnosis: >
-      Soil misclassified as Clay (ISLTYP=12) instead of actual lighter texture.
-      Clay has DKSAT=1.28e-6 m/s (very low K), so water pools at surface,
-      generating excessive Hortonian runoff.
-    affected_components:
-      - SoilHydraulicPropertyMod.F90
-      - SoilWaterMainMod.F90
-    remedy:
-      manual: "Verify ISLTYP matches HWSD/SoilGrids data at study location"
-      prevention: "Compare simulated vs observed baseflow index"
-    cross_references: [dt_010]
+    '
+  diagnosis: 'MMINLU attribute in HRLDAS setup file doesn''t match the section in
+    NoahmpTable.TBL. USGS has 27 classes, MODIS has 20 classes. Type 7 in USGS is
+    Grassland but in MODIS is Open Shrubland.
 
-  - id: dt_012
-    stage: s5_parameters
-    severity: silent
-    domain: parameter
-    symptom: >
-      ET is systematically too high. Soil never reaches stress conditions.
-      LAI appears correct but transpiration exceeds observations.
-    diagnosis: >
-      SMCMAX set too high for the soil type, so the soil column holds more
-      water than physically possible. The soil moisture stress function
-      (btran) never reduces transpiration because SMOIS stays above SMCREF.
-    affected_components:
-      - SoilWaterTranspirationMod.F90
-      - ResistanceCanopyStomataBallBerryMod.F90
-    remedy:
-      manual: "Verify SMCMAX matches literature for the soil texture class"
-      prevention: "Compare SMCMAX with pedotransfer estimate from sand/clay"
-    cross_references: [dt_007]
+    '
+  affected_components:
+  - NoahmpReadTableMod.F90
+  - ConfigVarInTransferMod.F90
+  remedy:
+    manual: Verify MMINLU in setup NetCDF matches NoahmpTable.TBL classification
+    prevention: ncdump -h setup_file | grep MMINLU; compare to table header
+  cross_references:
+  - dt_007
+- id: dt_009
+  stage: s0_config
+  severity: silent
+  domain: parameter
+  symptom: 'Output timeseries shows periodic artifacts or jumps in forcing-sensitive
+    variables. Forcing appears to skip or repeat values at regular intervals.
 
-  # ============================================================
-  # RUNTIME / EXECUTION TRAPS
-  # ============================================================
+    '
+  diagnosis: 'forcing_timestep is not an integer multiple of noah_timestep. The model
+    reads forcing every forcing_timestep seconds but integrates at noah_timestep.
+    If not evenly divisible, the forcing read timing drifts, causing interpolation
+    artifacts.
 
-  - id: dt_013
-    stage: s4_forcing
-    severity: fatal
-    domain: runtime
-    symptom: >
-      Model runs partway then crashes with file-not-found error. Output exists
-      for first portion of simulation but stops mid-period.
-    diagnosis: >
-      Gap in LDASIN forcing file sequence. The HRLDAS driver expects one file
-      per forcing_timestep with strict naming convention (YYYYMMDDHH.LDASIN_DOMAIN1).
-      A missing file causes immediate read failure.
-    affected_components:
-      - NoahmpReadForcingMod.F90
-    remedy:
-      manual: "Fill gaps with interpolated data or adjust simulation period"
-      prevention: "Verify continuous file sequence before running model"
-    cross_references: [dt_014]
+    '
+  affected_components:
+  - NoahmpDriverMainMod.F90 (time loop)
+  - NoahmpReadForcingMod.F90
+  remedy:
+    manual: Set forcing_timestep as integer multiple of noah_timestep
+    prevention: 'Validate: forcing_timestep % noah_timestep == 0'
+  cross_references: []
+- id: dt_010
+  stage: s2_soil
+  severity: silent
+  domain: parameter
+  symptom: 'Zero surface runoff everywhere despite heavy precipitation. All water
+    infiltrates. Baseflow index is 1.0.
 
-  - id: dt_014
-    stage: s6_run
-    severity: fatal
-    domain: runtime
-    symptom: >
-      Model crashes immediately at first timestep with NetCDF read error or
-      segmentation fault. No output files created.
-    diagnosis: >
-      HRLDAS setup file (wrfinput_d01) is corrupt, missing required variables,
-      or has dimension mismatches with forcing files. Grid dimensions must match
-      between setup file and LDASIN files.
-    affected_components:
-      - NoahmpReadLandMod.F90
-      - NoahmpInitMainMod.F90
-    remedy:
-      manual: "Check setup file dimensions match LDASIN; verify all required variables exist"
-      prevention: "ncdump -h on both files; compare dimensions"
-    cross_references: [dt_013]
+    '
+  diagnosis: 'All grid cells classified as Sand (ISLTYP=1) with DKSAT=1.76e-4 m/s.
+    Sandy soil has extremely high infiltration capacity, so all precipitation infiltrates
+    and appears as subsurface runoff only.
 
-  - id: dt_015
-    stage: s6_run
-    severity: fatal
-    domain: runtime
-    symptom: >
-      Model crashes with floating-point exception (SIGFPE) or NaN propagation
-      after running for some timesteps. Crash occurs during energy balance solver.
-    diagnosis: >
-      Forcing data contains out-of-range values (extreme temperature, negative
-      pressure, etc.) that cause division by zero or overflow in the energy
-      balance iteration. The implicit solver diverges.
-    affected_components:
-      - SoilSnowTemperatureMainMod.F90
-      - MatrixSolverTriDiagonalMod.F90
-    remedy:
-      manual: "Quality-control forcing data; remove spikes and fill missing values"
-      prevention: "Validate all forcing variables against physical limits before running"
-    cross_references: [dt_001, dt_002, dt_003, dt_005]
+    '
+  affected_components:
+  - SoilWaterMainMod.F90
+  - RunoffSurfaceTopModelMod.F90
+  remedy:
+    manual: Verify ISLTYP classification against known soil texture maps
+    prevention: Cross-check ISLTYP distribution against HWSD/SoilGrids
+  cross_references:
+  - dt_006
+  - dt_011
+- id: dt_011
+  stage: s2_soil
+  severity: silent
+  domain: parameter
+  symptom: 'Soil moisture permanently near saturation. Surface runoff is dominant
+    (>90% of total). Very little baseflow.
 
-  - id: dt_016
-    stage: s6_run
-    severity: silent
-    domain: runtime
-    symptom: >
-      Model produces NaN in output for specific grid cells but continues running.
-      Other grid cells appear normal. NaN appears in TSK, HFX, or SMOIS.
-    diagnosis: >
-      Isolated grid cells have inconsistent initial conditions (e.g., SMOIS > SMCMAX,
-      TSK = 0, or IVGTYP/ISLTYP = 0). The column solver fails for those cells
-      but the driver continues with other grid cells.
-    affected_components:
-      - NoahmpDriverMainMod.F90 (grid loop)
-      - BalanceErrorCheckMod.F90
-    remedy:
-      manual: "Check initial conditions in setup file; ensure no IVGTYP=0 on land cells"
-      prevention: "Validate all state variables are within physical bounds in setup file"
-    cross_references: [dt_014]
+    '
+  diagnosis: 'Soil misclassified as Clay (ISLTYP=12) instead of actual lighter texture.
+    Clay has DKSAT=1.28e-6 m/s (very low K), so water pools at surface, generating
+    excessive Hortonian runoff.
 
-  # ============================================================
-  # OUTPUT INTERPRETATION TRAPS
-  # ============================================================
+    '
+  affected_components:
+  - SoilHydraulicPropertyMod.F90
+  - SoilWaterMainMod.F90
+  remedy:
+    manual: Verify ISLTYP matches HWSD/SoilGrids data at study location
+    prevention: Compare simulated vs observed baseflow index
+  cross_references:
+  - dt_010
+- id: dt_012
+  stage: s5_parameters
+  severity: silent
+  domain: parameter
+  symptom: 'ET is systematically too high. Soil never reaches stress conditions. LAI
+    appears correct but transpiration exceeds observations.
 
-  - id: dt_017
-    stage: s7_postprocess
-    severity: silent
-    domain: output
-    symptom: >
-      SFCRUNOFF and UDRUNOFF appear to increase monotonically without seasonality.
-      Values reach unrealistically large numbers by end of simulation.
-    diagnosis: >
-      SFCRUNOFF and UDRUNOFF are ACCUMULATED since simulation start, not per-timestep
-      values. To get incremental runoff, compute the difference between consecutive
-      output timesteps: runoff_inc = SFCRUNOFF[t] - SFCRUNOFF[t-1].
-    affected_components:
-      - parse_noahmp_output.py
-    remedy:
-      manual: "Compute np.diff(SFCRUNOFF) * 1000 for incremental runoff in mm"
-      prevention: "Always compute incremental from accumulated variables"
-    cross_references: []
+    '
+  diagnosis: 'SMCMAX set too high for the soil type, so the soil column holds more
+    water than physically possible. The soil moisture stress function (btran) never
+    reduces transpiration because SMOIS stays above SMCREF.
 
-  - id: dt_018
-    stage: s7_postprocess
-    severity: silent
-    domain: output
-    symptom: >
-      Computed ET exceeds 20 mm/day consistently. Annual ET is >3000 mm, far
-      exceeding precipitation. Water balance doesn't close.
-    diagnosis: >
-      LH (latent heat flux) is being converted with wrong constant. ET = LH / Lv
-      where Lv = 2.5104e6 J/kg (latent heat of vaporization), NOT 2.5e3 or 2.5e9.
-      Also ensure LH is in W/m² and time conversion is correct.
-    affected_components:
-      - parse_noahmp_output.py
-    remedy:
-      manual: "ET_mm_s = LH_Wm2 / 2.5104e6; ET_mm_day = ET_mm_s * 86400"
-      prevention: "Verify ET_annual is 200-1500 mm for most basins"
-    cross_references: [dt_003]
+    '
+  affected_components:
+  - SoilWaterTranspirationMod.F90
+  - ResistanceCanopyStomataBallBerryMod.F90
+  remedy:
+    manual: Verify SMCMAX matches literature for the soil texture class
+    prevention: Compare SMCMAX with pedotransfer estimate from sand/clay
+  cross_references:
+  - dt_007
+- id: dt_013
+  stage: s4_forcing
+  severity: fatal
+  domain: runtime
+  symptom: 'Model runs partway then crashes with file-not-found error. Output exists
+    for first portion of simulation but stops mid-period.
+
+    '
+  diagnosis: 'Gap in LDASIN forcing file sequence. The HRLDAS driver expects one file
+    per forcing_timestep with strict naming convention (YYYYMMDDHH.LDASIN_DOMAIN1).
+    A missing file causes immediate read failure.
+
+    '
+  affected_components:
+  - NoahmpReadForcingMod.F90
+  remedy:
+    manual: Fill gaps with interpolated data or adjust simulation period
+    prevention: Verify continuous file sequence before running model
+  cross_references:
+  - dt_014
+- id: dt_014
+  stage: s6_run
+  severity: fatal
+  domain: runtime
+  symptom: 'Model crashes immediately at first timestep with NetCDF read error or
+    segmentation fault. No output files created.
+
+    '
+  diagnosis: 'HRLDAS setup file (wrfinput_d01) is corrupt, missing required variables,
+    or has dimension mismatches with forcing files. Grid dimensions must match between
+    setup file and LDASIN files.
+
+    '
+  affected_components:
+  - NoahmpReadLandMod.F90
+  - NoahmpInitMainMod.F90
+  remedy:
+    manual: Check setup file dimensions match LDASIN; verify all required variables
+      exist
+    prevention: ncdump -h on both files; compare dimensions
+  cross_references:
+  - dt_013
+- id: dt_015
+  stage: s6_run
+  severity: fatal
+  domain: runtime
+  symptom: 'Model crashes with floating-point exception (SIGFPE) or NaN propagation
+    after running for some timesteps. Crash occurs during energy balance solver.
+
+    '
+  diagnosis: 'Forcing data contains out-of-range values (extreme temperature, negative
+    pressure, etc.) that cause division by zero or overflow in the energy balance
+    iteration. The implicit solver diverges.
+
+    '
+  affected_components:
+  - SoilSnowTemperatureMainMod.F90
+  - MatrixSolverTriDiagonalMod.F90
+  remedy:
+    manual: Quality-control forcing data; remove spikes and fill missing values
+    prevention: Validate all forcing variables against physical limits before running
+  cross_references:
+  - dt_001
+  - dt_002
+  - dt_003
+  - dt_005
+- id: dt_016
+  stage: s6_run
+  severity: silent
+  domain: runtime
+  symptom: 'Model produces NaN in output for specific grid cells but continues running.
+    Other grid cells appear normal. NaN appears in TSK, HFX, or SMOIS.
+
+    '
+  diagnosis: 'Isolated grid cells have inconsistent initial conditions (e.g., SMOIS
+    > SMCMAX, TSK = 0, or IVGTYP/ISLTYP = 0). The column solver fails for those cells
+    but the driver continues with other grid cells.
+
+    '
+  affected_components:
+  - NoahmpDriverMainMod.F90 (grid loop)
+  - BalanceErrorCheckMod.F90
+  remedy:
+    manual: Check initial conditions in setup file; ensure no IVGTYP=0 on land cells
+    prevention: Validate all state variables are within physical bounds in setup file
+  cross_references:
+  - dt_014
+- id: dt_017
+  stage: s7_postprocess
+  severity: silent
+  domain: output
+  symptom: 'SFCRUNOFF and UDRUNOFF appear to increase monotonically without seasonality.
+    Values reach unrealistically large numbers by end of simulation.
+
+    '
+  diagnosis: 'SFCRUNOFF and UDRUNOFF are ACCUMULATED since simulation start, not per-timestep
+    values. To get incremental runoff, compute the difference between consecutive
+    output timesteps: runoff_inc = SFCRUNOFF[t] - SFCRUNOFF[t-1].
+
+    '
+  affected_components:
+  - parse_noahmp_output.py
+  remedy:
+    manual: Compute np.diff(SFCRUNOFF) * 1000 for incremental runoff in mm
+    prevention: Always compute incremental from accumulated variables
+  cross_references: []
+- id: dt_018
+  stage: s7_postprocess
+  severity: silent
+  domain: output
+  symptom: 'Computed ET exceeds 20 mm/day consistently. Annual ET is >3000 mm, far
+    exceeding precipitation. Water balance doesn''t close.
+
+    '
+  diagnosis: "LH (latent heat flux) is being converted with wrong constant. ET = LH\
+    \ / Lv where Lv = 2.5104e6 J/kg (latent heat of vaporization), NOT 2.5e3 or 2.5e9.\
+    \ Also ensure LH is in W/m\xB2 and time conversion is correct.\n"
+  affected_components:
+  - parse_noahmp_output.py
+  remedy:
+    manual: ET_mm_s = LH_Wm2 / 2.5104e6; ET_mm_day = ET_mm_s * 86400
+    prevention: Verify ET_annual is 200-1500 mm for most basins
+  cross_references:
+  - dt_003
+- id: dt_019_freedrainage_overdrain_humid
+  symptom:
+    description: 'Noah-MP on a humid/forested/energy-limited basin: runoff timing
+      excellent (r > 0.9) but discharge PBIAS >> +25% and basin water balance FAILS
+      with ET+RO > P; subsurface runoff (UGDRNOFF) is ~950 mm/yr and dominates total
+      runoff (runoff ratio ~0.6-0.7 vs observed ~0.4).'
+  diagnosis:
+    root_cause: SURFACE_RUNOFF_OPTION=3 + SUBSURFACE_RUNOFF_OPTION=3 (Schaake96 +
+      FREE DRAINAGE) has no groundwater store, so the bottom soil layer drains freely
+      as subsurface runoff before it can evaporate; the root zone is starved and realized
+      ET (= P - RO) collapses below atmospheric demand (LH-derived ET), over-producing
+      runoff. OPT_RUN is a dag-declared HIGH-sensitivity structural lever on both
+      LH and total runoff.
+  remedy:
+    action: For humid/energy-limited basins set SURFACE_RUNOFF_OPTION=1 and SUBSURFACE_RUNOFF_OPTION=1
+      (SIMGM TOPMODEL-with-groundwater, Niu et al. 2007); the aquifer store (WA/WT/ZWT,
+      cold-start default 4900 mm) allows capillary rise back to roots, raising ET
+      and lowering/smoothing runoff. Reserve free drainage (3) for arid / well-drained
+      columns. Also compute water-balance ET from prognostic ECAN+EDIR+ETRAN, not
+      from LH (LH-derived ET overstates realized water-flux ET; residual == ET_LH
+      - (P - RO)).
+  format_spec_violated: docs/s0_configuration.md physics-option defaults lack a hydroclimate
+    decision rule for OPT_RUN
+  canonical_intent: ki_local_if_pass
+  added_by_run: Noah_MP_retry1
+- id: noahmp_unrouted_runoff_vs_discharge_and_wb_closure
+  symptom:
+    description: Noah-MP runoff run reports negative discharge NSE with high r (~0.9)
+      and large +PBIAS vs a gauged-discharge obs, and basin water-balance closure
+      FAILS at ~15-25% (ET+runoff exceed precip).
+  diagnosis:
+    root_cause: Two coupled protocol defects, not a model result. (1) Column runoff
+      was scored vs gauged discharge through a hand-rolled linear-reservoir proxy,
+      which the dag forbids ('discharge comparison requires an external router; without
+      routing only WB closure is defensible') -> the discharge metrics are provisional.
+      (2) WB closure was computed with ET back-derived from LH (overstates realized
+      ET) and delta_storage_mm=None (ignores soil/snow/aquifer storage change), while
+      SIMGM ran SPINUP_LOOPS=0 so the WA=4900 aquifer was still draining -> closure
+      fails spuriously and subsurface runoff is inflated. Noah-MP closes water per
+      column each timestep, so a large aggregate residual is always a measurement/spin-up
+      artifact.
+  remedy:
+    action: Do not report proxy-routed discharge NSE as the verdict. Use WB closure
+      as the non-routed verdict, computed with prognostic ET (ECAN+EDIR+ETRAN) and
+      dS=dSMOIS*dz+dSNEQV+dWA; spin up SIMGM (SPINUP_LOOPS>=3 or multi-decade). For
+      real runoff skill without a router, validate runoff-to-runoff against a gridded
+      runoff product (GRUN, /mnt/datasets/obs/grun-v1-runoff).
+  format_spec_violated: docs/validation_convention.yaml runoff/regional_aggregate_time_series
+    validated_when caveat (routing required for discharge; WB closure only defensible
+    non-routed path)
+  canonical_intent: ki_local_if_pass
+  added_by_run: Noah_MP_retry1
+- id: dt_v060_offline_wb_closure_et_snapshot
+  symptom:
+    description: Noah-MP offline (HRLDAS) basin water-balance closure FAILS ~20-30%
+      (ET+Q exceed P) while dStorage ~= 0 and runoff pattern vs GRUN is excellent
+      (r~0.97); a strict critic flags workflow_incomplete claiming un-differenced
+      accumulated runoff.
+  diagnosis:
+    root_cause: 'Runoff IS correctly differenced from accumulated SFCRNOFF/UGDRNOFF
+      (GRUN r~0.97 proves it). The residual is the ET term: prognostic ET read from
+      an INSTANTANEOUS daily flux snapshot (ECAN+EDIR+ETRAN) x86400 overstates ET
+      because the offline daily HRLDAS build emits no accumulated ET fields. Noah-MP
+      closes water per column each timestep by construction, so the offline residual
+      is an extraction approximation, not a mass failure.'
+  remedy:
+    action: Do NOT gate the verdict on offline daily closure. Set verdict_metric =
+      GRUN runoff-to-runoff NSE/PBIAS (regional_aggregate) and mark WB closure a soft
+      diagnostic with ~+/-30% ET-snapshot tolerance. For exact closure use accumulated
+      ET fields if emitted, else sub-daily OUTPUT_TIMESTEP + flux integration. A residual
+      +PBIAS with high r is the dynamic-veg LAI ET-deficit structural ceiling (prescribe
+      LAI), OOS for the loop.
+  format_spec_violated: 'validation_convention.yaml runoff/regional_aggregate: headline
+    is NSE/PBIAS; WB closure is only a defensibility caveat, not the verdict gate'
+  canonical_intent: ki_local_if_pass
+  added_by_run: Noah_MP_retry1
+- id: dt_019
+  stage: s4_forcing
+  severity: silent
+  domain: time_reference
+  symptom: 'Flux-tower-driven column run has an excellent daily/seasonal LE pattern
+    but a badly distorted DIURNAL cycle: LE peaks hours away from the SWDOWN peak,
+    albedo and canopy shading look wrong, and COSZ in LDASOUT is near zero while
+    SWDOWN is at its daily maximum (or vice versa). Daily-mean LE metrics degrade by
+    a large amount that no parameter change recovers.
+
+    '
+  diagnosis: "FLUXNET2015 (and most site-network) timestamps are LOCAL STANDARD TIME\
+    \ with no DST. HRLDAS reads the LDASIN filename stamp as UTC: CALC_DECLIN in\
+    \ module_NoahMP_hrldas_driver.F computes TLOCTIM = hour + LONGITUDE/15 and the\
+    \ hour angle from it. Writing local-time-stamped tower data into LDASIN files\
+    \ therefore puts the modelled solar geometry out of phase with the observed\
+    \ radiation by the site's UTC offset -- up to ~12 h. Nothing errors; the energy\
+    \ balance is simply solved for the wrong time of day.\n"
+  affected_components:
+  - module_NoahMP_hrldas_driver.F (CALC_DECLIN)
+  - tools/convert_forcing_to_noahmp.py (read_fluxnet_at_point)
+  remedy:
+    action: Shift the site record by -UTC_OFFSET before writing LDASIN files. The KI
+      converter enforces this - `--source fluxnet` REQUIRES `--utc_offset`, taken
+      from the FLUXNET BADM/BIF variable UTC_OFFSET.
+    verification: Find the LDASIN file with the daily maximum SWDOWN; its UTC hour
+      must be within ~1 h of (12 - longitude/15) mod 24. For US-MMS (lon -86.41)
+      that is ~17-18 UTC.
+    prevention: Never assume a site-network timestamp is UTC. Read UTC_OFFSET from
+      the network's own metadata.
+  cross_references:
+  - dt_009
+  canonical_intent: ki_local_if_pass
+  added_by_run: Noah_MP_real_case_usmms_20260802
+- id: dt_020
+  stage: s7_output
+  severity: silent
+  domain: file_format
+  symptom: 'Parsed LDASOUT timeseries contains only SOIL_M_L1 / SOIL_T_L1 (layers 2..N
+    silently missing) on a single-column run; on a multi-cell domain the layer values
+    are scrambled across rows. Soil-moisture validation then compares the wrong depth
+    or fails for lack of data.
+
+    '
+  diagnosis: "HRLDAS writes layered LDASOUT fields with dimension order (Time,\
+    \ south_north, soil_layers_stag, west_east) -- the LAYER axis sits BETWEEN the\
+    \ two horizontal axes. SKILL.md documented them as (ns, y, x). Positional\
+    \ indexing var[0, k, iy, ix] with k over shape[1] therefore walks south_north\
+    \ (length 1) and reads the layer axis with the ROW index: exactly one layer comes\
+    \ back on a 1x1 column, and layer/row are transposed on a real grid.\n"
+  affected_components:
+  - tools/parse_noahmp_output.py (extract_point)
+  - IO_code/module_NoahMP_hrldas_driver.F (add_to_output_3d)
+  remedy:
+    action: Index by DIMENSION NAME, not position. extract_point now maps 'Time'->0,
+      'south_north'->iy, 'west_east'->ix and slices whichever axis is
+      soil_layers_stag / snow_layers / rad_num.
+    verification: A parsed 4-layer run must yield SOIL_M_L1..SOIL_M_L4 with distinct
+      values.
+  cross_references:
+  - dt_006
+  canonical_intent: ki_local_if_pass
+  added_by_run: Noah_MP_real_case_usmms_20260802
+- id: dt_021
+  stage: s7_output
+  severity: silent
+  domain: missing_data
+  symptom: 'Mean LH/HFX/FVEG from a parsed run are wildly negative (e.g. mean LH of
+    -20 W/m2 on a humid forest), or the first runoff increment is enormous. Only the
+    period means are wrong; the shape of the series looks right.
+
+    '
+  diagnosis: "The t=0 LDASOUT record (written when SKIP_FIRST_OUTPUT=.false.) is\
+    \ dumped BEFORE any physics has run, so every diagnostic field in it is the -9999\
+    \ fill value. HRLDAS attaches no _FillValue attribute, so a naive read folds\
+    \ -9999 into means, and the first accumulated-runoff difference is taken against\
+    \ -9999. A guard written as `value > -1e6` does NOT catch -9999.\n"
+  affected_components:
+  - tools/parse_noahmp_output.py (extract_point, compute_runoff_increment)
+  remedy:
+    action: Mask values <= -9990 to None at read time (extract_point now does), and/or
+      set SKIP_FIRST_OUTPUT=.true. in namelist.hrldas.
+    prevention: Range-check any consumer guard against -9999 specifically; -9999 is
+      inside every plausible `> -1e6` sanity bound.
+  canonical_intent: ki_local_if_pass
+  added_by_run: Noah_MP_real_case_usmms_20260802
+- id: dt_022
+  stage: s2_soil
+  severity: silent
+  domain: parameter_lookup
+  symptom: 'ISLTYP for a point disagrees with the site''s published soil texture; the
+    NoahmpTable row picked has a noticeably different BEXP / DKSAT / SMCMAX than the
+    correct texture class, shifting the ET/runoff partition with no error message.
+
+    '
+  diagnosis: "classify_usda_texture() in convert_soil_to_noahmp.py implemented the\
+    \ USDA triangle with three wrong boundaries: sandy clay was gated at clay>=40\
+    \ (the class starts at 35); sandy clay loam omitted the silt<28 limb, so e.g.\
+    \ sand 47 / clay 21 / silt 32 (a LOAM) returned sandy clay loam -- ISLTYP 7\
+    \ instead of 6, BEXP 7.12 instead of 5.25, DKSAT 6.3e-6 instead of 3.47e-6; and\
+    \ `sand>=43 -> sandy_loam` ignored the silt limb.\n"
+  affected_components:
+  - tools/convert_soil_to_noahmp.py (classify_usda_texture)
+  remedy:
+    action: Use the USDA-NRCS class definitions including the silt+1.5*clay /
+      silt+2*clay sand-limb boundaries and the silt<28 side of sandy clay loam
+      (rewritten 2026-08-02).
+    verification: 'sand 47 / clay 21 -> loam (ISLTYP 6); sand 60 / clay 25 -> sandy
+      clay loam; sand 45 / clay 15 -> loam; sand 50 / clay 38 -> sandy clay.'
+  canonical_intent: ki_local_if_pass
+  added_by_run: Noah_MP_real_case_usmms_20260802
+- id: dt_023
+  stage: s1_domain
+  severity: silent
+  domain: input_format
+  symptom: 'A cropland/irrigated run behaves exactly like the dryland default: LAI
+    follows the table climatology instead of the crop model, IRSIVOL/IRNUMSI stay 0
+    for the whole run, and the only clue is a line on stdout such as
+    "MODULE_HRLDAS_NETCDF_IO: Problem finding variable ''CROPTYPE'' in NetCDF file.
+    Using default values." -- or nothing at all, because a mis-SHAPED variable IS
+    found and silently read as garbage.
+
+    '
+  diagnosis: "The HRLDAS setup reader does NOT use a shape-agnostic helper for the\
+    \ crop / irrigation fields.  READ_CROP_INPUT calls\
+    \ nf90_get_var(..., start=(/x,y,1/), count=(/nx,ny,5/)) for CROPTYPE, so the\
+    \ variable must have exactly THREE dimensions in Fortran order\
+    \ (west_east, south_north, crop) -- i.e. declared (crop=5, south_north,\
+    \ west_east) in NetCDF/CDL and in netCDF4-python -- and NO Time dimension.\
+    \ PLANTING / HARVEST / SEASON_GDD (setup file) and IRFRACT / SIFRACT / MIFRACT /\
+    \ FIFRACT (agdata file) are read with TWO-element start/count, so they must be\
+    \ strictly 2-D (south_north, west_east).  Copying the (Time, south_north,\
+    \ west_east) pattern used for XLAT/IVGTYP makes the read run past the record.\n\
+    \  A second half of the same trap: the irrigation fractions do NOT live in the\
+    \ setup file at all.  READ_AGRICULTURE_DATA opens AGDATA_FLNM, a SEPARATE\
+    \ namelist path; leaving AGDATA_FLNM blank leaves IRFRACT at its 0.0 default and\
+    \ irrigation can never trigger (IrrigationPrepareMod requires\
+    \ IrrigationFracGrid >= IRR_FRAC, table default 0.10).\n"
+  affected_components:
+  - tools/build_hrldas_setup.py
+  - IO_code/module_hrldas_netcdf_io.F (read_crop_input, read_agriculture_data)
+  - IO_code/module_NoahMP_hrldas_driver.F
+  remedy:
+    action: Build the setup and agdata files with tools/build_hrldas_setup.py, which
+      writes CROPTYPE as (crop_cat=5, south_north, west_east) and PLANTING /
+      HARVEST / SEASON_GDD / IRFRACT / SIFRACT / MIFRACT / FIFRACT as 2-D, and set
+      AGDATA_FLNM in namelist.hrldas.
+    verification: 'ncdump -h the setup file: CROPTYPE(crop_cat, south_north,
+      west_east); PLANTING(south_north, west_east).  Run the binary and confirm the
+      stdout line "agdata_flnm: ''...''" appears with no "Problem finding variable
+      ''IRFRACT''" message, then confirm IRSIVOL > 0 in at least one LDASOUT of a
+      dry growing season.'
+    prevention: build_hrldas_setup.validate_setup_file() re-opens the file and fails
+      on wrong rank/order, on VEGFRA written as a fraction, and on CROPTYPE slot 5
+      < 0.5.
+  cross_references:
+  - dt_007
+  - dt_008
+  - dt_024
+  canonical_intent: ki_local_if_pass
+  added_by_run: Noah_MP_real_case_usne1_20260802
+- id: dt_024
+  stage: s0_configuration
+  severity: silent
+  domain: parameter_lookup
+  symptom: 'IRRIGATION_OPTION=2 ("trigger on crop season") is set with CROP_OPTION=0,
+    and irrigation starts/stops on dates that have nothing to do with the
+    PLANTING/HARVEST written into the setup file -- or the site is a cropland class
+    but FlagCropland is false and NOTHING irrigates.
+
+    '
+  diagnosis: "Two separate gates.  (1) READ_CROP_INPUT is only called when\
+    \ IOPT_CROP == 1 (module_NoahMP_hrldas_driver.F), so with CROP_OPTION=0 the\
+    \ PLANTING/HARVEST maps are never read; BiochemVarInTransferMod then leaves\
+    \ DatePlanting/DateHarvest at the NoahmpTable PLTDAY/HSDAY of the default crop\
+    \ (corn: 111/300) and the crop-season trigger silently uses those.  (2) Both the\
+    \ crop model and every irrigation method are gated on FlagCropland, which\
+    \ GeneralInitMod.F90 sets ONLY for MODIS-IGBP land use 12 (croplands) or 14\
+    \ (cropland/natural mosaic) -- so an irrigated site classified as grassland\
+    \ (10) or savanna never irrigates no matter what the namelist says.\n"
+  affected_components:
+  - docs/s0_configuration.md
+  - drivers/hrldas/BiochemVarInTransferMod.F90
+  - src/GeneralInitMod.F90
+  remedy:
+    action: For a real cropland site set IVGTYP to 12 (or 14) AND CROP_OPTION=1 AND
+      write PLANTING/HARVEST from ki_tools_common.crop_calendar.get_planting_harvest.
+      If the crop carbon model is deliberately off, use IRRIGATION_OPTION=3 (LAI
+      threshold) rather than 2, because option 2's dates are then not yours.
+    verification: The stdout must NOT contain "Problem finding variable 'PLANTING'";
+      IRNUMSI must increment inside, and only inside, the intended season.
+  cross_references:
+  - dt_023
+  canonical_intent: ki_local_if_pass
+  added_by_run: Noah_MP_real_case_usne1_20260802
+- id: dt_025
+  stage: s7_output
+  severity: silent
+  domain: unit_conversion
+  symptom: 'Total irrigation for a season comes out in the tens of thousands of mm
+    (or the water balance closes only if irrigation is dropped entirely). Summing
+    the LDASOUT IRSIVOL column over a period gives a number that scales with the
+    NUMBER OF OUTPUT STEPS rather than with the weather.
+
+    '
+  diagnosis: "IRSIVOL / IRMIVOL / IRFIVOL / IRELOSS / IRRSPLH (and ACSNOM / ACSNOW)\
+    \ are RUNNING TOTALS, not per-step values: WaterVarOutTransferMod does\
+    \ `IRSIVOL = IRSIVOL + IrrigationRateSprinkler*1000` every timestep.  Summing the\
+    \ raw series double-counts by ~N_timesteps, exactly like summing the accumulated\
+    \ SFCRNOFF column instead of its increments.\n"
+  affected_components:
+  - tools/parse_noahmp_output.py (ACCUMULATED_VARS)
+  - drivers/hrldas/WaterVarOutTransferMod.F90
+  remedy:
+    action: parse_noahmp_output.py now emits a `<NAME>_INC` column (per-output-step
+      increment, clipped at 0) for every entry of ACCUMULATED_VARS; sum THAT for a
+      period total.
+    verification: 'sum(IRSIVOL_INC) over the period == IRSIVOL(last) - IRSIVOL(first),
+      and the closed budget P + sum(IRSIVOL_INC) = ET + sum(IRELOSS_INC) + Q + dS
+      passes validate_water_balance.'
+  cross_references:
+  - dt_021
+  canonical_intent: ki_local_if_pass
+  added_by_run: Noah_MP_real_case_usne1_20260802
+- id: dt_026
+  stage: s1_domain
+  severity: silent
+  domain: initialization
+  symptom: 'A CROP_OPTION=1 run started on 1 January transpires a full canopy all
+    winter: LAI sits at the annual-maximum value from the setup file from the first
+    timestep until the first HARVEST date, giving a large cold-season LE bias that
+    no parameter change removes.
+
+    '
+  diagnosis: "The setup-file LAI is the INITIAL canopy.  With the crop model on,\
+    \ NoahmpInitMainMod converts it to leaf biomass (LFMASSXY = LAI/0.015 for corn,\
+    \ /0.030 for soybean) and nothing resets that biomass before planting:\
+    \ CarbonFluxCropMod resets LeafMass/StemMass to their minima ONLY at\
+    \ PlantGrowStage == 8 (i.e. once DayOfYear >= DateHarvest).  Seeding a January\
+    \ cold start with the table's annual-maximum LAI therefore grows a phantom\
+    \ winter canopy for the whole pre-planting period of the first simulated year.\n"
+  affected_components:
+  - tools/build_hrldas_setup.py
+  - drivers/hrldas/NoahmpInitMainMod.F90
+  - src/CarbonFluxCropMod.F90
+  remedy:
+    action: Initialize a cropped column BARE -- LAI = 0.05 (the same value the
+      post-harvest reset uses) -- not with the table LAI maximum. Only non-crop
+      (DVEG) runs should be seeded with the climatological LAI.
+    prevention: SPINUP_LOOPS >= 1 masks the symptom (the second loop inherits the
+      post-harvest reset), so it is easy to miss in a short single-loop test; set the
+      initial LAI correctly anyway.
+  cross_references:
+  - dt_023
+  canonical_intent: ki_local_if_pass
+  added_by_run: Noah_MP_real_case_usne1_20260802

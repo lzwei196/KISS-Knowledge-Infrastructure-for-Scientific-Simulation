@@ -87,13 +87,39 @@ def read_ohq_output(filepath):
     return headers, data
 
 
+def _normalize_colname(name):
+    """Canonicalise an OHQ column name for tolerant matching.
+
+    OHQLibTest emits constituent columns as ``block_name_CONSTITUENT:variable``
+    (UNDERSCORE between the block and the constituent), e.g.
+    ``Pond (6)_O2:concentration``.  SKILL.md section 5 and this tool's own
+    usage examples document the pattern as ``block_name:variable_name`` and
+    show ``Pond (6):O2:concentration`` -- with a COLON.  A user following the
+    documentation therefore gets a hard "Variable not found" even though the
+    column is present (verified 2026-08-09 against the Wet_pond developer
+    example, 1476 columns).  Normalising ':' and '_' to a single separator
+    makes both spellings resolve to the same column.
+    """
+    out = []
+    prev_sep = False
+    for ch in name.lower():
+        if ch in (":", "_", " "):
+            if not prev_sep:
+                out.append("\x00")
+            prev_sep = True
+        else:
+            out.append(ch)
+            prev_sep = False
+    return "".join(out).strip("\x00")
+
+
 def extract_variable(headers, data, variable_name):
     """Extract a single variable time series from output data.
 
     Args:
         headers: column headers
         data: 2D data array
-        variable_name: exact column name or substring match
+        variable_name: exact column name, ':'/'_'-tolerant name, or substring
 
     Returns:
         times: list of time values
@@ -106,19 +132,36 @@ def extract_variable(headers, data, variable_name):
             col_idx = i
             break
 
-    # Try substring match
+    # Separator-tolerant exact match (':' vs '_' between block and constituent)
     if col_idx is None:
+        want = _normalize_colname(variable_name)
         for i, h in enumerate(headers):
-            if variable_name.lower() in h.lower():
+            if _normalize_colname(h) == want:
+                col_idx = i
+                break
+
+    # Try substring match (also separator-tolerant)
+    if col_idx is None:
+        want = _normalize_colname(variable_name)
+        for i, h in enumerate(headers):
+            if want in _normalize_colname(h):
                 col_idx = i
                 break
 
     if col_idx is None:
         return None, None
 
+    # OHQ writes an INTERLEAVED (t, value) layout: every variable column is
+    # preceded by its OWN 't' column, so the time axis for column i is column
+    # i-1, NOT column 0.  Column 0 happens to agree when all state variables
+    # share the write schedule, but that is not guaranteed once a variable is
+    # written on a different interval.  Prefer the variable's own 't' column.
+    time_idx = 0
+    if col_idx > 0 and headers[col_idx - 1].strip().lower() in ("t", "time"):
+        time_idx = col_idx - 1
+
     times = []
     values = []
-    time_idx = 0  # First column is always time
 
     for row in data:
         if len(row) > col_idx:

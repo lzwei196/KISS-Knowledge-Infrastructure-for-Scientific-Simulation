@@ -99,7 +99,7 @@ def check_common_data():
     global PASS, FAIL
     common = [
         ("/mnt/disk1/Hydrocraft_server/data/obs", "Observation data"),
-        ("/mnt/disk1/Hydrocraft_server/data/forcing", "Forcing data"),
+        ("/media/server/hc_ssd/forcing", "Forcing data"),
         ("/mnt/disk1/Hydrocraft_server/data/dem", "DEM data"),
         ("/mnt/disk1/Hydrocraft_server/data/soil", "Soil data"),
     ]
@@ -118,8 +118,22 @@ def main():
     print()
 
     # Model-specific checks
-    # Binary: SWAT+ rev59
-    check_file("/mnt/disk1/Hydrocraft_server/Hydrocraft/revalidation/SWAT_Plus/wangjiaba/run/swatplus", "SWAT+ rev59", executable=True)
+    # Binary: SWAT+ Rev 59.3 (5.6MB, Jul 2019). HydroCraft projects use
+    # sd_channel_control3, which the post-2023 recompile crashes on
+    # (SIGSEGV in ch_initial_ -> proc_cha_; `ch` array allocated size 0).
+    # See diagnostics/triplets.yaml (pattern "SIGSEGV in ch_initial_").
+    # DO NOT use .../wangjiaba/run/swatplus — that is the broken 6.5MB recompile
+    # ("Revision unknown", GNU 13.3.0) that segfaults on channel init.
+    REV59_CANDIDATES = [
+        "/mnt/disk1/Hydrocraft_server/models/SWAT_Plus/test_rev59/swatplus_rev59",
+        "/mnt/disk1/Hydrocraft_server/outputs/chaohe_2000_2010_025deg/swatplus_cn2_test/swatplus_rev59",
+    ]
+    rev59 = next((p for p in REV59_CANDIDATES if os.path.isfile(p)), None)
+    if rev59:
+        check_file(rev59, "SWAT+ Rev 59.3 binary (5.6MB, Jul 2019)", executable=True)
+        print(f"  INFO  Run with: python tools/s8/run_swatplus.py {rev59} <TxtInOut>")
+    else:
+        check_file(REV59_CANDIDATES[0], "SWAT+ Rev 59.3 binary (5.6MB, Jul 2019)", executable=True)
 
     print()
 

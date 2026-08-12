@@ -159,6 +159,7 @@ Every value enters the model in specific units; no internal conversion is perfor
 | Precipitation       | mm/d            | m/d (some GCMs)    | x 1000                              | dt_003  |
 | PET                 | mm/d            | W/m2 (net rad)     | Penman-Monteith or Hargreaves       | dt_004  |
 | PET                 | mm/d            | mm/month           | / days_in_month                     | dt_005  |
+| PET (cold/high-alt) | mm/d            | Oudin/Hargreaves under-est | check Ep>=P-Q; use --pet-method priestley_taylor | dt_019  |
 | Temperature         | deg C           | K (ERA5/CMFD)      | - 273.15                            | dt_006  |
 | Temperature         | deg C           | deg F              | (F - 32) x 5/9                     | dt_007  |
 | Storage (Smax)      | mm              | m                  | x 1000                              | dt_008  |
@@ -186,9 +187,18 @@ These non-obvious facts cause silent failures. Each is linked to a diagnostic tr
    kg/m2/s (multiply by 86400). CMFD provides mm/3h (sum 8 per day). GCMs may
    provide m/d (multiply by 1000). Wrong units produce runoff 1000x too high/low.
 
-2. **dt_004 / dt_005**: PET must be pre-computed externally. MARRMoT does NOT compute
+2. **dt_004 / dt_005 / dt_019**: PET must be pre-computed externally. MARRMoT does NOT compute
    PET from radiation. Common trap: passing radiation (W/m2) as PET. Use Hargreaves
    or Penman-Monteith to convert. Monthly PET must be divided by days_in_month.
+   **PET-method choice (dt_019):** Oudin and Hargreaves are temperature-index formulae
+   calibrated on temperate lowlands and structurally UNDER-estimate atmospheric demand on
+   cold, high-altitude, high-radiation basins (e.g. the Tibetan Plateau / upper Yellow R).
+   BEFORE calibrating, check `Ep_annual >= (P - Q_obs)_annual`. If it fails and downwelling
+   radiation is available (CMFD ALWAYS supplies srad/lrad/pres), rebuild forcing with
+   `convert_forcing.py --pet-method priestley_taylor --srad-col ... --lrad-col ... --pres-col ...`
+   (always pass `--pres-col`; the 101325 Pa sea-level fallback inflates gamma and
+   under-estimates Ep exactly at altitude). The trap tell: water_balance FAIL with GR4J x2
+   (groundwater exchange) pinned near its bound while NSE/r still look respectable.
 
 3. **dt_006**: Temperature in Kelvin silently produces wrong snow/rain partitioning
    in models with temperature thresholds (m_06, m_12, m_37, etc.). No error raised.
@@ -213,6 +223,12 @@ These non-obvious facts cause silent failures. Each is linked to a diagnostic tr
 
 9. **dt_015**: Unit hydrograph routing assumes delta_t matches the routing time base.
    Using sub-daily time steps with daily UH parameters shifts the hydrograph peak.
+
+---
+
+## Output Description
+
+MARRMoT's `get_output()` method returns a structure containing three main arrays: (1) `Q` -- simulated streamflow in mm/d (same length as forcing time series), (2) `Ea` -- actual evapotranspiration in mm/d, and (3) `S` -- storage time series in mm for each model store (columns = stores). A water balance summary is printed to the console. The `parse_output.py` tool extracts these into a CSV with columns `date, Q_sim (mm/d), Ea (mm/d), S1, S2, ...` and computes validation metrics (NSE, KGE, PBIAS) against observed streamflow. To convert Q from mm/d to m^3/s, multiply by `catchment_area_km2 * 1e6 / 86400 / 1000`.
 
 ---
 
@@ -246,6 +262,56 @@ For HyMOD (m_29), the most commonly used benchmark model:
 
 For other models, parameter ranges are defined in each model file's `parRanges`
 property. Run `m = feval('m_XX_name'); m.parRanges` to retrieve bounds.
+
+### Calibration optimisers (`run_marrmot.py --calibrate`)
+
+Two optimisers are available via `--optimizer`:
+
+- `mc` (default, legacy): uniform Monte-Carlo over `parRanges`. Fine for ≤3-4
+  parameters; **hopeless beyond ~6** because the good region is an
+  exponentially small fraction of the hypercube. Writes incremental best
+  (timeout-safe).
+- `cmaes` (**recommended**): MARRMoT's own CMA-ES (`my_cmaes`) via the
+  `MARRMoT_model.calibrate` method — the optimiser the toolbox ships and
+  documents (`User manual/Examples/workflow_example_4.m`). Scales to the
+  6-15 parameter snow/soil/GW structures. Options:
+  - `--of-name` : objective function (`of_NSE`, `of_KGE`, `of_log_NSE`, ...).
+    KGE-family take a 3-weight vector (auto-handled); NSE-family take none.
+    `check_and_select` natively drops NaN / negative obs, so **seasonal/gappy
+    HYDAT records (e.g. prairie creeks gauged only Mar-Oct) need no masking**.
+  - `--restarts N` : **IPOP restarts (doubled popsize each)**. A single
+    mean-start CMA-ES run gets trapped in a local optimum on the rugged
+    conceptual-hydrology objective surface — observed at 05CG004:
+    mean-start cal_NSE **0.199**, with `--restarts 6` cal_NSE **0.329**.
+    Always use ≥5 restarts for a real calibration.
+  - `--max-fun-evals` : total eval budget across restarts. Each eval is one
+    full simulation over `1:cal_end`. **Cost scales sharply with numStores**:
+    m_12 alpine2 (2 stores) ≈ 1.6 s/eval (~550 evals ≈ 15 min); m_37 hbv
+    (5 stores) ≈ **50 s/eval** under the implicit Euler solver — not
+    "uncalibratable", but budget-limited: pair it with `--timeout` (below) and
+    report how many evals it actually got.
+  - `--lb/--ub` : optional tightened sampling bounds (JSON arrays).
+  - `--timeout` : wall-clock cap, and it is **safe to rely on**. BOTH optimisers
+    persist their incumbent to `best_theta.json` on every improvement (CMA-ES via
+    the `kdt_of_persist` objective shim), and expiry is handled as a normal
+    budget-limited outcome (`status: "partial"`, `timed_out: true`) rather than an
+    exception. This is what makes a whole-toolbox sweep tractable: give every
+    structure the same wall-clock cap, let the cheap ones converge and the
+    expensive ≥5-store ones return their best-so-far. **Always report the eval
+    budget next to a partial structure's metric** — a low NSE there means
+    "under-searched", not "structurally unsuitable".
+
+### Snowfall undercatch correction (`convert_forcing.py --cold-precip-scale`)
+
+NASA POWER (MERRA-2) under-catches **solid** precip far more than rain. For
+snowmelt-dominated basins the spring freshet — the NSE-dominant signal — is
+driven by accumulated winter snow, so under-caught snowfall systematically
+damps the simulated freshet. `--cold-precip-scale F --cold-precip-threshold T`
+multiplies precip by `F` only on days with mean-T < `T` (default 0 °C),
+boosting winter accumulation **without** inflating ET-dominated summer months
+(which a global `--precip-scale` does, over-producing runoff). At 05CG004
+(Bullpound Ck), `--cold-precip-scale 1.7` lifted held-out val NSE
+0.152→0.209 and improved r at every period.
 
 ---
 
@@ -354,52 +420,63 @@ ki/
 
 ## All 47 Model Structures
 
-| ID  | Name                    | Params | Stores | Based on              |
-|-----|-------------------------|--------|--------|-----------------------|
-| m_01 | collie1                | 1      | 1      | Collie River 1       |
-| m_02 | wetland                | 1      | 1      | Wetland model         |
-| m_03 | collie2                | 2      | 1      | Collie River 2       |
-| m_04 | newzealand1            | 1      | 1      | New Zealand           |
-| m_05 | ihacres                | 7      | 2      | IHACRES               |
-| m_06 | alpine1                | 2      | 2      | Alpine model          |
-| m_07 | gr4j                   | 4      | 2      | GR4J                  |
-| m_08 | us1                    | 2      | 2      | US model 1            |
-| m_09 | susannah1              | 6      | 2      | Susannah Brook 1      |
-| m_10 | susannah2              | 6      | 2      | Susannah Brook 2      |
-| m_11 | collie3                | 2      | 2      | Collie River 3       |
-| m_12 | alpine2                | 6      | 2      | Alpine model 2        |
-| m_13 | hillslope              | 7      | 2      | Hillslope model       |
-| m_14 | topmodel               | 7      | 2      | TOPMODEL              |
-| m_15 | plateau                | 5      | 2      | Plateau model         |
-| m_16 | newzealand2            | 1      | 2      | New Zealand 2         |
-| m_17 | penman                 | 4      | 2      | Penman model          |
-| m_18 | simhyd                 | 7      | 3      | SIMHYD                |
-| m_19 | australia              | 8      | 3      | Australia model       |
-| m_20 | gsfb                   | 3      | 2      | GSFB                  |
-| m_21 | flexb                  | 9      | 4      | FLEX-B                |
-| m_22 | vic                    | 10     | 5      | VIC                   |
-| m_23 | lascam                 | 11     | 3      | LASCAM                |
-| m_24 | mopex1                 | 7      | 3      | MOPEX 1               |
-| m_25 | tcm                    | 6      | 4      | TCM                   |
-| m_26 | flexis                 | 12     | 6      | FLEX-IS               |
-| m_27 | tank                   | 8      | 4      | TANK (Sugawara)       |
-| m_28 | xinanjiang             | 12     | 4      | Xinanjiang            |
-| m_29 | hymod                  | 5      | 5      | HyMOD                 |
-| m_30 | mopex2                 | 5      | 3      | MOPEX 2               |
-| m_31 | mopex3                 | 6      | 4      | MOPEX 3               |
-| m_32 | mopex4                 | 5      | 3      | MOPEX 4               |
-| m_33 | sacramento             | 11     | 5      | Sacramento            |
-| m_34 | flexis2                | 16     | 6      | FLEX-IS 2             |
-| m_35 | mopex5                 | 12     | 5      | MOPEX 5               |
-| m_36 | modhydrolog            | 15     | 5      | MODHYDROLOG           |
-| m_37 | hbv96                  | 15     | 5      | HBV-96                |
-| m_38 | tank2                  | 17     | 6      | TANK 2                |
-| m_39 | mcrm                   | 16     | 5      | MCRM                  |
-| m_40 | smar                   | 8      | 6      | SMAR                  |
-| m_41 | nam                    | 10     | 6      | NAM                   |
-| m_42 | hycymodel              | 12     | 6      | HYCYMODEL             |
-| m_43 | gsmsocont              | 8      | 3      | GSM-SOCONT            |
-| m_44 | echo                   | 16     | 6      | ECHO                  |
-| m_45 | prms                   | 18     | 6      | PRMS                  |
-| m_46 | classic                | 20     | 5      | CLASSIC               |
-| m_47 | ihm19                  | 24     | 4      | IHM19                 |
+**These are the EXACT names shipped in `Models/Model files/`** — pass the full
+name (the `Class / file name` column) to `run_marrmot.py --model`. Derive nothing:
+the `Np`/`Ns` counts are part of the filename, and several differ from the
+upstream paper's tables (e.g. `m_26` is `flexi`, not "flexis"; `m_47` is
+capitalised `IHM19`). Verify at runtime with
+`m = feval('<name>'); [m.numParams m.numStores]`.
+
+`Ns` (number of stores) is the cost driver: each store adds a dimension to the
+implicit-Euler solve, so per-evaluation cost rises steeply (~1.6 s/eval at 2
+stores to ~50 s/eval at 5). Budget calibration accordingly.
+
+| ID | Name | Np | Ns | Class / file name |
+|----|------|----|----|-------------------|
+| m_01 | collie1 | 1 | 1 | `m_01_collie1_1p_1s` |
+| m_02 | wetland | 4 | 1 | `m_02_wetland_4p_1s` |
+| m_03 | collie2 | 4 | 1 | `m_03_collie2_4p_1s` |
+| m_04 | newzealand1 | 6 | 1 | `m_04_newzealand1_6p_1s` |
+| m_05 | ihacres | 7 | 1 | `m_05_ihacres_7p_1s` |
+| m_06 | alpine1 | 4 | 2 | `m_06_alpine1_4p_2s` |
+| m_07 | gr4j | 4 | 2 | `m_07_gr4j_4p_2s` |
+| m_08 | us1 | 5 | 2 | `m_08_us1_5p_2s` |
+| m_09 | susannah1 | 6 | 2 | `m_09_susannah1_6p_2s` |
+| m_10 | susannah2 | 6 | 2 | `m_10_susannah2_6p_2s` |
+| m_11 | collie3 | 6 | 2 | `m_11_collie3_6p_2s` |
+| m_12 | alpine2 | 6 | 2 | `m_12_alpine2_6p_2s` |
+| m_13 | hillslope | 7 | 2 | `m_13_hillslope_7p_2s` |
+| m_14 | topmodel | 7 | 2 | `m_14_topmodel_7p_2s` |
+| m_15 | plateau | 8 | 2 | `m_15_plateau_8p_2s` |
+| m_16 | newzealand2 | 8 | 2 | `m_16_newzealand2_8p_2s` |
+| m_17 | penman | 4 | 3 | `m_17_penman_4p_3s` |
+| m_18 | simhyd | 7 | 3 | `m_18_simhyd_7p_3s` |
+| m_19 | australia | 8 | 3 | `m_19_australia_8p_3s` |
+| m_20 | gsfb | 8 | 3 | `m_20_gsfb_8p_3s` |
+| m_21 | flexb | 9 | 3 | `m_21_flexb_9p_3s` |
+| m_22 | vic | 10 | 3 | `m_22_vic_10p_3s` |
+| m_23 | lascam | 24 | 3 | `m_23_lascam_24p_3s` |
+| m_24 | mopex1 | 5 | 4 | `m_24_mopex1_5p_4s` |
+| m_25 | tcm | 6 | 4 | `m_25_tcm_6p_4s` |
+| m_26 | flexi | 10 | 4 | `m_26_flexi_10p_4s` |
+| m_27 | tank | 12 | 4 | `m_27_tank_12p_4s` |
+| m_28 | xinanjiang | 12 | 4 | `m_28_xinanjiang_12p_4s` |
+| m_29 | hymod | 5 | 5 | `m_29_hymod_5p_5s` |
+| m_30 | mopex2 | 7 | 5 | `m_30_mopex2_7p_5s` |
+| m_31 | mopex3 | 8 | 5 | `m_31_mopex3_8p_5s` |
+| m_32 | mopex4 | 10 | 5 | `m_32_mopex4_10p_5s` |
+| m_33 | sacramento | 11 | 5 | `m_33_sacramento_11p_5s` |
+| m_34 | flexis | 12 | 5 | `m_34_flexis_12p_5s` |
+| m_35 | mopex5 | 12 | 5 | `m_35_mopex5_12p_5s` |
+| m_36 | modhydrolog | 15 | 5 | `m_36_modhydrolog_15p_5s` |
+| m_37 | hbv | 15 | 5 | `m_37_hbv_15p_5s` |
+| m_38 | tank2 | 16 | 5 | `m_38_tank2_16p_5s` |
+| m_39 | mcrm | 16 | 5 | `m_39_mcrm_16p_5s` |
+| m_40 | smar | 8 | 6 | `m_40_smar_8p_6s` |
+| m_41 | nam | 10 | 6 | `m_41_nam_10p_6s` |
+| m_42 | hycymodel | 12 | 6 | `m_42_hycymodel_12p_6s` |
+| m_43 | gsmsocont | 12 | 6 | `m_43_gsmsocont_12p_6s` |
+| m_44 | echo | 16 | 6 | `m_44_echo_16p_6s` |
+| m_45 | prms | 18 | 7 | `m_45_prms_18p_7s` |
+| m_46 | classic | 12 | 8 | `m_46_classic_12p_8s` |
+| m_47 | IHM19 | 16 | 4 | `m_47_IHM19_16p_4s` |

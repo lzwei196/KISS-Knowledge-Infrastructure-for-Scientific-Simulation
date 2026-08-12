@@ -27,7 +27,7 @@ import time
 import re
 from pathlib import Path
 
-SIM_PATH = ""
+SIM_PATH = "/mnt/disk1/Hydrocraft_server/outputs/qinghai_lake_1951_2024/modflow6/workspace"
 MF6_PATH = ""         # Optional: path to mf6 binary
 SILENT = False
 
@@ -92,6 +92,22 @@ def process():
     # Load simulation
     sim = flopy.mf6.MFSimulation.load(sim_ws=str(sim_ws))
 
+    # --- KDT PATCH (idempotent): ensure every GWF model has an Output Control
+    # (OC) package so .hds/.cbc are written. None of the s2..s6 package-building
+    # tools create OC, so a pipeline-assembled model silently produces no head
+    # output and s8 finds nothing (null metrics). This patch does NOT persist to
+    # the shipped snapshot between runs and must be re-applied each session. ---
+    for _mname in list(sim.model_names):
+        _m = sim.get_model(_mname)
+        _is_gwf = str(getattr(_m, "model_type", "")).lower().startswith("gwf")
+        if _is_gwf and _m.get_package("oc") is None:
+            flopy.mf6.ModflowGwfoc(
+                _m,
+                head_filerecord=f"{_mname}.hds",
+                budget_filerecord=f"{_mname}.cbc",
+                saverecord=[("HEAD", "ALL"), ("BUDGET", "ALL")],
+            )
+
     # Write input files
     logger.info("Writing simulation files...")
     sim.write_simulation()
@@ -105,7 +121,12 @@ def process():
     t0 = time.time()
 
     exe_name = MF6_PATH if MF6_PATH else "mf6"
-    success, buff = sim.run_simulation(silent=SILENT, exe_name=exe_name)
+    import subprocess, os
+    # FloPy 3.10: exe_name kwarg removed; use subprocess directly
+    sim.write_simulation()
+    result = subprocess.run([exe_name], cwd=SIM_PATH, capture_output=True, text=True)
+    success = result.returncode == 0
+    buff = (result.stdout + result.stderr).splitlines()
 
     runtime = time.time() - t0
     logger.info(f"Runtime: {runtime:.1f} seconds")

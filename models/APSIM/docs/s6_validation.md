@@ -119,3 +119,66 @@ pbias_val = 100 * np.sum(sim-obs) / np.sum(obs)
 print(f"R² = {r2:.3f}, nRMSE = {nrmse_val:.1f}%, PBIAS = {pbias_val:.1f}%")
 # R² = 0.952, nRMSE = 5.8%, PBIAS = 1.3%
 ```
+
+## Regional-aggregate actual-yield comparison (decision rule)
+
+SPAM `_Y_` and FAOSTAT yields are ACTUAL on-farm yields (production /
+harvested-area). A default point run with generic HWSD soils + uniform
+adequate N simulates the ATTAINABLE (water-/radiation-limited) yield and
+will systematically OVER-predict actual regional yield by the local yield
+gap (commonly +40-120% in low-input, water-limited belts such as the WA
+wheatbelt; e.g. sim 2.9 vs SPAM 1.45 t/ha, PBIAS +100%). Cross-cell r is
+also low because uniform management + generic soils cannot reproduce the
+aggregate's fine-scale spatial ranking.
+
+Before running a regional-aggregate comparison, RESEARCH and MATCH the
+region's actual management/environment:
+  1. Nitrogen  - set applied+mineralized N to the regional AVERAGE, not a
+     well-fertilized rate. Reducing N supply is the primary lever moving
+     attainable toward actual in N/P-limited belts.
+  2. Soil water - use region-realistic PAWC. HWSD generic profiles
+     overstate plant-available water for WA sandplain soils; cap
+     (DUL-LL15) and rooting depth for shallow low-PAWC sands / subsoil
+     constraints. (Region-matching, NOT a convert_soil bug.)
+  3. Cultivar / sowing / rainfed - match the region; keep independent
+     single-season sims (see build_apsimx harvest caveat).
+
+SCORING: PBIAS is the determining metric. A residual POSITIVE PBIAS after
+region-matching reflects the irreducible attainable-vs-actual yield gap -
+not a model/tool defect. If the goal is model skill rather than yield-gap
+accounting, compare against ATTAINABLE-yield references (top-decile
+district yields, water-limited potential) and state so in the result.
+
+
+## Obs-shape selection and detrending (dag-binding; see SKILL.md 8.1-8.3)
+
+The "Regional-aggregate actual-yield comparison" rule above governs MAGNITUDE
+(why `pbias` is positive). This section governs which METRIC FAMILY is legal at
+all.
+
+`dag.yaml` `outputs[Grain.Wt].observability` binds the obs shape to the metric
+family. For `regional_aggregate_time_series` (GDHY, SPAM, FAOSTAT, any gridded
+or district/national yield - anything whose `resolved_obs.granularity` is
+`grid`, or that averages many fields):
+
+- `comparison_mode: aggregate_trend_comparison`
+- `metric_families: [trend_match, magnitude_accuracy]`
+- `determining_metric: pbias`
+- `detrending_options: [none, linear_residual, decadal_mean]`
+- caveat: "detrend before comparing"
+
+So:
+
+1. Set `obs_shape` from the OBS, not the simulation. `granularity == "grid"`
+   never means `point_time_series`.
+2. Call `ki_tools_common.metrics.trend_metrics` (metrics.py:492) in addition to
+   `all_metrics`. Its docstring is explicit: raw inter-annual Pearson r is NOT a
+   valid skill metric for this obs shape.
+3. Report `pbias` (determining), `r_detr`, `r_firstdiff`, `slope_ratio`, and the
+   `detrending` option used. Keep raw `r`/`nse` only as `r_raw`/`nse` for
+   transparency.
+4. Do NOT substitute record truncation for detrending; a sub-window is a
+   labelled diagnostic only.
+5. Keep `period_calibration` and `period_validation` disjoint.
+
+See triplet dt_020.

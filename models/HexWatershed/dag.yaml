@@ -1,0 +1,660 @@
+template_version: "3.5"
+
+identity:
+  model_id: "HexWatershed"
+  scientific_reference_version: "HexWatershed 1.0 (Liao et al. 2020, Environmental Modelling & Software 128:104702) — hexagon/unstructured-mesh watershed delineation"
+  implementation:
+    id: "hexwatershed-cpp-v1"
+    version: "1.0.0"
+    provenance: "C++11; PNNL (Chang Liao) HexWatershed C++ backend, single-JSON-config CLI."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c++"
+  license: "LicenseRef-Battelle-BSD-style"
+  license_reason: "Custom Battelle Memorial Institute BSD-style license (Copyright 2021 Battelle); two BSD-like redistribution clauses plus a non-standard Battelle name-use restriction in place of the canonical BSD-3-Clause non-endorsement clause — no exact SPDX id applies. Verified from LICENSE.md at github.com/pnnl/hexwatershed."
+  repo_url: "https://github.com/pnnl/hexwatershed"
+
+boundary:
+  scope_in:
+    - "Depression-filled DEM on an unstructured polygonal mesh (Priority-Flood + epsilon)"
+    - "Single (steepest-descent) flow direction per mesh cell"
+    - "Topological flow accumulation (upstream cell count)"
+    - "Stream-grid definition by accumulation threshold and/or burned-in flowlines"
+    - "Watershed boundary delineation per outlet"
+    - "Stream confluence, segment partition, segment topology, and Strahler stream order"
+    - "Subbasin and hillslope decomposition"
+    - "Watershed geometric characteristics (area, slope, drainage density, travel distances, TWI)"
+  scope_out:
+    - "Streamflow / discharge — topographic delineation only, no rainfall-runoff or routing-with-water"
+    - "Time-evolving hydrologic state — single static delineation, no time integration"
+    - "Mesh generation — delegated to the external PyFlowline package"
+    - "Land-surface / rainfall-runoff physics"
+  spatial: "distributed-stream"
+  temporal: "event"
+  closure: "none"
+  notes: "Static, steady-state topographic delineation on an arbitrary polygonal mesh; there is no time integration (the KI 'sDate' is a label only) and no mass/energy conservation budget. Distances, areas, and angles are computed with spherical geometry (great-circle distance, spherical area). Drainage is reported as an unweighted upstream cell COUNT; actual drainage area requires multiplying by per-cell area. 'distributed-stream' captures the mesh-cell, network-topology nature; 'event' is used as the closest single-delineation temporal label since the model has no genuine time step."
+
+inputs:
+  forcing: []
+  parameters:
+    - category: terrain
+      name: "Mesh cell elevation (dElevation_mean / dElevation_raw)"
+      unit: "m"
+      source_kind: dataset_lookup
+      model_input_format: "per-cell field in mesh JSON (resampled from a GeoTIFF DEM, EPSG:4326, elevation in meters)"
+      notes: "Single most critical input. DEM must be GCS degrees with meters elevation and nodata matching dMissing_value_dem. dElevation_raw preserves the original; dElevation_mean is what depression filling mutates."
+    - category: mesh_geometry
+      name: "Cell geometry (vVertex, dLongitude/dLatitude_center_degree, dArea)"
+      unit: "degrees (GCS) for coordinates; m^2 for dArea"
+      source_kind: dataset_lookup
+      model_input_format: "per-cell fields in mesh JSON"
+      notes: "Coordinates must be EPSG:4326 geographic degrees; model converts internally to 3D Cartesian. dArea must be m^2, not km^2."
+    - category: mesh_topology
+      name: "Cell adjacency (aNeighbor, aNeighbor_distance, lCellID)"
+      unit: "neighbor distance in m; IDs dimensionless"
+      source_kind: dataset_lookup
+      model_input_format: "per-cell neighbor lists in mesh JSON"
+      notes: "aNeighbor_distance must be meters. vNeighbor_land excludes ocean/edge cells; a cell with fewer land neighbors than vertices is treated as a domain-edge outlet."
+    - category: stream_network
+      name: "Preprocessed topological flowline network"
+      unit: "-"
+      source_kind: dataset_lookup
+      model_input_format: "PyFlowline-preprocessed topological flowlines with cell-to-stream mapping"
+      notes: "Used only when stream burning is enabled. Raw NHDPlus/HydroSHEDS shapefiles WITHOUT topology mapping are silently ignored. Must be EPSG:4326 to intersect the mesh."
+    - category: numerical_constant
+      name: "Earth radius (dRadius_earth)"
+      unit: "m"
+      source_kind: default
+      model_input_format: "hardcoded 6378137.0 (WGS84 equatorial radius) for haversine neighbor distances"
+  initial_conditions:
+    - category: state_init
+      name: "Raw cell elevation surface"
+      unit: "m"
+      source_kind: dataset_lookup
+      model_input_format: "dElevation_mean initialized from mesh JSON before Priority-Flood mutates it"
+      notes: "The delineation has no time-evolving state; the initial condition is the raw elevation surface that depression filling overwrites in place."
+  boundary_conditions:
+    - category: control_switch
+      name: "sMesh_type"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "config JSON string (hexagon | square | latlon | mpas | dggrid | tin)"
+      notes: "Selects the mesh JSON parser. A mismatch vs the actual JSON structure segfaults or misreads connectivity."
+    - category: control_switch
+      name: "iFlag_flowline (stream burning enable)"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "config JSON int (0/1)"
+    - category: control_switch
+      name: "iFlag_stream_grid_option"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "config JSON int (1=burned-only, 2=threshold-only, 3=combined, 4=adaptive-min)"
+      notes: "KI/wrapper documents default 2; the C++ parameter.cpp constructor default is 3 (combined)."
+    - category: control_switch
+      name: "iFlag_stream_burning_topology"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "config JSON int (0/1)"
+      notes: "When 1 without a topology file, silently falls back to elevation-based routing."
+    - category: control_switch
+      name: "iFlag_hillslope"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "config JSON int (0/1)"
+      notes: "Wrapper-documented default 0; C++ parameter.cpp default 1. Controls left/right/headwater hillslope decomposition."
+    - category: control_switch
+      name: "iFlag_multiple_outlet / nOutlet"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "config JSON int / long"
+    - category: control_switch
+      name: "iFlag_resample_method"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "config JSON int (1=nearest neighbor, 2=zonal mean)"
+    - category: control_switch
+      name: "iFlag_global / iFlag_vtk / iFlag_elevation_profile / iFlag_animation"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "config JSON ints toggling global-vs-regional run and optional VTK/profile/animation outputs"
+    - category: threshold
+      name: "dAccumulation_threshold"
+      unit: "ratio (<1.0) or absolute cell count (>=1.0)"
+      source_kind: user_provided
+      model_input_format: "config JSON float; dual interpretation by magnitude"
+      notes: "Controls stream-network density. Wrapper default 0.01; C++ ratio default 0.001, absolute default 25000000.0. <1.0 = ratio of max accumulation, >=1.0 = absolute count."
+    - category: threshold
+      name: "dBreach_threshold"
+      unit: "m"
+      source_kind: user_provided
+      model_input_format: "config JSON float; elevation-jump limit for breaching at stream crossings"
+      notes: "Wrapper default 0.0 (breaching disabled); C++ constructor default 5.0 m. Also scales the outlet deep-reduction (20x)."
+    - category: control_value
+      name: "dMissing_value_dem"
+      unit: "m (sentinel)"
+      source_kind: user_provided
+      model_input_format: "config JSON float (default -9999.0); must equal the DEM nodata exactly"
+    - category: management
+      name: "Outlet specification (lCellID_outlet, lBasinID, dLatitude/dLongitude_outlet_degree)"
+      unit: "degrees for lat/lon; IDs dimensionless"
+      source_kind: user_provided
+      model_input_format: "basin configuration JSON (required when iFlag_flowline=1)"
+      notes: "lCellID_outlet must match an actual mesh cell or the watershed is silently skipped (zero output, exit 0)."
+
+processes:
+  modules:
+    - name: "domain"
+      role: "driver"
+      brief: "Top-level orchestrator (setup/read/initialize/run/export/cleanup); reads config + mesh/flowline JSON and owns a single compset."
+    - name: "compset_run_model"
+      role: "driver"
+      brief: "Fixed 11-step delineation pipeline: depression fill -> flow direction -> accumulation -> stream grid -> watershed boundary -> confluence -> segment -> topology -> order -> subbasin -> characteristics."
+    - name: "PriorityFloodDepressionFilling"
+      role: "process_solver"
+      brief: "Barnes priority-flood + epsilon over a priority_queue; mutates dElevation_mean in place to remove pits, breaches burned streams, and deep-reduces outlet cells (20x breach-threshold below center)."
+    - name: "FlowDirection"
+      role: "process_solver"
+      brief: "Steepest-descent (single flow direction) over land neighbors using the FILLED elevation; sets lCellID_downslope_dominant and dSlope_max_downslope. A stream-burning-topology branch forces direction toward the burned downstream cell."
+    - name: "FlowAccumulation"
+      role: "integrator"
+      brief: "Topological multi-pass summing upslope counts until every resolved cell is flagged done; area-UNWEIGHTED upstream cell count."
+    - name: "StreamGridDefinition"
+      role: "process_solver"
+      brief: "Classifies cells as stream via accumulation threshold (ratio or absolute) and/or burned flag; also auto-detects an outlet in non-flowline mode and sets dLength_stream_conceptual for every cell."
+    - name: "WatershedBoundary"
+      role: "allocator"
+      brief: "Walks downslope chains from each cell to the outlet to assign watershed membership and builds per-outlet watershed objects."
+    - name: "StreamConfluence"
+      role: "process_solver"
+      brief: "Per-watershed detection of confluence cells (where multiple stream upslopes meet); counts confluences and segments."
+    - name: "StreamSegment"
+      role: "allocator"
+      brief: "Per-watershed partition of the stream network into reach segments between confluences, headwaters, and outlet."
+    - name: "StreamTopology"
+      role: "process_solver"
+      brief: "Builds upstream/downstream segment linkage (lSegment_downstream) per watershed."
+    - name: "StreamOrder"
+      role: "process_solver"
+      brief: "Assigns Strahler-style stream order per watershed segment."
+    - name: "Subbasin"
+      role: "allocator"
+      brief: "Delineates one subbasin per segment from cell topology; assigns lSubbasin and distance-to-subbasin-outlet."
+    - name: "WatershedCharacteristics"
+      role: "process_solver"
+      brief: "Computes area, drainage density, longest stream, and (when iFlag_hillslope) left/right/headwater hillslope geometry per watershed."
+    - name: "Export"
+      role: "driver"
+      brief: "Writes per-watershed JSON, stream edges, characteristics text files, and optional animation/VTK outputs."
+  internal_edges:
+    - from: "domain"
+      to: "compset_run_model"
+      kind: "invokes"
+      brief: "domain_run calls compset_run_model()."
+    - from: "Inputs"
+      to: "domain"
+      kind: "consumes_input"
+      brief: "domain_read populates vCell_active (valid-elevation cells) and the cell-id-to-index map from config + mesh JSON."
+    - from: "compset_run_model"
+      to: "PriorityFloodDepressionFilling"
+      kind: "invokes"
+      brief: "step 1"
+    - from: "PriorityFloodDepressionFilling"
+      to: "dElevation_mean"
+      kind: "writes_state"
+      brief: "fills pits, breaches streams, and deep-reduces outlet elevation in place."
+    - from: "compset_run_model"
+      to: "FlowDirection"
+      kind: "invokes"
+      brief: "step 2"
+    - from: "dElevation_mean"
+      to: "FlowDirection"
+      kind: "reads_state"
+      brief: "steepest descent uses the FILLED elevation, never dElevation_raw."
+    - from: "iFlag_stream_burned"
+      to: "FlowDirection"
+      kind: "reads_state"
+      brief: "stream-burning-topology branch overrides elevation-based direction toward the burned downstream cell."
+    - from: "FlowDirection"
+      to: "lCellID_downslope_dominant"
+      kind: "writes_state"
+      brief: "dominant downslope neighbor plus dSlope_max_downslope."
+    - from: "compset_run_model"
+      to: "FlowAccumulation"
+      kind: "invokes"
+      brief: "step 3"
+    - from: "lCellID_downslope_dominant"
+      to: "FlowAccumulation"
+      kind: "reads_state"
+      brief: "accumulation walks neighbor downslope ids until topologically resolved (hard dependency on direction completion)."
+    - from: "FlowAccumulation"
+      to: "dAccumulation"
+      kind: "writes_state"
+      brief: "sums upslope counts (area-unweighted)."
+    - from: "compset_run_model"
+      to: "StreamGridDefinition"
+      kind: "invokes"
+      brief: "step 4"
+    - from: "dAccumulation"
+      to: "StreamGridDefinition"
+      kind: "reads_state"
+      brief: "compared against the ratio/absolute threshold."
+    - from: "StreamGridDefinition"
+      to: "iFlag_stream"
+      kind: "writes_state"
+      brief: "marks stream cells; non-flowline branch also writes auto-detected outlet id/lat/lon."
+    - from: "compset_run_model"
+      to: "WatershedBoundary"
+      kind: "invokes"
+      brief: "step 5"
+    - from: "lCellID_downslope_dominant"
+      to: "WatershedBoundary"
+      kind: "reads_state"
+      brief: "walks downslope chains to the outlet to assign membership."
+    - from: "WatershedBoundary"
+      to: "iFlag_watershed"
+      kind: "writes_state"
+      brief: "marks watershed membership and builds per-outlet watershed objects holding cell COPIES."
+    - from: "compset_run_model"
+      to: "StreamConfluence"
+      kind: "invokes"
+      brief: "step 6 (per-watershed)"
+    - from: "compset_run_model"
+      to: "StreamSegment"
+      kind: "invokes"
+      brief: "step 7 (per-watershed)"
+    - from: "compset_run_model"
+      to: "StreamTopology"
+      kind: "invokes"
+      brief: "step 8"
+    - from: "compset_run_model"
+      to: "StreamOrder"
+      kind: "invokes"
+      brief: "step 9"
+    - from: "StreamOrder"
+      to: "lStream_segment"
+      kind: "writes_state"
+      brief: "Strahler-style order written per segment."
+    - from: "compset_run_model"
+      to: "Subbasin"
+      kind: "invokes"
+      brief: "step 10"
+    - from: "Subbasin"
+      to: "lSubbasin"
+      kind: "writes_state"
+      brief: "per-segment subbasin id plus distance-to-subbasin-outlet."
+    - from: "compset_run_model"
+      to: "WatershedCharacteristics"
+      kind: "invokes"
+      brief: "step 11; reads iFlag_hillslope."
+    - from: "WatershedCharacteristics"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "area, drainage density, longest stream, and hillslope geometry per watershed."
+    - from: "Export"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "writes per-watershed JSON, stream edges, characteristics text, and optional animation/VTK."
+
+states:
+  variables:
+    - name: "dElevation_mean"
+      unit: "m"
+      role: "prognostic"
+    - name: "dElevation_raw"
+      unit: "m"
+      role: "diagnostic"
+    - name: "lCellID_downslope_dominant"
+      unit: "-"
+      role: "prognostic"
+    - name: "dSlope_max_downslope"
+      unit: "ratio (dimensionless)"
+      role: "diagnostic"
+    - name: "dAccumulation"
+      unit: "cells (upstream count)"
+      role: "accumulator"
+    - name: "iFlag_stream"
+      unit: "-"
+      role: "prognostic"
+    - name: "iFlag_stream_burned"
+      unit: "-"
+      role: "prognostic"
+    - name: "iFlag_watershed"
+      unit: "-"
+      role: "prognostic"
+    - name: "iFlag_outlet"
+      unit: "-"
+      role: "prognostic"
+    - name: "iFlag_confluence"
+      unit: "-"
+      role: "prognostic"
+    - name: "lWatershed"
+      unit: "-"
+      role: "prognostic"
+    - name: "lStream_segment"
+      unit: "-"
+      role: "prognostic"
+    - name: "lSubbasin"
+      unit: "-"
+      role: "prognostic"
+    - name: "lHillslope"
+      unit: "-"
+      role: "prognostic"
+    - name: "dDistance_to_downslope"
+      unit: "m"
+      role: "diagnostic"
+    - name: "dDistance_to_channel"
+      unit: "m"
+      role: "diagnostic"
+    - name: "dDistance_to_watershed_outlet"
+      unit: "m"
+      role: "diagnostic"
+    - name: "dTwi"
+      unit: "-"
+      role: "diagnostic"
+    - name: "dLength_stream_conceptual"
+      unit: "m"
+      role: "diagnostic"
+  provenance: "populated"
+
+outputs:
+  - var: "dElevation_mean (depression-filled elevation)"
+    validation_rank: 1
+    unit: "m"
+    description: "Per-cell elevation after Priority-Flood depression filling; the surface all downstream analysis uses (raw retained in dElevation_raw)."
+    emitted_in: "watershed_NNNNN.json"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats:
+            - "Compare against a reference filled/hydro-conditioned DEM, NOT raw terrain; filled cells differ from input by design."
+            - "On a non-raster mesh, comparison requires resampling the reference to mesh cells."
+      detrending_options: ["none"]
+  - var: "lCellID_downslope_dominant (flow direction)"
+    validation_rank: 2
+    unit: "-"
+    description: "Dominant steepest-descent downslope neighbor per cell (single flow direction); -1 marks outlet/edge cells."
+    emitted_in: "watershed_NNNNN.json"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "event_detection"]
+          determining_metric: "csi"
+          caveats:
+            - "Mesh-cell flow direction; compare to a reference routing on the same mesh, or aggregate to network agreement (fraction of cells routed consistently)."
+      detrending_options: ["none"]
+  - var: "dAccumulation (flow accumulation)"
+    validation_rank: 3
+    unit: "cells (upstream count)"
+    description: "Number of upstream cells draining through each cell; area-unweighted. Multiply by mean cell area for drainage area in m^2."
+    emitted_in: "watershed_NNNNN.json"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats:
+            - "Output is a CELL COUNT; convert to drainage area (x mean cell area) before comparing to area-based references."
+            - "Mesh-dependent; a fair comparison controls for mesh resolution."
+      detrending_options: ["none"]
+  - var: "Drainage area (derived watershed/contributing area)"
+    validation_rank: 4
+    unit: "m^2"
+    description: "Contributing drainage area per outlet/watershed, derived from accumulation and actual cell areas (spherical geometry)."
+    emitted_in: "watershed_NNNNN_characteristics.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Compare per-outlet drainage area to a published/reference basin area; sensitive to outlet cell placement and mesh resolution."
+      detrending_options: ["none"]
+  - var: "Stream grid / stream network (iFlag_stream, segments)"
+    validation_rank: 5
+    unit: "-"
+    description: "Cells/segments classified as stream channels above the accumulation threshold and/or burned in."
+    emitted_in: "watershed_NNNNN.json / watershed_NNNNN_segment_*.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "event_detection"]
+          determining_metric: "csi"
+          caveats:
+            - "Network density depends strongly on dAccumulation_threshold; align threshold to the reference network's drainage density before scoring."
+            - "Compare against a reference vector stream network (e.g., resampled to the mesh) — overlap/hit-rate, not magnitude."
+      detrending_options: ["none"]
+  - var: "Strahler stream order"
+    validation_rank: 6
+    unit: "-"
+    description: "Branching order assigned per stream segment."
+    emitted_in: "watershed_NNNNN_segment_*.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "categorical_event_comparison"
+          metric_families: ["event_detection", "ranking_quality"]
+          determining_metric: "spearman"
+          caveats:
+            - "Order is integer-categorical and sensitive to stream-threshold density; compare max-order and order distribution rather than per-cell labels."
+      detrending_options: ["none"]
+  - var: "Watershed boundary / subbasin boundaries"
+    validation_rank: 7
+    unit: "-"
+    description: "Cells assigned to each outlet (watershed) or stream segment (subbasin)."
+    emitted_in: "watershed_NNNNN.json / watershed_NNNNN_subbasin_*.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "event_detection"]
+          determining_metric: "csi"
+          caveats:
+            - "Compare delineated boundary polygon to a reference watershed boundary (IoU / boundary overlap); sensitive to outlet placement."
+      detrending_options: ["none"]
+  - var: "Mean / max / min watershed slope"
+    validation_rank: 8
+    unit: "ratio (dimensionless rise/run)"
+    description: "Per-cell and basin-aggregate slope (between- and within-cell), reported as unitless ratios."
+    emitted_in: "watershed_NNNNN_characteristics.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["magnitude_accuracy", "spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats:
+            - "Slope is a ratio, NOT degrees or percent; convert before comparing (degrees = atan(ratio)*180/pi)."
+            - "Inflated ~3.28x if the source DEM was in feet, or by elevation/distance unit mismatches."
+      detrending_options: ["none"]
+  - var: "Drainage density"
+    validation_rank: 9
+    unit: "km^-1 (km/km^2)"
+    description: "Total stream length per unit watershed area."
+    emitted_in: "watershed_NNNNN_characteristics.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Typical physical range 0.5-10 km^-1; values ~1e6 off indicate m-vs-km or m^2-vs-km^2 unit errors."
+            - "Depends on the stream threshold; align extraction density to the reference."
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "mesh_resolution"
+      to: "dAccumulation (flow accumulation)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["liao2021_hexwatershed_advances", "liao2020_hexwatershed_delineation"]
+    - from: "mesh_resolution"
+      to: "lCellID_downslope_dominant (flow direction)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["liao2021_hexwatershed_advances", "liao2023_topological_meshindep"]
+    - from: "mesh_resolution"
+      to: "Stream grid / stream network"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["liao2020_hexwatershed_delineation", "liao2023_topological_meshindep"]
+    - from: "stream_burning (iFlag_flowline)"
+      to: "lCellID_downslope_dominant (flow direction)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "mountainous / complex / coarse-resolution terrain"
+      citations: ["liao2021_hexwatershed_advances", "liao2023_topological_streamburn"]
+    - from: "spatial_resampling method (iFlag_resample_method)"
+      to: "lCellID_downslope_dominant (flow direction)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "coarse resolution; headwater cells"
+      citations: ["liao2021_hexwatershed_advances"]
+    - from: "spatial_resampling method (iFlag_resample_method)"
+      to: "dAccumulation (flow accumulation)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "coarse resolution"
+      citations: ["liao2021_hexwatershed_advances"]
+    - from: "depression filling vs breaching (dBreach_threshold)"
+      to: "lCellID_downslope_dominant (flow direction)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "low-relief / depression-rich terrain"
+      citations: ["liao2023_topological_streamburn", "liao2021_hexwatershed_advances"]
+    - from: "flow_accumulation_threshold (dAccumulation_threshold)"
+      to: "Stream grid / stream network"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["liao2020_hexwatershed_delineation"]
+    - from: "source DEM quality/resolution"
+      to: "lCellID_downslope_dominant (flow direction)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always; partly mitigated by stream burning"
+      citations: ["liao2020_hexwatershed_delineation", "liao2021_hexwatershed_advances"]
+    - from: "mesh_type"
+      to: "dAccumulation (flow accumulation)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "unstructured Voronoi vs hexagon mesh; ESM coupling"
+      citations: ["liao2024_voronoi_routing_eval"]
+  citation_index:
+    liao2020_hexwatershed_delineation:
+      short_citation: "Liao et al. 2020"
+      doi: "10.1016/j.envsoft.2020.104702"
+      note: "Foundational HexWatershed 1.0; mesh resolution as dominant control on stream-network and drainage-area fidelity. Controlled config experiments, not a formal SA."
+    liao2021_hexwatershed_advances:
+      short_citation: "Liao et al. 2021"
+      doi: "10.1016/j.advwatres.2021.104099"
+      note: "HexWatershed 2.0; 16 Columbia-basin configurations quantify accuracy impact of resampling and stream burning, strongest at coarse resolution. Relative impact, no Sobol/Morris indices."
+    liao2023_topological_streamburn:
+      short_citation: "Liao et al. 2023 (stream burning / depression filling)"
+      doi: "10.1029/2022MS003487"
+      note: "Topological-relationship stream burning and breach-vs-fill control flow-direction correctness in low-relief / complex terrain."
+    liao2023_topological_meshindep:
+      short_citation: "Liao et al. 2023 (mesh-independent representation)"
+      doi: "10.1029/2022MS003089"
+      note: "Mesh resolution relative to channel spacing governs river-network topology consistency across meshes."
+    liao2024_voronoi_routing_eval:
+      short_citation: "Liao et al. 2024"
+      doi: "10.1029/2024MS004737"
+      note: "Voronoi-mesh routing evaluation; mesh type/connectivity affects routed drainage-area / flow-direction accuracy in ESM coupling."
+
+safety:
+  hazards:
+    - id: "dem_units_feet_not_meters"
+      kind: "soil_semantic"
+      description: "DEM elevation in feet (e.g., USGS NED) instead of meters inflates slopes ~3.28x and mis-behaves depression filling. (dt_013)"
+      severity: "silent"
+    - id: "coordinates_projected_not_gcs"
+      kind: "soil_semantic"
+      description: "Mesh/flowline coordinates in a projected CRS (UTM meters) are treated as degrees, producing nonsensical distances/areas/slopes. (dt_006)"
+      severity: "fatal"
+    - id: "cell_area_km2_not_m2"
+      kind: "soil_semantic"
+      description: "dArea supplied in km^2 instead of m^2 makes drainage metrics / drainage density 1e6 too large. (dt_011)"
+      severity: "silent"
+    - id: "neighbor_distance_wrong_units"
+      kind: "soil_semantic"
+      description: "aNeighbor_distance in km (1000x) or degrees (~111000x) instead of meters yields physically impossible slopes. (dt_012)"
+      severity: "silent"
+    - id: "missing_value_mismatch"
+      kind: "soil_semantic"
+      description: "dMissing_value_dem not matching the DEM nodata sentinel drops valid cells or retains nodata, leaving holes in the watershed. (dt_014)"
+      severity: "fatal"
+    - id: "mesh_type_mismatch"
+      kind: "parser_semantic"
+      description: "sMesh_type not matching the mesh JSON structure causes segfault/std::bad_alloc or misread connectivity. (dt_005)"
+      severity: "fatal"
+    - id: "outlet_cell_not_in_mesh"
+      kind: "control_semantic"
+      description: "lCellID_outlet not matching any mesh cell silently skips the watershed (zero output, exit code 0). (dt_008)"
+      severity: "silent"
+    - id: "accumulation_threshold_dual_meaning"
+      kind: "control_semantic"
+      description: "dAccumulation_threshold interpreted as ratio (<1.0) vs absolute cell count (>=1.0); wrong magnitude gives a far too dense or too sparse stream network. (dt_007)"
+      severity: "degraded"
+    - id: "stream_burning_raw_shapefile_silent_skip"
+      kind: "control_semantic"
+      description: "Raw flowline shapefiles lacking PyFlowline cell-to-stream topology mapping are silently ignored; stream burning has no effect. (dt_004)"
+      severity: "silent"
+    - id: "stream_burning_topology_silent_fallback"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "iFlag_stream_burning_topology=1 without a topology file silently falls back to elevation-based routing. (dt_018)"
+      severity: "silent"
+    - id: "breach_threshold_zero_disconnected_streams"
+      kind: "control_semantic"
+      description: "dBreach_threshold=0 disables breaching, leaving streams disconnected at artificial barriers/mesh artifacts. (dt_017)"
+      severity: "degraded"
+    - id: "outlet_magic_reduction_constants"
+      kind: "numerical_instability"
+      description: "Outlet cells are deep-reduced by an undocumented 20x breach-threshold (or fixed -10 m fallback) and the priority-flood loop terminates at queue size 3, which can materially alter domain-edge delineation."
+      severity: "degraded"
+  validation_limits:
+    - "Produces routing topology and geometry only; cannot be compared to streamflow/discharge observations (no water fluxes)."
+    - "Static single delineation with no time integration; cannot resolve any temporal dynamics."
+    - "Mesh-dependent results; fidelity is bounded by mesh resolution relative to channel spacing and cannot recover sub-cell network detail."
+    - "Depends on an externally generated mesh (PyFlowline); does not generate or correct its own mesh."
+  warnings:
+    - "dElevation_mean is the depression-filled surface (permanently mutated in place); use dElevation_raw for any comparison against input terrain."
+    - "dAccumulation is an upstream CELL COUNT, not contributing area; multiply by mean cell area to obtain drainage area in m^2."
+    - "All slope outputs are unitless ratios (rise/run), not degrees or percent."
+    - "Drainage density is km^-1 (km/km^2); compute with consistent km conversions or values come out ~1e6 too large."
+    - "Optional outputs (VTK, hillslope decomposition, animation, elevation profiles) require their iFlag_* switches; C++ constructor defaults differ from wrapper-documented defaults for several flags."
+  assumptions:
+    - statement: "The model is a static, steady-state topographic delineation with no time integration; the configured simulation date is a label only."
+      scope: "temporal nature of the whole model"
+      source: "HexWatershed docs (algorithm/application pages); Liao et al. 2020 EMS 128:104702"
+      status: "adopted"
+    - statement: "A single (steepest-descent) flow direction is assigned per cell from elevation differences and great-circle distances; spherical geometry is used for distance, area, and angle."
+      scope: "flow-direction and geometric computation"
+      source: "HexWatershed algorithm docs (Flow Direction / Distance-Area-Angle sections)"
+      status: "adopted"
+    - statement: "There is no mass or energy conservation closure; drainage is reported as an unweighted upstream cell count, and actual drainage area is derived by multiplying by per-cell area."
+      scope: "closure / conservation"
+      source: "HexWatershed source hexagon.h accumulation field and algorithm docs (Flow Accumulation / drainage area)"
+      status: "adopted"

@@ -1,90 +1,113 @@
 model:
-  name: "PyMT"
-  full_name: "Python Modeling Toolkit"
-  domain: "earth-surface-dynamics / model-coupling-framework"
-  version: "1.3.3.dev0"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PyMT/venv/bin/python"
-  language: "python"
-  license: "MIT"
-  authors: ["CSDMS team", "mcflugen@gmail.com"]
-  description: >
-    Model coupling framework that wraps BMI-enabled models in a unified Python API.
-    Supports coupling across disparate time/space scales via CSDMS Standard Names.
+  name: PyMT
+  full_name: Python Modeling Toolkit
+  domain: framework
+  version: 1.3.3.dev0
+  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/PyMT/venv/bin/python
+  language: python
+  license: MIT
+  authors:
+  - CSDMS team
+  - mcflugen@gmail.com
+  description: 'Model coupling framework that wraps BMI-enabled models in a unified
+    Python API. Supports coupling across disparate time/space scales via CSDMS Standard
+    Names.
 
+    '
 inputs:
   forcing:
-    - name: "model-specific (via BMI set_value)"
-      unit: "model-dependent (UDUNITS-compatible)"
-      valid_range: [null, null]
-      description: "Forcing variables depend on the wrapped BMI model"
+  - name: model-specific (via BMI set_value)
+    unit: model-dependent (UDUNITS-compatible)
+    valid_range:
+    - null
+    - null
+    description: Forcing variables depend on the wrapped BMI model
   parameters:
     critical:
-      - name: "run_duration"
-        valid_range: [1, null]
-        description: "Number of model time steps to execute"
-      - name: "time_step"
-        valid_range: [0.001, null]
-        description: "Model time step size (units vary by wrapped model)"
+    - name: run_duration
+      valid_range:
+      - 1
+      - null
+      description: Number of model time steps to execute
+    - name: time_step
+      valid_range:
+      - 0.001
+      - null
+      description: Model time step size (units vary by wrapped model)
     framework:
-      - name: "angle_convention"
-        valid_values: ["azimuth", "math"]
-        description: "Angle convention for directional variables"
-      - name: "unit_system"
-        valid_values: ["UDUNITS"]
-        description: "All unit conversions use gimli.units (UDUNITS-based)"
-
+    - name: angle_convention
+      valid_values:
+      - azimuth
+      - math
+      description: Angle convention for directional variables
+    - name: unit_system
+      valid_values:
+      - UDUNITS
+      description: All unit conversions use gimli.units (UDUNITS-based)
 outputs:
   primary:
-    - name: "model-specific (via BMI get_value)"
-      unit: "model-dependent"
-      valid_range: [null, null]
-      format: "flat numpy array (must reshape via grid_shape)"
+  - name: model-specific (via BMI get_value)
+    unit: model-dependent
+    valid_range:
+    - null
+    - null
+    format: flat numpy array (must reshape via grid_shape)
   formats:
-    - name: "numpy_array"
-      description: "Direct get_value() returns flat 1D numpy array"
-    - name: "netcdf"
-      description: "NcPortPrinter writes CF/UGRID-compliant NetCDF"
-    - name: "xarray_dataset"
-      description: "dataset_from_bmi_grid returns xarray.Dataset"
-
+  - name: numpy_array
+    description: Direct get_value() returns flat 1D numpy array
+  - name: netcdf
+    description: NcPortPrinter writes CF/UGRID-compliant NetCDF
+  - name: xarray_dataset
+    description: dataset_from_bmi_grid returns xarray.Dataset
 grid_types:
-  - name: "uniform_rectilinear"
-    description: "Regular spacing, origin + delta"
-  - name: "rectilinear"
-    description: "Variable spacing, 1D coordinate arrays"
-  - name: "structured"
-    description: "Curvilinear, 2D coordinate arrays"
-  - name: "unstructured"
-    description: "Arbitrary connectivity, UGRID format"
-
+- name: uniform_rectilinear
+  description: Regular spacing, origin + delta
+- name: rectilinear
+  description: Variable spacing, 1D coordinate arrays
+- name: structured
+  description: Curvilinear, 2D coordinate arrays
+- name: unstructured
+  description: Arbitrary connectivity, UGRID format
 mapper_types:
-  - name: "PointToPoint"
-    method: "Nearest-neighbor"
-  - name: "CellToPoint"
-    method: "Area-weighted average"
-  - name: "PointToCell"
-    method: "Area-weighted distribution"
-  - name: "EsmpMapper"
-    method: "ESMF conservative remapping"
-    requires: "esmpy"
-
+- name: PointToPoint
+  method: Nearest-neighbor
+- name: CellToPoint
+  method: Area-weighted average
+- name: PointToCell
+  method: Area-weighted distribution
+- name: EsmpMapper
+  method: ESMF conservative remapping
+  requires: esmpy
 dependencies:
-  - {name: "click", purpose: "CLI framework"}
-  - {name: "gimli.units", version: ">=0.3.2", purpose: "UDUNITS unit conversion"}
-  - {name: "jinja2", purpose: "Config template rendering"}
-  - {name: "landlab", version: ">=2", purpose: "Spatial grid data structures"}
-  - {name: "netcdf4", purpose: "NetCDF I/O"}
-  - {name: "numpy", version: "<2", purpose: "Array operations (numpy 2 breaks compiled BMI libs)"}
-  - {name: "scipy", purpose: "Scientific computing"}
-  - {name: "xarray", purpose: "Labeled array data"}
-
+- name: click
+  purpose: CLI framework
+- name: gimli.units
+  version: '>=0.3.2'
+  purpose: UDUNITS unit conversion
+- name: jinja2
+  purpose: Config template rendering
+- name: landlab
+  version: '>=2'
+  purpose: Spatial grid data structures
+- name: netcdf4
+  purpose: NetCDF I/O
+- name: numpy
+  version: <2
+  purpose: Array operations (numpy 2 breaks compiled BMI libs)
+- name: scipy
+  purpose: Scientific computing
+- name: xarray
+  purpose: Labeled array data
 known_issues:
-  - id: "numpy2"
-    description: "Requires numpy < 2. numpy 2.x causes silent dtype issues and segfaults in compiled BMI libs"
-    reference: "issue #173"
-  - id: "pkg_resources_deprecation"
-    description: "pkg_resources deprecation warning from model_collection.py — works but will need migration"
-  - id: "no_plugins"
-    description: "No model plugins installed in current venv — framework works but cannot run actual simulations"
-  - id: "flat_arrays"
-    description: "get_value() always returns flattened 1D arrays regardless of grid dimensionality"
+- id: numpy2
+  description: Requires numpy < 2. numpy 2.x causes silent dtype issues and segfaults
+    in compiled BMI libs
+  reference: 'issue #173'
+- id: pkg_resources_deprecation
+  description: "pkg_resources deprecation warning from model_collection.py \u2014\
+    \ works but will need migration"
+- id: no_plugins
+  description: "No model plugins installed in current venv \u2014 framework works\
+    \ but cannot run actual simulations"
+- id: flat_arrays
+  description: get_value() always returns flattened 1D arrays regardless of grid dimensionality

@@ -1,0 +1,522 @@
+template_version: "3.5"
+
+identity:
+  model_id: "SHAW"
+  scientific_reference_version: "SHAW v3.03 (Flerchinger 2017 Technical Documentation NWRC 2017-1; Flerchinger & Saxton 1989 theory)"
+  implementation:
+    id: "shaw-303"
+    version: "v3.03"
+    provenance: "Fortran 77; SHAW v3.03 (Gerald N. Flerchinger, USDA-ARS Northwest Watershed Research Center) compiled to the shaw303 binary."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: ""
+  repo_url: ""
+
+boundary:
+  scope_in:
+    - "1-D vertical coupled heat, water, and solute transfer through a single plant canopy - snow - residue - soil column (soil-plant-atmosphere continuum)"
+    - "Soil freezing/thawing: ice content, frost/thaw depth, freeze-thaw cycles with latent-heat coupling"
+    - "Multi-layer snowpack: density/grain metamorphism, albedo decay, liquid retention and snowmelt"
+    - "Explicit crop-residue heat/water/vapor transfer"
+    - "Multi-species plant canopy energy balance, stomatal-resistance-driven transpiration"
+    - "Surface energy balance partitioned into net radiation, sensible (H), latent (LE), and ground (G) heat flux"
+    - "Advective-dispersive solute transport for up to 10 salt species"
+  scope_out:
+    - "No 2-D/3-D horizontal transport; each profile/column is independent"
+    - "No river/channel routing; not a watershed-scale model"
+    - "Lateral subsurface flow exiting the profile is a lumped output term, not a resolved 2-D lateral process"
+  spatial: "1-D column"
+  temporal: "hourly"
+  closure: "both"
+  notes: "Heat and water flux equations for canopy, snow, residue, and soil layers are written in implicit finite-difference form and solved simultaneously and iteratively by a Newton-Raphson scheme to a user-prescribed tolerance. Ground heat flux is computed from the residual of the surface energy balance and must satisfy the heat-flux solution for the residue/soil profile. Mass-balance closure applies to water and to the transported solute species; surface energy-balance closure is intrinsic (not optional). Internally the heat and water systems are assembled as two separate tridiagonal matrices solved per iteration and coupled implicitly through the freeze-thaw liquid/ice repartition. Timestep flag MTSTEP selects hourly (0), daily (1), or custom-interval (2); the solver subdivides each hour into adaptive sub-timesteps."
+
+inputs:
+  forcing:
+    - {category: forcing, name: "air_temperature", unit: "degC", source_kind: forcing, model_input_format: ".wea (hourly TA or daily TMAX/TMIN)", notes: "Valid range approx -60 to 55 degC; hourly when MTSTEP=0, daily extremes when MTSTEP=1"}
+    - {category: forcing, name: "wind_speed", unit: "m/s (IFLAGSI=1)", source_kind: forcing, model_input_format: ".wea", notes: "IFLAGSI=0 expects mph (hourly) or miles/day (daily); IFLAGSI=1 expects m/s in both"}
+    - {category: forcing, name: "relative_humidity", unit: "percent", source_kind: forcing, model_input_format: ".wea (HUM column, hourly format)", notes: "Hourly format only"}
+    - {category: forcing, name: "dewpoint_temperature", unit: "degC", source_kind: forcing, model_input_format: ".wea (TDEW column, daily format)", notes: "Daily format only"}
+    - {category: forcing, name: "precipitation", unit: "mm (IFLAGSI=1)", source_kind: forcing, model_input_format: ".wea", notes: "IFLAGSI=0 expects inches"}
+    - {category: forcing, name: "solar_radiation", unit: "W/m2", source_kind: forcing, model_input_format: ".wea (SUNHOR hourly horizontal, or daily-average SOLAR)", notes: "Same unit regardless of IFLAGSI; daily mode expects average daily W/m2"}
+    - {category: forcing, name: "new_snow_density", unit: "g/cm3", source_kind: forcing, model_input_format: ".wea (SNODEN column, hourly)", notes: "0 = model auto-computes new-snow density from air temperature"}
+  parameters:
+    - {category: parameters, name: "soil_texture (sand/silt/clay/OM)", unit: "percent", source_kind: dataset_lookup, model_input_format: ".sit per soil node"}
+    - {category: parameters, name: "saturated_hydraulic_conductivity (SATCON)", unit: "cm/hr", source_kind: calibrated, model_input_format: ".sit", notes: "Always cm/hr regardless of IFLAGSI; valid approx 1e-4 to 100"}
+    - {category: parameters, name: "bulk_density", unit: "kg/m3", source_kind: dataset_lookup, model_input_format: ".sit"}
+    - {category: parameters, name: "soil_node_depth (ZS)", unit: "m", source_kind: user_provided, model_input_format: ".sit", notes: "First node ZS(1)=0.0 (surface); always meters regardless of IFLAGSI"}
+    - {category: parameters, name: "air_entry_potential (BCAP / psi_e)", unit: "m (negative)", source_kind: calibrated, model_input_format: ".sit"}
+    - {category: parameters, name: "quartz_fraction (QUARTZ)", unit: "fraction 0-1", source_kind: dataset_lookup, model_input_format: ".sit", notes: "Johansen 1975 thermal parameter; quartz fraction of mineral particles"}
+    - {category: parameters, name: "pore_size_distribution_index (BPAR / Campbell b)", unit: "dimensionless", source_kind: calibrated, model_input_format: ".sit", notes: "Rawls et al. 1982; controls water retention curve AND the unfrozen-water-vs-temperature relation critical to freeze-thaw; physically ~2-12"}
+    - {category: parameters, name: "site geometry (lat/lon/slope/aspect/elevation)", unit: "deg / m", source_kind: user_provided, model_input_format: ".sit", notes: "Elevation drives elevation-adjusted air pressure used in psychrometric calculations"}
+    - {category: parameters, name: "residue thermal/vapor coefficient (RESTKB)", unit: "dimensionless", source_kind: calibrated, model_input_format: ".sit / residue file", notes: "Wind influence on residue heat/vapor transfer; ~4.0 lying residue, ~8.5 standing residue"}
+    - {category: parameters, name: "canopy/vegetation parameters (LAI, canopy height, stomatal-resistance coefficients, rooting depth)", unit: "various", source_kind: dataset_lookup, model_input_format: "plant growth file (MCANFLG=1 or 3)"}
+    - {category: parameters, name: "snow parameters", unit: "various", source_kind: default, model_input_format: ".sit"}
+    - {category: parameters, name: "solute transport parameters (ASALT/DISPER per species)", unit: "various", source_kind: user_provided, model_input_format: ".sit (present only when NSALT>0)"}
+  initial_conditions:
+    - {category: initial_conditions, name: "soil_moisture_profile", unit: "volumetric fraction or matric potential", source_kind: user_provided, model_input_format: ".moi", notes: ">=2 profiles bracketing the simulation period required for interpolation; last profile must be at or after JEND"}
+    - {category: initial_conditions, name: "soil_temperature_profile", unit: "degC", source_kind: user_provided, model_input_format: ".tem", notes: "99999 sentinel = no measurement (model interpolates); some nodes per profile must carry valid values; last profile must be at or after JEND"}
+    - {category: initial_conditions, name: "initial_snow_depth_and_density", unit: "m / kg/m3", source_kind: user_provided, model_input_format: ".sit / initial state"}
+  boundary_conditions:
+    - {category: boundary_conditions, name: "MTSTEP (weather timestep selector)", unit: "code 0/1/2", source_kind: user_provided, model_input_format: ".inp", notes: "0=hourly (9 col), 1=daily (8 col), 2=custom; must match weather column count"}
+    - {category: boundary_conditions, name: "IFLAGSI (unit system selector)", unit: "code 0/1", source_kind: user_provided, model_input_format: ".inp", notes: "0=English, 1=SI; must match forcing units"}
+    - {category: boundary_conditions, name: "MCANFLG (plant canopy flag)", unit: "code 0-3", source_kind: user_provided, model_input_format: ".inp", notes: "1 or 3 requires plant growth file"}
+    - {category: boundary_conditions, name: "NSALT (number of solute species)", unit: "count 0-10", source_kind: user_provided, model_input_format: ".inp"}
+    - {category: boundary_conditions, name: "IWRC (water retention curve selector)", unit: "code 1-3", source_kind: user_provided, model_input_format: ".inp", notes: "1=Campbell, 2=Brooks-Corey, 3=van Genuchten; with IWRC=3 set psi_e=0"}
+    - {category: boundary_conditions, name: "ITMPBC (lower temperature boundary method)", unit: "code", source_kind: user_provided, model_input_format: ".inp", notes: "ITMPBC=1 uses a Hirota damping-depth dynamic bottom-node temperature rather than a fixed boundary"}
+    - {category: boundary_conditions, name: "JSTART / JEND (simulation start/end Julian day)", unit: "DOY", source_kind: user_provided, model_input_format: ".sit/.inp", notes: "JSTART must be first weather DOY + 1 (DAY2HR needs previous-day data)"}
+    - {category: boundary_conditions, name: "HRNOON (solar noon hour)", unit: "decimal hour", source_kind: user_provided, model_input_format: ".sit", notes: "Compute from longitude: 12.0 + (std_meridian - lon)/15; placeholder values mis-time the diurnal cycle and precipitation assignment"}
+    - {category: boundary_conditions, name: "HEIGHT (measurement reference height)", unit: "m", source_kind: user_provided, model_input_format: ".sit", notes: "Must exceed maximum canopy height"}
+    - {category: boundary_conditions, name: "NS (number of soil nodes)", unit: "count up to 50", source_kind: user_provided, model_input_format: ".sit", notes: ">=11 with fine near-surface spacing recommended to resolve frost penetration"}
+    - {category: boundary_conditions, name: "TOLER (Newton-Raphson convergence tolerance)", unit: "dimensionless", source_kind: user_provided, model_input_format: ".inp", notes: "0.001-0.01 recommended; 0.001 for freeze-thaw"}
+    - {category: boundary_conditions, name: "PONDMX (max ponding depth)", unit: "cm", source_kind: user_provided, model_input_format: ".sit", notes: "0 forces immediate runoff of excess water"}
+    - {category: boundary_conditions, name: "NRCHANG (changing-residue file flag)", unit: "code 0/1", source_kind: user_provided, model_input_format: ".inp"}
+    - {category: boundary_conditions, name: "MWATRXT (external soil source/sink flag)", unit: "code 0/1", source_kind: user_provided, model_input_format: ".inp", notes: "1 = external water injection/extraction file required"}
+    - {category: boundary_conditions, name: "LVLOUT output-level selectors", unit: "codes", source_kind: user_provided, model_input_format: ".inp", notes: "Select which of up to ~16 output files are written"}
+
+processes:
+  modules:
+    - {name: "Driver_TimeLoop", role: "driver", brief: "Hourly outer loop (PROGRAM SHAW303 + GOSHAW); advances day/year, sets the lower temperature/matric boundary, and runs the adaptive sub-timestep Newton iteration over the full canopy-snow-residue-soil column."}
+    - {name: "InputSetup", role: "driver", brief: "INPUT/IOFILES/DAYINP: reads site, soil, weather, moisture/temperature profiles, canopy growth and residue files; sets COMMON blocks and elevation-adjusted air pressure; disaggregates daily weather to hourly (DAY2HR)."}
+    - {name: "ShortwaveRadiation", role: "process_solver", brief: "SWRBAL: solar geometry, snow albedo, and multilayer shortwave transmission/absorption through canopy, snow, and residue."}
+    - {name: "LongwaveRadiation", role: "process_solver", brief: "LWRBAL: atmospheric, canopy, and surface-matrix longwave exchange among all layers using hardcoded emissivities."}
+    - {name: "AtmosphericStability", role: "process_solver", brief: "ATSTAB/STAB: iterative Monin-Obukhov surface-layer stability, friction velocity, and within-canopy/residue wind and aerodynamic resistances stored in shared COMMON state."}
+    - {name: "CanopyEnergyBalance", role: "process_solver", brief: "EBCAN: leaf temperature, stomatal resistance (Stewart-Jarvis), canopy humidity and conductance; assembles canopy rows of the heat matrix."}
+    - {name: "SnowEnergyBalance", role: "process_solver", brief: "EBSNOW: snow-layer energy/phase with vapor flux, snow thermal conductivity and heat capacity."}
+    - {name: "ResidueEnergyBalance", role: "process_solver", brief: "EBRES: residue-layer heat and vapor transfer."}
+    - {name: "SoilEnergyBalance", role: "process_solver", brief: "EBSOIL: soil heat conduction plus vapor (with enhancement), de Vries thermal conductivity, freezing via the freeze-thaw module; assembles soil rows of the heat matrix."}
+    - {name: "WaterBalance", role: "process_solver", brief: "WBCAN/SNOWBC/WBRES/WBSOIL: liquid-water mass balance per layer system; WBSOIL uses Richards-type unsaturated flow (hydraulic conductivity, liquid flux, retention) plus lateral flow and ponding."}
+    - {name: "RootWaterUptake", role: "process_solver", brief: "SOILXT: root/transpiration water extraction per soil layer, clamped against available layer water (AVAILA) before the water balance — silently zeros requested uptake in dry layers."}
+    - {name: "FreezeThaw_Retention", role: "process_solver", brief: "FROZEN/ADJUST/MATVLC: partition liquid/ice with salt-dependent freezing-point depression, enforce the water-retention curve, and re-balance state after each iteration; couples the heat and water systems implicitly."}
+    - {name: "PrecipSnowpack", role: "process_solver", brief: "PRECP/NWSNOW/WBSNOW/SNOMLT/META: rain/snow partitioning (wet-bulb), new-snow addition, snow compaction/metamorphism, and lagged snowmelt routing."}
+    - {name: "SoluteTransport", role: "process_solver", brief: "SOLUTE/SALTK: advective-dispersive transport of up to 10 salt species coupled to liquid flux and soil freezing.", applicability: "NSALT>0"}
+    - {name: "TridiagonalSolver", role: "integrator", brief: "TDMA: Thomas-algorithm solver applied separately to the heat matrix (A1..D1) and the water matrix (A2..D2) each iteration; SOLVRAD solves the radiation transmission system."}
+    - {name: "AccumulateAndOutput", role: "integrator", brief: "SUMDT/WBALNC/ENERGY/OUTPUT: accumulate per-step fluxes, close water and energy balances, and write profile/balance output files."}
+  internal_edges:
+    - {from: "InputSetup", to: "Driver_TimeLoop", kind: "produces_output", brief: "Hourly boundary forcing (radiation, temperature, wind, humidity, precip) disaggregated and handed to the time loop."}
+    - {from: "Driver_TimeLoop", to: "SoilEnergyBalance", kind: "writes_state", brief: "Sets lower-boundary soil temperature (input, Hirota damping, or zero-flux) and matric potential before iteration."}
+    - {from: "ShortwaveRadiation", to: "CanopyEnergyBalance", kind: "produces_output", brief: "Absorbed shortwave per canopy node feeds the canopy energy source term."}
+    - {from: "ShortwaveRadiation", to: "SnowEnergyBalance", kind: "produces_output", brief: "Absorbed shortwave per snow node feeds the snow energy balance."}
+    - {from: "ShortwaveRadiation", to: "SoilEnergyBalance", kind: "produces_output", brief: "Surface-absorbed shortwave feeds the soil-surface energy source."}
+    - {from: "LongwaveRadiation", to: "CanopyEnergyBalance", kind: "produces_output", brief: "Net longwave per canopy node feeds the canopy energy balance."}
+    - {from: "AtmosphericStability", to: "SoilEnergyBalance", kind: "writes_state", brief: "Friction velocity and surface wind (shared COMMON /WINDV/) drive soil surface heat/vapor flux."}
+    - {from: "AtmosphericStability", to: "SnowEnergyBalance", kind: "writes_state", brief: "Shared aerodynamic resistances drive snow surface flux."}
+    - {from: "CanopyEnergyBalance", to: "TridiagonalSolver", kind: "invokes", brief: "Canopy rows assembled into the heat tridiagonal matrix solved by TDMA into temperature increments."}
+    - {from: "SnowEnergyBalance", to: "TridiagonalSolver", kind: "invokes", brief: "Snow rows assembled into the heat matrix."}
+    - {from: "ResidueEnergyBalance", to: "TridiagonalSolver", kind: "invokes", brief: "Residue rows assembled into the heat matrix."}
+    - {from: "SoilEnergyBalance", to: "TridiagonalSolver", kind: "invokes", brief: "Soil rows assembled into the heat matrix; solution updates the soil temperature state."}
+    - {from: "TridiagonalSolver", to: "soil_temperature", kind: "writes_state", brief: "Heat-matrix solution increments update canopy/snow/residue/soil temperatures each iteration."}
+    - {from: "WaterBalance", to: "TridiagonalSolver", kind: "invokes", brief: "Water-balance rows assembled into the second tridiagonal system solved into matric-potential/water increments."}
+    - {from: "WaterBalance", to: "FreezeThaw_Retention", kind: "invokes", brief: "After updating water content, re-evaluates the ice partition when layer temperature <= 0."}
+    - {from: "FreezeThaw_Retention", to: "soil_ice_content", kind: "writes_state", brief: "Repartitions liquid water and ice and updates the apparent (latent-heat) heat capacity."}
+    - {from: "FreezeThaw_Retention", to: "soil_liquid_water_content", kind: "writes_state", brief: "Updates unfrozen liquid water via salt-dependent freezing-point depression."}
+    - {from: "solute_concentration", to: "FreezeThaw_Retention", kind: "reads_state", brief: "Solute concentration depresses freezing point, coupling salt state into the freeze partition."}
+    - {from: "SoilEnergyBalance", to: "WaterBalance", kind: "writes_state", brief: "Soil temperature and vapor flux feed liquid-water flux and hydraulic conductivity."}
+    - {from: "WaterBalance", to: "SoluteTransport", kind: "produces_output", brief: "Liquid flux drives advective-dispersive salt transport."}
+    - {from: "PrecipSnowpack", to: "WaterBalance", kind: "produces_output", brief: "Snowmelt plus rain infiltration becomes the upper-boundary water flux to the soil."}
+    - {from: "PrecipSnowpack", to: "snowpack_state", kind: "writes_state", brief: "New snow, compaction/metamorphism, and lagged melt update SWE, density, and albedo."}
+    - {from: "RootWaterUptake", to: "WaterBalance", kind: "consumes_input", brief: "Root/sink extraction is clamped to available layer water before the water balance."}
+    - {from: "AccumulateAndOutput", to: "Outputs", kind: "produces_output", brief: "Accumulated fluxes close water/energy balances and write temperature/water/liquid/matric/canopy/snow/frost/solute profile files."}
+    - {from: "Driver_TimeLoop", to: "AtmosphericStability", kind: "invokes", brief: "Each iteration recomputes surface-layer stability before the energy balances."}
+
+states:
+  variables:
+    - {name: "soil_temperature", unit: "degC", role: "prognostic"}
+    - {name: "soil_total_water_content", unit: "m3/m3", role: "prognostic"}
+    - {name: "soil_liquid_water_content", unit: "m3/m3", role: "prognostic"}
+    - {name: "soil_ice_content", unit: "m3/m3", role: "prognostic"}
+    - {name: "matric_potential", unit: "m", role: "prognostic"}
+    - {name: "solute_concentration", unit: "eq/kg or mol", role: "prognostic"}
+    - {name: "snowpack_state", unit: "SWE m / density kg/m3 / depth m", role: "prognostic"}
+    - {name: "snow_layer_temperature", unit: "degC", role: "prognostic"}
+    - {name: "residue_layer_state", unit: "degC temperature / gravimetric moisture", role: "prognostic"}
+    - {name: "canopy_air_temperature", unit: "degC", role: "prognostic"}
+    - {name: "canopy_air_vapor_density", unit: "kg/m3", role: "prognostic"}
+    - {name: "leaf_temperature", unit: "degC", role: "prognostic"}
+    - {name: "intercepted_canopy_water", unit: "m or kg/m2", role: "prognostic"}
+    - {name: "stomatal_resistance", unit: "s/m", role: "diagnostic"}
+    - {name: "surface_pond_water", unit: "m", role: "prognostic"}
+    - {name: "friction_velocity_USTAR", unit: "m/s", role: "diagnostic"}
+    - {name: "frost_thaw_depth", unit: "m", role: "diagnostic"}
+  provenance: "populated"
+
+outputs:
+  - var: "soil_temperature_profile"
+    validation_rank: 1
+    unit: "degC"
+    description: "Per-node soil temperature T(z,t); primary validation target."
+    emitted_in: "temp.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Surface nodes are more variable than deeper nodes; best agreement typically at 50-100 cm depth."]
+      detrending_options: ["none"]
+  - var: "total_water_content_profile"
+    validation_rank: 2
+    unit: "m3/m3"
+    description: "Per-node total (liquid + ice) volumetric water content theta_total(z,t)."
+    emitted_in: "water.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Probes measuring liquid-only water in frozen soil should be compared against the liquid output, not total."]
+      detrending_options: ["none"]
+  - var: "liquid_water_content_profile"
+    validation_rank: 3
+    unit: "m3/m3"
+    description: "Per-node liquid (unfrozen) volumetric water content; compare against liquid-only sensors in frozen soil."
+    emitted_in: "liquid.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Distinguishes unfrozen water during freeze-thaw; sensitive to the BPAR freezing-point-depression relation."]
+      detrending_options: ["none"]
+  - var: "matric_potential_profile"
+    validation_rank: 4
+    unit: "m"
+    description: "Per-node soil matric (water) potential psi(z,t)."
+    emitted_in: "matric.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Output unit (m vs kPa) is ambiguous in the KI; confirm against tensiometer convention before scoring."]
+      detrending_options: ["none"]
+  - var: "frost_thaw_snow_depth"
+    validation_rank: 5
+    unit: "m (depth), mm (SWE)"
+    description: "Frost depth, thaw depth, snow depth, and snow water equivalent; key freeze-thaw output."
+    emitted_in: "frost.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Frost depth is very sensitive to air temperature and initial snow depth; vertical node resolution limits resolvable frost penetration."]
+      detrending_options: ["none"]
+  - var: "surface_energy_balance"
+    validation_rank: 6
+    unit: "W/m2"
+    description: "Surface energy balance components: net/incoming-outgoing shortwave and longwave, sensible (H), latent (LE/EVAP), ground heat flux (G), and melt."
+    emitted_in: "energy.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Compare against eddy-covariance / flux-tower H and LE at matching reference height and energy-balance-closure conventions."]
+      detrending_options: ["none"]
+  - var: "water_balance_summary"
+    validation_rank: 7
+    unit: "mm"
+    description: "Water balance terms: precipitation, evaporation, transpiration, runoff, deep percolation/seepage, lateral flow, ponding, storage change."
+    emitted_in: "water.out (balance summary)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Lateral flow and deep percolation are model-internal terms rarely measured directly; ET is the most observable component."]
+      detrending_options: ["none"]
+  - var: "vertical_water_flux"
+    validation_rank: 8
+    unit: "m"
+    description: "Vertical water flux q(z,t) between soil nodes; flux between the bottom two nodes coincides with deep percolation."
+    emitted_in: "out.out (flux)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Internal flux rarely directly observed; usually inferred from lysimeter drainage."]
+      detrending_options: ["none"]
+  - var: "snow_layer_temperature"
+    validation_rank: 9
+    unit: "degC"
+    description: "Per-layer snowpack temperature T_snow(z,t)."
+    emitted_in: "snowtemp.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "canopy_air_and_leaf_temperature"
+    validation_rank: 10
+    unit: "degC"
+    description: "Canopy air-space and leaf temperatures per canopy node."
+    emitted_in: "canopytem.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Compare against in-canopy thermocouples or IR canopy temperature at the matching node height."]
+      detrending_options: ["none"]
+  - var: "solute_concentration_profile"
+    validation_rank: 11
+    unit: "eq/kg or mol (per species)"
+    description: "Per-node total salt and solution concentration for up to 10 solute species."
+    emitted_in: "salts.out / solute.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Only produced when NSALT>0; compare against soil-solution sampler concentrations."]
+      detrending_options: ["none"]
+
+influence:
+  _caveat: "No variance-based / global sensitivity study (Sobol, Morris, EFAST) specific to SHAW exists. All grades are derived from local sensitivity analyses, calibration-parameter rankings, and reported field-verification sensitivities in the peer-reviewed sources, so no edge is graded HIGH even where the input is mechanistically dominant (e.g., air_temperature->frost_thaw_snow_depth, soil_thermal_conductivity->soil_temperature). Grades reflect qualitative/local evidence only."
+  edges:
+    - from: "air_temperature"
+      to: "frost_thaw_snow_depth"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      applicability: "freezing soils"
+      citations: ["flerchinger1989_shaw_verification"]
+    - from: "initial_snow_depth"
+      to: "frost_thaw_snow_depth"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "freezing soils with snow cover"
+      citations: ["flerchinger1989_shaw_verification"]
+    - from: "lower_boundary_soil_temperature"
+      to: "frost_thaw_snow_depth"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      applicability: "when frost depth approaches the profile base"
+      citations: ["flerchinger1989_shaw_verification"]
+    - from: "saturated_hydraulic_conductivity"
+      to: "soil_total_water_content"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["flerchinger2012_shaw_calibration"]
+    - from: "air_entry_matric_potential"
+      to: "soil_total_water_content"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["flerchinger2012_shaw_calibration"]
+    - from: "pore_size_distribution_index"
+      to: "soil_total_water_content"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["flerchinger2012_shaw_calibration"]
+    - from: "bulk_density"
+      to: "soil_temperature"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["flerchinger2012_shaw_calibration", "yang2023_shaw_thermalconductivity"]
+    - from: "albedo"
+      to: "soil_temperature"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["flerchinger2012_shaw_calibration"]
+    - from: "soil_thermal_conductivity"
+      to: "soil_temperature"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "permafrost / cold regions"
+      citations: ["yang2023_shaw_thermalconductivity"]
+    - from: "soil_organic_matter"
+      to: "soil_temperature"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "permafrost / cold regions"
+      citations: ["yang2023_shaw_thermalconductivity"]
+    - from: "stomatal_resistance_coefficient"
+      to: "evapotranspiration"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "vegetated canopy"
+      citations: ["flerchinger1997_canopy_sensitivity"]
+    - from: "leaf_area_index"
+      to: "evapotranspiration"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "vegetated canopy"
+      citations: ["flerchinger1997_canopy_sensitivity"]
+    - from: "leaf_area_index"
+      to: "soil_temperature"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "vegetated canopy"
+      citations: ["flerchinger1997_canopy_sensitivity"]
+    - from: "rooting_depth"
+      to: "soil_total_water_content"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "vegetated canopy"
+      citations: ["flerchinger1997_canopy_sensitivity"]
+  citation_index:
+    flerchinger1989_shaw_verification:
+      short_citation: "Flerchinger & Saxton 1989 (Part II)"
+      doi: "10.13031/2013.31041"
+      note: "Field verification; frost depth very sensitive to ~1 degC air temperature and ~10 cm initial snow depth."
+    flerchinger2012_shaw_calibration:
+      short_citation: "Flerchinger et al. 2012"
+      doi: "10.13031/2013.42250"
+      note: "SHAW model use, calibration, validation; soil water governed by retention/hydraulic parameters, surface temperature sensitive to albedo and cover."
+    flerchinger1997_canopy_sensitivity:
+      short_citation: "Flerchinger & Pierson 1997"
+      doi: "10.1006/jare.1995.0167"
+      note: "Canopy parameterization sensitivity analysis; soil temperature/water/ET sensitive to stomatal resistance, LAI, canopy cover."
+    yang2023_shaw_thermalconductivity:
+      short_citation: "Yang et al. 2023"
+      doi: "10.1016/j.coldregions.2023.104034"
+      note: "Improved SHAW thermal-conductivity parameterization; soil thermal conductivity and SOM strongly control simulated permafrost soil temperature."
+
+safety:
+  hazards:
+    - id: "wind_precip_unit_flag_mismatch"
+      kind: "weather_file_semantic"
+      description: "IFLAGSI=0 with SI forcing silently scales wind ~2.2x (or ~53.7x daily) and precip ~25.4x, corrupting ET and energy balance."
+      severity: "critical"
+    - id: "weather_timestep_column_mismatch"
+      kind: "weather_file_semantic"
+      description: "MTSTEP not matching weather column count (9 hourly / 8 daily) mis-maps all columns; runs without error but produces wrong results."
+      severity: "silent"
+    - id: "weather_column_order_doy_yr"
+      kind: "weather_file_semantic"
+      description: "Daily format expects DOY then year; YR-first ordering makes year read as day-of-year, causing date mismatch or silently wrong data."
+      severity: "fatal_or_silent"
+    - id: "four_digit_year_one_day_run"
+      kind: "weather_file_semantic"
+      description: "4-digit year in any input file makes SHAW run exactly one day and exit with 'Normal completion' and no error."
+      severity: "silent"
+    - id: "solar_unit_or_convention_error"
+      kind: "weather_file_semantic"
+      description: "Station solar in MJ/m2/day not converted to W/m2 underestimates energy ~11.6x, causing cold/low-ET bias; SHAW expects W/m2."
+      severity: "degraded"
+    - id: "first_soil_node_not_surface"
+      kind: "soil_semantic"
+      description: "ZS(1) != 0.0 (first node must be the surface) can crash the model or corrupt the surface energy balance."
+      severity: "fatal_or_silent"
+    - id: "too_few_soil_nodes_freeze_thaw"
+      kind: "soil_semantic"
+      description: "NS too small over a deep profile cannot resolve 30-150 cm frost penetration, producing step-function frost profiles."
+      severity: "degraded"
+    - id: "bpar_out_of_physical_range"
+      kind: "soil_semantic"
+      description: "Non-physical Campbell b (BPAR) keeps soil liquid to very low temperature, disabling freeze-thaw; QUARTZ outside 0-1 is non-physical thermal parameter."
+      severity: "degraded"
+    - id: "van_genuchten_nonzero_air_entry"
+      kind: "soil_semantic"
+      description: "With IWRC=3 (van Genuchten) a non-zero psi_e applies both VG and Campbell air-entry corrections; psi_e must be 0."
+      severity: "degraded"
+    - id: "solute_column_shift_when_nsalt_zero"
+      kind: "soil_semantic"
+      description: "Leaving ASALT/DISPER columns present when NSALT=0 shifts soil-property column parsing and yields wrong soil properties."
+      severity: "silent"
+    - id: "moisture_profiles_insufficient"
+      kind: "initial_condition_semantic"
+      description: "Fewer than 2 bracketing moisture profiles (or last .tem/.moi entry before JEND) leaves the lower boundary uninterpolable; the run terminates early at 'Normal completion'."
+      severity: "fatal_or_silent"
+    - id: "all_sentinel_temperature_profile"
+      kind: "initial_condition_semantic"
+      description: "A temperature profile where all nodes are the 99999 'no-measurement' sentinel can crash or produce garbage."
+      severity: "fatal_or_silent"
+    - id: "initial_moisture_near_saturation"
+      kind: "initial_condition_semantic"
+      description: "Initial moisture near saturation (theta>0.45) causes first-timestep drainage/runoff artifacts; use field capacity plus spinup."
+      severity: "degraded"
+    - id: "newton_raphson_tolerance_too_large"
+      kind: "numerical_instability"
+      description: "TOLER>0.05 lets the Newton-Raphson solver accept inaccurate solutions where freeze-thaw latent-heat nonlinearity is strong."
+      severity: "degraded"
+    - id: "silent_stop_on_solver_divergence"
+      kind: "numerical_instability"
+      description: "SHAW may call Fortran STOP with exit code 0 and no message on solver divergence, leaving empty/incomplete output files."
+      severity: "fatal_or_silent"
+    - id: "jstart_no_previous_day"
+      kind: "control_semantic"
+      description: "JSTART equal to the first weather DOY leaves DAY2HR without previous-day data for interpolation (must be first DOY + 1)."
+      severity: "fatal_or_silent"
+    - id: "hrnoon_placeholder"
+      kind: "control_semantic"
+      description: "HRNOON set to a placeholder instead of the longitude-derived ~12.x value mis-times the diurnal cycle and can assign all precipitation to hour 0 (zero effective precip)."
+      severity: "critical"
+    - id: "height_below_canopy"
+      kind: "control_semantic"
+      description: "Measurement HEIGHT below maximum canopy height makes the wind/temperature profile extrapolation physically impossible."
+      severity: "degraded"
+    - id: "pondmx_zero_flat_terrain"
+      kind: "control_semantic"
+      description: "PONDMX=0 on flat terrain forces immediate runoff of excess water, overestimating runoff and underestimating infiltration."
+      severity: "degraded"
+    - id: "restkb_wrong_for_residue_type"
+      kind: "control_semantic"
+      description: "Residue RESTKB tuned for lying residue (~4.0) applied to standing residue (~8.5) underestimates wind exposure and keeps residue too moist."
+      severity: "degraded"
+  validation_limits:
+    - "1-D vertical point/column only; cannot represent horizontal 2-D/3-D transport or watershed routing."
+    - "Lateral subsurface flow is a lumped output term, not a resolved lateral process."
+    - "Frost penetration resolution is bounded by soil-node spacing; coarse grids cannot resolve deep frost."
+    - "Uncalibrated soil-temperature skill degrades where snow-insulation is mis-specified (cold bias reported over prairie sites)."
+  warnings:
+    - "SNODEN=0 in the weather file is valid: it instructs SHAW to compute new-snow density from air temperature."
+    - "Always verify output files are non-empty and the simulated period matches the requested period, because divergence produces a silent STOP."
+    - "The unfrozen-water-vs-temperature relation is governed by BPAR (Campbell b); pedotransfer-based BPAR/QUARTZ/BCAP from texture are required for physically meaningful freeze-thaw."
+  assumptions:
+    - statement: "The model is a single 1-D vertical soil-plant-atmosphere column; each profile is independent with no lateral coupling between columns."
+      scope: "spatial geometry"
+      source: "SHAW Technical Documentation (Flerchinger 2017) and USDA-ARS SHAW model overview"
+      status: "adopted"
+    - statement: "Heat and water (and solute) systems are solved simultaneously by an implicit finite-difference Newton-Raphson scheme to a user-prescribed tolerance, with the surface energy balance closed via the ground-heat-flux residual."
+      scope: "numerical closure"
+      source: "SHAW Technical Documentation - Numerical solution; Flerchinger & Saxton 1989 Part I"
+      status: "adopted"
+    - statement: "The lower temperature boundary is dynamic under ITMPBC=1 (Hirota damping-depth term driven by the prior-step gradient and mean annual temperature), not a fixed bottom-node temperature."
+      scope: "lower boundary condition"
+      source: "GOSHAW / SOILTK lower-boundary handling in SHAW v3.03 source (Shaw303.for)"
+      status: "adopted"
+    - statement: "Mass-balance closure applies to water and to the transported solute species; the surface energy balance is closed intrinsically every timestep."
+      scope: "conservation"
+      source: "SHAW Technical Documentation and WBALNC/ENERGY module behavior in SHAW source"
+      status: "adopted"
+    - statement: "Freeze-thaw liquid/ice partitioning is governed by salt-dependent freezing-point depression and the Campbell b (BPAR) retention exponent, coupling the heat and water systems implicitly."
+      scope: "freeze-thaw physics"
+      source: "FROZEN/MATVLC behavior in SHAW source (Shaw303.for) and Flerchinger & Saxton 1989 Part I"
+      status: "adopted"
+    - statement: "This dag describes the base SHAW v3.03 standalone implementation; the v3.03-CO2 beta carbon-flux variant (GPP/NEE/Reco) is out of scope."
+      scope: "implementation boundary"
+      source: "SHAW v3.03 source tree (Shaw303.for vs Shaw303-CO2Beta.for) and KI identity note"
+      status: "adopted"

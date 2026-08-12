@@ -1,0 +1,266 @@
+model:
+  name: LPJ
+  domain: biosphere
+  binary_path: ''
+  language: unknown
+inputs:
+  forcing:
+  - name: VP
+    unit: hPa
+    format: ''
+    source: skill_md
+  - name: Rh
+    unit: umol/m2/s
+    format: ''
+    source: skill_md
+  - name: Temperature
+    unit: unknown
+    format: ''
+    source: skill_md
+  - name: Precipitation
+    unit: unknown
+    format: ''
+    source: skill_md
+outputs:
+  primary:
+  - name: Temperature
+    unit: unknown
+    format: ''
+    source: skill_md
+  - name: npp
+    canonical_id: npp
+    unit: gC/m2/day
+  - name: biomass
+    canonical_id: biomass
+    unit: kgC/m2
+  - name: leaf_area_index
+    canonical_id: leaf_area_index
+    unit: m2/m2
+  - name: soil_carbon
+    canonical_id: soil_carbon
+    unit: kgC/m2
+known_issues:
+- id: dt_lpjguess_001
+  description: '{''description'': ''GPP and respiration unrealistically high (~300
+    degC regime). Temperature-dependent scalars saturated. Parabolic temperature response
+    returns zero but Q10 respiration explodes.''}'
+  affected_output: '{''root_cause'': ''Air temperature forcing supplied in Kelvin
+    instead of degrees Celsius. CMFD and MSWX provide temperature in K, but LPJ-GUESS
+    expects deg C.''}'
+  detection: '{''root_cause'': ''Air temperature forcing supplied in Kelvin instead
+    of degrees Celsius. CMFD and MSWX provide temperature in K, but LPJ-GUESS expects
+    deg C.''}'
+  fix: '{''action'': ''Subtract 273.15 from all temperature values before passing
+    to LPJ-GUESS. Validate that TA values fall within -50 to +55 deg C range.''}'
+- id: dt_lpjguess_002
+  description: '{''description'': ''Precipitation effectively zero. Vegetation dies
+    from permanent drought. Water balance shows no input despite using CMFD data.''}'
+  affected_output: '{''root_cause'': ''Precipitation left in kg/m2/s (CMFD native
+    unit) instead of converted to mm/day. A typical value of 1.15e-5 kg/m2/s (1 mm/day)
+    is interpreted as near-zero mm/day.''}'
+  detection: '{''root_cause'': ''Precipitation left in kg/m2/s (CMFD native unit)
+    instead of converted to mm/day. A typical value of 1.15e-5 kg/m2/s (1 mm/day)
+    is interpreted as near-zero mm/day.''}'
+  fix: '{''action'': ''Multiply CMFD precipitation by 86400 to convert from kg/m2/s
+    to mm/day. For MSWX (mm/3hr), sum 8 timesteps per day. Validate daily P is in
+    the 0-300 mm/day range.''}'
+- id: dt_lpjguess_003
+  description: "{'description': 'VPD scalar (f_VPD) always near 1.0 \u2014 no moisture\
+    \ stress on GPP. Transpiration unrealistically high for arid sites.'}"
+  affected_output: '{''root_cause'': ''VPD supplied in kPa instead of hPa. LPJ-GUESS
+    VPD parameters (VPD_0=10 hPa, VPD_1=35 hPa) expect hPa. A value of 1.5 kPa (=
+    15 hPa) appears as 1.5 hPa, far below the VPD_0 threshold.''}'
+  detection: '{''root_cause'': ''VPD supplied in kPa instead of hPa. LPJ-GUESS VPD
+    parameters (VPD_0=10 hPa, VPD_1=35 hPa) expect hPa. A value of 1.5 kPa (= 15 hPa)
+    appears as 1.5 hPa, far below the VPD_0 threshold.''}'
+  fix: '{''action'': ''Multiply VPD by 10 to convert from kPa to hPa. FLUXNET provides
+    hPa natively. If source data is in Pa, divide by 100. Validate that typical daytime
+    VPD is 5-40 hPa.''}'
+- id: dt_lpjguess_004
+  description: '{''description'': ''GPP output in gC/m2/day does not match eddy-covariance
+    tower observations reported in umol CO2/m2/s. Values appear off by a factor of
+    ~7200.''}'
+  affected_output: '{''root_cause'': ''Failure to apply the gC-to-umol flux unit conversion.
+    LPJ-GUESS internal GPP is in gC/m2/day but FLUXNET observations are in umol CO2/m2/s.
+    The conversion factor is 1e6 / 12.011 / 8640'
+  detection: '{''root_cause'': ''Failure to apply the gC-to-umol flux unit conversion.
+    LPJ-GUESS internal GPP is in gC/m2/day but FLUXNET observations are in umol CO2/m2/s.
+    The conversion factor is 1e6 / 12.011 / 8640'
+  fix: '{''action'': ''Convert GPP from gC/m2/day to umol/m2/s by multiplying by 1e6
+    / (12.011 * 86400) = 0.9649. Alternatively, convert observations to gC/m2/day
+    by dividing by 0.9649.''}'
+- id: dt_lpjguess_005
+  description: '{''description'': ''Model refuses to start or silently produces wrong
+    PFT configuration. Instruction file (.ins) parameters appear to be ignored.''}'
+  affected_output: '{''root_cause'': ''LPJ-GUESS instruction file (.ins) uses a strict
+    keyword-value format. Missing quotes around string values, wrong section nesting
+    (param block not closed with a closing brace), or trail'
+  detection: '{''root_cause'': ''LPJ-GUESS instruction file (.ins) uses a strict keyword-value
+    format. Missing quotes around string values, wrong section nesting (param block
+    not closed with a closing brace), or trail'
+  fix: '{''action'': ''Validate the .ins file structure: ensure all string values
+    are double-quoted, every opening brace has a matching closing brace, and PFT definitions
+    follow the \''pft "PFT_NAME" { ... }\'' pa'
+- id: dt_lpjguess_006
+  description: '{''description'': ''Model reports zero gridcells or crashes immediately.
+    Gridlist file appears to exist but no sites are processed.''}'
+  affected_output: '{''root_cause'': ''Gridlist file has wrong format. LPJ-GUESS expects
+    a whitespace-delimited text file with columns: longitude latitude [description].
+    Common errors include comma-separated values, header '
+  detection: '{''root_cause'': ''Gridlist file has wrong format. LPJ-GUESS expects
+    a whitespace-delimited text file with columns: longitude latitude [description].
+    Common errors include comma-separated values, header '
+  fix: '{''action'': ''Reformat gridlist as space-separated longitude latitude per
+    line with no header. Verify longitude precedes latitude. Remove any header lines
+    or trailing blank lines.''}'
+- id: dt_lpjguess_007
+  description: '{''description'': "Forcing data read error. Model cannot find or parse
+    daily meteorological driver files. Errors referencing ''getclimate'' or input
+    file dimensions."}'
+  affected_output: '{''root_cause'': "Driver data NetCDF or binary files have dimension
+    ordering or variable naming that does not match the LPJ-GUESS CF input specification.
+    Common issues: time dimension not named ''time'', '
+  detection: '{''root_cause'': "Driver data NetCDF or binary files have dimension
+    ordering or variable naming that does not match the LPJ-GUESS CF input specification.
+    Common issues: time dimension not named ''time'', '
+  fix: '{''action'': ''Ensure driver NetCDF files follow CF conventions with dimensions
+    (time, lat, lon) or (time, land). Variable names must match the instruction file
+    input specification. Use convert_forcing_t'
+- id: dt_lpjguess_008
+  description: '{''description'': ''Tropical simulation dominated by boreal/temperate
+    PFTs. Vegetation composition unrealistic for the climate zone.''}'
+  affected_output: '{''root_cause'': ''All PFTs enabled in the instruction file without
+    bioclimatic filtering. LPJ-GUESS PFTs have bioclimatic limits (T_min, T_max, GDD
+    requirements) but if the instruction file includes bor'
+  detection: '{''root_cause'': ''All PFTs enabled in the instruction file without
+    bioclimatic filtering. LPJ-GUESS PFTs have bioclimatic limits (T_min, T_max, GDD
+    requirements) but if the instruction file includes bor'
+  fix: '{''action'': ''Enable only climatically appropriate PFTs for the study region.
+    For tropical sites, disable boreal needle-leaved PFTs (BNE, BINE, BNS). For boreal
+    sites, disable tropical broadleaved PFTs '
+- id: dt_lpjguess_009
+  description: '{''description'': ''Model runs in population mode but user expects
+    individual-based (cohort) dynamics. Vegetation structure lacks age-class diversity.
+    No gap dynamics or light competition.''}'
+  affected_output: '{''root_cause'': ''Instruction file sets \''ifbgestab 0\'' and
+    \''ifsme 0\'' or uses \''vegmode "population"\'' instead of \''vegmode "cohort"\''.
+    Population mode uses area-averaged representation without indivi'
+  detection: '{''root_cause'': ''Instruction file sets \''ifbgestab 0\'' and \''ifsme
+    0\'' or uses \''vegmode "population"\'' instead of \''vegmode "cohort"\''. Population
+    mode uses area-averaged representation without indivi'
+  fix: '{''action'': "Set vegmode to ''cohort'' in the instruction file and enable
+    stochastic establishment (ifbgestab 1) and stochastic mortality (ifsme 1) for
+    individual-based dynamics with gap model behavior. '
+- id: dt_lpjguess_010
+  description: '{''description'': "Simulation completes but vegetation carbon pools
+    are still drifting. Soil carbon has not reached equilibrium. NEE has a persistent
+    non-zero trend during the ''stable'' reference period."}'
+  affected_output: '{''root_cause'': ''Spinup length (nyear_spinup) too short for
+    soil carbon pools to equilibrate. Slow soil organic matter pools (century-scale
+    turnover) require 500-1000+ years of spinup, especially in bo'
+  detection: '{''root_cause'': ''Spinup length (nyear_spinup) too short for soil carbon
+    pools to equilibrate. Slow soil organic matter pools (century-scale turnover)
+    require 500-1000+ years of spinup, especially in bo'
+  fix: '{''action'': ''Increase nyear_spinup to at least 500 years for temperate systems
+    and 1000+ years for boreal/peatland systems. Monitor the trend in total ecosystem
+    carbon (vegetation + soil + litter) over'
+- id: dt_lpjguess_011
+  description: '{''description'': ''GPP systematically 2-3x higher than FLUXNET observations
+    across all sites. Temperature and VPD responses appear correct but absolute magnitude
+    is wrong.''}'
+  affected_output: '{''root_cause'': ''LUE_max (maximum light use efficiency) parameter
+    set too high. Default range is 1.0-3.0 gC/MJ PAR. A value at the upper end (3.0)
+    overestimates GPP for most ecosystems. Temperate fores'
+  detection: '{''root_cause'': ''LUE_max (maximum light use efficiency) parameter
+    set too high. Default range is 1.0-3.0 gC/MJ PAR. A value at the upper end (3.0)
+    overestimates GPP for most ecosystems. Temperate fores'
+  fix: '{''action'': ''Calibrate LUE_max against site-level FLUXNET GPP observations.
+    Typical calibrated values: ENF 1.0-1.5, DBF 1.2-2.0, grassland 0.8-1.5 gC/MJ PAR.
+    Use differential evolution optimization aga'
+- id: dt_lpjguess_012
+  description: '{''description'': ''GPP peaks at wrong time of year. Summer GPP too
+    low relative to spring/autumn. Temperature response curve appears shifted.''}'
+  affected_output: '{''root_cause'': ''T_opt (optimal photosynthesis temperature)
+    parameter mismatched for the PFT or climate zone. Default T_opt=20 degC is appropriate
+    for temperate broadleaf but too low for tropical (T_op'
+  detection: '{''root_cause'': ''T_opt (optimal photosynthesis temperature) parameter
+    mismatched for the PFT or climate zone. Default T_opt=20 degC is appropriate for
+    temperate broadleaf but too low for tropical (T_op'
+  fix: '{''action'': "Adjust T_opt to match the PFT''s thermal niche: boreal conifers
+    10-18 degC, temperate deciduous 18-25 degC, tropical evergreen 25-32 degC. Also
+    verify T_min and T_max bracket the observed g'
+- id: dt_lpjguess_013
+  description: '{''description'': ''Heterotrophic respiration (Rh) far too high in
+    winter or too low in summer. Soil respiration seasonal cycle has wrong amplitude.''}'
+  affected_output: '{''root_cause'': ''Rh_Q10 parameter (Q10 for decomposition) inappropriate
+    for the soil environment. Default Rh_Q10=2.0 may be too high for warm soils (amplifying
+    summer Rh) or too low for cold soils (und'
+  detection: '{''root_cause'': ''Rh_Q10 parameter (Q10 for decomposition) inappropriate
+    for the soil environment. Default Rh_Q10=2.0 may be too high for warm soils (amplifying
+    summer Rh) or too low for cold soils (und'
+  fix: '{''action'': ''Adjust Rh_Q10 based on soil temperature regime: use 1.5-2.0
+    for tropical soils, 2.0-2.5 for temperate, and 2.5-3.5 for boreal/permafrost soils.
+    Also check Rh_base (default 2.0 umol/m2/s) a'
+- id: dt_lpjguess_014
+  description: '{''description'': ''NEE does not equal Reco - GPP. Carbon budget fails
+    to close. Small but persistent residual accumulates over multi-year simulations.''}'
+  affected_output: '{''root_cause'': ''Numerical precision loss in the daily carbon
+    balance computation. When GPP and Reco are both large (~10-20 umol/m2/s) but NEE
+    is small (~0.5 umol/m2/s), floating-point subtraction lose'
+  detection: '{''root_cause'': ''Numerical precision loss in the daily carbon balance
+    computation. When GPP and Reco are both large (~10-20 umol/m2/s) but NEE is small
+    (~0.5 umol/m2/s), floating-point subtraction lose'
+  fix: '{''action'': ''Compute NEE directly from (Ra + Rh) - GPP in a single expression
+    rather than from separately stored Reco. Verify the sign convention: NEE = Reco
+    - GPP (positive = source, negative = sink).'
+- id: dt_lpjguess_015
+  description: '{''description'': ''Vegetation dynamics produce unrealistic monoculture
+    after long simulation. A single PFT dominates 100% of patches despite diverse
+    initial conditions.''}'
+  affected_output: '{''root_cause'': ''Competitive exclusion in cohort mode without
+    adequate disturbance. If stochastic disturbance (fire, windthrow) is disabled
+    or its return interval is too long, the most competitive PFT '
+  detection: '{''root_cause'': ''Competitive exclusion in cohort mode without adequate
+    disturbance. If stochastic disturbance (fire, windthrow) is disabled or its return
+    interval is too long, the most competitive PFT '
+  fix: '{''action'': "Enable stochastic disturbance by setting ''ifdisturb 1'' in
+    the instruction file. Set distinterval to ecologically appropriate values (50-200
+    years for temperate forests, 80-400 years for bo'
+- id: dt_lpjguess_016
+  description: '{''description'': ''Spinup never converges. Soil organic carbon continues
+    increasing after 1000 model years. Annual NEE oscillates without stabilizing.''}'
+  affected_output: '{''root_cause'': ''Nitrogen deposition set to modern (elevated)
+    values during spinup instead of pre-industrial levels. Modern N deposition (1-10
+    kgN/ha/yr) continuously fertilizes the ecosystem, preventi'
+  detection: '{''root_cause'': ''Nitrogen deposition set to modern (elevated) values
+    during spinup instead of pre-industrial levels. Modern N deposition (1-10 kgN/ha/yr)
+    continuously fertilizes the ecosystem, preventi'
+  fix: '{''action'': ''Use pre-industrial N deposition rates (0.1-0.5 kgN/ha/yr) for
+    the spinup phase. Switch to transient N deposition only for the historical simulation
+    period. Monitor total ecosystem carbon t'
+- id: dt_lpjguess_017
+  description: '{''description'': ''Strong NEE source (positive) for the first 30-50
+    years of the transient run after spinup completes. Ecosystem appears to lose carbon
+    despite stable climate.''}'
+  affected_output: '{''root_cause'': ''CO2 concentration mismatch between spinup (pre-industrial
+    ~280 ppm) and transient run start (modern ~370 ppm). The abrupt CO2 jump stimulates
+    GPP, increasing N demand beyond supply, wh'
+  detection: '{''root_cause'': ''CO2 concentration mismatch between spinup (pre-industrial
+    ~280 ppm) and transient run start (modern ~370 ppm). The abrupt CO2 jump stimulates
+    GPP, increasing N demand beyond supply, wh'
+  fix: '{''action'': ''Run a transition period with gradually increasing CO2 from
+    pre-industrial to the transient start year, or use the transient CO2 trajectory
+    from 1850 onward. Discard the first 50 years of t'
+- id: dt_lpjguess_018
+  description: '{''description'': ''Output files contain only annual values but user
+    needs monthly or daily resolution. Monthly carbon flux seasonality cannot be analyzed.''}'
+  affected_output: '{''root_cause'': "Instruction file output section specifies only
+    annual output tables (e.g., ''file_cmass'', ''file_anpp'') without enabling monthly
+    output files (e.g., ''file_mnpp'', ''file_mgpp''). LPJ-GUESS '
+  detection: '{''root_cause'': "Instruction file output section specifies only annual
+    output tables (e.g., ''file_cmass'', ''file_anpp'') without enabling monthly output
+    files (e.g., ''file_mnpp'', ''file_mgpp''). LPJ-GUESS '
+  fix: '{''action'': "Add monthly output file declarations in the instruction file
+    output section: ''file_mnpp'', ''file_mgpp'', ''file_mra'', ''file_mrh'', ''file_mnee'',
+    ''file_mlai''. For daily output (if supported by t'
+unit_conversions: []

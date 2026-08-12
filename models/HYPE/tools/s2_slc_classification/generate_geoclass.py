@@ -34,14 +34,23 @@ LANDUSE_VEGTYPE = {
     5: 0,  # Glacier -> no vegetation
 }
 
-# Special class codes
+# Special class codes.
+# NOTE: Water (landuse 3) defaults to special=0 (regular water class), NOT
+# special=2 (internal/outlet lake). Per SKILL.md Known Issue #2, setting
+# special=2 WITHOUT a companion LakeData.txt makes HYPE create a zero-volume
+# lake that traps ALL water at the outlet -> zero discharge. special=2 must
+# only be assigned when lakes are explicitly configured (enable_lakes=True and
+# a LakeData.txt is provided in modeldir). See s6_lake_reservoir_config.
 SPECIAL_CODES = {
-    3: 2,  # Water -> special=2 (lake/river)
+    5: 3,  # Glacier -> special=3
+}
+SPECIAL_CODES_WITH_LAKES = {
+    3: 2,  # Water -> special=2 (outlet lake) -- ONLY with LakeData.txt
     5: 3,  # Glacier -> special=3
 }
 
 
-def generate_geoclass(slc_defs_path, output_path, soil_depths=None):
+def generate_geoclass(slc_defs_path, output_path, soil_depths=None, enable_lakes=False):
     """
     Generate GeoClass.txt from SLC definitions.
 
@@ -52,6 +61,7 @@ def generate_geoclass(slc_defs_path, output_path, soil_depths=None):
     """
     if soil_depths is None:
         soil_depths = DEFAULT_SOIL_DEPTHS
+    special_codes = SPECIAL_CODES_WITH_LAKES if enable_lakes else SPECIAL_CODES
 
     # Read SLC definitions
     slc_defs = []
@@ -77,7 +87,7 @@ def generate_geoclass(slc_defs_path, output_path, soil_depths=None):
             lu = slc['landuse']
             so = slc['soil']
             vegtype = LANDUSE_VEGTYPE.get(lu, 0)
-            special = SPECIAL_CODES.get(lu, 0)
+            special = special_codes.get(lu, 0)
             crop = 1 if lu == 2 else 0  # Crop class for agricultural land
             tiledepth = 0.8 if lu == 2 else 0  # Tile drainage for cropland
 
@@ -120,9 +130,13 @@ def main():
     parser = argparse.ArgumentParser(description='Generate HYPE GeoClass.txt')
     parser.add_argument('--slc_defs', required=True, help='SLC definitions CSV')
     parser.add_argument('--output', required=True, help='Output GeoClass.txt path')
+    parser.add_argument('--enable_lakes', action='store_true',
+                        help='Assign special=2 (outlet lake) to water classes. '
+                             'ONLY use when a LakeData.txt is provided (SKILL.md '
+                             'Known Issue #2), else water traps all discharge.')
 
     args = parser.parse_args()
-    generate_geoclass(args.slc_defs, args.output)
+    generate_geoclass(args.slc_defs, args.output, enable_lakes=args.enable_lakes)
 
 
 if __name__ == '__main__':

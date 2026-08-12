@@ -455,3 +455,251 @@
     prevention: "Calibrate after crop_correct and soildepth_factor are set"
   severity: degraded
   cross_references: [dt_017]
+
+- id: cwatm_dt_011
+  stage: s3_model_execution
+  failure_domain: model_internals
+  symptom:
+    description: "CWatM aborts as soon as runoff concentration initialises, when tanslope is a scalar in settings.ini."
+    error_pattern: "ctypes.ArgumentError"
+    detection_method: exception
+  diagnosis:
+    root_cause: "runoff_concentration.py computes tpeak from tanslope; a scalar tanslope makes tpeak a Python float, but the C++ routing helper requires an ndarray over the compressed active cells."
+    explanation: >
+      `tpeak = 0.5 + 0.6 * 50000 / (1440*60*sqrt(tanslope))` inherits the type of
+      tanslope. With a tanslope MAP it is an ndarray and everything works; with a
+      tanslope SCALAR it stays a float and the ctypes call rejects it. The 2026-05
+      real case hit this and worked around it by running a patched copy of the repo
+      OUTSIDE the KI, leaving the canonical source broken.
+    affected_components: [runoff_concentration, routing]
+  remedy:
+    action: "Broadcast tpeak onto the active-cell array"
+    manual_steps:
+      - "In cwatm/hydrological_modules/runoff_concentration.py, after the tpeak assignment add: tpeak = globals.inZero + tpeak"
+      - "Already applied to source/repo in this KI (2026-07-09)."
+    prevention: "Never patch a copy of the model outside the KI; fix source/repo so the next agent inherits the fix."
+  severity: fatal
+  cross_references: []
+
+- id: cwatm_dt_012
+  stage: s1_forcing_preparation
+  failure_domain: input_data
+  symptom:
+    description: "Shape mismatch between meteo and static maps, or the forcing is one day shorter than tmin/tmax."
+    error_pattern: "shape mismatch"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Two independent defects: (1) convert_forcing_to_cwatm used to emit the forcing at its NATIVE resolution (0.1 deg for CMFD) while the static maps are 0.25/0.5 deg; (2) the time filter compared full datetimes, and CMFD daily timestamps are not at midnight, so the final day of --end_date was silently dropped."
+    explanation: >
+      CWatM requires every input NetCDF to share the clone-map grid exactly.
+      Use --target_res equal to the static-map --res; the tool block-means and
+      orders latitudes north-first. The time filter now compares .date().
+    affected_components: [readmeteo, cwatm_initial]
+  remedy:
+    action: "Regenerate forcing with --target_res, then verify the grids"
+    manual_steps:
+      - "python tools/convert_forcing_to_cwatm.py ... --target_res <same as static --res>"
+      - "Assert lat/lon of every forcing, soil and ancillary NetCDF equals static/MaskMap.nc"
+      - "Assert all forcing variables have the SAME number of timesteps"
+    prevention: "Build static maps first; they define the grid. Never resample the static maps to the forcing."
+  severity: fatal
+  cross_references: [cwatm_dt_013]
+
+- id: cwatm_dt_013
+  stage: s3_model_execution
+  failure_domain: model_internals
+  symptom:
+    description: "run_cwatm_wrapper reports status=timeout after exactly 3600 s, or 'can't open file .../source/repo/source/repo/run_cwatm.py'."
+    error_pattern: "timeout|can't open file"
+    detection_method: exception
+  diagnosis:
+    root_cause: "The wrapper hard-coded a 1-hour subprocess timeout, and it joined a RELATIVE --cwatm_dir onto run_cwatm.py while also passing cwd=cwatm_dir, doubling the path."
+    explanation: >
+      A 0.5-degree multi-decade basin run takes hours (Jiujiang: ~2.4 s per
+      simulated day over 570 active cells). Both defects are fixed: timeout is now
+      an optional --timeout (default: no limit) and paths are absolutised.
+    affected_components: [run_cwatm_wrapper]
+  remedy:
+    action: "Use the patched wrapper; pass --flags=-q (the '=' form) and an absolute or relative --cwatm_dir"
+    manual_steps:
+      - "argparse treats '--flags -q' as an option, not a value: always write --flags=-q"
+      - "Long runs: launch via kdt_detached_run.py, not inline"
+    prevention: "Estimate runtime from a 1-2 month smoke run before committing to the full period."
+  severity: fatal
+  cross_references: [cwatm_dt_012]
+
+- id: cwatm_dt_014
+  stage: s2_static_data_preparation
+  failure_domain: input_data
+  symptom:
+    description: "Capillary rise behaves oddly, or the first 10-day period of each year has zero interception capacity."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "build_cwatm_ancillary fabricated relativeElevation (dzRel) from a hand-written factor list times ElevationStD, and its monthly->10-day interpolator never assigned index 0."
+    explanation: >
+      capillarRise.py reads dzRel[0..11] directly as the sub-grid elevation
+      distribution above the cell minimum at cumulative area fractions
+      1,5,10,20..100 %. These are measurable: build_cwatm_static.py now writes the
+      TRUE percentiles from MERIT-Hydro elv, and build_cwatm_ancillary copies them.
+      The 10-day interpolator now wraps December around so index 0 is real.
+    affected_components: [capillarRise, interception, evaporation]
+  remedy:
+    action: "Re-run build_cwatm_static.py, then build_cwatm_ancillary.py"
+    manual_steps:
+      - "Check relativeElevation.nc has 12 dzRel variables and dzRel0100 >> dzRel0001"
+      - "Check interceptCap*_10days.nc has a non-zero value at time index 0"
+    prevention: "Prefer a measured field over a fabricated profile whenever the DEM is already on disk."
+  severity: degraded
+  cross_references: []
+
+- id: cwatm_dt_015
+  stage: s1_forcing_preparation
+  failure_domain: input_data
+  symptom:
+    description: "Forcing conversion takes ~11 minutes per variable for a 2-month window."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "The reader globbed every CMFD file for a variable (74 yearly files, or 888 monthly files for the 3-hourly archive) and opened each one just to read its `time` axis."
+    explanation: >
+      The year is in the file NAME. Prefilter on a (19|20)\d{2} regex -- anchored so
+      the product-version stem V0200 is not misread as a year -- before opening
+      anything. 2-month CMFD conversion drops from 11 min to 20 s.
+    affected_components: [convert_forcing_to_cwatm]
+  remedy:
+    action: "Use the patched reader (filename year prefilter + contiguous spatial slices)"
+    manual_steps:
+      - "Read the spatial subset in the netCDF4 call, not after: ds[var][tidx, lat_slice, lon_slice]"
+    prevention: "Same class of bug as HBV's _load_cmfd year-glob: never glob *YYYY* against a stem containing digits."
+  severity: degraded
+  cross_references: [cwatm_dt_012]
+
+- id: cwatm_dt_016
+  stage: s3_model_execution
+  failure_domain: environment
+  symptom:
+    description: "ImportError from osgeo/GDAL about a TLS static block when importing CWatM."
+    error_pattern: "cannot allocate memory in static TLS block"
+    detection_method: exception
+  diagnosis:
+    root_cause: "GDAL's shared object is loaded after libstdc++ has exhausted the static TLS budget in this Python environment."
+    explanation: "Environment defect, not a CWatM defect. Preloading libstdc++ reserves the block first."
+    affected_components: [environment]
+  remedy:
+    action: "Preload libstdc++"
+    manual_steps:
+      - "export LD_PRELOAD=/lib/x86_64-linux-gnu/libstdc++.so.6"
+      - "Use /mnt/disk1/Hydrocraft_server/python_env/bin/python"
+    prevention: "Set LD_PRELOAD in the runner's env dict, not interactively."
+  severity: fatal
+  cross_references: []
+
+- id: cwatm_dt_017
+  stage: s5_calibration
+  failure_domain: parameterisation
+  symptom:
+    description: >-
+      Uncalibrated discharge has good correlation but poor NSE (the burek2020 signature),
+      AND the seasonal cycle is a quarter-cycle late: simulated autumn/winter flow far
+      exceeds observed while spring flow falls short. Raising crop_correct or arnoBeta_add
+      barely moves NSE.
+    error_pattern: "baseflow fraction > 0.6 with baseflow climatology peaking 3-4 months after precipitation"
+    detection_method: diagnostic
+  diagnosis:
+    root_cause: >-
+      recessionCoeff_factor is a DIVISOR of recessionCoeff (groundwater.py:72-73:
+      recessionCoeff = 1/recessionCoeff * factor; recessionCoeff = 1/recessionCoeff),
+      so effective recessionCoeff = recessionCoeff / recessionCoeff_factor. With
+      recessionCoeff = 0.02 and factor = 1.0 the groundwater residence time is 50 days,
+      the store swallows most of the runoff and phase-lags the hydrograph.
+    explanation: >-
+      NSE = 2*a*r - a^2 - b^2, so max NSE over all bias/variance corrections is r^2.
+      A phase-lagged store caps r, which caps NSE. Measured at Jiujiang (Yangtze, 1.5M km2,
+      2010-2023): BFI 0.75, baseflow peaks in October vs precipitation in June, r = 0.729
+      => NSE ceiling 0.531, actual NSE 0.184. Compute r^2 BEFORE targeting an NSE.
+    affected_components: [groundwater, calibration]
+  remedy:
+    action: "Pin recessionCoeff = 1.0 and calibrate recessionCoeff_factor as the residence time in days"
+    manual_steps:
+      - "In [GROUNDWATER] set: recessionCoeff  = 1.0"
+      - "Calibrate recessionCoeff_factor over [2, 40] -- it now equals tau_gw in days."
+      - "Verify: OUT_Map_MonthAvg = runoff, baseflow; area-weighted BFI should land near 0.3-0.45."
+    prevention: >-
+      SKILL.md's documented 1.0-10.0 range only makes baseflow slower. Never search it
+      without first checking the sign of the parameter in groundwater.py.
+  severity: degraded
+  cross_references: [cwatm_dt_018]
+
+- id: cwatm_dt_018
+  stage: s4_output_analysis
+  failure_domain: tooling
+  symptom:
+    description: "parse_cwatm_output.py cannot find the gauge discharge series even though the run succeeded."
+    error_pattern: "ERROR: Cannot find output file containing variable 'discharge'"
+    detection_method: exception
+  diagnosis:
+    root_cause: >-
+      CWatM writes gauge time series configured by OUT_TSS_Daily as <var>_daily.CSV, not NetCDF.
+      The parser only globbed *.nc, so the one file holding the point series it exists to extract
+      was invisible. A <var>_daily.nc appears only when OUT_MAP_Daily is also set.
+    explanation: "TSS layout: 4 header rows (Timeseries.., xloc.., yloc.., Date,G1..), then DD/MM/YYYY,value."
+    affected_components: [tools/parse_cwatm_output.py]
+  remedy:
+    action: "Fixed in place: parse_cwatm_output.py now prefers the TSS CSV"
+    manual_steps:
+      - "find_tss_csv() locates <variable>_<agg>.csv; extract_tss_csv() reads it with --gauge_index."
+    prevention: "Do not infer 'the run produced no gauge output' from the absence of a NetCDF."
+  severity: degraded
+  cross_references: [cwatm_dt_017]
+
+- id: cwatm_dt_019
+  stage: s3_model_execution
+  failure_domain: tooling
+  symptom:
+    description: "run_cwatm_wrapper.py reports run_cwatm.py missing at a doubled path, or dies on the GDAL TLS ImportError."
+    error_pattern: "source/repo/source/repo/run_cwatm.py|cannot allocate memory in static TLS block"
+    detection_method: exception
+  diagnosis:
+    root_cause: >-
+      run_model() launched the subprocess with cwd=cwatm_dir but passed cwatm_dir and
+      settings_path through unchanged, so any RELATIVE path was resolved a second time
+      against cwatm_dir. Separately it inherited the parent env, so callers had to remember
+      the LD_PRELOAD from cwatm_dt_016 by hand.
+    affected_components: [tools/run_cwatm_wrapper.py]
+  remedy:
+    action: "Fixed in place"
+    manual_steps:
+      - "run_model() now abspath()s cwatm_dir and settings_path."
+      - "run_model() injects LD_PRELOAD=/lib/x86_64-linux-gnu/libstdc++.so.6 into the child env."
+    prevention: "Any subprocess launched with an explicit cwd must receive absolute paths."
+  severity: fatal
+  cross_references: [cwatm_dt_016]
+
+- id: cwatm_dt_020
+  stage: s0_configuration
+  failure_domain: configuration
+  symptom:
+    description: "An irrigated basin simulates too much discharge; unmetDemand is all zero; lake parameters have no effect."
+    error_pattern: "includeIrrigation = True with includeWaterDemand = False"
+    detection_method: diagnostic
+  diagnosis:
+    root_cause: >-
+      includeIrrigation only controls the LAND SURFACE: with it True, irrPaddy/irrNonPaddy stay
+      as distinct land-cover types with their own crop coefficients and paddy topwater
+      (landcoverType.py:785, 855). The ABSTRACTION of irrigation water from rivers and
+      groundwater lives in waterdemand_module.dynamic(), which is gated on includeWaterDemand.
+      Likewise lakeAFactor / normalStorageLimit / lakeEvaFactor are inert while
+      includeWaterBodies = False -- 3 of the 11 documented calibration parameters do nothing.
+    affected_components: [water_demand, lakes_reservoirs]
+  remedy:
+    action: "State the coupling explicitly in the settings header, or supply the demand stack"
+    manual_steps:
+      - "Water demand needs domestic/industrial/livestock demand NetCDFs; none are on this server as of 2026-07-10."
+      - "Water bodies need lakesResID/lakesResType/lakesResDis/lakesResArea NetCDFs derived from HydroLAKES."
+      - "HydroLAKES_polys_v10.shp IS on disk at /mnt/disk1/Hydrocraft_server/data/lakes/ but NO KI tool builds the 4 NetCDFs."
+    prevention: >-
+      Before calibrating, list which of the 11 parameters are actually live under the current
+      option switches. Do not report an inert parameter as calibrated.
+  severity: degraded
+  cross_references: [cwatm_dt_017]

@@ -75,23 +75,30 @@ The standalone version has **more physics options** and is required for detailed
 - **OS**: Linux, macOS, Windows (with MinGW or Cygwin)
 
 ### Compilation
+The binary is ALREADY COMPILED at `/mnt/disk1/Hydrocraft_server/model/shaw/shaw303`
+(a symlink to `model/shaw/Shaw303/shaw303`). To rebuild, use the shipped script
+(handles gfortran 10+ legacy flags) — do NOT invent a `Code/` path, there is none:
 ```bash
-cd /mnt/disk1/Hydrocraft_server/model/shaw/Code
-gfortran -O2 -o shaw303 shaw303.f
-# Or if multiple source files:
-# gfortran -O2 -o shaw303 *.f
+cd /mnt/disk1/Hydrocraft_server/model/shaw
+bash compile.sh    # gfortran -O2 -w -std=legacy -fallow-argument-mismatch
+                   #   -o Shaw303/shaw303 Shaw303/Code+Debug/Shaw303.for
+                   # + symlink model/shaw/shaw303
 ```
 
 ### Running
 ```bash
 cd /path/to/input/files
-/mnt/disk1/Hydrocraft_server/model/shaw/Code/shaw303
-# When prompted, enter: Trial.30.inp
+/mnt/disk1/Hydrocraft_server/model/shaw/shaw303
+# When prompted, enter: Trial.303.inp
 ```
-SHAW reads from stdin — it prompts for the .inp file path. For automation, pipe it:
+SHAW reads from stdin — it prompts for the .inp file path AND a final
+"Press Enter to end". For automation, pipe BOTH (triplet shaw_024):
 ```bash
-echo "Trial.30.inp" | /mnt/disk1/Hydrocraft_server/model/shaw/Code/shaw303
+printf "Trial.303.inp\n\n" | /mnt/disk1/Hydrocraft_server/model/shaw/shaw303
 ```
+NOTE: SHAW normally exits with a benign Fortran EOF backtrace (non-zero return
+code) when it reaches the end of the weather file, yet writes COMPLETE output.
+Judge success by non-empty `.out` files, not by the return code (triplet shaw_018).
 
 ## Input Files (5 required + 3 optional)
 
@@ -159,6 +166,63 @@ The site file (.sit) has a complex multi-section structure:
 | 1 | Campbell | psi_e, theta_s, b |
 | 2 | Brooks-Corey | psi_e, theta_s, lambda, theta_r, l |
 | 3 | Van Genuchten | theta_s, n, theta_r, l, alpha (set psi_e=0) |
+
+### ⚠️ Soil Node Column Format — IWRC=1 (Campbell) — ACTUAL .sit format
+
+The actual binary format used by SHAW v3.03 for each soil node line is **12 columns**:
+
+```
+DEPTH  SAND  SILT  CLAY  OM  KSAT  BD  THETA_INIT  TINIT  BCAP  QUARTZ  BPAR
+```
+
+| Col | Name | Units | Notes |
+|-----|------|-------|-------|
+| 0 | DEPTH | m | Node depth (0.00 = surface) |
+| 1 | SAND | % | Sand fraction (0–100) |
+| 2 | SILT | % | Silt fraction |
+| 3 | CLAY | % | Clay fraction |
+| 4 | OM | % | Organic matter (OC × 1.724) |
+| 5 | KSAT | cm/hr | Saturated hydraulic conductivity |
+| 6 | BD | kg/m³ | Bulk density (written as `1360.`) |
+| 7 | THETA_INIT | m³/m³ | Initial volumetric water content |
+| 8 | TINIT | °C | Initial soil temperature |
+| 9 | BCAP | m | Air-entry potential (negative, e.g. `-0.30`) |
+| 10 | QUARTZ | 0–1 | **Thermal parameter** — quartz fraction of mineral particles (Johansen 1975) |
+| 11 | BPAR | — | **Campbell's b** — pore-size distribution index (Rawls et al. 1982) |
+
+> **WARNING — template trap**: The Compton Quebec template ships with `QUARTZ=8.5` and `BPAR=30.0` — both physically impossible or wrong. `QUARTZ` must be 0–1. `BPAR=30` means soil stays liquid to −150°C, disabling freeze-thaw simulation. ALWAYS apply pedotransfer corrections (see below).
+
+### ⚠️ BPAR and QUARTZ — Pedotransfer Functions (CRITICAL for freeze-thaw)
+
+**BPAR (Campbell's b)** controls both:
+- Water retention curve shape: ψ = BCAP × (θ/θ_sat)^(−BPAR)
+- Freeze-thaw: unfrozen water at temperature T < 0°C: θ_L/θ_sat = (6230/|BCAP|)^(−1/BPAR)
+
+With BPAR=30: 72% liquid water at −15°C → soil never freezes. With BPAR=6–9 (correct for loam/clay): 5–20% liquid at −15°C → realistic freeze-thaw.
+
+**Pedotransfer functions** (apply via `fix_bpar_quartz_from_texture()` in `setup_shaw_from_template.py`):
+
+```python
+# Rawls et al. (1982) — Campbell b from texture
+bpar   = 3.10 + 0.157 * clay - 0.003 * sand     # typical NE China: 6–10
+bpar   = max(2.0, min(12.0, bpar))               # clamped
+
+# Johansen (1975) — quartz fraction from sand content  
+quartz = min(0.85, max(0.10, sand/100.0 * 0.9 + 0.10))
+
+# Cosby et al. (1984) — BCAP (air-entry, m, negative)
+bcap   = -0.01 * (10.0 ** (1.54 - 0.0095*sand + 0.0063*(100-sand-clay)))
+bcap   = max(bcap, -1.0)
+bcap   = min(bcap, -0.05)
+```
+
+**Always call after template setup:**
+```python
+from models.SHAW.knowledge_infrastructure.tools.s1_site_setup.setup_shaw_from_template import fix_bpar_quartz_from_texture
+n = fix_bpar_quartz_from_texture(sit_path)
+```
+
+Or from `run_shaw_parallel.py` — `fix_bpar_quartz_in_sit(sit_path)` is defined inline and called after every template setup.
 
 ## Output Files (up to 19)
 
@@ -330,3 +394,62 @@ SHAW supports BOTH formats via the MTSTEP flag in .inp Line B:
 
 ### Output files
 All at `outputs/shaw_manitoba_544/`: validation_soil_temp.png, validation_frost_snow.png
+
+---
+
+## Validated: NE China Black Soil Domain — 6 Stations (2021–2022)
+
+**Data source**: Black Soil Observation Data NE China V2.0 (32 AWS/soil stations)
+- Local path: `data/china_data/BlackSoilObsData_NE_China_V2.0/ObservationData/`
+- Sensor: combined AWS with TDR soil moisture + soil temperature at a single depth
+- Format: xlsx, header at row 10, ~30-min records
+- Column format varies by station (8–15 columns): use column index, not name matching
+
+**6 validation cells and station mapping:**
+
+| Cell label | Station name | Lat/Lon (sensor) | 0.25° cell | Data period | Depth |
+|---|---|---|---|---|---|
+| `47p3750_123p6250` | EcologicalQiqihar (Fulaerji) | 47.269°N, 123.686°E | 47.375°N, 123.625°E | May 2021–Dec 2022 | unknown (est. 5–10cm) |
+| `47p8750_125p3750` | YianVegetables | 47.875°N, 125.375°E | same | May 2021–Dec 2022 | **20cm and 40cm** |
+| `43p3750_124p3750` | LishuSiping | 43.375°N, 124.375°E | same | Jun–Nov 2022 | **20cm** (mulch + bare) |
+| `47p3750_126p3750` | HailunSuihua | 47.254°N, 126.473°E | 47.375°N, 126.375°E | Jun–Dec 2022 | unknown (est. 5–10cm) |
+| `44p6250_123p6250` | ChanglingSongyuan | 44.625°N, 123.625°E | same | Jun–Dec 2022 | unknown (est. 5–10cm) |
+| `46p6250_131p6250` | YouyiShuangyashan | 46.625°N, 131.625°E | same | Jun–Dec 2022 | unknown (est. 5–10cm) |
+
+**Observed monthly soil moisture (% VWC)** — EcologicalQiqihar (best station, 2 full years):
+
+| Month | SM (%) | ST (°C) | Notes |
+|-------|--------|---------|-------|
+| May | 33–35 | 12–16 | Post-snowmelt refill |
+| Jun | 37–38 | 20 | Peak growing season onset |
+| Jul | 40–41 | 23–25 | Maximum moisture |
+| Aug | 34–40 | 21–22 | Post-rain peak |
+| Sep | 26–39 | 16–18 | Drainage |
+| Oct | 27–35 | 6–8 | Pre-freeze drying |
+| Nov | 21–29 | -1 | Onset of freezing |
+| Dec | 13–17 | -5 to -9 | Partially frozen (liquid water) |
+| Jan | ~13 | -9 | Deeply frozen |
+| Feb | ~13 | -9 | Peak frozen |
+| Mar | ~21 | -3 | Thaw begins |
+| Apr | ~33 | 4 | Rapid thaw refill |
+
+Growing season (May–Oct) mean: **35.5%**  |  Winter (Nov–Mar) mean: **18.2%** (liquid only)
+
+**Literature reference (Chinese Geographical Science, Springer):**  
+NE China Mollisol field capacity = 23.5–37% VWC, mean **31.65%** across 113 soil profiles.  
+Winter liquid water (frozen Mollisol, 5–20cm): **0–10% VWC** in frozen layers [from-memory, unverified beyond search result].
+
+**Key obs data notes:**
+- EcologicalQiqihar is the only station with complete freeze-thaw cycle data (Qiqihar city, MWRC experimental base)
+- YianVegetables and LishuSiping measure at 20–40cm — not directly comparable to SHAW 5cm node
+- HailunSuihua, ChanglingSongyuan, YouyiShuangyashan show anomalously high SM (50–70%) starting Jun 2022 only — likely sensor calibration issue or near-saturated wetland soil; treat with caution
+- Compare SHAW `liquid.out` (not `moist.out`) against these sensors — sensors detect liquid water only
+
+**SHAW performance (6-cell HWSD-corrected run, `ne_china_shaw_hwsd/`):**
+- Before BPAR fix (BPAR=30): Qiqihar SM PBIAS = +29.4% (soil never froze, liquid stayed at 35% while obs dropped to 13%)
+- After BPAR fix (BPAR=6.92 from Rawls 1982): Qiqihar winter liquid drops to 11–17% — physically correct
+- Growing season dry bias (PBIAS ≈ −24%): caused by HWSD bulk density overestimate (BD=1380 vs. ~1100 kg/m³ for NE China Mollisols)
+
+**Run scripts:**
+- 6-cell validation: `outputs/ne_china_shaw_vic_dssat/run_shaw_hwsd_validation.py`
+- Full 2223-cell domain: `outputs/ne_china_shaw_vic_dssat/run_shaw_parallel.py` (includes `fix_bpar_quartz_in_sit()` as of 2026-05-13)

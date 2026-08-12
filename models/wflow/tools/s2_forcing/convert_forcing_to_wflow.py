@@ -78,6 +78,7 @@ def read_cmfd_forcing_direct(forcing_dir, grid_path, start_year, end_year):
     all_precip = []
     all_temp = []
     all_srad = []
+    all_pet = []
 
     for year in range(start_year, end_year + 1):
         for month in range(1, 13):
@@ -111,19 +112,36 @@ def read_cmfd_forcing_direct(forcing_dir, grid_path, start_year, end_year):
                 s, e = d * 8, (d + 1) * 8
                 all_dates.append(datetime(year, month, 1) + timedelta(days=d))
                 p = data_month['Prec'][0][s:e]
-                all_precip.append(np.sum(p, axis=0))  # sum mm/3hr -> mm/day
+                # CMFD prec unit is kg m-2 s-1 (= mm/s); each 3-hr step = 10800 s
+                all_precip.append(np.sum(p, axis=0) * 10800)  # kg m-2 s-1 -> mm/day
                 if 'Temp' in data_month:
                     t = data_month['Temp'][0][s:e]
                     all_temp.append(np.mean(t, axis=0) - 273.15)  # K -> C
                 else:
                     all_temp.append(np.full((ny, nx), 15.0))
-                if 'SRad' in data_month:
-                    sr = data_month['SRad'][0][s:e]
-                    # Compute Hargreaves PET: 0.0023 * Ra * (T+17.8) * sqrt(DTR)
-                    t_mean = np.mean(data_month['Temp'][0][s:e], axis=0) - 273.15 if 'Temp' in data_month else 15.0
-                    ra_mj = np.mean(sr, axis=0) * 0.0864  # W/m2 -> MJ/m2/d
-                    dtr = 10.0  # assumed diurnal range
-                    pet_day = np.maximum(0, 0.0023 * ra_mj * (t_mean + 17.8) * math.sqrt(dtr))
+                if 'Temp' in data_month:
+                    t_slice = data_month['Temp'][0][s:e]
+                    t_mean = np.mean(t_slice, axis=0) - 273.15  # K -> C
+                    t_max = np.max(t_slice, axis=0) - 273.15
+                    t_min = np.min(t_slice, axis=0) - 273.15
+                    dtr = np.maximum(t_max - t_min, 0.5)  # actual diurnal range from 3-hr data
+                    # Compute Ra (extraterrestrial radiation, MJ/m2/day) from lat/DOY
+                    # FAO-56 Hargreaves: ET0 = 0.0023 * Ra(mm/day) * (T+17.8) * sqrt(DTR)
+                    # Ra in mm/day = Ra_MJ / 2.45
+                    cur_date = datetime(year, month, 1) + timedelta(days=d)
+                    doy = cur_date.timetuple().tm_yday
+                    dr = 1.0 + 0.033 * np.cos(2.0 * np.pi * doy / 365.0)
+                    delta = 0.4093 * np.sin(2.0 * np.pi * doy / 365.0 - 1.39)
+                    ra_grid = np.zeros((ny, nx))
+                    for jj in range(ny):
+                        lat_rad = np.radians(lats[jj])
+                        ws = np.arccos(np.clip(-np.tan(lat_rad) * np.tan(delta), -1, 1))
+                        ra_grid[jj, :] = (24.0*60.0/np.pi * 0.0820 * dr *
+                            (ws*np.sin(lat_rad)*np.sin(delta) +
+                             np.cos(lat_rad)*np.cos(delta)*np.sin(ws)))
+                    ra_mj = np.maximum(ra_grid, 0.0)
+                    ra_mm = ra_mj / 2.45  # MJ/m2/day -> mm/day equivalent
+                    pet_day = np.maximum(0, 0.0023 * ra_mm * (t_mean + 17.8) * np.sqrt(dtr))
                     all_pet.append(pet_day)
 
         print(f"  Year {year} processed", file=sys.stderr)
@@ -142,16 +160,93 @@ def read_cmfd_forcing_direct(forcing_dir, grid_path, start_year, end_year):
     return times, lats, lons, precip, temp, pet
 
 
+def read_forcing_via_ki_tools(source, grid_path, start_year, end_year, forcing_dir=None):
+    """Load forcing through ki_tools_common.load_forcing (the canonical loader).
+
+    Preferred over the bespoke readers below: load_forcing owns the CMFD/MSWX
+    unit conventions and the shared-decompression-pass optimisation, so unit
+    traps (dt_w001 precip, dt_w002 Kelvin) are fixed in ONE place rather than
+    re-derived per model KI.
+
+    Only cells inside wflow_subcatch are requested — on a basin grid the padded
+    window is typically 4-5x the active domain, and CMFD cost scales with the
+    number of points asked for.
+
+    Returns: times, lats, lons, precip(mm/day), temp(degC), pet(mm/day)
+    """
+    import xarray as xr
+    import pandas as pd
+    from ki_tools_common.load_forcing import load_daily_forcing_points
+
+    ds_grid = xr.open_dataset(grid_path)
+    lats = ds_grid["y"].values if "y" in ds_grid.dims else ds_grid["lat"].values
+    lons = ds_grid["x"].values if "x" in ds_grid.dims else ds_grid["lon"].values
+    if "wflow_subcatch" in ds_grid:
+        active = np.isfinite(ds_grid["wflow_subcatch"].values) & \
+                 (np.nan_to_num(ds_grid["wflow_subcatch"].values) > 0)
+    else:
+        active = np.ones((len(lats), len(lons)), dtype=bool)
+    ds_grid.close()
+
+    ny, nx = len(lats), len(lons)
+    cells = [(j, i) for j in range(ny) for i in range(nx) if active[j, i]]
+    latlons = [(float(lats[j]), float(lons[i])) for j, i in cells]
+    print(f"  Loading {source} for {len(cells)} active cells "
+          f"(grid {ny}x{nx}) via ki_tools_common.load_forcing", file=sys.stderr)
+
+    recs = load_daily_forcing_points(source, latlons, start_year, end_year,
+                                     forcing_dir=forcing_dir)
+
+    dates = pd.to_datetime(recs[0]["dates"])
+    nt = len(dates)
+    precip = np.zeros((nt, ny, nx), dtype=np.float32)
+    temp = np.zeros((nt, ny, nx), dtype=np.float32)
+    pet = np.zeros((nt, ny, nx), dtype=np.float32)
+
+    doy = np.array([d.timetuple().tm_yday for d in dates])
+    dr = 1.0 + 0.033 * np.cos(2.0 * np.pi * doy / 365.0)
+    delta = 0.4093 * np.sin(2.0 * np.pi * doy / 365.0 - 1.39)
+
+    for (j, i), rec in zip(cells, recs):
+        p = np.asarray(rec["precip_mm"], dtype=float)[:nt]
+        tmean = np.asarray(rec["temp_mean_c"], dtype=float)[:nt]
+        tmax = np.asarray(rec["temp_max_c"], dtype=float)[:nt]
+        tmin = np.asarray(rec["temp_min_c"], dtype=float)[:nt]
+        precip[:len(p), j, i] = p
+        temp[:len(tmean), j, i] = tmean
+
+        # FAO-56 Hargreaves: ET0 = 0.0023 * Ra[mm/day] * (Tmean+17.8) * sqrt(DTR)
+        lat_rad = np.radians(float(lats[j]))
+        ws = np.arccos(np.clip(-np.tan(lat_rad) * np.tan(delta), -1.0, 1.0))
+        ra_mj = np.maximum(
+            24.0 * 60.0 / np.pi * 0.0820 * dr *
+            (ws * np.sin(lat_rad) * np.sin(delta) +
+             np.cos(lat_rad) * np.cos(delta) * np.sin(ws)), 0.0)
+        dtr = np.maximum(tmax - tmin, 0.5)
+        pet[:, j, i] = np.maximum(
+            0.0, 0.0023 * (ra_mj / 2.45) * (tmean + 17.8) * np.sqrt(dtr))
+
+    # Inactive cells: neutral values (wflow ignores them, but NaN would poison
+    # any basin-mean diagnostic).
+    tmean_basin = float(np.nanmean(temp[:, active])) if active.any() else 15.0
+    for j in range(ny):
+        for i in range(nx):
+            if not active[j, i]:
+                temp[:, j, i] = tmean_basin
+
+    return dates.values.astype("datetime64[D]"), lats, lons, precip, temp, pet
+
+
 def validate_inputs(args):
     """Validate forcing data sources."""
     errors = []
 
-    if not args.forcing_dir and not args.cmfd_dir and not args.mswx_dir:
+    if not args.source and not args.forcing_dir and not args.cmfd_dir and not args.mswx_dir:
         errors.append(
             "Must provide --forcing_dir (VIC ASCII), --cmfd_dir, or --mswx_dir"
         )
 
-    if args.forcing_dir and not os.path.isdir(args.forcing_dir):
+    if args.forcing_dir and not args.source and not os.path.isdir(args.forcing_dir):
         errors.append(f"Forcing directory not found: {args.forcing_dir}")
 
     if not args.grid_nc and not args.staticmaps_nc:
@@ -161,9 +256,11 @@ def validate_inputs(args):
     if grid_path and not os.path.exists(grid_path):
         errors.append(f"Grid file not found: {grid_path}")
 
-    if args.start_year >= args.end_year:
+    # start_year == end_year is a legitimate single-year conversion — it is how
+    # a long run is built one resumable year at a time.
+    if args.start_year > args.end_year:
         errors.append(
-            f"start_year ({args.start_year}) must be < end_year ({args.end_year})"
+            f"start_year ({args.start_year}) must be <= end_year ({args.end_year})"
         )
 
     if errors:
@@ -345,7 +442,12 @@ def process(args):
 
     grid_path = args.grid_nc or args.staticmaps_nc
 
-    if args.forcing_dir:
+    if args.source:
+        times, lats, lons, precip, temp, pet = read_forcing_via_ki_tools(
+            args.source, grid_path, args.start_year, args.end_year,
+            forcing_dir=(args.forcing_dir or None)
+        )
+    elif args.forcing_dir:
         # Try VIC ASCII first, then CMFD NetCDF from subdirectories
         forcing_dir = Path(args.forcing_dir)
         vic_files = list(forcing_dir.glob("*_*.*_*.*"))  # VIC naming pattern
@@ -446,8 +548,12 @@ def main():
     parser = argparse.ArgumentParser(
         description="Convert CMFD/MSWX/VIC forcing to wflow NetCDF format"
     )
+    parser.add_argument("--source", type=str, default="",
+                        choices=["", "cmfd", "mswx", "nasa_power", "gswp3"],
+                        help="Load via ki_tools_common.load_forcing (PREFERRED). "
+                             "--forcing_dir then means the dataset ROOT.")
     parser.add_argument("--forcing_dir", type=str, default="",
-                        help="VIC ASCII forcing directory")
+                        help="VIC ASCII forcing directory, or dataset root with --source")
     parser.add_argument("--cmfd_dir", type=str, default="",
                         help="Raw CMFD NetCDF directory")
     parser.add_argument("--mswx_dir", type=str, default="",

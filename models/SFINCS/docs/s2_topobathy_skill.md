@@ -46,14 +46,16 @@ Build SFINCS topography (sfincs.dep), active cell mask (sfincs.msk), and index (
 
 | Output | Path | Size | Verification |
 |--------|------|------|-------------|
-| sfincs.dep | `{output_dir}/sfincs.dep` | nmax * mmax * 4 bytes | Elevation range correct |
-| sfincs.msk | `{output_dir}/sfincs.msk` | nmax * mmax * 1 byte | Active cells > 0 |
-| sfincs.ind | `{output_dir}/sfincs.ind` | nmax * mmax * 4 bytes | Sequential indices |
+| sfincs.dep | `{output_dir}/sfincs.dep` | **n_active * 4 bytes** (compressed, dt_v023) | Elevation range correct |
+| sfincs.msk | `{output_dir}/sfincs.msk` | **n_active * 1 byte** (compressed, dt_v023) | Active cells > 0 |
+| sfincs.ind | `{output_dir}/sfincs.ind` | **(n_active + 1) * 4 bytes** | int32 n_active header, then 1-based FORTRAN-order (n fastest, row 0 = SOUTH) indices |
 | topobathy_summary.json | `{output_dir}/topobathy_summary.json` | - | Statistics |
 
 ## Validation Checks
 
-1. File sizes match: dep = nmax * mmax * 4, msk = nmax * mmax * 1, ind = nmax * mmax * 4
+1. File sizes match: dep = n_active * 4, msk = n_active * 1, man = n_active * 4, ind = (n_active + 1) * 4.
+   These are COMPRESSED maps holding only the active cells in sfincs.ind order — a full
+   nmax*mmax grid makes SFINCS silently simulate a scrambled fragment (dt_v023).
 2. Active cells > 0 (mask values > 0)
 3. Edge active cells have mask=2 (outflow), not mask=3
 4. Elevation range is physically reasonable (not all -9999)

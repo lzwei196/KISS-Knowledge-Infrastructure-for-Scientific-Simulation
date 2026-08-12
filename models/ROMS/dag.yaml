@@ -1,0 +1,490 @@
+template_version: "3.5"
+
+identity:
+  model_id: "ROMS"
+  scientific_reference_version: "ROMS free-surface, hydrostatic, Boussinesq primitive-equation kernel (Rutgers ROMS, Nonlinear forward model; develop branch ~roms-4.2 lineage)"
+  implementation:
+    id: "roms-nlm"
+    version: "4.x (KI label v4.1; upstream latest tag roms-4.2)"
+    provenance: "Fortran 90; Rutgers ROMS Group nonlinear forward model (NLM) from github.com/myroms/roms, C-preprocessor (CPP) compile-time physics selection."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: "MIT"
+  repo_url: "https://github.com/myroms/roms"
+
+boundary:
+  scope_in:
+    - "Free-surface, hydrostatic, Boussinesq primitive-equation ocean circulation over variable bathymetry"
+    - "3D momentum (u, v) and free-surface (zeta) on a split-explicit barotropic/baroclinic mode split"
+    - "Active tracer transport (potential temperature, salinity) with selectable vertical mixing closure"
+    - "Regional/coastal/estuarine domains on an orthogonal-curvilinear Arakawa C-grid, terrain-following S-coordinate vertical"
+    - "Optional coupled submodels: biology (Fennel/NEMURO/EcoSim), sediment transport, sea-ice, bottom boundary layer, wave-effects-on-currents"
+  scope_out:
+    - "Non-hydrostatic dynamics (model is hydrostatic)"
+    - "Global free-surface-resolving circulation (model is regional/limited-area, requires lateral boundary data)"
+    - "Compressible / non-Boussinesq density effects"
+  spatial: "3-D"
+  temporal: "sub-hourly"
+  closure: "both"
+  notes: "Volume/mass-balance closure on the free surface and tracer (T, S) transport under the Boussinesq approximation; surface energy budget is closed internally only when BULK_FLUXES is active (air-sea fluxes computed from atmospheric state), otherwise prescribed surface fluxes are imposed. Hydrostatic balance replaces the vertical momentum equation. Time stepping is split-explicit: a fast barotropic (2D) mode on dtfast sub-steps and a slow baroclinic (3D) mode on the DT step, coupled at ratio NDTFAST = DT/dtfast; baroclinic DT is typically minutes but barotropic dtfast is sub-minute, so the model resolves sub-hourly dynamics."
+
+inputs:
+  forcing:
+    - {category: atmospheric, name: "Uwind", unit: "m/s", source_kind: forcing, model_input_format: "NetCDF field on RHO-grid (FRCNAME)", notes: "10 m wind E-component; supplied as atmospheric STATE when BULK_FLUXES active"}
+    - {category: atmospheric, name: "Vwind", unit: "m/s", source_kind: forcing, model_input_format: "NetCDF field on RHO-grid (FRCNAME)", notes: "10 m wind N-component"}
+    - {category: atmospheric, name: "Tair", unit: "degC", source_kind: forcing, model_input_format: "NetCDF field on RHO-grid", notes: "air temperature; Celsius, not Kelvin (BULK_FLUXES)"}
+    - {category: atmospheric, name: "Pair", unit: "mb (hPa)", source_kind: forcing, model_input_format: "NetCDF field on RHO-grid", notes: "surface pressure in millibar, not Pa"}
+    - {category: atmospheric, name: "Qair", unit: "kg/kg", source_kind: forcing, model_input_format: "NetCDF field on RHO-grid", notes: "specific humidity (0.001-0.020), not % relative humidity (BULK_FLUXES)"}
+    - {category: atmospheric, name: "rain", unit: "kg/m2/s", source_kind: forcing, model_input_format: "NetCDF field on RHO-grid", notes: "precipitation; mm/day must be divided by 86400"}
+    - {category: atmospheric, name: "swrad", unit: "W/m2", source_kind: forcing, model_input_format: "NetCDF field on RHO-grid", notes: "shortwave radiation, positive downward into ocean; SOLAR_SOURCE controls subsurface penetration"}
+    - {category: atmospheric, name: "lwrad", unit: "W/m2", source_kind: forcing, model_input_format: "NetCDF field on RHO-grid", notes: "net longwave (positive=warming) or downwelling-only when LONGWAVE_OUT active"}
+    - {category: surface_flux, name: "sustr", unit: "N/m2 (Pa)", source_kind: forcing, model_input_format: "NetCDF on U-points", notes: "surface U-momentum stress; supplied directly only when BULK_FLUXES is NOT defined (else double-counting)"}
+    - {category: surface_flux, name: "svstr", unit: "N/m2 (Pa)", source_kind: forcing, model_input_format: "NetCDF on V-points", notes: "surface V-momentum stress; non-bulk path only"}
+    - {category: surface_flux, name: "shflux", unit: "W/m2", source_kind: forcing, model_input_format: "NetCDF on RHO-grid", notes: "net surface heat flux; prescribed when BULK_FLUXES NOT defined"}
+    - {category: surface_flux, name: "swflux / EminusP", unit: "m/s (or kg/m2/s)", source_kind: forcing, model_input_format: "NetCDF on RHO-grid", notes: "net freshwater flux evaporation minus precipitation; non-bulk path"}
+    - {category: lateral_boundary, name: "open boundary T/S/u/v/zeta", unit: "per-variable", source_kind: forcing, model_input_format: "NetCDF BRYNAME with _west/_east/_south/_north suffixes", notes: "time-varying open-boundary data; must cover full simulation period (daily min, 6-hourly preferred), else last record is extrapolated"}
+    - {category: tidal, name: "tidal elevation/velocity constituents", unit: "m, m/s", source_kind: forcing, model_input_format: "NetCDF tidal-forcing file (SSH_TIDES/UV_TIDES)", notes: "harmonic constituents added at open boundaries; forcing time must match TIME_REF epoch"}
+    - {category: point_source, name: "river_transport / river_temp / river_salt", unit: "m3/s, degC, PSU", source_kind: forcing, model_input_format: "NetCDF river point-source file (river_Xposition/Eposition/direction/Vshape)", notes: "runoff point sources injected at named grid cells"}
+  parameters:
+    - {category: grid, name: "h", unit: "m (positive down)", source_kind: dataset_lookup, model_input_format: "NetCDF grid file (GRDNAME)", notes: "bathymetry; must be positive in water; smooth so r-factor |dh|/sum(h) < 0.2"}
+    - {category: grid, name: "pm, pn", unit: "1/m", source_kind: dataset_lookup, model_input_format: "NetCDF grid file", notes: "inverse curvilinear metrics 1/dx, 1/dy"}
+    - {category: grid, name: "f", unit: "1/s", source_kind: dataset_lookup, model_input_format: "NetCDF grid file", notes: "Coriolis parameter 2*omega*sin(lat)"}
+    - {category: grid, name: "lon_rho/lat_rho, angle, mask_rho", unit: "deg, rad, 0/1", source_kind: dataset_lookup, model_input_format: "NetCDF grid file", notes: "coordinates, grid rotation angle, land/sea mask"}
+    - {category: vertical_coordinate, name: "THETA_S", unit: "dimensionless", source_kind: calibrated, model_input_format: "roms.in keyword", notes: "surface S-coordinate stretching (0.1-10); recommended 3-7"}
+    - {category: vertical_coordinate, name: "THETA_B", unit: "dimensionless", source_kind: calibrated, model_input_format: "roms.in keyword", notes: "bottom S-coordinate stretching (0-4); recommended 0-2"}
+    - {category: vertical_coordinate, name: "TCLINE", unit: "m", source_kind: calibrated, model_input_format: "roms.in keyword", notes: "critical depth for stretching (5-200 m)"}
+    - {category: mixing, name: "VISC2", unit: "m2/s", source_kind: calibrated, model_input_format: "roms.in keyword", notes: "horizontal momentum viscosity (1-100)"}
+    - {category: mixing, name: "TNU2", unit: "m2/s", source_kind: calibrated, model_input_format: "roms.in keyword", notes: "horizontal tracer diffusivity (0-50)"}
+    - {category: mixing, name: "AKV_BAK, AKT_BAK", unit: "m2/s", source_kind: calibrated, model_input_format: "roms.in keyword", notes: "background vertical viscosity/diffusivity (1e-6-1e-4)"}
+    - {category: drag, name: "RDRG2", unit: "dimensionless", source_kind: calibrated, model_input_format: "roms.in keyword", notes: "quadratic bottom drag coefficient (0-0.01); small changes can destabilize"}
+    - {category: drag, name: "Zob", unit: "m", source_kind: calibrated, model_input_format: "roms.in keyword", notes: "bottom roughness length (0.001-0.05)"}
+    - {category: nudging, name: "Tnudg", unit: "days", source_kind: calibrated, model_input_format: "roms.in keyword", notes: "boundary/interior nudging time scale (recommended 3-30, typically 10 for T/S)"}
+    - {category: physical_constant, name: "RHO0", unit: "kg/m3", source_kind: default, model_input_format: "roms.in keyword (default mod_scalars rho0=1025.0)", notes: "Boussinesq reference seawater density; appears in pressure gradient and gorho0=g/rho0 buoyancy"}
+    - {category: physical_constant, name: "Cp", unit: "J/kg/degC", source_kind: default, model_input_format: "hardcoded mod_scalars (3985.0)", notes: "specific heat of seawater converting surface heat flux to temperature flux; not a roms.in input"}
+    - {category: physical_constant, name: "EOS polynomial coefficients", unit: "dimensionless", source_kind: default, model_input_format: "hardcoded rho_eos.F", notes: "Jackett & McDougall (1995) nonlinear UNESCO density fit; defines ROMS density, not user-configurable"}
+    - {category: varinfo, name: "variable-name mapping", unit: "n/a", source_kind: user_provided, model_input_format: "varinfo.yaml (VARNAME)", notes: "maps internal ROMS names to NetCDF variable names; mismatch causes GET_*FLD read failure"}
+  initial_conditions:
+    - {category: state, name: "zeta", unit: "m", source_kind: dataset_lookup, model_input_format: "NetCDF initial/restart file (ININAME)", notes: "free-surface elevation at start"}
+    - {category: state, name: "ubar, vbar", unit: "m/s", source_kind: dataset_lookup, model_input_format: "NetCDF ININAME", notes: "barotropic 2D velocity at start"}
+    - {category: state, name: "u, v", unit: "m/s", source_kind: dataset_lookup, model_input_format: "NetCDF ININAME", notes: "3D baroclinic velocity at start"}
+    - {category: state, name: "temp", unit: "degC", source_kind: dataset_lookup, model_input_format: "NetCDF ININAME", notes: "initial potential temperature in Celsius, not Kelvin (HYCOM/GLORYS conversion)"}
+    - {category: state, name: "salt", unit: "PSU", source_kind: dataset_lookup, model_input_format: "NetCDF ININAME", notes: "initial salinity"}
+    - {category: time, name: "ocean_time", unit: "seconds since TIME_REF", source_kind: user_provided, model_input_format: "NetCDF ININAME / roms.in TIME_REF", notes: "initialization epoch; all NetCDF time variables must reference the same TIME_REF (YYYYMMDD.dd)"}
+  boundary_conditions:
+    - {category: domain, name: "Lm, Mm, N", unit: "count", source_kind: user_provided, model_input_format: "roms.in keyword", notes: "interior XI/ETA points and vertical levels; Lm=xi_rho-2, Mm=eta_rho-2"}
+    - {category: time_stepping, name: "DT", unit: "s", source_kind: user_provided, model_input_format: "roms.in keyword", notes: "baroclinic time step; too large violates CFL -> BLOWUP"}
+    - {category: time_stepping, name: "NDTFAST", unit: "count", source_kind: user_provided, model_input_format: "roms.in keyword", notes: "barotropic sub-steps per DT (typically 20-60)"}
+    - {category: time_stepping, name: "NTIMES, TIME_REF", unit: "count, YYYYMMDD.dd", source_kind: user_provided, model_input_format: "roms.in keyword", notes: "run length and reference epoch"}
+    - {category: vertical_coordinate, name: "Vtransform, Vstretching", unit: "code (1/2; 1-5)", source_kind: user_provided, model_input_format: "roms.in keyword", notes: "S-coordinate transform/stretching family; Vtransform 1 and 2 parameter sets must not be mixed"}
+    - {category: lateral_bc, name: "LBC(...) per-variable per-edge", unit: "code", source_kind: user_provided, model_input_format: "roms.in keyword (edge order West South East North)", notes: "Per/Clo/Gra/Rad/RadNud/Cla/Fla open-boundary condition type per variable per edge"}
+    - {category: physics_switch, name: "CPP physics flags", unit: "compile-time", source_kind: user_provided, model_input_format: "application header .h", notes: "compile-time selection: SOLVE3D, SALINITY, UV_ADV/UV_COR, DJ_GRADPS, one mixing closure (LMD_MIXING|GLS_MIXING|MY25_MIXING), BULK_FLUXES, SSH_TIDES/UV_TIDES, optional BIOLOGY/SEDIMENT/WEC/NESTING/WET_DRY; changing a flag requires recompilation"}
+    - {category: physics_switch, name: "ANA_* analytical flags", unit: "compile-time", source_kind: user_provided, model_input_format: "application header .h", notes: "analytical forcing/grid/initial functions; silently override supplied data files when left defined"}
+    - {category: parallel, name: "NtileI, NtileJ", unit: "count", source_kind: user_provided, model_input_format: "roms.in keyword", notes: "MPI tiling; product must equal number of MPI processes"}
+    - {category: io, name: "NRST/NHIS/NAVG/NSTA, Hout(...)", unit: "steps / flags", source_kind: user_provided, model_input_format: "roms.in keyword", notes: "output intervals and per-variable output flags"}
+
+processes:
+  modules:
+    - {name: "main3d", role: "driver", brief: "Top-level nonlinear baroclinic time-stepping kernel; orders all process solvers and the barotropic/baroclinic split each timestep."}
+    - {name: "step2d", role: "integrator", brief: "Fast-mode barotropic engine: free-surface zeta and depth-averaged ubar/vbar via LF-AM3 or FB AB3-AM4 predictor-corrector over nfast sub-steps."}
+    - {name: "step3d_uv", role: "integrator", brief: "Slow-mode 3D momentum update for u, v coupled to the barotropic mode, applying vertical viscosity Akv implicitly."}
+    - {name: "step3d_t", role: "integrator", brief: "Tracer advection-diffusion: advances temp, salt (and passive tracers) with horizontal/vertical advection and Akt vertical diffusion."}
+    - {name: "rhs3d", role: "process_solver", brief: "Assembles the 3D momentum right-hand-side: advection, Coriolis, horizontal viscosity, and vertical integral of the pressure gradient."}
+    - {name: "prsgrd", role: "process_solver", brief: "Baroclinic pressure-gradient force from density (Shchepetkin-McWilliams density-Jacobian / spline schemes; DJ_GRADPS)."}
+    - {name: "rho_eos", role: "process_solver", brief: "Nonlinear Jackett-McDougall (1995) in-situ density from T, S, depth; also Brunt-Vaisala frequency bvf."}
+    - {name: "set_depth", role: "allocator", brief: "Recomputes terrain-following S-coordinate depths z_r, z_w and layer thicknesses Hz from the updated free surface zeta."}
+    - {name: "set_massflux", role: "process_solver", brief: "Computes horizontal mass fluxes Hz*u/n, Hz*v/m used by advection and the omega diagnosis."}
+    - {name: "omega", role: "process_solver", brief: "Diagnoses S-coordinate vertical velocity W (and true vertical velocity w) from horizontal mass divergence."}
+    - {name: "hmixing", role: "process_solver", brief: "Computes 3D horizontal viscosity/diffusivity coefficients when 3D-coefficient (e.g. Smagorinsky) options are active."}
+    - {name: "lmd_vmix (KPP)", role: "optional_module", brief: "Large-McWilliams-Doney K-profile boundary-layer + interior mixing producing Akv/Akt.", applicability: "LMD_MIXING"}
+    - {name: "gls_mixing", role: "optional_module", brief: "Generic Length Scale two-equation (k-epsilon/k-omega/gen) closure producing Akv/Akt and tke/gls state.", applicability: "GLS_MIXING"}
+    - {name: "my25_mixing", role: "optional_module", brief: "Mellor-Yamada Level 2.5 closure producing Akv/Akt.", applicability: "MY25_MIXING"}
+    - {name: "set_vbc", role: "process_solver", brief: "Sets surface momentum/tracer flux boundary conditions (bulk_flux bulk formulae when BULK_FLUXES, else prescribed forcing) feeding the forces module."}
+    - {name: "bblm", role: "process_solver", brief: "Bottom boundary layer model producing bottom stress bustr/bvstr."}
+    - {name: "set_tides", role: "optional_module", brief: "Adds harmonic tidal elevation/velocity forcing and equilibrium tide-generating body force at open boundaries.", applicability: "SSH_TIDES/UV_TIDES"}
+    - {name: "diag", role: "process_solver", brief: "Computes volume-averaged kinetic/potential/total energy, volume, and Courant numbers each step; BLOWUP instability monitor."}
+    - {name: "biology", role: "optional_module", brief: "Biogeochemistry source/sink (Fennel/NEMURO/EcoSim) mutating tracer concentrations.", applicability: "BIOLOGY"}
+    - {name: "sediment", role: "optional_module", brief: "Suspended-load and bed-load sediment transport with BBL closures.", applicability: "SEDIMENT"}
+    - {name: "nesting", role: "driver", brief: "Composite/refinement contact-zone exchange and two-way coupling between nested grids.", applicability: "NESTING"}
+  internal_edges:
+    - {from: "Inputs", to: "set_vbc", kind: consumes_input, brief: "Atmospheric/boundary forcing is read and time-interpolated, then surface fluxes are formed."}
+    - {from: "Inputs", to: "bblm", kind: consumes_input, brief: "Bottom roughness/drag parameters feed the bottom boundary layer stress computation."}
+    - {from: "temp", to: "rho_eos", kind: reads_state, brief: "EOS reads temperature and salinity tracer fields."}
+    - {from: "salt", to: "rho_eos", kind: reads_state, brief: "EOS reads salinity tracer field."}
+    - {from: "rho_eos", to: "rho", kind: writes_state, brief: "EOS writes in-situ density anomaly from T, S, depth."}
+    - {from: "rho_eos", to: "bvf", kind: writes_state, brief: "Writes Brunt-Vaisala frequency bvf = -gorho0*d(rho)/dz."}
+    - {from: "rho", to: "prsgrd", kind: reads_state, brief: "Pressure-gradient solver reads density to build the baroclinic PGF."}
+    - {from: "prsgrd", to: "rhs3d", kind: invokes, brief: "rhs3d calls prsgrd for the pressure-gradient term of the momentum RHS."}
+    - {from: "rhs3d", to: "ru", kind: writes_state, brief: "Accumulates the 3D momentum right-hand-side (advection, Coriolis, mixing, PGF) into ru."}
+    - {from: "rhs3d", to: "rv", kind: writes_state, brief: "Accumulates the 3D momentum right-hand-side into rv."}
+    - {from: "set_massflux", to: "W", kind: writes_state, brief: "Horizontal mass fluxes feed the omega vertical-velocity diagnosis."}
+    - {from: "step2d", to: "zeta", kind: writes_state, brief: "Barotropic engine updates free-surface elevation across nfast sub-steps."}
+    - {from: "step2d", to: "ubar", kind: writes_state, brief: "Updates depth-averaged barotropic momentum ubar, vbar."}
+    - {from: "zeta", to: "set_depth", kind: reads_state, brief: "S-coordinate depths/thicknesses recomputed from the new time-filtered free surface."}
+    - {from: "set_depth", to: "Hz", kind: writes_state, brief: "Writes S-coordinate layer thickness Hz and z_r, z_w depths."}
+    - {from: "Hz", to: "step3d_uv", kind: reads_state, brief: "3D momentum update needs refreshed layer thicknesses."}
+    - {from: "ru", to: "step3d_uv", kind: reads_state, brief: "step3d_uv integrates the accumulated momentum RHS into u, v."}
+    - {from: "step3d_uv", to: "u", kind: writes_state, brief: "Updates 3D baroclinic velocity coupled to the barotropic mode."}
+    - {from: "lmd_vmix (KPP)", to: "Akv", kind: writes_state, brief: "Active vertical-mixing closure writes vertical viscosity Akv."}
+    - {from: "lmd_vmix (KPP)", to: "Akt", kind: writes_state, brief: "Active vertical-mixing closure writes per-tracer vertical diffusivity Akt."}
+    - {from: "Akv", to: "step3d_uv", kind: reads_state, brief: "Implicit vertical viscosity applied to momentum."}
+    - {from: "Akt", to: "step3d_t", kind: reads_state, brief: "Tracer update uses vertical diffusivity."}
+    - {from: "step3d_t", to: "temp", kind: writes_state, brief: "Advances temperature tracer one slow time step."}
+    - {from: "step3d_t", to: "salt", kind: writes_state, brief: "Advances salinity tracer one slow time step."}
+    - {from: "set_vbc", to: "step3d_uv", kind: consumes_input, brief: "Surface stress enters 3D momentum as the top boundary condition."}
+    - {from: "bblm", to: "step3d_uv", kind: consumes_input, brief: "Bottom stress enters 3D momentum as the bottom boundary condition."}
+    - {from: "set_tides", to: "zeta", kind: writes_state, brief: "Adds tidal elevation/velocity forcing at open boundaries."}
+    - {from: "omega", to: "W", kind: writes_state, brief: "Diagnoses S-coordinate vertical velocity from mass divergence."}
+    - {from: "biology", to: "temp", kind: writes_state, brief: "Optional biogeochemistry source/sink modifies tracer concentrations (passive/bio tracers; T shown as representative)."}
+    - {from: "sediment", to: "salt", kind: writes_state, brief: "Optional sediment transport modifies suspended-sediment tracers (S shown as representative tracer slot)."}
+    - {from: "nesting", to: "temp", kind: writes_state, brief: "Two-way nesting overwrites coarse-grid state with refined averages in contact zones (T shown as representative)."}
+    - {from: "diag", to: "Outputs", kind: produces_output, brief: "Reports avg KE/PE/total energy, volume, and Courant number; detects blow-up."}
+    - {from: "step3d_t", to: "Outputs", kind: produces_output, brief: "History/average NetCDF writers emit the updated state (zeta, u, v, temp, salt, rho)."}
+
+states:
+  variables:
+    - {name: "zeta", unit: "m", role: prognostic}
+    - {name: "ubar", unit: "m/s", role: prognostic}
+    - {name: "vbar", unit: "m/s", role: prognostic}
+    - {name: "u", unit: "m/s", role: prognostic}
+    - {name: "v", unit: "m/s", role: prognostic}
+    - {name: "temp", unit: "degC", role: prognostic}
+    - {name: "salt", unit: "PSU", role: prognostic}
+    - {name: "rho", unit: "kg/m3", role: diagnostic}
+    - {name: "W", unit: "m3/s", role: diagnostic}
+    - {name: "w", unit: "m/s", role: diagnostic}
+    - {name: "Akv", unit: "m2/s", role: diagnostic}
+    - {name: "Akt", unit: "m2/s", role: diagnostic}
+    - {name: "bvf", unit: "1/s2", role: diagnostic}
+    - {name: "Hz", unit: "m", role: diagnostic}
+    - {name: "z_r, z_w", unit: "m", role: diagnostic}
+    - {name: "tke, gls", unit: "m2/s2, m3/s2", role: prognostic}
+    - {name: "ru", unit: "m4/s2", role: accumulator}
+    - {name: "rv", unit: "m4/s2", role: accumulator}
+    - {name: "rubar, rvbar, rzeta", unit: "barotropic RHS", role: accumulator}
+  provenance: "populated"
+
+outputs:
+  - var: "zeta"
+    validation_rank: 1
+    unit: "m"
+    description: "Free-surface elevation (sea surface height); barotropic prognostic state"
+    emitted_in: "roms_his.nc / roms_avg.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy, timing_accuracy]
+          determining_metric: "nse"
+          caveats: ["Tide-gauge SSH: separate tidal (harmonic amplitude/phase, e.g. M2) from subtidal residual; timing_accuracy applies to tidal phase."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: [spatial_pattern_match, magnitude_accuracy]
+          determining_metric: "csi"
+          caveats: ["Altimetric SSH anomaly needs a consistent mean-sea-surface reference before comparison."]
+      detrending_options: [none, linear_residual]
+  - var: "temp"
+    validation_rank: 2
+    unit: "degC"
+    description: "Potential temperature tracer (3D); surface level used as SST"
+    emitted_in: "roms_his.nc / roms_avg.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["CTD/ARGO upper-200 m profile RMSE target < 1 degC; vertical interpolation from S-levels to obs depths required."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: [spatial_pattern_match, magnitude_accuracy]
+          determining_metric: "csi"
+          caveats: ["Satellite SST is a skin/surface field; compare against the surface S-level (k=N-1); bias target < 0.5 degC, spatial r > 0.9."]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: [magnitude_accuracy]
+          determining_metric: "pbias"
+          caveats: ["Single-cast comparison; sensitive to sampling time within the diurnal/tidal cycle."]
+      detrending_options: [none, linear_residual]
+  - var: "salt"
+    validation_rank: 3
+    unit: "PSU"
+    description: "Salinity tracer (3D)"
+    emitted_in: "roms_his.nc / roms_avg.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["CTD/ARGO salinity RMSE target < 0.2 PSU; surface salinity strongly tied to freshwater-flux and river forcing accuracy."]
+      detrending_options: [none]
+  - var: "u"
+    validation_rank: 4
+    unit: "m/s"
+    description: "3D baroclinic velocity XI-component (eastward after rotation)"
+    emitted_in: "roms_his.nc / roms_avg.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["Current-meter/ADCP comparison: rotate grid (u,v) to geographic (eastward/northward) via grid angle; RMSE target < 0.15 m/s, direction RMSE < 30 deg."]
+      detrending_options: [none]
+  - var: "v"
+    validation_rank: 5
+    unit: "m/s"
+    description: "3D baroclinic velocity ETA-component (northward after rotation)"
+    emitted_in: "roms_his.nc / roms_avg.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["Rotate to geographic frame before comparison; baroclinic-tide velocity structure is highly sensitive to the vertical-mixing scheme."]
+      detrending_options: [none]
+  - var: "ubar, vbar"
+    validation_rank: 6
+    unit: "m/s"
+    description: "Vertically-integrated (barotropic) velocity components"
+    emitted_in: "roms_his.nc / roms_avg.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["Depth-averaged transport; compare against vertically-integrated current observations or tidal-current ellipses."]
+      detrending_options: [none]
+  - var: "rho"
+    validation_rank: 7
+    unit: "kg/m3"
+    description: "In-situ density anomaly from the nonlinear equation of state"
+    emitted_in: "roms_his.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [magnitude_accuracy, temporal_pattern_match]
+          determining_metric: "nse"
+          caveats: ["Usually derived from observed T/S via the same EOS rather than measured directly; mixed-layer depth (~0.03 kg/m3 criterion) is a common derived comparison target."]
+      detrending_options: [none]
+
+influence:
+  edges:
+    - from: "vertical mixing scheme (LMD-KPP / GLS / MY2.5 / NN)"
+      to: "vertical diffusivity (Akt)"
+      sensitivity_grade: "HIGH"
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "always (closure choice is a compile-time switch)"
+      citations: ["robertson2019_roms_tidal_mixing", "robertson2017_roms_surface_wind_mixing"]
+    - from: "vertical mixing scheme (LMD-KPP / GLS / MY2.5 / NN)"
+      to: "current velocity (u, v)"
+      sensitivity_grade: "HIGH"
+      basis: literature_quantitative
+      lever_type: structural
+      citations: ["robertson2019_roms_tidal_mixing", "feng2026_roms_param_optimization"]
+    - from: "vertical mixing scheme + surface wind stress"
+      to: "mixed layer depth"
+      sensitivity_grade: "HIGH"
+      basis: literature_quantitative
+      lever_type: structural
+      citations: ["robertson2017_roms_surface_wind_mixing"]
+    - from: "surface wind stress (sustr, svstr)"
+      to: "mixed layer depth"
+      sensitivity_grade: "HIGH"
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      citations: ["robertson2017_roms_surface_wind_mixing"]
+    - from: "surface wind stress (sustr, svstr)"
+      to: "sea surface temperature (temp surface level)"
+      sensitivity_grade: "MEDIUM"
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      citations: ["robertson2017_roms_surface_wind_mixing"]
+    - from: "bottom friction coefficient (RDRG2)"
+      to: "current velocity (u, v)"
+      sensitivity_grade: "HIGH"
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["feng2026_roms_param_optimization"]
+    - from: "horizontal diffusion / viscosity (VISC2, TNU2)"
+      to: "current velocity (u, v)"
+      sensitivity_grade: "LOW"
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["feng2026_roms_param_optimization"]
+    - from: "surface forcing (heat / momentum / freshwater)"
+      to: "alongshore transport"
+      sensitivity_grade: "HIGH"
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      applicability: "limited-area coastal domains (California Current 4D-Var)"
+      citations: ["moore2011_roms_4dvar_part3_obsimpact", "moore2011_roms_4dvar_part1"]
+    - from: "surface forcing (heat / momentum / freshwater)"
+      to: "cross-shore transport"
+      sensitivity_grade: "HIGH"
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      citations: ["moore2011_roms_4dvar_part3_obsimpact"]
+    - from: "initial conditions (T, S, velocity, zeta)"
+      to: "alongshore transport"
+      sensitivity_grade: "HIGH"
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      citations: ["moore2011_roms_4dvar_part3_obsimpact"]
+    - from: "open boundary conditions"
+      to: "current velocity (u, v)"
+      sensitivity_grade: "MEDIUM"
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "limited-area / regional domains"
+      citations: ["moore2011_roms_4dvar_part1", "feng2026_roms_param_optimization"]
+  citation_index:
+    feng2026_roms_param_optimization:
+      short_citation: "Feng et al. 2026"
+      doi: "10.3390/jmse14111061"
+      note: "ROMS parameterization optimization in Western Guangdong Sea; vertical mixing and bottom friction (RDRG2) high sensitivity, horizontal diffusion low."
+    robertson2019_roms_tidal_mixing:
+      short_citation: "Robertson & Dong 2019"
+      doi: "10.1186/s40562-019-0146-y"
+      note: "Evaluation of seven vertical-mixing parameterizations for tidal mixing in ROMS; scheme choice strongly controls velocity and diffusivity."
+    robertson2017_roms_surface_wind_mixing:
+      short_citation: "Robertson & Hartlipp 2017"
+      doi: "10.1186/s40562-017-0090-7"
+      note: "Surface wind mixing in ROMS; wind stress and mixing-scheme choice jointly set mixed-layer depth and surface diffusivity."
+    moore2011_roms_4dvar_part1:
+      short_citation: "Moore et al. 2011 (Part I)"
+      doi: "10.1016/j.pocean.2011.05.004"
+      note: "ROMS 4D-Var system overview; initial conditions, surface forcing, and open boundaries treated as control variables."
+    moore2011_roms_4dvar_part3_obsimpact:
+      short_citation: "Moore et al. 2011 (Part III)"
+      doi: "10.1016/j.pocean.2011.05.005"
+      note: "Adjoint observation-impact in the California Current; surface forcing and initial conditions dominate transport sensitivity."
+
+safety:
+  hazards:
+    - id: "precip_units_mmday_not_kgm2s"
+      kind: weather_file_semantic
+      description: "Precipitation supplied in mm/day instead of kg/m2/s (must divide by 86400); freshwater budget 1000x too high, salinity crashes toward 0 (dt_001)."
+      severity: silent
+    - id: "shortwave_sign_upward_positive"
+      kind: weather_file_semantic
+      description: "Shortwave radiation with upward-positive sign convention instead of positive-downward; ocean loses heat and SST crashes (dt_003)."
+      severity: silent
+    - id: "qair_relative_humidity_not_kgkg"
+      kind: weather_file_semantic
+      description: "Specific humidity Qair supplied as % relative humidity instead of kg/kg under BULK_FLUXES; latent-heat flux wrong, SST off by 10-50 degC (dt_007)."
+      severity: silent
+    - id: "tair_kelvin_not_celsius"
+      kind: weather_file_semantic
+      description: "Air temperature left in Kelvin instead of Celsius; extreme evaporation and surface heating (dt_009)."
+      severity: silent
+    - id: "pair_pascal_not_millibar"
+      kind: weather_file_semantic
+      description: "Surface pressure in Pa instead of millibar (must divide by 100); pressure forcing inert (dt_012)."
+      severity: silent
+    - id: "wind_speed_vs_stress_mismatch"
+      kind: weather_file_semantic
+      description: "Wind speed (m/s) supplied where stress (N/m2) expected, or vice versa, mismatched to BULK_FLUXES setting; surface momentum off by 1-2 orders (dt_020)."
+      severity: silent
+    - id: "forcing_varname_mismatch_varinfo"
+      kind: parser_semantic
+      description: "Forcing-file variable names do not match varinfo.yaml (e.g. u10 vs Uwind); GET_*FLD cannot find the field (dt_010)."
+      severity: fatal
+    - id: "bathymetry_negative_all_land"
+      kind: soil_semantic
+      description: "Bathymetry h negative (ETOPO1 convention) instead of positive-down; mask_rho=0 everywhere, zero ocean volume (dt_005)."
+      severity: fatal
+    - id: "grid_metrics_pm_pn_inverted"
+      kind: soil_semantic
+      description: "Grid metrics pm/pn supplied in meters instead of 1/meters; spatial derivatives inverted, instant CFL blow-up (dt_008)."
+      severity: fatal
+    - id: "bathymetry_rfactor_too_steep"
+      kind: soil_semantic
+      description: "Bathymetry r-factor |dh|/sum(h) exceeds 0.2; sigma-coordinate pressure-gradient errors produce spurious along-slope currents (dt_017)."
+      severity: degraded
+    - id: "theta_s_b_out_of_range"
+      kind: control_semantic
+      description: "THETA_S/THETA_B outside recommended range; sub-centimeter S-layers violate the vertical CFL (dt_013)."
+      severity: fatal
+    - id: "dt_too_large_cfl_blowup"
+      kind: numerical_instability
+      description: "Baroclinic DT too large for grid/depth; barotropic CFL violated, BLOWUP (NaN) within 10-100 steps (dt_002)."
+      severity: fatal
+    - id: "ndtfast_too_small_coupling"
+      kind: numerical_instability
+      description: "NDTFAST = DT/dtfast too small; poor barotropic-baroclinic coupling and degraded accuracy."
+      severity: degraded
+    - id: "ic_temp_kelvin_not_celsius"
+      kind: initial_condition_semantic
+      description: "Initial-condition temperature from a global product (HYCOM/GLORYS) left in Kelvin; wrong starting density and instability (dt_016)."
+      severity: silent
+    - id: "ocean_time_epoch_mismatch"
+      kind: control_semantic
+      description: "NetCDF time variables not in seconds since the same TIME_REF epoch; tidal/boundary forcing applied at the wrong model time, no tidal signal (dt_004)."
+      severity: silent
+    - id: "boundary_file_short_extrapolated"
+      kind: control_semantic
+      description: "Open-boundary file shorter than the simulation period; ROMS holds the last record, interior T/S drifts over weeks (dt_014)."
+      severity: degraded
+    - id: "bulk_fluxes_plus_precomputed_fluxes"
+      kind: control_semantic
+      description: "BULK_FLUXES defined while precomputed fluxes (shflux/swflux) are also supplied; surface forcing doubled, extreme SST (dt_015)."
+      severity: silent
+    - id: "ana_flags_override_data_silently"
+      kind: control_semantic
+      description: "Leftover ANA_* analytical CPP flags from an idealized case silently override supplied data forcing files (dt_019)."
+      severity: silent
+    - id: "tnudg_subday_reflecting_wall"
+      kind: control_semantic
+      description: "Boundary nudging time scale Tnudg < 1 day (units are days); acts as a hard reflecting wall, growing inward oscillations (dt_006)."
+      severity: degraded
+    - id: "lm_mm_mismatch_grid_dims"
+      kind: control_semantic
+      description: "Lm/Mm in roms.in do not equal xi_rho-2 / eta_rho-2; array-bounds error / SIGFPE at startup (dt_018)."
+      severity: fatal
+    - id: "ntile_product_ne_mpi_procs"
+      kind: control_semantic
+      description: "NtileI x NtileJ in roms.in does not equal the number of MPI processes; domain cannot be decomposed and the run aborts (MPI_ABORT) at startup (dt_011)."
+      severity: fatal
+    - id: "multiple_mixing_closures_defined"
+      kind: control_semantic
+      description: "More than one vertical-mixing closure (e.g. LMD + GLS) defined simultaneously at compile time; compile error or undefined behavior."
+      severity: fatal
+  validation_limits:
+    - "Hydrostatic: cannot resolve non-hydrostatic processes (deep convection plumes, sharp internal hydraulic jumps)."
+    - "Regional/limited-area: requires externally-supplied lateral open-boundary data; not a self-contained global model."
+    - "Terrain-following S-coordinate degrades pressure-gradient accuracy over steep bathymetry (r-factor sensitivity)."
+    - "Vtransform 1 and Vtransform 2 use different formulations; their parameter sets must not be interchanged."
+    - "Physical validity envelope: T -2 to 35 degC, S 0-42 PSU, SSH within +-2 m; outputs outside indicate forcing/config error."
+  warnings:
+    - "Changing any CPP flag requires full recompilation; the active physics is fixed at build time, not at run time."
+    - "ANA_* analytical functions silently take precedence over supplied data files when left defined."
+    - "Vertical S-levels are indexed k=0 at the bottom (deepest) and k=N-1 at the surface; surface fields use the top level."
+    - "MY2.5 closure can become numerically unstable under strong winds in shallow cases; LMD/KPP tends to overmix the near-surface."
+    - "Number of MPI processes must equal NtileI x NtileJ or the run aborts at startup."
+  assumptions:
+    - statement: "Model is hydrostatic and Boussinesq; the vertical momentum equation is replaced by hydrostatic balance and density variations enter only the buoyancy term."
+      scope: "All ROMS nonlinear forward simulations"
+      source: "ROMS docs/README.md Overview; en.wikipedia.org/wiki/Regional_Ocean_Modeling_System"
+      status: adopted
+    - statement: "Surface energy/flux closure is internal (computed from atmospheric state) only when BULK_FLUXES is active; otherwise prescribed surface fluxes are imposed and supplying both double-counts."
+      scope: "Surface boundary condition / air-sea coupling"
+      source: "bulk_flux.F and set_vbc.F module behavior in ROMS source; varinfo.yaml forcing-field definitions"
+      status: adopted
+    - statement: "In-situ density is computed by the hardcoded Jackett & McDougall (1995) nonlinear UNESCO equation of state; density and Brunt-Vaisala frequency are diagnostic, not prognostic."
+      scope: "Equation of state / pressure-gradient and mixing coupling"
+      source: "rho_eos.F nonlinear EOS polynomial in ROMS source"
+      status: adopted
+    - statement: "Time integration is split-explicit with a fast barotropic (2D) mode and slow baroclinic (3D) mode coupled at NDTFAST = DT/dtfast; both CFL limits (barotropic dtfast < dx/sqrt(g*hmax) and baroclinic DT) must hold."
+      scope: "Numerical stability / time-stepping"
+      source: "step2d.F / main3d.F split-explicit kernel in ROMS source; ROMS WikiROMS time-stepping documentation"
+      status: adopted
+    - statement: "Default Boussinesq reference density rho0=1025 kg/m3 and specific heat Cp=3985 J/kg/degC are model constants (mod_scalars) used in the pressure gradient, buoyancy, and heat-flux-to-temperature conversion."
+      scope: "Physical constants"
+      source: "mod_scalars.F default scalar definitions in ROMS source"
+      status: adopted

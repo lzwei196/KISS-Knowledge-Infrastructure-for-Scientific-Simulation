@@ -1,0 +1,240 @@
+schema_version: 1
+model_id: CLM5___CTSM
+domain: hydrology
+generated_by: "self-improve session (Claude Opus 4.8 [1m]) — Step-B validation-convention campaign, general schema"
+generated_at: 2026-07-09
+
+# Grounded ONLY in locally-fetched/cached OA full texts.
+# What is actually gradeable (has a real obs binding in model_obs_map): runoff/streamflow (gauge
+# discharge), GPP (FLUXNET flux), evapotranspiration (FLUXNET latent-energy flux), and terrestrial
+# water storage (GRACE TWS anomaly). Only RUNOFF/streamflow has a cited NUMERIC pass convention:
+# Moriasi et al. 2007 NSE/PBIAS tiers, independently corroborated for CLM5 by Cheng et al. 2023
+# (s41597), whose CLM5 CAMELS ensemble uses NSE>=0.5 as the "behavioral" streamflow threshold and
+# reports monthly-streamflow KGE ~0.65-0.92. GPP, ET and TWS are validated in the CLM5 literature via
+# ILAMB *relative* scoring + correlation/RMSE/bias, NOT a fixed NSE/r pass threshold -> those headline
+# bands are null (confidence <= 0.4) per the no-fabrication rule. TWS additionally carries a documented
+# structural ceiling (global models systematically underestimate large decadal TWS trends vs GRACE;
+# Scanlon 2018). Soil moisture, soil temperature, snow depth, soil/veg carbon and NEE appear in the dag
+# but have NO obs binding in model_obs_map -> no gradeable block emitted (noted in relevant blocks).
+# Bands are plain numbers read via `direction` (see VALIDATION_CONVENTION_SCHEMA.md).
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_2013.23153.txt
+  cheng2023:
+    doi: 10.1038/s41597-023-02049-7
+    title: "Characterizing uncertainty in Community Land Model version 5 hydrological applications"
+    venue: "Scientific Data"
+    year: 2023
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1038_s41597-023-02049-7.txt
+  denager2023:
+    doi: 10.5194/hess-27-2827-2023
+    title: "Point-scale multi-objective calibration of the Community Land Model (version 5.0) using in situ observations"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2023
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-27-2827-2023.txt
+  costarica2020:
+    doi: 10.5194/gmd-13-5147-2020
+    title: "Modeling land surface processes over a mountainous rainforest in Costa Rica using CLM5"
+    venue: "Geosci. Model Dev."
+    year: 2020
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_gmd-13-5147-2020.txt
+  clm5desc2019:
+    doi: 10.1029/2018ms001583
+    title: "The Community Land Model Version 5 (CLM5): Description of New Features, Benchmarking, and Impact of Forcing Uncertainty"
+    venue: "J. Adv. Model. Earth Syst."
+    year: 2019
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1029_2018ms001583.txt
+  ilamb2018:
+    doi: 10.1029/2018ms001354
+    title: "The International Land Model Benchmarking (ILAMB) System: Design, Theory, and Implementation"
+    venue: "J. Adv. Model. Earth Syst."
+    year: 2018
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1029_2018ms001354.txt
+  collier2012:
+    doi: 10.5194/bg-9-3857-2012
+    title: "A framework for benchmarking land models"
+    venue: "Biogeosciences"
+    year: 2012
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_bg-9-3857-2012.txt
+  bonan2020:
+    doi: 10.5194/bg-17-3017-2020
+    title: "Benchmarking and parameter sensitivity of physiological and vegetation dynamics using the Community Land Model"
+    venue: "Biogeosciences"
+    year: 2020
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_bg-17-3017-2020.txt
+  scanlon2018:
+    doi: 10.1073/pnas.1704665115
+    title: "Global models underestimate large decadal declining and rising water storage trends relative to GRACE satellite data"
+    venue: "PNAS"
+    year: 2018
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1073_pnas.1704665115.txt
+
+validation:
+
+  # ===================== RUNOFF / STREAMFLOW — gauge time series (well grounded) =====================
+  - canonical_quantity: runoff
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2007 general streamflow tiers; CLM5-specific behavioral threshold NSE>=0.5 (Cheng 2023)"
+        cites: [moriasi2007, cheng2023]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Moriasi 2007 streamflow PBIAS column"
+        cites: [moriasi2007]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "CLM5 CAMELS ensemble reports single-best monthly-streamflow KGE ~0.65-0.92 across 7 US clusters (Cheng 2023); no fixed KGE pass tier stated."
+        cites: [cheng2023]
+    validated_when: "NSE >= 0.50 AND |PBIAS| <= 25% (Moriasi 2007 satisfactory streamflow tier; CLM5 uses NSE>=0.5 as the behavioral cutoff, Cheng 2023)"
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Moriasi 2007 Table 4 general ratings: "Very good 0.75<NSE<=1.00 ... Satisfactory 0.50<NSE<=0.65 ...
+      Unsatisfactory NSE<=0.50", streamflow "PBIAS<+-10 (very good) ... <+-25 (satisfactory)". Cheng 2023
+      (CLM5 CAMELS ensemble, 464 basins): simulations "that produce error metrics that fall within
+      user-defined acceptable performance metric ranges (e.g., NSE >= 0.5 ...) are considered behavioral".
+      CRITICAL routing caveat: gridcell QRUNOFF is NOT routed streamflow; gauge comparison requires
+      external MOSART/mizuRoute routing and basin aggregation (dag caveat). obs binding = gauge discharge
+      (discharge_m3s / river_discharge_in_the_last_24_hours / daily_discharge_cms).
+
+  # ===================== RUNOFF / STREAMFLOW — basin monthly aggregate (transferred tiers) ===========
+  - canonical_quantity: runoff
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2007 tiers are defined on a monthly basis (this obs_shape); daily NSE tends to run lower"
+        cites: [moriasi2007, cheng2023]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        cites: [moriasi2007]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Cheng 2023 reports CLM5 skill on the monthly KGE metric for basin-aggregated streamflow (~0.65-0.92 best-set)."
+        cites: [cheng2023]
+    validated_when: "monthly NSE >= 0.50 AND |PBIAS| <= 25% (Moriasi 2007 satisfactory; CLM5 behavioral NSE>=0.5, Cheng 2023)"
+    evidence_strength: strong
+    confidence: 0.75
+    notes: >-
+      Same Moriasi 2007 convention as the point/gauge block, applied at basin monthly aggregate (the scale
+      at which Moriasi derived the tiers, and the scale Cheng 2023 uses monthly KGE). Requires basin
+      water-balance closure and routing.
+
+  # ===================== GPP — flux-tower time series (no cited NSE threshold) =====================
+  - canonical_quantity: gpp
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no cited NSE pass threshold for GPP in the fetched set; the CLM5 literature grades GPP with ILAMB relative scores + correlation/RMSE/bias, not a fixed NSE tier"
+        cites: []
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "GPP is benchmarked via ILAMB's hierarchical relative scoring (annual-mean/bias/RMSE/seasonal-cycle/spatial-pattern integrated to a 0-1 score), not an absolute NSE cutoff (Lawrence 2019 sec 3.3; Collier 2018; Bonan 2020). Single-site CLM5 studies report GPP correlation/R2 as context (Costa Rica 2020)."
+        cites: [clm5desc2019, ilamb2018, bonan2020, costarica2020]
+    validated_when: "UNRESOLVED numerically — no cited GPP NSE threshold; field judges GPP by ILAMB relative score + correlation/RMSE/bias. Gate must NOT auto-validate or loosen on this block."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Lawrence 2019 (CLM5 description): ILAMB "provides a hierarchical scoring system to indicate model
+      fidelity ... summary scores ... reflect integrated scores across multiple metrics (RMSE, bias,
+      interannual variability, spatial pattern, ...)". No numeric pass band exists for GPP -> null per the
+      no-fabrication rule (confidence 0.35). Caveat: eddy-covariance GPP is a flux-partitioning estimate;
+      ~100 km gridcell vs ~1 km tower footprint -> use single-point mode. obs binding = FLUXNET GPP
+      (GPP_gC_m2_d). NPP (same canonical_quantity, rank 2) has NO obs binding -> not graded here.
+
+  # ===================== EVAPOTRANSPIRATION — flux-tower LE time series (no cited NSE threshold) ======
+  - canonical_quantity: evapotranspiration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no cited NSE pass threshold for latent-heat/ET in the fetched set; graded via ILAMB relative score + correlation/RMSE, and point calibrations report only modest LE NSE"
+        cites: []
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "ET/latent heat is benchmarked by ILAMB relative scoring (Lawrence 2019 sec 3.3; Collier 2012/2018). Point-scale CLM5 calibration achieves best-scenario LE summary statistics but modest efficiencies (Denager 2023, NSE for the coupled fluxes < ~0.46 in tested scenarios); single-site R2 reported by Costa Rica 2020."
+        cites: [denager2023, costarica2020, ilamb2018]
+    validated_when: "UNRESOLVED numerically — no cited ET/LE NSE threshold; field judges ET by ILAMB relative score + correlation/RMSE/bias. Gate must NOT auto-validate or loosen on this block."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      obs binding = FLUXNET latent-energy flux (ET_GPP_LE_flux) mapped to the CLM latent-heat / ET output.
+      Caveat: eddy-covariance energy-balance non-closure (~10-30%) and footprint-vs-gridcell mismatch.
+      Denager 2023: even best multi-objective point calibration yields limited LE efficiency; no threshold
+      convention -> band null. The dag EFLX_LH_TOT row (rank 4) has has_obs_binding=false in the dag, but
+      model_obs_map supplies an LE flux binding, so ET is gradeable here on that basis.
+
+  # ===================== TERRESTRIAL WATER STORAGE — GRACE anomaly (structural ceiling) ==============
+  - canonical_quantity: total_water_storage
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no cited correlation pass threshold for CLM5 vs GRACE TWS in the fetched set; TWS is assessed by ILAMB relative score and trend comparison, not a fixed r cutoff"
+        cites: []
+    secondary_metrics:
+      - metric: bias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: "Global land models (CLM among the seven assessed) systematically UNDERESTIMATE large decadal declining and rising TWS trends relative to GRACE: 'Medians of modeled basin water storage trends greatly underestimate GRACE-derived large decreasing (<=-0.5 km3/y) and increasing (>=0.5 km3/y) trends'; models miss human-intervention (groundwater withdrawal) and some climate-driven trends. A low TWS-trend/magnitude score is therefore a documented data/structural ceiling, not a fixable KI defect (Scanlon 2018 PNAS)."
+        cites: [scanlon2018]
+    validated_when: "UNRESOLVED numerically — no cited r threshold for CLM5-vs-GRACE TWS; assess via ILAMB relative score and acknowledge the documented decadal-trend underestimation ceiling. Gate must NOT auto-validate or loosen on this block."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      obs binding = GRACE terrestrial water-storage anomaly (tws_anomaly_cm / terrestrial_water_storage_anomaly);
+      model_obs_map determining_metric = r. TWS is NOT one of the dag validation_row vars but IS bound in
+      model_obs_map, so it is graded here on that binding. Scanlon 2018 provides the structural-ceiling
+      mechanism (fetched paper), justifying the structurally_limited bias entry; no numeric r/bias pass band
+      is stated -> headline r null, confidence 0.3.
+
+deferred_paywalled:
+  - {ref: "Moriasi et al. 2015 — Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria (updated NSE/PBIAS/RSR/R2 tiers)", doi: 10.13031/trans.58.10715, needed_for: [runoff]}
+  - {ref: "A CLM5 multi-site FLUXNET GPP/ET evaluation reporting explicit NSE/KGE pass thresholds (would upgrade gpp + evapotranspiration from null bands)", doi: unknown_not_fetched, needed_for: [gpp, evapotranspiration]}
+  - {ref: "A CLM5-vs-GRACE TWS skill study reporting a correlation/NSE threshold for basin TWS anomaly", doi: unknown_not_fetched, needed_for: [total_water_storage]}

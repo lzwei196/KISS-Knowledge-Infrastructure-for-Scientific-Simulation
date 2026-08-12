@@ -106,8 +106,65 @@ def find_cama_files(cama_dir, variable, start_year, end_year):
     return files
 
 
+def _nc4_open_dataset(path):
+    """Open a NetCDF4 file using direct netCDF4 library (avoids xarray HDF5 issue)."""
+    import netCDF4 as nc4
+    import numpy as np
+
+    class _FakeDataset:
+        def __init__(self, ds):
+            dim_names = list(ds.dimensions.keys())
+            self.data_vars = {v: None for v in ds.variables if v not in ds.dimensions}
+            self.dims = {d: ds.dimensions[d].size for d in dim_names}
+            self._vars = {}
+            lats = ds.variables['lat'][:]
+            lons = ds.variables['lon'][:]
+            # Build time as datetime64
+            tvar = ds.variables['time']
+            import netCDF4 as _nc4
+            times_raw = _nc4.num2date(tvar[:], units=tvar.units,
+                                       calendar=getattr(tvar, 'calendar', 'standard'))
+            times = np.array([np.datetime64(str(t)[:10]) for t in times_raw])
+            self.time = _FakeResult(times)
+            for v in self.data_vars:
+                arr = ds.variables[v][:]
+                self._vars[v] = _FakeVar(arr, lats, lons)
+        def __getitem__(self, key):
+            return self._vars[key]
+        def close(self):
+            pass
+
+    class _FakeVar:
+        def __init__(self, arr, lats, lons):
+            self._arr = arr
+            self._lats = lats
+            self._lons = lons
+        def sel(self, method='nearest', **kwargs):
+            lat_val = kwargs.get('lat', kwargs.get('latitude'))
+            lon_val = kwargs.get('lon', kwargs.get('longitude'))
+            ilat = int(np.argmin(np.abs(self._lats - lat_val)))
+            ilon = int(np.argmin(np.abs(self._lons - lon_val)))
+            arr = self._arr[:, ilat, ilon] if self._arr.ndim == 3 else self._arr[ilat, ilon]
+            return _FakeResult(arr)
+        @property
+        def values(self):
+            return self._arr
+
+    class _FakeResult:
+        def __init__(self, arr):
+            self._arr = arr
+        @property
+        def values(self):
+            return np.array(self._arr)
+        def tolist(self):
+            return list(self._arr)
+
+    with nc4.Dataset(path) as ds:
+        fake = _FakeDataset(ds)
+    return fake
+
+
 def process(args):
-    import xarray as xr
     from pyproj import Transformer
 
     output_dir = Path(args.output_dir)
@@ -178,7 +235,7 @@ def process(args):
 
     for cf in sorted(cama_files):
         logger.info(f"Reading {cf}...")
-        ds = xr.open_dataset(cf)
+        ds = _nc4_open_dataset(cf)
 
         # Find the data variable
         data_var = None

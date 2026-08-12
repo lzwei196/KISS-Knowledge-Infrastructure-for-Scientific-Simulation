@@ -146,14 +146,19 @@ def _date_to_yyddd(dt) -> int:
 
 
 def _yyddd_to_date(yyddd: int) -> Optional[datetime]:
-    """Convert DSSAT YYDDD integer to datetime. Returns None if invalid."""
+    """Convert DSSAT YYDDD (5-digit) or YYYYDDD (7-digit) integer to datetime.
+    Summary.OUT in DSSAT >=4.7 uses YYYYDDD; FileX still uses YYDDD.
+    Returns None if invalid."""
     if yyddd is None or yyddd == -99 or yyddd <= 0:
         return None
-    yy = yyddd // 1000
+    yy_or_year = yyddd // 1000
     ddd = yyddd % 1000
     if ddd < 1 or ddd > 366:
         return None
-    year = 2000 + yy if yy <= 70 else 1900 + yy
+    if yy_or_year >= 1900:
+        year = yy_or_year
+    else:
+        year = 2000 + yy_or_year if yy_or_year <= 70 else 1900 + yy_or_year
     try:
         return datetime(year, 1, 1) + timedelta(days=ddd - 1)
     except (ValueError, OverflowError):
@@ -183,13 +188,13 @@ def _generate_dssatpro(workdir: str) -> str:
         "DDS", "DTS", "DDG",
     ]
     for code in dir_codes:
-        lines.append(f"{code} {wd}")
+        lines.append(f"{code} // {wd}")
 
-    lines.append(f"DCG {wd}/TOOLS/GENCALC GENCALC2.EXE")
-    lines.append(f"DGL {wd}/TOOLS/GLUE GLUE.BAT")
-    lines.append(f"DPM {wd}")
-    lines.append(f"DDE {wd}")
-    lines.append(f"TOG {wd}/TOOLS/GBUILD GBUILD.EXE")
+    lines.append(f"DCG // {wd}/TOOLS/GENCALC GENCALC2.EXE")
+    lines.append(f"DGL // {wd}/TOOLS/GLUE GLUE.BAT")
+    lines.append(f"DPM // {wd}")
+    lines.append(f"DDE // {wd}")
+    lines.append(f"TOG // {wd}/TOOLS/GBUILD GBUILD.EXE")
     lines.append("")
 
     # Model executable references — map crop code to model
@@ -212,40 +217,40 @@ def _generate_dssatpro(workdir: str) -> str:
     ]
     for code, model in model_map:
         if model:
-            lines.append(f"{code} {wd} dscsm048 {model}")
+            lines.append(f"{code} // {wd} dscsm048 {model}")
         else:
-            lines.append(f"{code} {wd}")
+            lines.append(f"{code} // {wd}")
 
     lines.append("")
-    lines.append(f"MGR {wd}")
-    lines.append(f"NSH {wd}")
-    lines.append(f"ASP {wd}")
-    lines.append(f"ASS {wd} dscsm048")
-    lines.append(f"ASA {wd} VARAN2.EXE")
-    lines.append(f"AGR {wd}")
-    lines.append(f"AQS {wd} dscsm048")
-    lines.append(f"AQA {wd} SUSTAIN2.EXE")
-    lines.append(f"ASX {wd}")
-    lines.append(f"APS {wd} dscsm048")
-    lines.append(f"APV {wd}")
-    lines.append(f"APM {wd}")
-    lines.append(f"APA {wd} VARAN2.EXE")
-    lines.append(f"APJ {wd}")
-    lines.append(f"APF {wd}")
-    lines.append(f"APP {wd}")
-    lines.append(f"APK {wd} DISC9801.EXE")
-    lines.append("TOE /usr/bin/nano")
-    lines.append("TOS ")
-    lines.append("TOM ")
+    lines.append(f"MGR // {wd}")
+    lines.append(f"NSH // {wd}")
+    lines.append(f"ASP // {wd}")
+    lines.append(f"ASS // {wd} dscsm048")
+    lines.append(f"ASA // {wd} VARAN2.EXE")
+    lines.append(f"AGR // {wd}")
+    lines.append(f"AQS // {wd} dscsm048")
+    lines.append(f"AQA // {wd} SUSTAIN2.EXE")
+    lines.append(f"ASX // {wd}")
+    lines.append(f"APS // {wd} dscsm048")
+    lines.append(f"APV // {wd}")
+    lines.append(f"APM // {wd}")
+    lines.append(f"APA // {wd} VARAN2.EXE")
+    lines.append(f"APJ // {wd}")
+    lines.append(f"APF // {wd}")
+    lines.append(f"APP // {wd}")
+    lines.append(f"APK // {wd} DISC9801.EXE")
+    lines.append("TOE // /usr/bin/nano")
+    lines.append("TOS // ")
+    lines.append("TOM // ")
 
     # Critical data directories
-    lines.append(f"STD {wd}/StandardData")
-    lines.append(f"WED {wd}/Weather")
-    lines.append(f"WGD {wd}/Weather/GEN")
-    lines.append(f"WMD {wd}/Weather/MONTH")
-    lines.append(f"CLD {wd}/Weather/CLIMATE")
-    lines.append(f"SLD {wd}/Soil")
-    lines.append(f"CRD {wd}/Genotype")
+    lines.append(f"STD // {wd}/StandardData")
+    lines.append(f"WED // {wd}/Weather")
+    lines.append(f"WGD // {wd}/Weather/GEN")
+    lines.append(f"WMD // {wd}/Weather/MONTH")
+    lines.append(f"CLD // {wd}/Weather/CLIMATE")
+    lines.append(f"SLD // {wd}/Soil")
+    lines.append(f"CRD // {wd}/Genotype")
 
     # Crop-specific directories
     crop_dirs = [
@@ -268,17 +273,17 @@ def _generate_dssatpro(workdir: str) -> str:
     ]
     for code, dirname in crop_dirs:
         if dirname == wd:
-            lines.append(f"{code} {wd}")
+            lines.append(f"{code} // {wd}")
         else:
-            lines.append(f"{code} {wd}/{dirname}")
+            lines.append(f"{code} // {wd}/{dirname}")
 
-    lines.append("OTD ")
-    lines.append(f"ASD {wd}/Seasonal")
-    lines.append(f"AQD {wd}/Sequence")
-    lines.append(f"APD {wd}/Spatial")
-    lines.append(f"PSD {wd}/Pest")
-    lines.append(f"ECD {wd}/ECONOMIC")
-    lines.append("TOD ")
+    lines.append("OTD // ")
+    lines.append(f"ASD // {wd}/Seasonal")
+    lines.append(f"AQD // {wd}/Sequence")
+    lines.append(f"APD // {wd}/Spatial")
+    lines.append(f"PSD // {wd}/Pest")
+    lines.append(f"ECD // {wd}/ECONOMIC")
+    lines.append("TOD // ")
     lines.append("")
 
     # Additional newer model entries
@@ -297,17 +302,18 @@ def _generate_dssatpro(workdir: str) -> str:
         ("MRY", "CSCER048", "Rye", "RYD"),
     ]
     for mcode, model, dirname, dcode in extra_models:
-        lines.append(f"{mcode} {wd} dscsm048 {model}")
+        lines.append(f"{mcode} // {wd} dscsm048 {model}")
         if dcode and dirname:
-            lines.append(f"{dcode} {wd}/{dirname}")
+            lines.append(f"{dcode} // {wd}/{dirname}")
 
-    lines.append(f"ACC {wd} dscsm048")
-    lines.append(f"CCD {wd}/ClimateChange")
-    lines.append(f"AYF {wd} dscsm048")
-    lines.append(f"YFD {wd}/YieldForecast")
+    lines.append(f"ACC // {wd} dscsm048")
+    lines.append(f"CCD // {wd}/ClimateChange")
+    lines.append(f"AYF // {wd} dscsm048")
+    lines.append(f"YFD // {wd}/YieldForecast")
     lines.append("")
 
-    return "\n".join(lines) + "\n"
+    # Working Linux DSSAT uses single-space separator (not "//")
+    return ("\n".join(lines) + "\n").replace(" // ", " ")
 
 
 # ==========================================================================
@@ -345,6 +351,60 @@ def _generate_filex(
     pldp = management.get("pldp", 5)
     fert_n = management.get("fert_n", 120)
     fert_date_offset = management.get("fert_date_offset", 30)
+
+    # ------------------------------------------------------------------
+    # Irrigation mode (added so a gridded ensemble can express an IRRIGATED
+    # and a RAINFED member of the SAME crop).
+    #
+    #   'none'   -> IRRIG=N, MI=0, no irrigation level rows   (dryland member)
+    #   'auto'   -> IRRIG=A, MI=0, AUTOMATIC MANAGEMENT drives it
+    #   'events' -> IRRIG=R, MI=1, explicit @I IDATE IROP IRVAL rows
+    #
+    # Resolution order: an explicit management['irrigation'] wins; otherwise a
+    # non-empty management['irrigation_events'] implies 'events'; otherwise the
+    # historical default (rice = auto/flooded paddy, everything else rainfed).
+    # Callers that pass neither key get byte-identical output to before.
+    # ------------------------------------------------------------------
+    irrigation_events = management.get("irrigation_events") or []
+    irr_mode = management.get("irrigation")
+    if irr_mode is None:
+        if irrigation_events:
+            irr_mode = "events"
+        else:
+            irr_mode = "auto" if crop == "RI" else "none"
+    irr_mode = str(irr_mode).lower()
+    if irr_mode not in ("none", "auto", "events"):
+        raise ValueError(
+            f"management['irrigation'] must be one of 'none', 'auto', 'events'; "
+            f"got {irr_mode!r}"
+        )
+    if irr_mode == "events" and not irrigation_events:
+        raise ValueError(
+            "management['irrigation']='events' requires a non-empty "
+            "management['irrigation_events'] list of (yyddd, mm) tuples."
+        )
+
+    irrig_flag = {"none": "N", "auto": "A", "events": "R"}[irr_mode]
+    mi_val = 1 if irr_mode == "events" else 0
+
+    def _event_rows(events):
+        """Normalise irrigation_events into (yyddd:int, irop:str, irval:float)."""
+        rows = []
+        for ev in events:
+            irop = "IR001"
+            if isinstance(ev, dict):
+                when = ev.get("yyddd", ev.get("date"))
+                amt = ev.get("mm", ev.get("irval"))
+                irop = ev.get("irop", irop)
+            else:
+                seq = list(ev)
+                when, amt = seq[0], seq[1]
+                if len(seq) >= 3:
+                    irop = seq[2]
+            if isinstance(when, str):
+                when = _date_to_yyddd(when)
+            rows.append((int(when), str(irop)[:5], float(amt)))
+        return rows
 
     # Compute fertilizer date (planting + offset)
     pdate_dt = _yyddd_to_date(planting_yyddd)
@@ -384,7 +444,7 @@ def _generate_filex(
     has_fert = fert_n > 0
     mf_val = 1 if has_fert else 0
     tname = f"DEFAULT {crop_info[2].upper()[:18]}"
-    lines.append(f" 1 1 0 0 {tname:<25s}  1  1  0  1  1  0{mf_val:>3d}  0  0  0  0  0  1")
+    lines.append(f" 1 1 0 0 {tname:<25s}  1  1  0  1  1{mi_val:>3d}{mf_val:>3d}  0  0  0  0  0  1")
     lines.append("")
 
     # Cultivars (Pitfall #4: fixed-width alignment)
@@ -409,17 +469,20 @@ def _generate_filex(
     lines.append("@C   PCR ICDAT  ICRT  ICND  ICRN  ICRE  ICWD ICRES ICREN ICREP ICRIP ICRID ICNAME")
     lines.append(f" 1    {crop} {sdate_yyddd:>5d}   100     0     1     1   -99  1000    .8     0   100    15 -99")
     lines.append("@C  ICBL  SH2O  SNH4  SNO3")
-    # Default initial soil water for common layer depths
+    # Rice (paddy) needs near-field-capacity initial water for germination.
+    # IRRI920001 soil: SLLL=0.21, SDUL=0.48, SSAT=0.52 — start at DUL.
+    # Other crops: typical dry-season initial water (0.20).
+    sh2o_init = 0.45 if crop == "RI" else 0.200
     ic_layers = [
-        (5, 0.200, 0.5, 0.1),
-        (15, 0.200, 0.5, 0.1),
-        (30, 0.200, 0.5, 0.1),
-        (60, 0.180, 0.5, 0.1),
-        (90, 0.170, 0.5, 0.1),
-        (120, 0.160, 0.5, 0.1),
-        (150, 0.160, 0.5, 0.1),
-        (180, 0.160, 0.5, 0.1),
-        (210, 0.160, 0.5, 0.1),
+        (5,   sh2o_init, 0.5, 1.0),
+        (15,  sh2o_init, 0.5, 1.0),
+        (30,  sh2o_init, 0.5, 1.0),
+        (60,  sh2o_init, 0.5, 0.5),
+        (90,  sh2o_init, 0.5, 0.5),
+        (120, sh2o_init, 0.5, 0.5),
+        (150, sh2o_init, 0.5, 0.5),
+        (180, sh2o_init, 0.5, 0.5),
+        (210, sh2o_init, 0.5, 0.5),
     ]
     for depth, sh2o, snh4, sno3 in ic_layers:
         lines.append(f" 1   {depth:>3d} {sh2o:>5.3f}  {snh4:>4.1f}  {sno3:>4.1f}")
@@ -433,20 +496,30 @@ def _generate_filex(
     lines.append(f" 1 {planting_yyddd:>5d}   -99 {ppop_str} {ppop_str}     S     R   {plrs:>3d}     0   {pldp:>3d}   -99   -99   -99   -99     0                        -99")
     lines.append("")
 
-    # Irrigation — rainfed (no events)
+    # Irrigation — default rainfed for non-rice; flooded auto-irrigation for
+    # rice (paddy). management['irrigation_events'] (documented in
+    # create_workdir's docstring but previously discarded) is now emitted as
+    # @I IDATE IROP IRVAL rows and selected by treatment factor MI=1.
     lines.append("*IRRIGATION AND WATER MANAGEMENT")
     lines.append("@I  EFIR  IDEP  ITHR  IEPT  IOFF  IAME  IAMT IRNAME")
     lines.append(" 1     1   -99   -99   -99   -99   -99   -99 -99")
     lines.append("@I IDATE  IROP IRVAL")
+    for _yyddd, _irop, _irval in _event_rows(irrigation_events):
+        lines.append(f" 1 {_yyddd:>5d} {_irop:<5s}{_irval:>6.0f}")
     lines.append("")
 
     # Fertilizer
     if has_fert:
         lines.append("*FERTILIZERS (INORGANIC)")
         lines.append("@F FDATE  FMCD  FACD  FDEP  FAMN  FAMP  FAMK  FAMC  FAMO  FOCD FERNAME")
-        # Split fertilizer: 40% at planting, 60% at offset
-        n_at_plant = int(fert_n * 0.4)
-        n_at_side = fert_n - n_at_plant
+        # Split fertilizer: 40% at planting, 60% at offset.
+        # Both halves MUST be int: fert_n commonly arrives as a float from
+        # ki_tools_common.fertilizer (NPKGRIDS returns e.g. 193.1), and the
+        # ':>3d' formats below raise "Unknown format code 'd' for object of
+        # type 'float'" on a float. Round rather than truncate so the split
+        # still sums to round(fert_n).
+        n_at_plant = int(round(fert_n * 0.4))
+        n_at_side = int(round(fert_n)) - n_at_plant
         lines.append(f" 1 {planting_yyddd:>5d} FE005 AP002    10   {n_at_plant:>3d}     0     0     0     0   -99 Planting urea")
         if n_at_side > 0 and fert_date_offset > 0:
             lines.append(f" 1 {fert_yyddd:>5d} FE005 AP002    10   {n_at_side:>3d}     0     0     0     0   -99 Sidedress urea")
@@ -466,8 +539,11 @@ def _generate_filex(
     # biomass accumulation and crop death.
     photo_method = "L" if crop_info[1] == "CRGRO048" else "R"
     lines.append(f" 1 ME              M     M     E     R     S     {photo_method}     R     1     G     R     2")
+    # IRRIG comes from the irrigation mode resolved at the top of this function:
+    # 'none'->N (rainfed), 'auto'->A (automatic, the rice/paddy default),
+    # 'events'->R (the explicit @I IDATE rows above).
     lines.append("@N MANAGEMENT  PLANT IRRIG FERTI RESID HARVS")
-    lines.append(" 1 MA              R     N     R     N     M")
+    lines.append(f" 1 MA              R     {irrig_flag}     R     N     M")
     lines.append("@N OUTPUTS     FNAME OVVEW SUMRY FROPT GROUT CAOUT WAOUT NIOUT MIOUT DIOUT VBOSE CHOUT OPOUT FMOPT")
     lines.append(" 1 OU              N     Y     Y     1     Y     N     Y     Y     N     N     Y     N     Y     A")
     lines.append("")
@@ -477,7 +553,23 @@ def _generate_filex(
     lines.append("@N PLANTING    PFRST PLAST PH2OL PH2OU PH2OD PSTMX PSTMN")
     lines.append(f" 1 PL          {pfirst_yyddd:>5d} {plast_yyddd:>5d}    10   100    30    40    10")
     lines.append("@N IRRIGATION  IMDEP ITHRL ITHRU IROFF IMETH IRAMT IREFF")
-    lines.append(" 1 IR             30    50   100 GS000 IR001    10     1")
+    # Rice: high threshold (80%) simulates flooded paddy — irrigate whenever soil
+    # drops below 80% with 50mm top-up. Non-rice: standard 50% threshold.
+    # Each field is overridable so an irrigated ensemble member can carry a
+    # site-specific automatic-irrigation rule; the widths below reproduce the
+    # historical line byte-for-byte when nothing is overridden.
+    irr_thr = str(management.get("irr_ithrl", "80" if crop == "RI" else "50"))
+    irr_amt = str(management.get("irr_amt", "50" if crop == "RI" else "10"))
+    irr_imdep = str(management.get("irr_imdep", "30"))
+    irr_ithru = str(management.get("irr_ithru", "100"))
+    irr_iroff = str(management.get("irr_iroff", "GS000"))
+    irr_imeth = str(management.get("irr_imeth", "IR001"))
+    irr_eff = str(management.get("irr_eff", "1"))
+    lines.append(
+        " 1 IR"
+        f"{irr_imdep:>15s}{irr_thr:>5s}{irr_ithru:>6s}"
+        f"{irr_iroff:>6s}{irr_imeth:>6s}{irr_amt:>5s}{irr_eff:>6s}"
+    )
     lines.append("@N NITROGEN    NMDEP NMTHR NAMNT NCODE NAOFF")
     lines.append(" 1 NI             30    50    25 FE001 GS000")
     lines.append("@N RESIDUES    RIPCN RTIME RIDEP")
@@ -494,16 +586,73 @@ def _generate_filex(
 # Batch File Generation
 # ==========================================================================
 
-def _generate_batch(filex_path: str, crop_name: str, n_treatments: int = 1) -> str:
+# Width of the DSSBatch.v48 @FILEX path field, in columns.
+#
+# PRIMARY SOURCE — dssat-csm-os v4.8 as built at /home/server/DSSAT, NOT KI
+# folklore. The batch record is parsed in CSM_Main/CSM.for:
+#
+#   268:  END_POS = LEN(TRIM(CHARTEST(1:92)))+1
+#   269:  FILEX  = CHARTEST((END_POS-12):(END_POS-1))
+#   270:  PATHEX = CHARTEST(1:END_POS-13)
+#   271:  READ(CHARTEST(93:113),110,IOSTAT=ERRNUM) TRTNUM,TRTREP,ROTNUM
+#   110   FORMAT(3(1X,I6))
+#
+# so the path field is columns 1-92 and TRTNO/TRTREP/ROTNUM are read from
+# columns 93-113 (TRTNO in 94-99). A 93rd path character is not truncated —
+# it lands *inside* the treatment number and yields Error 26, or silently
+# runs a different treatment. InputModule/ipexp.for:97 declares the buffer
+# that receives it as CHARACTER*92 FILEX_P. The shipped deck agrees:
+# Data/BatchFiles/Maize.v48 data records are 127 chars with the path field
+# blank-padded to 92 and TRTNO ending at column 99 (verified by reading it).
+#
+# SHARED-SPEC RECONCILIATION (shared_specs/dssat/base/format_spec.yaml):
+# the spec carries two FILEX width rules that disagree —
+# `field_widths.FILEX.record_length: 92` and `path_constraints.FILEX.max_chars: 95`.
+# 92 is the value the model source supports AND the tighter of the two, so a
+# field written to 92 satisfies both rules simultaneously. A tier-2 correction
+# of max_chars 95 -> 92 is proposed separately; this tool is NOT bent to match
+# the incorrect 95.
+FILEX_FIELD_WIDTH = 92
+
+
+def _generate_batch(filex_ref: str, crop_name: str, n_treatments: int = 1) -> str:
     """Generate DSSBatch.v48 content.
 
-    FileX path must be <=92 chars (Pitfall #1).
+    ``filex_ref`` is the FileX exactly as DSSAT will read it: RELATIVE to the
+    workdir (a bare basename), never a host absolute path. This is required by
+    shared_specs/dssat/base/format_spec.yaml
+    ``path_constraints.FILEX.must_be_relative_to_workdir`` and
+    ``tool_conventions.batch_file_writers.must_use_relative_paths``, and it is
+    what run_dssat() already assumes — it launches ``./dscsm048`` with
+    cwd=workdir.
+
+    Writing the basename makes PATHEX (CSM.for:270) empty, so DSSAT resolves
+    the FileX against the cwd. Writing an absolute path instead burns the
+    92-column budget on a directory prefix that is redundant, caps the usable
+    workdir depth, and additionally risks the CHARACTER*80 PATHEX buffer
+    (CSM.for:96, ipexp.for:96).
+
+    See FILEX_FIELD_WIDTH above for the primary-source derivation of 92.
     """
-    FILEX_FIELD_WIDTH = 92
-    if len(filex_path) > FILEX_FIELD_WIDTH:
+    if os.path.isabs(filex_ref):
         raise ValueError(
-            f"FileX path length ({len(filex_path)}) exceeds Fortran maximum "
-            f"({FILEX_FIELD_WIDTH}): '{filex_path}'. Use a shorter workdir path."
+            f"FileX reference for DSSBatch.v48 must be RELATIVE to the workdir "
+            f"(format_spec path_constraints.FILEX.must_be_relative_to_workdir), "
+            f"got absolute path '{filex_ref}'. Pass the basename; DSSAT runs "
+            f"with cwd=workdir."
+        )
+    if filex_ref != filex_ref.strip() or not filex_ref:
+        raise ValueError(f"FileX reference is blank or padded: {filex_ref!r}")
+    if filex_ref.startswith(os.pardir + os.sep) or os.pardir + os.sep in filex_ref:
+        raise ValueError(
+            f"FileX reference '{filex_ref}' escapes the workdir; DSSAT resolves "
+            f"it against cwd=workdir and would not find it."
+        )
+    if len(filex_ref) > FILEX_FIELD_WIDTH:
+        raise ValueError(
+            f"FileX reference length ({len(filex_ref)}) exceeds the "
+            f"{FILEX_FIELD_WIDTH}-column DSSBatch FILEX field (CSM.for:268): "
+            f"'{filex_ref}'. Columns 93+ are TRTNO/TRTREP/ROTNUM."
         )
 
     lines = []
@@ -514,11 +663,113 @@ def _generate_batch(filex_path: str, crop_name: str, n_treatments: int = 1) -> s
     lines.append(f"@FILEX{' ' * header_pad} TRTNO     RP     SQ     OP     CO")
 
     for trt in range(1, n_treatments + 1):
-        data_line = f"{filex_path:<{FILEX_FIELD_WIDTH}s}{trt:>6d}{1:>6d}{0:>6d}{0:>6d}{0:>6d}"
+        data_line = f"{filex_ref:<{FILEX_FIELD_WIDTH}s}{trt:>6d}{1:>6d}{0:>6d}{0:>6d}{0:>6d}"
         lines.append(data_line)
 
     lines.append("")
     return "\n".join(lines)
+
+
+def _verify_batch_filex_contract(batch_path: str, workdir: str,
+                                 filex_path: str) -> str:
+    """Re-read the DSSBatch.v48 actually written and check what DSSAT will parse.
+
+    This validates the STRING DSSAT RECEIVES, not the host path we intended to
+    write — the two diverge whenever padding, a stale file or a symlink gets in
+    the way, and only the former is what fails at runtime.
+
+    Replays CSM_Main/CSM.for:268-271 on the bytes on disk:
+      * path field = columns 1-92, must be non-blank, relative, and <= 92 cols;
+      * FILEX = the last 12 non-blank chars, PATHEX = everything before them;
+      * TRTNO/TRTREP/ROTNUM must parse as 3(1X,I6) out of columns 93-113;
+      * the field must resolve, under the workdir, to the FileX we wrote.
+
+    Returns the FILEX field as recorded. Raises ValueError on any violation.
+    """
+    with open(batch_path, "r", encoding="utf-8") as f:
+        lines = f.read().splitlines()
+
+    hdr_idx = next((i for i, ln in enumerate(lines)
+                    if ln.startswith("@FILEX")), None)
+    if hdr_idx is None:
+        raise ValueError(f"{batch_path}: no @FILEX header record")
+    hdr = lines[hdr_idx]
+    if hdr[:FILEX_FIELD_WIDTH].strip() != "@FILEX":
+        raise ValueError(
+            f"{batch_path}: @FILEX header field is not {FILEX_FIELD_WIDTH} "
+            f"columns wide — TRTNO would not start at column 93"
+        )
+    if hdr[FILEX_FIELD_WIDTH:FILEX_FIELD_WIDTH + 6].strip() != "TRTNO":
+        raise ValueError(
+            f"{batch_path}: TRTNO is not in columns {FILEX_FIELD_WIDTH + 1}-"
+            f"{FILEX_FIELD_WIDTH + 6} (found "
+            f"{hdr[FILEX_FIELD_WIDTH:FILEX_FIELD_WIDTH + 6]!r})"
+        )
+
+    recorded = None
+    n_data = 0
+    for i in range(hdr_idx + 1, len(lines)):
+        ln = lines[i]
+        if not ln.strip():
+            continue
+        field = ln[:FILEX_FIELD_WIDTH].strip()
+        if not field:
+            raise ValueError(f"{batch_path}: record {i + 1} has a blank FILEX field")
+        if os.path.isabs(field):
+            raise ValueError(
+                f"{batch_path}: record {i + 1} FILEX field {field!r} is ABSOLUTE — "
+                f"format_spec path_constraints.FILEX.must_be_relative_to_workdir"
+            )
+        if len(field) > FILEX_FIELD_WIDTH:
+            raise ValueError(
+                f"{batch_path}: record {i + 1} FILEX field is {len(field)} chars "
+                f"> {FILEX_FIELD_WIDTH} (CSM.for:268)"
+            )
+        # CSM.for:269-270 — DSSAT takes only the LAST 12 chars as the file name.
+        end_pos = len(ln[:FILEX_FIELD_WIDTH].rstrip()) + 1
+        dssat_filex = ln[max(0, end_pos - 13):end_pos - 1]
+        dssat_pathex = ln[:max(0, end_pos - 13)]
+        if dssat_pathex.strip():
+            raise ValueError(
+                f"{batch_path}: record {i + 1} leaves PATHEX={dssat_pathex.strip()!r}; "
+                f"a workdir-relative basename must leave it empty"
+            )
+        # CSM.for:271 — READ(CHARTEST(93:113),110) TRTNUM,TRTREP,ROTNUM with
+        # 110 FORMAT(3(1X,I6)). Each 1X skips one column, so the three I6
+        # windows DSSAT actually reads are columns 94-99, 101-106 and 108-113.
+        # Slice exactly those, so this checks what the Fortran reader sees
+        # rather than re-implementing our own writer's column arithmetic.
+        # (This generator lays the five fields out 6 columns wide rather than
+        # the shipped deck's 7; the values still land inside DSSAT's windows,
+        # and Fortran's default BLANK='NULL' ignores the padding. Parsing them
+        # at DSSAT's own offsets is what proves that.)
+        windows = [(93, 99), (100, 106), (107, 113)]
+        try:
+            trt, rep, rot = (int(ln[s:e]) for s, e in windows)
+        except (ValueError, IndexError):
+            raise ValueError(
+                f"{batch_path}: record {i + 1} TRTNO/TRTREP/ROTNUM not parseable "
+                f"as 3(1X,I6) from columns {FILEX_FIELD_WIDTH + 1}-"
+                f"{FILEX_FIELD_WIDTH + 21} "
+                f"({ln[FILEX_FIELD_WIDTH:FILEX_FIELD_WIDTH + 21]!r}) — the FILEX "
+                f"field has overflowed into the treatment columns"
+            )
+        if trt < 1:
+            raise ValueError(f"{batch_path}: record {i + 1} TRTNO {trt} < 1")
+        resolved = os.path.realpath(os.path.join(workdir, dssat_filex.strip()))
+        if resolved != os.path.realpath(filex_path):
+            raise ValueError(
+                f"{batch_path}: FILEX {dssat_filex.strip()!r} resolves under the "
+                f"workdir to {resolved}, not the FileX written at {filex_path}"
+            )
+        if recorded is not None and field != recorded:
+            raise ValueError(f"{batch_path}: FILEX field differs between records")
+        recorded = field
+        n_data += 1
+
+    if n_data == 0:
+        raise ValueError(f"{batch_path}: no data records under @FILEX")
+    return recorded
 
 
 # ==========================================================================
@@ -571,6 +822,18 @@ def create_workdir(
     **management_kwargs
         Override default management: ppop, plrs, pldp, fert_n,
         fert_date_offset, irrigation_events (list of (yyddd, mm) tuples).
+
+        irrigation : {'none', 'auto', 'events'}, optional
+            Explicit irrigation regime, so an ensemble can express a RAINFED
+            and an IRRIGATED member of the same crop:
+              'none'   -> IRRIG=N, no irrigation (dryland)
+              'auto'   -> IRRIG=A, DSSAT automatic irrigation, tuned by
+                          irr_imdep / irr_ithrl / irr_ithru / irr_iroff /
+                          irr_imeth / irr_amt / irr_eff
+              'events' -> IRRIG=R, the explicit irrigation_events rows
+            If omitted, a non-empty irrigation_events implies 'events';
+            otherwise the historical default applies (rice = 'auto',
+            every other crop = 'none').
 
     Returns
     -------
@@ -645,13 +908,18 @@ def create_workdir(
         # Use /tmp for short paths: /tmp/dssat_XXXXXXXX/
         workdir = tempfile.mkdtemp(prefix="dssat_", dir="/tmp")
 
-    # Verify total path will be within limits. The FileX path inside
-    # the workdir should be: workdir/XXXX0101.MZX = ~30 chars for /tmp
-    test_path = os.path.join(workdir, "X" * 12)
-    if len(test_path) > 90:
+    # NOTE: the workdir's own length does NOT feed the 92-column DSSBatch
+    # FILEX field (CSM.for:268). That field is written workdir-RELATIVE (see
+    # _generate_batch), so it always holds the 12-char FileX basename no
+    # matter how deep the workdir lives, and PATHEX (CSM.for:270) stays empty.
+    # DSSATPRO.v48 does record absolute paths, which DSSAT reads into
+    # CHARACTER*102 DSSATP / CHARACTER*120 PATHX (CSM.for:97,99), so warn only
+    # against that much larger budget.
+    if len(workdir) > 102:
         logger.warning(
-            "Workdir path is long (%d chars). FileX path may exceed "
-            "Fortran 92-char limit. Consider using /tmp.", len(workdir)
+            "Workdir path is %d chars; DSSATPRO.v48 entries are read into "
+            "CHARACTER*102 (CSM.for:97) and may truncate. Consider /tmp.",
+            len(workdir)
         )
 
     logger.info("Creating DSSAT workdir: %s", workdir)
@@ -728,9 +996,57 @@ def create_workdir(
                 if not os.path.exists(dst_geno):
                     os.symlink(str(gf), dst_geno)
 
+    # Merge China cultivar library (fixes Known Issue "China CUL not auto-loaded").
+    # The CN#### cultivar definitions live in Genotype/China/<MODEL>_China.CUL and
+    # are NOT reachable by the top-level symlink loop above (DSSAT reads ONE .CUL
+    # per crop). For each *_China.CUL, replace the workdir's symlinked base CUL
+    # with a REAL copy and append the CN#### data rows so codes like CN0001 resolve.
+    # CN entries reference ecotype IB0001 which exists in the base .ECO, so the
+    # merge is collision-free (CN#### vs IB#### codes never overlap).
+    china_dir = DSSAT_GENOTYPE / "China"
+    if china_dir.is_dir():
+        for cf in china_dir.iterdir():
+            if not cf.name.endswith("_China.CUL"):
+                continue
+            base_name = cf.name.replace("_China.CUL", ".CUL")  # MZCER048_China.CUL -> MZCER048.CUL
+            base_src = DSSAT_GENOTYPE / base_name
+            if not base_src.exists():
+                continue
+            # Extract CN#### data rows (skip comments '!', headers '*'/'@', blanks).
+            cn_rows = []
+            for ln in cf.read_text(errors="ignore").splitlines():
+                s = ln.strip()
+                if not s or s[0] in "!*@":
+                    continue
+                cn_rows.append(ln.rstrip("\n"))
+            if not cn_rows:
+                continue
+            for dst in (os.path.join(workdir, base_name),
+                        os.path.join(workdir, "Genotype", base_name)):
+                # Replace symlink with a real, writable copy, then append CN rows.
+                if os.path.islink(dst) or os.path.exists(dst):
+                    try:
+                        os.remove(dst)
+                    except OSError:
+                        pass
+                shutil.copy2(str(base_src), dst)
+                with open(dst, "a") as fh:
+                    fh.write("\n! --- China cultivar library (auto-merged) ---\n")
+                    fh.write("\n".join(cn_rows) + "\n")
+
     # ------------------------------------------------------------------
     # Soil file
     # ------------------------------------------------------------------
+    # DSSAT matches the FileX FIELDS soil ID against the .SOL profile name over a
+    # FIXED 10-char field; IDs shorter than ~8 chars break the match and INSOIL
+    # reads uninitialised soil arrays -> SIGFPE (no error message). The convert_*
+    # tools now zero-pad to 10, but warn loudly if a short ID slips through here.
+    if soil_file and len("".join(c for c in str(soil_id) if c.isalnum())) < 8:
+        logging.warning(
+            "soil_id '%s' is shorter than 8 chars — DSSAT will likely SIGFPE in "
+            "INSOIL (FileX<->.SOL fixed-width match fails). Use a 10-char ID "
+            "(e.g. zero-padded) that matches the .SOL profile name.", soil_id)
+
     soil_dst_main = os.path.join(workdir, "SOIL.SOL")
     soil_dst_dir = os.path.join(workdir, "Soil", "SOIL.SOL")
 
@@ -752,7 +1068,7 @@ def create_workdir(
     # ------------------------------------------------------------------
     if weather_file and os.path.isfile(weather_file):
         wth_basename = os.path.basename(weather_file)
-        wsta = wth_basename[:4]  # First 4 chars = station code
+        wsta = wth_basename[:4].upper()  # First 4 chars = station code (must be uppercase for DSSAT)
 
         # Copy weather file to workdir root AND Weather/
         shutil.copy2(weather_file, os.path.join(workdir, wth_basename))
@@ -812,14 +1128,26 @@ def create_workdir(
     logger.info("FileX written: %s", filex_path)
 
     # ------------------------------------------------------------------
-    # Generate DSSBatch.v48 (Pitfall #1: path <=92 chars)
+    # Generate DSSBatch.v48
+    #
+    # The FILEX field is written RELATIVE to the workdir (the bare basename),
+    # per format_spec path_constraints.FILEX.must_be_relative_to_workdir.
+    # run_dssat() below launches ./dscsm048 with cwd=workdir, so PATHEX
+    # (CSM.for:270) is empty and DSSAT resolves the FileX in the cwd. An
+    # absolute path here would spend the 92-column field (CSM.for:268) on a
+    # redundant prefix and cap how deep the workdir may live.
     # ------------------------------------------------------------------
-    batch_content = _generate_batch(filex_path, crop_name)
+    batch_content = _generate_batch(filex_basename, crop_name)
     batch_path = os.path.join(workdir, "DSSBatch.v48")
     with open(batch_path, "w", encoding="utf-8") as f:
         f.write(batch_content)
 
-    logger.info("Batch file written: %s", batch_path)
+    # Read the artifact DSSAT will actually consume back off disk and confirm
+    # the contract holds on those bytes — never on the host path we intended.
+    recorded_filex = _verify_batch_filex_contract(batch_path, workdir, filex_path)
+
+    logger.info("Batch file written: %s (FILEX field=%r)",
+                batch_path, recorded_filex)
 
     # ------------------------------------------------------------------
     # Generate DSSATPRO.v48 (Pitfall #5: correct paths)
@@ -888,12 +1216,16 @@ def _preflight_check(
             content = f.read()
         if "$BATCH" not in content:
             errors.append("Batch file missing $BATCH header")
-        # Check path length in batch file
-        for line in content.split("\n"):
-            if line.strip() and not line.startswith("$") and not line.startswith("!") and not line.startswith("@"):
-                path_part = line[:92].strip()
-                if len(path_part) > 92:
-                    errors.append(f"FileX path in batch exceeds 92 chars: {len(path_part)}")
+        # Replay CSM.for:268-271 on the bytes on disk. The previous check here
+        # (`len(line[:92].strip()) > 92`) was dead — a 92-column slice can never
+        # exceed 92 chars, so it passed unconditionally and never once tested
+        # the field. _verify_batch_filex_contract checks what DSSAT parses:
+        # relative, <=92 columns, empty PATHEX, TRTNO still readable at 93-113,
+        # and resolving under the workdir to the FileX that exists.
+        try:
+            _verify_batch_filex_contract(batch_path, workdir, filex_path)
+        except ValueError as e:
+            errors.append(str(e))
 
     # Check DSSATPRO.v48
     if not os.path.isfile(os.path.join(workdir, "DSSATPRO.v48")):
@@ -1166,11 +1498,22 @@ def parse_summary(workdir: str) -> List[Dict[str, Any]]:
             search_start += len(col) + 1
 
     # Column bounds: (start, end, name)
+    # DSSAT Summary.OUT numeric fields are RIGHT-aligned — the value ends at the
+    # right edge of the header token. Using [token_start, next_token_start) clips
+    # the leading digit of values wider than the header token (e.g. CWAM=17357
+    # in an 8-char column whose header "CWAM" left-edge is at pos+4). Use
+    # [end_of_prev_token, end_of_this_token) so right-aligned values are
+    # fully captured, padding to the left.
     col_bounds = []
     for k in range(len(col_positions)):
-        start = col_positions[k][0]
-        end = col_positions[k + 1][0] if k + 1 < len(col_positions) else None
-        col_bounds.append((start, end, col_positions[k][1]))
+        if k == 0:
+            start = 0
+        else:
+            prev_pos, prev_name = col_positions[k - 1]
+            start = prev_pos + len(prev_name)
+        this_pos, this_name = col_positions[k]
+        end = this_pos + len(this_name)
+        col_bounds.append((start, end, this_name))
 
     # Parse data records
     records = []

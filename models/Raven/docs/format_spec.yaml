@@ -1,316 +1,324 @@
-# format_spec.yaml — Machine-readable model format specification
-# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
-# Part of KDT Knowledge Infrastructure Tier B documentation
-#
-# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
-#   - Input ranges map to Level 1 check_value_range() calls
-#   - Output ranges map to Level 3 DOMAIN_CHECKS["hydrology"]
-#   - known_issues map to diagnostic triplets (triplets.yaml)
-
 model:
-  name: "Raven v4.1"
-  domain: "hydrology"
-  binary: "Raven.exe"
-  binary_path: "/mnt/disk1/Hydrocraft_server/model/raven/Raven.exe"
-  language: "C++"
-  working_directory: "./"
-  invocation: "Raven.exe <basin_name> -o output/"
-  dependencies: "g++ (C++11), optional: libnetcdf for NetCDF I/O"
-  notes: >
-    Meta-framework emulating 8+ model structures (GR4J, HBV-EC, HMETS,
-    MOHYSE, SAC-SMA, HYMOD, UBC, HYPR). Unique in HydroCraft for
-    structural uncertainty quantification via multi-model ensembles.
+  name: Raven v4.1
+  domain: hydrology
+  binary: Raven.exe
+  binary_path: /mnt/disk1/Hydrocraft_server/model/raven/Raven.exe
+  language: C++
+  working_directory: ./
+  invocation: Raven.exe <basin_name> -o output/
+  dependencies: 'g++ (C++11), optional: libnetcdf for NetCDF I/O'
+  notes: 'Meta-framework emulating 8+ model structures (GR4J, HBV-EC, HMETS, MOHYSE,
+    SAC-SMA, HYMOD, UBC, HYPR). Unique in HydroCraft for structural uncertainty quantification
+    via multi-model ensembles.
 
-# =========================================================================
-# INPUTS
-# =========================================================================
+    '
 inputs:
-
   forcing:
-    - name: "precipitation"
-      file: "{basin}.rvt"
-      variable: "PRECIP"
-      unit: "mm/d"
-      valid_range: [0.0, 500.0]
-      format: "Raven .rvt time series block (:MultiData or :Data)"
-      missing_value: -1.2345
-      conversion_from_cmfd: "mm/3hr -> mm/d: SUM 8 timesteps per day"
-      bug_history: "Raven IGNORES units and will NOT do conversion (dt_001). All conversion in convert_forcing_to_rvt.py."
-
-    - name: "temperature"
-      file: "{basin}.rvt"
-      variable: "TEMP_AVE (or TEMP_DAILY_MIN, TEMP_DAILY_MAX)"
-      unit: "degC"
-      valid_range: [-60.0, 60.0]
-      conversion_from_cmfd: "K -> degC: subtract 273.15; mean of 8 timesteps"
-      bug_history: "Kelvin not converted -> wrong PET, no snowmelt (dt_002)"
-
-    - name: "shortwave_radiation"
-      file: "{basin}.rvt"
-      variable: "SW_RADIA_NET or SHORTWAVE"
-      unit: "MJ/m2/d"
-      valid_range: [0.0, 35.0]
-      conversion_from_cmfd: "W/m2 -> MJ/m2/d: multiply by 0.0864"
-      bug_history: "W/m2 not converted -> extreme PET values (dt_003)"
-
-    - name: "air_pressure"
-      file: "{basin}.rvt"
-      variable: "AIR_PRES"
-      unit: "kPa"
-      valid_range: [50.0, 110.0]
-      conversion_from_cmfd: "Pa -> kPa: divide by 1000"
-      bug_history: "Pa not converted -> broken vapor pressure (dt_004)"
-
-    - name: "wind_speed"
-      file: "{basin}.rvt"
-      variable: "WIND_VEL"
-      unit: "m/s"
-      valid_range: [0.0, 80.0]
-      notes: "If not provided, Raven estimates from latitude (dt_025, silent approximation)"
-
-    - name: "relative_humidity"
-      file: "{basin}.rvt"
-      variable: "REL_HUMIDITY"
-      unit: "fraction"
-      valid_range: [0.0, 1.0]
-      notes: "If not provided, Raven generates internally"
-
+  - name: precipitation
+    file: '{basin}.rvt'
+    variable: PRECIP
+    unit: mm/d
+    valid_range:
+    - 0.0
+    - 500.0
+    format: Raven .rvt time series block (:MultiData or :Data)
+    missing_value: -1.2345
+    conversion_from_cmfd: 'mm/3hr -> mm/d: SUM 8 timesteps per day'
+    bug_history: Raven IGNORES units and will NOT do conversion (dt_001). All conversion
+      in convert_forcing_to_rvt.py.
+  - name: temperature
+    file: '{basin}.rvt'
+    variable: TEMP_AVE (or TEMP_DAILY_MIN, TEMP_DAILY_MAX)
+    unit: degC
+    valid_range:
+    - -60.0
+    - 60.0
+    conversion_from_cmfd: 'K -> degC: subtract 273.15; mean of 8 timesteps'
+    bug_history: Kelvin not converted -> wrong PET, no snowmelt (dt_002)
+  - name: shortwave_radiation
+    file: '{basin}.rvt'
+    variable: SW_RADIA_NET or SHORTWAVE
+    unit: MJ/m2/d
+    valid_range:
+    - 0.0
+    - 35.0
+    conversion_from_cmfd: 'W/m2 -> MJ/m2/d: multiply by 0.0864'
+    bug_history: W/m2 not converted -> extreme PET values (dt_003)
+  - name: air_pressure
+    file: '{basin}.rvt'
+    variable: AIR_PRES
+    unit: kPa
+    valid_range:
+    - 50.0
+    - 110.0
+    conversion_from_cmfd: 'Pa -> kPa: divide by 1000'
+    bug_history: Pa not converted -> broken vapor pressure (dt_004)
+  - name: wind_speed
+    file: '{basin}.rvt'
+    variable: WIND_VEL
+    unit: m/s
+    valid_range:
+    - 0.0
+    - 80.0
+    notes: If not provided, Raven estimates from latitude (dt_025, silent approximation)
+  - name: relative_humidity
+    file: '{basin}.rvt'
+    variable: REL_HUMIDITY
+    unit: fraction
+    valid_range:
+    - 0.0
+    - 1.0
+    notes: If not provided, Raven generates internally
   parameters:
     critical:
-      - name: "HRU table columns"
-        file: "{basin}.rvh"
-        description: "HRU data lines MUST have exactly 13 comma-separated fields"
-        bug_history: >
-          Undocumented 10th column is AQUIFER_PROFILE (set to [NONE]).
-          Without it, Raven segfaults with 'line N is wrong length' (err_001).
-          Column order: ID, AREA, ELEVATION, LATITUDE, LONGITUDE, BASIN_ID,
-          LAND_USE_CLASS, VEG_CLASS, SOIL_PROFILE, AQUIFER_PROFILE,
-          TERRAIN_CLASS, SLOPE, ASPECT
+    - name: HRU table columns
+      file: '{basin}.rvh'
+      description: HRU data lines MUST have exactly 13 comma-separated fields
+      bug_history: 'Undocumented 10th column is AQUIFER_PROFILE (set to [NONE]). Without
+        it, Raven segfaults with ''line N is wrong length'' (err_001). Column order:
+        ID, AREA, ELEVATION, LATITUDE, LONGITUDE, BASIN_ID, LAND_USE_CLASS, VEG_CLASS,
+        SOIL_PROFILE, AQUIFER_PROFILE, TERRAIN_CLASS, SLOPE, ASPECT
 
-      - name: "class name consistency"
-        file: "{basin}.rvh and {basin}.rvp"
-        description: "Soil, land use, vegetation, terrain class names must match exactly between .rvh and .rvp"
-        bug_history: "Case-sensitive mismatch causes fatal error (dt_007, dt_008)"
+        '
+    - name: class name consistency
+      file: '{basin}.rvh and {basin}.rvp'
+      description: Soil, land use, vegetation, terrain class names must match exactly
+        between .rvh and .rvp
+      bug_history: Case-sensitive mismatch causes fatal error (dt_007, dt_008)
+    - name: GlobalParameter syntax
+      file: '{basin}.rvp'
+      description: :GlobalParameter is single-line, NOT a block
+      bug_history: 'Wrong: :GlobalParameter / PARAM1 val / :EndGlobalParameter. Correct:
+        :GlobalParameter PARAM1 val (one per line, no block delimiters) (err_002).
 
-      - name: "GlobalParameter syntax"
-        file: "{basin}.rvp"
-        description: ":GlobalParameter is single-line, NOT a block"
-        bug_history: >
-          Wrong: :GlobalParameter / PARAM1 val / :EndGlobalParameter.
-          Correct: :GlobalParameter PARAM1 val (one per line, no block delimiters) (err_002).
-
-      - name: ".rvc file existence"
-        file: "{basin}.rvc"
-        description: "Raven requires .rvc file to exist even if empty"
-        bug_history: "Missing .rvc -> 'Cannot find or read .rvc file' exit (err_004)"
-
+        '
+    - name: .rvc file existence
+      file: '{basin}.rvc'
+      description: Raven requires .rvc file to exist even if empty
+      bug_history: Missing .rvc -> 'Cannot find or read .rvc file' exit (err_004)
     calibration_by_template:
       gr4j:
-        parameters: ["GR4J_X1", "GR4J_X2", "GR4J_X3", "GR4J_X4"]
+        parameters:
+        - GR4J_X1
+        - GR4J_X2
+        - GR4J_X3
+        - GR4J_X4
         count: 4
         snow: false
-
       hbv_ec:
-        parameters: ["SNOW_SWI", "MELT_FACTOR", "REFREEZE_FACTOR", "BASEFLOW_COEFF",
-                      "FIELD_CAPACITY", "SAT_WILT", "MAX_PERC_RATE", "TOPSOIL"]
+        parameters:
+        - SNOW_SWI
+        - MELT_FACTOR
+        - REFREEZE_FACTOR
+        - BASEFLOW_COEFF
+        - FIELD_CAPACITY
+        - SAT_WILT
+        - MAX_PERC_RATE
+        - TOPSOIL
         count: 21
         snow: true
-
       hmets:
-        parameters: ["GAMMA_SHAPE", "GAMMA_SCALE", "GAMMA_SHAPE2", "GAMMA_SCALE2",
-                      "SNOW_SWI_MIN", "SNOW_SWI_MAX", "MELT_FACTOR", "DD_MELT_TEMP",
-                      "REFREEZE_FACTOR", "DD_REFREEZE_TEMP"]
+        parameters:
+        - GAMMA_SHAPE
+        - GAMMA_SCALE
+        - GAMMA_SHAPE2
+        - GAMMA_SCALE2
+        - SNOW_SWI_MIN
+        - SNOW_SWI_MAX
+        - MELT_FACTOR
+        - DD_MELT_TEMP
+        - REFREEZE_FACTOR
+        - DD_REFREEZE_TEMP
         count: 21
         snow: true
-
       hymod:
-        parameters: ["SOIL_STORE", "B_EXP", "ALPHA", "KF", "KS"]
+        parameters:
+        - SOIL_STORE
+        - B_EXP
+        - ALPHA
+        - KF
+        - KS
         count: 5
         snow: false
-
   files:
     required:
-      - name: "{basin}.rvi"
-        description: "Model definition: process algorithms, timestep, output options"
-        format: "Raven command file (colon-prefixed directives)"
-
-      - name: "{basin}.rvp"
-        description: "Parameters: soil/veg/land-use class definitions and values"
-        format: "Raven command file"
-
-      - name: "{basin}.rvh"
-        description: "HRU/Basin: subbasins, HRU table (13 columns)"
-        format: "Raven command file with CSV data sections"
-
-      - name: "{basin}.rvt"
-        description: "Time series: forcing data and observed discharge"
-        format: "Raven command file with :Data/:MultiData blocks"
-
+    - name: '{basin}.rvi'
+      description: 'Model definition: process algorithms, timestep, output options'
+      format: Raven command file (colon-prefixed directives)
+    - name: '{basin}.rvp'
+      description: 'Parameters: soil/veg/land-use class definitions and values'
+      format: Raven command file
+    - name: '{basin}.rvh'
+      description: 'HRU/Basin: subbasins, HRU table (13 columns)'
+      format: Raven command file with CSV data sections
+    - name: '{basin}.rvt'
+      description: 'Time series: forcing data and observed discharge'
+      format: Raven command file with :Data/:MultiData blocks
     optional:
-      - name: "{basin}.rvc"
-        description: "Initial conditions (recommended for warm start)"
-        notes: "MUST exist even if empty. Use solution.rvc from previous run for warm start."
-
-# =========================================================================
-# OUTPUTS
-# =========================================================================
+    - name: '{basin}.rvc'
+      description: Initial conditions (recommended for warm start)
+      notes: MUST exist even if empty. Use solution.rvc from previous run for warm
+        start.
 outputs:
-
   primary:
-    - name: "discharge"
-      file: "output/Hydrographs.csv"
-      unit: "m3/s"
-      valid_range: [0, null]
-      format: "CSV; columns: date, sub_XX (simulated per subbasin), obs (if provided)"
-      notes: "Primary validation output"
-
-    - name: "diagnostics"
-      file: "output/Diagnostics.csv"
-      format: "CSV; performance metrics (NSE, KGE, RMSE, etc.)"
-      notes: "Reports -9999 if no observed data provided (dt_011, not an error)"
-
-    - name: "watershed_storage"
-      file: "output/WatershedStorage.csv"
-      format: "CSV; daily storage in all compartments"
-
-    - name: "forcing_functions"
-      file: "output/ForcingFunctions.csv"
-      format: "CSV; actual forcing used (including internally generated variables)"
-      notes: "Check this to see what Raven estimated when forcing was missing (dt_025)"
-
-# =========================================================================
-# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
-# =========================================================================
+  - name: discharge
+    file: output/Hydrographs.csv
+    unit: m3/s
+    valid_range:
+    - 0
+    - null
+    format: 'CSV; columns: date, sub_XX (simulated per subbasin), obs (if provided)'
+    notes: Primary validation output
+    canonical_id: discharge
+  - name: diagnostics
+    file: output/Diagnostics.csv
+    format: CSV; performance metrics (NSE, KGE, RMSE, etc.)
+    notes: Reports -9999 if no observed data provided (dt_011, not an error)
+  - name: watershed_storage
+    file: output/WatershedStorage.csv
+    format: CSV; daily storage in all compartments
+  - name: forcing_functions
+    file: output/ForcingFunctions.csv
+    format: CSV; actual forcing used (including internally generated variables)
+    notes: Check this to see what Raven estimated when forcing was missing (dt_025)
+  - name: basin_runoff
+    canonical_id: surface_runoff
+    unit: mm/day
+  - name: snow_water_equivalent
+    canonical_id: snow_water_equivalent
+    unit: mm
+  - name: soil_moisture
+    canonical_id: soil_moisture
+    unit: mm
+  - name: evapotranspiration
+    canonical_id: evapotranspiration
+    unit: mm/day
 known_issues:
-  - id: "unit_precip_not_aggregated"
-    triplet: "dt_001"
-    description: "Precip mm/3hr not aggregated to mm/d — 8x overestimate"
-    affected_output: "Hydrographs.csv — discharge 8x too high"
-    detection: "Mean annual runoff >> mean annual precip"
-    fix: "Sum 8 3-hourly timesteps per day in convert_forcing_to_rvt.py"
-    severity: "silent"
-
-  - id: "temperature_kelvin"
-    triplet: "dt_002"
-    description: "Temperature in Kelvin instead of Celsius"
-    affected_output: "Wrong PET and snowmelt"
-    detection: "Temperatures ~300 in .rvt"
-    fix: "Subtract 273.15"
-    severity: "silent"
-
-  - id: "radiation_wrong_units"
-    triplet: "dt_003"
-    description: "Shortwave radiation in W/m2 instead of MJ/m2/d"
-    affected_output: "Extreme PET"
-    fix: "Multiply by 0.0864"
-    severity: "silent"
-
-  - id: "pressure_pa_not_kpa"
-    triplet: "dt_004"
-    description: "Pressure in Pa instead of kPa"
-    affected_output: "Broken vapor pressure computation"
-    fix: "Divide by 1000"
-    severity: "silent"
-
-  - id: "missing_forcing_zeros"
-    triplet: "dt_010"
-    description: "Missing forcing variables filled with zeros silently"
-    affected_output: "Zero precip = zero discharge with no warning"
-    detection: "All Q = 0 despite reasonable other forcing"
-    fix: "Verify PRECIP is present in .rvt"
-    severity: "silent"
-
-  - id: "no_snow_in_cold_basin"
-    triplet: "dt_012"
-    description: "GR4J, HYMOD, SAC-SMA have NO snow processes"
-    affected_output: "Winter precipitation = rain, wrong seasonal pattern"
-    detection: "No seasonal accumulation in cold basins"
-    fix: "Use HBV-EC, HMETS, or UBC for snow-dominated basins"
-    severity: "silent"
-
-  - id: "rvh_13_columns"
-    triplet: "err_001"
-    description: "HRU data must have exactly 13 comma-separated fields including AQUIFER_PROFILE"
-    affected_output: "Segfault"
-    fix: "Add [NONE] as column 10 (AQUIFER_PROFILE)"
-    severity: "fatal"
-
-  - id: "cold_start_artifact"
-    triplet: "dt_023"
-    description: "First 1-2 years of simulation are unreliable due to cold start"
-    fix: "Add extra spinup years and discard in analysis"
-
-  - id: "ensemble_identical_rvp"
-    triplet: "dt_024"
-    description: "Ensemble members share same .rvp -> identical results"
-    fix: "Each template must have its own .rvp with template-specific parameters"
-
-# =========================================================================
-# EXPECTED RANGES (Bengbu reference)
-# =========================================================================
+- id: unit_precip_not_aggregated
+  triplet: dt_001
+  description: "Precip mm/3hr not aggregated to mm/d \u2014 8x overestimate"
+  affected_output: "Hydrographs.csv \u2014 discharge 8x too high"
+  detection: Mean annual runoff >> mean annual precip
+  fix: Sum 8 3-hourly timesteps per day in convert_forcing_to_rvt.py
+  severity: silent
+- id: temperature_kelvin
+  triplet: dt_002
+  description: Temperature in Kelvin instead of Celsius
+  affected_output: Wrong PET and snowmelt
+  detection: Temperatures ~300 in .rvt
+  fix: Subtract 273.15
+  severity: silent
+- id: radiation_wrong_units
+  triplet: dt_003
+  description: Shortwave radiation in W/m2 instead of MJ/m2/d
+  affected_output: Extreme PET
+  fix: Multiply by 0.0864
+  severity: silent
+- id: pressure_pa_not_kpa
+  triplet: dt_004
+  description: Pressure in Pa instead of kPa
+  affected_output: Broken vapor pressure computation
+  fix: Divide by 1000
+  severity: silent
+- id: missing_forcing_zeros
+  triplet: dt_010
+  description: Missing forcing variables filled with zeros silently
+  affected_output: Zero precip = zero discharge with no warning
+  detection: All Q = 0 despite reasonable other forcing
+  fix: Verify PRECIP is present in .rvt
+  severity: silent
+- id: no_snow_in_cold_basin
+  triplet: dt_012
+  description: GR4J, HYMOD, SAC-SMA have NO snow processes
+  affected_output: Winter precipitation = rain, wrong seasonal pattern
+  detection: No seasonal accumulation in cold basins
+  fix: Use HBV-EC, HMETS, or UBC for snow-dominated basins
+  severity: silent
+- id: rvh_13_columns
+  triplet: err_001
+  description: HRU data must have exactly 13 comma-separated fields including AQUIFER_PROFILE
+  affected_output: Segfault
+  fix: Add [NONE] as column 10 (AQUIFER_PROFILE)
+  severity: fatal
+- id: cold_start_artifact
+  triplet: dt_023
+  description: First 1-2 years of simulation are unreliable due to cold start
+  fix: Add extra spinup years and discard in analysis
+- id: ensemble_identical_rvp
+  triplet: dt_024
+  description: Ensemble members share same .rvp -> identical results
+  fix: Each template must have its own .rvp with template-specific parameters
 expected_ranges:
   bengbu_huai_river:
     basin_area_km2: 118358
-    period: "2000-2005"
-    forcing: "CMFD 224 cells aggregated to basin mean"
-
+    period: 2000-2005
+    forcing: CMFD 224 cells aggregated to basin mean
     ensemble_uncalibrated:
       mohyse_nse: 0.787
       hbv_nse: 0.592
       hmets_nse: 0.647
-      hymod_nse: -0.820
+      hymod_nse: -0.82
       gr4j_nse: 0.323
-      best_model: "MOHYSE (r=0.920, NSE=0.787)"
+      best_model: MOHYSE (r=0.920, NSE=0.787)
       structural_uncertainty_cv: 0.35
-
-# =========================================================================
-# CALIBRATION REFERENCE
-# =========================================================================
 calibration_reference:
-  method: "DDS (Dynamically Dimensioned Search)"
-  tool: "calibrate_raven_dds.py"
-
+  method: DDS (Dynamically Dimensioned Search)
+  tool: calibrate_raven_dds.py
   recommended_sequence:
-    - "Select template by climate (docs/s0_model_selection_skill.md)"
-    - "Run uncalibrated ensemble (5-8 templates)"
-    - "Pick best 2-3 templates by NSE"
-    - "DDS calibration on selected templates (500-1000 iterations)"
-    - "Validate on hold-out period"
-
+  - Select template by climate (docs/s0_model_selection_skill.md)
+  - Run uncalibrated ensemble (5-8 templates)
+  - Pick best 2-3 templates by NSE
+  - DDS calibration on selected templates (500-1000 iterations)
+  - Validate on hold-out period
   target_metrics:
-    - "NSE > 0.5"
-    - "KGE > 0.5"
-    - "PBIAS < 25%"
-
-  warmup: "Discard first 1-2 years (cold start equilibration)"
-
-# =========================================================================
-# UNIT CONVERSION TABLE
-# =========================================================================
+  - NSE > 0.5
+  - KGE > 0.5
+  - PBIAS < 25%
+  warmup: Discard first 1-2 years (cold start equilibration)
 unit_conversions:
-  - variable: "precipitation"
-    source: "CMFD (mm/3hr)"
-    target: "Raven (mm/d)"
-    operation: "SUM 8 timesteps per day"
-    trap_if_wrong: "Runoff 8x too high"
+- variable: precipitation
+  source: CMFD (mm/3hr)
+  target: Raven (mm/d)
+  operation: SUM 8 timesteps per day
+  trap_if_wrong: Runoff 8x too high
+- variable: temperature
+  source: CMFD (K)
+  target: Raven (degC)
+  offset: -273.15
+  operation: subtract
+  trap_if_wrong: PET wrong, no snowmelt
+- variable: shortwave_radiation
+  source: CMFD (W/m2)
+  target: Raven (MJ/m2/d)
+  factor: 0.0864
+  operation: multiply
+  trap_if_wrong: Extreme PET
+- variable: air_pressure
+  source: CMFD (Pa)
+  target: Raven (kPa)
+  factor: 0.001
+  operation: multiply
+  trap_if_wrong: Broken vapor pressure
 
-  - variable: "temperature"
-    source: "CMFD (K)"
-    target: "Raven (degC)"
-    offset: -273.15
-    operation: "subtract"
-    trap_if_wrong: "PET wrong, no snowmelt"
+# dt_rav_045 (2026-07-27): not every calibratable Raven parameter has a name in
+# the .rvp.  A tool that decides "is this parameter writable?" by scanning for
+# named columns will silently drop the profile-encoded ones.
+parameter_addressing:
+- name: Profile-encoded capacities are not addressable by name
+  file: '{basin}.rvp'
+  description: 'Some Raven emulation parameters have NO named column: their value is
+    carried by a :SoilProfiles layer thickness, as capacity_mm = thickness_m * POROSITY
+    * 1000. Known member: gr4j GR4J_X1 -> SOIL[0] (PRODUCT_STORE). Any tool that decides
+    whether a parameter is writable MUST check the :SoilProfiles encoding in addition
+    to :GlobalParameter and :Parameters headers, and any tool that writes one MUST
+    do so after POROSITY is final. GR4J_X3 is explicitly NOT in this class -- it is
+    a named :SoilParameterList column and SOIL[1] thickness is fixed geometry.
 
-  - variable: "shortwave_radiation"
-    source: "CMFD (W/m2)"
-    target: "Raven (MJ/m2/d)"
-    factor: 0.0864
-    operation: "multiply"
-    trap_if_wrong: "Extreme PET"
+    '
+  applies_to:
+  - calibrate_raven_dds.py
+  - build_rvp_parameters.py
+  bug_history: 'dt_rav_045 -- GR4J_X1 silently dropped from a 1000-iteration DDS run
+    at Tangnaihai; cal 0.838 / val 0.577 with X2 and X3 pinned at their bounds.
 
-  - variable: "air_pressure"
-    source: "CMFD (Pa)"
-    target: "Raven (kPa)"
-    factor: 0.001
-    operation: "multiply"
-    trap_if_wrong: "Broken vapor pressure"
+    '

@@ -135,7 +135,12 @@ def convert_to_bgc_met(daily_records, lat, pressure=101325.0):
         prcp_cm = mm_to_cm(r["prec_mm"])
 
         # CRITICAL: VPD in Pa, NOT kPa
-        vpd_pa = compute_vpd_from_tmin_tmax_q(tmin, tmax, r["q"], pressure)
+        # For FLUXNET input, vpd_hpa is already available (use directly × 100)
+        # For VIC input, compute from specific humidity
+        if "vpd_hpa" in r:
+            vpd_pa = r["vpd_hpa"] * 100.0
+        else:
+            vpd_pa = compute_vpd_from_tmin_tmax_q(tmin, tmax, r["q"], pressure)
 
         # Shortwave radiation (already W/m2 in VIC forcing)
         srad = max(0.0, r["srad"])
@@ -187,19 +192,70 @@ def validate_output(met_lines, daily_records):
     return warnings
 
 
+def read_fluxnet_forcing(filepath: str, start_year: int, end_year: int):
+    """
+    Read FLUXNET2015 FULLSET_DD.csv and return daily records for BIOME-BGC.
+
+    Columns used:
+      TA_F_MDS_DAY   → Tmax proxy (daytime mean, °C)
+      TA_F_MDS_NIGHT → Tmin proxy (nighttime mean, °C)
+      P_F            → precipitation (mm/day)  [BIOME-BGC needs cm — ÷10 done later]
+      VPD_F          → VPD (hPa) [BIOME-BGC needs Pa — ×100 done later]
+      SW_IN_F        → shortwave radiation (W/m²)
+
+    CRITICAL: -9999 fill values replaced with forward-filled or column means.
+    """
+    import pandas as pd
+    df = pd.read_csv(filepath)
+    df = df.replace(-9999.0, float("nan"))
+    df["_date"] = pd.to_datetime(df["TIMESTAMP"], format="%Y%m%d")
+    df = df[(df["_date"].dt.year >= start_year) & (df["_date"].dt.year <= end_year)]
+
+    # CRITICAL leap-day fix (dt root-cause): BIOME-BGC metarr_init.c reads EXACTLY
+    # 365*nyears met lines sequentially and does NOT index by yday. Emitting 366
+    # lines for a leap year shifts ALL subsequent forcing +1 day, drifting GPP out
+    # of phase and tanking NSE on later years. Drop Feb-29 → 365 lines every year.
+    df = df[~((df["_date"].dt.month == 2) & (df["_date"].dt.day == 29))]
+
+    required = ["TA_F_MDS_DAY", "TA_F_MDS_NIGHT", "P_F", "VPD_F", "SW_IN_F"]
+    for col in required:
+        if col not in df.columns:
+            raise ValueError(f"Missing column {col} in FULLSET_DD — check file")
+        df[col] = df[col].ffill().bfill()
+
+    records = []
+    for _, row in df.iterrows():
+        tmax = float(row["TA_F_MDS_DAY"])
+        tmin = float(row["TA_F_MDS_NIGHT"])
+        records.append({
+            "year": int(row["_date"].year),
+            "yday": int(row["_date"].timetuple().tm_yday),
+            "tmax": tmax,
+            "tmin": tmin,
+            "prec_mm": max(0.0, float(row["P_F"])),
+            # VPD_F is in hPa; store raw — convert to Pa in convert_to_bgc_met
+            "vpd_hpa": max(0.0, float(row["VPD_F"])),
+            "srad": max(0.0, float(row["SW_IN_F"])),
+        })
+    return records
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert VIC forcing to BIOME-BGC met format")
+        description="Convert VIC forcing or FLUXNET FULLSET_DD to BIOME-BGC met format")
     parser.add_argument("--forcing_file", required=True,
-                        help="VIC forcing file (7-col ASCII, 3-hourly)")
+                        help="VIC forcing file (7-col ASCII) or FLUXNET FULLSET_DD.csv")
+    parser.add_argument("--source", default="vic",
+                        choices=["vic", "fluxnet"],
+                        help="Input format: 'vic' (default) or 'fluxnet' (FULLSET_DD.csv)")
     parser.add_argument("--lat", type=float, required=True,
                         help="Site latitude (degrees)")
     parser.add_argument("--start_year", type=int, required=True)
     parser.add_argument("--end_year", type=int, required=True)
     parser.add_argument("--steps_per_day", type=int, default=8,
-                        help="Sub-daily timesteps per day (default 8 for 3-hourly)")
+                        help="Sub-daily timesteps per day (VIC only, default 8)")
     parser.add_argument("--pressure", type=float, default=101325.0,
-                        help="Surface pressure (Pa) for VPD calculation")
+                        help="Surface pressure (Pa) for VPD calculation (VIC only)")
     parser.add_argument("--output", required=True,
                         help="Output met file path")
 
@@ -214,9 +270,17 @@ def main():
 
     # Read and aggregate
     try:
-        daily_records = read_vic_forcing(
-            args.forcing_file, args.start_year, args.end_year,
-            args.steps_per_day)
+        if args.source == "fluxnet":
+            daily_records = read_fluxnet_forcing(
+                args.forcing_file, args.start_year, args.end_year)
+            # For FLUXNET, VPD is already known (hPa) — patch convert_to_bgc_met
+            # to use vpd_hpa directly instead of computing from q
+            for r in daily_records:
+                r["q"] = 0.0  # unused sentinel; VPD computed from vpd_hpa below
+        else:
+            daily_records = read_vic_forcing(
+                args.forcing_file, args.start_year, args.end_year,
+                args.steps_per_day)
     except Exception as e:
         result = {"status": "error", "stage": "processing",
                   "message": f"Failed to read forcing: {e}"}

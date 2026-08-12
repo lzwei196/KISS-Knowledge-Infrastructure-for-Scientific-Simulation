@@ -28,7 +28,127 @@
 - **Model**: Alpine3D (with MeteoIO + SNOWPACK)
 - **Domain**: Cryosphere — spatially distributed snow, energy balance, and runoff in mountainous terrain
 - **Created**: 2026-03-26
-- **Tools**: 4 | **Skill Documents**: 5 | **Diagnostic Triplets**: 18 | **Validation**: pending
+- **Last updated**: 2026-04-30
+- **Tools**: 4 | **Skill Documents**: 6 | **Diagnostic Triplets**: 22 | **Validation**: T3 (3 SNOTEL sites, 5 WY each)
+
+## ⛔ READ FIRST — the SNOTEL precipitation column is NOT cumulative (2026-08-09)
+
+The NRCS SNOTEL daily export column
+
+    Precipitation Accumulation (in) Start of Day Values
+
+is the **DAILY INCREMENT, in inches**, despite the word "Accumulation" in its
+name. It is *not* a water-year running total. Evidence at SNOTEL 590
+(2005-10 → 2015-09): the raw column sums to **1069 mm/yr**, its largest single
+value in ten years is **2.10 in** (a water-year cumulative would have to exceed
+40 in), and only **70%** of day-to-day steps are non-negative.
+
+Every Alpine3D run in this KI up to 2026-08-09 applied `.diff().clip(lower=0)`
+to that column (`t3_runs/build_site.py` → `build_snotel_forcing`), which keeps
+only the day-over-day *increases* and discards **~44% of the precipitation**:
+
+| site | raw column | after `.diff()` | loss |
+|---|---:|---:|---:|
+| 590 Lone Mountain, MT | 1069 mm/yr | 604 mm/yr | −43% |
+| 828 Trial Lake, UT | 1106 | 669 | −40% |
+| 637 Mores Creek Summit, ID | 1200 | 718 | −40% |
+| 679 Paradise, WA | 3832 | 1740 | −55% |
+
+**This single data bug is the −40…−60% SWE PBIAS reported at every validated
+site below, and the reason NSE stalled in the 0.31–0.39 band.** The physical
+explanations previously given for that bias — "the gauge ~1660 mm/yr cannot
+build the observed 2.3 m pillow" at Paradise, "pillow over-read", "orographic
+undercatch" — attribute a parsing bug to physics. Note that the `dt_023`
+maritime remedy factor (×1.9) is close to the reciprocal of the Paradise loss
+(3832/1740 = 2.2): it was numerically compensating for the differencing, not
+correcting the gauge.
+
+**Correct handling: use the column AS IS**, converting inches → mm
+(`convert_forcing_to_smet.py --precip-unit in`). At a fresh continental site
+with *no* precip factor at all this yields NSE ≈ 0.83 / PBIAS ≈ −10% on daily
+SWE. Before re-deriving any SWE bias as a physical effect, check the forcing
+total against the raw gauge.
+
+## Resolving a SNOTEL station (coordinates, elevation, timezone)
+
+Do not hand-type site coordinates. The NRCS AWDB REST API answers directly and
+is reachable from this host:
+
+```bash
+curl -s "https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/stations?stationTriplets=590:MT:SNTL&activeOnly=false"
+# -> name, latitude, longitude, elevation (FEET — multiply by 0.3048),
+#    dataTimeZone, beginDate/endDate
+```
+
+The station triplet is `<id>:<STATE>:SNTL`; the id is the filename stem of
+`/mnt/disk1/Hydrocraft_server/data/obs/snotel/<id>_daily.csv` and the state is
+in that file's `# SNOTEL <id>: <Name>, <ST>` comment line.
+
+## Validated Test Cases (Tier-3, real DEM + real obs)
+
+Located at `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Alpine3D/t3_runs/`:
+
+⚠️ Every row in the table below was produced with the differenced (i.e. ~44%
+too dry) precipitation described above. Treat their NSE/PBIAS as a **floor**,
+not as Alpine3D's skill. The 2026-08-09 Lone Mountain row is the first run with
+correct precipitation.
+
+| Site | SNOTEL | Climate | r | NSE | KGE | PBIAS | Period | precip |
+|---|---:|---|---:|---:|---:|---:|---|---|
+| Lone Mountain, MT | 590 | continental | see below | see below | | | 2010-10 → 2020-09 (held out) | **raw (correct)** |
+
+| Site | SNOTEL | Climate | r | NSE | KGE | Period |
+|---|---:|---|---:|---:|---:|---|
+| Trial Lake, UT | 828 | continental | 0.79 | +0.31 | +0.19 | 2014-10 → 2019-09 |
+| Mores Creek Summit, ID | 637 | continental-W | 0.85 | +0.39 | +0.20 | 2014-10 → 2019-09 |
+| Paradise, WA (Mt Rainier) | 679 | maritime | 0.62 | −0.22 | −0.11 | 2014-10 → 2019-09 (baseline, no remedy) |
+| Paradise, WA (Mt Rainier) | 679 | maritime | 0.71 | **+0.33** | +0.46 | 2006-01 → 2015-12 (dt_023 remedy, 1×1) |
+
+Continental sites have positive skill against daily SNOTEL SWE. Maritime
+sites (Paradise) fail two ways under single-station daily disaggregation:
+(1) orographic precip is undercaught and the SNOTEL gauge under-reads heavy
+wet snow (gauge ~1660 mm/yr cannot build the observed 2.3 m pillow), and
+(2) the synthetic ±6 K diurnal TA cycle + high roughness drive excessive
+turbulent melt, so the pack peaks in Jan–Mar and melts out months early
+(Apr–Jun sim/obs SWE ratio ≈ 0.09). The `undercatch_wmo` filter (dt_020)
+alone is far too weak. **Maritime remedy (dt_023, added 2026-06-19):** apply
+a multiplicative precip undercatch factor (~1.9) via
+`convert_forcing_to_smet.py --precip-undercatch-factor`, damp the diurnal TA
+amplitude to ~2.5 K, lower `ROUGHNESS_LENGTH` to ~0.003 m, and raise the
+`PSUM_PH` snow threshold to ~275.35 K. `build_site.py` now carries these as
+per-site `precip_factor`/`diurnal_amp`/`roughness`/`snow_thresh_K` overrides
+on `Paradise_WA`. Driver: `t3_runs/build_site.py` + `validate_all.py`.
+
+**Maritime remedy VERIFIED (2026-06-19, SNOTEL 679, WY2006–2015):** the dt_023
+overrides were tested on the full 2006-01-01..2015-12-31 daily SWE window and
+**PASS**: NSE **+0.33**, r **0.71**, KGE **+0.46**, PBIAS −40% (n=3651 days; cold
+start 2005-10-01, scored from 2006-01-01). This overturns the −0.22 baseline.
+The pack still under-accumulates (sim mean 511 vs obs 853 mm; the ×1.9 factor is
+a floor, not a ceiling) but peak SWE (2442 vs 2764 mm) and timing (r 0.71) are now
+good. Three new `build_site.py` knobs make this run reproducible and tractable:
+  - **Period is now configurable** per-site via `sim_start` / `sim_end` /
+    `eval_start` (was hardcoded WY15-19). Cold-start the autumn *before* the eval
+    window; `observed_swe.csv` is filtered to `eval_start` so the spinup autumn is
+    excluded from metrics.
+  - **Deep-maritime tractability:** a 10-yr Paradise run at 11×11/15-min is
+    compute-bound (the correct 2+ m pillow grows the finite-element count, so
+    per-step cost balloons — ~5 h+ and climbing). Single-station point-SWE only
+    scores the POI cell, so `grid_n=1` + `calc_step=60` + `light_output=True`
+    (1×1 column, 1 SNOWPACK sub-step/hr, grids/prof off, daily TS) cuts it to
+    **~15 min** with no change to the scored center-cell SWE. The validated 11×11
+    config remains the reference for any *spatial* fidelity claim.
+  - **POI centering fix:** the POI is now written at the centre of the centre cell
+    (`poi_e/poi_n`), not the cell corner. A corner POI is on the domain edge and
+    Alpine3D aborts with `InvalidArgument: Invalid POI` — fatal on a 1×1 grid.
+    Harmless (+50 m, same cell) on larger grids.
+  - `validate_all.py` POI glob generalized from the hardcoded `5_*` index to
+    `*_<exp>.smet`, so it finds the POI file for any grid size (1×1 → `0_0_…`).
+
+Note: the `build_site.py` io.ini template has **no `[SnowpackAdvanced]` section**,
+so `ALPINE3D` defaults FALSE (dt_016 warning at startup) — the run is effectively
+point-mode per cell. For single-station single-POI SWE validation this is benign
+(and consistent with the 1×1 reduction above), but a distributed/spatial run MUST
+add `[SnowpackAdvanced]\nALPINE3D = TRUE`.
 
 ---
 
@@ -144,10 +264,26 @@ snowpack computations.
 
 | Tool | Stage | Script | Lines | Purpose |
 |------|-------|--------|-------|---------|
-| convert_forcing_to_smet | s2 | `tools/convert_forcing_to_smet.py` | ~280 | Convert meteo data to SMET format with unit corrections |
-| generate_sno_files | s3 | `tools/generate_sno_files.py` | ~220 | Create initial snow/soil profiles per pixel |
-| run_alpine3d | s5 | `tools/run_alpine3d.py` | ~180 | Execution wrapper with config validation |
-| parse_alpine3d_output | s6 | `tools/parse_alpine3d_output.py` | ~250 | Parse ARC grid outputs to CSV time series |
+| convert_forcing_to_smet | s2 | `tools/convert_forcing_to_smet.py` | ~430 | Convert meteo data to SMET format with unit corrections |
+| generate_sno_files | s3 | `tools/generate_sno_files.py` | ~250 | Create initial snow/soil profiles per pixel or per land-use class |
+| run_alpine3d | s5 | `tools/run_alpine3d.py` | ~220 | Execution wrapper with config validation |
+| parse_alpine3d_output | s6 | `tools/parse_alpine3d_output.py` | ~260 | Parse ARC grid outputs to CSV time series |
+
+Options added 2026-08-09 (a full SNOTEL site can now be built with the KI tools
+alone; `t3_runs/build_site.py` is no longer required):
+
+| Tool | Option | Purpose |
+|---|---|---|
+| convert_forcing_to_smet | `--precip-unit in` | inches → mm (NRCS SNOTEL, NWS COOP) |
+| convert_forcing_to_smet | `--daily-disaggregate` | daily records → 24 hourly SMET rows (Alpine3D cannot run on daily forcing) |
+| convert_forcing_to_smet | `--diurnal-amp` | half-amplitude of the synthetic diurnal TA cycle; 6 K continental, 2.5 K maritime (dt_023) |
+| convert_forcing_to_smet | `--precip-undercatch-factor` | multiplicative PSUM correction (dt_020/dt_023) — **re-derive it after dt_024; a value >1.5 on SNOTEL forcing means the differencing bug is still present** |
+| generate_sno_files | `--experiment` / `--naming` / `--landuse-code` | emit the .sno file name Alpine3D actually searches for (dt_025) |
+| generate_sno_files | `--epsg` | write `easting`/`northing`/`epsg` for a projected DEM instead of bogus lat/lon |
+
+Reference end-to-end driver using only these tools:
+`/mnt/disk1/Hydrocraft_server/models/Alpine3D/run_and_score.py`
+(SNOTEL 590 Lone Mountain, MT; resumable at every stage).
 
 ---
 
@@ -317,22 +453,53 @@ fields           = timestamp TA RH VW DW ISWR ILWR PSUM HS
 
 ### SNO (Initial Snow/Soil Profile)
 
+**The layer columns are parsed POSITIONALLY** by
+`snowpack/plugins/SmetIO.cc::readSnowCover` (~L417–457), so the `fields` line
+must contain exactly these 19 tokens, in this order — including `ne`, the
+number of finite elements per layer (use 1). Omitting `ne` shifts every later
+column one position left, so `CDot` is read as the element count and the
+profile initialises with zero elements.
+
+Header key names are looked up literally: it is `SoilAlbedo` (not `SoilAlb`)
+and `CanopyLeafAreaIndex` (not `CanopyLAI`).
+
+Layers are read **BOTTOM → TOP**: the first `[DATA]` row is the deepest soil
+layer. Put the thick layers first and the thin near-surface layers last, and
+make temperature decrease from the first row to the last.
+
+For a projected DEM, use `easting` / `northing` / `epsg` — SMET accepts that
+pair as an alternative to `latitude`/`longitude`. Writing projected metres into
+`latitude`/`longitude` makes MeteoIO reject the profile.
+
 ```
 SMET 1.1 ASCII
 [HEADER]
-station_id       = pixel_001
-latitude         = 46.8
-longitude        = 9.8
+station_id       = 0_0_my_experiment
+easting          = 466550.00
+northing         = 5013550.00
+epsg             = 32612
 altitude         = 2500
 ProfileDate      = 2014-10-01T00:00
 nSnowLayerData   = 0
 nSoilLayerData   = 3
-fields           = timestamp Layer_Thick T Vol_Frac_I Vol_Frac_W Vol_Frac_V Vol_Frac_S Rho_S Conduc_S HeatCapac_S rg rb dd sp mk hr CDot metamo
+SoilAlbedo       = 0.2
+BareSoil_z0      = 0.02
+CanopyHeight     = 0.00
+CanopyLeafAreaIndex = 0.00
+CanopyDirectThroughfall = 1.00
+WindScalingFactor = 1.00
+ErosionLevel     = 0
+TimeCountDeltaHS = 0.000000
+fields           = timestamp Layer_Thick T Vol_Frac_I Vol_Frac_W Vol_Frac_V Vol_Frac_S Rho_S Conduc_S HeatCapac_S rg rb dd sp mk mass_hoar ne CDot metamo
 [DATA]
-2014-10-01T00:00  0.5  280.15  0.0  0.25  0.25  0.50  1800  1.5  900  0.3  0.2  0.0  1.0  0  0.0  0.0  0.0
-2014-10-01T00:00  0.5  281.15  0.0  0.20  0.30  0.50  1800  1.5  900  0.3  0.2  0.0  1.0  0  0.0  0.0  0.0
-2014-10-01T00:00  1.0  282.15  0.0  0.15  0.35  0.50  1800  1.5  900  0.3  0.2  0.0  1.0  0  0.0  0.0  0.0
+2014-10-01T00:00  1.0  282.15  0.0  0.15  0.35  0.50  1800  1.5  900  0.3  0.2  0.0  1.0  0  0.0  1  0.0  0.0
+2014-10-01T00:00  0.5  281.15  0.0  0.20  0.30  0.50  1800  1.5  900  0.3  0.2  0.0  1.0  0  0.0  1  0.0  0.0
+2014-10-01T00:00  0.5  280.15  0.0  0.25  0.25  0.50  1800  1.5  900  0.3  0.2  0.0  1.0  0  0.0  1  0.0  0.0
 ```
+
+`generate_sno_files.py` emits all of the above correctly as of 2026-08-09; use
+`--naming landuse --experiment <EXPERIMENT> --landuse-code <code> --epsg <code>`
+for a single per-class profile, or `--naming pixel` for one file per cell.
 
 ### ARC Grid (DEM, Land Use)
 
@@ -366,7 +533,16 @@ fields = easting northing altitude
 
 Written to `GRID2DPATH` at `GRIDS_DAYS_BETWEEN` intervals.
 
-Filename pattern: `YYYYMMDDHHMI_PARAM.asc` (e.g., `201412231200_SWE.asc`)
+Filename pattern: **`YYYY-MM-DDThh.mm.ss_PARAM.asc`**
+(e.g. `2014-12-23T12.00.00_SWE.asc`) — MeteoIO's ARC2D plugin writes ISO-8601
+dates with `.` substituted for the colons, which are illegal in many
+filesystems. The compact `YYYYMMDDHHMI_PARAM.asc` form documented here before
+2026-06-22 does **not** occur for SWE/HS/RSNO grids; a glob built on it matches
+nothing. (`parse_alpine3d_output.py` accepts both.) Note that some
+Alpine3D-internal grids — e.g. `TSOIL1` — *are* written with the compact stamp,
+so a directory listing can show both conventions side by side.
+
+Grid `NODATA_value` is **−999**, not −9999.
 
 Key output parameters:
 - **HS** — Snow depth (m)
@@ -425,10 +601,23 @@ interpolation to fail silently.
 Format: `YYYY-MM-DDTHH:MM` or `YYYY-MM-DDTHH:MM:SS`. Any deviation (e.g., spaces instead of T)
 causes MeteoIO to fail to read the file.
 
-### 7. Snow file naming convention
+### 7. Snow file naming convention (dt_024)
 
-Initial .sno files must follow the naming pattern expected by Alpine3D. Each grid cell requires
-a matching .sno file named by its pixel coordinates/ID.
+Alpine3D constructs the name it searches for in `SnowpackInterface.cc`
+(~L1258–1260) and reads whichever exists, per pixel:
+
+```
+per-pixel  (tried first)   <ix>_<iy>_<EXPERIMENT>.sno      e.g. 0_0_lone_mountain_mt.sno
+per-class  (fallback)      <EXPERIMENT>_<landuse_code>.sno e.g. lone_mountain_mt_10851.sno
+```
+
+- `EXPERIMENT` is `[Output]::EXPERIMENT` from io.ini — **not** the station id.
+- `ix` is the **column**, `iy` the **row counted from the BOTTOM** (MeteoIO
+  grids are south-up), so a 1×1 domain wants `0_0_<EXPERIMENT>.sno`.
+- `landuse_code` is the rounded value in the land-use grid (e.g. PREVAH 10851).
+
+Any other name means Alpine3D finds no initial profile and aborts. Use
+`generate_sno_files.py --naming {pixel,landuse} --experiment <EXPERIMENT>`.
 
 ### 8. Energy balance workers vs grid size
 

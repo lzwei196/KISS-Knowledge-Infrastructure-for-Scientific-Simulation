@@ -187,18 +187,16 @@ def read_vic_forcing(vic_dir, lat, lon, start_year, end_year):
     if best_file is None:
         return None, "No VIC forcing file found near lat={}, lon={}".format(lat, lon)
 
-    # Read the file
+    # Read the file — VIC forcing column order (CLAUDE.md unit trap):
+    # TEMP(°C), PREC(mm), PRESSURE(kPa), SWDOWN(W/m²), LWDOWN(W/m²), VP(kPa), WIND(m/s)
     df = pd.read_csv(best_file, sep=r"\s+", header=None,
-                     names=["PREC", "TMAX", "TMIN", "WIND", "VP", "SW_DOWN", "LW_DOWN"])
+                     names=["TAIR", "PREC", "PRESSURE", "SW_DOWN", "LW_DOWN", "VP", "WIND"])
 
     # Generate timestamps (3-hourly)
     start_dt = datetime(start_year, 1, 1)
     n_steps = len(df)
     timestamps = [start_dt + timedelta(hours=3 * i) for i in range(n_steps)]
     df["datetime"] = timestamps
-
-    # Compute mean temperature
-    df["TAIR"] = (df["TMAX"] + df["TMIN"]) / 2.0
 
     return df, None
 

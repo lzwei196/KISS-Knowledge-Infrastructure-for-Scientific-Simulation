@@ -1,0 +1,716 @@
+template_version: "3.5"
+
+identity:
+  model_id: "DayCent"
+  scientific_reference_version: "DayCent (Daily Century) ecosystem/biogeochemistry model, DDcentEVI lineage with methanogenesis; CSU/NREL User Manual & Scientific Basis (May 2018, full_05.02.108)"
+  implementation:
+    id: "ddcentevi-rev491"
+    version: "DDcentEVI revision 491 (trunk, 2023-07-10)"
+    provenance: "Fortran 77 + C; CSU/NREL precompiled statically-linked Linux ELF binary (DDcentEVI_rev491) plus DDlist100_rev491 post-processor; no source distributed in public release."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: "Proprietary — CSU/NREL, obtained by request (century@colostate.edu); not open-source"
+  repo_url: "https://www.nrel.colostate.edu/projects/daycent/"
+
+boundary:
+  scope_in:
+    - "Long-term C, N, P, S dynamics for point-scale plant-soil systems"
+    - "Plant production / NPP and above- and below-ground allocation (grassland/crop, forest, savanna producer submodels)"
+    - "Decomposition of litter and soil organic matter (3-pool active/slow/passive, top 20 cm)"
+    - "Daily multi-layer soil water balance and soil temperature"
+    - "Nutrient mineralization"
+    - "N trace-gas fluxes: N2O and NOx from nitrification and denitrification, N2 from denitrification"
+    - "CH4 oxidation in non-saturated soils; methanogenesis/CH4 production in flooded systems (DDcentEVI)"
+    - "Management and disturbance: planting, fertilization, harvest, grazing, fire, cultivation/tillage, irrigation, organic-matter additions"
+  scope_out:
+    - "SOM dynamics simulated only for the top 20 cm; deeper-soil organic matter not represented (EDEPTH used only for erosion C/N/P loss)"
+    - "No closed water balance maintained when simulating a water table"
+    - "Maintenance respiration code not fully validated (recommended set to 0.0)"
+    - "Gridded/regional execution: point/site scale only (1-D soil column at one lat/lon)"
+    - "Forest runs non-functional in the public distribution (zero-byte tree.100); TREE submodel requires a tree.100 obtained separately"
+  spatial: "1-D column"
+  temporal: "daily"
+  closure: "mass-balance"
+  notes: "Mass-balance closure applies to water (snowpack, interception, evaporation, transpiration, runoff, baseflow, leaching; sum of losses bounded by daily PET) and to C/N/P/S through litter and inorganic/organic soil pools. The daily ET path is a demand-side flux (Linacre 1977 from air temperature when only the 7 required weather columns are present; Penman 1948 when solar radiation / extra drivers are supplied), not a closed surface energy budget. Ammonium and CH4 oxidation are resolved only for the top 15 cm; SOM only for the top 20 cm."
+
+inputs:
+  forcing:
+    - category: "meteorology"
+      name: "precipitation"
+      unit: "cm/day"
+      source_kind: "forcing"
+      model_input_format: ".wth column 7"
+      notes: "DayCent weather precipitation is in cm/day (NOT mm/day); feeding mm/day silently inflates the water balance ~10x. (.100 monthly PRECIP is cm/month.)"
+    - category: "meteorology"
+      name: "maximum air temperature"
+      unit: "degC"
+      source_kind: "forcing"
+      model_input_format: ".wth column 5"
+    - category: "meteorology"
+      name: "minimum air temperature"
+      unit: "degC"
+      source_kind: "forcing"
+      model_input_format: ".wth column 6"
+    - category: "meteorology"
+      name: "solar radiation"
+      unit: "langley/day"
+      source_kind: "forcing"
+      model_input_format: ".wth column 8 (optional)"
+      notes: "Read only when usexdrivers/usexdrvrs is enabled in sitepar.in (DDcentEVI infers from column count). When present, PET uses Penman (1948); otherwise the model computes its own radiation and PET from air temperature (Linacre 1977). 1 langley = 41.84 kJ/m2."
+    - category: "meteorology"
+      name: "relative humidity"
+      unit: "%"
+      source_kind: "forcing"
+      model_input_format: ".wth column 9 (optional)"
+      notes: "Optional extra driver; read only when extra-driver weather option is active. Wind speed (mph) is a further optional driver."
+  parameters:
+    - category: "fixed_decomposition"
+      name: "fixed decomposition parameters"
+      unit: "various"
+      source_kind: "default"
+      model_input_format: "fix.100 (Century-100 ASCII)"
+      notes: "Biome-common fixed parameters governing organic-matter decomposition; must match rev 491; not normally adjusted between runs."
+    - category: "site"
+      name: "site climate / soil texture / initial SOM parameters"
+      unit: "various"
+      source_kind: "dataset_lookup"
+      model_input_format: "<site>.100 (Century-100 ASCII fixed-format)"
+      notes: "Monthly PRECIP (cm/month), TMN2M/TMX2M (degC); sitlat/sitlng (decimal deg, +N/+E); sand/silt/clay (fraction 0-1); bulkd (g/cm3); nlayer/nlaypg, drain, basef, stormf, ph; epnfa/epnfs atmospheric N inputs; initial SOM pool sizes som1ci/som2ci/som3ci, strucc, metabc."
+    - category: "soil_profile"
+      name: "soil hydraulic / texture profile by layer"
+      unit: "various"
+      source_kind: "dataset_lookup"
+      model_input_format: "soils.in (13 columns per layer, rev 491)"
+      notes: "Per-layer: top/bottom depth (cm), bulk density (g/cm3), field capacity (vol/vol), wilting point (vol/vol), evap coefficient, root fraction (sums to ~1.0), sand fraction, clay fraction, organic-matter MASS fraction (0-1, not percent), delta_min (~WP*0.9), saturated K (cm/s), pH. rev 491 requires 13 columns (delta_min added vs rev 470); depth structure must match ADEP/EDEPTH in fix.100."
+    - category: "site_physical"
+      name: "DayCent-specific site parameters"
+      unit: "various"
+      source_kind: "user_provided"
+      model_input_format: "sitepar.in (key/value)"
+      notes: "Elevation, slope/aspect, albedo, snow flag, water-table, cloud cover, temperature coefficients, nitrification controls (maxNitAmt), monthly solar-radiation surface transmission, usexdrvrs flag. Retired in DayCentEVI variants that infer the weather option from column count."
+    - category: "crop"
+      name: "crop / grass parameter library"
+      unit: "various"
+      source_kind: "dataset_lookup"
+      model_input_format: "crop.100"
+      notes: "Crop/grass options (e.g. CORN, SOYB, GRASS) referenced by CROP events."
+    - category: "forest"
+      name: "tree / forest parameter library"
+      unit: "various"
+      source_kind: "dataset_lookup"
+      model_input_format: "tree.100"
+      notes: "TREE submodel parameters; zero-byte in the public WoosterExampleLinux distribution so forest runs are non-functional without a tree.100 obtained from CSU/NREL."
+    - category: "event_libraries"
+      name: "management event parameter libraries"
+      unit: "various"
+      source_kind: "dataset_lookup"
+      model_input_format: "cult.100 / fert.100 / fire.100 / graz.100 / harv.100 / irri.100 / omad.100 / trem.100"
+      notes: "Option libraries referenced by the corresponding scheduled CULT/FERT/FIRE/GRAZ/HARV/IRRI/OMAD/tree-removal events."
+  initial_conditions:
+    - category: "soil_carbon"
+      name: "initial SOM pool sizes"
+      unit: "gC/m2"
+      source_kind: "user_provided"
+      model_input_format: "<site>.100 (som1ci/som2ci/som3ci, strucc, metabc) or extended from a prior .bin"
+      notes: "Passive/slow pools take centuries to equilibrate; an equilibrium (ACEQ) spin-up is run first. Initial values left at a desert template give wrong equilibrium SOM for a humid site."
+    - category: "state_handoff"
+      name: "prior-state binary archive"
+      unit: "Century binary"
+      source_kind: "user_provided"
+      model_input_format: "<root>.bin via -e (extend full state) or -i (initial conditions only, resets counters)"
+      notes: "3-stage protocol: equilibrium (-N eq) -> base history (-e eq -N base) -> treatment (-e base -N treat). All stages must share the same <site>.100 or SOM jumps discontinuously."
+  boundary_conditions:
+    - category: "management"
+      name: "timed management & disturbance schedule"
+      unit: "events"
+      source_kind: "user_provided"
+      model_input_format: "<schedule>.sch / .evt (year-in-sequence, day-of-year, event, argument)"
+      notes: "CROP, FERT, HARV, GRAZ, FRST, LAST, SENM, FIRE, TREE, IRRI, OMAD, CULT, ACEQ. ACEQ triggers adaptive-equilibrium termination of the spin-up; LAST ends the growing season; the 'F' weather option (with the .wth filename) is the only valid weather option for the initial block."
+    - category: "control_switch"
+      name: "weather-driver option (usexdrivers)"
+      unit: "flag"
+      source_kind: "user_provided"
+      model_input_format: "sitepar.in usexdrvrs (0/1)"
+      notes: "Selects the 7-column air-temperature PET path (Linacre 1977) vs the extra-driver Penman (1948) path; structural switch over which optional .wth columns are read."
+    - category: "output_control"
+      name: "output channel toggles"
+      unit: "flags"
+      source_kind: "user_provided"
+      model_input_format: "outfiles.in (28 channels, 0/1 + filename)"
+      notes: "Selects which .out/.csv files are written; presets no_outfiles.in (equilibrium), few_outfiles.in, full outfiles.in. Controls observability of model output, not the physics."
+    - category: "scenario_scaling"
+      name: "optional climate/management scaling"
+      unit: "multipliers"
+      source_kind: "user_provided"
+      model_input_format: "nscale.dat / omadscale.dat / phscale.dat / tmaxscale.dat / tminscale.dat / precscale.dat"
+      notes: "Optional scenario-adjustment multipliers applied to N inputs, organic amendments, pH, and climate drivers."
+
+processes:
+  modules:
+    - name: "Multi-layer soil water balance"
+      role: "process_solver"
+      brief: "1-D daily flow of water through canopy, litter, and explicit soil layers (watrflow.c + h2oflux.c, leachdly.c, watrbal.c, swpotentl.c, setasmos.c, snowmodel.c, calcpet.c); infiltration vs runoff partitioning governed by hours_rain; snow accumulates when Tmin<=1C, melts when Tmax>0C; bounds losses by daily PET."
+    - name: "Parton-Hartman soil temperature solver"
+      role: "process_solver"
+      brief: "Per-layer soil temperature (soiltemp.c + tgmodel.c, diffusiv.c) driving decomposition and N-transformation rates."
+    - name: "Century 5-pool SOM decomposition"
+      role: "process_solver"
+      brief: "Active (SOM1C surface+soil), slow (SOM2C), passive (SOM3C soil-only) pools plus structural/metabolic litter and dead-wood pools (pschem.f + declig.f, mnracc.f, calcdefac.c); decomposition modulated by the combined T+moisture factor (defac) and anaerobic multiplier (anerb); top 20 cm only."
+    - name: "Plant production submodel (grass/crop)"
+      role: "process_solver"
+      brief: "Above/below-ground C production with water and temperature stress and CO2 effect (potcrp.f + lacalc.f, leafa.f, gpdf.f, co2eff.f); crop/grass parameterised via crop.100."
+    - name: "TREE submodel (forest production)"
+      role: "optional_module"
+      applicability: "forest systems only; non-functional in public distribution (zero-byte tree.100)"
+      brief: "Forest plant production via tree.100 (trees.f + initprod.f, fracis.f, respir.f)."
+    - name: "Nitrogen trace-gas submodel"
+      role: "process_solver"
+      brief: "Nitrification- and denitrification-driven N2O, NO/NOx, and N2 (denitrify.c + nox_pulse.c, thawpulse.c); called daily after decomposition because mineralized N drives the fluxes; nitrification limited by low WFPS (moisture) and high WFPS (O2), increases with temperature, decreases with acidity, capped at 15% of soil NH4+/day (maxNitAmt)."
+    - name: "Methane submodel"
+      role: "process_solver"
+      brief: "CH4 oxidation in non-saturated soils (top 15 cm, function of soil T, water content, porosity, field capacity) and methanogenesis/CH4 production in flooded systems (methane.c); oxidation assumes downward atmospheric diffusion is the only CH4 source; CH4 production co-generates an equal C-equivalent of CO2 (factor 0.5)."
+    - name: "Nutrient mineralization & N cycle"
+      role: "process_solver"
+      brief: "Mineralization of N/P/S, NH3 volatilization and urea hydrolysis (mnracc.f + nh3volat.c, ureahydro.c) maintaining the mineral-N pool (aminrl) consumed by the trace-gas submodel."
+    - name: "Management & disturbance application"
+      role: "driver"
+      brief: "Applies scheduled CROP/FERT/HARV/GRAZ/FIRE/CULT/IRRI/OMAD events (csched.f + crfert.f, cutrtn.f, frem.f, omadscale.f), perturbing plant pools, mineral N, and SOM inputs."
+    - name: "ACEQ adaptive equilibrium control"
+      role: "integrator"
+      brief: "Monitors SOM-pool drift each block during spin-up and terminates when pools converge (~750-1000 simulated years); ensures slow/passive pools reach steady state before base history."
+  internal_edges:
+    - from: "Inputs"
+      to: "Multi-layer soil water balance"
+      kind: "consumes_input"
+      brief: "Daily precipitation and temperature from .wth drive the water balance."
+    - from: "Multi-layer soil water balance"
+      to: "Parton-Hartman soil temperature solver"
+      kind: "invokes"
+      brief: "Soil water state and the thermal solver are evaluated together each daily step."
+    - from: "Multi-layer soil water balance"
+      to: "per-layer soil water content (asmos)"
+      kind: "writes_state"
+      brief: "Updates per-layer volumetric water content / WFPS state."
+    - from: "Parton-Hartman soil temperature solver"
+      to: "per-layer soil temperature (stemp)"
+      kind: "writes_state"
+      brief: "Updates per-layer soil temperature state."
+    - from: "Parton-Hartman soil temperature solver"
+      to: "Century 5-pool SOM decomposition"
+      kind: "invokes"
+      brief: "Soil temperature modulates the decomposition factor (defac)."
+    - from: "Multi-layer soil water balance"
+      to: "Plant production submodel (grass/crop)"
+      kind: "invokes"
+      brief: "Soil-water stress (via root-fraction uptake per layer) limits plant growth."
+    - from: "Multi-layer soil water balance"
+      to: "Century 5-pool SOM decomposition"
+      kind: "invokes"
+      brief: "Soil moisture (WFPS/defac) co-controls decomposition rate."
+    - from: "Plant production submodel (grass/crop)"
+      to: "Century 5-pool SOM decomposition"
+      kind: "invokes"
+      brief: "Residue and root C inputs (cinput, accrst) feed the litter and SOM pools."
+    - from: "Plant production submodel (grass/crop)"
+      to: "aglivc (aboveground live C)"
+      kind: "writes_state"
+      brief: "Updates above/below-ground live and standing-dead C."
+    - from: "Century 5-pool SOM decomposition"
+      to: "somsc"
+      kind: "writes_state"
+      brief: "Updates active/slow/passive/structural/metabolic SOM C."
+    - from: "Nutrient mineralization & N cycle"
+      to: "aminrl / MINERL (mineral N,P,S available before plant uptake)"
+      kind: "writes_state"
+      brief: "Mineralization updates plant-available mineral N (aminrl)."
+    - from: "Century 5-pool SOM decomposition"
+      to: "Nutrient mineralization & N cycle"
+      kind: "invokes"
+      brief: "Decomposition releases mineralized N consumed by the N cycle."
+    - from: "Nitrogen trace-gas submodel"
+      to: "aminrl / MINERL (mineral N,P,S available before plant uptake)"
+      kind: "reads_state"
+      brief: "Reads soil mineral N (NH4+, NO3-) supplied by mineralization."
+    - from: "Nitrogen trace-gas submodel"
+      to: "per-layer soil temperature (stemp)"
+      kind: "reads_state"
+      brief: "Reads soil T and WFPS controlling nitrification/denitrification partitioning."
+    - from: "Nitrogen trace-gas submodel"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "Emits N2O, NO, N2 fluxes (nflux.out)."
+    - from: "Methane submodel"
+      to: "per-layer soil water content (asmos)"
+      kind: "reads_state"
+      brief: "Reads water content, porosity, and temperature for CH4 oxidation/production."
+    - from: "Methane submodel"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "Emits CH4 oxidation/production (methane.out)."
+    - from: "Management & disturbance application"
+      to: "Plant production submodel (grass/crop)"
+      kind: "invokes"
+      brief: "CROP/HARV/GRAZ planting and biomass-removal events trigger the plant production submodel."
+    - from: "Management & disturbance application"
+      to: "Nutrient mineralization & N cycle"
+      kind: "invokes"
+      brief: "FERT/OMAD events feed mineral and organic N into the mineralization/N-cycle module."
+    - from: "Management & disturbance application"
+      to: "aglivc (aboveground live C)"
+      kind: "writes_state"
+      brief: "Harvest/grazing/fire remove biomass; planting initializes a crop."
+    - from: "Management & disturbance application"
+      to: "aminrl / MINERL (mineral N,P,S available before plant uptake)"
+      kind: "writes_state"
+      brief: "Fertilizer and organic amendments add mineral and organic N."
+    - from: "Century 5-pool SOM decomposition"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "Emits SOM C (somsc) and heterotrophic CO2 respiration (summary.out)."
+    - from: "ACEQ adaptive equilibrium control"
+      to: "Century 5-pool SOM decomposition"
+      kind: "invokes"
+      brief: "Drives repeated spin-up blocks of the SOM decomposition solver until slow/passive pools converge."
+    - from: "ACEQ adaptive equilibrium control"
+      to: "somsc"
+      kind: "reads_state"
+      brief: "Monitors SOM-pool drift to decide spin-up termination."
+
+states:
+  variables:
+    - name: "somsc"
+      unit: "gC/m2"
+      role: "prognostic"
+    - name: "somtc"
+      unit: "gC/m2"
+      role: "prognostic"
+    - name: "som1c (active, surface+soil)"
+      unit: "gC/m2"
+      role: "prognostic"
+    - name: "som2c (slow)"
+      unit: "gC/m2"
+      role: "prognostic"
+    - name: "som3c (passive, soil)"
+      unit: "gC/m2"
+      role: "prognostic"
+    - name: "strucc (structural litter, surface+below)"
+      unit: "gC/m2"
+      role: "prognostic"
+    - name: "metabc (metabolic litter, surface+below)"
+      unit: "gC/m2"
+      role: "prognostic"
+    - name: "WOOD1C/WOOD2C/WOOD3C (dead wood)"
+      unit: "gC/m2"
+      role: "prognostic"
+    - name: "aglivc (aboveground live C)"
+      unit: "gC/m2"
+      role: "prognostic"
+    - name: "bglivcj/bglivcm (belowground live C juvenile/mature)"
+      unit: "gC/m2"
+      role: "prognostic"
+    - name: "stdedc (standing dead C)"
+      unit: "gC/m2"
+      role: "prognostic"
+    - name: "aminrl / MINERL (mineral N,P,S available before plant uptake)"
+      unit: "g/m2"
+      role: "prognostic"
+    - name: "NH4+ (ammonium, top 15 cm) / NO3- (nitrate, full profile)"
+      unit: "ppm or g/m2"
+      role: "prognostic"
+    - name: "per-layer soil water content (asmos)"
+      unit: "m3/m3 or cm"
+      role: "prognostic"
+    - name: "per-layer soil temperature (stemp)"
+      unit: "degC"
+      role: "prognostic"
+    - name: "snowpack (SWE)"
+      unit: "cm"
+      role: "prognostic"
+    - name: "anerb (anaerobic-conditions decomposition multiplier)"
+      unit: "dimensionless"
+      role: "diagnostic"
+    - name: "adefac (running annual mean of the T+moisture decomposition factor)"
+      unit: "dimensionless"
+      role: "accumulator"
+    - name: "cinput (annual C inputs)"
+      unit: "gC/m2/yr"
+      role: "accumulator"
+    - name: "CUM-N2O / CUM-NO (annual cumulative trace-gas)"
+      unit: "gN/ha/yr"
+      role: "accumulator"
+  provenance: "populated"
+
+outputs:
+  - var: "n2o_emission"
+    validation_rank: 4
+    unit: "gN/m2/day (model nflux.out reports g N ha-1 d-1)"
+    description: "Soil N2O flux, sum of nitrification and denitrification pathways; the USDA/EPA/IPCC reference output for cropland N2O inventory."
+    emitted_in: "nflux.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["N2O is pulse-dominated after fertilization/rain; daily timing and chamber-flux upscaling drive large scatter; default parameters are known to underestimate mean daily N2O strongly until calibrated."]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["National/regional N2O inventory aggregates carry management/technology signal beyond the weather-driven model."]
+      detrending_options: ["none", "linear_residual"]
+  - var: "no_emission"
+    validation_rank: 5
+    unit: "gN/m2/day (nflux.out g N ha-1 d-1)"
+    description: "Soil nitric-oxide (NO/NOx) flux from nitrification/denitrification."
+    emitted_in: "nflux.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Pulse-dominated; sparse field observation."]
+      detrending_options: ["none"]
+  - var: "ch4_flux"
+    validation_rank: 6
+    unit: "gC/m2/day"
+    description: "CH4 oxidation (upland) and methanogenesis/CH4 production (flooded/rice, DDcentEVI), including plant- and bubble-mediated emission components."
+    emitted_in: "methane.out / summary.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Upland CH4 oxidation flux is small; oxidation assumes atmospheric diffusion is the only CH4 source; large signal only for paddy/wetland systems."]
+      detrending_options: ["none"]
+  - var: "co2_heterotrophic"
+    validation_rank: 7
+    unit: "gC/m2/day"
+    description: "Soil heterotrophic (decomposition) CO2 respiration."
+    emitted_in: "summary.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Heterotrophic component only; partitioning Rh from total soil respiration in observations is uncertain."]
+      detrending_options: ["none"]
+  - var: "cprodc (daily net C production, GPP proxy)"
+    validation_rank: 1
+    unit: "gC/m2/day"
+    description: "Daily net C production reported in summary.out; the closest DayCent variable to daily GPP for cropland/grassland (an approximation, not true gross primary productivity)."
+    emitted_in: "summary.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["cprodc is a net-production proxy, not gross GPP; the .lis agcprd+bgcprd pathway is annualised and not a daily GPP substitute."]
+      detrending_options: ["none"]
+  - var: "nee"
+    validation_rank: 8
+    unit: "gC/m2/day"
+    description: "Net ecosystem exchange of CO2 (DayCent sign: positive = uptake)."
+    emitted_in: "summary.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["DayCent sign convention is opposite to the FLUXNET convention; sign must be flipped before metric computation."]
+      detrending_options: ["none"]
+  - var: "reco"
+    validation_rank: 9
+    unit: "gC/m2/day"
+    description: "Ecosystem respiration (autotrophic + heterotrophic)."
+    emitted_in: "summary.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "aboveground_biomass (aglivc)"
+    validation_rank: 10
+    unit: "gC/m2"
+    description: "Aboveground live carbon."
+    emitted_in: "bio.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Reported as carbon; observed biomass usually dry matter (multiply by ~1/0.45)."]
+      detrending_options: ["none"]
+  - var: "crop_yield (cgrain)"
+    validation_rank: 11
+    unit: "gC/m2"
+    description: "Economic grain/tuber yield carbon at harvest."
+    emitted_in: "harvest.csv"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "pbias"
+          caveats: ["Convert grain C to dry-matter yield (kg DM/ha ~ cgrain x10/0.45 at 45% C)."]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["National/regional yield aggregates carry a technology trend a weather-driven model cannot reproduce; compare detrended."]
+      detrending_options: ["none", "linear_residual", "decadal_mean"]
+  - var: "soil_organic_carbon (somsc)"
+    validation_rank: 2
+    unit: "gC/m2"
+    description: "Total soil organic-matter carbon (top 20 cm); the headline state variable and primary validation target."
+    emitted_in: "<root>.lis (via DDlist100) / soilc.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "pbias"
+          caveats: ["Slow/passive pools take centuries to equilibrate; a converged ACEQ spin-up is required before treatment comparison; equilibrated somsc ~5,000-15,000 gC/m2 for a temperate humid site."]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Match measured 0-20 cm SOC stock at a single sampling date."]
+      detrending_options: ["none"]
+  - var: "soil_moisture_layers"
+    validation_rank: 12
+    unit: "m3/m3"
+    description: "Per-layer volumetric soil water content."
+    emitted_in: "vswc.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "r"
+          caveats: ["Match the model layer to the sensor depth."]
+      detrending_options: ["none"]
+  - var: "soil_temperature_layers"
+    validation_rank: 13
+    unit: "degC"
+    description: "Per-layer average soil temperature."
+    emitted_in: "soiltavg.out"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Match the model layer to the sensor depth."]
+      detrending_options: ["none"]
+  - var: "evapotranspiration / water_balance"
+    validation_rank: 3
+    unit: "cm/day"
+    description: "Daily actual ET (evaporation + transpiration) plus runoff, drainage, and other water-balance components."
+    emitted_in: "watrbal.out / summary.out (aetdly)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["ET is a demand-side estimate (Linacre or Penman PET path), not an energy-balance LE; convert cm/day vs mm/day before comparison."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "soil pH (input)"
+      to: "n2o_emission"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["fitton2014_dailydaycent_n2o_input_sensitivity"]
+    - from: "N fertilizer rate (management)"
+      to: "n2o_emission"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: management
+      citations: ["delgrosso2009_daycent_global_ghg", "rafique2013_daycent_n2o_inverse_calibration"]
+    - from: "denitrification / nitrification rate parameters"
+      to: "n2o_emission"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["rafique2013_daycent_n2o_inverse_calibration", "necpalova2015_daycent_calibration_sensitivity"]
+    - from: "maximum decomposition rate parameters (DEC*)"
+      to: "soil_organic_carbon (somsc)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["wang2023_daycent_cute_gsa"]
+    - from: "humus/biomass C-fraction initialization parameters (FHP, FBM)"
+      to: "soil_organic_carbon (somsc)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["wang2023_daycent_cute_gsa"]
+    - from: "soil water content (state/input)"
+      to: "n2o_emission"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      citations: ["necpalova2015_daycent_calibration_sensitivity", "fitton2014_dailydaycent_n2o_input_sensitivity"]
+    - from: "soil temperature (state)"
+      to: "soil_organic_carbon (somsc)"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      citations: ["necpalova2015_daycent_calibration_sensitivity"]
+    - from: "crop growth / production parameters"
+      to: "crop_yield (cgrain)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["necpalova2015_daycent_calibration_sensitivity"]
+    - from: "tillage / management intensity"
+      to: "n2o_emission"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: management
+      citations: ["delgrosso2009_daycent_global_ghg"]
+  citation_index:
+    fitton2014_dailydaycent_n2o_input_sensitivity:
+      short_citation: "Fitton et al. 2014"
+      doi: "10.1007/s10705-014-9622-0"
+      note: "DailyDayCent input-uncertainty sensitivity at a UK cropland site; soil pH dominated N2O output uncertainty."
+    delgrosso2009_daycent_global_ghg:
+      short_citation: "Del Grosso et al. 2009"
+      doi: "10.1016/j.gloplacha.2008.12.006"
+      note: "Global DAYCENT GHG analysis; N fertilizer and management (tillage, land conversion) drive soil N2O and net GHG. Application/mitigation study, not a formal GSA — supports the fertilizer-rate driver edge qualitatively only."
+    rafique2013_daycent_n2o_inverse_calibration:
+      short_citation: "Rafique et al. 2013"
+      doi: "10.1007/s11270-013-1677-z"
+      note: "PEST inverse-modeling calibration of cropland N2O; sensitivity analysis of N-gas submodel parameters (not of the fertilizer-rate management input); default underestimates daily N2O by 98%."
+    necpalova2015_daycent_calibration_sensitivity:
+      short_citation: "Necpalova et al. 2015"
+      doi: "10.1016/j.envsoft.2014.12.011"
+      note: "PEST inverse modeling of 67 DayCent parameters; identifiability analysis; soil temperature and soil water observations most informative."
+    wang2023_daycent_cute_gsa:
+      short_citation: "Wang et al. 2023 (DayCent-CUTE)"
+      doi: "10.1016/j.envsoft.2023.105832"
+      note: "Morris/Sobol global sensitivity of >50 DayCent parameters over 30 experiments; DEC* decomposition-rate and FHP/FBM C-fraction parameters most influential on SOC."
+
+safety:
+  hazards:
+    - id: "weather_precip_mm_not_cm"
+      kind: "weather_file_semantic"
+      description: ".wth column 7 precipitation must be cm/day; mm/day input runs silently with a ~10x-inflated water balance (soil saturates daily, runoff >100 cm/yr, SOM accumulates uncontrollably). (dt_001)"
+      severity: "silent"
+    - id: "weather_temp_kelvin"
+      kind: "weather_file_semantic"
+      description: ".wth Tmin/Tmax (cols 5/6) must be degC; Kelvin input makes all temperature-driven rates wrong (Tmin/Tmax ~270). (dt_002)"
+      severity: "degraded"
+    - id: "weather_tmin_tmax_swapped"
+      kind: "weather_file_semantic"
+      description: ".wth columns 5/6 swapped yields Tmin > Tmax and biased growth. (dt_003)"
+      severity: "degraded"
+    - id: "weather_row_malformed"
+      kind: "weather_file_semantic"
+      description: "A .wth row with wrong field count or non-numeric/locale-decimal content aborts with 'unable to read line N of weather file'; leap years require 366 rows. (dt_004)"
+      severity: "fatal"
+    - id: "weather_does_not_span_period"
+      kind: "weather_file_semantic"
+      description: ".wth not spanning the schedule period causes DayCent to silently recycle climate years. (dt_013)"
+      severity: "silent"
+    - id: "soils_missing_delta_min_column"
+      kind: "soil_semantic"
+      description: "soils.in written with 12 columns instead of rev-491's 13 (missing delta_min) shifts Ksat/pH into wrong slots, crashing with 'swclimit[1] is negative'. (dt_026)"
+      severity: "fatal"
+    - id: "soils_om_percent_not_fraction"
+      kind: "soil_semantic"
+      description: "soils.in column 10 organic matter must be mass fraction 0-1; percent values (e.g. 0.86 instead of 0.0086) run without error but wildly overestimate SOM decomposition. (dt_027)"
+      severity: "silent"
+    - id: "soils_bulk_density_units"
+      kind: "soil_semantic"
+      description: "soils.in column 3 bulk density must be g/cm3; kg/m3 values (~1300) distort hydrology. (dt_006)"
+      severity: "degraded"
+    - id: "soils_root_fraction_zero"
+      kind: "soil_semantic"
+      description: "soils.in root-fraction column (col 7) summing to 0 leaves no roots to extract water; ANPP is 0 every year. (dt_007)"
+      severity: "fatal"
+    - id: "soils_fc_le_wp"
+      kind: "soil_semantic"
+      description: "Wilting point >= field capacity (cols 4/5 swapped or absurd ROSETTA output) is a water-balance error. (dt_008)"
+      severity: "fatal"
+    - id: "site_100_not_found"
+      kind: "control_semantic"
+      description: "Schedule names a <site>.100 absent from the run directory or library path; fatal 'cannot find <site>.100' at initialization. (dt_005)"
+      severity: "fatal"
+    - id: "site_initial_som_desert_template"
+      kind: "initial_condition_semantic"
+      description: "Initial SOM pools (som1ci/som2ci/som3ci) left at a desert template give wrong equilibrium SOM (e.g. 1500 gC/m2) for a humid site. (dt_010)"
+      severity: "degraded"
+    - id: "aceq_nonconvergence"
+      kind: "numerical_instability"
+      description: "Equilibrium spin-up reaches the maximum block count without converging when the climate cycle is too short/untrended or soils are unrealistic. (dt_009)"
+      severity: "degraded"
+    - id: "negative_pool_abort"
+      kind: "numerical_instability"
+      description: "A SOM/N pool going negative (epnfa/epnfs atmospheric N too low, or fix.100 mismatched with site.100) aborts with 'Negative pool detected'. (dt_019)"
+      severity: "fatal"
+    - id: "omad_event_name_missing"
+      kind: "control_semantic"
+      description: "An OMAD schedule event referencing a name absent from omad.100 adds zero amendment with no warning, over-depleting SOC. (dt_020)"
+      severity: "silent"
+    - id: "binary_handoff_order"
+      kind: "control_semantic"
+      description: "Treatment run before base history exists, or -e basename mismatch, aborts with 'cannot read binary file base'; all stages must share the same <site>.100 or SOM jumps discontinuously. (dt_011)"
+      severity: "fatal"
+    - id: "ddlist_revision_mismatch"
+      kind: "parser_semantic"
+      description: "Extracting a .bin with a DDlist100 revision different from the DDcentEVI that wrote it (binary format not stable across revisions) segfaults or fails to open. (dt_017)"
+      severity: "fatal"
+    - id: "varlist_misspelled_silent_drop"
+      kind: "parser_semantic"
+      description: "DDlist100 silently drops misspelled variable names from the varlist, producing a .lis with fewer columns than requested. (dt_014)"
+      severity: "silent"
+    - id: "calendar_decimal_year_mismatch"
+      kind: "parser_semantic"
+      description: "Calendar-year obs matched against decimal-year simulated time picks wrong rows; metric collapses (pearson_r ~0 with large RMSE). (dt_016)"
+      severity: "silent"
+  validation_limits:
+    - "Point/site scale only; no native gridded/regional or distributed-stream routing."
+    - "SOM dynamics parameterized for the top 20 cm only; ammonium and CH4 oxidation for the top 15 cm; deeper soils require manual re-initialization."
+    - "No closed water balance maintained when a water table is simulated."
+    - "Maintenance respiration code not fully validated (recommended set to 0.0)."
+    - "Generalized (uncalibrated) parameters likely give poor performance for some site-treatment combinations; default parameters are known to underestimate daily N2O strongly until calibrated."
+    - "Forest systems non-functional in the public distribution (zero-byte tree.100); use grassland as an explicitly-flagged coarse surrogate, do not fabricate tree parameters."
+    - "At most 15% of soil NH4+ can be nitrified per day (maxNitAmt)."
+  warnings:
+    - "Recommended verification order: soil water content -> crop yields/plant growth -> soil organic C -> N loss vectors (Del Grosso et al. 2011 calibration procedure)."
+    - "Scheduling a new CROP while the previous crop still has living biomass assigns that biomass to the new crop, causing large yield/C/N discrepancies if HARV was omitted."
+    - "Month-long events (grazing, irrigation, cultivation): a second event of the same type within a month cancels/replaces the first."
+    - "DayCent NEE sign is positive=uptake (opposite to FLUXNET); flip sign before metric computation."
+    - "Daily 'GPP' is best read as cprodc from summary.out; the .lis agcprd+bgcprd pathway is annualised, not a daily GPP variable."
+  assumptions:
+    - statement: "Point-scale 1-D vertical soil column at a single lat/lon; no lateral or gridded transport."
+      scope: "model geometry"
+      source: "DayCent User Manual & Scientific Basis (NREL/CSU, 2018), Overview and Water Flow Submodel sections"
+      status: "adopted"
+    - statement: "Mass-balance closure for water (losses bounded by daily PET) and for C/N/P/S pools; daily ET is a demand-side PET flux, not a closed surface energy budget."
+      scope: "conservation / closure"
+      source: "DayCent Scientific Basis section 2.1 (Water flow submodel), manual page 68"
+      status: "adopted"
+    - statement: "SOM and its decomposition apply to the top 20 cm only; NH4+ and CH4 oxidation to the top 15 cm; deeper soil organic matter is not represented."
+      scope: "vertical domain of the SOM and trace-gas submodels"
+      source: "DayCent Scientific Basis sections 3.1.1, 3.5, 3.6.2, manual pages 78/104/112"
+      status: "adopted"
+    - statement: "The weather-driver option is inferred from the .wth column count (DayCentEVI behavior) rather than read from a sitepar.in usexdrivers flag; with only the 7 required columns PET follows the air-temperature path (Linacre 1977), and when optional drivers (solar radiation, RH, wind) are supplied PET switches to Penman (1948)."
+      scope: "weather-option / PET method-code interpretation"
+      source: "DayCent manual weather-option description (Table 3, p.27; Water Flow Submodel, p.68) and the DDcentEVI binary I/O contract (initsite_tg.c symbols)"
+      status: "adopted"

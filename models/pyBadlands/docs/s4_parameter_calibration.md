@@ -71,20 +71,53 @@ calibrated with different m, n combinations.
 | Soft sedimentary | 0.01 – 0.1 | 0.05 – 0.5 |
 | Unconsolidated | 0.1 – 1.0 | 0.5 – 5.0 |
 
-### 3. Calibration Strategy
+### 3. Relief-Dependent Regime Selection
+
+**CRITICAL INSIGHT** — validated on two real sites (Pearl River USA, Modder River
+South Africa): the dominant erosion process depends on landscape relief.
+
+**Low-relief landscapes (< 200 m relief, coastal plains):**
+- Hillslope diffusion (caerial) controls denudation, NOT Kd
+- Kd spanning 1000× (5e-7 to 5e-4) had zero effect on denudation when caerial
+  was low (all gave 1.2 mm/kyr on a synthetic dome sweep)
+- caerial = 0.5 m²/yr brought denudation from 1.2 to 31.7 mm/kyr regardless of Kd
+- SPL term E = Kd·A^m·S^n is tiny because S is tiny on flat terrain
+- **Calibrate caerial first, then Kd is secondary**
+
+**High-relief landscapes (> 500 m relief, mountains/plateaus):**
+- SPL erodibility (Kd) controls denudation
+- caerial has minor effect relative to fluvial incision
+- Kd sweep: 3e-7→3.4, 8e-7→9.2, 1e-6→12.5, 5e-6→123 mm/kyr (Modder River)
+- **Calibrate Kd first, then caerial for hillslope tuning**
+
+### 4. Validated Real-Site Parameters
+
+| Site | Relief | Climate | Lithology | Kd | caerial | cmarine | Denu (model) | Denu (obs) | PBIAS |
+|------|--------|---------|-----------|-----|---------|---------|-------------|-----------|-------|
+| Pearl River, MS/LA, USA | 200 m | Humid 1.5 m/yr | Unconsolidated alluvium | 5e-5 | **0.5** | 1.0 | 21.5 mm/kyr | 21.5 mm/kyr | 0.0% |
+| Modder River, Free State, ZA | 1042 m | Semi-arid 0.5 m/yr | Karoo sandstone | **8e-7** | 0.005 | 0.01 | 12.8 mm/kyr | 5–20 mm/kyr | +2.1% |
+
+Obs sources: Pearl River — USGS WQP SSC at stations 02489500 (86 obs) and 02492000
+(291 obs). Modder River — published 10Be cosmogenic denudation (Codilean et al. 2014).
+
+### 5. Calibration Strategy
 
 **Step 1**: Set m=0.5, n=1.0 (standard SPL).
 
-**Step 2**: Estimate Kd from published denudation rates for the study area lithology.
+**Step 2**: Determine relief regime (low < 200 m vs high > 500 m).
 
-**Step 3**: Run a short simulation (10% of total time) and check:
+**Step 3**: For low-relief — set caerial by lithology (unconsolidated: 0.5, soft
+sedimentary: 0.1, hard: 0.01). Set Kd to a reasonable value (5e-5 for alluvium).
+
+**Step 3 alt**: For high-relief — estimate Kd from published denudation rates.
+Start with the lithology table in Section 1. Set caerial low (0.005–0.02).
+
+**Step 4**: Run a short simulation (10% of total time) and check:
 - Is the landscape eroding too fast / too slow?
 - Does relief increase or decrease?
 - Are hillslopes realistic?
 
-**Step 4**: Adjust Kd by factors of 2–10 (it spans many orders of magnitude).
-
-**Step 5**: Adjust caerial to tune hillslope curvature and ridge-valley relief.
+**Step 5**: Adjust the dominant parameter by factors of 2–10.
 
 **Step 6**: If using multiple lithologies, set up `<erocoeff>` with layer-specific Kd.
 

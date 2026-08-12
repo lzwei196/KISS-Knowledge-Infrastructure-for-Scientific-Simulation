@@ -117,7 +117,9 @@ def process(output_path, output_format, output_dir):
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    with open(output_path, "r") as f:
+    # errors="replace": CRHM's units row uses a Latin-1 degree sign for hru_t
+    # ("(ºC)" = byte 0xBA), which crashes a strict-UTF-8 read.
+    with open(output_path, "r", encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
 
     if len(lines) < 3:

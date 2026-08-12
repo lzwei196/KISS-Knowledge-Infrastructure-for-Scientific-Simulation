@@ -1,0 +1,673 @@
+template_version: "3.5"
+
+identity:
+  model_id: "Elmer-Ice"
+  scientific_reference_version: "Elmer/Ice 9.0 (Gagliardini et al. 2013 full-Stokes baseline; ReleaseNotes 9.0); SSA marine-ice-sheet configuration"
+  implementation:
+    id: "elmer-ice"
+    version: "Elmer/Ice 9.0 (Elmer FEM)"
+    provenance: "Fortran 90 (with C/C++ components); CSC-IT Center for Science Elmer/Ice glaciological add-on to the Elmer FEM suite; ElmerSolver binary driven by SIF input files."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: "GPL-2.0-or-later AND LGPL-2.1-or-later"
+  repo_url: "https://github.com/ElmerCSC/elmerfem"
+
+boundary:
+  scope_in:
+    - "Ice flow velocity and pressure (Full-Stokes momentum balance, Glen's flow law rheology)"
+    - "Shallow Shelf/Stream Approximation (SSA) and Shallow Ice Approximation (SIA) asymptotic flow"
+    - "Ice thickness evolution (mass conservation) under surface and basal mass balance forcing"
+    - "Upper and lower free-surface evolution and hydrostatic flotation"
+    - "Grounding-line dynamics (contact/flotation problem) and grounded/floating mask"
+    - "Thermo-mechanically coupled temperature/enthalpy field (polythermal ice)"
+    - "Basal sliding via friction laws (linear, Weertman, Budd, regularized-Coulomb)"
+    - "Subglacial hydrology (GlaDS) producing basal effective pressure"
+    - "Anisotropic fabric evolution; stress/strain-rate/ice-age diagnostics"
+    - "Calving (level-set / crevasse-depth) for marine-terminating glaciers"
+    - "Adjoint/inverse methods for friction and viscosity parameter estimation"
+  scope_out:
+    - "Not a coupled atmosphere/climate model — surface mass balance and geothermal heat flux are supplied as external forcing"
+    - "Ocean circulation not simulated — sub-shelf/basal melt supplied as forcing"
+  spatial: "3-D"
+  temporal: "annual"
+  closure: "both"
+  notes: "Solves full-Stokes mass + momentum conservation for incompressible ice coupled to free-surface kinematic equations and an energy/temperature balance; the SSA/SIA configurations are depth-integrated asymptotic reductions of the same conservation laws. Energy-balance closure applies through the temperature/enthalpy solver; mass-balance closure is enforced by the ThicknessSolver. The model uses a non-SI MPa-m-a internal unit system rather than raw SI, so coupling values across solvers assume that unit system. The temporal grain is annual for the default SSA ice-sheet configuration (glaciology runs typically step at 1 year = 31556926 s); the marine-terminating calving sub-configuration runs at sub-daily steps (0.25-2 days, i.e. event-to-daily grain), so the annual label reflects the default ice-sheet config rather than the calving config."
+
+inputs:
+  forcing:
+    - category: forcing
+      name: "Surface Mass Balance (SMB)"
+      unit: "m/a ice equivalent (positive = accumulation, negative = ablation)"
+      source_kind: forcing
+      model_input_format: "Top Surface Accumulation keyword / acabf element variable consumed by ThicknessSolver"
+      notes: "Sign convention is positive=accumulation; ablation must be negative or the ice grows everywhere with no ablation zone."
+    - category: forcing
+      name: "Surface Temperature"
+      unit: "deg C (SIF boundary condition); Kelvin internally for Arrhenius rate factor"
+      source_kind: forcing
+      model_input_format: "Temperature boundary-condition value on the upper surface"
+      notes: "SIF boundary conditions are specified in Celsius while the Arrhenius viscosity law uses Kelvin; consistent reference temperature required."
+    - category: forcing
+      name: "Basal / sub-shelf Melt Rate"
+      unit: "m/a ice equivalent (positive = melting)"
+      source_kind: forcing
+      model_input_format: "Bottom Surface Accumulation keyword / libmassbf element variable consumed by ThicknessSolver"
+    - category: forcing
+      name: "Geothermal Heat Flux (GHF)"
+      unit: "W/m2"
+      source_kind: forcing
+      model_input_format: "Heat Flux boundary condition on the basal surface (feeds Temperature/Enthalpy solver)"
+  parameters:
+    - category: parameter
+      name: "Basal friction coefficient (beta / Slip Coefficient)"
+      unit: "depends on friction law (Linear Pa·s/m; Weertman Pa·(m/a)^(-1/n); regularized-Coulomb dimensionless ~0.1-0.5)"
+      source_kind: calibrated
+      model_input_format: "SSA Friction Parameter; friction law selected by 'SSA Friction Law' (linear/weertman/budd/coulomb/regularized coulomb)"
+      notes: "Friction-law string maps to internal codes (LINEAR=1, WEERTMAN=2, REG_COULOMB_GAG=3, REG_COULOMB_JOU=4, BUDD=5); Weertman with exponent m=1 silently collapses to linear."
+    - category: parameter
+      name: "Glen's flow-law exponent n"
+      unit: "dimensionless (typically n=3)"
+      source_kind: calibrated
+      model_input_format: "SIF 'Viscosity Exponent' expects 1/n (=0.333 for n=3), NOT n"
+    - category: parameter
+      name: "Glen's flow-law rate factor A"
+      unit: "Pa^-3 s^-1 (range ~1e-25 to 1e-16)"
+      source_kind: calibrated
+      model_input_format: "Material rate factor; may be temperature-dependent via Arrhenius A(T)=A0·exp(-Q/(R·T))"
+    - category: parameter
+      name: "Ice density"
+      unit: "kg/m3 (≈910; internal MPa-m-a value differs)"
+      source_kind: default
+      model_input_format: "Material Density"
+    - category: parameter
+      name: "Seawater density"
+      unit: "kg/m3 (≈1025; internal MPa-m-a fallback 1.03225e-18)"
+      source_kind: default
+      model_input_format: "Constant 'Water Density'; silently defaulted in MPa-m-a units if absent"
+    - category: parameter
+      name: "Clausius-Clapeyron slope (beta_clapeyron)"
+      unit: "K/Pa (9.8e-8 air-free; 7.42e-8 air-saturated)"
+      source_kind: default
+      model_input_format: "Constants block; controls pressure-melting-point depth and temperate-ice extent"
+    - category: parameter
+      name: "Critical Shear Rate"
+      unit: "s^-1 (typical 1e-10 to 1e-8)"
+      source_kind: default
+      model_input_format: "Regularization of Glen's-law viscosity to avoid 0^(-1) singularity at zero strain rate"
+    - category: parameter
+      name: "GlaDS hydrology parameters (sheet conductivity, bedrock bump height)"
+      unit: "sheet conductivity ~0.001-0.05; bump height 0.01-1.0 m"
+      source_kind: calibrated
+      model_input_format: "GlaDS solver material/constants (controls subglacial drainage and effective pressure)"
+  initial_conditions:
+    - category: initial_condition
+      name: "Bed topography / bedrock elevation (Zb, bedrock)"
+      unit: "m (meters above sea level)"
+      source_kind: dataset_lookup
+      model_input_format: "Nodal bedrock variable; coordinates in meters (km causes 1000x-too-weak driving stress)"
+    - category: initial_condition
+      name: "Surface elevation (Zs)"
+      unit: "m"
+      source_kind: dataset_lookup
+      model_input_format: "Upper-surface nodal field"
+    - category: initial_condition
+      name: "Ice thickness (H)"
+      unit: "m"
+      source_kind: dataset_lookup
+      model_input_format: "Initial thickness nodal field; H = Zs - Zb"
+    - category: initial_condition
+      name: "Englacial temperature / enthalpy field"
+      unit: "deg C / J kg^-1"
+      source_kind: dataset_lookup
+      model_input_format: "Initial Temp/Enthalpy field (spin-up dependent; affects inferred friction)"
+    - category: initial_condition
+      name: "Ice mask / grounded mask"
+      unit: "binary / (-1,0,+1)"
+      source_kind: dataset_lookup
+      model_input_format: "Initial GroundedMask and ice extent"
+  boundary_conditions:
+    - category: boundary_condition
+      name: "Coordinate system selection"
+      unit: "—"
+      source_kind: user_provided
+      model_input_format: "SIF 'Coordinate System' (Cartesian 2D = x-z flowline, Cartesian 3D = plan-view+depth); must match mesh dimension"
+    - category: boundary_condition
+      name: "Friction law selection"
+      unit: "—"
+      source_kind: user_provided
+      model_input_format: "'SSA Friction Law' = linear | weertman | budd | coulomb | regularized coulomb (structural switch)"
+    - category: boundary_condition
+      name: "Flow approximation selection (Full-Stokes / SSA / SIA)"
+      unit: "—"
+      source_kind: user_provided
+      model_input_format: "Active solver set in SIF Solver/Equation blocks selects the stress-balance approximation"
+    - category: boundary_condition
+      name: "Timestep size and intervals"
+      unit: "s (1 year = 31556926 s)"
+      source_kind: user_provided
+      model_input_format: "SIF 'Timestep Sizes' in seconds; 'Output Intervals' <= 'Timestep Intervals'"
+    - category: boundary_condition
+      name: "Lateral / fjord-wall and ocean-pressure boundary conditions"
+      unit: "Pa / geometry"
+      source_kind: user_provided
+      model_input_format: "Calving-front / lateral constraints and ocean back-pressure on the marine boundary"
+
+processes:
+  modules:
+    - name: "SSABasalSolver"
+      role: process_solver
+      brief: "Solves the vertically-integrated Shallow Shelf/Stream Approximation momentum balance for in-plane basal velocity (SSAVelocity) with Picard/Newton nonlinear iteration; core ice-dynamics solver."
+    - name: "SSAMaterialModels"
+      role: process_solver
+      brief: "Utility computing effective basal friction (Slip) for 5 sliding laws (linear, Weertman, Budd, regularized-Coulomb Gagliardini/Joughin), sub-element grounding-line friction, and Glen-law viscosity exponent (1/n)."
+    - name: "SIASolver"
+      role: process_solver
+      brief: "Shallow Ice Approximation velocity solver; computes shallow-ice velocity from ice Depth and free-surface gradients (requires FlowDepth precompute)."
+      applicability: "when SIA approximation selected"
+    - name: "ThicknessSolver"
+      role: integrator
+      brief: "Integrates the mass-conservation/thickness-evolution equation dH/dt + div(uH) = a_s - a_b with stabilization and Min/Max H limiters; produces H, DHDT, residual."
+    - name: "GroundedSolver"
+      role: process_solver
+      brief: "Computes GroundedMask (+1 grounded / 0 grounding line / -1 floating) from ice geometry vs bedrock and flotation using a Toler keyword; defines the grounding line."
+    - name: "Flotation"
+      role: process_solver
+      brief: "Applies hydrostatic flotation to update lower/upper surfaces (Zb, Zs), Haf, and grounded/floating area fractions given thickness H and bedrock."
+    - name: "TemperateIce"
+      role: process_solver
+      brief: "Solves the ice temperature/enthalpy (thermomechanical) field feeding the rate factor / viscosity; couples polythermal thermodynamics to Glen's flow law."
+    - name: "FlowDepth"
+      role: process_solver
+      brief: "Computes ice Depth below surface and free-surface gradients; prerequisite producer for SIASolver."
+      applicability: "required when SIA approximation selected"
+    - name: "ComputeStress"
+      role: process_solver
+      brief: "Diagnostic solvers computing deviatoric stress, strain-rate tensor, and principal values from the velocity field."
+    - name: "GlaDSCoupledSolver"
+      role: optional_module
+      brief: "Subglacial hydrology (GlaDS) sheet-channel drainage producing basal Effective Pressure consumed by Budd/Coulomb friction laws."
+      applicability: "when subglacial hydrology coupling enabled"
+    - name: "Calving"
+      role: optional_module
+      brief: "Calving-front advance via level-set / crevasse-depth criterion with anisotropic remeshing for marine-terminating glaciers; emits the level-set calving-front position field."
+      applicability: "marine-terminating / calving runs only"
+    - name: "AdjointSSA"
+      role: optional_module
+      brief: "Adjoint/inverse-method solvers (cost, gradients DJDBeta/DJDmu, m1qn3 minimization) for data assimilation of friction/viscosity."
+      applicability: "inverse/data-assimilation workflow only"
+  internal_edges:
+    - from: "bedrock"
+      to: "GroundedSolver"
+      kind: reads_state
+      brief: "Bedrock elevation read to test flotation."
+    - from: "GroundedSolver"
+      to: "GroundedMask"
+      kind: writes_state
+      brief: "Sets +1/0/-1 mask from geometry vs bedrock and Toler."
+    - from: "GroundedMask"
+      to: "SSAMaterialModels"
+      kind: reads_state
+      brief: "SSAEffectiveFriction reads mask for sub-element grounding-line handling; zeros friction when floating."
+    - from: "bedrock"
+      to: "SSAMaterialModels"
+      kind: reads_state
+      brief: "Bedrock read for flotation thickness Hf = rhow·(sealevel-bedrock)/rho."
+    - from: "Effective Pressure"
+      to: "SSAMaterialModels"
+      kind: reads_state
+      brief: "Budd and Coulomb-Gagliardini laws read N (effective pressure)."
+    - from: "SSAMaterialModels"
+      to: "SSABasalSolver"
+      kind: invokes
+      brief: "SSABasalSolver calls SSAEffectiveFriction / ComputeMeanFriction per element."
+    - from: "Zb"
+      to: "SSABasalSolver"
+      kind: reads_state
+      brief: "Reads bottom-surface nodal values (Bottom Surface Name)."
+    - from: "Zs"
+      to: "SSABasalSolver"
+      kind: reads_state
+      brief: "Reads top-surface nodal values (Top Surface Name)."
+    - from: "SSABasalSolver"
+      to: "SSAVelocity"
+      kind: writes_state
+      brief: "Solves and stores in-plane basal velocity."
+    - from: "SSABasalSolver"
+      to: "Outputs"
+      kind: produces_output
+      brief: "Outputs basal shear-stress magnitude (strbasemag)."
+    - from: "SSAVelocity"
+      to: "ThicknessSolver"
+      kind: reads_state
+      brief: "Velocity field advects thickness in the mass-conservation equation."
+    - from: "acabf"
+      to: "ThicknessSolver"
+      kind: consumes_input
+      brief: "Surface mass balance element variable as source term."
+    - from: "libmassbf"
+      to: "ThicknessSolver"
+      kind: consumes_input
+      brief: "Basal/front mass balance element variable as sink/source."
+    - from: "GroundedMask"
+      to: "ThicknessSolver"
+      kind: reads_state
+      brief: "Mask read for floating-area-fraction sub-element handling."
+    - from: "ThicknessSolver"
+      to: "H"
+      kind: writes_state
+      brief: "Integrates and writes new ice thickness."
+    - from: "ThicknessSolver"
+      to: "DHDT"
+      kind: writes_state
+      brief: "Computes (H-PreH)/dt when Compute DHDT enabled."
+    - from: "H"
+      to: "Flotation"
+      kind: reads_state
+      brief: "Thickness used in hydrostatic surface update."
+    - from: "bedrock"
+      to: "Flotation"
+      kind: reads_state
+      brief: "Bedrock used to compute flotation thickness Hf."
+    - from: "Flotation"
+      to: "Zb"
+      kind: writes_state
+      brief: "Updates lower-surface elevation."
+    - from: "Flotation"
+      to: "Zs"
+      kind: writes_state
+      brief: "Updates upper-surface elevation."
+    - from: "Flotation"
+      to: "Haf"
+      kind: writes_state
+      brief: "Writes height above flotation."
+    - from: "Flotation"
+      to: "GroundedMask"
+      kind: writes_state
+      brief: "May (re)write grounded/floating area fractions."
+    - from: "FlowDepth"
+      to: "Depth"
+      kind: writes_state
+      brief: "Computes ice depth below surface."
+    - from: "FlowDepth"
+      to: "FreeSurfGrad1"
+      kind: writes_state
+      brief: "Computes free-surface gradient component used by SIA."
+    - from: "Depth"
+      to: "SIASolver"
+      kind: reads_state
+      brief: "SIA velocity needs precomputed depth."
+    - from: "FreeSurfGrad1"
+      to: "SIASolver"
+      kind: reads_state
+      brief: "SIA velocity needs free-surface gradient."
+    - from: "SIASolver"
+      to: "SIAVelocity"
+      kind: writes_state
+      brief: "Writes shallow-ice velocity field."
+    - from: "GlaDSCoupledSolver"
+      to: "Effective Pressure"
+      kind: writes_state
+      brief: "Subglacial hydrology produces basal effective pressure."
+    - from: "TemperateIce"
+      to: "Temperature"
+      kind: writes_state
+      brief: "Solves ice temperature/enthalpy feeding the viscosity rate factor."
+    - from: "Temperature"
+      to: "SSAMaterialModels"
+      kind: reads_state
+      brief: "Temperature-dependent Arrhenius rate factor modulates Glen-law viscosity."
+    - from: "Calving"
+      to: "Outputs"
+      kind: produces_output
+      brief: "Emits the level-set / crevasse-depth calving-front position for marine-terminating runs."
+    - from: "ComputeStress"
+      to: "Outputs"
+      kind: produces_output
+      brief: "Emits deviatoric stress and strain-rate tensors."
+    - from: "SSAVelocity"
+      to: "Outputs"
+      kind: produces_output
+      brief: "Velocity written to VTU PointData via the SIF Result Output solver block."
+    - from: "H"
+      to: "Outputs"
+      kind: produces_output
+      brief: "Thickness written to VTU."
+    - from: "Zs"
+      to: "Outputs"
+      kind: produces_output
+      brief: "Surface elevations written to VTU."
+    - from: "AdjointSSA"
+      to: "SSAVelocity"
+      kind: reads_state
+      brief: "Adjoint/inverse method uses forward SSA velocity to compute cost gradients."
+
+states:
+  variables:
+    - name: "SSAVelocity"
+      unit: "m/a (m/s in raw VTU)"
+      role: diagnostic
+    - name: "SIAVelocity"
+      unit: "m/a"
+      role: diagnostic
+    - name: "H"
+      unit: "m"
+      role: prognostic
+    - name: "DHDT"
+      unit: "m/a"
+      role: diagnostic
+    - name: "Zs"
+      unit: "m"
+      role: prognostic
+    - name: "Zb"
+      unit: "m"
+      role: prognostic
+    - name: "bedrock"
+      unit: "m"
+      role: diagnostic
+    - name: "GroundedMask"
+      unit: "(-1,0,+1)"
+      role: prognostic
+    - name: "Haf"
+      unit: "m"
+      role: diagnostic
+    - name: "Effective Pressure"
+      unit: "Pa"
+      role: prognostic
+    - name: "Depth"
+      unit: "m"
+      role: diagnostic
+    - name: "FreeSurfGrad1"
+      unit: "dimensionless (gradient)"
+      role: diagnostic
+    - name: "Temperature"
+      unit: "deg C"
+      role: prognostic
+    - name: "acabf"
+      unit: "m/a ice equivalent"
+      role: diagnostic
+    - name: "libmassbf"
+      unit: "m/a ice equivalent"
+      role: diagnostic
+    - name: "Fabric"
+      unit: "dimensionless (orientation tensor, 5 DOFs 3D / 3 DOFs 2D)"
+      role: prognostic
+  provenance: populated
+
+outputs:
+  - var: "SSAVelocity"
+    validation_rank: 1
+    unit: "m/a"
+    description: "Depth-averaged horizontal ice velocity (raw VTU stores m/s)"
+    emitted_in: "results*.vtu"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Convert VTU m/s to m/a (×31556926) before comparison", "Inverted basal friction is what makes modelled velocity match observed surface velocity"]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Transient velocity sensitive to mesh resolution and time-step magnitude"]
+      detrending_options: ["none"]
+  - var: "H"
+    validation_rank: 2
+    unit: "m"
+    description: "Ice thickness"
+    emitted_in: "results*.vtu"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["H must be positive everywhere; H = Zs - Zb"]
+      detrending_options: ["none"]
+  - var: "DHDT"
+    validation_rank: 3
+    unit: "m/a"
+    description: "Rate of change of ice thickness (elevation-change proxy)"
+    emitted_in: "results*.vtu"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "trend_match"]
+          determining_metric: "csi"
+          caveats: ["Comparable to altimetry-derived surface elevation change rates"]
+      detrending_options: ["none", "linear_residual"]
+  - var: "Zs"
+    validation_rank: 5
+    unit: "m"
+    description: "Upper-surface elevation"
+    emitted_in: "results*.vtu"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Surface elevation integrates basal-topography perturbations over time"]
+      detrending_options: ["none"]
+  - var: "GroundedMask"
+    validation_rank: 6
+    unit: "(-1,0,+1)"
+    description: "Grounded (+1) / grounding line (0) / floating (-1) mask; grounding-line position"
+    emitted_in: "results*.vtu"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "categorical_event_comparison"
+          metric_families: ["event_detection", "spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Grounding-line position compared as a categorical boundary; needs <1 km mesh at the GL to resolve"]
+      detrending_options: ["none"]
+  - var: "Temperature"
+    validation_rank: 4
+    unit: "deg C"
+    description: "Ice temperature relative to pressure-melting point (polythermal field)"
+    emitted_in: "results*.vtu"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Borehole temperature profiles; temperate-ice extent depends on Clausius-Clapeyron slope"]
+      detrending_options: ["none"]
+  - var: "Effective Pressure"
+    validation_rank: 7
+    unit: "Pa"
+    description: "Basal effective pressure (ice overburden minus water pressure) from subglacial hydrology"
+    emitted_in: "results*.vtu"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Comparable to borehole water-pressure records where available; GlaDS-only output"]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "basal friction coefficient (beta)"
+      to: "SSAVelocity"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["gilletchaulet2012_elmerice_greenland_inversion", "cheng2021_elmerice_adjoint_sensitivity", "zhao2018_elmerice_fleming_inversion_sensitivity"]
+    - from: "basal friction coefficient (beta)"
+      to: "ice discharge"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["gilletchaulet2012_elmerice_greenland_inversion", "bulthuis2019_icesheet_sobol_uq"]
+    - from: "friction-law exponent"
+      to: "sea-level contribution"
+      sensitivity_grade: HIGH
+      basis: cross_family_model_literature
+      lever_type: parameter
+      applicability: "multi-centennial projection"
+      citations: ["bulthuis2019_icesheet_sobol_uq"]
+    - from: "Glen's flow-law rheology (rate factor / exponent)"
+      to: "sea-level contribution"
+      sensitivity_grade: HIGH
+      basis: cross_family_model_literature
+      lever_type: parameter
+      applicability: "multi-centennial projection"
+      citations: ["bulthuis2019_icesheet_sobol_uq", "gagliardini2013_elmerice_capabilities"]
+    - from: "sub-shelf melt rate"
+      to: "sea-level contribution"
+      sensitivity_grade: HIGH
+      basis: cross_family_model_literature
+      lever_type: boundary_forcing
+      applicability: "warming-ocean projection"
+      citations: ["bulthuis2019_icesheet_sobol_uq"]
+    - from: "englacial temperature initialization"
+      to: "basal friction coefficient (beta)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "inversion / spin-up"
+      citations: ["zhao2018_elmerice_fleming_inversion_sensitivity"]
+    - from: "bedrock topography"
+      to: "basal friction coefficient (beta)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "inversion"
+      citations: ["zhao2018_elmerice_fleming_inversion_sensitivity"]
+    - from: "bedrock topography"
+      to: "Zs"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "transient"
+      citations: ["cheng2021_elmerice_adjoint_sensitivity"]
+    - from: "ocean-pressure boundary condition"
+      to: "basal friction coefficient (beta)"
+      sensitivity_grade: LOW
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "within a few km of grounding line"
+      citations: ["zhao2018_elmerice_fleming_inversion_sensitivity"]
+    - from: "surface mass balance"
+      to: "sea-level contribution"
+      sensitivity_grade: LOW
+      basis: cross_family_model_literature
+      lever_type: boundary_forcing
+      applicability: "multi-centennial projection"
+      citations: ["bulthuis2019_icesheet_sobol_uq"]
+  citation_index:
+    gilletchaulet2012_elmerice_greenland_inversion:
+      short_citation: "Gillet-Chaulet et al. 2012"
+      doi: "10.5194/tc-6-1561-2012"
+      note: "Elmer/Ice full-Stokes Robin inversion of Greenland basal friction; friction is dominant control on matching surface velocity/discharge."
+    gagliardini2013_elmerice_capabilities:
+      short_citation: "Gagliardini et al. 2013"
+      doi: "10.5194/gmd-6-1299-2013"
+      note: "Elmer/Ice model-description paper; friction laws, grounding-line contact, rheology, inverse methods."
+    zhao2018_elmerice_fleming_inversion_sensitivity:
+      short_citation: "Zhao et al. 2018"
+      doi: "10.5194/tc-12-2637-2018"
+      note: "Elmer/Ice control-inversion sensitivity to englacial temperature and bedrock; ocean-pressure/front effects decay inland (qualitative, not a quantitative SA index)."
+    cheng2021_elmerice_adjoint_sensitivity:
+      short_citation: "Cheng et al. 2021"
+      doi: "10.5194/tc-15-715-2021"
+      note: "Time-dependent adjoint sensitivity of surface velocity/elevation to basal friction and topography in full-Stokes/SSA Elmer frameworks."
+    bulthuis2019_icesheet_sobol_uq:
+      short_citation: "Bulthuis et al. 2019"
+      doi: "10.5194/tc-13-1349-2019"
+      note: "Variance-based (Sobol) global SA of multi-centennial ice-sheet sea-level projections; derived with the f.ETISh hybrid-SSA model, applied as cross-family proxy to full-Stokes models including Elmer/Ice."
+
+safety:
+  hazards:
+    - id: "velocity_ms_vs_ma_unit"
+      kind: parser_semantic
+      description: "Raw VTU velocity is SI m/s; glaciology expects m/a (1 m/a = 3.1688e-8 m/s). Comparing without conversion makes velocity appear ~3.2e7x too small."
+      severity: silent
+    - id: "viscosity_exponent_n_vs_inv_n"
+      kind: coefficient_runtime_silent_fallback
+      description: "SIF 'Viscosity Exponent' expects 1/n; entering n=3 directly makes effective viscosity 27x wrong."
+      severity: silent
+    - id: "density_gcm3_vs_kgm3"
+      kind: coefficient_runtime_silent_fallback
+      description: "Density given in g/cm3 instead of kg/m3 puts the flotation criterion / grounding line off by 1000x; absent 'Water Density' silently defaults to the MPa-m-a value 1.03225e-18, not 1025 kg/m3."
+      severity: silent
+    - id: "temperature_K_vs_C"
+      kind: weather_file_semantic
+      description: "SIF boundary conditions use Celsius while the Arrhenius rate factor uses Kelvin; mixing them gives nonsensical temperature-dependent viscosity."
+      severity: silent
+    - id: "clausius_clapeyron_slope"
+      kind: coefficient_runtime_silent_fallback
+      description: "Wrong Clausius-Clapeyron slope (not 9.8e-8 K/Pa air-free) shifts the pressure-melting point and temperate-ice extent."
+      severity: silent
+    - id: "friction_beta_units_per_law"
+      kind: coefficient_runtime_silent_fallback
+      description: "Friction parameter beta units must match the friction law (Linear Pa·s/m, Weertman Pa·(m/a)^(-1/n), Coulomb dimensionless); mismatch shifts basal drag orders of magnitude. Weertman with exponent m=1 silently collapses to linear."
+      severity: silent
+    - id: "coordinate_system_mesh_mismatch"
+      kind: control_semantic
+      description: "Coordinate System (Cartesian 2D x-z flowline vs 3D plan-view+depth) mismatched to the mesh crashes the solver at startup with a dimension error."
+      severity: fatal
+    - id: "mesh_coordinates_km_vs_m"
+      kind: control_semantic
+      description: "Mesh node coordinates in km instead of meters make driving stress rho·g·H 1000x too small; ice barely moves."
+      severity: silent
+    - id: "timestep_seconds_vs_years"
+      kind: control_semantic
+      description: "SIF 'Timestep Sizes' is in seconds; setting 1.0 instead of 31556926 yields ~10^7x too many steps with no visible evolution."
+      severity: silent
+    - id: "missing_body_force_zero_velocity"
+      kind: control_semantic
+      description: "Missing Body Force block or surface/thickness gradient leaves driving stress at zero, so velocity stays exactly zero everywhere."
+      severity: silent
+    - id: "critical_shear_rate_zero_nan"
+      kind: numerical_instability
+      description: "Critical Shear Rate = 0 causes division by zero in Glen's-law viscosity at zero strain rate, propagating NaN through the solution."
+      severity: fatal
+    - id: "smb_sign_convention"
+      kind: control_semantic
+      description: "SMB sign convention is positive=accumulation; ablation entered as positive makes ice grow everywhere with no ablation zone."
+      severity: silent
+    - id: "thickness_limiter_negative_H"
+      kind: numerical_instability
+      description: "Missing thickness limiter lets the advection scheme produce non-physical negative ice thickness at margins (Gibbs phenomenon)."
+      severity: silent
+    - id: "fabric_dofs_mismatch"
+      kind: control_semantic
+      description: "Fabric/orientation tensor must have 5 DOFs in 3D (3 in 2D); wrong DOFs crash the fabric solver."
+      severity: fatal
+  validation_limits:
+    - "SIA and SSA are depth-integrated asymptotic approximations valid only under shallow assumptions; they do not resolve the full stress balance near grounding lines or steep terrain."
+    - "Grounding-line dynamics require <1 km mesh resolution to converge; coarser meshes fail nonlinear convergence."
+    - "Transient calving/marine systems are highly sensitive to time-step magnitude (0.25-2 days) and mesh resolution (25-100 m), with vertical resolution most influential."
+    - "Computational cost scales linearly with number of time steps and cubically with 3D spatial resolution; fine meshes (>100k nodes) exhaust direct (MUMPS) solver memory and require iterative solvers."
+    - "Not a coupled atmosphere/ocean model; surface mass balance, geothermal heat flux, and sub-shelf melt must be supplied as external forcing."
+  warnings:
+    - "Output Intervals greater than Timestep Intervals yields empty / initial-only VTU output."
+    - "Systems with strong geometric attractors show limited numerical-parameter sensitivity, whereas transient systems depend strongly on mesh and temporal choices."
+    - "The model operates in a non-SI MPa-m-a internal unit system; coupled solver values silently assume this unit system rather than raw SI."
+  assumptions:
+    - statement: "The dag describes the SSA marine-ice-sheet configuration (SSA + Thickness + Grounded + Flotation core), the typical operational solver set; Elmer/Ice is solver-modular and the active set is defined per-simulation in the SIF."
+      scope: "process/state graph"
+      source: "Elmer/Ice SSASolver/ThicknessSolver/GroundedSolver/Flotation Fortran source and Elmer/Ice Models Manual"
+      status: adopted
+    - statement: "Incompressible ice with Glen's (non-Newtonian, optionally anisotropic) flow law; grounding line treated as a flotation/contact problem."
+      scope: "rheology and grounding-line closure"
+      source: "Gagliardini et al. 2013 (GMD 6, 1299) model description"
+      status: adopted
+    - statement: "Internal computation uses the MPa-m-a unit system; SI inputs (densities, velocities) require conversion and silent unit-system fallbacks exist (e.g. default water density 1.03225e-18)."
+      scope: "unit-system interpretation across solvers"
+      source: "SSASolver.F90 / SSAMaterialModels.F90 hardcoded fallbacks and Elmer/Ice unit-system documentation"
+      status: adopted
+    - statement: "Bulthuis et al. 2019 Sobol rankings are adopted as cross-family proxy evidence (derived with f.ETISh hybrid-SSA, not Elmer/Ice itself); no published full global-Sobol/Morris SA run directly with Elmer/Ice was found, so Elmer/Ice sensitivity evidence is adjoint/inversion-based."
+      scope: "influence block evidence basis"
+      source: "Bulthuis et al. 2019 (TC 13, 1349); Cheng et al. 2021 (TC 15, 715); Zhao et al. 2018 (TC 12, 2637)"
+      status: tentative

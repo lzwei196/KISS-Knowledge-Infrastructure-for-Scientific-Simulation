@@ -21,10 +21,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-BINARY_NAME = "apex1501"
-SOURCE_BINARY = Path(
-    "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/APEX/source/repo/Apex 1501 - Linux/apex1501"
-)
+# APEX v0806 PE32 binary run via Wine (v1501 has crop growth issues — see s1 docstring)
+BINARY_NAME = "APEX0806.exe"
+KI_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_BINARY = KI_ROOT / "reference" / "APEX0806.exe"
 
 # File extensions that indicate a per-run APEX output was written. The
 # presence of any one of these (non-empty) is the authoritative success signal.
@@ -34,7 +34,7 @@ _RUN_OUTPUT_EXTS = (".OUT", ".ACY", ".SAD", ".MSW", ".SUS", ".MAN")
 def validate_inputs(workspace: Path) -> None:
     if not workspace.is_dir():
         raise FileNotFoundError(f"Workspace does not exist: {workspace}")
-    for f in ("APEXFILE.DAT", "APEXCONT.DAT", "APEXRUN.DAT", "SITE01.SIT", "SUBA01.SUB", "SOIL01.SOL"):
+    for f in ("APEXFILE.DAT", "APEXCONT.DAT", "APEXRUN.DAT"):
         if not (workspace / f).is_file():
             raise FileNotFoundError(f"Required input missing in workspace: {f}")
 
@@ -43,9 +43,8 @@ def _ensure_binary(ws: Path) -> Path:
     bin_path = ws / BINARY_NAME
     if not bin_path.is_file():
         if not SOURCE_BINARY.is_file():
-            raise FileNotFoundError(f"apex1501 binary not found at {SOURCE_BINARY}")
+            raise FileNotFoundError(f"APEX0806 binary not found at {SOURCE_BINARY}")
         shutil.copy2(SOURCE_BINARY, bin_path)
-    os.chmod(bin_path, 0o755)
     return bin_path
 
 
@@ -56,6 +55,82 @@ def _collect_run_outputs(ws: Path) -> list[str]:
             if p.stat().st_size > 0:
                 seen.add(p.name)
     return sorted(seen)
+
+
+# ── APEX0806 terminal-fault gate ─────────────────────────────────────────
+# APEX0806 can access-violate (forrtl severe 157) while writing the end-of-run
+# timing footer on long runs (observed with APEXCONT.DAT NBYR=56 and with an
+# OPC/MGT rotation of >= 50 years). The exact trigger is input-dependent -- the
+# SAME workspace exits rc=0 after a small forcing perturbation -- so it cannot
+# be gated on NBYR. What is stable is that the fault happens AFTER the
+# simulation: measured 2026-08-09 on the Huaibin GDHY cell, the rc=157 run left
+# a complete OUTPUT.ACY (224 CORN rows spanning YR#=1..56 == NBYR) and an
+# OUTPUT.OUT carrying both end-of-run balance blocks, and repeat runs of the
+# same workspace are bit-reproducible apart from the timestamp header line.
+# Discarding such a run throws away a complete, correct result. We therefore
+# accept it -- but ONLY when every completeness marker below is present. Every
+# other severe error (24 EOF, 38 CONOUT$, a genuine mid-run abort, ...) still
+# raises exactly as before.
+_COMPLETION_MARKERS = ("TOTAL WATER BALANCE", "TOTAL SEDIMENT BALANCE")
+
+
+def _nbyr_from_control(ws: Path) -> int | None:
+    """NBYR from APEXCONT.DAT line 1 (fixed-width I4, or free format)."""
+    p = ws / "APEXCONT.DAT"
+    if not p.is_file():
+        return None
+    line = p.read_text(errors="replace").splitlines()[0] if p.read_text(errors="replace") else ""
+    for cand in (line[:4], line.split()[0] if line.split() else ""):
+        try:
+            v = int(cand)
+            if v > 0:
+                return v
+        except ValueError:
+            continue
+    return None
+
+
+def _acy_max_year_index(ws: Path) -> int | None:
+    """Largest YR# (4th column) over all CORN/crop rows of every *.ACY."""
+    best = None
+    for acy in list(ws.glob("*.ACY")) + list(ws.glob("*.acy")):
+        for ln in acy.read_text(errors="replace").splitlines():
+            f = ln.split()
+            if len(f) >= 5 and all(x.lstrip("-").isdigit() for x in f[:4]):
+                yr = int(f[3])
+                best = yr if best is None else max(best, yr)
+    return best
+
+
+def _terminal_fault_only(ws: Path, stderr: str, err_text: str) -> tuple[bool, str]:
+    """True iff the ONLY failure is the post-simulation footer access violation.
+
+    Requires ALL of: EPICERR clean; the severe error is 157/access violation
+    and nothing else; the end-of-run balance blocks were written; and *.ACY
+    spans the full NBYR requested in APEXCONT.DAT.
+    """
+    if "ERROR" in err_text.upper():
+        return False, "EPICERR.DAT is not clean"
+    low = stderr.lower()
+    if "severe (157)" not in low or "access violation" not in low:
+        return False, "severe error is not the (157) access violation"
+    if low.count("severe (") > 1:
+        return False, "more than one severe error reported"
+    out = ws / "OUTPUT.OUT"
+    if not out.is_file():
+        return False, "OUTPUT.OUT missing"
+    text = out.read_text(errors="replace")
+    missing = [m for m in _COMPLETION_MARKERS if m not in text]
+    if missing:
+        return False, f"end-of-run block(s) missing from OUTPUT.OUT: {missing}"
+    nbyr = _nbyr_from_control(ws)
+    span = _acy_max_year_index(ws)
+    if nbyr is None or span is None:
+        return False, "could not verify the *.ACY year span against NBYR"
+    if span < nbyr:
+        return False, f"*.ACY reaches YR#={span} but APEXCONT.DAT asks for NBYR={nbyr}"
+    return True, (f"all of {list(_COMPLETION_MARKERS)} present in OUTPUT.OUT and "
+                  f"*.ACY spans YR#=1..{span} == NBYR={nbyr}")
 
 
 def run(workspace, *, timeout: int = 600) -> dict:
@@ -77,7 +152,7 @@ def run(workspace, *, timeout: int = 600) -> dict:
                 pass
 
     proc = subprocess.run(
-        [f"./{BINARY_NAME}"],
+        ["wine", f"./{BINARY_NAME}"],
         cwd=str(ws),
         capture_output=True,
         text=True,
@@ -95,10 +170,21 @@ def run(workspace, *, timeout: int = 600) -> dict:
             f"EPICERR.DAT:\n{err_text}"
         )
 
+    terminal_fault = False
     if "severe" in (proc.stderr or "").lower() or "ERROR" in err_text.upper():
-        raise RuntimeError(
-            f"apex1501 reported errors (rc={proc.returncode}).\n"
-            f"stderr:\n{proc.stderr}\nEPICERR.DAT:\n{err_text}"
+        ok, why = _terminal_fault_only(ws, proc.stderr or "", err_text)
+        if not ok:
+            raise RuntimeError(
+                f"apex1501 reported errors (rc={proc.returncode}).\n"
+                f"stderr:\n{proc.stderr}\nEPICERR.DAT:\n{err_text}"
+            )
+        terminal_fault = True
+        sys.stderr.write(
+            f"[s6] WARNING: APEX0806 access-violated while writing the end-of-run "
+            f"footer, but the simulation itself COMPLETED ({why}). Accepting the "
+            f"outputs. Seen on long runs (NBYR=56 / OPC rotation >= 50 years); the "
+            f"trigger is input-dependent -- see "
+            f"diagnostics/triplets.yaml:apex0806_terminal_footer_fault.\n"
         )
 
     sum_path = ws / "RUN1501.SUM"
@@ -111,6 +197,7 @@ def run(workspace, *, timeout: int = 600) -> dict:
         "workspace": str(ws),
         "binary": str(bin_path),
         "returncode": proc.returncode,
+        "terminal_fault_accepted": terminal_fault,
         "out_files": out_files,
         "run_outputs": run_outputs,
         "sum_path": str(sum_path),

@@ -166,6 +166,14 @@ def interpolate_to_grid(lon_src, lat_src, depth_src,
     Returns
     -------
     np.ndarray : depth on SWAN grid, shape (my+1, mx+1)
+
+    Notes
+    -----
+    A SWAN input grid declared as ``INPGRID ... [mxinp] [myinp] [dxinp] [dyinp]``
+    has mxinp meshes in x and myinp meshes in y, hence (mxinp+1) x (myinp+1)
+    VALUES.  The x-axis is expanded correctly with ``mx + 1`` points; the y-axis
+    must be expanded the same way with ``my + 1`` points.  ``my`` == 0 is the
+    1-D case (a single row).
     """
     from scipy.interpolate import griddata
 
@@ -181,7 +189,7 @@ def interpolate_to_grid(lon_src, lat_src, depth_src,
 
     # Build target grid
     x_target = xpc + np.arange(mx + 1) * dx
-    y_target = ypc + np.arange(max(my, 1)) * (dy if dy > 0 else 1.0)
+    y_target = ypc + np.arange(my + 1) * (dy if dy > 0 else 1.0)
     xx, yy = np.meshgrid(x_target, y_target)
 
     # Interpolate
@@ -230,7 +238,9 @@ def convert_bathymetry(depth_data, grid_info, output_path,
     """
     mx = grid_info['mx']
     my = grid_info.get('my', 0)
-    n_rows = max(my, 1)
+    # SWAN INPGRID with [mxinp] x [myinp] MESHES holds (mxinp+1) x (myinp+1)
+    # VALUES.  my == 0 is the 1-D case and still yields exactly one row.
+    n_rows = my + 1
     n_cols = mx + 1
 
     if constant_depth is not None:

@@ -147,7 +147,17 @@ def build_command(args):
         cmd.extend([mpiexec, "-n", str(args.np)])
 
     cmd.append(os.path.abspath(args.rapid_bin))
-    cmd.extend(["--namelist", os.path.abspath(args.namelist)])
+
+    # RAPID's CLI stores the namelist argument in a Fortran character(len=50)
+    # variable (src/rapid_cli.F90 / rapid_var.f90). An absolute path longer than
+    # 50 chars is silently TRUNCATED, producing
+    #   "Cannot open file '/mnt/disk1/Hydrocraft_server/models/RAPID/source/r'".
+    # Pass the namelist as a path relative to the working directory (the binary
+    # is launched with cwd=work_dir), which keeps it well under 50 chars.
+    work_dir = args.work_dir or os.path.dirname(os.path.abspath(args.namelist))
+    nl_rel = os.path.relpath(os.path.abspath(args.namelist), os.path.abspath(work_dir))
+    nl_arg = nl_rel if len(nl_rel) <= 49 else os.path.abspath(args.namelist)
+    cmd.extend(["--namelist", nl_arg])
 
     return cmd
 

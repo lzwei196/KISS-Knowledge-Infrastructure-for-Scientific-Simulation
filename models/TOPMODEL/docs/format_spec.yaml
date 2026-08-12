@@ -1,0 +1,139 @@
+model:
+  name: TOPMODEL BMI (NOAA
+  domain: hydrology
+  binary_path: ''
+  language: unknown
+inputs:
+  forcing:
+  - name: rain
+    unit: '**m/hr**'
+    format: ''
+    source: skill_md
+  - name: temp
+    unit: K
+    format: ''
+    source: skill_md
+  - name: srad
+    unit: "W/m\xB2"
+    format: ''
+    source: skill_md
+  - name: wind
+    unit: m/s
+    format: ''
+    source: skill_md
+outputs:
+  primary:
+  - name: runoff
+    unit: unknown
+    format: ''
+    source: skill_md
+  - name: Evapotranspiration
+    unit: unknown
+    format: ''
+    source: skill_md
+  - name: discharge
+    canonical_id: discharge
+    unit: m3/s
+  - name: surface_runoff
+    canonical_id: surface_runoff
+    unit: mm/day
+  - name: evapotranspiration
+    canonical_id: evapotranspiration
+    unit: mm/day
+  - name: soil_moisture
+    canonical_id: soil_moisture
+    unit: m3/m3
+known_issues:
+- id: dt_001
+  description: "Simulated discharge is ~24,000\xD7 too high compared to observed"
+  affected_output: Precipitation left in mm/day instead of converting to m/hr
+  detection: Precipitation left in mm/day instead of converting to m/hr
+  fix: "Divide precipitation by 24,000 (mm\u2192m = \xF71000, day\u2192hr = \xF724)"
+- id: dt_002
+  description: "Simulated discharge is ~24\xD7 too high"
+  affected_output: Precipitation converted to m/day but not to m/hr
+  detection: Precipitation converted to m/day but not to m/hr
+  fix: Divide precipitation by 24 to convert from m/day to m/hr
+- id: dt_003
+  description: "Simulated discharge ~1000\xD7 too high"
+  affected_output: Precipitation in mm/hr instead of m/hr
+  detection: Precipitation in mm/hr instead of m/hr
+  fix: "Divide precipitation by 1,000 (mm\u2192m)"
+- id: dt_004
+  description: No evapotranspiration, all rainfall becomes runoff, PBIAS >> 50%
+  affected_output: PE (potential evapotranspiration) set to zero or not provided
+  detection: PE (potential evapotranspiration) set to zero or not provided
+  fix: Compute PET from temperature/radiation using Hargreaves or Penman-Monteith,
+    convert to m/hr
+- id: dt_005
+  description: ET too large, no runoff produced, extremely negative water balance
+  affected_output: PE left in mm/day instead of m/hr
+  detection: PE left in mm/day instead of m/hr
+  fix: Divide PE by 24,000
+- id: dt_006
+  description: PET unrealistically high (>20 mm/day equivalent)
+  affected_output: Temperature used in Kelvin in Hargreaves equation instead of Celsius
+  detection: Temperature used in Kelvin in Hargreaves equation instead of Celsius
+  fix: Subtract 273.15 from temperature before computing PET
+- id: dt_007
+  description: Validation metrics (NSE, KGE) are nonsensical (NSE = -1e6)
+  affected_output: "Comparing simulated Q in m/hr with observed Q in m\xB3/s"
+  detection: "Comparing simulated Q in m/hr with observed Q in m\xB3/s"
+  fix: "Convert both to same units: Q_m3s = Q_mhr \xD7 basin_area_m\xB2 / 3600"
+- id: dt_008
+  description: Segmentation fault during model execution
+  affected_output: nstep in inputs.dat doesn't match actual number of data lines
+  detection: nstep in inputs.dat doesn't match actual number of data lines
+  fix: Verify nstep equals the exact number of rain/pe/qobs lines in inputs.dat
+- id: dt_009
+  description: Water balance error (BAL is large), contributing area always 0 or 1
+  affected_output: TWI distribution area fractions do not sum to 1.0
+  detection: TWI distribution area fractions do not sum to 1.0
+  fix: Normalize dist_area_lnaotb so sum equals 1.0
+- id: dt_010
+  description: Saturated area calculation gives wrong spatial pattern
+  affected_output: TWI values not sorted from high to low in subcat.dat
+  detection: TWI values not sorted from high to low in subcat.dat
+  fix: Sort TWI classes by lnaotb descending (highest TWI first)
+- id: dt_011
+  description: Division by zero or NaN in model output
+  affected_output: szm parameter set to 0
+  detection: szm parameter set to 0
+  fix: Set szm > 0 (minimum ~0.001 m)
+- id: dt_012
+  description: Initial water balance error, model diverges from start
+  affected_output: sr0 (initial root zone deficit) exceeds srmax
+  detection: sr0 (initial root zone deficit) exceeds srmax
+  fix: "Ensure sr0 \u2264 srmax in params.dat"
+- id: dt_013
+  description: '''Can''t open control file named ./data/topmod.run'''
+  affected_output: Binary executed from wrong directory or topmod.run not at expected
+    path
+  detection: Binary executed from wrong directory or topmod.run not at expected path
+  fix: Run binary from directory containing data/topmod.run, or copy config to ./data/
+- id: dt_014
+  description: '''Can''t open'' error for inputs.dat, subcat.dat, or params.dat'
+  affected_output: File paths in topmod.run are wrong (absolute vs relative)
+  detection: File paths in topmod.run are wrong (absolute vs relative)
+  fix: Use paths relative to the binary's working directory in topmod.run
+- id: dt_015
+  description: Model runs but produces no output (topmod.out, hyd.out empty)
+  affected_output: stand_alone flag set to 0 in topmod.run
+  detection: stand_alone flag set to 0 in topmod.run
+  fix: Set first line of topmod.run to 1 for standalone execution
+- id: dt_016
+  description: Model produces output but Q is constant/flat
+  affected_output: Precipitation values are all zero (wrong column or file format)
+  detection: Precipitation values are all zero (wrong column or file format)
+  fix: Verify inputs.dat has non-zero rain values in column 1
+- id: dt_017
+  description: Routing delay is 0 or 1 timestep, no hydrograph attenuation
+  affected_output: Channel velocity (chv) too high relative to channel length
+  detection: Channel velocity (chv) too high relative to channel length
+  fix: Reduce chv or increase channel distances in subcat.dat
+- id: dt_018
+  description: Channel distance is orders of magnitude wrong
+  affected_output: dist_from_outlet in subcat.dat is in km instead of meters
+  detection: dist_from_outlet in subcat.dat is in km instead of meters
+  fix: Multiply channel distances by 1000
+unit_conversions: []

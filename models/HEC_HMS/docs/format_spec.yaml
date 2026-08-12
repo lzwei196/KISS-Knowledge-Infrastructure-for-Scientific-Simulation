@@ -1,0 +1,282 @@
+model:
+  name: HEC
+  domain: hydrology
+  binary_path: ''
+  language: unknown
+inputs:
+  forcing:
+  - name: Precipitation
+    unit: "CMFD 0.25\xB0"
+    format: ''
+    source: skill_md
+  - name: Temperature
+    unit: "CMFD 0.25\xB0"
+    format: ''
+    source: skill_md
+  - name: Snow
+    unit: unknown
+    format: ''
+    source: skill_md
+outputs:
+  primary:
+  - name: Baseflow
+    unit: Linear Reservoir (recession)
+    format: ''
+    source: skill_md
+  - name: Temperature
+    unit: "CMFD 0.25\xB0"
+    format: ''
+    source: skill_md
+  - name: runoff
+    unit: unknown
+    format: ''
+    source: skill_md
+  - name: Snow
+    unit: unknown
+    format: ''
+    source: skill_md
+  - name: Evapotranspiration
+    unit: unknown
+    format: ''
+    source: skill_md
+  - name: discharge
+    unit: unknown
+    format: ''
+    source: skill_md
+  - name: Flood
+    unit: unknown
+    format: ''
+    source: skill_md
+known_issues:
+- id: dt_101
+  description: '{''description'': ''Simulated discharge is 24x too high. Massive flood
+    every day regardless of season.'', ''error_pattern'': ''discharge spike'', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Precipitation in mm/day passed to hourly timestep
+    without dividing by 24'', ''explanation'': ''CMFD provides daily precipitation
+    in mm/day. If the model runs at hourly timestep, each hour '
+  detection: '{''root_cause'': ''Precipitation in mm/day passed to hourly timestep
+    without dividing by 24'', ''explanation'': ''CMFD provides daily precipitation
+    in mm/day. If the model runs at hourly timestep, each hour '
+  fix: '{''action'': ''Divide daily precipitation by number of timesteps per day when
+    using sub-daily interval'', ''tool_to_run'': ''convert_forcing_to_hms'', ''manual_steps'':
+    [''Check if model timestep matches forcing'
+- id: dt_102
+  description: '{''description'': ''PET is extremely high (>100 mm/day). No snow accumulation
+    even in winter. Unrealistic water balance.'', ''error_pattern'': ''extreme evaporation'',
+    ''detection_method'': ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Temperature in Kelvin instead of Celsius for
+    PET calculation'', ''explanation'': ''CMFD temperature is in Kelvin (typically
+    260-310 K). Hargreaves or Priestley-Taylor PET formulas expect C'
+  detection: '{''root_cause'': ''Temperature in Kelvin instead of Celsius for PET
+    calculation'', ''explanation'': ''CMFD temperature is in Kelvin (typically 260-310
+    K). Hargreaves or Priestley-Taylor PET formulas expect C'
+  fix: "{'action': 'Subtract 273.15 from CMFD temperature before PET calculation',\
+    \ 'tool_to_run': 'convert_forcing_to_hms', 'manual_steps': ['Check temperature\
+    \ range in forcing CSV \u2014 should be -30 to +45\xB0C', "
+- id: dt_108
+  description: '{''description'': ''Discharge is 10^6 too large or too small. Clearly
+    wrong magnitude.'', ''error_pattern'': ''magnitude error'', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: "{'root_cause': 'Basin area in m\xB2 instead of km\xB2 (or vice\
+    \ versa) in runoff-to-discharge conversion', 'explanation': 'Converting runoff\
+    \ depth (mm) to discharge (m\xB3/s) requires: Q = runoff_mm * area_km2 "
+  detection: "{'root_cause': 'Basin area in m\xB2 instead of km\xB2 (or vice versa)\
+    \ in runoff-to-discharge conversion', 'explanation': 'Converting runoff depth\
+    \ (mm) to discharge (m\xB3/s) requires: Q = runoff_mm * area_km2 "
+  fix: "{'action': 'Verify basin area units. Shapefile .area returns m\xB2 \u2014\
+    \ divide by 1e6 for km\xB2', 'tool_to_run': 'parse_hms_output', 'manual_steps':\
+    \ ['Check basin area: Bengbu should be ~121,330 km\xB2', 'If usi"
+- id: dt_110
+  description: '{''description'': ''PET values unrealistically high or low. Seasonal
+    cycle absent.'', ''error_pattern'': ''PET magnitude'', ''detection_method'': ''value_comparison''}'
+  affected_output: "{'root_cause': 'Radiation in W/m\xB2 not converted to MJ/m\xB2\
+    /day for Priestley-Taylor PET', 'explanation': 'CMFD shortwave radiation is in\
+    \ W/m\xB2. Priestley-Taylor PET expects net radiation in MJ/m\xB2/day. Co"
+  detection: "{'root_cause': 'Radiation in W/m\xB2 not converted to MJ/m\xB2/day for\
+    \ Priestley-Taylor PET', 'explanation': 'CMFD shortwave radiation is in W/m\xB2\
+    . Priestley-Taylor PET expects net radiation in MJ/m\xB2/day. Co"
+  fix: "{'action': 'Multiply W/m\xB2 by 0.0864 to get MJ/m\xB2/day before PET calculation',\
+    \ 'tool_to_run': 'convert_forcing_to_hms', 'manual_steps': ['Check radiation values\
+    \ \u2014 W/m\xB2 range: 0-400; MJ/m\xB2/day range: 0-"
+- id: dt_114
+  description: '{''description'': ''Simulated discharge looks reasonable in shape
+    but magnitude is wrong by factor of ~1000/86400'', ''error_pattern'': ''wrong
+    scale'', ''detection_method'': ''value_comparison''}'
+  affected_output: "{'root_cause': 'Runoff mm to m\xB3/s conversion missing the 1000\
+    \ or 86400 factor', 'explanation': 'The correct conversion is Q(m\xB3/s) = runoff(mm)\
+    \ \xD7 area(km\xB2) \xD7 1000 / 86400. The 1000 converts mm\xB7km\xB2 to m"
+  detection: "{'root_cause': 'Runoff mm to m\xB3/s conversion missing the 1000 or\
+    \ 86400 factor', 'explanation': 'The correct conversion is Q(m\xB3/s) = runoff(mm)\
+    \ \xD7 area(km\xB2) \xD7 1000 / 86400. The 1000 converts mm\xB7km\xB2 to m"
+  fix: "{'action': 'Use Q = runoff_mm * area_km2 * 1000 / 86400 exactly', 'tool_to_run':\
+    \ 'parse_hms_output', 'manual_steps': ['For Bengbu (121,330 km\xB2): 1 mm/day\
+    \ runoff \u2248 1404 m\xB3/s', 'Mean annual runoff ~200-"
+- id: dt_118
+  description: '{''description'': ''ET is ~30x too high or too low. Monthly PET values
+    used as daily.'', ''error_pattern'': ''PET timing'', ''detection_method'': ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Monthly average PET (mm/month) used directly
+    as daily PET (mm/day)'', ''explanation'': ''HEC-HMS Monthly Average ET expects
+    values in mm/month. If these are divided by days-in-month to get'
+  detection: '{''root_cause'': ''Monthly average PET (mm/month) used directly as daily
+    PET (mm/day)'', ''explanation'': ''HEC-HMS Monthly Average ET expects values in
+    mm/month. If these are divided by days-in-month to get'
+  fix: '{''action'': ''Verify PET units match the method. Monthly Average expects
+    mm/month. Priestley-Taylor expects mm/day.'', ''tool_to_run'': ''convert_forcing_to_hms'',
+    ''manual_steps'': [''Monthly PET range: 30-200'
+- id: dt_103
+  description: '{''description'': ''Zero runoff regardless of rainfall amount. Hydrograph
+    is flat at baseflow.'', ''error_pattern'': ''zero runoff'', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Curve Number is 0, NaN, or below 30 due to
+    failed soil group lookup'', ''explanation'': ''SCS Curve Number valid range is
+    30-100. If the HWSD soil group lookup returns no data (ocean, miss'
+  detection: '{''root_cause'': ''Curve Number is 0, NaN, or below 30 due to failed
+    soil group lookup'', ''explanation'': ''SCS Curve Number valid range is 30-100.
+    If the HWSD soil group lookup returns no data (ocean, miss'
+  fix: '{''action'': ''Validate CN is in [30, 100]. If NaN or 0, check HWSD spatial
+    overlap with basin.'', ''tool_to_run'': ''convert_soil_to_hms'', ''manual_steps'':
+    [''Check soil group distribution: A/B/C/D should sum'
+- id: dt_104
+  description: '{''description'': ''Simulated runoff volume is significantly less
+    than observed. Model systematically underestimates peaks.'', ''error_pattern'':
+    ''volume underestimate'', ''detection_method'': ''metric_comparison''}'
+  affected_output: '{''root_cause'': ''Initial abstraction ratio Ia/S = 0.2 (classic)
+    used instead of 0.05 (recommended)'', ''explanation'': ''The classic SCS method
+    uses Ia = 0.2*S, meaning 20% of maximum retention must be sat'
+  detection: '{''root_cause'': ''Initial abstraction ratio Ia/S = 0.2 (classic) used
+    instead of 0.05 (recommended)'', ''explanation'': ''The classic SCS method uses
+    Ia = 0.2*S, meaning 20% of maximum retention must be sat'
+  fix: '{''action'': ''Set Ia_ratio = 0.05 for humid/semi-humid basins. Keep 0.2 only
+    for arid regions.'', ''tool_to_run'': ''run_hec_hms'', ''manual_steps'': [''Compare
+    simulated vs observed annual runoff volume'', ''If '
+- id: dt_111
+  description: '{''description'': ''Green-Ampt model produces no infiltration or instant
+    saturation.'', ''error_pattern'': ''infiltration extreme'', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Suction head or hydraulic conductivity values
+    unrealistic for soil type'', ''explanation'': ''Green-Ampt wetting front suction
+    head ranges from 5 cm (sand) to 32 cm (clay). Saturated hydra'
+  detection: '{''root_cause'': ''Suction head or hydraulic conductivity values unrealistic
+    for soil type'', ''explanation'': ''Green-Ampt wetting front suction head ranges
+    from 5 cm (sand) to 32 cm (clay). Saturated hydra'
+  fix: '{''action'': ''Cross-reference soil properties with USDA soil texture triangle'',
+    ''tool_to_run'': ''convert_soil_to_hms'', ''manual_steps'': [''Check Ksat: sand
+    11.8 cm/hr, loam 1.3 cm/hr, clay 0.03 cm/hr'', ''Ch'
+- id: dt_105
+  description: '{''description'': ''Unit hydrograph peak is clipped or poorly resolved.
+    Peak discharge significantly underestimated.'', ''error_pattern'': ''UH resolution'',
+    ''detection_method'': ''visual_inspection''}'
+  affected_output: '{''root_cause'': ''Computational interval D is too large relative
+    to time-to-peak Tp'', ''explanation'': ''SCS UH requires D <= 0.29*Tp for adequate
+    peak resolution. If D > Tp/3, the discrete convolution mis'
+  detection: '{''root_cause'': ''Computational interval D is too large relative to
+    time-to-peak Tp'', ''explanation'': ''SCS UH requires D <= 0.29*Tp for adequate
+    peak resolution. If D > Tp/3, the discrete convolution mis'
+  fix: '{''action'': ''Set D <= Tp/5. For Tp=24hr, use D <= 4.8hr (e.g., D=1hr or
+    D=3hr)'', ''tool_to_run'': ''run_hec_hms'', ''manual_steps'': [''Check Tp value
+    and compare to model timestep'', ''If timestep > Tp/3, redu'
+- id: dt_106
+  description: '{''description'': ''Negative discharge values in routed flow. Oscillating
+    hydrograph.'', ''error_pattern'': ''negative flow'', ''detection_method'': ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Muskingum X > 0.5 or routing timestep violates
+    Courant condition'', ''explanation'': ''Muskingum routing coefficients C1, C2,
+    C3 must all be non-negative for stable routing. This requires '
+  detection: '{''root_cause'': ''Muskingum X > 0.5 or routing timestep violates Courant
+    condition'', ''explanation'': ''Muskingum routing coefficients C1, C2, C3 must
+    all be non-negative for stable routing. This requires '
+  fix: "{'action': 'Constrain X to [0, 0.5]. Verify dt satisfies 2KX <= dt <= 2K(1-X).',\
+    \ 'tool_to_run': 'run_hec_hms', 'manual_steps': ['Print C1, C2, C3 \u2014 all\
+    \ must be >= 0', 'If any negative, adjust K, X, or"
+- id: dt_113
+  description: '{''description'': ''Very small storms produce exactly zero runoff.
+    Only large storms generate flow.'', ''error_pattern'': ''threshold effect'', ''detection_method'':
+    ''visual_inspection''}'
+  affected_output: '{''root_cause'': ''SCS-CN initial abstraction Ia is larger than
+    most daily precipitation events'', ''explanation'': ''With CN=65 and Ia_ratio=0.2:
+    S = 25400/65 - 254 = 136.8 mm; Ia = 0.2*136.8 = 27.4 mm. Any'
+  detection: '{''root_cause'': ''SCS-CN initial abstraction Ia is larger than most
+    daily precipitation events'', ''explanation'': ''With CN=65 and Ia_ratio=0.2:
+    S = 25400/65 - 254 = 136.8 mm; Ia = 0.2*136.8 = 27.4 mm. Any'
+  fix: '{''action'': ''Use Ia_ratio=0.05 to reduce the threshold. Or increase CN if
+    soil/land cover warrants.'', ''tool_to_run'': ''run_hec_hms'', ''manual_steps'':
+    [''Calculate Ia = Ia_ratio * (25400/CN - 254)'', ''Compa'
+- id: dt_109
+  description: '{''description'': ''Time series shifted by one day. Peaks occur a
+    day early or late compared to observations.'', ''error_pattern'': ''time shift'',
+    ''detection_method'': ''visual_inspection''}'
+  affected_output: '{''root_cause'': ''DSS midnight convention: 2400 = end of day,
+    not start of next day'', ''explanation'': ''HEC-DSS uses 2400 to denote the end
+    of a day (equivalent to 0000 of the next day). When converting D'
+  detection: '{''root_cause'': ''DSS midnight convention: 2400 = end of day, not start
+    of next day'', ''explanation'': ''HEC-DSS uses 2400 to denote the end of a day
+    (equivalent to 0000 of the next day). When converting D'
+  fix: '{''action'': ''When reading DSS: replace 2400 with 0000 and add 1 day to date'',
+    ''tool_to_run'': ''convert_forcing_to_hms'', ''manual_steps'': [''Compare forcing
+    timestamps with an independent source'', ''Check i'
+- id: dt_112
+  description: '{''description'': "HEC-HMS run fails with ''No meteorologic model
+    found'' or ''Basin model not linked''.", ''error_pattern'': ''model linkage'',
+    ''detection_method'': ''error_message''}'
+  affected_output: '{''root_cause'': ''Basin model, meteorologic model, and control
+    specs not properly linked in .run file'', ''explanation'': ''HEC-HMS requires
+    a .run file that explicitly links: (1) a basin model name matchin'
+  detection: '{''root_cause'': ''Basin model, meteorologic model, and control specs
+    not properly linked in .run file'', ''explanation'': ''HEC-HMS requires a .run
+    file that explicitly links: (1) a basin model name matchin'
+  fix: "{'action': 'Verify that names in .run file exactly match names in .basin,\
+    \ .met, and .control files', 'tool_to_run': 'run_hec_hms', 'manual_steps': ['Open\
+    \ .run file \u2014 check Basin Model, Met Model, Cont"
+- id: dt_115
+  description: '{''description'': "Model crashes or produces empty output. Error:
+    ''No data for specified period''.", ''error_pattern'': ''period mismatch'', ''detection_method'':
+    ''error_message''}'
+  affected_output: '{''root_cause'': ''Simulation period extends beyond available
+    forcing data'', ''explanation'': ''If the control specification requests 1980-1990
+    but forcing data only covers 1985-1990, the model either crash'
+  detection: '{''root_cause'': ''Simulation period extends beyond available forcing
+    data'', ''explanation'': ''If the control specification requests 1980-1990 but
+    forcing data only covers 1985-1990, the model either crash'
+  fix: '{''action'': ''Verify forcing data covers the entire simulation period'',
+    ''tool_to_run'': ''convert_forcing_to_hms'', ''manual_steps'': [''List available
+    forcing files: ls *_{yyyy}.nc'', ''Verify continuous cover'
+- id: dt_116
+  description: '{''description'': ''Peak arrives much too early or too late compared
+    to observations.'', ''error_pattern'': ''timing error'', ''detection_method'':
+    ''visual_inspection''}'
+  affected_output: "{'root_cause': 'Lag time (Tp) unrealistic for basin size', 'explanation':\
+    \ 'SCS lag time depends on basin slope, length, and CN. For large basins like\
+    \ Bengbu (121,330 km\xB2), Tp should be on the order of"
+  detection: "{'root_cause': 'Lag time (Tp) unrealistic for basin size', 'explanation':\
+    \ 'SCS lag time depends on basin slope, length, and CN. For large basins like\
+    \ Bengbu (121,330 km\xB2), Tp should be on the order of"
+  fix: '{''action'': ''Estimate Tp from basin characteristics: Tp = L^0.8 * (S+1)^0.7
+    / (1140 * Y^0.5) [SCS method]'', ''tool_to_run'': ''run_hec_hms'', ''manual_steps'':
+    [''L = hydraulic length (longest flow path) in f'
+- id: dt_117
+  description: '{''description'': ''Dry spells much longer than expected. Simulated
+    baseflow recession unrealistically fast.'', ''error_pattern'': ''missing data'',
+    ''detection_method'': ''visual_inspection''}'
+  affected_output: '{''root_cause'': ''Missing precipitation days filled with zero
+    instead of NaN or interpolated'', ''explanation'': ''When CMFD NetCDF files have
+    missing days (corrupt files, gaps), filling with zero precipita'
+  detection: '{''root_cause'': ''Missing precipitation days filled with zero instead
+    of NaN or interpolated'', ''explanation'': ''When CMFD NetCDF files have missing
+    days (corrupt files, gaps), filling with zero precipita'
+  fix: "{'action': 'Flag missing days as NaN. Interpolate short gaps (<3 days). Report\
+    \ long gaps.', 'tool_to_run': 'convert_forcing_to_hms', 'manual_steps': ['Count\
+    \ consecutive zero-precipitation days \u2014 > 30 "
+- id: dt_107
+  description: '{''description'': ''Baseflow is constant or decays instantly. No seasonal
+    baseflow pattern.'', ''error_pattern'': ''baseflow shape'', ''detection_method'':
+    ''visual_inspection''}'
+  affected_output: '{''root_cause'': ''Recession constant confused with hydraulic
+    conductivity or decay rate'', ''explanation'': ''HEC-HMS linear reservoir baseflow
+    uses a dimensionless recession constant k (0 < k < 1). k=0.95 '
+  detection: '{''root_cause'': ''Recession constant confused with hydraulic conductivity
+    or decay rate'', ''explanation'': ''HEC-HMS linear reservoir baseflow uses a dimensionless
+    recession constant k (0 < k < 1). k=0.95 '
+  fix: '{''action'': ''Set recession constant as dimensionless ratio 0.5-0.99. Start
+    with 0.95 for large basins.'', ''tool_to_run'': ''run_hec_hms'', ''manual_steps'':
+    [''Check baseflow recession: plot log(Q_base) vs ti'
+unit_conversions: []

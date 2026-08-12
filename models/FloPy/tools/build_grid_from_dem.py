@@ -257,6 +257,33 @@ def process(args, warnings_list):
     botm, thicknesses = compute_layer_bottoms(
         top, args.nlay, args.layer_thickness, args.total_depth)
 
+    # --- Geographic-CRS guard (dt_006 datum / unit trap) ----------------
+    # MODFLOW DIS delr/delc must be in the model LENGTH unit (meters). If the
+    # DEM is in a geographic CRS (EPSG:4326, degrees), then cell_size and the
+    # resulting delr/delc are in DEGREES, not meters. Feeding those degree
+    # values to MODFLOW as meters silently shrinks the domain ~1e5x. Detect
+    # this and record the correct meter-equivalent spacing so downstream
+    # assembly uses metres. See SKILL.md "Grid from geographic DEM".
+    crs_str = (dem_meta.get('crs') or '').lower()
+    is_geographic = ('4326' in crs_str or 'wgs 84' in crs_str
+                     or 'wgs84' in crs_str or 'longlat' in crs_str
+                     or args.cell_size < 0.5)  # heuristic: deg-sized cell
+    if bbox:
+        cy = 0.5 * (bbox[1] + bbox[3])
+    else:
+        cy = 0.5 * (dem_meta['ymin'] + dem_meta['ymax'])
+    if is_geographic:
+        delc_m = args.cell_size * 110540.0                       # lat degree
+        delr_m = args.cell_size * 111320.0 * np.cos(np.deg2rad(cy))  # lon degree
+        warnings_list = warnings_list + [
+            f"Geographic CRS detected (crs={dem_meta.get('crs')}); cell_size "
+            f"{args.cell_size} interpreted as DEGREES. delr/delc are degrees — "
+            f"use delr_m={delr_m:.1f} m, delc_m={delc_m:.1f} m for MODFLOW DIS "
+            f"(computed at lat {cy:.2f}). Do NOT pass degree spacing as meters."]
+    else:
+        delc_m = float(delc[0])
+        delr_m = float(delr[0])
+
     # Save outputs
     output_dir = args.output_dir or '.'
     np.save(os.path.join(output_dir, 'top.npy'), top)
@@ -270,6 +297,12 @@ def process(args, warnings_list):
         'ncol': ncol,
         'delr': float(delr[0]),
         'delc': float(delc[0]),
+        'crs': dem_meta.get('crs'),
+        'crs_is_geographic': bool(is_geographic),
+        'cell_size_input': args.cell_size,
+        'cell_size_units': 'degrees' if is_geographic else 'meters',
+        'delr_m': float(delr_m),
+        'delc_m': float(delc_m),
         'top_min': float(np.nanmin(top)),
         'top_max': float(np.nanmax(top)),
         'top_mean': float(np.nanmean(top)),
@@ -277,7 +310,7 @@ def process(args, warnings_list):
         'layer_thicknesses': thicknesses,
         'total_cells': args.nlay * nrow * ncol,
         'dem_source': args.dem,
-        'cell_size_m': args.cell_size,
+        'cell_size_m': float(delr_m),
         'warnings': warnings_list
     }
 

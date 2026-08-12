@@ -1,0 +1,561 @@
+template_version: "3.5"
+
+identity:
+  model_id: "OGGM"
+  scientific_reference_version: "OGGM 1.6.x flowline glacier framework (Maussion et al. 2019 model description, elevation-band flowlines + MonthlyTIModel standard)"
+  implementation:
+    id: "oggm-py"
+    version: "1.6.3"
+    provenance: "Python; Open Global Glacier Model (University of Innsbruck), conda/pip oggm package wrapping flowline ice dynamics + temperature-index mass balance."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "python"
+  license: "BSD-3-Clause"
+  repo_url: "https://github.com/OGGM/oggm"
+
+boundary:
+  scope_in:
+    - "Mountain glacier mass balance, volume, area, length and geometry evolution at glacier-to-global scale"
+    - "Climatic surface mass balance via monthly temperature-index model"
+    - "Ice thickness / bed-topography inversion (shallow-ice, mass conservation, Glen's flow law)"
+    - "1.5D flowline ice dynamics (shallow-ice approximation)"
+    - "Frontal ablation / calving for tidewater glaciers"
+    - "Dynamic spinup for state initialization to the RGI inventory date"
+    - "CMIP6/ISIMIP3b future projections with delta-method bias correction"
+    - "Glacier runoff diagnostics (on/off-glacier melt, liquid precipitation, snowfall, refreezing) via run_with_hydro"
+  scope_out:
+    - "Full 3D ice-sheet physics (OGGM is depth-integrated 1.5D flowline / shallow-ice, not 3D)"
+    - "Englacial / basal thermodynamics (isothermal shallow-ice assumed)"
+    - "River routing / basin-outlet discharge generation (left to a downstream hydrology model)"
+    - "Snow/soil processes on non-glacier land surface"
+    - "Nominal (point-geometry) glaciers cannot be simulated"
+  spatial: "1-D column"
+  temporal: "seasonal"
+  closure: "mass-balance"
+  notes: "Glacier reduced to representative 1.5D flowline(s); elevation-band flowlines (Δz = 30 m bands) are the v1.6 standard, geometrical-centerline method also available. Volume/mass conservation enforced via ∂S/∂t = w·ṁ − ∇·q (ice-thickness diffusion). The native temporal grain is sub-annual: surface mass balance is computed on a MONTHLY temperature-index step, geometry is integrated with adaptive timesteps (semi-implicit scheme default), and volume/area/length diagnostics are reported ANNUALLY. The 'seasonal' enum value is the closest allowed bucket to this monthly mass-balance timestep — read with the monthly-MB / annual-reporting split documented here. The shallow-ice approximation assumes basal shear stress equals driving stress τ_d = α·ρ·g·h; no surface energy-balance closure (temperature-index, not energy-balance, melt)."
+
+inputs:
+  forcing:
+    - category: "climate"
+      name: "air temperature"
+      unit: "degC"
+      source_kind: "forcing"
+      model_input_format: "monthly mean temperature time series at the glacier; downscaled to elevation bands with a fixed lapse rate"
+      notes: "Baseline datasets W5E5 (default, calibration tuned against it), GSWP3, CRU TS4, ERA5. Default temperature lapse rate -6.5 K/km (cfg.PARAMS temp_default_gradient = -0.0065 K/m). CMIP6/ISIMIP3b raw fields may be delivered in Kelvin and must be converted to degC before use."
+    - category: "climate"
+      name: "precipitation"
+      unit: "kg m^-2 month^-1 (mm w.e./month)"
+      source_kind: "forcing"
+      model_input_format: "monthly total precipitation at the glacier; no precipitation gradient applied by default, scaled by the precipitation factor"
+      notes: "Solid/liquid partition by temp_all_solid (default 0 degC) and temp_all_liq (default 2 degC), linearly interpolated."
+  parameters:
+    - category: "mass_balance"
+      name: "melt_f (degree-day / temperature-sensitivity melt factor; legacy mu_star)"
+      unit: "kg m^-2 day^-1 degC^-1"
+      source_kind: "calibrated"
+      model_input_format: "per-glacier calibrated coefficient stored after mass-balance calibration"
+      notes: "v1.6 MonthlyTIModel uses melt_f; the v1.1-era equivalent is mu_star (typical 50-600, can reach 0-1000). Pinning at a bound signals climate mismatch."
+    - category: "mass_balance"
+      name: "prcp_fac (precipitation correction factor)"
+      unit: "dimensionless"
+      source_kind: "calibrated"
+      model_input_format: "multiplicative factor applied to climate precipitation"
+      notes: "Default ~2.5; typical 0.5-5.0, higher (2-4) for high-altitude Himalaya/Karakoram due to gauge undercatch."
+    - category: "mass_balance"
+      name: "temp_bias (temperature bias adjustment)"
+      unit: "degC"
+      source_kind: "calibrated"
+      model_input_format: "additive offset on climate temperature"
+      notes: "Typical -3 to +3 degC, compensates systematic climate biases."
+    - category: "mass_balance"
+      name: "T_Melt (melt threshold temperature)"
+      unit: "degC"
+      source_kind: "default"
+      model_input_format: "monthly mean air temperature threshold above which melt occurs"
+      notes: "Default -1 degC."
+    - category: "ice_dynamics"
+      name: "Glen creep parameter A (f_d = 2A/(n+2), n=3)"
+      unit: "s^-1 Pa^-3"
+      source_kind: "calibrated"
+      model_input_format: "deformation parameter for the shallow-ice flow law"
+      notes: "Default ~2.4e-24; calibrated against the Farinotti 2019 consensus volume in OGGM v1.4+."
+    - category: "ice_dynamics"
+      name: "f_s (basal sliding parameter)"
+      unit: "s^-1 Pa^-3 m^2"
+      source_kind: "default"
+      model_input_format: "basal sliding coefficient in the velocity law"
+      notes: "Free parameter, zero by default (often ignored initially)."
+    - category: "geometry"
+      name: "glacier outlines (RGI)"
+      unit: "polygon / km^2"
+      source_kind: "dataset_lookup"
+      model_input_format: "RGI shapefile polygons (RGIId, GLIMSId, Area, Zmin/Zmax/Zmed, Aspect, TermType, Surging, Form); RGI v6.0 default, v7.0 partial"
+    - category: "geometry"
+      name: "digital elevation model (DEM)"
+      unit: "m"
+      source_kind: "dataset_lookup"
+      model_input_format: "raster GeoTIFF clipped to glacier extent plus border"
+      notes: "SRTM (60S-60N, default), COPDEM (global), NASADEM, AW3D30, DEM3, RAMP. Use COPDEM above 60N where SRTM has voids."
+  initial_conditions:
+    - category: "geometry"
+      name: "spun-up glacier geometry"
+      unit: "m (ice thickness), m^2/m^3 (area/volume)"
+      source_kind: "derived"
+      model_input_format: "flowline ice-thickness / surface geometry produced by dynamic spinup that evolves forward to match the RGI inventory date"
+      notes: "Spinup default on; if it fails (surging/calving/DEM-outline errors or short history) the run starts from the RGI-date geometry with an initial shock."
+    - category: "ice_dynamics"
+      name: "inverted bed topography and initial ice thickness"
+      unit: "m"
+      source_kind: "derived"
+      model_input_format: "bed_h and section thickness from the mass-conservation bed inversion"
+  boundary_conditions:
+    - category: "calibration_target"
+      name: "geodetic mass-balance reference (Hugonnet et al. 2021)"
+      unit: "kg m^-2 yr^-1 (mm w.e./yr)"
+      source_kind: "dataset_lookup"
+      model_input_format: "per-glacier 2000-2020 geodetic MB rate used as the calibration target for melt_f/prcp_fac/temp_bias"
+      notes: "~1-3% of RGI glaciers lack geodetic MB; regional means or parameter transfer used as fallback. Per-glacier uncertainty ~200-500 mm w.e./yr — avoid overfitting."
+    - category: "consensus_target"
+      name: "Farinotti 2019 consensus ice thickness"
+      unit: "m / km^3"
+      source_kind: "dataset_lookup"
+      model_input_format: "consensus thickness/volume used to calibrate the inversion creep parameter A"
+    - category: "scenario_control"
+      name: "CMIP6/ISIMIP3b GCM + SSP scenario selection"
+      unit: "category"
+      source_kind: "user_provided"
+      model_input_format: "GCM name plus ssp126/245/370/585; delta-method bias-corrected against the baseline climate"
+    - category: "method_switch"
+      name: "ice-dynamics solver type (model_type)"
+      unit: "category"
+      source_kind: "user_provided"
+      model_input_format: "FluxBased (explicit, CFL-limited) or SemiImplicit (unconditionally stable; v1.6 default)"
+    - category: "method_switch"
+      name: "flowline construction method"
+      unit: "category"
+      source_kind: "user_provided"
+      model_input_format: "elevation-band flowlines (v1.6 standard) or geometrical-centerline"
+
+processes:
+  modules:
+    - name: "GlacierDirectoryPreprocessing"
+      role: "driver"
+      brief: "Clips the DEM to glacier extent, builds glacier masks, constructs flowlines (elevation-band default or geometrical-centerline) and catchment widths into per-glacier directories."
+    - name: "ClimateProcessing"
+      role: "process_solver"
+      brief: "Extracts monthly temperature/precipitation at the glacier, applies the fixed -6.5 K/km lapse rate to elevation bands, and bias-corrects projection climate via the delta method."
+    - name: "MonthlyTIMassBalance"
+      role: "process_solver"
+      brief: "Monthly temperature-index surface mass balance: B_i(z) = P_i^Solid(z) − melt_f·max(T_i(z) − T_Melt, 0)."
+    - name: "MassBalanceCalibration"
+      role: "process_solver"
+      brief: "Optimizes (melt_f, prcp_fac, temp_bias) so modeled MB matches the Hugonnet 2021 geodetic MB over the 2000-2020 reference period."
+    - name: "BedInversion"
+      role: "process_solver"
+      brief: "Inverts for ice thickness and bed topography from surface slope using mass conservation and Glen's flow law (τ = ρ·g·H·sin α); calibrated to the Farinotti 2019 consensus; supports rectangular/trapezoidal/parabolic/mixed bed shapes."
+    - name: "FlowlineIceDynamics"
+      role: "process_solver"
+      brief: "Depth-integrated isothermal shallow-ice flowline; velocity u = f_d·h·τ^n + f_s·τ^n/h (n=3), basal shear stress ≈ driving stress τ_d = α·ρ·g·h."
+    - name: "GeometryEvolution"
+      role: "integrator"
+      brief: "Solves the ice-thickness diffusion equation (SemiImplicit default, or FluxBased) to evolve flowline geometry; updates volume/area/length annually."
+    - name: "DynamicSpinup"
+      role: "process_solver"
+      brief: "Back-calculates a pre-RGI glacier state that evolves forward to match the observed RGI-date area/volume, providing initial conditions for runs."
+    - name: "HydroDiagnostics"
+      role: "optional_module"
+      brief: "run_with_hydro: partitions on/off-glacier melt, liquid precipitation, snowfall and refreezing into monthly runoff components."
+      applicability: "when store_monthly_hydro / run_with_hydro enabled"
+  internal_edges:
+    - from: "GlacierDirectoryPreprocessing"
+      to: "BedInversion"
+      kind: "invokes"
+      brief: "Flowlines, masks and surface slope feed the ice-thickness inversion."
+    - from: "GlacierDirectoryPreprocessing"
+      to: "ClimateProcessing"
+      kind: "invokes"
+      brief: "Glacier location and elevation bands define where/how climate is downscaled."
+    - from: "Climate"
+      to: "ClimateProcessing"
+      kind: "consumes_input"
+      brief: "Reads monthly temperature and precipitation forcing."
+    - from: "ClimateProcessing"
+      to: "MonthlyTIMassBalance"
+      kind: "invokes"
+      brief: "Lapse-rate-corrected monthly temp/precip drive the temperature-index melt and accumulation."
+    - from: "MonthlyTIMassBalance"
+      to: "MassBalanceCalibration"
+      kind: "invokes"
+      brief: "Calibration tunes melt_f/prcp_fac/temp_bias inside the MB model to the geodetic target."
+    - from: "MassBalanceCalibration"
+      to: "calibrated_mass_balance_params"
+      kind: "writes_state"
+      brief: "Stores calibrated per-glacier mass-balance parameters used by all later runs."
+    - from: "BedInversion"
+      to: "bed_h"
+      kind: "writes_state"
+      brief: "Produces inverted bed topography and initial ice thickness."
+    - from: "BedInversion"
+      to: "FlowlineIceDynamics"
+      kind: "invokes"
+      brief: "Bed geometry and initial thickness initialize the dynamics solver."
+    - from: "MonthlyTIMassBalance"
+      to: "FlowlineIceDynamics"
+      kind: "invokes"
+      brief: "Annual surface mass balance is the mass source/sink for ice flux."
+    - from: "DynamicSpinup"
+      to: "section_thickness"
+      kind: "writes_state"
+      brief: "Sets the initial flowline geometry matching the RGI-date inventory."
+    - from: "FlowlineIceDynamics"
+      to: "GeometryEvolution"
+      kind: "invokes"
+      brief: "Ice flux drives the ice-thickness diffusion integration of geometry."
+    - from: "GeometryEvolution"
+      to: "section_thickness"
+      kind: "writes_state"
+      brief: "Updates flowline cross-sectional thickness and surface elevation each timestep."
+    - from: "GeometryEvolution"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "Emits annual volume/area/length diagnostics."
+    - from: "GeometryEvolution"
+      to: "HydroDiagnostics"
+      kind: "invokes"
+      brief: "Geometry-at-timestep feeds the runoff-component partitioning."
+    - from: "HydroDiagnostics"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "Emits monthly melt, liquid precipitation, snowfall and refreezing components."
+
+states:
+  variables:
+    - name: "section_thickness"
+      unit: "m"
+      role: "prognostic"
+    - name: "surface_h"
+      unit: "m"
+      role: "prognostic"
+    - name: "bed_h"
+      unit: "m"
+      role: "diagnostic"
+    - name: "glacier_widths"
+      unit: "m"
+      role: "diagnostic"
+    - name: "volume"
+      unit: "m^3"
+      role: "prognostic"
+    - name: "area"
+      unit: "m^2"
+      role: "prognostic"
+    - name: "length"
+      unit: "m"
+      role: "prognostic"
+    - name: "calibrated_mass_balance_params"
+      unit: "melt_f kg m^-2 day^-1 degC^-1; prcp_fac dimensionless; temp_bias degC"
+      role: "diagnostic"
+    - name: "specific_mass_balance"
+      unit: "kg m^-2 (mm w.e.)"
+      role: "diagnostic"
+  provenance: "structural"
+
+outputs:
+  - var: "volume"
+    validation_rank: 2
+    unit: "m^3"
+    description: "Total glacier ice volume per year."
+    emitted_in: "model_diagnostics.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Per-glacier volume rarely observed directly; usually inferred from geodetic thickness change."]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Regional volume/volume-change carries large inter-model and observational spread (Farinotti 2019); compare trends/decadal means, not exact inter-annual values."]
+      detrending_options: ["linear_residual", "decadal_mean"]
+  - var: "area"
+    validation_rank: 3
+    unit: "m^2"
+    description: "Glacier area."
+    emitted_in: "model_diagnostics.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Compared against RGI inventory-date area; spinup is tuned to match it, so agreement at the inventory date is partly definitional."]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+      detrending_options: ["linear_residual", "decadal_mean"]
+  - var: "length"
+    validation_rank: 4
+    unit: "m"
+    description: "Glacier length along the main flowline."
+    emitted_in: "model_diagnostics.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Elevation-band flowlines lose 'true' glacier length geometry; length change is more meaningful than absolute length."]
+      detrending_options: ["first_difference"]
+  - var: "specific_mass_balance"
+    validation_rank: 1
+    unit: "kg m^-2 yr^-1 (mm w.e./yr)"
+    description: "Annual (and monthly) specific surface mass balance."
+    emitted_in: "model_diagnostics.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "pbias"
+          caveats: ["Comparable to glaciological/WGMS annual MB series; the calibration period (2000-2020 geodetic) is not independent validation."]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Geodetic MB target has ~200-500 mm w.e./yr per-glacier uncertainty."]
+      detrending_options: ["none"]
+  - var: "calving"
+    validation_rank: 5
+    unit: "m^3"
+    description: "Frontal-ablation / calving flux for tidewater glaciers."
+    emitted_in: "model_diagnostics.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Only meaningful for marine-terminating glaciers (TermType=1)."]
+      detrending_options: ["none"]
+  - var: "melt_on_glacier"
+    validation_rank: 6
+    unit: "kg m^-2 month^-1"
+    description: "On-glacier melt (ice + snow); primary glacier-runoff contribution."
+    emitted_in: "run_output_hydro.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Output uses the hydrological year (month index 1 = October NH); use actual datetime coordinates, never month indices, when aligning the seasonal cycle."]
+      detrending_options: ["none"]
+  - var: "melt_off_glacier"
+    validation_rank: 7
+    unit: "kg m^-2 month^-1"
+    description: "Off-glacier snowmelt."
+    emitted_in: "run_output_hydro.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "liq_prcp_on_glacier"
+    validation_rank: 8
+    unit: "kg m^-2 month^-1"
+    description: "Liquid precipitation falling on-glacier."
+    emitted_in: "run_output_hydro.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "snowfall_on_glacier"
+    validation_rank: 9
+    unit: "kg m^-2 month^-1"
+    description: "Snowfall on-glacier (solid accumulation)."
+    emitted_in: "run_output_hydro.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "refreezing"
+    validation_rank: 10
+    unit: "kg m^-2 month^-1"
+    description: "Refreezing of meltwater."
+    emitted_in: "run_output_hydro.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Rarely observed directly; usually an internal balance term rather than an independent validation target."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "melt_f (degree-day melt factor; legacy mu_star)"
+      to: "specific_mass_balance"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["maussion2019_oggm_v11", "schuster2023_tempindex_sensitivity", "chhotashigri_oggm_sensitivity", "rounce2020_bayesian_uncertainty"]
+    - from: "temp_bias (temperature bias)"
+      to: "specific_mass_balance"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["maussion2019_oggm_v11", "chhotashigri_oggm_sensitivity", "rounce2020_bayesian_uncertainty"]
+    - from: "temperature_lapse_rate"
+      to: "volume"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "structural"
+      citations: ["schuster2023_tempindex_sensitivity"]
+    - from: "prcp_fac (precipitation factor)"
+      to: "specific_mass_balance"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["maussion2019_oggm_v11", "chhotashigri_oggm_sensitivity", "rounce2020_bayesian_uncertainty"]
+    - from: "prcp_fac (precipitation factor)"
+      to: "specific_mass_balance"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "interannual / winter mass-balance variability"
+      citations: ["schuster2023_tempindex_sensitivity"]
+    - from: "Glen creep parameter A"
+      to: "volume"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["maussion2019_oggm_v11", "farinotti2019_consensus_thickness"]
+    - from: "Glen creep parameter A"
+      to: "bed_h"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "inverted ice thickness"
+      citations: ["maussion2019_oggm_v11", "farinotti2019_consensus_thickness"]
+    - from: "bed shape (rectangular vs parabolic)"
+      to: "volume"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "structural"
+      citations: ["maussion2019_oggm_v11"]
+    - from: "f_s (basal sliding parameter)"
+      to: "volume"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["maussion2019_oggm_v11"]
+    - from: "climate temporal resolution (daily vs monthly)"
+      to: "specific_mass_balance"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "structural"
+      applicability: "mass-balance gradient representation"
+      citations: ["schuster2023_tempindex_sensitivity"]
+  citation_index:
+    maussion2019_oggm_v11:
+      short_citation: "Maussion et al. 2019"
+      doi: "10.5194/gmd-12-909-2019"
+      note: "OGGM v1.1 model-description paper; sensitivity tests on mu*, precipitation factor, Glen A, bed shape, temperature bias."
+    schuster2023_tempindex_sensitivity:
+      short_citation: "Schuster et al. 2023"
+      doi: "10.1017/aog.2023.57"
+      note: "Systematic OGGM sensitivity to 18 temperature-index configurations; lapse rate strongest projected-volume control (19% spread under SSP1-2.6)."
+    farinotti2019_consensus_thickness:
+      short_citation: "Farinotti et al. 2019"
+      doi: "10.1038/s41561-019-0300-3"
+      note: "Consensus ice-thickness estimate; OGGM v1.4+ calibrates creep parameter A to this volume target."
+    rounce2020_bayesian_uncertainty:
+      short_citation: "Rounce et al. 2020"
+      doi: "10.1017/jog.2019.91"
+      note: "Bayesian (MCMC) calibration of OGGM-family TI-MB parameters over High Mountain Asia; precip-factor / temperature-bias trade-off dominates calibration uncertainty."
+    chhotashigri_oggm_sensitivity:
+      short_citation: "Chhota Shigri OGGM assessment 2024"
+      doi: "10.1007/978-3-031-76532-2_3"
+      note: "Site-scale OGGM 3-parameter sensitivity (melt factor, precipitation factor, temperature bias); melt factor and temperature bias leading controls."
+
+safety:
+  hazards:
+    - id: "cmip6_temperature_in_kelvin"
+      kind: "weather_file_semantic"
+      description: "Projection/GCM temperature left in Kelvin (~270-290) instead of degC makes the model see >270 degrees; silently all glaciers vanish or never melt under the delta method. (dt_oggm_010)"
+      severity: "silent"
+    - id: "hydrological_year_month_index"
+      kind: "parser_semantic"
+      description: "Monthly hydro output uses the hydrological year (month index 1 = October NH / April SH); treating indices as calendar months shifts the seasonal cycle ~3 months. Use actual datetime coordinates. (dt_oggm_016)"
+      severity: "silent"
+    - id: "melt_factor_pinned_at_bound"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Calibrated melt_f/mu_star pinned at its lower (0) or upper (~1000) bound matches MB at the boundary but is physically unrealistic; indicates climate mismatch, surge, or calving. (dt_oggm_013)"
+      severity: "degraded"
+    - id: "calibration_non_convergence"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "mb_calibration_from_geodetic_mb fails to find (melt_f, prcp_fac, temp_bias) matching the geodetic target (biased climate, surge-type, frontal ablation, DEM/outline errors); fallback/default parameters may be stored. (dt_oggm_011)"
+      severity: "degraded"
+    - id: "negative_inverted_thickness"
+      kind: "numerical_instability"
+      description: "Bed inversion (τ = ρ·g·H·sin α) yields negative ice thickness at DEM artifacts, thin margins, or icefalls where shallow-ice breaks down; clipping to zero leaves unrealistic bed geometry and underestimated volume. (dt_oggm_006)"
+      severity: "degraded"
+    - id: "fluxbased_cfl_violation"
+      kind: "numerical_instability"
+      description: "FluxBasedModel CFL condition becomes extremely restrictive at steep icefalls or very thin ice, driving sub-second timesteps and effectively stalling the run; SemiImplicitModel is unconditionally stable. (dt_oggm_014)"
+      severity: "degraded"
+    - id: "dynamic_spinup_non_convergence"
+      kind: "initial_condition_semantic"
+      description: "Dynamic spinup fails to reach the observed RGI-date area (climate too warm, surge-type, calving, or too-short history); simulation may proceed from an unreliable initial geometry. (dt_oggm_015)"
+      severity: "degraded"
+    - id: "insufficient_geodetic_overlap"
+      kind: "control_semantic"
+      description: "Climate period overlapping <~10-15 yr with the Hugonnet 2000-2020 geodetic reference silently degrades or fails MB calibration with no error in the climate step. (dt_oggm_009)"
+      severity: "silent"
+  validation_limits:
+    - "Isothermal shallow-ice / 1.5D flowline representation: no 3D ice dynamics, no englacial/basal thermodynamics."
+    - "Elevation-band flowlines lose true spatial geometry and absolute glacier length."
+    - "Nominal (point-geometry) glaciers and glaciers below ~0.01 km^2 cannot form valid centerlines and are excluded."
+    - "Surge-type glaciers (RGI surge flag 2/3) involve non-climatic mass transfer and should be excluded from climate calibration."
+    - "Monthly mass-balance timestep cannot resolve sub-monthly melt processes; temperature-index melt has no surface energy-balance closure."
+  warnings:
+    - "Default calibration is tuned for W5E5; switching the baseline climate dataset requires recalibration."
+    - "Geometrical-centerline flowlines are error-prone with poor DEM/outline data, computationally expensive, and incompatible with newer mass-balance models; elevation-band flowlines are the v1.6 standard."
+    - "Geodetic MB has ~200-500 mm w.e./yr per-glacier uncertainty; do not overfit individual glaciers."
+    - "Use COPDEM (or AW3D30/DEM3) rather than SRTM for glaciers above 60N where SRTM has voids/no coverage."
+  assumptions:
+    - statement: "Glacier is represented as one or more 1.5D flowlines under the isothermal shallow-ice approximation, with basal shear stress equal to the driving stress τ_d = α·ρ·g·h."
+      scope: "ice dynamics and geometry evolution"
+      source: "OGGM ice-dynamics docs (docs.oggm.org/en/stable/ice-dynamics.html); Maussion et al. 2019 (10.5194/gmd-12-909-2019)"
+      status: "adopted"
+    - statement: "Surface mass balance is computed with a monthly temperature-index model B_i(z) = P_i^Solid(z) − melt_f·max(T_i(z) − T_Melt, 0); no surface energy balance is closed."
+      scope: "mass balance"
+      source: "OGGM monthly mass-balance docs (docs.oggm.org/en/stable/mass-balance-monthly.html)"
+      status: "adopted"
+    - statement: "Temperature is downscaled to elevation bands with a fixed lapse rate of -6.5 K/km and no default precipitation gradient; precipitation is scaled only by the precipitation factor."
+      scope: "climate downscaling"
+      source: "OGGM mass-balance docs and cfg.PARAMS temp_default_gradient = -0.0065 K/m"
+      status: "adopted"
+    - statement: "v1.6 standard configuration is assumed: elevation-band flowlines and the SemiImplicit geometry solver as defaults, with the MonthlyTIModel using melt_f (the v1.1-era mu_star is treated as its equivalent)."
+      scope: "model configuration / parameter naming"
+      source: "OGGM v1.6 flowlines and whats-new docs (docs.oggm.org/en/stable/flowlines.html, whats-new.html)"
+      status: "tentative"
+    - statement: "Mass-balance parameters are calibrated to the Hugonnet 2021 geodetic MB (2000-2020) and the inversion creep parameter A to the Farinotti 2019 consensus volume; these are treated as the model's intrinsic calibration mechanism, not external observations."
+      scope: "calibration and inversion"
+      source: "Hugonnet et al. 2021; Farinotti et al. 2019 (10.1038/s41561-019-0300-3)"
+      status: "adopted"

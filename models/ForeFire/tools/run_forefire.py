@@ -83,12 +83,65 @@ def validate_inputs(args):
     return binary
 
 
+def _runtime_env(binary):
+    """Build the environment the ForeFire binary needs to actually start.
+
+    ForeFire links against libnetcdf-cxx4 (libnetcdf-cxx4.so.1). That library is
+    frequently installed to a non-default prefix (e.g. ~/.local/lib) because the
+    Debian/Ubuntu package `libnetcdf-c++4-dev` ships a DIFFERENT soname
+    (libnetcdf_c++4.so). Without LD_LIBRARY_PATH pointing at the prefix, the
+    binary dies before executing a single command with
+
+        error while loading shared libraries: libnetcdf-cxx4.so.1:
+        cannot open shared object file: No such file or directory
+
+    and exit code 127 -- which the caller sees only as "no output produced".
+    See diagnostics/triplets.yaml dt_015 (libnetcdf soname mismatch).
+    """
+    env = dict(os.environ)
+    soname = "libnetcdf-cxx4.so.1"
+    candidates = []
+    # 1. explicit override, 2. the ForeFire build tree's own lib/, 3. common prefixes
+    if env.get("NETCDF_HOME"):
+        candidates.append(os.path.join(env["NETCDF_HOME"], "lib"))
+    bin_dir = os.path.dirname(os.path.abspath(binary))
+    candidates.append(os.path.join(os.path.dirname(bin_dir), "lib"))
+    candidates += [
+        os.path.expanduser("~/.local/lib"),
+        "/usr/local/lib",
+        "/usr/lib",
+    ]
+    existing = [p for p in env.get("LD_LIBRARY_PATH", "").split(os.pathsep) if p]
+    found = None
+    for d in candidates:
+        if d and os.path.isfile(os.path.join(d, soname)):
+            found = d
+            break
+    if found and found not in existing:
+        env["LD_LIBRARY_PATH"] = os.pathsep.join([found] + existing)
+        print(f"LD_LIBRARY_PATH += {found} (holds {soname})")
+    elif not found:
+        print(f"PREFLIGHT WARNING: {soname} not found in {candidates}; "
+              "the binary may fail with 'cannot open shared object file'",
+              file=sys.stderr)
+    return env
+
+
 def process(args, binary):
     """Run the ForeFire simulation."""
     cmd = [binary, "-i", args.script]
     print(f"Running: {' '.join(cmd)}")
     print(f"Working directory: {args.workdir}")
 
+    env = _runtime_env(binary)
+    # ForeFire resolves ForeFireDataDirectory (and therefore loadData/fuelsTableFile)
+    # against the PWD ENVIRONMENT VARIABLE, not against the process working
+    # directory. subprocess's cwd= changes the latter but leaves PWD inherited
+    # from the parent, so running this tool from anywhere other than --workdir
+    # makes the engine look for data.nc beside the CALLER and abort with
+    # "File <caller>/./data.nc doesn't exist or no longer available".
+    # See diagnostics/triplets.yaml dt_024.
+    env["PWD"] = os.path.abspath(args.workdir)
     start = time.time()
     try:
         result = subprocess.run(
@@ -97,6 +150,7 @@ def process(args, binary):
             capture_output=True,
             text=True,
             timeout=args.timeout,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         print(f"ERROR: ForeFire timed out after {args.timeout} seconds", file=sys.stderr)
@@ -131,9 +185,17 @@ def process(args, binary):
 
 
 def validate_outputs(args, run_result):
-    """Postflight checks after running ForeFire."""
-    if run_result["status"] != "completed":
-        print(f"Skipping postflight: run status={run_result['status']}")
+    """Postflight checks after running ForeFire.
+
+    A non-zero return code does NOT mean there is no usable output: ForeFire
+    flushes each print[]/save[] as it executes, and the known engine crash
+    (triplet dt_021, FireNode leaving the domain) happens at some LATER goTo,
+    leaving every earlier isochrone valid on disk. So postflight still runs on
+    a crashed process; the status is downgraded to `partial` only if output was
+    in fact produced.
+    """
+    if run_result["status"] == "timeout":
+        print("Skipping postflight: run status=timeout")
         return run_result
 
     errors = []
@@ -161,6 +223,17 @@ def validate_outputs(args, run_result):
                 created_files.append({"file": name, "size_bytes": os.path.getsize(m)})
 
     run_result["output_files"] = created_files
+
+    # A crashed run that still produced output is `partial`, not `failed`:
+    # the isochrones written before the crash are physically valid.
+    if run_result["status"] == "failed" and created_files:
+        run_result["status"] = "partial"
+        run_result["partial_reason"] = (
+            f"forefire exited rc={run_result.get('returncode')} but wrote "
+            f"{len(created_files)} output file(s); see triplet dt_021 "
+            "(FireNode leaving the domain segfaults at a later goTo)."
+        )
+        print(f"POSTFLIGHT: {run_result['partial_reason']}", file=sys.stderr)
 
     if errors:
         for e in errors:

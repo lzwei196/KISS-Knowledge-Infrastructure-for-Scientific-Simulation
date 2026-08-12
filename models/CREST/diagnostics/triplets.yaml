@@ -162,3 +162,94 @@ triplets:
       If headers are in a non-standard path, configure may need:
         CPPFLAGS="-I/usr/include/geotiff" ./configure
       Check configure.ac for the three possible header locations it checks.
+
+  - id: T019
+    symptom: |
+      EF5 prints "Walked N (out of M) nodes for <gauge>!" with N << M (e.g. 4/24, 3/3262),
+      run completes with exit_code=0, ts.<gauge>.crest.csv produced but Discharge column is
+      identically 0.00 for every timestep. Soil moisture (SM) and basin-avg precip
+      look reasonable in the CSV.
+    diagnosis: |
+      The DDM/FAM grids fed to EF5 have a fragmented routing topology — unfilled sinks
+      and/or wrong drainage-direction encoding break the upstream flow path to the gauge.
+      Common causes:
+        - DDM was derived without sink-filling (e.g. wflow pcraster ldd_create defaults)
+        - DDM uses TauDEM 1-8 codes but ESRIDDM=true is set in control.txt
+        - SELFFAM convention mismatch between FAM tool and EF5 (EF5 expects min FAM=1)
+        - DEM clipped too tightly so headwater cells are missing
+      Diagnostic: grep DDM=0 cell count. If > 1% of basin cells, sinks are unfilled.
+    remedy: |
+      Regenerate DDM/FAM with the KI's Stage-1 tool:
+
+        python tools/prepare_basic_grids.py \
+          --dem raw_dem.tif --out-dir basin/grids/ \
+          --method breach --out-format asc \
+          --expected-outlet <gauge_lon> <gauge_lat>
+
+      The tool runs WhiteboxTools BreachDepressionsLeastCost → D8Pointer (ESRI) →
+      D8FlowAccumulation (cells, +1 for SELFFAM=true), and verifies:
+        - DDM unique values are subset of {0, 1, 2, 4, 8, 16, 32, 64, 128}
+        - DDM sinks < 1% of basin
+        - FAM at expected outlet is non-trivial (not 1)
+
+      Verified empirical effect on Nuxia 94109 (Yarlung Tsangpo, 2026-04-28):
+        old prepared DDM: 171 sinks (7.8%), FAM_max=129, walked 4/24 → sim_Q=0
+        regenerated DDM:  60 sinks (2.8%),  FAM_max=970, walked 180/181 → routing connected
+
+  - id: T020
+    symptom: |
+      `ef5 -z dem.tif -d ddm.tif -a fam.tif -p` runs (prints banner) and exits cleanly,
+      but no DDM or FAM file is produced. Exit code is 0.
+    diagnosis: |
+      EF5 v1.2.3's `-p` flag (mode=1, "process DEM from scratch") is present in the
+      getopt argument parser but its implementation in `ProcessDEM()` is empty —
+      mode=1 falls through to a no-op. Only mode=2 (`-s`, FAM from existing DDM) works.
+    remedy: |
+      Do NOT use `ef5 -p`. Use the KI's Stage-1 tool instead:
+        python tools/prepare_basic_grids.py --dem raw_dem.tif --out-dir basin/grids/ ...
+      If you must run EF5 directly, only `-s` (recompute FAM from a known-good DDM) works:
+        ef5 -z dem.tif -d ddm.tif -a fam.tif -s
+
+  - id: T021
+    symptom: |
+      EF5 runs to completion with ROUTING=LR. Walked-nodes diagnostic looks good
+      (high connectivity, e.g. 180/181). Soil moisture and Fast/Slow Flow columns
+      in ts.<gauge>.crest.csv are non-zero. But the Discharge column is identically
+      0.00 for every timestep. NSE/r/KGE all NaN or undefined.
+    diagnosis: |
+      EF5 v1.2.3 LR (Linear Reservoir) routing is BROKEN for discharge output:
+      LinearRoute.cpp's Route() function has `discharge` in its signature but
+      NEVER assigns to it. The simulator initializes currentQ to 0.0 and
+      LR routing leaves it at 0.0. KinematicRoute.cpp does correctly populate
+      discharge->at(i) at channel cells.
+
+      The water balance and routing are still happening correctly internally —
+      water is flowing between cells via incomingWater[LR_LAYER_OVERLAND/INTERFLOW]
+      buffers, but the simulator never converts those to m³/s for the output CSV.
+      The discharge formula (FF+SF)*area/3.6 exists in Simulator.cpp but only in
+      the calibration path (CALI_DREAM), not the regular SIMU path.
+    remedy: |
+      Switch to ROUTING=KW (Kinematic Wave) in the [Task] block, and replace
+      the [LRParamSet] with a [KWParamSet] block:
+
+        [kwparamset NAME]
+        GAUGE=<gauge>
+        UNDER=1.67     # interflow speed multiplier (range 0.1-10)
+        LEAKI=0.043    # interflow leak rate (0-1)
+        TH=6.66        # channel threshold (FAM cells)
+        ISU=0.0        # initial interflow storage
+        ALPHA=2.99     # channel Q = alpha * A^beta multiplier
+        BETA=0.93      # channel exponent (range 0.5-1.5)
+        ALPHA0=4.60    # overland alpha
+
+      Then in [Task]:  ROUTING=KW, ROUTING_PARAM_SET=NAME
+
+      Verified empirical effect (2026-04-29):
+        Bengbu sub-basin 1990: LR sim_Q=0, KW sim_Q max=652 m³/s, r=0.57, PBIAS=-66%
+        Nuxia 1991-2000:        LR sim_Q=0, KW sim_Q max=2364 m³/s, r=0.80, PBIAS=-84%
+
+      KW captures monsoon timing well (r > 0.5 with default params); volume bias
+      requires UNDER/LEAKI/ALPHA calibration. The Python surrogate at
+      `auto_dissect/_work/CREST/run_validation.py` re-implements LR in Python
+      and DOES produce non-zero Q because the surrogate computes Q correctly —
+      this is a binary-side bug, not an algorithm bug.

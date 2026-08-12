@@ -291,9 +291,23 @@ def write_clean_csv(timeseries, output_path, sep=","):
     """Write clean CSV from timeseries data."""
     if not timeseries:
         return
-    keys = list(timeseries[0].keys())
+    # MONICA output mixes sections (e.g. daily vs crop/harvest events) whose
+    # rows do not all carry the same columns; extract_timeseries only adds a
+    # key when that row's cell is non-empty, so later rows can contain keys
+    # absent from timeseries[0]. Build the fieldname set as the UNION of all
+    # rows' keys (preserving first-seen order) and fill gaps with restval,
+    # instead of trusting the first row alone (which raised
+    # "dict contains fields not in fieldnames").
+    keys = []
+    seen = set()
+    for entry in timeseries:
+        for k in entry.keys():
+            if k not in seen:
+                seen.add(k)
+                keys.append(k)
     with open(output_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=keys, delimiter=sep)
+        writer = csv.DictWriter(f, fieldnames=keys, delimiter=sep,
+                                restval="", extrasaction="ignore")
         writer.writeheader()
         writer.writerows(timeseries)
 

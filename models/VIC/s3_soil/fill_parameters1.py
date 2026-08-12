@@ -1,3 +1,6 @@
+# KDT dt_vic_023: netCDF4 MUST be imported before xarray, and every
+# xr.open_dataset() MUST pin `engine=`. See diagnostics/triplets.md.
+import netCDF4  # noqa: F401  # isort:skip  -- must precede `import xarray`
 import xarray as xr
 import pandas as pd
 import numpy as np
@@ -16,13 +19,26 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", message="The 'band' dimension is ignored by rasterio")
 
 # --- 1. 配置核心输入路径 ---
-MASTER_GRID_NC = Path(r"/mnt/disk1/Hydrocraft_server/outputs/xixian_rerun_71379b42/vic_temp/grid/grid_xixian_rerun_71379b42_025deg.nc")
-ELEV_NC_IN = Path(r"/mnt/disk1/Hydrocraft_server/data/elev/elev_CMFD_V0200_B-00_fx_010deg.nc")
-PREC_ANNUAL_NC = Path(r"/mnt/disk1/Hydrocraft_server/data/his_average_prec/prec_CMFD_010deg_meanAnnual_1951-2020_mm.nc")
-SOIL_RASTER_IN = Path(r"/mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img")
+_BASIN = os.environ.get("VIC_BASIN_NAME", "xixian_rerun_71379b42")
+_OUT_ROOT = Path(os.environ.get("VIC_OUT_ROOT", "/mnt/disk1/Hydrocraft_server/outputs"))
+
+MASTER_GRID_NC = _OUT_ROOT / _BASIN / "vic_temp" / "grid" / f"grid_{_BASIN}_025deg.nc"
+# KDT 2026-07-09 — these three were hard-coded to CHINA-ONLY rasters. Outside the
+# CMFD domain the elevation lookup silently returned the nearest *Chinese* cell's
+# elevation (sel(method="nearest") never fails), which is a wrong number rather
+# than an error. They are now env-configurable; defaults reproduce the China runs.
+ELEV_NC_IN = Path(os.environ.get(
+    "VIC_ELEV_NC",
+    r"/mnt/disk1/Hydrocraft_server/data/elev/elev_CMFD_V0200_B-00_fx_010deg.nc"))
+PREC_ANNUAL_NC = Path(os.environ.get(
+    "VIC_PREC_ANNUAL_NC",
+    r"/mnt/disk1/Hydrocraft_server/data/his_average_prec/prec_CMFD_010deg_meanAnnual_1951-2020_mm.nc"))
+SOIL_RASTER_IN = Path(os.environ.get(
+    "VIC_SOIL_RASTER",
+    r"/mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img"))
 
 # --- 2. 配置输出路径 ---
-OUTPUT_DIR = Path(r"/mnt/disk1/Hydrocraft_server/outputs/xixian_rerun_71379b42/vic_temp/soil")
+OUTPUT_DIR = _OUT_ROOT / _BASIN / "vic_temp" / "soil"
 SOIL_PARAM_OUT = OUTPUT_DIR / "SOIL_PARAM_FINAL.txt"
 
 # --- 3. 准备工作 ---

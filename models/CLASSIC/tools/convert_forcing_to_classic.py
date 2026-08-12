@@ -119,9 +119,9 @@ def validate_inputs(args):
     """Validate input arguments before processing."""
     errors = []
 
-    if args.source_type == "csv":
+    if args.source_type in ("csv", "fluxnet"):
         if args.csv_file is None:
-            errors.append("--csv_file required for source_type=csv")
+            errors.append(f"--csv_file required for source_type={args.source_type}")
         elif not os.path.isfile(args.csv_file):
             errors.append(f"CSV file not found: {args.csv_file}")
     else:
@@ -404,6 +404,90 @@ def convert_csv_to_classic(csv_file, lat, lon, start_year, end_year,
         sys.exit(1)
 
 
+def convert_fluxnet_to_classic(csv_file, lat, lon, start_year, end_year,
+                               output_dir, timestep_minutes):
+    """
+    Convert a FLUXNET2015 FULLSET sub-daily file (e.g. FULLSET_HH.csv) to
+    CLASSIC single-point met netCDF files.
+
+    FLUXNET tower met is the canonical site forcing for CLASSIC point runs but
+    arrives with raw FLUXNET variable names/units, not the pre-ordered 11-col
+    legacy MET layout.  This reader maps:
+        SW_IN_F (W/m2)  -> dswrf        P_F   (mm/timestep) -> pre (kg/m2/s)
+        LW_IN_F (W/m2)  -> dlwrf        WS_F  (m/s)         -> wind
+        TA_F    (degC)  -> tmp          PA_F  (kPa)         -> pres (Pa)
+        TA_F+RH(+VPD)   -> spfh (kg/kg, specific humidity, computed)
+
+    CLASSIC's met reader is NOT leap-aware (`do d=1,365` in metModule.f90), so
+    Feb-29 timesteps are dropped (noleap forcing; run with leap=.false.).
+    """
+    if pd is None:
+        print(json.dumps({"status": "error",
+                           "errors": ["pandas required for FLUXNET conversion"]}))
+        sys.exit(1)
+
+    df = pd.read_csv(csv_file)
+    if "TIMESTAMP_START" not in df.columns:
+        print(json.dumps({"status": "error",
+                           "errors": ["TIMESTAMP_START column not found "
+                                      "(expected a FLUXNET FULLSET sub-daily file)"]}))
+        sys.exit(1)
+
+    ts = df["TIMESTAMP_START"].astype(np.int64).astype(str)
+    times = pd.to_datetime(ts, format="%Y%m%d%H%M")
+
+    def clean(col):
+        v = pd.to_numeric(df[col], errors="coerce").astype(float)
+        v[v <= -9990.0] = np.nan
+        return v.interpolate(limit_direction="both").to_numpy()
+
+    ta = clean("TA_F")                       # degC
+    sw = np.maximum(clean("SW_IN_F"), 0.0)   # W/m2
+    lw = clean("LW_IN_F")                     # W/m2
+    pa_kpa = clean("PA_F")                    # kPa
+    ws = clean("WS_F")                        # m/s
+    p_mm = clean("P_F")                       # mm per timestep
+    rh = clean("RH") if "RH" in df.columns else np.full(len(df), np.nan)
+    vpd = clean("VPD_F") if "VPD_F" in df.columns else np.full(len(df), np.nan)
+
+    # Specific humidity from TA(degC), RH(%) [primary] or VPD(hPa) [fallback].
+    es = 0.6108 * np.exp(17.27 * ta / (ta + 237.3))           # sat vap press, kPa
+    e = np.where(np.isfinite(rh), rh / 100.0 * es, es - vpd / 10.0)
+    e = np.clip(e, 1e-4, es)                                   # 0 < e <= es
+    spfh = 0.622 * e / (pa_kpa - 0.378 * e)                    # kg/kg
+
+    sec = timestep_minutes * 60.0
+    var_data = {
+        "dswrf": sw,
+        "dlwrf": lw,
+        "pre": p_mm / sec,                   # mm/timestep -> kg/m2/s
+        "tmp": ta,
+        "spfh": spfh,
+        "wind": ws,
+        "pres": pa_kpa * 1000.0,             # kPa -> Pa
+    }
+
+    # Year filter + drop Feb 29 (noleap)
+    yr = times.dt.year.to_numpy()
+    mmdd = times.dt.strftime("%m%d").to_numpy()
+    keep = (yr >= start_year) & (yr <= end_year) & (mmdd != "0229")
+    times_kept = [t.to_pydatetime() for t, k in zip(times, keep) if k]
+    for k in var_data:
+        var_data[k] = var_data[k][keep]
+
+    os.makedirs(output_dir, exist_ok=True)
+    results = {"status": "success", "files": [], "warnings": [],
+               "n_timesteps": len(times_kept)}
+    for var_name, data in var_data.items():
+        results["warnings"].extend(validate_outputs(var_name, data))
+        out_path = os.path.join(output_dir, f"{var_name}.nc")
+        create_classic_met_nc(out_path, var_name, data, times_kept, lat, lon)
+        results["files"].append(out_path)
+
+    print(json.dumps(results, indent=2))
+    return results
+
+
 def convert_netcdf_to_classic(source_dir, source_type, lat, lon,
                                start_year, end_year, output_dir,
                                timestep_minutes):
@@ -541,7 +625,7 @@ def main():
         description="Convert forcing data to CLASSIC netCDF format"
     )
     parser.add_argument("--source_type", required=True,
-                        choices=["crujra", "era5", "csv"],
+                        choices=["crujra", "era5", "csv", "fluxnet"],
                         help="Source dataset type")
     parser.add_argument("--source_dir", default=None,
                         help="Directory with source netCDF files")
@@ -567,6 +651,10 @@ def main():
         convert_csv_to_classic(args.csv_file, args.lat, args.lon,
                                args.start_year, args.end_year,
                                args.output_dir, args.timestep_minutes)
+    elif args.source_type == "fluxnet":
+        convert_fluxnet_to_classic(args.csv_file, args.lat, args.lon,
+                                   args.start_year, args.end_year,
+                                   args.output_dir, args.timestep_minutes)
     else:
         convert_netcdf_to_classic(args.source_dir, args.source_type,
                                    args.lat, args.lon,

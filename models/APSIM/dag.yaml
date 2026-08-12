@@ -1,0 +1,459 @@
+template_version: "3.5"
+
+identity:
+  model_id: "APSIM"
+  scientific_reference_version: "APSIM Next Generation (Plant Modelling Framework lineage; daily soil-plant-atmosphere continuum)"
+  implementation:
+    id: "apsim-ng"
+    version: "APSIM Next Generation (ApsimX, .NET 8.0 build)"
+    provenance: "C#; APSIM Initiative ApsimX Next Generation, JSON .apsimx simulations with SQLite output."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "csharp"
+  license: "Custom APSIM General Use Licence Agreement (APSIM Initiative consortium; not OSI-standard)"
+  repo_url: "https://github.com/APSIMInitiative/ApsimX"
+
+boundary:
+  scope_in:
+    - "crop growth and development (phenology, canopy/LAI, biomass, grain yield)"
+    - "soil water balance (infiltration, SCS-CN runoff, Ritchie evaporation, drainage, layered redistribution)"
+    - "soil nitrogen and carbon cycling (mineralisation, nitrate/ammonium/urea pools, residue decomposition)"
+    - "crop water and nitrogen uptake from a layered soil profile"
+    - "management operations (sowing, fertiliser, irrigation, harvest)"
+    - "canopy energy/light partitioning and potential evapotranspiration (MicroClimate)"
+  scope_out:
+    - "regional/gridded aggregation (single point/field only; one Zone, area in ha)"
+    - "single-plant detail (Plant operates on an area basis, representative population)"
+    - "internally-simulated atmosphere/weather (weather is a forced input via .met)"
+    - "river routing, regional hydrology, economic markets (external/add-on components)"
+  spatial: "1-D column"
+  temporal: "daily"
+  closure: "mass-balance"
+  notes: "Daily mass bookkeeping across coupled modules: crop returns soil water and N uptake to the soil water/N modules each day, crop cover passed to the water balance for evaporation/runoff, and tops/root residues passed to surface-organic-matter and soil N at harvest. The soil profile is solved consecutively (process-by-process) each day, not as simultaneous coupled flow equations. MicroClimate computes a Penman-Monteith / equilibrium-evaporation energy balance for potential ET, but the overall conservation target is water and C/N mass, not a closed surface energy budget."
+
+inputs:
+  forcing:
+    - {category: weather, name: "Solar radiation (radn)", unit: "MJ/m^2/day", source_kind: forcing, model_input_format: ".met text file daily column", notes: "Drives biomass via RUE x intercepted radiation; APSIM reads each value as MJ/m^2 (W/m^2 or J/m^2/day cause 10-50x biomass error)."}
+    - {category: weather, name: "Maximum temperature (maxt)", unit: "degC", source_kind: forcing, model_input_format: ".met text file daily column", notes: "Thermal time uses 3-hourly temps interpolated from daily max/min."}
+    - {category: weather, name: "Minimum temperature (mint)", unit: "degC", source_kind: forcing, model_input_format: ".met text file daily column"}
+    - {category: weather, name: "Rainfall (rain)", unit: "mm/day", source_kind: forcing, model_input_format: ".met text file daily column", notes: "Must be daily totals; sub-daily (mm/3hr) drivers must be summed."}
+    - {category: weather, name: "Vapour pressure (vp)", unit: "hPa", source_kind: forcing, model_input_format: ".met optional daily column", notes: "Drives VPD/ET; optional."}
+    - {category: weather, name: "Wind (wind)", unit: "m/s", source_kind: forcing, model_input_format: ".met optional daily column"}
+    - {category: weather, name: "Pan evaporation (pan)", unit: "mm/day", source_kind: forcing, model_input_format: ".met optional daily column"}
+    - {category: weather, name: "Atmospheric CO2 (co2)", unit: "ppm", source_kind: forcing, model_input_format: ".met optional daily column / scalar", notes: "Defaults to ambient if absent; affects RUE and transpiration efficiency."}
+    - {category: weather, name: "Air pressure", unit: "hPa", source_kind: forcing, model_input_format: ".met optional column", notes: "Silently defaults to 1010 hPa when absent from the weather file."}
+  parameters:
+    - {category: weather_metadata, name: "tav (annual average ambient temperature)", unit: "degC", source_kind: dataset_lookup, model_input_format: ".met header metadata", notes: "Drives the CERES soil-temperature model; missing tav/amp gives wrong soil temps and germination timing."}
+    - {category: weather_metadata, name: "amp (annual amplitude of mean monthly temperature)", unit: "degC", source_kind: dataset_lookup, model_input_format: ".met header metadata"}
+    - {category: site, name: "latitude / longitude", unit: "decimal degrees", source_kind: dataset_lookup, model_input_format: ".met header metadata", notes: "Latitude sets day length / radiation geometry."}
+    - {category: soil_physical, name: "Layer thickness", unit: "mm", source_kind: dataset_lookup, model_input_format: "Physical layer array in .apsimx JSON", notes: "Typical 100-300 mm; cm input gives a 10x-too-shallow profile."}
+    - {category: soil_physical, name: "Bulk density (BD)", unit: "g/cc", source_kind: dataset_lookup, model_input_format: "Physical layer array in .apsimx JSON", notes: "Typical 1.0-1.8; kg/m^3 input crashes the water balance."}
+    - {category: soil_physical, name: "AirDry / LL15 / DUL / SAT", unit: "mm/mm", source_kind: dataset_lookup, model_input_format: "Physical layer array in .apsimx JSON", notes: "Volumetric water limits; must satisfy AirDry <= LL15 <= DUL <= SAT per layer."}
+    - {category: soil_physical, name: "Saturated hydraulic conductivity (KS)", unit: "mm/day", source_kind: dataset_lookup, model_input_format: "Physical layer array in .apsimx JSON"}
+    - {category: crop_soil, name: "Crop lower limit (LL)", unit: "mm/mm", source_kind: calibrated, model_input_format: "SoilCrop layer array in .apsimx JSON", notes: "Crop extraction limit; must be >= LL15."}
+    - {category: crop_soil, name: "Root uptake rate (KL)", unit: "/day", source_kind: calibrated, model_input_format: "SoilCrop layer array in .apsimx JSON", notes: "Typically decreases with depth (0.01-0.10)."}
+    - {category: crop_soil, name: "Root exploration factor (XF)", unit: "dimensionless", source_kind: calibrated, model_input_format: "SoilCrop layer array in .apsimx JSON"}
+    - {category: water_balance, name: "Soil evaporation U / Cona (Summer/Winter)", unit: "mm; mm/d^0.5", source_kind: calibrated, model_input_format: "WaterBalance node in .apsimx JSON", notes: "Ritchie stage-1 (U) and stage-2 (Cona) drying limits; defaults U=6, summer Cona 3.5 / winter 2.5."}
+    - {category: water_balance, name: "Bare-soil curve number (CN2Bare) / Salb / SWCON / diffusivity", unit: "dimensionless; 0-1; 0-1", source_kind: calibrated, model_input_format: "WaterBalance node in .apsimx JSON", notes: "SCS-CN runoff, bare-soil albedo, per-layer drainage conductivity, unsaturated-flow diffusivity."}
+    - {category: cultivar, name: "Crop/cultivar genetic coefficients", unit: "mixed (degC.d, g/MJ, dimensionless)", source_kind: calibrated, model_input_format: "named built-in cultivar in crop resource files (case-sensitive)", notes: "Phenology thermal-time targets, base/optimum/ceiling temperatures, vernalisation x_vernal_temp/y_vernal_days, photoperiod sensitivity, RUE, extinction coefficient, SLA, harvest index, grain-number and grain-size parameters. Not all exposed as scene inputs; live in cultivar resource files."}
+  initial_conditions:
+    - {category: soil_water, name: "Initial soil water per layer (SW)", unit: "mm/mm", source_kind: user_provided, model_input_format: "WaterBalance/Sample node in .apsimx JSON"}
+    - {category: soil_nitrogen, name: "Initial mineral N pools (NO3, NH4, Urea per layer)", unit: "kg/ha", source_kind: user_provided, model_input_format: "Nutrient/solute initial arrays in .apsimx JSON", notes: "High initial NO3 silently inflates yield."}
+    - {category: soil_carbon, name: "Initial organic C/N pools and surface residue", unit: "kg/ha; %", source_kind: user_provided, model_input_format: "Organic / SurfaceOrganicMatter nodes in .apsimx JSON"}
+  boundary_conditions:
+    - {category: management, name: "Sowing (Population, Cultivar, Depth, RowSpacing)", unit: "plants/m^2; string; mm; mm", source_kind: user_provided, model_input_format: "Manager script (SowingRule) in .apsimx", notes: "Population is plants/m^2 (wheat ~100-250, maize ~7-10), NOT plants/ha; cultivar name must match a built-in exactly."}
+    - {category: management, name: "Fertiliser application (Amount, Depth, Type)", unit: "kg/ha; mm; enum (NO3N/NH4N/UreaN)", source_kind: user_provided, model_input_format: "Manager script / Fertiliser node in .apsimx"}
+    - {category: management, name: "Irrigation application (Amount, Depth, Efficiency)", unit: "mm; mm; 0-1", source_kind: user_provided, model_input_format: "Manager script / Irrigation node in .apsimx"}
+    - {category: management, name: "Harvest operation", unit: "event/date", source_kind: user_provided, model_input_format: "Manager script (HarvestRule) in .apsimx"}
+    - {category: control, name: "Simulation period (Clock Start/End)", unit: "date", source_kind: user_provided, model_input_format: "Clock node in .apsimx"}
+    - {category: control, name: "Zone area", unit: "ha", source_kind: user_provided, model_input_format: "Zone node in .apsimx (default 1.0 ha)"}
+    - {category: control, name: "Reported variables and reporting event", unit: "variable list; event name", source_kind: user_provided, model_input_format: "Report node EventNames in .apsimx", notes: "Requires [Clock].DoReport (or a crop event) to emit rows."}
+
+processes:
+  modules:
+    - {name: "Clock", role: "driver", brief: "Daily timestep loop; fires the fixed-order daily event chain (DoWeather -> DoManagement -> DoFertiliser -> DoEnergyArbitration -> DoSoilWaterMovement -> DoSoilTemperature -> DoSolute/OM -> DoWaterArbitration -> DoPhenology -> DoPotential/ActualPlantGrowth -> DoNutrientArbitration -> DoUpdate -> DoReport). This strict ordering is the true model DAG."}
+    - {name: "Weather", role: "driver", brief: "Reads the .met file and exposes daily MaxT/MinT/Radn/Rain/VP/Wind/CO2/DayLength; defaults AirPressure to 1010 hPa when absent."}
+    - {name: "MicroClimate", role: "process_solver", brief: "Canopy energy and light interception arbitration; computes potential ET (equilibrium/Priestley-Taylor and Penman-Monteith terms), net radiation and intercepted radiation across canopy layers."}
+    - {name: "WaterBalance", role: "process_solver", brief: "Cascading layered soil water: infiltration, runoff, Ritchie stage-1/stage-2 soil evaporation, saturated/unsaturated/lateral flow, per-layer drainage; Drainage is the downward flux of the last layer."}
+    - {name: "Runoff", role: "process_solver", brief: "SCS curve-number surface runoff with cover and tillage CN reductions; antecedent moisture weighted over an effective depth."}
+    - {name: "SoilTemperature", role: "process_solver", brief: "CERES-style layered soil temperature solver driven by tav/amp header metadata; affects germination, root growth and decomposition."}
+    - {name: "SurfaceOrganicMatter", role: "process_solver", brief: "Surface residue pool decomposition and cover; cover feeds runoff/evaporation and decomposition adds FOM to the soil organic pools."}
+    - {name: "Nutrient", role: "process_solver", brief: "CERES-style C/N cycling: FOM (carbohydrate/cellulose/lignin), Microbial, Humic, Inert pools plus NO3/NH4/Urea solutes; mineralisation, urea hydrolysis, nitrate/ammonium supply."}
+    - {name: "Phenology", role: "process_solver", brief: "Thermal-time driven phase progression through development stages; exposes continuous Stage and CurrentPhaseName; vernalisation and photoperiod sensitivity for some crops; thermal time reduced by water/N stress between emergence and flowering."}
+    - {name: "Plant", role: "driver", brief: "Generic Plant Modelling Framework crop container managing Sow/Harvest, lifecycle flags, and the orchestration of organs through potential and actual growth."}
+    - {name: "Leaf", role: "process_solver", brief: "Canopy leaf-area development and light interception (extinction coefficient, max LAI, specific leaf area); drives intercepted radiation and biomass demand."}
+    - {name: "Root", role: "process_solver", brief: "Layered root growth, water extraction (KL, LL, XF) and N uptake; binds to the soil water module at runtime and writes uptake deltas back into soil state."}
+    - {name: "OrganArbitrator", role: "allocator", brief: "Partitions C and N supply among organs (potential then actual partitioning, driven by RUE x intercepted radiation) and arbitrates soil water/N uptake; harvest index controls grain fraction."}
+    - {name: "Report", role: "integrator", brief: "Collects user-listed variables on DoReport and persists them to the SQLite output datastore (and optional CSV)."}
+  internal_edges:
+    - {from: "Clock", to: "Weather", kind: "invokes", brief: "DoWeather fires first each day to load drivers."}
+    - {from: "Weather", to: "MicroClimate", kind: "produces_output", brief: "Radn/MaxT/MinT/VP feed energy and potential-ET calculation."}
+    - {from: "Clock", to: "MicroClimate", kind: "invokes", brief: "DoEnergyArbitration."}
+    - {from: "Weather", to: "Phenology", kind: "consumes_input", brief: "Temperature drives thermal-time accumulation."}
+    - {from: "Clock", to: "Phenology", kind: "invokes", brief: "DoPhenology advances the thermal-time stage."}
+    - {from: "SoilTemperature", to: "Phenology", kind: "reads_state", brief: "Soil temperature affects germination and early development."}
+    - {from: "Clock", to: "WaterBalance", kind: "invokes", brief: "DoSoilWaterMovement after energy arbitration."}
+    - {from: "Weather", to: "WaterBalance", kind: "produces_output", brief: "Rain drives infiltration and runoff."}
+    - {from: "Runoff", to: "WaterBalance", kind: "writes_state", brief: "Runoff is subtracted from infiltrating water."}
+    - {from: "SurfaceOrganicMatter", to: "WaterBalance", kind: "reads_state", brief: "Surface cover modifies runoff CN and soil evaporation."}
+    - {from: "Clock", to: "SoilTemperature", kind: "invokes", brief: "DoSoilTemperature solves the layered thermal profile."}
+    - {from: "Clock", to: "Nutrient", kind: "invokes", brief: "DoSoilOrganicMatter / DoSolute drive C-N cycling."}
+    - {from: "SurfaceOrganicMatter", to: "Nutrient", kind: "produces_output", brief: "Residue decomposition adds FOM to soil organic pools."}
+    - {from: "WaterBalance", to: "Nutrient", kind: "produces_output", brief: "Drainage (last-layer flux) drives solute leaching."}
+    - {from: "Clock", to: "Plant", kind: "invokes", brief: "DoPotentialPlantGrowth then DoActualPlantGrowth."}
+    - {from: "Phenology", to: "Plant", kind: "reads_state", brief: "Stage gates organ growth and partitioning."}
+    - {from: "MicroClimate", to: "Leaf", kind: "produces_output", brief: "Intercepted radiation sets potential biomass production."}
+    - {from: "Leaf", to: "OrganArbitrator", kind: "produces_output", brief: "Leaf supply (RUE x intercepted radiation) feeds biomass arbitration."}
+    - {from: "MicroClimate", to: "OrganArbitrator", kind: "produces_output", brief: "Potential ET sets crop water demand for arbitration."}
+    - {from: "Clock", to: "OrganArbitrator", kind: "invokes", brief: "DoWaterArbitration and DoNutrientArbitration."}
+    - {from: "OrganArbitrator", to: "Root", kind: "invokes", brief: "Arbitrator calls Root water/N uptake with allocated amounts."}
+    - {from: "WaterBalance", to: "Root", kind: "produces_output", brief: "Layered SW/ESW provides the uptake supply."}
+    - {from: "Root", to: "WaterBalance", kind: "writes_state", brief: "Water uptake deltas removed from per-layer soil water."}
+    - {from: "Nutrient", to: "Root", kind: "produces_output", brief: "NO3/NH4 per layer set the N supply."}
+    - {from: "Root", to: "Nutrient", kind: "writes_state", brief: "N uptake removed from the NO3/NH4 solute pools."}
+    - {from: "OrganArbitrator", to: "Plant", kind: "writes_state", brief: "Allocates C/N to Leaf/Grain/Root biomass."}
+    - {from: "Clock", to: "Plant", kind: "invokes", brief: "DoManagement-subscribed scripts call Plant.Sow/Harvest."}
+    - {from: "Plant", to: "Report", kind: "produces_output", brief: "Phenology Stage, biomass, LAI and rooting depth reported."}
+    - {from: "WaterBalance", to: "Report", kind: "produces_output", brief: "ESW, Drainage, Runoff and Evaporation reported."}
+    - {from: "Weather", to: "Report", kind: "produces_output", brief: "Rain/MaxT/MinT/Radn reported."}
+    - {from: "Report", to: "Outputs", kind: "produces_output", brief: "DoReport writes rows to the SQLite datastore (and CSV)."}
+
+states:
+  variables:
+    - {name: "accumulated thermal time", unit: "degC.d", role: accumulator}
+    - {name: "phenological stage (continuous) / CurrentPhaseName", unit: "stage code / string", role: prognostic}
+    - {name: "cumulative vernalising days", unit: "days", role: accumulator}
+    - {name: "leaf area index (LAI)", unit: "m^2/m^2", role: prognostic}
+    - {name: "canopy cover (green/total)", unit: "0-1", role: diagnostic}
+    - {name: "organ biomass pools (leaf, grain, above-ground, root)", unit: "g/m^2", role: prognostic}
+    - {name: "plant nitrogen content", unit: "g N/m^2", role: prognostic}
+    - {name: "rooting depth", unit: "mm", role: prognostic}
+    - {name: "soil water content per layer (SW / SWmm / ESW)", unit: "mm/mm; mm", role: prognostic}
+    - {name: "matric potential per layer (PSI)", unit: "cm", role: diagnostic}
+    - {name: "soil mineral N pools per layer (NO3, NH4, Urea)", unit: "kg/ha", role: prognostic}
+    - {name: "soil organic C/N pools per layer (FOM, Microbial, Humic, Inert)", unit: "kg/ha", role: prognostic}
+    - {name: "surface residue pool (C/N and cover)", unit: "kg/ha; 0-1", role: prognostic}
+    - {name: "tillage curve-number reduction state (CumWaterSinceTillage / TillageCnRed)", unit: "mm; dimensionless", role: accumulator}
+    - {name: "water table depth", unit: "mm", role: diagnostic}
+    - {name: "soil temperature per layer", unit: "degC", role: prognostic}
+  provenance: "populated"
+
+outputs:
+  - var: "Grain.Wt"
+    validation_rank: 1
+    unit: "g/m^2"
+    description: "Grain dry weight (yield); g/m^2 x10 = kg/ha, /100 = t/ha."
+    emitted_in: "SQLite Report table (.db)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Compare at maturity, not the daily series; convert g/m^2 to the obs unit (t/ha or kg/ha) before computing metrics."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "pbias"
+          caveats: ["Multi-season point yields; unit conversion required."]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Point/field model vs regional yield statistics that average many fields and carry a technology trend the weather-driven model cannot reproduce; detrend before comparing."]
+      detrending_options: ["none", "linear_residual", "decadal_mean"]
+  - var: "AboveGround.Wt"
+    validation_rank: 5
+    unit: "g/m^2"
+    description: "Above-ground biomass."
+    emitted_in: "SQLite Report table (.db)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Convert g/m^2 to obs unit; compare at sampling date."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: ["none", "first_difference"]
+  - var: "Leaf.LAI"
+    validation_rank: 2
+    unit: "m^2/m^2"
+    description: "Leaf area index; peak typically 3-8."
+    emitted_in: "SQLite Report table (.db)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Match sampling dates; peak LAI and its timing are the informative features."]
+      detrending_options: ["none"]
+  - var: "Phenology.Stage / flowering & maturity date"
+    validation_rank: 6
+    unit: "stage code / day-of-year"
+    description: "Phenological development stage and derived flowering/maturity timing."
+    emitted_in: "SQLite Report table (.db)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["timing_accuracy"]
+          determining_metric: "day_bias"
+          caveats: ["Compare observed flowering/maturity DOY to the day the stage threshold is crossed."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["timing_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "Root.RootingDepth"
+    validation_rank: 7
+    unit: "mm"
+    description: "Rooting depth."
+    emitted_in: "SQLite Report table (.db)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "Soil.Water.SW / ESW"
+    validation_rank: 3
+    unit: "mm/mm; mm"
+    description: "Volumetric and extractable soil water per layer."
+    emitted_in: "SQLite Report table (.db)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "r"
+          caveats: ["Match model layer depths to sensor depths; SW is volumetric (mm/mm), not percent."]
+      detrending_options: ["none"]
+  - var: "SoilWater.Drainage / Runoff / Es"
+    validation_rank: 4
+    unit: "mm"
+    description: "Deep drainage, surface runoff, and soil evaporation fluxes."
+    emitted_in: "SQLite Report table (.db)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "r"
+          caveats: ["Field-scale fluxes rarely measured directly; often only cumulative balances are observable."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "cardinal temperatures (base/optimum/ceiling for development)"
+      to: "Grain.Wt"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "wheat"
+      citations: ["zhao2014_apsim_wheat_sensitivity"]
+    - from: "vernalization sensitivity"
+      to: "AboveGround.Wt"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "wheat"
+      citations: ["zhao2014_apsim_wheat_sensitivity"]
+    - from: "thermal time floral-initiation to flowering"
+      to: "AboveGround.Wt"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "wheat"
+      citations: ["zhao2014_apsim_wheat_sensitivity"]
+    - from: "grains per gram stem"
+      to: "Grain.Wt"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["zhao2014_apsim_wheat_sensitivity", "winn2023_apsim_maize_calibration"]
+    - from: "max grain size"
+      to: "Grain.Wt"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "wheat"
+      citations: ["zhao2014_apsim_wheat_sensitivity"]
+    - from: "potential grain filling rate"
+      to: "Grain.Wt"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "wheat"
+      citations: ["zhao2014_apsim_wheat_sensitivity"]
+    - from: "initial soil nitrogen"
+      to: "Grain.Wt"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "N-limited conditions"
+      citations: ["hao2024_apsim_wheat_gsa_yield"]
+    - from: "nitrogen fertilization rate"
+      to: "Grain.Wt"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: management
+      citations: ["zhao2014_apsim_wheat_sensitivity", "hao2024_apsim_wheat_gsa_yield"]
+    - from: "precipitation"
+      to: "Grain.Wt"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      applicability: "water-limited conditions"
+      citations: ["hao2024_apsim_wheat_gsa_yield"]
+    - from: "soil hydraulic parameters (DUL/LL/water-holding)"
+      to: "Grain.Wt"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "water-limited sandy soils"
+      citations: ["hao2024_apsim_wheat_gsa_yield"]
+    - from: "soil type / moisture regime"
+      to: "Grain.Wt"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: structural
+      citations: ["hao2024_apsim_wheat_gsa_yield", "plants2025_apsim_wheat_soil_moisture_gsa"]
+    - from: "minimum temperature"
+      to: "Grain.Wt"
+      sensitivity_grade: LOW
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      citations: ["hao2024_apsim_wheat_gsa_yield"]
+    - from: "phenology thermal-time targets"
+      to: "Phenology.Stage / flowering & maturity date"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["zhao2014_apsim_wheat_sensitivity", "winn2023_apsim_maize_calibration"]
+    - from: "soil moisture level"
+      to: "AboveGround.Wt"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      applicability: "wheat"
+      citations: ["plants2025_apsim_wheat_soil_moisture_gsa"]
+  citation_index:
+    zhao2014_apsim_wheat_sensitivity:
+      short_citation: "Zhao, Bryan & Song 2014"
+      doi: "10.1016/j.ecolmodel.2014.02.003"
+      note: "Variance-based sensitivity/uncertainty analysis of 10 APSIM-wheat cultivar parameters for yield and biomass; fertilization reorders sensitivities."
+    hao2024_apsim_wheat_gsa_yield:
+      short_citation: "Hao et al. 2024"
+      doi: "10.1016/j.ecolmodel.2023.110551"
+      note: "Variance-based GSA of APSIM-wheat yield; initial soil N dominant (64-79%) under N-limited, soil hydraulics + precipitation up to 83% under water-limited; min temperature least sensitive."
+    wang2025_apsim_gsa_calibration_methods:
+      short_citation: "Wang et al. 2025"
+      doi: "10.1016/j.compag.2025.110750"
+      note: "Compared Morris, Sobol-Martinez, eFAST with optimisers in APSIM Next Gen; Morris broadest, eFAST most selective; GSA prior to calibration improves prediction quality."
+    plants2025_apsim_wheat_soil_moisture_gsa:
+      short_citation: "Plants 2025 (Changji winter-wheat GSA)"
+      doi: "10.3390/plants14172608"
+      note: "Morris + eFAST GSA of APSIM-Wheat at different soil moisture levels; parameter rank order on yield/biomass shifts with moisture."
+    winn2023_apsim_maize_calibration:
+      short_citation: "Winn et al. 2023"
+      doi: "10.1002/csc2.20857"
+      note: "APSIM maize calibration of 15 corn hybrids; phenology thermal-time and grain-number/size as key yield/timing levers."
+
+safety:
+  hazards:
+    - id: "weather_radn_units_megajoule"
+      kind: weather_file_semantic
+      description: "Solar radiation authored in W/m^2 or J/m^2/day instead of MJ/m^2/day causes 10-50x biomass over-prediction (radn should be 0-35)."
+      severity: fatal
+    - id: "weather_temperature_kelvin"
+      kind: weather_file_semantic
+      description: "Temperature supplied in Kelvin (values ~280-310) instead of Celsius accumulates extreme thermal time and crops fail to develop."
+      severity: fatal
+    - id: "weather_rain_subdaily_not_summed"
+      kind: weather_file_semantic
+      description: "Sub-daily (mm/3hr) rainfall not summed to daily totals yields ~1/8 of true rain and false drought stress."
+      severity: fatal
+    - id: "weather_vp_kpa_not_hpa"
+      kind: weather_file_semantic
+      description: "Vapour pressure in kPa instead of hPa inflates VPD and ET."
+      severity: degraded
+    - id: "weather_missing_tav_amp"
+      kind: weather_file_semantic
+      description: "Missing tav/amp header metadata leaves the CERES soil-temperature model with wrong defaults, distorting germination and root growth."
+      severity: degraded
+    - id: "soil_water_limit_ordering"
+      kind: soil_semantic
+      description: "Soil water limits not ordered AirDry <= LL15 <= DUL <= SAT per layer produce impossible water contents and crash the water balance."
+      severity: fatal
+    - id: "soil_thickness_cm_not_mm"
+      kind: soil_semantic
+      description: "Layer thickness in cm instead of mm makes the profile 10x too shallow; roots hit the bottom and over-stress."
+      severity: fatal
+    - id: "soil_bulk_density_kgm3"
+      kind: soil_semantic
+      description: "Bulk density in kg/m^3 (e.g. 1400) instead of g/cc crashes or zeroes the water balance."
+      severity: fatal
+    - id: "soil_array_layer_count_mismatch"
+      kind: soil_semantic
+      description: "Physical/Chemical/Organic/WaterBalance soil arrays of unequal length raise an index-out-of-range crash."
+      severity: fatal
+    - id: "cultivar_name_not_in_resource_db"
+      kind: control_semantic
+      description: "Cultivar name not matching the case-sensitive built-in resource database raises a null-reference crash on sowing."
+      severity: fatal
+    - id: "population_plants_per_ha"
+      kind: control_semantic
+      description: "Plant population given in plants/ha instead of plants/m^2 gives impossible density, plant die-off or astronomical LAI."
+      severity: fatal
+    - id: "initial_no3_silent_yield_inflation"
+      kind: initial_condition_semantic
+      description: "High initial NO3 silently relieves N stress and inflates yield with no error."
+      severity: silent
+    - id: "biomass_output_unit_misread"
+      kind: parser_semantic
+      description: "Grain.Wt / AboveGround.Wt are g/m^2, not kg/ha or t/ha; comparing g/m^2 to t/ha without converting gives R^2 near 0 and huge PBIAS (false validation failure)."
+      severity: silent
+    - id: "report_event_not_firing"
+      kind: control_semantic
+      description: "Report.EventNames missing [Clock].DoReport (or a crop event with the crop never sown) yields an empty Report table despite a successful run."
+      severity: silent
+  validation_limits:
+    - "Point/field (single Zone) model; cannot represent regional/gridded aggregation directly — regional yield statistics average many fields with different soils, varieties, and management."
+    - "Daily timestep cannot resolve sub-daily processes; thermal time is from 3-hourly temps interpolated from daily max/min."
+    - "Function forms are calibrated to experimental datasets; applicability is bounded by the calibration range of the chosen cultivar."
+    - "Soil profile solved consecutively each day (not simultaneous coupled flow); SWIM is the alternative solver for tightly-coupled flow."
+  warnings:
+    - "Crop assimilate production scales with RUE x intercepted radiation, so radiation units and cultivar RUE dominate biomass magnitude."
+    - "APSIM can return exit code 0 even when individual simulations failed; check the _Messages table (MessageType=2) for per-simulation errors."
+    - "Drainage is defined as the downward flux of the last soil layer; downstream solute leaching depends on this convention."
+    - "Nutrient pools are wired by string Name lookup; renaming a soil/solute child silently breaks the C/N coupling."
+  assumptions:
+    - statement: "The model operates at a single point/field on an area basis with a representative plant population, not individual-plant detail."
+      scope: "spatial geometry"
+      source: "APSIM Plant crop-module documentation (apsim.info) and the Zone/area-basis design"
+      status: adopted
+    - statement: "Conservation is mass-balance for water and soil C/N; MicroClimate provides a potential-ET energy term but the model does not close a surface energy budget."
+      scope: "closure"
+      source: "APSIM crop-growth-and-development framework docs and MicroClimate / WaterBalance module behavior in ApsimX source"
+      status: adopted
+    - statement: "Basic physiological principles are treated as essentially the same across species, with species/cultivar differences captured solely through parameter inputs in the Plant Modelling Framework."
+      scope: "cross-species generalisation"
+      source: "APSIM Plant module design-premise documentation (apsim.info)"
+      status: adopted
+    - statement: "The soil profile is solved consecutively (process-by-process) each day rather than as simultaneous coupled differential flow equations (the SWIM alternative)."
+      scope: "soil water numerics"
+      source: "APSIM SoilWat vs SWIM documentation (apsim.info)"
+      status: adopted
+    - statement: "Germination is taken to occur the day after sowing once soil water in the sowing layer exceeds the pesw_germ threshold."
+      scope: "phenology initiation"
+      source: "APSIM Plant module phenology documentation (apsim.info)"
+      status: adopted

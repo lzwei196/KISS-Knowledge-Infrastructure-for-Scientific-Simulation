@@ -445,3 +445,152 @@
     prevention: "Configuration validation checks concentration ranges"
   severity: silent
   cross_references: []
+
+# --- Added 2026-08-11 from the US-Ne1 real-case run (all VERIFIED on disk) ---
+
+- id: dt_018
+  stage: s4_execution
+  failure_domain: tooling
+  symptom:
+    description: "run_swap.py reports '[FAIL] SWAP exited with code 100' even though stdout says 'Swap normal completion!', swap.ok is written and result.blc/.inc/.vap are complete."
+    error_pattern: "SWAP exited with code 100"
+    detection_method: exit_code
+  diagnosis:
+    root_cause: "SWAP 4.2.0's main program ends with `Call Exit(100)` — exit code 100 IS normal completion, not an error."
+    explanation: >
+      src/swap_main.f90 (line ~72) ends with `Call Exit(100)` after writing
+      'Swap normal completion!'. Any wrapper that tests `returncode != 0`
+      declares every successful run a failure and skips output validation.
+      Verified 2026-08-11 on tests/cases/1.hupselbrook.
+    affected_components: [swap_main.f90, tools/run_swap.py]
+  remedy:
+    action: "Treat rc==100 + ('normal completion' on stdout OR a *.ok file) as success."
+    tool_to_run: "tools/run_swap.py (swap_run_succeeded(); fixed 2026-08-11)"
+    manual_steps:
+      - "Never gate SWAP success on rc==0; check swap.ok / <project>.ok instead"
+    prevention: "run_swap.swap_run_succeeded() encodes this"
+  severity: fatal
+  cross_references: []
+
+- id: dt_019
+  stage: s5_output_parsing
+  failure_domain: file_format
+  symptom:
+    description: "Parsed .inc CSV is numerically garbage (fields shifted one column, values carrying trailing commas); parse_vap raises UnicodeDecodeError 0xba; water_balance.csv is never written."
+    error_pattern: "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xba"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "SWAP .inc/.vap are COMMA-separated (blank-padded) and written in latin-1; the .blc labels are 'Gross Rainfall'/'Plant Transpiration' in a two-column INPUT|OUTPUT table, not 'Rain + snow :' key-value lines."
+    explanation: >
+      Splitting .inc/.vap data rows on whitespace shifts every field by one.
+      The .vap units header contains 'ºC' (0xBA) so a UTF-8 open crashes.
+      parse_blc's pre-2026-08-11 patterns ("Water balance components",
+      "Rain + snow :") appear nowhere in SWAP 4.2.0 output, so it silently
+      returned [] for every run.
+    affected_components: [tools/parse_swap_output.py, swapoutput.f90]
+  remedy:
+    action: "Split .inc/.vap on ',', open SWAP output with encoding='latin-1', parse .blc as the two-column table."
+    tool_to_run: "tools/parse_swap_output.py (fixed 2026-08-11)"
+    manual_steps:
+      - "Sanity check: water_balance.csv must have one row per balance period"
+      - "Check balance_deviation_cm ~ 0 for every period"
+    prevention: "parse_swap_output writes water_balance.csv + soil_profiles.csv"
+  severity: silent
+  cross_references: [dt_017]
+
+- id: dt_020
+  stage: s1_met_forcing
+  failure_domain: silent_error
+  symptom:
+    description: ".met file written from CMFD is all-NaN, or the MSWX run prints 'MSWX reader not yet implemented, falling back to synthetic' and the .met contains FABRICATED weather — output validation passes either way."
+    error_pattern: "falling back to synthetic"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "convert_forcing_to_swap.py had a hand-rolled NetCDF reader that never assigned what it read into its result dict, and an MSWX path that silently substituted generate_synthetic_met()."
+    explanation: >
+      All-NaN columns pass every np.nanmax() range check, so the run proceeds
+      on empty forcing. SKILL.md already mandates ki_tools_common.load_forcing;
+      the tool now calls it for cmfd / mswx / nasa_power / gswp3 and FAILS on
+      any NaN column. 'synthetic' is an explicit, loudly-warned choice.
+    affected_components: [tools/convert_forcing_to_swap.py]
+  remedy:
+    action: "Use --source nasa_power|mswx|cmfd|gswp3; never accept a synthetic fallback in a scored run."
+    tool_to_run: "tools/convert_forcing_to_swap.py (fixed 2026-08-11)"
+    manual_steps:
+      - "Check July Rad ~ 20000-30000 kJ/m2/d and Hum ~ 1-3 kPa in the .met"
+    prevention: "validate_outputs() now errors on any NaN in rad/tmin/tmax/hum/wind/rain"
+  severity: fatal
+  cross_references: [dt_001, dt_002, dt_004]
+
+- id: dt_021
+  stage: s2_soil_parameters
+  failure_domain: silent_error
+  symptom:
+    description: "convert_soil_to_swap.py prints 'WARNING: No texture data, defaulting to loam' for EVERY site even when --hwsd points at a valid hwsd.bil."
+    error_pattern: "No texture data, defaulting to"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "read_hwsd_at_point() read MU_GLOBAL and then `return None` — the HWSD attribute join was never implemented, so --hwsd had no effect on the MvG parameters."
+    explanation: >
+      ki_tools_common.soil_utils.lookup_hwsd() already joins hwsd.bil to
+      HWSD_DATA and returns topsoil AND subsoil sand/silt/clay plus bulk
+      density. At US-Ne1 (41.1651, -96.4766) it resolves MU 4730 =
+      loam over clay_loam, BD 1.37 g/cm3 — the old default gave loam/loam
+      and Ksat 17.5 instead of 4.4 cm/d for the subsoil.
+    affected_components: [tools/convert_soil_to_swap.py]
+  remedy:
+    action: "Delegate to ki_tools_common.soil_utils.lookup_hwsd; pass BDENS in mg/cm3 (g/cm3 x 1000)."
+    tool_to_run: "tools/convert_soil_to_swap.py (fixed 2026-08-11)"
+    manual_steps:
+      - "Confirm the [INFO] HWSD topsoil/subsoil lines appear in the log"
+    prevention: "A 'defaulting to loam' warning now means HWSD genuinely had no data"
+  severity: silent
+  cross_references: [dt_011]
+
+- id: dt_022
+  stage: s3_config_assembly
+  failure_domain: file_format
+  symptom:
+    description: "SWAP aborts in rdinit_/rddata_ with 'Inconsistent variable type' pointing at the first row of the crop rotation (or any other) table."
+    error_pattern: "Inconsistent variable type"
+    detection_method: model_error
+  diagnosis:
+    root_cause: "The table's COLUMN-NAME line was deleted (or reordered) when the table body was replaced — SWAP's ttutil rddata reads tables by their header names."
+    explanation: >
+      A `^\s*CROPSTART...` regex matches the newline ENDING the previous line,
+      so a line-index computed from it points one line too early and eats the
+      header. Use `^[ \t]*` when locating a table header.
+    affected_components: [tools/assemble_swap_config.py, rddata.for]
+  remedy:
+    action: "Keep the header line; only replace rows between it and '* End of table'."
+    tool_to_run: "tools/assemble_swap_config.py (added 2026-08-11)"
+    manual_steps:
+      - "Compare the assembled .swp table block against the base file"
+    prevention: "assemble_swap_config.check_config() re-validates crop dates, MvG ranges and file-name case"
+  severity: fatal
+  cross_references: [dt_006, dt_013]
+
+- id: dt_023
+  stage: s3_config_assembly
+  failure_domain: parameterization
+  symptom:
+    description: "Irrigated site: SWAP applies 500-850 mm/yr of scheduled irrigation and simulated ET is ~50% above eddy-covariance ET."
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "SCHEDULE=1 with the shipped Hupselbrook maizes.crp defaults (TCS=1, TREL=0.95) irrigates whenever Tact/Tpot drops below 0.95 — near-zero water stress all season."
+    explanation: >
+      Verified 2026-08-11 at FLUXNET US-Ne1 (irrigated maize, Mead NE):
+      uncalibrated daily ET vs LE_F_MDS gave r=0.76, PBIAS +48%; against the
+      energy-balance-corrected LE_CORR, PBIAS +17.6%, KGE 0.36 — i.e. ~30 of
+      the 48 points are the FLUXNET closure gap, the rest is over-irrigation.
+      Real US-Ne1 pivot application is ~200-300 mm/yr.
+    affected_components: [maizes.crp, irrigation.f90]
+  remedy:
+    action: "For a real irrigated field prefer prescribed events (SWIRFIX=1) from the site record; if scheduling, relax TREL (~0.7-0.8) or use TCS=2/TCS=4 with a site depletion threshold."
+    tool_to_run: "tools/assemble_swap_config.py --irrigation DATE,DEPTH,CONC,TYPE"
+    manual_steps:
+      - "Compare annual irrigation_cm in parsed/water_balance.csv against the site record"
+    prevention: "Report annual irrigation totals alongside ET"
+  severity: calibration
+  cross_references: [dt_008]

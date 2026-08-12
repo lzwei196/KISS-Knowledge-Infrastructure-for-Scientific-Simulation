@@ -68,6 +68,18 @@ def validate_settings(settings_path):
         result["errors"].append(f"Failed to parse settings: {e}")
         return result
 
+    # `config.optionxform = str` above keeps keys CASE-SENSITIVE, so the real
+    # keys are `StepStart` / `TemperatureInKelvin` / `PathOut`.  Every lookup
+    # below must therefore be case-insensitive; a plain lowercase .get() always
+    # missed and silently returned the default, which turned the date-range and
+    # temperature-unit preflight checks into dead code.
+    def cget(d, key, default=""):
+        kl = key.lower()
+        for k, v in d.items():
+            if k.lower() == kl:
+                return v
+        return default
+
     # Check required sections
     required_sections = [
         "OPTIONS", "FILE_PATHS", "MASK_OUTLET",
@@ -86,7 +98,7 @@ def validate_settings(settings_path):
     result["parsed"]["options"] = options
 
     # Temperature unit check
-    temp_in_k = options.get("temperatureinkelvin", "True")
+    temp_in_k = cget(options, "TemperatureInKelvin", "True")
     if temp_in_k.lower() == "true":
         result["parsed"]["temp_unit"] = "Kelvin"
     else:
@@ -98,7 +110,7 @@ def validate_settings(settings_path):
         result["parsed"]["file_paths"] = file_paths
 
         # Check PathOut exists or can be created
-        path_out = file_paths.get("pathout", "")
+        path_out = cget(file_paths, "PathOut", "")
         if path_out and not path_out.startswith("$"):
             if not os.path.isdir(path_out):
                 result["warnings"].append(
@@ -108,32 +120,68 @@ def validate_settings(settings_path):
     # Check date range
     if config.has_section("TIME-RELATED_CONSTANTS"):
         time_cfg = dict(config.items("TIME-RELATED_CONSTANTS"))
-        step_start = time_cfg.get("stepstart", "")
-        step_end = time_cfg.get("stepend", "")
-        spin_up = time_cfg.get("spinup", "")
+        step_start = cget(time_cfg, "StepStart", "")
+        step_end = cget(time_cfg, "StepEnd", "")
+        spin_up = cget(time_cfg, "SpinUp", "")
 
         result["parsed"]["step_start"] = step_start
         result["parsed"]["step_end"] = step_end
         result["parsed"]["spin_up"] = spin_up
 
-        # Validate date format (DD/MM/YYYY)
-        for date_name, date_str in [("StepStart", step_start), ("StepEnd", step_end)]:
-            if date_str:
+        # Validate date format (DD/MM/YYYY) and remember the parsed values so
+        # the ordering check below can actually run.
+        parsed_dates = {}
+        for date_name, date_str in [("StepStart", step_start),
+                                    ("SpinUp", spin_up),
+                                    ("StepEnd", step_end)]:
+            if not date_str:
+                continue
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
                 try:
-                    datetime.strptime(date_str, "%d/%m/%Y")
+                    parsed_dates[date_name] = datetime.strptime(date_str, fmt)
+                    break
                 except ValueError:
-                    try:
-                        datetime.strptime(date_str, "%Y-%m-%d")
-                    except ValueError:
-                        result["warnings"].append(
-                            f"{date_name} = '{date_str}' — cannot parse date. "
-                            f"Expected DD/MM/YYYY."
-                        )
+                    continue
+            else:
+                result["warnings"].append(
+                    f"{date_name} = '{date_str}' — cannot parse date. "
+                    f"Expected DD/MM/YYYY."
+                )
+
+        # Preflight check 6: start < end, and SpinUp inside [start, end].
+        start = parsed_dates.get("StepStart")
+        end = parsed_dates.get("StepEnd")
+        spin = parsed_dates.get("SpinUp")
+        if start and end and start >= end:
+            result["valid"] = False
+            result["errors"].append(
+                f"StepStart ({step_start}) is not before StepEnd ({step_end})."
+            )
+        if spin and start and spin < start:
+            result["valid"] = False
+            result["errors"].append(
+                f"SpinUp ({spin_up}) precedes StepStart ({step_start})."
+            )
+        if spin and end and spin >= end:
+            result["valid"] = False
+            result["errors"].append(
+                f"SpinUp ({spin_up}) is not before StepEnd ({step_end}); "
+                f"the whole run would be discarded as spin-up."
+            )
+        if spin and start and end:
+            span_days = (end - start).days
+            spin_days = (spin - start).days
+            if span_days > 0 and spin_days < 365:
+                result["warnings"].append(
+                    f"Spin-up is only {spin_days} days. A basin starting with empty "
+                    f"channels and an empty groundwater store needs 2-3 years "
+                    f"(SKILL.md: 10-day spin-up at Jiujiang gave 60 m3/s vs 10,000 observed)."
+                )
 
     # Check precipitation conversion factor
     if config.has_section("METEO"):
         meteo = dict(config.items("METEO"))
-        prec_conv = meteo.get("precipitation_coversion", "86.4")
+        prec_conv = cget(meteo, "precipitation_coversion", "86.4")
         try:
             prec_conv_val = float(prec_conv)
             if prec_conv_val == 86.4:

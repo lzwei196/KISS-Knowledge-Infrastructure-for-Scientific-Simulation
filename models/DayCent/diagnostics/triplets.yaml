@@ -201,3 +201,25 @@
   symptom: "User asked for 'daily GPP' but few_outvars.txt lists agcprd/bgcprd/cgrain/somsc — none labeled GPP."
   diagnosis: "DayCent reports daily net C production as `cprodc` in summary.out (when few_outfiles.in is used). The .lis pathway via DDlist100 does not give a ready daily GPP variable; agcprd+bgcprd in the .lis is annualised for most configurations."
   remedy: "For daily GPP validation, parse summary.out's cprodc column directly instead of running DDlist100. The SKILL.md 'Mapping DayCent outputs to FLUXNET variables' table lists the canonical mappings."
+
+- id: 26
+  stage: s1_site_setup
+  failure_domain: parameter_format
+  severity: fatal
+  symptom: "DayCent crashes with 'swclimit[1] is negative. Check soils.in' during first timestep."
+  diagnosis: "convert_soil_to_daycent.py wrote 12 columns but DayCent rev 491 expects 13 columns. The missing column 11 (delta_min, minimum volumetric water content) causes DayCent to read Ksat into the delta_min slot and pH into the Ksat slot, producing negative swclimit."
+  remedy: "Fixed in convert_soil_to_daycent.py (2026-04-22): added delta_min column (= WP × 0.9) between OM and Ksat. Verify soils.in has exactly 13 tab-separated columns per row. Cross-check against WoosterExampleLinux/soils.in."
+  discovered_during: "AT-Neu + US-Var FLUXNET validation runs (2026-04-22)"
+  affects_models: ["DayCent"]
+  tags: ["soils_in", "column_count", "13_columns"]
+
+- id: 27
+  stage: s1_site_setup
+  failure_domain: unit_conversion
+  severity: silent
+  symptom: "Soil organic matter in soils.in is 0.86 or 1.45 instead of 0.0086 or 0.0145. DayCent runs without error but SOM decomposition is wildly overestimated."
+  diagnosis: "HWSD returns OC as percent (e.g., 0.86% = 0.86). The old threshold (> 1.5) missed typical values 0.5-1.5 which were written directly as OM fraction instead of being divided by 100. A value of 0.86 in the fraction column means 86% organic matter (peat), not 0.86% OC."
+  remedy: "Fixed in convert_soil_to_daycent.py (2026-04-22): lowered the OM threshold from > 1.5 to > 0.2. Any OM value > 0.2 is now treated as percent and divided by 100. Typical mineral soil OM fraction should be 0.005-0.05."
+  discovered_during: "AT-Neu + US-Var FLUXNET validation runs (2026-04-22)"
+  affects_models: ["DayCent"]
+  tags: ["organic_matter", "unit_conversion", "HWSD", "soils_in"]

@@ -111,23 +111,49 @@ inputs:
 outputs:
 
   primary:
+    - name: "precipitation_projection"
+      canonical_id: "precipitation_rate"
+      file: "forcing_{MODEL}_{SSP}/pr_*.nc"
+      unit: "mm/day"
+      valid_range: [0.0, 500.0]
+      format: "NetCDF; downscaled CMIP6 precipitation, bias-corrected via delta method"
+      notes: "Future projected daily precipitation per cell."
+
+    - name: "temperature_max_projection"
+      canonical_id: "air_temperature_max"
+      file: "forcing_{MODEL}_{SSP}/tasmax_*.nc"
+      unit: "degC"
+      valid_range: [-50.0, 60.0]
+      format: "NetCDF"
+      notes: "Future projected daily Tmax per cell."
+
+    - name: "temperature_min_projection"
+      canonical_id: "air_temperature_min"
+      file: "forcing_{MODEL}_{SSP}/tasmin_*.nc"
+      unit: "degC"
+      valid_range: [-70.0, 50.0]
+      format: "NetCDF"
+      notes: "Future projected daily Tmin per cell."
+
     - name: "climate_deltas"
       file: "{MODEL}_{SSP}_deltas_{basin}_{period}.nc"
       unit: "degC (temp delta), ratio (precip ratio)"
       format: "NetCDF with monthly deltas per grid cell"
-      notes: "12 monthly values per variable per cell."
+      notes: "12 monthly values per variable per cell. Intermediate output; consumed by delta-change application step."
 
     - name: "projected_forcing"
       file: "forcing_{MODEL}_{SSP}/ directory"
-      unit: "same as VIC forcing"
+      unit: "various (same as VIC forcing)"
       format: "VIC-compatible forcing files (same format as baseline)"
-      notes: "All 7 VIC variables. Only temp and precip modified; others pass-through."
+      notes: "Bundles all 7 VIC variables. Only temp and precip modified; others pass-through. Use precipitation_projection / temperature_max_projection / temperature_min_projection canonical outputs to feed downstream models."
 
-    - name: "projected_discharge"
-      file: "vic_result_{MODEL}_{SSP}/ and routing_{MODEL}_{SSP}/"
+    - name: "discharge_projection"
+      canonical_id: "discharge"
+      file: "routing_{MODEL}_{SSP}/<station>.day"
       unit: "m3/s"
-      format: "VIC + routing output"
-      notes: "Run VIC + routing with projected forcing to get future hydrology."
+      valid_range: [0.0, 50000.0]
+      format: "ASCII; columns = year month day discharge_m3s"
+      notes: "Future-period discharge from coupled VIC+routing under projected forcing. Compare to historical baseline ratio for climate-impact signal."
 
   diagnostics:
     - name: "delta_sanity_check"

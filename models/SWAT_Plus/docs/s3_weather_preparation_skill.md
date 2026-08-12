@@ -94,27 +94,46 @@ p000002.pcp
 python tools/s3/generate_weather_stations.py
 ```
 
-Map station combinations to spatial objects. Each record in weather-sta.cli has:
-- Station name
-- pcp station name (from pcp.cli)
-- tmp station name (from tmp.cli)
-- slr station name (from slr.cli)
-- hmd station name (from hmd.cli)
-- wnd station name (from wnd.cli)
+Map station combinations to spatial objects. Each record in weather-sta.cli has these columns,
+**in this exact order** (verified against the shipped rev59 developer example
+`run_lrew/swatplus_rev59_demo/weather-sta.cli`):
 
-SWAT+ assigns the nearest weather-sta.cli record to each spatial object centroid.
+```
+name    wgn         pcp         tmp         slr         hmd         wnd         wnd_dir  atmo_dep
+sta01   wgn_sta01   sta01.pcp   sta01.tmp   sta01.slr   sta01.hmd   sta01.wnd   null     null
+```
+
+Two traps (`dt_040`):
+- The `wgn` column comes **second**, not last. Writing `pcp` first makes SWAT+ read the pcp
+  station name as the wgn name.
+- The pcp..wnd columns hold the **file name including its extension** (`sta01.pcp`), not a bare
+  stem.
+
+Station names are matched **by name** against the `wst` column of `hru.con` / `rout_unit.con`.
+`generate_hru_from_global.py` writes `staNN` there, so `prepare_weather_files.py` must be given
+those names (its 7th argument) — otherwise it emits `p000001.pcp` and nothing binds.
 
 **Expected result**: weather-sta.cli with one record per unique station combination.
 
-### Step 5: Generate weather generator (wgn.wgn)
+### Step 5: Generate the weather generator (`weather-wgn.cli`)
 
-Compute monthly climate statistics for each station:
-- Monthly mean max/min temperature, standard deviation
-- Monthly mean precipitation, number of wet days, skew coefficient
-- Monthly mean solar radiation, dew point temperature
-- Probability of wet day following wet/dry day
+SWAT+ Rev 59 reads **`weather-wgn.cli`** — the name listed in `file.cio`. A SWAT2012-style
+`wgn.wgn` is NOT read. Layout, per station: a header line (`name lat lon elev rain_yrs`), then a
+14-column header, then 12 monthly rows of:
 
-**Expected result**: wgn.wgn with 12 monthly rows per station. Even if observed data is complete, SWAT+ reads wgn.wgn at startup.
+```
+tmp_max_ave tmp_min_ave tmp_max_sd tmp_min_sd pcp_ave pcp_sd pcp_skew
+wet_dry wet_wet pcp_days pcp_hhr slr_ave dew_ave wnd_ave
+```
+
+`generate_weather_stations.py` computes all 14 from each station's own `.pcp/.tmp/.slr/.hmd/.wnd`
+(wet/dry Markov probabilities from the daily sequence; dew point by inverse Magnus from RH and
+mean T). `pcp_hhr` (max 30-min rainfall) is not resolvable from a daily series and is estimated as
+0.3 × the largest daily total; supply a sub-hourly series if sediment yield (MUSLE peak rate) is
+the calibration target.
+
+**Expected result**: weather-wgn.cli with 12 monthly rows per station. SWAT+ reads it at startup
+even when the observed record is complete.
 
 ### Step 6: Validate weather data
 

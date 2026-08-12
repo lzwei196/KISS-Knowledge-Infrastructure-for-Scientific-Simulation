@@ -9,7 +9,7 @@ Description:  Convert VIC forcing files (ASCII) to PCSE CSV weather format
 
               CRITICAL UNIT CONVERSIONS:
                 SW radiation:  W/m2 → kJ/m2/day  (multiply by 86.4)
-                Precipitation: mm   → cm/day      (divide by 10)
+                Precipitation: mm   -> mm/day     (CSV column stays mm; CSVWeatherDataProvider divides /10 -> cm internally)
                 Temperature:   C    → C           (no change)
                 Vapor pressure: kPa → kPa         (no change)
                 Wind speed:    m/s  → m/s         (no change)
@@ -84,8 +84,8 @@ def validate_outputs(output_files):
                 errors.append(f"IRRAD max={max_irrad} — unreasonably high, check units")
         if 'RAIN' in sample.columns:
             max_rain = sample['RAIN'].max()
-            if max_rain > 50:
-                errors.append(f"RAIN max={max_rain} — likely in mm, should be cm (divide by 10)")
+            if max_rain > 500:
+                errors.append(f"RAIN max={max_rain} mm -- unreasonably high for mm/day, check units")
 
     if errors:
         for e in errors:
@@ -193,10 +193,10 @@ def process():
 
                 # CRITICAL UNIT CONVERSIONS
                 irrad_kj = sw_wm2 * 86.4    # W/m2 → kJ/m2/day
-                rain_cm = prec_mm / 10.0      # mm → cm
+                rain_mm = prec_mm            # keep mm; CSVWeatherDataProvider divides /10 -> cm
 
                 f.write(f"{current_date},{irrad_kj:.1f},{tmin_c:.1f},{tmax_c:.1f},"
-                        f"{vap_kpa:.3f},{wind_ms:.1f},{rain_cm:.4f},-999\n")
+                        f"{vap_kpa:.3f},{wind_ms:.1f},{rain_mm:.4f},-999\n")
 
         output_files.append(str(output_csv))
         logger.info(f"  Created: {output_csv}")

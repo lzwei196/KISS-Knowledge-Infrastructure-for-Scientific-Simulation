@@ -1,0 +1,437 @@
+template_version: "3.5"
+
+identity:
+  model_id: "GSFLOW"
+  scientific_reference_version: "GSFLOW (USGS TM 6-D1, 2008; PRMS + MODFLOW-2005/MODFLOW-NWT integration), 2.2.x lineage"
+  implementation:
+    id: "gsflow-v2"
+    version: "2.3.1 (gsflow_v2)"
+    provenance: "Fortran 90 + C; USGS public-domain GSFLOW couples PRMS-V surface hydrology with MODFLOW-2005/MODFLOW-NWT groundwater flow."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: "CC0-1.0"
+  repo_url: "https://www.usgs.gov/software/gsflow-coupled-groundwater-and-surface-water-flow-model-version-221"
+
+boundary:
+  scope_in:
+    - "Coupled surface-water / groundwater flow in one or more watersheds (a few to several thousand km²) over months to decades"
+    - "PRMS land-surface processes: interception, snowpack accumulation/melt, evapotranspiration, surface runoff, infiltration, interflow, soil-zone water balance on distributed daily climate"
+    - "3-D saturated groundwater flow and storage (MODFLOW), 1-D unsaturated flow (UZF), groundwater discharge to land surface"
+    - "Stream-aquifer and lake-aquifer interaction (SFR, LAK packages)"
+    - "Three simulation modes: integrated coupled (GSFLOW5), PRMS-only (PRMS5), MODFLOW-only"
+    - "Effects of land-use change, climate variability, and groundwater withdrawals on flow"
+  scope_out:
+    - "No plant-growth module — vegetation/cover parameters are static; agricultural cover may be problematic"
+    - "Solute transport, water quality, geochemistry, ecology, and management-strategy optimization"
+    - "Sub-daily / storm-mode kinematic-wave simulation (daily time step only)"
+    - "Capillary pressure gradients in the unsaturated zone; capillary fringe; upward sediment movement"
+    - "Stream backwater effects and hydrograph attenuation/diffusion (Manning normal-depth, single-valued stage-discharge routing)"
+  spatial: "distributed-stream"
+  temporal: "daily"
+  closure: "mass-balance"
+  notes: "Conserves water mass with an overall basin budget ΔS_total = Δt(Q_in − Q_out) plus per-reservoir budgets; reports overall budget error and percent discrepancy each time step. Spatial coupling: PRMS HRUs (irregular polygons) map to a MODFLOW finite-difference grid through gravity reservoirs (number of subsurface reservoirs equals number of HRUs). The three regions (land surface; streams/lakes; subsurface) are solved iteratively (coupled-regions), not as a single integrated 3-D Richards' equation; no surface energy-balance closure (ET is a demand-side PET calculation, e.g. Jensen-Haise)."
+
+inputs:
+  forcing:
+    - {category: forcing, name: "precipitation", unit: "in/day (precip_units=0) or mm/day (precip_units=1)", source_kind: forcing, model_input_format: ".day (climate_hru, one value per HRU per day) or PRMS .data station file", notes: "Rain/snow/mixed form determined from air temperature unless prescribed; distributed to HRUs by the precip_module"}
+    - {category: forcing, name: "air temperature (tmax and tmin)", unit: "degF (temp_units=0) or degC (temp_units=1)", source_kind: forcing, model_input_format: ".day or .data; both tmax and tmin required", notes: "Distributed to HRUs by the temp_module; controls rain/snow partition (~32 degF threshold)"}
+    - {category: forcing, name: "solar radiation (swrad)", unit: "Langleys/day (cal/cm²/day)", source_kind: forcing, model_input_format: ".day or .data (optional)", notes: "If absent, estimated by ddsolrad (degree-day) and distributed via soltab; 1 W/m² = 2.065 Langleys/day"}
+    - {category: forcing, name: "potential ET (potet)", unit: "in/day", source_kind: forcing, model_input_format: ".day (optional)", notes: "Used when et_module=climate_hru prescribes PET instead of computing it"}
+    - {category: forcing, name: "pan evaporation", unit: "length", source_kind: forcing, model_input_format: ".data (optional)", notes: "Used only when the potet_epan ET module is selected"}
+    - {category: forcing, name: "observed streamflow", unit: "ft³/s (runoff_units=0) or m³/s (runoff_units=1)", source_kind: user_provided, model_input_format: ".data station file (optional)", notes: "Observed data for calibration/comparison; not a model driver"}
+  parameters:
+    - {category: parameters, name: "soil_moist_max", unit: "in", source_kind: calibrated, model_input_format: "PRMS .params (nhru)", notes: "Maximum soil-moisture capacity; top calibration parameter; typical 2–20 in"}
+    - {category: parameters, name: "soil_rechr_max", unit: "in", source_kind: calibrated, model_input_format: "PRMS .params (nhru)", notes: "Max recharge-zone capacity; must be <= soil_moist_max"}
+    - {category: parameters, name: "ssr2gw_rate", unit: "fraction/day", source_kind: calibrated, model_input_format: "PRMS .params (nssr)", notes: "Gravity-reservoir → groundwater drainage rate (≈Ksat/500, cap ~0.8); drives recharge into MODFLOW"}
+    - {category: parameters, name: "slowcoef_lin / fastcoef", unit: "1/day", source_kind: calibrated, model_input_format: "PRMS .params (nhru)", notes: "Linear/nonlinear interflow (slow/preferential-flow) coefficients"}
+    - {category: parameters, name: "gwflow_coef", unit: "1/day", source_kind: calibrated, model_input_format: "PRMS .params (PRMS-only groundwater reservoir)", notes: "Groundwater discharge coefficient (PRMS5 mode; superseded by MODFLOW in GSFLOW5)"}
+    - {category: parameters, name: "smidx_coef / smidx_exp", unit: "dimensionless", source_kind: calibrated, model_input_format: "PRMS .params (nhru)", notes: "srunoff_smidx soil-moisture-index surface-runoff coefficients"}
+    - {category: parameters, name: "jh_coef", unit: "dimensionless", source_kind: calibrated, model_input_format: "PRMS .params", notes: "Jensen-Haise PET coefficient (potet_jh)"}
+    - {category: parameters, name: "rain_cbh_adj / snow_cbh_adj / tmax_cbh_adj / tmin_cbh_adj", unit: "factor / degrees", source_kind: calibrated, model_input_format: "PRMS .params (nhru × nmonth)", notes: "Per-HRU monthly precipitation and temperature adjustment factors for climate_hru forcing"}
+    - {category: parameters, name: "hru_area", unit: "acres", source_kind: dataset_lookup, model_input_format: "PRMS .params (nhru)", notes: "PRMS internal area unit is acres; km² → acres × 247.105"}
+    - {category: parameters, name: "hru_elev / hru_slope / hru_aspect / hru_type", unit: "ft or m (elev_units) / fraction / degrees / code", source_kind: dataset_lookup, model_input_format: "PRMS .params (nhru)", notes: "HRU geometry from DEM; elevation units must match elev_units and lapse-rate parameters"}
+    - {category: parameters, name: "soil_type", unit: "code (1=sand,2=loam,3=clay)", source_kind: dataset_lookup, model_input_format: "PRMS .params (nhru, dtype int)", notes: "From HWSD/SoilGrids"}
+    - {category: parameters, name: "cov_type / covden_sum / covden_win", unit: "code / fraction (0–1)", source_kind: dataset_lookup, model_input_format: "PRMS .params (nhru)", notes: "Vegetation type and summer/winter cover density from land-cover raster"}
+    - {category: parameters, name: "hru_percent_imperv / imperv_stor_max", unit: "fraction / in", source_kind: dataset_lookup, model_input_format: "PRMS .params (nhru)", notes: "Impervious fraction and impervious storage capacity"}
+    - {category: parameters, name: "MODFLOW hydraulic conductivity / transmissivity (HK, VKA)", unit: "length/time", source_kind: calibrated, model_input_format: "MODFLOW LPF or UPW package", notes: "Saturated-zone aquifer properties; UPW pairs with the NWT solver, LPF with PCG"}
+    - {category: parameters, name: "streambed / lakebed leakance (SFR, LAK)", unit: "length/time per length", source_kind: calibrated, model_input_format: "MODFLOW SFR / LAK packages", notes: "Controls stream/lake–aquifer exchange flux"}
+  initial_conditions:
+    - {category: initial_conditions, name: "initial groundwater heads", unit: "length", source_kind: user_provided, model_input_format: "MODFLOW BAS6 (or steady-state first stress period)", notes: "Required for first MODFLOW stress period; critical for transient runs; a steady-state period can establish the initial head field"}
+    - {category: initial_conditions, name: "initial soil moisture / recharge-zone storage", unit: "in", source_kind: default, model_input_format: "PRMS control-file initial conditions", notes: "Requires 1–3 yr spinup to equilibrate"}
+    - {category: initial_conditions, name: "initial snowpack water equivalent", unit: "in", source_kind: default, model_input_format: "PRMS control-file initial conditions", notes: "Spinup-sensitive"}
+    - {category: initial_conditions, name: "initial unsaturated-zone and gravity-reservoir storage", unit: "length", source_kind: default, model_input_format: "MODFLOW UZF / GVR coupling state", notes: "Spinup-sensitive coupling storages"}
+  boundary_conditions:
+    - {category: boundary_conditions, name: "model_mode", unit: "code", source_kind: user_provided, model_input_format: "control file (GSFLOW5 | PRMS5 | MODFLOW)", notes: "Selects coupled / PRMS-only / MODFLOW-only run"}
+    - {category: boundary_conditions, name: "start_time / end_time", unit: "Y M D H Min S", source_kind: user_provided, model_input_format: "control file (6 int)", notes: "Simulation window"}
+    - {category: boundary_conditions, name: "modflow_time_zero", unit: "date", source_kind: user_provided, model_input_format: "control file", notes: "Must be ≥1 day before start_time in GSFLOW mode (coupling convention)"}
+    - {category: boundary_conditions, name: "climate module selection (temp_module, precip_module, solrad_module, et_module)", unit: "switch", source_kind: user_provided, model_input_format: "control file", notes: "e.g. climate_hru (gridded .day) vs station interpolation (temp_1sta_laps/precip_dist2); ddsolrad vs prescribed; potet_jh vs climate_hru. Choice must match presence of matching .day files"}
+    - {category: boundary_conditions, name: "process module selection (srunoff_module, strmflow_module, soilzone_module)", unit: "switch", source_kind: user_provided, model_input_format: "control file", notes: "Surface-runoff, streamflow-routing, and soil-zone module choices"}
+    - {category: boundary_conditions, name: "unit codes (temp_units, precip_units, runoff_units, elev_units)", unit: "integer code", source_kind: user_provided, model_input_format: "control file", notes: "Declare the units of the supplied forcing/geometry; mismatch causes silent unit-conversion errors"}
+    - {category: boundary_conditions, name: "MODFLOW external boundaries (CHD, GHB, FHB, WEL)", unit: "head / flux", source_kind: user_provided, model_input_format: "MODFLOW package input files", notes: "Specified-head, head-dependent, and specified-flow boundaries plus well pumping/withdrawals"}
+    - {category: boundary_conditions, name: "MODFLOW solver selection and tolerances (NWT/PCG: MXITER, HCLOSE)", unit: "switch / convergence criteria", source_kind: user_provided, model_input_format: "MODFLOW NWT or PCG package", notes: "NWT (Newton-Raphson) for drying/rewetting cells; tolerance settings affect convergence"}
+    - {category: boundary_conditions, name: "MODFLOW LENUNI / ITMUNI", unit: "length/time unit code", source_kind: user_provided, model_input_format: "MODFLOW DIS package", notes: "e.g. LENUNI=2 (meters), ITMUNI=4 (days)"}
+    - {category: boundary_conditions, name: "cascade routing network (ncascade, hru_up_id, hru_down_id, hru_segment, cascade_flg)", unit: "topology", source_kind: user_provided, model_input_format: "PRMS .params / ncascade.params", notes: "Defines HRU-to-HRU and HRU-to-segment lateral flow paths; required for streamflow to reach the outlet"}
+
+processes:
+  modules:
+    - {name: "ClimateDistribution", role: "driver", brief: "Distributes precipitation, air temperature, and solar radiation to HRUs (temp_module / precip_module / solrad_module; climate_hru for gridded .day, or station interpolation)"}
+    - {name: "Interception", role: "process_solver", brief: "Plant-canopy interception and storage of precipitation (intcp)"}
+    - {name: "Snowpack", role: "process_solver", brief: "Rain/snow partition by temperature, snow accumulation, energy-budget snowmelt; tracks snowpack water equivalent (snowcomp)"}
+    - {name: "PotentialET_JensenHaise", role: "process_solver", brief: "Computes potential ET from temperature and solar radiation using jh_coef (potet_jh)", applicability: "et_module=potet_jh; bypassed when et_module=climate_hru prescribes PET"}
+    - {name: "SurfaceRunoff_smidx", role: "process_solver", brief: "Surface runoff via soil-moisture-index (smidx_coef/smidx_exp) plus impervious-area runoff and infiltration"}
+    - {name: "SoilZone", role: "process_solver", brief: "Soil-zone water balance over capillary, gravity, and preferential-flow reservoirs; computes actual ET, interflow, and gravity drainage (ssr2gw_rate) to groundwater"}
+    - {name: "CascadeRouting", role: "allocator", brief: "Routes surface runoff and interflow laterally through a cascade of HRUs (upslope→downslope) to stream segments"}
+    - {name: "GVR_Coupling", role: "allocator", brief: "Gravity-reservoir mapping linking each PRMS HRU to MODFLOW cells (gsflow_prms2mf distributes drainage/runoff to cells, streams, lakes; gsflow_mf2prms returns groundwater discharge)", applicability: "GSFLOW5 coupled mode only"}
+    - {name: "UZF", role: "process_solver", brief: "Unsaturated-zone flow: vertical 1-D Richards' solution routing gravity drainage (recharge) from the soil zone to the water table (capillary gradients neglected)", applicability: "GSFLOW5 / MODFLOW modes"}
+    - {name: "MODFLOW_SaturatedFlow", role: "process_solver", brief: "3-D saturated groundwater flow and storage solved with the Newton-Raphson (NWT) or PCG solver", applicability: "GSFLOW5 / MODFLOW modes"}
+    - {name: "SFR_StreamRouting", role: "process_solver", brief: "Stream-segment routing (Manning normal depth) and stream–aquifer leakage exchange with MODFLOW cells", applicability: "GSFLOW5 / MODFLOW modes"}
+    - {name: "LAK_Lakes", role: "optional_module", brief: "Lake water budget and lake–aquifer leakage (completely-mixed lake volume, Dupuit assumption)", applicability: "when LAK package is present"}
+    - {name: "WaterBudget", role: "integrator", brief: "Accumulates per-reservoir and overall basin water budgets each daily time step and reports budget error / percent discrepancy"}
+  internal_edges:
+    - {from: "Inputs", to: "ClimateDistribution", kind: consumes_input, brief: "Reads precipitation, temperature, solar radiation forcing"}
+    - {from: "ClimateDistribution", to: "Interception", kind: invokes, brief: "Per-HRU climate feeds canopy interception"}
+    - {from: "ClimateDistribution", to: "Snowpack", kind: invokes, brief: "Temperature drives rain/snow partition and melt"}
+    - {from: "ClimateDistribution", to: "PotentialET_JensenHaise", kind: invokes, brief: "Temperature and radiation drive PET"}
+    - {from: "Interception", to: "SoilZone", kind: invokes, brief: "Net (throughfall) precipitation passed to the soil zone"}
+    - {from: "Snowpack", to: "SoilZone", kind: invokes, brief: "Snowmelt + rain delivered as infiltration"}
+    - {from: "Snowpack", to: "basin_snow", kind: writes_state, brief: "Updates snowpack water equivalent"}
+    - {from: "PotentialET_JensenHaise", to: "SoilZone", kind: invokes, brief: "PET limits actual ET in the soil zone"}
+    - {from: "SurfaceRunoff_smidx", to: "CascadeRouting", kind: invokes, brief: "Surface runoff enters the cascade network"}
+    - {from: "SoilZone", to: "soil_moist", kind: writes_state, brief: "Updates soil-moisture storage"}
+    - {from: "SoilZone", to: "SurfaceRunoff_smidx", kind: invokes, brief: "Soil-moisture state conditions runoff generation"}
+    - {from: "SoilZone", to: "CascadeRouting", kind: invokes, brief: "Interflow routed laterally"}
+    - {from: "SoilZone", to: "GVR_Coupling", kind: writes_state, brief: "Gravity drainage (ssr2gw_rate) feeds gravity reservoirs"}
+    - {from: "GVR_Coupling", to: "UZF", kind: invokes, brief: "Distributes recharge from gravity reservoirs to MODFLOW cells"}
+    - {from: "UZF", to: "MODFLOW_SaturatedFlow", kind: invokes, brief: "Recharge reaches the water table"}
+    - {from: "MODFLOW_SaturatedFlow", to: "gw_head", kind: writes_state, brief: "Solves and updates groundwater heads"}
+    - {from: "MODFLOW_SaturatedFlow", to: "SFR_StreamRouting", kind: invokes, brief: "Groundwater discharge / stream leakage exchange"}
+    - {from: "MODFLOW_SaturatedFlow", to: "GVR_Coupling", kind: invokes, brief: "Groundwater discharge returned to gravity reservoirs (gsflow_mf2prms)"}
+    - {from: "CascadeRouting", to: "SFR_StreamRouting", kind: invokes, brief: "Routed surface/interflow delivered to stream segments"}
+    - {from: "SFR_StreamRouting", to: "LAK_Lakes", kind: invokes, brief: "Stream inflow/outflow exchanges with lakes"}
+    - {from: "SFR_StreamRouting", to: "Outputs", kind: produces_output, brief: "Basin-outlet streamflow (basin_cfs) and per-segment gage flow"}
+    - {from: "MODFLOW_SaturatedFlow", to: "Outputs", kind: produces_output, brief: "Heads (.hds) and cell-by-cell budgets (.cbc)"}
+    - {from: "SoilZone", to: "WaterBudget", kind: invokes, brief: "Soil-zone fluxes/storage feed the budget accounting"}
+    - {from: "MODFLOW_SaturatedFlow", to: "WaterBudget", kind: invokes, brief: "Saturated-zone storage change feeds the overall budget"}
+
+states:
+  variables:
+    - {name: "soil_moist", unit: "in", role: prognostic}
+    - {name: "soil_rechr", unit: "in", role: prognostic}
+    - {name: "gravity_reservoir_storage (ssr)", unit: "in", role: prognostic}
+    - {name: "preferential_flow_storage", unit: "in", role: prognostic}
+    - {name: "canopy_interception_storage (basinintcpstor)", unit: "in", role: prognostic}
+    - {name: "impervious_storage (basinimpervstor)", unit: "in", role: prognostic}
+    - {name: "basin_snow", unit: "in (PRMS pkwater_equiv)", role: prognostic}
+    - {name: "unsaturated_zone_storage (UZF, unsat_stor)", unit: "length", role: prognostic}
+    - {name: "gw_head", unit: "length (MODFLOW water table)", role: prognostic}
+    - {name: "saturated_zone_storage (sat_stor)", unit: "length³", role: prognostic}
+    - {name: "stream_storage (strm_stor) / SFR segment flow", unit: "length³ / flow", role: prognostic}
+    - {name: "lake_storage (lake_stor)", unit: "length³", role: prognostic}
+    - {name: "GVR coupling storage (PRMS↔MODFLOW exchange reservoir)", unit: "length", role: prognostic}
+    - {name: "basin_recharge", unit: "in", role: accumulator}
+    - {name: "basin_actet", unit: "in", role: diagnostic}
+  provenance: "structural"
+
+outputs:
+  - var: "basin_cfs"
+    validation_rank: 3
+    unit: "ft³/s"
+    description: "Simulated streamflow at the basin outlet (convert to m³/s ×0.028317)"
+    emitted_in: "PRMS statvar file (stat_var_file)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Discard 1–3 yr spinup before scoring; including it strongly degrades NSE/KGE"
+            - "Unit mismatch (cfs vs m³/s ≈35×) must be reconciled before comparison"
+        - obs_shape: "categorical_event"
+          comparison_mode: "categorical_event_comparison"
+          metric_families: ["event_detection", "timing_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Daily time step cannot resolve sub-daily flood peaks; high-flow event timing limited to daily resolution"]
+      detrending_options: ["none"]
+  - var: "basin_stflow"
+    validation_rank: 4
+    unit: "in/day"
+    description: "Basin total streamflow as depth (convert to m³/s via × area_km² × 25.4 × 1000 / 86400)"
+    emitted_in: "PRMS water-budget / CSV basin summary"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Area-based depth→volume conversion required; do not confuse with the direct basin_cfs path"]
+      detrending_options: ["none"]
+  - var: "basin_actet"
+    validation_rank: 1
+    unit: "in"
+    description: "Area-weighted actual evapotranspiration"
+    emitted_in: "GSFLOW CSV (basinpervet) / PRMS water-budget file"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["No surface energy-balance closure; ET is a PET-limited demand calculation, biases inherit from the PET method"]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["HRU-resolution field; compare against gridded ET only after HRU→grid mapping"]
+      detrending_options: ["none"]
+  - var: "basin_recharge"
+    validation_rank: 5
+    unit: "in"
+    description: "Groundwater recharge from soil zone / unsaturated zone (uzf_recharge)"
+    emitted_in: "GSFLOW CSV (uzf_recharge) / PRMS summary"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Recharge is rarely directly observed; comparison usually indirect via heads/baseflow"]
+      detrending_options: ["seasonal", "decadal_mean"]
+  - var: "gw_head (MODFLOW .hds)"
+    validation_rank: 2
+    unit: "length (ft/m)"
+    description: "Simulated groundwater head per layer/cell"
+    emitted_in: "MODFLOW head file (.hds)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "r"
+          caveats: ["Cell-averaged head vs point well measurement; cell size must be appropriate to the gradient"]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Compare on the MODFLOW grid layer corresponding to the screened interval"]
+      detrending_options: ["none"]
+  - var: "basin_snow"
+    validation_rank: 6
+    unit: "in"
+    description: "Basin snowpack water equivalent (SWE)"
+    emitted_in: "PRMS statvar / CSV"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "timing_accuracy", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Point SNOTEL SWE vs HRU-mean SWE; elevation/aspect of the HRU matters"]
+      detrending_options: ["none"]
+  - var: "basin_soil_moist"
+    validation_rank: 7
+    unit: "in"
+    description: "Basin soil-moisture storage"
+    emitted_in: "PRMS statvar / CSV (basinsoilmoist)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Bucket storage (inches) is not directly volumetric soil moisture; pattern comparison more defensible than magnitude"]
+      detrending_options: ["none"]
+  - var: "overall water budget (IN/OUT, percent discrepancy)"
+    validation_rank: 8
+    unit: "length³ and length³/day"
+    description: "MODFLOW/GSFLOW volumetric budget summaries with overall budget error and percent discrepancy"
+    emitted_in: "MODFLOW listing (.list) / GSFLOW water-budget file"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Internal mass-balance check (target percent discrepancy near 0), not an external observation"]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "potential-ET coefficient (jh_coef / PRMS ET parameters)"
+      to: "basin_actet"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["hunt2013_gsflow_troutlake", "tolley2019_gsflow_sensitivity", "srivastava2014_integrated_gsa"]
+    - from: "PRMS ET / soil-zone parameters"
+      to: "basin_recharge"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["hunt2013_gsflow_troutlake", "markstrom2008_gsflow_docs"]
+    - from: "vegetation / tree-canopy density (covden)"
+      to: "basin_recharge"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["hunt2013_gsflow_troutlake"]
+    - from: "soil-zone storage capacity (soil_moist_max, sat_threshold)"
+      to: "basin_cfs"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["tolley2019_gsflow_sensitivity", "markstrom2008_gsflow_docs"]
+    - from: "aquifer hydraulic conductivity / transmissivity (MODFLOW HK, lower aquifer)"
+      to: "gw_head (MODFLOW .hds)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "GSFLOW5 / MODFLOW modes"
+      citations: ["tolley2019_gsflow_sensitivity", "chen2018_gsflow_framework", "markstrom2008_gsflow_docs"]
+    - from: "degree of regional aquifer confinement / aquifer hydraulic structure"
+      to: "basin_cfs"
+      sensitivity_grade: HIGH
+      basis: cross_family_model_literature
+      lever_type: parameter
+      applicability: "integrated SW-GW basins (cross-family ParFlow-CLM analog)"
+      citations: ["srivastava2014_integrated_gsa", "tolley2019_gsflow_sensitivity"]
+    - from: "snow / snowmelt energy-budget parameters"
+      to: "basin_cfs"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "snow-influenced basins"
+      citations: ["hunt2013_gsflow_troutlake", "markstrom2008_gsflow_docs"]
+    - from: "streambed / lakebed hydraulic conductivity (SFR/LAK leakance)"
+      to: "stream-aquifer exchange (stream_leakage)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "GSFLOW5 / MODFLOW modes"
+      citations: ["markstrom2008_gsflow_docs", "tolley2019_gsflow_sensitivity"]
+  citation_index:
+    tolley2019_gsflow_sensitivity:
+      short_citation: "Tolley, Foglia & Harter 2019"
+      doi: "10.1029/2018WR024209"
+      note: "PEST-based SA + calibration of a GSFLOW model (Scott Valley); strongly nonlinear parameter response constrained by streamflow, heads, and ET"
+    hunt2013_gsflow_troutlake:
+      short_citation: "Hunt et al. 2013"
+      doi: ""
+      note: "USGS SIR 2013-5159; PEST-calibrated GSFLOW Trout Lake; recharge sensitive to ET and tree-cover density; calibrated against heads, streamflow, lake levels, ET, SWE"
+    markstrom2008_gsflow_docs:
+      short_citation: "Markstrom et al. 2008"
+      doi: ""
+      note: "USGS TM 6-D1; canonical GSFLOW documentation identifying ET coefficients, soil-zone storage, snowmelt, and hydraulic conductivity as dominant process controls"
+    chen2018_gsflow_framework:
+      short_citation: "Chen, Ahmad & Kalra 2018"
+      doi: ""
+      note: "GMD Discussions preprint (withdrawn); GSFLOW development framework (Lehman Creek), transmissivity adjustment needed during coupled calibration — gray literature"
+    srivastava2014_integrated_gsa:
+      short_citation: "Srivastava et al. 2014"
+      doi: "10.1016/j.jhydrol.2014.05.020"
+      note: "Morris global SA of an integrated ParFlow-CLM model (NOT GSFLOW); aquifer confinement most important control, all SW/GW processes sensitive to ET — cross-family analog"
+
+safety:
+  hazards:
+    - id: "precip_units_mm_as_inches"
+      kind: "weather_file_semantic"
+      description: "Precipitation supplied in mm/day but precip_units=0 (inches) → mm read as inches, ~25.4× streamflow overestimate"
+      severity: "silent"
+    - id: "temp_units_celsius_as_fahrenheit"
+      kind: "weather_file_semantic"
+      description: "Temperature in degC read with temp_units=0 (degF) → rain/snow threshold (~32 degF) fails, no winter snow, inflated winter ET"
+      severity: "silent"
+    - id: "swrad_wm2_as_langleys"
+      kind: "weather_file_semantic"
+      description: "Solar radiation left in W/m² instead of Langleys/day (×2.065) → radiation ~2× low, PET/ET silently ~halved"
+      severity: "silent"
+    - id: "soil_moist_max_mm_as_inches"
+      kind: "soil_semantic"
+      description: "soil_moist_max in mm but model expects inches → ~25× capacity, soil acts as an infinite sponge, near-zero streamflow"
+      severity: "silent"
+    - id: "elev_units_m_as_feet"
+      kind: "soil_semantic"
+      description: "DEM elevation in meters with elev_units=feet → lapse-rate corrections ~3.3× wrong, wrong snow line and flow timing"
+      severity: "silent"
+    - id: "hru_area_not_acres"
+      kind: "soil_semantic"
+      description: "hru_area in km²/m² instead of PRMS acres → basin water balance off by ~247×"
+      severity: "silent"
+    - id: "control_block_missing_delimiter"
+      kind: "parser_semantic"
+      description: "Missing #### delimiter between control/parameter blocks → parser misalignment, startup crash"
+      severity: "fatal"
+    - id: "param_array_length_dimension_mismatch"
+      kind: "parser_semantic"
+      description: "Parameter array length ≠ declared dimension (nhru/nsegment/nssr) → array-bounds crash at initialization"
+      severity: "fatal"
+    - id: "wrong_param_dtype_code"
+      kind: "parser_semantic"
+      description: "Wrong data-type code (1=int on a float truncates to 0; 4=string on numeric → garbage) → uniform/zero output"
+      severity: "silent"
+    - id: "day_file_column_count"
+      kind: "weather_file_semantic"
+      description: ".day line not exactly 6 date fields + nhru values → fewer crashes, more silently ignored with time-series misalignment"
+      severity: "fatal_or_silent"
+    - id: "modflow_solver_nonconvergence"
+      kind: "numerical_instability"
+      description: "MODFLOW PCG/NWT fails convergence ('FAILED TO MEET SOLVER CONVERGENCE') from unrealistic K, far-off initial heads, dry-cell rewetting, or over-fine grid → water budget does not close"
+      severity: "fatal"
+    - id: "modflow_time_zero_ordering"
+      kind: "control_semantic"
+      description: "modflow_time_zero equal to or after start_time → GSFLOW aborts; must be ≥1 day before start_time"
+      severity: "fatal"
+    - id: "cascade_network_undefined"
+      kind: "control_semantic"
+      description: "Cascade routing undefined (ncascade=0, no hru_segment) → surface runoff/interflow have no pathway, basin_cfs always 0"
+      severity: "degraded"
+    - id: "groundwater_params_too_low"
+      kind: "control_semantic"
+      description: "ssr2gw_rate/gwflow_coef too low → insufficient recharge/baseflow, flashy hydrograph with overestimated peaks"
+      severity: "silent"
+    - id: "spinup_in_validation_stats"
+      kind: "initial_condition_semantic"
+      description: "First 1–3 spinup years (dry soil, off groundwater heads) included in NSE/KGE → strongly negative metrics despite a reasonable hydrograph"
+      severity: "silent"
+    - id: "basin_cfs_vs_cms_unit"
+      kind: "parser_semantic"
+      description: "basin_cfs (ft³/s) compared directly to observations in m³/s → silent ~35× magnitude error (×0.028317 to convert)"
+      severity: "silent"
+  validation_limits:
+    - "Daily time step: cannot resolve sub-daily processes (flood peaks, sub-daily runoff/streambed leakage); storm/kinematic-wave mode unavailable"
+    - "No plant-growth module: static vegetation makes agricultural / strongly land-use-dynamic areas problematic"
+    - "No native solute/water-quality or geochemistry simulation"
+    - "Stream routing neglects backwater and hydrograph attenuation (Manning normal-depth, single-valued stage-discharge)"
+    - "Unsaturated zone neglects capillary pressure gradients and the capillary fringe (vertical 1-D UZF)"
+    - "Finite-difference cell-size constraints: cells too wide vs stream width misrepresent SW-GW interaction; cells too thin in unconfined aquifers oscillate and cause non-convergence"
+  warnings:
+    - "GVR coupling (number of subsurface gravity reservoirs must equal number of HRUs) is the core integration; broken HRU↔cell mapping silently corrupts recharge/discharge exchange"
+    - "UPW package pairs with the NWT solver and LPF with PCG; mixing solver and flow package is a model-configuration error"
+    - "stream_temp module (v2.2.0) gives significantly different results than prior versions; earlier stream-temperature work should be redone"
+    - "Default control modules (temp_1sta/precip_1sta/ddsolrad/potet_jh) differ from a gridded-forcing workflow that sets all climate modules to climate_hru; the climate module choice must match the forcing files actually provided"
+  assumptions:
+    - statement: "Each HRU is internally homogeneous; flows and storage changes occur uniformly within an HRU over each daily time step (analogous to a finite-difference cell)"
+      scope: "PRMS land-surface discretization"
+      source: "GSFLOW TM 6-D1 (Markstrom et al. 2008), Watershed Discretization / Assumptions and Limitations"
+      status: "adopted"
+    - statement: "Mass-balance (water) closure only; ET is a PET-limited demand calculation (e.g. Jensen-Haise), not a closed surface energy budget"
+      scope: "closure semantics"
+      source: "GSFLOW TM 6-D1 Water Budgets; Table 1 module list (potet_jh)"
+      status: "adopted"
+    - statement: "Unsaturated zone solved as vertical 1-D Richards' flow with capillary gradients neglected; capillary fringe not represented"
+      scope: "UZF subsurface region"
+      source: "GSFLOW TM 6-D1 Assumptions and Limitations (Unsaturated Zone), UZF Package"
+      status: "adopted"
+    - statement: "Streambed and lakebed leakage use the Dupuit assumption (vertical head loss neglected); streams are 1-D Manning normal-depth with no backwater"
+      scope: "SFR / LAK stream-aquifer interaction"
+      source: "GSFLOW TM 6-D1 Assumptions and Limitations (Streams, Lakes)"
+      status: "adopted"
+    - statement: "This dag describes the integrated GSFLOW5 coupled mode; UZF/SFR/MODFLOW modules are inactive in PRMS5-only runs"
+      scope: "model_mode applicability"
+      source: "GSFLOW TM 6-D1 simulation modes (integrated / PRMS-only / MODFLOW-only)"
+      status: "adopted"

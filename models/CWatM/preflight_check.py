@@ -48,9 +48,23 @@ def main():
     print(f"{' PREFLIGHT: CWatM ':=^60}")
     print()
     check_dir("/mnt/disk1/Hydrocraft_server/models/CWatM/knowledge_infrastructure/tools", "KI tools directory")
-    # Model-specific binary/package check
-    print("  WARN  CWatM: binary path not verified — check SKILL.md")
-    PASS += 1
+
+    # Model-specific package check. CWatM is natively Python: run_cwatm.py IS the
+    # model. The old code printed "binary path not verified" and counted it as a
+    # PASS, so preflight succeeded even when the model could not be imported.
+    repo = "/mnt/disk1/Hydrocraft_server/models/CWatM/source/repo"
+    check_file(os.path.join(repo, "run_cwatm.py"), "CWatM entry point")
+    check_file(os.path.join(repo, "cwatm", "hydrological_modules",
+                            "routing_reservoirs", "t5_linux.so"),
+               "C++ kinematic-routing library")
+    for mod in ("numpy", "netCDF4", "osgeo.gdal", "rasterio", "pandas"):
+        check_import(mod, "python dependency")
+    if repo not in sys.path:
+        sys.path.insert(0, repo)
+    check_import("cwatm.management_modules.globals", "CWatM package")
+    if not os.environ.get("LD_PRELOAD"):
+        print("  INFO  If osgeo raises 'static TLS block', set "
+              "LD_PRELOAD=/lib/x86_64-linux-gnu/libstdc++.so.6 (triplet cwatm_dt_016)")
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

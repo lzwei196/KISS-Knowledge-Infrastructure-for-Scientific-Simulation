@@ -33,6 +33,13 @@ import numpy as np
 PYSWAN_ROOT = os.path.join(os.path.dirname(__file__), '..', '..', 'source', 'repo')
 if os.path.isdir(PYSWAN_ROOT):
     sys.path.insert(0, PYSWAN_ROOT)
+# pyswan is pip-installed into the HydroCraft python_env, NOT into the system
+# interpreter, and this KI ships no ../../source/repo checkout.  Mirror the
+# search path used by preflight_check.py so the tool imports under a plain
+# `python3` too.
+_PENV = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+if os.path.isdir(_PENV) and _PENV not in sys.path:
+    sys.path.append(_PENV)
 try:
     from pyswan import oceanwaves as ow, swan
 except ImportError:
@@ -44,6 +51,68 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Preflight validation
 # ---------------------------------------------------------------------------
+
+def _strip_comment(raw):
+    """Remove a SWAN comment from one physical line.
+
+    The SWAN user manual (section 4.1) says everything on a line behind a '$'
+    is ignored, and that '!' may be used as a comment sign as well.  Both are
+    INLINE, not just line-leading:
+
+        READINP BOTTOM 1. 'flat.bot' 3 0 FREE   $ 500 m grid
+        BOUNDSPEC SIDE W CCW CON FILE 'b.tpar'  ! from buoy 46050
+
+    Only skipping lines that BEGIN with a comment sign gets this wrong twice
+    over.  A trailing "& ! why" no longer ends with '&', so the continuation is
+    not joined and the command is parsed as two broken fragments; and a
+    commented-out line such as "$ READINP WIND 1. 'old.wnd' 4 0 FREE" still
+    yields a quoted name, so preflight demands a file the run never reads.
+
+    A comment sign inside a quoted name is data, not a comment, so quoting is
+    tracked.  An unbalanced quote leaves the rest of the line untouched, which
+    keeps a real filename rather than truncating it.
+    """
+    in_quote = False
+    for i, ch in enumerate(raw):
+        if ch == "'":
+            in_quote = not in_quote
+        elif ch in '$!' and not in_quote:
+            return raw[:i]
+    return raw
+
+
+def _logical_lines(lines):
+    """Join SWAN continuation lines into one logical command per element.
+
+    A SWAN command may be spread over several physical lines by ending each
+    continued line with '&' or '_'.  Classifying PHYSICAL lines misreads such a
+    command twice: the first fragment is classified on its real keyword and the
+    continuation on whatever word happens to start it.  A continued READINP
+    would then have its filename skipped entirely, and a continued output
+    command could have its fragment misread.
+
+    Comments are stripped (see :func:`_strip_comment`) BEFORE the continuation
+    test, so "READINP ... & $ comment" still joins.  Lines that are entirely
+    comment or blank are dropped rather than emitted, and a comment line in the
+    middle of a continuation does not terminate it.  Yield stripped logical
+    lines, none of them empty.
+    """
+    out, buf = [], ''
+    for raw in lines:
+        s = _strip_comment(raw).strip()
+        if not s:
+            # Pure comment or blank: never a command, and must not close an
+            # open continuation.
+            continue
+        if s.endswith('&') or s.endswith('_'):
+            buf += s[:-1].rstrip() + ' '
+            continue
+        out.append((buf + s).strip())
+        buf = ''
+    if buf:
+        out.append(buf.strip())
+    return out
+
 
 def validate_swn_inputs(swn_path, swan_binary=None):
     """
@@ -90,9 +159,28 @@ def validate_swn_inputs(swn_path, swan_binary=None):
     with open(swn_path, 'r') as f:
         lines = f.readlines()
 
-    for line in lines:
-        line = line.strip()
-        if line.startswith('$') or line.startswith('%') or len(line) == 0:
+    for line in _logical_lines(lines):
+        # _logical_lines already dropped comments and blanks.
+        if not line:
+            continue
+
+        # Only commands that READ a file reference a required INPUT. SWAN OUTPUT
+        # commands (TABLE/BLOCK/SPEC/SPECOUT/NESTOUT/HOTFILE) also quote
+        # filenames, but those are CREATED by the run and do not exist at
+        # preflight time, so flagging them as "missing input" wrongly FAILs a
+        # valid run.
+        #
+        # The commands that CONSUME a pre-existing file all begin with either
+        # READ (READINP / READGRID / READ) or BOUN (BOUNdspec ... FILE 'f',
+        # BOUNdnest1/2/3 ... 'f', and the historical BOUNNEST spelling).  Every
+        # output command begins with something else (TABLE, BLOCK, SPEC*, NEST*,
+        # HOTFILE, POINTS...), so this prefix test never mistakes an output for
+        # an input.  Testing only the READ/BOUNNEST prefixes silently skipped
+        # BOUNDSPEC ... FILE boundary data, which IS a required pre-existing
+        # input -- a missing TPAR then surfaced only as a mid-run SWAN abort.
+        tokens = line.split()
+        cmd = tokens[0].upper() if tokens else ''
+        if not (cmd.startswith('READ') or cmd.startswith('BOUN')):
             continue
 
         # Find quoted filenames
@@ -132,12 +220,39 @@ def validate_outputs_after_run(swn_path, output_dir=None):
 
     swn_dir = output_dir or os.path.dirname(os.path.abspath(swn_path))
 
-    # Parse .swn for output file references (TABLE, SPEC commands)
+    # Parse .swn for output file references.
+    #
+    # SWAN's file-writing commands quote the POINT/CURVE SET name FIRST and the
+    # output FILE name second:
+    #     TABLE 'sname' [HEADER] 'fname' <var> ...
+    #     BLOCK 'sname' [HEADER] 'fname' <var> ...
+    #     SPECOUT 'sname' ... 'fname'
+    #     NESTOUT 'sname' 'fname'
+    # only HOTFILE quotes the filename first.  A non-greedy
+    # "(?:TABLE|SPEC)\s+.*?'([^']+)'" therefore captured 'sname', which has no
+    # dot, so the `if '.' in outfile` test dropped it and this postflight
+    # validated NOTHING -- an empty or missing .crv passed as OK.  Commands are
+    # joined into logical lines first so a continued TABLE is read once.
     with open(swn_path, 'r') as f:
-        content = f.read()
+        lines = f.readlines()
 
-    # Find output files from TABLE and SPEC commands
-    output_patterns = re.findall(r"(?:TABLE|SPEC)\s+.*?'([^']+)'", content)
+    output_patterns = []
+    for line in _logical_lines(lines):
+        # _logical_lines already dropped comments and blanks.
+        if not line:
+            continue
+        tokens = line.split()
+        cmd = tokens[0].upper() if tokens else ''
+        quoted = re.findall(r"'([^']+)'", line)
+        if not quoted:
+            continue
+        if cmd.startswith('HOTF'):
+            output_patterns.append(quoted[0])
+        elif (cmd.startswith('TABLE') or cmd.startswith('BLOCK')
+              or cmd.startswith('SPECOUT') or cmd.startswith('NESTOUT')):
+            # skip quoted[0] == set name; the rest may name the output file
+            output_patterns.extend(quoted[1:])
+
     for outfile in output_patterns:
         if '.' in outfile:
             filepath = os.path.join(swn_dir, outfile)

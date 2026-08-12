@@ -25,7 +25,7 @@ def main():
     parser.add_argument("--working_dir", required=True,
                         help="OGGM working directory")
     parser.add_argument("--gcm", required=True,
-                        help="GCM name (e.g., BCC-CSM2-MR, CESM2, MPI-ESM1-2-HR)")
+                        help="ISIMIP3b member (e.g., mri-esm2-0_r1i1p1f1, gfdl-esm4_r1i1p1f1)")
     parser.add_argument("--ssp", required=True,
                         choices=["ssp126", "ssp245", "ssp370", "ssp585"],
                         help="SSP scenario")
@@ -53,11 +53,15 @@ def main():
         per_glacier = working_dir / 'per_glacier'
         rgi_ids = []
         if per_glacier.exists():
-            for region_dir in per_glacier.iterdir():
-                if region_dir.is_dir():
-                    for gdir in region_dir.iterdir():
-                        if gdir.is_dir():
-                            rgi_ids.append(gdir.name)
+            for region_dir in sorted(per_glacier.iterdir()):
+                if not region_dir.is_dir():
+                    continue
+                for sub_dir in sorted(region_dir.iterdir()):
+                    if not sub_dir.is_dir():
+                        continue
+                    for gdir_path in sorted(sub_dir.iterdir()):
+                        if gdir_path.is_dir():
+                            rgi_ids.append(gdir_path.name)
 
         if not rgi_ids:
             print("ERROR: No glacier directories found")
@@ -66,20 +70,21 @@ def main():
         gdirs = workflow.init_glacier_directories(rgi_ids, reset=False)
         print(f"Processing {len(gdirs)} glaciers...")
 
-        # Download and process CMIP6 data
-        # OGGM provides pre-processed CMIP6 via the shop module
-        print(f"Downloading {args.gcm} {args.ssp} data...")
+        # Download and process ISIMIP3b CMIP6 data
+        # process_monthly_isimip_data auto-downloads from OGGM Bremen server
+        print(f"Downloading ISIMIP3b {args.gcm} {args.ssp} data...")
 
         workflow.execute_entity_task(
-            gcm_climate.process_cmip_data, gdirs,
-            filesuffix=f'_{rid}',
-            y0=args.start_year,
-            y1=args.end_year
+            gcm_climate.process_monthly_isimip_data, gdirs,
+            member=args.gcm,
+            ssp=args.ssp,
+            output_filesuffix=f'_{rid}',
         )
 
-        # CRITICAL: Verify temperature is in Celsius
+        # CRITICAL: Verify temperature is in Celsius (trap dt_oggm_010)
         import xarray as xr
         sample_gdir = gdirs[0]
+        # ISIMIP3b output filesuffix format
         climate_file = Path(sample_gdir.dir) / f'gcm_data_{rid}.nc'
         if climate_file.exists():
             ds = xr.open_dataset(climate_file)

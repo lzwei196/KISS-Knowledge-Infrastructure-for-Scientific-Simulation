@@ -1,0 +1,619 @@
+template_version: "3.5"
+
+identity:
+  model_id: "SFINCS"
+  scientific_reference_version: "SFINCS reduced-physics solver (Leijnse et al. 2021; local-inertial / SSWE), subgrid per van Ormondt et al. 2025"
+  implementation:
+    id: "sfincs-v232"
+    version: "v2.3.2 (mt_Faber lineage)"
+    provenance: "Fortran reduced-physics flood solver shipped by Deltares; realizes the SFINCS local-inertial/SSWE spec (Leijnse et al. 2021) with subgrid per van Ormondt et al. 2025."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: "GPL-3.0"
+  repo_url: "https://github.com/Deltares/SFINCS"
+
+boundary:
+  scope_in:
+    - "2D shallow-water flood inundation (depth and extent) within a local domain"
+    - "Pluvial flooding from local precipitation"
+    - "Fluvial flooding from river discharge / source-point inflow"
+    - "Coastal/compound flooding from tidal/surge water-level boundary (datum-dependent)"
+    - "Optional infiltration loss (constant, SCS-CN, Horton, Green-Ampt)"
+    - "Optional hydraulic structures (thin dams, weirs, drainage)"
+    - "Optional wave setup / wave-driven flooding via SnapWave coupling"
+  scope_out:
+    - "Large-scale river-network routing (CaMa-Flood's role)"
+    - "Watershed runoff generation / land-surface hydrology (VIC's role)"
+    - "Morphology / sediment transport"
+    - "Salinity / density-driven flow"
+    - "Detailed 3D flow features (reduced-physics solver)"
+    - "Feedback from local flood to upstream hydrology (one-way coupling only)"
+  spatial: "2-D grid"
+  temporal: "event"
+  closure: "mass-balance"
+  notes: >
+    Mass-balance closure on water: continuity integrates flux divergence
+    plus precipitation minus infiltration plus source discharge over the
+    active grid (rain volume ~ stored volume validated). Reduced-physics
+    momentum: SFINCS-LIE (local inertial, advection neglected, default) for
+    sub-critical flow; SFINCS-SSWE (advection on) for super-critical or wave
+    runs. Coarse computational grid (typ. 50-200 m) carries fine subgrid
+    bathymetry (5-10 m); subgrid mode decouples accuracy from compute-grid
+    size and embeds roughness in subgrid tables. No surface energy budget.
+
+inputs:
+  forcing:
+    - category: forcing
+      name: "precipitation"
+      unit: "mm/hr"
+      source_kind: forcing
+      model_input_format: "ASCII precipfile (time_seconds precip_mmhr); netprecipfile NetCDF path unreliable"
+      notes: "Instantaneous rate in mm/hr; drives pluvial flooding. Time-interpolated each step by the meteo module into prcp."
+    - category: forcing
+      name: "river discharge boundary"
+      unit: "m3/s"
+      source_kind: forcing
+      model_input_format: "sfincs.src (source points) + sfincs.dis (discharge time series)"
+      notes: "Injected as point/source discharge qsrc; the CaMa-Flood->SFINCS fluvial coupling path."
+    - category: forcing
+      name: "water level boundary"
+      unit: "m"
+      source_kind: forcing
+      model_input_format: "sfincs.bnd (boundary points) + sfincs.bzs (water-level time series)"
+      notes: "Coastal/downstream water-level BC; vertical datum must match the DEM datum."
+    - category: forcing
+      name: "wind speed and direction"
+      unit: "m/s, degrees"
+      source_kind: forcing
+      model_input_format: "spiderweb / amu-amv wind fields (dtwnd update interval, default 1800 s)"
+      notes: "Optional; produces wind stress (tauwu/tauwv) for surge/setup. Not active in default pluvial/fluvial runs."
+    - category: forcing
+      name: "atmospheric pressure"
+      unit: "Pa"
+      source_kind: forcing
+      model_input_format: "atmospheric pressure forcing field / spwfile composite"
+      notes: "Optional; barometric forcing for surge runs."
+  parameters:
+    - category: parameter
+      name: "bed level (topography/bathymetry)"
+      unit: "m (vertical datum must match boundary conditions)"
+      source_kind: dataset_lookup
+      model_input_format: "sfincs.dep (binary float32 row-major), sourced from a DEM raster (GeoTIFF)"
+      notes: "Terrain elevation, positive upward; defines conveyance with subgrid tables."
+    - category: parameter
+      name: "active cell mask"
+      unit: "category code"
+      source_kind: user_provided
+      model_input_format: "sfincs.msk (binary uint8): 0=inactive, 1=active(computed), 2=outflow boundary, 3=water-level BC"
+      notes: "SKILL.md convention adopted (1=active). Interior cells must be 1; mask=3 on interior makes SFINCS prescribe water level and compute zero flood depth."
+    - category: parameter
+      name: "active-cell index map"
+      unit: "cell indices"
+      source_kind: derived
+      model_input_format: "sfincs.ind (binary int32: [n_active][1-based flat indices])"
+      notes: "Maps active cells to grid / subgrid; header int32 must equal n_active."
+    - category: parameter
+      name: "Manning's n roughness"
+      unit: "s/m^(1/3) (dimensionless n, ~0.015-0.20)"
+      source_kind: calibrated
+      model_input_format: "sfincs.man (binary float32 row-major) or uniform manning; manning_land 0.04 / manning_sea 0.02 split at rgh_lev_land"
+      notes: "Primary calibration parameter. Precomputed once into gn2=g*n^2 at init (compute_fluxes reads gn2); editing manning after init is inert. In subgrid mode roughness is embedded in the subgrid tables instead."
+    - category: parameter
+      name: "subgrid tables"
+      unit: "derived (volume-depth, conveyance, roughness)"
+      source_kind: derived
+      model_input_format: "sfincs.sbg / sbgfile (NetCDF; h73table, subgrid_z_volmax)"
+      notes: "Optional but dominant control on coarse-grid accuracy; continuity maps storage volume to water level via these tables."
+    - category: parameter
+      name: "infiltration parameters"
+      unit: "mm/hr (qinf); method-specific (CN, Green-Ampt, Horton)"
+      source_kind: dataset_lookup
+      model_input_format: "qinf constant or qinffile; scsfile/sfacinf (CN); ksfile/sigmafile/psifile (Green-Ampt); f0file/fcfile/kdfile (Horton)"
+      notes: "Optional infiltration sink subtracted from precipitation in the continuity balance."
+    - category: parameter
+      name: "grid definition"
+      unit: "m / EPSG"
+      source_kind: user_provided
+      model_input_format: "sfincs.inp keywords: x0,y0,dx,dy,mmax,nmax,rotation,epsg"
+      notes: "EPSG must be a projected (UTM) CRS; geographic 4326 with metric dx/dy is fatal."
+  initial_conditions:
+    - category: initial_condition
+      name: "initial water level"
+      unit: "m"
+      source_kind: user_provided
+      model_input_format: "zsini uniform (default 0.0) or inifile (binary spatially varying)"
+      notes: "Sets zs at simulation start."
+    - category: initial_condition
+      name: "restart state"
+      unit: "mixed"
+      source_kind: user_provided
+      model_input_format: "rstfile containing zs, qx, qy, umean, vmean"
+      notes: "Optional warm-start from a prior run."
+  boundary_conditions:
+    - category: boundary_condition
+      name: "momentum advection toggle"
+      unit: "0/1"
+      source_kind: user_provided
+      model_input_format: "advection keyword (0=LIE local-inertial, 1=SSWE with advection)"
+      notes: "Structural switch selecting the reduced-physics regime; default 0."
+    - category: boundary_condition
+      name: "minimum flow depth threshold (huthresh)"
+      unit: "m"
+      source_kind: default
+      model_input_format: "huthresh keyword in sfincs.inp"
+      notes: "Wetting/drying threshold; cells below huthresh treated dry, controlling flood-extent edges and wet/dry stability. Default split across streams: docs default 0.05 m (range 0.001-0.1); binary symbol __sfincs_data_MOD_huthresh default 0.01 m. Unresolved across docs vs binary streams - use SFINCS-manual 0.05 m unless byte-confirmed otherwise."
+    - category: boundary_condition
+      name: "momentum time-integration / smoothing weight (theta)"
+      unit: "dimensionless"
+      source_kind: default
+      model_input_format: "theta keyword in sfincs.inp"
+      notes: "Momentum time-integration / numerical-smoothing weight affecting stability. Default split across streams: source binary symbol __sfincs_data_MOD_theta default 0.9; docs default 1.0. Unresolved across docs vs binary streams."
+    - category: boundary_condition
+      name: "simulation time window"
+      unit: "s / datetime"
+      source_kind: user_provided
+      model_input_format: "tref / tstart / tstop"
+      notes: "Reference, start and stop times; forcing times are relative to tref."
+    - category: boundary_condition
+      name: "computational timestep control"
+      unit: "s / dimensionless"
+      source_kind: user_provided
+      model_input_format: "alpha Courant limiter (default 0.5; binary alfa default 0.75) constraining dt <= alpha*dx/sqrt(g*h_max)"
+      notes: "Adaptive CFL-limited timestep; violation produces NaN crash."
+    - category: boundary_condition
+      name: "output format and intervals"
+      unit: "s"
+      source_kind: user_provided
+      model_input_format: "outputformat=net (NetCDF); dtout/dtmapout, dthisout, dtmaxout"
+      notes: "outputformat must be 'net' for NetCDF map/his output; otherwise binary."
+    - category: boundary_condition
+      name: "hydraulic structures"
+      unit: "geometry / m"
+      source_kind: user_provided
+      model_input_format: "thin dams (.thd), weirs, drainage (.drn)"
+      notes: "Optional; override fluxes between cells inside the momentum step."
+
+processes:
+  modules:
+    - name: "sfincs_input"
+      role: driver
+      brief: "Reads sfincs.inp (keyword=value) and all referenced ASCII/binary files into module-scope state; SFINCS takes no CLI args and reads only from CWD."
+    - name: "sfincs_domain"
+      role: allocator
+      brief: "Builds the (regular or quadtree) mesh, masks kcs/kcuv, bed level zb, and precomputes gn2=g*Manning^2 and storage volumes before the time loop."
+    - name: "sfincs_subgrid"
+      role: process_solver
+      brief: "Holds subgrid bathymetry volume-depth tables (h73table, subgrid_z_volmax) so a coarse compute grid carries fine sub-cell bathymetry; consumed by continuity."
+      applicability: "when subgrid mode enabled (sbgfile)"
+    - name: "sfincs_meteo"
+      role: process_solver
+      brief: "Time-interpolates spatially-uniform or gridded precipitation, wind and pressure forcing into prcp / tauwu/tauwv / patm."
+    - name: "sfincs_infiltration"
+      role: process_solver
+      brief: "Computes infiltration loss qinf (constant, SCS-CN, Horton, or Green-Ampt) and accumulates cuminf; subtracted from precip in continuity."
+      applicability: "when infiltration enabled (qinf/scs/horton/green-ampt)"
+    - name: "sfincs_boundaries"
+      role: process_solver
+      brief: "Applies water-level / discharge / infragravity boundaries at mask=2/BC cells (update_boundary_fluxes, time interpolation)."
+    - name: "sfincs_discharges"
+      role: process_solver
+      brief: "Injects point/source discharge qsrc into cells; the CaMa-Flood->SFINCS fluvial coupling path (.src/.dis)."
+    - name: "sfincs_momentum"
+      role: process_solver
+      brief: "Solves the reduced shallow-water momentum equation for flux q at uv-points (compute_fluxes), applying Manning friction (g*n^2 term), optional advection, viscosity, and wind/pressure/wave forcing."
+    - name: "sfincs_structures"
+      role: process_solver
+      brief: "Thin dams, weirs and drainage modify inter-cell fluxes (compute_fluxes_over_structures) inside the momentum step."
+      applicability: "when structures defined (.thd/.weir/.drn)"
+    - name: "sfincs_continuity"
+      role: integrator
+      brief: "Updates water level zs from flux divergence + precip - infiltration + sources (regular or subgrid volume tables); the mass-conservation core."
+    - name: "sfincs_nonhydrostatic"
+      role: process_solver
+      brief: "Optional non-hydrostatic pressure correction (BiCGStab+ILU) overwriting hydrostatic q/zs for short-wave dynamics when enabled."
+      applicability: "when non-hydrostatic mode enabled"
+    - name: "sfincs_snapwave"
+      role: optional_module
+      brief: "Couples the SnapWave spectral wave solver for wave setup, wave forces, and wave-enhanced roughness in coastal runs."
+      applicability: "when SnapWave coupling enabled"
+    - name: "sfincs_timestep_analysis"
+      role: integrator
+      brief: "Adaptive CFL timestep control (dt <= alpha*dx/sqrt(g*h)) computed from max(zs-zb) each step."
+    - name: "sfincs_output"
+      role: driver
+      brief: "Writes NetCDF map (sfincs_map.nc) and history point time series (sfincs_his.nc) honoring store_* flags and outputformat=net."
+    - name: "sfincs_lib"
+      role: driver
+      brief: "Top-level timestep loop (initialize -> update -> finalize); the tloop* timers define the exact per-step module invocation order."
+  internal_edges:
+    - from: "sfincs_input"
+      to: "sfincs_domain"
+      kind: invokes
+      brief: "Parsed inputs feed mesh/mask/bed/roughness assembly at initialization."
+    - from: "sfincs_domain"
+      to: "gn2"
+      kind: writes_state
+      brief: "initialize_roughness precomputes g*Manning^2 once; momentum reads it every step (post-init manning edits are inert)."
+    - from: "Inputs"
+      to: "sfincs_meteo"
+      kind: consumes_input
+      brief: "Reads precipitation/wind/pressure forcing files."
+    - from: "sfincs_meteo"
+      to: "prcp"
+      kind: writes_state
+      brief: "Writes precipitation rate (and wind/pressure stress) consumed by continuity and momentum."
+    - from: "sfincs_infiltration"
+      to: "qinf"
+      kind: writes_state
+      brief: "Infiltration sink (netprcp = prcp - qinf) feeds the continuity balance."
+    - from: "Inputs"
+      to: "sfincs_boundaries"
+      kind: consumes_input
+      brief: "Reads water-level (bnd/bzs) and discharge (src/dis) boundary time series."
+    - from: "sfincs_boundaries"
+      to: "q"
+      kind: writes_state
+      brief: "Injects boundary fluxes into q and prescribes zs at mask=2/BC cells (default 0 m drains inland terrain - dt_v005)."
+    - from: "sfincs_discharges"
+      to: "q"
+      kind: writes_state
+      brief: "Adds source-point discharge qsrc (CaMa coupling) into the flux field."
+    - from: "zs"
+      to: "sfincs_momentum"
+      kind: reads_state
+      brief: "Momentum reads current water level, bed, gn2 friction, viscosity, and wind/wave forcing to update flux q."
+    - from: "sfincs_momentum"
+      to: "q"
+      kind: writes_state
+      brief: "Writes flux per unit width q (and velocity components) at active uv-points."
+    - from: "sfincs_structures"
+      to: "q"
+      kind: writes_state
+      brief: "Overrides q across thin dams/weirs/drainage within the momentum step."
+    - from: "q"
+      to: "sfincs_continuity"
+      kind: reads_state
+      brief: "Continuity consumes momentum flux, source discharge, precipitation and infiltration in the mass balance."
+    - from: "sfincs_subgrid"
+      to: "sfincs_continuity"
+      kind: invokes
+      brief: "compute_water_levels_subgrid maps storage volume to zs via subgrid volume tables."
+    - from: "sfincs_continuity"
+      to: "zs"
+      kind: writes_state
+      brief: "Writes updated water surface elevation zs - the primary prognostic state each timestep."
+    - from: "zs"
+      to: "sfincs_momentum"
+      kind: reads_state
+      brief: "Next sub-step momentum re-reads the just-updated zs - the tightly coupled q<->zs predictor."
+    - from: "sfincs_nonhydrostatic"
+      to: "zs"
+      kind: writes_state
+      brief: "When enabled, pressure correction overwrites hydrostatic q/zs."
+    - from: "sfincs_snapwave"
+      to: "sfincs_momentum"
+      kind: invokes
+      brief: "Returns wave forces / hm0 / enhanced roughness fed back into momentum."
+    - from: "sfincs_lib"
+      to: "sfincs_timestep_analysis"
+      kind: invokes
+      brief: "Adaptive CFL dt computed from max(zs-zb) each step."
+    - from: "zs"
+      to: "hmax"
+      kind: writes_state
+      brief: "ncoutput stores running maxima: hmax=max(zs-zb) (flood depth), zsmax=max(zs) (surface elev)."
+    - from: "sfincs_continuity"
+      to: "Outputs"
+      kind: produces_output
+      brief: "Time-stepped state accumulates into the sfincs_map.nc and sfincs_his.nc output fields via sfincs_output."
+
+states:
+  variables:
+    - name: "zs"
+      unit: "m"
+      role: prognostic
+    - name: "q"
+      unit: "m2/s"
+      role: prognostic
+    - name: "umean"
+      unit: "m/s"
+      role: prognostic
+    - name: "vmean"
+      unit: "m/s"
+      role: prognostic
+    - name: "gn2"
+      unit: "m^2/s^2 (derived g*Manning^2 friction field)"
+      role: diagnostic
+    - name: "prcp"
+      unit: "m/s"
+      role: diagnostic
+    - name: "netprcp"
+      unit: "m/s"
+      role: diagnostic
+    - name: "qinf"
+      unit: "m/s"
+      role: diagnostic
+    - name: "hmax"
+      unit: "m"
+      role: accumulator
+    - name: "zsmax"
+      unit: "m"
+      role: accumulator
+    - name: "cumprcp"
+      unit: "m"
+      role: accumulator
+    - name: "cuminf"
+      unit: "m"
+      role: accumulator
+    - name: "twet"
+      unit: "s"
+      role: accumulator
+    - name: "storage_volume"
+      unit: "m3 (subgrid storage volume zvolume)"
+      role: diagnostic
+  provenance: populated
+
+outputs:
+  - var: "hmax"
+    validation_rank: 5
+    unit: "m"
+    description: "Maximum water depth above bed over the simulation; the correct flood-depth variable (cf. zsmax which is surface elevation)."
+    emitted_in: "sfincs_map.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "event_detection"]
+          determining_metric: "csi"
+          caveats:
+            - "Compare against observed/benchmark flood-extent or depth maps; flood/no-flood detection uses CSI/hit-rate. Datum and grid alignment must match."
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "High-water marks at surveyed points; SFINCS local-domain depth vs surveyed peak depth."
+      detrending_options: ["none"]
+  - var: "zsmax"
+    validation_rank: 2
+    unit: "m"
+    description: "Maximum water surface elevation (bed + depth) over the simulation; not flood depth."
+    emitted_in: "sfincs_map.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Compare against surveyed high-water-mark surface elevations on a shared vertical datum; not a flood-depth proxy."
+      detrending_options: ["none"]
+  - var: "zs"
+    validation_rank: 3
+    unit: "m"
+    description: "Instantaneous water surface elevation at each map-output interval."
+    emitted_in: "sfincs_map.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Event-scale; map snapshots at dtmapout. Requires matching grid and datum."
+      detrending_options: ["none"]
+  - var: "point_zs / point_h"
+    validation_rank: 4
+    unit: "m"
+    description: "Water surface elevation / water depth at observation (his) points."
+    emitted_in: "sfincs_his.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Compare against stage/depth gauges within the domain; timing of peak (t_zsmax) admits DOY/lag bias. Requires shared datum for zs."
+      detrending_options: ["none"]
+  - var: "flood extent (derived from hmax > threshold)"
+    validation_rank: 1
+    unit: "category / area"
+    description: "Wet/dry classification derived from hmax exceeding a depth threshold."
+    emitted_in: "sfincs_map.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "categorical_event_comparison"
+          metric_families: ["event_detection", "spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats:
+            - "Against satellite/observed inundation masks (e.g. SAR-derived) using CSI / hit-rate / false-alarm; sensitive to chosen depth threshold."
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "Manning's n roughness"
+      to: "water_level / flood_extent"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "regime-dependent: HIGH in fluvial-pluvial-dominated cases, low for land cells in fluvially-extreme global events"
+      citations: ["eilander2023_mozambique_pilot", "hawker2019_dem_roughness_floodmap_sensitivity"]
+    - from: "fluvial discharge forcing"
+      to: "flood_extent"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      citations: ["eilander2023_global_compound_framework", "eilander2023_mozambique_pilot"]
+    - from: "pluvial rainfall forcing"
+      to: "flood_extent"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      citations: ["eilander2023_global_compound_framework"]
+    - from: "spatial resolution (compute grid)"
+      to: "flood_extent / discharge"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      citations: ["eilander2023_global_compound_framework", "vanormondt2025_sfincs_subgrid"]
+    - from: "subgrid topography / bed level"
+      to: "discharge"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "coarse-grid runs; subgrid keeps discharge error within 2% of analytical vs >40% without"
+      citations: ["vanormondt2025_sfincs_subgrid"]
+    - from: "DEM resolution"
+      to: "water_level"
+      sensitivity_grade: MEDIUM
+      basis: cross_family_model_literature
+      lever_type: parameter
+      applicability: "local-inertial solver class (Hawker 2019 analog)"
+      citations: ["hawker2019_dem_roughness_floodmap_sensitivity", "vanormondt2025_sfincs_subgrid"]
+    - from: "river bifurcations / floodplain connectivity"
+      to: "flood_extent"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      citations: ["eilander2023_global_compound_framework"]
+    - from: "SCS-CN infiltration"
+      to: "flood_extent"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "pluvial-driven flood volume; secondary to roughness and dynamic forcing"
+      citations: ["eilander2023_mozambique_pilot"]
+    - from: "river depth"
+      to: "flood_extent"
+      sensitivity_grade: LOW
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["eilander2023_global_compound_framework", "eilander2023_mozambique_pilot"]
+    - from: "coastal water-level forcing"
+      to: "flood_extent"
+      sensitivity_grade: LOW
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "fluvially-dominated events; reflects driver dominance, not general insensitivity"
+      citations: ["eilander2023_global_compound_framework"]
+  citation_index:
+    leijnse2021_sfincs_reduced_physics:
+      short_citation: "Leijnse et al. 2021"
+      doi: "10.1016/j.coastaleng.2021.103852"
+      note: "Foundational SFINCS reduced-physics (local-inertial/SSWE) compound-flood solver paper."
+    eilander2023_global_compound_framework:
+      short_citation: "Eilander et al. 2023a"
+      doi: "10.5194/nhess-23-823-2023"
+      note: "Global compound-flood framework coupling SFINCS+CaMa-Flood+GTSM; OAT sensitivity - skill most sensitive to fluvial/pluvial forcing, bifurcations, resolution; not very sensitive to river depth, land Manning, coastal forcing for fluvial events."
+    eilander2023_mozambique_pilot:
+      short_citation: "Eilander et al. 2023b"
+      doi: "10.5194/nhess-23-2251-2023"
+      note: "Sofala/Mozambique compound-flood pilot; skill most sensitive to Manning roughness and dynamic forcing, not very sensitive to river depth; constant Manning 0.03, SCS-CN (GCN250)."
+    vanormondt2025_sfincs_subgrid:
+      short_citation: "van Ormondt et al. 2025"
+      doi: "10.5194/gmd-18-843-2025"
+      note: "SFINCS subgrid lookup tables; without subgrid discharge errors exceed 40% at 500 m, with subgrid within 2% of analytical - subgrid bed-level the dominant coarse-grid control."
+    hawker2019_dem_roughness_floodmap_sensitivity:
+      short_citation: "Hawker et al. 2019"
+      doi: "10.1080/19475705.2019.1604573"
+      note: "Local-inertial 2D model (same governing equations as SFINCS); combined DEM resolution + Manning roughness strongly control flood extent and WSE. Cross-family proxy evidence."
+
+safety:
+  hazards:
+    - id: "geographic_crs_metric_spacing"
+      kind: control_semantic
+      description: "Grid CRS must be projected (UTM); geographic 4326 with metric dx/dy crashes or produces garbage."
+      severity: fatal
+    - id: "cfl_violation_nan"
+      kind: numerical_instability
+      description: "dt exceeding CFL limit (dt > alpha*dx/sqrt(g*h_max)) produces NaN/Inf crash."
+      severity: fatal
+    - id: "manning_too_low_cfl"
+      kind: numerical_instability
+      description: "Manning's n < 0.01 reduces friction, raises velocity, and triggers CFL instability/NaN even at small dt; floor at ~0.02."
+      severity: fatal
+    - id: "interior_mask_water_level_bc"
+      kind: control_semantic
+      description: "Interior cells set to mask=3 (water-level BC) instead of 1 (active) make SFINCS prescribe water levels and compute zero flood depth."
+      severity: silent
+    - id: "outflow_mask_inland_drain"
+      kind: control_semantic
+      description: "mask=2 outflow cells default to 0 m water level; on inland/mountainous terrain (e.g. 143 m bed) the head gradient instantly drains the domain to hmax=0. Use mask=1 closed boundary inland."
+      severity: silent
+    - id: "bnd_points_off_active_mask"
+      kind: control_semantic
+      description: "Water-level boundary points not aligned to active (mask>0) cells are silently ignored; boundary appears dry."
+      severity: silent
+    - id: "datum_mismatch_dem_vs_wl"
+      kind: control_semantic
+      description: "DEM vertical datum (e.g. EGM96 geoid) differing from the water-level BC datum (MSL/chart) offsets coastal levels by 20-40 m."
+      severity: silent
+    - id: "double_counted_water_source"
+      kind: control_semantic
+      description: "Applying both SFINCS direct rainfall and VIC/CaMa runoff-as-source over the same domain double-counts water; choose rainfall+river-discharge-BC OR runoff-source-without-rainfall, never both."
+      severity: silent
+    - id: "stage_vs_discharge_bc_swap"
+      kind: control_semantic
+      description: "Using a stage BC where a discharge BC is intended (or a negative/sign-flipped discharge) reverses or removes river inflow, flooding the wrong side."
+      severity: silent
+    - id: "daily_bc_subhourly_ramps"
+      kind: numerical_instability
+      description: "Daily boundary forcing linearly interpolated to a sub-hourly step creates artificial 24-hour ramps; insufficient for flash-flood timing."
+      severity: degraded
+    - id: "subgrid_ratio_checkerboard"
+      kind: numerical_instability
+      description: "Subgrid-to-compute resolution ratio >30x produces noisy tables and checkerboard wet/dry artifacts; keep 5-20x."
+      severity: degraded
+    - id: "advection_low_alpha_oscillation"
+      kind: numerical_instability
+      description: "Advection enabled (SSWE) with too-low alpha on steep terrain causes oscillating water levels and ~100x runtime."
+      severity: degraded
+    - id: "sigabrt_after_success"
+      kind: numerical_instability
+      description: "gfortran 13.3 / libnetcdff finalization can exit code -6 (SIGABRT) AFTER 'Simulation finished'; output is valid. Judge success by sfincs.log + sfincs_map.nc existence, not exit code."
+      severity: degraded
+    - id: "outputformat_not_net"
+      kind: control_semantic
+      description: "outputformat unset/non-'net' writes binary instead of NetCDF; post-processing finds no sfincs_map.nc."
+      severity: degraded
+    - id: "huthresh_default_stream_split"
+      kind: control_semantic
+      description: "huthresh wetting/drying default disagrees across streams (docs 0.05 m vs binary symbol 0.01 m); an unset huthresh inherits a build-default that changes wet/dry edge cells and thin-film flood extent. Set huthresh explicitly rather than relying on the default."
+      severity: degraded
+  validation_limits:
+    - "Local-domain 2D inundation only; no native large-scale river-network routing (relies on CaMa-Flood upstream) or runoff generation (relies on VIC)."
+    - "Reduced-physics: SFINCS-LIE (advection off) valid for sub-critical flow; super-critical or wave-dominated flow requires SFINCS-SSWE / non-hydrostatic mode."
+    - "Event-scale; not a continuous long-term hydrologic simulator."
+    - "Plausibility bounds: max flood depth ~20 m, precip <~200 mm/hr (extreme), Manning n 0.015-0.20; active cells <~500,000 on a 4-core CPU."
+    - "This build omits the advection-diffusion (tracer transport) module; concentration/tracer outputs are unavailable."
+  warnings:
+    - "Use hmax (depth) not zsmax (surface elevation = bed+depth) when interpreting flood depth."
+    - "Roughness is consumed via gn2=g*Manning^2 precomputed once at initialization; modifying the manning field after init has no effect."
+    - "In subgrid mode, roughness is embedded in the subgrid tables rather than the Manning parameters."
+    - "Discharge source points placed on high ground (ridge) rather than a channel create an artificial pond with no downstream drainage."
+    - "Continuity silently depends on subgrid initialization having run; storage-volume->water-level mapping requires the subgrid tables when subgrid mode is on."
+    - "huthresh and theta both carry docs-vs-binary default disagreements; do not rely on the implicit default - set them explicitly in sfincs.inp."
+  assumptions:
+    - statement: "Point/2D local-domain geometry on a structured (optionally rotated/quadtree) grid; depth-averaged shallow water, no vertical structure."
+      scope: "all SFINCS runs in this build"
+      source: "SFINCS overview docs (sfincs.readthedocs.io/overview) and Leijnse et al. 2021"
+      status: adopted
+    - statement: "Mass-balance closure on water only (no surface energy budget); continuity conserves flux divergence + precip - infiltration + sources."
+      scope: "water balance"
+      source: "sfincs_continuity module behavior; SFINCS overview docs"
+      status: adopted
+    - statement: "Reduced-physics momentum: advection neglected by default (SFINCS-LIE local-inertial, advection=0); SSWE/advection only when explicitly enabled."
+      scope: "momentum solver regime"
+      source: "SFINCS overview (governing equations, Bates et al. 2010); compile_sfincs.sh advection-off default"
+      status: adopted
+    - statement: "Mask convention adopted is 0=inactive, 1=active(computed), 2=outflow boundary, 3=water-level BC (SKILL.md Critical Domain Knowledge)."
+      scope: "sfincs.msk interpretation"
+      source: "SFINCS KI SKILL.md; input docs (sfincs.readthedocs.io/input)"
+      status: tentative
+    - statement: "huthresh default taken as 0.05 m (SFINCS manual / docs) where the stripped binary symbol could not be byte-confirmed; the 0.01 m binary-symbol value is recorded as an unresolved docs-vs-binary split."
+      scope: "wetting/drying threshold default"
+      source: "SFINCS input docs (sfincs.readthedocs.io/input numerical parameters) vs binary symbol __sfincs_data_MOD_huthresh"
+      status: tentative

@@ -10,7 +10,7 @@
 > or hand-coded approximation in place of the real model. Doing so produces
 > scientifically invalid results and defeats the purpose of the KI.
 >
-> Before starting, run: `python preflight_check.py` (in this KI directory)
+> Before starting, run: `python3 preflight_check.py` (in this KI directory). **Use `python3` (3.12, pcse 6.0.12) for ALL tools -- the default `python` (3.11) cannot import pcse (numpy ABI mismatch) and preflight FAILS.**
 
 > **CMFD direct reader available:** Use `from ki_tools_common.netcdf_utils import load_cmfd_daily_all` to read CMFD 3-hourly data directly. Returns daily precip (mm), temp (°C with Tmin/Tmax), radiation (W/m²), wind, humidity. Handles subdirectory search (Prec/, Temp/, etc.) and unit conversions automatically.
 > to verify that the model binary/package and required data are available.
@@ -67,7 +67,7 @@ WOFOST is the EU standard crop growth model developed at Wageningen University &
 | Phenology | DVS (0→1→2) continuous | V-stage/R-stage discrete |
 | Soil model | Single-layer bucket (SMW/SMFCF/SM0) | Multi-layer (SLLL/SDUL/SSAT per layer) |
 | Radiation units | **J/m2/day** (IRRAD) -- see WARNING below | MJ/m2/day (SRAD) |
-| Precipitation units | cm/day (RAIN) | mm/day (RAIN) |
+| Precipitation units | **CSV column: mm/day** (CSVWeatherDataProvider divides /10 -> cm); internal var: cm/day (RAIN) | mm/day (RAIN) |
 | Configuration | YAML files + Python dicts | Fixed-width text files (FileX) |
 | Weather providers | NASAPower, CSV, Excel, custom | .WTH fixed-format files |
 | Execution | `engine.run_till_terminate()` | `dscsm048` executable |
@@ -191,7 +191,7 @@ print(f"Final DVS: {df['DVS'].iloc[-1]:.2f}")
 
 - **⚠️ IRRAD is J/m2/day (JOULES), NOT kJ or MJ!** — The PCSE documentation says "kJ" but the internal DB stores JOULES. Spain example: IRRAD=15,657,000 J/m²/d = 15.7 MJ. **Convert from VIC: IRRAD = SW_W_m2 × 86400** (not × 86.4). If IRRAD < 100,000, it's 1000x too low and yield will be ZERO. This is the #1 cause of WOFOST zero-yield bugs. **(dt_v005)**
 - **E0/ES0/ET0 are cm/day, NOT mm/day** — Spain DB values: ET0=0.08-0.88 cm/d. If Hargreaves gives mm/day, **divide by 10**. Values >1.5 cm/d cause extreme water stress. **(dt_v006)**
-- **RAIN is cm/day, NOT mm/day** — If you pass mm values (e.g., 5.0 mm as 5.0 cm), precipitation is 10x too high. The model runs fine but soil is permanently waterlogged.
+- **RAIN unit is context-dependent** -- In a **CSVWeatherDataProvider CSV the RAIN column is mm/day** (PCSE divides it by 10 -> cm internally); only the *internal model variable* / a hand-built WeatherDataContainer use cm/day. Writing the CSV in cm makes rainfall 10-100x too low -> drought-stressed crop, low yield. Ground truth: create_csv_weather_file.py docstring + dt_004.
 - **VAP is kPa, NOT hPa or mbar** — Vapor pressure must be in kPa. 1 kPa = 10 hPa = 10 mbar.
 
 ### Validated Results — Bengbu (VIC forcing, DB crop params)
@@ -201,6 +201,21 @@ print(f"Final DVS: {df['DVS'].iloc[-1]:.2f}")
 | Grain maize | **6,102 kg/ha** | 5,780 | 14,281 |
 
 WOFOST matches DSSAT within 10% for both crops with default parameters.
+
+### ⚠️ Validating against FAOSTAT NATIONAL yields — scale/trend mismatch (added 2026-06-08)
+Point or few-point WOFOST runs compared to a FAOSTAT NATIONAL yield series are a **domain/scale mismatch**, not a fair skill test. The national aggregate is spatially smoothed across many agro-climates, partly irrigated, and rises on a multi-decade technology trend (improved hybrids, fertiliser, management). A fixed-parameter, weather-driven point sim has far higher interannual variance (drought-year crop failures -> TWSO≈0; wet years -> high yield) than the buffered national mean, so **raw NSE/KGE are intrinsically very negative and raw r is low regardless of model quality.**
+
+**Correct framing when only national obs exists:**
+- Prefer sub-national / admin-unit yield obs at the simulated scale if available.
+- Otherwise **detrend BOTH series and report detrended r** as the skill metric (removes the technology trend the model cannot reproduce).
+- Pick a **rainfed semi-arid country+crop in WLP_FD** to maximise the weather-driven signal.
+
+**Empirical anchor (Morocco wheat, 3 points, 1985-2024, WLP_FD, fixed Nov sowing, default Winter_wheat_107):** raw r=0.278, **detrended r=0.287** — i.e. detrending does NOT lift this case above the 0.5 skill threshold. The residual gap is structural (point-vs-national aggregate) + uncalibrated fixed-calendar agromanagement (Mediterranean wheat sowing follows the autumn rains, not a fixed date), which is **calibration / human-engineering territory, not a KI artifact bug.** Do not treat a low r on a point-vs-national comparison as a forcing/physics failure.
+
+> **CANONICAL TOOL (added 2026-06-08):** Use `tools/s8_yield_analysis/validate_against_faostat.py SIM_CSV CROP COUNTRY OUT_JSON [UNITS]` for FAOSTAT-national validation. It is **obs_shape-aware**: it classifies the comparison as `regional_aggregate_time_series` and reports ONLY the dag-valid metric families — `magnitude_accuracy` (pbias, decadal_mean_pbias, mean_abs_pct_err) and `trend_match` (detrended r, first-difference r, trend-slope ratio). Raw NSE/r/KGE are relegated to an `invalid_for_obs_shape` block (the pre-retry gate REJECTs them as `REJECT_WRONG_METRIC` if reported as the verdict — see triplet dt_faostat_obs_shape). SIM_CSV needs columns `year,sim_tha`. The other s8 tools (compute_gridded_yield / compare_wofost_dssat / generate_yield_map) remain for gridded/cross-model work.
+>
+> **Validated reference (USA Corn Belt maize, 3-pt avg, PP mode, 1991-2023, default Grain_maize_205):** magnitude_accuracy pbias +6.6% (decadal +3.4%); trend_match detrended r=0.506, first-diff r=0.611. This PASSES under the correct framing — raw NSE=-1.4/r=0.09 are structurally meaningless for this obs_shape and must NOT be the verdict.
+
 
 ### PCSE 6.0 API Changes (validated 2026-04-10)
 

@@ -1,0 +1,453 @@
+template_version: "3.5"
+
+identity:
+  model_id: "APEX"
+  scientific_reference_version: "APEX (Agricultural Policy/Environmental eXtender); Theoretical Documentation v0604 (BREC #2008-17, 2008) science lineage, run as the v0806 user-guide binding"
+  implementation:
+    id: "apex-0806"
+    version: "v0806"
+    provenance: "Fortran 90 binary (APEX0806) shipped by Texas A&M AgriLife / Blackland Research and Extension Center, realizing the APEX v0604 science lineage."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: ""
+  repo_url: "https://epicapex.tamu.edu/software/"
+
+boundary:
+  scope_in:
+    - "Whole-farm / small-watershed agronomy, hydrology, water quality at daily step"
+    - "Hydrology: rainfall interception, surface runoff (SCS Curve Number or Green-Ampt), peak rate (Rational or TR-55), subsurface/lateral flow, ET, snowmelt, water-table dynamics"
+    - "Soil erosion by water (USLE/MUSLE/MUST/MUSS/MUSI/RUSLE/RUSLE2) and by wind (WEQ); manure erosion"
+    - "Nutrient cycling and transport: N (mineralization, nitrification, denitrification, fixation, volatilization, leaching, runoff and sediment loss) and P (Sharpley sorption with labile/active/stable pools)"
+    - "Carbon-nitrogen cycling (optional Century soil-organic-C/N model)"
+    - "Pesticide fate (GLEAMS-based: runoff, leaching, sediment transport, decay)"
+    - "Crop growth: single generic radiation-use-efficiency model (~100-120 crops), heat-unit phenology, harvest-index yield, plant competition, mixed stands"
+    - "Management: tillage, fertilization, irrigation, liming, grazing/manure, drainage, furrow diking, terraces, residue, cover crops"
+    - "Channel/floodplain routing of water, sediment, nutrients, and pesticides between subareas to the watershed outlet; reservoir and groundwater components"
+    - "Economics: crop budgets, costs/returns by operation"
+  scope_out:
+    - "Detailed 2-D/3-D groundwater hydrology (only a simplified groundwater store)"
+    - "Direct shoot effects of aluminum toxicity (represented only indirectly via root growth and water-use inhibition)"
+    - "Sub-area internal heterogeneity (each subarea assumed homogeneous in soil, land use, management, weather)"
+  spatial: "distributed-stream"
+  temporal: "daily"
+  closure: "mass-balance"
+  notes: "Mass-balance closure applies to water (PCP ~= WYLD + ET + DPRK + delta-S within about +/-5%) and to N, P, C, sediment, and pesticides; channel routing conserves mass between subareas to the outlet. Most processes run daily; optional Green-Ampt infiltration and rainfall-excess are computed at sub-daily (~0.1 h) intervals. ET options are demand-side flux calculations, not a closed surface energy budget."
+
+inputs:
+  forcing:
+    - {category: "weather", name: "Daily precipitation (PRCP)", unit: "mm/day", source_kind: "forcing", model_input_format: "*.DLY daily weather file (Fortran I6,2I4,6F6.2)", notes: "May be read or stochastically generated (first-order Markov chain, Nicks 1974); partitioned to snowfall when mean of Tmax and surface soil temperature <= 0 C"}
+    - {category: "weather", name: "Maximum air temperature (TMAX)", unit: "degC", source_kind: "forcing", model_input_format: "*.DLY", notes: "Read or generated (Richardson 1981 multivariate model)"}
+    - {category: "weather", name: "Minimum air temperature (TMIN)", unit: "degC", source_kind: "forcing", model_input_format: "*.DLY", notes: "Read or generated"}
+    - {category: "weather", name: "Solar radiation (SRAD)", unit: "MJ/m2/day", source_kind: "forcing", model_input_format: "*.DLY", notes: "Required for Penman-family PET. Expected ~10-25 MJ/m2/day; supplying W/m2 (multiply by 0.0864) silently distorts ET/water yield"}
+    - {category: "weather", name: "Wind speed", unit: "m/s", source_kind: "forcing", model_input_format: "*.DLY", notes: "Required for Penman PET and wind erosion"}
+    - {category: "weather", name: "Relative humidity (RHM)", unit: "fraction (0-1)", source_kind: "forcing", model_input_format: "*.DLY", notes: "Required for Penman PET; fraction not percent"}
+    - {category: "atmospheric", name: "Atmospheric CO2 concentration", unit: "ppm by volume", source_kind: "forcing", model_input_format: "APEXCONT.DAT / *.SIT", notes: "Drives radiation-use-efficiency CO2 response (bc1, bc2). ~420 ppm modern"}
+  parameters:
+    - {category: "crop", name: "Crop growth coefficients", unit: "mixed", source_kind: "dataset_lookup", model_input_format: "CROPCOM.DAT / PLANTABLE.DAT (~120 crops)", notes: "TBSC base temp, TOPC optimal temp, potential heat units, DMLA/XLAI max LAI, HMX max height, RDMX max root depth, RUE radiation-use efficiency and CO2 response, WAVP VPD coefficient, HIP/WSYF harvest index, optimal N/P concentration coefficients, aluminum tolerance, critical aeration factor"}
+    - {category: "soil", name: "Soil profile hydraulic and chemical properties", unit: "mixed", source_kind: "dataset_lookup", model_input_format: "*.SOL (up to 30 layers x 50+ properties)", notes: "Layer depths, sand/silt/clay, bulk density (g/cm3), field capacity, wilting point, porosity, organic C (% wt), pH, saturated K Ksat (mm/h), labile P, curve number"}
+    - {category: "site", name: "Site geometry", unit: "mixed", source_kind: "user_provided", model_input_format: "*.SIT (9 lines, F8.2 fields)", notes: "Latitude/longitude (decimal degrees; southern hemisphere negative), elevation (m, not feet), azimuth, slope"}
+    - {category: "hydrology", name: "Subarea routing geometry", unit: "mixed", source_kind: "user_provided", model_input_format: "*.SUB", notes: "WSA watershed area (ha; negative WSA adds this subarea's runoff to another before routing), CHL/RCHL channel length (km), CHS channel slope (m/m fraction, 0.05 = 5%); CHL==RCHL marks a headwater subarea"}
+    - {category: "weather_generator", name: "Monthly weather-generator statistics", unit: "mixed", source_kind: "dataset_lookup", model_input_format: "*.WP1 (12 months x 13 variables), *.WND, WPM1.DAT/WINDCOM.DAT station lists", notes: "Monthly storm mean/std/skew, wet-dry probabilities, monthly mean/std of Tmax/Tmin, monthly mean solar radiation, wind statistics"}
+    - {category: "internal", name: "APEX general/internal parameters (PARM)", unit: "dimensionless", source_kind: "calibrated", model_input_format: "APEXPARM.DAT / PARM1102.DAT", notes: "Internal coefficients including PARM42 (NRCS curve-number index), PARM23, PARM34, PARM84 used in calibration"}
+  initial_conditions:
+    - {category: "soil_water", name: "Initial soil water content by layer", unit: "mm or fraction", source_kind: "user_provided", model_input_format: "*.SOL / template", notes: "Soil/nutrient pools start at the template's equilibrium (e.g. Texas climate); a non-template climate needs 20-25 year spin-up before pools reach steady state"}
+    - {category: "nutrient", name: "Initial soil N (NO3) and P pool states", unit: "kg/ha", source_kind: "user_provided", model_input_format: "*.SOL", notes: "Initial NO3 per layer, labile/active/stable P, organic N/C pools"}
+    - {category: "residue", name: "Initial surface residue mass", unit: "t/ha", source_kind: "user_provided", model_input_format: "*.SOL / *.OPC", notes: "Surface residue carried into simulation start"}
+  boundary_conditions:
+    - {category: "management", name: "Operation schedule (planting, tillage, fertilization, irrigation, harvest, kill, grazing)", unit: "date + rate", source_kind: "user_provided", model_input_format: "*.OPC/*.MGT (fixed-width rows: yr I3, month I3, day I3, opcode + 4 code fields I5, 8x F9.2 op params)", notes: "Column 6 is the PLANT_ID (from CROPCOM.DAT) selecting the crop. APEX0806 operation codes: plant/drill 136, fertilize 261, harvest-grain 292, field cultivator 160, kill-crop 451; fertilizer elemental N 53 / P 54"}
+    - {category: "control", name: "Run control settings", unit: "codes", source_kind: "user_provided", model_input_format: "APEXCONT.DAT (line 1 Fortran I4 fixed-width)", notes: "NBYR years, IYR/IMO/IDA start, IPD print frequency, NGN weather generate/read code, IET PET-equation code, ISCN stochastic-CN code, ITYP peak-rate code, LPYR leap-year flag"}
+    - {category: "method_switch", name: "PET equation selector (IET)", unit: "code", source_kind: "user_provided", model_input_format: "APEXCONT.DAT", notes: "Selects Penman-Monteith / Penman / Priestley-Taylor / Hargreaves / Baier-Robertson"}
+    - {category: "method_switch", name: "Water-erosion equation selector", unit: "code", source_kind: "user_provided", model_input_format: "APEXPRNT.DAT / control", notes: "Selects among USLE, MUSLE, MUST, MUSS, MUSI, RUSLE, RUSLE2 plus WEQ wind erosion"}
+    - {category: "method_switch", name: "Weather input/generate code (NGN)", unit: "code", source_kind: "user_provided", model_input_format: "APEXCONT.DAT", notes: "Digits select which variables are generated vs read from *.DLY (1=PRCP,2=TMAX,3=TMIN,4=SRAD,5=WIND,6=RH); NGN=0 reads all from *.DLY"}
+
+processes:
+  modules:
+    - {name: "WeatherInput", role: "driver", brief: "Reads daily precipitation, Tmax/Tmin, solar radiation, wind, and relative humidity from *.DLY for each subarea"}
+    - {name: "WeatherGenerator", role: "optional_module", brief: "Stochastically generates the weather variables flagged by NGN: precipitation via first-order Markov chain (Nicks 1974), temperature and radiation via Richardson 1981 multivariate model", applicability: "when NGN flags a variable for generation"}
+    - {name: "Hydrology", role: "process_solver", brief: "Surface runoff via SCS Curve Number or Green-Ampt; peak rate via Rational or TR-55; soil-water routing through up to 30 layers; lateral subsurface flow, groundwater return, tile drainage, snowmelt, water-table dynamics"}
+    - {name: "Evapotranspiration", role: "process_solver", brief: "Potential and actual ET via the IET-selected equation (Penman-Monteith / Penman / Priestley-Taylor / Hargreaves / Baier-Robertson)"}
+    - {name: "Erosion", role: "process_solver", brief: "Water erosion / sediment yield via the selected equation (USLE/MUSLE/MUST/MUSS/MUSI/RUSLE/RUSLE2) plus WEQ wind erosion and manure erosion"}
+    - {name: "NutrientCycle_N", role: "process_solver", brief: "Soil N cycle: mineralization, nitrification, denitrification, fixation (legumes), volatilization, leaching, and loss in runoff and on sediment"}
+    - {name: "NutrientCycle_P", role: "process_solver", brief: "Soil P cycle via Sharpley adsorption-desorption with labile/active/stable mineral pools; soluble P in runoff and P on sediment"}
+    - {name: "CenturyCarbon", role: "optional_module", brief: "Century-based soil organic carbon/nitrogen pool dynamics", applicability: "when Century C/N enabled"}
+    - {name: "CropGrowth", role: "process_solver", brief: "EPIC-style heat-unit phenology; potential biomass from radiation-use efficiency (Monteith 1977, extinction coeff 0.65), LAI development/senescence, root growth, water/nutrient/temperature/aeration stresses (REG = min stress), harvest-index yield"}
+    - {name: "SoilTemperature", role: "process_solver", brief: "Soil-layer temperature from air temperature and net radiation, lagged for residue and snow cover (BCV factor)"}
+    - {name: "Management", role: "driver", brief: "Applies scheduled or automatic operations: planting, tillage, fertilization, irrigation, liming, grazing/manure, drainage, residue, harvest, kill-crop, contouring, terraces"}
+    - {name: "Routing", role: "integrator", brief: "Channel/floodplain routing (variable-storage or Muskingum) of flow, sediment, nutrients, and pesticides from each subarea downstream to the watershed outlet"}
+    - {name: "Pesticide", role: "optional_module", brief: "GLEAMS-based pesticide fate: runoff, leaching, sediment transport, decay", applicability: "when pesticides are scheduled"}
+    - {name: "Economics", role: "optional_module", brief: "Crop budgets, costs and returns by operation"}
+  internal_edges:
+    - {from: "WeatherInput", to: "Hydrology", kind: "invokes", brief: "Precipitation and temperature drive runoff and the water balance"}
+    - {from: "WeatherGenerator", to: "WeatherInput", kind: "writes_state", brief: "Generated variables substitute for missing *.DLY columns per NGN"}
+    - {from: "WeatherInput", to: "Evapotranspiration", kind: "invokes", brief: "Radiation, temperature, wind, humidity drive the PET calculation"}
+    - {from: "Hydrology", to: "soil water content per layer (ST)", kind: "writes_state", brief: "Infiltration, percolation, lateral flow update per-layer soil water"}
+    - {from: "Evapotranspiration", to: "soil water content per layer (ST)", kind: "writes_state", brief: "Actual ET removes water from the profile"}
+    - {from: "soil water content per layer (ST)", to: "CropGrowth", kind: "reads_state", brief: "Soil water availability sets the crop water-stress factor"}
+    - {from: "Hydrology", to: "Erosion", kind: "invokes", brief: "Runoff volume and peak rate drive water erosion / sediment yield"}
+    - {from: "soil water content per layer (ST)", to: "NutrientCycle_N", kind: "reads_state", brief: "Water flux moves NO3 by leaching, runoff, and lateral flow"}
+    - {from: "soil water content per layer (ST)", to: "NutrientCycle_P", kind: "reads_state", brief: "Runoff and percolation move soluble P"}
+    - {from: "CenturyCarbon", to: "NutrientCycle_N", kind: "invokes", brief: "Century C/N pool turnover couples to the N cycle"}
+    - {from: "NutrientCycle_N", to: "CropGrowth", kind: "reads_state", brief: "Soil N supply (mass-flow limited) sets the nitrogen stress factor"}
+    - {from: "NutrientCycle_P", to: "CropGrowth", kind: "reads_state", brief: "Soil P supply sets the phosphorus stress factor"}
+    - {from: "SoilTemperature", to: "CropGrowth", kind: "reads_state", brief: "Soil/air temperature sets the temperature stress and heat-unit accumulation"}
+    - {from: "CropGrowth", to: "crop biomass (BIOM/DM)", kind: "writes_state", brief: "Daily radiation-use-efficiency growth accumulates biomass and LAI"}
+    - {from: "Management", to: "CropGrowth", kind: "invokes", brief: "Planting, fertilization, irrigation, harvest, and kill operations modify crop and pool state"}
+    - {from: "Management", to: "NutrientCycle_N", kind: "writes_state", brief: "Fertilizer and manure applications add to soil N pools"}
+    - {from: "CropGrowth", to: "Outputs", kind: "produces_output", brief: "Harvest index times above-ground biomass yields grain yield (YLD/YLDG)"}
+    - {from: "Erosion", to: "Routing", kind: "invokes", brief: "Subarea sediment is delivered to the channel network"}
+    - {from: "Hydrology", to: "Routing", kind: "invokes", brief: "Subarea runoff is routed downstream"}
+    - {from: "NutrientCycle_N", to: "Routing", kind: "invokes", brief: "Subarea N loads are routed to the outlet"}
+    - {from: "NutrientCycle_P", to: "Routing", kind: "invokes", brief: "Subarea P loads are routed to the outlet"}
+    - {from: "Pesticide", to: "Routing", kind: "invokes", brief: "Subarea pesticide loads are routed to the outlet"}
+    - {from: "Routing", to: "Outputs", kind: "produces_output", brief: "Routed water, sediment, nutrient, and pesticide loads at the watershed outlet"}
+    - {from: "Management", to: "Economics", kind: "invokes", brief: "Operation costs feed crop budgets"}
+
+states:
+  variables:
+    - {name: "soil water content per layer (ST)", unit: "mm", role: "prognostic"}
+    - {name: "snow pack water equivalent (SNO)", unit: "mm", role: "prognostic"}
+    - {name: "groundwater / return-flow store", unit: "mm", role: "prognostic"}
+    - {name: "shallow + deep aquifer storage", unit: "mm", role: "prognostic"}
+    - {name: "soil mineral N (NO3) per layer (WNO3)", unit: "kg/ha", role: "prognostic"}
+    - {name: "soil organic N pool", unit: "kg/ha", role: "prognostic"}
+    - {name: "labile P pool", unit: "kg/ha", role: "prognostic"}
+    - {name: "active mineral P pool", unit: "kg/ha", role: "prognostic"}
+    - {name: "stable mineral P pool", unit: "kg/ha", role: "prognostic"}
+    - {name: "Century soil organic C/N pools", unit: "kg/ha", role: "prognostic"}
+    - {name: "crop biomass (BIOM/DM)", unit: "t/ha", role: "prognostic"}
+    - {name: "standing live above-ground biomass (STL)", unit: "t/ha", role: "prognostic"}
+    - {name: "leaf area index (LAI)", unit: "m2/m2", role: "prognostic"}
+    - {name: "root depth / root biomass (RD/RWT)", unit: "m; t/ha", role: "prognostic"}
+    - {name: "accumulated heat units / heat-unit index (HUI)", unit: "dimensionless (0-1)", role: "accumulator"}
+    - {name: "harvest index accumulator (HIA)", unit: "dimensionless", role: "accumulator"}
+    - {name: "soil temperature per layer (STMP)", unit: "degC", role: "prognostic"}
+    - {name: "surface residue mass", unit: "t/ha", role: "prognostic"}
+    - {name: "channel/floodplain routing storage", unit: "m3", role: "prognostic"}
+    - {name: "water stress factor (WS)", unit: "days / dimensionless", role: "diagnostic"}
+    - {name: "temperature stress factor (TS)", unit: "days / dimensionless", role: "diagnostic"}
+    - {name: "nitrogen / phosphorus / aeration stress factors", unit: "dimensionless", role: "diagnostic"}
+    - {name: "delta soil-water storage (DF / delta-S)", unit: "mm", role: "diagnostic"}
+  provenance: "populated"
+
+outputs:
+  - var: "YLDG"
+    validation_rank: 1
+    unit: "t/ha"
+    description: "Crop grain yield, dry matter (harvest index x above-ground biomass, reduced by water stress and pest factor)"
+    emitted_in: "<run>.ACY (also <run>.OUT)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "pbias"
+          caveats: ["Requires 20-25 year spin-up for non-template climates or early-year yields are artificially low (WS>50)", "Field-trial yields are point/plot scale matching a single homogeneous subarea"]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["National/regional aggregate yields carry a technology trend a weather-driven process model cannot reproduce; detrend before comparing inter-annual variability"]
+      detrending_options: ["decadal_mean", "linear_residual", "first_difference", "none"]
+  - var: "BIOM"
+    validation_rank: 4
+    unit: "t/ha"
+    description: "Total / above-ground biomass accumulated via radiation-use efficiency"
+    emitted_in: "<run>.OUT (.ACY crop columns)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Plot-scale biomass harvest compared against a homogeneous subarea"]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Regional aggregate biomass carries a technology trend a weather-driven process model cannot reproduce; detrend before comparing inter-annual variability (same audit case as YLDG)"]
+      detrending_options: ["decadal_mean", "linear_residual", "first_difference", "none"]
+  - var: "LAI"
+    validation_rank: 2
+    unit: "m2/m2"
+    description: "Leaf area index from heat-unit-driven development and senescence"
+    emitted_in: "<run>.OUT / .SAD"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Timing of LAI peak depends on heat-unit accumulation and planting date"]
+      detrending_options: ["none"]
+  - var: "WYLD"
+    validation_rank: 5
+    unit: "mm"
+    description: "Water yield (surface runoff + lateral + return flow) leaving the subarea/watershed"
+    emitted_in: "<run>.OUT (m3 in the watershed mass-balance block)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Outlet water yield compared against gauged streamflow at the watershed outlet"]
+      detrending_options: ["none"]
+  - var: "ET"
+    validation_rank: 3
+    unit: "mm"
+    description: "Actual evapotranspiration"
+    emitted_in: "<run>.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["ET magnitude is sensitive to the selected PET equation and to SRAD units"]
+      detrending_options: ["none"]
+  - var: "DPRK"
+    validation_rank: 6
+    unit: "mm"
+    description: "Deep percolation below the root zone"
+    emitted_in: "<run>.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Rarely directly observed; usually inferred from a water-balance residual"]
+      detrending_options: ["none"]
+  - var: "Y"
+    validation_rank: 7
+    unit: "t/ha"
+    description: "Sediment (soil-loss) yield from water erosion"
+    emitted_in: "<run>.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Event-driven and heavy-tailed; magnitude depends strongly on the selected erosion equation"]
+      detrending_options: ["none"]
+  - var: "N losses (leaching / runoff / sediment)"
+    validation_rank: 8
+    unit: "kg/ha"
+    description: "Nitrogen lost via nitrate leaching, runoff, lateral flow, and organic N on sediment"
+    emitted_in: "<run>.OUT / outlet loads"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "pbias"
+          caveats: ["Outlet load or concentration (mg/L) comparisons; sensitive to runoff partitioning"]
+      detrending_options: ["none"]
+  - var: "P losses (soluble runoff / sediment / tile)"
+    validation_rank: 9
+    unit: "kg/ha"
+    description: "Phosphorus lost as soluble P in runoff, P on sediment, and through tile drains"
+    emitted_in: "<run>.OUT / outlet loads"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "pbias"
+          caveats: ["Tile-drain dissolved P controlled by drainage and P-cycling parameters"]
+      detrending_options: ["none"]
+  - var: "outlet hydrograph (HYC)"
+    validation_rank: 10
+    unit: "m3/s"
+    description: "Routed streamflow hydrograph at the watershed outlet"
+    emitted_in: "<run>.HYC"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Compared against gauged discharge; peak timing depends on routing method choice"]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "PARM42 (NRCS curve-number index coefficient)"
+      to: "WYLD (surface runoff / water yield)"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["wang2006_apex_national_assessment", "talebizadeh2018_apexsensun"]
+    - from: "PARM42 (NRCS curve-number index coefficient)"
+      to: "Y (water erosion / soil loss)"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["wang2006_apex_national_assessment"]
+    - from: "PARM42 (NRCS curve-number index coefficient)"
+      to: "N losses (runoff)"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["wang2006_apex_national_assessment"]
+    - from: "PARM42 (NRCS curve-number index coefficient)"
+      to: "P losses (runoff)"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["wang2006_apex_national_assessment", "ford2015_apex_tile_phosphorus"]
+    - from: "PARM23 (soil-evaporation / lower-limit water content)"
+      to: "WYLD (surface runoff)"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["jiang2016_apex_runoff_sediment_p"]
+    - from: "PARM34 (water-balance / CN retention regulator)"
+      to: "Y (sediment yield)"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["jiang2016_apex_runoff_sediment_p"]
+    - from: "PARM84 (root growth / soil-water depletion)"
+      to: "Y (sediment yield)"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["jiang2016_apex_runoff_sediment_p"]
+    - from: "tile-drainage / subsurface hydrology parameters"
+      to: "P losses (dissolved P through tile drains)"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["ford2015_apex_tile_phosphorus"]
+    - from: "P-cycling parameters (soil P sorption / availability)"
+      to: "P losses (total P load)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      citations: ["ford2015_apex_tile_phosphorus"]
+    - from: "radiation-use efficiency / biomass-energy ratio (WA/RUE)"
+      to: "BIOM / YLDG (crop biomass and yield)"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["apex2017_switchgrass_biofuel_sa", "wang2006_apex_national_assessment"]
+    - from: "harvest index (HI)"
+      to: "YLDG (crop grain yield)"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["apex2017_switchgrass_biofuel_sa"]
+    - from: "water-stress / soil-water-limit parameters"
+      to: "BIOM (crop biomass yield)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["apex2017_switchgrass_biofuel_sa", "talebizadeh2018_apexsensun"]
+    - from: "soil-evaporation coefficient (PARM12)"
+      to: "outlet hydrograph (streamflow)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      citations: ["talebizadeh2018_apexsensun"]
+  citation_index:
+    wang2006_apex_national_assessment:
+      short_citation: "Wang et al. 2006"
+      doi: "10.13031/2013.20475"
+      note: "Sensitivity Analysis of APEX for National Assessment (Transactions of the ASABE 49(3):679-688); PARM42 curve-number index very influential for runoff and all water-related outputs"
+    talebizadeh2018_apexsensun:
+      short_citation: "Talebizadeh et al. 2018"
+      doi: "10.1111/1752-1688.12686"
+      note: "APEXSENSUN R package (JAWRA 54(6):1270-1284); regression/derivative/variance/regional SA; curve-number and soil-evaporation/root-growth parameters dominate hydrology at Rock Creek"
+    jiang2016_apex_runoff_sediment_p:
+      short_citation: "Jiang 2016"
+      note: "PhD dissertation, Mississippi State University; Morris + LH-OAT screening of 45 APEX parameters; PARM23, PARM34, PARM84 very influential for runoff/sediment/P"
+    ford2015_apex_tile_phosphorus:
+      short_citation: "Ford et al. 2015"
+      doi: "10.2134/jeq2014.12.0527"
+      note: "JEQ 44(4):1099-1110; SA of APEX hydrology and P-cycling parameters in tile-drained landscapes; CN, tile/drainage, and P-cycling parameters control dissolved and total P"
+    apex2017_switchgrass_biofuel_sa:
+      short_citation: "Mauder et al. 2017"
+      doi: "10.1007/s12155-017-9878-8"
+      note: "BioEnergy Research 10:1175-1188; global SA of APEX for switchgrass biomass; crop-growth/RUE, harvest-index, curve-number, and water-stress parameters control simulated biomass"
+
+safety:
+  hazards:
+    - id: "weather_srad_units_wm2"
+      kind: "weather_file_semantic"
+      description: "Solar radiation authored in W/m2 instead of MJ/m2/day (expected ~10-25); silently distorts ET and water yield (multiply W/m2 by 0.0864)"
+      severity: "silent"
+    - id: "weather_rh_percent_not_fraction"
+      kind: "weather_file_semantic"
+      description: "Relative humidity supplied as percent rather than fraction (0-1), corrupting Penman PET"
+      severity: "silent"
+    - id: "ngn_generate_overrides_dly"
+      kind: "control_semantic"
+      description: "An NGN digit flagging a variable also populated in *.DLY makes APEX use the weather generator and ignore the file column"
+      severity: "silent"
+    - id: "site_units_elevation_slope"
+      kind: "soil_semantic"
+      description: "Elevation in feet not metres, channel slope CHS as percent not m/m fraction (0.05 = 5%), or southern-hemisphere latitude not negative; all silently bias hydrology"
+      severity: "silent"
+    - id: "apexcont_i4_free_format"
+      kind: "control_semantic"
+      description: "APEXCONT.DAT line 1 read as Fortran I4 fixed-width; free-format spacing concatenates fields so NBYR=6 is misread as 62 and all later fields shift"
+      severity: "silent"
+    - id: "opcode_version_mismatch"
+      kind: "control_semantic"
+      description: "Mixing APEX1501 operation codes (plant 132 / fert 580 / harvest 316 / kill 397) into an APEX0806 run silently misinterprets operations and zeroes yield; use 0806 codes 136/261/292/451"
+      severity: "silent"
+    - id: "fert_code_pause_92_93"
+      kind: "control_semantic"
+      description: "Fertilizer codes 92/93 (APEX1501-only) are absent from APEX0806 FERTCOM.DAT (entries 1-72 only) and trigger a Fortran PAUSE awaiting stdin; use elemental codes 53/54"
+      severity: "fatal"
+    - id: "tillage_code_absent_pause"
+      kind: "control_semantic"
+      description: "An operation/tillage code absent from the APEX0806 TILLCOM.DAT (e.g. 151) triggers a Fortran PAUSE that blocks indefinitely; use a code present in the table (e.g. 160)"
+      severity: "fatal"
+    - id: "opc_field_width_phu_shift"
+      kind: "parser_semantic"
+      description: "Writing the OPC operation line with 5xI5 instead of 4xI5 shifts the F-format fields one slot right so PHU is read as 0, maturing the crop on planting day with ~0 biomass"
+      severity: "silent"
+    - id: "missing_kill_op_carryover"
+      kind: "control_semantic"
+      description: "Omitting kill-crop (op 451) the day after harvest leaves residual live canopy that compounds across years, freezing HUI and zeroing YLDG from year 3 onward"
+      severity: "silent"
+    - id: "spinup_artificial_drought"
+      kind: "initial_condition_semantic"
+      description: "Texas-template soil/nutrient pools at a humid/temperate site without 20-25 year spin-up cause artificial drought (WS>50) and yields <2 t/ha for the early years"
+      severity: "degraded"
+    - id: "exit_zero_silent_crash"
+      kind: "parser_semantic"
+      description: "Binary returns exit code 0 even on Fortran severe errors; success must be verified by non-empty *.OUT/*.ACY output and a clean EPICERR.DAT, not the return code"
+      severity: "fatal_or_silent"
+  validation_limits:
+    - "Each subarea must be relatively homogeneous in soil, land use, management, and weather (EPIC field area up to ~100 ha); intra-subarea heterogeneity is unresolved"
+    - "Daily time step cannot resolve sub-daily hydrologic dynamics except where the optional Green-Ampt / rainfall-excess sub-daily path is active"
+    - "Generic single crop model with crop-specific parameters; extinction coefficient 0.65 represents narrow-row crops and may be inappropriate (0.4-0.6) for tropical/wide-row crops"
+    - "Long-term (100+ year) simulations may exceed the adequacy of available rainfall/temperature records, requiring weather generation"
+    - "Aluminum toxicity is represented only indirectly via root growth and water-use inhibition, not as a direct shoot effect"
+  warnings:
+    - "Soil/nutrient pools require a 20-25 year spin-up to reach steady state for a non-template climate; filter spin-up years out of reported output"
+    - "Biomass accumulation REG is the minimum of water, nutrient, temperature, and aeration stresses; a single dominant stress can cap yield"
+    - "N fixation occurs only for legumes, is reduced when top-0.3 m water content is below 75% field capacity, and is prohibited when root-zone NO3-N exceeds 300 kg/ha/m"
+    - "Crop water compensation across dry layers depends on the rooting parameter (UC near 1.0 allows full compensation; near 0 disables it)"
+  assumptions:
+    - statement: "The simulation domain is a watershed of one or more point-scale, vertically-1-D homogeneous subareas connected by 1-D channel routing"
+      scope: "spatial geometry of the whole model"
+      source: "APEX Theoretical Documentation v0604 (Chapter 1; epicapex.tamu.edu)"
+      status: "adopted"
+    - statement: "Water balance closes as PCP ~= WYLD + ET + DPRK + delta-S to within about +/-5%; N, P, C, sediment, and pesticide mass are conserved through routing"
+      scope: "conservation / closure"
+      source: "APEX Theoretical Documentation v0604 hydrology and routing chapters; <run>.OUT mass-balance block"
+      status: "adopted"
+    - statement: "ET options are demand-side flux calculations; the model does not close a surface energy budget"
+      scope: "energy closure"
+      source: "APEX Theoretical Documentation v0604 (2.x hydrology / ET)"
+      status: "adopted"
+    - statement: "This dag describes the APEX0806 binding (operation codes 136/261/292/451, fertilizer codes 53/54, FERTCOM.DAT entries 1-72); APEX1501 is a distinct binding excluded here due to a confirmed P-cycling NaN that zeroes annual-crop biomass"
+      scope: "implementation identity"
+      source: "APEX0806 User Guide (epicapex.tamu.edu); KI SKILL.md operation-code table"
+      status: "adopted"

@@ -1,0 +1,369 @@
+template_version: "3.5"
+
+identity:
+  model_id: "DualSPHysics"
+  scientific_reference_version: "Weakly-compressible SPH (WCSPH) per Crespo et al. 2015 / Dominguez et al. 2022; DualSPHysics v5.4 formulation"
+  implementation:
+    id: "dualsphysics-5.4"
+    version: "v5.4.355"
+    provenance: "C++/CUDA (OpenMP CPU + CUDA GPU); DualSPHysics group (EPHYSLAB Vigo / Univ. Manchester); WCSPH solver built on the SPHysics lineage."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c++"
+  license: "LGPL-2.1"
+  repo_url: "https://github.com/DualSPHysics/DualSPHysics"
+
+boundary:
+  scope_in:
+    - "Free-surface flows (dam breaks, wave impact, flooding)"
+    - "Wave generation, propagation, and active/passive absorption"
+    - "Wave-structure interaction and forces on coastal/offshore structures"
+    - "Floating-body 6-DOF dynamics and fluid-structure interaction"
+    - "Open-channel inlet/outlet flow"
+  scope_out:
+    - "Eulerian / mesh-based fields (the method is meshless Lagrangian)"
+    - "Truly incompressible (divergence-free) flow — uses weakly-compressible Tait closure"
+    - "Physical acoustic compressibility — artificial sound speed (~10x max velocity), not ~1500 m/s"
+  spatial: "3-D"
+  temporal: "sub-hourly"
+  closure: "mass-balance"
+  notes: "Each particle's mass is constant; density fluctuates (<~1%) under a weakly-compressible Tait equation-of-state closure with artificially lowered sound speed. Momentum closes via SPH discretization of Navier-Stokes with selectable dissipation (artificial viscosity or laminar+SPS turbulence). 2-D cases are also supported; the dominant operational mode and cost scaling (~dp^-3) are 3-D. Explicit variable timestep is CFL-constrained (Courant + force + viscous limits), so the effective temporal grain is sub-second."
+
+inputs:
+  forcing:
+    - {category: "wave", name: "wave kinematics (significant height Hs, peak period Tp / spectrum)", unit: "m, s", source_kind: "user_provided", model_input_format: "XML wavemaker (piston/flap) or spectral definition realized at the paddle/relaxation zone", notes: "Heights in meters (ocean 0.5-5 m, lab 0.01-0.3 m); cm authoring blows up or vanishes."}
+    - {category: "flow", name: "inlet velocity / current", unit: "m/s", source_kind: "user_provided", model_input_format: "XML inlet/outlet zone imposed velocity", notes: "Must be m/s; cm/s or knots can exceed artificial sound speed and destabilize."}
+    - {category: "water_level", name: "water level / tide", unit: "m", source_kind: "user_provided", model_input_format: "XML still-water level / boundary elevation"}
+  parameters:
+    - {category: "physical_constant", name: "reference fluid density (rhop0)", unit: "kg/m^3", source_kind: "default", model_input_format: "XML constantsdef rhop0", notes: "1000 freshwater, 1025 seawater. g/cm^3 (1.0) corrupts the EOS."}
+    - {category: "physical_constant", name: "gravitational acceleration (gravity)", unit: "m/s^2", source_kind: "default", model_input_format: "XML constantsdef gravity (x,y,z)", notes: "Typical (0,0,-9.81); also couples into the density-diffusion term via DDTgz=rhop0*Gravity.z/CteB, so a wrong gravity direction silently alters the DDT2 correction. cm/s^2 authoring is a critical unit error."}
+    - {category: "physical_constant", name: "polytropic constant (gamma)", unit: "dimensionless", source_kind: "default", model_input_format: "XML constantsdef gamma", notes: "7 for water (Tait EOS)."}
+    - {category: "numerical", name: "speed-of-sound coefficient (coefsound)", unit: "dimensionless", source_kind: "default", model_input_format: "XML constantsdef", notes: "Sets artificial sound speed >=10x max velocity (typical 15-20)."}
+    - {category: "numerical", name: "smoothing-length coefficient (coefh)", unit: "dimensionless", source_kind: "default", model_input_format: "XML constantsdef coefh", notes: "h = coefh*sqrt(n*dp^2); sets kernel support and neighbor count."}
+    - {category: "resolution", name: "particle spacing (dp)", unit: "m", source_kind: "user_provided", model_input_format: "XML dp", notes: "Fundamental resolution; 3-D cost ~dp^-3. mm/cm authoring yields billions of particles / OOM."}
+    - {category: "numerical", name: "artificial viscosity coefficient / kinematic viscosity (Visco)", unit: "dimensionless (artificial 0.01-0.1) OR m^2/s (laminar ~1e-6)", source_kind: "default", model_input_format: "XML parameters Visco", notes: "UNITS depend on ViscoTreatment — conditional-unit trap; mismatch is ~10,000x error."}
+    - {category: "numerical", name: "density-diffusion coefficient (DensityDTvalue)", unit: "dimensionless", source_kind: "default", model_input_format: "XML parameters", notes: "delta-SPH coefficient, typical 0.1."}
+  initial_conditions:
+    - {category: "geometry", name: "initial particle distribution (Case.bi4)", unit: "m", source_kind: "derived", model_input_format: "binary bi4 produced by GenCase from the XML geometry (box/sphere/cylinder/prism draw commands, CAD/STL)", notes: "Particles fill fluid and boundary regions within pointmin/pointmax; geometry outside the box is clipped."}
+    - {category: "field", name: "initial particle density / velocity", unit: "kg/m^3, m/s", source_kind: "default", model_input_format: "set by GenCase (typically hydrostatic rest state)"}
+  boundary_conditions:
+    - {category: "control", name: "boundary method (Boundary: DBC vs mDBC)", unit: "-", source_kind: "user_provided", model_input_format: "XML parameters Boundary (1=DBC, 2=mDBC) + SlipMode", notes: "mDBC required for quantitative wall pressure; DBC leaves an artificial fluid-wall gap."}
+    - {category: "control", name: "time integration scheme (StepAlgorithm)", unit: "-", source_kind: "default", model_input_format: "XML parameters (1=Verlet, 2=Symplectic)"}
+    - {category: "control", name: "SPH kernel (Kernel)", unit: "-", source_kind: "default", model_input_format: "XML parameters (1=Cubic, 2=Wendland)"}
+    - {category: "control", name: "viscosity treatment (ViscoTreatment)", unit: "-", source_kind: "default", model_input_format: "XML parameters (1=Artificial, 2=Laminar+SPS, 3=Laminar)"}
+    - {category: "control", name: "density diffusion method (DensityDT)", unit: "-", source_kind: "default", model_input_format: "XML parameters (0=None, 1=Molteni, 2/3=Fourtakas)"}
+    - {category: "control", name: "particle shifting mode (Shifting)", unit: "-", source_kind: "default", model_input_format: "XML parameters (0-3)"}
+    - {category: "control", name: "CFL number (cflnumber)", unit: "dimensionless", source_kind: "default", model_input_format: "XML parameters", notes: "Typical 0.1-0.2; >0.5 risks NaN blow-up."}
+    - {category: "control", name: "density exclusion thresholds (RhopOutMin/Max)", unit: "kg/m^3", source_kind: "default", model_input_format: "XML parameters (default 700/1300)", notes: "Too-tight range over-excludes particles and terminates early."}
+    - {category: "control", name: "simulation end / output interval (TimeMax, TimeOut)", unit: "s", source_kind: "user_provided", model_input_format: "XML parameters"}
+    - {category: "control", name: "wave paddle / relaxation-zone & AWAS absorption", unit: "-", source_kind: "user_provided", model_input_format: "XML wave generation block"}
+    - {category: "control", name: "rigid/floating-body coupling (RigidAlgorithm; Chrono/DEM)", unit: "-", source_kind: "user_provided", model_input_format: "XML parameters / floating block"}
+
+processes:
+  modules:
+    - {name: "GenCase_Preprocessor", role: "driver", brief: "Resolves XML geometry + constants into the initial particle distribution (Case.bi4) on a Cartesian grid; supports CAD/STL import."}
+    - {name: "SolverDriver", role: "driver", brief: "JSph / JSphCpuSingle|JSphGpuSingle run loop: RunCellDivide -> PreLoop -> Interaction_Forces -> ComputeStep -> RunFloating -> SaveData."}
+    - {name: "NeighborSearch", role: "integrator", brief: "RunCellDivide builds the cell-linked neighbor list (divdata) shared by all interaction kernels."}
+    - {name: "InteractionForcesFluid", role: "process_solver", brief: "Core SPH momentum + continuity: pressure-gradient acceleration, viscous term, density rate, with DDT and shifting contributions."}
+    - {name: "InteractionForcesBound", role: "process_solver", brief: "Boundary force/density correction; mDBC (MdbcBoundCorrection) extrapolates boundary state from fluid with slip modes.", applicability: "DBC always; mDBC correction when Boundary=2"}
+    - {name: "EquationOfState", role: "process_solver", brief: "Tait EOS P=CteB*((rho/rhop0)^gamma - 1) mapping density to pressure each step (ComputePress)."}
+    - {name: "DensityDiffusionTerm", role: "process_solver", brief: "Molteni/Fourtakas delta-SPH correction stabilizing the continuity equation (DDTkh, DDTgz).", applicability: "when DensityDT>0"}
+    - {name: "ShiftingCorrection", role: "optional_module", brief: "JSphShifting/JSphShiftingAdv particle shifting to reduce anisotropy and free-surface noise.", applicability: "when Shifting>0"}
+    - {name: "TimeIntegrator", role: "integrator", brief: "Verlet or Symplectic step; DtVariable() computes adaptive dt from force (AceMax), Courant (Cs0,VelMax), viscous (ViscDtMax) and flex-structure limits."}
+    - {name: "InteractionForcesDEM", role: "optional_module", brief: "Discrete-element boundary collision (Hertzian repulsion + Cummins-2010 damping).", applicability: "when UseDEM set"}
+    - {name: "RunFloating", role: "process_solver", brief: "Integrates floating-body linear/angular motion from accumulated SPH (and DEM/Chrono) forces.", applicability: "when floating bodies present"}
+    - {name: "InletOutlet", role: "optional_module", brief: "JSphInOut open-boundary zones; imposes velocity/density, AWAS wave-velocity coupling.", applicability: "when inlet/outlet zones defined"}
+    - {name: "WaveGeneration", role: "optional_module", brief: "JWaveGen/JRelaxZones piston/flap paddles and relaxation zones imposing wave kinematics.", applicability: "when wavemaker defined"}
+    - {name: "FlexStructure", role: "optional_module", brief: "JSphFlexStruc FSI particles; their max sound speed constrains the global timestep.", applicability: "when flexible structures present"}
+    - {name: "SaveData", role: "driver", brief: "Writes Part_XXXX.bi4 snapshots (Idp,Pos,Vel,Rhop,Mass) and RUN.out summary at TimeOut intervals."}
+  internal_edges:
+    - {from: "Inputs", to: "GenCase_Preprocessor", kind: "consumes_input", brief: "XML geometry + constants + parameters read by the preprocessor."}
+    - {from: "GenCase_Preprocessor", to: "SolverDriver", kind: "produces_output", brief: "Case.bi4 initial particle distribution + Case.xml execution parameters passed to the solver."}
+    - {from: "SolverDriver", to: "NeighborSearch", kind: "invokes", brief: "RunCellDivide rebuilds the cell-linked list each step."}
+    - {from: "SolverDriver", to: "ShiftingCorrection", kind: "invokes", brief: "PreLoopProcedure computes shifting velocities / mDBC normals.", applicability: "when Shifting>0 or Boundary=2"}
+    - {from: "SolverDriver", to: "InteractionForcesFluid", kind: "invokes", brief: "Interaction_Forces fluid force pass."}
+    - {from: "SolverDriver", to: "InteractionForcesBound", kind: "invokes", brief: "Interaction_Forces boundary force/density correction."}
+    - {from: "SolverDriver", to: "TimeIntegrator", kind: "invokes", brief: "ComputeStep advances the Verlet/Symplectic step."}
+    - {from: "SolverDriver", to: "RunFloating", kind: "invokes", brief: "RunFloating integrates rigid/floating-body motion.", applicability: "when floating bodies present"}
+    - {from: "SolverDriver", to: "SaveData", kind: "invokes", brief: "SaveData writes Part_XXXX.bi4 at TimeOut intervals."}
+    - {from: "SolverDriver", to: "EquationOfState", kind: "writes_state", brief: "sets CteB, gamma, Cs0, rhop0 defining the Tait EOS constants."}
+    - {from: "NeighborSearch", to: "InteractionForcesFluid", kind: "produces_output", brief: "cell-linked neighbor list consumed by the fluid force loop."}
+    - {from: "NeighborSearch", to: "InteractionForcesBound", kind: "produces_output", brief: "same neighbor structure used for boundary interaction."}
+    - {from: "ShiftingCorrection", to: "InteractionForcesFluid", kind: "writes_state", brief: "pre-loop shifting velocities / mDBC normals read in the force pass."}
+    - {from: "InteractionForcesBound", to: "InteractionForcesFluid", kind: "writes_state", brief: "mDBC corrects boundary density/velocity from fluid before the force pass."}
+    - {from: "EquationOfState", to: "InteractionForcesFluid", kind: "reads_state", brief: "pressure read to form the pressure-gradient acceleration."}
+    - {from: "InteractionForcesFluid", to: "acceleration", kind: "writes_state", brief: "accumulates per-particle acceleration (Ace) and density rate."}
+    - {from: "DensityDiffusionTerm", to: "InteractionForcesFluid", kind: "writes_state", brief: "adds the DDT correction to the continuity equation."}
+    - {from: "ShiftingCorrection", to: "position", kind: "writes_state", brief: "shifts particle positions to regularize the distribution."}
+    - {from: "InteractionForcesFluid", to: "TimeIntegrator", kind: "produces_output", brief: "AceMax, VelMax, ViscDtMax reductions feed the adaptive dt."}
+    - {from: "TimeIntegrator", to: "position", kind: "writes_state", brief: "advances particle position."}
+    - {from: "TimeIntegrator", to: "velocity", kind: "writes_state", brief: "advances particle velocity."}
+    - {from: "TimeIntegrator", to: "density", kind: "writes_state", brief: "advances particle density."}
+    - {from: "InteractionForcesFluid", to: "RunFloating", kind: "produces_output", brief: "SPH forces on floating particles integrated into rigid-body motion."}
+    - {from: "InteractionForcesDEM", to: "RunFloating", kind: "writes_state", brief: "DEM contact forces added to floating/boundary accelerations."}
+    - {from: "InletOutlet", to: "InteractionForcesFluid", kind: "writes_state", brief: "inlet imposes velocity/density on the fluid each step."}
+    - {from: "WaveGeneration", to: "velocity", kind: "writes_state", brief: "paddle/relaxation zone imposes wave kinematics on boundary/fluid."}
+    - {from: "FlexStructure", to: "TimeIntegrator", kind: "produces_output", brief: "FlexStrucDtMax constrains the global timestep."}
+    - {from: "DensityDiffusionTerm", to: "EquationOfState", kind: "reads_state", brief: "DDTgz=rhop0*Gravity.z/CteB couples gravity into the DDT2 correction."}
+    - {from: "TimeIntegrator", to: "SaveData", kind: "produces_output", brief: "at TimeOut intervals writes Idp,Pos,Vel,Rhop,Mass and RUN.out."}
+    - {from: "SaveData", to: "Outputs", kind: "produces_output", brief: "emits Part_XXXX.bi4 snapshots and the run log."}
+
+states:
+  variables:
+    - {name: "position", unit: "m", role: "prognostic"}
+    - {name: "velocity", unit: "m/s", role: "prognostic"}
+    - {name: "density", unit: "kg/m^3", role: "prognostic"}
+    - {name: "pressure", unit: "Pa", role: "diagnostic"}
+    - {name: "acceleration", unit: "m/s^2", role: "diagnostic"}
+    - {name: "mass", unit: "kg", role: "diagnostic"}
+    - {name: "particle_type_code", unit: "-", role: "diagnostic"}
+    - {name: "velocity_gradient", unit: "1/s", role: "diagnostic"}
+    - {name: "particle_concentration", unit: "-", role: "diagnostic"}
+    - {name: "adaptive_timestep_dt", unit: "s", role: "diagnostic"}
+  provenance: "populated"
+
+outputs:
+  - var: "pressure"
+    validation_rank: 2
+    unit: "Pa"
+    description: "Per-particle pressure from the Tait equation of state; total pressure (hydrostatic + dynamic) unless the rho*g*z component is removed."
+    emitted_in: "Part_XXXX.bi4 (press field, exported via PartVTK/MeasureTool)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Subtract the hydrostatic component (P_dyn = P_total - rho*g*(SWL-z)) before comparing to pressure transducers."
+            - "Use mDBC, not DBC, for quantitative near-wall pressure."
+            - "Measurement points must sit inside the fluid (>=2*dp from boundaries, below the free surface)."
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Peak impact pressure is sensitive to resolution and over-large DDT smoothing."]
+      detrending_options: ["none"]
+  - var: "water_surface_elevation"
+    validation_rank: 1
+    unit: "m"
+    description: "Free-surface elevation derived from particle positions / isosurface or a virtual wave gauge (MeasureTool)."
+    emitted_in: "Part_XXXX.bi4 (via IsoSurface / MeasureTool gauge)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Accuracy is dominated by particle resolution (recommended H/dp >= 10 for wave flumes) and artificial-viscosity calibration."]
+      detrending_options: ["none"]
+  - var: "force_on_structure"
+    validation_rank: 3
+    unit: "N"
+    description: "Integrated fluid force on a given MK boundary structure (via ComputeForces)."
+    emitted_in: "CSV (via ComputeForces)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Artificial viscosity can overestimate peak horizontal force by ~25% vs laminar+SPS; dissipation scheme matters."
+            - "Force accuracy is primarily resolution-controlled."
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Peak force magnitude depends on dp and viscosity treatment."]
+      detrending_options: ["none"]
+  - var: "velocity"
+    validation_rank: 4
+    unit: "m/s"
+    description: "Per-particle velocity (and magnitude) interpolated to gauges via MeasureTool."
+    emitted_in: "Part_XXXX.bi4 (vel field)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Interpolation points must be inside the fluid domain or MeasureTool returns zero/NaN."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "particle_spacing_dp"
+      to: "water_surface_elevation"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["crespo2015_dualsphysics_solver", "altomare2015_wave_impact_structures", "sato2021_violent_flow_validation"]
+    - from: "particle_spacing_dp"
+      to: "force_on_structure"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["sato2021_violent_flow_validation", "gonzalezcao2019_violent_collisions_accuracy"]
+    - from: "particle_spacing_dp"
+      to: "pressure"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "impact pressure on structures"
+      citations: ["sato2021_violent_flow_validation", "altomare2015_wave_impact_structures"]
+    - from: "artificial_viscosity_alpha"
+      to: "force_on_structure"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["sato2021_violent_flow_validation"]
+    - from: "artificial_viscosity_alpha"
+      to: "water_surface_elevation"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["depadova2014_artificial_viscosity_regular_waves", "crespo2015_dualsphysics_solver"]
+    - from: "viscosity_treatment (artificial vs laminar+SPS)"
+      to: "force_on_structure"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: structural
+      citations: ["sato2021_violent_flow_validation"]
+    - from: "density_diffusion_coefficient_DDT"
+      to: "pressure"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "impact pressure"
+      citations: ["sato2021_violent_flow_validation"]
+    - from: "smoothing_length_coefficient_coefh"
+      to: "water_surface_elevation"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["crespo2015_dualsphysics_solver"]
+    - from: "boundary_condition_setup (wave generation / DBC)"
+      to: "force_on_structure"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      citations: ["altomare2015_wave_impact_structures", "gonzalezcao2019_violent_collisions_accuracy"]
+    - from: "gas_phase_modeling"
+      to: "pressure"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "rapid wave breaking / impact pressure"
+      citations: ["sato2021_violent_flow_validation"]
+  citation_index:
+    crespo2015_dualsphysics_solver:
+      short_citation: "Crespo et al. 2015"
+      doi: "10.1016/j.cpc.2014.10.004"
+      note: "Canonical DualSPHysics solver paper; WCSPH formulation, dp/coefh/alpha/sound-speed control on accuracy, dp-refinement convergence."
+    altomare2015_wave_impact_structures:
+      short_citation: "Altomare et al. 2015"
+      doi: "10.1016/j.coastaleng.2014.11.001"
+      note: "Wave run-up, forces and overtopping on coastal structures; accuracy strongly dp- and wave-generation/boundary-dependent; alpha calibration for flumes."
+    gonzalezcao2019_violent_collisions_accuracy:
+      short_citation: "Gonzalez-Cao et al. 2019"
+      doi: "10.1016/j.compfluid.2018.11.021"
+      note: "Violent wave-structure impact accuracy (skill index, NSD, correlation, RMSE) on free-surface elevation and horizontal wall force; resolution and viscosity treatment govern accuracy."
+    sato2021_violent_flow_validation:
+      short_citation: "Sato et al. 2021"
+      doi: "10.1080/21664250.2021.1991608"
+      note: "Resolution + dissipation-scheme study; laminar+SPS within ~5% of peak force, artificial viscosity overestimates up to 25%; impact pressure underestimated when DDT too large."
+    depadova2014_artificial_viscosity_regular_waves:
+      short_citation: "De Padova et al. 2014"
+      doi: "10.1080/00221686.2014.932853"
+      note: "Effect of artificial-viscosity alpha on regular-wave SPH: controls wave-height attenuation, energy dissipation, free-surface elevation; appropriate alpha ranges."
+
+safety:
+  hazards:
+    - id: "dp_authored_in_mm"
+      kind: "weather_file_semantic"
+      description: "Particle spacing dp authored in mm/cm instead of meters; count scales ~dp^-3 -> billions of particles / OOM (bad_alloc)."
+      severity: "fatal"
+    - id: "rhop0_g_per_cm3"
+      kind: "weather_file_semantic"
+      description: "Reference density rhop0 given as 1.0 g/cm^3 instead of 1000 kg/m^3; Tait EOS and sound speed corrupted -> particles explode/collapse."
+      severity: "fatal_or_silent"
+    - id: "gravity_in_cm_per_s2"
+      kind: "weather_file_semantic"
+      description: "Gravitational acceleration authored in cm/s^2 (e.g. 981) instead of m/s^2 (9.81), or with wrong sign/direction; corrupts the hydrostatic field and silently alters the DDT2 correction via DDTgz=rhop0*Gravity.z/CteB."
+      severity: "critical"
+    - id: "visco_units_mismatch_treatment"
+      kind: "control_semantic"
+      description: "Visco value not matched to ViscoTreatment: artificial 0.01-0.1 (dimensionless) vs laminar ~1e-6 m^2/s -> silent ~10,000x viscosity error."
+      severity: "silent"
+    - id: "wave_height_in_cm"
+      kind: "weather_file_semantic"
+      description: "Wave height authored in cm not meters; invisible waves (too small) or instant blow-up (too large)."
+      severity: "degraded"
+    - id: "velocity_not_m_per_s"
+      kind: "weather_file_semantic"
+      description: "Inlet/current velocity in cm/s or knots not m/s; can exceed artificial sound speed -> supersonic instability."
+      severity: "degraded"
+    - id: "cfl_too_large_or_coefsound_too_small"
+      kind: "numerical_instability"
+      description: "CFL>0.5 or coefsound<10 lets dt exceed the stability limit (particle moves >1 kernel support/step) -> NaN, particles fly to infinity."
+      severity: "fatal"
+    - id: "ddt_disabled_noisy_pressure"
+      kind: "numerical_instability"
+      description: "DensityDT=0 leaves WCSPH pressure field noisy with density fluctuations >1%; enable Fourtakas DDT (mode 2/3)."
+      severity: "degraded"
+    - id: "rhopout_range_too_tight"
+      kind: "initial_condition_semantic"
+      description: "RhopOutMin/Max range too tight (default 700-1300) over-excludes particles near DBC boundaries -> early termination (PartsOutMax)."
+      severity: "degraded"
+    - id: "boundary_layer_gap_leakage"
+      kind: "soil_semantic"
+      description: "Gaps in the boundary particle layer let fluid leak through walls; boundary must fully enclose the domain."
+      severity: "fatal_or_silent"
+    - id: "geometry_outside_domain_box"
+      kind: "soil_semantic"
+      description: "Geometry extends outside pointmin/pointmax; particles are clipped or zero produced by GenCase."
+      severity: "fatal"
+    - id: "dbc_wall_pressure_artifact"
+      kind: "control_semantic"
+      description: "DBC (instead of mDBC) leaves an artificial fluid-wall gap with inaccurate wall pressure; use mDBC for quantitative pressure."
+      severity: "degraded"
+    - id: "pressure_includes_hydrostatic"
+      kind: "parser_semantic"
+      description: "Pressure output is total (hydrostatic + dynamic); transducer comparison requires subtracting rho*g*(SWL-z)."
+      severity: "silent"
+    - id: "measuretool_points_outside_fluid"
+      kind: "parser_semantic"
+      description: "MeasureTool interpolation points outside the fluid (in air/boundary) return zero/NaN for all gauges."
+      severity: "degraded"
+    - id: "coefsound_too_high_tiny_dt"
+      kind: "numerical_instability"
+      description: "coefsound set too high makes artificial sound speed too large, shrinking dt -> simulation drastically slower for no accuracy benefit."
+      severity: "warning"
+  validation_limits:
+    - "Weakly-compressible Tait closure: valid only for density variation <~1%; not applicable to strongly compressible flows."
+    - "Artificial sound speed (~10x max velocity) is non-physical; acoustic phenomena are not represented."
+    - "Explicit variable timestep cannot use arbitrarily large dt; sub-daily/sub-second timestep means long real-time simulations are computationally bounded."
+    - "Resolution-limited: features need >=~10 particles across the smallest dimension; sub-dp features are unresolved."
+  warnings:
+    - "Verlet integration requires periodic synchronization (~every 40 steps) to prevent density/velocity divergence; use Symplectic for robustness."
+    - "Standard DBC produces a near-wall boundary layer; mDBC gives smoother pressure/density and more accurate no-slip conditions."
+    - "Artificial-viscosity alpha must be tuned (e.g., ~0.01 for wave propagation); it controls wave-height attenuation."
+    - "Inlet/outlet zones need >=6 (typically 6-8) particle layers; too few causes pressure oscillations."
+  assumptions:
+    - statement: "Each particle's mass is constant; only density fluctuates under the weakly-compressible (Tait) closure."
+      scope: "All WCSPH simulations"
+      source: "DualSPHysics SPH-formulation wiki (Governing equations / Equation of state) and Crespo et al. 2015 (doi:10.1016/j.cpc.2014.10.004)"
+      status: "adopted"
+    - statement: "Pressure is diagnosed from density via the Tait equation of state P=CteB*((rho/rhop0)^gamma - 1); it is not a primary prognostic variable."
+      scope: "Pressure output / EOS closure"
+      source: "JSph ComputePress (EquationOfState module) and SPH-formulation wiki"
+      status: "adopted"
+    - statement: "The numerical speed of sound is set to >=10x maximum fluid velocity to keep density variation under ~1%, and is not the physical ~1500 m/s."
+      scope: "Stability and weakly-compressible accuracy"
+      source: "SPH-formulation wiki (Equation of state) and Crespo et al. 2015"
+      status: "adopted"
+    - statement: "Geometry is point/particle-resolved at spacing dp; the simulation is fully Lagrangian with no fixed mesh."
+      scope: "Spatial representation"
+      source: "DualSPHysics features/running wiki and GenCase preprocessor behavior"
+      status: "adopted"

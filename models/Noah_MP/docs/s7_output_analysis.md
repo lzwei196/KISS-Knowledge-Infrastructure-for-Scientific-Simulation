@@ -158,3 +158,11 @@ print(f"R = {R_annual:.0f} mm/yr")
 print(f"dS = {dS:.0f} mm/yr")
 print(f"Balance: P - ET - R - dS = {P_annual - ET_annual - R_annual - dS:.0f} mm/yr")
 ```
+
+
+## Non-routed validation verdict (runoff, regional_aggregate_time_series)
+
+- **Headline verdict = GRUN runoff-to-runoff skill** (basin-aggregated Noah-MP runoff vs gridded GRUN v1, monthly mm/day): report NSE / PBIAS / KGE / r. This matches the dag regional_aggregate_time_series shape and needs no router.
+- **Basin water-balance closure is a SOFT diagnostic, never the verdict gate.** Noah-MP closes water per column each timestep by construction. The offline closure derives prognostic ET from an INSTANTANEOUS daily flux snapshot (ECAN+EDIR+ETRAN) x86400 because the offline daily HRLDAS build does not emit accumulated ET fields, so a residual up to ~30% is an ET-extraction approximation, not a mass violation. The runoff term IS exact (diffed from accumulated SFCRNOFF/UGDRNOFF), so GRUN skill is trustworthy even when closure shows a large residual.
+- **Exact closure (optional):** use accumulated ET fields where available, or set OUTPUT_TIMESTEP sub-daily (e.g. 10800 s) and integrate the ET flux over sub-daily snapshots.
+- **After the verdict is GRUN skill:** a residual +PBIAS with high r (e.g. r~0.97, PBIAS+60%) is the documented dynamic-vegetation LAI ET-deficit structural ceiling (see validation_convention.yaml ET pbias status=structurally_limited): route to config change (prescribe LAI) / acquire_data, never fix_ki.

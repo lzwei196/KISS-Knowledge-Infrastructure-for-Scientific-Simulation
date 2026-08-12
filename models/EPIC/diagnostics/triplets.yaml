@@ -1,178 +1,850 @@
+# EPIC 1102 Diagnostic Triplets
+#
+# Each entry captures a symptom, its root cause, and a specific fix.
+# EPIC is a fixed-format Fortran model, so most bugs are format or unit
+# errors that are SILENT (the model runs and produces wrong numbers).
+
 triplets:
-  - id: T01
-    symptom: |
-      forrtl: severe (29): file not found, unit 39, file ./fort.39
-      Earlier message: "File SOIL38K.DAT IS MISSING."
+  - id: "EPIC_001"
+    category: "format_error"
+    severity: "critical"
+    silent: false
+    error: |
+      EPIC exits immediately or prints "FORMAT ERROR AT LINE ..." into
+      the .OUT file. No .ACY or .ANN produced.
     diagnosis: |
-      EPIC0810 looks for SOIL38K.DAT, but the EPIC1102 example bundle ships SOIL35K.DAT.
-      The file format is identical; only the file name changed between releases.
+      A control or site file (SIT/SOL/OPC/DLY) was regenerated from
+      scratch from a Python dict instead of copied from a template.
+      EPIC uses rigid Fortran fixed-width formats — a single misplaced
+      space breaks the read.
     remedy: |
-      In your workspace: cp SOIL35K.DAT SOIL38K.DAT
-      run_epic_workspace.setup_workspace() does this automatically.
+      Use the copy-first tools (build_site_file.py, build_soil_file.py,
+      build_opc_file.py). Never write fixed-format Fortran files from
+      Python dicts. If you have to patch a value, load the template
+      text, modify the exact column range, and write it back.
+    discovered_during: "s7_binary_test"
+    tags: ["fortran", "fixed_width"]
 
-  - id: T02
-    symptom: |
-      forrtl: severe (64): input conversion error, unit 24, file <site>.SOL
+  - id: "EPIC_002"
+    category: "unit_conversion"
+    severity: "critical"
+    silent: true
+    error: |
+      ACY yields are 10-100x too small and .ANN PRCP column is O(1)
+      instead of O(1000 mm/yr).
     diagnosis: |
-      The .SOL file contains alphabetic structure codes (e.g. "A B C D" rows)
-      that the EPIC0810 Fortran reader rejects when reading numeric F8.2 fields.
+      Precipitation in the .DLY file was written in kg m-2 s-1 (CMFD
+      raw unit) instead of mm/day.
     remedy: |
-      Run sanitize_sol(sol_path) in tools/run_epic_workspace.py — it replaces
-      every alpha token with "0.00" while preserving column widths. The header
-      line (line 1) is left as free text.
+      Multiply CMFD prec by 86400 before writing to .DLY. The
+      convert_forcing_to_epic.py tool does this automatically via
+      ki_tools_common.load_forcing. Verify .ANN PRCP column is
+      ~500-2000 mm/yr.
+    discovered_during: "s8_validation"
+    tags: ["precipitation", "forcing", "unit"]
 
-  - id: T03
-    symptom: |
-      Binary hangs forever and prints "FORTRAN PAUSE\nPAUSE prompt>"
+  - id: "EPIC_003"
+    category: "unit_conversion"
+    severity: "critical"
+    silent: true
+    error: |
+      PET column in .ANN is ~6000 mm/yr and yields are depressed.
     diagnosis: |
-      EPIC0810 hits a Fortran PAUSE statement on a non-fatal warning (e.g. missing
-      optional file) and waits for keyboard ENTER from stdin.
+      Temperature in .DLY was written in Kelvin (~290) instead of
+      degC (~17). PET is inflated.
     remedy: |
-      Always invoke with stdin closed: subprocess.run([bin], cwd=ws,
-      stdin=subprocess.DEVNULL, stdout=PIPE, stderr=PIPE, timeout=600)
+      Subtract 273.15 from CMFD tmax/tmin before writing. Verify mean
+      Tmax on DLY lines reads 15-25C, not 280-300.
+    discovered_during: "s8_validation"
+    tags: ["temperature", "kelvin"]
 
-  - id: T04
-    symptom: |
-      OUT file is < 2 KB, no annual data, no error message.
+  - id: "EPIC_004"
+    category: "unit_conversion"
+    severity: "major"
+    silent: true
+    error: |
+      Yields unrealistically low even though P and T look correct.
     diagnosis: |
-      EPICRUN.DAT line is missing the trailing "/" required by the namelist read,
-      or the site_id column is not exactly 9 chars wide.
+      Solar radiation in .DLY was written in W m-2 (CMFD daily mean
+      ~180) instead of MJ m-2 day-1 (~15).
     remedy: |
-      Format must be: "{site_id:>9s} {NSIT:3d} {NWP1:3d} {NWND:3d} {NWP5:3d}
-      {NSOL:3d} {NOPS:3d} {NDLY:3d}/" — note the trailing slash.
+      Multiply W m-2 by 0.0864 = MJ m-2 day-1. The heuristic in
+      convert_forcing_to_epic.py: if monthly mean > 60, assume W m-2
+      and convert. Verify SRAD is 5-30 for temperate latitudes.
+    discovered_during: "s8_validation"
+    tags: ["solar", "radiation", "srad"]
 
-  - id: T05
-    symptom: |
-      <site>.ACY and <site>.DGN files exist but have only 11 lines (header only).
+  - id: "EPIC_005"
+    category: "format_error"
+    severity: "critical"
+    silent: true
+    error: |
+      Yields are 0 or negative in the .ACY. Model runs silently to
+      completion.
     diagnosis: |
-      The output-type toggles in PRNT1102.DAT are 0 for these extensions, or the
-      site never triggered a harvest event (forest sites produce no .ACY rows by design).
+      The crop code in the .OPC plant line is wrong — the wrong row
+      of CROPCOM.DAT was selected. Silent because EPIC happily grows
+      any crop it finds.
     remedy: |
-      For empty .ACY: check OPC for harvest operation code 650. For empty .DGN:
-      verify the daily print toggle row in PRNT1102.DAT. Use parse_out_annual_table()
-      to scrape annual values from the .OUT report instead.
+      Always look up crop codes with `select_crop.py --name <NAME>`
+      before passing to build_opc_file.py. Cross-check the ACY CPNM
+      column in the output — it echoes the crop name EPIC actually ran.
+    discovered_during: "s8_validation"
+    tags: ["crop", "cropcom", "opc"]
 
-  - id: T06
-    symptom: |
-      ANN file shows all-zero precipitation/ET despite .DLY having data.
+  - id: "EPIC_006"
+    category: "path_error"
+    severity: "critical"
+    silent: false
+    error: |
+      EPIC prints "CANNOT OPEN FILE <xxx.DAT>" and halts.
     diagnosis: |
-      EPICCONT.DAT start year is outside the .DLY date range, so EPIC falls back
-      to the WXGEN weather generator with empty .WP1 statistics.
+      EPIC reads input files by hard-coded filename from the current
+      working directory. Running `wine epic.exe` from a different
+      directory does not work.
     remedy: |
-      Set EPICCONT.DAT IYR to a year that exists in your .DLY file. The
-      update_epiccont() helper takes start_year and validates against the range.
+      Run the binary from inside the workspace directory:
+        cd /path/to/workspace && wine ./epic1102-official_release.exe
+      run_epic.py does this automatically via cwd=workspace.
+    discovered_during: "s7_binary_test"
+    tags: ["wine", "cwd", "path"]
 
-  - id: T07
-    symptom: |
-      forrtl: severe error during model startup; OUT file shows year 1 day 1 only.
+  - id: "EPIC_007"
+    category: "format_error"
+    severity: "major"
+    silent: true
+    error: |
+      .ACY shows the right crop name but YLDG is zero or tiny.
     diagnosis: |
-      tmax < tmin in one or more rows of the .DLY file (forcing converter bug).
+      .OPC plant line used the wrong equipment code. Using a harvest
+      code (292) in the plant row means the crop never gets seeded.
     remedy: |
-      Add `assert (data["tmax"] >= data["tmin"]).all()` to the forcing converter.
-      Most often caused by swapped tmin/tmax columns when reading source NetCDF.
+      Start from the shipped umstead.OPC template — it has verified
+      equip codes (136 plant, 261 fert, 292 harvest, 451 kill).
+    discovered_during: "s7_binary_test"
+    tags: ["opc", "equipment_code"]
 
-  - id: T08
-    symptom: |
-      ACY rows show YLDG=0 every year for a clearly cropped site.
+  - id: "EPIC_008"
+    category: "config_error"
+    severity: "critical"
+    silent: false
+    error: |
+      EPIC crashes with "SUBSCRIPT OUT OF RANGE" after the first year.
     diagnosis: |
-      The Potential Heat Units (PHU) in the OPC planting row (column OPV1)
-      are wrong, so the crop never reaches maturity within the season.
+      NBYR in EPICCONT.DAT row 1 col 1 exceeds the number of years
+      available in the .DLY file. EPIC reads past EOF.
     remedy: |
-      Compute PHU as sum of (Tavg - Tbase) between planting and observed maturity
-      from the .DLY file. For corn Tbase=8 °C, typical PHU = 1500–2000 °C·day.
+      Ensure NBYR times 365 <= rows in .DLY. Set NBYR and IYR0 via
+      build_control_files.py --nbyr and --iyr0.
+    discovered_during: "s7_binary_test"
+    tags: ["nbyr", "epiccont", "weather"]
 
-  - id: T09
-    symptom: |
-      ANN ET > PRCP for several years; soil dries out completely.
+  - id: "EPIC_009"
+    category: "format_error"
+    severity: "major"
+    silent: true
+    error: |
+      Off-by-one date behaviour: crops plant a day early or late.
     diagnosis: |
-      Relative humidity in .DLY is in percent (0–100) instead of fraction (0–1).
-      EPIC interprets RH=70 as "RH = 7000%" and the vapor pressure deficit
-      explodes, driving PET to absurd values.
+      In the .OPC file, column 10-13 is the Julian day number and must
+      match the month+day. Changing MM/DD but not JD causes mismatch.
     remedy: |
-      Divide RH by 100 in the forcing converter. Add a range check
-      `assert data["rh"].max() < 1.5` to validate_forcing_dict().
+      build_opc_file.py computes JD from (month, day) via datetime.
+      Never set MM/DD and JD separately by hand.
+    discovered_during: "s7_binary_test"
+    tags: ["opc", "julian_day"]
 
-  - id: T10
-    symptom: |
-      LAI in DGN goes negative or NaN; OUT file mentions "CROP NOT FOUND".
+  - id: "EPIC_010"
+    category: "silent_error"
+    severity: "major"
+    silent: true
+    error: |
+      .ANN Q (runoff) column is zero in a wet basin.
     diagnosis: |
-      The crop code in the OPC planting row doesn't exist in CROPCOM.DAT.
+      SCS curve number not set or soil bulk density overridden too low
+      (<1.2 t/m3). EPIC uses CN from .SIT row 5 and soil props from .SOL.
     remedy: |
-      Look up the crop code in CROPCOM.DAT (column CPNM). For corn, code is 2;
-      for switchgrass, 22; for natural mixed forest, 38.
+      Use build_soil_file.py with HWSD-derived bulk density (usually
+      1.35-1.55 t/m3). Verify .SIT row 5 has CN 75-85 for row crops.
+    discovered_during: "s8_validation"
+    tags: ["runoff", "curve_number", "soil"]
 
-  - id: T11
-    symptom: |
-      Yield is reasonable but ET is implausibly low (< 200 mm/yr in temperate climate).
+  - id: "EPIC_011"
+    category: "runtime_error"
+    severity: "critical"
+    silent: false
+    error: |
+      "wine: could not load ..." error on first invocation.
     diagnosis: |
-      Solar radiation in .DLY is in W/m² instead of MJ/m²/day. PET is then
-      ~24× too low and the model becomes water-limited.
+      Wine is not installed or its prefix is corrupted. Fresh Linux
+      VMs need `wine wineboot` once to initialize the prefix.
     remedy: |
-      Convert: srad_MJ = srad_Wm2 * 0.0864 (for daily mean) or
-      srad_Wm2 * dayl_seconds / 1e6 for Daymet.
+      sudo apt install wine; wine wineboot; wine --version
+    discovered_during: "s7_binary_test"
+    tags: ["wine", "install"]
 
-  - id: T12
-    symptom: |
-      Soil water never drains; runoff = 0 every storm.
+  - id: "EPIC_012"
+    category: "format_error"
+    severity: "major"
+    silent: true
+    error: |
+      .ANN IRGA column shows zero even though --mode auto was set.
     diagnosis: |
-      Saturated hydraulic conductivity in row 19 of SOL is in cm/day instead of mm/h.
-      A typical loam Ksat of 5 mm/h becomes 5 cm/day = 0.21 mm/h, ~24× too low.
+      IRR flag position in EPICCONT.DAT row 2 was edited at the wrong
+      column (flag block layout is I5 fields).
     remedy: |
-      Multiply Ksat_cm_per_day * 10 / 24 to get mm/h.
+      Use configure_irrigation.py which computes the column index
+      programmatically. Verify by reading .OUT header — it prints all
+      control flags.
+    discovered_during: "s7_binary_test"
+    tags: ["irrigation", "epiccont"]
 
-  - id: T13
-    symptom: |
-      Bulk density row in SOL has values like 1440 instead of 1.44.
+  - id: "EPIC_013"
+    category: "data_error"
+    severity: "major"
+    silent: true
+    error: |
+      .ANN PRCP column is all zeros and ET equals PET.
     diagnosis: |
-      Bulk density in kg/m³ instead of g/cm³.
+      The .DLY file contains NaN or sentinel values (-99, 9999) that
+      EPIC reads as zeros.
     remedy: |
-      Divide by 1000.
+      convert_forcing_to_epic.py validates inputs. Run the
+      water_balance_check in parse_outputs.py and check the residual.
+    discovered_during: "s8_validation"
+    tags: ["precipitation", "missing_data"]
 
-  - id: T14
-    symptom: |
-      Layer depth row in SOL has values like 5, 15, 30, 60 — runoff and percolation are wild.
+  - id: "EPIC_014"
+    category: "format_error"
+    severity: "minor"
+    silent: true
+    error: |
+      Output files appear but have 0-byte size or only a header.
     diagnosis: |
-      Layer depths in cm instead of metres.
+      PRNT1102.DAT output-variable selection block has all zeros for
+      the output file class.
     remedy: |
-      Divide by 100. EPIC0810 expects metres in the layer depth row.
+      Start from the shipped PRNT1102.DAT template — never blank it.
+    discovered_during: "s7_binary_test"
+    tags: ["prnt1102", "output_selection"]
 
-  - id: T15
-    symptom: |
-      Crop matures in 30 days; harvest yields ~0.
+  - id: "EPIC_015"
+    category: "format_error"
+    severity: "critical"
+    silent: true
+    error: |
+      SITECOM.DAT has the user's new SIT file listed, but EPICRUN.DAT
+      still points at the shipped site.
     diagnosis: |
-      PHU set too low (e.g. 200 °C·day) — crop sprints through phenology
-      and never accumulates biomass.
+      EPICRUN.DAT run line has 7 integer columns after the run name:
+      SIT WP1 WP5 WND SOL OPS DLY. If any index is wrong EPIC loads
+      the wrong file silently.
     remedy: |
-      Use realistic PHU per crop: corn 1500, wheat 1700, soybean 1500,
-      switchgrass 2000.
+      Use build_control_files.py which appends new entries AND rewrites
+      the run line with matching indexes.
+    discovered_during: "s7_binary_test"
+    tags: ["epicrun", "list_com"]
 
-  - id: T16
-    symptom: |
-      Same workspace produces different results on repeat runs.
+  - id: "EPIC_016"
+    category: "unit_conversion"
+    severity: "minor"
+    silent: true
+    error: |
+      Soil organic C in the .SOL is too high (>5%), inflating N
+      mineralization.
     diagnosis: |
-      Stale output files from a previous run aren't being deleted; EPIC0810
-      appends rather than overwrites some output files (notably .ACY in append mode).
+      HWSD gives organic carbon as g/g. The .SOL format expects
+      percent (0-100). Writing g/g gives 100x too little; multiplying
+      twice gives 100x too much.
     remedy: |
-      Before re-running: rm -f workspace/<site_id>.* (then run again).
-      Or use a fresh setup_workspace() into a new temp dir.
+      In build_soil_file.py, multiply g/g by 100 exactly once.
+      Typical .SOL organic C values are 0.5-3.0 for ag soils.
+    discovered_during: "s8_validation"
+    tags: ["soil", "organic_carbon"]
 
-  - id: T17
-    symptom: |
-      EPIC0810 segfaults at startup with no Fortran error.
+  - id: "EPIC_017"
+    category: "silent_error"
+    severity: "major"
+    silent: true
+    error: |
+      Water balance residual (P+IRGA - ET - Q) > 100 mm/yr and growing.
     diagnosis: |
-      Workspace is missing one of the database files: CROPCOM.DAT, FERT2012.DAT,
-      TILLCOM.DAT, PESTCOM.DAT, or PARM1102.DAT. The Fortran open succeeds
-      (file is auto-created empty) but the read fails.
+      Spin-up too short; soil water pool hasn't equilibrated.
     remedy: |
-      Verify all REQUIRED_TEMPLATE_FILES are present:
-      `python tools/run_epic_workspace.py --workspace ws` will validate.
+      Run with at least 2 years of spinup. Discard first 2 years from
+      metrics. Check .DWC daily file for soil water drift.
+    discovered_during: "s8_validation"
+    tags: ["water_balance", "spinup"]
 
-  - id: T18
-    symptom: |
-      Wind speed in .DLY printed as "***" or model crashes on day 1.
+  - id: "EPIC_018"
+    category: "management_schedule"
+    severity: "critical"
+    silent: true
+    error: |
+      ACY shows FTN = fertilizer only in simulation year 1 (full rate applied),
+      partial rate in year 2 (remaining quota), then FTN = 0 from year 3 onward —
+      even though explicit scheduled fert ops appear in the .OPC for every rotation year.
     diagnosis: |
-      Wind speed exceeds the F6.2 column width (i.e. > 99.99 m/s) due to
-      forcing units in km/h or mph not converted.
+      OPV6 = 0 in the plant operation row causes EPIC to use a default
+      max-N-per-crop limit (~200 kg/ha from CROPCOM). This limit is a
+      CUMULATIVE LIFETIME cap across the full simulation, not an annual cap.
+      Year 1 fert (e.g., 193 kg/ha) consumes nearly all of the 200 kg quota;
+      year 2 gets only the 7 kg remainder; years 3+ get nothing.
+      OUT prints "MAX N FERT/CROP = 200. kg/ha" confirming the active limit.
     remedy: |
-      km/h → m/s: divide by 3.6. mph → m/s: multiply by 0.44704.
-      Add range check `assert (0 <= ws).all() and (ws < 50).all()`.
+      Set OPV6 in the plant row to >= NBYR * annual_fert_rate.
+      Example: 11-year run at 193 kg/ha/yr requires OPV6 >= 2123; use 3000
+      for safety. In build_opc_file.py or edit_opc.py, pass v6=<value> to
+      the plant op. Also set OPC line 2 to "   1 500" (NROT=1) for an
+      annual monocrop so there is no duplicate-simulation artifact.
+    discovered_during: "zhengzhou_corn_2010_2020"
+    tags: ["fertilization", "OPV6", "rotation", "annual_cycling"]
+
+  - id: "EPIC_019"
+    category: "management_schedule"
+    severity: "major"
+    silent: true
+    error: |
+      IRGA = 0 mm/yr in .ACY for ALL simulation years even though IRR = 2
+      (auto-irrigation) is set in EPICCONT.DAT, or even though explicit
+      scheduled irrigation ops (EQIP=502 FLOODIRR) appear in the .OPC.
+      WS (annual water stress) is also 0.000 for all years.
+    diagnosis: |
+      Two independent root causes, both produce IRGA=0:
+
+      (1) AUTO-IRRIGATION (IRR=2): fires only when the daily water-stress
+          index WS_daily > PARM[67] (AIWS threshold). In monsoon-dominated
+          climates (East Asia, South Asia, W. Africa wet season), summer
+          precipitation fully meets peak ET demand, so WS_daily = 0 on
+          every day of the growing season. No matter how low you set AIWS
+          (tested 6.0, 0.85, 0.0001), the trigger condition is never met
+          and IRGA stays 0. This is CORRECT model behaviour — the site is
+          genuinely not water-stressed. ACY WS=0.000 is the diagnostic.
+
+      (2) SCHEDULED IRRIGATION OPS (EQIP=502/501/500): operations appear
+          in the .OUT run log ("FLOODIRR 8 502") but apply RR=0 mm and
+          VIRR=0.00 to the field regardless of the V1/V2 amount and APPC
+          flag in the .OPC. Root cause in EPIC 1102 binary is not confirmed,
+          but observed consistently across multiple scheduled-op tests.
+
+      (3) TOOL BUG — configure_irrigation.py: the tool writes the IRR flag
+          using I5 (5-char) chunk indexing, placing it at character positions
+          35-39 of EPICCONT line 2. The actual EPICCONT template uses 4-char
+          fields; the true IRR position is character 33 (chunk index 8 in a
+          4-char scheme). The tool therefore writes to the wrong field and
+          leaves the real IRR flag unchanged.
+    remedy: |
+      (1) For monsoon sites where WS=0: irrigation cannot meaningfully
+          improve simulated yield through the irrigation pathway. The
+          yield gap vs. observed is driven by crop parameter miscalibration
+          (PHU, harvest index, radiation use efficiency for local cultivars),
+          not water stress. Do NOT attempt to force irrigation via lower AIWS
+          thresholds or scheduled ops — neither will fire at a water-surplus site.
+          Report IRGA=0 and WS=0 as correct physics, then focus on PHU
+          calibration or switching to a locally calibrated .CRP file.
+
+      (2) For sites that SHOULD be water-stressed: check ACY WS column first.
+          WS > 0 means auto-irrigation CAN fire; check PARM[67] (default 6.0
+          is very high — try 0.85-1.5). If using scheduled ops, verify
+          the out file shows the op executing with nonzero RR; if RR=0 is
+          printed, the EPIC 1102 binary may not honour V1/V2 for that
+          equipment code — try equip code 382 (GATEPIPE IRRI) instead of 502.
+
+      (3) configure_irrigation.py: read the template EPICCONT manually,
+          locate the IRR field at character position 33 (0-indexed: chars 32-33),
+          and set it directly via string slicing rather than calling the tool.
+    discovered_during: "zhengzhou_corn_2010_2020"
+    tags: ["irrigation", "IRGA", "IRR", "water_stress", "monsoon", "configure_irrigation", "EPICCONT"]
+
+  - id: "EPIC_020"
+    category: "domain_mismatch"
+    severity: "info"
+    silent: false
+    error: |
+      Verifier requests basin-routed river discharge (m3/s, daily) such as
+      GloFAS or GRDC at a gauge draining thousands of km2, but EPIC's only
+      hydrologic flux output is .ANN Q = point-scale SURFACE RUNOFF ONLY
+      (mm/yr). All metrics return null because no temporal/scale overlap
+      can be constructed.
+    diagnosis: |
+      Wrong-variable + wrong-scale. EPIC 1102 is a 0-D point field-scale
+      agro-ecosystem model (single homogeneous HLU <=100 ha). dag.yaml
+      scope_out excludes "Channel routing across heterogeneous areas" and
+      "Spatially distributed / gridded simulation". No EPIC output and no KI
+      tool maps point surface runoff to basin-routed m3/s discharge.
+    remedy: |
+      SKIP (no retry). Switching cultivar/forcing/parameters cannot make a
+      point crop-field model emit routed river discharge. The only valid
+      hydrologic obs for EPIC is point_time_series surface-runoff (mm), and
+      do NOT close P-ET-Q on .ANN Q (it excludes percolation/lateral flow).
+      Route basin m3/s discharge obs to a routing-capable KI such as
+      EF5/HYPE/GR4J/airGR.
+    discovered_during: "verifier_glofas_huai"
+    tags: ["domain", "wrong_variable", "scale", "skip", "discharge", "routing"]
+
+  - id: EPIC_021
+    category: management_schedule
+    severity: major
+    silent: true
+    error: |
+      HUSC printed on the harvest line of the .OUT run log is outside the
+      dag's 0.9-1.2 band (observed 1.10 and 1.45 for spring maize at
+      Changchun, Jilin), so the dag caveat marks the yields as suspect --
+      even though the run completes cleanly and the .ACY looks plausible.
+    diagnosis: |
+      OPV1 of the PLANT operation is the crop's PHU (Potential Heat Units)
+      that defines maturity; HUSC = accumulated HU / PHU. build_opc_file.py
+      hard-coded OPV1 = 1550 -- the value inherited from the shipped umstead
+      (North Carolina) example -- at EVERY site and for every crop. Where the
+      local season accumulates a different heat-unit total, the crop reaches
+      maturity well before (HUSC > 1.2) or after (HUSC < 0.9) the scheduled
+      harvest date. Changchun Jilin (plant 05-04, harvest 09-13, TBS=8 degC)
+      accumulates ~1750-1900 degC-days, i.e. 13-23% more than 1550.
+    remedy: |
+      Derive PHU from the run's OWN forcing, which is standard EPIC/SWAT
+      practice, and pass it to build_opc_file.build(..., phu=<value>):
+
+        from build_opc_file import compute_phu, crop_base_temp
+        phu = compute_phu(f"{ws}/STN01.DLY", plant_mmdd, harvest_mmdd,
+                          crop_base_temp("CORN"))
+
+      compute_phu() sums max(0, Tmean - TBS) from planting to harvest and
+      averages over the years in the .DLY (TBS comes from CROPCOM.DAT col 4:
+      CORN 8, SOYB 10, WWHT 0). ORDER MATTERS: build the forcing BEFORE the
+      .OPC so the .DLY exists. At Jilin this moved HUSC 1.10/1.45 -> 1.00/1.18,
+      inside the dag band.
+    discovered_during: "gdhy_jilin_maize_1995_2016"
+    tags: ["PHU", "OPV1", "HUSC", "maturity", "heat_units", "umstead_legacy"]
+
+  - id: EPIC_022
+    category: management_schedule
+    severity: info
+    silent: true
+    error: |
+      Simulated yield is systematically HIGH against area-average gridded /
+      census yield products (GDHY, SPAM, FAOSTAT), with .ACY PPOP = 10.000
+      in every run regardless of site.
+    diagnosis: |
+      OPV5 of the PLANT operation is the plant population (plants/m2).
+      build_opc_file.py hard-codes v5 = 10.0, again inherited from the
+      umstead example. 10 plants/m2 = 100,000 plants/ha sits at the very top
+      of the realistic range (typical rainfed maize 6.0-7.5 plants/m2), so
+      EPIC simulates a denser -- hence higher-yielding -- stand than the
+      average field the obs product aggregates over. This compounds with the
+      structural gap between a well-managed point field simulation and an
+      area-average census yield.
+    remedy: |
+      NOT a metric-tuning knob: only change PPOP when a data source or the
+      site agronomy justifies it, and record the source. There is no gridded
+      plant-density product in the curated dataset index, so the current KI
+      keeps 10.0 as the documented default. When a site's density is known,
+      pass it through build_opc_file (OPV5) and say so in the run notes.
+      Do NOT adjust PPOP to move PBIAS.
+    discovered_during: "gdhy_jilin_maize_1995_2016"
+    tags: ["PPOP", "OPV5", "plant_density", "magnitude", "umstead_legacy"]
+
+  - id: EPIC_023
+    category: forcing
+    severity: critical
+    silent: true
+    error: |
+      EPIC completes cleanly but heat-unit accumulation, HUSC at harvest and
+      PET are all wrong. Inspecting <stn>.DLY shows the TMX and TMN columns
+      holding IDENTICAL values on every row (zero diurnal range), e.g.
+        1995   1   1  6.34 -9.45 -9.45  0.00 ...
+      compute_phu() then returns a PHU derived from a mean-only temperature
+      series and the crop never matures on schedule.
+    diagnosis: |
+      The CMFD V2.0 archive ships two stores. Data_forcing_01dy_010deg (daily)
+      contains a daily MEAN temperature only, so ki_tools_common.load_forcing
+      returns temp_max_c == temp_min_c == temp_mean_c. Data_forcing_03hr_010deg
+      (3-hourly) is the only store from which a true daily TMX/TMN can be
+      aggregated. Pointing $CMFD_PATH (or CMFD_DEFAULT_DIR in
+      convert_forcing_to_epic.py) at the daily store is ~40x faster
+      (~3 s/year vs ~2-6 min/year), which makes it a tempting shortcut — and
+      it produces no error at all, only wrong physics.
+      Verified 2026-07-28 at 44.25N 125.25E, 1995: daily store gave
+      TMX=TMN=mean; 3-hourly store gave TMX -15.3..32.3, TMN -21.3..23.5 degC.
+    remedy: |
+      Always point CMFD forcing at Data_forcing_03hr_010deg. The hc_ssd copy
+      (/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg) is the fast one;
+      /mnt/disk1/Hydrocraft_server/data/forcing/Data_forcing_03hr_010deg is the
+      fallback when hc_ssd is not mounted. convert_forcing_to_epic.py now
+      (a) resolves CMFD_DEFAULT_DIR from that candidate list and (b) RAISES if
+      >90% of days have |TMX - TMN| < 0.01 degC, so the daily store can no
+      longer silently corrupt a run. Budget ~2-6 min/simulated year for the
+      3-hourly extraction and launch multi-decade setups detached; the per-year
+      JSON memo under <workspace>/.forcing_cache makes that resumable.
+    discovered_during: "gdhy_jilin_maize_1995_2016"
+    tags: ["forcing", "CMFD", "TMX", "TMN", "diurnal_range", "silent", "PHU"]
+
+  - id: "EPIC_024"
+    category: "silent_error"
+    severity: "critical"
+    silent: true
+    error: |
+      EPIC runs cleanly for the whole rotation, but HUSC on the harvest line
+      of the .OUT climbs year on year and settles ABOVE the dag's required
+      0.9-1.2 band, e.g. at Changchun Jilin maize 1995-2016:
+        1995 HUSC= 1.00   1996 1.14   1997 1.27   1998 1.31 ... 2007 1.38
+      Yields are inflated (sim 8.5 t/ha dry vs GDHY 6.1 t/ha, PBIAS +65%) and
+      the harvest always fires on the scheduled calendar date rather than at
+      maturity. The tell is the monthly HUI block in the .OUT: the January
+      value is 0.00 in year 1 but 0.11, 0.21, 0.29 ... in later years,
+      stabilising near 0.30 instead of returning to zero every winter.
+    diagnosis: |
+      The KILL operation (equip 451) in the .OPC was written with crop_id = 0
+      instead of the crop's CROPCOM code. EPIC then has no crop to kill, the
+      standing crop is never terminated, and its heat-unit index is never
+      reset. The residual HUI carries across the rotation boundary and is
+      added to the next season's accumulation, so HUSC at harvest reads
+      1 + residual. Because the crop is already past HUI = 1 well before the
+      scheduled harvest date, it keeps standing (and accumulating biomass /
+      re-partitioning to grain) instead of being harvested at maturity.
+      The shipped templates/umstead.OPC kill row carries crop_id = 2 (CORN) —
+      the generated file had dropped it. Entirely silent: no error, no
+      warning, correct-looking .ACY.
+    remedy: |
+      The kill row's crop_id MUST equal the crop being killed:
+        ops.append(_op_line(harvest_yr, km, kd, 451, 0, crop_code, 0))
+      Fixed in tools/build_opc_file.py (it previously hard-coded 0). Verify
+      after every run:
+        grep " HUI " <run>.OUT | head          # January column must be 0.00
+        grep "CSP2WD" <run>.OUT                # HUSC at harvest 0.9-1.2
+      With the fix at Changchun the January HUI returns to 0.00 in every year,
+      HUSC at harvest becomes 1.00-1.07, harvest migrates to the true maturity
+      date (Sep 13-28 rather than always Sep 13), and dry yield falls from
+      8.52 to ~6.9 t/ha. Also note this makes compute_phu()'s output verifiable:
+      with the carry-over present, HUSC over-shoot looks like a PHU error and
+      invites a wrong "raise the PHU" fix.
+    discovered_during: "gdhy_jilin_maize_1995_2016"
+    tags: ["opc", "kill", "crop_code", "HUSC", "HUI", "silent", "yield_bias"]
+
+  - id: EPIC_025
+    category: validation_contract
+    severity: critical
+    silent: true
+    error: |
+      A clean EPIC run (HUSC at harvest 1.0-1.07, PHU site-derived, FTN full in
+      every year, forcing from the CMFD 3-hourly store, water balance closing)
+      nevertheless scores r = 0.21, NSE = -8.45, KGE = 0.06 against an annual
+      yield series, and the self-improve loop fires a diagnose on r < 0.5.
+      The tell: resolved_obs says granularity = 'grid' / geometry = '0.5deg grid
+      cell' / dataset_id = 'gdhy_v1_2_v1_3', but the run reports
+      obs_shape = 'point_time_series'.
+    diagnosis: |
+      Comparison-contract misbinding, not a model defect. GDHY / SPAM / FAOSTAT /
+      statistical-yearbook yields are AREA AVERAGES. dag.yaml offers YLDG both
+      'point_time_series' and 'regional_aggregate_time_series' but carries no rule
+      for choosing, SKILL.md had no obs-binding section, and
+      ki_tools_common.crop_obs.get_observed_yield_series() returns a bare
+      {year: kg/ha} dict with no granularity or convention metadata -- so the
+      caller has nothing to bind on and defaults to the point shape. That promotes
+      raw inter-annual r/NSE/KGE to the headline, which the dag's own aggregate
+      caveat forbids. Two structural reasons the raw metrics cannot be met:
+        (1) technology trend -- Changchun GDHY maize rises +0.163 t/ha/yr
+            (2.66%/yr; 1997-2006 mean 5.25 -> 2007-2016 mean 6.97 t/ha) from
+            cultivar turnover and input intensification, which a fixed-management
+            EPIC run cannot contain (sim slope +0.003, slope_ratio 0.02);
+        (2) variance damping -- a 0.5deg cell mean averages hundreds of fields, so
+            detrended sd is 0.55 t/ha (obs) vs 1.07 t/ha (sim), and NSE/KGE charge
+            that scale mismatch to the model.
+      Remove the trend and the weather signal is present: detrended r = 0.38,
+      first-difference r = 0.59.
+      A second, independent silent gap rides along: EPIC .ACY YLDG is DRY MATTER,
+      the moisture basis GDHY reports on was never ESTABLISHED or cited anywhere in
+      this KI, and SKILL.md's unit table documented only the kg/ha -> t/ha step.
+      (The run assumed a market basis; that assumption is undocumented and is
+      exactly what this triplet forbids.) Applying (or omitting) the
+      /(1 - 0.155) conversion moves the dag's DETERMINING metric from PBIAS
+      +26.8% to +50.1% with no rule written down anywhere.
+    remedy: |
+      Before scoring ANY yield obs, resolve the shape from the dag:
+
+        python tools/resolve_obs_shape.py --var YLDG --granularity grid \
+            --geometry "0.5deg grid cell" --dataset-id gdhy_v1_2_v1_3 --n-steps 20
+
+      Any gridded / regional / national / census-anchored product binds to
+      obs_shape = 'regional_aggregate_time_series', comparison_mode =
+      'aggregate_trend_comparison', determining_metric = 'pbias', detrending =
+      'linear_residual'. The VERDICT is the dag's determining_metric ALONE
+      (pbias); r_detr / r_firstdiff / slope_ratio are diagnostic pattern evidence,
+      NOT a second verdict, and raw r / NSE / KGE are marked non-verdict. Reserve
+      'point_time_series' for station, experiment-plot or single-field records.
+      On moisture: EPIC's dry-matter basis is a model fact, but the OBS basis must
+      be ESTABLISHED from that product's own documentation and cited -- the KI does
+      not assume GDHY/FAOSTAT/SPAM/yearbook conventions. Convert the sim
+      (yield_market = yield_dry / (1 - w), w recorded with its source) only once
+      the obs is established to be market-basis; report PBIAS on both bases either
+      way.
+      Do NOT respond to this symptom by tuning PPOP, PHU or the cultivar --
+      PHU is already site-derived (EPIC_021), the kill row is already fixed
+      (EPIC_024), and EPIC_022 forbids moving PPOP to chase PBIAS.
+    discovered_during: "gdhy_jilin_maize_1997_2016_selfimprove_retry1"
+    tags: ["obs_shape", "regional_aggregate", "detrend", "technology_trend", "GDHY", "moisture_basis", "validation_contract", "silent"]
+
+  - id: EPIC_026
+    category: tooling
+    severity: high
+    silent: false
+    error: |
+      `python3 quick_validate.py --rerun` -- the path SKILL.md advertises as
+      "Quick validation (fastest path -- use this for KI testing)" -- dies
+      immediately with:
+        ERROR: [Errno 2] No such file or directory:
+        '/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/EPIC/epic_workspace/epic1102-official_release.exe'
+      and emits {"ki_usable": false}. Without --rerun it instead reports
+      "Missing umstead_0.ANN" / "Missing umstead_0.ACY", because the default
+      workspace points at the same vanished directory.
+    diagnosis: |
+      quick_validate.py hard-coded DEFAULT_BINARY and DEFAULT_WORKSPACE to the
+      transient dissection scratch tree `_work_v2/EPIC/epic_workspace`. SKILL.md
+      already documents that (a) that tree "is a transient dissection scratch dir
+      and no longer exists" and (b) the binary must be resolved through
+      `tools/_common.resolve_binary()` (which walks $EPIC_BINARY -> models/EPIC/bin
+      -> models/EPIC/source/repo -> the legacy scratch path). preflight_check.py
+      and tools/run_epic.py already used the resolver; quick_validate.py was the
+      one caller that bypassed it, so `preflight_check.py` reported PASS on the
+      very binary quick_validate could not find -- an inconsistency that makes
+      the failure look like a broken install rather than a stale constant.
+    remedy: |
+      quick_validate.py now imports `resolve_binary` from tools/_common and picks
+      the workspace from WORKSPACE_CANDIDATES (KI runs/umstead_quick_validate ->
+      models/EPIC/outputs -> models/EPIC/source/repo -> legacy scratch), choosing
+      the first that actually holds umstead_0.ANN. `--rerun` always writes into
+      the KI-local runs/ dir so the shipped reference outputs under
+      models/EPIC/outputs/ are never overwritten. Verified 2026-07-29:
+        python3 quick_validate.py --rerun
+        -> PASS  15 yr, P=1129.1 ET=578.4 Q_sfc=59.0 mm/yr, yield 5.23 t/ha
+      NEVER hard-code the binary or workspace in a new tool -- call
+      _common.resolve_binary().
+    discovered_during: "gdhy_maize_changchun_2026_07_29"
+    tags: ["quick_validate", "binary_path", "_work_v2", "stale_path", "resolve_binary", "developer_example"]
+
+  - id: EPIC_027
+    category: tooling
+    severity: high
+    silent: true
+    error: |
+      Every `.ACY` produced through quickstart.py carries PPOP = 10.000 in every
+      year at every site, even though SKILL.md ("Plant population (OPV5) is a site
+      decision, not a default") and triplet EPIC_022 both instruct the agent to
+      pass a SOURCED plant density. No error is raised; the run simply simulates
+      100,000 plants/ha -- above every published NE-China spring-maize density
+      treatment (30,000 / 52,500 / 75,000 / 97,500 plants ha-1, optimum ~76,000).
+    diagnosis: |
+      `build_opc_file.build()` DOES take `ppop=` (OPV5), but `quickstart.py` --
+      the entry point SKILL.md says to "use instead of driving the nine stage
+      tools by hand" -- never accepted or forwarded it. The documented
+      requirement was therefore unsatisfiable from the recommended path: the only
+      way to honour it was to abandon quickstart and drive the stage tools
+      manually, which SKILL.md advises against. Classic protocol/tool mismatch:
+      the doc mandates a decision the tool gives you no way to express, so the
+      site-blind legacy value wins silently in every run.
+    remedy: |
+      quickstart.py now takes `ppop=` (Python) / `--ppop` (CLI) and forwards it to
+      build_opc(); omitting it keeps the documented 10.0 default, and passing it
+      prints a line naming it a SOURCED override. This is parameter SOURCING, and
+      EPIC_022 still stands: do NOT move PPOP to chase PBIAS. Because no gridded
+      or survey plant-density product for a specific cell-year exists on this
+      server, a `--ppop` run must be reported as a labelled SENSITIVITY, never as
+      the scored verdict, until a source pins the value.
+    discovered_during: "gdhy_maize_changchun_2026_07_29"
+    tags: ["quickstart", "PPOP", "OPV5", "protocol_gap", "silent", "umstead_legacy"]
+
+  - id: EPIC_028
+    category: validation_contract
+    severity: high
+    silent: true
+    error: |
+      Follow-up to EPIC_025, which left ONE item open: "the OBS basis must be
+      ESTABLISHED from that product's own documentation and cited -- the KI does
+      not assume GDHY/FAOSTAT/SPAM/yearbook conventions." While it stayed open,
+      every run was free to re-decide it, and the dag's DETERMINING metric moved
+      from PBIAS +26.8% to +50.1% on that unrecorded choice alone.
+    diagnosis: |
+      The GDHY NetCDF files carry NO metadata whatsoever -- verified 2026-07-29:
+      the per-year `yield_<YYYY>.nc4` have empty global attributes and a single
+      unlabelled variable named `var` (only lat/lon carry units). So the basis is
+      genuinely unreadable from the data, and an agent with no registry to consult
+      will always fall back to a guess.
+    remedy: |
+      The basis is now ESTABLISHED and registered as DATA in
+      tools/resolve_obs_shape.py (`OBS_MOISTURE_BASIS`, reachable via
+      `lookup_obs_moisture_basis(dataset_id, crop)` and surfaced in every
+      resolve() as `.moisture_basis.obs_native` / `.conversion`):
+        * GDHY grid yields are estimated from a satellite crop-specific vegetation
+          index calibrated to FAO-REPORTED COUNTRY YIELD STATISTICS
+          (Iizumi & Sakai 2020, Sci Data 7:97, doi:10.1038/s41597-020-0433-7),
+          so GDHY inherits FAOSTAT's reporting basis;
+        * FAO crop-production definitions: cereals are reported as "clean, dry
+          weight of grains with 12-14 percent moisture in the form usually
+          marketed"; rice is reported as PADDY;
+        * => GDHY / FAOSTAT / SPAM cereals are MARKET moisture, w = 0.14 for maize
+          in China (top of FAO's 12-14% band; China GB 1353 trade ceiling),
+          w_range 0.12-0.14 as the sensitivity.
+      The w = 0.155 constant the KI carried before is the US grain-trade
+      convention, NOT FAO's -- demoted to a sensitivity. Scoring EPIC's DRY-MATTER
+      YLDG straight against a raw GDHY value is a basis MISMATCH, not a "dry
+      basis" comparison; convert one side (either gives an identical PBIAS) and
+      report both numbers. A product with no registry row still returns
+      established=false -- establish it, cite it, and ADD THE ROW rather than
+      deciding again in the next run.
+    discovered_during: "gdhy_maize_changchun_2026_07_29"
+    tags: ["moisture_basis", "GDHY", "FAOSTAT", "SPAM", "registry", "validation_contract", "silent", "EPIC_025_followup"]
+
+  - id: EPIC_029
+    category: forcing
+    severity: critical
+    silent: true
+    error: |
+      A `--source nasa_power` run (the global / fast forcing path) dies in
+      convert_forcing_to_epic.build with the CMFD-specific message of triplet
+      EPIC_023:
+        "nasa_power forcing has a ZERO diurnal temperature range on 1827/1827
+         days (temp_max_c == temp_min_c) ... point $CMFD_PATH at the 3-HOURLY
+         archive"
+      at a site that has nothing to do with CMFD. The same fetch succeeds when
+      convert_forcing_to_epic._load_daily_window is called directly.
+    diagnosis: |
+      The per-year forcing memo, not the loader. `_load_year_cached()` built its
+      JSON payload with
+
+          if k == "dates" or not isinstance(v, (list, tuple)): continue
+
+      but ki_tools_common.load_forcing returns NUMPY ARRAYS for nasa_power and
+      mswx (the local CMFD fallback returns lists, which is why CMFD sites never
+      saw this). Every variable therefore failed the isinstance test, the cached
+      year held ONLY "dates", and build() fell through to its `_pick(...,
+      default=...)` constants: TMX = TMN = 0 degC, precip = 0 mm, srad = 18
+      MJ/m2/d. The zero diurnal range is what trips EPIC_023's guard -- with a
+      slightly different default set EPIC would have run happily on fabricated
+      weather. Caching is ON by default (cache_dir defaults to
+      <workspace>/.forcing_cache), so this killed the entire NASA POWER path
+      from the moment the memo was added.
+    remedy: |
+      `_as_float_list()` now normalises ANY 1-D numeric sequence (list, tuple,
+      numpy or masked array) before the memo is written, and build() refuses to
+      substitute defaults for the load-bearing variables:
+
+          missing = [k for k in ("temp_max_c","temp_min_c","precip_mm")
+                     if _pick(data, k, default=None) is None]
+          if missing: raise ValueError(...)
+
+      A memo written before this fix is STALE and carries only `dates` --
+      delete <workspace>/.forcing_cache (or $EPIC_FORCING_CACHE) once. Verified
+      2026-08-10 at 45.25N 9.75E: cached 1984-1988 now reload with
+      Tmax=17.1C Tmin=8.2C prcp=2.41mm/d srad=12.6MJ/m2/d.
+      GENERAL RULE for any KI memo: never gate serialisation on
+      `isinstance(v, list)` -- the loaders return numpy.
+    discovered_during: "gdhy_maize_povalley_2026_08_10"
+    tags: ["forcing", "nasa_power", "cache", "numpy", "silent", "defaults"]
+
+  - id: EPIC_030
+    category: forcing
+    severity: major
+    silent: false
+    error: |
+      A NASA POWER run that starts before 1984 dies with an opaque
+        "Forcing validation FAILED: SRAD mean nan MJ/m2/d out of range"
+      while Tmax/Tmin/precip for the same years look perfectly normal.
+    diagnosis: |
+      NASA POWER's solar record (ALLSKY_SFC_SW_DWN, CERES/SRB) begins
+      1984-01-01; its MERRA-2 temperature and precipitation begin 1981-01-01.
+      A 1981-1983 request therefore returns real T/P and an ALL-NaN radiation
+      column (verified at 45.25N 9.75E: NaN fraction 1.0 for 1981/1983, 0.0 for
+      1984 and later). The NaNs then poison the W/m2-vs-MJ magnitude test
+      (`nan > 60` is False, so no conversion is applied) and only surface in the
+      range check, which cannot say why.
+    remedy: |
+      convert_forcing_to_epic.build now counts non-finite radiation days and
+      raises naming the record start when source == "nasa_power" and
+      year1 < 1984. Start NASA POWER runs at 1984, or take radiation from
+      another source. GDHY covers 1981-2016, so a NASA-POWER-forced GDHY
+      comparison is a 1984-2016 window (minus spin-up).
+    discovered_during: "gdhy_maize_povalley_2026_08_10"
+    tags: ["forcing", "nasa_power", "radiation", "record_start", "1984"]
+
+  - id: EPIC_031
+    category: site_preparation
+    severity: high
+    silent: true
+    error: |
+      Every non-China quickstart run prints
+        "elevation: 100 m, slope: 0.0100 m/m (1.00%)"
+      no matter where on Earth it is, and the .SIT carries those numbers.
+    diagnosis: |
+      quickstart._lookup_terrain tried the China DEM 90m, then the CMFD
+      elevation grid (China only), then returned the hard-coded placeholder
+      (100 m, 1%). Both sources are China-only, so OUTSIDE China the placeholder
+      was the only possible outcome -- a fabricated site geometry that changes
+      EPIC's PET (barometric pressure is derived from elevation) and its
+      curve-number runoff / MUSLE erosion (slope). The curated GLOBAL primary
+      DEM (MERIT DEM v1.0.2, 3 arcsec, /mnt/datasets/MERIT_DEM, 5x5 degree tiles
+      named by their lower-left corner) was on the server the whole time, and
+      ki_tools_common.terrain.get_terrain is China-only too, so there was no
+      global fallback to import.
+    remedy: |
+      _lookup_terrain now falls back to the MERIT tile
+      (`_merit_tile(lat, lon)` -> n45e005_dem.tif style) via
+      `_elev_slope_from_raster`. Verified 2026-08-10: Po Valley 45.25N 9.75E
+      54 m, Iowa 41.25N -93.25E 256 m, S.Africa Highveld -28.25 27.25 1509 m.
+      SLOPE is the gradient of a least-squares PLANE over an ~1 km window (the
+      scale of the <=100 ha HLU EPIC simulates), not a two-cell central
+      difference: at 45.25N 9.75E the point sits on an Adda river-terrace scarp
+      where the 180 m difference reads 7.3% for a field on the flat Po plain.
+      The China branch keeps its central difference so the Changchun reference
+      run stays reproducible.
+    discovered_during: "gdhy_maize_povalley_2026_08_10"
+    tags: ["site", "SIT", "elevation", "slope", "DEM", "MERIT", "global", "silent"]
+
+  - id: EPIC_032
+    category: management_schedule
+    severity: critical
+    silent: true
+    error: |
+      A run configured with `--irrigation auto` produces IRGA = 0.000 mm in
+      every .ACY year and a yield byte-identical to the dryland run, and the
+      .OUT MANAGEMENT DATA block still says "DRYLAND AGRICULTURE".
+      EPICCONT.DAT row 2 is also visibly corrupted afterwards:
+        before  "   0    1   0   0   0    1   0   0   0   0   2 ..."
+        after   "   0    1   0   0   0    1   0   0     2 0   2 ...    0    0    0"
+    diagnosis: |
+      SUPERSEDES item (3) of EPIC_019, which had the file right but the
+      conclusion wrong. EPICCONT.DAT does NOT hold the irrigation flag at all --
+      sweeping every one of its row-2 integers leaves the .OUT echo at "DRYLAND
+      AGRICULTURE" (verified 2026-08-10, 21 runs of the binary). EPIC's
+      irrigation switch is TWO fields in TWO other files:
+        * IRR = the FIRST integer of the flag line at the end of <run>.SIT.
+          Method codes read off the .OUT echo by sweeping the field:
+            0 DRYLAND / 1 SPRINKLER / 2 FURROW / 3 IRRIGATION WITH FERT ADDED /
+            4 AUTOMATIC (BIG GUN FROM LAGOON) / 5 DRIP.
+        * OPV3 on the PLANTING row of <run>.OPC = the automatic-irrigation
+          trigger (plant water-stress factor). With IRR in 1/2/3/5 and OPV3 = 0
+          the .OUT reads "USER SPECIFIED IRRIGATION" and EPIC waits for
+          scheduled irrigation operations a rainfed-built .OPC does not contain,
+          so IRGA stays 0.000 -- silently still dryland.
+      configure_irrigation.py wrote a 5-char-wide integer into EPICCONT row 2:
+      wrong file, and the wrong field width, so it also shifted every flag after
+      position 7 and appended three spurious columns. docs/format_spec.yaml
+      compounded this by prescribing "use configure_irrigation.py which computes
+      the column index" as the fix for a mis-placed IRR flag.
+    remedy: |
+      configure_irrigation.py now sets .SIT IRR (preserving the I4 grid) AND the
+      .OPC OPV3 trigger (through edit_opc.set_auto_trigger -- do not
+      re-implement the fixed-width row writer), and no longer touches
+      EPICCONT.DAT. Modes: dryland/sprinkler/furrow/fertigation/lagoon/drip,
+      plus the back-compatible aliases auto -> sprinkler, auto_deficit ->
+      furrow, scheduled -> furrow with trigger 0. quickstart forwards
+      `--irrigation-trigger` (default 0.85). It must run AFTER build_opc, which
+      rewrites the .OPC from the template.
+      Verified at 45.25N 9.75E (Po Valley maize, NASA POWER 1984-1988):
+        dryland  IRGA 0.0 mm, WS 25-35 stress days, YLDG 7.70 t/ha dry (1984)
+        furrow   IRGA 200-400 mm/yr, WS 1.0, YLDG 10.25 t/ha dry (1984), ET
+                 468 -> 590 mm/yr.
+      NOTE on EPIC_019 remedy (1): "irrigation cannot help" is a MONSOON-site
+      statement (WS = 0 there). Check the .ACY WS column before repeating it --
+      at a Mediterranean/continental site WS is large and irrigation moves the
+      yield a lot.
+    discovered_during: "gdhy_maize_povalley_2026_08_10"
+    tags: ["irrigation", "IRR", "SIT", "OPV3", "OPC", "EPICCONT", "silent", "supersedes_EPIC_019"]

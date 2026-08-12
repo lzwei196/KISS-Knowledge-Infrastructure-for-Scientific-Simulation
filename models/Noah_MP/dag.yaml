@@ -1,0 +1,373 @@
+template_version: "3.5"
+
+identity:
+  model_id: "Noah-MP"
+  scientific_reference_version: "Noah-MP multi-physics community LSM (Niu et al. 2011 / He et al. 2023 NCAR/TN-575+STR v5.0 lineage; community code v5.2)"
+  implementation:
+    id: "noahmp-hrldas-v52"
+    version: "v5.2.0"
+    provenance: "Fortran 90/2008; NCAR/RAL community Noah-MP v5.2.0 run uncoupled through the HRLDAS offline column driver."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: ""
+  _reason: "NCAR/noahmp README points to LICENSE.txt (open-source community model) without naming an SPDX identifier in body text; not quoted verbatim."
+  repo_url: "https://github.com/NCAR/noahmp"
+
+boundary:
+  scope_in:
+    - "Column (1-D) land-surface biogeophysics: surface energy balance"
+    - "Surface and subsurface water balance; soil moisture (liquid + ice)"
+    - "Soil and snow-layer temperature; skin temperature"
+    - "Physical snowpack (up to 3 layers): accumulation, compaction, melt, albedo aging"
+    - "Canopy water interception and canopy energy/water exchange"
+    - "Groundwater / water-table dynamics (TOPMODEL- and MMF-based)"
+    - "Runoff generation (surface and subsurface/baseflow)"
+    - "Short-term leaf phenology, photosynthesis and CO2 flux (dynamic vegetation / crop on)"
+  scope_out:
+    - "Atmosphere is not simulated in offline mode — near-surface forcing must be supplied"
+    - "Lateral / river routing is not part of the LSM (handed to WRF-Hydro/NWM, CaMa-Flood)"
+    - "BVOC and CH4 flux modules present but untested / under development"
+  spatial: "1-D column"
+  temporal: "sub-hourly"
+  closure: "both"
+  notes: "Mass-balance (water) and energy-balance closure are checked per column each timestep (BalanceWaterInit/Check, BalanceEnergyCheck; legacy ERROR subroutine). Each grid cell is solved as an independent 1-D soil-vegetation-atmosphere column with no lateral exchange between columns; gridded application is a stack of independent columns. Lower thermal boundary (TBOT) is applied at a fixed depth (~8 m); total soil-layer thickness must not exceed 7.5 m."
+
+inputs:
+  forcing:
+    - {category: forcing, name: "T2D (air temperature at reference height)", unit: "K", source_kind: forcing, model_input_format: "LDASIN NetCDF, one file per forcing timestep (YYYYMMDDHH.LDASIN_DOMAIN1)", notes: "Physical valid range [200,340] K; Tetens/Magnus saturation-vapor-pressure terms are evaluated directly on this field."}
+    - {category: forcing, name: "Q2D (specific humidity at reference height)", unit: "kg/kg", source_kind: forcing, model_input_format: "LDASIN NetCDF", notes: "Specific humidity, NOT relative humidity; typical 0.001-0.025, physical ceiling ~0.04."}
+    - {category: forcing, name: "U2D (zonal wind component)", unit: "m/s", source_kind: forcing, model_input_format: "LDASIN NetCDF"}
+    - {category: forcing, name: "V2D (meridional wind component)", unit: "m/s", source_kind: forcing, model_input_format: "LDASIN NetCDF"}
+    - {category: forcing, name: "PSFC (surface pressure)", unit: "Pa", source_kind: forcing, model_input_format: "LDASIN NetCDF", notes: "Sets air density P/(R*T); scales all turbulent fluxes."}
+    - {category: forcing, name: "LWDOWN (downward longwave radiation)", unit: "W/m2", source_kind: forcing, model_input_format: "LDASIN NetCDF"}
+    - {category: forcing, name: "SWDOWN (downward shortwave radiation)", unit: "W/m2", source_kind: forcing, model_input_format: "LDASIN NetCDF", notes: "Model does not internally clip to >=0; negative interpolation artifacts act as an energy sink."}
+    - {category: forcing, name: "RAINRATE (precipitation rate)", unit: "mm/s (= kg/m2/s)", source_kind: forcing, model_input_format: "LDASIN NetCDF", notes: "Internally partitioned into rain/snow (OPT_SNF); rate units are mm/s, not mm/hr."}
+  parameters:
+    - {category: parameter, name: "SMCMAX (porosity / saturated soil moisture)", unit: "m3/m3", source_kind: dataset_lookup, model_input_format: "NoahmpTable.TBL soil section", notes: "Per soil-texture class; must satisfy SMCMAX > SMCREF > SMCWLT > 0."}
+    - {category: parameter, name: "DKSAT (saturated hydraulic conductivity)", unit: "m/s", source_kind: dataset_lookup, model_input_format: "NoahmpTable.TBL soil section", notes: "Controls infiltration vs runoff partitioning; ~1e-7..1e-4 m/s."}
+    - {category: parameter, name: "BEXP (Clapp-Hornberger pore-size exponent)", unit: "-", source_kind: dataset_lookup, model_input_format: "NoahmpTable.TBL soil section"}
+    - {category: parameter, name: "SMCWLT (wilting point)", unit: "m3/m3", source_kind: dataset_lookup, model_input_format: "NoahmpTable.TBL soil section"}
+    - {category: parameter, name: "MFSNO (snowmelt curve parameter)", unit: "-", source_kind: calibrated, model_input_format: "NoahmpTable.TBL"}
+    - {category: parameter, name: "VCMX25 (max carboxylation rate at 25C)", unit: "umol/m2/s", source_kind: calibrated, model_input_format: "NoahmpTable.TBL vegetation section"}
+    - {category: parameter, name: "CWPVT (canopy wind extinction parameter)", unit: "-", source_kind: calibrated, model_input_format: "NoahmpTable.TBL vegetation section"}
+    - {category: parameter, name: "ISLTYP (soil-type index)", unit: "class index 1-19", source_kind: dataset_lookup, model_input_format: "HRLDAS setup NetCDF 2-D field", notes: "STATSGO/STAS texture; selects the soil-parameter row; 14=Water cells skipped, 15=Bedrock."}
+    - {category: parameter, name: "IVGTYP (vegetation-type index)", unit: "class index", source_kind: dataset_lookup, model_input_format: "HRLDAS setup NetCDF 2-D field", notes: "Class set depends on MMINLU (USGS 27-class vs MODIFIED_IGBP_MODIS_NOAH 20-class)."}
+    - {category: parameter, name: "VEGFRA (green vegetation fraction)", unit: "% (0-100)", source_kind: dataset_lookup, model_input_format: "HRLDAS setup NetCDF 2-D field (or 12-month climatology)", notes: "Percent, not 0-1 fraction; driver only divides by 100 when max>1."}
+    - {category: parameter, name: "TMN/TBOT (deep-soil annual-mean temperature, lower BC)", unit: "K", source_kind: dataset_lookup, model_input_format: "HRLDAS setup NetCDF 2-D field", notes: "Lower thermal boundary condition held constant at the column base."}
+    - {category: parameter, name: "Soil-layer geometry ZSOIL / DZS (interface depths and thicknesses)", unit: "m", source_kind: user_provided, model_input_format: "namelist.hrldas soil_thick_input (NSOIL values)", notes: "ZSOIL negative downward (e.g. -0.1/-0.4/-1.0/-2.0); DZS positive; NSOIL must equal the count of thickness values."}
+  initial_conditions:
+    - {category: initial_condition, name: "SMOIS (initial volumetric soil moisture per layer)", unit: "m3/m3", source_kind: user_provided, model_input_format: "HRLDAS setup NetCDF 3-D field or restart", notes: "Cold-start default ~0.50-0.75*SMCMAX (docs: 60% saturation); must lie between SMCWLT and SMCMAX. 3-5 yr spinup recommended."}
+    - {category: initial_condition, name: "TSLB (initial soil temperature per layer)", unit: "K", source_kind: user_provided, model_input_format: "HRLDAS setup NetCDF 3-D field or restart"}
+    - {category: initial_condition, name: "TSK (initial skin temperature)", unit: "K", source_kind: user_provided, model_input_format: "HRLDAS setup NetCDF 2-D field"}
+    - {category: initial_condition, name: "SNOW / SNOWH (initial SWE and snow depth)", unit: "mm / m", source_kind: user_provided, model_input_format: "HRLDAS setup NetCDF 2-D field"}
+    - {category: initial_condition, name: "CANWAT (initial canopy intercepted water)", unit: "mm", source_kind: user_provided, model_input_format: "HRLDAS setup NetCDF 2-D field"}
+    - {category: initial_condition, name: "Aquifer storage / water-table (WA, ZWT)", unit: "mm / m", source_kind: default, model_input_format: "restart or arbitrary-init default", notes: "Cold-start default aquifer ~4900 mm (~2.5 m water table)."}
+  boundary_conditions:
+    - {category: boundary_condition, name: "dynamic_veg_option (DVEG)", unit: "switch 1-7", source_kind: user_provided, model_input_format: "namelist.hrldas &NOAHLSM_OFFLINE", notes: "Vegetation dynamics / LAI source; default 4."}
+    - {category: boundary_condition, name: "canopy_stomatal_resistance_option (OPT_CRS)", unit: "switch 1-2", source_kind: user_provided, model_input_format: "namelist.hrldas", notes: "Ball-Berry (1) vs Jarvis (2); must be 1 when dynamic vegetation is on."}
+    - {category: boundary_condition, name: "btr_option (OPT_BTR, soil-moisture stress)", unit: "switch 1-3", source_kind: user_provided, model_input_format: "namelist.hrldas", notes: "Noah / CLM / SSiB stress formulation."}
+    - {category: boundary_condition, name: "surface_runoff_option (OPT_RUN surface)", unit: "switch 1-8", source_kind: user_provided, model_input_format: "namelist.hrldas", notes: "SIMGM/SIMTOP/Schaake96/BATS/VIC/Xinanjiang; very high sensitivity."}
+    - {category: boundary_condition, name: "subsurface_runoff_option (baseflow scheme)", unit: "switch 1-6", source_kind: user_provided, model_input_format: "namelist.hrldas"}
+    - {category: boundary_condition, name: "surface_drag_option (OPT_SFC)", unit: "switch 1-2", source_kind: user_provided, model_input_format: "namelist.hrldas", notes: "Monin-Obukhov vs Chen97 exchange coefficient."}
+    - {category: boundary_condition, name: "frozen_soil_option (OPT_FRZ/INF)", unit: "switch 1-2", source_kind: user_provided, model_input_format: "namelist.hrldas"}
+    - {category: boundary_condition, name: "radiative_transfer_option (OPT_RAD)", unit: "switch 1-3", source_kind: user_provided, model_input_format: "namelist.hrldas"}
+    - {category: boundary_condition, name: "snow_albedo_option (OPT_ALB)", unit: "switch 1-3", source_kind: user_provided, model_input_format: "namelist.hrldas", notes: "BATS / CLASS / SNICAR; SNICAR (3) needs optics files."}
+    - {category: boundary_condition, name: "pcp_partition_option (OPT_SNF, rain/snow split)", unit: "switch 1-4", source_kind: user_provided, model_input_format: "namelist.hrldas"}
+    - {category: boundary_condition, name: "crop_option / irrigation_option / tile_drainage_option / wetland_option", unit: "switch (0=off)", source_kind: user_provided, model_input_format: "namelist.hrldas", notes: "Activate optional crop, irrigation, tile-drainage, wetland modules."}
+    - {category: boundary_condition, name: "MMINLU land-use classification choice", unit: "string (USGS | MODIFIED_IGBP_MODIS_NOAH)", source_kind: user_provided, model_input_format: "HRLDAS setup NetCDF global attribute", notes: "Must match the section used in NoahmpTable.TBL."}
+    - {category: boundary_condition, name: "Time control (noah_timestep, forcing_timestep, output_timestep, NSOIL, khour/kday)", unit: "s / count", source_kind: user_provided, model_input_format: "namelist.hrldas", notes: "forcing_timestep and output_timestep must be integer multiples of noah_timestep (default 900 s)."}
+
+processes:
+  modules:
+    - {name: "ProcessAtmosForcing", role: "process_solver", brief: "Prepares reference-height atmospheric state and partitions precipitation into rain/snow (OPT_SNF) each timestep."}
+    - {name: "GeneralInit", role: "integrator", brief: "Per-timestep state preparation: recomputes snow-layer indexing (ISNOW), layer thicknesses and frozen fractions, and clamps/re-derives prognostic state before physics."}
+    - {name: "PhenologyMain", role: "process_solver", brief: "Leaf/stem area index and growing season from temperature and dynamic-vegetation logic; feeds canopy radiation and stomatal conductance."}
+    - {name: "CanopyWaterIntercept", role: "process_solver", brief: "Canopy rain/snow interception, throughfall, drip, dew/frost and advected precipitation heat to canopy/ground."}
+    - {name: "EnergyMain", role: "process_solver", brief: "Surface energy balance: aerodynamic/stomatal resistances and separate vegetated and bare-ground sensible/latent/ground heat fluxes; drives soil/snow temperature and phase change."}
+    - {name: "SurfaceRadiation", role: "process_solver", brief: "Two-stream sunlit/shaded canopy radiation transfer plus ground+snow albedo (BATS/CLASS/SNICAR); absorbed SW/PAR for photosynthesis (OPT_RAD/OPT_ALB)."}
+    - {name: "ResistanceCanopyStomata", role: "process_solver", brief: "Stomatal conductance and leaf photosynthesis (Ball-Berry / Jarvis) controlling transpiration demand and CO2 assimilation; modulated by soil-water stress BTRAN."}
+    - {name: "SoilSnowTemperatureMain", role: "process_solver", brief: "1-D thermal diffusion through the combined snow+soil column solved implicitly with a tridiagonal matrix solver, plus phase change."}
+    - {name: "WaterMain", role: "allocator", brief: "Dispatches canopy hydrology, snowpack hydrology, soil water, irrigation and wetland sub-solvers and aggregates water fluxes."}
+    - {name: "SnowWaterMain", role: "process_solver", brief: "Snow accumulation, compaction, layer combine/divide, meltwater percolation/refreeze, SWE/snow-depth update and SNICAR aerosol aging (up to 3 layers)."}
+    - {name: "SoilWaterMain", role: "process_solver", brief: "Richards-equation soil-water diffusion with tridiagonal moisture solver, infiltration, and surface runoff (1 of up to 8 schemes) plus subsurface runoff and optional tile drainage."}
+    - {name: "GroundWater", role: "process_solver", brief: "Unconfined aquifer / TOPMODEL or MMF water-table dynamics providing the lower boundary for the soil column and lateral/baseflow."}
+    - {name: "BiochemVegCrop", role: "optional_module", brief: "Dynamic-vegetation carbon allocation and explicit crop growth (GDD-driven, 5 crop types / 8 stages) producing LAI/biomass/grain and NEE/GPP/NPP.", applicability: "dynamic vegetation (DVEG) and/or crop_option=1"}
+    - {name: "Irrigation", role: "optional_module", brief: "Trigger-based irrigation split across sprinkler (canopy), micro and flood methods.", applicability: "irrigation_option>0"}
+    - {name: "BalanceErrorCheck", role: "integrator", brief: "Closes per-step water and energy budgets (BalanceWaterInit/Check, BalanceEnergyCheck) and flags imbalance."}
+  internal_edges:
+    - {from: "Inputs", to: "ProcessAtmosForcing", kind: "consumes_input", brief: "LDASIN forcing (SW/LW, T2D/Q2D/wind, PSFC, RAINRATE) read and partitioned into rain/snow."}
+    - {from: "GeneralInit", to: "TemperatureSoilSnow", kind: "writes_state", brief: "Re-derives snow-layer indexing and layer thicknesses, clamping handed-in state."}
+    - {from: "ProcessAtmosForcing", to: "CanopyWaterIntercept", kind: "invokes", brief: "Rain/snow flux delivered to the canopy."}
+    - {from: "PhenologyMain", to: "LeafAreaIndex", kind: "writes_state", brief: "Sets LAI/SAI (canopy optical depth)."}
+    - {from: "LeafAreaIndex", to: "SurfaceRadiation", kind: "reads_state", brief: "LAI/SAI set canopy radiation absorption."}
+    - {from: "SurfaceRadiation", to: "ResistanceCanopyStomata", kind: "invokes", brief: "Absorbed PAR (sunlit/shaded) drives photosynthesis and stomatal conductance."}
+    - {from: "SoilMoisture", to: "ResistanceCanopyStomata", kind: "reads_state", brief: "Soil-water stress (BTRAN) limits transpiration demand."}
+    - {from: "ResistanceCanopyStomata", to: "EnergyMain", kind: "produces_output", brief: "Stomatal conductance sets the transpiration term in the vegetated surface energy balance."}
+    - {from: "EnergyMain", to: "SoilSnowTemperatureMain", kind: "invokes", brief: "Ground heat flux is the upper BC for thermal diffusion."}
+    - {from: "SoilSnowTemperatureMain", to: "TemperatureSoilSnow", kind: "writes_state", brief: "Implicit tridiagonal solve updates snow+soil layer temperatures and phase change."}
+    - {from: "EnergyMain", to: "WaterMain", kind: "invokes", brief: "Energy solved first; melt and phase-change feed hydrology the same timestep."}
+    - {from: "TemperatureSoilSnow", to: "WaterMain", kind: "reads_state", brief: "Snow/soil temperatures and melt drive snowpack and soil-water phase change."}
+    - {from: "CanopyWaterIntercept", to: "CanopyLiqWater", kind: "writes_state", brief: "Interception updates canopy water store."}
+    - {from: "CanopyWaterIntercept", to: "SnowWaterMain", kind: "produces_output", brief: "Throughfall snowfall reaches the ground snowpack."}
+    - {from: "WaterMain", to: "SnowWaterMain", kind: "invokes", brief: "Snowpack hydrology sub-solver."}
+    - {from: "WaterMain", to: "SoilWaterMain", kind: "invokes", brief: "Soil-water sub-solver."}
+    - {from: "SnowWaterMain", to: "SnowWaterEquiv", kind: "writes_state", brief: "Updates SWE and snow depth."}
+    - {from: "SnowWaterMain", to: "SoilWaterMain", kind: "produces_output", brief: "Snowmelt+rain through the pack becomes soil-surface water input."}
+    - {from: "SoilWaterMain", to: "SoilMoisture", kind: "writes_state", brief: "Richards redistribution updates per-layer soil moisture."}
+    - {from: "GroundWater", to: "WaterTableDepth", kind: "writes_state", brief: "Aquifer / TOPMODEL update of water-table depth."}
+    - {from: "WaterTableDepth", to: "SoilWaterMain", kind: "reads_state", brief: "Water-table depth sets the soil-column lower boundary condition."}
+    - {from: "SoilWaterMain", to: "Outputs", kind: "produces_output", brief: "Surface and subsurface runoff (SFCRUNOFF, UDRUNOFF) emitted (accumulated)."}
+    - {from: "BiochemVegCrop", to: "LeafAreaIndex", kind: "writes_state", brief: "Carbon allocation updates leaf mass / LAI used next step."}
+    - {from: "Irrigation", to: "CanopyWaterIntercept", kind: "writes_state", brief: "Sprinkler water added before canopy interception."}
+    - {from: "EnergyMain", to: "Outputs", kind: "produces_output", brief: "Sensible/latent/ground heat fluxes and skin temperature emitted to LDASOUT."}
+    - {from: "EnergyMain", to: "BalanceErrorCheck", kind: "produces_output", brief: "Surface-energy-balance components checked for energy closure."}
+    - {from: "WaterMain", to: "BalanceErrorCheck", kind: "produces_output", brief: "All water fluxes summed for per-step mass-balance closure."}
+
+states:
+  variables:
+    - {name: "TemperatureSoilSnow", unit: "K", role: "prognostic"}
+    - {name: "SoilMoisture", unit: "m3/m3", role: "prognostic"}
+    - {name: "SoilLiqWater", unit: "m3/m3", role: "prognostic"}
+    - {name: "SoilIce", unit: "m3/m3", role: "prognostic"}
+    - {name: "TSK (skin/radiative surface temperature)", unit: "K", role: "prognostic"}
+    - {name: "TemperatureCanopy", unit: "K", role: "prognostic"}
+    - {name: "TemperatureGrd (ground temperature)", unit: "K", role: "prognostic"}
+    - {name: "TemperatureCanopyAir (TAH)", unit: "K", role: "prognostic"}
+    - {name: "VaporPresCanAir (EAH)", unit: "Pa", role: "prognostic"}
+    - {name: "SnowWaterEquiv", unit: "mm", role: "prognostic", notes: "Total snow water equivalent (SWE); SnowWaterEquivPrev carried across step."}
+    - {name: "SnowDepth", unit: "m", role: "prognostic"}
+    - {name: "SnowIce / SnowLiqWater (per snow layer)", unit: "mm", role: "prognostic"}
+    - {name: "CanopyLiqWater", unit: "mm", role: "prognostic"}
+    - {name: "CanopyIce", unit: "mm", role: "prognostic"}
+    - {name: "LeafAreaIndex", unit: "m2/m2", role: "prognostic"}
+    - {name: "StemAreaIndex (SAI)", unit: "m2/m2", role: "prognostic"}
+    - {name: "WaterTableDepth", unit: "m", role: "prognostic", notes: "Water-table depth (ZWT); MMF/TOPMODEL groundwater state."}
+    - {name: "AquiferStorage (WA)", unit: "mm", role: "prognostic"}
+    - {name: "SmcwtdXY (SMCWTD, soil moisture below water table)", unit: "m3/m3", role: "prognostic"}
+    - {name: "Carbon pools (LeafMass/StemMass/RootMass/WoodMass/StableCarbon/FastCarbon)", unit: "g/m2", role: "prognostic"}
+    - {name: "GrainMass / GrowDegreeDay / PlantGrowStage", unit: "g/m2 / degree-days / stage", role: "prognostic"}
+    - {name: "SnowCoverFrac (FSNO)", unit: "-", role: "diagnostic"}
+    - {name: "AlbedoSnowPrev (BATS/CLASS aging memory)", unit: "-", role: "prognostic"}
+  provenance: "populated"
+
+outputs:
+  - var: "LH"
+    validation_rank: 3
+    unit: "W/m2"
+    description: "Total latent heat flux (canopy evaporation + transpiration + soil evaporation), positive upward."
+    emitted_in: "LDASOUT NetCDF (YYYYMMDDHH00.LDASOUT_DOMAIN1)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Eddy-covariance tower fluxes carry energy-balance non-closure (~10-30%); column footprint vs tower footprint mismatch."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Gridded ET products (e.g. satellite/reanalysis) are themselves model-derived; treat as cross-validation, not ground truth."]
+      detrending_options: ["none"]
+  - var: "HFX"
+    validation_rank: 4
+    unit: "W/m2"
+    description: "Total sensible heat flux, positive upward."
+    emitted_in: "LDASOUT NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Tower energy-balance non-closure; sensible heat most sensitive to the surface-exchange scheme (OPT_SFC)."]
+      detrending_options: ["none"]
+  - var: "SMOIS"
+    validation_rank: 5
+    unit: "m3/m3"
+    description: "Volumetric soil moisture per layer (ice + liquid)."
+    emitted_in: "LDASOUT NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["In-situ probes sample a depth/support volume that rarely matches model layer interfaces; anomaly correlation often more meaningful than absolute magnitude."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Satellite retrievals sense only the top few cm; compare against the shallowest model layer."]
+      detrending_options: ["none", "linear_residual"]
+  - var: "TSK"
+    validation_rank: 6
+    unit: "K"
+    description: "Surface skin / radiative temperature."
+    emitted_in: "LDASOUT NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Satellite LST is clear-sky and instantaneous-overpass; emissivity assumptions affect comparison."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "SNEQV"
+    validation_rank: 7
+    unit: "mm"
+    description: "Snow water equivalent (total over up-to-3-layer snowpack)."
+    emitted_in: "LDASOUT NetCDF (also SNOW/SNOWH)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["SNOTEL/pillow point SWE vs grid-cell mean; timing of melt-out is a key diagnostic (MFSNO, snow albedo scheme)."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Gridded SWE products have large uncertainty in forest/complex terrain."]
+      detrending_options: ["none"]
+  - var: "SFCRUNOFF + UDRUNOFF (total runoff)"
+    validation_rank: 1
+    unit: "m (accumulated; mm/s instantaneous in some drivers)"
+    description: "Surface plus subsurface/baseflow runoff. Written as values ACCUMULATED since simulation start; incremental runoff = difference between consecutive output timesteps."
+    emitted_in: "LDASOUT NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Column runoff is NOT streamflow; comparison to gauged discharge requires an external routing model (WRF-Hydro, CaMa-Flood). Without routing only basin-aggregated water-balance closure is defensible."]
+      detrending_options: ["none"]
+  - var: "GPP / NEE"
+    validation_rank: 2
+    unit: "g C/m2/s (GPP) ; g CO2/m2/s (NEE)"
+    description: "Gross primary productivity and net ecosystem exchange (dynamic vegetation / crop on)."
+    emitted_in: "LDASOUT NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["FLUXNET NEE partitioning into GPP is itself model-assisted; only available when carbon/dynamic-veg physics is active."]
+      detrending_options: ["none"]
+  - var: "LAI"
+    validation_rank: 8
+    unit: "m2/m2"
+    description: "Leaf area index (prognostic when dynamic vegetation active; prescribed otherwise)."
+    emitted_in: "LDASOUT NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Only meaningful as an evaluation target when dynamic vegetation is on; with prescribed LAI it echoes the input."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - {from: "SMCMAX (porosity)", to: "LH", sensitivity_grade: HIGH, basis: literature_quantitative, lever_type: parameter, citations: ["cuntz2016_noahmp_hardcoded_sobol"]}
+    - {from: "SMCMAX (porosity)", to: "SFCRUNOFF + UDRUNOFF (total runoff)", sensitivity_grade: HIGH, basis: literature_quantitative, lever_type: parameter, citations: ["cuntz2016_noahmp_hardcoded_sobol"]}
+    - {from: "DKSAT (saturated hydraulic conductivity)", to: "SFCRUNOFF + UDRUNOFF (total runoff)", sensitivity_grade: HIGH, basis: literature_quantitative, lever_type: parameter, citations: ["cuntz2016_noahmp_hardcoded_sobol"]}
+    - {from: "BEXP (Clapp-Hornberger exponent)", to: "SMOIS", sensitivity_grade: HIGH, basis: literature_quantitative, lever_type: parameter, citations: ["arsenault2018_noahmp_dynveg_sensitivity", "cuntz2016_noahmp_hardcoded_sobol"]}
+    - {from: "BEXP (Clapp-Hornberger exponent)", to: "LH", sensitivity_grade: MEDIUM, basis: literature_quantitative, lever_type: parameter, citations: ["arsenault2018_noahmp_dynveg_sensitivity"]}
+    - {from: "SMCWLT (wilting point)", to: "SMOIS", sensitivity_grade: HIGH, basis: literature_quantitative, lever_type: parameter, citations: ["arsenault2018_noahmp_dynveg_sensitivity"]}
+    - {from: "SMCWLT (wilting point)", to: "LH", sensitivity_grade: MEDIUM, basis: literature_quantitative, lever_type: parameter, citations: ["arsenault2018_noahmp_dynveg_sensitivity"]}
+    - {from: "FXEXP (bare-soil evaporation exponent, hard-coded)", to: "LH", sensitivity_grade: MEDIUM, basis: literature_quantitative, lever_type: parameter, citations: ["cuntz2016_noahmp_hardcoded_sobol"]}
+    - {from: "VCMX25 (max carboxylation at 25C)", to: "LH", sensitivity_grade: HIGH, basis: literature_quantitative, lever_type: parameter, applicability: "dynamic vegetation on", citations: ["arsenault2018_noahmp_dynveg_sensitivity"]}
+    - {from: "VCMX25 (max carboxylation at 25C)", to: "GPP / NEE", sensitivity_grade: HIGH, basis: literature_quantitative, lever_type: parameter, applicability: "dynamic vegetation on", citations: ["arsenault2018_noahmp_dynveg_sensitivity"]}
+    - {from: "QE25 (quantum efficiency at 25C)", to: "GPP / NEE", sensitivity_grade: HIGH, basis: literature_quantitative, lever_type: parameter, applicability: "dynamic vegetation on", citations: ["arsenault2018_noahmp_dynveg_sensitivity"]}
+    - {from: "SLA (specific leaf area)", to: "LH", sensitivity_grade: MEDIUM, basis: literature_quantitative, lever_type: parameter, applicability: "dynamic vegetation on", citations: ["arsenault2018_noahmp_dynveg_sensitivity"]}
+    - {from: "LTOVRC (leaf turnover rate)", to: "LAI", sensitivity_grade: MEDIUM, basis: literature_quantitative, lever_type: parameter, applicability: "dynamic vegetation on", citations: ["arsenault2018_noahmp_dynveg_sensitivity"]}
+    - {from: "surface_runoff_option (OPT_RUN / runoff-groundwater scheme)", to: "LH", sensitivity_grade: HIGH, basis: literature_quantitative, lever_type: structural, citations: ["gan2019_noahmp_physics_uncertainty", "li2022_noahmp_global_scheme_eval"]}
+    - {from: "surface_runoff_option (OPT_RUN / runoff-groundwater scheme)", to: "SFCRUNOFF + UDRUNOFF (total runoff)", sensitivity_grade: HIGH, basis: literature_quantitative, lever_type: structural, citations: ["gan2019_noahmp_physics_uncertainty"]}
+    - {from: "surface_drag_option (OPT_SFC / surface-exchange scheme)", to: "HFX", sensitivity_grade: HIGH, basis: literature_quantitative, lever_type: structural, citations: ["gan2019_noahmp_physics_uncertainty", "li2022_noahmp_global_scheme_eval"]}
+    - {from: "radiative_transfer_option (OPT_RAD scheme)", to: "LH", sensitivity_grade: MEDIUM, basis: literature_quantitative, lever_type: structural, citations: ["gan2019_noahmp_physics_uncertainty", "li2022_noahmp_global_scheme_eval"]}
+    - {from: "btr_option (OPT_BTR / soil-moisture-stress scheme)", to: "LH", sensitivity_grade: MEDIUM, basis: literature_quantitative, lever_type: structural, citations: ["gan2019_noahmp_physics_uncertainty"]}
+  citation_index:
+    cuntz2016_noahmp_hardcoded_sobol:
+      short_citation: "Cuntz et al. 2016"
+      doi: "10.1002/2016JD025097"
+      note: "Sobol' GSA of 42 standard + 75 hard-coded Noah-MP parameters at 12 US catchments; SMCMAX single most sensitive for latent heat, runoff and LH share near-identical sensitivities."
+    arsenault2018_noahmp_dynveg_sensitivity:
+      short_citation: "Arsenault et al. 2018"
+      doi: "10.1175/JHM-D-17-0205.1"
+      note: "Sensitivity of SH/LH/soil-moisture/NEE to 43 parameters under three dynamic-vegetation configs; QE25, VCMX25, LTOVRC, SLA, SMCWLT, BEXP dominant."
+    gan2019_noahmp_physics_uncertainty:
+      short_citation: "Gan et al. 2019"
+      doi: "10.1029/2019WR024814"
+      note: "288 multi-physics experiments over 10 China hydrologic regions; RUN/SFC/RAD/BTR scheme choices dominate LH and SH variance."
+    li2022_noahmp_global_scheme_eval:
+      short_citation: "Li et al. 2022"
+      doi: "10.1029/2021JD035753"
+      note: "Global evaluation ranking runoff-groundwater, surface-exchange and radiation-transfer scheme options against energy/water flux observations."
+    wang2023_noahmp_uncertainty_quantification:
+      short_citation: "Wang et al. 2023"
+      doi: "10.1029/2023JD038556"
+      note: "Parametric and structural UQ over a grassland/sandy-soil site confirming strong spatial variability in parameter importance (context; no edge depends solely on it)."
+
+safety:
+  hazards:
+    - {id: "forcing_T2D_celsius_not_kelvin", kind: "weather_file_semantic", description: "T2D supplied in Celsius rather than Kelvin makes saturation-vapor-pressure terms underflow; NaN or ~0 K skin temperature.", severity: "fatal_or_silent"}
+    - {id: "forcing_RAINRATE_mm_per_hr", kind: "weather_file_semantic", description: "RAINRATE in mm/hr instead of mm/s (3600x high) instantly saturates the soil column and produces extreme runoff.", severity: "silent"}
+    - {id: "forcing_Q2D_relative_humidity", kind: "weather_file_semantic", description: "Q2D supplied as relative humidity (0-100%) instead of specific humidity (kg/kg) drives latent heat >1000 W/m2 and runaway ET.", severity: "silent"}
+    - {id: "forcing_SWDOWN_negative_interp", kind: "weather_file_semantic", description: "Negative SWDOWN from temporal interpolation acts as an energy sink (model does not internally clip); systematic cold bias.", severity: "silent"}
+    - {id: "forcing_PSFC_hPa_not_Pa", kind: "weather_file_semantic", description: "PSFC in hPa instead of Pa gives ~100x air-density error scaling all turbulent fluxes; Bowen ratio looks normal so error hides.", severity: "silent"}
+    - {id: "soil_geometry_ZSOIL_positive_sign", kind: "soil_semantic", description: "ZSOIL given positive instead of negative-downward corrupts layer ordering; soil solver array-bounds crash or inverted profiles.", severity: "fatal"}
+    - {id: "vegfra_fraction_not_percent", kind: "coefficient_runtime_silent_fallback", description: "VEGFRA as 0-1 fraction instead of 0-100 percent; driver only divides by 100 when max>1, so cells silently behave as bare soil.", severity: "silent"}
+    - {id: "mminlu_table_classification_mismatch", kind: "control_semantic", description: "MMINLU attribute in the setup file does not match the NoahmpTable.TBL section (USGS 27-class vs MODIS 20-class); wrong vegetation params per land cover.", severity: "silent"}
+    - {id: "forcing_timestep_not_multiple", kind: "control_semantic", description: "forcing_timestep not an integer multiple of noah_timestep causes forcing-read timing drift and periodic interpolation artifacts.", severity: "degraded"}
+    - {id: "soil_misclassified_all_sand", kind: "soil_semantic", description: "All cells classified Sand (ISLTYP=1, high DKSAT) so all precipitation infiltrates; zero surface runoff, baseflow index 1.0.", severity: "silent"}
+    - {id: "soil_misclassified_all_clay", kind: "soil_semantic", description: "All cells classified Clay (ISLTYP=12, very low DKSAT) so water pools at the surface; >90% Hortonian surface runoff.", severity: "silent"}
+    - {id: "soil_SMCMAX_too_high_no_stress", kind: "soil_semantic", description: "SMCMAX set too high for the texture keeps SMOIS above SMCREF; the BTRAN soil-moisture stress never triggers and ET runs systematically high.", severity: "silent"}
+    - {id: "forcing_LDASIN_sequence_gap", kind: "weather_file_semantic", description: "A missing file in the strictly-named LDASIN sequence causes an immediate read failure mid-run.", severity: "fatal"}
+    - {id: "setup_file_corrupt_dim_mismatch", kind: "control_semantic", description: "Corrupt or dimension-mismatched HRLDAS setup file (missing vars, grid mismatch with forcing) yields an immediate NetCDF/segfault with no output.", severity: "fatal"}
+    - {id: "forcing_out_of_range_solver_divergence", kind: "numerical_instability", description: "Out-of-range forcing (extreme temperature, negative pressure) drives division-by-zero/overflow and SIGFPE/NaN divergence in the energy-balance iteration.", severity: "fatal"}
+    - {id: "initial_condition_bad_isolated_cells", kind: "initial_condition_semantic", description: "Isolated cells with SMOIS>SMCMAX, TSK=0, or IVGTYP/ISLTYP=0 produce per-cell NaN while the driver continues on other cells.", severity: "silent"}
+  validation_limits:
+    - "Column 1-D model: no native lateral or river routing; gauged streamflow comparison requires an external routing model."
+    - "Multi-physics has 12+ option switches and thousands of combinations; only a limited subset is tested (Niu et al. 2011, Yang et al. 2011)."
+    - "BVOC flux module 'not tested'; CH4 flux module 'under development'; SBETA/FXEXP/SALP noted as not actually in use in some configurations."
+    - "Soil moisture requires 3-5 years of spinup to equilibrate before evaluation."
+    - "Total soil-layer thickness must not exceed 7.5 m (lower thermal BC TBOT applied at ~8.0 m)."
+    - "Water-body cells (ISLTYP=14) are skipped in the land-surface calculation."
+  warnings:
+    - "SFCRUNOFF and UDRUNOFF are written ACCUMULATED since simulation start; incremental runoff must be computed as the difference between consecutive output timesteps."
+    - "Changing the parameters of a scheme that is not the selected option has no effect (e.g. SIMGM runoff params are ignored when a Schaake scheme is active)."
+    - "OPT_CRS must be Ball-Berry (1) when dynamic vegetation (DVEG) is on."
+    - "REFKDT and CZIL strongly affect runoff partitioning and aerodynamic resistance respectively and are the primary calibration knobs there."
+    - "Noah-MP uses the triple point 273.16 K (not 273.15) as the phase-change reference, affecting every phase-change and supercooled-water calculation."
+  assumptions:
+    - statement: "Each grid cell is solved as an independent 1-D soil-vegetation-atmosphere column with no lateral exchange between columns."
+      scope: "all gridded applications"
+      source: "Noah-MP User's Guide v0 (Niu 2011), Sec. 1.0; HRLDAS column driver (module_NoahMP_hrldas_driver)"
+      status: "adopted"
+    - statement: "Water and energy budgets are closed per column each timestep (mass-balance for water; surface energy balance for fluxes)."
+      scope: "all runs"
+      source: "BalanceWaterInit/Check and BalanceEnergyCheck modules; legacy ERROR subroutine in the User's Guide"
+      status: "adopted"
+    - statement: "Phase-change / freezing reference temperature is the triple point 273.16 K."
+      scope: "all phase-change and supercooled-water calculations"
+      source: "ConstantDefineMod.F90 (ConstFreezePoint = 273.16 K)"
+      status: "adopted"
+    - statement: "The physical valid range for T2D is taken as [200,340] K for validation messaging, rather than the looser 180 K floor seen in some tooling limits."
+      scope: "forcing quality control"
+      source: "Noah-MP SKILL/configuration docs (T2D physical range)"
+      status: "tentative"
+    - statement: "This dag describes the single runnable HRLDAS offline column implementation of Noah-MP v5.2.0 (online WRF/MPAS/LIS couplings are out of scope for this binding)."
+      scope: "implementation identity"
+      source: "NCAR/noahmp v5.2 repository; HRLDAS offline driver entry points"
+      status: "adopted"

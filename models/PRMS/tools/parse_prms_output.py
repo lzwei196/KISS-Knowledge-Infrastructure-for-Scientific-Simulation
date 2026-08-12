@@ -128,9 +128,12 @@ def parse_csv_output(csv_path: str) -> pd.DataFrame:
     Expected format:
         Year,Month,Day,basin_potet,basin_actet,basin_ppt,...
     """
-    df = pd.read_csv(csv_path)
+    df = pd.read_csv(csv_path, skipinitialspace=True)
 
-    # Build date index
+    # PRMS writes column names with leading spaces (", basin_cfs"); normalize.
+    df.columns = [str(c).strip() for c in df.columns]
+
+    # Build date index.
     if all(c in df.columns for c in ["Year", "Month", "Day"]):
         df["date"] = pd.to_datetime(
             df[["Year", "Month", "Day"]].rename(
@@ -139,6 +142,23 @@ def parse_csv_output(csv_path: str) -> pd.DataFrame:
         )
         df = df.set_index("date")
         df = df.drop(columns=["Year", "Month", "Day"], errors="ignore")
+    else:
+        # PRMS basin_summary / prms_summary (csvON_OFF) write a single combined
+        # "Date" column formatted as YYYY-MM-DD, not separate Year/Month/Day.
+        # The first data row of prms_summary.csv is a units row ("year-month-day,
+        # inches/day,...") that must be dropped before datetime parsing.
+        date_col = next((c for c in df.columns
+                         if c.lower() in ("date", "year-month-day", "year_month_day")),
+                        None)
+        if date_col is not None:
+            parsed = pd.to_datetime(df[date_col], errors="coerce")
+            df = df.loc[parsed.notna()].copy()
+            df["date"] = parsed[parsed.notna()].values
+            df = df.set_index("date")
+            df = df.drop(columns=[date_col], errors="ignore")
+            # Remaining value columns may be strings (units row removed) — coerce.
+            for c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce")
 
     return df
 

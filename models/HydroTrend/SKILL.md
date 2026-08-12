@@ -340,3 +340,50 @@ ki/
 └── diagnostics/
     └── triplets.yaml                     # Failure diagnosis entries
 ```
+
+## Daily-Q gauge validation — domain limits (added 2026-06-21)
+
+HydroTrend's snow routine is a **lumped degree-day** model: basin-wide melt is
+released the instant air temperature crosses the melt point, with **no snowpack
+cold-content/ripening delay** and **no distributed-melt spreading**. It also has
+no frozen-soil infiltration or depression-storage / fill-and-spill routing.
+
+Consequence at **low-relief snowmelt-prairie / seasonal gauges** (e.g. HYDAT
+05EC005 Redwater R, AB, relief 135 m): the simulated freshet **leads observed by
+a constant ~6 days and is too broad**. Daily Pearson r is therefore capped near
+0.3 (verified: zero-lag r=0.287, but r=0.53 at +6-day lag), so NSE <= r^2 ~ 0.08
+regardless of magnitude calibration — even though mean/variance/peak match
+(PBIAS +8%, simmax~obsmax).
+
+**Validation guidance:** daily-Q-vs-gauge comparison is reliable only for
+nival or rainfall-dominated basins whose freshet timing is **channel-routing-
+controlled**. For low-relief prairie / cold-regions fill-and-spill basins,
+validate against **monthly or seasonal Q**, or against **annual suspended-
+sediment yield** (the model's design output) — not the daily gauge. Do not
+retry-tune a daily gauge here; the ceiling is structural to the C source.
+
+## Daily-Q on LARGE rainfall-dominated basins — route to attenuate (2026-06-23)
+
+For a large **rainfall-dominated lowland** basin the limiting factor is NOT
+melt timing but **peak attenuation**: the lumped model has only one smoothing
+mechanism — the channel travel-time lag in `hydrorain.c` (`distbins`), set by
+**basin length (line 28, km) ÷ mean river velocity (line 32, m/s)**. With the
+defaults (short length / fast velocity, ~3-day spread) storm peaks run 2–5×
+above a network-routed reference (GloFAS/LISFLOOD), giving negative NSE even
+after the mean is calibrated. **Increase L and/or lower v so the spread
+(~L/v ÷ 86400 days) matches the basin concentration time.** Verified on
+**Huai @ Wangjiaba (GloFAS dis24, 30,630 km²)**: `L=600 km, v=0.6 m/s`
+(~12-day spread) lifted pooled daily **NSE −0.96 → 0.73, r 0.56 → 0.86,
+KGE → 0.86, PBIAS 0.8%** across 2003/2007/2018/2020. Set the mean independently
+via evaporation (lines 26 dry-evap + 26b groundwater-ET α, mm/d) and add
+baseflow damping with a large groundwater store (line 33). See triplet ht_022.
+
+## Authoring HYDRO.IN (no generate_hydro_in.py tool exists)
+
+The Pipeline Stages table lists `generate_hydro_in.py` (Stage 3) but **no such
+tool ships** — assemble `{PREFIX}.IN` by adapting the shipped example
+(`source/repo/data/input/HYDRO.IN`) or a prior working run
+(`outputs/hydrotrend_*/HYDRO.IN`). Drive date-aligned daily validation by
+emitting a `{PREFIX}.CLIMATE` daily override with
+`convert_climate_to_hydrotrend.py --climate-out` (this replaces the stochastic
+weather generator — the only way to match an observed daily series by date).

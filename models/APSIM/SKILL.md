@@ -385,6 +385,69 @@ Common validation targets:
 - **LAI** (m²/m²): Peak LAI timing and magnitude
 - **Soil water** (mm): Profile soil water content over time
 
+### 8.1 Obs-shape selection - REQUIRED before computing any metric
+
+`dag.yaml` `outputs[Grain.Wt].observability.comparable_obs_shapes` declares THREE
+mutually exclusive comparison modes. Pick by the OBSERVATION's spatial support,
+not by the simulation's.
+
+| Obs example | obs_shape | comparison_mode | determining_metric | detrending_options |
+|---|---|---|---|---|
+| One field trial, one season | `point_snapshot` | `scalar_comparison` | `pbias` | `none` |
+| One field trial, many seasons | `point_time_series` | `time_series_comparison` | `pbias` | `none` |
+| GDHY / SPAM / FAOSTAT / any gridded, district or national yield | `regional_aggregate_time_series` | `aggregate_trend_comparison` | `pbias` | `none`, `linear_residual`, `decadal_mean` |
+
+**A 0.5-degree GDHY cell, a SPAM pixel, a district series and a national FAOSTAT
+series are ALL `regional_aggregate_time_series`.** They average thousands of
+fields and carry a secular technology/management trend that a
+constant-management, weather-driven point simulation cannot and must not
+reproduce. If `resolved_obs.granularity == "grid"`, or the obs is a statistical
+aggregate of any kind, the obs_shape is `regional_aggregate_time_series` - full
+stop. Declaring it `point_time_series` silently selects the wrong metric family.
+
+### 8.2 Mandatory detrending for `regional_aggregate_time_series`
+
+`ki_tools_common.metrics.all_metrics` alone (raw NSE / r / KGE) is **NOT** valid
+for this obs shape. Also call `ki_tools_common.metrics.trend_metrics(obs, sim)`
+(`metrics.py:492`), which implements the dag `trend_match` family with
+`linear_residual` detrending:
+
+python
+from ki_tools_common.metrics import all_metrics, trend_metrics
+m = all_metrics(obs, sim)           # magnitude_accuracy: PBIAS, RMSE
+m.update(trend_metrics(obs, sim))   # trend_match: r_detr, r_firstdiff, slope_ratio
+
+
+| Metric | Meaning | Good |
+|---|---|---|
+| `pbias` | determining metric; magnitude vs the aggregate | abs(PBIAS) < 15% |
+| `r_detr` | interannual skill after removing each series own linear trend | > 0.3 |
+| `r_firstdiff` | year-over-year change skill (trend-free by construction) | > 0.3 |
+| `slope_ratio` | sim trend / obs trend; near 0 is EXPECTED under constant management | report, do not score |
+| `r` (raw), `nse` | NOT skill metrics for this shape | report as `r_raw` for transparency only |
+
+**Do NOT truncate the record to a "management-consistent" sub-window in place of
+detrending.** Truncation is not one of the dag `detrending_options`, it discards
+data, and it moves PBIAS without removing the trend it was chosen to handle. A
+sub-window may be reported as an ADDITIONAL diagnostic, clearly labelled, never
+as a substitute.
+
+**Worked example (GDHY wheat, Balcarce AR, 1984-2016, n=33).** Raw `r = -0.19`
+looked like an anti-correlated model. `trend_metrics` on the SAME pairs gives
+`r_detr = +0.14`, `r_firstdiff = +0.33`, `slope_obs = +0.074 t/ha/yr`,
+`slope_sim = -0.042 t/ha/yr`. The negative raw r was entirely an artefact of the
+obs technology trend. The only real model finding is `pbias = +40.8%`, i.e. the
+attainable-vs-actual yield gap of triplet dt_019 - handle that with
+region-matched management (dt_019), not with a metric change.
+
+### 8.3 Calibration / validation split
+
+`period_calibration` and `period_validation` must be DISJOINT. Emitting the same
+window twice, so that `nse_val` is bit-identical to `nse_cal`, reports no
+independent information. For an uncalibrated forward run, either split the
+seasons into two disjoint periods or declare a single period and omit the
+`_cal` / `_val` fields.
+
 ## 9. File Structure
 
 ```

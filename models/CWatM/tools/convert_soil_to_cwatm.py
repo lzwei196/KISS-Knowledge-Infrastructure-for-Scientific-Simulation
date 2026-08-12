@@ -107,7 +107,104 @@ def validate_inputs(args):
         sys.exit(1)
 
 
-def read_hwsd_data(input_dir, bbox):
+def _read_hwsd_bil(input_dir, bbox, resolution=0.25):
+    """
+    Read HWSD raster (.bil or .img) + HWSD.mdb to extract texture classes.
+    Uses rasterio + mdbtools (mdb-export).  Resamples to target resolution.
+    """
+    import glob, subprocess, csv, io, rasterio
+    from rasterio.windows import from_bounds
+
+    lat_min, lat_max, lon_min, lon_max = bbox
+
+    # Find the raster file (.bil or .img)
+    raster_files = (
+        glob.glob(os.path.join(input_dir, "*.bil")) +
+        glob.glob(os.path.join(input_dir, "*.img")) +
+        glob.glob(os.path.join(input_dir, "hwsd.*"))
+    )
+    raster_path = next(
+        (f for f in raster_files if f.endswith(('.bil', '.img'))), None
+    )
+    if raster_path is None:
+        raise FileNotFoundError(f"No HWSD .bil/.img file found in {input_dir}")
+
+    # Locate HWSD.mdb (same dir, sibling dir, or known path)
+    mdb_candidates = (
+        glob.glob(os.path.join(input_dir, "*.mdb")) +
+        glob.glob(os.path.join(os.path.dirname(input_dir), "**", "*.mdb"), recursive=True) +
+        ["/media/server/hc_ssd/forcing/huaihe_raw/soil/HWSD.mdb"]
+    )
+    mdb_path = next((f for f in mdb_candidates if os.path.exists(f)), None)
+
+    # Build MU_GLOBAL → (T_USDA_TEX_CLASS, S_USDA_TEX_CLASS) lookup from MDB
+    mu_to_tex = {}
+    if mdb_path and os.path.exists(mdb_path):
+        try:
+            raw = subprocess.check_output(
+                ["mdb-export", mdb_path, "HWSD_DATA"], stderr=subprocess.DEVNULL
+            ).decode("utf-8", errors="replace")
+            reader = csv.DictReader(io.StringIO(raw))
+            for row in reader:
+                try:
+                    mu = int(float(row.get("MU_GLOBAL", 0)))
+                    t = int(float(row.get("T_USDA_TEX_CLASS") or 4))
+                    s = int(float(row.get("S_USDA_TEX_CLASS") or t))
+                    mu_to_tex[mu] = (t, s)
+                except (ValueError, TypeError):
+                    pass
+        except Exception:
+            pass  # Fall back to defaults if mdbtools unavailable
+
+    # Read HWSD raster, subset to bbox
+    with rasterio.open(raster_path) as src:
+        window = from_bounds(lon_min, lat_min, lon_max, lat_max, src.transform)
+        mu_data = src.read(1, window=window).astype(np.float32)
+        win_transform = src.window_transform(window)
+
+    # Build native grid coordinates (cell centres)
+    n_rows, n_cols = mu_data.shape
+    native_res = abs(win_transform.e)   # cell height in degrees
+    lons_native = win_transform.c + native_res * np.arange(n_cols) + native_res / 2
+    lats_native = win_transform.f - native_res * np.arange(n_rows) - native_res / 2
+
+    # Map MU_GLOBAL → texture code (1-12; default 4=Loam for unknowns)
+    tex_top_native = np.full_like(mu_data, 4, dtype=np.int32)
+    tex_sub_native = np.full_like(mu_data, 4, dtype=np.int32)
+    for mu, (tt, ts) in mu_to_tex.items():
+        mask = mu_data == mu
+        tex_top_native[mask] = tt
+        tex_sub_native[mask] = ts
+
+    # Resample to target resolution by majority vote (block average for texture codes)
+    out_lats = np.arange(lat_max - resolution / 2, lat_min, -resolution)
+    out_lons = np.arange(lon_min + resolution / 2, lon_max, resolution)
+    tex_top_out = np.full((len(out_lats), len(out_lons)), 4, dtype=np.int32)
+    tex_sub_out = np.full((len(out_lats), len(out_lons)), 4, dtype=np.int32)
+
+    for iy, lat_c in enumerate(out_lats):
+        for ix, lon_c in enumerate(out_lons):
+            r_min = np.searchsorted(np.sort(lats_native)[::-1][::-1], lat_c - resolution / 2)
+            r_max = np.searchsorted(np.sort(lats_native)[::-1][::-1], lat_c + resolution / 2)
+            c_min = np.searchsorted(lons_native, lon_c - resolution / 2)
+            c_max = np.searchsorted(lons_native, lon_c + resolution / 2)
+            lat_idx = np.where((lats_native >= lat_c - resolution / 2) & (lats_native < lat_c + resolution / 2))[0]
+            lon_idx = np.where((lons_native >= lon_c - resolution / 2) & (lons_native < lon_c + resolution / 2))[0]
+            if len(lat_idx) == 0 or len(lon_idx) == 0:
+                continue
+            block_t = tex_top_native[np.ix_(lat_idx, lon_idx)].flatten()
+            block_s = tex_sub_native[np.ix_(lat_idx, lon_idx)].flatten()
+            block_t = block_t[block_t > 0]
+            block_s = block_s[block_s > 0]
+            if len(block_t) > 0:
+                tex_top_out[iy, ix] = int(np.bincount(block_t).argmax())
+            if len(block_s) > 0:
+                tex_sub_out[iy, ix] = int(np.bincount(block_s).argmax())
+
+    return tex_top_out, tex_sub_out, out_lats, out_lons
+
+
+def read_hwsd_data(input_dir, bbox, resolution=0.25):
     """
     Read HWSD soil data and extract texture classes.
 
@@ -132,8 +229,13 @@ def read_hwsd_data(input_dir, bbox):
         tif_files = glob.glob(os.path.join(input_dir, "*texture*.tif"))
         if tif_files and gdal is not None:
             return _read_hwsd_tif(tif_files, bbox)
+        # Try BIL/IMG raster (HWSD global raster + HWSD.mdb via mdbtools)
+        bil_files = (glob.glob(os.path.join(input_dir, "*.bil")) +
+                     glob.glob(os.path.join(input_dir, "*.img")))
+        if bil_files:
+            return _read_hwsd_bil(input_dir, bbox, resolution=resolution)
         raise FileNotFoundError(
-            f"No HWSD NetCDF or GeoTIFF files found in {input_dir}"
+            f"No HWSD NetCDF, GeoTIFF, or BIL/IMG files found in {input_dir}"
         )
 
     ds = nc.Dataset(hwsd_files[0])
@@ -290,7 +392,7 @@ def convert_soil(args):
     results = {"status": "success", "files_created": [], "warnings": []}
 
     if args.source == "hwsd":
-        texture_top, texture_sub, lats, lons = read_hwsd_data(args.input_dir, args.bbox)
+        texture_top, texture_sub, lats, lons = read_hwsd_data(args.input_dir, args.bbox, resolution=args.resolution)
 
         # Layer 1: Topsoil (0-5 cm) — same as topsoil texture
         # Layer 2: Topsoil (5-30 cm) — same as topsoil texture

@@ -36,6 +36,7 @@ PLANT_TEMPLATES = {
         'pleaf0': -300.0,
         'rleaf0': 1.7e5,
         'rroot0': 3.3e5,
+        'root_fractions': [0.05, 0.10, 0.15, 0.18, 0.18, 0.15, 0.12, 0.05, 0.01, 0.01, 0.00],
         # Growth curve: (DOY, height, dchar, clump, biomass, LAI, rootdp)
         'growth': [
             (1,   0.05, 0.5, 1.0, 0.01, 0.1, 0.3),
@@ -124,49 +125,98 @@ PLANT_TEMPLATES = {
         ],
     },
     'conifer': {
+        # Korean Pine / Scots Pine — NE China evergreen needleleaf.
+        # LAI calibrated to 2.0-3.5 range (Korean Pine: Dai et al. 2004,
+        # Gower et al. 1997); JackPine BERMS validation used LAI=2.0.
+        # Previous template had LAI=5.5 (overestimate by ~100%).
         'itype': 1,
-        'pintrcp': 0.5,
-        'xangle': 2.0,
-        'canalb': 0.10,
-        'tccrit': -5.0,
-        'rstomo': 200.0,
+        'pintrcp': 0.5,    # conifers intercept 0.5 mm per unit LAI (needles)
+        'xangle': 1.0,     # random needle orientation
+        'canalb': 0.10,    # dark conifer albedo (JackPine validated: 0.10)
+        'tccrit': -5.0,    # evergreen: transpires to -5°C (JackPine validated)
+        'rstomo': 150.0,   # stomatal resistance (JackPine validated: 150 s/m)
         'rstexp': 5.0,
         'pleaf0': -300.0,
-        'rleaf0': 2.0e5,
-        'rroot0': 4.0e5,
-        # Evergreen: constant LAI with slight seasonal variation
+        'rleaf0': 6.7e5,   # JackPine validated
+        'rroot0': 1.7e6,   # JackPine validated
+        # Evergreen: slight seasonal LAI variation (new shoot growth in summer)
+        # Heights calibrated to Korean Pine 15-20 m in NE China
         'growth': [
-            (1,   10.0, 1.0, 0.6, 5.0, 4.0, 2.0),
-            (90,  10.0, 1.0, 0.6, 5.0, 4.0, 2.0),
-            (150, 10.0, 1.0, 0.6, 5.5, 5.0, 2.0),
-            (210, 10.0, 1.0, 0.6, 6.0, 5.5, 2.0),
-            (270, 10.0, 1.0, 0.6, 5.5, 5.0, 2.0),
-            (330, 10.0, 1.0, 0.6, 5.0, 4.0, 2.0),
-            (365, 10.0, 1.0, 0.6, 5.0, 4.0, 2.0),
+            (1,   15.0, 0.3, 0.7, 5.0, 2.0, 1.0),
+            (90,  15.0, 0.3, 0.7, 5.0, 2.0, 1.0),
+            (120, 15.0, 0.3, 0.7, 5.2, 2.5, 1.0),
+            (180, 15.0, 0.3, 0.7, 5.5, 3.0, 1.0),
+            (240, 15.0, 0.3, 0.7, 5.5, 3.0, 1.0),
+            (300, 15.0, 0.3, 0.7, 5.2, 2.5, 1.0),
+            (365, 15.0, 0.3, 0.7, 5.0, 2.0, 1.0),
         ],
+        # Root fractions for 11 soil nodes (0,2,5,10,15,20,30,50,60,90,120 cm)
+        # Evergreen conifer: moderately deep roots, concentrated in top 60 cm
+        'root_fractions': [0.02, 0.05, 0.10, 0.12, 0.15, 0.18, 0.20, 0.10, 0.05, 0.02, 0.01],
+    },
+    'dahurian_larch': {
+        # Dahurian Larch (Larix gmelinii) — dominant in Greater Khingan Mts.
+        # Deciduous NEEDLELEAF — unique: drops needles in autumn like broadleaf,
+        # but needle dimensions like conifer. MCANFLG=1 required (seasonal LAI).
+        # LAI peak 2.5-4.0 (He et al. 2012, Wirth et al. 1999).
+        # Transpires only in growing season (leaf-out ~DOY 110, senescence ~DOY 260).
+        'itype': 1,
+        'pintrcp': 0.4,    # deciduous larch: intermediate between conifer and broadleaf
+        'xangle': 1.0,     # random needle orientation
+        'canalb': 0.12,    # slightly higher than evergreen conifer (brighter needles)
+        'tccrit': 0.0,     # no transpiration when frozen (needles fully shed by Nov)
+        'rstomo': 120.0,   # larch stomatal resistance (lower than pine: Kelliher 1993)
+        'rstexp': 5.0,
+        'pleaf0': -200.0,
+        'rleaf0': 5.0e5,
+        'rroot0': 1.5e6,
+        # Growth curve: full leaf-off in winter, strong seasonal signal
+        # Height ~15 m for mature Dahurian Larch in NE China
+        'growth': [
+            (1,   15.0, 0.3, 0.7, 0.5, 0.0, 1.2),   # bare in winter
+            (100, 15.0, 0.3, 0.7, 0.5, 0.0, 1.2),   # still bare (cold spring)
+            (115, 15.0, 0.3, 0.7, 1.0, 0.5, 1.2),   # leaf-out
+            (140, 15.0, 0.3, 0.7, 2.0, 2.0, 1.2),   # rapid leaf development
+            (175, 15.0, 0.3, 0.7, 3.0, 3.5, 1.2),   # peak LAI
+            (220, 15.0, 0.3, 0.7, 3.0, 3.5, 1.2),   # full canopy
+            (255, 15.0, 0.3, 0.7, 2.5, 2.5, 1.2),   # early senescence
+            (275, 15.0, 0.3, 0.7, 1.5, 1.0, 1.2),   # rapid needle fall
+            (295, 15.0, 0.3, 0.7, 0.5, 0.0, 1.2),   # fully deciduous
+            (365, 15.0, 0.3, 0.7, 0.5, 0.0, 1.2),   # bare winter
+        ],
+        'root_fractions': [0.02, 0.05, 0.10, 0.15, 0.18, 0.18, 0.15, 0.10, 0.05, 0.01, 0.01],
     },
     'deciduous': {
+        # Mongolian Oak (Quercus mongolica) + White Birch (Betula platyphylla)
+        # — dominant deciduous broadleaf species in NE China (Changbai Mts, Khingan).
+        # LAI peak 4.5-6.0 (Zhang et al. 2006); height 15-25 m for mature stands.
+        # Stomatal resistance 150-250 s/m (oak higher, birch lower).
         'itype': 1,
-        'pintrcp': 0.5,
-        'xangle': 1.0,
-        'canalb': 0.18,
-        'tccrit': 0.0,
-        'rstomo': 200.0,
+        'pintrcp': 0.3,    # broadleaf: 0.3 mm/LAI (less interception per area than needles)
+        'xangle': 0.8,     # slightly horizontal broad leaves
+        'canalb': 0.18,    # deciduous broadleaf albedo
+        'tccrit': 0.0,     # no transpiration below 0°C
+        'rstomo': 200.0,   # oak/birch stomatal resistance (higher than larch)
         'rstexp': 5.0,
         'pleaf0': -200.0,
         'rleaf0': 2.5e5,
         'rroot0': 5.0e5,
+        # NE China deciduous broadleaf: leaf-out later than temperate (cold spring)
+        # Height calibrated to NE China mature hardwood stands: 18 m
         'growth': [
-            (1,   8.0, 3.0, 0.7, 0.5, 0.0, 2.0),
-            (100, 8.0, 3.0, 0.7, 0.5, 0.0, 2.0),
-            (120, 8.0, 3.0, 0.7, 1.0, 1.0, 2.0),
-            (150, 8.0, 3.0, 0.7, 3.0, 4.0, 2.0),
-            (200, 8.0, 3.0, 0.7, 4.0, 5.0, 2.0),
-            (250, 8.0, 3.0, 0.7, 3.5, 4.0, 2.0),
-            (280, 8.0, 3.0, 0.7, 2.0, 2.0, 2.0),
-            (310, 8.0, 3.0, 0.7, 0.5, 0.0, 2.0),
-            (365, 8.0, 3.0, 0.7, 0.5, 0.0, 2.0),
+            (1,   18.0, 3.0, 0.8, 0.5, 0.0, 1.5),   # bare in winter
+            (110, 18.0, 3.0, 0.8, 0.5, 0.0, 1.5),   # still bare
+            (125, 18.0, 3.0, 0.8, 1.5, 1.5, 1.5),   # leaf-out (late May)
+            (155, 18.0, 3.0, 0.8, 3.0, 4.0, 1.5),   # rapid growth
+            (195, 18.0, 3.0, 0.8, 4.5, 5.5, 1.5),   # peak LAI
+            (245, 18.0, 3.0, 0.8, 4.5, 5.5, 1.5),   # full canopy
+            (270, 18.0, 3.0, 0.8, 3.0, 3.0, 1.5),   # early senescence (Sep)
+            (295, 18.0, 3.0, 0.8, 1.0, 0.5, 1.5),   # leaf fall (Oct)
+            (310, 18.0, 3.0, 0.8, 0.5, 0.0, 1.5),   # fully bare
+            (365, 18.0, 3.0, 0.8, 0.5, 0.0, 1.5),   # bare winter
         ],
+        # Deeper roots than conifers: oak/birch tap deeper moisture reserves
+        'root_fractions': [0.02, 0.04, 0.08, 0.10, 0.12, 0.15, 0.18, 0.15, 0.10, 0.05, 0.01],
     },
     'sagebrush': {
         'itype': 1,
@@ -231,6 +281,14 @@ def adjust_phenology_for_latitude(growth_curve, lat):
 
     # Sort by DOY
     adjusted.sort(key=lambda x: x[0])
+
+    # SHAW requires the growth file to cover DOY 1 and DOY 365 exactly.
+    # Ensure first entry is DOY 1 and last is DOY 365.
+    if adjusted[0][0] > 1:
+        adjusted.insert(0, (1,) + adjusted[0][1:])
+    if adjusted[-1][0] < 365:
+        adjusted.append((365,) + adjusted[-1][1:])
+
     return adjusted
 
 
@@ -262,6 +320,8 @@ def main():
     parser.add_argument("--crop_type", type=str, required=True,
                         choices=list(PLANT_TEMPLATES.keys()),
                         help="Vegetation type")
+    parser.add_argument("--print_root_fractions", action="store_true",
+                        help="Print root distribution fractions for .sit file")
     parser.add_argument("--start_year", type=int, required=True)
     parser.add_argument("--end_year", type=int, required=True)
     parser.add_argument("--lat", type=float, default=45.0,
@@ -284,6 +344,10 @@ def main():
     print(f"  XANGLE: {template['xangle']}")
     print(f"  CANALB: {template['canalb']}")
     print(f"  RSTOMO: {template['rstomo']}")
+    if args.print_root_fractions and 'root_fractions' in template:
+        rf = template['root_fractions']
+        print(f"\nRoot fractions (for .sit after F1, MCANFLG=0 only):")
+        print("  " + "  ".join(f"{v:.2f}" for v in rf))
 
 
 if __name__ == "__main__":

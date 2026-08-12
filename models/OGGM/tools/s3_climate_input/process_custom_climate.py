@@ -62,9 +62,13 @@ def main():
         glacier_locations = []
 
         if per_glacier.exists():
-            for region_dir in per_glacier.iterdir():
-                if region_dir.is_dir():
-                    for gdir in region_dir.iterdir():
+            for region_dir in sorted(per_glacier.iterdir()):
+                if not region_dir.is_dir():
+                    continue
+                for sub_dir in sorted(region_dir.iterdir()):
+                    if not sub_dir.is_dir():
+                        continue
+                    for gdir in sorted(sub_dir.iterdir()):
                         if gdir.is_dir():
                             # Read glacier center coordinates from outlines
                             outline_files = list(gdir.glob("outlines.*"))

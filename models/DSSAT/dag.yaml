@@ -1,0 +1,899 @@
+template_version: "3.3"
+
+identity:
+  model_id: "DSSAT"
+  scientific_reference_version: "DSSAT 4.8.5 cropping-system shell (Jones et al. 2003 modular CSM architecture; Hoogenboom et al. 2019)"
+  implementation:
+    id: "dssat-csm-485"
+    version: "4.8.5 Build 41"
+    provenance: "DSSAT-CSM Fortran source build 41 from github.com/DSSAT/dssat-csm-os; CMake + gfortran/Intel IFort; binary dscsm048."
+  ki_class: "forward_model"
+  language: "fortran"
+  license: "BSD-3-Clause"
+  repo_url: "https://github.com/DSSAT/dssat-csm-os"
+
+boundary:
+  scope_in:
+    - "Daily simulation of crop growth, development, and yield for 45+ crops as a function of soil-plant-atmosphere dynamics"
+    - "Daily soil water balance across a multi-layer 1-D soil column (Ritchie cascading tipping-bucket)"
+    - "Daily soil nitrogen, phosphorus, potassium, and carbon balances with selectable SOM engine (CERES/Godwin or CENTURY/Parton)"
+    - "Genotype x Environment x Management (GxExM) interactions on a single homogeneous land unit"
+    - "Greenhouse gas emissions (N2O, CO2-C from SOM decomposition; CH4 for paddy rice)"
+  scope_out:
+    - "Lateral surface or subsurface hydrology / channel routing between fields"
+    - "Spatial / gridded simulation (no built-in spatial mode; one weather station + one soil profile per simulation)"
+    - "Sub-daily atmospheric forcing (model is forced at daily timestep; only specific processes like hourly canopy photosynthesis compute sub-daily internally)"
+    - "Closed surface energy budget at the canopy (default ET options are demand-side flux methods, not full energy closure)"
+  spatial: "1-D column"
+  temporal: "daily"
+  closure: "mass-balance"
+  notes: "Mass-balance closure applies to water, inorganic and organic N, P, K, and the C pools of the selected SOM engine across the soil column and plant. Default daily ET options (Ritchie/Priestley-Taylor/FAO-56 Penman-Monteith/ASCE) are demand-side flux calculations rather than a closed surface energy budget; canopy energy-balance closure appears only when the optional hourly canopy photosynthesis path (PHOTO=C / ETPHOT) is active. Some processes (radiation/temperature inside ETPHOT and PETPTH) discretize the day into 24 hourly steps internally."
+
+inputs:
+  forcing:
+    - {category: "weather", name: "SRAD (solar radiation)", unit: "MJ/m2/day", source_kind: "forcing", model_input_format: ".WTH FileW (DSSAT fixed-width)", notes: "Range-checked 0-100; <0.1 silently clamped to 0.1 with WARNING; W/m2 must be converted (x0.0864)."}
+    - {category: "weather", name: "TMAX (max air temperature)", unit: "deg C", source_kind: "forcing", model_input_format: ".WTH FileW", notes: "Must satisfy TMAX >= TMIN every day."}
+    - {category: "weather", name: "TMIN (min air temperature)", unit: "deg C", source_kind: "forcing", model_input_format: ".WTH FileW"}
+    - {category: "weather", name: "RAIN (precipitation)", unit: "mm/day", source_kind: "forcing", model_input_format: ".WTH FileW"}
+    - {category: "weather", name: "WIND", unit: "km/day", source_kind: "forcing", model_input_format: ".WTH FileW", notes: "Required if MEEVP=F (FAO-56 PM) or Z (ASCE); DSSAT expects km/day not m/s (x86.4)."}
+    - {category: "weather", name: "TDEW / DEWP (dew-point temperature)", unit: "deg C", source_kind: "forcing", model_input_format: ".WTH FileW", notes: "Required for FAO-56 PM and ASCE ET options."}
+    - {category: "weather", name: "RHUM (relative humidity)", unit: "%", source_kind: "forcing", model_input_format: ".WTH FileW"}
+    - {category: "weather", name: "PAR (photosynthetically active radiation)", unit: "moles/m2/day", source_kind: "forcing", model_input_format: ".WTH FileW"}
+    - {category: "atmospheric", name: "CO2 (atmospheric CO2 concentration)", unit: "ppm", source_kind: "forcing", model_input_format: "ICO2 switch selects M=measured CO2xxx.WDA per year, D=static default ~380 ppm, W=from .WTH file", notes: "Time-varying atmospheric driver; affects photosynthesis via CO2 fertilization."}
+  parameters:
+    - {category: "soil_surface", name: "SALB (bare/dry surface albedo)", unit: "fraction", source_kind: "calibrated", model_input_format: ".SOL profile header"}
+    - {category: "soil_surface", name: "SLU1 (stage-1 soil evaporation upper limit U)", unit: "mm", source_kind: "calibrated", model_input_format: ".SOL profile header"}
+    - {category: "soil_surface", name: "SLDR (drainage rate SWCON)", unit: "fraction/day", source_kind: "calibrated", model_input_format: ".SOL profile header"}
+    - {category: "soil_surface", name: "SLRO (SCS runoff curve number CN)", unit: "dimensionless", source_kind: "calibrated", model_input_format: ".SOL profile header"}
+    - {category: "soil_surface", name: "SLNF (N mineralization factor)", unit: "fraction", source_kind: "calibrated", model_input_format: ".SOL profile header", notes: "Silently clamped to 1.0 if outside [0,1]."}
+    - {category: "soil_surface", name: "SLPF (photosynthesis/growth factor)", unit: "fraction", source_kind: "calibrated", model_input_format: ".SOL profile header"}
+    - {category: "soil_layer", name: "SLB (layer bottom depth)", unit: "cm", source_kind: "dataset_lookup", model_input_format: ".SOL per-layer", notes: "Strictly monotonic; max NL=20 layers; layer 1 top fixed at 0 cm."}
+    - {category: "soil_layer", name: "SLLL (lower limit / wilting point LL)", unit: "cm3/cm3", source_kind: "calibrated", model_input_format: ".SOL per-layer"}
+    - {category: "soil_layer", name: "SDUL (drained upper limit / field capacity DUL)", unit: "cm3/cm3", source_kind: "calibrated", model_input_format: ".SOL per-layer"}
+    - {category: "soil_layer", name: "SSAT (saturated water content SAT)", unit: "cm3/cm3", source_kind: "calibrated", model_input_format: ".SOL per-layer", notes: "Must satisfy SLLL < SDUL < SSAT in every layer."}
+    - {category: "soil_layer", name: "SRGF (relative root growth factor)", unit: "fraction", source_kind: "calibrated", model_input_format: ".SOL per-layer"}
+    - {category: "soil_layer", name: "SSKS (saturated hydraulic conductivity)", unit: "cm/hr", source_kind: "calibrated", model_input_format: ".SOL per-layer"}
+    - {category: "soil_layer", name: "SBDM (bulk density)", unit: "g/cm3", source_kind: "dataset_lookup", model_input_format: ".SOL per-layer"}
+    - {category: "soil_layer", name: "SLOC (organic carbon)", unit: "%", source_kind: "dataset_lookup", model_input_format: ".SOL per-layer"}
+    - {category: "soil_layer", name: "SLCL/SLSI/SLCF (clay/silt/coarse-fragment fractions)", unit: "%", source_kind: "dataset_lookup", model_input_format: ".SOL per-layer"}
+    - {category: "soil_layer", name: "SLNI (total N)", unit: "%", source_kind: "dataset_lookup", model_input_format: ".SOL per-layer"}
+    - {category: "soil_layer", name: "SLHW/SLHB (pH in water / buffer)", unit: "pH units", source_kind: "dataset_lookup", model_input_format: ".SOL per-layer"}
+    - {category: "soil_layer", name: "SCEC (cation exchange capacity)", unit: "cmol/kg", source_kind: "dataset_lookup", model_input_format: ".SOL per-layer"}
+    - {category: "weather_climatology", name: "TAV (annual mean air temperature)", unit: "deg C", source_kind: "calibrated", model_input_format: ".WTH station header", notes: "Defaults silently to 20 deg C if missing/<=0; controls soil temperature seasonality."}
+    - {category: "weather_climatology", name: "AMP / TAMP (annual amplitude of monthly mean T)", unit: "deg C", source_kind: "calibrated", model_input_format: ".WTH station header", notes: "Defaults silently to 5 deg C if missing/<=0."}
+    - {category: "weather_station", name: "LAT, LONG, ELEV, REFHT, WNDHT (station geometry)", unit: "degrees / m", source_kind: "dataset_lookup", model_input_format: ".WTH station header"}
+    - {category: "cultivar", name: "CERES grain coefficients (e.g., P1, P2/P2O, P2R, P5, G1, G2, G3, PHINT, P1D, P1V, VEFF, THOT)", unit: "mixed (GDD, hours, GDD/h, count, g, dimensionless)", source_kind: "calibrated", model_input_format: ".CUL (e.g., MZCER048.CUL, WHCER048.CUL, RICER048.CUL)", notes: "Range bounds in .SPE MINIMA/MAXIMA are documentation only; out-of-range values run silently."}
+    - {category: "cultivar", name: "CROPGRO photothermal coefficients (CSDL, PPSEN, EM-FL, FL-SD, SD-PM, LFMAX, SLAVR, WTPSD, etc.)", unit: "mixed (h, 1/h, photothermal days, mg CO2/m2/s, cm2/g, g)", source_kind: "calibrated", model_input_format: ".CUL (e.g., SBGRO048.CUL)"}
+    - {category: "ecotype", name: "Ecotype coefficients", unit: "mixed", source_kind: "calibrated", model_input_format: ".ECO (e.g., SBGRO048.ECO; not used for some CERES crops like rice)"}
+    - {category: "species", name: "Species coefficients (cardinal temperatures, RUE, partitioning rules, MINIMA/MAXIMA bounds)", unit: "mixed", source_kind: "calibrated", model_input_format: ".SPE (e.g., MZCER048.SPE)"}
+  initial_conditions:
+    - {category: "soil_state", name: "SH2O (initial volumetric soil water by layer)", unit: "cm3/cm3", source_kind: "user_provided", model_input_format: "FileX *INITIAL CONDITIONS layer fields (ICBL must match .SOL SLB)", notes: "Silently clamped to [LL, SAT] at initialization."}
+    - {category: "soil_state", name: "SNO3 (initial soil nitrate by layer)", unit: "ppm", source_kind: "user_provided", model_input_format: "FileX *INITIAL CONDITIONS layer fields", notes: "Defaults to 0.1 ppm when ISWNIT=N; no upper bound enforced; unit confusion (kg/ha vs ppm) silently inflates yield."}
+    - {category: "soil_state", name: "SNH4 (initial soil ammonium by layer)", unit: "ppm", source_kind: "user_provided", model_input_format: "FileX *INITIAL CONDITIONS layer fields"}
+    - {category: "residue_state", name: "ICRES (initial surface residue mass)", unit: "kg/ha", source_kind: "user_provided", model_input_format: "FileX *INITIAL CONDITIONS header"}
+    - {category: "residue_state", name: "ICREN, ICREP, ICRIP, ICRID (residue %N, %P, % incorporated, incorporation depth)", unit: "% / cm", source_kind: "user_provided", model_input_format: "FileX *INITIAL CONDITIONS header"}
+    - {category: "legacy_crop", name: "PCR (previous crop code)", unit: "2-char code", source_kind: "user_provided", model_input_format: "FileX *INITIAL CONDITIONS header"}
+    - {category: "soil_state", name: "ICRT, ICND, ICRN, ICRE (initial root weight, nodules, root N, root growth params)", unit: "kg/ha / mixed", source_kind: "user_provided", model_input_format: "FileX *INITIAL CONDITIONS header"}
+    - {category: "soil_state", name: "ICWD (water-table depth)", unit: "cm (-99 if none)", source_kind: "user_provided", model_input_format: "FileX *INITIAL CONDITIONS header"}
+    - {category: "soil_state", name: "ICDAT (initial-conditions date)", unit: "YYDDD Julian", source_kind: "user_provided", model_input_format: "FileX *INITIAL CONDITIONS header", notes: "Must be <= SDATE."}
+  boundary_conditions:
+    - {category: "control", name: "SDATE (simulation start date)", unit: "YYDDD Julian", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS GENERAL", notes: "Must satisfy SDATE <= PDATE (earliest management event)."}
+    - {category: "control", name: "NYERS (number of simulated years)", unit: "count", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS GENERAL"}
+    - {category: "control", name: "SMODEL (8-char crop model identifier)", unit: "code", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS GENERAL", notes: "Blank defaults to DSSATPRO mapping; wrong code silently misinterprets cultivar coefficients."}
+    - {category: "control_switch", name: "WATER, NITRO, SYMBI, PHOSP, POTAS, DISES, CHEM, TILL (process toggles ISWWAT/ISWNIT/ISWSYM/ISWPHO/ISWPOT/ISWDIS/ISWCHE/ISWTIL)", unit: "Y/N", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS OPTIONS", notes: "WATER=N forces NITRO and PHOSP to N; SYMBI valid only for legumes."}
+    - {category: "method_switch", name: "MEEVP / EVAPO (ET method)", unit: "code (R/P/F/Z/D/M/H/T)", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS METHODS", notes: "R=Ritchie (default), P=Priestley-Taylor, F=FAO-56 Penman-Monteith, Z=ASCE."}
+    - {category: "method_switch", name: "MESEV (soil evaporation method)", unit: "code (S/R)", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS METHODS", notes: "S=Suleiman-Ritchie (recommended); R=old Ritchie two-stage (code default when section absent)."}
+    - {category: "method_switch", name: "MEINF / INFIL (infiltration method)", unit: "code (S/N/R)", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS METHODS"}
+    - {category: "method_switch", name: "MEPHO / PHOTO (photosynthesis method)", unit: "code (L/C/R)", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS METHODS", notes: "L=leaf-level daily (required for CROPGRO crops), C=hourly canopy (ETPHOT), R=RUE radiation-use-efficiency (CERES default)."}
+    - {category: "method_switch", name: "MEHYD / HYDRO (hydrology method)", unit: "code (R)", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS METHODS"}
+    - {category: "method_switch", name: "MESOM (SOM engine)", unit: "code (G/P)", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS METHODS", notes: "G=Godwin/CERES single-pool; P=Parton/Century multi-pool (requires mesic spin-up)."}
+    - {category: "method_switch", name: "MESOL (soil-layer redistribution)", unit: "code (1/2/3)", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS METHODS"}
+    - {category: "method_switch", name: "METMP (soil temperature method)", unit: "code (D/E)", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS METHODS", notes: "D=DSSAT-Kimball improved (v4.8+); E=EPIC."}
+    - {category: "method_switch", name: "MEGHG (greenhouse-gas method)", unit: "code (0/1)", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS METHODS", notes: "0=DSSAT original denitrification; 1=DayCent N2O."}
+    - {category: "method_switch", name: "MEWTH / WTHER (weather source)", unit: "code (M/G/S)", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS METHODS"}
+    - {category: "method_switch", name: "ICO2 (CO2 source switch)", unit: "code (M/D/W)", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS METHODS"}
+    - {category: "method_switch", name: "INCON (initial-conditions source)", unit: "code (M/S)", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS METHODS"}
+    - {category: "method_switch", name: "NSWIT (N routine selector)", unit: "code (1)", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS METHODS"}
+    - {category: "management_mode", name: "IPLTI, IIRRI, IFERI, IHARI (planting/irrigation/fertilizer/harvest mode: R reported, A automatic, N none, F/D variants)", unit: "code", source_kind: "user_provided", model_input_format: "FileX *SIMULATION CONTROLS MANAGEMENT"}
+    - {category: "management_planting", name: "PDATE (planting date)", unit: "YYDDD Julian", source_kind: "user_provided", model_input_format: "FileX *PLANTING DETAILS"}
+    - {category: "management_planting", name: "PPOP (plant population)", unit: "plants/m2", source_kind: "user_provided", model_input_format: "FileX *PLANTING DETAILS"}
+    - {category: "management_planting", name: "PLRS (row spacing)", unit: "cm", source_kind: "user_provided", model_input_format: "FileX *PLANTING DETAILS"}
+    - {category: "management_planting", name: "PLDP (planting depth)", unit: "cm", source_kind: "user_provided", model_input_format: "FileX *PLANTING DETAILS"}
+    - {category: "management_planting", name: "INGENO (cultivar code)", unit: "6-char code", source_kind: "user_provided", model_input_format: "FileX *CULTIVARS (must match VAR# in .CUL for selected crop model)"}
+    - {category: "management_irrigation", name: "Irrigation events {IDATE, IRVAL amount, IROP method, EFIR efficiency}", unit: "YYDDD / mm / code / fraction", source_kind: "user_provided", model_input_format: "FileX *IRRIGATION AND WATER MANAGEMENT"}
+    - {category: "management_fertilizer", name: "Fertilizer events {FDATE, FAMN N rate, FAMP P rate, FAMK K rate, FMCD method code, FDEP depth}", unit: "YYDDD / kg/ha / code / cm", source_kind: "user_provided", model_input_format: "FileX *FERTILIZERS (INORGANIC)", notes: "Invalid FMCD silently reset to '001' broadcast."}
+    - {category: "management_residue", name: "Organic-residue events", unit: "mixed", source_kind: "user_provided", model_input_format: "FileX *RESIDUES"}
+    - {category: "management_tillage", name: "Tillage events", unit: "mixed", source_kind: "user_provided", model_input_format: "FileX *TILLAGE"}
+    - {category: "management_chemical", name: "Chemical/pesticide events", unit: "mixed", source_kind: "user_provided", model_input_format: "FileX *CHEMICAL"}
+    - {category: "management_harvest", name: "Harvest events {HDATE, HPC harvest %, HBPC by-product %, HSTG harvest stage}", unit: "YYDDD / %", source_kind: "user_provided", model_input_format: "FileX *HARVEST"}
+    - {category: "management_auto", name: "Automatic-management thresholds (PWDINF/PWDINL window, soil-moisture/temperature criteria, irrigation/fertilizer triggers)", unit: "mixed", source_kind: "user_provided", model_input_format: "FileX @AUTOMATIC MANAGEMENT"}
+    - {category: "linkage", name: "WSTA (4-char weather-station code linking to .WTH)", unit: "code", source_kind: "user_provided", model_input_format: "FileX *FIELDS"}
+    - {category: "linkage", name: "ID_SOIL (10-char soil-profile code linking to .SOL pedon)", unit: "code", source_kind: "user_provided", model_input_format: "FileX *FIELDS", notes: "SLNO='-99' or blank silently substitutes a 1-layer generic default soil."}
+
+processes:
+  modules:
+    - {name: "CSM (driver)", role: "driver", brief: "Top-level PROGRAM CSM in CSM_Main/CSM.for. Parses runlist, reads FileX, opens FILEIO, loops over treatments and DYNAMIC phases."}
+    - {name: "LAND (sequencer)", role: "driver", brief: "CSM_Main/LAND.for orchestrates the daily state machine WEATHR -> SOIL -> SPAM -> PLANT -> MGMTOPS across DYNAMIC phases RUNINIT, SEASINIT, RATE, INTEGR, OUTPUT, SEASEND, ENDRUN."}
+    - {name: "WEATHR", role: "driver", brief: "Weather/weathr.for reads observed .WTH (IPWTH) or generates stochastic weather (WGEN); computes hourly fluxes (HMET, SOLAR); applies WTHMOD adjustments; sets CO2 (CO2VAL)."}
+    - {name: "Phenology (PHENOL / crop-specific variants MZ_PHENOL, IpPhenol)", role: "process_solver", brief: "Tracks thermal-time / GDD accumulation, daylength, vernalization; advances VSTAGE, RSTAGE, EDAT, ADAT, MDAT."}
+    - {name: "CROPGRO", role: "process_solver", brief: "Plant/CROPGRO/CROPGRO.for. Leaf-level CO2/light/N/water-limited photosynthesis (PHOTO=L), DEMAND-driven C/N partitioning (DEMAND, MOBIL), cohort-based PODS/SDCOMP, RESPIR maintenance/growth respiration; legumes, vegetables, fiber crops, perennial forages.", applicability: "CROPGRO crops only (soybean, peanut, cotton, dry bean, tomato, etc.)"}
+    - {name: "CERES (CERES-Maize MZCER, CERES-Wheat WHCER, CERES-Rice RICER, CERES-Sorghum SGCER, CERES-Millet MLCER, CERES-Barley BACER, CERES-Sugarbeet BSCER)", role: "process_solver", brief: "Radiation-use-efficiency (RUE) biomass accumulation; staged grain filling (MZ_GROSUB, RI_GROSUB); root growth (MZ_ROOTS); N balance (MZ_NFACTO, MZ_NUPTAK).", applicability: "CERES grain cereals"}
+    - {name: "IXIM (MZIXM)", role: "process_solver", brief: "Alternative maize growth engine (more mechanistic canopy than CERES-Maize).", applicability: "MODEL=MZIXM048"}
+    - {name: "CropSim / APSIM-Wheat (CSCER, WHCRP, WHAPS)", role: "process_solver", brief: "Alternative wheat/barley templates."}
+    - {name: "SUBSTOR (PTSUB, TR_SUBSTOR)", role: "process_solver", brief: "Tuber crops (potato, taniers).", applicability: "Tuber crops"}
+    - {name: "Specialized crop engines (CANEGRO, CASUPRO, SAMUCA, CSYCA/CSCAS, ALOHA, TEFF, AROIDS, Forage)", role: "process_solver", brief: "Sugarcane, cassava, pineapple, tef, root crops, forages."}
+    - {name: "WATBAL (Ritchie cascading soil water)", role: "process_solver", brief: "Soil/SoilWater/WATBAL.for. Daily tipping-bucket water balance with DUL/LL/SAT/SWCON; runoff via SCS curve number (RNOFF); infiltration (INFIL S/N=SCS or R=Ritchie); saturated drainage (SATFLO); tile drainage; water table; capillary fringe upward flow. Writes SWDELTS."}
+    - {name: "SPAM (Soil-Plant-Atmosphere)", role: "process_solver", brief: "SPAM/SPAM.for. Computes potential ET via PET dispatcher (PETPT/PETPEN/PETASCE/PETDYN/PETPNO/PETMEY/PETPTH), partitions EO into EOS soil evaporation (PSE + SOILEV or ESR_SoilEvap two-stage) and EOP transpiration (TRANS), invokes root water uptake (ROOTWU), computes soil temperature (STEMP / STEMP_EPIC), mulch and flood evaporation."}
+    - {name: "ETPHOT", role: "optional_module", brief: "Hourly canopy photosynthesis and energy balance for PHOTO=C path; supplies EOP to SPAM with sub-daily resolution.", applicability: "MEPHO=C"}
+    - {name: "SoilNi (inorganic N)", role: "process_solver", brief: "Soil/Inorganic_N. Nitrification, denitrification, NH4/NO3 transport, urea hydrolysis, oxidized-layer dynamics for paddy (OXLAYER); NFLUX, EQUIL2."}
+    - {name: "SoilOrg / CENTURY (alternative SOM engines)", role: "process_solver", brief: "Soil/CERES_OrganicMatter/SoilOrg.for (Godwin/Jones single-pool) vs Soil/CENTURY_OrganicMatter/CENTURY.for (Parton three-pool). Both decompose litter, mineralize N/P/C, write SoilOrg.OUT/SOMLITC.OUT.", applicability: "MESOM=G selects Godwin; MESOM=P selects Century"}
+    - {name: "SoilPi / SoilKi (inorganic P, K)", role: "optional_module", brief: "Sorption, mineralization, plant-available pool dynamics for P and K.", applicability: "ISWPHO=Y for P; ISWPOT=Y for K"}
+    - {name: "FloodN / Paddy_Mgmt", role: "optional_module", brief: "Flood-water layer state (FLOOD, FLOODWAT), paddy N dynamics in floodwater, auto-irrigation to maintain bund depth.", applicability: "Paddy rice"}
+    - {name: "GHG (Greenhouse-gas module)", role: "optional_module", brief: "Methane (CH4) emissions from paddy; N2O emissions from soil; writes GHG.OUT.", applicability: "MEGHG=1 enables DayCent N2O; CH4 enabled for paddy"}
+    - {name: "Mulch", role: "optional_module", brief: "Surface-mulch layer state (MULCHMASS, MULCHWAT, MULCHALB); evaporation and decay; coupled to SPAM (MULCH_EVAP) and WATBAL (initial abstraction)."}
+    - {name: "Symbiotic N fixation (SYMBI / NFIX)", role: "optional_module", brief: "Daily N fixation NFIXN; cumulative NFXM; legumes only.", applicability: "ISWSYM=Y and legume crop"}
+    - {name: "Disease / Chemical / Tillage modules (DISES, CHEM, TILL)", role: "optional_module", brief: "Optional perturbations on plant, soil, and management state."}
+    - {name: "MGMTOPS (management driver)", role: "driver", brief: "Management/MgmtOps.for orchestrates planting (AUTPLT), harvest (AUTHAR), irrigation (IRRIG, PADDY_MGMT, Flood_Irrig), fertilizer placement (Fert_Place), tillage (TILLAGE), organic-matter placement (OM_Place), chemicals (Chemical)."}
+    - {name: "LAND/SEQ integrator (INTEGR phase)", role: "integrator", brief: "Inside LAND.for INTEGR: integrates SW(L) = SW(L) + SWDELTS(L) + SWDELTU(L) + SWDELTX(L) per layer, updates plant DM pools from daily increments, advances DAS/DAP and soil temperature."}
+    - {name: "OPSUM / OPVIEW / OPHARV (output aggregators)", role: "integrator", brief: "Utilities/OPSUM.for + OPVIEW.for plus crop-specific OPHARV. Aggregate end-of-season scalars (HWAM yield, ADAT, MDAT, CWAM, GNAM, ETCM, ROCM) and emit Summary.OUT and Overview.OUT."}
+  internal_edges:
+    - {from: "CSM", to: "LAND", kind: "invokes", brief: "PROGRAM CSM calls LAND once per RUNINIT/SEASINIT and once per simulated day."}
+    - {from: "LAND", to: "WEATHR", kind: "invokes", brief: "Daily first call; supplies SRAD/TMAX/TMIN/RAIN/TDEW/WINDSP/CO2 via the WEATHER type."}
+    - {from: "WEATHR", to: "SPAM", kind: "produces_output", brief: "Daily weather drives PET and ET partitioning."}
+    - {from: "WEATHR", to: "Phenology (PHENOL / crop-specific variants MZ_PHENOL, IpPhenol)", kind: "produces_output", brief: "TMAX/TMIN drive thermal-time accumulator and photoperiod calculation."}
+    - {from: "WEATHR", to: "WATBAL (Ritchie cascading soil water)", kind: "consumes_input", brief: "RAIN drives infiltration and runoff."}
+    - {from: "LAND", to: "SOIL", kind: "invokes", brief: "Daily call; SOIL dispatches to SOILDYN, WATBAL, CENTURY or SoilOrg, SoilNi, SoilPi, SoilKi."}
+    - {from: "LAND", to: "MGMTOPS (management driver)", kind: "invokes", brief: "Daily call after PLANT; MGMTOPS dispatches planting (AUTPLT), irrigation (IRRIG/PADDY_MGMT), fertilizer placement (Fert_Place), tillage (TILLAGE), organic-matter placement (OM_Place), chemicals (Chemical), and harvest (AUTHAR)."}
+    - {from: "WATBAL (Ritchie cascading soil water)", to: "SW (soil water state)", kind: "writes_state", brief: "Computes SWDELTS(NL) - drainage + infiltration + redistribution - added to SW in INTEGR phase."}
+    - {from: "WATBAL (Ritchie cascading soil water)", to: "WINF (water available for infiltration)", kind: "writes_state", brief: "Williams-SCS curve-number RNOFF inside WATBAL determines RUNOFF; WINF = RAIN + irrigation - RUNOFF passed to INFIL; initial-abstraction ratio capped at 0.6."}
+    - {from: "Mulch", to: "WATBAL (Ritchie cascading soil water)", kind: "reads_state", brief: "Mulch state modifies initial abstraction in RNOFF."}
+    - {from: "SOIL", to: "SPAM", kind: "produces_output", brief: "SOILPROP (BD, DUL, LL, SAT, OC, SWCN) and ST passed to SPAM for ET partitioning and root uptake."}
+    - {from: "LAND", to: "SPAM", kind: "invokes", brief: "After SOIL; SPAM consumes EORATIO, KSEVAP, KTRANS, RLV, XHLAI from PLANT (previous-day state)."}
+    - {from: "SPAM", to: "ETPHOT", kind: "invokes", brief: "Sub-daily canopy energy balance and photosynthesis path."}
+    - {from: "SPAM", to: "EO (potential evapotranspiration)", kind: "writes_state", brief: "PET dispatch (Ritchie/Priestley-Taylor/FAO-56 PM/ASCE) produces EO; ET_ALB silently overridden to 0.05 when FLOOD>0."}
+    - {from: "SPAM", to: "EOS (potential soil evaporation)", kind: "writes_state", brief: "PSE partitions EO into EOS using XLAI and KSEVAP; SOILEV / ESR_SoilEvap computes ES with two-stage soil evaporation limited by SLU1."}
+    - {from: "SPAM", to: "EOP (potential transpiration)", kind: "writes_state", brief: "TRANS computes potential transpiration EOP; actual EP capped at MIN(EOP, TRWUP*10) where TRWUP is potential root uptake."}
+    - {from: "SPAM", to: "RWU(NL), TRWUP, TRWU (potential and actual root water uptake)", kind: "writes_state", brief: "ROOTWU computes per-layer potential root water uptake from RLV, SW, LL, SAT, PORMIN, RWUMX."}
+    - {from: "SW(NL) (volumetric soil water content per layer)", to: "SWFAC, TURFAC (water stress on photosynthesis / expansion)", kind: "writes_state", brief: "SWFAC reduces photosynthesis below threshold; TURFAC reduces expansive growth earlier (expansion more water-sensitive)."}
+    - {from: "LAND", to: "PLANT", kind: "invokes", brief: "Daily call; PLANT dispatches to CROPGRO / CERES variant / SUBSTOR / specialized engine per MODEL code."}
+    - {from: "PLANT", to: "CROPGRO", kind: "invokes", brief: "Dispatch when MODEL is a CROPGRO crop code (e.g., CRGRO048 for soybean, peanut, cotton, dry bean, tomato)."}
+    - {from: "PLANT", to: "CERES (CERES-Maize MZCER, CERES-Wheat WHCER, CERES-Rice RICER, CERES-Sorghum SGCER, CERES-Millet MLCER, CERES-Barley BACER, CERES-Sugarbeet BSCER)", kind: "invokes", brief: "Dispatch for CERES grain-cereal MODEL codes (MZCER048, WHCER048, RICER048, SGCER048, MLCER048, BACER048, BSCER048)."}
+    - {from: "PLANT", to: "SUBSTOR (PTSUB, TR_SUBSTOR)", kind: "invokes", brief: "Dispatch for tuber-crop MODEL codes (PTSUB048 potato, TRSUB taniers)."}
+    - {from: "PLANT", to: "IXIM (MZIXM)", kind: "invokes", brief: "Dispatch when MODEL=MZIXM048 (alternative maize, more mechanistic canopy than CERES-Maize)."}
+    - {from: "PLANT", to: "CropSim / APSIM-Wheat (CSCER, WHCRP, WHAPS)", kind: "invokes", brief: "Dispatch for CSCER048/WHCRP048/WHAPS048 wheat/barley templates."}
+    - {from: "PLANT", to: "Specialized crop engines (CANEGRO, CASUPRO, SAMUCA, CSYCA/CSCAS, ALOHA, TEFF, AROIDS, Forage)", kind: "invokes", brief: "Dispatch for CANEGRO/CASUPRO/SAMUCA (sugarcane), CSYCA/CSCAS (cassava), ALOHA (pineapple), TEFF (tef), AROIDS (root crops), Forage by MODEL code."}
+    - {from: "Phenology (PHENOL / crop-specific variants MZ_PHENOL, IpPhenol)", to: "C/N partitioning", kind: "produces_output", brief: "After ADAT partitioning shifts to grain; grain-filling duration controlled by P5; HIAM accumulates."}
+    - {from: "PLANT", to: "PG (gross photosynthesis)", kind: "writes_state", brief: "Daily gross assimilation computed via either the PHOTO=R RUE path (SRAD x RUE x f(XHLAI)) or the PHOTO=L leaf-level CROPGRO path; SRAD supplied by WEATHR and XHLAI is the previous-day PLANT state."}
+    - {from: "PG (gross photosynthesis)", to: "WTLF, STMWT, RTWT, SDWT, PODWT (leaf/stem/root/seed/pod dry weights)", kind: "writes_state", brief: "Daily DM accumulation = PG x (1 - respiration losses) multiplicatively scaled by stress factors SWFAC, NSTRES, KSTRES, PSTRS1; allocated to organ pools by partitioning rules."}
+    - {from: "CROPGRO", to: "WTLF, STMWT, RTWT, SDWT, PODWT (leaf/stem/root/seed/pod dry weights)", kind: "writes_state", brief: "GROW updates dry-weight pools each INTEGR call."}
+    - {from: "CROPGRO", to: "RLV(NL) (root length density)", kind: "writes_state", brief: "ROOTS distributes root growth to RLV(NL); consumed next day by ROOTWU."}
+    - {from: "PLANT", to: "XLAI / XHLAI (total / healthy leaf area index)", kind: "produces_output", brief: "Leaf area state fed back to SPAM for next-day energy partition."}
+    - {from: "SoilNi (inorganic N)", to: "PLANT", kind: "produces_output", brief: "Available NH4/NO3 per layer consumed by crop N uptake routines (NUPTAK / MZ_NUPTAK)."}
+    - {from: "PLANT", to: "NSTRES (nitrogen stress factor)", kind: "writes_state", brief: "NSTRES = N_supply / N_demand computed from plant N demand vs SoilNi-supplied uptake; <1 reduces growth."}
+    - {from: "NSTRES (nitrogen stress factor)", to: "PG (gross photosynthesis)", kind: "reads_state", brief: "Feedback into PHOTO and DEMAND partitioning."}
+    - {from: "SoilOrg / CENTURY (alternative SOM engines)", to: "SoilNi (inorganic N)", kind: "writes_state", brief: "Surface residue (ICRES) plus SOM pool decomposition drive mineralization; MESOM=G (Godwin) or P (Century) selects pool structure; T-sensitive via soil temperature."}
+    - {from: "ST(NL) (soil temperature per layer)", to: "SoilOrg / CENTURY (alternative SOM engines)", kind: "reads_state", brief: "Soil-T (METMP=D Kimball-improved or E EPIC) modulates SOM decomposition and nitrification rates; soil-T pool itself is initialized from TAV+TAMP at SEASINIT."}
+    - {from: "WEATHR", to: "ST(NL) (soil temperature per layer)", kind: "consumes_input", brief: "Station-header TAV (annual mean) and TAMP (annual amplitude) set the seasonal soil-T profile at SEASINIT before STEMP/STEMP_EPIC begins daily updates."}
+    - {from: "Symbiotic N fixation (SYMBI / NFIX)", to: "WTNFX (cumulative N fixation)", kind: "writes_state", brief: "Daily NFIXN accumulated to NFXM; gated by legume crop AND ISWSYM=Y - non-legumes force the switch off regardless of FileX setting."}
+    - {from: "MGMTOPS (management driver)", to: "SoilNi (inorganic N)", kind: "writes_state", brief: "Fert_Place adds NH4/NO3/Urea to soil-layer pools at scheduled FERT events; FDEP and FMCD control depth/method."}
+    - {from: "MGMTOPS (management driver)", to: "WINF (water available for infiltration)", kind: "writes_state", brief: "IRRIG irrigation amount added to daily WINF before RNOFF/INFIL."}
+    - {from: "MGMTOPS (management driver)", to: "FLOOD (floodwater depth)", kind: "writes_state", brief: "PADDY_MGMT auto-irrigation maintains paddy bund depth via FLOODWAT; can override IRRIG when CROP=RI."}
+    - {from: "SoilOrg / CENTURY (alternative SOM engines)", to: "SoilNi (inorganic N)", kind: "writes_state", brief: "Mineralization writes NH4 source term to inorganic N pools."}
+    - {from: "PLANT", to: "Summary.OUT yield (HWAM/HWAH/HIAM)", kind: "produces_output", brief: "End-of-season harvest scalars written through OPSUM/OPHARV."}
+    - {from: "WEATHR", to: "PG (gross photosynthesis)", kind: "consumes_input", brief: "ICO2 switch routes CO2 source (M=measured CO2xxx.WDA, D=static ~380 ppm, W=from .WTH) into CO2VAL, which modulates photosynthesis (CO2 fertilization) and transpiration efficiency."}
+    - {from: "PLANT", to: "PlantGro.OUT / PlantN.OUT / PlantC.OUT", kind: "produces_output", brief: "Daily plant-state scalars written via Opgrow."}
+    - {from: "WATBAL (Ritchie cascading soil water)", to: "SoilWat.OUT", kind: "produces_output", brief: "Daily soil-water output (SWXD, SWTD, per-layer SW)."}
+    - {from: "SoilNi (inorganic N)", to: "SoilNi.OUT", kind: "produces_output", brief: "Daily inorganic-N output (NH4D, NO3D per layer)."}
+    - {from: "LAND (sequencer)", to: "OPSUM / OPVIEW / OPHARV (output aggregators)", kind: "invokes", brief: "SEASEND phase aggregates SUMVALS registrations from all modules into Summary.OUT and Overview.OUT."}
+
+states:
+  variables:
+    - {name: "YRDOY (current simulation date, YYYYDDD)", unit: "Julian", role: "diagnostic"}
+    - {name: "DAS (days after simulation start)", unit: "days", role: "accumulator"}
+    - {name: "DAP (days after planting)", unit: "days", role: "accumulator"}
+    - {name: "DYNAMIC (state-machine phase: RUNINIT/SEASINIT/RATE/INTEGR/OUTPUT/SEASEND/ENDRUN)", unit: "enum", role: "diagnostic"}
+    - {name: "SW(NL) (volumetric soil water content per layer)", unit: "cm3/cm3", role: "prognostic"}
+    - {name: "SWDELTS(NL) (water-balance increment from WATBAL)", unit: "cm3/cm3/d", role: "diagnostic"}
+    - {name: "SWDELTU(NL) (unsaturated-flow increment)", unit: "cm3/cm3/d", role: "diagnostic"}
+    - {name: "SWDELTX(NL) (ET-driven increment from SPAM)", unit: "cm3/cm3/d", role: "diagnostic"}
+    - {name: "ST(NL) (soil temperature per layer)", unit: "deg C", role: "prognostic"}
+    - {name: "SRFTEMP (surface soil temperature)", unit: "deg C", role: "prognostic"}
+    - {name: "NH4(NL) (per-layer ammonium pool)", unit: "ppm", role: "prognostic"}
+    - {name: "NO3(NL) (per-layer nitrate pool)", unit: "ppm", role: "prognostic"}
+    - {name: "FLOOD (floodwater depth)", unit: "mm", role: "prognostic"}
+    - {name: "MULCH (mulch state: mass, cover, water, albedo)", unit: "mixed", role: "prognostic"}
+    - {name: "WINF (water available for infiltration)", unit: "mm", role: "diagnostic"}
+    - {name: "RUNOFF (daily runoff)", unit: "mm", role: "diagnostic"}
+    - {name: "EO (potential evapotranspiration)", unit: "mm/d", role: "diagnostic"}
+    - {name: "EOP (potential transpiration)", unit: "mm/d", role: "diagnostic"}
+    - {name: "EOS (potential soil evaporation)", unit: "mm/d", role: "diagnostic"}
+    - {name: "EP (actual transpiration)", unit: "mm/d", role: "diagnostic"}
+    - {name: "ES (actual soil evaporation)", unit: "mm/d", role: "diagnostic"}
+    - {name: "ET (actual evapotranspiration)", unit: "mm/d", role: "diagnostic"}
+    - {name: "XLAI / XHLAI (total / healthy leaf area index)", unit: "m2/m2", role: "prognostic"}
+    - {name: "CANHT (canopy height)", unit: "m", role: "prognostic"}
+    - {name: "WTLF, STMWT, RTWT, SDWT, PODWT (leaf/stem/root/seed/pod dry weights)", unit: "kg/ha", role: "prognostic"}
+    - {name: "TOPWT (aboveground biomass)", unit: "kg/ha", role: "prognostic"}
+    - {name: "TOTWT (total plant dry weight)", unit: "kg/ha", role: "prognostic"}
+    - {name: "GROWTH (daily biomass increment)", unit: "kg/ha/d", role: "diagnostic"}
+    - {name: "PG (gross photosynthesis)", unit: "g CH2O/m2/d", role: "diagnostic"}
+    - {name: "GRWRES, MAINR (growth and maintenance respiration)", unit: "g CH2O/m2/d", role: "diagnostic"}
+    - {name: "VSTAGE (vegetative stage), RSTAGE (reproductive stage), GSTD", unit: "stage / Zadoks", role: "prognostic"}
+    - {name: "MDATE (maturity date)", unit: "YRDOY", role: "prognostic"}
+    - {name: "YRPLT (planting date)", unit: "YRDOY", role: "prognostic"}
+    - {name: "RLV(NL) (root length density)", unit: "cm root / cm3 soil", role: "prognostic"}
+    - {name: "RTDEP (root depth)", unit: "cm", role: "prognostic"}
+    - {name: "RWU(NL), TRWUP, TRWU (potential and actual root water uptake)", unit: "cm/d", role: "diagnostic"}
+    - {name: "WTNCAN, WTNLF, WTNST, WTNSD, WTNRT, WTNSH (canopy/leaf/stem/seed/root/shell N)", unit: "kg/ha", role: "prognostic"}
+    - {name: "WTNUP (cumulative N uptake)", unit: "kg/ha", role: "accumulator"}
+    - {name: "WTNFX (cumulative N fixation)", unit: "kg/ha", role: "accumulator"}
+    - {name: "NFIXN (daily N fixation)", unit: "kg/ha/d", role: "diagnostic"}
+    - {name: "PCNL, PCNST, PCNRT, PCNSD, PCNSH (% N in tissues)", unit: "%", role: "diagnostic"}
+    - {name: "SWFAC, TURFAC (water stress on photosynthesis / expansion)", unit: "0-1", role: "diagnostic"}
+    - {name: "NSTRES (nitrogen stress factor)", unit: "0-1", role: "diagnostic"}
+    - {name: "KSTRES (potassium stress factor)", unit: "0-1", role: "diagnostic"}
+    - {name: "PSTRES1, PSTRES2 (phosphorus stress on photo / vegetative)", unit: "0-1", role: "diagnostic"}
+    - {name: "EWSD (excess-water / waterlogging stress)", unit: "0-1", role: "diagnostic"}
+    - {name: "SOM pools (CERES single-pool or CENTURY three-pool C/N/P)", unit: "kg/ha", role: "prognostic"}
+    - {name: "Cumulative water balance (PRCM, ETCM, EPCM, ESCM, IRCM, ROCM, DRCM)", unit: "mm", role: "accumulator"}
+    - {name: "Cumulative N balance (NICM, NUCM, NFXM, NLCM)", unit: "kg N/ha", role: "accumulator"}
+    - {name: "Cumulative GHG (N2OEM, CO2EM, CH4EM, TCEQM)", unit: "kg N/ha or kg C/ha or kg CO2eq/ha", role: "accumulator"}
+  provenance: "populated"
+
+outputs:
+  - var: "HWAM (harvested grain yield at maturity, dry)"
+    validation_rank: 1
+    unit: "kg/ha"
+    description: "Dry grain/seed yield at physiological maturity per treatment - the canonical end-of-season yield variable."
+    emitted_in: "Summary.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Single-year/single-site comparison: only a magnitude check is meaningful; r/NSE/KGE are structurally undefined for a single (sim, obs) pair."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "ranking_quality"]
+          determining_metric: "pbias"
+          caveats: ["Multi-year same-site requires NYERS >= 2 and consistent cultivar/management; inter-annual signal is weather-driven."]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["National/sub-national yield aggregates carry a technology/cultivar-improvement trend that a weather-only point process model cannot reproduce; detrend before comparing temporal patterns."]
+        - obs_shape: "regional_aggregate_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Single-year aggregate yield (e.g., FAOSTAT one year, national); scalar check only."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["DSSAT has no built-in spatial mode; a 'field' is constructed by running many point simulations on a grid; per-pixel comparison only makes sense if cultivar/management/soil are spatially varied consistently with the obs."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Requires a gridded ensemble of DSSAT point runs over multiple seasons; per-pixel comparison only valid where cultivar/management/soil vary consistently with the obs."]
+      detrending_options: ["none", "first_difference", "linear_residual", "decadal_mean"]
+  - var: "HWAH (harvested yield, dry, at harvest date)"
+    validation_rank: 2
+    unit: "kg/ha"
+    description: "Yield actually harvested = HWAM * HPC/100; zero when crop never matured or HPC=0."
+    emitted_in: "Summary.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["National/sub-national harvested yield aggregates carry a technology/cultivar-improvement trend that a weather-only point process model cannot reproduce; detrend before comparing temporal patterns; HPC must be set or HWAH=0."]
+        - obs_shape: "regional_aggregate_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Single-year aggregate; one point comparison only."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["DSSAT has no built-in spatial mode; construct a gridded ensemble."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Gridded ensemble of point runs; align cultivar/management/soil spatially."]
+      detrending_options: ["none", "first_difference", "linear_residual", "decadal_mean"]
+  - var: "CWAM (aboveground biomass at maturity)"
+    validation_rank: 3
+    unit: "kg/ha"
+    description: "Tops dry weight at physiological maturity."
+    emitted_in: "Summary.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["National/sub-national biomass aggregates carry a technology/cultivar-improvement trend that a weather-only point process model cannot reproduce; detrend before comparing temporal patterns."]
+        - obs_shape: "regional_aggregate_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Single-year aggregate biomass; scalar check only."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["DSSAT has no built-in spatial mode; construct a gridded ensemble for biomass fields."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Gridded ensemble of point runs over multiple seasons; align cultivar/management/soil spatially."]
+      detrending_options: ["none", "first_difference", "linear_residual", "decadal_mean"]
+  - var: "HIAM (harvest index at maturity)"
+    validation_rank: 10
+    unit: "fraction"
+    description: "Grain / aboveground biomass ratio at maturity."
+    emitted_in: "Summary.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "ADAT (anthesis date)"
+    validation_rank: 11
+    unit: "YRDOY"
+    description: "Day of year of anthesis/flowering for the simulated season."
+    emitted_in: "Summary.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["timing_accuracy"]
+          determining_metric: "day_bias"
+          caveats: ["Compare as DOY (after stripping YYYY); year-boundary issues if YRDOY is treated as raw integer."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["timing_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "MDAT (physiological maturity date)"
+    validation_rank: 12
+    unit: "YRDOY"
+    description: "Day of year of physiological maturity."
+    emitted_in: "Summary.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["timing_accuracy"]
+          determining_metric: "day_bias"
+          caveats: ["ADAT > MDAT is biologically impossible and indicates a YRDOY parsing bug, not a model error."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["timing_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "EDAT (emergence date)"
+    validation_rank: 13
+    unit: "YRDOY"
+    description: "Day of year of crop emergence."
+    emitted_in: "Summary.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["timing_accuracy"]
+          determining_metric: "day_bias"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "LAIX (maximum LAI during season)"
+    validation_rank: 6
+    unit: "m2/m2"
+    description: "Peak leaf area index attained during the simulated season."
+    emitted_in: "Summary.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "LAID / XLAI (daily leaf area index)"
+    validation_rank: 14
+    unit: "m2/m2"
+    description: "Daily leaf area index trajectory."
+    emitted_in: "PlantGro.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Remote-sensing LAI products carry their own retrieval bias and view-angle/cloud gaps; align on simulation calendar before comparing."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Requires gridded ensemble of DSSAT point runs (see HWAM caveats)."]
+      detrending_options: ["none"]
+  - var: "CWAD (daily aboveground dry weight)"
+    validation_rank: 15
+    unit: "kg/ha"
+    description: "Daily tops dry-matter accumulation."
+    emitted_in: "PlantGro.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "GWAD (daily grain dry weight)"
+    validation_rank: 4
+    unit: "kg/ha"
+    description: "Daily grain dry-matter accumulation during grain filling."
+    emitted_in: "PlantGro.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "ETCM (cumulative evapotranspiration)"
+    validation_rank: 7
+    unit: "mm"
+    description: "Seasonal cumulative actual ET (EP + ES + EM + EF)."
+    emitted_in: "Summary.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Lysimeter or eddy-covariance ETa benchmarks differ in footprint; choose comparable spatial scale."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Daily ET available in ET.OUT; ETCM is the seasonal total."]
+      detrending_options: ["none"]
+  - var: "ET (daily actual evapotranspiration)"
+    validation_rank: 8
+    unit: "mm/d"
+    description: "Daily evapotranspiration components (EO, EOP, EOS, EP, ES, EF, EM)."
+    emitted_in: "ET.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["MEEVP choice (R/P/F/Z) materially changes EO; compare against the obs reference ET formulation."]
+      detrending_options: ["none"]
+  - var: "SW (daily volumetric soil water by layer)"
+    validation_rank: 9
+    unit: "cm3/cm3"
+    description: "Per-layer volumetric soil water content."
+    emitted_in: "SoilWat.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "r"
+          caveats: ["Sensor depth must be matched to DSSAT layer; root-zone-integrated comparison preferred when sensors are at non-DSSAT depths."]
+      detrending_options: ["none"]
+  - var: "ROCM (cumulative runoff)"
+    validation_rank: 16
+    unit: "mm"
+    description: "Seasonal cumulative surface runoff via SCS curve number."
+    emitted_in: "Summary.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Plot-scale runoff only; no lateral routing."]
+      detrending_options: ["none"]
+  - var: "DRCM (cumulative deep drainage)"
+    validation_rank: 17
+    unit: "mm"
+    description: "Seasonal cumulative drainage below the soil profile."
+    emitted_in: "Summary.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "NLCM (cumulative N leached)"
+    validation_rank: 18
+    unit: "kg N/ha"
+    description: "Seasonal cumulative nitrate leached below the soil profile."
+    emitted_in: "Summary.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Lysimeter / suction-cup observations only; basin-scale loadings are out of scope."]
+      detrending_options: ["none"]
+  - var: "NUCM (cumulative crop N uptake)"
+    validation_rank: 19
+    unit: "kg N/ha"
+    description: "Seasonal cumulative N uptake by the crop."
+    emitted_in: "Summary.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "NFXM (cumulative N fixed)"
+    validation_rank: 20
+    unit: "kg N/ha"
+    description: "Seasonal cumulative symbiotic N fixation (legumes only)."
+    emitted_in: "Summary.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Defined only for legumes with ISWSYM=Y."]
+      detrending_options: ["none"]
+  - var: "GNAM (grain N content at maturity)"
+    validation_rank: 5
+    unit: "kg N/ha"
+    description: "Total N in the grain pool at maturity."
+    emitted_in: "Summary.OUT"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "N2OEM (cumulative N2O-N emissions)"
+    validation_rank: 21
+    unit: "kg N/ha"
+    description: "Seasonal cumulative N2O-N flux from denitrification (MEGHG=0) or DayCent (MEGHG=1)."
+    emitted_in: "Summary.OUT (and GHG.OUT daily)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Chamber-flux observations are episodic; integrate over event windows."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "event_detection"]
+          determining_metric: "nse"
+          caveats: ["N2O is highly episodic; consider event-based metrics."]
+      detrending_options: ["none"]
+  - var: "CH4EM (cumulative CH4-C emissions, paddy)"
+    validation_rank: 22
+    unit: "kg C/ha"
+    description: "Seasonal cumulative methane emissions from paddy rice."
+    emitted_in: "Summary.OUT (and GHG.OUT daily)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Paddy rice only."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - {from: "P1D (photoperiod sensitivity coefficient, CERES-Wheat cultivar)", to: "ADAT (anthesis date)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "CERES-Wheat", lever_type: "parameter", citations: ["liu2015_ceres_wheat_morris_efast", "chen2025_dssat_wheat_water_n_gsa"]}
+    - {from: "P1 (juvenile-phase thermal time, CERES cultivar)", to: "ADAT (anthesis date)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "CERES-Wheat", lever_type: "parameter", citations: ["liu2015_ceres_wheat_morris_efast"]}
+    - {from: "VEFF (vernalization sensitivity, CERES-Wheat cultivar)", to: "ADAT (anthesis date)", sensitivity_grade: "MEDIUM", basis: "literature_quantitative", applicability: "CERES-Wheat", lever_type: "parameter", citations: ["liu2015_ceres_wheat_morris_efast"]}
+    - {from: "G2 (kernels per spike, CERES-Wheat cultivar)", to: "HWAM (grain yield)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "CERES-Wheat", lever_type: "parameter", citations: ["liu2015_ceres_wheat_morris_efast", "chen2025_dssat_wheat_water_n_gsa"]}
+    - {from: "G1 (kernel-weight coefficient, CERES-Wheat cultivar)", to: "HWAM (grain yield)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "CERES-Wheat", lever_type: "parameter", citations: ["liu2015_ceres_wheat_morris_efast", "chen2025_dssat_wheat_water_n_gsa"]}
+    - {from: "P1D (photoperiod sensitivity, CERES-Wheat cultivar)", to: "HWAM (grain yield)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "CERES-Wheat", lever_type: "parameter", citations: ["chen2025_dssat_wheat_water_n_gsa"]}
+    - {from: "P5 (grain-filling thermal time, CERES-Wheat cultivar)", to: "CWAM (aboveground biomass)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "CERES-Wheat", lever_type: "parameter", citations: ["chen2025_dssat_wheat_water_n_gsa"]}
+    - {from: "P1V (vernalization days, CERES-Wheat cultivar)", to: "LAIX (max LAI)", sensitivity_grade: "MEDIUM", basis: "literature_quantitative", applicability: "CERES-Wheat", lever_type: "parameter", citations: ["chen2025_dssat_wheat_water_n_gsa"]}
+    - {from: "P2O (critical photoperiod, CERES-Rice cultivar)", to: "ADAT (anthesis date)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "CERES-Rice", lever_type: "parameter", citations: ["zhang2021_ceres_rice_gsa"]}
+    - {from: "P1 (juvenile-phase thermal time, CERES-Rice cultivar)", to: "HWAM (grain yield)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "CERES-Rice", lever_type: "parameter", citations: ["zhang2021_ceres_rice_gsa"]}
+    - {from: "THOT (high-temperature stress threshold, CERES-Rice species/cultivar)", to: "HWAM (grain yield)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "CERES-Rice (species-parameter lever; carries the high-T stress mechanism on grain growth - orthogonal to the boundary-forcing TMAX edge below)", lever_type: "parameter", citations: ["zhang2021_ceres_rice_gsa"]}
+    - {from: "Air temperature (TMAX, stage-specific)", to: "HWAM (grain yield)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "CERES-Rice; stage-specific TMAX climate perturbations in zhang2021_ceres_rice_gsa drive grain yield through phenology and through interaction with the species-parameter THOT high-T stress threshold (sibling edge above)", lever_type: "boundary_forcing", citations: ["zhang2021_ceres_rice_gsa"]}
+    - {from: "G3 (rice tillering coefficient, CERES-Rice cultivar)", to: "HWAM (grain yield)", sensitivity_grade: "LOW", basis: "literature_quantitative", applicability: "CERES-Rice", lever_type: "parameter", citations: ["zhang2021_ceres_rice_gsa"]}
+    - {from: "SDUL (drained upper limit, per layer)", to: "HWAM (grain yield)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "always", lever_type: "parameter", citations: ["jiang2017_dssat_soilwater_n", "thorp2020_dssat_et_gsa"]}
+    - {from: "SLLL (lower limit / wilting point, per layer)", to: "HWAM (grain yield)", sensitivity_grade: "MEDIUM", basis: "literature_quantitative", applicability: "Water-limited conditions, especially reduced irrigation", lever_type: "parameter", citations: ["thorp2020_dssat_et_gsa", "jiang2017_dssat_soilwater_n"]}
+    - {from: "SLLL (lower limit, per layer)", to: "NLCM (N leached)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "always", lever_type: "parameter", citations: ["jiang2017_dssat_soilwater_n"]}
+    - {from: "SLDR (drainage rate / SWCON)", to: "NLCM (N leached)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "always", lever_type: "parameter", citations: ["jiang2017_dssat_soilwater_n", "thorp2020_dssat_et_gsa"]}
+    - {from: "SRGF (relative root growth factor, per layer)", to: "HWAM (grain yield)", sensitivity_grade: "MEDIUM", basis: "literature_quantitative", applicability: "CROPGRO", lever_type: "parameter", citations: ["thorp2020_dssat_et_gsa"]}
+    - {from: "Precipitation (RAIN)", to: "HWAM (grain yield)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "Rainfed and supplementally irrigated", lever_type: "boundary_forcing", citations: ["jiang2017_dssat_soilwater_n"]}
+    - {from: "Fertilizer N rate (FAMN)", to: "HWAM (grain yield)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "N-responsive cereals", lever_type: "management", citations: ["jiang2017_dssat_soilwater_n"]}
+    - {from: "Fertilizer N rate (FAMN)", to: "NLCM (N leached)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "always", lever_type: "management", citations: ["jiang2017_dssat_soilwater_n"]}
+    - {from: "MEEVP / EVAPO (ET method switch: R vs P vs F vs Z)", to: "ETCM (cumulative ET)", sensitivity_grade: "HIGH", basis: "literature_quantitative", applicability: "always", lever_type: "structural", citations: ["thorp2020_dssat_et_gsa"]}
+    - {from: "CO2 concentration", to: "HWAM (grain yield)", sensitivity_grade: "MEDIUM", basis: "literature_quantitative", applicability: "Climate-change / elevated-CO2 scenarios", lever_type: "boundary_forcing", citations: ["thorp2020_dssat_et_gsa"]}
+    - {from: "Initial soil water content (SH2O at SDATE)", to: "HWAM (grain yield)", sensitivity_grade: "MEDIUM", basis: "literature_quantitative", applicability: "Reduced-irrigation / water-limited conditions", lever_type: "parameter", citations: ["thorp2020_dssat_et_gsa"]}
+  citation_index:
+    liu2015_ceres_wheat_morris_efast:
+      short_citation: "Liu et al. 2015"
+      doi: "10.11975/j.issn.1002-6819.2015.14.020"
+      note: "Global SA of DSSAT-CERES-Wheat cultivar/ecotype parameters using Morris screening and EFAST variance-based; phenology dominated by P1D, P1, P2, VEFF and yield by G2, G1, P1D."
+    chen2025_dssat_wheat_water_n_gsa:
+      short_citation: "Chen et al. 2025"
+      doi: "10.1038/s41598-025-95260-y"
+      note: "EFAST SA + uncertainty of CERES-Wheat cultivar parameters across factorial water/N treatments; G2, G1, P1D dominate yield; P5/P1D dominate biomass; P1V/P1D dominate LAI."
+    zhang2021_ceres_rice_gsa:
+      short_citation: "Zhang et al. 2021"
+      doi: "10.3390/agronomy11122446"
+      note: "EFAST SA of CERES-Rice across cultivars and stage-specific climate perturbations; P2O dominates across outputs; grain yield most sensitive to THOT, then P1, G2, P2O, G1, PHINT."
+    jiang2017_dssat_soilwater_n:
+      short_citation: "Jiang et al. 2017"
+      doi: "10.1007/s10705-016-9800-3"
+      note: "OAT + global SA of CERES-Wheat and CERES-Maize in semi-arid and humid Canadian sites; yield highly sensitive to SDUL, N fertilizer rate, precipitation; N leaching to SDUL, SLLL, SLDR, precipitation, N rate."
+    thorp2020_dssat_et_gsa:
+      short_citation: "Thorp et al. 2020"
+      doi: "10.1016/j.compag.2020.105837"
+      note: "Morris GSA of seven ET options in DSSAT-CSM CROPGRO-Cotton at Bushland TX lysimeter; SDUL, SLLL, SLDR, SRGF and ET method choice (Priestley-Taylor vs FAO-56 PM vs ASCE) drive 14/23 agroecosystem metrics; sensitivity to initial soil water and SLLL increases under reduced irrigation."
+
+safety:
+  hazards:
+    - id: "weather_SRAD_unit_or_range_error"
+      kind: "weather_file_semantic"
+      description: "SRAD outside 0-100 MJ/m2/day raises ErrCode 2 from DailyWeatherCheck; W/m2 values (50-350) trigger fatal error or, after silent <0.1 clamp, severely distort photosynthesis."
+      severity: "fatal_or_silent"
+      triplet_id: "dt_005,dt_009,dt_013"
+    - id: "weather_TMAX_lt_TMIN"
+      kind: "weather_file_semantic"
+      description: "TMAX < TMIN on any day triggers ErrCode 6; typically caused by swapped columns or mixed F/C units."
+      severity: "fatal"
+      triplet_id: "dt_006"
+    - id: "weather_nonsequential_dates"
+      kind: "weather_file_semantic"
+      description: "YRDOY out of chronological order or with missing/duplicated days triggers ErrCode 8 from IpWRec; affected by unsorted merges, Y2K errors, leap-year DOY 366 handling."
+      severity: "fatal"
+      triplet_id: "dt_007"
+    - id: "weather_NaN_silent_to_missing"
+      kind: "weather_file_semantic"
+      description: "NaN values silently converted to -99 by IpWRec; downstream defaults can cause subtle errors with no warning."
+      severity: "silent"
+      triplet_id: "dt_008"
+    - id: "weather_TAV_TAMP_silent_default"
+      kind: "weather_file_semantic"
+      description: "Missing TAV silently defaults to 20 C; missing TAMP silently defaults to 5 C; wrong defaults distort soil temperature seasonality, germination, root growth, OM decomposition."
+      severity: "silent"
+      triplet_id: "dt_010,dt_011"
+    - id: "weather_WIND_unit_confusion"
+      kind: "weather_file_semantic"
+      description: "DSSAT expects WIND in km/day; m/s values are ~86x too low; no range check enforced; affects FAO-56 PM and ASCE ET options."
+      severity: "silent"
+      triplet_id: "dt_012"
+    - id: "weather_WSTA_not_found"
+      kind: "weather_file_semantic"
+      description: "WSTA code in FileX *FIELDS does not match any available .WTH file; IPWTH_alt.for constructs FILEWW from WSTA+year+seq+.WTH and INQUIRE returns FALSE, raising ErrCode 29 (OPEN failed) or 30 (file missing). Common after weather-file rename, year-suffix mismatch, or NYEAR header drift."
+      severity: "fatal"
+      triplet_id: "dt_004"
+    - id: "soil_SAT_lt_DUL_or_LL_gt_DUL"
+      kind: "soil_semantic"
+      description: "Water-ordering violation in any layer raises fatal Error 7 (SAT<DUL) or Error 8 (LL>DUL) from IPSOIL_Inp; typically from column misalignment or bad pedotransfer estimates."
+      severity: "fatal"
+      triplet_id: "dt_014,dt_015"
+    - id: "soil_NLAYR_exceeds_NL"
+      kind: "soil_semantic"
+      description: "More than NL=20 layers triggers fatal Error 2; NL is compile-time fixed in ModuleDefs.for."
+      severity: "fatal"
+      triplet_id: "dt_016"
+    - id: "soil_profile_not_found"
+      kind: "soil_semantic"
+      description: "Soil profile code in FileX *FIELDS not found in any searched .SOL triggers fatal Error 4 from IPSOIL."
+      severity: "fatal"
+      triplet_id: "dt_017"
+    - id: "soil_SLNO_blank_silent_default"
+      kind: "soil_semantic"
+      description: "SLNO='-99' or blank in FileX *FIELDS causes IPSOIL_Inp to silently set SLPF=1.0, NLAYR=1 and skip the soil-file read; generic 1-layer default soil runs with no warning."
+      severity: "silent"
+      triplet_id: "dt_003"
+    - id: "soil_SALB_nonpositive"
+      kind: "soil_semantic"
+      description: "SALB<=0 (often left at -99) raises fatal Error 12; SALB is required for energy balance and soil temperature."
+      severity: "fatal"
+      triplet_id: "dt_021"
+    - id: "soil_SLNF_silent_clamp"
+      kind: "soil_semantic"
+      description: "SLNF outside [0,1] silently clamped to 1.0 with WARNING only; intended N-mineralization reduction silently lost."
+      severity: "silent"
+      triplet_id: "dt_020"
+    - id: "soil_layer1_thick_unstable"
+      kind: "soil_semantic"
+      description: "First soil layer thicker than 5 cm triggers a WARNING that explicit numerical integration in WATBAL/SOILEV may become unstable."
+      severity: "warning"
+      triplet_id: "dt_019"
+    - id: "soil_shallow_profile_SOC_40CM_zero"
+      kind: "numerical_instability"
+      description: "Soil profiles thinner than ~20 cm cause SOIL_40CM=0 leading to division-by-zero SIGFPE in CENTURY OPSOMLIT_C output (pre-fix); recent guard added but legacy builds still affected."
+      severity: "fatal"
+      triplet_id: "dt_018"
+    - id: "ic_SH2O_clamped_to_SAT"
+      kind: "initial_condition_semantic"
+      description: "Initial volumetric soil water above SAT in any layer is silently clamped to [LL, SAT] at initialization; less water than specified, no warning."
+      severity: "silent"
+      triplet_id: "dt_029"
+    - id: "ic_excessive_NO3_silent_yield_inflation"
+      kind: "initial_condition_semantic"
+      description: "No upper bound enforced on initial NO3/NH4 (ppm); unit confusion (kg/ha vs ppm) silently inflates early-season uptake and yield."
+      severity: "silent"
+      triplet_id: "dt_030"
+    - id: "ic_layer_depth_misalignment"
+      kind: "initial_condition_semantic"
+      description: "IC layer depths (ICBL) not matching .SOL SLB trigger LMATCH interpolation; mismatched layers produce unexpected initial SH2O/SNO3/SNH4 distributions with no warning."
+      severity: "silent"
+      triplet_id: "dt_028"
+    - id: "cultivar_code_not_found"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Cultivar INGENO in FileX not found in the .CUL raises fatal Error 2 from IPVAR; commonly from typo, wrong .CUL for selected MODEL, or version mismatch."
+      severity: "fatal"
+      triplet_id: "dt_022"
+    - id: "cultivar_out_of_range_SPE"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Cultivar coefficients outside .SPE MINIMA/MAXIMA are not enforced - silently produce wrong phenology/yield; .SPE bounds are documentation only."
+      severity: "silent"
+      triplet_id: "dt_024"
+    - id: "wrong_MODEL_silent_misinterpretation"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Wrong SMODEL code (e.g., MZCER vs MZIXM, CSCRP vs CRGRO) still parses with IOSTAT and silently misinterprets cultivar coefficients."
+      severity: "silent"
+      triplet_id: "dt_023"
+    - id: "control_SDATE_after_PDATE"
+      kind: "control_semantic"
+      description: "Simulation start date after planting date raises fatal Error 4; events are processed chronologically from SDATE."
+      severity: "fatal"
+      triplet_id: "dt_025"
+    - id: "control_ISWNIT_Y_ISWWAT_N"
+      kind: "control_semantic"
+      description: "Many N routines return early when ISWWAT='N' (OPSOILNI etc.); ISWNIT=Y with ISWWAT=N silently produces -99/zero N outputs despite fertilizer applications."
+      severity: "silent"
+      triplet_id: "dt_026"
+    - id: "control_invalid_method_switch_silent_default"
+      kind: "control_semantic"
+      description: "Invalid MEWTH/MESOM/MEEVP/MEINF/MEPHO/MESOL/MESEV/METMP/MEGHG codes are silently replaced by IPSIM defaults (e.g., MEWTH='M', MESOM='G', MEEVP='R'); wrong method runs with no validation."
+      severity: "silent"
+      triplet_id: "dt_027"
+    - id: "control_FMCD_silent_default"
+      kind: "control_semantic"
+      description: "Invalid fertilizer method code FMCD silently reset to '001' (broadcast); valid-but-unintended codes accepted; changes N volatilization/loss markedly."
+      severity: "silent"
+      triplet_id: "dt_034"
+    - id: "control_NAPPL_silent_drop"
+      kind: "control_semantic"
+      description: "Management operations above NAPPL=9000 (fertilizer/irrigation/residue/harvest combined) silently dropped after IPFERT exits the read loop; long-term runs lose events with no error."
+      severity: "silent"
+      triplet_id: "dt_033"
+    - id: "control_fertilizer_date_before_SDATE"
+      kind: "control_semantic"
+      description: "Fertilizer date before YRSIM with IFERI='R' raises fatal Error 3 from IPFERT; common after SDATE moved but fertilizer dates unchanged."
+      severity: "fatal"
+      triplet_id: "dt_031"
+    - id: "control_harvest_date_before_SDATE"
+      kind: "control_semantic"
+      description: "Harvest dates before YRSIM are silently skipped by IPMAN/IPHAR (GO TO 50) under IHARI='R'; if no HDATE>=SDATE remains the season ends with no harvest event. Y4K_DOY raises Error 6 for invalid YRDOY."
+      severity: "fatal_or_silent"
+      triplet_id: "dt_032"
+    - id: "control_auto_planting_no_window_met"
+      kind: "control_semantic"
+      description: "With IPLTI='A', AUTPLT checks soil-moisture/temperature criteria (TSDEP/AVGSW vs PTTN/PTX/SWPLTL/SWPLTH) each day in [PWDINF, PWDINL]; if criteria never satisfied, YRPLT stays 9999999 and the run steps days without planting (apparent hang). CropStatus=11 in Summary.OUT."
+      severity: "fatal"
+      triplet_id: "dt_039"
+    - id: "phenology_TT_collapse_high_altitude"
+      kind: "numerical_instability"
+      description: "Persistent daily mean T below crop base temperature (e.g., >3000 m altitude) collapses thermal-time accumulation to zero; phenology routines divide by accumulated TT producing SIGFPE."
+      severity: "fatal"
+      triplet_id: "dt_036"
+    - id: "ratephase_SIGFPE"
+      kind: "numerical_instability"
+      description: "Division by zero during RATE subroutines (zero PAW = DUL-LL, zero LAI denominator, zero soil mass for shallow soils) terminates the Fortran runtime with no DSSAT-level error message; output files truncated."
+      severity: "fatal"
+      triplet_id: "dt_035,dt_044"
+    - id: "summary_OUT_yrdoy_parsing"
+      kind: "parser_semantic"
+      description: "Summary.OUT uses fixed-width FORMAT with 25-char TNAME; whitespace splitting misaligns columns and can map SDAT into HWAM position (huge fake yields); YRDOY treated as plain int produces apparent ADAT>MDAT."
+      severity: "silent"
+      triplet_id: "dt_050,dt_043"
+    - id: "all_minus99_summary"
+      kind: "parser_semantic"
+      description: "Summary.OUT initialized to -99 by OPSUM (lines 362-459) at SEASINIT; early-season failure (weather error, crop failure, RATE crash) leaves -99 defaults that must never be averaged as data."
+      severity: "silent"
+      triplet_id: "dt_041"
+    - id: "output_HWAH_zero_silent"
+      kind: "parser_semantic"
+      description: "HWAH = HWAM * HPC/100 is zero whenever the crop never matured, HPC=0, or grain filling was terminated by frost/drought; Summary.OUT reports HWAH=0 with no error, easily mistaken for a tool/parsing failure. Inspect MDAT, SWFAC, NSTRES to disambiguate."
+      severity: "silent"
+      triplet_id: "dt_042"
+    - id: "PHOTO_R_for_CROPGRO_crop_zero_yield"
+      kind: "control_semantic"
+      description: "Setting PHOTO=R (RUE) for CROPGRO crops collapses leaf-level photosynthesis - AGEFAC drops to 0, plants die, yield is zero, OVERVIEW.OUT reports 'Plant died due to extreme stress'."
+      severity: "critical"
+      triplet_id: "dt_051"
+  validation_limits:
+    - "Single-point (one weather station + one soil profile) per run; no built-in distributed/spatial mode."
+    - "Daily timestep at the forcing boundary; cannot resolve sub-daily atmospheric drivers (storms, sub-daily temperature peaks) - some processes compute hourly internally but the forcing is daily."
+    - "Single-season simulation yields only one (sim, obs) pair; temporal NSE/KGE/r against time series require NYERS >= 2."
+    - "Crops outside the calibrated cultivar library require new cultivar calibration before defensible use; .SPE MINIMA/MAXIMA are documentation, not enforced."
+    - "Pre-v4.8 cultivar coefficients require recalibration after v4.8 soil-temperature changes."
+    - "Long-term climate-change / risk applications recommend >= 30 years of weather records."
+  warnings:
+    - "PHOTO method is hardcoded by crop-model dispatch inside PLANT; LAND and CSM never see the switch but it can change biomass >5x by selecting ETPHOT vs PSE/TRANS for EOP supply."
+    - "FLOOD>0 silently overrides MSALB to 0.05 inside SPAM, mutating effective albedo seen by PET without WEATHR/SOILDYN being aware."
+    - "Module SAVE state on SPAM (and most CSM subroutines) persists across calls; multi-treatment runs that fail to reinitialize on SEASINIT can leak state from the previous treatment."
+    - "OPSUM registers Summary.OUT columns by sentinel LABEL strings with no schema enforcement; any module can register/overwrite columns by name."
+    - "WATBAL writes SWDELTS, SPAM writes SWDELTX, unsaturated flow writes SWDELTU; SW integration in LAND.for is order-dependent (SOIL then SPAM then PLANT)."
+    - "Cultivar (.CUL), ecotype (.ECO), species (.SPE) data live as MODULE-scope SAVE state for the entire run after IPVAR/IPECO."
+    - "MgmtOps.PADDY_MGMT can override MgmtOps.IRRIG amounts when CROP=RI without warning."
+  assumptions:
+    - statement: "Land unit is spatially uniform (single point / homogeneous field); a single (lat, lon) carries one soil profile, one cultivar choice, and one management schedule."
+      scope: "All forward-model runs"
+      source: "DSSAT component docs (Land Unit Module description; dssat.net/models-overview/components/) and Jones et al. 2003 Eur. J. Agronomy 18(3-4):235-265 (DOI 10.1016/S1161-0301(02)00107-7)"
+      status: "adopted"
+    - statement: "Mass is conserved for water across the soil column (Ritchie cascading WATBAL) and for inorganic and organic N, P, K and C in the active soil and plant pools; surface energy is not closed by default."
+      scope: "Default ET options (MEEVP in {R, P, F, Z}); not the ETPHOT hourly canopy path"
+      source: "WATBAL.for, RNOFF.for, SPAM.for, PET.for, CENTURY.for and SoilOrg.for module behavior in DSSAT-CSM source; Reynolds & Acock (1997) modular design criteria cited at dssat.net/development/model-development/"
+      status: "adopted"
+    - statement: "Inter-module communication is exclusively through defined I/O variables (and the shared ModuleData PUT/GET store); modules can be validated independently."
+      scope: "All primary modules (WEATHR, SOIL, SPAM, PLANT, MGMTOPS)"
+      source: "Reynolds & Acock 1997 design criteria documented at dssat.net/development/model-development/; SPAM.for PUT('SPAM', ...) and ModuleData GET pattern observed in DSSAT-CSM source"
+      status: "adopted"
+    - statement: "MESEV defaults to 'R' (old Ritchie two-stage) when *SIMULATION CONTROLS is absent, even though the recommended choice for v4.8+ is 'S' (Suleiman-Ritchie)."
+      scope: "Soil evaporation calculation"
+      source: "IPSIM.for default initialization in DSSAT-CSM source; SKILL/docs recommendation discrepancy noted in DSSAT user materials"
+      status: "tentative"
+    - statement: "MEEVP code 'R' is Ritchie/Priestley-Taylor as implemented in PETPT; 'F' is FAO-56 Penman-Monteith and requires WIND + DEWP/RHUM in the .WTH; 'Z' is ASCE."
+      scope: "ET method dispatch"
+      source: "SPAM.for PET dispatcher and PETPT/PETPEN/PETASCE module behavior in DSSAT-CSM source; dssat.net components page"
+      status: "adopted"
+    - statement: "CO2 is a time-varying atmospheric forcing (handled as a single concept and emitted once under forcing); ICO2 switch only selects its source (measured CO2xxx.WDA, static default ~380 ppm, or .WTH file column)."
+      scope: "Inputs routing"
+      source: "WEATHR/CO2VAL behavior in DSSAT-CSM source"
+      status: "adopted"
+    - statement: "Symbiotic N fixation is active only for legume crops with ISWSYM=Y; for non-legumes the switch is forced N regardless of FileX setting."
+      scope: "N balance"
+      source: "IPSIM.for control-switch validation and CROPGRO NFIX module behavior in DSSAT-CSM source"
+      status: "adopted"

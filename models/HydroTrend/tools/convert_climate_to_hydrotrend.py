@@ -169,6 +169,10 @@ def process_csv(filepath, date_col, temp_col, precip_col,
     """
     monthly_temps = defaultdict(list)
     monthly_precip = defaultdict(list)  # daily values in mm/day
+    # Per (month, year) accumulated precip totals, so P_std reflects the
+    # INTERANNUAL std of monthly precip totals (HYDRO.IN field 5, "rainstd"),
+    # not the std of daily values.
+    monthly_precip_by_year = defaultdict(lambda: defaultdict(float))
 
     with open(filepath, "r") as f:
         reader = csv.DictReader(f)
@@ -210,6 +214,7 @@ def process_csv(filepath, date_col, temp_col, precip_col,
 
             monthly_temps[month].append(t_val)
             monthly_precip[month].append(p_val)
+            monthly_precip_by_year[month][dt.year] += p_val
 
     # Compute statistics
     stats = {}
@@ -233,11 +238,9 @@ def process_csv(filepath, date_col, temp_col, precip_col,
         p_mean_daily = sum(precs) / len(precs)
         p_total_mm = p_mean_daily * DAYS_IN_MONTH[m]
 
-        # Std dev of monthly totals across years
-        yearly_totals = defaultdict(float)
-        for p in precs:
-            yearly_totals[len(yearly_totals)] += p
-        p_std_vals = list(yearly_totals.values())
+        # Std dev of monthly totals across years (interannual variability of
+        # the monthly precip total — HYDRO.IN field 5 "rainstd").
+        p_std_vals = list(monthly_precip_by_year[m].values())
         if len(p_std_vals) > 1:
             p_mean_tot = sum(p_std_vals) / len(p_std_vals)
             p_std_mm = math.sqrt(
@@ -263,17 +266,90 @@ def format_hydro_in_lines(monthly_stats):
 
     IMPORTANT: HydroTrend expects precipitation in mm here.
     The model internally divides by 1000 to get meters.
+
+    CRITICAL PARSER QUIRK: HydroTrend reads each monthly line with
+    `fscanf(fidinput, "%3s %lf %lf %lf %lf ", ...)`. The TRAILING SPACE in
+    that format string makes scanf keep consuming whitespace (including the
+    newline) until it hits a non-whitespace character. If a monthly line ends
+    right after the 4th number, scanf swallows the newline and eats the FIRST
+    field of the NEXT line — every one of the 12 iterations then consumes two
+    lines, shifting all downstream parameters (basin length, hydraulic
+    geometry, groundwater, lon/lat) by several lines and the run aborts in
+    HydroCheckInput. The shipped example file avoids this by ending every
+    monthly line with trailing text. We therefore append a trailing tab +
+    marker so scanf stops on the same line. DO NOT remove the trailing marker.
     """
     lines = []
     for m in range(12):
         s = monthly_stats[m]
+        marker = "\t12-23) Month Tmean Tstd P(mm) Pstd" if m == 0 else "\t."
         line = (
             f"{MONTH_NAMES[m]:>3s}  "
             f"{s['t_mean']:5.1f} {s['t_std']:5.2f} "
             f"{s['p_total_mm']:6.1f} {s['p_std_mm']:6.2f}"
+            f"{marker}"
         )
         lines.append(line)
     return lines
+
+
+def write_hydro_climate(filepath, out_path, date_col, temp_col, precip_col,
+                        precip_units, temp_units, start_year, end_year):
+    """
+    Emit a daily HYDRO.CLIMATE file that OVERRIDES HydroTrend's stochastic
+    weather generator with the actual observed/reanalysis daily series.
+
+    This is the ONLY way to get date-aligned daily discharge out of HydroTrend
+    (the default stochastic generator produces random realizations that cannot
+    be compared day-by-day to a gauge). Required for any point_time_series
+    validation against an observed discharge record.
+
+    Format (read by hydroreadclimate.c -> Read_Rainfall_Etc):
+      6 header lines (skipped)
+      line 7:  "<n_steps> <dt_hours>"   (dt=24 for daily; n_steps = 365*nyears)
+      then n_steps lines: "<precip_mm> <temp_C>"
+
+    CRITICAL: HydroTrend uses a FIXED 365-day year (daysiy), so Feb 29 MUST be
+    dropped — otherwise the day index drifts past the model calendar and the
+    run aborts with "insufficient climate data". Records must be in strict
+    chronological order, exactly 365 per year for (end_year-start_year+1) years.
+    """
+    import calendar
+    rows = {}
+    with open(filepath, "r") as f:
+        for row in csv.DictReader(f):
+            ds = row[date_col].strip().replace("/", "-")
+            y, m, d = (int(x) for x in ds.split("-")[:3])
+            p = convert_precip_to_mm_per_day(float(row[precip_col]), precip_units)
+            t = convert_temp_to_celsius(float(row[temp_col]), temp_units)
+            rows[(y, m, d)] = (p, t)
+
+    recs = []
+    missing = 0
+    for y in range(start_year, end_year + 1):
+        for mo in range(1, 13):
+            ndays = calendar.monthrange(y, mo)[1]
+            for dd in range(1, ndays + 1):
+                if mo == 2 and dd == 29:
+                    continue  # fixed 365-day model year
+                if (y, mo, dd) in rows:
+                    recs.append(rows[(y, mo, dd)])
+                else:
+                    missing += 1
+                    recs.append((0.0, 0.0))
+
+    with open(out_path, "w") as f:
+        for i in range(6):
+            f.write(f"# HYDRO.CLIMATE daily forcing (header line {i+1})\n")
+        f.write(f"{len(recs)} 24\n")
+        for p, t in recs:
+            # clamp into hydroreadclimate.c accepted ranges
+            p = min(max(p, 0.0), 1999.9)
+            t = min(max(t, -79.9), 79.9)
+            f.write(f"{p:.4f} {t:.3f}\n")
+
+    return {"n_steps": len(recs), "n_years": end_year - start_year + 1,
+            "missing_days_filled_zero": missing}
 
 
 def compute_annual_stats(monthly_stats):
@@ -310,6 +386,16 @@ def main():
                         help="Column name for precipitation")
     parser.add_argument("--date-col", default="date",
                         help="Column name for date")
+    parser.add_argument("--climate-out", default=None,
+                        help="Also emit a daily HYDRO.CLIMATE file at this path "
+                             "(overrides HydroTrend's stochastic generator with "
+                             "the real daily series — REQUIRED for date-aligned "
+                             "point_time_series validation against a gauge). "
+                             "Use with --climate-start-year/--climate-end-year.")
+    parser.add_argument("--climate-start-year", type=int, default=None,
+                        help="First model year for HYDRO.CLIMATE (inclusive)")
+    parser.add_argument("--climate-end-year", type=int, default=None,
+                        help="Last model year for HYDRO.CLIMATE (inclusive)")
     args = parser.parse_args()
 
     # Step 1: Validate inputs
@@ -356,6 +442,28 @@ def main():
         "annual_stats": annual,
         "warnings": warnings,
     }
+
+    # Optional: emit daily HYDRO.CLIMATE for date-aligned forcing
+    if args.climate_out:
+        if args.climate_start_year is None or args.climate_end_year is None:
+            result["climate_out"] = {
+                "status": "error",
+                "message": "--climate-out requires --climate-start-year and "
+                           "--climate-end-year",
+            }
+        else:
+            try:
+                cinfo = write_hydro_climate(
+                    args.input, args.climate_out, args.date_col, args.temp_col,
+                    args.precip_col, args.precip_units, args.temp_units,
+                    args.climate_start_year, args.climate_end_year,
+                )
+                cinfo["status"] = "success"
+                cinfo["file"] = args.climate_out
+                result["climate_out"] = cinfo
+            except Exception as e:
+                result["climate_out"] = {"status": "error", "message": str(e)}
+
     print(json.dumps(result, indent=2))
 
 

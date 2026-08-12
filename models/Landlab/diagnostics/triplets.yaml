@@ -419,3 +419,224 @@
     prevention: "Components validate field locations on __init__"
   severity: fatal
   cross_references: [dt_008]
+
+# --- SSC-Q RATING CURVE ERRORS (dissect_atchafalaya_ssc_q_surrogate context) ---
+
+- id: dt_016
+  stage: s5_run
+  failure_domain: ssc_q_rating_curve
+  symptom:
+    description: "SSC-Q log-space correlation r < 0.5 despite matched discharge and SSC records"
+    error_pattern: "np.corrcoef(log10_obs, log10_sim)[0,1] < 0.5"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "SPACE K_sed or m_sp tuned for geomorphology timescales; SSC magnitude decoupled from observed discharge range"
+    explanation: >
+      The analytical SPACE approximation SSC ∝ Q^m_sp relies on self-similar
+      drainage-area scaling (A = Q / runoff_rate). For very large alluvial rivers
+      (Atchafalaya: 243,000 km²) this approximation breaks down if runoff_rate
+      is inconsistent with the basin's humid-climate value (~0.3–0.6 m/yr).
+      If runoff_rate is set too high or too low, the implied drainage area is
+      wrong, shifting K_sed·A^m by orders of magnitude and destroying the
+      SSC-Q correlation.
+    affected_components: [SpaceLargeScaleEroder, ErosionDeposition]
+  remedy:
+    action: "Calibrate runoff_rate = Q_mean / A_basin to the actual basin value before running SSC prediction"
+    tool_to_run: "tools/dissect_atchafalaya_ssc_q_surrogate.py"
+    manual_steps:
+      - "Compute long-term mean Q from RDB file (Atchafalaya mean ≈ 6700 m³/s)"
+      - "Compute A_basin from drainage_area_km2 in STATIONS dict"
+      - "runoff_rate = Q_mean * 3.156e7 / (A_basin * 1e6)  [m/yr]"
+      - "Typical humid-subtropical value: 0.3–0.6 m/yr"
+    prevention: "dissect_atchafalaya_ssc_q_surrogate.py uses validated runoff_rate=0.5 m/yr"
+  severity: silent
+  cross_references: [dt_001, dt_003]
+
+- id: dt_017
+  stage: s5_run
+  failure_domain: ssc_q_rating_curve
+  symptom:
+    description: "SPACE concavity θ < 0.40 or > 0.55 in steady-state slope-area test"
+    error_pattern: "concavity_index outside [0.40, 0.55]"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "SpaceLargeScaleEroder m_sp/n_sp exponents inconsistent with standard stream-power theory (m=0.5, n=1.0)"
+    explanation: >
+      The steady-state concavity index θ = m_sp / n_sp for detachment-limited
+      stream power. With m_sp=0.5, n_sp=1.0, expected θ = 0.5. Grid discretization
+      on a 50×50 RasterModelGrid with dx=200m introduces ~5% error, so the
+      valid range is [0.40, 0.55]. Concavity outside this range indicates the
+      exponents were changed, or soil__depth was not initialized (SPACE requires
+      soil__depth > 0 at all nodes; if initialized to 0, SPACE defaults to
+      bedrock-only mode with different effective exponents).
+    affected_components: [SpaceLargeScaleEroder, FlowAccumulator]
+  remedy:
+    action: "Verify m_sp=0.5, n_sp=1.0, and initialize soil__depth = 2.0 m before SPACE construction"
+    tool_to_run: "tools/dissect_atchafalaya_ssc_q_surrogate.py"
+    manual_steps:
+      - "grid.add_field('soil__depth', np.full(n_nodes, 2.0), at='node')  BEFORE SpaceLargeScaleEroder()"
+      - "SpaceLargeScaleEroder(grid, K_sed=2.5e-5, K_br=1e-6, m_sp=0.5, n_sp=1.0)"
+      - "If concavity > 0.55, check that SpaceLargeScaleEroder (not Space) is used — they have different formulations"
+    prevention: "dissect_atchafalaya_ssc_q_surrogate.py validates θ ∈ [0.40, 0.55] on every run"
+  severity: silent
+  cross_references: [dt_003, dt_006]
+
+# --- SLOPE-AREA ANALYSIS ERRORS (real DEM) ---
+
+- id: dt_018
+  stage: s1_domain
+  failure_domain: slope_area_analysis
+  symptom:
+    description: "Slope-area concavity θ is near 0 or negative; R² < 0.1 despite many channel nodes"
+    error_pattern: "theta < 0.05 or r2 < 0.10"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Using topographic__steepest_slope (D8 receiver slope) for slope-area on depression-filled real DEM"
+    explanation: >
+      After DepressionFinderAndRouter fills depressions, the outlet cells of
+      filled depressions receive artificially flat slopes (near zero) because
+      the receiver is at the same filled elevation. These near-zero slopes
+      collapse the slope-area regression. Additionally, D8 receiver slopes
+      on SRTM integer-elevation DEMs cluster at discrete values (1/dx, 2/dx...)
+      creating horizontal bands in log-log space that mask the true trend.
+    affected_components: [FlowAccumulator, DepressionFinderAndRouter]
+  remedy:
+    action: "Use 2D spatial gradient |∇z| for slope and bin the slope-area data in log-spaced area bins"
+    tool_to_run: "tools/dissect_loess_plateau_slope_area.py"
+    manual_steps:
+      - "dz_dr, dz_dc = np.gradient(z.reshape(mg.shape), mg.dx, mg.dx)"
+      - "slope = np.sqrt(dz_dr**2 + dz_dc**2).flatten()"
+      - "Bin into 20-30 log-spaced area bins; fit median slope per bin"
+      - "R² computed on binned medians, not raw scatter"
+    prevention: "dissect_loess_plateau_slope_area.py uses gradient+binning by default"
+  severity: silent
+  cross_references: [dt_003]
+
+- id: dt_019
+  stage: s1_domain
+  failure_domain: slope_area_analysis
+  symptom:
+    description: "Slope-area θ is anomalously low (< 0.15) despite clean R² (> 0.6)"
+    error_pattern: "theta < 0.15 with r2 > 0.60"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Single-outlet boundary condition funnels all flow to one corner, compressing slopes near outlet"
+    explanation: >
+      With closed_all_but_outlet boundary, the entire grid drains to one
+      boundary node. Near this node, flows converge and the channel slope
+      approaches zero as water from many upstream paths merges — this is
+      physically incorrect for a small clip DEM that isn't a closed basin.
+      The large fraction of high-drainage-area nodes with near-zero slope
+      pulls the fitted θ toward 0, even though the true fluvial concavity
+      may be 0.3-0.5. This is distinct from genuinely low concavity in
+      actively eroding terrain (Loess Plateau gullies θ ≈ 0.10-0.20).
+    affected_components: [FlowAccumulator, RasterModelGrid boundary conditions]
+  remedy:
+    action: "Use open_all boundary conditions for slope-area analysis on DEM clips"
+    tool_to_run: "tools/dissect_loess_plateau_slope_area.py"
+    manual_steps:
+      - "In convert_dem_to_grid.py call: --boundary open_all"
+      - "Water exits naturally at all low-elevation edges"
+      - "For genuine single-basin analysis, use a DEM that fully contains the basin"
+    prevention: "dissect_loess_plateau_slope_area.py uses open_all by default"
+  severity: silent
+  cross_references: [dt_018]
+
+- id: dt_020
+  stage: s5_run
+  failure_domain: ssc_q_rating_curve
+  symptom:
+    description: "SPACE Qs-Q exponent b_sim ≈ -0.5 (negative), or SSC-Q fit gives strong negative trend"
+    error_pattern: "b_sim < 0"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Fitting SSC = Qs/Q vs Q instead of fitting Qs vs Q directly"
+    explanation: >
+      By SPACE physics, Qs ∝ Q^m (m=0.5), so SSC = Qs/Q ∝ Q^(m-1) = Q^(-0.5).
+      The SSC-Q exponent is ALWAYS negative regardless of whether SPACE is
+      working correctly. This causes the test to fail even for perfect SPACE
+      output. The correct test fits Qs (sediment mass flux, kg/s) vs Q (m³/s)
+      and expects b_Qs = m = 0.5 (DL regime) or ~1.0 (TL regime).
+    affected_components: [SpaceLargeScaleEroder, FlowAccumulator]
+  remedy:
+    action: "Fit log(Qs_kg_s) vs log(Q_m3s) — do NOT divide by Q before fitting"
+    tool_to_run: "tools/dissect_atchafalaya_ssc_q_surrogate.py"
+    manual_steps:
+      - "Qs_kg_s = net_vol_m3 * rho_sed / yr_to_s"
+      - "lq_m, lqs_m = log10(Q_model), log10(Qs_model)"
+      - "b_sim, _, r_sim, _, _ = linregress(lq_m, lqs_m)"
+      - "Pass if b_sim in [0.35, 1.20] and r_sim >= 0.90"
+    prevention: "dissect_atchafalaya_ssc_q_surrogate.py fits Qs vs Q by default"
+  severity: silent
+  cross_references: [dt_016]
+
+- id: dt_021
+  stage: s5_run
+  failure_domain: ssc_q_rating_curve
+  symptom:
+    description: "SPACE Qs-Q exponent b_sim outside [0.35, 1.20] even though r > 0.95"
+    error_pattern: "b_sim > 1.20 or b_sim < 0.35"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "SPACE running in wrong regime (expected DL but got TL, or vice versa)"
+    explanation: >
+      SPACE has two limiting regimes:
+        Detachment-limited (DL): b → m_sp = 0.5. Requires bare bedrock (H→0) or
+          very high v_s (fast settling → sediment doesn't travel far).
+        Transport-limited (TL): b → ~1.0. Requires deep soil (H >> H_star) and
+          low v_s (slow settling → sediment travels long distances).
+      With H=2m, H*=1m, v_s=5m/yr: 86.5% sediment-dominated → TL regime, b~0.9.
+      b > 1.20: grid size too large relative to v_s (extreme TL), or geometry error.
+      b < 0.35: grid is artificially deposition-dominated (v_s too high, or H→0).
+    affected_components: [SpaceLargeScaleEroder]
+  remedy:
+    action: "Check H, H_star, v_s ratio and grid dimensions against expected regime"
+    tool_to_run: "tools/dissect_atchafalaya_ssc_q_surrogate.py"
+    manual_steps:
+      - "DL regime: set soil__depth = 0.01 (bare bedrock) OR v_s = 1000 m/yr"
+      - "TL regime (default): soil__depth = 2.0, v_s = 5.0, H_star = 1.0"
+      - "Check: bedrock_factor = exp(-H/H_star) — if > 0.5, grid is DL-dominated"
+    prevention: "dissect_atchafalaya_ssc_q_surrogate.py accepts both DL and TL: b in [0.35, 1.20]"
+  severity: silent
+  cross_references: [dt_020, dt_017]
+
+- id: dt_022
+  stage: s5_run
+  failure_domain: model_scope_mismatch
+  symptom:
+    description: "SPACE gives near-zero annual sediment yield (SY < 1 t/km²/yr) for a real DEM despite physically reasonable K_sed values"
+    error_pattern: "SY == 0.0 or SY < 1.0 with K_sed in [1e-5, 1e-1]"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "SPACE was designed for geological timescale (ka–Ma) landscape evolution, not for computing annual sediment yield from a real DEM"
+    explanation: >
+      SPACE operates in transport-limited (TL) regime by default (soil_depth >> H_star).
+      In TL regime, erosion ≈ deposition at every node, so net mass export from the
+      watershed is governed by transport efficiency — not by K_sed. With a single outlet
+      and closed boundaries, only ~0.3% of core nodes drain directly to the boundary;
+      the remaining 99.7% of eroded material re-deposits within the basin before
+      reaching the outlet.
+
+      Consequence: even with K_sed = 1e-1 (enormous), the export efficiency is ~2.7%
+      of gross erosion. For SY = 5000 t/km²/yr with 2.7% efficiency, mean gross erosion
+      would need to be 132 mm/yr — physically impossible for a Loess Plateau hillslope.
+
+      SPACE's sediment__erosion_flux is in m/s; the correct annual flux is
+      ~1.6e-7 m/s → 5e-9 m/step × cell area → effectively zero in floating-point.
+      The model is not broken — the application is outside its design scope.
+    affected_components: [SpaceLargeScaleEroder, ErosionDeposition]
+  remedy:
+    action: "Use detachment-limited stream power law (E = K_sp × A^m × S^n) for annual SY from real DEMs"
+    tool_to_run: "tools/dissect_loess_plateau_sediment_yield.py"
+    manual_steps:
+      - "Calibrate K_sp so mean(E × ρ_bulk) / watershed_area = target SY"
+      - "Formula: K_sp = SY_target / (mean(A^m × S^n) × ρ_bulk × unit_conversion)"
+      - "For Loess Plateau, target SY = 2000–10000 t/km²/yr (Liu 1985, Wang 2011)"
+      - "Use K_sp = 1.64e-4 m^0/yr with m=0.5, n=1.0, ρ_bulk=1400 kg/m³ as starting point"
+      - "Boundary: set closed_all_but_outlet for watershed-scale SY (single catchment)"
+      - "Open_all gives many small sub-basins (0.3% of nodes drain to boundary directly)"
+      - "SY = (K_sp × sum(A^m × S^n × cell_area) × ρ_bulk / 1000) / watershed_area_km2"
+      - "P export: TP [kg/ha/yr] = SY [t/km²/yr] × 10 × P_conc [kg/kg]; P_conc = P_soil_ppm × ER × 1e-6"
+    prevention: "Never use SPACE for SY validation on real DEMs at annual timescales; it is a landscape evolution model, not a sediment rating curve"
+  severity: silent
+  cross_references: [dt_016, dt_019]

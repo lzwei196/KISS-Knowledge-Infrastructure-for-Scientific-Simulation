@@ -51,12 +51,14 @@ PHYSICAL_BOUNDS = {
     "t":    (-80, 60),    # temperature (C)
     "rh":   (0, 100),     # relative humidity (%)
     "u":    (0, 80),      # wind speed (m/s)
-    "ppt":  (0, 500),     # precipitation (mm/d)
+    "ppt":  (0, 500),     # precipitation (mm/d), legacy name
+    "p":    (0, 500),     # precipitation (mm) — CRHM obs-module standard precip name
+                          # (convert_vic_to_obs.py writes 'p'; see validated similkameen.obs)
     "Qsi":  (0, 1400),    # shortwave radiation (W/m2)
     "Qso":  (0, 1400),    # outgoing shortwave (W/m2)
     "Qli":  (0, 600),     # longwave incoming (W/m2)
     "Qn":   (-400, 1000), # net radiation (W/m2)
-    "p":    (30, 110),    # pressure (kPa)
+    "press": (30, 110),   # barometric pressure (kPa) — NOT 'p' (CRHM uses 'p' for precip)
     "SunAct": (0, 24),    # sunshine hours
     "ea":   (0, 10),      # vapor pressure (kPa)
 }
@@ -164,8 +166,9 @@ def process(obs_path):
     var_names = [v["name"] for v in results["variables"]]
     if "t" not in var_names:
         results["errors"].append("CRITICAL: Temperature variable 't' not declared in header")
-    if "ppt" not in var_names:
-        results["errors"].append("CRITICAL: Precipitation variable 'ppt' not declared in header")
+    # CRHM's obs module names precipitation 'p'; 'ppt' is a legacy alias. Accept either.
+    if "p" not in var_names and "ppt" not in var_names:
+        results["errors"].append("CRITICAL: Precipitation variable 'p' (or legacy 'ppt') not declared in header")
 
     # Parse data rows
     prev_dt = None

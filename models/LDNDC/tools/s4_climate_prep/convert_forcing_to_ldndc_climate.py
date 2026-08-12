@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 
 def validate_inputs():
     errors = []
-    valid_sources = ["cmfd", "mswx", "nasa_power", "vic_forcing", "fluxnet"]
+    valid_sources = ["cmfd", "mswx", "nasa_power", "vic_forcing", "fluxnet", "fluxnet_fullset"]
     if FORCING_SOURCE not in valid_sources:
         errors.append(f"Unknown forcing_source: {FORCING_SOURCE}. Must be one of: {valid_sources}")
     if not FORCING_PATH:
@@ -139,12 +139,55 @@ def _load_fluxnet_erai(forcing_file):
     return df
 
 
+def _load_fluxnet_fullset(forcing_file):
+    """Load FLUXNET FULLSET daily forcing (FULLSET_DD.csv).
+
+    Uses gap-filled tower observations (MDS method) — higher quality than ERA-I alone.
+    Columns used: TA_F_MDS, TA_F_MDS_DAY, TA_F_MDS_NIGHT, P_F, SW_IN_F, WS_F.
+    Missing values (-9999) are replaced with ERA fallback columns where available.
+    """
+    import pandas as pd
+    df = pd.read_csv(forcing_file)
+    df["date"] = pd.to_datetime(df["TIMESTAMP"], format="%Y%m%d")
+    # Replace FLUXNET -9999 fill value with NaN
+    df = df.replace(-9999, float("nan"))
+    # Alias FULLSET columns to ERAI column names so the rest of the pipeline is unchanged
+    df["TA_ERA"] = df.get("TA_F_MDS", df.get("TA_ERA", None))
+    df["TA_ERA_DAY"] = df.get("TA_F_MDS_DAY", df.get("TA_ERA_DAY", None))
+    df["TA_ERA_NIGHT"] = df.get("TA_F_MDS_NIGHT", df.get("TA_ERA_NIGHT", None))
+    df["P_ERA"] = df.get("P_F", df.get("P_ERA", None))
+    df["SW_IN_ERA"] = df.get("SW_IN_F", df.get("SW_IN_ERA", None))
+    df["WS_ERA"] = df.get("WS_F", df.get("WS_ERA", None))
+    # Forward-fill any remaining NaN (small gaps)
+    for col in ["TA_ERA", "TA_ERA_DAY", "TA_ERA_NIGHT", "P_ERA", "SW_IN_ERA", "WS_ERA"]:
+        if col in df.columns:
+            df[col] = df[col].ffill().bfill()
+    return df
+
+
 def _collect_daily_arrays(start_year, end_year):
     """Read forcing and return parallel arrays: prec, tavg, tmax, tmin, grad, wind.
 
     Returns (ndays, prec[], tavg[], tmax[], tmin[], grad[], wind[]).
     All arrays are numpy or list of float, same length.
     """
+    if FORCING_SOURCE == "fluxnet_fullset":
+        import pandas as pd
+        df = _load_fluxnet_fullset(FORCING_PATH)
+        df = df[(df.date.dt.year >= start_year) & (df.date.dt.year <= end_year)]
+        ta = df["TA_ERA"]
+        ta_day = df["TA_ERA_DAY"].where(df["TA_ERA_DAY"].notna(), ta + 3)
+        ta_night = df["TA_ERA_NIGHT"].where(df["TA_ERA_NIGHT"].notna(), ta - 3)
+        return (
+            len(df),
+            np.maximum(0, df["P_ERA"].fillna(0).values),
+            ta.values,
+            ta_day.values,
+            ta_night.values,
+            np.maximum(0, df["SW_IN_ERA"].fillna(150).values),
+            np.maximum(0, df["WS_ERA"].fillna(2.0).values),
+        )
+
     if FORCING_SOURCE == "vic_forcing":
         vic = _load_vic_forcing(FORCING_PATH)
         return (vic["ndays"], vic["prec"], vic["tavg"], vic["tmax"],

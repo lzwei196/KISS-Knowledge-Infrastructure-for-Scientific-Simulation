@@ -72,6 +72,8 @@ def main():
             cfg.initialize(logging_level='WARNING')
             cfg.PATHS['working_dir'] = str(Path(args.working_dir).resolve())
             cfg.PARAMS['border'] = args.prepro_border
+            cfg.PARAMS['use_multiprocessing'] = True
+            cfg.PARAMS['mp_processes'] = 16  # parallel downloads; cap avoids rate-limit
 
         working_dir = Path(cfg.PATHS['working_dir'])
         working_dir.mkdir(parents=True, exist_ok=True)

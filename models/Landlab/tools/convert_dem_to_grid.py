@@ -201,8 +201,8 @@ def main():
 
     # Save output
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
-    from landlab.io.netcdf import to_netcdf
-    to_netcdf(grid, args.output, format="NETCDF4")
+    from landlab.io.netcdf import write_netcdf
+    write_netcdf(args.output, grid, format="NETCDF4", at="node")
 
     summary = {
         "status": "success",

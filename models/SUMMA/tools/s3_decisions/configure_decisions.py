@@ -165,7 +165,14 @@ DEFAULT_DECISIONS = {
     'alb_method':  'varDecay',
     'spatial_gw':  'localColumn',
     'subRouting':  'timeDlay',
-    'snowDenNew':  'anderson',
+    # snowDenNew (new-snow-density method) is intentionally OMITTED from the
+    # defaults. Writing 'snowDenNew anderson' triggers a canopySnow "failed to
+    # converge [mass]" crash on the first snowfall of a cold-region winter
+    # cold-start (verified Moyie 08NH120 2026-06-29: identical setup converges
+    # iff this line is absent). The proven Reynolds Mountain / Belly River
+    # reference decisions files omit it, so SUMMA falls back to its compiled
+    # default, which converges. Users may still set it explicitly via
+    # --decisions if a case needs a specific method. (KI fix 2026-06-29.)
 }
 
 # ---------------------------------------------------------------------------

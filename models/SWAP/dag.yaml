@@ -1,0 +1,546 @@
+template_version: "3.5"
+
+identity:
+  model_id: "SWAP"
+  scientific_reference_version: "SWAP version 4 (WENR Report 2780, 2017; doi:10.18174/416321) — vadose-zone Richards/MvG ecohydrology spec"
+  implementation:
+    id: "swap-4.2.0"
+    version: "4.2.0"
+    provenance: "Fortran; Wageningen University & Research (WUR/WENR) SWAP 4 executable, reads free-format ASCII input via the TTUTIL library."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: "Free for non-commercial use with acknowledgement of source (WENR); not for commercial purposes or monetary gain. No SPDX id."
+  repo_url: "github.com/SWAP-model/swap"
+
+boundary:
+  scope_in:
+    - "1-D vertical transport of water in the variably saturated vadose zone (Richards equation, Mualem-van Genuchten hydraulics)"
+    - "Root water uptake and water/oxygen/salt stress (Feddes or de Jong van Lier reduction)"
+    - "Potential and actual evapotranspiration and rainfall interception (Penman-Monteith; reference ET + crop factors)"
+    - "Solute transport: convection, diffusion, dispersion, Freundlich adsorption, first-order decomposition, root uptake, salinity stress"
+    - "Soil heat flow (analytical sine input or numerical with moisture-dependent capacity/conductivity)"
+    - "Crop growth: simple prescribed module or detailed dynamic WOFOST (arable) and WOFOST grass modules"
+    - "Surface runoff, interflow, and lateral drainage (Hooghoudt/Ernst, tabulated flux-GWL, multi-level resistance)"
+    - "Macropore / preferential (bypass, dual-permeability) flow in shrinking/cracking clay and peat soils"
+    - "Snow accumulation and melt; frost reduction factors"
+    - "Irrigation: fixed regime and scheduled/optimized; surface-water management with weirs"
+  scope_out:
+    - "Gridded / distributed horizontal flow (single 1-D field-scale column only; lateral flow only via lumped analytical drainage)"
+    - "Advanced pesticide transport — requires coupling to PEARL"
+    - "Advanced nitrogen/phosphorus transport — requires coupling to ANIMO or Soil-N"
+    - "Mechanistic regional groundwater flow (upscaling needs external GIS)"
+  spatial: "1-D column"
+  temporal: "daily"
+  closure: "mass-balance"
+  notes: "Daily meteorological driving with an adaptive internal sub-daily timestep (order of seconds during fast processes such as intensive rain showers, runoff and macropore flow, up to 1 day). Richards equation solved with an implicit backward finite-difference scheme and Newton-Raphson iteration ensuring water mass conservation; water and solute balances are reported with explicit balance-error terms, and snowpack and macropore water balances are tracked separately. The default daily Penman-Monteith ET path is a demand-side flux calculation, not a closed surface energy budget."
+
+inputs:
+  forcing:
+    - {category: forcing, name: "Rad", unit: "kJ/m2/d", source_kind: forcing, model_input_format: ".met meteorological file column", notes: "Global solar radiation; SWAP expects kJ/m2/d (~2000-30000), NOT W/m2."}
+    - {category: forcing, name: "Tmin", unit: "degC", source_kind: forcing, model_input_format: ".met column", notes: "Minimum air temperature; Celsius, not Kelvin."}
+    - {category: forcing, name: "Tmax", unit: "degC", source_kind: forcing, model_input_format: ".met column"}
+    - {category: forcing, name: "Hum", unit: "kPa", source_kind: forcing, model_input_format: ".met column", notes: "Actual vapour pressure, NOT relative humidity."}
+    - {category: forcing, name: "Wind", unit: "m/s", source_kind: forcing, model_input_format: ".met column", notes: "Wind speed at the ALTW measurement height."}
+    - {category: forcing, name: "Rain", unit: "mm/d", source_kind: forcing, model_input_format: ".met column", notes: "Daily precipitation; optional sub-daily rainfall intensities for runoff/macropore studies."}
+    - {category: forcing, name: "ETref", unit: "mm/d", source_kind: forcing, model_input_format: ".met column", notes: "Reference ET, used only when SWETR=1 (otherwise ET computed internally by Penman-Monteith)."}
+    - {category: forcing, name: "Wet", unit: "fraction", source_kind: forcing, model_input_format: ".met column", notes: "Wet duration fraction of day."}
+  parameters:
+    - {category: soil_hydraulic, name: "ORES (theta_r)", unit: "cm3/cm3", source_kind: calibrated, model_input_format: ".swp soil-water section", notes: "Residual water content; must be strictly < OSAT."}
+    - {category: soil_hydraulic, name: "OSAT (theta_s)", unit: "cm3/cm3", source_kind: calibrated, model_input_format: ".swp soil-water section", notes: "Saturated water content (typ 0.35-0.55)."}
+    - {category: soil_hydraulic, name: "ALFA (alpha)", unit: "1/cm", source_kind: calibrated, model_input_format: ".swp soil-water section", notes: "van Genuchten shape parameter; must be positive."}
+    - {category: soil_hydraulic, name: "NPAR (n)", unit: "-", source_kind: calibrated, model_input_format: ".swp soil-water section", notes: "van Genuchten n; must be > 1.001."}
+    - {category: soil_hydraulic, name: "KSATFIT", unit: "cm/d", source_kind: calibrated, model_input_format: ".swp soil-water section", notes: "Fitted saturated hydraulic conductivity (sand 100-1000, clay 0.1-10 cm/d)."}
+    - {category: soil_hydraulic, name: "LEXP", unit: "-", source_kind: calibrated, model_input_format: ".swp soil-water section", notes: "Exponent in Mualem K function."}
+    - {category: soil_hydraulic, name: "ALFAW", unit: "1/cm", source_kind: calibrated, model_input_format: ".swp soil-water section", notes: "Wetting-curve alpha for hysteresis scaling."}
+    - {category: soil_hydraulic, name: "H_ENPR", unit: "cm", source_kind: calibrated, model_input_format: ".swp soil-water section", notes: "Air-entry pressure head (near-saturation modification)."}
+    - {category: soil_hydraulic, name: "KSATEXM", unit: "cm/d", source_kind: calibrated, model_input_format: ".swp soil-water section", notes: "Measured Ksat."}
+    - {category: soil_thermal, name: "BDENS", unit: "mg/cm3 (=kg/m3)", source_kind: dataset_lookup, model_input_format: ".swp soil-water section", notes: "Dry bulk density (typ 1000-1800); controls heat capacity. mg/cm3, not g/cm3."}
+    - {category: crop, name: "Crop parameters (.crp)", unit: "various", source_kind: dataset_lookup, model_input_format: ".crp file (CROPTYPE 1 simple, 2 WOFOST general, 3 WOFOST grass)", notes: "Development/DVS, LAI tables, assimilation, partitioning, senescence, root growth, water/oxygen/salt stress, interception."}
+    - {category: root_uptake, name: "omega_c", unit: "-", source_kind: calibrated, model_input_format: ".crp root water uptake section", notes: "Critical stress index for compensatory root water uptake (de Jong van Lier)."}
+    - {category: solute, name: "Solute transport parameters", unit: "various", source_kind: calibrated, model_input_format: ".swp solute section", notes: "Diffusion, dispersion, Freundlich adsorption, first-order decomposition, root solute uptake TSCF; salinity-stress onset Pi and decline SSF."}
+    - {category: drainage, name: "Drainage formula parameters", unit: "various", source_kind: user_provided, model_input_format: ".dra file", notes: "Hooghoudt/Ernst resistances, tabulated flux-vs-GWL, or multi-level resistances (DRAMET 1/2/3)."}
+    - {category: site, name: "LAT / ALT / ALTW / Angstrom coefficients", unit: "deg / m / m / -", source_kind: user_provided, model_input_format: ".swp general/meteorology section", notes: "Latitude, altitude, wind-measurement height (default 10 m), Angstrom coefficients used when ET computed from basic weather."}
+    - {category: discretization, name: "ISUBLAY / ISOILLAY / HSUBLAY / HCOMP / NCOMP", unit: "- / - / cm / cm / -", source_kind: user_provided, model_input_format: ".swp vertical-discretization section", notes: "Profile/compartment discretization; NCOMP x HCOMP must equal HSUBLAY per sub-layer."}
+    - {category: numerics, name: "DTMIN / DTMAX / MAXIT / GWLCONV / CRITDEVH1CP / CRITDEVMASBAL", unit: "d / d / - / cm / - / -", source_kind: default, model_input_format: ".swp Richards-numerics section", notes: "Adaptive-timestep bounds, max iterations, max GWL change per step (use 1-10 cm for shallow GWL), and water/mass-balance deviation criteria."}
+  initial_conditions:
+    - {category: initial_condition, name: "Initial pressure heads / soil moisture profile", unit: "cm / cm3/cm3", source_kind: user_provided, model_input_format: ".swp soil-water section or OUTFIL.END restart", notes: "Negative pressure heads in the unsaturated zone."}
+    - {category: initial_condition, name: "Initial solute concentrations", unit: "mg/cm3", source_kind: user_provided, model_input_format: ".swp solute section or OUTFIL.END"}
+    - {category: initial_condition, name: "Initial soil temperatures", unit: "degC", source_kind: user_provided, model_input_format: ".swp heat section or OUTFIL.END"}
+    - {category: initial_condition, name: "Initial snow and ponding layer storage", unit: "cm", source_kind: user_provided, model_input_format: "OUTFIL.END restart"}
+  boundary_conditions:
+    - {category: control, name: "TSTART / TEND", unit: "date", source_kind: user_provided, model_input_format: ".swp general section", notes: "Simulation period; TSTART must lie within forcing coverage and TSTART <= CROPSTART."}
+    - {category: control, name: "SWETR", unit: "switch", source_kind: user_provided, model_input_format: ".swp meteorology section", notes: "0 = compute Penman-Monteith ET from weather; 1 = use supplied ETref."}
+    - {category: control, name: "SWBOTB (bottom boundary type)", unit: "switch", source_kind: user_provided, model_input_format: ".swp / .bbc", notes: "One of 8 lower-boundary options controlled by head, flux, or head-flux relation (1 GWL, 2 flux, 3 aquifer head, 4 GWL-flux, 5 pressure head, 6 zero flux, 7 free drainage, 8 free outflow)."}
+    - {category: control, name: "DRAMET (drainage method)", unit: "switch", source_kind: user_provided, model_input_format: ".dra", notes: "1 flux-GWL table, 2 Hooghoudt/Ernst, 3 multi-level resistance."}
+    - {category: control, name: "SWCROP / CROPTYPE / CROPSTART / CROPEND / CROPFIL", unit: "switch / date / file", source_kind: user_provided, model_input_format: ".swp crop section", notes: "Crop rotation schedule and crop-file binding; rotation periods must not overlap."}
+    - {category: control, name: "Output switches (SWBLC / SWINC / SWVAP / SWCSV / SWBAL / SWWBA / SWSBA / SWATE / SWMETDETAIL)", unit: "switch", source_kind: user_provided, model_input_format: ".swp general section", notes: "Select which balance/profile/CSV output files are written; SWCSV=1 with INLIST_CSV selects custom variables."}
+    - {category: management, name: "Irrigation schedule", unit: "various", source_kind: user_provided, model_input_format: ".crp / .swp irrigation section", notes: "Fixed date/depth/quality or scheduled/optimized (allowable stress/depletion, critical head/water content)."}
+    - {category: management, name: "Surface-water / weir management", unit: "various", source_kind: user_provided, model_input_format: ".swp surface-water section", notes: "Imposed or simulated surface-water levels controlled by weir and soil-moisture criteria."}
+    - {category: boundary, name: "Solute top-boundary concentration", unit: "mg/cm3", source_kind: user_provided, model_input_format: ".swp solute section"}
+
+processes:
+  modules:
+    - {name: "RichardsSoilWaterFlow", role: process_solver, brief: "Solves Richards' equation for 1-D variably saturated vertical water flow with Mualem-van Genuchten retention/conductivity; implicit backward finite-difference + Newton-Raphson; adaptive timestep DTMIN..DTMAX."}
+    - {name: "MualemVanGenuchtenHydraulics", role: process_solver, brief: "Maps pressure head h to water content theta and hydraulic conductivity K via MvG functions (with near-saturation modification and optional hysteresis)."}
+    - {name: "PenmanMonteithET", role: process_solver, brief: "Computes potential evapotranspiration and interception from radiation, temperature, vapour pressure and wind; supports crop factors or supplied reference ET."}
+    - {name: "RootWaterUptakeStress", role: process_solver, brief: "Partitions potential into actual transpiration via Feddes or de Jong van Lier water-stress reduction, plus oxygen and salt stress weighted by root density."}
+    - {name: "CropGrowth", role: optional_module, brief: "Simple prescribed module (CROPTYPE=1) for upper-boundary development, or detailed dynamic WOFOST general (2) / WOFOST grass (3); produces DVS, LAI, biomass, rooting depth."}
+    - {name: "SoluteTransport", role: optional_module, brief: "Convection-dispersion equation with diffusion, Freundlich adsorption, first-order decomposition, root uptake and salinity stress."}
+    - {name: "HeatTransport", role: optional_module, brief: "Soil temperature profile via analytical sine-input or numerical scheme with moisture-dependent heat capacity and conductivity."}
+    - {name: "Drainage", role: process_solver, brief: "Lateral discharge via Hooghoudt, Ernst, tabulated flux-GWL, or multi-level resistance (DRAMET 1/2/3); fluxes distributed over discharge layers."}
+    - {name: "BottomBoundary", role: driver, brief: "Applies one of 8 lower-boundary conditions (head, flux, or head-flux relation) to the Richards solver."}
+    - {name: "MacroporeFlow", role: optional_module, brief: "Bypass / dual-permeability preferential flow in shrinking-cracking clay and peat soils; static and dynamic volumes from shrinkage characteristics."}
+    - {name: "SnowFrost", role: optional_module, brief: "Snowpack accumulation/melt below a threshold air temperature; frost reduction factors on K, root uptake, drainage and bottom flux; snowpack adjusts the soil-temperature top boundary."}
+    - {name: "Irrigation", role: optional_module, brief: "Fixed or scheduled/optimized irrigation applications based on timing and depth criteria."}
+    - {name: "SurfaceWaterManagement", role: optional_module, brief: "Surface-water balance with weirs (imposed or simulated levels) and reservoir storage."}
+  internal_edges:
+    - {from: "Atmosphere", to: "PenmanMonteithET", kind: consumes_input, brief: "Radiation, temperature, vapour pressure, wind drive potential ET."}
+    - {from: "PenmanMonteithET", to: "CropGrowth", kind: invokes, brief: "Potential ET and interception passed to crop development / canopy."}
+    - {from: "CropGrowth", to: "RootWaterUptakeStress", kind: invokes, brief: "LAI, rooting depth and crop factors define the transpiration demand and root distribution."}
+    - {from: "RootWaterUptakeStress", to: "RichardsSoilWaterFlow", kind: writes_state, brief: "Actual transpiration becomes a root-extraction sink term in the Richards solver."}
+    - {from: "MualemVanGenuchtenHydraulics", to: "RichardsSoilWaterFlow", kind: invokes, brief: "Supplies theta(h) and K(h) closure for the flow equation."}
+    - {from: "RichardsSoilWaterFlow", to: "h", kind: writes_state, brief: "Updates pressure head per compartment."}
+    - {from: "RichardsSoilWaterFlow", to: "theta", kind: writes_state, brief: "Updates volumetric water content per compartment."}
+    - {from: "RichardsSoilWaterFlow", to: "GWL", kind: writes_state, brief: "Updates groundwater level."}
+    - {from: "BottomBoundary", to: "RichardsSoilWaterFlow", kind: invokes, brief: "Imposes the selected lower-boundary head/flux condition."}
+    - {from: "Drainage", to: "RichardsSoilWaterFlow", kind: invokes, brief: "Lateral drainage fluxes extracted over discharge layers."}
+    - {from: "MacroporeFlow", to: "RichardsSoilWaterFlow", kind: invokes, brief: "Bypass infiltration and rapid drainage exchange with the soil matrix."}
+    - {from: "SnowFrost", to: "RichardsSoilWaterFlow", kind: invokes, brief: "Snowmelt routed to infiltration; frost reduction factors scale fluxes."}
+    - {from: "Irrigation", to: "RichardsSoilWaterFlow", kind: invokes, brief: "Irrigation applications added to the surface water flux."}
+    - {from: "RichardsSoilWaterFlow", to: "SoluteTransport", kind: invokes, brief: "Water flux field drives convection-dispersion solute transport."}
+    - {from: "SoluteTransport", to: "solute_concentration", kind: writes_state, brief: "Updates solute mass/concentration per compartment."}
+    - {from: "Atmosphere", to: "HeatTransport", kind: consumes_input, brief: "Air / soil-surface temperature sets the heat-flow top boundary."}
+    - {from: "HeatTransport", to: "T", kind: writes_state, brief: "Updates soil temperature per node."}
+    - {from: "SurfaceWaterManagement", to: "Drainage", kind: invokes, brief: "Weir-controlled surface-water levels set drainage base levels."}
+    - {from: "RichardsSoilWaterFlow", to: "Outputs", kind: produces_output, brief: "Emits water-balance components (.bal/.blc/.inc/.wba) and profiles (.vap)."}
+    - {from: "SoluteTransport", to: "Outputs", kind: produces_output, brief: "Emits cumulative solute balance (.sba)."}
+    - {from: "CropGrowth", to: "Outputs", kind: produces_output, brief: "Emits crop growth (.crp) variables."}
+
+states:
+  variables:
+    - {name: "h", unit: "cm", role: prognostic}
+    - {name: "theta", unit: "cm3/cm3", role: prognostic}
+    - {name: "T", unit: "degC", role: prognostic}
+    - {name: "GWL", unit: "cm", role: diagnostic}
+    - {name: "solute_concentration", unit: "mg/cm3", role: prognostic}
+    - {name: "snow_storage", unit: "cm", role: prognostic}
+    - {name: "ponding_storage", unit: "cm", role: prognostic}
+    - {name: "macropore_storage", unit: "cm", role: prognostic}
+    - {name: "surface_water_storage", unit: "cm", role: prognostic}
+    - {name: "DVS", unit: "-", role: prognostic}
+    - {name: "TSUM", unit: "degC-d", role: accumulator}
+    - {name: "LAI", unit: "m2/m2", role: prognostic}
+    - {name: "biomass", unit: "kg/ha", role: accumulator}
+    - {name: "rooting_depth", unit: "cm", role: prognostic}
+  provenance: "structural"
+
+outputs:
+  - var: "actual_transpiration"
+    validation_rank: 6
+    unit: "cm"
+    description: "Actual crop transpiration (root water uptake) after water/oxygen/salt stress reduction."
+    emitted_in: ".inc / .wba / .csv"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Field-scale point quantity; flux-tower ET partitioning into T/E carries its own uncertainty."]
+      detrending_options: ["none"]
+  - var: "actual_soil_evaporation"
+    validation_rank: 1
+    unit: "cm"
+    description: "Actual bare-soil evaporation from the surface compartment."
+    emitted_in: ".inc / .wba"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Only separable from transpiration when the obs provides partitioned ET."]
+      detrending_options: ["none"]
+  - var: "evapotranspiration"
+    validation_rank: 2
+    unit: "cm/d"
+    description: "Total actual evapotranspiration (transpiration + soil evaporation + interception)."
+    emitted_in: ".inc / .wba"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Field-scale single-column; compare to eddy-covariance or lysimeter at the same site."]
+      detrending_options: ["none"]
+  - var: "soil_water_content_profile"
+    validation_rank: 3
+    unit: "cm3/cm3"
+    description: "Depth-resolved volumetric water content theta per compartment."
+    emitted_in: ".vap"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "r"
+          caveats: ["Compare at the specific sensor depth; representativeness of a point probe vs a model compartment matters."]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Single profile measurement at one time."]
+      detrending_options: ["none"]
+  - var: "pressure_head_profile"
+    validation_rank: 4
+    unit: "cm"
+    description: "Depth-resolved matric pressure head h per compartment."
+    emitted_in: ".vap"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "r"
+          caveats: ["Compare against tensiometer at matching depth."]
+      detrending_options: ["none"]
+  - var: "groundwater_level"
+    validation_rank: 5
+    unit: "cm"
+    description: "Simulated groundwater (phreatic) level below surface."
+    emitted_in: ".wba"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "r"
+          caveats: ["Sensitive to bottom-boundary choice; only meaningful when SWBOTB represents a real water table."]
+      detrending_options: ["none"]
+  - var: "drainage_flux"
+    validation_rank: 7
+    unit: "cm"
+    description: "Net lateral drainage discharge (and per-level drainage in .blc)."
+    emitted_in: ".inc / .wba / .blc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Compare to measured tile/ditch discharge; lumped analytical drainage, not mechanistic lateral flow."]
+      detrending_options: ["none"]
+  - var: "bottom_flux"
+    validation_rank: 8
+    unit: "cm"
+    description: "Net vertical flux across the lower boundary of the column."
+    emitted_in: ".inc / .wba"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Rarely directly observed; usually inferred, so comparison is indirect."]
+      detrending_options: ["none"]
+  - var: "solute_concentration_output"
+    validation_rank: 9
+    unit: "mg/cm3"
+    description: "Solute concentration / cumulative solute balance components."
+    emitted_in: ".sba / .vap"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Unit care: mg/cm3 vs mg/L differ by 1000x; salinity/leaching obs at matching depth."]
+      detrending_options: ["none"]
+  - var: "soil_temperature_profile"
+    validation_rank: 10
+    unit: "degC"
+    description: "Depth-resolved soil temperature per node."
+    emitted_in: ".ate / .vap"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Compare against soil-temperature probe at matching depth."]
+      detrending_options: ["none"]
+  - var: "crop_yield"
+    validation_rank: 11
+    unit: "kg/ha"
+    description: "Storage-organ / total dry weight at harvest (WOFOST detailed crop modules)."
+    emitted_in: ".crp"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Only meaningful with CROPTYPE=2/3; simple module prescribes development and does not predict yield."]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["National/regional yield aggregates carry a technology trend a single weather-driven field column cannot reproduce; detrend before comparing."]
+      detrending_options: ["none", "linear_residual", "decadal_mean"]
+  - var: "leaf_area_index"
+    validation_rank: 12
+    unit: "m2/m2"
+    description: "Potential and actual leaf area index over the growing season."
+    emitted_in: ".crp"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Phenology timing (DVS) bias shows up as LAI lag; WOFOST modules only."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "ALFA (van Genuchten alpha)"
+      to: "actual_transpiration"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "loamy soils, saline conditions"
+      citations: ["wang2021_swap_efast_saline"]
+    - from: "NPAR (van Genuchten n)"
+      to: "actual_transpiration"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "loamy soils"
+      citations: ["wang2021_swap_efast_saline"]
+    - from: "ALFA (van Genuchten alpha)"
+      to: "crop_yield"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "loamy soils"
+      citations: ["wang2021_swap_efast_saline"]
+    - from: "NPAR (van Genuchten n)"
+      to: "crop_yield"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "loamy soils"
+      citations: ["wang2021_swap_efast_saline"]
+    - from: "omega_c (compensatory root water uptake stress index)"
+      to: "actual_transpiration"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["wang2021_swap_efast_saline"]
+    - from: "omega_c (compensatory root water uptake stress index)"
+      to: "crop_yield"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "loamy soils"
+      citations: ["wang2021_swap_efast_saline"]
+    - from: "Pi (salt level at which salt stress starts)"
+      to: "crop_yield"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "saline conditions"
+      citations: ["wang2021_swap_efast_saline"]
+    - from: "SSF (decline of root water uptake above Pi)"
+      to: "actual_transpiration"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "saline conditions"
+      citations: ["wang2021_swap_efast_saline"]
+    - from: "theta_r (ORES, residual water content)"
+      to: "crop_yield"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["wang2021_swap_efast_saline"]
+    - from: "theta_s (OSAT, saturated water content)"
+      to: "actual_transpiration"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["wang2021_swap_efast_saline"]
+    - from: "TSCF (root solute uptake coefficient)"
+      to: "crop_yield"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "saline conditions"
+      citations: ["wang2021_swap_efast_saline"]
+    - from: "rooting density / root distribution"
+      to: "pressure_head_profile"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["groh2017_swap_sobol_amalgam"]
+    - from: "potential evapotranspiration (ETpot forcing)"
+      to: "pressure_head_profile"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      citations: ["groh2017_swap_sobol_amalgam"]
+    - from: "soil hydraulic properties (van Genuchten alpha, n, theta_r, theta_s)"
+      to: "soil_water_content_profile"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["groh2017_swap_sobol_amalgam", "xu2016_swap_epic_gsa_calibration"]
+    - from: "Ksat (saturated hydraulic conductivity)"
+      to: "drainage_flux"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["xu2016_swap_epic_gsa_calibration"]
+    - from: "crop growth (EPIC) parameters"
+      to: "crop_yield"
+      sensitivity_grade: HIGH
+      basis: cross_family_model_literature
+      lever_type: parameter
+      applicability: "SWAP-EPIC coupling (EPIC growth, not native WOFOST)"
+      citations: ["xu2016_swap_epic_gsa_calibration"]
+    - from: "soil physics parameters"
+      to: "drainage_flux"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["wesseling1997_swap_gsa_report"]
+  citation_index:
+    wang2021_swap_efast_saline:
+      short_citation: "Wang et al. 2021"
+      doi: "10.1016/S1002-0160(21)60038-3"
+      note: "EFAST variance-based GSA of 20 SWAP parameters for transpiration, dry matter and yield of sunflower in saline soils; alpha, n, omega_c, Pi, SSF, TSCF dominant (Pedosphere)."
+    xu2016_swap_epic_gsa_calibration:
+      short_citation: "Xu et al. 2016"
+      doi: "10.1016/j.envsoft.2016.05.013"
+      note: "LH-OAT GSA for SWAP-EPIC; 14 of 49 parameters sensitive across soil hydraulic, crop growth and solute categories."
+    groh2017_swap_sobol_amalgam:
+      short_citation: "Groh et al. 2017"
+      doi: "10.1007/s12665-017-6701-y"
+      note: "Sobol GSA + AMALGAM on SWAP soil hydraulic properties for sole and mixed crops; rooting density and ETpot crucial for matric potential, soil hydraulics for water content (Environmental Earth Sciences)."
+    wesseling1997_swap_gsa_report:
+      short_citation: "Wesseling et al. 1997"
+      doi: ""
+      note: "Foundational SWAP GSA technical report (DLO Winand Staring Centre Report 160); bottom-boundary condition and soil-physics category most influential on water-balance terms. Qualitative grounding only."
+
+safety:
+  hazards:
+    - id: "radiation_unit_W_per_m2"
+      kind: weather_file_semantic
+      description: "Radiation supplied in W/m2 instead of kJ/m2/d (~86.4x low) inflates VPD-driven ET; soil dries to wilting point, ET 100+ mm/d. (dt_001)"
+      severity: silent
+      triplet_id: "dt_001"
+    - id: "humidity_as_relative_not_vapor_pressure"
+      kind: weather_file_semantic
+      description: "Hum column holds relative humidity (0-1 or 0-100) instead of actual vapour pressure in kPa, creating huge VPD and runaway evaporation. (dt_002)"
+      severity: silent
+      triplet_id: "dt_002"
+    - id: "subdaily_rain_not_aggregated"
+      kind: weather_file_semantic
+      description: "3-hourly precipitation records passed as daily without summing give ~8x too much rain, causing permanent waterlogging and runoff. (dt_003)"
+      severity: silent
+      triplet_id: "dt_003"
+    - id: "temperature_in_kelvin"
+      kind: weather_file_semantic
+      description: "Air temperature in Kelvin (~293) instead of Celsius corrupts thermal time and Penman-Monteith ET; crops never emerge/mature. (dt_004)"
+      severity: fatal
+      triplet_id: "dt_004"
+    - id: "ksat_wrong_units"
+      kind: soil_semantic
+      description: "KSATFIT/KSATEXM in m/s or m/d instead of cm/d makes all water drain instantly with no retention. (dt_005)"
+      severity: silent
+      triplet_id: "dt_005"
+    - id: "ores_ge_osat"
+      kind: soil_semantic
+      description: "ORES >= OSAT (residual >= saturated water content) causes division by zero / NaN in the van Genuchten retention curve. (dt_006)"
+      severity: fatal
+      triplet_id: "dt_006"
+    - id: "bdens_g_per_cm3"
+      kind: soil_semantic
+      description: "Bulk density in g/cm3 instead of mg/cm3 (=kg/m3) is clipped to the 100 minimum, giving wrong heat capacity. (dt_007)"
+      severity: degraded
+      triplet_id: "dt_007"
+    - id: "ncomp_hcomp_hsublay_mismatch"
+      kind: soil_semantic
+      description: "NCOMP x HCOMP != HSUBLAY is not rigorously checked, so profile depth and compartment boundaries are silently wrong. (dt_015)"
+      severity: silent
+      triplet_id: "dt_015"
+    - id: "richards_convergence_clay_dtmax"
+      kind: numerical_instability
+      description: "DTMAX too large for clay / steep-retention (low NPAR) soils makes the Richards solver backtrack to DTMIN; run hangs or is extremely slow. (dt_010)"
+      severity: degraded
+      triplet_id: "dt_010"
+    - id: "gwlconv_too_loose"
+      kind: numerical_instability
+      description: "GWLCONV left at the loose default (100 cm) allows the groundwater level to oscillate / jump unrealistically between timesteps. (dt_011)"
+      severity: degraded
+      triplet_id: "dt_011"
+    - id: "malformed_met_swp_listio"
+      kind: parser_semantic
+      description: "Malformed .met/.swp (mismatched columns, tabs, blank data lines) breaks the TTUTIL list-directed READ (forrtl severe 59). (dt_012)"
+      severity: fatal
+      triplet_id: "dt_012"
+    - id: "cropstart_outside_season_or_after_tstart"
+      kind: control_semantic
+      description: "CROPSTART after the growing season, or TSTART after CROPSTART, misses early-season thermal time so DVS never advances and biomass is zero. (dt_013)"
+      severity: silent
+      triplet_id: "dt_013"
+    - id: "crop_rotation_overlap"
+      kind: control_semantic
+      description: "Crop rotation periods overlap (CROPEND(N) > CROPSTART(N+1)) or have unintended gaps; overlap behaviour is undefined. (dt_014)"
+      severity: silent
+      triplet_id: "dt_014"
+    - id: "altw_wind_height_mismatch"
+      kind: weather_file_semantic
+      description: "ALTW (wind measurement height) inconsistent with the forcing dataset's anemometer height biases the Penman-Monteith aerodynamic term and ET. (dt_016)"
+      severity: degraded
+      triplet_id: "dt_016"
+    - id: "solute_concentration_mg_per_L"
+      kind: soil_semantic
+      description: "Solute concentration in mg/L instead of mg/cm3 (a solute-input unit contract) gives values 1000x too high while mass balance still appears closed. (dt_017)"
+      severity: silent
+      triplet_id: "dt_017"
+  validation_limits:
+    - "Field-scale single 1-D column: cannot resolve gridded/distributed horizontal flow; lateral flow only via lumped analytical drainage formulas."
+    - "Mechanistic regional groundwater flow is out of scope; regional application requires external GIS upscaling."
+    - "Advanced pesticide and nutrient transport require external coupled models (PEARL, ANIMO/Soil-N)."
+    - "The simple crop module (CROPTYPE=1) only prescribes development for the upper boundary and does not respond to stress; yield prediction requires the detailed WOFOST modules."
+    - "Daily meteorological driving; sub-daily runoff/macropore behaviour resolved only through the adaptive internal timestep, not from sub-daily forcing unless rainfall intensities are supplied."
+  warnings:
+    - "ORES must be strictly less than OSAT for every soil layer, NPAR > 1.001, and ALFA positive, or the MvG retention curve is undefined."
+    - "Pressure heads must be negative in the unsaturated zone."
+    - "Water-balance closure |Sum_In - Sum_Out - dStorage| should be < 0.1 cm/yr; larger deviations indicate numerical problems (CRITDEVMASBAL triggers a .dwb.csv error file)."
+    - "Three run-time message classes exist (input-data errors, infeasible-combination warnings, fatal calculation errors that stop the run); a successful run logs 'Swap simulation okay!'."
+    - "Under frozen-soil/frost conditions reduction factors are applied to hydraulic conductivity, root water uptake, drainage and bottom flux, and snowpack insulation adjusts the soil-temperature top boundary."
+  assumptions:
+    - statement: "Transport in the vadose zone is predominantly vertical; the field is represented deterministically by a single 1-D soil column (one microclimate, vegetation, soil and drainage condition)."
+      scope: "spatial geometry / domain"
+      source: "SWAP version 4 manual (WENR Report 2780, 2017), Section 1.1 Model domain and processes, doi:10.18174/416321"
+      status: adopted
+    - statement: "Soil hydraulic behaviour is described by Mualem-van Genuchten functions with a near-saturation modification; optional hysteresis via drying/wetting-curve scaling."
+      scope: "soil-water closure"
+      source: "SWAP version 4 manual, Chapter 2 (Soil water flow), doi:10.18174/416321"
+      status: adopted
+    - statement: "Lateral flow below the groundwater level is represented only via analytical drainage formulas (Hooghoudt/Ernst, tabulated, multi-level), not a mechanistic groundwater model."
+      scope: "lateral drainage / boundary"
+      source: "SWAP version 4 manual, Chapter 4 (Drainage), doi:10.18174/416321"
+      status: adopted
+    - statement: "Mass-balance closure applies to water and (when active) solute and snow/macropore sub-systems; the default daily Penman-Monteith ET path is a demand-side flux, not a closed surface energy budget."
+      scope: "conservation / closure"
+      source: "SWAP version 4 manual, Summary and Chapter 3 (Evapotranspiration), doi:10.18174/416321"
+      status: adopted
+    - statement: "This dag describes SWAP 4.2.0; the canonical process/IO grounding is the 2017 SWAP v4 manual, which the developers state applies to SWAP 4 (the official site advertises point release 4.3.0 with no separate full manual)."
+      scope: "version provenance"
+      source: "SWAP version 4 manual (WENR Report 2780, 2017) and www.swap.alterra.nl downloads page"
+      status: tentative

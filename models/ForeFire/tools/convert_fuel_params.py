@@ -47,6 +47,18 @@ import numpy as np
 
 # Anderson 13 fuel models — SI units for Rothermel/Balbi
 # Rhod: kg/m³, sd: 1/m, e: m, Sigmad: kg/m², DeltaH: J/kg
+#
+# PROVENANCE: values are transcribed verbatim from the ForeFire reference fuel
+# table `tests/runff/fuels.csv` in the upstream repository, which the official
+# user guide (docs/source/user_guide/fuels_and_models.rst, "Finding and Creating
+# Fuel Parameter Sets") designates as "the best and intended reference for a
+# correctly formatted file". Indices 0-13 follow the Anderson (1982) FBFM
+# numbering: 0 = non-burnable, 1-13 = the thirteen fuel models.
+#
+# The table previously stopped at index 5, so `--source anderson13` delivered
+# only 6 of the 13 models it names and a fuel raster derived from land cover
+# could not represent ANY timber-litter or slash fuel (Anderson 8-13). Indices
+# 6-13 below close that gap.
 ANDERSON_13_SI = {
     0: {
         "name": "Non-burnable", "Rhod": 563, "Rhol": 522, "Md": 0.1, "Ml": 1.0,
@@ -88,6 +100,70 @@ ANDERSON_13_SI = {
         "sd": 4325, "sl": 5844, "e": 0.6, "Sigmad": 1.393, "Sigmal": 0.201,
         "stoch": 8.3, "RhoA": 1.0, "Ta": 300, "Tau0": 70000,
         "Deltah": 18802000, "DeltaH": 18802000, "Cp": 1800, "Cpa": 1000,
+        "Ti": 600, "X0": 0.3, "r00": 2.5e-05, "Blai": 4.0, "me": 0.3,
+    },
+    6: {
+        "name": "Dormant brush / hardwood slash", "Rhod": 562, "Rhol": 474,
+        "Md": 0.1, "Ml": 1.0, "sd": 6740, "sl": 8195, "e": 0.57,
+        "Sigmad": 1.326, "Sigmal": 0.166,
+        "stoch": 8.3, "RhoA": 1.0, "Ta": 300, "Tau0": 70000,
+        "Deltah": 18941000, "DeltaH": 18941000, "Cp": 1800, "Cpa": 1000,
+        "Ti": 600, "X0": 0.3, "r00": 2.5e-05, "Blai": 4.0, "me": 0.3,
+    },
+    7: {
+        "name": "Southern rough", "Rhod": 658, "Rhol": 651,
+        "Md": 0.1, "Ml": 1.0, "sd": 4734, "sl": 5733, "e": 0.15,
+        "Sigmad": 1.415, "Sigmal": 0.541,
+        "stoch": 8.3, "RhoA": 1.0, "Ta": 300, "Tau0": 70000,
+        "Deltah": 18472000, "DeltaH": 18466000, "Cp": 1800, "Cpa": 1000,
+        "Ti": 600, "X0": 0.3, "r00": 2.5e-05, "Blai": 4.0, "me": 0.3,
+    },
+    8: {
+        "name": "Closed timber litter", "Rhod": 446, "Rhol": 513,
+        "Md": 0.1, "Ml": 1.0, "sd": 7792, "sl": 9072, "e": 0.78,
+        "Sigmad": 0.492, "Sigmal": 0.023,
+        "stoch": 8.3, "RhoA": 1.0, "Ta": 300, "Tau0": 70000,
+        "Deltah": 18587000, "DeltaH": 18587000, "Cp": 1800, "Cpa": 1000,
+        "Ti": 600, "X0": 0.3, "r00": 2.5e-05, "Blai": 4.0, "me": 0.3,
+    },
+    9: {
+        "name": "Hardwood litter", "Rhod": 467, "Rhol": 543,
+        "Md": 0.1, "Ml": 1.0, "sd": 6115, "sl": 7224, "e": 0.285,
+        "Sigmad": 0.855, "Sigmal": 0.174,
+        "stoch": 8.3, "RhoA": 1.0, "Ta": 300, "Tau0": 70000,
+        "Deltah": 18474000, "DeltaH": 18474000, "Cp": 1800, "Cpa": 1000,
+        "Ti": 600, "X0": 0.3, "r00": 2.5e-05, "Blai": 4.0, "me": 0.3,
+    },
+    10: {
+        "name": "Timber litter and understory", "Rhod": 674, "Rhol": 612,
+        "Md": 0.1, "Ml": 1.0, "sd": 4801, "sl": 5928, "e": 0.45,
+        "Sigmad": 1.525, "Sigmal": 0.709,
+        "stoch": 8.3, "RhoA": 1.0, "Ta": 300, "Tau0": 70000,
+        "Deltah": 18280000, "DeltaH": 18277000, "Cp": 1800, "Cpa": 1000,
+        "Ti": 600, "X0": 0.3, "r00": 2.5e-05, "Blai": 4.0, "me": 0.3,
+    },
+    11: {
+        "name": "Light logging slash", "Rhod": 653, "Rhol": 582,
+        "Md": 0.1, "Ml": 1.0, "sd": 4753, "sl": 6569, "e": 0.75,
+        "Sigmad": 1.096, "Sigmal": 1.105,
+        "stoch": 8.3, "RhoA": 1.0, "Ta": 300, "Tau0": 70000,
+        "Deltah": 18226000, "DeltaH": 18221000, "Cp": 1800, "Cpa": 1000,
+        "Ti": 600, "X0": 0.3, "r00": 2.5e-05, "Blai": 4.0, "me": 0.3,
+    },
+    12: {
+        "name": "Medium logging slash", "Rhod": 596, "Rhol": 586,
+        "Md": 0.1, "Ml": 1.0, "sd": 3688, "sl": 5551, "e": 0.475,
+        "Sigmad": 1.346, "Sigmal": 0.077,
+        "stoch": 8.3, "RhoA": 1.0, "Ta": 300, "Tau0": 70000,
+        "Deltah": 19050000, "DeltaH": 19050000, "Cp": 1800, "Cpa": 1000,
+        "Ti": 600, "X0": 0.3, "r00": 2.5e-05, "Blai": 4.0, "me": 0.3,
+    },
+    13: {
+        "name": "Heavy logging slash", "Rhod": 438, "Rhol": 488,
+        "Md": 0.1, "Ml": 1.0, "sd": 7274, "sl": 8453, "e": 0.38,
+        "Sigmad": 1.053, "Sigmal": 0.321,
+        "stoch": 8.3, "RhoA": 1.0, "Ta": 300, "Tau0": 70000,
+        "Deltah": 17842000, "DeltaH": 17842000, "Cp": 1800, "Cpa": 1000,
         "Ti": 600, "X0": 0.3, "r00": 2.5e-05, "Blai": 4.0, "me": 0.3,
     },
 }

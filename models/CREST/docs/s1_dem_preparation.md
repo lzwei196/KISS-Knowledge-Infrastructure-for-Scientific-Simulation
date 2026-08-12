@@ -22,29 +22,73 @@ Prepare the three fundamental grids required by EF5: Digital Elevation Model (DE
 
 ## Procedure
 
-### Step 1: Obtain and clip DEM
+### Recommended (KDT 5.1.2): use the KI's `prepare_basic_grids` tool
+
+The Stage-1 tool wraps WhiteboxTools and produces EF5-compatible
+DEM/DDM/FAM in one command:
 
 ```bash
-# Using GDAL to clip DEM to bounding box
-gdalwarp -te lon_min lat_min lon_max lat_max \
-         -tr 0.01 0.01 \
-         input_dem.tif clipped_dem.tif
+python tools/prepare_basic_grids.py \
+    --dem raw_dem.tif \
+    --out-dir basin/grids/ \
+    --bbox 82.0 27.8 95.3 31.5 \
+    --method breach \
+    --out-format asc \
+    --expected-outlet 94.583 29.466
 ```
 
-Or use EF5's built-in DEM processor:
+The tool:
+1. Clips the DEM to `--bbox` (optional)
+2. Fills sinks via `BreachDepressionsLeastCost` (preferred — preserves more
+   terrain than fill; falls back to `FillDepressions` with `--method fill`)
+3. Computes D8 drainage direction with **ESRI encoding** (EF5 expects this)
+4. Computes D8 flow accumulation as **cell count, self-inclusive**
+   (EF5 `SELFFAM=true` convention)
+5. Writes ASC by default (EF5's TIF reader has known bugs with
+   rasterio-generated GeoTIFFs — see known_issues in `format_spec.yaml`)
+6. Verifies the output and writes a diagnostic JSON. Fails loudly if:
+   - DEM/DDM/FAM grids don't share extent/transform/CRS
+   - DDM contains non-ESRI values (anything outside {0, 1, 2, 4, 8, 16, 32, 64, 128})
+   - More than 1% of valid cells are unfilled sinks (DDM=0)
+   - The expected-outlet check shows FAM=1 (gauge isolated)
+
+If `--expected-outlet` is supplied, the tool reports FAM at that cell and
+its 3×3 max — so you can confirm the upstream basin connects to the gauge
+before running EF5.
+
+#### Why a custom tool (and not `ef5 -p`)
+
+The EF5 v1.2.3 binary's argument parser accepts a `-p` flag (mode=1) that
+SKILL.md historically advertised as a fallback DEM processor. That flag is
+**not implemented in this build of EF5** — `ProcessDEM(mode=1)` falls
+through and exits silently with no output (verified at
+`source/repo/src/DEMProcessor.cpp`). The only working EF5 mode is `-s`
+(mode=2), which recomputes FAM from a *pre-existing* DDM:
+
 ```bash
-ef5 -z dem.tif -d ddm.tif -a fam.tif -p
+# Recompute FAM from a known-good DDM (rare; only useful for re-prepping)
+ef5 -z dem.tif -d ddm.tif -a fam.tif -s
 ```
 
-### Step 2: Fill sinks and generate DDM
+Do not use `ef5 -p`. Use `prepare_basic_grids.py`.
 
-If not using EF5's built-in tool, use TauDEM or ArcGIS Hydrology tools:
+### Alternative: external D8 tools
+
+If WhiteboxTools is unavailable, you can produce the same outputs with
+TauDEM or ArcGIS Hydrology — but you must enforce the same conventions:
+
 ```bash
-# TauDEM workflow
+# TauDEM workflow (then set ESRIDDM=false in control.txt — TauDEM uses 1-8 codes!)
 pitremove dem.tif -z dem_filled.tif
 d8flowdir -p ddm.tif -sd8 slope.tif -fel dem_filled.tif
-aread8 -p ddm.tif -ad8 fam.tif
+aread8 -p ddm.tif -ad8 fam.tif      # WARNING: this is 0-based; add +1 for SELFFAM=true
 ```
+
+Critical conventions (whichever tool you use):
+- ESRI encoding for DDM (1, 2, 4, 8, 16, 32, 64, 128) — set `ESRIDDM=true` in control.txt
+- Self-inclusive FAM (minimum value = 1) — set `SELFFAM=true` in control.txt
+- Nodata = -9999 in all three grids
+- All three grids on identical extent, cellsize, and CRS
 
 ### Step 3: Set DDM encoding
 

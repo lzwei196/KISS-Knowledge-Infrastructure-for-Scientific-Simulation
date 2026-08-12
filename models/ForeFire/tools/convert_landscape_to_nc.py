@@ -182,51 +182,85 @@ def process(args):
         wind_u_data = np.full((nt, nz, ny, nx), u_val, dtype=np.float64)
         wind_v_data = np.full((nt, nz, ny, nx), v_val, dtype=np.float64)
 
-    # Reshape altitude and fuel to 4D (t, z, y, x)
-    alt_4d = dem.reshape(1, 1, ny, nx).astype(np.float64)
-    fuel_4d = fuel.reshape(1, 1, ny, nx).astype(np.float64)
-
-    # Create output NetCDF
+    # Create output NetCDF in ForeFire's REQUIRED domain format.
+    # The binary's DataBroker::loadFromNCFile has a hard contract that the
+    # XHAT/YHAT layout does NOT satisfy ("Domain variable not found"): it needs
+    #   - a scalar NC_STRING `domain` variable carrying float32 SWx/SWy/Lx/Ly +
+    #     BBoxWSEN (lon/lat) so startFire[lonlat] maps to local meters,
+    #   - per-layer `type` attributes ('data'/'fuel'),
+    #   - nt=1 (nt=2 with no time coord underflows the time index),
+    #   - south-up rows (domain origin = SW corner, y increasing north).
     print(f"Writing: {args.output}")
     bounds = dem_info["bounds"]
+    crs = dem_info["crs"]
+    Lx = float(bounds.right - bounds.left)
+    Ly = float(bounds.top - bounds.bottom)
+
+    # lon/lat bounding box of the (projected) corners for the lonlat->meter map
+    try:
+        from pyproj import Transformer
+        tr = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
+        los, las = [], []
+        for X in (bounds.left, bounds.right):
+            for Y in (bounds.bottom, bounds.top):
+                lo, la = tr.transform(X, Y)
+                los.append(lo); las.append(la)
+        W, E = min(los), max(los); S, N = min(las), max(las)
+    except Exception as _e:
+        print(f"WARNING: corner reprojection failed ({_e}); using meter bbox", file=sys.stderr)
+        W, S, E, N = 0.0, 0.0, Lx, Ly
+
+    # rasterio/GDAL give north-up rows (row 0 = north); flip to south-up.
+    alt2 = np.flipud(dem.astype(np.float64))
+    fuel2 = np.flipud(fuel.astype(np.int16))
+    wu2 = np.flipud(np.asarray(wind_u_data[0, 0], dtype=np.float64))
+    wv2 = np.flipud(np.asarray(wind_v_data[0, 0], dtype=np.float64))
 
     ds = netCDF4.Dataset(args.output, 'w', format='NETCDF4')
-    ds.createDimension('DIMX', nx)
-    ds.createDimension('DIMY', ny)
-    ds.createDimension('DIMZ', nz)
-    ds.createDimension('DIMT', nt)
-    ds.createDimension('DIMX1', nx)
-    ds.createDimension('DIMY1', ny)
+    for dname, dsize in [('nt', 1), ('nz', 1), ('ny', ny), ('nx', nx),
+                         ('ft', 1), ('fz', 1), ('fy', ny), ('fx', nx)]:
+        ds.createDimension(dname, dsize)
 
-    # Coordinate variables
-    x = np.linspace(bounds.left, bounds.right, nx)
-    y = np.linspace(bounds.bottom, bounds.top, ny)
+    dom = ds.createVariable('domain', str)          # NC_STRING scalar
+    dom[...] = ""
+    dom.type = "domain"
+    dom.SWx = np.float32(0.0); dom.SWy = np.float32(0.0); dom.SWz = np.float32(0.0)
+    dom.Lx = np.float32(Lx); dom.Ly = np.float32(Ly); dom.Lz = np.float32(0.0)
+    dom.t0 = np.float32(0.0); dom.Lt = np.float32(np.inf)
+    dom.BBoxWSEN = f"{W},{S},{E},{N}"
+    dom.WSENLBRT = f"{W},{S},{E},{N},0.0,0.0,{Lx},{Ly}"
+    # PROVENANCE ONLY -- these are NOT read by the engine. SWx/SWy above MUST stay
+    # at 0: the engine maps its LOCAL metric frame (0..Lx, 0..Ly) onto BBoxWSEN,
+    # and putting the projected easting/northing in SWx/SWy corrupts that mapping
+    # (perimeters then dump at nonsense lon/lat). The consequence for callers is
+    # the trap in triplet dt_022: `startFire[loc=(x,y,0)]` expects LOCAL metres,
+    # so passing absolute UTM puts the ignition outside the domain and ForeFire
+    # silently creates NO fire -- every isochrone is an empty FeatureCollection
+    # and the exit code is 0. Subtract these origins, or use startFire[lonlat=].
+    dom.originX = float(bounds.left)
+    dom.originY = float(bounds.bottom)
+    dom.projCRS = str(crs)
+    print(f"  Domain frame: LOCAL metres 0..{Lx:.0f} x 0..{Ly:.0f}; "
+          f"projected origin (SW) = ({bounds.left}, {bounds.bottom}) in {crs}.")
+    print( "  -> startFire[loc=] takes LOCAL metres (subtract the origin); "
+           "startFire[lonlat=] takes degrees. Absolute CRS coords ignite nothing "
+           "and raise no error (triplet dt_022).")
 
-    xvar = ds.createVariable('XHAT', 'f8', ('DIMX',))
-    yvar = ds.createVariable('YHAT', 'f8', ('DIMY',))
-    xvar[:] = x
-    yvar[:] = y
+    alt_var = ds.createVariable('altitude', 'f8', ('nt', 'nz', 'ny', 'nx'))
+    alt_var.type = "data"; alt_var.units = "m"
+    alt_var[0, 0, :, :] = alt2
 
-    # Data variables
-    alt_var = ds.createVariable('altitude', 'f8', ('DIMT', 'DIMZ', 'DIMY', 'DIMX'))
-    alt_var.units = "m"
-    alt_var[0, :, :, :] = alt_4d[0]
-    if nt > 1:
-        alt_var[1, :, :, :] = alt_4d[0]
+    fuel_var = ds.createVariable('fuel', 'i2', ('ft', 'fz', 'fy', 'fx'))
+    fuel_var.type = "fuel"
+    fuel_var[0, 0, :, :] = fuel2
 
-    fuel_var = ds.createVariable('fuel', 'f8', ('DIMT', 'DIMZ', 'DIMY1', 'DIMX1'))
-    fuel_var.units = "index"
-    fuel_var[0, :, :, :] = fuel_4d[0]
-    if nt > 1:
-        fuel_var[1, :, :, :] = fuel_4d[0]
+    wu_var = ds.createVariable('windU', 'f8', ('nt', 'nz', 'ny', 'nx'))
+    wu_var.type = "data"; wu_var.units = "m/s"
+    wu_var[0, 0, :, :] = wu2
 
-    wu_var = ds.createVariable('windU', 'f8', ('DIMT', 'DIMZ', 'DIMY', 'DIMX'))
-    wu_var.units = "m/s"
-    wu_var[:] = wind_u_data
-
-    wv_var = ds.createVariable('windV', 'f8', ('DIMT', 'DIMZ', 'DIMY', 'DIMX'))
-    wv_var.units = "m/s"
-    wv_var[:] = wind_v_data
+    wv_var = ds.createVariable('windV', 'f8', ('nt', 'nz', 'ny', 'nx'))
+    wv_var.type = "data"; wv_var.units = "m/s"
+    wv_var[0, 0, :, :] = wv2
 
     ds.description = "ForeFire landscape data"
     ds.timestamp = args.timestamp

@@ -1,0 +1,28 @@
+{
+  "status": "success",
+  "model": "m_07_gr4j_4p_2s",
+  "theta": [
+    350,
+    0,
+    90,
+    1.7
+  ],
+  "S0": [
+    175,
+    30
+  ],
+  "delta_t": 1.0,
+  "output_csv": "./marrmot_timeseries.csv",
+  "script_path": "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure/work/tmpov69svgq.m",
+  "return_code": 0,
+  "stdout_first_500": "Loaded 5479 timesteps of forcing data\nP mean: 1.30 mm/d, Ep mean: 1.45 mm/d, T mean: 1.80 C\nModel: m_07_gr4j_4p_2s (4 params, 2 stores)\nRunning model...\nTotal P  = 7134.028 mm.\nTotal Ea = -5448.3318 mm.\nTotal Q = -1579.08 mm.\nTotal Exchange = -0 mm.\nDelta S1 = -42.5861 mm.\nDelta S2 = -13.2077 mm.\nOn route = -0.25919 mm.\n-------------\nWater balance = 50.5632 mm.\nModel run complete.\nOutput written to /mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure/work/marrmot_timeseries.csv\nW",
+  "stderr_first_500": "warning: Invalid UTF-8 byte sequences have been replaced.\nwarning: called from\n    tmpov69svgq at line 41 column 3\n\nwarning: Invalid UTF-8 byte sequences have been replaced.\nwarning: called from\n    tmpov69svgq at line 41 column 3\n\nwarning: Invalid UTF-8 byte sequences have been replaced.\nwarning: called from\n    tmpov69svgq at line 41 column 3\n\n",
+  "warnings": [
+    "Water balance error = 50.5632 mm (> 1 mm threshold, dt_014)"
+  ],
+  "n_timesteps": 5479,
+  "Q_mean": 0.288206,
+  "Q_max": 3.332565,
+  "Ea_mean": 0.994403,
+  "water_balance": 50.563189
+}

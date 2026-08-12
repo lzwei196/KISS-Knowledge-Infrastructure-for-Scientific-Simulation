@@ -559,3 +559,327 @@ triplets:
     validated: true
     validated_basin: Bengbu
     validated_date: "2026-03-24"
+
+  # --- Validated at Wangjiaba (51030), 2026-07-09 -----------------------------
+
+  - id: dt_r11
+    stage: s2_morphology
+    failure_domain: silent_error
+    symptom:
+      description: "dem.asc contains impossible elevations (e.g. min = -4358 m) and a halo of values between -9999 and 0 around the basin edge; downstream `== -9999` masks miss cells because nodata reads back as -9999.00000000001"
+      error_pattern: "N/A"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "rasterio reproject() called without src_nodata"
+      explanation: >
+        clip_and_resample_dem() masked the DEM with nodata=-9999 and then called
+        reproject(..., resampling=bilinear, dst_nodata=-9999) WITHOUT src_nodata.
+        The resampling kernel therefore treats -9999 as a real elevation and blends
+        it with valid terrain, creating a garbage halo (9,450 of 30,464 L0 cells at
+        Wangjiaba) and float-fuzzed nodata that defeats exact equality masks.
+        Separately, bilinear is wrong here: the source (90 m) is FINER than L0
+        (~1 km), so the operation is an aggregation and needs Resampling.average.
+      affected_components: [s2_morphology, prepare_morpho_data.py]
+    remedy:
+      action: "Pass src_nodata to reproject, fold the source's own nodata first, use Resampling.average, and normalise fuzz with a tolerance"
+      manual_steps:
+        - "out_image[out_image == src.nodata] = -9999   # e.g. 32767 for china_dem_90m"
+        - "reproject(..., resampling=Resampling.average, src_nodata=-9999, dst_nodata=-9999)"
+        - "dst[dst <= -9990] = -9999"
+      prevention: "Assert dem.min() is physically plausible before writing dem.asc"
+    severity: fatal
+    validated: true
+    validated_basin: Wangjiaba
+    validated_date: "2026-07-09"
+
+  - id: dt_r12
+    stage: s1_domain
+    failure_domain: runtime
+    symptom:
+      description: "mHM aborts at startup with a level-2 grid mismatch where only xllcorner/yllcorner disagree, and the expected corners look geographically wrong"
+      error_pattern: "L2_variable_init: size mismatch in grid file for level2"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "mHM's read_header_ascii() dummy args are (ncols, nrows) but every call site passes (nrows, ncols)"
+      explanation: >
+        In mo_meteo_handler.f90 the call is
+          call read_header_ascii(fName, unit, nrows2, ncols2, ...)
+        while the subroutine declares (header_ncols, header_nrows, ...). The ASCII
+        "ncols" line therefore lands in mHM's nrows. calculate_grid_properties()
+        then derives xllcornerOut from ncolsIn, mixing the x-origin with the
+        y-extent. For a NON-square L0 no geographically correct header can satisfy
+        the check: at Wangjiaba (239 x 213 @ 0.01 deg) mHM demanded
+        xll=113.12, yll=31.35 while the true origin is (113.24, 31.46).
+        mHM's own test domains are square (240 x 240), so upstream never sees it.
+      affected_components: [s1_domain, setup_mhm_domain.py, s4_forcing]
+    remedy:
+      action: "Pad L0 to a SQUARE grid whose side is an exact multiple of the L1/L11 ratio"
+      manual_steps:
+        - "side = max(ncols, nrows); round side UP to a multiple of R = cs_L1/cs_L0"
+        - "Grow xllcorner/yllcorner outward so the basin stays centred"
+        - "Then xllOut = xll0 + N*cs0 - (N/R)*cs1 = xll0 for either reading"
+      prevention: "setup_mhm_domain.py enforces the square-L0 constraint; the extra cells are nodata"
+    severity: fatal
+    validated: true
+    validated_basin: Wangjiaba
+    validated_date: "2026-07-09"
+
+  - id: dt_r13
+    stage: s2_morphology
+    failure_domain: runtime
+    symptom:
+      description: "mHM prints 'Initialize domains ...' and then spins forever at ~100% CPU with no further output and no error"
+      error_pattern: "N/A"
+      detection_method: hang
+    diagnosis:
+      root_cause: "A cycle in the L0 flow-direction grid; mRM's L11 network tracer follows fdir until an outlet and never terminates"
+      explanation: >
+        When upscaling a fine D8 network (MERIT-Hydro) to L0 by 'walk downstream
+        until leaving the cell', a river that meanders across a cell boundary
+        yields A->B and B->A. Two further traps make it worse: (1) the coarse-cell
+        index must be computed with the SAME integer arithmetic as the block
+        slicing -- a lon/lat round-trip disagrees near block edges when the fine
+        grid origin is offset by a fraction of a fine cell; (2) a cycle checker
+        that flags the cell where the walk stopped will false-positive on genuine
+        outlets (fdir = 0).
+      affected_components: [s2_morphology, prepare_morpho_data.py, mRM]
+    remedy:
+      action: "Accept a downstream neighbour only if its max upstream area is STRICTLY greater; then assert acyclicity"
+      manual_steps:
+        - "Precompute upa_max per L0 cell from MERIT `upa`"
+        - "During the trace accept (ni,nj) only when upa_max[ni,nj] > upa_max[i,j]"
+        - "Otherwise keep walking; if nothing qualifies set fdir = 0 (outlet)"
+        - "Map fine->coarse with (mr - r0)//ratio, NOT via lon/lat"
+        - "Run a 3-state DFS on the MASKED grid; fdir=0 is an outlet, not a cycle"
+      prevention: "prepare_morpho_data.py aborts if the upscaled network contains a cycle"
+    severity: fatal
+    validated: true
+    validated_basin: Wangjiaba
+    validated_date: "2026-07-09"
+
+  - id: dt_r14
+    stage: s9_calibration
+    failure_domain: silent_error
+    symptom:
+      description: "mHM prints 'Use DDS' then exits with return code 0. No FinalParam.nml, no dds_results.out, no 'mHM: Finished!'"
+      error_pattern: "Error DDS: max function evals must be minimum 6"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "nIterations < 6"
+      explanation: >
+        FORCES mo_dds.F90:169 does `if (imaxiter < 6) stop 'Error DDS: max function
+        evals must be minimum 6'`. A Fortran `stop '<message>'` exits with status
+        ZERO, so every wrapper that checks the return code reports SUCCESS while
+        the calibration never ran.
+      affected_components: [s9_calibration, s6_namelist, FORCES/mo_dds.F90]
+    remedy:
+      action: "Use nIterations >= 6 (realistically several hundred for DDS)"
+      manual_steps:
+        - "Set nIterations >= 6 in &Optimization"
+        - "Never trust mHM's exit code alone: assert FinalParam.nml exists afterwards"
+      prevention: "generate_mhm_namelists.py and setup_mhm_calibration.py both reject n_iterations < 6"
+    severity: fatal
+    validated: true
+    validated_basin: Wangjiaba
+    validated_date: "2026-07-09"
+
+  - id: dt_r15
+    stage: s9_calibration
+    failure_domain: runtime
+    symptom:
+      description: "Calibration aborts immediately with a missing-namelist error even though only discharge is being calibrated"
+      error_pattern: "POSITION_NML: namelist /optional_data/ MISSING"
+      detection_method: log_match
+    diagnosis:
+      root_cause: "opti_function=10 is NOT KGE of discharge in mHM v5.13.1"
+      explanation: >
+        mo_mhm_read_config.f90 reads the &optional_data namelist for
+        `case(10:13, 28)` (soil moisture), `case(17)` (neutrons),
+        `case(27,29,30)` (ET) and `case(15)` (TWS). Per
+        mo_mrm_objective_function_runoff.F90 the DISCHARGE objectives are
+        1 = 1-NSE, 2 = 1-lnNSE, 3 = 1-0.5*(NSE+lnNSE), 9 = 1-KGE,
+        14 = multi-gauge KGE. opti_function=10 is 1 - KGE of catchment-average
+        SOIL MOISTURE. Older SKILL.md text calling 10 "KGE (recommended)" makes
+        the documented recipe crash.
+      affected_components: [s9_calibration, SKILL.md]
+    remedy:
+      action: "For discharge calibration use opti_function = 1 (1-NSE) or 9 (1-KGE)"
+      manual_steps:
+        - "opti_function = 1  -> minimise 1 - NSE(Q)"
+        - "opti_function = 9  -> minimise 1 - KGE(Q)"
+        - "Only use 10-13/15/17/27-30 with an &optional_data namelist AND the obs files"
+      prevention: "setup_mhm_calibration.py rejects objectives that require &optional_data"
+    severity: fatal
+    validated: true
+    validated_basin: Wangjiaba
+    validated_date: "2026-07-09"
+
+  - id: dt_r16
+    stage: s9_calibration
+    failure_domain: silent_error
+    symptom:
+      description: "A run configured with --opti_function 1 --n_iterations 2000 actually executes with opti_function=10 and nIterations=1000"
+      error_pattern: "POSITION_NML: namelist /optional_data/ MISSING"
+      detection_method: config_comparison
+    diagnosis:
+      root_cause: "setup_mhm_calibration.py rewrote mhm.nml again on the --execute call, stamping in argparse DEFAULTS"
+      explanation: >
+        SKILL.md documents invoking the tool three times: configure, then
+        --execute, then --parse_results. The latter two carry no optimiser flags,
+        so process() re-ran modify_mhm_nml_for_calibration() with the default
+        opti_function and n_iterations, silently discarding the configuration.
+      affected_components: [s9_calibration, setup_mhm_calibration.py]
+    remedy:
+      action: "Only rewrite mhm.nml on the configure call"
+      manual_steps:
+        - "if not (EXECUTE or PARSE_RESULTS): modify_mhm_nml_for_calibration(...)"
+        - "Verify mhm.nml right before launching: grep opti_function nIterations"
+      prevention: "Fixed in setup_mhm_calibration.py: the rewrite is skipped when --execute/--parse_results is given"
+    severity: fatal
+    validated: true
+    validated_basin: Wangjiaba
+    validated_date: "2026-07-09"
+
+  - id: dt_s09
+    stage: s1_domain
+    failure_domain: silent_error
+    symptom:
+      description: "Simulated discharge is a roughly constant fraction of observed (PBIAS approx -50%) with good timing (r > 0.8); calibration cannot remove the bias"
+      error_pattern: "N/A"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "The basin shapefile covers only part of the gauge's true drainage area"
+      explanation: >
+        data/shp/wangjiaba_shp contains THREE nested polygons; the largest is
+        15,952 km2 against the gauge's documented 30,630 km2 (52%). Re-deriving D8
+        from the China 90 m DEM reproduces the same 15.8k km2, because on the flat,
+        leveed Huai plain bare-earth D8 routes the Hong River (~12,000 km2) to a
+        confluence just DOWNSTREAM of Wangjiaba. Half the contributing area is
+        simply absent from the model grid, so no parameter set can fix the volume.
+      affected_components: [s1_domain, data/shp]
+    remedy:
+      action: "Delineate the catchment from MERIT-Hydro and snap the outlet to the DOCUMENTED drainage area"
+      manual_steps:
+        - "python tools/s1_domain/delineate_basin_merit.py --outlet_lon .. --outlet_lat .. --target_area_km2 30630"
+        - "MERIT `upa` gives 30,844 km2 at (115.585, 32.425); the reverse-traced basin is 29,638 km2 (-3.2%)"
+        - "ALWAYS cross-check the shapefile area against the gauge's published drainage area first"
+      prevention: "delineate_basin_merit.py refuses to emit a basin more than 10% from --target_area_km2"
+    severity: fatal
+    validated: true
+    validated_basin: Wangjiaba
+    validated_date: "2026-07-09"
+
+  - id: dt_s10
+    stage: s4_forcing
+    failure_domain: silent_error
+    symptom:
+      description: "Basin-mean precipitation is about 1/8 of the climatological value (e.g. 125 mm/yr instead of 1000 mm/yr); runoff is near zero, PBIAS approx -95%"
+      error_pattern: "N/A"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "CMFD DAILY precipitation multiplied by 10800 s (3 h) instead of 86400 s (1 d)"
+      explanation: >
+        The CMFD daily product (Data_forcing_01dy_*) stores a daily MEAN RATE in
+        kg m-2 s-1, not a 3-hourly accumulation. The old tool applied the 3-hourly
+        factor 10800 and then skipped the resample (because a daily file has <= 366
+        steps), delivering one eighth of the true rainfall. The SKILL.md unit table
+        ("Precipitation CMFD mm/3hr -> multiply by 8") describes the 3-HOURLY
+        product only.
+      affected_components: [s4_forcing, convert_forcing_to_mhm.py, SKILL.md]
+    remedy:
+      action: "Load through ki_tools_common.load_forcing.load_daily_forcing, which normalises units once"
+      manual_steps:
+        - "from ki_tools_common.load_forcing import load_daily_forcing  # returns precip_mm in mm/day"
+        - "Sanity gate: basin-mean precipitation must be 200-4000 mm/yr"
+      prevention: "convert_forcing_to_mhm.py hard-fails when basin-mean precipitation is outside 200-4000 mm/yr"
+    severity: fatal
+    validated: true
+    validated_basin: Wangjiaba
+    validated_date: "2026-07-09"
+
+  - id: dt_s11
+    stage: s4_forcing
+    failure_domain: silent_error
+    symptom:
+      description: "PET is either identically zero, or wildly inflated (basin mean ~98 mm/day) when tmin/tmax are synthesised as tavg +/- 5 K"
+      error_pattern: "N/A"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Hargreaves-Samani (processCase(5)=1) applied to a daily-mean-temperature-only forcing"
+      explanation: >
+        CMFD daily provides one temperature field, so load_daily_forcing returns
+        temp_max_c == temp_min_c == temp_mean_c. Hargreaves scales with
+        sqrt(Tmax - Tmin) and is therefore EXACTLY zero. Fabricating a diurnal
+        range does not recover the missing information; it manufactures the very
+        quantity the method integrates and previously produced PET ~ 98 mm/day
+        (~20x physical), which evaporated the entire water balance.
+      affected_components: [s4_forcing, convert_forcing_to_mhm.py]
+    remedy:
+      action: "Pre-compute PET with Oudin (2005) and run mHM with processCase(5)=0"
+      manual_steps:
+        - "convert_forcing_to_mhm.py --pet_method 0  -> writes input/meteo/pet/pet.nc"
+        - "Oudin needs only tavg and latitude; at Wangjiaba it gives 925 mm/yr, max 6.5 mm/day"
+        - "Cross-check: PET/precip should be O(1) in a humid subtropical basin"
+      prevention: "convert_forcing_to_mhm.py refuses --pet_method 1 when the mean diurnal range is < 0.1 K"
+    severity: fatal
+    validated: true
+    validated_basin: Wangjiaba
+    validated_date: "2026-07-09"
+
+  - id: dt_s12
+    stage: s2_morphology
+    failure_domain: silent_error
+    symptom:
+      description: "lc_YYYY.asc and LAI_class.asc contain a SINGLE class for the whole basin, or croplands carry a flat year-round LAI of 2-5"
+      error_pattern: "N/A"
+      detection_method: value_comparison
+    diagnosis:
+      root_cause: "Wrong default raster path (silent uniform fallback) plus an IGBP lookup applied to a UMD-legend raster"
+      explanation: >
+        landcover_to_mhm_luse.py defaulted to data/vegetation/AVHRR/... which does
+        not exist; the missing-file branch filled the grid with a single cropland
+        class. The real raster,
+        data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif, uses the UMD
+        14-class legend (its .vat.dbf global counts show value 11 = 11.8M cells =
+        cropland, 12 = 87M = bare). Under IGBP, 11 = Permanent Wetlands, so the
+        IGBP table relabels all Huai cropland as wetland and swaps the seasonal
+        crop LAI curve (0.0-5.2) for a flat 2-5.
+      affected_components: [s2_morphology, landcover_to_mhm_luse.py]
+    remedy:
+      action: "Point at data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif and use --legend umd"
+      manual_steps:
+        - "Verify the class histogram over the basin looks physical before proceeding"
+        - "Wangjiaba: 23.8% forest, 74.6% pervious, 1.6% sealed, 7 LAI classes"
+      prevention: "landcover_to_mhm_luse.py now exits 1 rather than emitting a uniform grid"
+    severity: degraded
+    validated: true
+    validated_basin: Wangjiaba
+    validated_date: "2026-07-09"
+
+  - id: dt_s13
+    stage: s5_gauge
+    failure_domain: silent_error
+    symptom:
+      description: "daily_discharge.out shows Qobs values that look like day-of-month numbers, or all gauge metrics are nonsense"
+      error_pattern: "N/A"
+      detection_method: output_comparison
+    diagnosis:
+      root_cause: "Gauge file written as 4 columns (YYYY MM DD Q) with no header"
+      explanation: >
+        mo_read_timeseries.f90 skips FIVE header lines and then parses SIX columns
+        (YYYY MM DD HH MM Q). A bare 4-column file makes mHM consume the first data
+        rows as the header and then read discharge out of the DAY column.
+      affected_components: [s5_gauge, prepare_mhm_gauge.py]
+    remedy:
+      action: "Emit the 5-line header and 6 columns, as in mhm_src/test_domain/input/gauge/00398.txt"
+      manual_steps:
+        - "line1: '<id> <name> (daily discharge)'"
+        - "line2: 'nodata   -9999'"
+        - "line3: 'n       1       measurements per day [1, 1440]'"
+        - "line4/5: 'start'/'end'  YYYY MM DD HH MM"
+        - "data:   YYYY MM DD 00 00   <Q>"
+      prevention: "prepare_mhm_gauge.py writes the header; it also exits 2 rather than emitting an all-nodata gauge"
+    severity: fatal
+    validated: true
+    validated_basin: Wangjiaba
+    validated_date: "2026-07-09"

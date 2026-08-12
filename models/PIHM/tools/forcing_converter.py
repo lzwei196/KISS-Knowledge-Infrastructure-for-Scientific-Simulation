@@ -80,15 +80,59 @@ def validate_inputs(args):
 
 
 def convert_prcp(value, unit):
-    """Convert precipitation to kg/m2/s."""
+    """Convert precipitation to kg/m2/s.
+
+    1 mm of water spread over 1 m2 IS 1 kg, so mm/s and kg/m2/s are the SAME
+    number -- there is no density division here.  Dividing by 1000 gives m/s,
+    and PIHM already does that itself: src/forcing.c:123 does
+        elem[i].wf.prcp = forc->meteo[ind].value[PRCP_TS] / 1000.0;
+    so a /1000 in this converter is applied twice and the model sees 1e-6 of
+    the real rainfall.  Ground truth: input/ShaleHills/ShaleHills.meteo carries
+    PRCP = 4.72e-04 kg/m2/s, i.e. 1.7 mm/hr / 1031 mm/yr (Shale Hills PA).
+    """
     v = float(value)
     if unit == "mm/hr":
-        return v / 3600.0 / 1000.0  # mm/hr → m/s → kg/m2/s (density=1000)
+        return v / 3600.0
     elif unit == "mm/day":
-        return v / 86400.0 / 1000.0
+        return v / 86400.0
     elif unit == "mm/s":
-        return v / 1000.0
+        return v
     return v  # already kg/m2/s
+
+
+def validate_prcp_climatology(records, unit):
+    """Catch an order-of-magnitude PRCP scaling error, which no per-row check can.
+
+    VALID_RANGES["prcp_kgm2s"] has a LOWER bound of 0.0, so a uniformly
+    1000x-too-small precipitation column passes every single row test and the
+    model silently desiccates (PIHM Chiuni real_case 2026-08-02: 1.14 mm/yr
+    written instead of 1138 mm/yr -> groundwater head pinned at the aquifer
+    bottom for all 3134 days, r = -6e-17).  The only detector is the
+    AGGREGATE, so reconstruct the annual total and bound it by global
+    climatology.  Returns (errors, mm_per_year).
+    """
+    if len(records) < 2:
+        return [], None
+    t0 = datetime.strptime(records[0]["time"], "%Y-%m-%d %H:%M")
+    t1 = datetime.strptime(records[-1]["time"], "%Y-%m-%d %H:%M")
+    span_s = (t1 - t0).total_seconds()
+    if span_s <= 0:
+        return [], None
+    dt_s = span_s / (len(records) - 1)
+    total_mm = sum(r["prcp_kgm2s"] for r in records) * dt_s  # kg/m2/s -> mm
+    years = span_s / (365.25 * 86400.0)
+    mm_yr = total_mm / years if years > 0 else None
+    if years < 0.5 or mm_yr is None:
+        return [], mm_yr
+    if mm_yr < 10.0 or mm_yr > 15000.0:
+        return ([
+            "PRCP annual total %.4g mm/yr (%.4g mm over %.2f yr) is outside the "
+            "global climatological range [10, 15000] mm/yr. The --prcp-unit "
+            "'%s' conversion is almost certainly off by a factor of 1000: "
+            "kg/m2/s == mm/s, NOT m/s. Compare input/ShaleHills/ShaleHills.meteo "
+            "(4.72e-04 kg/m2/s = 1031 mm/yr)." % (mm_yr, total_mm, years, unit)
+        ], mm_yr)
+    return [], mm_yr
 
 
 def convert_temp(value, unit):
@@ -142,6 +186,31 @@ def convert_humidity(value, humidity_type, temp_k, pres_pa):
         rh = 100.0 * e / es
         return max(0.0, min(100.0, rh))
     return v
+
+
+def validate_time_series(records):
+    """Reject a time axis that IntrplForcing (src/forcing.c) cannot search.
+
+    IntrplForcing binary-searches ftime[] for the bracket containing t and then
+    divides by (ftime[middle] - ftime[middle - 1]). So the column has to be
+    strictly increasing:
+      * duplicate timestamps  -> divide by zero -> inf/NaN forcing;
+      * out-of-order rows     -> the search lands in the wrong bracket and the
+                                 step silently reuses the previous value.
+    Neither shows up as an error at run time, which is exactly the failure mode
+    this converter exists to prevent, so these are fatal rather than warnings.
+    """
+    errors = []
+    prev = None
+    for i, rec in enumerate(records):
+        t = datetime.strptime(rec["time"], "%Y-%m-%d %H:%M")
+        if prev is not None and t <= prev[1]:
+            errors.append(
+                f"Row {i}: timestamp {rec['time']} is not after row {prev[0]} "
+                f"({prev[1]:%Y-%m-%d %H:%M}); .meteo must be strictly increasing"
+            )
+        prev = (i, t)
+    return errors
 
 
 def validate_output_ranges(records):
@@ -229,6 +298,21 @@ def process(args):
             }
             records.append(rec)
 
+    # Fatal: a non-monotonic time axis is unrecoverable downstream
+    time_errors = validate_time_series(records)
+    if time_errors:
+        print(json.dumps({"status": "error",
+                          "errors": time_errors[:20] +
+                                    ([f"... and {len(time_errors)-20} more"]
+                                     if len(time_errors) > 20 else [])}))
+        sys.exit(1)
+
+    # Fatal: an order-of-magnitude PRCP scaling error is invisible per-row
+    prcp_errors, prcp_mm_yr = validate_prcp_climatology(records, args.prcp_unit)
+    if prcp_errors:
+        print(json.dumps({"status": "error", "errors": prcp_errors}))
+        sys.exit(1)
+
     # Validate output ranges
     warnings = validate_output_ranges(records)
     if warnings and len(warnings) > 20:
@@ -237,8 +321,14 @@ def process(args):
     # Write PIHM .meteo file
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
     with open(args.output, "w") as f:
-        f.write(f"METEO_TS\t1\n")
-        f.write(f"WIND_LVL\t{args.wind_level:.1f}\n")
+        # MM-PIHM's ReadMeteo (src/read_forc.c) sscanf's ONE line
+        #   "%s %d %s %lf"  ->  METEO_TS <index> WIND_LVL <zlvl>
+        # and then CheckHeader(8, TIME PRCP SFCTMP RH SFCSPD SOLAR LONGWV PRES).
+        # Writing METEO_TS / WIND_LVL on SEPARATE lines, or omitting the column
+        # header, aborts PIHM with ERR_WRONG_FORMAT before the first timestep.
+        f.write(f"METEO_TS\t1\tWIND_LVL\t{args.wind_level:.1f}\n")
+        f.write("TIME\tPRCP\tSFCTMP\tRH\tSFCSPD\tSOLAR\tLONGWV\tPRES\n")
+        f.write("#TS\tkg/m2/s\tK\t%\tm/s\tW/m2\tW/m2\tPa\n")
         for rec in records:
             f.write(
                 f"{rec['time']}\t"
@@ -251,7 +341,7 @@ def process(args):
                 f"{rec['pres_pa']:.2f}\n"
             )
 
-    return records, warnings
+    return records, warnings, prcp_mm_yr
 
 
 def main():
@@ -277,12 +367,13 @@ def main():
     args = parser.parse_args()
 
     validate_inputs(args)
-    records, warnings = process(args)
+    records, warnings, prcp_mm_yr = process(args)
 
     result = {
         "status": "success",
         "output": args.output,
         "n_records": len(records),
+        "prcp_mm_per_year": prcp_mm_yr,
         "time_range": [records[0]["time"], records[-1]["time"]] if records else [],
         "warnings": warnings,
     }

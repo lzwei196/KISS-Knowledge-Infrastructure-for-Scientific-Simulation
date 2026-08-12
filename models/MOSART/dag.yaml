@@ -1,0 +1,692 @@
+template_version: "3.5"
+
+identity:
+  model_id: "MOSART"
+  scientific_reference_version: "MOSART-WM (MOSART routing of Li et al. 2013 + Voisin et al. 2013 water management, with ISTARF reservoir release)"
+  implementation:
+    id: "mosartwmpy"
+    version: "1.0.x (mosartwmpy, PyPI/conda-forge)"
+    provenance: "Python; IMMM-SFA / PNNL (Thurber, Xu, Vernon) numba-JIT translation of the Fortran MOSART-WM routing + water-management science, with BMI interface."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "python"
+  license: "BSD-3-Clause"
+  repo_url: "https://github.com/IMMM-SFA/mosartwmpy"
+
+boundary:
+  scope_in:
+    - "Grid-based river routing of land-surface runoff: hillslope overland flow, subnetwork (tributary) channel routing, main-channel routing"
+    - "Reservoir storage and regulated release (including ISTARF statistical target release)"
+    - "Irrigation water-supply allocation from reservoirs/channels to dependent grid cells"
+    - "Flood routing (excess channel storage shed to ocean)"
+    - "Freshwater delivery to ocean outlets via river-network topology"
+  scope_out:
+    - "Runoff generation / land-surface hydrology (supplied externally by an upstream LSM such as VIC, CLM, mHM, Livneh)"
+    - "Water-demand generation (supplied externally as gridded NetCDF or by an agent-based model)"
+    - "Negative runoff routing (negative components are stripped to direct-to-ocean flow, not routed)"
+    - "Atmospheric water exchange beyond reservoir evaporation and irrigation abstraction"
+  spatial: "distributed-stream"
+  temporal: "sub-hourly"
+  closure: "mass-balance"
+  notes: "Water mass continuity dS/dt = Qin - Qout + R - I is enforced on each of the three routing tiers (hillslope, subnetwork, main channel) and on reservoir storage (floored at zero). Default main timestep is 10800 s, internally subdivided into subcycles x routing_iterations (effective ~720 s) with per-cell adaptive subiterations for CFL stability. No surface energy budget is closed; reservoir evaporation is a demand-side flux applied to storage only."
+
+inputs:
+  forcing:
+    - category: forcing
+      name: "surface_runoff (QOVER)"
+      unit: "mm/s"
+      source_kind: forcing
+      model_input_format: "gridded NetCDF runoff field, or BMI surface_runoff_flux set per timestep"
+      notes: "BMI standard name surface_runoff_flux -> state hillslope_surface_runoff. Converted mm/s -> m3/s (x 0.001 x land_fraction x area) -> m/s internally and back each update()."
+    - category: forcing
+      name: "subsurface_runoff (QDRAI)"
+      unit: "mm/s"
+      source_kind: forcing
+      model_input_format: "gridded NetCDF runoff field, or BMI subsurface_runoff_flux"
+      notes: "BMI standard name subsurface_runoff_flux -> state hillslope_subsurface_runoff; enters the subnetwork channel as lateral inflow."
+    - category: forcing
+      name: "wetland_runoff (QGWL, optional)"
+      unit: "mm/s"
+      source_kind: forcing
+      model_input_format: "gridded NetCDF runoff field (optional)"
+      notes: "Glacier/wetland/lake runoff; negative values gated to direct-to-ocean flow when river depth below minimum."
+    - category: forcing
+      name: "total_demand (totalDemand)"
+      unit: "m3/s"
+      source_kind: forcing
+      model_input_format: "gridded NetCDF demand field with monthly time coordinate, or BMI demand_flux"
+      notes: "BMI standard name demand_flux -> state grid_cell_demand_rate; read monthly and padded to nearest past month. Active only when water_management.enabled."
+  parameters:
+    - category: parameter
+      name: "main channel geometry (rlen, rslp, rwid, rwid0, rdep)"
+      unit: "m, m/m"
+      source_kind: dataset_lookup
+      model_input_format: "grid domain NetCDF fields"
+      notes: "Main channel length, slope, bankfull width, floodplain width, bankfull depth; missing floodplain width rwid0 makes flood water disappear."
+    - category: parameter
+      name: "subnetwork (tributary) geometry (tslp, twid)"
+      unit: "m, m/m"
+      source_kind: dataset_lookup
+      model_input_format: "grid domain NetCDF fields"
+    - category: parameter
+      name: "hillslope geometry (hslp, gxr)"
+      unit: "m/m, m^-1"
+      source_kind: dataset_lookup
+      model_input_format: "grid domain NetCDF fields"
+      notes: "Hillslope topographic slope and drainage density (channel length per unit area)."
+    - category: parameter
+      name: "Manning's roughness (nr, nt, nh)"
+      unit: "s/m^(1/3)"
+      source_kind: calibrated
+      model_input_format: "grid domain NetCDF fields"
+      notes: "Main-channel / tributary / overland roughness; the principal (and nearly only) calibrated parameter family in MOSART."
+    - category: parameter
+      name: "grid topology (ID, dnID, fdir, lat, lon, area, areaTotal, areaTotal2, frac)"
+      unit: "-, degrees, m2, 0-1"
+      source_kind: dataset_lookup
+      model_input_format: "grid domain NetCDF fields"
+      notes: "Defines river-network connectivity (dnID=-1 marks outlet) and per-cell drainage area/fraction."
+    - category: parameter
+      name: "reservoir parameters (GRAND_ID, GRID_CELL_INDEX, CAP_MCM, AREA_SKM, DAM_HGT_M, ISTARF coefficients)"
+      unit: "million m3, km2, m"
+      source_kind: dataset_lookup
+      model_input_format: "reservoirs.nc"
+      notes: "GRanD reservoir geometry + ISTARF release coefficients. CAP_MCM x 1e6 -> m3; AREA_SKM x 1e6 -> m2 internally."
+    - category: parameter
+      name: "reservoir dependency database"
+      unit: "-"
+      source_kind: dataset_lookup
+      model_input_format: "dependency_database.parquet"
+      notes: "Maps dependent grid cells to the reservoir(s) that supply them."
+    - category: parameter
+      name: "mean monthly reservoir flow and demand schedules"
+      unit: "m3/s"
+      source_kind: dataset_lookup
+      model_input_format: "mean_monthly_reservoir_flow.parquet, mean_monthly_reservoir_demand.parquet"
+      notes: "Monthly climatological inflow/demand schedules driving ISTARF and minimum-flow release rules."
+  initial_conditions:
+    - category: initial_condition
+      name: "model state restart"
+      unit: "mixed"
+      source_kind: user_provided
+      model_input_format: "{name}_restart_{year}_{month}_{day}.nc"
+      notes: "Full snapshot of routing and reservoir state arrays; restart date reflects the day after the last completed output day. Absent a restart, all state arrays zero-initialize."
+  boundary_conditions:
+    - category: boundary_condition
+      name: "simulation.timestep"
+      unit: "s"
+      source_kind: user_provided
+      model_input_format: "config.yaml"
+      notes: "Main routing timestep (default 10800 s)."
+    - category: boundary_condition
+      name: "simulation.subcycles / simulation.routing_iterations"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "config.yaml"
+      notes: "Subdivide the timestep; effective routing resolution = timestep/subcycles/routing_iterations (default ~720 s). Too few for large/steep basins causes CFL violation."
+    - category: boundary_condition
+      name: "simulation.output_resolution / output_file_frequency"
+      unit: "s, -"
+      source_kind: user_provided
+      model_input_format: "config.yaml"
+      notes: "output_resolution must be an integer multiple of timestep (averaging window); file frequency monthly/yearly avoids one-timestep-per-file output."
+    - category: boundary_condition
+      name: "water_management.enabled"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "config.yaml"
+      notes: "Structural switch turning the reservoir + demand + irrigation system on/off; off gives natural (unregulated) flow."
+    - category: boundary_condition
+      name: "water_management.reservoirs.enable_istarf"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "config.yaml"
+      notes: "Selects ISTARF statistical target-release rules vs the simpler inflow-matching regulation."
+    - category: boundary_condition
+      name: "grid.subdomain"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "config.yaml"
+      notes: "List of lat,lon pairs subsetting basins; reduces memory/runtime versus full-domain runs."
+    - category: boundary_condition
+      name: "runoff.read_from_file"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "config.yaml"
+      notes: "When true, file runoff overwrites BMI-set runoff each timestep; set false to drive runoff via BMI set_value."
+
+processes:
+  modules:
+    - name: "Model (BMI driver)"
+      role: "driver"
+      brief: "BMI-compliant orchestrator (initialize/update/update_until/finalize); manages config, grid, state, runoff/demand loading, runoff unit toggling, and output buffering."
+    - name: "TimestepIntegrator"
+      role: "integrator"
+      brief: "Advances one timestep via _prepare -> subcycle loop (subcycles x routing_iterations, per-cell adaptive subiterations) -> _finalize; accumulates and averages flow fields."
+    - name: "HillslopeRouting"
+      role: "process_solver"
+      brief: "Manning-equation overland flow; updates hillslope storage/depth and produces lateral inflow to the subnetwork (v=depth^(2/3)*slope^(1/2)/n)."
+    - name: "SubnetworkRouting"
+      role: "process_solver"
+      brief: "Tributary channel routing via Manning's equation with adaptive CFL subiterations; produces lateral inflow to the main channel."
+    - name: "SubnetworkState"
+      role: "process_solver"
+      brief: "Recomputes subnetwork cross-section area, depth, wetness perimeter and hydraulic radius from storage and tributary geometry each subiteration."
+    - name: "MainChannelRouting"
+      role: "process_solver"
+      brief: "Main river-channel routing; delegates outflow estimation to KinematicWave and geometry to MainChannelState; rectangular below bankfull, trapezoidal floodplain above."
+    - name: "MainChannelState"
+      role: "process_solver"
+      brief: "Recomputes main-channel cross-section area, depth, wetness perimeter and hydraulic radius from storage and channel geometry each subiteration."
+    - name: "KinematicWave"
+      role: "process_solver"
+      brief: "Core kinematic-wave outflow when drainage_area/(width*length) <= 1e6; otherwise inflow-balance fallback (outflow = -(inflow + lateral_flow))."
+    - name: "UpstreamAccumulation"
+      role: "integrator"
+      brief: "Passes channel outflow downstream through river-network topology (dnID groupby) to become upstream inflow of the downstream cell; redistributes direct flow to outlet cells."
+    - name: "ReservoirRelease"
+      role: "optional_module"
+      brief: "Computes monthly / ISTARF release targets and reservoir operating schedules (start-of-operations and flood-control months)."
+      applicability: "when water_management.enabled"
+    - name: "ReservoirRegulation"
+      role: "optional_module"
+      brief: "Applies dam storage balance (inflow - outflow - evaporation, floored at 0) and release rules in place to channel outflow; minimum-flow rule driven by monthly mean-inflow schedule."
+      applicability: "when water_management.enabled"
+    - name: "ExtractionRegulatedFlow"
+      role: "optional_module"
+      brief: "Iteratively (3 passes) converts available reservoir flow volume (0.9 ratio) into grid-cell supply by demand fraction; residual flow returned to the channel."
+      applicability: "when water_management.enabled"
+    - name: "SubnetworkIrrigation"
+      role: "optional_module"
+      brief: "Extracts tributary storage to meet grid-cell unmet demand under minimum-depth (0.1 m) and maximum-fraction (0.5) limits."
+      applicability: "when water_management.enabled"
+    - name: "MainChannelIrrigation"
+      role: "optional_module"
+      brief: "Extracts main-channel storage to meet grid-cell unmet demand under depth/fraction limits."
+      applicability: "when water_management.enabled"
+    - name: "RunoffInput"
+      role: "process_solver"
+      brief: "Loads gridded surface/subsurface/wetland runoff forcing into the hillslope runoff state for the current time."
+    - name: "DemandInput"
+      role: "process_solver"
+      brief: "Loads gridded (monthly) demand forcing into grid_cell_demand_rate; padded to nearest past month."
+    - name: "FloodRouting"
+      role: "process_solver"
+      brief: "Sheds channel storage above flood_threshold back to the ocean; subtracts flood flux from current surface runoff using previous-timestep storage."
+    - name: "Grid"
+      role: "allocator"
+      brief: "Loads domain/parameter file, fills minimum slopes and Manning defaults, builds outlet/downstream topology and per-cell iteration counts."
+    - name: "State"
+      role: "allocator"
+      brief: "Declares and zero-initializes all flattened-grid state arrays; serializes/deserializes restart snapshots."
+  internal_edges:
+    - from: "Model (BMI driver)"
+      to: "TimestepIntegrator"
+      kind: "invokes"
+      brief: "BMI update()/update_until() drives the per-timestep integrator (model.model -> update.update)."
+    - from: "Model (BMI driver)"
+      to: "RunoffInput"
+      kind: "invokes"
+      brief: "Driver loads runoff forcing for the current time before advancing the timestep."
+    - from: "Model (BMI driver)"
+      to: "DemandInput"
+      kind: "invokes"
+      brief: "Driver loads (monthly) demand forcing for the current time when water_management is enabled."
+    - from: "Model (BMI driver)"
+      to: "ReservoirRelease"
+      kind: "invokes"
+      brief: "Driver computes monthly / ISTARF release targets and reservoir schedules (model.model -> reservoirs.release)."
+    - from: "Model (BMI driver)"
+      to: "Grid"
+      kind: "invokes"
+      brief: "Driver initializes grid topology/geometry at model setup."
+    - from: "Model (BMI driver)"
+      to: "State"
+      kind: "invokes"
+      brief: "Driver allocates and (re)initializes state arrays at model setup."
+    - from: "TimestepIntegrator"
+      to: "HillslopeRouting"
+      kind: "invokes"
+      brief: "Subcycle loop entry: integrator invokes hillslope routing each routing iteration (update.update -> hillslope.routing)."
+    - from: "TimestepIntegrator"
+      to: "SubnetworkIrrigation"
+      kind: "invokes"
+      brief: "Integrator calls subnetwork irrigation from the subcycle loop (update.update -> subnetwork.irrigation), not chained off a routing solver."
+    - from: "TimestepIntegrator"
+      to: "MainChannelIrrigation"
+      kind: "invokes"
+      brief: "Integrator calls main-channel irrigation from the subcycle loop (update.update -> main_channel.irrigation)."
+    - from: "TimestepIntegrator"
+      to: "ReservoirRegulation"
+      kind: "invokes"
+      brief: "Integrator calls reservoir regulation from the subcycle loop (update.update -> reservoirs.regulation)."
+    - from: "RunoffInput"
+      to: "HillslopeRouting"
+      kind: "consumes_input"
+      brief: "Loaded surface/subsurface runoff state feeds hillslope overland-flow computation."
+    - from: "Grid"
+      to: "HillslopeRouting"
+      kind: "consumes_input"
+      brief: "Hillslope slope, drainage density and Manning roughness drive overland velocity."
+    - from: "HillslopeRouting"
+      to: "hillslope_storage"
+      kind: "writes_state"
+      brief: "Updates hillslope overland water storage and depth."
+    - from: "HillslopeRouting"
+      to: "SubnetworkRouting"
+      kind: "invokes"
+      brief: "Overland + subsurface flow becomes lateral inflow to the subnetwork."
+    - from: "SubnetworkRouting"
+      to: "SubnetworkState"
+      kind: "invokes"
+      brief: "Recomputes tributary geometry each subiteration."
+    - from: "SubnetworkRouting"
+      to: "subnetwork_storage"
+      kind: "writes_state"
+      brief: "Updates tributary channel storage."
+    - from: "SubnetworkRouting"
+      to: "MainChannelRouting"
+      kind: "invokes"
+      brief: "Subnetwork discharge accumulated as lateral inflow to the main channel."
+    - from: "MainChannelRouting"
+      to: "MainChannelState"
+      kind: "invokes"
+      brief: "Recomputes main-channel geometry from storage each subiteration."
+    - from: "MainChannelRouting"
+      to: "KinematicWave"
+      kind: "invokes"
+      brief: "Delegates outflow estimation to the kinematic-wave / inflow-balance solver."
+    - from: "KinematicWave"
+      to: "channel_storage"
+      kind: "writes_state"
+      brief: "Kinematic-wave / fallback outflow updates main-channel storage and outflow."
+    - from: "MainChannelRouting"
+      to: "UpstreamAccumulation"
+      kind: "invokes"
+      brief: "Channel outflow routed downstream through dnID topology."
+    - from: "UpstreamAccumulation"
+      to: "MainChannelRouting"
+      kind: "invokes"
+      brief: "Upstream inflow delivered as inflow to the downstream cell's main channel."
+    - from: "ReservoirRelease"
+      to: "reservoir_storage"
+      kind: "writes_state"
+      brief: "Sets monthly / ISTARF release targets driving regulation."
+    - from: "MainChannelRouting"
+      to: "ReservoirRegulation"
+      kind: "invokes"
+      brief: "Channel outflow at dam (x 0.9 ratio) made available to reservoir regulation."
+    - from: "ReservoirRegulation"
+      to: "channel_storage"
+      kind: "writes_state"
+      brief: "Dam release replaces channel outflow in place before downstream routing (order-dependent)."
+    - from: "ReservoirRegulation"
+      to: "reservoir_storage"
+      kind: "writes_state"
+      brief: "Storage balance inflow - outflow - evaporation, floored at zero."
+    - from: "ReservoirRegulation"
+      to: "ExtractionRegulatedFlow"
+      kind: "invokes"
+      brief: "Regulated flow available for grid-cell supply allocation."
+    - from: "ExtractionRegulatedFlow"
+      to: "grid_cell_supply"
+      kind: "writes_state"
+      brief: "Iteratively converts dam flow volume to grid-cell supply; residual returned to channel."
+    - from: "ExtractionRegulatedFlow"
+      to: "grid_cell_deficit"
+      kind: "writes_state"
+      brief: "Accumulates unmet demand over the timestep."
+    - from: "DemandInput"
+      to: "grid_cell_supply"
+      kind: "consumes_input"
+      brief: "Demand rate seeds per-substep unmet-demand volume driving extraction and supply."
+    - from: "SubnetworkIrrigation"
+      to: "grid_cell_supply"
+      kind: "writes_state"
+      brief: "Extracts tributary storage to meet demand under depth/fraction limits."
+    - from: "MainChannelIrrigation"
+      to: "grid_cell_supply"
+      kind: "writes_state"
+      brief: "Extracts main-channel storage to meet demand under depth/fraction limits."
+    - from: "FloodRouting"
+      to: "channel_storage"
+      kind: "reads_state"
+      brief: "Reads previous-timestep storage above flood_threshold to shed excess to ocean."
+    - from: "TimestepIntegrator"
+      to: "storage"
+      kind: "writes_state"
+      brief: "_finalize recomputes total routing storage = (channel + subnetwork + hillslope*area)*drainage_fraction."
+    - from: "TimestepIntegrator"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "Masks averaged flow into runoff_land/runoff_ocean and buffers all output variables."
+    - from: "State"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "BMI variable registry maps state arrays to standard-name outputs."
+
+states:
+  variables:
+    - name: "storage"
+      unit: "m3"
+      role: "prognostic"
+    - name: "channel_storage"
+      unit: "m3"
+      role: "prognostic"
+    - name: "subnetwork_storage"
+      unit: "m3"
+      role: "prognostic"
+    - name: "hillslope_storage"
+      unit: "m"
+      role: "prognostic"
+    - name: "channel_outflow_downstream"
+      unit: "m3/s"
+      role: "prognostic"
+    - name: "channel_inflow_upstream"
+      unit: "m3/s"
+      role: "diagnostic"
+    - name: "channel_depth"
+      unit: "m"
+      role: "diagnostic"
+    - name: "channel_flow_velocity"
+      unit: "m/s"
+      role: "diagnostic"
+    - name: "runoff_land"
+      unit: "m3/s"
+      role: "diagnostic"
+    - name: "runoff_ocean"
+      unit: "m3/s"
+      role: "diagnostic"
+    - name: "reservoir_storage"
+      unit: "m3"
+      role: "prognostic"
+    - name: "reservoir_release"
+      unit: "m3/s"
+      role: "diagnostic"
+    - name: "grid_cell_demand_rate"
+      unit: "m3/s"
+      role: "diagnostic"
+    - name: "grid_cell_supply"
+      unit: "m3"
+      role: "accumulator"
+      note: "Accumulated supplied volume over the timestep (paired with grid_cell_deficit); source_reader tagged it [m3/s] but the BMI name supply_water_amount and the paired deficit volume indicate m3."
+    - name: "grid_cell_deficit"
+      unit: "m3"
+      role: "accumulator"
+    - name: "delta_storage"
+      unit: "m3/s"
+      role: "diagnostic"
+  provenance: "populated"
+
+outputs:
+  - var: "RIVER_DISCHARGE_OVER_LAND_LIQ"
+    validation_rank: 1
+    unit: "m3/s"
+    description: "Main-channel outflow / basin river discharge (BMI runoff_land, outgoing_water_volume_transport_along_river_channel); the gauge-comparable streamflow output."
+    emitted_in: "output NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Gauge cell must be mapped to the correct outlet cell of the river network; topology errors put discharge at the wrong cell."
+            - "With water_management.enabled, simulated flow is regulated; compare against naturalized obs or run unregulated for natural-flow validation."
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "spatial_pattern_match"]
+          determining_metric: "nse"
+          caveats:
+            - "Multi-gauge / gridded comparison requires consistent network construction across resolutions."
+      detrending_options: ["none"]
+  - var: "channel_outflow"
+    validation_rank: 2
+    unit: "m3/s"
+    description: "Outflow from a single grid cell's main channel."
+    emitted_in: "output NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Single-cell outflow; for basin discharge use RIVER_DISCHARGE_OVER_LAND_LIQ at the outlet."
+      detrending_options: ["none"]
+  - var: "STORAGE_LIQ"
+    validation_rank: 3
+    unit: "m3"
+    description: "Total routing storage (channel + subnetwork + hillslope) on the grid; BMI surface_water_amount."
+    emitted_in: "output NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats:
+            - "Total-water-storage observations (e.g., gravimetric anomalies) measure a broader column than routing storage alone; compare anomalies, not absolute storage."
+      detrending_options: ["first_difference"]
+  - var: "WRM_STORAGE"
+    validation_rank: 4
+    unit: "m3"
+    description: "Reservoir storage; BMI reservoir_water_amount."
+    emitted_in: "output NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Compared per reservoir; ISTARF release rules approximate operations and will not match individual dam decisions exactly."
+      detrending_options: ["none"]
+  - var: "WRM_SUPPLY"
+    validation_rank: 5
+    unit: "m3/s"
+    description: "Water supply delivered to a grid cell from reservoir/channel extraction."
+    emitted_in: "output NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["magnitude_accuracy", "trend_match"]
+          determining_metric: "pbias"
+          caveats:
+            - "Observed water deliveries/withdrawals are aggregated and influenced by management decisions the model approximates; compare aggregates/trends, not cell-level instantaneous values."
+      detrending_options: ["linear_residual"]
+  - var: "WRM_DEFICIT"
+    validation_rank: 6
+    unit: "m3"
+    description: "Cumulative unmet demand for a grid cell."
+    emitted_in: "output NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["magnitude_accuracy", "trend_match"]
+          determining_metric: "pbias"
+          caveats:
+            - "Deficit depends on the prescribed demand input; only meaningful relative to the supplied demand forcing."
+      detrending_options: ["none"]
+
+influence:
+  _caveat: "All MOSART sensitivity evidence in the cited literature is comparative / one-at-a-time (OAT) scenario analysis (e.g., Luo et al. 2017 seven-simulation comparison, Li et al. 2013 resolution/roughness experiments), NOT variance-based global SA (Sobol/Morris/EFAST). Consequently no edge can be graded HIGH from this literature even where the input is mechanistically dominant; MEDIUM with basis=literature_qualitative is the conservative, paper-faithful ceiling. (status: tentative — mirrors the safety.assumptions note on influence grading.)"
+  edges:
+    - from: "channel_Manning_roughness (nr)"
+      to: "channel_velocity"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["li2013_mosart_runoff_routing", "li2013_mosart_velocity_resolution", "luo2017_mosart_inundation_amazon"]
+    - from: "channel_Manning_roughness (nr)"
+      to: "streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["li2013_mosart_runoff_routing", "luo2017_mosart_inundation_amazon"]
+    - from: "channel_Manning_roughness (nr)"
+      to: "river_stage"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "MOSART-Inundation"
+      citations: ["luo2017_mosart_inundation_amazon"]
+    - from: "floodplain_inundation_representation"
+      to: "streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "MOSART-Inundation"
+      citations: ["luo2017_mosart_inundation_amazon"]
+    - from: "floodplain_inundation_representation"
+      to: "river_stage"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "MOSART-Inundation"
+      citations: ["luo2017_mosart_inundation_amazon"]
+    - from: "floodplain_inundation_representation"
+      to: "inundation_extent"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "MOSART-Inundation"
+      citations: ["luo2017_mosart_inundation_amazon"]
+    - from: "floodplain_topography_DEM"
+      to: "inundation_extent"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "MOSART-Inundation"
+      citations: ["luo2017_mosart_inundation_amazon"]
+    - from: "channel_geometry (rwid/rdep)"
+      to: "streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["luo2017_mosart_inundation_amazon", "li2013_mosart_runoff_routing"]
+    - from: "backwater_effects"
+      to: "river_stage"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "MOSART-Inundation"
+      citations: ["luo2017_mosart_inundation_amazon"]
+    - from: "spatial_resolution"
+      to: "channel_velocity"
+      sensitivity_grade: LOW
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["li2013_mosart_runoff_routing", "li2013_mosart_velocity_resolution"]
+    - from: "reservoir_flow_regulation"
+      to: "streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "water_management enabled"
+      citations: ["li2022_mosart_sediment_us"]
+  citation_index:
+    li2013_mosart_runoff_routing:
+      short_citation: "Li et al. 2013"
+      doi: "10.1175/JHM-D-12-015.1"
+      note: "Foundational MOSART paper (J. Hydrometeorology); scale-adaptive kinematic-wave routing; channel-velocity sensitivity to Manning roughness over the Columbia basin."
+    li2013_mosart_velocity_resolution:
+      short_citation: "Li et al. 2013"
+      doi: "10.1175/JHM-D-12-015.1"
+      note: "Same Li et al. 2013 publication, cited for channel-velocity robustness across 1/6-1/2 deg spatial resolutions."
+    luo2017_mosart_inundation_amazon:
+      short_citation: "Luo et al. 2017"
+      doi: "10.5194/gmd-10-1233-2017"
+      note: "MOSART-Inundation Amazon seven-simulation comparative sensitivity study (floodplain inundation, topography, channel geometry, depth-dependent Manning, backwater)."
+    li2022_mosart_sediment_us:
+      short_citation: "Li et al. 2022"
+      doi: "10.5194/hess-26-665-2022"
+      note: "MOSART-sediment over CONUS; comparative sensitivity to transport equation, reservoir trapping, and flow regulation."
+
+safety:
+  hazards:
+    - id: "runoff_unit_mm_per_day_as_mm_per_s"
+      kind: "weather_file_semantic"
+      description: "Runoff supplied in mm/day but interpreted as mm/s yields discharge ~86400x too high."
+      severity: "fatal_or_silent"
+    - id: "runoff_unit_m_per_s_as_mm_per_s"
+      kind: "weather_file_semantic"
+      description: "Runoff supplied in m/s but interpreted as mm/s yields discharge ~1000x too high."
+      severity: "fatal_or_silent"
+    - id: "grid_area_km2_instead_of_m2"
+      kind: "soil_semantic"
+      description: "Grid cell area in km2 instead of m2 makes discharge ~1e-6 of expected (area enters the mm/s->m3/s conversion)."
+      severity: "silent"
+    - id: "nan_slope_bypasses_minimum_replacement"
+      kind: "numerical_instability"
+      description: "Zero slopes are replaced by minimums (0.005 hillslope, 0.0001 channel/subnetwork) but NaN slopes bypass replacement and propagate NaN through Manning's equation, including unbounded channel depth in flat terrain."
+      severity: "fatal"
+    - id: "cfl_violation_too_few_subcycles"
+      kind: "numerical_instability"
+      description: "Large/steep basins with too few subcycles/routing_iterations violate the CFL-like criterion, causing instability/NaN; reduce timestep or raise subcycles."
+      severity: "fatal"
+    - id: "reservoir_area_skm_in_m2"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Reservoir evaporation uses 1e6 * evap * dt * AREA_SKM assuming km2; AREA_SKM already in m2 drives 1e6x evaporation and drains entire storage to zero."
+      severity: "silent"
+    - id: "reservoir_cap_mcm_already_m3"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "CAP_MCM is million-m3 and multiplied by 1e6 internally; values already in m3 are double-converted and reservoirs overflow."
+      severity: "silent"
+    - id: "missing_floodplain_width_rwid0"
+      kind: "soil_semantic"
+      description: "Missing floodplain width rwid0 makes flood water disappear (trapezoidal floodplain section undefined above bankfull)."
+      severity: "silent"
+    - id: "lat_lon_mismatch_or_inactive_mask"
+      kind: "control_semantic"
+      description: "Grid lat/lon must match exactly across grid, runoff and demand files, and the routing mask must include active land cells; mismatch or all-ocean mask yields all-zero/NaN output."
+      severity: "fatal_or_silent"
+    - id: "output_resolution_not_multiple_of_timestep"
+      kind: "control_semantic"
+      description: "output_resolution must be >= timestep and an integer multiple of it; otherwise initialization raises."
+      severity: "fatal"
+    - id: "runoff_read_from_file_overrides_bmi"
+      kind: "control_semantic"
+      description: "When runoff.read_from_file is true, file runoff overwrites BMI-set runoff each timestep, silently ignoring BMI set_value."
+      severity: "silent"
+    - id: "demand_monthly_pad_spikes"
+      kind: "control_semantic"
+      description: "Demand is read monthly and padded to the nearest past time; discontinuous multi-file runoff with pad selection produces unrealistic spikes at monthly boundaries."
+      severity: "degraded"
+  validation_limits:
+    - "Does not generate runoff or water demand; both must be supplied externally, so validation skill is bounded by the quality of the upstream forcing."
+    - "Negative runoff is not routed (shed to direct-to-ocean), so the model cannot represent net abstraction signaled as negative runoff."
+    - "Base routing has no surface energy or evaporation budget except reservoir evaporation; not suitable for energy-balance questions."
+    - "Floodplain inundation, river stage, and suspended-sediment skill require the MOSART-Inundation / MOSART-sediment extensions, not the base routing+WM configuration."
+  warnings:
+    - "Reservoir release uses ISTARF statistical target rules keyed to storage level and month; it approximates operations and will not reproduce individual dam decisions."
+    - "Irrigation extraction at high irrigation_extraction_maximum_fraction (default 0.5) can over-deplete channels, driving gauge discharge below observed even when demand is fully met; compare against a water_management.enabled=false natural-flow run to separate routing from abstraction."
+    - "reservoir_potential_evaporation is consumed by regulation() but is documented as never initialized; reservoir evaporation may silently be zero unless explicitly provided."
+    - "Reservoir release in regulation() overwrites channel outflow in place before downstream routing, so reservoir and main-channel computations are order-dependent within a routing iteration."
+  assumptions:
+    - statement: "This dag describes the mosartwmpy Python implementation of MOSART-WM (routing + water management + ISTARF + irrigation), not the base Fortran CTSM/E3SM MOSART routing-only model."
+      scope: "whole model"
+      source: "mosartwmpy source (model.py, update/update.py, reservoirs/) and Thurber et al. 2021 JOSS 6(62):3221 doi:10.21105/joss.03221"
+      status: adopted
+    - statement: "Kinematic-wave routing is assumed: where the channel is steep enough, the friction slope is approximated by the bed slope; an inflow-balance fallback applies when drainage_area/(width*length) exceeds 1e6."
+      scope: "main-channel and subnetwork routing"
+      source: "CTSM MOSART tech note section 2.14 (Eq. 2.14.1) and mosartwmpy main_channel/kinematic_wave.py"
+      status: adopted
+    - statement: "Mass-balance continuity dS/dt = Qin - Qout + R - I is closed on each routing tier and on reservoir storage (floored at zero); no surface energy budget is closed."
+      scope: "all routing components and reservoirs"
+      source: "CTSM MOSART tech note section 2.14 (Eq. 2.14.4)"
+      status: adopted
+    - statement: "Runoff and water demand are exogenous boundary inputs (from an upstream LSM and a demand dataset/ABM respectively); their generation is out of model scope."
+      scope: "inputs"
+      source: "Voisin et al. 2013 HESS 17(9):3605-3622 doi:10.5194/hess-17-3605-2013 and mosartwmpy input/runoff.py, input/demand.py"
+      status: adopted
+    - statement: "Sensitivity grades derive from comparative scenario / one-at-a-time experiments in MOSART development papers, not from variance-based global SA indices; channel Manning roughness is the principal calibrated parameter while most parameters are estimated a priori. Because no variance-based index exists, no influence edge is graded HIGH."
+      scope: "influence block"
+      source: "Li et al. 2013 doi:10.1175/JHM-D-12-015.1 and Luo et al. 2017 doi:10.5194/gmd-10-1233-2017"
+      status: tentative

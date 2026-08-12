@@ -286,6 +286,10 @@ Same format as Scott & Burgan.
 
 ---
 
+## Output Description
+
+Cell2Fire produces per-simulation CSV files in the output folder, organized by variable type (Grids, Messages, RateOfSpread, Intensity, FlameLength, CrownFire). The main outputs are burn-state grids (0=unburned, 1=burned), fire spread message logs (sender cell, receiver cell, time step), and optional per-cell rate-of-spread, fire intensity (kW/m), and flame length (m) grids. All outputs are plain CSV; burn probability maps are derived by averaging final grids across Monte Carlo simulations. Use `parse_cell2fire_output.py` to aggregate results into structured summary CSVs. See the detailed structure below.
+
 ## Output Folder Structure
 
 ```

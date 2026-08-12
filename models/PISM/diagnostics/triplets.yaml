@@ -505,3 +505,178 @@
     prevention: "Use convert_geometry.py or convert_climate_forcing.py which handle renaming"
   severity: fatal
   cross_references: []
+
+- id: dt_021
+  stage: s9_post_processing
+  failure_domain: structural_mismatch
+  symptom:
+    description: >
+      The requested comparison variable is not an ice-sheet observable PISM can emit
+      (e.g. snow-water-equivalent SWE, seasonal snowpack, streamflow at a gauge).
+      The metric is structurally UNCOMPUTABLE, not merely wrong-valued.
+    error_pattern: "SWE|snow.?water|swe|requested variable.*not in outputs|no .* output"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Wrong-variable / wrong-model case assignment. PISM's declared outputs (dag.yaml
+      outputs[]) are ice-sheet state ONLY: thk, usurf, velsurf_mag, velbase_mag, mask,
+      ice_volume_glacierized, tendency_of_ice_mass(+_due_to_discharge), tillwat,
+      temppabase. There is NO SWE / seasonal-snowpack / discharge output. The internal
+      PDD diagnostics (surface_accumulation_flux, climatic_mass_balance) are glacier
+      surface-mass-balance fluxes, NOT seasonal snowpack SWE, and are not in the
+      observability contract.
+    explanation: >
+      SWE at an alpine-glacier point is a snow/hydrology observable. In HydroCraft it is
+      produced by snow/cold-region models (CRHM, SUMMA) and compared against SNOTEL /
+      CanSWE / european_alps_snow — not by an ice-sheet-dynamics model. No PISM
+      parameter, forcing, or spinup change can make PISM emit SWE, so entering the retry
+      loop is the WRONG loop (RETRY CANNOT HELP). A pre-retry dag-driven gate that checks
+      whether the requested variable exists in outputs[] should short-circuit here.
+    affected_components: [output, observability_contract, case_assignment]
+  remedy:
+    action: >
+      Do NOT enter the retry loop. Report STRUCTURAL_MISMATCH with metric = null and
+      the reason. Re-route SWE@<site> to a snow/hydrology model. For a PISM-VALID test at
+      the same site, compare a declared output instead: thk (spatial_snapshot vs a
+      glacier-thickness product) or ice_volume_glacierized (regional_aggregate vs a
+      mass-balance series).
+    tool_to_run: parse_output.py
+    manual_steps:
+      - "Confirm the requested variable against dag.yaml outputs[].var — if absent, stop."
+      - "Set status=completed, metrics=null, note the wrong-variable assignment."
+      - "Suggest the correct model class (snow/hydrology) for the requested observable."
+    prevention: "Validate the requested obs variable is in dag outputs[] BEFORE building the case."
+  severity: structural
+  cross_references: [dt_016]
+- id: dt_022
+  stage: s9_post_processing
+  failure_domain: observability_contract
+  symptom:
+    description: >
+      A snow/hydrology observable (snow_water_equivalent, snowmelt) is requested of
+      PISM and appears valid because docs/format_spec.yaml listed it under outputs[],
+      yet the run yields metric=null / 'Variable not found'.
+    error_pattern: "snow_water_equivalent|snowmelt|Variable not found|metric=null"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      docs/format_spec.yaml outputs[] advertised observables (snow_water_equivalent,
+      snowmelt) that are NOT in the authoritative dag.yaml outputs[] and cannot be
+      physically emitted by an ice-sheet-dynamics model. The spec drifted out of sync
+      with the dag observability contract, causing wrong-variable case assignment.
+    affected_components: [output, observability_contract, case_assignment]
+  remedy:
+    action: >
+      Keep docs/format_spec.yaml outputs[] a strict subset of dag.yaml outputs[];
+      remove non-emittable snow observables. Route SWE/snowmelt requests to snow/
+      hydrology models (CRHM/SUMMA/SNOWPACK/SnowModel/VIC). See dt_021 for the
+      structural-mismatch handling.
+  format_spec_violated: pism.outputs.primary.must_subset_dag_outputs
+  canonical_intent: ki_local_if_pass
+  added_by_run: PISM_retry2
+- id: dt_023
+  stage: s2_input_preparation
+  failure_domain: io_environment
+  symptom:
+    description: >
+      Bootstrapping PISM from a real ice-geometry product (BedMachine Greenland/
+      Antarctica) crashes or refuses to run. Three distinct failures appear in
+      sequence: (1) signal 6/SIGSEGV during context/Time init with an HDF5
+      'header (1.10.10) vs library (1.14.3) version mismatched' banner; (2)
+      'PISM ERROR: Cannot compute longitude and latitude. Please rebuild PISM
+      with PROJ'; (3) 'input y coordinate has to be strictly increasing while
+      regridding thk'.
+    error_pattern: "HDF5 library version mismatched|Cannot compute longitude and latitude|y coordinate has to be strictly increasing|signal number 11 SEGV|signal 6"
+    detection_method: runtime_crash
+  diagnosis:
+    root_cause: >
+      (1) This PISM build links an HDF5 whose compile-time headers disagree with
+      the runtime library, so NetCDF4 (HDF5-backed) input reads corrupt/segfault.
+      (2) The build has NO PROJ (-version shows no PROJ line), yet PISM by default
+      recomputes lon/lat from the projection at bootstrap. (3) BedMachine stores
+      its y axis DESCENDING (dy<0) but PISM's regridder requires strictly
+      increasing x and y.
+    affected_components: [convert_geometry, run_pism, io, grid]
+  remedy:
+    action: >
+      In convert_geometry.py: write NETCDF3_64BIT_OFFSET (default now), block-mean
+      coarsen 150 m BedMachine to a runnable grid (--coarsen N), flip descending
+      axes to strictly increasing, and optionally inject constant climate
+      (--const-smb, --const-ice-temp) so a self-contained `-surface given` run
+      needs no external forcing. In run_pism.py set HDF5_DISABLE_VERSION_CHECK=2.
+      Pass `-grid.recompute_longitude_and_latitude false` (no-PROJ build) and
+      `-surface given -energy none` for a short geometry-hold diagnostic.
+    tool_to_run: convert_geometry.py
+    manual_steps:
+      - "convert_geometry.py --coarsen 64 --const-smb 0 --const-ice-temp 263.15 (BedMachine bed/thickness)"
+      - "run_pism.py --mode bootstrap --dynamics sia --grid-dx 10 --extra-args '-surface given -energy none -grid.recompute_longitude_and_latitude false'"
+      - "parse_output.py --mode spatial --variables usurf; interpolate BedMachine surface to PISM grid; spatial_pattern_match over obs thk>10m"
+    prevention: "PISM input files should be NetCDF-3 with strictly increasing coordinates on a build without PROJ."
+  severity: fatal
+  cross_references: [dt_004, dt_015, dt_017]
+  notes: >
+    usurf (ice surface elevation) IS a declared dag output; comparing it to
+    BedMachine surface_elevation_m is a VALID spatial_snapshot / spatial_pattern_match
+    case (NOT a wrong-variable reject like dt_021/dt_022). Result GrIS 10km SIA 100yr:
+    r=0.9945 NSE=0.989 KGE=0.985 PBIAS-0.53% RMSE 82 m over ice. CAVEAT: geometry is
+    initialized from the same BedMachine product (short hold, not an independent
+    multi-millennium spinup), so high skill is partly circular — bed errors propagate
+    directly into usurf (see dag usurf caveat).
+  added_by_run: PISM_bedmachine_gris
+
+- id: dt_024
+  stage: s9_post_processing
+  failure_domain: validation_metric
+  symptom:
+    description: >
+      Validating PISM surface speed (velsurf_mag) against a gridded velocity
+      mosaic (MEaSUREs Antarctica/Greenland ice velocity, spatial_snapshot) gives
+      a near-zero or NEGATIVE raw Pearson r (e.g. -0.02) even though the model
+      clearly puts fast flow on the right outlets. Two confounders: (1) velsurf
+      spans ~4 orders of magnitude (interior ~0.3 m/yr, outlets >1000 m/yr) so a
+      RAW-space Pearson r is dominated by a few large values; (2) a short,
+      unrelaxed bootstrap run leaves a handful of non-converged SSA cells at the
+      margin / grounding line with absurd speeds (1e5 m/yr) that swamp the
+      correlation. Also: `-topg_to_phi a,b,c,d` aborts with "invalid -topg_to_phi
+      argument" on PISM 2.3, and `-calving float_kill` deletes the entire ice
+      shelf (the most coherent fast-flow signal), worsening the comparison.
+    error_pattern: "invalid -topg_to_phi argument|Maximum diffusivity of SIA flow .* is too high|raw Pearson .* (0\\.0|-0\\.)"
+    detection_method: metric_inspection
+  diagnosis:
+    root_cause: >
+      (a) The dag declares velsurf_mag determining_metric=csi with an explicit
+      caveat that fast flow spans orders of magnitude and "log-space or rank
+      metrics [are] often more informative" — RAW Pearson r is the wrong metric
+      family for this obs_shape. (b) PISM 2.3 retired the `-topg_to_phi LIST`
+      option; the till-friction-angle parameterization is now set via config keys
+      basal_yield_stress.mohr_coulomb.topg_to_phi.{enabled,phi_min,phi_max,topg_min,topg_max}.
+      (c) The thick Lambert/outlet trunk drives SIA diffusivity over PISM's abort
+      threshold; cap it with -stress_balance.sia.max_diffusivity. (d) float_kill
+      removes floating ice — use -pik -ocean constant to KEEP the shelf.
+    affected_components: [parse_output, run_pism, validation, metric_family]
+  remedy:
+    action: >
+      Score velsurf_mag in LOG10 space (and report rank/Spearman + log-space r),
+      not raw Pearson. Exclude non-converged cells (model speed >> regional obs
+      max, e.g. >3000 m/yr) as numerical artifacts and log the excluded count.
+      Run hybrid ssa+sia with the shelf preserved (-pik -ocean constant), a
+      bed-keyed till friction angle via the config keys (NOT the list option),
+      and a capped SIA diffusivity. Use convert_geometry.py --x-range/--y-range
+      to cut one glacier region out of the continental BedMachine product.
+    tool_to_run: run_pism.py
+    manual_steps:
+      - "convert_geometry.py --x-range X0,X1 --y-range Y0,Y1 --coarsen 10 --const-smb 0 --const-ice-temp 248.15 (BedMachine bed/thickness -> regional bootstrap)"
+      - "run_pism.py --mode bootstrap --dynamics hybrid --grid-dx 5 --ppq 0.5 --duration 1 --extra-args '-surface given -energy none -pik -ocean constant -basal_yield_stress.mohr_coulomb.topg_to_phi.enabled true -basal_yield_stress.mohr_coulomb.topg_to_phi.phi_min 5 -basal_yield_stress.mohr_coulomb.topg_to_phi.phi_max 40 -basal_yield_stress.mohr_coulomb.topg_to_phi.topg_min -300 -basal_yield_stress.mohr_coulomb.topg_to_phi.topg_max 700 -stress_balance.sia.max_diffusivity 5e5 -grid.recompute_longitude_and_latitude false'"
+      - "regrid MEaSUREs speed to the PISM grid (same EPSG:3031); pair over thk>10 & obs CNT>0, drop speed>3000; all_metrics(log10(obs+1), log10(sim+1))"
+    prevention: "For velsurf_mag spatial_snapshot use log-space/rank metrics (dag determining_metric=csi); never headline raw Pearson r for a 4-orders-of-magnitude field."
+  severity: degraded
+  cross_references: [dt_023]
+  notes: >
+    Result Amery/Lambert (East Antarctica) 5km hybrid 1yr hold, shelf preserved:
+    log10-space spatial r=0.667, Spearman=0.707, NSE_log=-2.15, KGE_log=0.067,
+    PBIAS_log=-79% (interior too slow: cold isothermal -energy none stiffens ice;
+    pattern is right, magnitude/dynamic-range compressed). raw Pearson r=0.026
+    (artifact). GENUINE dynamical check (velocity is SOLVED, not an input) unlike
+    the usurf geometry-hold (dt_023) which is partly circular. n=25079, 205
+    non-converged cells excluded.
+  added_by_run: PISM_measures_amery

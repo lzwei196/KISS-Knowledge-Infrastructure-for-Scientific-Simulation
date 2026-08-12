@@ -23,28 +23,16 @@ import numpy as np
 from datetime import datetime, timedelta
 
 def validate_inputs(forcing_dir, start_date, end_date, shapefile):
-    """Validate that all required forcing files exist."""
+    """Validate that the forcing root and shapefile exist.
+
+    Variable/file discovery is delegated to ki_tools_common.load_forcing, which
+    knows each source's on-disk layout (CMFD subdirs, MSWX, NASA-POWER), so we
+    no longer guess filenames here.
+    """
     errors = []
 
-    if not os.path.isdir(forcing_dir):
+    if forcing_dir and not os.path.isdir(forcing_dir):
         errors.append(f"Forcing directory not found: {forcing_dir}")
-
-    # Check for required variables
-    required_vars = ['prec', 'temp', 'srad']
-    start_year = int(start_date[:4])
-    end_year = int(end_date[:4])
-
-    for var in required_vars:
-        for year in range(start_year, end_year + 1):
-            # CMFD naming: {var}_CMFD_V0106_B-01_01dy_025deg_{year}.nc
-            pattern_found = False
-            if os.path.isdir(forcing_dir):
-                import glob
-                matches = glob.glob(os.path.join(forcing_dir, f"{var}*{year}*.nc"))
-                if matches:
-                    pattern_found = True
-            if not pattern_found:
-                errors.append(f"Missing {var} for year {year}")
 
     if shapefile and not os.path.exists(shapefile):
         errors.append(f"Basin shapefile not found: {shapefile}")
@@ -66,149 +54,136 @@ def compute_pet_hargreaves(tmin_C, tmax_C, tmean_C, lat_deg, doy):
     ws = np.clip(ws, 0, np.pi)
 
     Gsc = 0.0820  # solar constant MJ/m²/min
-    Ra = (24 * 60 / np.pi) * Gsc * dr * (
+    Ra_MJ = (24 * 60 / np.pi) * Gsc * dr * (
         ws * np.sin(lat_rad) * np.sin(delta) +
         np.cos(lat_rad) * np.cos(delta) * np.sin(ws)
     )
-    Ra = np.maximum(Ra, 0)
+    Ra_MJ = np.maximum(Ra_MJ, 0)
+
+    # Hargreaves (FAO-56) requires Ra in EQUIVALENT EVAPORATION (mm/day), not in
+    # MJ/m²/day. Convert with the latent-heat factor 0.408 (= 1/2.45 MJ/kg).
+    # Omitting this inflates PET by ~2.45x (e.g. ~2500 mm/yr instead of the
+    # realistic ~1000 mm/yr for the Huai basin), which silently dries the model
+    # and suppresses runoff.
+    Ra_mm = Ra_MJ * 0.408
 
     # Hargreaves equation
     trange = np.maximum(tmax_C - tmin_C, 0.1)
-    pet = 0.0023 * (tmean_C + 17.8) * np.sqrt(trange) * Ra
+    pet = 0.0023 * (tmean_C + 17.8) * np.sqrt(trange) * Ra_mm
     pet = np.maximum(pet, 0)
 
     return pet
 
 
 def extract_basin_mean_forcing(forcing_dir, shapefile, start_date, end_date,
-                                lat_center=None, lon_center=None):
+                                lat_center=None, lon_center=None, source='cmfd'):
     """
-    Extract basin-averaged forcing from CMFD NetCDF files.
+    Extract basin forcing via the shared ki_tools_common loader.
 
-    If shapefile is provided, uses spatial masking.
-    If only lat/lon, uses nearest grid cell.
+    Uses ``ki_tools_common.load_forcing.load_daily_forcing`` which correctly
+    handles the on-disk CMFD/MSWX/NASA-POWER directory layout (e.g. CMFD V0200
+    stores monthly files under Prec/ Temp/ SRad/ subdirectories). The previous
+    implementation globbed ``{var}*{year}*.nc`` directly in ``forcing_dir`` and
+    only read ``files[0]`` — on the current CMFD layout it matched nothing and
+    silently produced all-zero forcing. See triplet dt_016.
 
-    Returns dict with daily arrays: prec_mm_day, temp_K, srad_Wm2
+    TOPMODEL is lumped (single subcatchment), so a representative point at the
+    basin centroid is extracted (the loader returns the nearest grid cell).
+
+    Returns dict with daily arrays: prec_mm_day, temp_K, tmin_C, tmax_C, srad_Wm2.
     """
-    try:
-        import netCDF4 as nc
-    except ImportError:
-        print("ERROR: netCDF4 required. pip install netCDF4")
-        sys.exit(1)
-
-    import glob
+    from ki_tools_common.load_forcing import load_daily_forcing
 
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
     ndays = (end_dt - start_dt).days + 1
 
+    fc = load_daily_forcing(source, lat_center, lon_center,
+                            start_dt.year, end_dt.year,
+                            forcing_dir=forcing_dir)
+
+    # Normalize loader dates to python datetime. The MSWX loader returns
+    # numpy.datetime64 (no .year/.month/.day attrs) while CMFD returns python
+    # datetime; pd.Timestamp coerces both so the mapping below is source-robust.
+    # (Prior bug: datetime(d.year,...) crashed on MSWX -> AttributeError.)
+    import pandas as pd
+    dates = [pd.Timestamp(d).to_pydatetime() for d in fc['dates']]
+    # Map loader days onto the requested [start_dt, end_dt] window.
     prec_daily = np.full(ndays, np.nan)
     temp_daily = np.full(ndays, np.nan)
+    tmin_daily = np.full(ndays, np.nan)
+    tmax_daily = np.full(ndays, np.nan)
     srad_daily = np.full(ndays, np.nan)
 
-    # Try to load basin mask from shapefile
-    basin_mask = None
-    lat_grid = None
-    lon_grid = None
+    for i, d in enumerate(dates):
+        dd = datetime(d.year, d.month, d.day)
+        if dd < start_dt or dd > end_dt:
+            continue
+        j = (dd - start_dt).days
+        if 0 <= j < ndays:
+            prec_daily[j] = fc['precip_mm'][i]
+            temp_daily[j] = fc['temp_mean_c'][i] + 273.15
+            tmin_daily[j] = fc['temp_min_c'][i]
+            tmax_daily[j] = fc['temp_max_c'][i]
+            srad_daily[j] = fc['srad_wm2'][i]
 
-    for year in range(start_dt.year, end_dt.year + 1):
-        for var_name, var_key in [('prec', 'prec'), ('temp', 'temp'), ('srad', 'srad')]:
-            pattern = os.path.join(forcing_dir, f"{var_key}*{year}*.nc")
-            files = sorted(glob.glob(pattern))
-            if not files:
-                print(f"WARNING: No {var_key} file for {year}")
-                continue
-
-            ds = nc.Dataset(files[0], 'r')
-
-            # Get coordinate arrays on first file
-            if lat_grid is None:
-                for dim_name in ['lat', 'latitude', 'Lat', 'LAT']:
-                    if dim_name in ds.variables:
-                        lat_grid = ds.variables[dim_name][:]
-                        break
-                for dim_name in ['lon', 'longitude', 'Lon', 'LON']:
-                    if dim_name in ds.variables:
-                        lon_grid = ds.variables[dim_name][:]
-                        break
-
-            if lat_grid is None or lon_grid is None:
-                print(f"WARNING: Cannot find lat/lon in {files[0]}")
-                ds.close()
-                continue
-
-            # Find nearest grid cell if no mask
-            if basin_mask is None and lat_center is not None:
-                lat_idx = np.argmin(np.abs(lat_grid - lat_center))
-                lon_idx = np.argmin(np.abs(lon_grid - lon_center))
-
-            # Get time and data
-            time_var = None
-            for tname in ['time', 'Time', 'TIME']:
-                if tname in ds.variables:
-                    time_var = ds.variables[tname]
-                    break
-
-            # Find data variable
-            data_var = None
-            for vname in ds.variables:
-                if vname.lower().startswith(var_key[:4]) and vname not in ['lat', 'lon', 'latitude', 'longitude', 'time']:
-                    data_var = ds.variables[vname]
-                    break
-            if data_var is None:
-                # Try the var_key directly
-                for vname in ds.variables:
-                    if vname not in ['lat', 'lon', 'latitude', 'longitude', 'time', 'Lat', 'Lon']:
-                        data_var = ds.variables[vname]
-                        break
-
-            if data_var is None:
-                print(f"WARNING: Cannot find data variable in {files[0]}")
-                ds.close()
-                continue
-
-            # Determine time steps in this file
-            if time_var is not None:
-                nt = len(time_var)
-            else:
-                nt = data_var.shape[0]
-
-            year_start = datetime(year, 1, 1)
-
-            for t_idx in range(nt):
-                current_date = year_start + timedelta(days=t_idx)
-                if current_date < start_dt or current_date > end_dt:
-                    continue
-
-                day_idx = (current_date - start_dt).days
-                if day_idx < 0 or day_idx >= ndays:
-                    continue
-
-                # Extract data for this timestep
-                try:
-                    if basin_mask is not None:
-                        val = np.nanmean(data_var[t_idx, :, :][basin_mask])
-                    else:
-                        val = float(data_var[t_idx, lat_idx, lon_idx])
-                except:
-                    continue
-
-                if var_key == 'prec':
-                    prec_daily[day_idx] = val
-                elif var_key == 'temp':
-                    temp_daily[day_idx] = val
-                elif var_key == 'srad':
-                    srad_daily[day_idx] = val
-
-            ds.close()
+    n_valid = int(np.sum(~np.isnan(prec_daily)))
+    print(f"  load_daily_forcing({source}): {n_valid}/{ndays} days populated "
+          f"(precip mean {np.nanmean(prec_daily):.2f} mm/day, "
+          f"Tmean {np.nanmean(temp_daily)-273.15:.1f} C)")
 
     return {
         'prec_mm_day': prec_daily,
         'temp_K': temp_daily,
+        'tmin_C': tmin_daily,
+        'tmax_C': tmax_daily,
         'srad_Wm2': srad_daily,
         'ndays': ndays,
         'start_date': start_date,
     }
+
+
+def load_obs_qmhr(obs_file, start_date, ndays, basin_area_km2,
+                  seconds_per_day=86400.0):
+    """
+    Load observed daily discharge (m3/s) and convert to per-DAY runoff depth (m).
+
+    TOPMODEL discharge is a DEPTH PER TIMESTEP. With one model step per day the
+    matching observed quantity is the daily runoff depth:
+        depth_per_day (m) = Q_m3s * 86400 / area_m2
+    (i.e. the full day's volume spread over the basin). This must use 86400 s,
+    NOT 3600 — a per-hour factor would leave obs 24x smaller than the simulated
+    per-day depth and make NSE/PBIAS meaningless. The caller disaggregates this
+    daily depth evenly across steps_per_day sub-steps.
+
+    Missing days -> 0.0 (the Qobs column only feeds the binary's internal
+    objective; authoritative cal/val metrics are computed externally on valid
+    obs only).
+    """
+    import pandas as pd
+    q = np.zeros(ndays)
+    if not (obs_file and os.path.exists(obs_file) and basin_area_km2):
+        return q
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    area_m2 = basin_area_km2 * 1e6
+    # Encoding auto-detect (GBK for most Huai stations); only date/Q columns used.
+    for enc in ('utf-8', 'gbk', 'gb18030'):
+        try:
+            df = pd.read_csv(obs_file, sep='\t', encoding=enc)
+            break
+        except Exception:
+            df = None
+    if df is None:
+        print(f"WARNING: could not read obs file {obs_file}")
+        return q
+    df['date'] = pd.to_datetime(df['dates'])
+    df = df[df['Q'] > -90]  # filter -99 / -99.9 missing flags
+    for _, row in df.iterrows():
+        dd = row['date'].to_pydatetime()
+        j = (datetime(dd.year, dd.month, dd.day) - start_dt).days
+        if 0 <= j < ndays:
+            q[j] = float(row['Q']) * seconds_per_day / area_m2
+    return q
 
 
 def convert_to_topmodel_inputs(forcing_data, dt_hours, lat_center,
@@ -223,17 +198,19 @@ def convert_to_topmodel_inputs(forcing_data, dt_hours, lat_center,
       - Qobs: m³/s → m/hr    (÷ (area_m² / 3600))  but if not available, use 0
     """
     ndays = forcing_data['ndays']
-    steps_per_day = int(24 / dt_hours)
+    steps_per_day = int(round(24 / dt_hours))
     nstep = ndays * steps_per_day
 
     prec_mm_day = forcing_data['prec_mm_day']
     temp_K = forcing_data['temp_K']
-
-    # Compute PET using Hargreaves
     temp_C = temp_K - 273.15
-    # Use daily temp as mean, estimate range as 10°C if no min/max
-    tmin_C = temp_C - 5.0
-    tmax_C = temp_C + 5.0
+
+    # Prefer real daily Tmin/Tmax from the forcing source; fall back to +-5C.
+    tmin_C = forcing_data.get('tmin_C')
+    tmax_C = forcing_data.get('tmax_C')
+    if tmin_C is None or np.all(np.isnan(tmin_C)):
+        tmin_C = temp_C - 5.0
+        tmax_C = temp_C + 5.0
 
     start_dt = datetime.strptime(forcing_data['start_date'], "%Y-%m-%d")
     doys = np.array([(start_dt + timedelta(days=i)).timetuple().tm_yday
@@ -241,34 +218,49 @@ def convert_to_topmodel_inputs(forcing_data, dt_hours, lat_center,
 
     pet_mm_day = compute_pet_hargreaves(tmin_C, tmax_C, temp_C, lat_center, doys)
 
-    # CRITICAL UNIT CONVERSION
-    # mm/day → m/hr: divide by 1000 (mm→m) then by 24 (day→hr) = ÷24000
-    prec_m_hr = np.nan_to_num(prec_mm_day, nan=0.0) / 24000.0
-    pet_m_hr = np.nan_to_num(pet_mm_day, nan=0.0) / 24000.0
+    # CRITICAL UNIT CONVERSION.
+    # The TOPMODEL C engine treats rain[it]/pe[it] as DEPTH PER TIMESTEP (m),
+    # NOT a rate: see topmodel.c `*p=rain[it]; deficit_root_zone-=*p`. The
+    # timestep dt (hours) is used only for rate conversions (infiltration p/dt,
+    # uz drainage td*dt, channel routing chv*dt).
+    #   daily depth (m) = mm/day / 1000
+    #   per-step depth  = daily depth / steps_per_day
+    # => at dt=1h  (24 steps/day): /1000/24 = /24000   (matches hourly convention)
+    #    at dt=24h ( 1 step/day):  /1000               (daily convention)
+    daily_depth_m = np.nan_to_num(prec_mm_day, nan=0.0) / 1000.0
+    daily_pet_m = np.nan_to_num(pet_mm_day, nan=0.0) / 1000.0
+    prec_step = daily_depth_m / steps_per_day
+    pet_step = daily_pet_m / steps_per_day
 
-    # Load observed discharge if available
-    qobs_m_hr = np.zeros(ndays)
-    if obs_file and os.path.exists(obs_file) and basin_area_km2:
-        try:
-            obs_data = np.genfromtxt(obs_file, skip_header=0, usecols=(1, 3),
-                                      dtype=None, encoding='utf-8',
-                                      delimiter='\t')
-            # This is simplified; actual parsing depends on file format
-        except:
-            pass
+    # Observed discharge (per-step depth). Disaggregating obs the same way keeps
+    # it on the same per-step footing as the simulated flow.
+    qobs_daily = load_obs_qmhr(obs_file, forcing_data['start_date'], ndays,
+                               basin_area_km2)
+    qobs_step = qobs_daily / steps_per_day
 
-    # Disaggregate daily to hourly (uniform within day)
-    rain_hourly = np.repeat(prec_m_hr, steps_per_day)
-    pet_hourly = np.repeat(pet_m_hr, steps_per_day)
-    qobs_hourly = np.repeat(qobs_m_hr, steps_per_day)
+    # Disaggregate daily to sub-daily (uniform within day)
+    rain_hourly = np.repeat(prec_step, steps_per_day)
+    pet_hourly = np.repeat(pet_step, steps_per_day)
+    qobs_hourly = np.repeat(qobs_step, steps_per_day)
 
-    # Write inputs.dat
+    # Header timestep MUST be 1.0. The NOAA-OWP standalone binary advances time
+    # as `current_time_step += dt` (bmi_topmodel.c Update) and then uses
+    # current_time_step as the 1-based index into rain[]/pe[]/Qobs[]. Any dt!=1
+    # makes it index rain[dt], rain[2*dt], ... — skipping (dt-1)/dt of the data,
+    # reading past the array end (SUMP collapses, eventually SIGSEGV). So one
+    # model timestep == one input row, regardless of the physical step length.
+    # For a daily run (steps_per_day=1) each step represents one day and the
+    # rate parameters (t0, td, chv, rv) are therefore interpreted per-day.
+    model_dt = 1.0
     with open(output_file, 'w') as f:
-        f.write(f"{nstep}  {dt_hours:.1f}\n")
+        f.write(f"{nstep}  {model_dt:.1f}\n")
         for i in range(nstep):
-            f.write(f"   {rain_hourly[i]:.7f}  {pet_hourly[i]:.7f}  {qobs_hourly[i]:.7f}\n")
+            f.write(f"   {rain_hourly[i]:.8f}  {pet_hourly[i]:.8f}  {qobs_hourly[i]:.8f}\n")
 
-    print(f"Wrote {output_file}: {nstep} steps, dt={dt_hours}h")
+    phys_hours = 24.0 / steps_per_day
+    print(f"Wrote {output_file}: {nstep} steps (model dt=1.0, "
+          f"1 step = {phys_hours:.1f} physical hours), "
+          f"max rain/step={rain_hourly.max():.5f} m")
     return nstep
 
 
@@ -294,7 +286,10 @@ def validate_outputs(output_file, nstep):
     if data_lines != nstep:
         errors.append(f"Data lines mismatch: expected {nstep}, got {data_lines}")
 
-    # Check value ranges
+    # Value-range checks are on PER-STEP DEPTH (m/step). The header dt is always
+    # 1.0 (see convert_to_topmodel_inputs), so use a physically generous ceiling:
+    # an extreme daily storm is ~250 mm = 0.25 m; allow some margin.
+    rain_ceiling = 0.5
     for i, line in enumerate(lines[1:], 1):
         vals = line.split()
         if len(vals) != 3:
@@ -302,15 +297,11 @@ def validate_outputs(output_file, nstep):
             continue
         rain, pe, qobs = float(vals[0]), float(vals[1]), float(vals[2])
 
-        # Rain in m/hr should be small (< 0.01 m/hr = 10 mm/hr extreme)
-        if rain > 0.01:
-            errors.append(f"Line {i}: rain={rain} m/hr seems too high (>10 mm/hr)")
+        if rain > rain_ceiling:
+            errors.append(f"Line {i}: rain={rain} m/step exceeds {rain_ceiling:.3f} m "
+                          f"(implausible at dt={file_dt}h)")
         if rain < 0:
             errors.append(f"Line {i}: negative rainfall")
-
-        # PE in m/hr should be very small (< 0.001 m/hr)
-        if pe > 0.001:
-            errors.append(f"Line {i}: PE={pe} m/hr seems too high")
         if pe < 0:
             errors.append(f"Line {i}: negative PE")
 
@@ -325,7 +316,8 @@ def validate_outputs(output_file, nstep):
 
 def main():
     parser = argparse.ArgumentParser(description="Convert CMFD forcing to TOPMODEL inputs.dat")
-    parser.add_argument('--forcing-dir', required=True, help='CMFD forcing directory')
+    parser.add_argument('--forcing-dir', required=True, help='Forcing root directory (CMFD/MSWX)')
+    parser.add_argument('--source', default='cmfd', help='Forcing source: cmfd|mswx|nasa_power')
     parser.add_argument('--start-date', required=True, help='Start date YYYY-MM-DD')
     parser.add_argument('--end-date', required=True, help='End date YYYY-MM-DD')
     parser.add_argument('--lat', type=float, required=True, help='Basin center latitude')
@@ -350,7 +342,7 @@ def main():
     print("=== Step 2: Extracting basin-mean forcing ===")
     forcing_data = extract_basin_mean_forcing(
         args.forcing_dir, args.shapefile, args.start_date, args.end_date,
-        lat_center=args.lat, lon_center=args.lon
+        lat_center=args.lat, lon_center=args.lon, source=args.source
     )
 
     print("=== Step 3: Converting to TOPMODEL format ===")

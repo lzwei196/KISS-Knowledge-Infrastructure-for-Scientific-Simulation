@@ -1,96 +1,119 @@
 model:
-  name: "ESMF"
-  full_name: "Earth System Modeling Framework"
-  version: "9.0.0"
-  domain: "earth_system_coupling_framework"
-  type: "framework_library"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ESMF/source/repo/test/testO/Linux.gfortran.64.openmpi.default/ESMF_FieldMeshSMMSTest"
-  note: "ESMF is a coupling framework, not a standalone geophysical model. Test binaries validate framework functionality."
-
+  name: ESMF
+  full_name: Earth System Modeling Framework
+  version: 9.0.0
+  domain: framework
+  type: framework_library
+  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/ESMF/source/repo/test/testO/Linux.gfortran.64.openmpi.default/ESMF_FieldMeshSMMSTest
+  note: ESMF is a coupling framework, not a standalone geophysical model. Test binaries
+    validate framework functionality.
 inputs:
   grid_formats:
-    - name: "structured_grid"
-      format: "NetCDF (CF-1.6+)"
-      description: "Logically-rectangular grid with coordinate variables"
-    - name: "unstructured_mesh"
-      format: "NetCDF (UGRID/ESMF native)"
-      description: "Triangle/quad mesh with node coords and element connectivity"
-    - name: "scrip_grid"
-      format: "NetCDF (SCRIP)"
-      description: "Grid description for regridding with cell corners"
+  - name: structured_grid
+    format: NetCDF (CF-1.6+)
+    description: Logically-rectangular grid with coordinate variables
+  - name: unstructured_mesh
+    format: NetCDF (UGRID/ESMF native)
+    description: Triangle/quad mesh with node coords and element connectivity
+  - name: scrip_grid
+    format: NetCDF (SCRIP)
+    description: Grid description for regridding with cell corners
   forcing:
-    - name: "grid_coordinates"
-      unit: "degrees"
-      valid_range: [-180, 360]
-      trap: "Must be degrees, not radians; 57.3x error if wrong"
-    - name: "cell_areas"
-      unit: "radians_squared"
-      valid_range: [0.0, 6.28]
-      trap: "Must be radians² for conservative regrid, not degrees² or m²"
-    - name: "time_axis"
-      unit: "CF-convention (days since epoch)"
-      trap: "Integer timesteps cause fatal crash in ESMF_Clock"
+  - name: grid_coordinates
+    unit: degrees
+    valid_range:
+    - -180
+    - 360
+    trap: Must be degrees, not radians; 57.3x error if wrong
+  - name: cell_areas
+    unit: radians_squared
+    valid_range:
+    - 0.0
+    - 6.28
+    trap: "Must be radians\xB2 for conservative regrid, not degrees\xB2 or m\xB2"
+  - name: time_axis
+    unit: CF-convention (days since epoch)
+    trap: Integer timesteps cause fatal crash in ESMF_Clock
   parameters:
     critical:
-      - name: "regrid_method"
-        valid_range: ["bilinear", "patch", "neareststod", "nearestdtos", "conserve", "conserve2nd"]
-        description: "Interpolation method for field regridding"
-      - name: "coupling_frequency"
-        unit: "seconds"
-        valid_range: [1, 3600]
-        description: "Temporal resolution of inter-component coupling"
-      - name: "halo_width"
-        unit: "cells"
-        valid_range: [1, 4]
-        description: "Width of parallel halo exchange region"
-      - name: "de_decomposition"
-        description: "MPI domain decomposition layout; product must equal nprocs"
-      - name: "stagger_location"
-        valid_range: ["CENTER", "CORNER", "EDGE1", "EDGE2"]
-        description: "Grid stagger for field data placement"
-      - name: "mask_convention"
-        description: "0 = masked out (ESMF convention). Common trap: other tools use 1 = masked"
-      - name: "mesh_connectivity_indexing"
-        description: "1-based Fortran convention. C/Python 0-based causes off-by-one"
-
+    - name: regrid_method
+      valid_range:
+      - bilinear
+      - patch
+      - neareststod
+      - nearestdtos
+      - conserve
+      - conserve2nd
+      description: Interpolation method for field regridding
+    - name: coupling_frequency
+      unit: seconds
+      valid_range:
+      - 1
+      - 3600
+      description: Temporal resolution of inter-component coupling
+    - name: halo_width
+      unit: cells
+      valid_range:
+      - 1
+      - 4
+      description: Width of parallel halo exchange region
+    - name: de_decomposition
+      description: MPI domain decomposition layout; product must equal nprocs
+    - name: stagger_location
+      valid_range:
+      - CENTER
+      - CORNER
+      - EDGE1
+      - EDGE2
+      description: Grid stagger for field data placement
+    - name: mask_convention
+      description: '0 = masked out (ESMF convention). Common trap: other tools use
+        1 = masked'
+    - name: mesh_connectivity_indexing
+      description: 1-based Fortran convention. C/Python 0-based causes off-by-one
 outputs:
   primary:
-    - name: "regrid_weight_file"
-      format: "NetCDF"
-      description: "Sparse matrix weight file for field interpolation"
-    - name: "regridded_fields"
-      format: "NetCDF (CF-1.6+)"
-      description: "Fields interpolated from source to destination grid"
-    - name: "component_state"
-      format: "NetCDF"
-      description: "Export/import state fields from coupled components"
+  - name: regrid_weight_file
+    format: NetCDF
+    description: Sparse matrix weight file for field interpolation
+  - name: regridded_fields
+    format: NetCDF (CF-1.6+)
+    description: Fields interpolated from source to destination grid
+  - name: component_state
+    format: NetCDF
+    description: Export/import state fields from coupled components
   diagnostics:
-    - name: "PET_log_files"
-      format: "text"
-      description: "Per-process log files (PET0.ESMF_LogFile, etc.)"
-    - name: "runtime_trace"
-      format: "binary"
-      description: "Enabled via ESMF_RUNTIME_TRACE=ON for performance profiling"
-
+  - name: PET_log_files
+    format: text
+    description: Per-process log files (PET0.ESMF_LogFile, etc.)
+  - name: runtime_trace
+    format: binary
+    description: Enabled via ESMF_RUNTIME_TRACE=ON for performance profiling
 known_issues:
-  - id: 1
-    description: "Grid coordinates in radians instead of degrees causes 57.3x silent error"
-    severity: "silent"
-  - id: 2
-    description: "Cell areas in degrees² or m² instead of radians² breaks conservative regrid"
-    severity: "silent"
-  - id: 3
-    description: "Mesh element connectivity using 0-based indices causes off-by-one topology error"
-    severity: "silent"
-  - id: 4
-    description: "Inverted mask convention (1=masked instead of 0=masked) silently excludes valid data"
-    severity: "silent"
-  - id: 5
-    description: "SCRIP grid corner order must be counter-clockwise; clockwise gives negative areas"
-    severity: "silent"
-  - id: 6
-    description: "MPI decomposition mismatch (regDecomp product != nprocs) causes fatal DELayout error"
-    severity: "fatal"
-  - id: 7
-    description: "Field stagger location mismatch with Grid causes segfault in regrid"
-    severity: "fatal"
+- id: 1
+  description: Grid coordinates in radians instead of degrees causes 57.3x silent
+    error
+  severity: silent
+- id: 2
+  description: "Cell areas in degrees\xB2 or m\xB2 instead of radians\xB2 breaks conservative\
+    \ regrid"
+  severity: silent
+- id: 3
+  description: Mesh element connectivity using 0-based indices causes off-by-one topology
+    error
+  severity: silent
+- id: 4
+  description: Inverted mask convention (1=masked instead of 0=masked) silently excludes
+    valid data
+  severity: silent
+- id: 5
+  description: SCRIP grid corner order must be counter-clockwise; clockwise gives
+    negative areas
+  severity: silent
+- id: 6
+  description: MPI decomposition mismatch (regDecomp product != nprocs) causes fatal
+    DELayout error
+  severity: fatal
+- id: 7
+  description: Field stagger location mismatch with Grid causes segfault in regrid
+  severity: fatal

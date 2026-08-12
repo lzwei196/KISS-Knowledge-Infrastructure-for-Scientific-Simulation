@@ -36,6 +36,29 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 
+def lookup_elevation(lat, lon):
+    """Look up elevation from DEM for ET0 computation.
+
+    Uses ki_tools_common.terrain.get_terrain() (China DEM 90m or CMFD grid).
+    Call this before compute_et0_fao56() if you don't have elevation::
+
+        elev = lookup_elevation(lat, lon)
+        et0 = compute_et0_fao56(tmin, tmax, srad, wind, lat, elev, doy)
+    """
+    try:
+        for p in ['/mnt/disk1/Hydrocraft_server/models/ki_tools_common',
+                  '/home/server/knowledge-dissection-toolkit/kdt-release']:
+            if p not in sys.path:
+                sys.path.insert(0, p)
+        from ki_tools_common.terrain import get_terrain
+        t = get_terrain(lat, lon)
+        logger.info(f"Elevation from {t['source']}: {t['elevation']:.0f} m")
+        return t['elevation']
+    except Exception:
+        logger.warning("DEM lookup failed; using 100 m default")
+        return 100.0
+
+
 def compute_et0_fao56(tmin, tmax, solar_rad, wind, lat, elevation, doy,
                        rh_min=None, rh_max=None):
     """
@@ -47,7 +70,7 @@ def compute_et0_fao56(tmin, tmax, solar_rad, wind, lat, elevation, doy,
         solar_rad: Solar radiation (MJ/m2/day), array
         wind: Wind speed at 2m (m/s), array
         lat: Latitude (degrees)
-        elevation: Elevation (m)
+        elevation: Elevation (m). Use lookup_elevation(lat, lon) to get from DEM.
         doy: Day of year (1-366), array
         rh_min: Min relative humidity (%), optional
         rh_max: Max relative humidity (%), optional

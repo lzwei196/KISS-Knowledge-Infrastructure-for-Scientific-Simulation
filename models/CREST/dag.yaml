@@ -1,0 +1,567 @@
+template_version: "3.5"
+
+identity:
+  model_id: "CREST"
+  scientific_reference_version: "CREST distributed water balance (Wang et al. 2011, HSJ 56:84-98) as realized in EF5 v1.2.3"
+  implementation:
+    id: "crest-ef5-v123"
+    version: "EF5 v1.2.3 (hydrocraft-crest-ef5 package v1.1.0)"
+    provenance: "C++; HyDROSLab EF5 framework (Flamig/Vergara/Gourley), single bin/ef5 executable; CREST is one of EF5's selectable water-balance modules (MODEL=CREST)."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c++"
+  license: "Unlicense"
+  repo_url: "https://github.com/HyDROSLab/EF5"
+
+boundary:
+  scope_in:
+    - "Grid-distributed surface water balance (variable-infiltration-curve runoff generation, infiltration, ET) per cell"
+    - "Sub-grid soil-moisture storage-capacity variability via the Xinanjiang/VIC infiltration curve"
+    - "Runoff separation into overland (fast) and interflow (slow) components"
+    - "Impervious-area direct runoff"
+    - "Cell-to-cell flow routing to gauge discharge (Linear Reservoir or Kinematic Wave)"
+    - "Optional temperature-index Snow-17 snowmelt"
+    - "Optional inundation-depth mapping from discharge"
+    - "Streamflow return-period diagnostics"
+  scope_out:
+    - "Energy-balance snowmelt (only temperature-index Snow-17 is available)"
+    - "Full Saint-Venant hydrodynamic routing (Kinematic Wave is a kinematic approximation only)"
+    - "Groundwater dynamics beyond the linear-reservoir interflow conceptualization"
+    - "Alternative EF5 water-balance modules (SAC-SMA, HyMOD, HP) — selected instead of CREST, out of scope for this dag"
+    - "From-scratch DEM-to-DDM/FAM derivation (EF5 v1.2.3 ProcessDEM mode=1 is unimplemented)"
+  spatial: "distributed-stream"
+  temporal: "sub-hourly"
+  closure: "mass-balance"
+  notes: "Per-cell water mass balance closes over the soil store (state SM vs WM): precipitation is partitioned into actual ET, infiltration/excess runoff, and storage change. No surface energy-balance closure; Snow-17, when active, is a temperature-index (not energy-balance) module. Configurable timestep (sub-hourly to daily); FC in mm/hr and flash-flood application make hourly/sub-hourly the common operating regime."
+
+inputs:
+  forcing:
+    - category: forcing
+      name: "Precipitation"
+      unit: "mm per config UNIT interval (internally converted to mm/hr)"
+      source_kind: forcing
+      model_input_format: "gridded raster per timestep ([PrecipForcing]); ASC/BIF/TIF/TRMMRT/TRMMV7/MRMS, filename date-token template, FREQ-controlled"
+      notes: "Config UNIT must match the true file unit; EF5 converts mm/d->mm/hr by /24. When Snow-17 is active the precip vector is silently replaced by rain+melt before CREST consumes it."
+    - category: forcing
+      name: "PET (potential evapotranspiration)"
+      unit: "mm per config UNIT interval, or C (UNIT=C for internally-computed temperature-based PET)"
+      source_kind: forcing
+      model_input_format: "gridded raster per timestep ([PETForcing]); ASC/BIF/TIF"
+      notes: "UNIT=C converts temperature to PET internally; temperature must be in Celsius (Kelvin causes near-total evaporation)."
+    - category: forcing
+      name: "Temperature"
+      unit: "C"
+      source_kind: forcing
+      model_input_format: "gridded raster per timestep (TIF/ASC), driving Snow-17 and/or temperature-based PET"
+      notes: "Optional; only consumed when Snow-17 or temperature-PET is enabled."
+  parameters:
+    - category: parameters
+      name: "WM"
+      unit: "mm"
+      source_kind: calibrated
+      model_input_format: "scalar in [ParamSet] or multiplicative grid (wm_grid)"
+      notes: "Maximum soil water capacity (depth-integrated pore space). Negative values silently clamped to 100 mm."
+    - category: parameters
+      name: "B"
+      unit: "-"
+      source_kind: calibrated
+      model_input_format: "scalar or multiplicative grid (b_grid)"
+      notes: "Variable-infiltration-curve exponent; higher B = more runoff for given soil moisture. B<0 clamped to 1.0, NaN to 0.0; B=0 risks VIC division-by-zero."
+    - category: parameters
+      name: "IM"
+      unit: "% (0-100)"
+      source_kind: calibrated
+      model_input_format: "scalar or multiplicative grid (im_grid)"
+      notes: "Impervious area ratio. Dual semantics: scalar divided by 100 (percent->fraction) when no grid; acts as direct multiplier when im_grid present."
+    - category: parameters
+      name: "KE"
+      unit: "-"
+      source_kind: calibrated
+      model_input_format: "scalar or multiplicative grid"
+      notes: "PET-to-actual-ET multiplier (adjPET = PET x KE)."
+    - category: parameters
+      name: "FC (Ksat)"
+      unit: "mm/hr"
+      source_kind: calibrated
+      model_input_format: "scalar or multiplicative grid (fc_grid)"
+      notes: "Saturated hydraulic conductivity controlling the overland/interflow split. Despite the FC label this is Ksat, not field capacity."
+    - category: parameters
+      name: "Channel routing coefficients (LR: RIVER, COEM, UNDER, LEAKO, LEAKI, TH; KW: ALPHA, BETA, ALPHA0, UNDER, LEAKI, TH)"
+      unit: "mixed (multipliers, fractions, FAM-cell threshold)"
+      source_kind: calibrated
+      model_input_format: "[LRParamSet] or [KWParamSet], selected by ROUTING and ROUTING_PARAM_SET"
+      notes: "Routing parameter set must match the chosen router. TH (FAM-cell threshold) defines channel cells. KW exponent BETA also has a hardcoded 0.6 fallback in the solver."
+  initial_conditions:
+    - category: initial_conditions
+      name: "IWU"
+      unit: "% of WM (0-100)"
+      source_kind: user_provided
+      model_input_format: "scalar in [ParamSet]"
+      notes: "Initial soil water as percent of WM; SM_init = IWU x WM / 100. Spin-up sensitive; warmup window set by TIME_WARMEND."
+    - category: initial_conditions
+      name: "ISO / ISU"
+      unit: "mm"
+      source_kind: user_provided
+      model_input_format: "scalar in routing param set"
+      notes: "Initial overland (ISO) and interflow (ISU) reservoir storages. ISU also used by KW interflow."
+    - category: initial_conditions
+      name: "Saved state grids"
+      unit: "mm (SM); module-specific for routing/snow"
+      source_kind: user_provided
+      model_input_format: "crest_SM_YYYYMMDD_HHUU.tif (and routing/snow state grids) for warm restart"
+      notes: "Written and reloaded automatically for restart continuity."
+  boundary_conditions:
+    - category: boundary_conditions
+      name: "ROUTING selector"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "ROUTING=LR|KW plus ROUTING_PARAM_SET in the task section"
+      notes: "Must be set or only the water balance runs (no discharge produced). In EF5 v1.2.3, LR never assigns discharge (see safety); KW is the operative router."
+    - category: boundary_conditions
+      name: "DDM encoding flag (ESRIDDM)"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "ESRIDDM=true (ESRI 1,2,4...128) | false (TauDEM 1-8)"
+      notes: "Must match the actual DDM encoding or routing goes the wrong direction."
+    - category: boundary_conditions
+      name: "FAM self-inclusion flag (SELFFAM)"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "SELFFAM=true when FAM minimum value is 1"
+      notes: "Mismatch causes off-by-one basin area and gauge snapping errors."
+    - category: boundary_conditions
+      name: "Simulation window and timestep (TIME_BEGIN, TIME_END, TIME_WARMEND, TIMESTEP)"
+      unit: "datetime / interval"
+      source_kind: user_provided
+      model_input_format: "task-section control keys"
+      notes: "TIMESTEP must satisfy Courant condition for the grid resolution, especially under KW routing."
+    - category: boundary_conditions
+      name: "Gauge specification (LON/LAT, BASINAREA, OBS)"
+      unit: "WGS84 degrees / km2 / m3/s"
+      source_kind: user_provided
+      model_input_format: "[Gauge] block; OBS CSV (datetime,value) parsed by LoadTimeExcel"
+      notes: "Gauge LON/LAT always in unprojected WGS84 regardless of grid PROJ; BASINAREA aids cell snapping. OBS discharge in m3/s; non-matching CSV lines silently skipped."
+    - category: boundary_conditions
+      name: "Static basic grids (DEM, DDM, FAM)"
+      unit: "m / direction code / cell count"
+      source_kind: dataset_lookup
+      model_input_format: "ESRI ASCII (.asc) or Float32 GeoTIFF (.tif), identical extent/cellsize/projection"
+      notes: "Define basin topology; DEM also feeds Snow-17 atmospheric-pressure calculation. Nodata standardized to -9999."
+
+processes:
+  modules:
+    - name: "Variable infiltration curve (Xinanjiang/VIC)"
+      role: process_solver
+      brief: "Sub-grid soil-moisture-capacity distribution; Wmaxm = WM x (1+B), A = Wmaxm x (1-(1-SM/WM)^(1/(1+B))); generates saturation-excess runoff above capacity."
+    - name: "Evapotranspiration"
+      role: process_solver
+      brief: "adjPET = PET x KE; when precip <= adjPET, ExcessET = (adjPET - precip) x SM/WM withdraws from the soil store."
+    - name: "Runoff separation"
+      role: allocator
+      brief: "Splits excess into overland (fast) and interflow (slow); interflow bounded by temX = ((SM_old+SM_new)/WM/2) x FC x stepHours, remainder to overland."
+    - name: "Impervious-area runoff"
+      role: process_solver
+      brief: "IM fraction generates direct runoff (precipImperv) independent of soil moisture, added to overland flow."
+    - name: "Linear Reservoir routing"
+      role: integrator
+      brief: "Two parallel reservoirs (overland + interflow) per cell with leak rates LEAKO/LEAKI; speed = depth^0.66 x sqrt(slope) x Manning multiplier."
+      applicability: "ROUTING=LR; NOTE: in EF5 v1.2.3 this router does not assign discharge in the SIMU path (see safety)."
+    - name: "Kinematic Wave routing"
+      role: integrator
+      brief: "Saint-Venant kinematic approximation Q = ALPHA x A^BETA for channel (BETA hardcoded fallback 0.6), ALPHA0 overland, linear interflow leak; iterative Newton solve."
+      applicability: "ROUTING=KW; operative discharge-producing router in EF5 v1.2.3."
+    - name: "Snow-17"
+      role: optional_module
+      brief: "Temperature-index snowmelt updating ATI/WI/WQ/heat-deficit; rewrites the precip vector to rain+melt before CREST consumes it."
+      applicability: "when temperature forcing and snow module are enabled"
+    - name: "Inundation mapping"
+      role: optional_module
+      brief: "SimpleInundation (power-law) or VCInundation (volume-conserving) depth from routed discharge."
+      applicability: "when inundation output is enabled"
+    - name: "BasicGrids"
+      role: allocator
+      brief: "Builds the GridNode mesh from DEM/DDM/FAM; computes slope, flow accumulation, downstream links and contributing area used by routing."
+    - name: "Gauge averaging"
+      role: integrator
+      brief: "Averages distributed cell values over gauge basins for time-series output and the calibration objective."
+  internal_edges:
+    - from: "Inputs"
+      to: "Variable infiltration curve (Xinanjiang/VIC)"
+      kind: consumes_input
+      brief: "Precipitation (or rain+melt) drives the infiltration/excess partition."
+    - from: "Inputs"
+      to: "Evapotranspiration"
+      kind: consumes_input
+      brief: "PET forcing scaled by KE supplies ET demand."
+    - from: "Snow-17"
+      to: "Variable infiltration curve (Xinanjiang/VIC)"
+      kind: invokes
+      brief: "Snow-17 (when active) replaces precip with rain+melt before the water balance runs."
+    - from: "Inputs"
+      to: "Snow-17"
+      kind: consumes_input
+      brief: "Temperature forcing and DEM-derived atmospheric pressure drive the snow energy/heat-deficit update."
+    - from: "Variable infiltration curve (Xinanjiang/VIC)"
+      to: "SM"
+      kind: writes_state
+      brief: "Updates soil-moisture store at end of step."
+    - from: "Evapotranspiration"
+      to: "SM"
+      kind: writes_state
+      brief: "ExcessET withdrawal decreases SM."
+    - from: "SM"
+      to: "Variable infiltration curve (Xinanjiang/VIC)"
+      kind: reads_state
+      brief: "Current SM sets the saturation fraction A and Wmaxm."
+    - from: "Variable infiltration curve (Xinanjiang/VIC)"
+      to: "Runoff separation"
+      kind: invokes
+      brief: "Excess passed to the fast/slow split."
+    - from: "Impervious-area runoff"
+      to: "Runoff separation"
+      kind: invokes
+      brief: "Impervious direct runoff added to the overland component."
+    - from: "Runoff separation"
+      to: "Overland reservoir storage"
+      kind: writes_state
+      brief: "Overland (fast) excess accumulates into the overland store / channel input."
+    - from: "Runoff separation"
+      to: "Interflow reservoir storage"
+      kind: writes_state
+      brief: "Interflow (slow) excess accumulates into the interflow store."
+    - from: "BasicGrids"
+      to: "Kinematic Wave routing"
+      kind: invokes
+      brief: "GridNode slope/flow-accumulation/downstream links supply routing topology and travel time."
+    - from: "Overland reservoir storage"
+      to: "Kinematic Wave routing"
+      kind: reads_state
+      brief: "Fast-flow buffer consumed by the router."
+    - from: "Interflow reservoir storage"
+      to: "Kinematic Wave routing"
+      kind: reads_state
+      brief: "Slow-flow buffer consumed by the router."
+    - from: "Kinematic Wave routing"
+      to: "Outputs"
+      kind: produces_output
+      brief: "Per-cell and per-gauge discharge (m3/s)."
+    - from: "Linear Reservoir routing"
+      to: "Outputs"
+      kind: produces_output
+      brief: "Discharge in the calibration path only; SIMU-path discharge is not assigned in v1.2.3 (see safety)."
+    - from: "Kinematic Wave routing"
+      to: "Inundation mapping"
+      kind: invokes
+      brief: "Routed discharge feeds inundation depth estimation."
+    - from: "Inundation mapping"
+      to: "Outputs"
+      kind: produces_output
+      brief: "Inundation depth grid."
+    - from: "Kinematic Wave routing"
+      to: "Gauge averaging"
+      kind: invokes
+      brief: "Discharge selected/averaged per gauge for time-series output."
+    - from: "Gauge averaging"
+      to: "Outputs"
+      kind: produces_output
+      brief: "Gauge-averaged simulated Q for time-series output / calibration objective."
+    - from: "Snow-17"
+      to: "SWE"
+      kind: writes_state
+      brief: "Updates snow water equivalent (WI+WQ)."
+
+states:
+  variables:
+    - name: "SM"
+      unit: "mm (reported externally as % of WM)"
+      role: prognostic
+    - name: "Overland reservoir storage"
+      unit: "mm"
+      role: prognostic
+    - name: "Interflow reservoir storage"
+      unit: "mm"
+      role: prognostic
+    - name: "SWE"
+      unit: "mm"
+      role: prognostic
+    - name: "Snow heat deficit / ATI"
+      unit: "mm / C"
+      role: prognostic
+    - name: "KW channel/overland discharge state (PQ/PO/IR)"
+      unit: "m3/s (carried across steps)"
+      role: prognostic
+    - name: "Actual ET (actET)"
+      unit: "mm"
+      role: diagnostic
+    - name: "Overland/interflow step excess"
+      unit: "mm"
+      role: diagnostic
+  provenance: "populated"
+
+outputs:
+  - var: "STREAMFLOW (Q)"
+    validation_rank: 1
+    unit: "m3/s"
+    description: "Discharge at each grid cell and at gauge locations."
+    emitted_in: "gridded streamflow product + per-gauge time-series file (e.g. ts.<gauge>.crest.csv)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Gauge discharge must be in m3/s; cfs/mm-day mismatch yields extremely negative NSE despite good shape."
+            - "Requires ROUTING=KW for valid discharge in EF5 v1.2.3."
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Peak-flow or event-volume comparison; sensitive to routing-parameter calibration."
+      detrending_options: ["none"]
+  - var: "SOILMOISTURE (SM)"
+    validation_rank: 2
+    unit: "% of WM"
+    description: "Soil moisture as percentage of maximum soil water capacity."
+    emitted_in: "gridded soilmoisture product; per-gauge time series"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "temporal_pattern_match"]
+          determining_metric: "r"
+          caveats:
+            - "Model SM is relative (% of WM), not absolute volumetric water content; comparison to satellite/in-situ VWC needs rescaling or rank-based matching."
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match"]
+          determining_metric: "r"
+          caveats:
+            - "Relative (% of WM) units; pattern/anomaly comparison more defensible than absolute magnitude."
+      detrending_options: ["none", "linear_residual"]
+  - var: "SNOWWATER (SWE)"
+    validation_rank: 3
+    unit: "mm"
+    description: "Snow water equivalent from the Snow-17 module."
+    emitted_in: "gridded swe product; per-gauge time series"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats:
+            - "Only meaningful when Snow-17 is enabled; temperature-index melt, not energy-balance."
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Snow-17 calibrated at a 6-hr step; non-6hr timesteps bias melt timing."
+      detrending_options: ["none"]
+  - var: "RETURNPERIOD (RP)"
+    validation_rank: 4
+    unit: "years"
+    description: "Streamflow return period derived from the simulated discharge distribution."
+    emitted_in: "gridded return-period product"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "categorical_event"
+          comparison_mode: "categorical_event_comparison"
+          metric_families: ["event_detection", "ranking_quality"]
+          determining_metric: "spearman"
+          caveats:
+            - "Threshold-exceedance/flood-class diagnostic; uses a hardcoded precip exponent (1.25) in the accumulation."
+      detrending_options: ["none"]
+  - var: "INUNDATION (depth)"
+    validation_rank: 5
+    unit: "m"
+    description: "Inundation water depth from the optional inundation-mapping module."
+    emitted_in: "gridded depth product"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "event_detection"]
+          determining_metric: "csi"
+          caveats:
+            - "Simple/volume-conserving inundation, not a 2D hydraulic solution; flood-extent overlap (CSI) more appropriate than per-pixel depth RMSE."
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "WM (maximum soil water capacity)"
+      to: "STREAMFLOW (Q) volume"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["wang2011_crest_model", "flamig2020_ef5_crest", "chen2023_crestv3_conus"]
+    - from: "FC (saturated hydraulic conductivity, Ksat)"
+      to: "STREAMFLOW (Q)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["wang2011_crest_model", "li2021_crest_imap"]
+    - from: "IWU (antecedent / initial soil moisture)"
+      to: "STREAMFLOW (Q)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "flood-event simulation (CREST-iMAP ranking)"
+      citations: ["li2021_crest_imap"]
+    - from: "KE (PET-to-actual-ET multiplier)"
+      to: "STREAMFLOW (Q) volume"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["flamig2020_ef5_crest", "chen2023_crestv3_conus"]
+    - from: "B (variable infiltration curve exponent)"
+      to: "runoff generation"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["wang2011_crest_model", "chen2023_crestv3_conus"]
+    - from: "IM (impervious area ratio)"
+      to: "STREAMFLOW (Q) peak flow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["flamig2020_ef5_crest", "wang2011_crest_model"]
+    - from: "ALPHA (kinematic-wave channel routing multiplier)"
+      to: "STREAMFLOW (Q) peak / unit streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "ROUTING=KW"
+      citations: ["flamig2020_ef5_crest"]
+    - from: "BETA (kinematic-wave channel routing exponent)"
+      to: "STREAMFLOW (Q) peak / unit streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "ROUTING=KW"
+      citations: ["flamig2020_ef5_crest"]
+    - from: "ALPHA0 (overland routing multiplier)"
+      to: "STREAMFLOW (Q) time-to-peak"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "ROUTING=KW"
+      citations: ["flamig2020_ef5_crest"]
+    - from: "UNDER (interflow speed multiplier)"
+      to: "STREAMFLOW (Q) recession / baseflow timing"
+      sensitivity_grade: LOW
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["flamig2020_ef5_crest"]
+    - from: "LEAKI (interflow reservoir leak fraction)"
+      to: "STREAMFLOW (Q) baseflow / recession"
+      sensitivity_grade: LOW
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["flamig2020_ef5_crest"]
+  citation_index:
+    wang2011_crest_model:
+      short_citation: "Wang et al. 2011"
+      doi: "10.1080/02626667.2010.543087"
+      note: "Foundational CREST paper; reports simulated runoff sensitive to Ksat (FC) and maximum soil water capacity WM (Nzoia basin). Qualitative/reported sensitivity, no variance-based GSA index."
+    flamig2020_ef5_crest:
+      short_citation: "Flamig et al. 2020"
+      doi: "10.5194/gmd-13-4943-2020"
+      note: "EF5/CREST framework; separates water-balance (WM,B,IM,KE,FC,IWU) from kinematic-wave routing (ALPHA,BETA,ALPHA0,UNDER,LEAKI,TH); routing parameters dominate peak-flow skill, water-balance parameters control volume/recession. Reported, not a quantitative GSA index."
+    li2021_crest_imap:
+      short_citation: "Li et al. 2021"
+      doi: "10.1016/j.envsoft.2021.105051"
+      note: "CREST-iMAP coupled hydro-hydraulic SA; ranks antecedent (initial) soil moisture as most sensitive for flood accuracy, then land-surface and infiltration parameters. Ranking-based, no published Sobol/Morris index value."
+    chen2023_crestv3_conus:
+      short_citation: "Chen et al. 2023"
+      doi: "10.1016/j.jhydrol.2023.130333"
+      note: "CONUS-wide CRESTv3.0 calibration/validation; reducing calibration to the most influential parameter from each block (water balance vs routing) suffices for streamflow skill. Calibrated-parameter selection, not a standalone GSA index."
+
+safety:
+  hazards:
+    - id: "precip_unit_mismatch_24x"
+      kind: "weather_file_semantic"
+      description: "Config PrecipForcing UNIT not matching the true file unit (mm/h vs mm/d) yields 24x too-high or 24x too-low discharge / near-flat hydrograph."
+      severity: "silent"
+    - id: "pet_temperature_in_kelvin"
+      kind: "weather_file_semantic"
+      description: "Temperature-based PET (UNIT=C) fed Kelvin instead of Celsius produces enormous PET, evaporating all precip to near-zero discharge."
+      severity: "silent"
+    - id: "fc_ksat_unit_mmday"
+      kind: "weather_file_semantic"
+      description: "FC (Ksat) given in mm/day instead of mm/hr makes infiltration capacity 24x too high; all rainfall becomes interflow with no overland flow."
+      severity: "silent"
+    - id: "wm_units_meters"
+      kind: "soil_semantic"
+      description: "WM grid in meters instead of mm (e.g. 0.1-0.5 vs 100-500) saturates the soil instantly, giving constant saturation excess."
+      severity: "silent"
+    - id: "im_fraction_vs_percent"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Scalar IM given as fraction (0-1) with no im_grid is divided by 100, collapsing impervious runoff to near-zero (dual percent/multiplier semantics)."
+      severity: "silent"
+    - id: "param_grid_clamps"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Silent clamps/floors: WM<0 -> 100 mm, B<0 -> 1.0, B NaN -> 0.0, IM clamped to [0,1], zero-valued multiplicative grid cells replaced by 0.01, all undocumented in config."
+      severity: "silent"
+    - id: "ddm_encoding_flag_mismatch"
+      kind: "control_semantic"
+      description: "ESRIDDM flag not matching DDM encoding (ESRI 1,2,4...128 vs TauDEM 1-8) routes water the wrong direction; SELFFAM mismatch causes off-by-one basin area / gauge snapping failure."
+      severity: "degraded"
+    - id: "fragmented_routing_topology"
+      kind: "control_semantic"
+      description: "Unfilled DDM sinks or wrong drainage encoding fragment the upstream flow path: EF5 walks N<<M nodes, exits 0, but discharge is identically 0 while SM/precip look reasonable."
+      severity: "fatal_or_silent"
+    - id: "lr_routing_no_discharge_v123"
+      kind: "control_semantic"
+      description: "EF5 v1.2.3 Linear-Reservoir routing never assigns discharge in the SIMU path (LinearRoute.cpp Route() leaves currentQ=0); Q is identically 0 and NSE/KGE are NaN despite non-zero Fast/Slow Flow. Use ROUTING=KW."
+      severity: "fatal_or_silent"
+    - id: "routing_unset_water_balance_only"
+      kind: "control_semantic"
+      description: "ROUTING (and ROUTING_PARAM_SET) omitted from the task: only the water balance runs and no discharge is produced (empty output)."
+      severity: "fatal"
+    - id: "obs_discharge_wrong_units"
+      kind: "parser_semantic"
+      description: "Observation discharge in cfs / mm-day / L/s instead of m3/s makes NSE extremely negative despite a reasonable hydrograph shape; non-matching OBS CSV lines are silently skipped."
+      severity: "silent"
+    - id: "courant_timestep_instability"
+      kind: "numerical_instability"
+      description: "TIMESTEP too large for grid resolution causes Courant instability and oscillating/spiking discharge, especially under Kinematic Wave routing."
+      severity: "degraded"
+    - id: "soil_moisture_stuck_extremes"
+      kind: "initial_condition_semantic"
+      description: "WM too small (<~10 mm) or IWU at 0/100 with no warm-up pins soil moisture at 0% or 100%."
+      severity: "degraded"
+    - id: "snow17_nonsix_hour_step"
+      kind: "numerical_instability"
+      description: "Several Snow-17 constants are step-size dependent (negative melt factor normalized to a 6-hr step); non-6hr timesteps bias snowmelt timing."
+      severity: "degraded"
+  validation_limits:
+    - "Routing is a conceptual (Linear Reservoir) or kinematic (Kinematic Wave) approximation — not full Saint-Venant hydrodynamics."
+    - "Snowmelt is temperature-index only (Snow-17); no energy-balance snow physics."
+    - "No groundwater dynamics beyond the linear-reservoir interflow conceptualization."
+    - "EF5 v1.2.3 cannot derive DDM/FAM from a raw DEM (ProcessDEM mode=1 unimplemented); topology must be precomputed."
+    - "Uncalibrated, a reasonable setup should give NSE > -1 and |PBIAS| < ~50%; values far outside this signal configuration/unit errors rather than model limits."
+  warnings:
+    - "In EF5 v1.2.3 prefer ROUTING=KW; LR yields identically-zero discharge in the regular simulation path."
+    - "FC labels saturated hydraulic conductivity (Ksat), not field capacity, despite the name."
+    - "When Snow-17 is active, CREST silently receives rain+melt in place of raw precip (precip vector substitution invisible to the water balance)."
+    - "Multiplicative parameter grids scale the scalar param set (effective = scalar x grid_value); a grid value is a multiplier, not an absolute, which is not stated in the config docs."
+  assumptions:
+    - statement: "Each grid cell closes a soil-layer water mass balance (state SM vs WM); precipitation partitions into actual ET, infiltration/excess runoff, and storage change, with no surface energy-balance closure."
+      scope: "CREST water-balance module per cell"
+      source: "EF5 User Manual (HyDROSLab) CREST water-balance section; Wang et al. 2011 (DOI 10.1080/02626667.2010.543087)"
+      status: adopted
+    - statement: "Kinematic Wave is the operative discharge-producing router for EF5 v1.2.3; Linear Reservoir is structurally present but does not assign discharge in the simulation path."
+      scope: "Routing coupling, EF5 v1.2.3"
+      source: "LinearRoute.cpp / KinematicRoute.cpp Route() behavior in EF5 v1.2.3 source"
+      status: adopted
+    - statement: "This dag describes the CREST water-balance path within EF5; the alternative water-balance modules (SAC-SMA, HyMOD, HP) selectable in the same binary are out of scope."
+      scope: "Model selection (MODEL=CREST)"
+      source: "EF5 README and models documentation (github.com/HyDROSLab/EF5)"
+      status: adopted
+    - statement: "Soil moisture is reported externally as a percentage of WM (relative), not absolute volumetric water content, even though the internal state is stored in mm."
+      scope: "SOILMOISTURE output semantics"
+      source: "EF5 CREST output (soilMoisture vector written as SM*100/WM) and docs"
+      status: adopted

@@ -148,6 +148,52 @@ S3 (met)  ──┼──> S5 (control file) ──> S6 (run) ──> S7 (parse)
 S4 (rain) ──┘
 ```
 
+> **S1 MESH — RESOLVED 2026-06-21 (run 05GA008 Sounding Creek):** `tools/build_tribs_mesh.py` builds the `.points` mesh (OPTMESHINPUT=1) by wrapping pytRIBS.
+> **S2 SPATIAL MAPS — RESOLVED 2026-06-21:** `tools/build_tribs_spatial_maps.py`
+> builds the basin-specific `.soi`/`.lan`/`.iwt` rasters (distributed mode) by
+> wrapping pytRIBS `SoilProcessor.create_soil_map`/`write_soil_table`/
+> `run_soil_workflow`/`generate_uniform_groundwater` + `InOut.write_ascii`/
+> `write_landuse_table`. It consumes the `<prefix>_watershed.shp` from
+> `build_tribs_mesh.py` and emits a control-file snippet (`spatial_maps.in.txt`)
+> with `SOILMAPNAME:`/`LANDMAPNAME:`/`GWATERFILE:` paths.
+> Historical note — Stages S1 (TIN mesh) and S2 (spatial maps) formerly had **no KI tool**. tRIBS needs either a pre-built TIN
+> (`.nodes/.edges/.tri/.z`, `OPTMESHINPUT=8`) or a `.points` file of UTM
+> x,y,z + boundary codes (`OPTMESHINPUT=1`), PLUS basin-specific spatial
+> rasters (`.soi` soil map, `.lan` landuse map, `.iwt` water-table map).
+> `convert_soil_params.py` emits only the `.sdt`/`.ldt` lookup *tables*; the
+> spatial maps are now produced by `build_tribs_spatial_maps.py` (S2). The
+> upstream builder is the **pytRIBS** Python package — pip-installed into
+> python_env (0.5.0) and wrapped by both S1/S2 tools; no `meshbuilder` binary is
+> needed for OPTMESHINPUT=1. `ki_tools_common.terrain_ops.delineate_basin`
+> produces a basin raster mask but NOT a tRIBS mesh.
+> **Consequence:** a brand-new basin can now be set up end-to-end from KI tools
+> (S1 mesh + S2 spatial maps), unlike the still-blocked PIHM / SMASH / PyTOPKAPI
+> mesh-tool gaps. The shipped Zenodo benchmarks (happy_jack point/SWE,
+> big_spring distributed) under `testing/black_box/benchmarks/` remain the
+> bit-identical regression path (mesh `.nodes` byte-match, full 143183-hr run in ~43 s).
+> **DOMAIN VALIDITY — basin-suitability gate (READ before choosing a verifier gauge):**
+> tRIBS is a *continuous, fully-distributed* model whose runoff is generated and
+> routed over a **D8 contributing drainage network**. It is INVALID — discharge
+> metrics are structurally poor (r<0.5) regardless of tools or calibration — on
+> basins where the delineated (gross) area badly overestimates the *effective*
+> contributing area, or where flow is ephemeral / zero-dominated. Before trusting
+> metrics, require ALL of:
+>   - perennial flow regime (not ephemeral / intermittent);
+>   - effective contributing area ≈ D8 gross delineated area (no large
+>     non-contributing / fill-and-spill / prairie-pothole terrain);
+>   - humid-to-subhumid foothill / mountain morphology (the happy_jack / big_spring
+>     benchmark regime), NOT semi-arid prairie.
+> If a target gauge fails these, **remap the verifier obs to a native-domain HYDAT
+> gauge** (perennial, fully-contributing foothill/mountain catchment) and stop
+> retrying — null/poor metrics there are a domain-validity issue, not a KI defect.
+> **DO NOT use HYDAT 05GA008 Sounding Creek nr Oyen AB for metric validation:**
+> semi-arid Palliser-Triangle ephemeral prairie stream, gross ~2990 km² vs effective
+> contributing ~580 km² (~5× non-contributing pothole terrain). It is a valid
+> end-to-end *setup* smoke-test for the S1/S2 tools but NOT a metric benchmark.
+> (S2 build_tribs_spatial_maps.py is API-verified against pytRIBS 0.5.0 but not yet
+> run end-to-end; validate it on the remapped contributing-area gauge. In
+> --soil-mode local it expects sand/clay in g/kg, not percent.)
+
 ---
 
 ## 5. Unit Conventions — Critical Trap Table
@@ -294,6 +340,8 @@ Voronoi-based spatial output at specified intervals (if OPTSPATIAL=1).
 
 | Tool | Lines | Purpose |
 |------|-------|---------|
+| `build_tribs_mesh.py` | ~190 | S1: DEM + outlet → tRIBS `.points` TIN mesh (OPTMESHINPUT=1) via pytRIBS |
+| `build_tribs_spatial_maps.py` | ~200 | S2: watershed → `.soi`/`.lan`/`.iwt` spatial maps + control snippet via pytRIBS |
 | `convert_met_forcing.py` | ~350 | Convert global reanalysis → tRIBS met format with unit conversions |
 | `convert_soil_params.py` | ~280 | Convert HWSD/SSURGO → tRIBS soil table (.sdt) |
 | `run_tribs.py` | ~200 | Execute tRIBS binary with preflight checks |

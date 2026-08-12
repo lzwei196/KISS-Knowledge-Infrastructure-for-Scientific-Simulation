@@ -26,14 +26,14 @@
 | Field | Value |
 |-------|-------|
 | Package | OpenFOAM-dev (CFD Framework) |
-| Domain | Computational Fluid Dynamics / Hydraulics |
+| Domain | Computational Fluid Dynamics / Hydraulics / Storm Surge |
 | Language | C++ (9,257 source files) |
 | Build System | wmake (custom), Allwmake master script |
 | License | GPL v3 |
 | Source | https://github.com/OpenFOAM/OpenFOAM-dev |
 | Tools | 7 |
-| Diagnostic Triplets | 20 |
-| Validation | cavity tutorial (lid-driven cavity benchmark) |
+| Diagnostic Triplets | 32 (20 general + 12 ocean/storm-surge) |
+| Validation | cavity tutorial; Hurricane Laura 2020 IB barometric (NSE=0.51, R=0.84 @ Grand Isle) |
 
 ---
 
@@ -232,6 +232,11 @@ These are the most dangerous unit/format traps that cause silent errors or crash
 | ut_010 | Boundary patch names | Must match blockMeshDict names exactly | Typo or case mismatch | Unassigned patch, crash |
 | ut_011 | `internalField uniform 0` for vectors | Must be `uniform (0 0 0)` | Scalar 0 for vector field | Parse error |
 | ut_012 | Surface tension `sigma` in VoF | `[1 0 -2 0 0 0 0]` (kg/s^2) | Using N/m as scalar without dimensions | Wrong interface dynamics |
+| ut_013 | Hydrostatic p_rgh init in VoF | p_rgh_water = p_atm_BC + (ρ_w-ρ_a)·g·z_surface | `uniform 0` or `uniform p_atm` | 400,000 Pa imbalance → 32 m/s spike → 4s deltaT forever |
+| ut_014 | phaseProperties `sigma` (dev) | `sigma 0.07;` (scalar, no parens) | `sigmas ((air water) 0.07);` (legacy) | FATAL: "keyword sigma is undefined" |
+| ut_015 | cAlpha in fvSolution (dev) | Removed — set via div(phi,alpha) in fvSchemes | `cAlpha 0.5;` in alpha.water solver block | FATAL: "Deprecated and unused cAlpha" |
+| ut_016 | Storm surge IB formula | η_IB = −(Pair−1013.25)×100/(ρ×g) [mbar→m] | Omitting ×100 for mbar→Pa conversion | 100× too small surge |
+| ut_017 | Free surface cell alignment | z_surface must equal a blockMesh cell face | z_surface inside a cell (e.g. 47.5m in 10m cells) | Max(alpha)=1.82 at t=0 → RT instability |
 
 ---
 
@@ -331,6 +336,59 @@ Mixing these up produces unexpected output frequency.
 In VoF simulations, `alpha.water` (or `alpha.phase1`) ranges 0-1. The field must
 be initialized correctly: 1 = water, 0 = air. Using `setFields` with `boxToCell`
 or `cylinderToCell` is required. An all-zero alpha field means no water exists.
+
+### dk_010: incompressibleVoF vs shallowWaterFoam for Ocean Domains
+**incompressibleVoF is designed for lab-scale problems** (wave tank, ship waves, dam break).
+It is NOT appropriate for basin-scale ocean/storm surge domains (>100 km horizontal) because:
+1. **Mass loss**: MULES numerical diffusion smears alpha into the air cell layer; open atmosphere
+   BCs then let diffused alpha escape. At 40m depth with 10m cells, mass loss rate ~4.7e-7/s.
+2. **Standing waves**: Closed slip-wall domain has no wave absorption. Initial pressure transients
+   create resonant gravity waves (period T = 2L/c ≈ 27 h for 977 km basin). deltaT permanently
+   oscillates at 0.25-1.5s — 100× slower than needed.
+3. **Zero surge from uniform forcing**: Domain-averaged uniform p_atm has ∇p_atm = 0. The IB
+   surface rise is exactly cancelled by the p_rgh change at the gauge → net surge = 0.
+4. **VoF scale constraint**: For a 977km × 674km × 50m domain, VoF must resolve both the
+   40m water column AND the 977km horizontal dynamics simultaneously — computationally intractable.
+
+**Use shallowWaterFoam instead** (`$WM_PROJECT_DIR/applications/legacy/incompressible/shallowWaterFoam/`):
+- Solves 2D depth-integrated SWE: ∂h/∂t + ∇·(hU) = 0; ∂(hU)/∂t + ∇·(UhU) + g·h·∇(h+h0) = 0
+- Fields: h (depth), hU (depth-integrated velocity), h0 (bed topography)
+- Typical dt = 0.5 × dx / √(g·h) = 0.5 × 4886 / √(9.81×40) = 123s → 4320 steps for 5 days
+- Barometric forcing: set h0(x,y,t) = −(p_atm − p_ref)/(ρ·g) (inverted barometer)
+- Reference performance: IB-only gives NSE=0.51, R=0.84 vs NOAA obs @ Grand Isle for Laura 2020
+
+### dk_011: libparallel.so Must Be Built Before decomposePar
+When building individual OpenFOAM utilities (not running Allwmake), the dependency
+`libparallel.so` in `src/parallel/parallel/` must be compiled first or decomposePar
+will fail with "cannot find -lparallel". Fix:
+```bash
+cd $WM_PROJECT_DIR/src/parallel/parallel && wmake libso
+# Then retry decomposePar
+```
+
+### dk_012: MULESCorr yes Causes Rayleigh-Taylor Instability
+`MULESCorr yes` (the MULES correction step) applies an additional corrective flux after
+the bounded MULES step. This correction can overshoot, producing alpha > 1 in interface
+cells. When alpha > 1 in an upper cell, that cell has density > ρ_water, sitting above
+normal water → Rayleigh-Taylor unstable. The velocity grows exponentially until NaN.
+**Always use `MULESCorr no` for large domains or when alpha Max > 1 is observed.**
+`nSubCycles 1-2` is sufficient; `nSubCycles 5` with `MULESCorr no` is stable but slow.
+
+### dk_013: runTimeModifiable Does Not Apply to 0/ Field Files
+`runTimeModifiable true` in controlDict allows hot-editing of `system/fvSchemes`,
+`system/fvSolution`, and `system/controlDict`. It does NOT re-read boundary conditions
+from `0/` field files. For a running parallel case, BC changes must be made to ALL
+`processor*/0/fieldName` files and require a solver restart.
+
+### dk_014: Water Level Extraction from p_rgh Probe (VoF)
+For an incompressibleVoF storm surge simulation, the water level anomaly at a gauge
+located at height z_probe (within the water column) is:
+```
+η(t) = (p_rgh_probe(t) − p_rgh_probe(0)) / ((ρ_water − ρ_air) × g)
+```
+This only gives correct surge if: (a) mass is conserved (no alpha leakage), AND
+(b) the forcing has spatial variation at the gauge location (∇p_atm ≠ 0).
+With uniform domain-averaged forcing: the IB rise and p_rgh change cancel → η = 0.
 
 ### dk_009: Parallel Run MPI Consistency
 `mpirun -np N foamRun -parallel` requires:
@@ -494,6 +552,18 @@ See `diagnostics/triplets.yaml` for full definitions.
 | dt_018 | fatal | syntax | Missing semicolon in dictionary |
 | dt_019 | silent | unit_conversion | Surface tension sigma wrong dimensions |
 | dt_020 | degraded | convergence | Insufficient nNonOrthogonalCorrectors |
+| dt_021 | silent | solver_selection | incompressibleVoF used for basin-scale ocean surge (>100km) — mass loss + zero signal |
+| dt_022 | fatal | numerical_stability | deltaT → machine-zero from MULESCorr alpha>1 Rayleigh-Taylor instability |
+| dt_023 | fatal | numerical_stability | Fixed U + fixed p_rgh at same boundary (atmosphere) is overdetermined |
+| dt_024 | fatal | library_dependency | decomposePar build fails: libparallel.so not built yet |
+| dt_025 | silent | initialization | alpha.water inletOutlet at atmosphere causes mass loss via MULES diffusion |
+| dt_026 | fatal | configuration | cAlpha deprecated in OpenFOAM-dev fvSolution alpha block |
+| dt_027 | degraded | initialization | Free surface not aligned with cell face → setFields alpha overshoot > 1 |
+| dt_028 | silent | initialization | Uniform p_rgh=0 init → 400kPa imbalance → standing waves → deltaT stuck at 0.25s |
+| dt_029 | fatal | numerical_stability | Open lateral BCs (zeroGradient p_rgh) → hydrostatic pressure drives 28 m/s outflow |
+| dt_030 | degraded | numerical_stability | interfaceCompression scheme creates periodic Co spikes that collapse deltaT |
+| dt_031 | silent | output_interpretation | p_rgh gauge masked by mass loss; uniform forcing gives zero spatial surge variation |
+| dt_032 | fatal | configuration | Dev incompressibleVoF requires phaseProperties + physicalProperties.water/air (not transportProperties) |
 
 ---
 

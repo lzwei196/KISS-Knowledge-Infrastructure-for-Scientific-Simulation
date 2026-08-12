@@ -147,6 +147,80 @@ def validate_outputs(output_path):
     logger.info("Output validation passed.")
 
 
+def ensure_forcing_list(settings, forcing):
+    """Guarantee forcingListFile exists where SUMMA actually reads it.
+
+    dt_032. SUMMA resolves the forcing file list against settingsPath, NOT
+    forcingPath:
+
+        ffile_info.f90:86   infile = trim(SETTINGS_PATH)//trim(FORCING_FILELIST)
+
+    The individual .nc names *inside* that list are then resolved against
+    forcingPath (ffile_info.f90:120), so the list and the data it names live in
+    two DIFFERENT directories. That asymmetry is easy to miss, and the s2
+    forcing builders write forcingFileList.txt next to the .nc files they
+    produce (i.e. in forcingPath) because that is the only directory they are
+    given. The result is a fileManager that references a file SUMMA cannot
+    find, surfacing much later as validate_file_manager's
+    "forcingListFile: file not found at '<settings>/forcingFileList.txt'".
+
+    create_file_manager is the one tool that knows BOTH paths, so it owns this
+    contract. Resolution order:
+      1. already in settingsPath  -> leave it alone (author's own list wins)
+      2. present in forcingPath   -> copy it across, preserving order
+      3. neither                  -> synthesise from the .nc files in
+                                     forcingPath, sorted by name (the s2 tools
+                                     emit forcing_YYYY.nc, so lexical order IS
+                                     chronological order; SUMMA requires
+                                     chronological order, ffile_info.f90:145).
+    Returns a dict describing what happened, for the stdout JSON.
+    """
+    import glob as _glob
+    import shutil as _shutil
+
+    dst = os.path.join(settings, FORCING_LIST_FILE)
+    src = os.path.join(forcing, FORCING_LIST_FILE)
+
+    if os.path.isfile(dst):
+        return {"action": "already_present", "path": dst}
+
+    os.makedirs(settings, exist_ok=True)
+
+    if os.path.isfile(src):
+        _shutil.copyfile(src, dst)
+        logger.info(
+            f"forcingListFile: copied {src} -> {dst} (SUMMA reads the list "
+            f"from settingsPath, ffile_info.f90:86)")
+        action = "copied_from_forcing_path"
+    else:
+        names = sorted(os.path.basename(p)
+                       for p in _glob.glob(os.path.join(forcing, "*.nc")))
+        if not names:
+            logger.error(
+                f"no forcing list and no *.nc files in {forcing} -- cannot "
+                f"build forcingListFile")
+            raise FileNotFoundError(
+                f"forcingListFile missing from both '{settings}' and "
+                f"'{forcing}', and '{forcing}' contains no *.nc forcing files")
+        with open(dst, 'w') as fh:
+            for n in names:
+                fh.write(f"{n}\n")
+        logger.info(f"forcingListFile: synthesised {dst} from {len(names)} "
+                    f"*.nc files in forcingPath (sorted chronologically)")
+        action = "synthesised_from_forcing_dir"
+
+    with open(dst) as fh:
+        entries = [l.strip() for l in fh if l.strip()
+                   and not l.strip().startswith('!')]
+    missing = [e for e in entries if not os.path.isfile(os.path.join(forcing, e))]
+    if missing:
+        logger.warning(
+            f"forcingListFile names {len(missing)} file(s) absent from "
+            f"forcingPath (SUMMA resolves them there): {missing[:5]}")
+    return {"action": action, "path": dst, "n_entries": len(entries),
+            "n_missing_in_forcing_path": len(missing)}
+
+
 def process():
     """Generate fileManager.txt."""
     os.makedirs(os.path.dirname(OUTPUT_FILE) or '.', exist_ok=True)
@@ -156,6 +230,8 @@ def process():
     settings = SETTINGS_PATH.rstrip('/') + '/'
     forcing = FORCING_PATH.rstrip('/') + '/'
     output = OUTPUT_PATH.rstrip('/') + '/'
+
+    forcing_list_info = ensure_forcing_list(settings, forcing)
 
     with open(OUTPUT_FILE, 'w') as f:
         f.write("! ====================================================================\n")
@@ -201,7 +277,8 @@ def process():
         "settings_path": settings,
         "forcing_path": forcing,
         "output_path": output,
-        "sim_period": f"{SIM_START} to {SIM_END}"
+        "sim_period": f"{SIM_START} to {SIM_END}",
+        "forcing_list": forcing_list_info
     }))
 
     return OUTPUT_FILE

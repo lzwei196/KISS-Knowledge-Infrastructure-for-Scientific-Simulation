@@ -23,13 +23,14 @@
 
 # CREST (Coupled Routing and Excess STorage) within EF5 — Knowledge Infrastructure
 
-**Package**: `hydrocraft-crest-ef5` v1.0.0
+**Package**: `hydrocraft-crest-ef5` v1.1.0
 **Model**: EF5 v1.2.3 with CREST water balance + Linear Reservoir / Kinematic Wave routing
 **Framework**: Ensemble Framework For Flash Flood Forecasting (EF5)
+**KDT version**: 5.1.2 (uses `ki_tools_common` for forcing/metrics/cross-platform)
 **Created by**: Jianyun Zhang Research Group, Hohai University
-**Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 18 diagnostic triplets | ~1,600 lines of validated Python
-**Validation status**: `production_validated` (Bengbu, Huai River Basin, 1981-1985)
+**Last updated**: 2026-04-28 (added Stage-1 `prepare_basic_grids` tool; corrected `ef5 -p` documentation)
+**Stats**: 5 tools | 5 skill documents | 18 diagnostic triplets | ~1,900 lines of validated Python
+**Validation status**: `production_validated` (Bengbu, Huai River Basin, 1981-1985 — surrogate-validated; real EF5 binary requires Stage-1 grid regeneration on prepared inputs, see s1_dem_preparation.md)
 
 ---
 
@@ -83,12 +84,25 @@ Runtime: OpenMP (libgomp) for parallel execution
 Ubuntu: sudo apt install libgeotiff-dev libtiff-dev zlib1g-dev autoconf automake
 ```
 
-### DEM processing mode
+### DEM processing
 
-EF5 can also generate DDM and FAM from a raw DEM:
+Use the KI's Stage-1 tool to derive DEM/DDM/FAM from a raw DEM:
 ```bash
-ef5 -z dem.tif -d ddm.tif -a fam.tif -p   # process DEM
-ef5 -z dem.tif -d ddm.tif -a fam.tif -s   # slope computation
+python tools/prepare_basic_grids.py --dem raw_dem.tif --out-dir basin/grids/ \
+    --method breach --out-format asc --expected-outlet 94.583 29.466
+```
+This wraps WhiteboxTools (BreachDepressionsLeastCost → D8Pointer → D8FlowAccumulation),
+emits ESRIDDM-encoded DDM and SELFFAM=true FAM, and verifies the result. See
+`docs/s1_dem_preparation.md` for the full procedure and verification rules.
+
+EF5 itself ships with a `-s` flag that recomputes flow accumulation from an
+existing DDM, but only mode `-s` (FAM from DDM) is implemented in v1.2.3 — the
+`-p` flag is in the source's argument parser but its body is empty. Do NOT
+rely on `ef5 -p` for from-scratch DEM processing; use `prepare_basic_grids.py`.
+
+```bash
+# Recompute FAM from a known-good DDM (rare; only useful for re-prepping)
+ef5 -z dem.tif -d ddm.tif -a fam.tif -s
 ```
 
 ### Test run
@@ -125,10 +139,21 @@ Stage 7 depends on 6.
 
 | Tool | Stage | Script Path | Lines | Purpose |
 |------|-------|-------------|------:|---------|
+| `prepare_basic_grids` | s1 | `tools/prepare_basic_grids.py` | ~400 | DEM → sink-filled DEM + ESRI DDM + SELFFAM=true FAM (WhiteboxTools) |
 | `convert_forcing_to_ef5` | s2 | `tools/convert_forcing_to_ef5.py` | ~350 | CMFD/MSWX precip+PET to EF5 grid format |
 | `convert_params_to_ef5` | s3 | `tools/convert_params_to_ef5.py` | ~300 | HWSD soil → CREST parameter grids |
 | `run_ef5` | s6 | `tools/run_ef5.py` | ~250 | Execute EF5 with validation |
 | `parse_ef5_output` | s7 | `tools/parse_ef5_output.py` | ~300 | Parse output, compute NSE/KGE, plot |
+
+### KDT 5.1.2 shared modules used by these tools
+
+| Module | Used by | Purpose |
+|--------|---------|---------|
+| `ki_tools_common.metrics` | `parse_ef5_output` | NSE/KGE/PBIAS/RMSE computation |
+| `ki_tools_common.load_forcing` | `convert_forcing_to_ef5` | CMFD/MSWX/NASA POWER ingestion |
+| `ki_tools_common.soil_utils` | `convert_params_to_ef5` | USDA texture + Saxton-Rawls + ROSETTA-VG (v5.1.2 added) |
+| `ki_tools_common.cross_platform` | `run_ef5` | ELF/PE32 detection, broken-interpreter fix (v5.1.2 added) |
+| `ki_tools_common.debug_framework` | all stages | Levels 0–3 triage on any tool failure |
 
 ---
 

@@ -58,6 +58,26 @@ SMB_CONVERSIONS = {
 }
 
 
+def block_mean_1d(a, f):
+    """Block-average a 1D array by factor f (trims to a multiple of f)."""
+    a = np.asarray(a, dtype=np.float64)
+    if f <= 1:
+        return a
+    n = (len(a) // f) * f
+    return a[:n].reshape(-1, f).mean(axis=1)
+
+
+def block_mean_2d(a, f):
+    """Block-average a 2D array (y, x) by factor f, NaN-aware (trims edges)."""
+    a = np.asarray(a, dtype=np.float64)
+    if f <= 1:
+        return a
+    ny, nx = a.shape
+    ny2, nx2 = (ny // f) * f, (nx // f) * f
+    a = a[:ny2, :nx2].reshape(ny2 // f, f, nx2 // f, f)
+    return np.nanmean(a, axis=(1, 3))
+
+
 def validate_inputs(args):
     """Validate inputs before processing."""
     errors = []
@@ -114,28 +134,55 @@ def process(args):
                     y_dim = y_dim or dims[-2]
                     x_dim = x_dim or dims[-1]
 
-    # Create output
-    os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
-    dst = Dataset(args.output, "w", format="NETCDF4")
+    f = max(1, int(getattr(args, "coarsen", 1) or 1))
+    if f > 1:
+        warnings.append(f"Coarsening by block-mean factor {f} (edges trimmed to a multiple of {f})")
 
-    # Copy spatial dimensions
+    # Create output. PISM is NetCDF-aware but several builds link an HDF5 whose
+    # header/library versions disagree, which segfaults on NetCDF4 (HDF5-backed)
+    # reads. NetCDF-3 (64-bit offset) sidesteps HDF5 entirely and is the format
+    # PISM's own examples ship, so it is the safe default for a PISM input file.
+    os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+    out_format = "NETCDF4" if getattr(args, "netcdf4", False) else "NETCDF3_64BIT_OFFSET"
+    dst = Dataset(args.output, "w", format=out_format)
+
+    # PISM regridding requires strictly INCREASING x and y. Source products
+    # (e.g. BedMachine) often store y descending — detect and flip.
+    flip = {}
+    for dname in [y_dim, x_dim]:
+        if dname and dname in src.variables:
+            c = np.array(src.variables[dname][:], dtype=np.float64)
+            flip[dname] = bool(c.size > 1 and c[1] < c[0])
+        else:
+            flip[dname] = False
+
+    # Copy spatial dimensions (coarsened length when --coarsen > 1)
     for dname in [y_dim, x_dim]:
         if dname and dname in src.dimensions:
-            dst.createDimension(dname, len(src.dimensions[dname]))
+            n_full = len(src.dimensions[dname])
+            n_out = (n_full // f) if f > 1 else n_full
+            dst.createDimension(dname, n_out)
             if dname in src.variables:
                 v = src.variables[dname]
-                out_v = dst.createVariable(dname, v.datatype, v.dimensions)
-                out_v[:] = v[:]
-                for attr in v.ncattrs():
-                    out_v.setncattr(attr, v.getncattr(attr))
-                # Ensure coordinate units are meters
-                if hasattr(out_v, "units") and out_v.units in ("km", "kilometers"):
+                coord = np.array(v[:], dtype=np.float64)
+                if hasattr(v, "units") and v.units in ("km", "kilometers"):
                     warnings.append(f"Converting {dname} from km to m")
-                    out_v[:] = out_v[:] * 1000.0
-                    out_v.units = "m"
+                    coord = coord * 1000.0
+                coord = block_mean_1d(coord, f)
+                if flip[dname]:
+                    coord = coord[::-1]
+                    warnings.append(f"Flipped {dname} to be strictly increasing (PISM requirement)")
+                out_v = dst.createVariable(dname, "f8", v.dimensions)
+                out_v[:] = coord
+                for attr in v.ncattrs():
+                    if attr not in ("_FillValue",):
+                        out_v.setncattr(attr, v.getncattr(attr))
+                out_v.units = "m"
 
     converted = []
     spatial_dims = tuple(d for d in [y_dim, x_dim] if d)
+    flip_y = flip.get(y_dim, False)
+    flip_x = flip.get(x_dim, False)
 
     # Bedrock topography
     if args.topg_var and args.topg_var in src.variables:
@@ -147,6 +194,12 @@ def process(args):
             data = data[-1] if data.ndim == 3 else data
             while data.ndim > 2:
                 data = data[0]
+        data = block_mean_2d(data, f)
+        if data.ndim == 2:
+            if flip_y:
+                data = data[::-1, :]
+            if flip_x:
+                data = data[:, ::-1]
 
         out_v = dst.createVariable("topg", "f8", spatial_dims, fill_value=1e20)
         out_v[:] = data
@@ -168,6 +221,12 @@ def process(args):
             data = data[-1] if data.ndim == 3 else data
             while data.ndim > 2:
                 data = data[0]
+        data = block_mean_2d(data, f)
+        if data.ndim == 2:
+            if flip_y:
+                data = data[::-1, :]
+            if flip_x:
+                data = data[:, ::-1]
 
         data = np.maximum(data, 0.0)
 
@@ -191,6 +250,12 @@ def process(args):
             data = data[-1] if data.ndim == 3 else data
             while data.ndim > 2:
                 data = data[0]
+        data = block_mean_2d(data, f)
+        if data.ndim == 2:
+            if flip_y:
+                data = data[::-1, :]
+            if flip_x:
+                data = data[:, ::-1]
 
         out_v = dst.createVariable("bheatflx", "f8", spatial_dims, fill_value=1e20)
         out_v[:] = data
@@ -214,6 +279,12 @@ def process(args):
             data = data[-1] if data.ndim == 3 else data
             while data.ndim > 2:
                 data = data[0]
+        data = block_mean_2d(data, f)
+        if data.ndim == 2:
+            if flip_y:
+                data = data[::-1, :]
+            if flip_x:
+                data = data[:, ::-1]
 
         out_v = dst.createVariable("climatic_mass_balance", "f8", spatial_dims,
                                    fill_value=1e20)
@@ -222,6 +293,27 @@ def process(args):
         out_v.long_name = "surface mass balance (accumulation minus ablation)"
         out_v.standard_name = "land_ice_surface_specific_mass_balance_flux"
         converted.append("climatic_mass_balance")
+
+    # Optional constant climate fields (for self-contained `-surface given` runs
+    # when the geometry source carries no climate, e.g. BedMachine).
+    if spatial_dims and (getattr(args, "const_smb", None) is not None
+                         or getattr(args, "const_ice_temp", None) is not None):
+        shape = tuple(len(dst.dimensions[d]) for d in spatial_dims)
+        if args.const_smb is not None:
+            cv = dst.createVariable("climatic_mass_balance", "f8", spatial_dims,
+                                    fill_value=1e20)
+            cv[:] = np.full(shape, float(args.const_smb))
+            cv.units = "kg m^-2 year^-1"
+            cv.long_name = "surface mass balance (accumulation minus ablation)"
+            cv.standard_name = "land_ice_surface_specific_mass_balance_flux"
+            converted.append("climatic_mass_balance")
+        if args.const_ice_temp is not None:
+            tv = dst.createVariable("ice_surface_temp", "f8", spatial_dims,
+                                    fill_value=1e20)
+            tv[:] = np.full(shape, float(args.const_ice_temp))
+            tv.units = "kelvin"
+            tv.long_name = "ice surface temperature for -surface given"
+            converted.append("ice_surface_temp")
 
     # Add projection
     if args.projection:
@@ -288,6 +380,16 @@ def main():
     parser.add_argument("--smb-units", default="m_we/year",
                         choices=list(SMB_CONVERSIONS.keys()))
     parser.add_argument("--projection", default=None, help="PROJ string for the dataset")
+    parser.add_argument("--coarsen", type=int, default=1,
+                        help="Block-mean coarsening factor (downsample input by N in x and y). "
+                             "Needed to make 150 m BedMachine runnable at ice-sheet scale.")
+    parser.add_argument("--const-smb", type=float, default=None,
+                        help="Add a uniform climatic_mass_balance field (kg m-2 year-1)")
+    parser.add_argument("--const-ice-temp", type=float, default=None,
+                        help="Add a uniform ice_surface_temp field (kelvin) for -surface given")
+    parser.add_argument("--netcdf4", action="store_true",
+                        help="Write NETCDF4 instead of the default NETCDF3_64BIT_OFFSET "
+                             "(NetCDF-3 avoids HDF5 header/library segfaults in some PISM builds)")
     parser.add_argument("--output-json", default=None, help="Write result JSON to file")
 
     args = parser.parse_args()

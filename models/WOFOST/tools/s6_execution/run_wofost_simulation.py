@@ -55,7 +55,8 @@ def validate_inputs():
         errors.append(f"Agro YAML not found: {AGRO_YAML}")
     if not OUTPUT_CSV:
         errors.append("OUTPUT_CSV not set")
-    if SIMULATION_MODE != "PP" and (not SOIL_PARAMS_JSON or not Path(SOIL_PARAMS_JSON).exists()):
+    # PCSE 6.0 requires soil-hydraulic params for ALL modes incl. PP (see process()).
+    if not SOIL_PARAMS_JSON or not Path(SOIL_PARAMS_JSON).exists():
         errors.append(f"Soil params required for {SIMULATION_MODE}: {SOIL_PARAMS_JSON}")
     try:
         import pcse
@@ -90,19 +91,28 @@ def process():
     import yaml
     import pandas as pd
     from pcse.input import YAMLCropDataProvider, CSVWeatherDataProvider
-    from pcse.util import WOFOST72SiteDataProvider
+    # PCSE 6.0+: WOFOST72SiteDataProvider moved from pcse.util to pcse.input (dt_v001)
+    from pcse.input import WOFOST72SiteDataProvider
     from pcse.base import ParameterProvider
 
     # Load components
     cropdata = YAMLCropDataProvider()
     cropdata.set_active_crop(CROP_NAME, VARIETY_NAME)
 
+    # PCSE 6.0 fix (2026-06-08): Wofost72_PP STILL requires the soil-hydraulic
+    # parameters (SMFCF, SM0, K0, RDMSOL, ...) at construction even though water
+    # is not limiting in potential-production mode — omitting them raises
+    # `ParameterError: Value for parameter SMFCF missing`. The SKILL claim "PP
+    # mode: no soil" is therefore wrong for PCSE 6.0. Load soil whenever a soil
+    # JSON is provided, for ALL modes; only fall back to empty if none given.
     soildata = {}
-    if SIMULATION_MODE != "PP":
+    if SOIL_PARAMS_JSON and Path(SOIL_PARAMS_JSON).exists():
         with open(SOIL_PARAMS_JSON) as f:
             soildata = json.load(f)
 
-    sitedata = WOFOST72SiteDataProvider(WAV=WAV, CO2=CO2)
+    # PCSE 6.0+: CO2 no longer accepted by SiteDataProvider; handled internally
+    # via crop CO2 tables (dt_v002). Use WAV only.
+    sitedata = WOFOST72SiteDataProvider(WAV=WAV)
     params = ParameterProvider(cropdata=cropdata, soildata=soildata, sitedata=sitedata)
 
     weather = CSVWeatherDataProvider(WEATHER_CSV)

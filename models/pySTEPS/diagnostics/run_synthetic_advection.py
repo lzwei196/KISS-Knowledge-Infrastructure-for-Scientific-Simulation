@@ -9,13 +9,21 @@ future frames using pysteps.verification.
 
 This exercises the real pysteps code paths (proesmans motion, extrapolation
 nowcast, det_cat_fct, fss). It is not a scientific skill-score benchmark.
+
+Writes a test-result JSON to the path given by $OUTPUT_JSON (default: ./tester_result.json).
 """
 from __future__ import annotations
 
 import json
+import math
+import os
 import sys
 import time
 from pathlib import Path
+
+_PENV = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+if _PENV not in sys.path:
+    sys.path.insert(0, _PENV)
 
 import numpy as np
 
@@ -27,6 +35,32 @@ except Exception:
 
 from pysteps import motion, nowcasts
 from pysteps.verification import det_cat_fct, fss
+
+
+# ----- Metrics (continuous, on flattened grids) -----
+def nse(obs, mod):
+    obs = np.asarray(obs, float); mod = np.asarray(mod, float)
+    denom = np.sum((obs - obs.mean()) ** 2)
+    if denom == 0:
+        return float("nan")
+    return float(1.0 - np.sum((obs - mod) ** 2) / denom)
+
+
+def pearson_r(obs, mod):
+    obs = np.asarray(obs, float); mod = np.asarray(mod, float)
+    if obs.std() == 0 or mod.std() == 0:
+        return float("nan")
+    return float(np.corrcoef(obs, mod)[0, 1])
+
+
+def kge(obs, mod):
+    obs = np.asarray(obs, float); mod = np.asarray(mod, float)
+    r = pearson_r(obs, mod)
+    if np.isnan(r):
+        return float("nan")
+    alpha = mod.std() / obs.std() if obs.std() != 0 else float("nan")
+    beta = mod.mean() / obs.mean() if obs.mean() != 0 else float("nan")
+    return float(1.0 - math.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2))
 
 
 def synth_sequence(
@@ -54,6 +88,7 @@ def synth_sequence(
 
 def main() -> int:
     out_dir = Path(__file__).resolve().parent
+    ki_dir = out_dir.parent
     t_start = time.time()
 
     n_past = 4
@@ -97,8 +132,17 @@ def main() -> int:
 
     mean_csi = float(np.mean([d["CSI"] for d in per_lead]))
     mean_fss = float(np.mean([d["FSS"] for d in per_lead]))
+    wall = time.time() - t_start
 
-    result = {
+    # Continuous metrics: flatten all lead-time grids into single vectors
+    all_nowcast = nowcast_scored.ravel()
+    all_truth = truth.ravel()
+    nse_val = nse(all_truth, all_nowcast)
+    r_val = pearson_r(all_truth, all_nowcast)
+    kge_val = kge(all_truth, all_nowcast)
+
+    # Detailed result for diagnostics/last_run.json
+    detail = {
         "pysteps_version": PYSTEPS_VERSION,
         "grid": list(seq.shape[1:]),
         "n_past_frames": n_past,
@@ -109,14 +153,46 @@ def main() -> int:
         "nowcast_method": "extrapolation",
         "motion_time_s": round(motion_time, 3),
         "nowcast_time_s": round(nowcast_time, 3),
-        "total_time_s": round(time.time() - t_start, 3),
+        "total_time_s": round(wall, 3),
         "mean_CSI": mean_csi,
         "mean_FSS": mean_fss,
+        "nse": nse_val,
+        "r": r_val,
+        "kge": kge_val,
         "per_lead": per_lead,
     }
+    (out_dir / "last_run.json").write_text(json.dumps(detail, indent=2))
 
-    (out_dir / "last_run.json").write_text(json.dumps(result, indent=2))
-    print(json.dumps(result, indent=2))
+    # Orchestrator-compatible tester_result.json
+    tester = {
+        "model_id": "pySTEPS",
+        "status": "completed",
+        "test_runs": [
+            {
+                "variable_compared": "precipitation_intensity",
+                "variable_unit": "mm/h",
+                "comparison_type": "analytical",
+                "obs_source_detail": (
+                    "Synthetic translating Gaussian blob (sigma=18, peak=8 mm/h, "
+                    "u=2, v=1 px/frame) on 200x200 grid. 4 past frames -> Proesmans "
+                    "motion -> extrapolation nowcast of 5 lead times vs held-out truth. "
+                    f"Walltime={wall:.2f}s. mean_CSI={mean_csi:.4f}, mean_FSS={mean_fss:.4f}."
+                ),
+                "model_actually_produced": 1,
+                "location": "synthetic 200x200 radar grid, 5 lead-time frames",
+                "nse": nse_val,
+                "r": r_val,
+                "kge": kge_val,
+                "n_samples": int(all_truth.size),
+                "wall_seconds": wall,
+            }
+        ],
+    }
+    tester_path = os.environ.get("OUTPUT_JSON", str(ki_dir / "tester_result.json"))
+    with open(tester_path, "w") as f:
+        json.dump(tester, f, indent=2)
+
+    print(json.dumps(detail, indent=2))
     return 0
 
 

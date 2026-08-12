@@ -1,3 +1,6 @@
+# KDT dt_vic_023: netCDF4 MUST be imported before xarray, and every
+# xr.open_dataset() MUST pin `engine=`. See diagnostics/triplets.md.
+import netCDF4  # noqa: F401  # isort:skip  -- must precede `import xarray`
 import xarray as xr
 import numpy as np
 import rioxarray
@@ -12,23 +15,37 @@ from scipy.interpolate import griddata
 # ====================================================================
 # --- 0. 配置 ---
 # ====================================================================
+# KDT 2026-07-10: ("rhum", "Rhum") removed. The CMFD directory is spelled
+# "RHum", so this entry never matched and every run printed "✗ 目录不存在" —
+# harmlessly, because process_forcing.py loads only
+# ['prec','temp','pres','srad','lrad','wind','shum'] and derives vapour pressure
+# from shum + pres. Correcting the case would instead have added 12*N wasted
+# reprojections of a variable VIC never reads. These 7 are exactly the
+# FORCE_TYPEs in the global parameter file.
 VARIABLES_TO_PROCESS = [
     ("wind", "Wind"),
     ("temp", "Temp"),
     ("pres", "Pres"),
     ("shum", "SHum"),
-    ("rhum", "Rhum"),
     ("srad", "SRad"),
     ("lrad", "LRad"),
     ("prec", "Prec")
 ]
 
-YEAR_START = 1979
-YEAR_END = 1980
+# --- Basin/period configuration via environment (KDT 2026-07-09) -----------
+# SKILL.md warns YEAR_START/YEAR_END must be edited in three places, and that
+# config_paths.py silently does NOT update GRID_NC_PATH. Reading them from the
+# environment removes both traps. Defaults reproduce the old hard-coded run.
+_BASIN = os.environ.get("VIC_BASIN_NAME", "xixian")
+_OUT_ROOT = Path(os.environ.get("VIC_OUT_ROOT", "/mnt/disk1/Hydrocraft_server/outputs"))
 
-INPUT_DATA_DIR = Path(r"/Volumes/Expansion4t/hydro-space2/data/forcing")
-GRID_NC_PATH = Path(r"/Volumes/Expansion4t/hydro-space2/outputs/xixian_1979-1980_025deg/vic_temp/grid/grid_xixian_1979-1980_025deg_025deg.nc")
-OUTPUT_DIR = Path(r"/Volumes/Expansion4t/hydro-space2/outputs/xixian_1979-1980_025deg/vic_temp/forcing/forcing_1d")
+YEAR_START = int(os.environ.get("VIC_YEAR_START", 1979))
+YEAR_END = int(os.environ.get("VIC_YEAR_END", 1980))
+
+INPUT_DATA_DIR = Path(os.environ.get(
+    "VIC_CMFD_DIR", r"/Volumes/Expansion4t/hydro-space2/data/forcing"))
+GRID_NC_PATH = _OUT_ROOT / _BASIN / "vic_temp" / "grid" / f"grid_{_BASIN}_025deg.nc"
+OUTPUT_DIR = _OUT_ROOT / _BASIN / "vic_temp" / "forcing" / "forcing_1d"
 MASK_VAR_NAME = "mask"
 
 # ====================================================================
@@ -152,8 +169,20 @@ for var_prefix, var_dir_name in VARIABLES_TO_PROCESS:
         total_files += 1
         print(f"   [{total_files}] 处理: {nc_file.name}", end="")
 
+        # KDT 2026-07-09: resumability. A basin-wide reprojection of ~1000 CMFD
+        # monthly files takes hours; without this, any interruption restarts
+        # from zero.
+        _base = re.sub(r'_\d{3}deg_', '_025deg_', nc_file.stem)
+        _out = OUTPUT_DIR / f"{_base}_{_BASIN}.nc"
+        if _out.exists() and _out.stat().st_size > 0:
+            print(" ✓ (已存在，跳过)")
+            success_files += 1
+            continue
+
         try:
-            xds = xr.open_dataset(nc_file)
+            # dt_vic_023: engine MUST be pinned; a bare open_dataset() triggers
+            # xarray's backend-entrypoint probe and SIGSEGVs at interpreter exit.
+            xds = open_nc(nc_file)
 
             if ("lat" in xds.coords) and ("lon" in xds.coords):
                 src_lat, src_lon = "lat", "lon"
@@ -233,7 +262,7 @@ for var_prefix, var_dir_name in VARIABLES_TO_PROCESS:
 
             # 输出文件名
             base_name = re.sub(r'_\d{3}deg_', '_025deg_', nc_file.stem)
-            output_filename = f"{base_name}_xixian.nc"
+            output_filename = f"{base_name}_{_BASIN}.nc"
             output_path = OUTPUT_DIR / output_filename
 
             # 编码

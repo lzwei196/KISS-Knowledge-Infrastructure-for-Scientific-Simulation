@@ -1,0 +1,435 @@
+template_version: "3.5"
+
+identity:
+  model_id: "Delft3D"
+  scientific_reference_version: "D-Flow Flexible Mesh shallow-water hydrodynamics (Deltares Delft3D FM lineage; Kernkamp et al. 2011 unstructured-grid scheme)"
+  implementation:
+    id: "dflowfm"
+    version: "2026.02 (engines built from github.com/Deltares/Delft3D)"
+    provenance: "Fortran 90; Deltares D-Flow FM (dflowfm) unstructured-grid kernel, orchestrated under DIMR."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: "GPL-3.0-or-later"
+  repo_url: "https://github.com/Deltares/Delft3D"
+
+boundary:
+  scope_in:
+    - "Non-steady 2D-horizontal (depth-averaged) and 3D shallow-water hydrodynamics on a staggered unstructured flexible mesh"
+    - "Tidal and wind-driven flow: water level and velocity"
+    - "Advection-diffusion transport of salinity, temperature, and conservative tracers"
+    - "Baroclinic (density-driven) circulation via equation of state"
+    - "Surface heat exchange with the atmosphere (excess / composite heat-flux models)"
+    - "Vertical turbulent mixing (k-epsilon closure) in 3D"
+    - "Bed friction (Chezy / Manning / White-Colebrook) and bottom shear stress"
+    - "Drying and flooding of cells"
+    - "Optional sediment transport and bed-level morphodynamics; optional wave coupling (D-Waves); optional water-quality coupling (D-Water Quality)"
+  scope_out:
+    - "Structured curvilinear-grid hydrodynamics (that is the sibling Delft3D-FLOW / flow2d3d engine, a separate implementation)"
+    - "Non-hydrostatic vertical accelerations (hydrostatic shallow-water approximation only)"
+    - "Wave dynamics, sediment kinetics, and water-quality kinetics as standalone physics — these are separate coupled suite modules, not the hydrodynamic kernel itself"
+    - "Atmospheric/meteorological generation and upstream catchment runoff (supplied as external forcing/boundaries)"
+  spatial: "distributed-stream"
+  temporal: "sub-hourly"
+  closure: "mass-balance"
+  notes: "Mass/volume balance is the kernel's conserved quantity: continuity is solved implicitly (theta-method) for water level s1 across the whole domain in one combined system, with a diagnostic volume-error accumulator (volerr/volerrcum). Scalar transport conserves constituent mass under advection-diffusion. Surface heat exchange is a demand-side flux into the temperature equation, not a closed surface energy budget. Spatial discretization is a finite-volume staggered unstructured mesh (cells: triangles/quads/pentagons/hexagons or curvilinear) with sigma, z, or z-sigma vertical layering; projected (metric) coordinates are required for correct areas/volumes."
+
+inputs:
+  forcing:
+    - {category: meteorological, name: wind_speed, unit: "m/s at 10 m", source_kind: forcing, model_input_format: ".wnd / .ext+.bc meteo block", notes: "reference height is 10 m"}
+    - {category: meteorological, name: wind_direction, unit: "degrees nautical (FROM North)", source_kind: forcing, model_input_format: ".wnd / .ext+.bc meteo block", notes: "nautical FROM convention, not meteorological-TO; a 180-degree error reverses wind setup"}
+    - {category: meteorological, name: atmospheric_pressure, unit: "Pa", source_kind: forcing, model_input_format: ".ext+.bc meteo block", notes: "must be Pa, not hPa; drives the inverse-barometer water-level response"}
+    - {category: meteorological, name: air_temperature, unit: "degC", source_kind: forcing, model_input_format: ".ext+.bc meteo block", notes: "drives heat-flux model (Temperature module)"}
+    - {category: meteorological, name: relative_humidity, unit: "% (0-100)", source_kind: forcing, model_input_format: ".ext+.bc meteo block", notes: "percentage not fraction"}
+    - {category: meteorological, name: cloud_cover, unit: "fraction (0-1)", source_kind: forcing, model_input_format: ".ext+.bc meteo block"}
+    - {category: meteorological, name: shortwave_radiation, unit: "W/m2", source_kind: forcing, model_input_format: ".ext+.bc meteo block", notes: "must be non-negative; negative values from interpolation corrupt the heat budget"}
+    - {category: meteorological, name: precipitation, unit: "mm/hr", source_kind: forcing, model_input_format: ".ext+.bc meteo block"}
+  parameters:
+    - {category: bed_friction, name: friction_type_and_coefficient, unit: "Chezy m^(1/2)/s | Manning s/m^(1/3) | White-Colebrook", source_kind: calibrated, model_input_format: "MDU UnifFrictType + UnifFrictCoef (or spatial friction field)", notes: "type selector and coefficient value must be consistent; default uniform value frcuni=0.023 (Manning) when no field provided"}
+    - {category: turbulence, name: horizontal_eddy_viscosity, unit: "m2/s", source_kind: calibrated, model_input_format: "MDU Vicouv", notes: "model default vicouv=0.1 m2/s; controls momentum mixing and is a silent numerical-diffusion default"}
+    - {category: turbulence, name: horizontal_eddy_diffusivity, unit: "m2/s", source_kind: calibrated, model_input_format: "MDU Dicouv", notes: "model default dicouv=0.1 m2/s; controls scalar mixing"}
+    - {category: bathymetry, name: bed_level, unit: "m (Delft3D convention: depth positive DOWN)", source_kind: dataset_lookup, model_input_format: "_net.nc node/cell bed level (bl)", notes: "static substrate geometry; sign convention is positive-down, opposite to GEBCO/ETOPO positive-up"}
+    - {category: physical_constant, name: reference_density, unit: "kg/m3", source_kind: default, model_input_format: "kernel default rhomean=1000.0", notes: "Boussinesq reference density in pressure/baroclinic terms"}
+  initial_conditions:
+    - {category: hydrodynamic, name: initial_water_level, unit: "m (MSL)", source_kind: user_provided, model_input_format: "initial field file (.ini) / restart _rst.nc", notes: "state s1 at simulation start"}
+    - {category: hydrodynamic, name: initial_velocity, unit: "m/s", source_kind: user_provided, model_input_format: "initial field file / restart _rst.nc"}
+    - {category: constituent, name: initial_salinity, unit: "PSU", source_kind: user_provided, model_input_format: "initial field file / restart _rst.nc", notes: "background default backgroundsalinity=30 ppt feeds density when the salinity module is off"}
+    - {category: constituent, name: initial_temperature, unit: "degC", source_kind: user_provided, model_input_format: "initial field file / restart _rst.nc", notes: "background default backgroundwatertemperature=20 degC when the temperature module is off"}
+  boundary_conditions:
+    - {category: open_boundary, name: water_level_boundary, unit: "m (datum-referenced)", source_kind: user_provided, model_input_format: ".pli location + .bc time series (waterlevelbnd)", notes: "datum/sign convention (MSL vs chart datum) must be consistent with bathymetry"}
+    - {category: open_boundary, name: velocity_boundary, unit: "m/s", source_kind: user_provided, model_input_format: ".pli + .bc (velocitybnd)"}
+    - {category: open_boundary, name: river_discharge_boundary, unit: "m3/s", source_kind: user_provided, model_input_format: ".pli + .bc (dischargebnd)", notes: "freshwater inflow must carry an explicit salinity (S=0 PSU); otherwise it inherits ocean salinity"}
+    - {category: open_boundary, name: salinity_boundary, unit: "PSU", source_kind: user_provided, model_input_format: ".bc (salinitybnd)"}
+    - {category: open_boundary, name: temperature_boundary, unit: "degC", source_kind: user_provided, model_input_format: ".bc (temperaturebnd)"}
+    - {category: open_boundary, name: tidal_harmonic_boundary, unit: "amplitude m, phase deg, period MINUTES", source_kind: user_provided, model_input_format: ".bc astronomical/harmonic components", notes: "D-Flow FM .bc periods are in minutes (M2=745.2); phases must be referenced to the simulation RefDate epoch"}
+    - {category: control, name: vertical_structure_Kmx, unit: "count", source_kind: user_provided, model_input_format: "MDU Kmx", notes: "Kmx=0 -> 2D depth-averaged; Kmx>0 -> 3D layered (default sigma layers)"}
+    - {category: control, name: time_reference_and_unit, unit: "RefDate YYYYMMDD; Tunit S/M/H", source_kind: user_provided, model_input_format: "MDU RefDate + Tunit", notes: "all MDU time parameters are in Tunit except DtMax, which is always in seconds"}
+    - {category: control, name: friction_type_switch_UnifFrictType, unit: "enum (0=Chezy,1=Manning,2=White-Colebrook)", source_kind: user_provided, model_input_format: "MDU UnifFrictType"}
+    - {category: control, name: heat_flux_model_selector, unit: "enum (Temperature module mode)", source_kind: user_provided, model_input_format: "MDU Temperature", notes: "selects excess vs composite/heat-flux surface exchange"}
+
+processes:
+  modules:
+    - {name: TimestepDriver, role: driver, brief: "Orchestrates one flow timestep (continuity solve -> transport/morpho -> explicit velocity reconstruction -> transport); manages CFL-based timestep reduction (flow_run_single_timestep)"}
+    - {name: MomentumFuru, role: process_solver, brief: "Computes link momentum (advection iadvec=33 Perot, pressure-gradient, friction, viscosity) producing fu/ru link coefficients fed to the water-level solve"}
+    - {name: ContinuitySolver, role: process_solver, brief: "Assembles and solves the implicit theta-method (teta0=0.55) free-surface continuity equation for water level s1 (step_reduce_hydro / solve_matrix), with optional non-linear iteration to tolerance epsmaxlev"}
+    - {name: VelocityReconstruction, role: integrator, brief: "Perot reconstruction of cell-centre velocities ucx/ucy/ucz from face-normal link velocities u1 (velocities_explicit)"}
+    - {name: Transport, role: process_solver, brief: "Horizontal+vertical advection-diffusion of constituents (salinity sa1, temperature tem1, tracers); MC limiter, implicit vertical diffusion (compute_transport)"}
+    - {name: Turbulence, role: process_solver, brief: "Vertical turbulence closure (default k-epsilon, iturbulencemodel=3) producing eddy viscosity/diffusivity for 3D momentum and transport", applicability: "3D (Kmx>0)"}
+    - {name: DensityEOS, role: process_solver, brief: "Equation of state converting salinity/temperature to density rho for the baroclinic pressure-gradient term"}
+    - {name: HeatFlux, role: process_solver, brief: "Surface heat-exchange model computing the water-surface heat budget from meteo forcing into the temperature equation", applicability: "Temperature module enabled"}
+    - {name: WindDrag, role: process_solver, brief: "Applies wind stress as surface momentum forcing via drag-coefficient breakpoints"}
+    - {name: DryingFlooding, role: allocator, brief: "Sets wet/dry link and cell masks (kfu/kfs) from epshu/epshs/chkadvd thresholds, gating which cells/links the solvers update (setkfs/poshcheck)"}
+    - {name: Hydrology, role: optional_module, brief: "Groundwater/infiltration/rainfall-runoff source terms into the continuity volume balance"}
+    - {name: SedimentMorphology, role: optional_module, brief: "Suspended + bedload sediment transport and bed-level update coupled back to flow (morphodynamic feedback)"}
+    - {name: Waves, role: optional_module, brief: "Wave coupling (D-Waves / SWAN) contributing radiation-stress forcing and enhanced bed shear, exchanged via DIMR"}
+    - {name: WaterQuality, role: optional_module, brief: "D-Water Quality (DELWAQ/BLOOM) biogeochemistry driven by transported constituents, coupled via DIMR"}
+    - {name: FM1D-SRE, role: optional_module, brief: "Embedded SOBEK-RE 1D implicit solver for 1D network branches, coupled into the 2D/3D step (SOFLOW_wrap / fm1dimp)"}
+  internal_edges:
+    - {from: Inputs, to: MomentumFuru, kind: consumes_input, brief: "bed friction, eddy viscosity, gravity, reference density feed momentum/pressure/friction terms"}
+    - {from: Inputs, to: TimestepDriver, kind: consumes_input, brief: "CFLMax and theta control timestep reduction and time integration"}
+    - {from: WindDrag, to: MomentumFuru, kind: writes_state, brief: "wind surface stress added to link momentum"}
+    - {from: MomentumFuru, to: ContinuitySolver, kind: writes_state, brief: "furu writes link coefficients fu/ru consumed when assembling the s1 matrix"}
+    - {from: ContinuitySolver, to: s1, kind: writes_state, brief: "solve_matrix updates water level s1 at end of timestep"}
+    - {from: ContinuitySolver, to: u1, kind: writes_state, brief: "back-substitution updates link normal velocity u1 from the new s1 gradient"}
+    - {from: s1, to: hs, kind: writes_state, brief: "waterdepth hs = s1 - bl recomputed after the solve"}
+    - {from: s1, to: DryingFlooding, kind: reads_state, brief: "poshcheck/setkfs test s1 above local bottom to set kfu/kfs masks"}
+    - {from: DryingFlooding, to: MomentumFuru, kind: writes_state, brief: "wet/dry masks (epshu/epshs/chkadvd) gate which links carry momentum/advection"}
+    - {from: u1, to: VelocityReconstruction, kind: reads_state, brief: "Perot reconstruction reads u1 to build ucx/ucy/ucz"}
+    - {from: VelocityReconstruction, to: Transport, kind: writes_state, brief: "cell-centre velocities and discharge fluxes feed constituent advection"}
+    - {from: q1, to: Transport, kind: reads_state, brief: "link discharge q1 used as horizontal advective flux for constituents"}
+    - {from: Transport, to: sa1, kind: writes_state, brief: "updates salinity at end of timestep"}
+    - {from: Transport, to: tem1, kind: writes_state, brief: "updates temperature at end of timestep"}
+    - {from: HeatFlux, to: tem1, kind: writes_state, brief: "surface heat budget enters the temperature equation"}
+    - {from: Turbulence, to: Transport, kind: writes_state, brief: "vertical eddy diffusivity used by implicit vertical diffusion"}
+    - {from: Turbulence, to: MomentumFuru, kind: writes_state, brief: "vertical eddy viscosity used in 3D momentum"}
+    - {from: sa1, to: DensityEOS, kind: reads_state, brief: "salinity into equation of state"}
+    - {from: tem1, to: DensityEOS, kind: reads_state, brief: "temperature into equation of state"}
+    - {from: DensityEOS, to: MomentumFuru, kind: writes_state, brief: "density rho into the baroclinic pressure-gradient term"}
+    - {from: Hydrology, to: ContinuitySolver, kind: writes_state, brief: "rain/infiltration/groundwater source terms enter the continuity volume balance"}
+    - {from: SedimentMorphology, to: bed_level, kind: writes_state, brief: "morphological bed-level update feeds back into depth/continuity"}
+    - {from: Waves, to: MomentumFuru, kind: writes_state, brief: "radiation stress and enhanced bed shear added to momentum"}
+    - {from: Transport, to: WaterQuality, kind: invokes, brief: "transported constituents drive D-Water Quality kinetics via DIMR"}
+    - {from: FM1D-SRE, to: ContinuitySolver, kind: invokes, brief: "SOFLOW_wrap solves 1D branches and exchanges s1/q with the 2D/3D node-link system"}
+    - {from: TimestepDriver, to: ContinuitySolver, kind: invokes, brief: "calls step_reduce_hydro each timestep"}
+    - {from: TimestepDriver, to: Transport, kind: invokes, brief: "calls transport after the hydrodynamic step"}
+    - {from: s1, to: Outputs, kind: produces_output, brief: "water level written to _his.nc / _map.nc"}
+    - {from: VelocityReconstruction, to: Outputs, kind: produces_output, brief: "ucx/ucy/ucz written as velocity fields"}
+    - {from: Transport, to: Outputs, kind: produces_output, brief: "salinity/temperature/discharge written to output"}
+    - {from: MomentumFuru, to: Outputs, kind: produces_output, brief: "bed shear stress (taus/taubu) written to output"}
+
+states:
+  variables:
+    - {name: s1, unit: "m", role: prognostic}
+    - {name: u1, unit: "m/s", role: prognostic}
+    - {name: q1, unit: "m3/s", role: prognostic}
+    - {name: hs, unit: "m", role: diagnostic}
+    - {name: vol1, unit: "m3", role: diagnostic}
+    - {name: ucx, unit: "m/s", role: diagnostic}
+    - {name: ucy, unit: "m/s", role: diagnostic}
+    - {name: ucz, unit: "m/s", role: diagnostic}
+    - {name: ww1, unit: "m/s", role: prognostic}
+    - {name: zws, unit: "m", role: diagnostic}
+    - {name: sa1, unit: "PSU", role: prognostic}
+    - {name: tem1, unit: "degC", role: prognostic}
+    - {name: rho, unit: "kg/m3", role: diagnostic}
+    - {name: turkin1, unit: "m2/s2", role: prognostic}
+    - {name: taus, unit: "N/m2", role: diagnostic}
+    - {name: bed_level, unit: "m", role: prognostic}
+    - {name: kfs, unit: "flag", role: diagnostic}
+    - {name: kfu, unit: "flag", role: diagnostic}
+    - {name: volerrcum, unit: "m3", role: accumulator}
+  provenance: "populated"
+
+outputs:
+  - var: "water_level"
+    validation_rank: 1
+    unit: "m"
+    description: "Sea surface elevation (s1) at cell centres"
+    emitted_in: "_his.nc (observation points), _map.nc (spatial field)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy, timing_accuracy]
+          determining_metric: "nse"
+          caveats:
+            - "tide-gauge datum (MSL vs chart datum) must match the model datum before comparison"
+            - "for tidal records, evaluate M2 amplitude ratio (0.8-1.2) and phase error (<30 min) explicitly; NSE is artificially inflated for large-mean small-variation signals"
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: [spatial_pattern_match, magnitude_accuracy]
+          determining_metric: "csi"
+          caveats: ["requires gridded/altimetry surface; mesh-to-grid interpolation introduces sampling error"]
+      detrending_options: [none]
+  - var: "velocity"
+    validation_rank: 3
+    unit: "m/s"
+    description: "Depth-averaged (2D) or per-layer cell-centre flow velocity (ucx, ucy)"
+    emitted_in: "_map.nc, _his.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy, timing_accuracy]
+          determining_metric: "nse"
+          caveats: ["ADCP/current-meter measurement depth must match the compared model layer; speed and direction may need separate evaluation"]
+      detrending_options: [none]
+  - var: "salinity"
+    validation_rank: 4
+    unit: "PSU"
+    description: "Salt concentration constituent (sa1)"
+    emitted_in: "_map.nc, _his.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["sensor depth and stratification must be matched; salt-intrusion comparisons are sensitive to freshwater-boundary salinity specification"]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: [spatial_pattern_match, magnitude_accuracy]
+          determining_metric: "csi"
+          caveats: ["captures salt-intrusion extent / plume structure"]
+      detrending_options: [none]
+  - var: "temperature"
+    validation_rank: 5
+    unit: "degC"
+    description: "Water temperature constituent (tem1), driven by surface heat flux"
+    emitted_in: "_map.nc, _his.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["heat-flux forcing quality (RH, shortwave, cloud) dominates bias; sensor depth must be matched"]
+      detrending_options: [none]
+  - var: "bed_shear_stress"
+    validation_rank: 6
+    unit: "N/m2"
+    description: "Bottom shear stress (taus / taubu)"
+    emitted_in: "_map.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [magnitude_accuracy, temporal_pattern_match]
+          determining_metric: "nse"
+          caveats: ["rarely measured directly; usually inferred, so comparison is semi-quantitative"]
+      detrending_options: [none]
+  - var: "bed_level_change"
+    validation_rank: 7
+    unit: "m"
+    description: "Morphodynamic bed-level evolution (sediment module)"
+    emitted_in: "_map.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: [spatial_pattern_match, magnitude_accuracy]
+          determining_metric: "csi"
+          caveats: ["bathymetric-survey difference maps; sensitive to MorFac, initial bed composition, and survey epoch"]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [magnitude_accuracy, timing_accuracy]
+          determining_metric: "pbias"
+          caveats: ["morphological change accumulates and amplifies over decadal timescales"]
+      detrending_options: [none, linear_residual]
+  - var: "significant_wave_height"
+    validation_rank: 2
+    unit: "m"
+    description: "Significant wave height (hwav) from the coupled D-Waves module"
+    emitted_in: "_map.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["only available when wave coupling is active; buoy (NDBC-style) Hs comparison"]
+      detrending_options: [none]
+
+influence:
+  edges:
+    - from: "Manning/bed roughness coefficient"
+      to: "velocity"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "tidal-current hydrodynamics"
+      citations: ["goacoast2025_delft3d_hydro_sensitivity"]
+    - from: "Manning/bed roughness coefficient"
+      to: "water_level"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["goacoast2025_delft3d_hydro_sensitivity"]
+    - from: "horizontal eddy viscosity (Vicouv)"
+      to: "velocity"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["goacoast2025_delft3d_hydro_sensitivity"]
+    - from: "horizontal eddy diffusivity (Dicouv)"
+      to: "salinity"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "scalar mixing"
+      citations: ["goacoast2025_delft3d_hydro_sensitivity"]
+    - from: "JONSWAP bottom friction"
+      to: "significant_wave_height"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "coupled wave run (D-Waves)"
+      citations: ["goacoast2025_delft3d_hydro_sensitivity"]
+    - from: "initial bed composition (grain-size distribution)"
+      to: "bed_level_change"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "sediment/morphodynamics"
+      citations: ["usgs2024_delft3d_sediment_bedcomp_sensitivity"]
+    - from: "sediment grain size / transport parameters"
+      to: "bed_level_change"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "sediment/morphodynamics"
+      citations: ["usgs2024_delft3d_sediment_bedcomp_sensitivity", "briere2011_delft3d_bar_autocalibration"]
+    - from: "morphological acceleration factor (MorFac)"
+      to: "bed_level_change"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "sediment/morphodynamics; validity bounded by Froude/Courant/friction"
+      citations: ["morgan2020_morfac_fluvial", "ranasinghe2011_morfac_dependencies"]
+    - from: "morphological acceleration factor (MorFac)"
+      to: "velocity"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "fluvial flood-wave celerity (Nooksack River)"
+      citations: ["morgan2020_morfac_fluvial"]
+    - from: "transverse bed-slope parameter"
+      to: "bed_level_change"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "bar/bed-level morphodynamics"
+      citations: ["briere2011_delft3d_bar_autocalibration", "morgan2020_morfac_fluvial"]
+    - from: "sediment transport factor"
+      to: "bed_level_change"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "morphodynamic calibration"
+      citations: ["ranasinghe2011_morfac_dependencies", "briere2011_delft3d_bar_autocalibration"]
+  citation_index:
+    goacoast2025_delft3d_hydro_sensitivity:
+      short_citation: "Goa Coast study 2025"
+      doi: "10.1007/s10236-025-01724-0"
+      note: "OAT sensitivity analysis of Delft3D FM hydrodynamics, Goa Coast; Manning roughness dominant for current velocity, eddy viscosity/diffusivity secondary, JONSWAP friction for Hs (Ocean Dynamics)"
+    usgs2024_delft3d_sediment_bedcomp_sensitivity:
+      short_citation: "USGS (Dauphin Island) 2024"
+      doi: "10.3390/jmse12112108"
+      note: "Sensitivity of Delft3D morphology to initial bed composition and sediment parameters, amplifying on decadal timescales (JMSE)"
+    morgan2020_morfac_fluvial:
+      short_citation: "Morgan et al. 2020"
+      doi: "10.1016/j.geomorph.2020.107088"
+      note: "MorFac modification of inflow hydrograph reduces flood-wave celerity and alters morphodynamic response, Nooksack River (Geomorphology)"
+    ranasinghe2011_morfac_dependencies:
+      short_citation: "Ranasinghe et al. 2011"
+      doi: "10.1016/j.coastaleng.2011.03.010"
+      note: "Dependencies and sensitivities of the MORFAC approach as a function of Froude, sediment-transport factor, friction, Courant number (Coastal Engineering)"
+    briere2011_delft3d_bar_autocalibration:
+      short_citation: "Briere et al. 2011"
+      doi: "10.9753/icce.v32.sediment.65"
+      note: "DUD automatic calibration of Delft3D bar morphodynamics; sediment-transport and bed-slope free parameters most influential (ICCE)"
+
+safety:
+  hazards:
+    - id: "bathymetry_sign_not_negated"
+      kind: "soil_semantic"
+      description: "GEBCO/ETOPO positive-up elevation used directly as Delft3D positive-down depth, so the sea floor is read as terrain above water and all cells go dry."
+      severity: "fatal"
+    - id: "pressure_hpa_not_pa"
+      kind: "weather_file_semantic"
+      description: "Atmospheric pressure supplied in hPa instead of Pa makes the pressure-gradient (inverse-barometer) response ~100x too small; silent, detectable only against observations."
+      severity: "silent"
+    - id: "wind_direction_to_not_from"
+      kind: "weather_file_semantic"
+      description: "Wind direction given as meteorological-TO rather than nautical-FROM produces a 180-degree error that reverses wind setup and storm surge."
+      severity: "silent"
+    - id: "relative_humidity_fraction_not_percent"
+      kind: "weather_file_semantic"
+      description: "Relative humidity supplied as fraction (0-1) instead of percent (0-100) corrupts the surface heat budget, giving temperature bias > 5 degC."
+      severity: "silent"
+    - id: "harmonic_period_not_minutes"
+      kind: "weather_file_semantic"
+      description: "Tidal harmonic constituent period given in hours/seconds rather than the .bc-required minutes makes the tide oscillate ~60x too fast/slow."
+      severity: "silent"
+    - id: "negative_shortwave_after_interpolation"
+      kind: "numerical_instability"
+      description: "Linear temporal interpolation of 3-hourly shortwave at dawn/dusk yields negative radiation, propagating NaN through the heat-flux/temperature solve."
+      severity: "fatal"
+    - id: "friction_type_value_mismatch"
+      kind: "control_semantic"
+      description: "A Manning-magnitude value used with the Chezy friction type (or vice versa) yields near-infinite bottom friction and near-zero flow velocities everywhere."
+      severity: "silent"
+    - id: "tunit_mismatch"
+      kind: "control_semantic"
+      description: "MDU time parameters interpreted in the wrong Tunit (S vs M vs H) make the simulated duration ~60x too short or too long (note DtMax is always in seconds)."
+      severity: "silent"
+    - id: "geographic_coordinates_unprojected"
+      kind: "soil_semantic"
+      description: "Geographic (degree) coordinates used without a projected CRS compute cell areas in degree^2 instead of m^2, corrupting all volume/discharge/area-dependent quantities."
+      severity: "silent"
+    - id: "cfl_violation"
+      kind: "numerical_instability"
+      description: "Timestep too large for grid resolution and depth drives CFL above 1; the scheme amplifies errors exponentially to 100+ m/s velocities and diverges."
+      severity: "fatal"
+    - id: "tidal_phase_epoch_mismatch"
+      kind: "control_semantic"
+      description: "Harmonic phases referenced to a different epoch (FES2014/TPXO) than the simulation RefDate shift all tidal timing by hours while amplitudes stay correct."
+      severity: "silent"
+    - id: "river_boundary_missing_salinity"
+      kind: "control_semantic"
+      description: "A river discharge boundary with no salinity spec defaults the freshwater inflow to ocean salinity (~35 PSU), making the river salty and corrupting density-driven circulation."
+      severity: "silent"
+    - id: "background_salinity_default_30ppt"
+      kind: "initial_condition_semantic"
+      description: "When the salinity module is off, the kernel default backgroundsalinity=30 ppt (not 0) still feeds the equation of state, silently introducing unintended baroclinic gradients."
+      severity: "silent"
+  validation_limits:
+    - "Hydrostatic shallow-water approximation: cannot resolve non-hydrostatic vertical accelerations (e.g. sharp fronts, plunging breakers, strongly non-hydrostatic short waves)."
+    - "Wave dynamics, sediment kinetics, and water-quality kinetics are not native to the hydrodynamic kernel; they require the separate coupled suite modules."
+    - "This implementation (D-Flow FM) is the unstructured-mesh kernel; structured curvilinear-grid problems are the domain of the sibling Delft3D-FLOW engine."
+    - "Validation evidence in the KI is the F34 idealized-estuary example test case only; no real-basin validation is documented."
+  warnings:
+    - "When salinity/temperature modules are disabled, density still uses background defaults (30 ppt / 20 degC) — model output is not salinity-free, it is salinity-clamped, which can drive spurious baroclinic forcing."
+    - "Background horizontal eddy viscosity/diffusivity defaults (0.1 m2/s) act as silent numerical diffusion and materially affect mixing if left unexamined."
+    - "Tidal skill metrics (NSE/R2) are artificially high for large-mean small-variation water levels; M2 amplitude ratio and phase error are the discriminating metrics."
+  assumptions:
+    - statement: "Bathymetry uses the Delft3D positive-down depth convention; ocean cells carry positive depth."
+      scope: "all geometry/bathymetry inputs"
+      source: "D-Flow FM User Manual and Delft3D bathymetry convention; KI triplet dt_001"
+      status: adopted
+    - statement: "The kernel is hydrostatic shallow-water; vertical accelerations are neglected relative to gravity."
+      scope: "the hydrodynamic momentum balance"
+      source: "Deltares D-Flow Flexible Mesh module description (finite-volume shallow-water solver)"
+      status: adopted
+    - statement: "Continuity is solved implicitly (theta-method, default teta0=0.55) over the whole domain as one combined system with optional non-linear iteration; mass/volume is the conserved quantity."
+      scope: "free-surface / water-level solve"
+      source: "Deltares D-Flow FM numerical-approach description; m_flowparameters / step_reduce_hydro source behavior"
+      status: adopted
+    - statement: "Default vertical turbulence closure is k-epsilon (iturbulencemodel=3) with sigma layering in 3D."
+      scope: "3D vertical mixing"
+      source: "D-Flow FM kernel defaults (m_flow.f90 default_flow)"
+      status: adopted
+    - statement: "The dissected runnable is the D-Flow FM unstructured engine; Delft3D-FLOW structured-grid is treated as a separate implementation out of scope for this dag."
+      scope: "implementation identity"
+      source: "Deltares Delft3D repository (two co-existing kernel lineages)"
+      status: adopted

@@ -277,27 +277,163 @@ def convert_cmfd_to_airgr(cmfd_csv: str, lat_deg: float,
 
 
 # ---------------------------------------------------------------------------
+# Main conversion: GRDC-Caravan basin-mean NetCDF -> airGR
+# ---------------------------------------------------------------------------
+
+def convert_caravan_to_airgr(caravan_nc: str, lat_deg: float,
+                             output_csv: str,
+                             start_date: str = None,
+                             end_date: str = None,
+                             pe_method: str = "oudin") -> pd.DataFrame:
+    """
+    Convert a GRDC-Caravan basin-mean timeseries NetCDF to airGR GR4J input.
+
+    Caravan ships *basin-averaged* daily ERA5-Land forcing matched 1:1 with the
+    standardised streamflow (already in mm/day), which is exactly the lumped
+    catchment-average input GR4J needs — far more appropriate than a single
+    point of MSWX/NASA-POWER for a large basin. This is the correct path for
+    any global GRDC-Caravan gauge (e.g. Missouri R. at Hermann, 1.32e6 km2).
+
+    Variables used:
+      total_precipitation_sum   [mm]      -> Precip_mm   (daily basin-mean total)
+      temperature_2m_mean       [degC]    -> TempMean_degC
+      streamflow                [mm/day]  -> Qobs_mm      (already mm/day, no conversion)
+      potential_evaporation_sum [mm]      -> PE if pe_method='era5land'
+
+    PE handling:
+      pe_method='oudin' (default, recommended): compute PE via the Oudin formula
+        from basin-mean temperature + latitude. ERA5-Land potential_evaporation
+        is strongly overestimated (~2300 mm/yr for the Missouri basin vs a
+        realistic ~700-1100 mm/yr), which drains GR4J's production store; Oudin
+        is the airGR-recommended PE input (Oudin et al. 2005).
+      pe_method='era5land': use the shipped potential_evaporation_sum directly.
+
+    Parameters
+    ----------
+    caravan_nc : path to GRDC-Caravan timeseries NetCDF (HDF5/NETCDF4)
+    lat_deg    : basin centroid latitude [degrees] (for Oudin PE)
+    output_csv : output path for airGR-format CSV
+    start_date : optional 'YYYY-MM-DD' clip start
+    end_date   : optional 'YYYY-MM-DD' clip end
+    pe_method  : 'oudin' (default) or 'era5land'
+
+    Returns
+    -------
+    df_out : DataFrame with Date, Precip_mm, PotEvap_mm, TempMean_degC, Qobs_mm
+    """
+    try:
+        import xarray as xr
+    except ImportError:
+        raise ImportError("xarray required for Caravan loading. pip install xarray")
+
+    # Caravan NetCDFs are HDF5; the default netCDF4 engine can hit HDF lock
+    # errors on these read-only mounts, so prefer h5netcdf and fall back.
+    try:
+        ds = xr.open_dataset(caravan_nc, engine="h5netcdf")
+    except Exception:
+        ds = xr.open_dataset(caravan_nc)
+
+    dates = pd.to_datetime(ds["date"].values)
+    precip = ds["total_precipitation_sum"].values.astype(float)
+    temp = ds["temperature_2m_mean"].values.astype(float)
+    qobs = ds["streamflow"].values.astype(float)  # already mm/day
+    pe_era5 = (ds["potential_evaporation_sum"].values.astype(float)
+               if "potential_evaporation_sum" in ds else None)
+    ds.close()
+
+    df = pd.DataFrame({
+        "Date": dates,
+        "Precip_mm": precip,
+        "TempMean_degC": temp,
+        "Qobs_mm": qobs,
+    })
+    if pe_era5 is not None:
+        df["_pe_era5"] = pe_era5
+
+    # --- Clip to requested window ---
+    if start_date:
+        df = df[df["Date"] >= pd.Timestamp(start_date)]
+    if end_date:
+        df = df[df["Date"] <= pd.Timestamp(end_date)]
+    df = df.sort_values("Date").reset_index(drop=True)
+
+    # --- Forcing must contain no NA in Precip/PE (airGR stops on NA) ---
+    # ERA5-Land basin means are gap-free, but guard anyway.
+    df["Precip_mm"] = df["Precip_mm"].clip(lower=0).fillna(0.0)
+    df["TempMean_degC"] = df["TempMean_degC"].interpolate().ffill().bfill()
+
+    # --- PE ---
+    if pe_method == "era5land" and "_pe_era5" in df.columns:
+        pe_mm = np.maximum(df["_pe_era5"].fillna(0.0).values, 0.0)
+    else:
+        julian_days = df["Date"].dt.dayofyear.values
+        pe_mm = pe_oudin(julian_days, df["TempMean_degC"].values, lat_deg)
+        pe_mm = np.maximum(pe_mm, 0.0)
+
+    df_out = pd.DataFrame({
+        "Date": df["Date"].dt.strftime("%Y-%m-%d"),
+        "Precip_mm": np.round(df["Precip_mm"].values, 4),
+        "PotEvap_mm": np.round(pe_mm, 4),
+        "TempMean_degC": np.round(df["TempMean_degC"].values, 2),
+        "Qobs_mm": np.round(df["Qobs_mm"].values, 6),  # NA allowed in Qobs
+    })
+
+    warnings = validate_outputs(df_out)
+    for w in warnings:
+        print(f"[convert_forcing] WARNING: {w}")
+
+    df_out.to_csv(output_csv, index=False)
+    print(f"[convert_forcing] Caravan -> airGR: wrote {len(df_out)} daily records "
+          f"to {output_csv} (PE={pe_method}, lat={lat_deg})")
+    print(f"[convert_forcing]   P mean {df_out['Precip_mm'].mean():.3f} mm/d, "
+          f"PE mean {df_out['PotEvap_mm'].mean():.3f} mm/d, "
+          f"Qobs mean {df_out['Qobs_mm'].mean():.3f} mm/d")
+    return df_out
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert CMFD/ERA5 forcing to airGR GR4J format"
+        description="Convert CMFD/ERA5/Caravan forcing to airGR GR4J format"
     )
-    parser.add_argument("--cmfd-csv", required=True, help="Input CMFD CSV path")
+    parser.add_argument("--source", choices=["cmfd", "caravan"], default="cmfd",
+                        help="Input source type")
+    parser.add_argument("--cmfd-csv", help="Input CMFD CSV path (source=cmfd)")
+    parser.add_argument("--caravan-nc", help="GRDC-Caravan timeseries NetCDF (source=caravan)")
     parser.add_argument("--lat", type=float, required=True, help="Catchment latitude [deg]")
     parser.add_argument("--output", required=True, help="Output CSV path")
     parser.add_argument("--area-km2", type=float, help="Catchment area [km2]")
-    parser.add_argument("--qobs-csv", help="Observed discharge CSV path")
+    parser.add_argument("--qobs-csv", help="Observed discharge CSV path (source=cmfd)")
+    parser.add_argument("--start-date", help="Clip start YYYY-MM-DD (source=caravan)")
+    parser.add_argument("--end-date", help="Clip end YYYY-MM-DD (source=caravan)")
+    parser.add_argument("--pe-method", choices=["oudin", "era5land"], default="oudin",
+                        help="PE source for Caravan (default oudin)")
 
     args = parser.parse_args()
-    convert_cmfd_to_airgr(
-        cmfd_csv=args.cmfd_csv,
-        lat_deg=args.lat,
-        output_csv=args.output,
-        area_km2=args.area_km2,
-        qobs_csv=args.qobs_csv,
-    )
+    if args.source == "caravan":
+        if not args.caravan_nc:
+            parser.error("--caravan-nc required when --source caravan")
+        convert_caravan_to_airgr(
+            caravan_nc=args.caravan_nc,
+            lat_deg=args.lat,
+            output_csv=args.output,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            pe_method=args.pe_method,
+        )
+    else:
+        if not args.cmfd_csv:
+            parser.error("--cmfd-csv required when --source cmfd")
+        convert_cmfd_to_airgr(
+            cmfd_csv=args.cmfd_csv,
+            lat_deg=args.lat,
+            output_csv=args.output,
+            area_km2=args.area_km2,
+            qobs_csv=args.qobs_csv,
+        )
 
 
 if __name__ == "__main__":

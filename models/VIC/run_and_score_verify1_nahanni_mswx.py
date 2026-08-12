@@ -1,0 +1,953 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+VIC 5.1.0 + Lohmann route_1.0 VERIFIER (verify_1) at the SOUTH NAHANNI RIVER,
+ABOVE VIRGINIA FALLS, Northwest Territories, Canada — GRDC_4208221 in the
+GRDC-Caravan extension.  ** MSWX forcing variant. **
+
+WHY THIS GAUGE
+--------------
+The real-case ran at 允景洪 Jinghong (Lancang/Mekong, Yunnan, China, CMFD
+forcing, ~145,000 km2, tropical/subtropical monsoon). A verifier must exercise
+the SAME KI tools somewhere the tools have never been. South Nahanni above
+Virginia Falls is:
+  * a different continent, forcing dataset and DEM (Copernicus GLO-30, not
+    china_dem_90m);
+  * ~15,400 km2 (Caravan polygon), matching the John Day (verify_2) scale;
+  * genuinely UNREGULATED -- it drains Nahanni National Park Reserve (Mackenzie
+    Mountains) with no mainstem dams and no reservoirs. route_1.0 has no
+    reservoir module, so an unregulated basin is the only place a routed
+    hydrograph is a fair test;
+  * a COLD snowmelt regime (frac_snow ~0.44, subarctic 61.6N) -- maximally
+    distinct from the tropical monsoon Jinghong real-case;
+  * daily obs are 100% complete 1998-2015 (no gaps, cf. dt_vic_021).
+
+WHY MSWX (not NASA POWER)
+-------------------------
+The verifier forcing policy is: CHINA -> CMFD; otherwise the LOCAL global
+product MSWX 0.1deg 3-hourly (/mnt/disk3/msxw). NASA POWER is a network fetch of
+last resort and is only used when no local product covers the basin. MSWX is
+global and covers Canada, so it is the correct choice here; it is also LOCAL, so
+there is no per-point network fetch that can hang the run (the failure the task
+warns about, which is exactly how the prior NASA POWER attempt at this gauge
+stalled). MSWX wind is 10 m -- the SAME convention as CMFD at the real case, so
+the forcing is more directly comparable to Jinghong than the 2 m NASA POWER path
+(cf. feedback_nasa_power_wind_height). Units preflighted: Tair degC, P mm/3hr,
+Pres Pa, SWd/LWd W/m2, spechum kg/kg, Wind m/s.
+
+Chain (identical stages to the real case; s0/s5 substituted for the region)
+--------------------------------------------------------------------------
+  s0a Copernicus GLO-30 DEM tiles -> mosaic + crop          (global DEM)
+  s0b ki_tools_common.terrain_ops.delineate_basin           -> basin/flow_accum/dem_filled
+  s1  s1_grid/make_basin_grid_nc.py                         -> grid_<basin>_025deg.nc
+  s1b build elevation + annual-precip NetCDFs on the VIC grid
+  s2  s3_soil/fill_parameters1.py                           -> SOIL_PARAM_FINAL.txt
+  s3  s3_soil/fill_parameters2.py                           -> SOIL_PARAM_COMPLETE.txt
+      (interpolates the GLOBAL 0.5deg soil param file, valid outside China)
+  s4  s4_veg/process_vegetation_detailed.py                 -> vic_veg_param_final.txt
+      (AVHRR 1 km landcover is already global)
+  s5  build_mswx_forcing()                                  -> per-cell VIC ASCII forcing
+      (MSWX 0.1deg 3-hourly, 8 steps/day, 7 cols in FORCE_TYPE order; each
+       (var,year) global file is read ONCE and all cells extracted; per-year
+       npz cache makes it resumable)
+  s6  config_paths.create_global_param()                    -> global_param_<basin>.txt
+  s7  vic_classic.exe                                       -> daily flux per cell (mm)
+  s8  s5_routing/build_routing_param.py                     -> direc/frac/xmask/staloc/UH.all
+  s9  route_1.0/src/rout                                    -> daily discharge (m3/s)
+  s10 score vs GRDC-Caravan streamflow, water balance, result.json
+
+VIC HAS NO ROUTING (dag.yaml: OUT_DISCHARGE is lake-module only), so s8+s9 are
+mandatory -- summing runoff+baseflow gives a hydrograph with no lag and no
+attenuation (dt_vic_019).
+
+Periods (obs complete; MSWX starts 1979; a 3-year spin-up is used because a
+subarctic snow/soil column equilibrates slowly, cf. dt_vic_030):
+  spinup      2002-2004   (discarded)
+  calibration 2005-01-01 .. 2009-12-31
+  validation  2010-01-01 .. 2014-12-31   (held out; nothing is tuned on it)
+UNCALIBRATED throughout -- default soil/veg parameters, exactly as the real
+case, and the SAME standard (non-frozen) global-param template the Jinghong real
+case and the John Day verifier used, so the metrics are directly comparable.
+
+Units. Caravan 'streamflow' is a catchment-mean depth in mm/day. `rout` emits
+m3/s. Obs are converted to m3/s with the Caravan basin-shape area (the same area
+Caravan used to make mm/day), so sim and obs are compared in the real-case's
+native units.
+
+Resumable: every stage is skipped when its output already exists.
+"""
+import os
+import sys
+import glob
+import json
+import subprocess
+import urllib.request
+
+import numpy as np
+import pandas as pd
+
+sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
+from ki_tools_common.metrics import all_metrics
+from ki_tools_common.validation import validate_water_balance
+from validators.standard_calval import compute_calval_metrics
+
+# ---------------------------------------------------------------------------
+BASE = "/mnt/disk1/Hydrocraft_server"
+KI = f"{BASE}/models/VIC/knowledge_infrastructure"
+CASE = f"{BASE}/models/VIC/detached/verify_1"
+
+BASIN = "nahanni_virginiafalls"
+STA = "NAH"
+GAUGE_ID = "GRDC_4208221"
+
+CARAVAN = "/mnt/datasets/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc"
+OBS_NC = f"{CARAVAN}/timeseries/netcdf/grdc/{GAUGE_ID}.nc"
+BASIN_SHAPES = f"{CARAVAN}/shapefiles/grdc/grdc_basin_shapes.shp"
+
+OUT_ROOT = f"{BASE}/outputs"
+BDIR = f"{OUT_ROOT}/{BASIN}"
+DELIN = f"{BDIR}/delineation"
+DEM_DIR = f"{BDIR}/dem"
+DEM_CROP = f"{DEM_DIR}/nahanni_cop30.tif"
+TILE_CACHE = f"{BASE}/data/dem/dem_tiles_cache"
+
+BASIN_SHP = f"{BASE}/data/shp/nahanni_shp/nahanni_boundary.shp"
+CARAVAN_SHP = f"{BASE}/data/shp/nahanni_shp/nahanni_caravan.shp"
+
+VIC_EXE = f"{BASE}/model/VIC-5.1.0/vic/drivers/classic/vic_classic.exe"
+ROUT_EXE = f"{BASE}/model/route_1.0/src/rout"
+GP_TEMPLATE = f"{BASE}/outputs/tangnaihai/vic_temp/global_param_tangnaihai.txt"
+
+# GRDC gauge: SOUTH NAHANNI RIVER, ABOVE VIRGINIA FALLS (WSC 10EB001)
+OUTLET_LON, OUTLET_LAT = -125.8104, 61.6312
+CARAVAN_P_MEAN_MMDAY = 1.9574   # Caravan p_mean for GRDC_4208221
+
+YEAR_START, YEAR_END = 2002, 2014
+CAL = ("2005-01-01", "2009-12-31")
+VAL = ("2010-01-01", "2014-12-31")
+EVAL_START, EVAL_END = CAL[0], VAL[1]
+
+FORCING_PREFIX = f"{BASIN}_025deg_"
+
+MSWX_ROOT = "/mnt/disk3/msxw"
+
+ELEV_NC = f"{BDIR}/vic_temp/grid/elev_{BASIN}_025deg.nc"
+PREC_NC = f"{BDIR}/vic_temp/grid/prec_annual_{BASIN}_025deg.nc"
+
+GRID_NC = f"{BDIR}/vic_temp/grid/grid_{BASIN}_025deg.nc"
+SOIL_FINAL = f"{BDIR}/vic_temp/soil/SOIL_PARAM_FINAL.txt"
+SOIL_COMPLETE = f"{BDIR}/vic_temp/soil/SOIL_PARAM_COMPLETE.txt"
+FORCING_FINAL = f"{BDIR}/vic_temp/forcing/forcing_final"
+VEG_PARAM = f"{BDIR}/vic_temp/veg/vic_veg_param_final.txt"
+GLOBAL_PARAM = f"{BDIR}/vic_temp/global_param_{BASIN}.txt"
+VIC_RESULT = f"{BDIR}/vic_result"
+ROUTING = f"{BDIR}/routing_param"
+VIC_IN = f"{ROUTING}/vic_in"
+ROUT_OUT = f"{ROUTING}/rout_out"
+
+ENV = dict(os.environ)
+ENV.update(
+    VIC_BASIN_NAME=BASIN,
+    VIC_BASIN_SHP=BASIN_SHP,
+    VIC_OUT_ROOT=OUT_ROOT,
+    VIC_DEM=DEM_CROP,
+    VIC_ELEV_NC=ELEV_NC,
+    VIC_PREC_ANNUAL_NC=PREC_NC,
+    VIC_STATION_NAME=STA,
+    VIC_OUTLET_LON=str(OUTLET_LON),
+    VIC_OUTLET_LAT=str(OUTLET_LAT),
+    VIC_YEAR_START=str(YEAR_START),
+    VIC_YEAR_END=str(YEAR_END),
+    VIC_START_DATE=f"{YEAR_START}-01-01",
+    VIC_END_DATE=f"{YEAR_END}-12-31",
+    VIC_FORCING_PREFIX=FORCING_PREFIX,
+    VIC_GLOBAL_PARAM_TEMPLATE=GP_TEMPLATE,
+    # native-resolution rasters for the routing grid (never coarsen; dt_vic_020)
+    VIC_FLOW_ACCUM=f"{DELIN}/flow_accum.tif",
+    VIC_BASIN_RASTER=f"{DELIN}/basin.tif",
+    VIC_FILLED_DEM=f"{DELIN}/dem_filled.tif",
+    PYTHONUNBUFFERED="1",
+)
+
+os.makedirs(CASE, exist_ok=True)
+
+RESULT = {
+    "model_id": "VIC",
+    "this_location": "GRDC-Caravan Extension (5,357 global gauges + basin shapes)",
+    "obs_source": "GRDC",
+    "status": "failed",
+    "tools_used": [],
+    "tools_failed": [],
+    "metrics": {"nse": None, "kge": None, "pbias": None, "r": None, "period": None},
+    "water_balance": {"status": "N/A", "residual_pct": None},
+    "notes": "",
+}
+
+
+def save(note=None):
+    if note:
+        RESULT["notes"] = note
+    with open(f"{CASE}/result.json", "w") as f:
+        json.dump(RESULT, f, indent=2, ensure_ascii=False)
+
+
+# dt_vic_023: a stage can SIGSEGV during interpreter teardown (foreign libhdf5
+# dlopen'd by xarray's backend-entrypoint probe) AFTER it has written correct
+# output. A fatal signal is forgiven ONLY when `validate()` proves the stage's
+# output is complete; anything else still aborts the run.
+TEARDOWN_SIGNALS = (-11, -6, 139, 134)
+
+
+def run(script, cwd, label, timeout=None, args=(), validate=None):
+    print(f"\n===== {label} =====", flush=True)
+    p = subprocess.run([sys.executable, script, *args], cwd=cwd, env=ENV,
+                       capture_output=True, text=True, timeout=timeout)
+    print("\n".join((p.stdout or "").strip().splitlines()[-15:]), flush=True)
+
+    if p.returncode != 0:
+        forgiven = False
+        if p.returncode in TEARDOWN_SIGNALS and validate is not None:
+            try:
+                forgiven = bool(validate())
+            except Exception as e:  # a validator that blows up == not validated
+                print(f"[{label}] validator raised: {e}", flush=True)
+                forgiven = False
+        if forgiven:
+            warn = (f"{label}: rc={p.returncode} (fatal signal at interpreter teardown, "
+                    f"dt_vic_023) BUT output artifact validated complete -> continuing")
+            print(f"[WARN] {warn}", flush=True)
+            RESULT.setdefault("warnings", []).append(warn)
+        else:
+            print("STDERR:", (p.stderr or "")[-3000:], flush=True)
+            RESULT["tools_failed"].append(
+                f"{label}: rc={p.returncode} :: {(p.stderr or '')[-300:]}")
+            save(f"stage {label} failed")
+            sys.exit(1)
+
+    RESULT["tools_used"].append(label)
+
+
+def n_cells():
+    return sum(1 for line in open(SOIL_COMPLETE) if line.strip())
+
+
+# ===================== s0a Copernicus DEM mosaic ===========================
+CARAVAN_AREA_KM2 = None
+if not os.path.exists(DEM_CROP):
+    print("\n===== s0a Copernicus GLO-30 DEM mosaic =====", flush=True)
+    import rasterio
+    from rasterio.merge import merge
+    import geopandas as gpd
+
+    os.makedirs(DEM_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(BASIN_SHP), exist_ok=True)
+
+    shapes = gpd.read_file(BASIN_SHAPES)
+    car = shapes[shapes["gauge_id"] == GAUGE_ID].to_crs("EPSG:4326")
+    if car.empty:
+        RESULT["tools_failed"].append(f"{GAUGE_ID} absent from grdc_basin_shapes.shp")
+        save("gauge polygon not found")
+        sys.exit(1)
+    car.to_file(CARAVAN_SHP)
+    CARAVAN_AREA_KM2 = float(car.to_crs("ESRI:54009").area.iloc[0] / 1e6)
+    minx, miny, maxx, maxy = car.total_bounds
+    print(f"[s0a] Caravan polygon area = {CARAVAN_AREA_KM2:.0f} km2, "
+          f"bbox = {minx:.3f},{miny:.3f},{maxx:.3f},{maxy:.3f}", flush=True)
+
+    pad = 0.15
+    minx, miny, maxx, maxy = minx - pad, miny - pad, maxx + pad, maxy + pad
+
+    tiles = []
+    for la in range(int(np.floor(miny)), int(np.floor(maxy)) + 1):
+        for lo in range(int(np.floor(minx)), int(np.floor(maxx)) + 1):
+            ns = f"N{la:02d}" if la >= 0 else f"S{abs(la):02d}"
+            ew = f"E{lo:03d}" if lo >= 0 else f"W{abs(lo):03d}"
+            name = f"Copernicus_DSM_COG_10_{ns}_00_{ew}_00_DEM.tif"
+            path = os.path.join(TILE_CACHE, name)
+            if not os.path.exists(path):
+                url = (f"https://copernicus-dem-30m.s3.amazonaws.com/"
+                       f"{name[:-4]}/{name}")
+                print(f"[s0a] downloading {name}", flush=True)
+                try:
+                    tmp = path + ".part"
+                    urllib.request.urlretrieve(url, tmp)
+                    os.replace(tmp, path)
+                except Exception as e:
+                    print(f"[s0a] tile {name} unavailable ({e}) -- likely ocean, skipping",
+                          flush=True)
+                    continue
+            tiles.append(path)
+
+    if not tiles:
+        RESULT["tools_failed"].append("no Copernicus DEM tiles for the Nahanni bbox")
+        save("DEM mosaic empty")
+        sys.exit(1)
+    print(f"[s0a] merging {len(tiles)} tiles", flush=True)
+
+    srcs = [rasterio.open(t) for t in tiles]
+    arr, tr = merge(srcs, bounds=(minx, miny, maxx, maxy))
+    prof = srcs[0].profile.copy()
+    prof.update(height=arr.shape[1], width=arr.shape[2], transform=tr,
+                count=1, compress="lzw", dtype="float32", nodata=-9999.0)
+    a = arr[0].astype("float32")
+    a[~np.isfinite(a)] = -9999.0
+    with rasterio.open(DEM_CROP, "w", **prof) as dst:
+        dst.write(a, 1)
+    for s in srcs:
+        s.close()
+    print(f"[s0a] DEM {a.shape} -> {DEM_CROP}", flush=True)
+else:
+    print("[s0a] DEM mosaic exists, skip")
+
+if CARAVAN_AREA_KM2 is None:
+    import geopandas as gpd
+    CARAVAN_AREA_KM2 = float(gpd.read_file(CARAVAN_SHP).to_crs("ESRI:54009").area.iloc[0] / 1e6)
+RESULT["tools_used"].append("Copernicus GLO-30 DEM mosaic (global DEM for a non-China basin)")
+
+# ===================== s0b delineation =====================================
+DELIN_AREA_KM2 = None
+if not os.path.exists(BASIN_SHP):
+    print("\n===== s0b ki_tools_common.terrain_ops.delineate_basin =====", flush=True)
+    import rasterio
+    import geopandas as gpd
+    from rasterio.features import shapes as rshapes
+    from shapely.geometry import shape
+    from shapely.ops import unary_union
+    from ki_tools_common.terrain_ops import delineate_basin
+
+    os.makedirs(DELIN, exist_ok=True)
+    # Copernicus GLO-30 is 1 arcsec (~30 m lat x ~14 m lon at 61.6N) => ~420 m2/px.
+    # 50,000 px ~ 21 km2 -> a stream network dense enough that the 0.25deg VIC
+    # cells all sit on a channel, coarse enough to avoid hillslope noise.
+    d = delineate_basin(dem_path=DEM_CROP, pour_point=(OUTLET_LON, OUTLET_LAT),
+                        output_dir=DELIN, stream_threshold=50000, snap_distance_m=2000.0)
+    DELIN_AREA_KM2 = float(d["basin_area_km2"])
+    print(f"[s0b] delineated area = {DELIN_AREA_KM2:.0f} km2 "
+          f"(Caravan polygon {CARAVAN_AREA_KM2:.0f} km2, "
+          f"{100 * (DELIN_AREA_KM2 / CARAVAN_AREA_KM2 - 1):+.1f}%)", flush=True)
+
+    with rasterio.open(d["basin_raster"]) as s:
+        a = s.read(1)
+        nod = s.nodata if s.nodata is not None else 0
+        mk = ((a != nod) & (a > 0)).astype(np.uint8)
+        tr = s.transform
+    poly = unary_union([shape(g) for g, v in rshapes(mk, mask=mk > 0, transform=tr) if v > 0])
+    gpd.GeoDataFrame({"name": [BASIN]}, geometry=[poly], crs="EPSG:4326").to_file(BASIN_SHP)
+else:
+    print("[s0b] basin shapefile exists, skip")
+if DELIN_AREA_KM2 is None:
+    import geopandas as gpd
+    DELIN_AREA_KM2 = float(gpd.read_file(BASIN_SHP).to_crs("ESRI:54009").area.iloc[0] / 1e6)
+RESULT["tools_used"].append("ki_tools_common.terrain_ops.delineate_basin")
+
+if not 0.85 < DELIN_AREA_KM2 / CARAVAN_AREA_KM2 < 1.15:
+    RESULT["tools_failed"].append(
+        f"delineate_basin: area {DELIN_AREA_KM2:.0f} km2 vs Caravan {CARAVAN_AREA_KM2:.0f} km2 "
+        f"({100 * (DELIN_AREA_KM2 / CARAVAN_AREA_KM2 - 1):+.1f}%) -- pour point mis-snapped")
+    save("delineated basin area disagrees with the GRDC basin shape by >15%")
+    sys.exit(1)
+
+# ===================== s1 grid =============================================
+if not os.path.exists(GRID_NC):
+    run(f"{KI}/s1_grid/make_basin_grid_nc.py", f"{KI}/s1_grid", "s1_grid/make_basin_grid_nc.py")
+else:
+    print("[s1] grid exists, skip")
+    RESULT["tools_used"].append("s1_grid/make_basin_grid_nc.py")
+
+# ===================== s1b elevation + annual precip on the VIC grid ========
+if not (os.path.exists(ELEV_NC) and os.path.exists(PREC_NC)):
+    print("\n===== s1b elevation + annual-precip grids =====", flush=True)
+    import xarray as xr
+    import geopandas as gpd
+    from shapely.geometry import box
+    from rasterstats import zonal_stats
+
+    g = xr.open_dataset(GRID_NC)
+    ys = g["y"].values
+    xs = g["x"].values
+    g.close()
+
+    half = 0.125
+    boxes = [box(lo - half, la - half, lo + half, la + half) for la in ys for lo in xs]
+    gdf = gpd.GeoDataFrame(geometry=boxes, crs="EPSG:4326")
+    stats = zonal_stats(gdf, DEM_CROP, stats="mean", nodata=-9999.0)
+    elev = np.array([s["mean"] if s["mean"] is not None else np.nan for s in stats],
+                    dtype="float64").reshape(len(ys), len(xs))
+    elev[~np.isfinite(elev)] = np.nanmean(elev)
+
+    xr.Dataset({"elev": (("y", "x"), elev)},
+               coords={"y": ys, "x": xs}).to_netcdf(ELEV_NC)
+    print(f"[s1b] elevation {elev.min():.0f}-{elev.max():.0f} m -> {ELEV_NC}", flush=True)
+
+    prec = np.full((len(ys), len(xs)), CARAVAN_P_MEAN_MMDAY * 365.25, dtype="float64")
+    xr.Dataset({"prec_mean_annual": (("y", "x"), prec)},
+               coords={"y": ys, "x": xs}).to_netcdf(PREC_NC)
+    print(f"[s1b] annual precip {prec[0, 0]:.0f} mm/yr -> {PREC_NC}", flush=True)
+else:
+    print("[s1b] elev/prec grids exist, skip")
+
+# ===================== s2/s3 soil ==========================================
+if not os.path.exists(SOIL_FINAL):
+    run(f"{KI}/s3_soil/fill_parameters1.py", f"{KI}/s3_soil", "s3_soil/fill_parameters1.py")
+else:
+    print("[s2] SOIL_PARAM_FINAL exists, skip")
+    RESULT["tools_used"].append("s3_soil/fill_parameters1.py")
+
+if not os.path.exists(SOIL_COMPLETE):
+    run(f"{KI}/s3_soil/fill_parameters2.py", f"{KI}/s3_soil", "s3_soil/fill_parameters2.py")
+else:
+    print("[s3] SOIL_PARAM_COMPLETE exists, skip")
+    RESULT["tools_used"].append("s3_soil/fill_parameters2.py")
+
+NCELL = n_cells()
+print(f"[grid] VIC cells = {NCELL}", flush=True)
+
+sp = pd.read_csv(SOIL_COMPLETE, sep=r"\s+", header=None)
+ksat = sp.iloc[:, 12]           # col 13 = Ksat layer 1
+expt = sp.iloc[:, 9]            # col 10 = expt layer 1
+bd = sp.iloc[:, 33]             # col 34 = bulk density layer 1
+print(f"[s3] Ksat {ksat.min():.1f}-{ksat.max():.1f} mm/day, expt {expt.min():.2f}-{expt.max():.2f}, "
+      f"bulk_density {bd.min():.0f}-{bd.max():.0f} kg/m3, elev {sp.iloc[:, 21].min():.0f}-"
+      f"{sp.iloc[:, 21].max():.0f} m", flush=True)
+if ksat.min() <= 0 or expt.min() <= 0 or bd.min() <= 0:
+    RESULT["tools_failed"].append(
+        "fill_parameters2.py left non-positive Ksat/expt/bulk_density -- global soil "
+        "interpolation did not reach this basin")
+    save("soil parameters are degenerate; VIC would produce meaningless runoff")
+    sys.exit(1)
+
+# ===================== s4 veg ==============================================
+def _veg_complete():
+    """One 2-token header line (cell_id, n_veg_classes) per VIC cell."""
+    if not os.path.exists(VEG_PARAM):
+        return False
+    n = sum(1 for l in open(VEG_PARAM) if len(l.split()) == 2)
+    print(f"[s4] validate: {n}/{NCELL} veg cell records", flush=True)
+    return n == NCELL
+
+
+if not os.path.exists(VEG_PARAM):
+    run(f"{KI}/s4_veg/process_vegetation_detailed.py", f"{KI}/s4_veg",
+        "s4_veg/process_vegetation_detailed.py", validate=_veg_complete)
+else:
+    print("[s4] veg param exists, skip")
+    RESULT["tools_used"].append("s4_veg/process_vegetation_detailed.py")
+
+# ===================== s5 forcing (MSWX 0.1deg 3-hourly, LOCAL) =============
+# Policy: non-China -> MSWX global 3-hourly. Each (variable, year) global file is
+# chunked one full-globe slab per timestep, so a spatial subset must decompress
+# every timestep of the file -- ~4-5 min/file. We therefore read each file EXACTLY
+# ONCE and extract all NCELL cells from that single pass (never per-cell). A per-
+# year npz cache under forcing_final/.mswx_year_cache/ makes the stage resumable:
+# a relaunch skips any year already cached. Final assembly writes the 7-column VIC
+# ASCII (AIR_TEMP, PREC, PRESSURE, SWDOWN, LWDOWN, VP, WIND) in FORCE_TYPE order,
+# tab-separated, %.4f, 8 steps/day -- byte-format identical to the NASA POWER path.
+#
+# MSWX variable/unit map (preflighted):
+#   Tair/air_temperature          degC       -> AIR_TEMP  (direct)
+#   P/precipitation               mm 3h-1    -> PREC      (clip >=0)
+#   Pres/surface_pressure         Pa         -> PRESSURE  (/1000 -> kPa)
+#   SWd/downward_shortwave_...     W m-2      -> SWDOWN    (clip >=0)
+#   LWd/downward_longwave_...      W m-2      -> LWDOWN    (direct)
+#   spechum/specific_humidity     kg kg-1    -> VP = q*P_kPa/(0.622+0.378*q) [kPa]
+#   Wind/wind_speed               m s-1      -> WIND      (clip >=0; 10 m, = CMFD)
+MSWX_VARS = [  # (role, subdir, file_prefix, datavar)
+    ("temp", "Tair",    "Tair",    "air_temperature"),
+    ("prec", "P",       "P",       "precipitation"),
+    ("pres", "Pres",    "Pres",    "surface_pressure"),
+    ("swd",  "SWd",     "SWd",     "downward_shortwave_radiation"),
+    ("lwd",  "LWd",     "LWd",     "downward_longwave_radiation"),
+    ("shum", "spechum", "spechum", "specific_humidity"),
+    ("wind", "wind",    "Wind",    "wind_speed"),
+]
+MSWX_CACHE = f"{FORCING_FINAL}/.mswx_year_cache"
+
+
+def _read_mswx_cells(cells):
+    """Extract MSWX 3-hourly series for all `cells` from local global files.
+
+    Returns (dates_ordered, {role: ndarray[nsteps, ncell]}). Resumable per-year.
+    """
+    import netCDF4
+    lats = np.array([c[0] for c in cells])
+    lons = np.array([c[1] for c in cells])
+    latmin, latmax = lats.min() - 0.25, lats.max() + 0.25
+    lonmin, lonmax = lons.min() - 0.25, lons.max() + 0.25
+
+    os.makedirs(MSWX_CACHE, exist_ok=True)
+    ncell = len(cells)
+    year_npz = []
+    for year in range(YEAR_START, YEAR_END + 1):
+        yc = f"{MSWX_CACHE}/year_{year}.npz"
+        year_npz.append(yc)
+        if os.path.exists(yc):
+            print(f"[s5] MSWX year {year} cached, skip", flush=True)
+            continue
+        print(f"[s5] MSWX year {year}: reading {len(MSWX_VARS)} global files ...", flush=True)
+        roles = {}
+        dates = None
+        for role, subdir, prefix, dvar in MSWX_VARS:
+            fp = f"{MSWX_ROOT}/{subdir}/{prefix}_{year}.nc"
+            if not os.path.isfile(fp):
+                raise FileNotFoundError(f"MSWX file missing: {fp}")
+            ds = netCDF4.Dataset(fp)
+            lat = ds.variables["lat"][:]
+            lon = ds.variables["lon"][:]
+            la = np.where((lat >= latmin) & (lat <= latmax))[0]
+            lo = np.where((lon >= lonmin) & (lon <= lonmax))[0]
+            i0, i1 = int(la.min()), int(la.max()) + 1
+            j0, j1 = int(lo.min()), int(lo.max()) + 1
+            sub = np.asarray(ds.variables[dvar][:, i0:i1, j0:j1], dtype="float64")
+            sub = np.ma.filled(np.ma.masked_invalid(sub), np.nan)
+            sublat = lat[i0:i1]
+            sublon = lon[j0:j1]
+            if dates is None:
+                tv = ds.variables["time"]
+                dts = netCDF4.num2date(tv[:], tv.units, only_use_cftime_datetimes=False)
+                dates = pd.to_datetime([str(x) for x in dts])
+            nstep = sub.shape[0]
+            out = np.empty((nstep, ncell), dtype="float64")
+            for ci, (clat, clon) in enumerate(cells):
+                ilat = int(np.argmin(np.abs(sublat - clat)))
+                ilon = int(np.argmin(np.abs(sublon - clon)))
+                out[:, ci] = sub[:, ilat, ilon]
+            roles[role] = out
+            ds.close()
+            print(f"[s5]   {subdir}: sub{sub.shape} nstep={nstep} "
+                  f"mean={np.nanmean(out):.3f}", flush=True)
+        tmp = yc + ".part"
+        np.savez_compressed(
+            tmp,
+            dates=np.array([d.value for d in dates], dtype="int64"),
+            **roles,
+        )
+        os.replace(tmp, yc)
+        print(f"[s5] MSWX year {year} cached ({nstep} steps) -> {yc}", flush=True)
+
+    # assemble in chronological order
+    all_dates = []
+    acc = {r[0]: [] for r in MSWX_VARS}
+    for yc in year_npz:
+        z = np.load(yc)
+        all_dates.append(pd.to_datetime(z["dates"]))
+        for role in acc:
+            acc[role].append(z[role])
+        z.close()
+    dates = pd.DatetimeIndex(np.concatenate([d.values for d in all_dates]))
+    data = {role: np.concatenate(acc[role], axis=0) for role in acc}
+    return dates, data
+
+
+def _mswx_defaults(role, air_temp_c):
+    if role == "temp":
+        return 15.0
+    if role == "prec":
+        return 0.0
+    if role == "pres":
+        return 101300.0
+    if role == "swd":
+        return 150.0
+    if role == "lwd":
+        return 5.67e-8 * (air_temp_c + 273.15) ** 4 * 0.8
+    if role == "shum":
+        return 0.005
+    if role == "wind":
+        return 2.0
+    return 0.0
+
+
+def build_mswx_forcing(cells):
+    dates, data = _read_mswx_cells(cells)
+    ncell = len(cells)
+    print(f"[s5] MSWX assembled: {len(dates)} steps x {ncell} cells", flush=True)
+
+    # NaN fill (MSWX is a complete global product; this is a guard)
+    temp = data["temp"]
+    for role in data:
+        d = data[role]
+        if np.isnan(d).any():
+            if role == "lwd":
+                fill = 5.67e-8 * (np.nan_to_num(temp, nan=15.0) + 273.15) ** 4 * 0.8
+                d = np.where(np.isnan(d), fill, d)
+            else:
+                d = np.where(np.isnan(d), _mswx_defaults(role, 15.0), d)
+            data[role] = d
+
+    air_temp = data["temp"]
+    prec = np.clip(data["prec"], 0.0, None)
+    pres_kpa = data["pres"] / 1000.0
+    swd = np.clip(data["swd"], 0.0, None)
+    lwd = data["lwd"]
+    q = np.clip(data["shum"], 0.0, None)
+    vp = q * pres_kpa / (0.622 + 0.378 * q)
+    wind = np.clip(data["wind"], 0.0, None)
+
+    os.makedirs(FORCING_FINAL, exist_ok=True)
+    for ci, (clat, clon) in enumerate(cells):
+        df = pd.DataFrame({
+            "AIR_TEMP": air_temp[:, ci],
+            "PREC": prec[:, ci],
+            "PRESSURE": pres_kpa[:, ci],
+            "SWDOWN": swd[:, ci],
+            "LWDOWN": lwd[:, ci],
+            "VP": vp[:, ci],
+            "WIND": wind[:, ci],
+        })
+        fn = f"{FORCING_PREFIX}{clat:.4f}_{clon:.4f}"
+        df.to_csv(f"{FORCING_FINAL}/{fn}", sep="\t", header=False, index=False,
+                  float_format="%.4f")
+    print(f"[s5] wrote {ncell} VIC forcing files -> {FORCING_FINAL}", flush=True)
+
+
+nday = int((pd.Timestamp(f"{YEAR_END}-12-31") - pd.Timestamp(f"{YEAR_START}-01-01")).days) + 1
+have = len(glob.glob(f"{FORCING_FINAL}/{FORCING_PREFIX}*"))
+
+
+def _forcing_complete():
+    fs = sorted(glob.glob(f"{FORCING_FINAL}/{FORCING_PREFIX}*"))
+    if len(fs) != NCELL:
+        print(f"[s5] validate: {len(fs)}/{NCELL} forcing files", flush=True)
+        return False
+    nrec = sum(1 for _ in open(fs[0]))
+    print(f"[s5] validate: {len(fs)}/{NCELL} files, {nrec} recs (expect {nday * 8})", flush=True)
+    return nrec == nday * 8
+
+
+if not _forcing_complete():
+    # cell (lat, lon) from the soil param file (cols 3,4), exactly what VIC uses
+    # to construct the forcing filename it opens.
+    cells = []
+    for line in open(SOIL_COMPLETE):
+        p = line.split()
+        if len(p) >= 4:
+            cells.append((float(p[2]), float(p[3])))
+    assert len(cells) == NCELL, f"soil cells {len(cells)} != NCELL {NCELL}"
+    print(f"[s5] building MSWX forcing for {len(cells)} cells "
+          f"({YEAR_START}-{YEAR_END}) -- LOCAL, no network fetch", flush=True)
+    build_mswx_forcing(cells)
+else:
+    print("[s5] forcing_final complete, skip")
+RESULT["tools_used"].append("s2_forcing MSWX builder (load_forcing convention: MSWX 0.1deg 3-hourly)")
+
+have = len(glob.glob(f"{FORCING_FINAL}/{FORCING_PREFIX}*"))
+if have < NCELL:
+    RESULT["tools_failed"].append(f"MSWX forcing: {have}/{NCELL} cells written")
+    save("MSWX forcing incomplete -> VIC would abort on a missing forcing file")
+    sys.exit(1)
+
+sample = sorted(glob.glob(f"{FORCING_FINAL}/{FORCING_PREFIX}*"))[0]
+nrec = sum(1 for _ in open(sample))
+print(f"[s5] {os.path.basename(sample)}: {nrec} records (expect {nday * 8})", flush=True)
+if nrec != nday * 8:
+    RESULT["tools_failed"].append(
+        f"MSWX forcing: {nrec} records != {nday * 8} (8 steps/day x {nday} days)")
+    save("forcing record count mismatch -> VIC would abort")
+    sys.exit(1)
+
+# ===================== s6 global param =====================================
+if not os.path.exists(GLOBAL_PARAM):
+    print("\n===== s6 config_paths.create_global_param =====", flush=True)
+    sys.path.insert(0, KI)
+    os.environ.update({k: v for k, v in ENV.items() if k.startswith("VIC_")})
+    import importlib
+    import config_paths
+    importlib.reload(config_paths)
+    config_paths.create_output_dirs()
+    if not config_paths.create_global_param():
+        RESULT["tools_failed"].append("config_paths.create_global_param(): template missing")
+        save("global param template missing")
+        sys.exit(1)
+    RESULT["tools_used"].append("config_paths.create_global_param()")
+else:
+    print("[s6] global param exists, skip")
+    RESULT["tools_used"].append("config_paths.create_global_param()")
+
+gp_txt = open(GLOBAL_PARAM).read()
+for key, want in [("STARTYEAR", str(YEAR_START)), ("ENDYEAR", str(YEAR_END)),
+                  ("FORCEYEAR", str(YEAR_START)), ("FORCE_STEPS_PER_DAY", "8"),
+                  ("FROZEN_SOIL", "FALSE")]:
+    line = [l for l in gp_txt.splitlines() if l.strip().startswith(key)]
+    print(f"[s6] {line}", flush=True)
+    assert line and want in line[0], f"{key} not set to {want} in global param"
+
+# ===================== s7 VIC ==============================================
+flux = glob.glob(f"{VIC_RESULT}/{BASIN}_fluxes_*.txt")
+if len(flux) < NCELL:
+    print(f"\n===== s7 vic_classic.exe ({len(flux)}/{NCELL} present) =====", flush=True)
+    os.makedirs(VIC_RESULT, exist_ok=True)
+    p = subprocess.run([VIC_EXE, "-g", GLOBAL_PARAM], capture_output=True, text=True)
+    print("rc =", p.returncode, flush=True)
+    print((p.stdout or "")[-1500:], flush=True)
+    if p.returncode != 0:
+        print("STDERR:", (p.stderr or "")[-3000:], flush=True)
+        RESULT["tools_failed"].append(f"vic_classic.exe: rc={p.returncode} :: {(p.stderr or '')[-400:]}")
+        save("VIC binary failed")
+        sys.exit(1)
+    flux = glob.glob(f"{VIC_RESULT}/{BASIN}_fluxes_*.txt")
+print(f"[s7] flux files: {len(flux)}", flush=True)
+if len(flux) < NCELL * 0.95:
+    RESULT["tools_failed"].append(f"vic_classic.exe: only {len(flux)}/{NCELL} flux files")
+    save("VIC produced too few flux files")
+    sys.exit(1)
+RESULT["tools_used"].append("vic_classic.exe (VIC 5.1.0 classic driver)")
+
+# ===================== s8 routing params ===================================
+def _routing_complete():
+    need = [f"{ROUTING}/{STA}_direc.txt", f"{ROUTING}/{STA}_frac.txt",
+            f"{ROUTING}/{STA}_xmask.txt", f"{ROUTING}/{STA}_staloc.txt",
+            f"{ROUTING}/UH.all"]
+    missing = [os.path.basename(p) for p in need
+               if not (os.path.exists(p) and os.path.getsize(p) > 0)]
+    print(f"[s8] validate: missing={missing or 'none'}", flush=True)
+    return not missing
+
+
+if not os.path.exists(f"{ROUTING}/{STA}_direc.txt"):
+    run(f"{KI}/s5_routing/build_routing_param.py", KI, "s5_routing/build_routing_param.py",
+        validate=_routing_complete)
+else:
+    print("[s8] routing params exist, skip")
+    RESULT["tools_used"].append("s5_routing/build_routing_param.py")
+
+# ===================== s9 Lohmann routing ==================================
+# Velocity is IDENTIFIED against the observed lag on the calibration window only
+# (never on NSE), exactly as at Bengbu/Harbin (dt_vic_028). The default 1.5 m/s
+# is a Bengbu value and must not be inherited.
+day_files = glob.glob(f"{ROUT_OUT}/*.day")
+if not day_files:
+    print("\n===== s9 route_1.0/rout =====", flush=True)
+    os.makedirs(VIC_IN, exist_ok=True)
+    os.makedirs(ROUT_OUT, exist_ok=True)
+    n = 0
+    for fn in sorted(os.listdir(VIC_RESULT)):
+        if not fn.endswith(".txt") or fn.startswith("._"):
+            continue
+        df = pd.read_csv(f"{VIC_RESULT}/{fn}", sep=r"\s+", skiprows=3, header=None)
+        # 0..2 = Y M D; 3 = OUT_PREC; 16 = OUT_RUNOFF; 17 = OUT_BASEFLOW; 18 = OUT_EVAP
+        # rout expects: year month day prec evap runoff baseflow
+        out = df.iloc[:, [0, 1, 2, 3, 18, 16, 17]]
+        new = fn.replace(f"{BASIN}_", "").replace(".txt", "")
+        out.to_csv(f"{VIC_IN}/{new}", sep="\t", header=False, index=False, float_format="%.4f")
+        n += 1
+    print(f"[s9] preprocessed {n} flux files -> vic_in/", flush=True)
+
+    for f in glob.glob(f"{ROUTING}/*.uh_s"):
+        os.remove(f)
+    p = subprocess.run([ROUT_EXE, "rout_global.txt"], cwd=ROUTING,
+                       capture_output=True, text=True, timeout=7200)
+    print(f"[s9] rout rc={p.returncode}", flush=True)
+    print("\n".join((p.stdout or "").strip().splitlines()[-10:]), flush=True)
+    if p.stderr:
+        print("STDERR:", p.stderr[-1500:], flush=True)
+    day_files = glob.glob(f"{ROUT_OUT}/*.day")
+    if not day_files:
+        RESULT["tools_failed"].append("route_1.0/rout: no .day output")
+        save("Lohmann routing produced no output")
+        sys.exit(1)
+RESULT["tools_used"].append("route_1.0/src/rout (Lohmann routing binary)")
+
+# ===================== s9b velocity identification =========================
+# Match the routed UH lag to the observed CAL-window lag (dt_vic_028). Never fit
+# velocity to NSE. `observed_lag_days` returns the signed lag (days) by which the
+# default-velocity sim LEADS obs; the target UH lag is uh_lag(1.5)+that lead.
+# Bisect velocity down from 1.5; if the target exceeds the scheme ceiling
+# (uh_lag at v=0.10), pin to the 0.10 m/s pool bound and report the plateau.
+ROUTE_START = (YEAR_START, 1)
+ROUTE_END = (YEAR_END, 12)
+sys.path.insert(0, KI)
+VELOCITY = None
+VEL_INFO = {}
+try:
+    from s5_routing.run_routing import route, observed_lag_days
+    import netCDF4 as _nc
+
+    def _load_obs_series():
+        with _nc.Dataset(OBS_NC) as ds:
+            t = ds.variables["date"]
+            dd = _nc.num2date(t[:], t.units, only_use_cftime_datetimes=False)
+            q = np.asarray(ds.variables["streamflow"][:], dtype="float64")
+        s = pd.Series(q, index=pd.to_datetime([str(d) for d in dd]))
+        s = s[np.isfinite(s) & (s >= 0)]
+        return s * CARAVAN_AREA_KM2 / 86.4
+
+    obs_full = _load_obs_series()
+    obs_cal = obs_full.loc[CAL[0]:CAL[1]]
+
+    def _route(v):
+        s = route(ROUTING, velocity=v, diffusivity=800.0,
+                  route_start=ROUTE_START, route_end=ROUTE_END)
+        return s, float(s.attrs.get("uh_lag_days", np.nan))
+
+    sim15, lag15 = _route(1.5)
+    sim0, ceil_lag = _route(0.10)
+    ol = observed_lag_days(obs_cal, sim15.loc[CAL[0]:CAL[1]])   # dict
+    signed = int(ol["best_lag_days"])          # >0 => sim leads obs (too fast)
+    target = lag15 + signed
+    VEL_INFO = {
+        "uh_lag_days_at_1.5": lag15, "uh_lag_ceiling_at_0.10": ceil_lag,
+        "observed_signed_lag_days_cal": signed, "target_uh_lag_days": target,
+        "r_at_zero_lag_cal": ol["r_at_zero_lag"],
+        "nse_ceiling_at_zero_lag_cal": ol["nse_ceiling_at_zero_lag"],
+    }
+    print(f"[s9b] uh_lag(1.5)={lag15:.2f} d, ceiling uh_lag(0.10)={ceil_lag:.2f} d, "
+          f"obs signed lag={signed} d -> target={target:.2f} d "
+          f"(r@0={ol['r_at_zero_lag']:.3f}, NSE ceiling={ol['nse_ceiling_at_zero_lag']:.3f})",
+          flush=True)
+
+    if signed <= 0 or target <= lag15:
+        VELOCITY = 1.5
+        print("[s9b] sim not early -> keep default v=1.5", flush=True)
+    elif target >= ceil_lag:
+        VELOCITY = 0.10  # demand exceeds scheme ceiling -> pin to pool lower bound
+        print("[s9b] target lag exceeds scheme ceiling -> pin v=0.10 (plateau)", flush=True)
+    else:
+        lo_v, hi_v = 0.10, 1.5
+        for _ in range(20):
+            mid = 0.5 * (lo_v + hi_v)
+            _, lag_mid = _route(mid)
+            if lag_mid > target:   # lag too long -> need faster water -> raise velocity
+                lo_v = mid
+            else:
+                hi_v = mid
+        VELOCITY = 0.5 * (lo_v + hi_v)
+    print(f"[s9b] velocity in use = {VELOCITY:.4f} m/s", flush=True)
+    sim_final, lag_final = _route(VELOCITY)
+    VEL_INFO["uh_lag_days_in_use"] = lag_final
+    sim = sim_final
+except Exception as e:
+    import traceback
+    print(f"[s9b] velocity identification unavailable ({e}); using rout .day at default",
+          flush=True)
+    traceback.print_exc()
+    sim = None
+
+# ===================== s10 score ===========================================
+print("\n===== s10 scoring =====", flush=True)
+if sim is None:
+    rd = pd.read_csv(sorted(day_files)[0], sep=r"\s+", header=None,
+                     names=["year", "month", "day", "Q"])
+    rd["date"] = pd.to_datetime(rd[["year", "month", "day"]])
+    sim = rd.set_index("date")["Q"]
+    VELOCITY = VELOCITY if VELOCITY is not None else 1.5
+else:
+    sim = pd.Series(np.asarray(sim.values, dtype="float64"),
+                    index=pd.to_datetime(sim.index)).rename("Q")
+
+import netCDF4
+with netCDF4.Dataset(OBS_NC) as ds:
+    t = ds.variables["date"]
+    dates = netCDF4.num2date(t[:], t.units, only_use_cftime_datetimes=False)
+    q_mmday = np.asarray(ds.variables["streamflow"][:], dtype="float64")
+obs = pd.Series(q_mmday, index=pd.to_datetime([str(d) for d in dates]))
+obs = obs[np.isfinite(obs) & (obs >= 0)]
+# Caravan streamflow is a catchment-mean depth; convert to m3/s with the same
+# basin polygon Caravan used, so sim (m3/s from rout) and obs share units.
+obs = obs * CARAVAN_AREA_KM2 / 86.4
+
+paired = pd.concat([obs.rename("obs"), sim.rename("sim")], axis=1).dropna()
+paired = paired.loc[EVAL_START:EVAL_END]
+print(f"[s10] paired days={len(paired)} obs_mean={paired['obs'].mean():.2f} "
+      f"sim_mean={paired['sim'].mean():.2f} m3/s", flush=True)
+
+if len(paired) < 2:
+    RESULT["metrics"]["metrics_null_reason"] = (
+        f"no temporal overlap: sim {sim.index.min()}..{sim.index.max()}, "
+        f"obs {obs.index.min()}..{obs.index.max()}")
+    save("no temporal overlap between routed sim and obs")
+    sys.exit(1)
+
+m = {k.lower(): float(v) for k, v in all_metrics(paired["obs"].values, paired["sim"].values).items()}
+RESULT["tools_used"].append("ki_tools_common.metrics.all_metrics")
+
+cv = compute_calval_metrics(paired.index.values, paired["obs"].values, paired["sim"].values,
+                            cal_start=CAL[0], cal_end=CAL[1],
+                            val_start=VAL[0], val_end=VAL[1])
+RESULT["tools_used"].append("validators.standard_calval.compute_calval_metrics")
+
+RESULT["metrics"] = {
+    "nse": m["nse"], "kge": m["kge"], "pbias": m["pbias"], "r": m["r"],
+    "rmse": m.get("rmse"),
+    "period": f"{EVAL_START}..{EVAL_END}",
+    "n_paired": int(len(paired)),
+    "obs_mean_m3s": float(paired["obs"].mean()),
+    "sim_mean_m3s": float(paired["sim"].mean()),
+    "nse_cal": float(cv["calibration"]["NSE"]), "kge_cal": float(cv["calibration"]["KGE"]),
+    "pbias_cal": float(cv["calibration"]["PBIAS"]), "r_cal": float(cv["calibration"]["r"]),
+    "nse_val": float(cv["validation"]["NSE"]), "kge_val": float(cv["validation"]["KGE"]),
+    "pbias_val": float(cv["validation"]["PBIAS"]), "r_val": float(cv["validation"]["r"]),
+    "period_calibration": f"{CAL[0]}..{CAL[1]}",
+    "period_validation": f"{VAL[0]}..{VAL[1]}",
+}
+
+# ---- water balance: basin-mean over the evaluation period ----
+acc = {"P": [], "ET": [], "RO": [], "S": []}
+for fn in sorted(glob.glob(f"{VIC_RESULT}/{BASIN}_fluxes_*.txt")):
+    df = pd.read_csv(fn, sep=r"\s+", skiprows=2)
+    df["date"] = pd.to_datetime(df[["YEAR", "MONTH", "DAY"]].rename(
+        columns={"YEAR": "year", "MONTH": "month", "DAY": "day"}))
+    df = df[(df["date"] >= EVAL_START) & (df["date"] <= EVAL_END)]
+    if df.empty:
+        continue
+    stor = (df["OUT_SOIL_MOIST_0"] + df["OUT_SOIL_MOIST_1"] +
+            df["OUT_SOIL_MOIST_2"] + df["OUT_SWE"])
+    acc["P"].append(df["OUT_PREC"].sum())
+    acc["ET"].append(df["OUT_EVAP"].sum())
+    acc["RO"].append((df["OUT_RUNOFF"] + df["OUT_BASEFLOW"]).sum())
+    acc["S"].append(stor.iloc[-1] - stor.iloc[0])
+
+ndays = int((pd.Timestamp(EVAL_END) - pd.Timestamp(EVAL_START)).days) + 1
+wb = validate_water_balance(precip_mm=float(np.mean(acc["P"])),
+                           et_mm=float(np.mean(acc["ET"])),
+                           runoff_mm=float(np.mean(acc["RO"])),
+                           delta_storage_mm=float(np.mean(acc["S"])),
+                           period_days=ndays)
+RESULT["water_balance"] = {
+    "status": wb["status"],
+    "residual_pct": float(wb["residual_pct"]) if wb.get("residual_pct") is not None else None,
+    "residual_mm": float(wb["residual_mm"]) if wb.get("residual_mm") is not None else None,
+    "basin_mean_P_mm_yr": float(np.mean(acc["P"])) / ndays * 365.25,
+    "basin_mean_ET_mm_yr": float(np.mean(acc["ET"])) / ndays * 365.25,
+    "basin_mean_Q_mm_yr": float(np.mean(acc["RO"])) / ndays * 365.25,
+    "n_cells": NCELL,
+}
+RESULT["tools_used"].append("ki_tools_common.validation.validate_water_balance")
+RESULT["basin"] = {
+    "delineated_area_km2": DELIN_AREA_KM2,
+    "caravan_area_km2": CARAVAN_AREA_KM2,
+    "area_err_pct": 100 * (DELIN_AREA_KM2 / CARAVAN_AREA_KM2 - 1),
+}
+RESULT["routing"] = {"velocity_m_s": VELOCITY, "diffusivity_m2_s": 800.0, **VEL_INFO}
+RESULT["status"] = "completed"
+
+save(
+    f"VERIFIER at the SOUTH NAHANNI RIVER, above Virginia Falls, NWT Canada ({GAUGE_ID}, "
+    f"GRDC-Caravan extension) -- a different continent, forcing dataset and DEM from the "
+    f"允景洪 Jinghong (Lancang/Mekong) real-case, and a COLD snowmelt regime (frac_snow ~0.44, "
+    f"subarctic 61.6N) maximally distinct from tropical-monsoon Jinghong. Full KI chain re-run "
+    f"from scratch with the REAL binaries: Copernicus GLO-30 mosaic -> delineate_basin "
+    f"({DELIN_AREA_KM2:.0f} km2 vs {CARAVAN_AREA_KM2:.0f} km2 Caravan polygon, "
+    f"{100 * (DELIN_AREA_KM2 / CARAVAN_AREA_KM2 - 1):+.1f}%) -> s1_grid ({NCELL} cells @0.25deg) "
+    f"-> s3_soil (fill_parameters2 interpolates the GLOBAL 0.5deg soil file, China-only HWSD is "
+    f"irrelevant) -> s4_veg (AVHRR global) -> LOCAL MSWX 0.1deg 3-hourly forcing (8 steps/day, 7 "
+    f"cols; each var/year global file read once, all {NCELL} cells extracted, per-year npz cache "
+    f"for resume; NO network fetch -- unlike the prior NASA POWER attempt that hung) -> "
+    f"vic_classic.exe -> build_routing_param.py -> route_1.0/rout (velocity IDENTIFIED on the CAL "
+    f"lag, never NSE; dt_vic_028; v={VELOCITY}). paired={len(paired)} d ({EVAL_START}..{EVAL_END}); "
+    f"obs_mean={paired['obs'].mean():.2f} sim_mean={paired['sim'].mean():.2f} m3/s. "
+    f"NSE={m['nse']:.3f} r={m['r']:.3f} KGE={m['kge']:.3f} PBIAS={m['pbias']:+.1f}%. "
+    f"cal(2005-09) NSE={cv['calibration']['NSE']:.3f} KGE={cv['calibration']['KGE']:.3f}; "
+    f"val(2010-14, held out) NSE={cv['validation']['NSE']:.3f} KGE={cv['validation']['KGE']:.3f} "
+    f"PBIAS={cv['validation']['PBIAS']:+.1f}%. UNCALIBRATED, same VIC defaults and same standard "
+    f"(non-frozen) global-param template the Jinghong real case used -- directly comparable. "
+    f"Water balance {wb['status']} ({RESULT['water_balance']['residual_pct']}%). Obs are Caravan "
+    f"catchment-mean depths (mm/day) converted to m3/s with the Caravan polygon area so units "
+    f"match the routed sim and metrics are comparable to Jinghong's. South Nahanni drains Nahanni "
+    f"National Park Reserve with NO mainstem dams -- chosen because route_1.0 has no reservoir "
+    f"module. MSWX wind is 10 m (same convention as CMFD at the real case), unlike the 2 m NASA "
+    f"POWER path. CAVEAT: this subarctic basin is cold enough that FROZEN_SOIL would matter "
+    f"(cf. Harbin/dt_vic_031) and 3-yr spin-up may under-equilibrate the deep store (dt_vic_030); "
+    f"the standard non-frozen uncalibrated protocol is kept deliberately for comparability, and "
+    f"any residual snow-timing/volume bias is reported, not tuned away."
+)
+print(json.dumps(RESULT["metrics"], indent=2), flush=True)
+print("DONE", flush=True)

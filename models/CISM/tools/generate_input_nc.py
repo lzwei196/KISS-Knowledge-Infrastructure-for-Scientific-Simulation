@@ -147,6 +147,81 @@ def generate_slab(ewn, nsn, dew, dns, slope=0.01, thickness=1000.0):
 
 
 # ---------------------------------------------------------------------------
+# BedMachine ingestion (real ice-sheet domain)
+# ---------------------------------------------------------------------------
+
+def _block_mean(arr, f):
+    """Block-mean coarsen a 2-D array by integer factor f (crops the remainder)."""
+    ny, nx = arr.shape
+    ny2, nx2 = (ny // f) * f, (nx // f) * f
+    a = np.asarray(arr[:ny2, :nx2], dtype=np.float64)
+    return a.reshape(ny2 // f, f, nx2 // f, f).mean(axis=(1, 3))
+
+
+def generate_bedmachine(nc_path, dew, dns):
+    """
+    Ingest a BedMachine NetCDF (Greenland v6 / Antarctica v4.1) and coarsen the
+    bed topography and ice thickness onto a regular CISM grid.
+
+    BedMachine grids are polar-stereographic in METERS (native 150 m Greenland /
+    500 m Antarctica) with `x` ascending and `y` DESCENDING. CISM expects the
+    scalar grid with y1 ascending, so the coarsened fields are flipped in y.
+
+    Returns (fields, grid) where:
+      fields = {topg, thk, artm, acab, usurf, obs_usurf}
+      grid   = {ewn, nsn, dew, dns}
+    The coarsened observed `surface` is carried as `obs_usurf` for the
+    spatial_snapshot validation against the model-computed `usurf`.
+    """
+    ds = netCDF4.Dataset(nc_path, "r")
+    x = ds.variables["x"][:]
+    y = ds.variables["y"][:]
+    native_dx = abs(float(x[1] - x[0]))   # 150 m (Greenland v6)
+
+    # Integer coarsening factor from requested spacing
+    f = max(1, int(round(dew / native_dx)))
+    dew_actual = f * native_dx
+    dns_actual = f * abs(float(y[1] - y[0]))
+
+    bed = ds.variables["bed"][:]
+    thickness = ds.variables["thickness"][:]
+    surface = ds.variables["surface"][:]
+    ds.close()
+
+    topg = _block_mean(bed, f)
+    thk = np.clip(_block_mean(thickness, f), 0.0, None)
+    obs_usurf = _block_mean(surface, f)
+
+    # CISM wants y1 ascending; BedMachine y is descending -> flip in y (axis 0)
+    topg = np.flipud(topg).copy()
+    thk = np.flipud(thk).copy()
+    obs_usurf = np.flipud(obs_usurf).copy()
+
+    nsn, ewn = topg.shape
+
+    # artm/acab: not the observable here (usurf snapshot), supply physically
+    # plausible Greenland-wide constants so the run is well-posed.
+    artm = np.full((nsn, ewn), -20.0, dtype=np.float64)
+    acab = np.full((nsn, ewn), 0.3, dtype=np.float64)
+
+    # Initial diagnostic surface (CISM recomputes usurf from topg+thk internally)
+    usurf = np.where(thk > 0, np.maximum(topg, 0.0) + thk, np.maximum(topg, 0.0))
+
+    print(f"BedMachine ingest: native {native_dx:.0f} m, factor {f} "
+          f"-> {dew_actual:.0f} m grid")
+    print(f"  Coarsened grid: {ewn} x {nsn} cells")
+    print(f"  topg range: {topg.min():.1f} .. {topg.max():.1f} m")
+    print(f"  thk  range: {thk.min():.1f} .. {thk.max():.1f} m "
+          f"(ice-covered cells: {int((thk>1).sum())})")
+    print(f"  obs surface range: {obs_usurf.min():.1f} .. {obs_usurf.max():.1f} m")
+
+    fields = {"topg": topg, "thk": thk, "artm": artm, "acab": acab,
+              "usurf": usurf, "obs_usurf": obs_usurf}
+    grid = {"ewn": ewn, "nsn": nsn, "dew": dew_actual, "dns": dns_actual}
+    return fields, grid
+
+
+# ---------------------------------------------------------------------------
 # Custom loader
 # ---------------------------------------------------------------------------
 
@@ -222,6 +297,9 @@ def write_netcdf(output_path, fields, ewn, nsn, upn, dew, dns):
         "thk":   ("f8", ("time", "y1", "x1"), "m", "ice thickness"),
         "artm":  ("f8", ("time", "y1", "x1"), "degC", "surface air temperature"),
         "acab":  ("f8", ("time", "y1", "x1"), "m/year", "surface mass balance"),
+        "usurf": ("f8", ("time", "y1", "x1"), "m", "upper ice surface elevation"),
+        "obs_usurf": ("f8", ("time", "y1", "x1"), "m",
+                      "observed upper surface (resampled, validation reference)"),
     }
 
     for vname, (dtype, dims, units, long_name) in var_specs.items():
@@ -296,8 +374,10 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate CISM NetCDF input files"
     )
-    parser.add_argument("--mode", choices=["dome", "slab", "custom"],
+    parser.add_argument("--mode", choices=["dome", "slab", "custom", "bedmachine"],
                         default="dome", help="Generation mode")
+    parser.add_argument("--bedmachine",
+                        help="Path to BedMachine NetCDF (mode=bedmachine)")
     parser.add_argument("--ewn", type=int, default=31, help="E-W grid points")
     parser.add_argument("--nsn", type=int, default=31, help="N-S grid points")
     parser.add_argument("--upn", type=int, default=11, help="Sigma levels")
@@ -321,6 +401,20 @@ def main():
     parser.add_argument("--acab", help="CSV file for surface mass balance")
 
     args = parser.parse_args()
+
+    # BedMachine derives its grid from the file itself; handle before the
+    # generic CLI-grid validation (which assumes ewn/nsn/dew/dns are given).
+    if args.mode == "bedmachine":
+        if not args.bedmachine or not os.path.exists(args.bedmachine):
+            print(f"VALIDATION ERROR: --bedmachine path not found: {args.bedmachine}")
+            sys.exit(1)
+        fields, grid = generate_bedmachine(args.bedmachine, args.dew, args.dns)
+        args.ewn, args.nsn = grid["ewn"], grid["nsn"]
+        args.dew, args.dns = grid["dew"], grid["dns"]
+        write_netcdf(args.output, fields, args.ewn, args.nsn, args.upn,
+                     args.dew, args.dns)
+        validate_output(args.output, args.ewn, args.nsn)
+        return
 
     # Step 1: Validate inputs
     validate_inputs(args)

@@ -579,7 +579,19 @@ def validate():
 
 
 def main():
-    """Entry point: run validation and output results."""
+    """Entry point: run validation and output results.
+
+    The target may be supplied on the command line
+    (``validate_weather_file.py /path/to/SITE0001.WTH``) so a batch driver can
+    validate many .WTH files without rewriting the module. The module global
+    WEATHER_FILE_PATH stays the default when no argument is given, so existing
+    set-the-global callers are unaffected.
+    """
+    global WEATHER_FILE_PATH
+    _pos = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if _pos:
+        WEATHER_FILE_PATH = _pos[0]
+
     # -----------------------------------------------------------------------
     # PRECONDITIONS
     # -----------------------------------------------------------------------

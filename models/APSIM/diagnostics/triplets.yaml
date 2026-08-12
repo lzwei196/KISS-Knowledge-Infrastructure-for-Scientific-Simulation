@@ -457,3 +457,65 @@
     prevention: "convert_met.py flags VP outside 1-60 hPa range"
   severity: degraded
   cross_references: [dt_001, dt_007]
+
+- id: dt_019
+  stage: s6_validation
+  failure_domain: silent_error
+  symptom:
+    description: "Point crop simulation over-predicts a regional ACTUAL-yield aggregate (SPAM/FAOSTAT) by ~1.5-2.5x with low cross-cell r. PBIAS large and positive despite correct units and a physically sensible sim yield."
+    error_pattern: "PBIAS > 50 with sim/obs ratio 1.5-2.5 and sim yield physically reasonable"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Attainable-vs-actual yield-gap mismatch: default point run with generic HWSD soils + uniform adequate N simulates attainable (water/radiation-limited) yield; SPAM _Y_ / FAOSTAT report ACTUAL on-farm yield depressed by the regional yield gap (nutrient/subsoil constraints, frost, weeds). Distinct from the dt_017 unit trap, where the ratio is ~100:1."
+    explanation: >
+      SPAM _Y_ = production/harvested-area is an actual yield. A generic
+      point setup with no nutrient/subsoil/pest limitation reaches the
+      water-limited attainable yield, which in low-input belts (e.g. WA
+      wheatbelt) is ~2x the actual regional average.
+    affected_components: [Validation, Nitrogen, Physical, SowingRule]
+  remedy:
+    action: "Region-match management (regional-average N, realistic low-PAWC soils, cultivar/rainfed status) before running, OR score against attainable-yield references; report residual +PBIAS as the yield gap."
+    tool_to_run: "build_apsimx.py / convert_soil.py (region-matched inputs)"
+    manual_steps:
+      - "Confirm sim/obs ratio is ~2x (not 10x/100x) to rule out dt_006/dt_017 unit errors"
+      - "Lower applied+mineralized N to the regional average N-limited supply"
+      - "Cap PAWC / rooting depth for region soils (WA sandplain); do not accept generic HWSD PAWC"
+      - "If validating model skill, compare against attainable/top-decile references, not SPAM actual yield"
+    prevention: "SKILL.md / s6_validation 'Regional-aggregate actual-yield comparison' decision rule"
+  severity: silent
+  cross_references: [dt_017, dt_006]
+
+- id: dt_020
+  stage: s6_validation
+  failure_domain: silent_error
+  symptom:
+    description: "Inter-annual Pearson r is near zero or NEGATIVE (and NSE strongly negative) when a multi-season point run is compared to a GRIDDED or district/national yield product (GDHY, SPAM, FAOSTAT), even though simulated yields are physically sensible and PBIAS is moderate."
+    error_pattern: "r < 0 with physically reasonable yields against a gridded/national yield aggregate"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Point-series metric family (raw NSE/r/KGE via all_metrics) applied to a regional_aggregate_time_series obs that carries a secular technology/management trend."
+    explanation: >
+      dag.yaml outputs[Grain.Wt].observability declares obs_shape
+      regional_aggregate_time_series -> comparison_mode
+      aggregate_trend_comparison, determining_metric pbias, caveat "detrend
+      before comparing", detrending_options [none, linear_residual,
+      decadal_mean]. A gridded/statistical yield rises with technology and
+      management, which a constant-management weather-driven simulation does
+      not reproduce; the opposing trends drive raw Pearson r negative and hide
+      whatever real inter-annual skill exists. Observed at the GDHY 0.5-degree
+      cell 37.75S/58.75W (Balcarce, AR): raw r = -0.19 while r_detr = +0.14 and
+      r_firstdiff = +0.33 on the identical obs/sim pairs.
+    affected_components: [Validation]
+  remedy:
+    action: "Set obs_shape to regional_aggregate_time_series and score with ki_tools_common.metrics.trend_metrics (linear_residual detrending); keep pbias as the determining metric."
+    tool_to_run: "ki_tools_common.metrics.trend_metrics (metrics.py:492)"
+    manual_steps:
+      - "If resolved_obs.granularity == 'grid' or the obs is a statistical aggregate, obs_shape is regional_aggregate_time_series - never point_time_series"
+      - "Call trend_metrics(obs, sim) alongside all_metrics; report r_detr, r_firstdiff, slope_ratio, slope_obs, slope_sim"
+      - "Report pbias as the determining metric and state the detrending option used"
+      - "Do NOT truncate the record to a management-consistent sub-window instead of detrending - truncation is not a dag detrending_option; report it as a labelled diagnostic only"
+      - "Keep period_calibration and period_validation disjoint"
+      - "A residual positive pbias after this is the attainable-vs-actual yield gap - see dt_019, not a metric problem"
+    prevention: "SKILL.md sections 8.1-8.3 and docs/s6_validation.md 'Obs-shape selection and detrending'"
+  severity: silent
+  cross_references: [dt_019, dt_017, dt_006]

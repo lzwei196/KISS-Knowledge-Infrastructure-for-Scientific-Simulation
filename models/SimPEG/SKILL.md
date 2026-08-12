@@ -270,6 +270,12 @@ mesh.plot_slice(physical_property, normal='Y', ind=slice_index)
 
 ---
 
+## Output Description
+
+SimPEG's `inv.run(m0)` returns the recovered model vector as a numpy array with one value per active mesh cell, representing the inverted physical property (e.g., density in kg/m^3, conductivity in S/m, susceptibility in SI). The predicted data vector is obtained via `sim.dpred(m_recovered)`. Use `model_map * m_recovered` to transform from model space back to physical property space. The `parse_results.py` tool exports: (1) the recovered model as a CSV with columns `x, y, z, property_value`, (2) a convergence log with iteration number, data misfit (phi_d), regularization (phi_m), and trade-off parameter (beta), and (3) optional model-slice plots and observed-vs-predicted data comparisons.
+
+---
+
 ## 7. Calibration / Tuning Parameters
 
 | Priority | Parameter                 | Typical Range         | Effect                              |

@@ -249,8 +249,12 @@ def write_subcat_dat(output_file, basin_name, twi_hist,
     n_channels = len(distances)
 
     with open(output_file, 'w') as f:
-        # Header
-        f.write(f"1  1  0\n")
+        # Header: num_sub_catchments  imap  yes_print_output
+        # yes_print_output MUST be 1, else the standalone binary writes neither
+        # topmod.out nor hyd.out (topmodel.c gates all fprintf on this flag;
+        # results() line ~29 writes hyd.out only when TRUE). The shipped Taegu
+        # demo uses "1  1  1".
+        f.write(f"1  1  1\n")
         f.write(f"{basin_name}\n")
         f.write(f"{n_classes}  {area_fraction:.0f}\n")
 

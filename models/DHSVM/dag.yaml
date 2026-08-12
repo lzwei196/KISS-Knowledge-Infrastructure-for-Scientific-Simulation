@@ -1,0 +1,716 @@
+template_version: "3.5"
+
+identity:
+  model_id: "DHSVM"
+  scientific_reference_version: "DHSVM 3.2 (Wigmosta et al. 1994; PNNL/UW release 2018-02-23)"
+  implementation:
+    id: "dhsvm-pnnl-32"
+    version: "3.2"
+    provenance: "C; University of Washington / PNNL distributed DHSVM-PNNL 3.2 source (github.com/pnnl/DHSVM-PNNL)."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c"
+  license: ""
+  repo_url: "https://github.com/pnnl/DHSVM-PNNL"
+
+boundary:
+  scope_in:
+    - "Spatially distributed water and energy balance per grid cell in mountainous watersheds"
+    - "Energy-balance snow accumulation, melt, canopy snow interception, and snow sliding/avalanche redistribution"
+    - "Two-layer (overstory/understory) vegetation interception, evaporation, and transpiration"
+    - "Multi-layer unsaturated soil-moisture column and percolation"
+    - "Topography-driven saturated lateral subsurface flow between cells"
+    - "Overland (kinematic-wave) and channel-network (Muskingum-Cunge) routing; optional road routing"
+    - "Optional stream temperature (RBM coupling) and erosion/sediment/water-quality modules"
+  scope_out:
+    - "Dynamic vegetation / LAI growth — LAI prescribed as monthly per-class values, not simulated"
+    - "Lateral subsurface flow under unsaturated conditions — lateral movement only occurs when soil layers are saturated"
+    - "Geographic (unprojected) grids — DEM must be projected (typically UTM)"
+  spatial: "2-D grid"
+  temporal: "hourly"
+  closure: "both"
+  notes: "Coupled water and energy budget closed per grid cell per timestep (P - Eio - Eiu - Es - Eto - Etu - Qs = dSs1 + dSs2 + dSio + dSiu + dW). Basin-scale closure reported by FinalMassBalance in mm; acceptable closure error is < 1% of total inflow. Timestep is configurable in whole hours (3-hourly common); no sub-hour (minute) resolution is supported, and no fixed default is documented."
+
+inputs:
+  forcing:
+    - category: forcing
+      name: "Air temperature (Tair)"
+      unit: "deg C"
+      source_kind: forcing
+      model_input_format: "per-cell ASCII met file data_<lat>_<lon>, column Tair"
+      notes: "Drives rain/snow partition and turbulent fluxes; supplied in Celsius (Kelvin input silently suppresses all snow)."
+    - category: forcing
+      name: "Wind speed"
+      unit: "m/s"
+      source_kind: forcing
+      model_input_format: "per-cell ASCII met file, wind column"
+    - category: forcing
+      name: "Relative humidity"
+      unit: "% (0-100)"
+      source_kind: forcing
+      model_input_format: "per-cell ASCII met file, RH column"
+      notes: "Sets vapor pressure deficit for ET; fraction (0-1) input silently inflates ET."
+    - category: forcing
+      name: "Incoming shortwave radiation (Swin)"
+      unit: "W/m2"
+      source_kind: forcing
+      model_input_format: "per-cell ASCII met file, Swin column"
+      notes: "0 at night, diurnal peak ~800-1200 W/m2; partitioned into beam/diffuse and visible (VISFRACT) internally."
+    - category: forcing
+      name: "Incoming longwave radiation (Lwin)"
+      unit: "W/m2"
+      source_kind: forcing
+      model_input_format: "per-cell ASCII met file, Lwin column"
+    - category: forcing
+      name: "Precipitation"
+      unit: "m/timestep"
+      source_kind: forcing
+      model_input_format: "per-cell ASCII met file, precip column"
+      notes: "Read as meters per timestep, NOT mm; distributed by inverse-distance weighting plus precipitation lapse rate."
+  parameters:
+    - category: terrain
+      name: "Digital elevation model (DEM)"
+      unit: "m"
+      source_kind: dataset_lookup
+      model_input_format: "flat binary float32, row-major, exactly nrows*ncols values"
+      notes: "Provides elevation for lapse rates; derives slope and aspect; must be projected (UTM)."
+    - category: terrain
+      name: "Slope"
+      unit: "radians"
+      source_kind: dataset_lookup
+      model_input_format: "flat binary float32"
+    - category: terrain
+      name: "Aspect"
+      unit: "degrees (0=N, 90=E, 180=S, 270=W)"
+      source_kind: dataset_lookup
+      model_input_format: "flat binary float32"
+    - category: soil
+      name: "Soil type map"
+      unit: "index into soil parameter table"
+      source_kind: dataset_lookup
+      model_input_format: "flat binary int32"
+    - category: soil
+      name: "Soil depth / per-layer depths"
+      unit: "m"
+      source_kind: dataset_lookup
+      model_input_format: "flat binary float32 map + per-class layer depths in config"
+      notes: "Layer depths must be monotonically increasing surface-downward; among the most influential calibration parameters."
+    - category: soil
+      name: "Soil hydraulic & thermal parameters"
+      unit: "lateral conductivity m/s; exponential decrease (-); max infiltration m/s; porosity, field capacity, wilting point (fraction); pore-size distribution; bubbling pressure; bulk density kg/m3; vertical conductivity m/s; thermal conductivity & capacity (per layer)"
+      source_kind: calibrated
+      model_input_format: "SOILS section of config, per USDA soil class"
+      notes: "Lateral conductivity and its exponential-decrease rate are the dominant streamflow calibration levers."
+    - category: vegetation
+      name: "Vegetation type map"
+      unit: "index into vegetation parameter table"
+      source_kind: dataset_lookup
+      model_input_format: "flat binary int32"
+    - category: vegetation
+      name: "Vegetation (overstory/understory) parameters"
+      unit: "monthly LAI; monthly albedo; height m; min/max stomatal resistance s/m; fractional & hemispheric coverage; trunk space; aerodynamic & radiation attenuation; snow interception capacity & efficiency; mass-release drip ratio; moisture threshold; VPD; Rpc; root-zone count, depths, and fractions"
+      source_kind: calibrated
+      model_input_format: "vegetation parameter table referenced by config; 12 monthly LAI/albedo values per stratum"
+      notes: "Vegetation height must exceed the Reference Height constant or the log wind profile yields NaN; LAI and minimum stomatal resistance dominate ET."
+    - category: channel
+      name: "Channel class properties"
+      unit: "Manning's n (-); channel geometry (m)"
+      source_kind: calibrated
+      model_input_format: "stream.class.dat"
+    - category: constants
+      name: "Lapse rates and rain/snow thresholds"
+      unit: "temperature lapse rate C/m; precipitation lapse rate m/m; rain & snow threshold C; roughness m; reference height m"
+      source_kind: calibrated
+      model_input_format: "CONSTANTS section of config"
+      notes: "Defaults: temperature lapse rate -0.0065 C/m, precipitation lapse rate 3e-6 m/m, rain threshold -0.45 C, snow threshold 0.46 C, reference height 75.0 m."
+  initial_conditions:
+    - category: state
+      name: "Initial snow water equivalent"
+      unit: "m"
+      source_kind: user_provided
+      model_input_format: "model state / restart files"
+    - category: state
+      name: "Initial soil moisture per layer"
+      unit: "fraction"
+      source_kind: user_provided
+      model_input_format: "model state / restart files"
+    - category: state
+      name: "Initial interception storage (canopy rain/snow)"
+      unit: "m"
+      source_kind: user_provided
+      model_input_format: "model state / restart files"
+      notes: "First simulation year(s) reflect spin-up and are commonly excluded from validation metrics."
+  boundary_conditions:
+    - category: domain
+      name: "Basin mask"
+      unit: "0/1 (1 = inside basin)"
+      source_kind: user_provided
+      model_input_format: "flat binary int32, row-major, nrows*ncols values"
+      notes: "Only mask=1 cells are computed; binary map size must equal nrows*ncols*4 bytes."
+    - category: domain
+      name: "Stream network topology"
+      unit: "segment connectivity, length (m), slope, width (m)"
+      source_kind: user_provided
+      model_input_format: "stream.map.dat (cell->segment) + stream.network.dat (connectivity)"
+    - category: control
+      name: "Flow-routing method"
+      unit: "structural switch"
+      source_kind: user_provided
+      model_input_format: "OPTIONS section; NETWORK channel routing, kinematic-wave overland, D8 (default) vs D4"
+      notes: "D8 is the default build; D8 gradient routing is documented as experimental."
+    - category: control
+      name: "Grid geometry and time-stepping"
+      unit: "rows, columns, grid spacing (m); timestep (hours); start/end dates"
+      source_kind: user_provided
+      model_input_format: "AREA + TIME sections; dates in MM/DD/YYYY-HH"
+      notes: "Config Rows/Columns must match binary-map dimensions or the model segfaults; timestep must match the forcing interval."
+
+processes:
+  modules:
+    - name: "MakeLocalMetData"
+      role: "process_solver"
+      brief: "Builds per-cell meteorology from station data via inverse-distance interpolation weights and temperature/precipitation lapse rates; feeds all downstream physics."
+    - name: "RadiationBalance"
+      role: "process_solver"
+      brief: "Shortwave/longwave net radiation per vegetation layer (beam/diffuse separation, canopy-gap geometry, solar position)."
+    - name: "MassEnergyBalance"
+      role: "integrator"
+      brief: "Per-cell core that orchestrates interception, snow, ET, soil evaporation, unsaturated flow, and surface energy balance for one cell-timestep; emits SatFlow/IExcess consumed by routing."
+    - name: "SnowPackEnergyBalance"
+      role: "process_solver"
+      brief: "Two-layer energy-balance snowpack: accumulation, rain/snow partition via temperature thresholds, sublimation, and melt outflow."
+    - name: "SnowInterception"
+      role: "process_solver"
+      brief: "Canopy snow interception storage, mass release, and canopy vapor flux shared with ET and longwave balance."
+    - name: "InterceptionStorage"
+      role: "process_solver"
+      brief: "Canopy rain interception storage and drip (leaf-drip diameter, LAI-scaled capacity), producing throughfall to the soil column."
+    - name: "EvapoTranspiration"
+      role: "process_solver"
+      brief: "Penman-Monteith-style overstory/understory transpiration using canopy resistance and aerodynamic resistance, driven by net radiation and VPD."
+    - name: "SoilEvaporation"
+      role: "process_solver"
+      brief: "Bare-soil evaporation from the top soil layer using residual energy after canopy ET."
+    - name: "UnsaturatedFlow"
+      role: "process_solver"
+      brief: "Multi-layer (typically 3) vertical soil-water movement: infiltration, percolation, and recharge to the saturated zone, updating water-table depth."
+    - name: "SurfaceEnergyBalance"
+      role: "process_solver"
+      brief: "Ground surface energy balance (net/sensible/latent/ground heat) solved with RootBrent bracketing and a stability correction."
+    - name: "RouteSubSurface"
+      role: "integrator"
+      brief: "TOPMODEL-like saturated lateral subsurface flow between cells; sets water level and the channel/road interception fluxes."
+    - name: "RouteSurface"
+      role: "integrator"
+      brief: "Overland (Hortonian + saturation-excess) runoff routing, optionally kinematic-wave, delivering IExcess to channels."
+    - name: "RouteChannel"
+      role: "integrator"
+      brief: "Channel-network (Muskingum-Cunge) and road routing assembling intercepted subsurface flow and overland runoff into segment discharge."
+    - name: "Avalanche"
+      role: "optional_module"
+      brief: "SnowSlide lateral redistribution of SWE between neighboring cells and mass-wasting/landslide triggers."
+      applicability: "when snow sliding / mass-wasting is enabled"
+    - name: "RBMStreamTemperature"
+      role: "optional_module"
+      brief: "Semi-Lagrangian water-temperature model for advection-dominated rivers (Yearsley 2009)."
+      applicability: "when DHSVM_USE_RBM build option is enabled"
+    - name: "Aggregate"
+      role: "integrator"
+      brief: "Sums per-cell fluxes and states into basin totals and the running/final mass-balance accounting (closure error in mm)."
+    - name: "InitTables"
+      role: "driver"
+      brief: "Reads soil/vegetation parameter tables, terrain maps, and constants and initializes per-cell model state before the timestep loop."
+  internal_edges:
+    - from: "Inputs"
+      to: "MakeLocalMetData"
+      kind: "consumes_input"
+      brief: "station met forcing, DEM, and lapse-rate constants localized per cell"
+    - from: "MakeLocalMetData"
+      to: "RadiationBalance"
+      kind: "invokes"
+      brief: "per-cell met (temperature, humidity) drives the radiation balance"
+    - from: "MakeLocalMetData"
+      to: "MassEnergyBalance"
+      kind: "invokes"
+      brief: "per-cell PIXMET drives the coupled mass-energy balance"
+    - from: "RadiationBalance"
+      to: "EvapoTranspiration"
+      kind: "invokes"
+      brief: "net radiation per veg layer drives transpiration demand"
+    - from: "RadiationBalance"
+      to: "SnowPackEnergyBalance"
+      kind: "invokes"
+      brief: "shortwave/longwave net feeds the snow energy balance"
+    - from: "RadiationBalance"
+      to: "SurfaceEnergyBalance"
+      kind: "invokes"
+      brief: "net radiation feeds the ground surface energy balance (RootBrent / DELTAT bracket, stability correction)"
+    - from: "SurfaceEnergyBalance"
+      to: "SoilTemp"
+      kind: "writes_state"
+      brief: "surface energy balance updates soil surface temperature"
+    - from: "Avalanche"
+      to: "Swq"
+      kind: "writes_state"
+      brief: "SnowSlide moves SWE between neighboring cells before the energy balance"
+    - from: "SnowInterception"
+      to: "EvapoTranspiration"
+      kind: "invokes"
+      brief: "canopy snow / vapor flux alters available canopy water for ET"
+    - from: "InterceptionStorage"
+      to: "UnsaturatedFlow"
+      kind: "invokes"
+      brief: "throughfall and drip become infiltration input"
+    - from: "SnowPackEnergyBalance"
+      to: "UnsaturatedFlow"
+      kind: "invokes"
+      brief: "snowmelt outflow infiltrates the soil column"
+    - from: "EvapoTranspiration"
+      to: "SoilEvaporation"
+      kind: "invokes"
+      brief: "residual energy after canopy ET drives bare-soil evaporation"
+    - from: "SoilEvaporation"
+      to: "SoilMoist"
+      kind: "writes_state"
+      brief: "soil evaporation withdraws moisture from the top soil layer"
+    - from: "EvapoTranspiration"
+      to: "SoilMoist"
+      kind: "writes_state"
+      brief: "transpiration withdraws soil moisture per layer"
+    - from: "UnsaturatedFlow"
+      to: "TableDepth"
+      kind: "writes_state"
+      brief: "percolation and recharge update water-table depth"
+    - from: "MassEnergyBalance"
+      to: "SatFlow"
+      kind: "writes_state"
+      brief: "produces per-cell saturated-zone flux consumed next timestep by routing"
+    - from: "SatFlow"
+      to: "RouteSubSurface"
+      kind: "reads_state"
+      brief: "subsurface routing reads per-cell saturated flow"
+    - from: "MassEnergyBalance"
+      to: "IExcess"
+      kind: "writes_state"
+      brief: "infiltration excess and return flow recorded as surface runoff"
+    - from: "IExcess"
+      to: "RouteSurface"
+      kind: "reads_state"
+      brief: "surface runoff routed overland"
+    - from: "RouteSubSurface"
+      to: "TableDepth"
+      kind: "writes_state"
+      brief: "lateral redistribution updates the water table between cells"
+    - from: "RouteSubSurface"
+      to: "RouteChannel"
+      kind: "invokes"
+      brief: "intercepted subsurface flow becomes channel inflow"
+    - from: "RouteSurface"
+      to: "RouteChannel"
+      kind: "invokes"
+      brief: "overland runoff delivered to the channel network"
+    - from: "RouteChannel"
+      to: "RBMStreamTemperature"
+      kind: "invokes"
+      brief: "channel discharge drives the optional stream-temperature model"
+    - from: "MassEnergyBalance"
+      to: "Aggregate"
+      kind: "invokes"
+      brief: "per-cell fluxes summed into basin totals"
+    - from: "RouteChannel"
+      to: "Aggregate"
+      kind: "invokes"
+      brief: "channel interception and streamflow added to basin totals"
+    - from: "Aggregate"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "basin totals and per-pixel state written; mass-balance closure reported in mm"
+    - from: "InitTables"
+      to: "MassEnergyBalance"
+      kind: "invokes"
+      brief: "soil/veg parameter tables and initial state set up before the timestep loop"
+
+states:
+  variables:
+    - name: "Swq"
+      unit: "m"
+      role: prognostic
+    - name: "SoilMoist"
+      unit: "fraction"
+      role: prognostic
+    - name: "TableDepth"
+      unit: "m"
+      role: prognostic
+    - name: "WaterLevel"
+      unit: "m above datum"
+      role: prognostic
+    - name: "IntRain"
+      unit: "m"
+      role: prognostic
+    - name: "IntSnow"
+      unit: "m"
+      role: prognostic
+    - name: "ColdContent"
+      unit: "J"
+      role: prognostic
+    - name: "PackWater"
+      unit: "m"
+      role: prognostic
+    - name: "SnowAlbedo"
+      unit: "fraction"
+      role: prognostic
+    - name: "LastSnow"
+      unit: "days since last snowfall"
+      role: accumulator
+    - name: "SoilTemp"
+      unit: "C"
+      role: prognostic
+    - name: "ChannelStorage"
+      unit: "m3"
+      role: prognostic
+    - name: "SatFlow"
+      unit: "m/timestep"
+      role: diagnostic
+    - name: "IExcess"
+      unit: "m"
+      role: diagnostic
+    - name: "ChannelInt"
+      unit: "m"
+      role: diagnostic
+  provenance: "populated"
+
+outputs:
+  - var: "Streamflow"
+    validation_rank: 1
+    unit: "m3/s"
+    description: "Channel discharge per stream segment at network outlets"
+    emitted_in: "Stream.Flow"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Gauge location must map to the correct stream segment ID"
+            - "Skip the spin-up period; first year(s) reflect initialization"
+      detrending_options: ["none"]
+  - var: "Swq"
+    validation_rank: 3
+    unit: "m"
+    description: "Snow water equivalent per grid cell / basin-averaged"
+    emitted_in: "Aggregated.Values; Pixel time series"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "SNOTEL / snow-course point must fall inside a representative cell"
+            - "Melt-out date timing is sensitive to temperature lapse rate"
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats:
+            - "Compare against gridded snow-cover/SWE products at matching resolution"
+      detrending_options: ["none"]
+  - var: "TotalET"
+    validation_rank: 2
+    unit: "m/timestep"
+    description: "Total actual evapotranspiration (overstory/understory transpiration, interception evaporation, soil evaporation)"
+    emitted_in: "Aggregated.Values; Pixel time series"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Flux-tower footprint must be vegetation-representative of the cell"
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats:
+            - "Remote-sensing ET products carry retrieval bias; aggregate to model resolution"
+      detrending_options: ["none"]
+  - var: "SoilMoist"
+    validation_rank: 4
+    unit: "fraction"
+    description: "Volumetric soil moisture per layer"
+    emitted_in: "Aggregated.Values; Pixel time series"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Probe depth must align with the model layer being compared"
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats:
+            - "Satellite soil-moisture senses only the surface layer"
+      detrending_options: ["none"]
+  - var: "TableDepth"
+    validation_rank: 5
+    unit: "m"
+    description: "Depth of the water table below the surface"
+    emitted_in: "Aggregated.Values; Pixel time series"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Well location must map to a representative cell; DHSVM water table is a column abstraction"
+      detrending_options: ["none"]
+  - var: "MassError"
+    validation_rank: 6
+    unit: "mm"
+    description: "End-of-simulation water-balance closure error (Total Inflow - Total Outflow - Storage Change)"
+    emitted_in: "Mass.Final.Balance (stderr)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Internal consistency check, not an observation; closure should be < 1% of total inflow"
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "lateral saturated hydraulic conductivity"
+      to: "Streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations:
+        - "cuo2011_dhsvm_lumped_sensitivity"
+        - "du2014_dhsvm_micacreek_validation"
+        - "melo2021_dhsvm_geomorphons_sensitivity"
+    - from: "exponential decrease rate of conductivity with depth"
+      to: "Streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations:
+        - "cuo2011_dhsvm_lumped_sensitivity"
+        - "du2014_dhsvm_micacreek_validation"
+        - "melo2021_dhsvm_geomorphons_sensitivity"
+    - from: "soil porosity"
+      to: "Streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations:
+        - "cuo2011_dhsvm_lumped_sensitivity"
+        - "melo2021_dhsvm_geomorphons_sensitivity"
+    - from: "field capacity"
+      to: "Streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "high and low flow regimes (Q5/Q95)"
+      citations:
+        - "melo2021_dhsvm_geomorphons_sensitivity"
+    - from: "wilting point"
+      to: "Streamflow"
+      sensitivity_grade: LOW
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "humid climates"
+      citations:
+        - "melo2021_dhsvm_geomorphons_sensitivity"
+    - from: "soil depth / thickness"
+      to: "Streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations:
+        - "du2014_dhsvm_micacreek_validation"
+    - from: "leaf area index (LAI)"
+      to: "TotalET"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "vegetation-dominated basins"
+      citations:
+        - "cuo2011_dhsvm_lumped_sensitivity"
+        - "pan2018_dhsvm_rs_et_multiobjective"
+    - from: "minimum stomatal resistance"
+      to: "TotalET"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations:
+        - "cuo2011_dhsvm_lumped_sensitivity"
+        - "pan2018_dhsvm_rs_et_multiobjective"
+    - from: "vegetation height"
+      to: "TotalET"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations:
+        - "cuo2011_dhsvm_lumped_sensitivity"
+    - from: "vapour pressure deficit parameter"
+      to: "TotalET"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations:
+        - "cuo2011_dhsvm_lumped_sensitivity"
+    - from: "overstory fractional coverage"
+      to: "TotalET"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "forested scenarios"
+      citations:
+        - "cuo2011_dhsvm_lumped_sensitivity"
+    - from: "leaf area index (LAI)"
+      to: "Streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "vegetation-dominated basins"
+      citations:
+        - "cuo2011_dhsvm_lumped_sensitivity"
+        - "pan2018_dhsvm_rs_et_multiobjective"
+    - from: "precipitation lapse rate"
+      to: "Streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "orographic / mountain basins"
+      citations:
+        - "du2014_dhsvm_micacreek_validation"
+  citation_index:
+    cuo2011_dhsvm_lumped_sensitivity:
+      short_citation: "Cuo et al. 2011"
+      doi: "10.1002/hyp.8017"
+      note: "OAT lumped sensitivity of DHSVM in tropical (Pang Khum) and temperate (Cedar River) catchments; porosity, lateral Ksat, exponential-decrease, LAI, veg height, VPD, min stomatal resistance most sensitive"
+    du2014_dhsvm_micacreek_validation:
+      short_citation: "Du et al. 2014"
+      doi: "10.1002/hyp.10110"
+      note: "DHSVM validation at Mica Creek; calibration most sensitive to lateral Ksat and exponential decay of conductivity with depth"
+    melo2021_dhsvm_geomorphons_sensitivity:
+      short_citation: "Melo et al. 2021"
+      doi: "10.3390/w13152032"
+      note: "Sensitivity of five DHSVM soil parameters on streamflow using geomorphons; ranking LSHC, ED, porosity, FC, WP (quantitative Sobol indices not extractable from open text)"
+    pan2018_dhsvm_rs_et_multiobjective:
+      short_citation: "Pan et al. 2018"
+      doi: "10.3390/w10121841"
+      note: "Multi-objective (streamflow + RS-ET) calibration of DHSVM; ET controlled by LAI and minimum stomatal resistance, streamflow by soil conductivity/decay"
+
+safety:
+  hazards:
+    - id: "precip_mm_instead_of_m"
+      kind: "weather_file_semantic"
+      description: "Precipitation read as m/timestep; supplying mm produces a silent ~1000x flood with no error"
+      severity: "silent"
+    - id: "temperature_kelvin_instead_of_celsius"
+      kind: "weather_file_semantic"
+      description: "Air temperature in Kelvin never trips the rain/snow threshold, silently suppressing all snow and inflating ET"
+      severity: "silent"
+    - id: "rh_fraction_instead_of_percent"
+      kind: "weather_file_semantic"
+      description: "Relative humidity as fraction (0-1) instead of percent inflates VPD and drives extreme ET"
+      severity: "silent"
+    - id: "wind_kmhr_instead_of_ms"
+      kind: "weather_file_semantic"
+      description: "Wind speed in km/hr (3.6x) inflates turbulent heat fluxes, biasing ET and snowmelt"
+      severity: "silent"
+    - id: "shortwave_mj_instead_of_wm2"
+      kind: "weather_file_semantic"
+      description: "Shortwave in MJ/m2/day instead of W/m2 corrupts the radiation balance"
+      severity: "silent"
+    - id: "soil_depth_cm_instead_of_m"
+      kind: "soil_semantic"
+      description: "Soil depth in cm produces a 100x-deep column; the basin never saturates and the water table is unrealistically deep"
+      severity: "silent"
+    - id: "ksat_mmhr_instead_of_ms"
+      kind: "soil_semantic"
+      description: "Hydraulic conductivity in mm/hr (3.6e6x) drains the soil instantly"
+      severity: "silent"
+    - id: "porosity_percent_instead_of_fraction"
+      kind: "soil_semantic"
+      description: "Porosity as percent (>1) triggers an assertion failure and crash"
+      severity: "fatal"
+    - id: "dem_feet_instead_of_meters"
+      kind: "soil_semantic"
+      description: "DEM elevation in feet corrupts lapse-rate corrections and snow-line elevations"
+      severity: "silent"
+    - id: "slope_degrees_instead_of_radians"
+      kind: "soil_semantic"
+      description: "Slope in degrees instead of radians corrupts solar geometry and the radiation balance"
+      severity: "silent"
+    - id: "lapse_rate_per_km_instead_of_per_m"
+      kind: "control_semantic"
+      description: "Temperature lapse rate in C/km (1000x) over-corrects temperature with elevation"
+      severity: "silent"
+    - id: "soil_layers_non_monotonic"
+      kind: "soil_semantic"
+      description: "Soil layer depths not monotonically increasing surface-downward corrupt inter-layer moisture redistribution"
+      severity: "degraded"
+    - id: "veg_height_below_reference_height"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Vegetation height below the Reference Height constant drives the log wind-profile term to NaN"
+      severity: "fatal"
+    - id: "binary_map_size_mismatch"
+      kind: "parser_semantic"
+      description: "Binary map size not equal to nrows*ncols*4 bytes shifts all subsequent pixels (garbage) or, if dimensions mismatch config, segfaults"
+      severity: "fatal_or_silent"
+    - id: "met_filename_grid_decimal_mismatch"
+      kind: "parser_semantic"
+      description: "Per-cell met filename decimal precision not matching GRID_DECIMAL (even trailing zeros) makes DHSVM unable to open the meteorological data file and exit fatally (dt_012)"
+      severity: "fatal"
+    - id: "date_format_misparse"
+      kind: "parser_semantic"
+      description: "Forcing dates not in MM/DD/YYYY-HH (e.g. ISO YYYY-MM-DD) are silently misparsed, misaligning forcing"
+      severity: "silent"
+    - id: "timestep_forcing_mismatch"
+      kind: "control_semantic"
+      description: "Config timestep not matching the forcing interval causes silent record skipping/re-reading and periodic artifacts"
+      severity: "degraded"
+  validation_limits:
+    - "Lateral subsurface flow is simulated only when soil layers are saturated; no unsaturated lateral flow"
+    - "LAI is prescribed as monthly per-class inputs, not dynamically simulated; vegetation feedbacks to drought/disturbance are not represented"
+    - "Requires a projected (UTM) grid; geographic coordinates are not supported"
+    - "First simulation year(s) are spin-up and should be excluded from validation metrics"
+    - "D8 gradient routing is documented as experimental"
+  warnings:
+    - "Default Reference Height (75.0 m) exceeds typical vegetation heights; unless lowered below the minimum veg height the log wind profile can yield NaN (dt_015 hazard)"
+    - "Mass-balance closure error should be < 1% of total inflow; larger residuals indicate a parameterization or input problem rather than a converged solution"
+    - "Manual calibration is labor-intensive; lateral conductivity, its exponential-decrease rate, soil thickness, and precipitation lapse rate are the dominant streamflow levers"
+  assumptions:
+    - statement: "The model is a 2-D distributed grid of coupled 1-D vertical columns linked only by saturated lateral subsurface, overland, and channel routing"
+      scope: "spatial geometry"
+      source: "DHSVM water-and-energy-budget formulation (Wigmosta et al. 1994; UW/PNNL DHSVM overview, cig.uw.edu dhsvm_cob.pdf)"
+      status: adopted
+    - statement: "Water and energy balance is closed per cell per timestep (mass-balance for water; surface energy balance for fluxes), with basin closure tracked in mm by FinalMassBalance"
+      scope: "conservation / closure"
+      source: "FinalMassBalance module behavior in DHSVM source; dhsvm_cob.pdf water-budget equation"
+      status: adopted
+    - statement: "The operational timestep is a user-set whole-hour value (3-hourly common); no sub-hour (minute) resolution is supported and no fixed default is documented"
+      scope: "temporal resolution"
+      source: "DHSVM TIME config section; PNNL DHSVM-PNNL README"
+      status: tentative
+    - statement: "Rain/snow partition temperature thresholds are runtime config globals, not compile-time constants, despite being documented under CONSTANTS"
+      scope: "snow process parameterization"
+      source: "MAX_SNOW_TEMP/MIN_RAIN_TEMP handling in constants.h / globals.c and the CONSTANTS config section"
+      status: adopted

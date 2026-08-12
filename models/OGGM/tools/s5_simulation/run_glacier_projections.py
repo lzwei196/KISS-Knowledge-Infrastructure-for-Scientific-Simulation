@@ -49,15 +49,19 @@ def main():
             cfg.initialize(logging_level='WARNING')
             cfg.PATHS['working_dir'] = str(working_dir)
 
-        # Load GDirs
+        cfg.PARAMS['store_model_geometry'] = True
+
+        # Load GDirs — 4-level nesting: per_glacier/RGIxx-NN/RGIxx-NN.YY/RGIxx-NN.YYZZZ/
         per_glacier = working_dir / 'per_glacier'
         rgi_ids = []
         if per_glacier.exists():
-            for region_dir in per_glacier.iterdir():
+            for region_dir in sorted(per_glacier.iterdir()):
                 if region_dir.is_dir():
-                    for gdir in region_dir.iterdir():
-                        if gdir.is_dir():
-                            rgi_ids.append(gdir.name)
+                    for sub_dir in sorted(region_dir.iterdir()):
+                        if sub_dir.is_dir():
+                            for gdir_path in sorted(sub_dir.iterdir()):
+                                if gdir_path.is_dir():
+                                    rgi_ids.append(gdir_path.name)
 
         gdirs = workflow.init_glacier_directories(rgi_ids, reset=False)
         print(f"Running projections for {len(gdirs)} glaciers...")
@@ -68,8 +72,8 @@ def main():
             run_task=tasks.run_from_climate_data,
             climate_filename='gcm_data',
             climate_input_filesuffix=suffix,
-            min_ys=args.start_year,
-            max_ys=args.end_year,
+            ys=args.start_year,
+            ye=args.end_year,
             store_monthly_hydro=True,
             output_filesuffix=suffix
         )

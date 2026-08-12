@@ -537,3 +537,289 @@
     prevention: "Document the forcing strategy clearly in the config"
   severity: silent
   cross_references: [dt_003]
+
+# ── Triplets dt_021–dt_028: lessons from 49-site SNOTEL batch (2026-04-30) ──
+
+- id: dt_021
+  stage: s3_configuration
+  failure_domain: runtime
+  symptom:
+    description: >
+      stdout floods with "Days_between is zero" at every timestep. Log file
+      grows to several GB. Run appears to hang (no progress shown). SNOWPACK
+      produces correct physics but I/O throughput saturates the disk.
+    error_pattern: "Days_between is zero"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      CALCULATION_STEP_LENGTH > 60 s (i.e., > 1 min). HzDump in Main.cc line
+      713 uses a hardcoded 30-min hazard-output interval (0.5/24 = 0.02083 days).
+      The booleanTime function computes: floor(0.02083 / step_days + 0.5) * step_days.
+      With step_days = 0.25 (6h): floor(0.5833) * 0.25 = 0 → prints error at
+      every step. With step_days = 0.04167 (60 min): floor(1.0) * 0.04167 ≠ 0 → OK.
+    affected_components: [Main.cc HzDump booleanTime, I/O, hazard output]
+  remedy:
+    action: "Set CALCULATION_STEP_LENGTH = 60 (1 minute). Never exceed 60 s."
+    tool_to_run: generate_config.py
+    manual_steps:
+      - "CALCULATION_STEP_LENGTH = 60  # seconds, in [Snowpack] section"
+      - "The generate_config.py default is already 60; do NOT override to larger values"
+      - "Verify by checking that stdout does NOT contain 'Days_between is zero'"
+    prevention: >
+      The KI pipeline uses CALCULATION_STEP_LENGTH = 60 by default. Do not patch
+      this value to larger numbers for performance — it causes the flooding.
+      Note: generate_config.py validates step in [1, 3600] as seconds but SNOWPACK
+      reads it as minutes; so generate with step=60, which yields 60-min steps.
+  severity: fatal
+  cross_references: [dt_005]
+
+- id: dt_022
+  stage: s5_production_run
+  failure_domain: runtime
+  symptom:
+    description: >
+      SNOWPACK crashes during early-season snowfall with message:
+      "Temperature out of bound at beginning of iteration! At node n=N (nN=3,
+      SoilNode=0): T=200.47 K". Crash typically occurs in the first 1–4 water
+      years of a long spinup, before any observed HS data is available.
+      T values of 200–210 K (= −63 to −73°C) are physically impossible.
+    error_pattern: "Temperature out of bound at beginning of iteration"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      First thin snowfall event (e.g., 0.2 mm/day → 2 mm depth) creates only
+      2–3 elements, each with MINIMUM_L_ELEMENT = 2 cm. Because actual snow is
+      thinner than MINIMUM_L_ELEMENT, the elements are larger than the pack.
+      This makes the tri-diagonal temperature matrix ill-conditioned. Combined
+      with extreme longwave cooling (ILWR ≈ 200 W/m² at T = −3°C → net LW ≈
+      −90 W/m²), the solver produces T ≈ 200 K at intermediate nodes. On the
+      next timestep SNOWPACK reads the stored (wrong) temperature and immediately
+      detects "out of bound at BEGINNING of iteration". The convergence-based
+      adaptive timestepper halves the step repeatedly until min_allowed_sn_dt is
+      reached, then throws an unrecoverable exception.
+      ALLOW_ADAPTIVE_TIMESTEPPING = false does NOT prevent this: it only controls
+      the pre-emptive stability reduction (Snowpack.cc line 2219). The convergence-
+      based halving in the do-while loop (line 2325) is always active.
+    affected_components: [compTemperatureProfile, tri-diagonal solver, adaptive timestepping]
+  remedy:
+    action: >
+      Limit spinup to ≤5 water years before the first valid HS observation.
+      Long pre-obs spinup periods accumulate thin-snow instability across many
+      early-season events. Sites with no HS obs until 2005 but forcing from
+      1985 face 20 winters of thin-snow risk.
+    tool_to_run: ""
+    manual_steps:
+      - "Find hs_first = earliest date where observed HS > 0"
+      - "Compute wy_hs = hs_first.year if month < 10 else hs_first.year + 1"
+      - "Set simulation start = max(natural_start, Oct-1 of wy_hs - 6)"
+      - "This caps spinup at 5 full water years before first HS obs"
+      - "Also set MINIMUM_L_ELEMENT = 0.02 and REDUCE_N_ELEMENTS = 10"
+    prevention: >
+      Cap pre-obs spinup to ≤5 WY. Use MINIMUM_L_ELEMENT = 0.02 (not 0.01).
+      ALLOW_ADAPTIVE_TIMESTEPPING = false is insufficient — the convergence-based
+      halving is hardcoded and cannot be disabled via ini.
+  severity: fatal
+  cross_references: [dt_018, dt_023]
+
+- id: dt_023
+  stage: s3_configuration
+  failure_domain: silent_error
+  symptom:
+    description: >
+      ALLOW_ADAPTIVE_TIMESTEPPING = false is set in [SnowpackAdvanced] but
+      SNOWPACK still halves the timestep during difficult convergence events.
+      Log shows "sn_dt" decreasing from 60 to 30 to 15 min even though adaptive
+      stepping was supposed to be disabled.
+    error_pattern: "sn_dt"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Two separate adaptive-timestepping mechanisms exist in Snowpack.cc:
+      (1) Pre-emptive stability reduction (line 2219): "if (allow_adaptive_timestepping
+          && sn_dt > 60.) sn_dt /= 2" — DISABLED by ALLOW_ADAPTIVE_TIMESTEPPING=false.
+      (2) Convergence-based halving (line 2325): inside the do-while loop, if
+          compTemperatureProfile returns false (non-convergence), "sn_dt /= 2"
+          unconditionally — NOT controlled by ALLOW_ADAPTIVE_TIMESTEPPING.
+      The parameter only disables mechanism (1). Mechanism (2) is always active
+      and is what produces the "Temperature out of bound" crashes when the halved
+      step still cannot converge.
+    affected_components: [Snowpack.cc compTemperatureProfile, adaptive timestepping]
+  remedy:
+    action: >
+      Do not rely on ALLOW_ADAPTIVE_TIMESTEPPING = false to prevent solver
+      instability. The flag suppresses only the pre-emptive halving. Address the
+      root cause (thin snowpack, ill-conditioned matrix) per dt_022 instead.
+    tool_to_run: ""
+    manual_steps:
+      - "Accept that convergence-based halving is always active — this is correct behavior"
+      - "Fix root cause: limit spinup length (dt_022) and increase MINIMUM_L_ELEMENT"
+    prevention: >
+      The ini flag ALLOW_ADAPTIVE_TIMESTEPPING does exactly what the name says
+      for the pre-emptive path only. The convergence path is a solver safety
+      mechanism that cannot be disabled. Don't try to.
+  severity: silent
+  cross_references: [dt_022]
+
+- id: dt_024
+  stage: s3_configuration
+  failure_domain: silent_error
+  symptom:
+    description: >
+      SNOWPACK runs without errors and the .met output file is written, but it
+      contains zero data records (only the two header lines). parse_output.py
+      reports n_records = 0. No error is printed.
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      TS_START = 0.0 (or PROF_START = 0.0). MeteoIO stores midnight timestamps
+      as Julian Day X + 0.5 (fractional day = 0.5). The booleanTime output
+      trigger checks whether jul_frc > threshold OR jul_frc < threshold. With
+      TS_START = 0.0 and TS_DAYS_BETWEEN = 1.0, the trigger fires only if
+      jul_frc ≥ 0.5. At every daily step, jul_frc is exactly 0.5 — the
+      boundary case is never triggered and the condition is never true.
+      Setting TS_START = 0.01 shifts the trigger window: at each daily step
+      jul_frc ≈ 0.99 (well above 0.5) → output fires correctly.
+    affected_components: [booleanTime, TS_START, output]
+  remedy:
+    action: "Set TS_START = 0.01 (not 0.0) and PROF_START = 0.01"
+    tool_to_run: generate_config.py
+    manual_steps:
+      - "In the [Output] section of the .ini file:"
+      - "TS_START = 0.01"
+      - "PROF_START = 0.01"
+      - "Verify: .met file should contain one row per TS_DAYS_BETWEEN interval"
+    prevention: >
+      Always use TS_START = 0.01, not 0.0. generate_config.py writes 0.0 by
+      default — patch it after generation. TS_DAYS_BETWEEN = 1.0 with
+      TS_START = 0.01 gives correct daily output at midnight.
+  severity: silent
+  cross_references: [dt_021]
+
+- id: dt_025
+  stage: s3_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      SNOWPACK or MeteoIO fails at startup with error about unknown coordinate
+      system or "COORDSYS = LATLON not recognized".
+    error_pattern: "LATLON|unknown coordinate|COORDSYS"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      This MeteoIO build (bundled with SNOWPACK 3.7.1 at the HydroCraft path)
+      uses COORDSYS = CH1903 for geographic coordinates, not COORDSYS = LATLON.
+      generate_config.py writes LATLON, which this version does not recognize.
+    affected_components: [MeteoIO coordinate system, config parsing]
+  remedy:
+    action: "Replace COORDSYS = LATLON with COORDSYS = CH1903 in the .ini file"
+    tool_to_run: generate_config.py
+    manual_steps:
+      - "After running generate_config.py, patch the .ini:"
+      - "sed -i 's/COORDSYS = LATLON/COORDSYS = CH1903/' station.ini"
+      - "Or in Python: ini_text = ini_text.replace('COORDSYS = LATLON', 'COORDSYS = CH1903')"
+    prevention: >
+      Always apply the COORDSYS patch after generate_config.py. This is a
+      HydroCraft-local issue with the compiled MeteoIO version.
+  severity: fatal
+  cross_references: []
+
+- id: dt_026
+  stage: s3_configuration
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      MeteoIO fails to find forcing file. Error about missing station or
+      unrecognized key "STATION1". Config appears correct but no SMET is loaded.
+    error_pattern: "STATION1|unknown key|unrecognized"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      The config key for the forcing file path changed from STATION1 to
+      METEOFILE1 in this MeteoIO version. generate_config.py may write STATION1
+      (the older form), which is silently ignored, leaving no SMET loaded.
+    affected_components: [MeteoIO SMET reader, config parsing]
+  remedy:
+    action: "Replace STATION1 = with METEOFILE1 = in the [Input] section"
+    tool_to_run: generate_config.py
+    manual_steps:
+      - "After running generate_config.py, patch:"
+      - "ini_text = ini_text.replace('STATION1 = ', 'METEOFILE1 = ')"
+    prevention: "Always apply the METEOFILE1 patch after generate_config.py for this build."
+  severity: fatal
+  cross_references: [dt_016]
+
+- id: dt_027
+  stage: s2_profile_setup
+  failure_domain: parameter_format
+  symptom:
+    description: >
+      SNOWPACK crashes at initialization with error about missing required field
+      in the .sno file. Error may mention CanopyDirectThroughfall, ErosionLevel,
+      or TimeCountDeltaHS.
+    error_pattern: "CanopyDirectThroughfall|ErosionLevel|TimeCountDeltaHS|required field"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      build_sno_profile.py writes a .sno template that is missing three fields
+      required by SmetIO.cc get_doubleval():
+        - CanopyDirectThroughfall (fraction of precip through canopy)
+        - ErosionLevel (0 = no erosion)
+        - TimeCountDeltaHS (0.0 = not counting HS changes)
+      Without these, SNOWPACK throws an exception at profile read time.
+    affected_components: [SmetIO.cc, .sno parser, initialization]
+  remedy:
+    action: >
+      After running build_sno_profile.py, insert the three missing fields before
+      the 'fields' line in the [HEADER] section of the .sno file.
+    tool_to_run: build_sno_profile.py
+    manual_steps:
+      - "Open the generated .sno file"
+      - "Before the line 'fields = timestamp Layer_Thick ...', insert:"
+      - "CanopyDirectThroughfall = 1.00"
+      - "ErosionLevel = 0"
+      - "TimeCountDeltaHS = 0.000000"
+      - "For open sites (no canopy): CanopyDirectThroughfall = 1.00 is correct"
+    prevention: >
+      Patch the .sno file immediately after build_sno_profile.py in the pipeline.
+      In Python: sno_text = sno_text.replace('\nfields =', '\nCanopyDirectThroughfall = 1.00\nErosionLevel = 0\nTimeCountDeltaHS = 0.000000\nfields =')
+  severity: fatal
+  cross_references: [dt_004]
+
+- id: dt_028
+  stage: s5_production_run
+  failure_domain: silent_error
+  symptom:
+    description: >
+      At maritime Pacific sites (coastal CA, OR, WA), simulated snow depth
+      is 80–145% higher than observed (PBIAS > +80%). Continental interior
+      sites (CO, ID, UT, WY, MT) with the same pipeline show PBIAS < 40%.
+      NSE is negative at maritime sites despite acceptable R (0.7–0.9).
+    error_pattern: ""
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: >
+      Brutsaert (1975) ILWR parameterization with fixed RH = 0.80 underestimates
+      downwelling longwave radiation at humid maritime sites. At T = 5°C and
+      actual RH ~ 0.95, ILWR should be ~340 W/m²; with RH = 0.80 it computes
+      ~310 W/m² (≈ −30 W/m² bias). This persistent cold bias suppresses melt,
+      causing snow to accumulate excessively. The effect is amplified in maritime
+      climates where rain-on-snow events are misclassified as snowfall by a
+      simple temperature threshold.
+    affected_components: [ILWR parameterization, energy balance, melt]
+  remedy:
+    action: >
+      For maritime Pacific sites (CA coast/Sierra foothills, OR/WA coast),
+      increase the assumed RH to 0.90–0.95 in the Brutsaert formula, or use
+      a site-specific ILWR bias correction of +20 to +40 W/m².
+    tool_to_run: ""
+    manual_steps:
+      - "For CA/OR/WA sites: use RH = 0.90 in ILWR = sigma * epsilon * TA^4 where epsilon = 0.642 * (RH * e_sat(TA) / TA)^(1/7)"
+      - "Alternatively: read actual RH from SNOTEL forcing (if available) rather than fixing at 0.80"
+      - "Validate: at maritime sites expect ILWR_winter = 300–380 W/m², not 200–280 W/m²"
+    prevention: >
+      Use actual observed RH from the SNOTEL station rather than a fixed value.
+      SNOTEL stations report relative humidity. Pass it through convert_forcing.py
+      instead of hardcoding 0.80 for all sites.
+  severity: silent
+  cross_references: [dt_019, dt_011]

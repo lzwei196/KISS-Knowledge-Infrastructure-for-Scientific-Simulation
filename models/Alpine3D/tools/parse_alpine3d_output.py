@@ -68,19 +68,31 @@ def validate_inputs(args):
 def parse_timestamp_from_filename(filename):
     """Extract timestamp from Alpine3D grid filename.
 
-    Expected format: YYYYMMDDHHMI_PARAM.asc
-    Example: 201412231200_SWE.asc → 2014-12-23T12:00
+    Two on-disk conventions are supported:
+      (1) compact (documented):  YYYYMMDDHHMI_PARAM.asc
+          e.g. 201412231200_SWE.asc            -> 2014-12-23T12:00
+      (2) MeteoIO ARC (actual):  YYYY-MM-DDThh.mm.ss_PARAM.asc
+          e.g. 2008-09-01T12.00.00_RSNO.asc    -> 2008-09-01T12:00
+
+    The MeteoIO ARC2D plugin writes ISO-style dates with '.' replacing ':'
+    in the time portion (colons are illegal in many filesystems), so the
+    original \\d{12} regex never matched real Alpine3D output. We now split
+    off the parameter as the token after the final '_' and try both layouts.
     """
     basename = os.path.basename(filename)
-    match = re.match(r"(\d{12})_(\w+)\.asc", basename)
-    if match:
-        ts_str = match.group(1)
-        param = match.group(2)
+    if not basename.endswith(".asc"):
+        return None, None
+    stem = basename[:-4]                      # drop .asc
+    if "_" not in stem:
+        return None, None
+    ts_str, param = stem.rsplit("_", 1)       # param = last token (SWE, RSNO, ...)
+    for fmt in ("%Y%m%d%H%M", "%Y-%m-%dT%H.%M.%S", "%Y-%m-%dT%H.%M",
+                "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
         try:
-            dt = datetime.strptime(ts_str, "%Y%m%d%H%M")
+            dt = datetime.strptime(ts_str, fmt)
             return dt.strftime("%Y-%m-%dT%H:%M"), param
         except ValueError:
-            return None, None
+            continue
     return None, None
 
 
@@ -197,9 +209,14 @@ def process_point_mode(files_by_time, params, row, col, nodata=-9999):
         for param in params:
             if param in files_by_time[timestamp]:
                 header, data = read_arc_grid(files_by_time[timestamp][param])
+                # Honor the grid's own NODATA_value (e.g. -999 for Alpine3D
+                # ARC output); the domain/basin modes already do this, but
+                # point mode previously used a hardcoded -9999, so snow-free
+                # cells (RSNO=-999) leaked through as bogus values.
+                nodata_val = header.get("nodata_value", nodata)
                 if row < len(data) and col < len(data[row]):
                     val = data[row][col]
-                    if val is not None and abs(val - nodata) > 0.1:
+                    if val is not None and abs(val - nodata_val) > 0.1:
                         record[param] = val
                     else:
                         record[param] = None

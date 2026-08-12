@@ -1,0 +1,292 @@
+schema_version: 1
+model_id: mHM
+domain: hydrology
+generated_by: "self-improve session (Claude Opus 4.8) — validation-convention Step-B, general schema"
+generated_at: 2026-07-09
+
+# Grounded ONLY in the locally-cached full texts (literature complete in-cache; no new fetches).
+# HEADLINE / streamflow discharge is STRONG: the Moriasi 2007 three-tier NSE/PBIAS/RSR table
+# (reproduced by Arnold/SWAT 2012 and updated by Moriasi 2015) is the field convention for
+# watershed-scale flow, and mHM's own operational German setup calibrates to NSE >= 0.65 (Zink 2017);
+# multi-site mHM benchmarks report KGE from 0.53 (sparsely gauged W-Africa) up to 0.91-0.93 (seamless
+# MPR, Samaniego 2017). SPATIAL evapotranspiration and soil-moisture are the mHM community's second
+# axis and are judged with SPAEF (Koch 2018), NOT the dag's placeholder csi — but the SPAtial EFficiency
+# metric has NO generic pass threshold: Dembele 2022 states it is "difficult to formulate generic
+# guidelines for the desired range of SPAEF and KGE" (floors: KGE >= -0.41, SPAEF >= -0.73; optimum 1),
+# and spatial-AET calibration in Germany reaches only average SPAEF ~= 0.46 (Demirel 2018). So spatial
+# ET/SM blocks keep SPAEF as the headline metric but with a NULL pass band (un-thresholded => the gate
+# may contextualize, never auto-validate/loosen). Point-scale ET/SM and per-cell runoff have no fetched
+# numeric validation tier and are honest weak/null blocks. Bands are plain numbers read via `direction`.
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_trans.58.10715.txt
+  arnold2012:
+    doi: 10.13031/2013.42256
+    title: "SWAT: Model Use, Calibration, and Validation"
+    venue: "Transactions of the ASABE"
+    year: 2012
+    oa: green
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_2013.42256.txt
+  koch2018:
+    doi: 10.5194/gmd-11-1873-2018
+    title: "The SPAtial EFficiency metric (SPAEF): multiple-component evaluation of spatial patterns for optimization of hydrological models"
+    venue: "Geosci. Model Dev."
+    year: 2018
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_gmd-11-1873-2018.txt
+  demirel2018:
+    doi: 10.5194/hess-22-1299-2018
+    title: "Combining satellite data and appropriate objective functions for improved spatial pattern performance of a distributed hydrologic model"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2018
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-22-1299-2018.txt
+  dembele2022:
+    doi: 10.3390/rs14020315
+    title: "Climate Normalized Spatial Patterns of Evapotranspiration Enhance the Calibration of a Hydrological Model"
+    venue: "Remote Sensing"
+    year: 2022
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.3390_rs14020315.txt
+  samaniego2017:
+    doi: 10.5194/hess-21-4323-2017
+    title: "Toward seamless hydrologic predictions across spatial scales"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2017
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-21-4323-2017.txt
+  zink2017:
+    doi: 10.5194/hess-21-1769-2017
+    title: "A high-resolution dataset of water fluxes and states for Germany accounting for parametric uncertainty"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2017
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-21-1769-2017.txt
+  thober2019:
+    doi: 10.5194/gmd-12-2501-2019
+    title: "The multiscale routing model mRM v1.0: simple river routing at resolutions from 1 to 50 km"
+    venue: "Geosci. Model Dev."
+    year: 2019
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_gmd-12-2501-2019.txt
+  pomeon2018:
+    doi: 10.3390/w10101418
+    title: "Computationally Efficient Multivariate Calibration and Validation of a Grid-Based Hydrologic Model in Sparsely Gauged West African River Basins"
+    venue: "Water"
+    year: 2018
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.3390_w10101418.txt
+  kunnath2018:
+    doi: 10.3390/w11102083
+    title: "Additional Value of Using Satellite-Based Soil Moisture and Two Sources of Groundwater Data for Hydrological Model Calibration"
+    venue: "Water"
+    year: 2019
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.3390_w11102083.txt
+
+validation:
+
+  # ===================== DISCHARGE / streamflow time series (STRONG — headline) =====================
+  - canonical_quantity: discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi 2007 Table 4 watershed-scale flow: satisfactory 0.50<NSE<0.65, good 0.65-0.75, very good >0.75; Moriasi 2015 keeps NSE>0.50 satisfactory for watershed flow."
+        cites: [moriasi2007, moriasi2015, arnold2012]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Moriasi 2007 streamflow PBIAS: very good <+/-10, good +/-10-15, satisfactory +/-15-25, unsatisfactory >+/-25. NOTE Moriasi 2015 tightens watershed-flow satisfactory to PBIAS <= +/-15%; use 15 for a stricter gate."
+        cites: [moriasi2007, moriasi2015]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "KGE is the mHM community's routine objective function but has no Moriasi-style tier table; floor -0.41 = a run beats the mean-flow benchmark (Dembele 2022). Achieved mHM benchmarks: KGE 0.53 sparsely-gauged W-Africa (Pomeon 2018), up to 0.91-0.93 seamless-MPR Rhine (Samaniego 2017); mRM routing changes median KGE by <0.11 (Thober 2019)."
+        cites: [dembele2022, pomeon2018, samaniego2017, thober2019]
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "RMSE-to-obs-SD ratio; Moriasi 2007 Table 4: satisfactory 0.60<RSR<0.70, good 0.50-0.60, very good <0.50. Co-reported with NSE (RSR=sqrt(1-NSE))."
+        cites: [moriasi2007]
+    validated_when: "NSE >= 0.50 (Moriasi satisfactory) AND |PBIAS| <= 25% for streamflow. mHM's own German operational convention calibrates catchments to NSE >= 0.65 (Zink 2017, ~good tier)."
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      Headline quantity and the dag determining_metric (nse) is retained. Moriasi 2007: "model
+      simulation can be judged as satisfactory if NSE > 0.50 and RSR < 0.70, and if PBIAS < +/-25% for
+      streamflow"; Arnold/SWAT 2012 reproduces "NSE ... >0.75 ... very good" per Moriasi 2007. Zink 2017
+      German ensemble: basins accepted at "a Nash-Sutcliffe model efficiency of 0.65 (NSE >= 0.65)".
+      Gauge must snap to the correct L11 routing cell (a mis-snapped gauge zeros discharge) and routing
+      resolution can shift peak timing 1-3 days (dag caveats) — a timing offset is not a water-balance
+      failure.
+
+  # ===================== EVAPOTRANSPIRATION / spatial pattern (MODERATE — SPAEF, no pass tier) ==========
+  - canonical_quantity: evapotranspiration
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: spaef
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: >-
+          SPAEF optimum = 1 (Koch 2018, three equally-weighted components: correlation, CV-ratio,
+          histogram-match). NO generic numeric pass threshold exists: Dembele 2022 — "it is difficult
+          to formulate generic guidelines for the desired range of SPAEF and KGE ... lower bound of
+          -0.41 for KGE and -0.73 for SPAEF". Benchmark spatial-AET calibration in Germany reaches only
+          average SPAEF ~= 0.46 (Demirel 2018: "although not perfect (average SPAEF = 0.46)"). Un-
+          thresholded => gate may contextualize, never auto-validate or loosen.
+        cites: [koch2018, demirel2018, dembele2022]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "dag placeholder metric for spatial AET is csi (categorical), but the mHM/remote-sensing literature judges continuous spatial ET patterns with SPAEF (Koch 2018; Demirel 2018; Dembele 2022), which supersedes csi here."
+        cites: [koch2018]
+    validated_when: "Spatial AET pattern judged by SPAEF (optimum 1); no cited pass tier — contextual only. Benchmark spatial calibrations achieve SPAEF ~0.4-0.6."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      SPAEF is a well-established convention metric (moderate) but carries no field pass threshold (band
+      null, confidence 0.4). Spatial AET pattern is set by PET-correction/aspect and vegetation
+      parameters, not by discharge-only calibration (dag caveat) — spatial ET failure under a Q-only
+      calibration is a calibration-design limitation, not necessarily a KI defect.
+
+  # ===================== EVAPOTRANSPIRATION / point time series (WEAK — no fetched tier) =============
+  - canonical_quantity: evapotranspiration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper reports a flux-tower / point AET NSE tier; the Moriasi 2007/2015 tiers were derived for streamflow (and sediment/nutrient), not for ET, so they are not transferred here."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED — no cited point-ET temporal-skill threshold in the fetched set."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      dag determining_metric (nse) retained but null-banded per the no-fabrication rule. PET-method/
+      forcing mismatch (e.g. Hargreaves with only tavg) systematically biases aET (dag caveat). A flux-
+      tower ET evaluation reporting NSE/RMSE tiers would raise this block.
+
+  # ===================== SOIL MOISTURE / spatial pattern (MODERATE — SPAEF, no pass tier) ============
+  - canonical_quantity: soil_moisture
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: spaef
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: >-
+          Same SPAEF convention as spatial AET: optimum 1 (Koch 2018), no generic pass threshold
+          (Dembele 2022: "difficult to formulate generic guidelines"; floor -0.73). Satellite spatial
+          soil-moisture patterns are evaluated with SPAEF/its components, not a fixed tier.
+        cites: [koch2018, demirel2018, dembele2022]
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: supportive
+        ceiling_reason: "dag placeholder for spatial SM is csi; the field uses SPAEF for continuous spatial soil-moisture patterns (Koch 2018; Demirel 2018)."
+        cites: [koch2018]
+    validated_when: "Spatial soil-moisture pattern judged by SPAEF (optimum 1); no cited pass tier — contextual only."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      Satellite SM products sense a shallow surface layer — compare against the matching model horizon
+      (dag caveat). SPAEF metric is solid; pass threshold is undefined (band null, confidence 0.4).
+
+  # ===================== SOIL MOISTURE / point time series (WEAK — r, no model tier) =================
+  - canonical_quantity: soil_moisture
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: >-
+          No fetched paper gives a model-vs-obs point soil-moisture r tier. Kunnath-Poovakka 2019 notes
+          satellite SM has "typical correlations of greater than 0.8" against ground SM — but that is an
+          obs-product inter-comparison, NOT a model-validation pass threshold, so it is not adopted as a
+          band.
+        cites: [kunnath2018]
+    secondary_metrics: []
+    validated_when: "UNRESOLVED — no cited point soil-moisture r threshold; anomaly/index comparison often more meaningful than absolute mm (dag caveat)."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Absolute SM magnitude depends on soil-depth configuration (dag caveat); correlation of anomalies
+      is the practical target but has no fetched numeric tier.
+
+  # ===================== TOTAL RUNOFF / spatial pattern (WEAK — per-cell, rarely observed) ===========
+  - canonical_quantity: runoff
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: spaef
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Per-cell generated runoff is pre-routing and rarely observed spatially; SPAEF (optimum 1, Koch 2018) is the applicable spatial-pattern metric but there is no cited pass threshold, and there is no gridded runoff obs product bound in obs_map."
+        cites: [koch2018]
+    secondary_metrics: []
+    validated_when: "UNRESOLVED — do not compare per-cell generated runoff to gauge hydrographs (dag caveat); no cited spatial pass tier."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Included for completeness; the gradeable runoff signal is the routed discharge block above, not
+      per-cell generated runoff.
+
+  # ===================== TOTAL WATER STORAGE / GRACE anomaly (WEAK — obs_map-bound, r) ================
+  - canonical_quantity: total_water_storage
+    obs_shape: regional_aggregate
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: >-
+          Bound in model_obs_map (tws_anomaly_cm / lwe_thickness_cm, GRACE), NOT in the dag
+          validation_rows. Pomeon 2018 validates mHM total water storage anomaly against GRACE
+          retrievals, but reports no numeric correlation tier, so the band is null.
+        cites: [pomeon2018]
+    secondary_metrics: []
+    validated_when: "UNRESOLVED — GRACE dTWS compared by correlation of anomalies; no cited r threshold. Provenance: obs_map binding (determining_metric r), not a dag validation_row."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      GRACE is coarse (~basin/regional scale); anomaly correlation is the practical target. Multivariate
+      mHM calibrations use dTWS-GRACE as a validation (not always calibration) constraint (Pomeon 2018).
+
+deferred_paywalled:
+  - ref: "Cuntz et al. 2015 — sequential screening / noninformative mHM parameters (fetch_failed; would sharpen which discharge params drive skill)"
+    doi: 10.1002/2015wr016907
+    needed_for: [discharge]
+  - ref: "Spatial-pattern-oriented multicriteria sensitivity analysis of a distributed hydrologic model (fetch_failed; would ground spatial ET/SM SPAEF sensitivity targets)"
+    doi: 10.3390/w10091188
+    needed_for: [evapotranspiration, soil_moisture]

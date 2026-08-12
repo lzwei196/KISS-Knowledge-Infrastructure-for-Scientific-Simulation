@@ -27,8 +27,8 @@
 **Model**: SWAP v4.2.0
 **Developer**: Wageningen University and Research (WUR), The Netherlands
 **Last updated**: 2026-03-28
-**Stats**: 5 tools | 6 skill documents | 17 diagnostic triplets | ~1,200 lines of validated Python
-**Validation status**: `analytic` (Hupselbrook case, Netherlands, 2002-2004)
+**Stats**: 6 tools | 6 skill documents | 23 diagnostic triplets | ~1,600 lines of validated Python
+**Validation status**: `analytic` (Hupselbrook, NL, 2002-2004) + `real-case` (FLUXNET US-Ne1, 2001-2013)
 
 ---
 
@@ -96,6 +96,18 @@ tests/cases/1.hupselbrook/     # Hupselbrook, Netherlands
 **Validated**: SWAP runs successfully on Hupselbrook. Water balance for 2002:
 - Rain+snow: 84.18 cm, Transpiration: 38.17 cm, Soil evaporation: 16.69 cm, Drainage: 22.11 cm
 
+Reproduced bit-for-bit 2026-08-11 through `tools/run_swap.py` + `tools/parse_swap_output.py`
+(0.8 s, balance deviation 0.00 cm). NOTE: the binary exits with code **100** on success — see
+Critical Domain Knowledge #9.
+
+**Second validated site (2026-08-11)**: FLUXNET2015 **US-Ne1** (irrigated maize, Mead NE,
+41.1651 N / -96.4766 E), 2001-2013, NASA POWER daily forcing + HWSD soil, full pipeline
+s1-s7 through the KI tools. Uncalibrated daily ET vs eddy-covariance:
+r 0.76 / KGE -0.12 / NSE -1.14 / PBIAS +48% against `LE_F_MDS`, and
+r 0.75 / KGE 0.36 / NSE -0.13 / PBIAS +17.6% against energy-balance-corrected `LE_CORR`.
+Water balance closes to 0.0 mm over 4383 d. The residual bias is over-irrigation from the
+shipped `maizes.crp` scheduling defaults (dt_023), not a forcing/unit error.
+
 ---
 
 ## Pipeline (8 stages)
@@ -103,9 +115,9 @@ tests/cases/1.hupselbrook/     # Hupselbrook, Netherlands
 | # | Stage | Tool(s) | Description |
 |---|-------|---------|-------------|
 | 0 | Configuration | (manual) | Site selection, period, forcing source |
-| 1 | Met forcing | `convert_forcing_to_swap` | CMFD/MSWX → SWAP .met format (unit conversions) |
+| 1 | Met forcing | `convert_forcing_to_swap` | CMFD/MSWX/NASA POWER/GSWP3 → SWAP .met (via `ki_tools_common.load_forcing`) |
 | 2 | Soil parameters | `convert_soil_to_swap` | HWSD → van Genuchten parameters for .swp file |
-| 3 | Config assembly | (manual with templates) | Build .swp, .crp, .dra, .bbc from parameters |
+| 3 | Config assembly | `assemble_swap_config` | Build .swp from a validated base + site params, MvG table, crop rotation, irrigation |
 | 4 | Execution | `run_swap` | Run SWAP binary with preflight checks |
 | 5 | Output parsing | `parse_swap_output` | Extract .blc/.inc/.csv results to structured CSV |
 | 6 | Visualization | `plot_swap_results` | Water balance, soil moisture profiles, ET timeseries |
@@ -258,9 +270,48 @@ Ksat: sand 10-100 cm/d, clay 0.1-10 cm/d
 The .blc file provides In/Out totals. Sum(In) - Sum(Out) should equal storage change.
 Deviation > 0.01 cm indicates numerical issues. Check CRITDEVH1CP and MAXIT.
 
-### 9. Crop rotation dates must not overlap
+### 9. SWAP's NORMAL exit code is 100, not 0
+`src/swap_main.f90` ends with `Call Exit(100)` after printing `Swap normal completion!`.
+A wrapper that tests `returncode != 0` marks EVERY successful run as failed. Assert success
+from the model's own evidence: rc 0, **or** rc 100 with "normal completion" on stdout / a
+`*.ok` file in the work dir (`run_swap.swap_run_succeeded()`). See dt_018.
+
+### 10. SWAP output files are COMMA-separated and latin-1 encoded
+`.inc`, `.vap` and the native `.csv` are blank-padded **comma**-separated (splitting on
+whitespace shifts every field by one). The `.vap` units header contains `ºC` (byte 0xBA),
+so opening SWAP output as UTF-8 raises `UnicodeDecodeError` — use `encoding="latin-1"`.
+`.blc` is a two-column `INPUT | OUTPUT` table with labels like `Gross Rainfall` /
+`Plant Transpiration` / `- system 1` (drainage), NOT `key : value` lines. See dt_019.
+
+### 11. Tables in .swp are read by their COLUMN-NAME header
+ttutil's `rddata` locates a table by its header row (`CROPSTART CROPEND CROPFIL CROPTYPE`,
+`ORES OSAT ALFA ...`). Dropping or reordering that line gives
+`Inconsistent variable type` inside `rdinit_`, pointing at the first data row. See dt_022.
+
+### 12. Crop rotation dates must not overlap
 Each crop period (CROPSTART to CROPEND) must not overlap with adjacent crops.
 Between crops, the soil is treated as bare.
+
+---
+
+## Observation compatibility (what SWAP can and cannot be scored against)
+
+SWAP is a **1-D vadose-zone column**: one field, depths 0 to ~-200 cm, no horizontal
+dimension and no ocean. Before accepting a validation target, check the support:
+
+| Obs kind | Scoreable? | Notes |
+|---|---|---|
+| Flux tower ET/LE at the column's field (FLUXNET2015) | yes | `point_time_series`; compare Tact+Eact |
+| In-situ soil moisture / soil temperature profile (ISMN, RISMA) | yes | match the sensor depth to a compartment in `.vap` |
+| Piezometer / water-table depth | yes, with care | only meaningful with SWBOTB 1/3/4 and a shallow GWL |
+| Tile-drain discharge at the field | yes | `.blc` "- system 1" (needs SWDRA>0) |
+| Soil pore-water solute / soil salinity (EC, mg/cm³) at that field | yes | `.sba` / `.vap` solute1; watch mg/L vs mg/cm³ (dt_017) |
+| **Gridded / regional field (any variable)** | **no** | there is no gridded or batch-of-columns runner in this KI |
+| **Ocean salinity (EN4, WOA23, `sea_water_salinity` in psu)** | **NO — structural** | EN4.2.2 is a 1°×1° monthly ocean analysis on 42 sub-sea depth levels (5 m … 5350 m) with land masked. SWAP has no ocean compartment and its solute state is soil pore-water concentration in mg/cm³ on a land column. There is no unit, no support and no domain in common — do NOT construct a metric from it. |
+
+Verified 2026-08-11: `/mnt/datasets/obs/en4-2-2/EN.4.2.2.analyses.g10.*.zip`,
+variable `salinity`, `standard_name = sea_water_salinity`, dims (time, depth, lat, lon),
+72.6% of surface cells wet, land = NaN.
 
 ---
 
@@ -268,8 +319,9 @@ Between crops, the soil is treated as bare.
 
 | Tool | Script | Purpose | Key Inputs | Key Outputs |
 |------|--------|---------|------------|-------------|
-| convert_forcing_to_swap | `tools/convert_forcing_to_swap.py` | CMFD/MSWX → .met | NetCDF forcing, lat/lon | .met file |
+| convert_forcing_to_swap | `tools/convert_forcing_to_swap.py` | CMFD/MSWX/NASA POWER/GSWP3 → .met | `--source`, lat/lon, dates | .met file |
 | convert_soil_to_swap | `tools/convert_soil_to_swap.py` | HWSD → MvG params | HWSD raster, lat/lon | Soil parameter table |
+| assemble_swap_config | `tools/assemble_swap_config.py` | Base .swp → site .swp | base .swp, MvG table, crop/irrigation rows, `--set KEY=VALUE` | swap.swp (+ trap checks) |
 | run_swap | `tools/run_swap.py` | Execute SWAP binary | .swp file, binary path | Exit code, output files |
 | parse_swap_output | `tools/parse_swap_output.py` | Extract results to CSV | SWAP output dir | Structured CSV files |
 | plot_swap_results | `tools/plot_swap_results.py` | Visualization | Parsed CSV files | PNG figures |

@@ -173,6 +173,32 @@ def process():
     # L0 is computed from basin bounds with buffer
     header_L0 = compute_grid_extent(bounds, cellsize_L0, buffer_cells=2)
 
+    # CRITICAL (dt_r12): L0 MUST BE SQUARE, with the side an exact multiple of the
+    # L1/L11 ratio.  mHM's read_header_ascii() declares (header_ncols, header_nrows,
+    # ...) but every call site passes (nrows, ncols, ...) positionally, e.g.
+    # mo_meteo_handler.f90.  The ASCII `ncols` line therefore lands in mHM's `nrows`,
+    # and calculate_grid_properties() derives xllcornerOut from ncolsIn -- mixing the
+    # x-origin with the y-extent.  For a NON-square L0 no geographically correct
+    # header can satisfy the L2 check and mHM aborts with
+    #   "L2_variable_init: size mismatch in grid file for level2".
+    # With a square L0 of side N and ratio R,
+    #   xllOut = xll0 + N*cs0 - (N/R)*cs1 = xll0  under either reading.
+    # mHM's own test domains are square (240x240), so upstream never trips over it.
+    _R = max(int(round(cellsize_L1 / cellsize_L0)), int(round(cellsize_L11 / cellsize_L0)))
+    side = int(math.ceil(max(header_L0["ncols"], header_L0["nrows"]) / _R) * _R)
+    if side != header_L0["ncols"] or side != header_L0["nrows"]:
+        pad_c = side - header_L0["ncols"]
+        pad_r = side - header_L0["nrows"]
+        # centre the basin in the padded square (nodata fills the pad)
+        header_L0["xllcorner"] -= (pad_c // 2) * cellsize_L0
+        header_L0["yllcorner"] -= (pad_r // 2) * cellsize_L0
+        logger.info(
+            f"Padding L0 to a square: {header_L0['ncols']}x{header_L0['nrows']} "
+            f"-> {side}x{side} (pad {pad_c} cols, {pad_r} rows; multiple of R={_R})"
+        )
+        header_L0["ncols"] = side
+        header_L0["nrows"] = side
+
     # CRITICAL: L1 and L11 must be derived from L0 grid dimensions, NOT from basin bounds.
     # mHM internally computes L1 as: nrows_L1 = ceil(nrows_L0 / R), ncols_L1 = ceil(ncols_L0 / R)
     # and uses L0's xllcorner/yllcorner as the origin. If we compute L1 independently

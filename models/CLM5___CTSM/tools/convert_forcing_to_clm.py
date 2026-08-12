@@ -17,14 +17,43 @@ combined files with specific variable names:
   - TBOT (K), QBOT (kg/kg), WIND (m/s), PRECTmms (mm/s = kg/m²/s),
     FSDS (W/m²), FLDS (W/m²), PSRF (Pa)
 
+TWO OUTPUT LAYOUTS (--datm-layout)
+----------------------------------
+``legacy``  (default, unchanged): one NetCDF per variable, ``clmforc.<VAR>.nc``.
+            Convenient for inspection, but DATM CANNOT READ IT — no CIME stream
+            template matches that layout.
+
+``clm1pt``  The layout the CLM1PT / CLM_USRDAT stream actually reads:
+            one file per month named ``YYYY-MM.nc`` under
+            ``$DIN_LOC_ROOT_CLMFORC/$CLM_USRDAT_NAME/CLM1PT_data/``, each
+            holding every forcing variable plus LONGXY/LATIXY/EDGE*.
+            Verified against cime/src/components/data_comps_mct/datm/
+            cime_config/namelist_definition_datm.xml:
+              strm_datdir  = $DIN_LOC_ROOT_CLMFORC/$CLM_USRDAT_NAME/CLM1PT_data
+              strm_datfil  = %ym.nc
+              strm_datvar  = ZBOT z / TBOT tbot / RH rh / WIND wind /
+                             PRECTmms precn / FSDS swdn / PSRF pbot / FLDS lwdn
+
+  *** TRAP (dt_018): the CLM1PT stream reads humidity as ``RH`` in PERCENT,
+      NOT as ``QBOT`` in kg/kg.  A file that carries QBOT only makes DATM abort
+      with "ERROR: (shr_dmodel_readstrm) cannot find field rh".  dt_004 in
+      triplets.yaml describes the *global* DATM streams; the single-point
+      stream is the exception. ***
+
 Usage:
     python convert_forcing_to_clm.py --source era5 --input /path/to/data.nc \\
         --output /path/to/datm/ --start-year 2000 --end-year 2010
     python convert_forcing_to_clm.py --source csv --input /path/to/station.csv \\
         --output /path/to/datm/ --lat 40.0 --lon 116.0
+    python convert_forcing_to_clm.py --source fluxnet \\
+        --input .../fluxnet/sites/US-MMS/FULLSET_HR.csv \\
+        --output $DIN_LOC_ROOT/atm/datm7/US-MMS/CLM1PT_data \\
+        --datm-layout clm1pt --lat 39.3232 --lon -86.4131 \\
+        --zbot 30.0 --elevation 275 --start-year 1999 --end-year 2014
 """
 
 import argparse
+import calendar
 import json
 import os
 import sys
@@ -41,6 +70,11 @@ try:
     import pandas as pd
 except ImportError:
     pd = None
+
+try:
+    import netCDF4 as nc4
+except ImportError:
+    nc4 = None
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +136,33 @@ SOURCE_MAPS = {
         "longwave": "longwave",
         "pressure": "pressure",
     },
+    # FLUXNET2015 FULLSET half-hourly (HH) / hourly (HR) files.  The "_F"
+    # suffix marks the gap-filled variables (MDS gap-filling + ERA-Interim
+    # downscaled fill) — those are the only ones continuous enough to drive a
+    # land model.  Pastorello et al. 2020, Sci. Data 7:225, Table 3.
+    "fluxnet": {
+        "TA_F": "temperature",        # degC
+        "SW_IN_F": "shortwave",       # W/m2
+        "LW_IN_F": "longwave",        # W/m2
+        "VPD_F": "vpd",               # hPa
+        "PA_F": "pressure",           # kPa
+        "P_F": "precipitation",       # mm per timestep
+        "WS_F": "wind_speed",         # m/s
+    },
 }
+
+# Per-variable fallbacks when a site does not report the primary column.
+FLUXNET_FALLBACKS = {
+    "LW_IN_F": ["LW_IN_JSB_F", "LW_IN_F_MDS", "LW_IN_ERA"],
+    "TA_F": ["TA_F_MDS", "TA_ERA"],
+    "SW_IN_F": ["SW_IN_F_MDS", "SW_IN_ERA"],
+    "VPD_F": ["VPD_F_MDS", "VPD_ERA"],
+    "PA_F": ["PA", "PA_ERA"],
+    "P_F": ["P", "P_ERA"],
+    "WS_F": ["WS", "WS_ERA"],
+}
+
+FLUXNET_MISSING = -9999.0
 
 
 def validate_inputs(args):
@@ -122,9 +182,9 @@ def validate_inputs(args):
         if args.start_year > args.end_year:
             errors.append("start-year must be <= end-year")
 
-    if args.source == "csv":
+    if args.source in ("csv", "fluxnet"):
         if args.lat is None or args.lon is None:
-            errors.append("--lat and --lon required for CSV source")
+            errors.append(f"--lat and --lon required for {args.source} source")
 
     if errors:
         print(json.dumps({"status": "error", "errors": errors}))
@@ -339,8 +399,155 @@ def process_csv(filepath, args):
     return result, times
 
 
+def vpd_to_rh(vpd_hpa, t_k):
+    """Convert vapour-pressure deficit (hPa) + air temperature (K) to RH (%).
+
+    es via Tetens (same formulation as rh_to_specific_humidity), then
+        RH = 100 * (es - VPD) / es
+    RH is clipped to [1, 100]: CLM's DATM converts RH back to specific
+    humidity, and RH <= 0 produces a negative q that aborts the run.
+    """
+    t_c = t_k - KELVIN_OFFSET
+    es_pa = 611.2 * np.exp(17.67 * t_c / (t_c + 243.5))
+    vpd_pa = vpd_hpa * 100.0
+    rh = 100.0 * (es_pa - vpd_pa) / es_pa
+    return np.clip(rh, 1.0, 100.0)
+
+
+def barometric_pressure(elev_m):
+    """US standard atmosphere pressure (Pa) at elevation (m)."""
+    return 101325.0 * (1.0 - 2.25577e-5 * elev_m) ** 5.25588
+
+
+def process_fluxnet(filepath, args):
+    """Read a FLUXNET2015 FULLSET HH/HR file into CLM5 DATM variables.
+
+    Returns (data, times, meta).  ``data`` carries BOTH the RH (%) needed by
+    the CLM1PT stream and QBOT (kg/kg) for the generic DATM streams, so either
+    layout can be written from one pass.
+    """
+    wanted = list(SOURCE_MAPS["fluxnet"].keys())
+    header = pd.read_csv(filepath, nrows=0).columns.tolist()
+
+    resolved, missing = {}, []
+    for col in wanted:
+        if col in header:
+            resolved[col] = col
+            continue
+        alt = next((c for c in FLUXNET_FALLBACKS.get(col, []) if c in header), None)
+        if alt:
+            resolved[col] = alt
+        else:
+            missing.append(col)
+
+    usecols = ["TIMESTAMP_START", "TIMESTAMP_END"] + list(resolved.values())
+    df = pd.read_csv(filepath, usecols=usecols)
+    df = df.replace(FLUXNET_MISSING, np.nan)
+
+    t_start = pd.to_datetime(df["TIMESTAMP_START"].astype(np.int64).astype(str),
+                             format="%Y%m%d%H%M")
+    t_end = pd.to_datetime(df["TIMESTAMP_END"].astype(np.int64).astype(str),
+                           format="%Y%m%d%H%M")
+    dt_seconds = float((t_end - t_start).dt.total_seconds().median())
+    # FLUXNET values are interval MEANS; stamp them at the interval midpoint so
+    # DATM's nearest-neighbour time interpolation picks the right hour.
+    times = t_start + pd.to_timedelta(dt_seconds / 2.0, unit="s")
+
+    if args.start_year is not None:
+        keep = times.dt.year >= args.start_year
+        df, times = df[keep.values], times[keep.values]
+    if args.end_year is not None:
+        keep = times.dt.year <= args.end_year
+        df, times = df[keep.values], times[keep.values]
+
+    # dt_007: CLM runs a noleap (365-day) calendar. Feb 29 must be dropped from
+    # the forcing, otherwise the stream time axis drifts by one day per leap
+    # year relative to the model calendar.
+    n_before = len(times)
+    leapmask = ~((times.dt.month == 2) & (times.dt.day == 29))
+    df, times = df[leapmask.values], times[leapmask.values]
+    n_leap_dropped = n_before - len(times)
+
+    def col(name):
+        src = resolved.get(name)
+        return df[src].to_numpy(dtype=float) if src else None
+
+    n = len(times)
+    t_c = col("TA_F")
+    if t_c is None:
+        raise ValueError("FLUXNET file has no usable air-temperature column")
+    tbot = celsius_to_kelvin(t_c)
+
+    pa_kpa = col("PA_F")
+    if pa_kpa is None or np.all(np.isnan(pa_kpa)):
+        if args.elevation is None:
+            raise ValueError(
+                "No pressure column (PA_F/PA/PA_ERA) in the FLUXNET file; "
+                "pass --elevation so a barometric estimate can be used"
+            )
+        psrf = np.full(n, barometric_pressure(args.elevation))
+    else:
+        psrf = pa_kpa * 1000.0  # kPa -> Pa
+
+    vpd = col("VPD_F")
+    if vpd is None:
+        raise ValueError("FLUXNET file has no usable VPD column for humidity")
+    rh = vpd_to_rh(vpd, tbot)
+
+    precip_step = col("P_F")
+    if precip_step is None:
+        raise ValueError("FLUXNET file has no usable precipitation column")
+    # P_F is the accumulation over ONE timestep (mm), not a rate.
+    prect = precip_step / dt_seconds
+
+    data = {
+        "TBOT": tbot,
+        "PSRF": psrf,
+        "RH": rh,
+        "QBOT": rh_to_specific_humidity(rh, tbot, psrf),
+        "WIND": col("WS_F"),
+        "PRECTmms": prect,
+        "FSDS": np.maximum(col("SW_IN_F"), 0.0),
+        "FLDS": col("LW_IN_F"),
+        "ZBOT": np.full(n, float(args.zbot)),
+    }
+
+    # Any residual gaps (rare in the _F columns) are linearly interpolated so
+    # DATM never sees a NaN — a NaN in the forcing propagates silently into
+    # soil moisture and shows up only as a crash days later.
+    gap_report = {}
+    for k, v in list(data.items()):
+        if v is None:
+            raise ValueError(f"FLUXNET file is missing the source column for {k}")
+        nan_n = int(np.count_nonzero(~np.isfinite(v)))
+        if nan_n:
+            s = pd.Series(v).interpolate(limit_direction="both")
+            data[k] = s.to_numpy()
+            gap_report[k] = nan_n
+
+    meta = {
+        "columns_used": resolved,
+        "columns_missing": missing,
+        "timestep_seconds": dt_seconds,
+        "n_records": n,
+        "leap_day_records_dropped": n_leap_dropped,
+        "residual_gaps_interpolated": gap_report,
+    }
+    return data, times.to_numpy(), meta
+
+
 def process(args):
     """Main processing: read source data, convert, write DATM NetCDF."""
+    if args.source == "fluxnet":
+        if pd is None:
+            print(json.dumps({
+                "status": "error",
+                "errors": ["pandas required for FLUXNET processing"]
+            }))
+            sys.exit(1)
+        data, times, meta = process_fluxnet(args.input, args)
+        return data, times, meta
+
     if args.source in ("era5", "gswp3", "crujra"):
         if xr is None:
             print(json.dumps({
@@ -375,7 +582,7 @@ def process(args):
         }))
         sys.exit(1)
 
-    return data, times
+    return data, times, {}
 
 
 def validate_outputs(data):
@@ -492,11 +699,119 @@ def write_datm_netcdf(data, times, output_dir, lat=None, lon=None):
     return output_dir
 
 
+CLM1PT_VARS = ["ZBOT", "TBOT", "RH", "WIND", "PRECTmms", "FSDS", "PSRF", "FLDS"]
+
+
+def write_clm1pt_monthly(data, times, output_dir, lat, lon, half_width_deg=0.05,
+                         resume=True):
+    """Write DATM CLM1PT monthly files (``YYYY-MM.nc``).
+
+    One file per calendar month holding every forcing variable, matching
+    strm_datfil = ``%ym.nc`` for stream CLM1PT.CLM_USRDAT.  ``time`` is days
+    since the first instant of that month on a NOLEAP calendar, which is why
+    the leap days must already have been dropped upstream (dt_007).
+
+    ``resume=True`` skips months whose file already exists, so a re-launched
+    detached run does not redo a multi-year conversion.
+    """
+    if nc4 is None:
+        raise RuntimeError("netCDF4 is required for the clm1pt layout")
+
+    os.makedirs(output_dir, exist_ok=True)
+    t = pd.to_datetime(times)
+    years = t.year.to_numpy()
+    months = t.month.to_numpy()
+    keys = years * 100 + months
+
+    lon360 = float(lon) % 360.0
+    written, skipped = [], []
+
+    for key in np.unique(keys):
+        yr, mo = int(key // 100), int(key % 100)
+        fname = os.path.join(output_dir, f"{yr:04d}-{mo:02d}.nc")
+        if resume and os.path.exists(fname):
+            skipped.append(os.path.basename(fname))
+            continue
+
+        sel = keys == key
+        tt = t[sel]
+        ref = np.datetime64(f"{yr:04d}-{mo:02d}-01T00:00:00")
+        offs = (tt.to_numpy() - ref) / np.timedelta64(1, "s") / 86400.0
+
+        ds = nc4.Dataset(fname + ".tmp", "w", format="NETCDF3_64BIT_OFFSET")
+        ds.createDimension("time", None)
+        ds.createDimension("lat", 1)
+        ds.createDimension("lon", 1)
+        ds.createDimension("scalar", 1)
+
+        tv = ds.createVariable("time", "f8", ("time",))
+        tv.units = f"days since {yr:04d}-{mo:02d}-01 00:00:00"
+        tv.calendar = "noleap"
+        tv.long_name = "observation time"
+        tv[:] = offs
+
+        lonv = ds.createVariable("LONGXY", "f8", ("lat", "lon"))
+        lonv.units = "degrees_east"
+        lonv.long_name = "longitude"
+        lonv[:] = lon360
+        latv = ds.createVariable("LATIXY", "f8", ("lat", "lon"))
+        latv.units = "degrees_north"
+        latv.long_name = "latitude"
+        latv[:] = float(lat)
+
+        for name, val in (("EDGEW", lon360 - half_width_deg),
+                          ("EDGEE", lon360 + half_width_deg),
+                          ("EDGES", float(lat) - half_width_deg),
+                          ("EDGEN", float(lat) + half_width_deg)):
+            ev = ds.createVariable(name, "f8", ("scalar",))
+            ev.units = "degrees_east" if name in ("EDGEW", "EDGEE") else "degrees_north"
+            ev.long_name = f"{name.lower()} edge in atmospheric data"
+            ev[:] = val
+
+        for var in CLM1PT_VARS:
+            if var not in data:
+                raise KeyError(
+                    f"CLM1PT layout requires {var}; converter produced "
+                    f"{sorted(data)}"
+                )
+            v = ds.createVariable(var, "f4", ("time", "lat", "lon"))
+            v.units = _get_units(var)
+            v.long_name = _CLM1PT_LONGNAME[var]
+            v.mode = "time-dependent"
+            v[:] = np.asarray(data[var])[sel].reshape(-1, 1, 1)
+
+        ds.case_title = "CLM1PT single-point tower forcing"
+        ds.history = ("created by CLM5___CTSM KI convert_forcing_to_clm.py "
+                      "--datm-layout clm1pt")
+        ds.close()
+        os.replace(fname + ".tmp", fname)
+        written.append(os.path.basename(fname))
+
+    return {"dir": output_dir, "files_written": len(written),
+            "files_skipped_existing": len(skipped),
+            "first": written[0] if written else (skipped[0] if skipped else None),
+            "last": written[-1] if written else (skipped[-1] if skipped else None)}
+
+
+_CLM1PT_LONGNAME = {
+    "ZBOT": "observational height",
+    "TBOT": "temperature at the lowest atm level",
+    "RH": "relative humidity at the lowest atm level",
+    "WIND": "wind at the lowest atm level",
+    "PRECTmms": "precipitation",
+    "FSDS": "incident solar radiation",
+    "PSRF": "pressure at the lowest atm level",
+    "FLDS": "incident longwave radiation",
+}
+
+
 def _get_units(var_name):
     """Return CF-convention units for CLM5 DATM variables."""
     units_map = {
         "TBOT": "K",
         "QBOT": "kg/kg",
+        "RH": "%",
+        "ZBOT": "m",
         "WIND": "m/s",
         "PRECTmms": "mm/s",
         "FSDS": "W/m2",
@@ -512,7 +827,7 @@ def main():
     )
     parser.add_argument(
         "--source", type=str, required=True,
-        choices=["era5", "gswp3", "crujra", "csv"],
+        choices=["era5", "gswp3", "crujra", "csv", "fluxnet"],
         help="Forcing data source type"
     )
     parser.add_argument(
@@ -527,24 +842,55 @@ def main():
     parser.add_argument("--end-year", type=int, default=None)
     parser.add_argument("--lat", type=float, default=None, help="Latitude")
     parser.add_argument("--lon", type=float, default=None, help="Longitude")
+    parser.add_argument(
+        "--datm-layout", type=str, default="legacy",
+        choices=["legacy", "clm1pt"],
+        help="legacy = one file per variable (NOT readable by DATM); "
+             "clm1pt = monthly YYYY-MM.nc files for the CLM1PT/CLM_USRDAT stream"
+    )
+    parser.add_argument("--zbot", type=float, default=30.0,
+                        help="Forcing reference height (m) written as ZBOT")
+    parser.add_argument("--elevation", type=float, default=None,
+                        help="Site elevation (m); used only if the source has "
+                             "no pressure column")
+    parser.add_argument("--half-width-deg", type=float, default=0.05,
+                        help="Half-width of the single-point cell (EDGE*)")
+    parser.add_argument("--no-resume", action="store_true",
+                        help="Rewrite monthly files that already exist")
 
     args = parser.parse_args()
 
     validate_inputs(args)
-    data, times = process(args)
+    data, times, meta = process(args)
     warnings_list = validate_outputs(data)
 
     os.makedirs(args.output, exist_ok=True)
-    output_path = write_datm_netcdf(
-        data, times, args.output, lat=args.lat, lon=args.lon
-    )
+    if args.datm_layout == "clm1pt":
+        if args.lat is None or args.lon is None:
+            print(json.dumps({"status": "error", "errors": [
+                "--lat and --lon are required for --datm-layout clm1pt"]}))
+            sys.exit(1)
+        layout_info = write_clm1pt_monthly(
+            data, times, args.output, args.lat, args.lon,
+            half_width_deg=args.half_width_deg, resume=not args.no_resume,
+        )
+        output_path = layout_info["dir"]
+    else:
+        layout_info = None
+        output_path = write_datm_netcdf(
+            data, times, args.output, lat=args.lat, lon=args.lon
+        )
 
     result = {
         "status": "success",
         "source": args.source,
+        "datm_layout": args.datm_layout,
         "output_dir": args.output,
+        "output_path": output_path,
         "variables_converted": list(data.keys()),
         "n_timesteps": len(times) if hasattr(times, '__len__') else 0,
+        "source_meta": meta,
+        "layout": layout_info,
         "warnings": warnings_list,
     }
 

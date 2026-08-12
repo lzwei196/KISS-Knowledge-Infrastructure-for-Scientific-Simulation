@@ -66,8 +66,31 @@ def compile_model(source_dir: str) -> None:
     print("Compilation successful.")
 
 
-def validate_params(data_dir: str, param_file: str) -> dict:
-    """Parse and validate parameter file. Returns key parameters."""
+def _resolve(rel: str, *bases) -> str:
+    """Resolve a params-file path the SAME way the binary will.
+
+    HAIL-CAESAR builds every input path as ``read_path + "/" + fname`` and
+    resolves it against the process working directory (see src/main.cpp:
+    argv[1] locates only the PARAMETER file, never the data files). A relative
+    read_path is therefore relative to the RUN directory, which for the shipped
+    Boscastle example is ``<repo>/test`` (see test/run_tests.sh), NOT the repo
+    root and NOT the data dir. Try every plausible base and return the first
+    that exists, else the first candidate for the error message.
+    """
+    cands = [rel] + [os.path.join(b, rel) for b in bases if b]
+    for c in cands:
+        if os.path.exists(c):
+            return c
+    return cands[0]
+
+
+def validate_params(data_dir: str, param_file: str, run_cwd: str = None) -> dict:
+    """Parse and validate parameter file. Returns key parameters.
+
+    ``run_cwd`` is the directory the model binary will be launched from; a
+    relative ``read_path``/``write_path`` in the params file is resolved
+    against it (and against data_dir as a fallback).
+    """
     param_path = os.path.join(data_dir, param_file)
     if not os.path.isfile(param_path):
         raise FileNotFoundError(f"Parameter file not found: {param_path}")
@@ -96,12 +119,13 @@ def validate_params(data_dir: str, param_file: str) -> dict:
     dem_ext = params.get("dem_read_extension", "asc")
     read_path = params.get("read_path", data_dir)
     if dem_name:
-        dem_file = os.path.join(read_path, f"{dem_name}.{dem_ext}")
-        # Try relative to data_dir too
+        dem_file = _resolve(os.path.join(read_path, f"{dem_name}.{dem_ext}"),
+                            run_cwd, data_dir)
         if not os.path.isfile(dem_file):
-            dem_file2 = os.path.join(data_dir, read_path, f"{dem_name}.{dem_ext}")
-            if not os.path.isfile(dem_file2):
-                errors.append(f"DEM file not found: {dem_file} or {dem_file2}")
+            errors.append(
+                f"DEM file not found: {dem_file} "
+                f"(read_path={read_path!r} resolved against cwd={run_cwd!r} "
+                f"and data_dir={data_dir!r})")
     else:
         errors.append("read_fname not set in parameter file")
 
@@ -109,16 +133,19 @@ def validate_params(data_dir: str, param_file: str) -> dict:
     rain_file = params.get("rainfall_data_file", "")
     rain_on = params.get("rainfall_data_on", "no")
     if rain_on.lower() == "yes" and rain_file:
-        rain_path = os.path.join(read_path, rain_file)
+        rain_path = _resolve(os.path.join(read_path, rain_file),
+                             run_cwd, data_dir)
         if not os.path.isfile(rain_path):
-            rain_path2 = os.path.join(data_dir, read_path, rain_file)
-            if not os.path.isfile(rain_path2):
-                errors.append(f"Rainfall file not found: {rain_path}")
+            errors.append(f"Rainfall file not found: {rain_path}")
 
-    # Check write path
+    # Check write path. The binary does NOT create it (triplet T014), and it
+    # must be created where the binary will resolve it -- i.e. against run_cwd.
     write_path = params.get("write_path", "")
     if write_path:
-        os.makedirs(write_path, exist_ok=True)
+        wp = write_path if os.path.isabs(write_path) else \
+            os.path.join(run_cwd or data_dir, write_path)
+        os.makedirs(wp, exist_ok=True)
+        params["_resolved_write_path"] = wp
 
     # Check numerical parameters
     max_run = params.get("max_run_duration", "0")
@@ -147,27 +174,71 @@ def validate_params(data_dir: str, param_file: str) -> dict:
     return params
 
 
+def _tail(path: str, nbytes: int = 8000) -> str:
+    """Last nbytes of a log file (the model prints one line per iteration)."""
+    try:
+        size = os.path.getsize(path)
+        with open(path, "r", errors="replace") as f:
+            if size > nbytes:
+                f.seek(size - nbytes)
+            return f.read()
+    except OSError:
+        return ""
+
+
 def run_model(binary_path: str, data_dir: str, param_file: str,
-              num_threads: int = 1, timeout_sec: int = 7200) -> dict:
-    """Execute HAIL-CAESAR model."""
+              num_threads: int = 1, timeout_sec: int = 7200,
+              log_file: str = None, run_cwd: str = None) -> dict:
+    """Execute HAIL-CAESAR model.
+
+    ``timeout_sec <= 0`` means NO time limit -- required for multi-month /
+    multi-year catchment runs, which are launched detached and are expected to
+    take hours. ``log_file`` streams stdout+stderr straight to disk instead of
+    buffering it in memory: HAIL-CAESAR prints a line per iteration, so a long
+    run buffered via capture_output grows without bound and gives a watcher no
+    progress signal at all.
+    """
     env = os.environ.copy()
     env["OMP_NUM_THREADS"] = str(num_threads)
 
     cmd = [binary_path, data_dir, param_file]
     print(f"Running: {' '.join(cmd)}")
     print(f"OMP_NUM_THREADS={num_threads}")
+    no_limit = timeout_sec is None or timeout_sec <= 0
+    print(f"Timeout: {'NONE' if no_limit else str(timeout_sec) + 's'}")
+    if log_file:
+        print(f"Streaming model stdout/stderr -> {log_file}")
 
+    # The binary resolves a RELATIVE read_path/write_path against ITS cwd.
+    # dirname(binary) (=<repo>/bin) matches no documented invocation; the
+    # shipped test script runs from <repo>/test. Default to the repo root
+    # (parent of bin/) and let the caller override with run_cwd.
+    cwd_eff = run_cwd or os.path.dirname(os.path.dirname(
+        os.path.abspath(binary_path))) or "."
+    print(f"Working directory: {cwd_eff}")
     start_time = time.time()
+    wait_for = None if no_limit else timeout_sec
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout_sec,
-            env=env,
-            cwd=os.path.dirname(binary_path) or ".",
-        )
+        if log_file:
+            os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
+            with open(log_file, "w") as lf:
+                proc = subprocess.Popen(
+                    cmd, stdout=lf, stderr=subprocess.STDOUT, env=env,
+                    cwd=cwd_eff,
+                )
+                rc = proc.wait(timeout=wait_for)
+            stdout_txt, stderr_txt = _tail(log_file), ""
+        else:
+            r = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=wait_for,
+                env=env,
+                cwd=cwd_eff,
+            )
+            rc, stdout_txt, stderr_txt = r.returncode, r.stdout, r.stderr
     except subprocess.TimeoutExpired:
         elapsed = time.time() - start_time
         raise RuntimeError(
@@ -175,6 +246,11 @@ def run_model(binary_path: str, data_dir: str, param_file: str,
         )
 
     elapsed = time.time() - start_time
+
+    class _Res:
+        pass
+    result = _Res()
+    result.returncode, result.stdout, result.stderr = rc, stdout_txt, stderr_txt
 
     output = {
         "returncode": result.returncode,
@@ -195,7 +271,8 @@ def run_model(binary_path: str, data_dir: str, param_file: str,
 
 def validate_output(params: dict) -> dict:
     """Check that expected output files exist."""
-    write_path = params.get("write_path", ".")
+    # use the path resolved against the model's cwd, not the raw relative one
+    write_path = params.get("_resolved_write_path") or params.get("write_path", ".")
     write_fname = params.get("write_fname", "catchment.dat")
 
     results = {}
@@ -248,7 +325,16 @@ def main():
     parser.add_argument("--num_threads", type=int, default=1,
                         help="Number of OpenMP threads")
     parser.add_argument("--timeout", type=int, default=7200,
-                        help="Timeout in seconds (default 2 hours)")
+                        help="Timeout in seconds (default 2 hours). "
+                             "Use 0 for NO limit (multi-month catchment runs).")
+    parser.add_argument("--cwd", default=None,
+                        help="Directory to launch the binary from. A RELATIVE "
+                             "read_path/write_path in the .params file is "
+                             "resolved against this (shipped Boscastle example: "
+                             "<source_dir>/test). Default: <source_dir>.")
+    parser.add_argument("--log_file", default=None,
+                        help="Stream model stdout/stderr to this file instead of "
+                             "buffering it in memory (use for long runs)")
     parser.add_argument("--skip_compile", action="store_true",
                         help="Skip compilation step")
 
@@ -263,12 +349,13 @@ def main():
             raise FileNotFoundError(f"Binary not found: {binary}")
 
     # Step 2: Validate parameters
-    params = validate_params(args.data_dir, args.param_file)
+    run_cwd = args.cwd or args.source_dir
+    params = validate_params(args.data_dir, args.param_file, run_cwd)
 
     # Step 3: Run model
     run_result = run_model(
         binary, args.data_dir, args.param_file,
-        args.num_threads, args.timeout
+        args.num_threads, args.timeout, args.log_file, run_cwd
     )
 
     # Step 4: Validate output

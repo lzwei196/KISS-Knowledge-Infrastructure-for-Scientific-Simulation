@@ -123,3 +123,39 @@ ds.close()
 
 *This skill document is part of the hydrocraft-summa knowledge infrastructure.*
 *Stage 2 of 7 | Tools used: convert_vic_forcing_to_summa | Related triplets: dt_003, dt_004, dt_005, dt_012, dt_013*
+
+## Known archive issue: CMFD V0200 SRad spurious spikes (Tibetan Plateau)
+
+CMFD V0200 3-hourly `SRad` contains rare physically impossible spikes over the
+Tibetan Plateau (upper Yellow / Tangnaihai domain, probed 1980-1990: up to
+2701 W/m2, at most 0.041% of a year, none in 1980-82). A 3-hour MEAN cannot
+exceed the TOA horizontal ceiling (~1410 W/m2). `build_summa_forcing_from_reanalysis.py`
+now clips values above `SW_CEILING_WM2=1410` with a logged count and a `sw_qc`
+provenance entry, and ABORTS if more than 0.5% of a year exceeds the ceiling
+(that indicates a units/loader error, never a spot artifact). Do NOT loosen
+`RANGES["SWRadAtm"]` to swallow such values silently.
+
+### Acceptance / resume contract (enforced by `validate_year_output`)
+
+The shortwave QC is only meaningful if it also governs which files are
+ACCEPTED, not just which are written. `validate_year_output()` is the single
+gate used both after a write and on resume, and a forcing year is accepted
+only when BOTH hold:
+
+1. `SWRadAtm <= SW_CEILING_WM2` (1410 W/m2), via `POST_QC_MAX`, which caps the
+   accepted upper bound below the raw `RANGES["SWRadAtm"]` bound of 1500; and
+2. the global attribute `sw_qc` is present (`REQUIRED_PROVENANCE_ATTRS`).
+
+`RANGES` is unchanged and still describes the RAW archive; `POST_QC_MAX` is the
+post-QC contract. Both checks exist because a cached year written before the QC
+step can otherwise be skipped as "complete": a file with `SWRadAtm` max in the
+1410-1500 band satisfies the raw range check, and a file with no provenance at
+all was never screened. Observed on this domain: `forcing_1984.nc` from the
+pre-QC build has an SW max of 1420 W/m2, and none of the pre-QC files carry
+`sw_qc`.
+
+Consequence on the first run after this change: every pre-QC cached year is
+rejected and rebuilt, logging
+`rebuilding -- cached file rejected (missing 'sw_qc' provenance attribute ...)`.
+This is intended -- it is what guarantees the scored run's forcing came
+entirely from the QC-aware path. Use `--force` only to rebuild unconditionally.

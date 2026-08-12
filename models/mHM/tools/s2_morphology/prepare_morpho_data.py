@@ -49,16 +49,28 @@ DEM_PATH = ""  # If empty, use HydroCraft default
 # HydroCraft DEM paths
 CHINA_DEM = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "data/dem/china_dem_90m/china_dem_90m.tif")
 
+FDIR_SOURCE = "dem"     # "dem" (bare-earth D8) or "merit" (MERIT-Hydro D8)
+MERIT_DIR_TIF = ""
+
 if len(sys.argv) > 1:
     import argparse
     parser = argparse.ArgumentParser(description="Prepare mHM morphological data")
     parser.add_argument("--config", required=True)
     parser.add_argument("--domain_info", required=True)
     parser.add_argument("--dem_path", default="")
+    parser.add_argument("--fdir_source", default="dem", choices=["dem", "merit"],
+                        help="'merit' upscales MERIT-Hydro's hydrologically corrected "
+                             "D8 onto L0. Use it on any flat or engineered basin; "
+                             "keep 'dem' only where relief truly controls drainage.")
+    parser.add_argument("--merit_dir_tif", default="",
+                        help="MERIT *_dir.tif from delineate_basin_merit.py "
+                             "(the matching *_upa.tif is found alongside)")
     args = parser.parse_args()
     CONFIG_PATH = args.config
     DOMAIN_INFO_PATH = args.domain_info
     DEM_PATH = args.dem_path
+    FDIR_SOURCE = args.fdir_source
+    MERIT_DIR_TIF = args.merit_dir_tif
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -123,7 +135,8 @@ def clip_and_resample_dem(dem_path, header, shp_path):
         dst_transform=dst_transform,
         dst_crs=rasterio.open(dem_path).crs,
         resampling=Resampling.bilinear,
-        dst_nodata=-9999,
+        src_nodata=-9999,      # rasterio_mask filled the outside with -9999;
+        dst_nodata=-9999,      # without src_nodata it is averaged into the edge cells
     )
 
     return dst_data
@@ -238,6 +251,154 @@ def compute_d8_flow_direction(dem, nodata=-9999):
             fdir[i, j] = best_dir if best_dir > 0 else 0
 
     return fdir
+
+
+D8_OFFSET = {
+    1: (0, 1), 2: (1, 1), 4: (1, 0), 8: (1, -1),
+    16: (0, -1), 32: (-1, -1), 64: (-1, 0), 128: (-1, 1),
+}
+OFFSET_D8 = {v: k for k, v in D8_OFFSET.items()}
+
+
+def upscale_merit_fdir(merit_dir_tif, header, valid_mask, nodata=-9999):
+    """Upscale MERIT-Hydro's 3-arcsec D8 onto the L0 grid, guaranteeing a DAG.
+
+    dt_r13 -- mHM hangs after "Initialize domains ..." at 100% CPU with no error
+    when the L0 flow-direction grid contains a CYCLE: mRM's L11 tracer follows
+    fdir until it reaches an outlet and never terminates.  Naive upscaling of a
+    fine D8 network creates cycles whenever a river meanders across a coarse cell
+    boundary (A->B and B->A).
+
+    Two guards, both required:
+      1. Map fine->coarse with INTEGER arithmetic ((fr - row_off)//ratio).  A
+         lon/lat round-trip is off by a fraction of a fine cell and silently
+         misassigns boundary cells.
+      2. Accept a downstream neighbour only when its maximum upstream area is
+         STRICTLY greater.  upa increases monotonically downstream, so the coarse
+         network is a DAG by construction.
+
+    A cycle checker must treat fdir == 0 as an OUTLET, not a cycle.
+    """
+    from rasterio.windows import Window
+
+    upa_tif = str(merit_dir_tif).replace("_dir.tif", "_upa.tif")
+    if not Path(upa_tif).exists():
+        logger.error(f"MERIT upa raster not found next to dir raster: {upa_tif}")
+        sys.exit(1)
+
+    nrows, ncols = header["nrows"], header["ncols"]
+    cs = header["cellsize"]
+    yur = header["yllcorner"] + nrows * cs
+
+    with rasterio.open(merit_dir_tif) as src:
+        res_m = src.transform.a
+        ratio_f = cs / res_m
+        ratio = int(round(ratio_f))
+        if abs(ratio_f - ratio) > 1e-6:
+            logger.error(f"L0 cellsize {cs} is not an integer multiple of MERIT {res_m}")
+            sys.exit(2)
+        col_off = (header["xllcorner"] - src.transform.c) / res_m
+        row_off = (src.transform.f - yur) / res_m
+        if abs(col_off - round(col_off)) > 1e-4 or abs(row_off - round(row_off)) > 1e-4:
+            logger.error(f"L0 grid is not aligned to the MERIT grid "
+                         f"(col_off={col_off}, row_off={row_off})")
+            sys.exit(2)
+        win = Window(round(col_off), round(row_off), ncols * ratio, nrows * ratio)
+        # boundless: the padded (square) L0 extent may reach outside the MERIT clip
+        fine_dir = src.read(1, window=win, boundless=True, fill_value=nodata)
+    with rasterio.open(upa_tif) as src:
+        fine_upa = src.read(1, window=win, boundless=True, fill_value=-9999.0)
+
+    logger.info(f"MERIT fine grid {fine_dir.shape} -> L0 {nrows}x{ncols} (ratio {ratio})")
+
+    # Per-coarse-cell maximum upstream area (the cell's "outlet" fine pixel)
+    blocks = fine_upa.reshape(nrows, ratio, ncols, ratio)
+    maxupa = blocks.max(axis=(1, 3))
+    flat = blocks.transpose(0, 2, 1, 3).reshape(nrows, ncols, ratio * ratio)
+    arg = flat.argmax(axis=2)
+    out_fr = np.arange(nrows)[:, None] * ratio + arg // ratio
+    out_fc = np.arange(ncols)[None, :] * ratio + arg % ratio
+
+    fnr, fnc = fine_dir.shape
+    fdir = np.full((nrows, ncols), nodata, dtype=np.int32)
+    n_outlet = n_noflow = 0
+
+    for i in range(nrows):
+        for j in range(ncols):
+            if not valid_mask[i, j] or maxupa[i, j] <= 0:
+                continue
+            fr, fc = int(out_fr[i, j]), int(out_fc[i, j])
+            ni = nj = -1
+            for _ in range(4 * ratio + 8):          # bounded walk out of the block
+                d = int(fine_dir[fr, fc])
+                if d not in D8_OFFSET:              # 0=mouth, -1=depression, nodata
+                    break
+                dr, dc = D8_OFFSET[d]
+                fr, fc = fr + dr, fc + dc
+                if not (0 <= fr < fnr and 0 <= fc < fnc):
+                    break
+                ci, cj = fr // ratio, fc // ratio   # INTEGER map, never via lon/lat
+                if (ci, cj) != (i, j):
+                    ni, nj = ci, cj
+                    break
+
+            if ni < 0:
+                fdir[i, j] = 0                      # true outlet / mouth / sink
+                n_outlet += 1
+                continue
+            if not (0 <= ni < nrows and 0 <= nj < ncols) or not valid_mask[ni, nj]:
+                fdir[i, j] = 0                      # flows out of the domain
+                n_outlet += 1
+                continue
+            if maxupa[ni, nj] <= maxupa[i, j]:      # STRICT increase => DAG
+                fdir[i, j] = 0
+                n_noflow += 1
+                continue
+            off = (ni - i, nj - j)
+            if off not in OFFSET_D8:                # non-adjacent: cannot encode in D8
+                fdir[i, j] = 0
+                n_noflow += 1
+                continue
+            fdir[i, j] = OFFSET_D8[off]
+
+    logger.info(f"MERIT upscale: {n_outlet} outlet cells, {n_noflow} cells demoted "
+                f"to outlet by the strict-upa rule")
+    assert_acyclic(fdir, nodata)
+    return fdir
+
+
+def assert_acyclic(fdir, nodata=-9999):
+    """Fail loudly on a cycle. fdir == 0 is an OUTLET, not a cycle (dt_r13)."""
+    nrows, ncols = fdir.shape
+    UNSEEN, ACTIVE, DONE = 0, 1, 2
+    state = np.zeros((nrows, ncols), dtype=np.uint8)
+    state[(fdir == nodata)] = DONE
+
+    for i0 in range(nrows):
+        for j0 in range(ncols):
+            if state[i0, j0] != UNSEEN:
+                continue
+            path = []
+            i, j = i0, j0
+            while True:
+                if state[i, j] == ACTIVE:
+                    raise RuntimeError(
+                        f"CYCLE in L0 flow direction at ({i},{j}) -- mRM would hang "
+                        f"forever in 'Initialize domains' (dt_r13)")
+                if state[i, j] == DONE:
+                    break
+                state[i, j] = ACTIVE
+                path.append((i, j))
+                d = int(fdir[i, j])
+                if d == 0 or d not in D8_OFFSET:
+                    break                                   # outlet: terminates
+                dr, dc = D8_OFFSET[d]
+                i, j = i + dr, j + dc
+                if not (0 <= i < nrows and 0 <= j < ncols):
+                    break
+            for (pi, pj) in path:
+                state[pi, pj] = DONE
+    logger.info("Flow-direction acyclicity check passed (fdir is a DAG)")
 
 
 def compute_flow_accumulation(fdir, nodata=-9999):
@@ -377,8 +538,17 @@ def process():
     write_ascii_grid(morph_dir / "aspect.asc", aspect, header)
 
     # Compute D8 flow direction (ArcGIS convention)
-    logger.info("Computing D8 flow direction (ArcGIS convention)...")
-    fdir = compute_d8_flow_direction(dem)
+    if FDIR_SOURCE == "merit":
+        if not MERIT_DIR_TIF or not Path(MERIT_DIR_TIF).exists():
+            logger.error("--fdir_source merit requires --merit_dir_tif <..._dir.tif>")
+            sys.exit(1)
+        logger.info(f"Upscaling MERIT-Hydro D8 from {MERIT_DIR_TIF} ...")
+        fdir = upscale_merit_fdir(MERIT_DIR_TIF, header, dem != -9999)
+    else:
+        logger.info("Computing D8 flow direction from the DEM (ArcGIS convention)...")
+        logger.warning("dt_s09: bare-earth D8 reproduces a truncated basin on flat or "
+                       "leveed plains. Prefer --fdir_source merit there.")
+        fdir = compute_d8_flow_direction(dem)
     write_ascii_grid(morph_dir / "fdir.asc", fdir.astype(float), header)
 
     # Compute flow accumulation

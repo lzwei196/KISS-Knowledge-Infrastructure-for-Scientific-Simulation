@@ -20,6 +20,22 @@ Extraction targets:
   - Discharge at specified gauge locations (lat/lon or row/col)
   - Basin-average runoff, ET, storage
   - Time series in CSV format for validation
+
+CHOOSING THE RIGHT FILE (dt_027)
+--------------------------------
+PCR-GLOBWB writes ONE FILE PER (variable, aggregation) pair, and every one of
+them holds a variable with the SAME name. Asking for `discharge` when the
+output directory holds both
+
+    discharge_annuaAvg_output.nc     (11 annual means)
+    discharge_dailyTot_output.nc     (4018 daily values)
+
+is ambiguous, and resolving it by alphabetical order silently returns the
+11-value annual series to a caller that asked for a daily hydrograph. Pass
+``--aggregation dailyTot`` (the dag declares discharge is emitted in
+``discharge_dailyTot_output.nc``). When the variable resolves to more than one
+file and no ``--aggregation`` is given, this tool now RAISES rather than
+guessing.
 """
 
 import os
@@ -117,6 +133,96 @@ def validate_outputs(output_csv):
 # Extraction functions
 # ---------------------------------------------------------------------------
 
+AGGREGATIONS = ("dailyTot", "monthTot", "monthAvg", "monthEnd", "monthMax",
+                "annuaTot", "annuaAvg", "annuaEnd", "annuaMax")
+
+
+def resolve_output_file(netcdf_dir, variable, aggregation=None):
+    """Return the single NetCDF holding `variable` at `aggregation`.
+
+    PCR-GLOBWB names its outputs `{variable}_{aggregation}_output.nc`. When
+    `aggregation` is given, that file is selected by NAME -- never by scanning
+    variables in directory order. When it is omitted and the variable resolves
+    to exactly one file, that file is used; when it resolves to several, this
+    raises instead of silently taking the alphabetically-first one (which for
+    `discharge` is `discharge_annuaAvg_output.nc`, an 11-value annual series).
+    """
+    if aggregation is not None and aggregation not in AGGREGATIONS:
+        raise ValueError(f"Unknown aggregation '{aggregation}'. "
+                         f"Valid: {list(AGGREGATIONS)}")
+
+    if aggregation:
+        fname = f"{variable}_{aggregation}_output.nc"
+        path = os.path.join(netcdf_dir, fname)
+        if not os.path.exists(path):
+            present = sorted(f for f in os.listdir(netcdf_dir)
+                             if f.startswith(f"{variable}_") and f.endswith(".nc"))
+            raise FileNotFoundError(
+                f"{fname} not found in {netcdf_dir}. "
+                f"Present for '{variable}': {present or 'none'}. "
+                f"Add '{variable}' to the matching out*NC line of "
+                f"[reportingOptions] in the .ini."
+            )
+        logger.info(f"Selected {fname} by explicit --aggregation {aggregation}")
+        return path
+
+    # Match on the .ini reporting name in the FILE name first -- the variable
+    # inside `actualET_monthTot_output.nc` is called `land_surface_evaporation`,
+    # so scanning ds.variables alone would miss it.
+    candidates = [f for f in sorted(os.listdir(netcdf_dir))
+                  if f.startswith(f"{variable}_") and f.endswith("_output.nc")]
+
+    if not candidates:
+        for fname in sorted(os.listdir(netcdf_dir)):
+            if not fname.endswith(".nc"):
+                continue
+            try:
+                with nc.Dataset(os.path.join(netcdf_dir, fname), "r") as ds:
+                    if variable in ds.variables:
+                        candidates.append(fname)
+            except Exception as e:
+                logger.warning(f"Could not read {fname}: {e}")
+
+    if not candidates:
+        raise KeyError(
+            f"Variable '{variable}' not found in any .nc under {netcdf_dir}. "
+            f"Available: {sorted(list_output_variables(netcdf_dir))}"
+        )
+    if len(candidates) > 1:
+        raise ValueError(
+            f"dt_027: '{variable}' is present in {len(candidates)} output files "
+            f"{candidates}. These are different temporal aggregations of the same "
+            f"variable and are NOT interchangeable. Pass --aggregation "
+            f"(one of {list(AGGREGATIONS)}) to choose explicitly."
+        )
+    logger.info(f"Selected {candidates[0]} (sole file containing '{variable}')")
+    return os.path.join(netcdf_dir, candidates[0])
+
+
+_COORD_NAMES = ("time", "lat", "lon", "latitude", "longitude")
+
+
+def resolve_variable_in(ds, variable, path):
+    """Name of `variable` INSIDE its output file.
+
+    The .ini reporting name and the NetCDF variable name are not the same: the
+    file `actualET_monthTot_output.nc` carries a variable called
+    `land_surface_evaporation`. Prefer an exact match; otherwise, since
+    PCR-GLOBWB writes exactly one data variable per output file, take that one.
+    """
+    if variable in ds.variables:
+        return variable
+    data_vars = [v for v in ds.variables if v not in _COORD_NAMES]
+    if len(data_vars) == 1:
+        logger.info(f"'{variable}' is stored as '{data_vars[0]}' in "
+                    f"{os.path.basename(path)}")
+        return data_vars[0]
+    raise KeyError(
+        f"'{variable}' not in {os.path.basename(path)} and its data variables "
+        f"{data_vars} are ambiguous."
+    )
+
+
 def find_nearest_cell(lats, lons, target_lat, target_lon):
     """Find nearest grid cell to target coordinates."""
     lat_idx = np.argmin(np.abs(lats - target_lat))
@@ -158,7 +264,8 @@ def list_output_variables(netcdf_dir):
     return variables
 
 
-def extract_point_timeseries(netcdf_dir, variable, lat, lon, output_csv):
+def extract_point_timeseries(netcdf_dir, variable, lat, lon, output_csv,
+                             aggregation=None):
     """Extract time series at a single point (lat/lon) to CSV.
 
     Args:
@@ -167,36 +274,12 @@ def extract_point_timeseries(netcdf_dir, variable, lat, lon, output_csv):
         lat: Target latitude
         lon: Target longitude
         output_csv: Output CSV file path
+        aggregation: Temporal aggregation, e.g. 'dailyTot' (see dt_027)
     """
     if nc is None:
         raise ImportError("netCDF4 required for extraction")
 
-    # Find the file containing this variable
-    nc_files = sorted([f for f in os.listdir(netcdf_dir) if f.endswith(".nc")])
-    target_file = None
-
-    for fname in nc_files:
-        filepath = os.path.join(netcdf_dir, fname)
-        try:
-            with nc.Dataset(filepath, "r") as ds:
-                if variable in ds.variables:
-                    target_file = filepath
-                    break
-        except Exception:
-            continue
-
-    if target_file is None:
-        # Try pattern matching
-        for fname in nc_files:
-            if variable.lower() in fname.lower():
-                target_file = os.path.join(netcdf_dir, fname)
-                break
-
-    if target_file is None:
-        available = list_output_variables(netcdf_dir)
-        raise KeyError(
-            f"Variable '{variable}' not found. Available: {list(available.keys())}"
-        )
+    target_file = resolve_output_file(netcdf_dir, variable, aggregation)
 
     logger.info(f"Extracting '{variable}' from {target_file}")
 
@@ -221,7 +304,7 @@ def extract_point_timeseries(netcdf_dir, variable, lat, lon, output_csv):
         dates = nc.num2date(time_var[:], time_units, time_calendar)
 
         # Extract data
-        data_var = ds.variables[variable]
+        data_var = ds.variables[resolve_variable_in(ds, variable, target_file)]
         units = getattr(data_var, "units", "unknown")
 
         if len(data_var.shape) == 3:  # time, lat, lon
@@ -249,7 +332,7 @@ def extract_point_timeseries(netcdf_dir, variable, lat, lon, output_csv):
 
 
 def extract_basin_average(netcdf_dir, variable, landmask_nc, output_csv,
-                          cell_area_nc=None):
+                          cell_area_nc=None, aggregation=None):
     """Extract basin-average time series using a landmask.
 
     Args:
@@ -258,31 +341,12 @@ def extract_basin_average(netcdf_dir, variable, landmask_nc, output_csv,
         landmask_nc: Landmask NetCDF (boolean/binary)
         output_csv: Output CSV file
         cell_area_nc: Cell area NetCDF (m2) for area-weighted average
+        aggregation: Temporal aggregation, e.g. 'monthTot' (see dt_027)
     """
     if nc is None:
         raise ImportError("netCDF4 required")
 
-    # Find variable file
-    nc_files = sorted([f for f in os.listdir(netcdf_dir) if f.endswith(".nc")])
-    target_file = None
-    for fname in nc_files:
-        filepath = os.path.join(netcdf_dir, fname)
-        try:
-            with nc.Dataset(filepath, "r") as ds:
-                if variable in ds.variables:
-                    target_file = filepath
-                    break
-        except Exception:
-            continue
-
-    if target_file is None:
-        for fname in nc_files:
-            if variable.lower() in fname.lower():
-                target_file = os.path.join(netcdf_dir, fname)
-                break
-
-    if target_file is None:
-        raise KeyError(f"Variable '{variable}' not found in {netcdf_dir}")
+    target_file = resolve_output_file(netcdf_dir, variable, aggregation)
 
     # Read landmask
     with nc.Dataset(landmask_nc, "r") as ds:
@@ -302,7 +366,7 @@ def extract_basin_average(netcdf_dir, variable, landmask_nc, output_csv,
     with nc.Dataset(target_file, "r") as ds:
         time_var = ds.variables["time"]
         dates = nc.num2date(time_var[:], time_var.units, getattr(time_var, "calendar", "standard"))
-        data_var = ds.variables[variable]
+        data_var = ds.variables[resolve_variable_in(ds, variable, target_file)]
         units = getattr(data_var, "units", "unknown")
 
         os.makedirs(os.path.dirname(output_csv) or ".", exist_ok=True)
@@ -340,12 +404,14 @@ def summarize_outputs(netcdf_dir):
 # ---------------------------------------------------------------------------
 
 def process(netcdf_dir, variable, output_csv, lat=None, lon=None,
-            landmask_nc=None, cell_area_nc=None, mode="point"):
+            landmask_nc=None, cell_area_nc=None, mode="point", aggregation=None):
     """Main extraction dispatcher."""
     if mode == "point" and lat is not None and lon is not None:
-        extract_point_timeseries(netcdf_dir, variable, lat, lon, output_csv)
+        extract_point_timeseries(netcdf_dir, variable, lat, lon, output_csv,
+                                 aggregation=aggregation)
     elif mode == "basin" and landmask_nc:
-        extract_basin_average(netcdf_dir, variable, landmask_nc, output_csv, cell_area_nc)
+        extract_basin_average(netcdf_dir, variable, landmask_nc, output_csv,
+                              cell_area_nc, aggregation=aggregation)
     elif mode == "summary":
         summarize_outputs(netcdf_dir)
     else:
@@ -361,6 +427,12 @@ def main():
     )
     parser.add_argument("netcdf_dir", help="Path to output netcdf/ directory")
     parser.add_argument("--variable", "-v", default="discharge", help="Variable to extract")
+    parser.add_argument(
+        "--aggregation", "-a", default=None, choices=list(AGGREGATIONS),
+        help="Temporal aggregation of the output file to read, e.g. dailyTot. "
+             "REQUIRED whenever the variable was reported at more than one "
+             "aggregation (dt_027)."
+    )
     parser.add_argument("--lat", type=float, default=None, help="Target latitude")
     parser.add_argument("--lon", type=float, default=None, help="Target longitude")
     parser.add_argument("--output", "-o", default="output.csv", help="Output CSV file")
@@ -377,10 +449,12 @@ def main():
         process(args.netcdf_dir, args.variable, args.output, mode="summary")
     elif args.landmask:
         process(args.netcdf_dir, args.variable, args.output,
-                landmask_nc=args.landmask, cell_area_nc=args.cell_area, mode="basin")
+                landmask_nc=args.landmask, cell_area_nc=args.cell_area,
+                mode="basin", aggregation=args.aggregation)
     elif args.lat is not None and args.lon is not None:
         process(args.netcdf_dir, args.variable, args.output,
-                lat=args.lat, lon=args.lon, mode="point")
+                lat=args.lat, lon=args.lon, mode="point",
+                aggregation=args.aggregation)
         validate_outputs(args.output)
     else:
         summarize_outputs(args.netcdf_dir)

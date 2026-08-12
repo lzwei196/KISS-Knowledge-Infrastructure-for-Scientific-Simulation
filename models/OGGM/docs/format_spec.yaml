@@ -1,234 +1,230 @@
-# format_spec.yaml — Machine-readable model format specification
-# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
-# Part of KDT Knowledge Infrastructure Tier B documentation
-#
-# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
-#   - Input ranges map to Level 1 check_value_range() calls
-#   - Output ranges map to Level 3 DOMAIN_CHECKS["glacier"]
-#   - known_issues map to diagnostic triplets (triplets.yaml)
-
 model:
-  name: "OGGM (Open Global Glacier Model)"
-  domain: "glacier"
-  secondary_domains: ["cryosphere", "hydrology"]
-  binary: "Python package (oggm)"
-  binary_path: "conda install -c conda-forge oggm"
-  language: "Python"
-  working_directory: "cfg.PATHS['working_dir']"
-  notes: "Modular glacier dynamics framework. Uses RGI inventory. Pre-processed directories (L1-L5) available from Bremen server."
-
-# =========================================================================
-# INPUTS
-# =========================================================================
+  name: OGGM (Open Global Glacier Model)
+  domain: glacier
+  secondary_domains:
+  - cryosphere
+  - hydrology
+  binary: Python package (oggm)
+  binary_path: conda install -c conda-forge oggm
+  language: Python
+  working_directory: cfg.PATHS['working_dir']
+  notes: Modular glacier dynamics framework. Uses RGI inventory. Pre-processed directories
+    (L1-L5) available from Bremen server.
 inputs:
-
   forcing:
-    - name: "temperature"
-      file: "climate_historical.nc (in glacier directory)"
-      unit: "degC (monthly mean)"
-      valid_range: [-50.0, 40.0]
-      format: "NetCDF (time x 1)"
-      notes: "W5E5 or CRU dataset. Monthly resolution at glacier centroid."
-
-    - name: "precipitation"
-      file: "climate_historical.nc (in glacier directory)"
-      unit: "kg/m2/month"
-      valid_range: [0.0, 2000.0]
-      format: "NetCDF (time x 1)"
-      notes: "Total monthly precipitation. Precipitation correction factor (pcf) applied during calibration."
-
-    - name: "cmip6_projections"
-      file: "Separate climate files per GCM/SSP"
-      unit: "degC (temp), kg/m2/month (precip)"
-      valid_range: null
-      notes: "Downloaded from ISIMIP or processed from CMIP6 archive."
-
+  - name: temperature
+    file: climate_historical.nc (in glacier directory)
+    unit: degC (monthly mean)
+    valid_range:
+    - -50.0
+    - 40.0
+    format: NetCDF (time x 1)
+    notes: W5E5 or CRU dataset. Monthly resolution at glacier centroid.
+  - name: precipitation
+    file: climate_historical.nc (in glacier directory)
+    unit: kg/m2/month
+    valid_range:
+    - 0.0
+    - 2000.0
+    format: NetCDF (time x 1)
+    notes: Total monthly precipitation. Precipitation correction factor (pcf) applied
+      during calibration.
+  - name: cmip6_projections
+    file: Separate climate files per GCM/SSP
+    unit: degC (temp), kg/m2/month (precip)
+    valid_range: null
+    notes: Downloaded from ISIMIP or processed from CMIP6 archive.
   parameters:
     critical:
-      - name: "mu_star"
-        file: "climate_info.pkl (in glacier directory)"
-        description: "Temperature sensitivity of mass balance (melt factor)"
-        valid_range: [10, 800]
-        unit: "mm w.e. yr-1 K-1"
-        bug_history: >
-          mu_star at bounds (0 or 1000) indicates climate data mismatch or
-          surge glacier. Check climate data units and exclude problematic glaciers.
+    - name: mu_star
+      file: climate_info.pkl (in glacier directory)
+      description: Temperature sensitivity of mass balance (melt factor)
+      valid_range:
+      - 10
+      - 800
+      unit: mm w.e. yr-1 K-1
+      bug_history: 'mu_star at bounds (0 or 1000) indicates climate data mismatch
+        or surge glacier. Check climate data units and exclude problematic glaciers.
 
-      - name: "precipitation_correction_factor"
-        file: "climate_info.pkl"
-        description: "Precipitation scaling factor"
-        valid_range: [0.5, 5.0]
-        default: 2.5
-        unit: "dimensionless"
-        notes: "Compensates for gauge undercatch and orographic enhancement."
-
-      - name: "temperature_bias"
-        file: "climate_info.pkl"
-        description: "Temperature offset for calibration"
-        valid_range: [-5.0, 5.0]
-        default: 0.0
-        unit: "degC"
-
-      - name: "glen_a"
-        file: "OGGM cfg defaults"
-        description: "Glen's creep parameter (flow law)"
-        valid_range: [1e-25, 1e-23]
-        default: 2.4e-24
-        unit: "s-1 Pa-3"
-
-      - name: "rgi_version"
-        file: "cfg setting"
-        description: "Randolph Glacier Inventory version"
-        valid_range: ["6.0", "7.0"]
-        default: "6.0"
-        notes: "RGI v6.0 recommended (extensively validated). v7.0 partial support."
-
-      - name: "prepro_level"
-        file: "GDir download setting"
-        description: "Preprocessing level for glacier directories"
-        valid_range: [1, 5]
-        default: 5
-        notes: "L5 = run-ready (everything pre-computed). L3 for custom climate."
-
+        '
+    - name: precipitation_correction_factor
+      file: climate_info.pkl
+      description: Precipitation scaling factor
+      valid_range:
+      - 0.5
+      - 5.0
+      default: 2.5
+      unit: dimensionless
+      notes: Compensates for gauge undercatch and orographic enhancement.
+    - name: temperature_bias
+      file: climate_info.pkl
+      description: Temperature offset for calibration
+      valid_range:
+      - -5.0
+      - 5.0
+      default: 0.0
+      unit: degC
+    - name: glen_a
+      file: OGGM cfg defaults
+      description: Glen's creep parameter (flow law)
+      valid_range:
+      - 1e-25
+      - 1e-23
+      default: 2.4e-24
+      unit: s-1 Pa-3
+    - name: rgi_version
+      file: cfg setting
+      description: Randolph Glacier Inventory version
+      valid_range:
+      - '6.0'
+      - '7.0'
+      default: '6.0'
+      notes: RGI v6.0 recommended (extensively validated). v7.0 partial support.
+    - name: prepro_level
+      file: GDir download setting
+      description: Preprocessing level for glacier directories
+      valid_range:
+      - 1
+      - 5
+      default: 5
+      notes: L5 = run-ready (everything pre-computed). L3 for custom climate.
   files:
     required:
-      - name: "glacier directories (GDirs)"
-        description: "Per-glacier directory with outlines, DEM, climate, flowlines"
-        format: "Directory tree, one per glacier"
-
-      - name: "RGI outlines"
-        description: "Randolph Glacier Inventory shapefiles"
-        format: "ESRI Shapefile / GeoJSON"
-
+    - name: glacier directories (GDirs)
+      description: Per-glacier directory with outlines, DEM, climate, flowlines
+      format: Directory tree, one per glacier
+    - name: RGI outlines
+      description: Randolph Glacier Inventory shapefiles
+      format: ESRI Shapefile / GeoJSON
     optional:
-      - name: "custom climate files"
-        description: "User-provided climate data for glacier locations"
-        format: "NetCDF with temp, prec, time dimensions"
-
-      - name: "CMIP6 projection files"
-        description: "Future climate scenarios for glacier projections"
-
-# =========================================================================
-# OUTPUTS
-# =========================================================================
+    - name: custom climate files
+      description: User-provided climate data for glacier locations
+      format: NetCDF with temp, prec, time dimensions
+    - name: CMIP6 projection files
+      description: Future climate scenarios for glacier projections
 outputs:
-
   primary:
-    - name: "glacier_volume"
-      file: "model_diagnostics.nc"
-      unit: "km3"
-      valid_range: [0.0, null]
-      key_columns: ["volume"]
-      format: "NetCDF (time x glacier)"
-      notes: "Total glacier ice volume per year."
-
-    - name: "glacier_area"
-      file: "model_diagnostics.nc"
-      unit: "km2"
-      valid_range: [0.0, null]
-      key_columns: ["area"]
-      notes: "Glacier surface area per year. Should decrease under warming."
-
-    - name: "glacier_length"
-      file: "model_diagnostics.nc"
-      unit: "m"
-      valid_range: [0.0, null]
-      key_columns: ["length"]
-
-    - name: "glacier_melt"
-      file: "run_output_hydro.nc"
-      unit: "kg/month"
-      valid_range: [0.0, null]
-      key_columns: ["melt_off_glacier", "melt_on_glacier"]
-      notes: "Monthly melt contribution to runoff."
-
-    - name: "glacier_runoff"
-      file: "run_output_hydro.nc"
-      unit: "kg/month"
-      valid_range: [0.0, null]
-      key_columns: ["runoff"]
-      notes: "Total glacier contribution including melt + liquid precipitation - refreezing."
-
+  - name: glacier_volume
+    file: model_diagnostics.nc
+    unit: km3
+    valid_range:
+    - 0.0
+    - null
+    key_columns:
+    - volume
+    format: NetCDF (time x glacier)
+    notes: Total glacier ice volume per year.
+    canonical_id: glacier_volume
+  - name: glacier_area
+    file: model_diagnostics.nc
+    unit: km2
+    valid_range:
+    - 0.0
+    - null
+    key_columns:
+    - area
+    notes: Glacier surface area per year. Should decrease under warming.
+    canonical_id: glacier_area
+  - name: glacier_length
+    file: model_diagnostics.nc
+    unit: m
+    valid_range:
+    - 0.0
+    - null
+    key_columns:
+    - length
+  - name: glacier_melt
+    file: run_output_hydro.nc
+    unit: kg/month
+    valid_range:
+    - 0.0
+    - null
+    key_columns:
+    - melt_off_glacier
+    - melt_on_glacier
+    notes: Monthly melt contribution to runoff.
+    canonical_id: glacier_melt
+  - name: glacier_runoff
+    file: run_output_hydro.nc
+    unit: kg/month
+    valid_range:
+    - 0.0
+    - null
+    key_columns:
+    - runoff
+    notes: Total glacier contribution including melt + liquid precipitation - refreezing.
+    canonical_id: glacier_runoff
+  - name: mass_balance
+    canonical_id: glacier_mass_balance
+    unit: mm w.e./year
   diagnostics:
-    - name: "volume_change"
-      check: "Volume should decrease under warming scenarios"
-      notes: "Increasing volume under SSP2-4.5+ suggests calibration error."
-
-    - name: "area_change"
-      check: "Area fraction change within -80% to +10% over 100 years"
-      notes: "Complete disappearance possible for small glaciers. Growth rare except under SSP1-2.6."
-
-    - name: "mass_balance"
-      check: "Specific mass balance -3000 to +1000 mm w.e./yr"
-      reference: "Hugonnet et al. 2021 geodetic observations"
-      notes: "Calibrated against geodetic mass balance."
-
-    - name: "peak_water"
-      check: "Peak water year should be identifiable in projection output"
-      notes: "Initially increasing runoff (more melt) then declining (less ice). Timing depends on glacier size and warming rate."
-
-# =========================================================================
-# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
-# =========================================================================
+  - name: volume_change
+    check: Volume should decrease under warming scenarios
+    notes: Increasing volume under SSP2-4.5+ suggests calibration error.
+  - name: area_change
+    check: Area fraction change within -80% to +10% over 100 years
+    notes: Complete disappearance possible for small glaciers. Growth rare except
+      under SSP1-2.6.
+  - name: mass_balance
+    check: Specific mass balance -3000 to +1000 mm w.e./yr
+    reference: Hugonnet et al. 2021 geodetic observations
+    notes: Calibrated against geodetic mass balance.
+  - name: peak_water
+    check: Peak water year should be identifiable in projection output
+    notes: Initially increasing runoff (more melt) then declining (less ice). Timing
+      depends on glacier size and warming rate.
 known_issues:
-  - id: "hydrological_year_mismatch"
-    description: "OGGM uses hydrological year (Oct 1 NH, Apr 1 SH) but VIC uses calendar year"
-    affected_output: "Glacier melt shifted by 3 months when merging with VIC"
-    detection: "Melt peak appears in wrong season"
-    fix: "Convert OGGM output to calendar dates using NetCDF time dimension, not month indices"
-
-  - id: "double_counting_with_vic"
-    description: "VIC computes snowmelt on glacier cells; OGGM also computes melt — 2x counting"
-    affected_output: "Total discharge in glacierized basin"
-    detection: "Discharge ~2x expected in summer for glacierized cells"
-    fix: "Option A: Mask VIC glacier cells. Option B: Subtract VIC snowmelt on glacier cells from OGGM. Option C: Post-hoc correction for small fractions (<5%)"
-
-  - id: "mu_star_at_bounds"
-    description: "mu_star = 0 or 1000 indicates climate data mismatch or problematic glacier"
-    affected_output: "Mass balance unrealistic for that glacier"
-    detection: "mu_star at bounds in climate_info.pkl"
-    fix: "Check climate data units; exclude problematic glaciers"
-
-  - id: "nominal_glacier"
-    description: "RGI outline is a point, not polygon — RuntimeError"
-    affected_output: "Glacier cannot be processed"
-    detection: "RuntimeError: Glacier is a nominal glacier"
-    fix: "Exclude this glacier (too small or data-deficient)"
-
-  - id: "cfl_violation"
-    description: "FluxBasedModel unstable — CFL condition violated"
-    affected_output: "Simulation crashes"
-    detection: "ValueError: CFL condition violated"
-    fix: "Switch to SemiImplicitModel (more stable)"
-
-  - id: "numpy2_incompatible"
-    description: "OGGM and salem not compatible with numpy >= 2.0"
-    affected_output: "Import errors"
-    detection: "AttributeError or TypeError from numpy"
-    fix: "Pin numpy < 2.0"
-
-  - id: "dem_not_found_high_lat"
-    description: "SRTM void above 60N — DEM not available"
-    affected_output: "Preprocessing fails"
-    detection: "FileNotFoundError: DEM not found"
-    fix: "Set dem_source='COPDEM' for high-latitude glaciers"
-
-# =========================================================================
-# EXPECTED RANGES (reference basins)
-# =========================================================================
+- id: hydrological_year_mismatch
+  description: OGGM uses hydrological year (Oct 1 NH, Apr 1 SH) but VIC uses calendar
+    year
+  affected_output: Glacier melt shifted by 3 months when merging with VIC
+  detection: Melt peak appears in wrong season
+  fix: Convert OGGM output to calendar dates using NetCDF time dimension, not month
+    indices
+- id: double_counting_with_vic
+  description: "VIC computes snowmelt on glacier cells; OGGM also computes melt \u2014\
+    \ 2x counting"
+  affected_output: Total discharge in glacierized basin
+  detection: Discharge ~2x expected in summer for glacierized cells
+  fix: 'Option A: Mask VIC glacier cells. Option B: Subtract VIC snowmelt on glacier
+    cells from OGGM. Option C: Post-hoc correction for small fractions (<5%)'
+- id: mu_star_at_bounds
+  description: mu_star = 0 or 1000 indicates climate data mismatch or problematic
+    glacier
+  affected_output: Mass balance unrealistic for that glacier
+  detection: mu_star at bounds in climate_info.pkl
+  fix: Check climate data units; exclude problematic glaciers
+- id: nominal_glacier
+  description: "RGI outline is a point, not polygon \u2014 RuntimeError"
+  affected_output: Glacier cannot be processed
+  detection: 'RuntimeError: Glacier is a nominal glacier'
+  fix: Exclude this glacier (too small or data-deficient)
+- id: cfl_violation
+  description: "FluxBasedModel unstable \u2014 CFL condition violated"
+  affected_output: Simulation crashes
+  detection: 'ValueError: CFL condition violated'
+  fix: Switch to SemiImplicitModel (more stable)
+- id: numpy2_incompatible
+  description: OGGM and salem not compatible with numpy >= 2.0
+  affected_output: Import errors
+  detection: AttributeError or TypeError from numpy
+  fix: Pin numpy < 2.0
+- id: dem_not_found_high_lat
+  description: "SRTM void above 60N \u2014 DEM not available"
+  affected_output: Preprocessing fails
+  detection: 'FileNotFoundError: DEM not found'
+  fix: Set dem_source='COPDEM' for high-latitude glaciers
 expected_ranges:
   yarlung_tsangpo:
     glacier_fraction_pct: 10
-    glacier_contribution_annual_pct: "15-25"
-    glacier_contribution_late_summer_pct: "40-60"
-    peak_water_year: "2030-2060 (SSP dependent)"
-
+    glacier_contribution_annual_pct: 15-25
+    glacier_contribution_late_summer_pct: 40-60
+    peak_water_year: 2030-2060 (SSP dependent)
   heihe_upper:
     glacier_fraction_pct: 5
-    notes: "Arid basin, glacier melt critical for summer baseflow"
-
+    notes: Arid basin, glacier melt critical for summer baseflow
   decision_thresholds:
-    skip_oggm_pct: "<0.1"
-    optional_pct: "0.1-1"
-    recommended_pct: "1-10"
-    required_pct: ">10"
+    skip_oggm_pct: <0.1
+    optional_pct: 0.1-1
+    recommended_pct: 1-10
+    required_pct: '>10'

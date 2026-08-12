@@ -819,3 +819,415 @@ triplets:
       prevention: "Default decisions now use vegeParTbl=USGS. create_file_manager.py should verify MPTABLE.TBL sections."
     severity: "fatal"
     cross_references: []
+
+  - id: dt_027
+    stage: "s1_domain_setup"
+    failure_domain: "parameter_format"
+    symptom:
+      description: >
+        Large negative discharge bias (PBIAS -40% to -70%) with a GOOD correlation
+        (r > 0.7) and a water balance that CLOSES. Routing changes, gamma-scale
+        sweeps and soil calibration all fail to move PBIAS. scalarTotalET exceeds
+        (basin precipitation - observed runoff).
+      error_pattern: "PBIAS.*-[4-9][0-9]|scalarTotalET.*exceed"
+      detection_method: "metric_check"
+    diagnosis:
+      root_cause: >
+        vegTypeIndex was invented (uniform value, or a rule keyed on elevation)
+        rather than sourced from a land-cover raster, giving the basin a taller
+        canopy and a higher, less seasonal LAI than it has.
+      explanation: >
+        vegTypeIndex indexes MPTABLE.TBL's HVT (canopy top height) and LAIM (monthly
+        LAI) rows, which set aerodynamic conductance, interception capacity and
+        transpiring leaf area. Under MODIFIED_IGBP_MODIS_NOAH, Evergreen Broadleaf
+        Forest (2) is HVT 20 m with LAI 4.5 in EVERY month, while Closed Shrubland
+        (6) is HVT 1.1 m with LAI 0.0 in Dec-Feb. Mislabelling shrubland as forest
+        therefore evaporates water all dry season. At Jinghong (Lancang, 142,695 km2)
+        an elevation rule did exactly this to 42% of basin area -- the wettest 42% --
+        producing scalarTotalET 766.8 mm/yr against a P - Q_obs ceiling of 555 mm/yr
+        and PBIAS -66.5%. Routing is a mass-conserving redistribution in time and can
+        NEVER repair this; three rounds of routing work were spent before the
+        vegetation was checked. The tell is that r stays high (the model gets the
+        monsoon timing right) while PBIAS stays stuck and the water balance closes:
+        the water is not lost by the numerics, it is genuinely evaporated.
+      affected_components:
+        - "gru_hru_mapping.csv / attributes.nc vegTypeIndex column"
+        - "MPTABLE.TBL HVT and LAIM rows"
+        - "scalarTotalET, scalarCanopyEvaporation, scalarCanopyTranspiration"
+    remedy:
+      action: >
+        Source vegTypeIndex from land cover, and check the ET ceiling BEFORE
+        calibrating or routing.
+      tool_to_run: "tools/s8_routing/build_river_network.py --landcover_tif ... --veg_scheme modis"
+      manual_steps:
+        - "Compute the ceiling: ET_max = P_basin_mean - Q_obs (both mm/yr). Compare scalarTotalET."
+        - "If scalarTotalET > ET_max, discharge is structurally under-predictable. Stop tuning."
+        - "Re-run build_river_network.py with --landcover_tif <AVHRR IGBP tif> --veg_scheme <usgs|modis>."
+        - "Set the vegeParTbl decision to match --veg_scheme (SKILL.md Sec 2c). They are NOT independent."
+        - "Pass --veg_scheme to set_trial_parameters.py --from_hwsd too: heightCanopyTop/Bottom are PARAMETERS (popMetadat.f90:212), not table lookups, and default to a 20 m / 2 m forest on EVERY HRU. Its legacy canopy dict is hard-coded USGS-27, so MODIS class 1 (ENF, 20 m) lands on USGS 1 (Urban, height 0) -> fatal paramCheck."
+        - "Emit scalarLAI and confirm winter basin-mean LAI is near 0 for a shrub/grass basin."
+      prevention: >
+        build_river_network.py now takes --landcover_tif and emits veg_area_fraction;
+        its --veg_index path warns that vegetation is an assumption. Read that JSON.
+    severity: "high"
+    cross_references: ["dt_022", "dt_028", "cm_029"]
+
+  - id: dt_028
+    stage: "s6_execution"
+    failure_domain: "output_interpretation"
+    symptom:
+      description: >
+        Canopy interception loss computed as (pptrate - scalarThroughfallRain -
+        scalarThroughfallSnow) reads an implausible 35-45% of precipitation, leading
+        to a "canopy parameter problem / requires_calibration" verdict.
+      error_pattern: "interception.*(3[5-9]|4[0-9])%|interception_loss_frac"
+      detection_method: "metric_check"
+    diagnosis:
+      root_cause: >
+        P minus throughfall is the interception RATE, not the interception LOSS.
+        It counts intercepted water that later reaches the ground as if it had
+        evaporated.
+      explanation: >
+        SUMMA defines scalarThroughfallRain as "rain that reaches the ground without
+        ever touching the canopy" (vegLiqFlux.f90:62). Water the canopy DOES intercept
+        leaves the canopy store by four paths, only two of which are vapour:
+          vapour : scalarCanopyEvaporation, scalarCanopySublimation
+          to ground: scalarCanopyLiqDrainage (vegLiqFlux.f90:63), scalarCanopySnowUnloading
+        Subtracting only throughfall therefore attributes drainage and snow unloading
+        to the atmosphere. In a snowy or high-LAI basin the overcount is large: at
+        Jinghong the statistic read 42.9% of P while the true interception loss was a
+        fraction of that. The bogus ratio survived three diagnostic rounds and drove a
+        requires_calibration verdict, because a canopy that "loses" 43% of P looks like
+        a parameter problem.
+      affected_components:
+        - "scalarThroughfallRain / scalarThroughfallSnow"
+        - "scalarCanopyLiqDrainage / scalarCanopySnowUnloading"
+        - "outputControl.txt variable selection"
+    remedy:
+      action: "Compute interception loss as canopy evaporation + canopy sublimation."
+      tool_to_run: ""
+      manual_steps:
+        - "Add scalarCanopyEvaporation, scalarCanopySublimation, scalarCanopyTranspiration, scalarGroundEvaporation, scalarCanopyLiqDrainage, scalarCanopySnowUnloading to outputControl.txt."
+        - "interception_loss = |scalarCanopyEvaporation| + |scalarCanopySublimation|"
+        - "Cross-check: those two plus transpiration, ground evaporation and snow sublimation must sum to |scalarTotalET|."
+        - "Attribute the ET excess to a component before blaming a parameter."
+      prevention: >
+        Never infer a vapour flux by differencing two mass fluxes when the model
+        emits the vapour flux directly.
+    severity: "medium"
+    cross_references: ["dt_027"]
+
+  - id: dt_029
+    stage: "s4_parameters"
+    failure_domain: "parameter_format"
+    symptom:
+      description: >
+        SUMMA aborts immediately with
+        "FATAL ERROR: summa_paramSetup/paramCheck/height of canopy top is less than
+        the height of the canopy bottom", typically right after switching vegeParTbl
+        or after writing a short-canopy (shrub/grass/barren) vegTypeIndex.
+      error_pattern: "height of canopy top is less than the height of the canopy bottom"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: >
+        set_trial_parameters.py --from_hwsd wrote heightCanopyTop/heightCanopyBottom
+        from a hard-coded USGS-27 dict (ZTOPV/ZBOTV) while vegTypeIndex was written
+        against a different table, or for a class whose ZTOPV is 0.
+      explanation: >
+        heightCanopyTop and heightCanopyBottom are ordinary SUMMA parameters
+        (popMetadat.f90:212), NOT values SUMMA looks up from MPTABLE.TBL's HVT/HVB.
+        Unwritten they take localParamInfo.txt's 20.0 m / 2.0 m -- a forest on every
+        HRU. The legacy ZTOPV dict is USGS-only and sets 0 for Urban (1) and Water
+        (16); ZBOTV then floors the bottom at 0.01, so top(0.0) < bottom(0.01) and
+        paramCheck.f90:128 aborts. Under MODIFIED_IGBP_MODIS_NOAH the same dict is
+        simply the wrong table: MODIS 1 is Evergreen Needleleaf Forest (HVT 20 m) but
+        USGS 1 is Urban (ZTOPV 0).
+      affected_components:
+        - "set_trial_parameters.py ZTOPV / ZBOTV"
+        - "trialParams.nc heightCanopyTop / heightCanopyBottom"
+        - "paramCheck.f90:128"
+    remedy:
+      action: "Pass --veg_scheme so canopy heights are read from MPTABLE.TBL HVT/HVB for the table vegTypeIndex actually uses."
+      tool_to_run: "tools/s4_parameters/set_trial_parameters.py --from_hwsd --veg_scheme <usgs|modis>"
+      manual_steps:
+        - "python tools/s4_parameters/set_trial_parameters.py --attributes_nc settings/attributes.nc --output_nc settings/trialParams.nc --from_hwsd --veg_scheme modis"
+        - "Confirm: ncdump -v heightCanopyTop,heightCanopyBottom settings/trialParams.nc  # top > bottom on EVERY hru"
+        - "--veg_scheme must equal the vegeParTbl decision (SKILL.md Sec 2c)."
+      prevention: >
+        set_trial_parameters.py now raises with this explanation when the legacy
+        ZTOPV/ZBOTV path would produce bottom >= top, instead of letting SUMMA abort.
+    severity: "fatal"
+    cross_references: ["dt_027", "dt_022"]
+
+  - id: dt_030
+    stage: s1
+    domain: silent_error
+    title: "Dominant land cover / soil is actually the LOWEST-NUMBERED class present"
+    symptom:
+      error_pattern: >
+        No error. create_gru_hru.py --veg_scheme reports a veg_area_fraction
+        dominated by a low-numbered class that is implausible for the basin --
+        e.g. 65% IGBP/MODIS class 1 "Evergreen Needleleaf Forest" on a 3000-4700 m
+        Tibetan alpine basin, or class 1 appearing on nearly every GRU of any
+        domain. Downstream: scalarTotalET too high, runoff too low, and
+        scalarTotalET can exceed the P - Q_obs ceiling.
+      observed_behavior: >
+        Every GRU is assigned a vegTypeIndex (and soilTypeIndex) equal to the
+        smallest class id present in that cell, not the areally dominant one.
+    diagnosis:
+      root_cause: >
+        The single-HRU branch computed the mode as
+        Counter(np.unique(values)).most_common(1)[0][0]. np.unique() collapses the
+        pixel array to its DISTINCT values, so the Counter sees each class exactly
+        once, every count ties at 1, and most_common() returns the first item of a
+        sorted-ascending array -- i.e. the minimum class id. The same bug applied
+        to soilTypeIndex.
+      explanation: >
+        This is silent: the value written is always a class that genuinely occurs
+        in the cell, so no validator can flag it as impossible. It merely happens
+        to be the wrong one. Because IGBP/MODIS numbers forests low (1-5) and
+        grass/shrub high (6-10), the bias is systematically toward TALL FOREST on
+        exactly the open alpine and arid basins where that is most wrong. It
+        reproduces the Jinghong over-transpiration failure of SKILL.md 2c, but
+        arriving from the domain tool rather than from a bad elevation rule, so an
+        agent auditing its own veg logic finds nothing.
+      affected_components:
+        - "create_gru_hru.py single-HRU dominant veg/soil selection"
+        - "gru_hru_mapping.csv vegTypeIndex / soilTypeIndex"
+        - "attributes.nc -> trialParams.nc canopy height, LAI, rooting depth"
+    remedy:
+      action: "Take the mode over the FULL clipped pixel array, never over the unique list."
+      tool_to_run: "tools/s1_domain_setup/create_gru_hru.py"
+      manual_steps:
+        - "vals, counts = np.unique(lc_values, return_counts=True); lc_mode = int(vals[np.argmax(counts)])"
+        - "Keep the unique list ONLY for the --multi_hru branch (one HRU per class)."
+        - "Audit the veg_area_fraction in the tool's stdout JSON against the basin's real land cover before running SUMMA."
+      prevention: >
+        create_gru_hru.py now computes lc_mode / soil_mode with
+        np.unique(..., return_counts=True) and prints veg_class_counts +
+        veg_area_fraction so the class mix is auditable at a glance.
+      verified: >
+        Upper Yellow above Tangnaihai, 0.5 deg, 74 GRUs, 2026-07-20. Before:
+        65.1% class 1 Evergreen Needleleaf Forest (HVT 20 m). After: 83.3%
+        class 10 Grassland, 8.4% class 7 Open Shrubland, 7.9% class 9 Savanna --
+        i.e. alpine meadow, which is what the basin actually is.
+    severity: "silent"
+    cross_references: ["dt_024", "dt_022", "dt_029"]
+
+  - id: dt_031
+    stage: s1
+    domain: silent_error
+    title: "Every GRU gets elevation 0.0 (int16 DEM + nodata=np.nan), and soilTypeIndex holds HWSD mapping-unit ids"
+    symptom:
+      error_pattern: >
+        No error. gru_hru_mapping.csv / attributes.nc show elevation 0.0 on EVERY
+        row for a basin that is plainly not at sea level, and/or soilTypeIndex
+        values in the thousands (e.g. 11145-11741) instead of 1..19.
+      observed_behavior: >
+        SUMMA either aborts reading SOILPARM.TBL out of range, or runs with a
+        sea-level domain: forcing lapse-corrected from the reanalysis grid
+        elevation down to "0 m" is warmed by ~26 K on a 4000 m basin, so snow
+        never accumulates and the energy balance is wrong everywhere.
+    diagnosis:
+      root_cause: >
+        (a) create_gru_hru.py called rio_mask(..., nodata=np.nan) on the DEM.
+        Real DEMs are int16 (SRTM, MERIT, china_dem_90m), and rasterio raises
+        when a NaN nodata is applied to an integer band. The bare
+        "except Exception: elevation = 0.0" then assigned 0.0 to every GRU.
+        (b) The soil raster's modal value was written straight into
+        soilTypeIndex. HWSD's hwsd.bil stores MU_GLOBAL mapping-unit ids, which
+        are not soil categories at all.
+      explanation: >
+        Both are silent because 0.0 m and a large integer are structurally valid
+        numbers. The DEM failure is total (every cell fails identically, so no
+        spatial pattern hints at it) and it defeats the lapse correction in
+        build_summa_forcing_from_reanalysis.py, which is the one place elevation
+        would otherwise be sanity-checked.
+      affected_components:
+        - "create_gru_hru.py DEM clip + soil index assignment"
+        - "attributes.nc elevation / soilTypeIndex"
+        - "build_summa_forcing_from_reanalysis.py lapse correction"
+    remedy:
+      action: "Mask the DEM on its OWN nodata in float space; resolve out-of-range soil values through the HWSD texture crosswalk."
+      tool_to_run: "tools/s1_domain_setup/create_gru_hru.py"
+      manual_steps:
+        - "rio_mask(dem_ds, geom, crop=True, filled=True) then cast float64 and NaN out dem_ds.nodata"
+        - "Reject |elev| outside -500..9000 m regardless of declared nodata"
+        - "resolve_soil_category(): 1..19 passes through; anything else -> lookup_hwsd(lat,lon)['texture'] -> TEXTURE_TO_STAS"
+        - "Read back the tool's elevation_m and soil_categories JSON fields before running SUMMA."
+      prevention: >
+        create_gru_hru.py now logs a per-GRU WARNING plus an ERROR summary on any
+        DEM failure, and reports elevation_m{min,max,mean,n_zero}, dem_failures,
+        soil_categories and soil_resolution in its stdout JSON.
+      verified: >
+        Upper Yellow above Tangnaihai, 0.5 deg, 74 GRUs, 2026-07-20. Before:
+        elevation 0.0 on 74/74 GRUs, soilTypeIndex 11145-11741. After: elevation
+        3221.6-4768.4 m (mean 4160 m), 0 failures; soil categories [1,3,6,7,9,12]
+        with 74/74 resolved via HWSD texture.
+    severity: "silent"
+    cross_references: ["dt_018", "dt_030", "dt_006"]
+
+  - id: dt_032
+    stage: "s6_execution"
+    domain: "path_resolution"
+    title: "forcingListFile is read from settingsPath, but the s2 tools write it into forcingPath"
+    symptom:
+      error_pattern: "forcingListFile: file not found at '.*/settings/forcingFileList.txt'"
+      observed:
+        - "validate_file_manager.py exits 2 with a single forcingListFile error, while forcingFileList.txt plainly exists in the forcing directory next to forcing_YYYY.nc"
+        - "If validate_file_manager is skipped, SUMMA itself aborts in ffile_info with a file-open error on the list, having never read a single forcing record."
+      context: >
+        SUMMA resolves the forcing file list and the forcing data it names
+        against TWO DIFFERENT directories:
+          ffile_info.f90:86   infile = trim(SETTINGS_PATH)//trim(FORCING_FILELIST)
+          ffile_info.f90:120  the .nc names inside the list resolve against FORCING_PATH
+        The s2 builders (build_summa_forcing_from_reanalysis.py,
+        convert_vic_forcing_to_summa.py) are only ever given --output_dir, so
+        they write forcingFileList.txt beside the .nc files they produce -- i.e.
+        into forcingPath, which is the one place SUMMA will not look for it.
+        Nothing between s2 and s6 knows both paths, so the mismatch survives all
+        the way to the run gate.
+    diagnosis:
+      root_cause: >
+        A directory-ownership gap, not a bad path string. The tool that PRODUCES
+        the list does not know settingsPath; the tool that CONSUMES it
+        (create_file_manager.py) knows both but used to emit the
+        `forcingListFile 'forcingFileList.txt'` line without checking that the
+        referenced file exists at settingsPath.
+      explanation: >
+        Fatal rather than silent -- SUMMA cannot invent a forcing list -- but it
+        surfaces only at the very end of an expensive setup, after domain,
+        forcing, parameters and initial conditions are all built, which is why it
+        reads as a late mystery instead of an s2 output-location decision.
+      affected_components:
+        - "tools/s6_execution/create_file_manager.py"
+        - "tools/s2_forcing_prep/build_summa_forcing_from_reanalysis.py"
+        - "settings/forcingFileList.txt"
+    remedy:
+      action: "Let create_file_manager.py place the list at settingsPath; never hand-copy it and never point forcingPath at the settings dir to compensate."
+      tool_to_run: "tools/s6_execution/create_file_manager.py"
+      manual_steps:
+        - "Run create_file_manager.py with --settings_path and --forcing_path as usual; ensure_forcing_list() copies the list from forcingPath into settingsPath."
+        - "If no list exists in either place, it synthesises one from the sorted *.nc files in forcingPath (forcing_YYYY.nc => lexical order IS chronological, which ffile_info.f90:145 requires)."
+        - "Read the stdout JSON 'forcing_list' field: action, n_entries, n_missing_in_forcing_path. n_missing_in_forcing_path > 0 means the list names files that are not there."
+        - "Then run validate_file_manager.py, which checks the same settingsPath location."
+      prevention: >
+        create_file_manager.py now guarantees the file it references actually
+        exists at the location SUMMA reads, and reports what it did. The s2
+        tool's docstring states the asymmetry explicitly so the next author does
+        not 'fix' it by moving the list themselves.
+      verified: >
+        Upper Yellow above Tangnaihai, 0.5 deg, 74 GRUs, 11 forcing years,
+        2026-08-02. Before: validate_file_manager exit 2, "forcingListFile: file
+        not found at '.../work/settings/forcingFileList.txt'" with all 11
+        forcing_YYYY.nc and the list present in work/forcing/. After: list copied
+        to settings/, 11 entries, 0 missing, validation passes and SUMMA reads
+        the forcing.
+    severity: "fatal"
+    cross_references: ["dt_001", "dt_002", "dt_005"]
+
+  - id: dt_033
+    stage: "s6_execution"
+    domain: "dependency_mismatch"
+    title: "simStartTime at 00:00 is one step before the first PERIOD-ENDING forcing record"
+    symptom:
+      error_pattern: "first requested simulation timestep not in any forcing file"
+      observed:
+        - "SUMMA aborts in under a second with 'FATAL ERROR: summa_readForcing/read_force/getFirstTimestep/first requested simulation timestep not in any forcing file', then STOP 1."
+        - "The forcing files are plainly present, validate_file_manager passed, and the year in question is obviously covered."
+      context: >
+        SUMMA forcing timestamps are PERIOD-ENDING (each stamp labels the END of
+        its averaging interval). The s2 builders honour this, so forcing_1980.nc
+        for 3-hourly CMFD spans 1980-01-01 03:00 .. 1981-01-01 00:00 -- there is
+        no 00:00 record on 1 January. Writing the natural-looking
+        simStartTime '1980-01-01 00:00' therefore asks for a timestep that is
+        one data_step earlier than anything on disk.
+    diagnosis:
+      root_cause: >
+        Off-by-one-timestep between the period-ending forcing convention and a
+        hand-written sim window. Not corrupt forcing, not a missing year.
+      explanation: >
+        The Fortran message names neither the requested time nor the available
+        range, so it reads as "the forcing is broken" and sends you back to
+        rebuild s2 -- which regenerates exactly the same (correct) files. The
+        cost is a full forcing rebuild chasing a one-line config value.
+      affected_components:
+        - "fileManager.txt simStartTime / simEndTime"
+        - "tools/s6_execution/create_file_manager.py callers"
+    remedy:
+      action: "Derive the sim window from the forcing time axis instead of hard-coding YYYY-01-01 00:00."
+      tool_to_run: "tools/s6_execution/validate_file_manager.py"
+      manual_steps:
+        - "First valid start = first stamp of the earliest forcing file = YYYY-01-01 00:00 + data_step (03:00 for 3-hourly CMFD)."
+        - "Last valid end  = last stamp of the latest forcing file (YYYY+1-01-01 00:00)."
+        - "validate_file_manager.py now reads the forcing time axis and reports 'forcing time axis: <first> .. <last>', erroring with the exact value to use if the window falls outside it."
+        - "In a runner, read the axis with netCDF4 and format the window; do not hard-code the hour."
+      prevention: >
+        validate_file_manager.py fails the run BEFORE SUMMA starts, naming both
+        the requested and the available timestamps and the value to use.
+      verified: >
+        Upper Yellow above Tangnaihai, 74 GRUs, 2026-08-02. simStartTime
+        '1980-01-01 00:00' -> SUMMA STOP 1 in 0.9 s. Validator now reports
+        "forcing time axis: 1980-01-01 03:00 .. 1991-01-01 00:00" and errors
+        with "Set simStartTime to '1980-01-01 03:00' or later". With 03:00 the
+        run proceeds and reads forcing normally.
+    severity: "fatal"
+    cross_references: ["dt_005", "dt_032", "dt_015"]
+
+  - id: dt_034
+    stage: "s5_initial_conditions"
+    domain: "silent_error"
+    title: "coldState matric head is hard-coded -100 m and silently overrides --init_moisture"
+    symptom:
+      error_pattern: "scalarTotalRunoff ~ 1e-13 m/s for months while the water balance closes"
+      observed:
+        - "Runoff is effectively zero (1e-13 m/s, i.e. 1e-5 mm/day) for the whole first year or more, even through the melt season and monsoon."
+        - "P and ET are both sane and the water balance CLOSES -- the missing water is all going into soil storage, so no conservation check fires."
+        - "mLayerVolFracLiq at the first output step is ~0.17 even though --init_moisture 0.25 (or 0.30) was passed."
+      context: >
+        create_initial_conditions.py wrote mLayerVolFracLiq from --init_moisture
+        but mLayerMatricHead from the module constant INIT_MATRIC_HEAD = -100.0 m
+        (inherited from the Reynolds test case). Those two variables describe
+        DIFFERENT soil states and SUMMA does not reconcile or flag them.
+    diagnosis:
+      root_cause: >
+        Under the KI's own default decision `f_Richards = mixdform`, matric head
+        is the PROGNOSTIC variable in unsaturated soil, so SUMMA recomputes
+        theta from psi at the first step and the -100 m head wins.
+        --init_moisture is silently discarded.
+      explanation: >
+        -100 m is near the wilting point for most textures. On the default 4 m,
+        8-layer profile that is a storage deficit of order 600 mm, which the
+        basin must fill from precipitation surplus before it generates any
+        runoff -- years, on a basin with ~180 mm/yr of surplus. It presents as
+        dt_011 "all runoff is zero" with a perfectly closed water balance, which
+        is the most expensive possible signature: every conservation and unit
+        check passes, so the search goes to parameters, routing and forcing
+        before anyone looks at the initial condition. The number is also a
+        plausible-looking constant, so it survives code review.
+      affected_components:
+        - "tools/s5_initial_conditions/create_initial_conditions.py"
+        - "settings/coldState.nc mLayerMatricHead / mLayerVolFracLiq"
+        - "any run using f_Richards=mixdform (the KI default)"
+    remedy:
+      action: "Invert the van Genuchten retention curve so head and theta describe one state, using the same s4 parameters SUMMA will use."
+      tool_to_run: "tools/s5_initial_conditions/create_initial_conditions.py"
+      manual_steps:
+        - "Pass --trial_params_nc settings/trialParams.nc so the tool can read per-HRU theta_sat / theta_res / vGn_alpha / vGn_n."
+        - "Se = (theta - theta_r)/(theta_s - theta_r); m = 1 - 1/n; psi = -(1/alpha) * (Se**(-1/m) - 1)**(1/n). SUMMA stores vGn_alpha NEGATIVE, so use alpha = |vGn_alpha|."
+        - "Prefer --init_moisture_from field_capacity for a humid/monsoon basin: it is the near-equilibrium start and cuts years off the spinup."
+        - "Read the stdout JSON 'initial_soil_state': consistent must be true, and matric_head_mean_m should be ~-3.4 m when starting at field capacity (field capacity IS theta at -33 kPa = -3.37 m -- a free self-check that the inversion is right)."
+        - "s4 must run BEFORE s5; the dependency is new."
+      prevention: >
+        The tool now derives head from theta, reports the derivation in its
+        stdout JSON, and logs a loud WARNING naming dt_034 if it has to fall
+        back to the constant because --trial_params_nc was not supplied.
+      verified: >
+        Upper Yellow above Tangnaihai, 74 GRUs, 9-month cold-start smoke,
+        2026-08-02. Before: head flat -100 m, first-step theta 0.164-0.187,
+        Jan-Sep runoff 0.33 mm against P 630 mm. After: head -2.35..-3.36 m from
+        per-HRU field capacity, theta 0.071-0.413, Jan-Sep runoff 67.1 mm
+        (runoff coefficient 0.106) and still rising into autumn. Same forcing,
+        same parameters, same decisions.
+    severity: "silent"
+    cross_references: ["dt_011", "dt_014", "dt_015", "dt_006"]

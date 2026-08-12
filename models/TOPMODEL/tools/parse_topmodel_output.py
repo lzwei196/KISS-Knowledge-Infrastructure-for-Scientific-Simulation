@@ -38,12 +38,17 @@ def parse_hyd_out(hyd_file):
     """
     Parse hyd.out file.
 
-    Format: timestep  Q_simulated  Q_observed  (all in m/hr)
+    COLUMN ORDER (per topmodel.c results(), line ~29):
+        fprintf(out_hyd_fptr, "%d %lf %lf\\n", it, Qobs[it], Q[it]);
+    i.e. the columns are:  timestep  Q_OBSERVED  Q_SIMULATED  (all in m/step).
+    The SKILL.md table and an earlier version of this parser had these two
+    columns swapped, which silently corrupted NSE/PBIAS. They are read in the
+    correct order here.
 
     Returns:
         timesteps: array of timestep indices
-        q_sim: simulated discharge (m/hr)
-        q_obs: observed discharge (m/hr)
+        q_sim: simulated discharge (m/step)
+        q_obs: observed discharge (m/step)
     """
     timesteps = []
     q_sim = []
@@ -55,17 +60,18 @@ def parse_hyd_out(hyd_file):
             if len(parts) >= 3:
                 try:
                     t = int(parts[0])
-                    qs = float(parts[1])
-                    qo = float(parts[2])
+                    qo = float(parts[1])  # Qobs (column 2)
+                    qs = float(parts[2])  # Qsim (column 3)
                     timesteps.append(t)
                     q_sim.append(qs)
                     q_obs.append(qo)
                 except ValueError:
                     continue
             elif len(parts) == 2:
+                # No timestep index: assume "Qobs Qsim" to match the 3-col order
                 try:
-                    qs = float(parts[0])
-                    qo = float(parts[1])
+                    qo = float(parts[0])
+                    qs = float(parts[1])
                     timesteps.append(len(timesteps) + 1)
                     q_sim.append(qs)
                     q_obs.append(qo)
@@ -112,14 +118,30 @@ def parse_topmod_out(topmod_file):
     return results
 
 
-def convert_mhr_to_m3s(q_mhr, basin_area_km2):
+def convert_depth_per_step_to_m3s(q_depth_per_step, basin_area_km2,
+                                  seconds_per_step=3600.0):
     """
-    Convert discharge from m/hr to m³/s.
+    Convert TOPMODEL discharge (a DEPTH PER TIMESTEP, m/step) to volumetric m³/s.
 
-    Q_m3s = Q_mhr * basin_area_m2 / 3600
+        Q_m3s = depth_per_step (m) * basin_area_m2 / seconds_per_step
+
+    The standalone binary emits Q as a depth accumulated over ONE model step
+    (see topmodel.c: rain[]/pe[]/Q[] are per-step depths, dt is only a rate
+    factor). seconds_per_step is therefore the PHYSICAL length of one step:
+      - hourly run (1 step = 1 h):  3600
+      - daily  run (1 step = 1 d): 86400   <- HydroCraft daily convention
+    Hard-coding 3600 (the previous behaviour) made daily-run m³/s reports 24x
+    too high. Note: dimensionless metrics (NSE/KGE/PBIAS/r) are computed on the
+    raw per-step depths and are unaffected by this factor; only the reported
+    volumetric magnitude changes.
     """
     basin_area_m2 = basin_area_km2 * 1e6
-    return q_mhr * basin_area_m2 / 3600.0
+    return q_depth_per_step * basin_area_m2 / seconds_per_step
+
+
+# Backwards-compatible alias (old name assumed m/hr -> /3600).
+def convert_mhr_to_m3s(q_mhr, basin_area_km2, seconds_per_step=3600.0):
+    return convert_depth_per_step_to_m3s(q_mhr, basin_area_km2, seconds_per_step)
 
 
 def compute_nse(sim, obs):
@@ -184,6 +206,7 @@ def compute_all_metrics(sim, obs):
 def write_csv(output_file, timesteps, q_sim, q_obs, start_date=None, dt_hours=1.0,
               basin_area_km2=None):
     """Write results to CSV with optional date column and m³/s conversion."""
+    seconds_per_step = dt_hours * 3600.0
 
     with open(output_file, 'w', newline='') as f:
         writer = csv.writer(f)
@@ -203,8 +226,8 @@ def write_csv(output_file, timesteps, q_sim, q_obs, start_date=None, dt_hours=1.
                 row.append(dt.strftime('%Y-%m-%d %H:%M'))
             row.extend([f"{q_sim[i]:.8e}", f"{q_obs[i]:.8e}"])
             if basin_area_km2:
-                q_sim_m3s = convert_mhr_to_m3s(q_sim[i], basin_area_km2)
-                q_obs_m3s = convert_mhr_to_m3s(q_obs[i], basin_area_km2)
+                q_sim_m3s = convert_depth_per_step_to_m3s(q_sim[i], basin_area_km2, seconds_per_step)
+                q_obs_m3s = convert_depth_per_step_to_m3s(q_obs[i], basin_area_km2, seconds_per_step)
                 row.extend([f"{q_sim_m3s:.4f}", f"{q_obs_m3s:.4f}"])
             writer.writerow(row)
 
@@ -277,8 +300,9 @@ def main():
     print(f"  r    = {metrics['r']:.4f}")
 
     if args.basin_area_km2:
-        q_sim_m3s = convert_mhr_to_m3s(q_sim, args.basin_area_km2)
-        q_obs_m3s = convert_mhr_to_m3s(q_obs, args.basin_area_km2)
+        seconds_per_step = args.dt_hours * 3600.0
+        q_sim_m3s = convert_depth_per_step_to_m3s(q_sim, args.basin_area_km2, seconds_per_step)
+        q_obs_m3s = convert_depth_per_step_to_m3s(q_obs, args.basin_area_km2, seconds_per_step)
         metrics_m3s = compute_all_metrics(q_sim_m3s, q_obs_m3s)
         print(f"\n  In m³/s:")
         print(f"  Mean sim = {metrics_m3s['mean_sim']:.2f} m³/s")

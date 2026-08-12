@@ -82,6 +82,76 @@ crop_option                         = 0   ! No crops
 irrigation_option                   = 0   ! No irrigation
 ```
 
+#### Runoff / ET partitioning — hydroclimate decision rule (added 2026-07)
+
+The general-purpose defaults above (`surface_runoff_option=3` Schaake96 +
+`subsurface_runoff_option=3` free drainage, `btr_option=1` Noah) are tuned for
+water-limited / semi-arid columns. In **humid, energy-limited, or forested
+basins** free drainage over-drains the soil column and the restrictive Noah
+btran factor then starves transpiration, so realized ET collapses and the model
+**over-produces runoff** (measured +65 % PBIAS at 允景洪/Jinghong on the Lancang;
+r=0.92, so timing is correct and the error is purely volume/partitioning). For
+such basins use:
+
+```
+surface_runoff_option    = 1   ! SIMGM TOPMODEL (dynamic water table)
+subsurface_runoff_option = 1   ! SIMGM groundwater baseflow (retains soil water)
+btr_option               = 2   ! CLM soil-moisture factor (less restrictive than Noah=1;
+                               !   lets the retained water be transpired -> raises ET,
+                               !   lowers runoff overproduction)
+```
+
+Rule of thumb: choose by aridity index P/PET and land cover —
+`P/PET > 1` (humid) and/or forest/woody cover → OPT_RUN=1 + BTR_OPTION=2;
+`P/PET < 1` (arid/semi-arid) → keep the Schaake96 + free-drainage + Noah-btran
+defaults. OPT_RUN=1 cold-starts with WA=WT≈4900 mm and a diagnosed water table
+(no extra init needed). Note OPT_RUN=1 alone only partially closes the bias — it
+retains water but BTR_OPTION=1 still throttles its use, so pair it with
+BTR_OPTION=2. Routing cannot fix this: it is mass-conserving and the bias is a
+partitioning error UPSTREAM of any routing.
+
+#### Managed cropland — crop model and irrigation (added 2026-08)
+
+The defaults above (`crop_option = 0`, `irrigation_option = 0`) describe a NATURAL
+column.  For a site whose land use is managed cropland — FLUXNET BADM
+`IGBP = CRO`, `DOM_DIST_MGMT = Agriculture`, or any cropland grid cell — those
+defaults are a modelling error, not a neutral choice: the LAI cycle of a planted,
+harvested, and (often) irrigated field is not the MODIS climatology, and at an
+irrigated site the growing-season water supply is simply missing.
+
+```
+dynamic_veg_option = 4      ! VegFrac = SHDMAX; the crop model supplies LAI
+crop_option        = 1      ! Liu et al. crop model, category from CROPTYPE
+irrigation_option  = 2      ! 1 = always, 2 = crop season, 3 = LAI threshold
+irrigation_method  = 1      ! 0 = SIFRACT/MIFRACT/FIFRACT split, 1 = sprinkler,
+                            ! 2 = micro/drip, 3 = surface flooding
+agdata_flnm        = './run/agdata.nc'   ! REQUIRED when irrigation_option >= 1
+```
+
+Preconditions, all enforced by `tools/build_hrldas_setup.py`:
+
+| Requirement | Why |
+|---|---|
+| `IVGTYP` = 12 or 14 (MODIS-IGBP) | `FlagCropland` gates BOTH the crop model and every irrigation method (`GeneralInitMod.F90`) |
+| `CROPTYPE` in the setup file, slot 5 >= 0.5 | activates the crop category; slots 1-4 are class weights, largest wins (1 = corn, 2 = soybean) |
+| `PLANTING` / `HARVEST` in the setup file | read ONLY when `crop_option = 1`; otherwise `irrigation_option = 2` silently uses the NoahmpTable PLTDAY/HSDAY (dt_024) |
+| `IRFRACT` (+ `SIFRACT`/`MIFRACT`/`FIFRACT`) in `agdata_flnm` | the trigger needs `IRFRACT >= IRR_FRAC` (table default 0.10); the setup file is NOT read for these (dt_023) |
+| setup-file `LAI` = 0.05 for crop runs | the crop model turns setup LAI into leaf biomass and never resets it before the first harvest -> phantom winter canopy (dt_026) |
+
+Planting and harvest days of year come from
+`ki_tools_common.crop_calendar.get_planting_harvest(lat, lon, crop=...)` (GGCMI
+Phase 3), not from the table defaults.
+
+Irrigation parameters that behave as calibration knobs live in NoahmpTable.TBL,
+not the namelist: `IRR_MAD` (management allowable deficit, default 0.60) is the
+dominant control on applied volume, then `SPRIR_RATE` (6.4 mm/h),
+`IRR_HAR` (stop 20 d before harvest), `IRR_LAI` (option-3 threshold) and
+`IR_RAIN` (rain rate above which the trigger is skipped).
+
+Noah-MP v5.2 has no fertilisation or nitrogen-limitation input, so there is no
+fertilisation configuration step for this model.
+
+
 ### 5. Set file paths
 
 ```

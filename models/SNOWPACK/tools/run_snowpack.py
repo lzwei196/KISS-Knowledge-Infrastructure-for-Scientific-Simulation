@@ -107,8 +107,11 @@ def process(args):
     # Ensure output directory exists
     output_dir = ensure_output_dir(args.config)
 
-    # Build command
-    cmd = [args.binary, "-c", args.config, "-e", args.end_date]
+    # Build command. The subprocess runs with cwd set to the config's directory
+    # (below), so the config path passed to the binary must be absolute -- a
+    # relative path like "config/io.ini" would otherwise be re-resolved against
+    # the new cwd and MeteoIO would fail with "Path expansion ... failed".
+    cmd = [args.binary, "-c", os.path.abspath(args.config), "-e", args.end_date]
 
     print(f"Running: {' '.join(cmd)}", file=sys.stderr)
     print(f"Mode: {args.mode}", file=sys.stderr)

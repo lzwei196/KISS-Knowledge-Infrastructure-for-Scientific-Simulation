@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Provide the PCSE engine with daily meteorological data via a WeatherDataProvider. This is the most error-prone stage because PCSE uses non-standard units (kJ/m2/day for radiation, cm/day for precipitation) that differ from both VIC and DSSAT. Getting units wrong produces no error — the model runs to completion with plausible-looking but scientifically wrong results.
+Provide the PCSE engine with daily meteorological data via a WeatherDataProvider. This is the most error-prone stage because PCSE uses non-standard *internal* units (kJ/m2/day for radiation, cm/day for precipitation) that differ from both VIC and DSSAT — but note the **CSVWeatherDataProvider CSV columns are mm/day for RAIN** (provider divides /10 → cm) and kJ/m2/day for IRRAD; the provider does the unit scaling, so author the CSV in mm. Getting units wrong produces no error — the model runs to completion with plausible-looking but scientifically wrong results.
 
 ## Prerequisites
 
@@ -24,7 +24,7 @@ Provide the PCSE engine with daily meteorological data via a WeatherDataProvider
 | TMAX | float | forcing/station | Maximum daily temperature (Celsius) |
 | VAP | float | forcing/station | Vapor pressure (**kPa**, NOT hPa) |
 | WIND | float | forcing/station | Wind speed at 2m (**m/s**, NOT km/day) |
-| RAIN | float | forcing/station | Daily precipitation — **must be cm/day** (NOT mm) |
+| RAIN | float | forcing/station | Daily precipitation — **mm/day in the CSV** (CSVWeatherDataProvider divides by 10 → cm internally) |
 | SNOWDEPTH | float | optional | Snow depth (cm) |
 | lat | float | location | Latitude (decimal degrees) |
 | lon | float | location | Longitude (decimal degrees) |
@@ -81,13 +81,13 @@ HasSunshine = False
 
 ## Daily weather observations
 DAY,IRRAD,TMIN,TMAX,VAP,WIND,RAIN,SNOWDEPTH
-2000-01-01,2500,0.5,5.2,0.65,3.5,0.12,-999
+2000-01-01,2500,0.5,5.2,0.65,3.5,1.2,-999
 2000-01-02,3100,-1.0,3.8,0.55,2.8,0.00,-999
 ```
 
 **CRITICAL UNIT RULES**:
 - IRRAD: **kJ/m2/day** — typical range 2000-35000. If your values are 2-35, you have MJ — multiply by 1000.
-- RAIN: **cm/day** — typical range 0-10. If your values are 0-100, you have mm — divide by 10.
+- RAIN: **mm/day** — typical range 0-100. CSVWeatherDataProvider divides this column by 10 → cm/day internally. **Do NOT pre-convert to cm**; writing cm here makes rainfall 10x too low (drought, poor yield).
 - VAP: **kPa** — typical range 0.1-5.0. If your values are 1-50, you have hPa — divide by 10.
 - WIND: **m/s** — typical range 0-15. If your values are 0-500, you have km/day — divide by 86.4.
 - TMIN/TMAX: **Celsius** — if values > 200, you have Kelvin — subtract 273.15.
@@ -96,11 +96,11 @@ DAY,IRRAD,TMIN,TMAX,VAP,WIND,RAIN,SNOWDEPTH
 
 ```python
 # VIC forcing columns: PREC(mm), TMAX(C), TMIN(C), WIND(m/s), SW(W/m2), LW(W/m2), VP(kPa), PRESS(kPa)
-# PCSE needs: IRRAD(kJ/m2/day), TMIN(C), TMAX(C), VAP(kPa), WIND(m/s), RAIN(cm/day)
+# PCSE CSV needs: IRRAD(kJ/m2/day), TMIN(C), TMAX(C), VAP(kPa), WIND(m/s), RAIN(mm/day)
 
 # Unit conversions:
 IRRAD_kj = sw_wm2 * 86.4       # W/m2 → kJ/m2/day (×3600×24/1000)
-RAIN_cm = prec_mm / 10.0        # mm → cm
+RAIN_mm = prec_mm               # keep mm — CSVWeatherDataProvider divides /10 → cm
 # TMIN, TMAX, WIND, VAP: no conversion needed (same units)
 ```
 
@@ -126,9 +126,9 @@ assert df['IRRAD'].max() > 100, \
 assert df['IRRAD'].max() < 50000, \
     f"IRRAD max={df['IRRAD'].max()} — unreasonably high, check units"
 
-# RAIN range check — the #2 silent error
-assert df['RAIN'].max() < 50, \
-    f"RAIN max={df['RAIN'].max()} — likely in mm, divide by 10!"
+# RAIN range check — the #2 silent error (CSV column is mm/day; provider divides /10 → cm)
+assert df['RAIN'].max() < 500, \
+    f"RAIN max={df['RAIN'].max()} mm — unreasonably high for mm/day, check units"
 
 # Temperature sanity
 assert (df['TMIN'] <= df['TMAX']).all(), "TMIN > TMAX on some days!"
@@ -155,9 +155,9 @@ assert len(df) == len(date_range), \
    - Quick test: `if max(IRRAD) < 100: ERROR — multiply by 1000`
    - If unexpected: See diagnostic triplet dt_003
 
-2. **RAIN unit check**: Values should be in tenths (cm/day), NOT whole numbers (mm/day)
-   - Quick test: `if max(RAIN) > 50: WARNING — possibly mm, divide by 10`
-   - If unexpected: See diagnostic triplet dt_004
+2. **RAIN unit check**: CSV column is **mm/day** (CSVWeatherDataProvider divides by 10 → cm internally). Do NOT pre-convert to cm.
+   - Quick test: `if max(RAIN) > 500: WARNING — unreasonably high for mm/day`
+   - If unexpected: See diagnostic triplets dt_004, dt_016
 
 3. **No gaps**: Every day from start to end must have data
    - If unexpected: See diagnostic triplet dt_011
@@ -172,10 +172,10 @@ assert len(df) == len(date_range), \
 > **Do this instead**: Always multiply MJ by 1000 to get kJ. Verify: typical clear-sky summer IRRAD is 20000-30000 kJ/m2/day.
 > See diagnostic triplet dt_003.
 
-> **PITFALL**: RAIN in mm/day instead of cm/day
-> VIC, DSSAT, and most datasets use mm. PCSE uses cm. If you forget to divide by 10, precipitation is 10x too high. Soil is permanently waterlogged. Yield drops. **No error message.**
-> **Do this instead**: Always divide mm by 10 for PCSE. Verify: typical daily rainfall in cm is 0-5.
-> See diagnostic triplet dt_004.
+> **PITFALL**: pre-dividing the CSV RAIN column to cm/day
+> The CSVWeatherDataProvider RAIN column is **mm/day** — PCSE divides it by 10 to get the model's internal cm/day. If you also divide mm→cm yourself, precipitation reaches the soil 10x too low. The crop is chronically water-stressed. Yield drops. **No error message.** (Only a hand-built WeatherDataContainer / the internal model variable use cm/day directly.)
+> **Do this instead**: Pass mm/day straight into the CSV RAIN column; let the provider do the /10. Verify: typical daily rainfall in mm is 0-50.
+> See diagnostic triplets dt_004, dt_016.
 
 > **PITFALL**: NASAPowerWeatherDataProvider timeout
 > The NASA POWER API can be slow or unavailable. If it times out, the provider raises an exception and the simulation cannot start.

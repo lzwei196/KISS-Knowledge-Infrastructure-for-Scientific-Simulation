@@ -1,167 +1,237 @@
 model:
-  name: "HydroCNHS"
-  version: "1.2.1"
-  domain: "Hydrology - Coupled Natural-Human Systems"
-  language: "Python"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/HydroCNHS/venv/bin/python"
-  package: "hydrocnhs"
-  time_step: "daily"
-  rainfall_runoff_schemes: ["GWLF", "ABCD"]
-  routing: "Lohmann"
-  abm_apis: ["Dam", "RiverDiv", "Conveying", "InSitu"]
-
+  name: HydroCNHS
+  version: 1.2.1
+  domain: hydrology
+  language: Python
+  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/HydroCNHS/venv/bin/python
+  package: hydrocnhs
+  time_step: daily
+  rainfall_runoff_schemes:
+  - GWLF
+  - ABCD
+  routing: Lohmann
+  abm_apis:
+  - Dam
+  - RiverDiv
+  - Conveying
+  - InSitu
 inputs:
   forcing:
-    - name: "temperature"
-      symbol: "temp"
-      unit: "degC"
-      valid_range: [-60, 60]
-      format: "dict of lists keyed by subbasin name"
-      notes: "Must be Celsius. If Kelvin, subtract 273.15 (dt_003)"
-    - name: "precipitation"
-      symbol: "prec"
-      unit: "cm/day"
-      valid_range: [0, 100]
-      format: "dict of lists keyed by subbasin name"
-      notes: "MUST be cm/day. If mm/day divide by 10 (dt_001). If kg/m2/s multiply by 86400/10 (dt_002)"
-    - name: "potential_evapotranspiration"
-      symbol: "pet"
-      unit: "cm/day"
-      valid_range: [0, 5]
-      format: "dict of lists keyed by subbasin name"
-      notes: "Optional - Hamon method used if not provided. Must be cm/day if supplied (dt_004)"
+  - name: temperature
+    symbol: temp
+    unit: degC
+    valid_range:
+    - -60
+    - 60
+    format: dict of lists keyed by subbasin name
+    notes: Must be Celsius. If Kelvin, subtract 273.15 (dt_003)
+  - name: precipitation
+    symbol: prec
+    unit: cm/day
+    valid_range:
+    - 0
+    - 100
+    format: dict of lists keyed by subbasin name
+    notes: MUST be cm/day. If mm/day divide by 10 (dt_001). If kg/m2/s multiply by
+      86400/10 (dt_002)
+  - name: potential_evapotranspiration
+    symbol: pet
+    unit: cm/day
+    valid_range:
+    - 0
+    - 5
+    format: dict of lists keyed by subbasin name
+    notes: Optional - Hamon method used if not provided. Must be cm/day if supplied
+      (dt_004)
   parameters:
     critical:
-      - name: "CN2"
-        full_name: "SCS Curve Number"
-        valid_range: [25, 100]
-        sensitivity: "very_high"
-        description: "SCS runoff curve number; most sensitive GWLF parameter. Change of +/-5 shifts peak Q 30-50%"
-        scheme: "GWLF"
-      - name: "Res"
-        full_name: "Recession coefficient"
-        valid_range: [0.001, 0.5]
-        sensitivity: "high"
-        description: "Baseflow recession coefficient"
-        scheme: "GWLF"
-      - name: "Alpha"
-        full_name: "Groundwater discharge rate"
-        valid_range: [0, 1]
-        sensitivity: "high"
-        description: "Groundwater discharge rate"
-        scheme: "GWLF"
-      - name: "Ur"
-        full_name: "Available water capacity"
-        valid_range: [1, 15]
-        unit: "cm"
-        sensitivity: "high"
-        description: "Soil available water capacity. Must be in cm not mm (dt_009)"
-        scheme: "GWLF"
+    - name: CN2
+      full_name: SCS Curve Number
+      valid_range:
+      - 25
+      - 100
+      sensitivity: very_high
+      description: SCS runoff curve number; most sensitive GWLF parameter. Change
+        of +/-5 shifts peak Q 30-50%
+      scheme: GWLF
+    - name: Res
+      full_name: Recession coefficient
+      valid_range:
+      - 0.001
+      - 0.5
+      sensitivity: high
+      description: Baseflow recession coefficient
+      scheme: GWLF
+    - name: Alpha
+      full_name: Groundwater discharge rate
+      valid_range:
+      - 0
+      - 1
+      sensitivity: high
+      description: Groundwater discharge rate
+      scheme: GWLF
+    - name: Ur
+      full_name: Available water capacity
+      valid_range:
+      - 1
+      - 15
+      unit: cm
+      sensitivity: high
+      description: Soil available water capacity. Must be in cm not mm (dt_009)
+      scheme: GWLF
     gwlf:
-      - name: "IS"
-        valid_range: [0, 0.5]
-        sensitivity: "medium"
-        description: "Fraction of precipitation intercepted"
-      - name: "Sep"
-        valid_range: [0, 0.5]
-        sensitivity: "low"
-        description: "Fraction to deep aquifer"
-      - name: "Beta"
-        valid_range: [0, 1]
-        sensitivity: "medium"
-        description: "Unsaturated zone percolation"
-      - name: "Df"
-        valid_range: [0, 1]
-        unit: "cm/degC"
-        sensitivity: "medium"
-        description: "Snowmelt degree-day coefficient (dt_010)"
-      - name: "Kc"
-        valid_range: [0.5, 1.5]
-        sensitivity: "medium"
-        description: "Crop/vegetation coefficient"
+    - name: IS
+      valid_range:
+      - 0
+      - 0.5
+      sensitivity: medium
+      description: Fraction of precipitation intercepted
+    - name: Sep
+      valid_range:
+      - 0
+      - 0.5
+      sensitivity: low
+      description: Fraction to deep aquifer
+    - name: Beta
+      valid_range:
+      - 0
+      - 1
+      sensitivity: medium
+      description: Unsaturated zone percolation
+    - name: Df
+      valid_range:
+      - 0
+      - 1
+      unit: cm/degC
+      sensitivity: medium
+      description: Snowmelt degree-day coefficient (dt_010)
+    - name: Kc
+      valid_range:
+      - 0.5
+      - 1.5
+      sensitivity: medium
+      description: Crop/vegetation coefficient
     abcd:
-      - name: "a"
-        valid_range: [0, 1]
-        sensitivity: "high"
-        description: "Controls runoff during unsaturation"
-      - name: "b"
-        valid_range: [0, 400]
-        unit: "cm"
-        sensitivity: "high"
-        description: "Maximum soil water storage"
-      - name: "c"
-        valid_range: [0, 1]
-        sensitivity: "medium"
-        description: "Groundwater recharge fraction"
-      - name: "d"
-        valid_range: [0, 1]
-        sensitivity: "medium"
-        description: "Groundwater discharge rate"
+    - name: a
+      valid_range:
+      - 0
+      - 1
+      sensitivity: high
+      description: Controls runoff during unsaturation
+    - name: b
+      valid_range:
+      - 0
+      - 400
+      unit: cm
+      sensitivity: high
+      description: Maximum soil water storage
+    - name: c
+      valid_range:
+      - 0
+      - 1
+      sensitivity: medium
+      description: Groundwater recharge fraction
+    - name: d
+      valid_range:
+      - 0
+      - 1
+      sensitivity: medium
+      description: Groundwater discharge rate
     routing:
-      - name: "GShape"
-        valid_range: [1, 100]
-        description: "Gamma distribution shape for within-subbasin UH"
-      - name: "GScale"
-        valid_range: [0.01, 150]
-        description: "Gamma distribution scale for within-subbasin UH"
-      - name: "Velo"
-        valid_range: [0.5, 55]
-        unit: "m/s"
-        description: "Saint-Venant wave celerity (dt_011)"
-      - name: "Diff"
-        valid_range: [200, 4000]
-        unit: "m2/s"
-        description: "Saint-Venant diffusion coefficient"
+    - name: GShape
+      valid_range:
+      - 1
+      - 100
+      description: Gamma distribution shape for within-subbasin UH
+    - name: GScale
+      valid_range:
+      - 0.01
+      - 150
+      description: Gamma distribution scale for within-subbasin UH
+    - name: Velo
+      valid_range:
+      - 0.5
+      - 55
+      unit: m/s
+      description: Saint-Venant wave celerity (dt_011)
+    - name: Diff
+      valid_range:
+      - 200
+      - 4000
+      unit: m2/s
+      description: Saint-Venant diffusion coefficient
   geometry:
-    - name: "subbasin_area"
-      unit: "ha"
-      notes: "MUST be hectares. If km2 multiply by 100 (dt_005). If m2 divide by 10000 (dt_006)"
-    - name: "latitude"
-      unit: "decimal_degrees"
-      notes: "Required for Hamon PET calculation (dt_008)"
-    - name: "flow_length"
-      unit: "m"
-      notes: "If km multiply by 1000 (dt_007)"
-
+  - name: subbasin_area
+    unit: ha
+    notes: MUST be hectares. If km2 multiply by 100 (dt_005). If m2 divide by 10000
+      (dt_006)
+  - name: latitude
+    unit: decimal_degrees
+    notes: Required for Hamon PET calculation (dt_008)
+  - name: flow_length
+    unit: m
+    notes: If km multiply by 1000 (dt_007)
 outputs:
   primary:
-    - name: "Q_routed"
-      unit: "cms (m3/s)"
-      valid_range: [0, 100000]
-      format: "dict keyed by subbasin/outlet name"
-      description: "Routed streamflow at each outlet"
+  - name: Q_routed
+    unit: cms (m3/s)
+    valid_range:
+    - 0
+    - 100000
+    format: dict keyed by subbasin/outlet name
+    description: Routed streamflow at each outlet
+  - name: discharge
+    canonical_id: discharge
+    unit: m3/s
+  - name: surface_runoff
+    canonical_id: surface_runoff
+    unit: mm/day
+  - name: evapotranspiration
+    canonical_id: evapotranspiration
+    unit: mm/day
+  - name: soil_moisture
+    canonical_id: soil_moisture
+    unit: m3/m3
   diagnostics:
-    - name: "NSE"
-      valid_range: [-inf, 1]
-      description: "Nash-Sutcliffe Efficiency"
-    - name: "KGE"
-      valid_range: [-inf, 1]
-      description: "Kling-Gupta Efficiency"
-    - name: "PBIAS"
-      unit: "%"
-      description: "Percent Bias"
-    - name: "r"
-      valid_range: [-1, 1]
-      description: "Pearson correlation coefficient"
-    - name: "RMSE"
-      unit: "cms"
-      valid_range: [0, inf]
-      description: "Root Mean Square Error"
-
+  - name: NSE
+    valid_range:
+    - -inf
+    - 1
+    description: Nash-Sutcliffe Efficiency
+  - name: KGE
+    valid_range:
+    - -inf
+    - 1
+    description: Kling-Gupta Efficiency
+  - name: PBIAS
+    unit: '%'
+    description: Percent Bias
+  - name: r
+    valid_range:
+    - -1
+    - 1
+    description: Pearson correlation coefficient
+  - name: RMSE
+    unit: cms
+    valid_range:
+    - 0
+    - inf
+    description: Root Mean Square Error
 config:
-  format: "YAML"
-  date_format: "YYYY/M/D"
-  notes: "Date must be YYYY/M/D not YYYY-MM-DD (silent parse failure). DataLength must equal days between StartDate and EndDate inclusive."
+  format: YAML
+  date_format: YYYY/M/D
+  notes: Date must be YYYY/M/D not YYYY-MM-DD (silent parse failure). DataLength must
+    equal days between StartDate and EndDate inclusive.
   calibration_sentinel: -99
-  notes_calibration: "Parameters set to -99 are marked for GA calibration. Bounds must be set explicitly."
-
+  notes_calibration: Parameters set to -99 are marked for GA calibration. Bounds must
+    be set explicitly.
 known_issues:
-  - id: "dt_001"
-    description: "Precipitation in mm/day instead of cm/day causes 10x discharge error"
-    severity: "silent"
-  - id: "dt_005"
-    description: "Area in km2 instead of ha causes 100x low discharge"
-    severity: "silent"
-  - id: "dt_008"
-    description: "Wrong date format causes silent parse failure"
-    severity: "silent"
+- id: dt_001
+  description: Precipitation in mm/day instead of cm/day causes 10x discharge error
+  severity: silent
+- id: dt_005
+  description: Area in km2 instead of ha causes 100x low discharge
+  severity: silent
+- id: dt_008
+  description: Wrong date format causes silent parse failure
+  severity: silent

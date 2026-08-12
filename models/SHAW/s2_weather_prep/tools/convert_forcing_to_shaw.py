@@ -79,6 +79,136 @@ def temp_to_dewpoint(T, RH):
     return td
 
 
+def read_daily_csv(filepath, start_year=None, end_year=None):
+    """
+    Read a pre-aggregated DAILY weather CSV into SHAW's record list.
+
+    Designed for already-SHAW-ready daily sources such as the RISMA station
+    bundle (weather_complete.csv: date,tmax_C,tmin_C,precip_mm,srad_MJ_m2,
+    wind_m_s,rh_pct) and Environment-Canada / AAFC daily exports.
+
+    Required columns (case-insensitive, flexible names):
+        date (YYYY-MM-DD)         -> jday/year
+        tmax_C / tmax             -> tmax (C)
+        tmin_C / tmin             -> tmin (C)
+        precip_mm / precip        -> precip (mm/day)
+        srad_MJ_m2 / srad / solar -> shortwave; MJ/m2/day is auto-converted to W/m2
+        wind_m_s / wind           -> wind (m/s)
+        rh_pct / rh               -> relative humidity (%)
+
+    Returns a list of per-day dicts with the same keys write_daily_weather()
+    consumes (jday, year, tmax, tmin, tavg, wind, precip, swdown, rh).
+    Solar is emitted in W/m2 so write_daily_weather can pass it through.
+
+    Unit trap (triplet shaw_029): SHAW daily mode wants AVERAGE daily solar in
+    W/m2.  Daily totals reported in MJ/m2/day are multiplied by 11.574
+    (= 1e6 J / 86400 s).  Values that already look like W/m2 (mean > 60) are
+    left untouched.
+    """
+    import csv as _csv
+
+    def _pick(row, *names):
+        for n in names:
+            for k in row:
+                if k and k.strip().lower() == n:
+                    v = row[k]
+                    if v is None or str(v).strip() == "":
+                        return None
+                    try:
+                        return float(v)
+                    except ValueError:
+                        return None
+        return None
+
+    rows = []
+    with open(filepath, newline="") as fh:
+        rdr = _csv.DictReader(fh)
+        for row in rdr:
+            datestr = None
+            for k in row:
+                if k and k.strip().lower() in ("date", "datetime", "day"):
+                    datestr = str(row[k]).strip()
+                    break
+            if not datestr:
+                continue
+            try:
+                dt = datetime.strptime(datestr[:10], "%Y-%m-%d")
+            except ValueError:
+                continue
+            if start_year and dt.year < start_year:
+                continue
+            if end_year and dt.year > end_year:
+                continue
+            tmax = _pick(row, "tmax_c", "tmax", "tmax_air", "maxair_t")
+            tmin = _pick(row, "tmin_c", "tmin", "tmin_air", "minair_t")
+            if tmax is None or tmin is None:
+                continue
+            precip = _pick(row, "precip_mm", "precip", "prcp", "rain_mm") or 0.0
+            srad = _pick(row, "srad_mj_m2", "srad", "solar", "solar_mj", "totrs_mj")
+            wind = _pick(row, "wind_m_s", "wind", "avgws", "windspeed")
+            rh = _pick(row, "rh_pct", "rh", "avgrh", "humidity")
+            # Solar -> W/m2 (auto-detect MJ/m2/day vs already-W/m2)
+            if srad is None:
+                swdown = 150.0
+            elif srad <= 60.0:           # MJ/m2/day regime
+                swdown = srad * 11.574
+            else:                        # already W/m2
+                swdown = srad
+            rows.append({
+                "jday": dt.timetuple().tm_yday,
+                "year": dt.year,
+                "tmax": tmax,
+                "tmin": tmin,
+                "tavg": 0.5 * (tmax + tmin),
+                "wind": wind if wind is not None else 2.0,
+                "precip": max(0.0, precip),
+                "swdown": max(0.0, swdown),
+                "rh": rh if rh is not None else 70.0,
+            })
+
+    # Sort by true calendar date and FILL GAPS. SHAW's DAY2HR aborts
+    # ("ENCOUNTERED PROBLEMS READING DAILY WEATHER DATA") on any missing
+    # calendar day, so the daily series must be strictly consecutive. Missing
+    # days are linearly interpolated between the nearest present neighbours
+    # (e.g. RISMA Ontario is missing 2017-10-14).
+    by_date = {}
+    for r in rows:
+        d = datetime(r["year"], 1, 1) + timedelta(days=r["jday"] - 1)
+        by_date[d.date()] = r
+    if not by_date:
+        return []
+    keys = sorted(by_date)
+    filled = []
+    cur = keys[0]
+    last = keys[-1]
+    fields = ("tmax", "tmin", "tavg", "wind", "precip", "swdown", "rh")
+    n_filled = 0
+    while cur <= last:
+        if cur in by_date:
+            filled.append(by_date[cur])
+        else:
+            # find previous and next present days
+            prev = cur - timedelta(days=1)
+            while prev not in by_date:
+                prev -= timedelta(days=1)
+            nxt = cur + timedelta(days=1)
+            while nxt not in by_date:
+                nxt += timedelta(days=1)
+            span = (nxt - prev).days
+            w = (cur - prev).days / span
+            rp, rn = by_date[prev], by_date[nxt]
+            rec = {f: rp[f] * (1 - w) + rn[f] * w for f in fields}
+            rec["precip"] = 0.0   # don't smear precip across a gap
+            rec["jday"] = cur.timetuple().tm_yday
+            rec["year"] = cur.year
+            filled.append(rec)
+            n_filled += 1
+        cur += timedelta(days=1)
+    if n_filled:
+        print(f"  Filled {n_filled} missing calendar day(s) by interpolation")
+    return filled
+
+
 def find_forcing_file(forcing_dir, lat, lon, prefix=None):
     """Find the VIC forcing file for a given lat/lon."""
     forcing_dir = Path(forcing_dir)
@@ -162,15 +292,22 @@ def read_vic_forcing(filepath, start_year, end_year, steps_per_day=8):
             continue
 
         try:
-            precip = float(parts[0])  # mm/timestep
-            tmax = float(parts[1])    # C
-            tmin = float(parts[2])    # C
-            wind = float(parts[3])    # m/s
+            # HydroCraft forcing_final column order (from global_param FORCE_TYPE):
+            # AIR_TEMP(°C)  PREC(mm/ts)  PRESSURE(kPa)  SWDOWN(W/m²)
+            # LWDOWN(W/m²)  VP(kPa)  WIND(m/s)  — 7 columns, no QAIR
+            temp     = float(parts[0])                                    # °C
+            precip   = float(parts[1])                                    # mm/timestep
+            pressure = float(parts[2]) * 1000 if len(parts) > 2 else 101325.0  # kPa→Pa
+            swdown   = float(parts[3]) if len(parts) > 3 else 200.0      # W/m²
+            lwdown   = float(parts[4]) if len(parts) > 4 else 300.0      # W/m²
+            vp_kpa   = float(parts[5]) if len(parts) > 5 else 0.01       # kPa
+            wind     = float(parts[6]) if len(parts) > 6 else 2.0        # m/s
 
-            qair = float(parts[4]) if len(parts) > 4 else 0.005   # kg/kg
-            swdown = float(parts[5]) if len(parts) > 5 else 200.0  # W/m2
-            lwdown = float(parts[6]) if len(parts) > 6 else 300.0  # W/m2
-            pressure = float(parts[7]) if len(parts) > 7 else 101325.0  # Pa
+            # Convert VP → specific humidity for RH computation
+            e_pa = vp_kpa * 1000.0
+            qair = 0.622 * e_pa / max(pressure - 0.378 * e_pa, 1.0)  # kg/kg
+            tmax = temp   # 3-hourly: same T each sub-step; write_daily_weather
+            tmin = temp   # computes true daily max/min across 8 sub-steps
         except (ValueError, IndexError):
             continue
 
@@ -178,7 +315,7 @@ def read_vic_forcing(filepath, start_year, end_year, steps_per_day=8):
         year = current_date.year
         hour = step_in_day * (24 // steps_per_day)
 
-        tavg = (tmax + tmin) / 2.0
+        tavg = temp
         rh = specific_to_relative_humidity(qair, tavg, pressure)
 
         data.append({
@@ -292,12 +429,15 @@ def write_daily_weather(data, output_path, steps_per_day=8):
 
 def main():
     parser = argparse.ArgumentParser(description="Convert VIC forcing to SHAW weather format")
-    parser.add_argument("--forcing_dir", type=str, required=True,
-                        help="Directory with VIC forcing files")
-    parser.add_argument("--lat", type=float, required=True, help="Target latitude")
-    parser.add_argument("--lon", type=float, required=True, help="Target longitude")
-    parser.add_argument("--start_year", type=int, required=True, help="Start year")
-    parser.add_argument("--end_year", type=int, required=True, help="End year")
+    parser.add_argument("--forcing_dir", type=str, default=None,
+                        help="Directory with VIC/CMFD forcing files")
+    parser.add_argument("--csv", type=str, default=None,
+                        help="Pre-aggregated daily weather CSV (RISMA/EC/AAFC). "
+                             "When given, --forcing_dir is ignored.")
+    parser.add_argument("--lat", type=float, default=0.0, help="Target latitude")
+    parser.add_argument("--lon", type=float, default=0.0, help="Target longitude")
+    parser.add_argument("--start_year", type=int, default=None, help="Start year")
+    parser.add_argument("--end_year", type=int, default=None, help="End year")
     parser.add_argument("--output", type=str, required=True, help="Output weather file")
     parser.add_argument("--mode", choices=["hourly", "daily"], default="daily",
                         help="Output format: hourly or daily")
@@ -308,10 +448,31 @@ def main():
 
     args = parser.parse_args()
 
+    data = None
+
+    # Preferred path: a pre-aggregated daily CSV (RISMA/EC/AAFC daily exports)
+    if args.csv:
+        print(f"Reading daily CSV forcing: {args.csv}")
+        data = read_daily_csv(args.csv, args.start_year, args.end_year)
+        if not data:
+            print("ERROR: no usable rows in --csv")
+            sys.exit(1)
+        print(f"Read {len(data)} daily records from CSV")
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        # CSV is already daily -> one record per day (steps_per_day=1)
+        if args.mode == "hourly":
+            print("WARNING: --csv is daily data; forcing --mode daily")
+        write_daily_weather(data, str(output_path), steps_per_day=1)
+        return
+
+    if args.forcing_dir is None:
+        print("ERROR: provide --csv or --forcing_dir")
+        sys.exit(1)
+
     # Find forcing file — try VIC ASCII first, then CMFD NetCDF
     forcing_file = find_forcing_file(args.forcing_dir, args.lat, args.lon, args.prefix)
 
-    data = None
     if forcing_file is not None:
         print(f"Reading VIC forcing: {forcing_file}")
         data = read_vic_forcing(forcing_file, args.start_year, args.end_year, args.steps_per_day)
@@ -362,8 +523,17 @@ def main():
                     tdew = (237.3 * math.log(vp / 0.6108)) / (17.27 - math.log(vp / 0.6108)) if vp > 0.001 else tmin_c
                     base = datetime(args.start_year, 1, 1) + timedelta(days=d)
                     jd = base.timetuple().tm_yday
-                    data.append({'jd': jd, 'year': base.year, 'tmax': tmax_c, 'tmin': tmin_c,
-                                 'tdew': tdew, 'wind': wind, 'prec': prec_mm, 'solar': srad})
+                    tavg = (tmax_c + tmin_c) / 2.0
+                    # Back-compute RH from tdew so write_daily_weather's
+                    # temp_to_dewpoint(tavg, rh) round-trips correctly.
+                    _a, _b = 17.27, 237.7
+                    _gd = _a * tdew / (_b + tdew) if (_b + tdew) != 0 else 0
+                    _gt = _a * tavg / (_b + tavg) if (_b + tavg) != 0 else 0
+                    rh = max(0.0, min(100.0, 100.0 * math.exp(_gd - _gt)))
+                    data.append({'jday': jd, 'year': base.year,
+                                 'tmax': tmax_c, 'tmin': tmin_c, 'tavg': tavg,
+                                 'tdew': tdew, 'wind': wind,
+                                 'precip': prec_mm, 'swdown': srad, 'rh': rh})
                 print(f"Read {len(data)} days from CMFD NetCDF")
         except Exception as ex:
             print(f"CMFD NetCDF read failed: {ex}")

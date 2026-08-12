@@ -32,9 +32,9 @@ import sys
 from datetime import datetime
 
 
-REQUIRED_EXTENSIONS = [".mesh", ".att", ".soil", ".lc", ".meteo", ".riv",
+REQUIRED_EXTENSIONS = [".mesh", ".att", ".soil", ".meteo", ".riv",
                        ".para", ".calib"]
-OPTIONAL_EXTENSIONS = [".ic", ".lai", ".bc", ".geol", ".lsm", ".rad",
+OPTIONAL_EXTENSIONS = [".lc", ".ic", ".lai", ".bc", ".geol", ".lsm", ".rad",
                        ".bgc", ".ndep"]
 
 
@@ -240,6 +240,139 @@ def run_model(args, warnings):
         }
 
 
+MAX_PHYSICAL_T1_K = 350.0
+
+
+def mesh_numele(input_dir, project):
+    """(nelem, None) from <input_dir>/<project>.mesh, else (None, reason).
+
+    src/read_mesh.c:16-17 does NextLine() then ReadKeyword(cmdstr, "NUMELE",
+    'i', ...): NUMELE must be the FIRST record of the .mesh or the solver
+    aborts with ERR_WRONG_FORMAT.  A later NUMELE token is therefore NOT
+    evidence of the element count -- if the first record is anything else the
+    deck the binary read is not the deck we are parsing, the record length of
+    the element-wise .dat files is unverifiable, and the caller must SKIP.
+
+    "Record" here is src/custom_io.c NextLine + NonBlank: the first line whose
+    first character, after an optional UTF-8 BOM and leading spaces/tabs, is
+    not '#', CR, LF or NUL.  Keyword matching is case-insensitive to match
+    ReadKeyword's strcasecmp (src/read_func.c:85), and the value must parse as
+    a positive int to match its "%s %d".
+    """
+    path = os.path.join(input_dir, project + ".mesh")
+    try:
+        with open(path, "r", encoding="utf-8-sig") as f:
+            for line in f:
+                s = line.lstrip(" \t")
+                if s == "" or s[0] in ("#", "\r", "\n", "\0"):
+                    continue
+                tok = s.split()
+                if tok[0].upper() != "NUMELE":
+                    return (None, "first record of %s.mesh is %r, not NUMELE "
+                            "(src/read_mesh.c requires NUMELE first)"
+                            % (project, tok[0]))
+                if len(tok) < 2:
+                    return (None, "NUMELE record of %s.mesh carries no value"
+                            % project)
+                try:
+                    n = int(tok[1])
+                except ValueError:
+                    return (None, "NUMELE value %r in %s.mesh is not an int"
+                            % (tok[1], project))
+                if n < 1:
+                    return (None, "NUMELE %d in %s.mesh is not positive"
+                            % (n, project))
+                return (n, None)
+    except (OSError, UnicodeDecodeError) as e:
+        return (None, "cannot read %s.mesh: %r" % (project, e))
+    return (None, "%s.mesh contains no non-comment record" % project)
+
+
+def check_thermal_divergence(args, result):
+    """Fail a run whose Noah soil-temperature solver has gone unstable.
+
+    A diverged column still exits 0 and still writes every .dat file, so the
+    only symptom downstream is that every calibration trial scores None while
+    reporting ok=True (ChiuniFR 2026-08-02: nine trials, ~8 h, all null,
+    against skin temperatures of 1.4e11 K).  Read-only, and it never flips
+    status on its own uncertainty: EVERY reason the check cannot run (numpy
+    missing, no .t1.dat, unreadable, empty, NUMELE unverifiable, bad record
+    length, non-monotonic time column) is appended to result["warnings"] as
+    "thermal-divergence check SKIPPED (<why>)", so a caller can always tell an
+    unchecked run from a checked one.
+    """
+    repo = os.path.dirname(os.path.abspath(args.binary))
+    outdir = os.path.join(repo, "output", args.output_dir or args.project)
+    t1 = os.path.join(outdir, args.project + ".t1.dat")
+
+    def _skip(why):
+        result.setdefault("warnings", []).append(
+            "thermal-divergence check SKIPPED (%s): %s" % (why, t1))
+
+    try:
+        import numpy as np
+    except ImportError:
+        _skip("numpy is not importable")
+        return
+    if not os.path.isfile(t1):
+        _skip("no such file -- T1 is not in this deck's .lsm output list, "
+              "or the run wrote no output")
+        return
+
+    # src/print.c:159-166 writes one double of time followed by nvar doubles;
+    # for an element-wise variable nvar == NUMELE, so the record length is
+    # exactly NUMELE+1 and NO magnitude heuristic is needed to separate the
+    # time stamp from the temperatures.
+    nelem, why_no_numele = mesh_numele(args.input_dir, args.project)
+    if nelem is None:
+        _skip(why_no_numele)
+        return
+    reclen = nelem + 1
+    try:
+        # print.c uses fwrite(), i.e. host-native doubles; every supported
+        # MM-PIHM build host is little-endian, so bind the layout explicitly
+        # rather than inheriting the reader's native order.
+        a = np.fromfile(t1, dtype="<f8")
+    except (OSError, ValueError):
+        _skip("unreadable")
+        return
+    if a.size == 0:
+        _skip("empty")
+        return
+    if a.size % reclen != 0:
+        _skip("size %d doubles is not a multiple of NUMELE+1 = %d"
+              % (a.size, reclen))
+        return
+    m = a.reshape(-1, reclen)
+    stamps = m[:, 0]
+    if not np.all(np.isfinite(stamps)) or (
+            stamps.shape[0] > 1 and not np.all(np.diff(stamps) > 0.0)):
+        _skip("column 0 is not a strictly increasing time stamp -- the file "
+              "does not match this deck's NUMELE")
+        return
+
+    # Every remaining value IS a T1 temperature: no value is filtered out, so
+    # an arbitrarily large divergence (ChiuniFR 2026-08-02 reached 1.44e11 K)
+    # still reaches the threshold test.
+    vals = m[:, 1:]
+    isfin = np.isfinite(vals)
+    nonfinite = int(vals.size - np.count_nonzero(isfin))
+    finite = vals[isfin]
+    tmax = float(finite.max()) if finite.size else float("inf")
+    result["max_t1_k"] = tmax
+    result["nonfinite_t1_count"] = nonfinite
+    if tmax > MAX_PHYSICAL_T1_K or nonfinite > 0:
+        result["status"] = "error"
+        result.setdefault("errors", []).append(
+            "THERMAL DIVERGENCE: max finite T1 = %.6g K (limit %.0f K), "
+            "%d non-finite T1 value(s) in %s -- the Noah soil-temperature "
+            "solver has gone unstable. Check ZBOT_DATA in the .lsm against "
+            "the mesh soil depth (zmax-zmin): src/noah/noah.c:1024 needs "
+            "0.5*(zsoil[n-2]+zsoil[n-1]) - zbot > 0, otherwise the geothermal "
+            "term becomes anti-diffusive."
+            % (tmax, MAX_PHYSICAL_T1_K, nonfinite, t1))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Execute MM-PIHM binary with pre-flight validation"
@@ -259,6 +392,7 @@ def main():
 
     warnings = validate_inputs(args)
     result = run_model(args, warnings)
+    check_thermal_divergence(args, result)
 
     print(json.dumps(result, indent=2))
     if result["status"] != "success":

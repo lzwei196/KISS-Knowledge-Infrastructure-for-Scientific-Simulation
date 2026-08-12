@@ -2,50 +2,69 @@
 
 ## Purpose
 
-Configure the wind speed and direction fields that drive fire spread in the Rothermel
-equation. Wind is the dominant factor in fire spread rate — incorrect wind setup is
-the most common cause of unrealistic fire behavior.
+Configure the wind speed and direction fields that drive fire spread in the
+Rothermel equation. Wind is the dominant factor in fire spread rate —
+incorrect wind setup is the most common cause of unrealistic fire behavior.
+
+## ⚠️ Two unit/convention bugs to avoid (re-verified 2026-04-29)
+
+These contradict what some older project docs said; the source is authoritative:
+
+1. **YAML `wind.simple.speed` is in MPH, not ft/min.**
+   `simfire/utils/config.py:860` does:
+   ```python
+   speed = mph_to_ftpm(self.yaml_data["wind"]["simple"]["speed"])
+   ```
+   So if you write `speed: 1760` (intending "20 mph × 88 ft/min"),
+   SimFire reads it as 1760 mph → 154,880 ft/min — fire fills the grid in
+   minutes. Just write `speed: 20`.
+   Same conversion applies to `wind.perlin.speed.range_min/max`
+   (`config.py:897-901`).
+
+2. **YAML `wind.simple.direction` is "TO direction", not meteorological "from".**
+   `simfire/world/rothermel.py:104` computes
+   `wind_angle_radians = np.radians(90 − U_dir)` and then projects the wind
+   vector onto the spread direction; max RoS occurs when
+   `angle_of_travel == U_dir`. So:
+   - `direction = 90` → wind blows **toward East** (fire spreads East)
+   - `direction = 225` → wind blows **toward Southwest** (fire spreads SW)
+   - For a Diablo NE wind that blows TO SW, write `direction: 225`,
+     NOT `direction: 45`.
 
 ## Inputs
 
-| Input | Source | Format | Units |
-|-------|--------|--------|-------|
-| Wind speed | Measurement/model | scalar or 2D array | **ft/min** (internally) |
-| Wind direction | Measurement/model | scalar or 2D array | degrees (0=N, CW) |
-| Wind mode | Config | string | "simple", "perlin", "cfd" |
-
-## Outputs
-
-| Output | Format | Units | Shape |
-|--------|--------|-------|-------|
-| Wind speed array | numpy float | ft/min | (H, W) |
-| Wind direction array | numpy float | degrees [0, 360) | (H, W) |
+| Input | Source | Format | YAML unit | Internal unit |
+|-------|--------|--------|-----------|---------------|
+| Wind speed | weather obs / model | scalar | **mph** | ft/min |
+| Wind direction | weather obs / model | scalar | degrees, "TO direction" | same |
+| Wind mode | config | string | `simple` / `perlin` / `cfd` | — |
 
 ## Procedure
 
-### Option A: Simple (Constant) Wind
+### Option A: Simple (constant) wind — recommended for case studies
 
-Uniform speed and direction across entire domain. Good for testing.
+Uniform speed and direction across the entire domain.
 
 ```yaml
 wind:
   function: simple
   simple:
-    speed: 1760       # ft/min (= 20 mph × 88)
-    direction: 90.0   # degrees (0=N, 90=E wind blows FROM east)
+    speed: 20            # mph (NOT ft/min). config.py:860 applies mph_to_ftpm
+    direction: 90.0      # degrees, "TO" convention. 90 = wind blows TOWARD East.
 ```
 
-**CRITICAL CONVERSION**: The `speed` value must be in **ft/min**.
-| Common Source | Conversion | Example |
-|---------------|------------|---------|
-| 10 mph | × 88 = 880 ft/min | Light breeze |
-| 20 mph | × 88 = 1760 ft/min | Moderate wind |
-| 5 m/s | × 196.85 = 984 ft/min | Moderate breeze |
-| 30 km/h | × 54.68 = 1640 ft/min | Fresh breeze |
+| You want… | direction |
+|---|---|
+| Wind FROM N (blowing TO S) | 180 |
+| Wind FROM E (blowing TO W) | 270 |
+| Wind FROM S (blowing TO N) | 0 |
+| Wind FROM W (blowing TO E) | 90 |
+| Wind FROM NE (blowing TO SW; Diablo) | 225 |
+| Wind FROM SW (blowing TO NE) | 45 |
 
-### Option B: Perlin Noise Wind
+### Option B: Perlin noise wind
 
-Spatially varying wind using Simplex noise. Produces naturalistic variation.
+Spatially varying wind using Simplex noise.
 
 ```yaml
 wind:
@@ -53,120 +72,89 @@ wind:
   perlin:
     speed:
       seed: 2345
-      scale: 400          # noise spatial frequency
-      octaves: 3          # detail passes
-      persistence: 0.7    # amplitude decay per octave
-      lacunarity: 2.0     # frequency increase per octave
-      range_min: 7        # minimum speed (ft/min)
-      range_max: 47       # maximum speed (ft/min)
+      scale: 400
+      octaves: 3
+      persistence: 0.7
+      lacunarity: 2.0
+      range_min: 5         # mph (NOT ft/min)
+      range_max: 30         # mph
     direction:
       seed: 650
       scale: 1500
       octaves: 2
       persistence: 0.9
       lacunarity: 1.0
-      range_min: 0.0      # degrees
-      range_max: 360.0    # degrees
+      range_min: 0.0        # degrees, "TO direction"
+      range_max: 360.0
 ```
 
-**Note**: `range_min` and `range_max` for speed are in **ft/min**.
-A range of 7–47 ft/min = 0.08–0.53 mph. This is very slow wind.
-For realistic conditions, use e.g., `range_min: 440, range_max: 2640` (5–30 mph).
+### Option C: CFD wind
 
-### Option C: CFD Wind
-
-Computational Fluid Dynamics wind using Navier-Stokes solver. Accounts for terrain
-effects on wind flow.
+Computational Fluid Dynamics wind using a Navier-Stokes solver. The
+`speed` here is a boundary-condition magnitude in **m/s**; the resulting
+spatial array is converted via `scale_ms_to_ftpm` (`config.py:891`).
 
 ```yaml
 wind:
   function: cfd
   cfd:
-    time_to_train: 1000    # CFD solver iterations (convergence)
-    result_accuracy: 1
-    iterations: 1
-    scale: 1
-    timestep_dt: 1.0
-    diffusion: 0.0
-    viscosity: 0.0000001
-    speed: 19.0             # boundary condition speed (ft/min)
-    direction: north        # boundary condition direction (compass name)
+    time_to_train: 1000     # CFD solver iterations
+    speed: 8.9              # m/s boundary condition (~20 mph)
+    direction: north        # boundary direction (compass name)
+    # ... + diffusion / viscosity / scale / timestep_dt etc.
 ```
 
-### Converting External Wind Data
+### Converting external wind data
 
-Use `convert_wind_to_simfire.py` for external sources:
+`tools/convert_wind_to_simfire.py` exists for advanced workflows that need
+to **inject pre-computed wind arrays** (e.g. into a CFD or custom layer
+pipeline). It produces `.npy` arrays in **ft/min** because that's what
+the Rothermel internals expect.
 
-```bash
-# From weather station data in mph
-python ki/tools/convert_wind_to_simfire.py \
-    --speed 20 --speed-unit mph \
-    --direction 270 \
-    --grid-shape 225 450 \
-    --output-dir ./wind_data/
-
-# From ERA5/MERRA2 in m/s
-python ki/tools/convert_wind_to_simfire.py \
-    --csv era5_wind.csv \
-    --speed-col u10 --dir-col wind_dir \
-    --speed-unit ms \
-    --grid-shape 225 450 \
-    --output-dir ./wind_data/
-```
-
-## Wind Direction Convention
-
-SimFire uses **meteorological convention**: direction the wind blows FROM.
-
-| Direction | Degrees | Fire spreads toward |
-|-----------|---------|---------------------|
-| North | 0° | South |
-| East | 90° | West |
-| South | 180° | North |
-| West | 270° | East |
-
-The Rothermel model extracts the wind component along the direction from the
-current pixel to each neighbor. Only the positive (pushing) component is used;
-negative (opposing) wind is clamped to zero.
+For the standard `simple` and `perlin` paths, **do not** use the
+ft/min outputs of this tool as YAML scalars — those YAML scalars are
+already mph. Just write the mph value directly.
 
 ## Verification
 
-1. Check wind speed is in ft/min (not mph):
+1. **Sanity-check sim wind against intent.** After loading the config,
+   confirm internal units:
    ```python
-   # If max speed < 100 ft/min, likely in mph (forgot ×88)
-   # 100 ft/min = 1.14 mph — almost no wind
-   assert wind_speed.max() > 100, "Wind likely in mph, not ft/min"
+   from simfire.utils.units import mph_to_ftpm
+   intended_mph = 20
+   internal_ftmin = mph_to_ftpm(intended_mph)   # 1760 ft/min
    ```
+   If your sim is spreading 88× faster than expected, you almost certainly
+   double-converted (wrote ft/min in the YAML).
 
-2. Check direction range:
-   ```python
-   assert 0 <= wind_dir.min() and wind_dir.max() < 360
-   ```
+2. **Check direction alignment.** Run a short sim with wind blowing toward
+   East (`direction: 90`) on a square grid; fire should elongate **eastward**
+   from the ignition point. If it elongates west, you've used the
+   meteorological "from" convention.
 
-3. Visual sanity: fire should elongate downwind
+3. Direction range:
    ```python
-   # East wind (90°) → fire should spread westward
-   # Fire elongation axis should align with wind direction
+   assert 0 <= wind_dir < 360
    ```
 
 ## Traps
 
 | Trap | Symptom | Severity | Fix |
 |------|---------|----------|-----|
-| Speed in mph instead of ft/min | Fire barely moves | **Silent** | Multiply by 88 |
-| Speed in m/s instead of ft/min | Fire barely moves | **Silent** | Multiply by 196.85 |
-| Perlin range_min/max in mph | Very slow wind field | **Silent** | Use ft/min values |
+| YAML `simple.speed` written as ft/min (e.g. 1760) | Fire fills grid in minutes; sim/expected RoS ratio ≈ 88× | **Silent** | Write the mph value (20), not 1760 |
+| YAML `simple.direction` set per meteorological "from" convention | Fire spreads OPPOSITE the intended downwind direction | **Silent** | Use "TO direction": for "wind from NE", write 225 not 45 |
+| Perlin `range_min/max` written as ft/min | Wind field 88× too strong | **Silent** | Use mph values |
+| `convert_wind_to_simfire.py` ft/min outputs pasted into YAML | Wind 88× too strong | **Silent** | Use that tool only for spatial wind ARRAYS in CFD/custom layers; the simple/perlin YAML scalars are mph |
 | Direction in radians | Erratic fire direction | **Silent** | Convert to degrees |
 | CFD too few training iterations | Wind field not converged | **Silent** | Increase `time_to_train` |
-| Math convention (0=E, CCW) | Fire spreads wrong direction | **Silent** | Convert to met convention |
 
 ## Example
 
-For a 20 mph east wind (common Santa Ana condition):
+For a 20 mph Diablo wind (NE → SW):
 ```yaml
 wind:
   function: simple
   simple:
-    speed: 1760    # 20 mph × 88 = 1760 ft/min
-    direction: 90  # from east
+    speed: 20         # mph
+    direction: 225    # blows TO SW
 ```

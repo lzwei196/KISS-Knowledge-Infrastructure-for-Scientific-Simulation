@@ -1,0 +1,420 @@
+template_version: "3.5"
+
+identity:
+  model_id: "CLASSIC"
+  scientific_reference_version: "CLASSIC v1.0 (Melton et al. 2020, GMD 13:2825; CLASS 3.6.2 physics + CTEM v2.0 biogeochemistry lineage)"
+  implementation:
+    id: "classic-v100"
+    version: "v1.0.0"
+    provenance: "Fortran 2008; ECCC/CCCma stand-alone offline land-surface scheme, run as a serial or MPI-parallel build over point or gridded domains."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: "CC-BY-4.0"
+  repo_url: "https://gitlab.com/cccma/classic"
+
+boundary:
+  scope_in:
+    - "Surface exchange of energy, momentum, and water between atmosphere and land (CLASS physics)"
+    - "Multi-layer soil temperature and liquid/frozen soil moisture dynamics"
+    - "Snowpack accumulation, melt, density, albedo (single-layer representation)"
+    - "Vegetation canopy interception, radiation cascade, and evapotranspiration"
+    - "Surface ponding"
+    - "Terrestrial carbon biogeochemistry: photosynthesis, autotrophic/heterotrophic respiration, allocation, phenology, tissue turnover (CTEM)"
+    - "Disturbance: fire ignition/spread/emissions, land-use change, PFT competition"
+    - "Wetland methane emission and soil methane uptake"
+  scope_out:
+    - "Lateral heat/moisture transfer between grid cells (each cell is independent outside MESH coupling)"
+    - "Channel/streamflow routing of runoff (runoff is a diagnostic flux, not routed)"
+    - "Atmospheric dynamics (model is forced offline by prescribed meteorology)"
+    - "Species-level vegetation (represented only at plant-functional-type level)"
+    - "Nitrogen cycle (under development, not in v1.0)"
+  spatial: "1-D column"
+  temporal: "sub-hourly"
+  closure: "both"
+  notes: "Each grid cell/tile is an independent 1-D vertical column (configurable ground layers; standard offline config is 20 layers to >61 m depth); gridded runs are many independent columns with no lateral exchange. CLASS physics runs at a sub-daily timestep (15 min coupled, 30 min offline); CTEM biogeochemistry runs daily. Closure is dual: surface energy budget closure is enforced by construction (unlike eddy-covariance towers with 10-30% residual), and the terrestrial carbon budget closes (NEE/NEP sums to zero at equilibrium) only when spinfast=1 — accelerated soil-carbon spin-up (spinfast>1) deliberately breaks the carbon mass balance."
+
+inputs:
+  forcing:
+    - {category: "atmospheric", name: "FSS — downwelling shortwave radiation", unit: "W m-2", source_kind: "forcing", model_input_format: "per-variable netCDF-4 (time,lat,lon); non-CF time encoded as 'day as %Y%m%d.%f'"}
+    - {category: "atmospheric", name: "FDL — downwelling longwave radiation", unit: "W m-2", source_kind: "forcing", model_input_format: "per-variable netCDF-4 (time,lat,lon)"}
+    - {category: "atmospheric", name: "PRE — precipitation rate", unit: "kg m-2 s-1", source_kind: "forcing", model_input_format: "per-variable netCDF-4 (time,lat,lon)", notes: "Driver expects a mass flux rate, NOT an mm depth per interval; wrong units silently scale the water balance."}
+    - {category: "atmospheric", name: "TA — air temperature at reference height", unit: "deg C", source_kind: "forcing", model_input_format: "per-variable netCDF-4 (time,lat,lon)", notes: "Driver expects Celsius and converts to Kelvin internally (distinct from init-file TBAR which is Kelvin)."}
+    - {category: "atmospheric", name: "QA — specific humidity at reference height", unit: "kg kg-1", source_kind: "forcing", model_input_format: "per-variable netCDF-4 (time,lat,lon)"}
+    - {category: "atmospheric", name: "VMOD — wind speed at reference height", unit: "m s-1", source_kind: "forcing", model_input_format: "per-variable netCDF-4 (time,lat,lon)"}
+    - {category: "atmospheric", name: "PRES — surface air pressure", unit: "Pa", source_kind: "forcing", model_input_format: "per-variable netCDF-4 (time,lat,lon)"}
+    - {category: "atmospheric", name: "CO2 — atmospheric CO2 concentration", unit: "ppmv", source_kind: "forcing", model_input_format: "annual netCDF time series; non-CF 'day as %Y%m%d.%f' encoding", notes: "Drives photosynthetic CO2 response; required when ctem_on."}
+    - {category: "atmospheric", name: "CH4 — atmospheric CH4 concentration", unit: "ppmv", source_kind: "forcing", model_input_format: "annual netCDF time series"}
+    - {category: "disturbance", name: "POPD — population density (fire ignition)", unit: "people km-2", source_kind: "forcing", model_input_format: "annual netCDF", notes: "Optional; consumed only when dofire enabled."}
+    - {category: "disturbance", name: "LGHT — lightning strike density (fire ignition)", unit: "strikes km-2 yr-1", source_kind: "forcing", model_input_format: "daily netCDF", notes: "Optional; consumed only when dofire enabled."}
+    - {category: "boundary_driver", name: "LUC — prescribed land-use-change PFT fractions", unit: "fraction", source_kind: "forcing", model_input_format: "annual netCDF", notes: "Optional; consumed only when lnduseon enabled."}
+    - {category: "boundary_driver", name: "OBSWETF — observed wetland fraction", unit: "fraction", source_kind: "forcing", model_input_format: "daily netCDF", notes: "Optional prescribed wetland extent for CH4 emissions."}
+  parameters:
+    - {category: "soil", name: "SAND / CLAY / ORGM — soil texture", unit: "% (0-100)", source_kind: "dataset_lookup", model_input_format: "init netCDF (per layer); SAND flags -2=peat, -3=bedrock, -4=ice"}
+    - {category: "soil", name: "SDEP — permeable/bedrock depth", unit: "m", source_kind: "dataset_lookup", model_input_format: "init netCDF"}
+    - {category: "soil", name: "DRN — drainage index", unit: "-", source_kind: "dataset_lookup", model_input_format: "init netCDF (0=bog, 1=free-draining, ~0.005 typical)"}
+    - {category: "soil", name: "SOCI — soil colour index (bare-soil albedo)", unit: "1-20 index", source_kind: "dataset_lookup", model_input_format: "init netCDF"}
+    - {category: "soil", name: "DELZ — ground-layer thickness", unit: "m", source_kind: "default", model_input_format: "init netCDF (>=~0.10 m for explicit-scheme stability)"}
+    - {category: "vegetation", name: "FCAN / ALVC / ALIC / CMAS / LNZ0 / PAMN / PAMX / ROOT — CLASS PFT canopy parameters", unit: "mixed (fraction, albedo, kg m-2, m, ln(m))", source_kind: "calibrated", model_input_format: "init netCDF (per CLASS PFT, icp1)"}
+    - {category: "vegetation", name: "CTEM PFT-specific physiology (vmax, quantum efficiency, specific leaf area, stomatal-conductance, allocation, respiration coefficients)", unit: "mixed", source_kind: "calibrated", model_input_format: "template_run_parameters namelist (per CTEM PFT, icc)"}
+    - {category: "geometry", name: "ZRFH / ZRFM / ZBLD — reference and blending heights", unit: "m", source_kind: "user_provided", model_input_format: "joboptions namelist", notes: "Must exceed canopy height or surface-atmosphere exchange cannot be solved."}
+    - {category: "grid", name: "grclarea / FARE / GC / MID — cell area, tile fraction, land mask, mosaic id", unit: "km2 / fraction / index", source_kind: "dataset_lookup", model_input_format: "init netCDF (GC=-1 marks land)"}
+  initial_conditions:
+    - {category: "soil_physics", name: "TBAR — soil layer temperature", unit: "K", source_kind: "user_provided", model_input_format: "init/restart netCDF (per layer)", notes: "Init file is Kelvin, unlike Celsius forcing TA."}
+    - {category: "soil_physics", name: "THLQ / THIC — liquid / frozen soil moisture", unit: "m3 m-3", source_kind: "user_provided", model_input_format: "init/restart netCDF (per layer)"}
+    - {category: "snow", name: "SNO / TSNO / ALBS / RHOS / WSNO — snowpack mass, temperature, albedo, density, liquid water", unit: "kg m-2 / K / - / kg m-3 / kg m-2", source_kind: "user_provided", model_input_format: "init/restart netCDF"}
+    - {category: "carbon", name: "gleafmas / bleafmas / stemmass / rootmass / litrmass / soilcmas — CTEM carbon pools", unit: "kgC m-2", source_kind: "user_provided", model_input_format: "init/restart netCDF (per icc; litter/soil per icc+bareground+LUC)", notes: "Must be pre-spun-up; pools equilibrate only after repeated forcing cycling."}
+    - {category: "vegetation", name: "fcancmx — CTEM PFT fractional coverage", unit: "fraction", source_kind: "user_provided", model_input_format: "init/restart netCDF (per icc)"}
+  boundary_conditions:
+    - {category: "control", name: "ctem_on — enable CTEM biogeochemistry", unit: "logical", source_kind: "user_provided", model_input_format: "joboptions namelist", notes: ".false. gives physics-only run with all-zero carbon fluxes."}
+    - {category: "control", name: "spinfast — soil-carbon spin-up acceleration factor", unit: "integer", source_kind: "user_provided", model_input_format: "joboptions namelist", notes: ">1 accelerates decomposition and breaks NEP=GPP-Ra-Rh; set 1 for transient/carbon-budget runs."}
+    - {category: "control", name: "metLoop — number of forcing-cycle repeats for spin-up", unit: "integer", source_kind: "user_provided", model_input_format: "joboptions namelist"}
+    - {category: "control", name: "dofire / PFTCompetition / lnduseon — disturbance, competition, land-use switches", unit: "logical", source_kind: "user_provided", model_input_format: "joboptions namelist"}
+    - {category: "numerical", name: "ITC / ITCG / ITG — surface-temperature iteration scheme", unit: "1=bisection | 2=Newton-Raphson", source_kind: "user_provided", model_input_format: "joboptions namelist", notes: "Use 1; 2 (Newton-Raphson) diverges to NaN."}
+    - {category: "physics_option", name: "IDISP / IZREF / ISLFD / IPCP / IWF / isnoalb — physics method switches", unit: "integer codes", source_kind: "user_provided", model_input_format: "joboptions namelist"}
+    - {category: "domain", name: "run coordinates (lon/lat or lon/lon/lat/lat box)", unit: "degrees", source_kind: "user_provided", model_input_format: "second CLI argument", notes: "Must match init-file grid or model exits with 'No valid gridcells'."}
+    - {category: "config", name: "PFT counts ican / icc / l2max", unit: "integer", source_kind: "user_provided", model_input_format: "run_parameters namelist", notes: "Must match init-file ic/icc dimensions or segfault."}
+    - {category: "output_control", name: "JMOSTY / JDSTY — monthly/daily output start years", unit: "year", source_kind: "user_provided", model_input_format: "joboptions namelist"}
+
+processes:
+  modules:
+    - {name: "metDisaggregation", role: "process_solver", brief: "Disaggregates input forcing to the physics timestep: step/linear interpolation, conservative random precip distribution, zenith-angle diurnal shortwave distribution, and timezone circular shift.", applicability: "always"}
+    - {name: "SoilProperties", role: "process_solver", brief: "Derives soil thermal and hydraulic properties from texture (SAND/CLAY/ORGM) for the thermal-hydrology core.", applicability: "always"}
+    - {name: "EnergyBudget", role: "process_solver", brief: "Surface energy balance over the four subareas (canopy-over-bare/snow, bare, snow): net radiation, sensible/latent/ground heat flux, surface temperatures; couples to CTEM photosynthesis/conductance when ctem_on.", applicability: "always"}
+    - {name: "SoilThermalHydrology", role: "integrator", brief: "Land-surface integrator for soil temperature (TBAR), liquid/frozen moisture (THLQ/THIC), ponding, infiltration, and runoff/baseflow generation.", applicability: "always"}
+    - {name: "SnowScheme", role: "process_solver", brief: "Single-layer snowpack mass/energy: SNO, TSNO, RHOS, ALBS, WSNO, and snow water equivalent.", applicability: "always"}
+    - {name: "CanopyInterception", role: "process_solver", brief: "Canopy temperature (TCAN), canopy air (TAC/QAC), rain/snow interception (RCAN/SCAN), aerodynamic resistances and reference-height handling.", applicability: "always"}
+    - {name: "Photosynthesis", role: "process_solver", brief: "CTEM leaf-level GPP, stomatal CO2 and canopy conductance, and autotrophic (maintenance) respiration; feeds the energy budget.", applicability: "ctem_on=.true."}
+    - {name: "CarbonAllocationPhenology", role: "allocator", brief: "Allocates NPP to green/brown leaf, stem and root pools; tracks leaf phenological status and growth efficiency; sets prognostic LAI.", applicability: "ctem_on=.true."}
+    - {name: "SoilCarbonRespiration", role: "integrator", brief: "Litter and soil carbon pools, heterotrophic respiration, and net ecosystem/biome productivity (nep/nbp).", applicability: "ctem_on=.true."}
+    - {name: "Disturbance", role: "optional_module", brief: "Fire (ignition from POPD+LGHT, spread, emissions, burnt-to-bare carbon transfer) and land-use-change carbon/PFT reallocation.", applicability: "dofire or lnduseon enabled"}
+    - {name: "Competition", role: "optional_module", brief: "PFT competition for space using bioclimatic state (gdd5, twarmm, tcoldm, aridity) to set vegetation composition.", applicability: "PFTCompetition enabled"}
+    - {name: "PeatlandMoss", role: "optional_module", brief: "Peatland moss carbon (Cmossmas, litrmsmoss, dmoss) and wetland CH4 emission / soil CH4 uptake.", applicability: "peatland tiles (ipeatland>0)"}
+  internal_edges:
+    - {from: "Inputs", to: "metDisaggregation", kind: "consumes_input", brief: "Reads raw meteorological forcing netCDFs."}
+    - {from: "metDisaggregation", to: "EnergyBudget", kind: "invokes", brief: "Supplies timestep-resolved shortwave/longwave/Ta/Qa/wind/pressure/precip to the energy balance."}
+    - {from: "Inputs", to: "SoilProperties", kind: "consumes_input", brief: "Reads soil texture to derive hydraulic/thermal coefficients."}
+    - {from: "SoilProperties", to: "SoilThermalHydrology", kind: "invokes", brief: "Provides derived soil hydraulic/thermal properties."}
+    - {from: "EnergyBudget", to: "TCAN", kind: "writes_state", brief: "Updates canopy temperature."}
+    - {from: "EnergyBudget", to: "SoilThermalHydrology", kind: "invokes", brief: "Passes surface fluxes/ground heat to the soil integrator."}
+    - {from: "EnergyBudget", to: "CanopyInterception", kind: "invokes", brief: "Drives canopy energy/interception exchange."}
+    - {from: "EnergyBudget", to: "SnowScheme", kind: "invokes", brief: "Drives snowpack energy exchange and melt."}
+    - {from: "SoilThermalHydrology", to: "TBAR", kind: "writes_state", brief: "Integrates soil layer temperature."}
+    - {from: "SoilThermalHydrology", to: "THLQ", kind: "writes_state", brief: "Integrates liquid soil moisture."}
+    - {from: "SoilThermalHydrology", to: "THIC", kind: "writes_state", brief: "Integrates frozen soil moisture."}
+    - {from: "SoilThermalHydrology", to: "Outputs", kind: "produces_output", brief: "Emits total/surface runoff and evapotranspiration fluxes."}
+    - {from: "SnowScheme", to: "SNO", kind: "writes_state", brief: "Updates snow mass / SWE."}
+    - {from: "SnowScheme", to: "ALBS", kind: "writes_state", brief: "Updates snow albedo."}
+    - {from: "CanopyInterception", to: "RCAN", kind: "writes_state", brief: "Updates intercepted canopy water."}
+    - {from: "Inputs", to: "Photosynthesis", kind: "consumes_input", brief: "Atmospheric CO2 concentration drives carboxylation."}
+    - {from: "THLQ", to: "Photosynthesis", kind: "reads_state", brief: "Soil moisture limits stomatal conductance / water stress."}
+    - {from: "Photosynthesis", to: "EnergyBudget", kind: "invokes", brief: "Canopy conductance and net photosynthesis feed back into the surface energy balance within the same timestep when ctem_on."}
+    - {from: "Photosynthesis", to: "CarbonAllocationPhenology", kind: "invokes", brief: "Passes NPP for allocation."}
+    - {from: "Photosynthesis", to: "Outputs", kind: "produces_output", brief: "Emits gpp, npp, ra."}
+    - {from: "CarbonAllocationPhenology", to: "gleafmas", kind: "writes_state", brief: "Allocates carbon to green leaf."}
+    - {from: "CarbonAllocationPhenology", to: "stemmass", kind: "writes_state", brief: "Allocates carbon to stem."}
+    - {from: "CarbonAllocationPhenology", to: "rootmass", kind: "writes_state", brief: "Allocates carbon to root."}
+    - {from: "CarbonAllocationPhenology", to: "lai", kind: "writes_state", brief: "Sets leaf area index from leaf carbon and specific leaf area."}
+    - {from: "lai", to: "EnergyBudget", kind: "reads_state", brief: "Updated LAI/canopy structure feeds the next-step radiation and energy balance."}
+    - {from: "CarbonAllocationPhenology", to: "SoilCarbonRespiration", kind: "invokes", brief: "Litterfall and turnover feed soil/litter pools."}
+    - {from: "SoilCarbonRespiration", to: "litrmass", kind: "writes_state", brief: "Updates litter carbon."}
+    - {from: "SoilCarbonRespiration", to: "soilcmas", kind: "writes_state", brief: "Updates soil carbon."}
+    - {from: "SoilCarbonRespiration", to: "Outputs", kind: "produces_output", brief: "Emits rh, nep, nbp."}
+    - {from: "Disturbance", to: "stemmass", kind: "writes_state", brief: "Fire/LUC moves carbon out of live pools using pre-disturbance snapshots."}
+    - {from: "Disturbance", to: "soilcmas", kind: "writes_state", brief: "Transfers disturbed carbon to litter/soil and emits fire CO2."}
+    - {from: "Competition", to: "fcancmx", kind: "writes_state", brief: "Updates PFT fractional coverage from competition."}
+    - {from: "EnergyBudget", to: "Outputs", kind: "produces_output", brief: "Emits rss, rls, hfss, hfls."}
+
+states:
+  variables:
+    - {name: "TBAR", unit: "K", role: "prognostic"}
+    - {name: "THLQ", unit: "m3 m-3", role: "prognostic"}
+    - {name: "THIC", unit: "m3 m-3", role: "prognostic"}
+    - {name: "TCAN", unit: "K", role: "prognostic"}
+    - {name: "TAC", unit: "K", role: "prognostic"}
+    - {name: "QAC", unit: "kg kg-1", role: "prognostic"}
+    - {name: "RCAN", unit: "kg m-2", role: "prognostic"}
+    - {name: "SCAN", unit: "kg m-2", role: "prognostic"}
+    - {name: "ZPND", unit: "m", role: "prognostic"}
+    - {name: "TPND", unit: "K", role: "prognostic"}
+    - {name: "TSFS", unit: "K", role: "prognostic"}
+    - {name: "TBAS", unit: "K", role: "prognostic"}
+    - {name: "maxAnnualActLyr", unit: "m", role: "prognostic"}
+    - {name: "SNO", unit: "kg m-2", role: "prognostic"}
+    - {name: "TSNO", unit: "K", role: "prognostic"}
+    - {name: "ALBS", unit: "-", role: "prognostic"}
+    - {name: "RHOS", unit: "kg m-3", role: "prognostic"}
+    - {name: "WSNO", unit: "kg m-2", role: "prognostic"}
+    - {name: "GRO", unit: "-", role: "prognostic"}
+    - {name: "gleafmas", unit: "kgC m-2", role: "prognostic"}
+    - {name: "bleafmas", unit: "kgC m-2", role: "prognostic"}
+    - {name: "stemmass", unit: "kgC m-2", role: "prognostic"}
+    - {name: "rootmass", unit: "kgC m-2", role: "prognostic"}
+    - {name: "litrmass", unit: "kgC m-2", role: "prognostic"}
+    - {name: "soilcmas", unit: "kgC m-2", role: "prognostic"}
+    - {name: "fcancmx", unit: "fraction", role: "prognostic"}
+    - {name: "lfstatus", unit: "-", role: "prognostic"}
+    - {name: "lai", unit: "m2 m-2", role: "diagnostic"}
+  provenance: "populated"
+
+outputs:
+  - var: "rss"
+    validation_rank: 3
+    unit: "W m-2"
+    description: "Net shortwave radiation at the surface"
+    emitted_in: "per-variable netCDF (rss_hh/_d/_mo/_yr.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Flux-tower radiation components carry instrument and footprint uncertainty."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "hfss"
+    validation_rank: 4
+    unit: "W m-2"
+    description: "Sensible heat flux"
+    emitted_in: "per-variable netCDF (hfss_hh/_d/_mo/_yr.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Model enforces surface energy-balance closure; eddy-covariance towers leave a 10-30% closure residual, so do not force the obs LE+H to close."]
+      detrending_options: ["none"]
+  - var: "hfls"
+    validation_rank: 5
+    unit: "W m-2"
+    description: "Latent heat flux (energy equivalent of evapotranspiration)"
+    emitted_in: "per-variable netCDF (hfls_hh/_d/_mo/_yr.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Same energy-balance-closure caveat as hfss; tower LE often the closure-residual term."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "gpp"
+    validation_rank: 1
+    unit: "kgC m-2 s-1 (instantaneous) or kgC m-2 month-1 (accumulated)"
+    description: "Gross primary productivity"
+    emitted_in: "per-variable netCDF (gpp_d/_mo/_yr.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Tower GPP is a partitioning product (not directly measured); unit varies with output frequency."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "nep"
+    validation_rank: 6
+    unit: "kgC m-2 s-1 or kgC m-2 month-1"
+    description: "Net ecosystem productivity (NEP ~ GPP - Ra - Rh)"
+    emitted_in: "per-variable netCDF (nep_d/_mo/_yr.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Sign convention and tower NEE partitioning; NEP=GPP-Ra-Rh closes only at spinfast=1."]
+      detrending_options: ["none"]
+  - var: "nbp"
+    validation_rank: 7
+    unit: "kgC m-2 s-1 or kgC m-2 yr-1"
+    description: "Net biome productivity (NEP minus disturbance/land-use carbon losses)"
+    emitted_in: "per-variable netCDF (nbp_mo/_yr.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Global/regional land-sink estimates (e.g. GCB) are themselves model/inversion products; compare decadal means and trend, not inter-annual point matches."]
+      detrending_options: ["decadal_mean", "linear_residual"]
+  - var: "rh"
+    validation_rank: 8
+    unit: "kgC m-2 s-1"
+    description: "Heterotrophic (soil/litter) respiration"
+    emitted_in: "per-variable netCDF (rh_d/_mo/_yr.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Field soil-respiration (e.g. SRDB) mixes autotrophic and heterotrophic components; partitioning needed."]
+      detrending_options: ["none"]
+  - var: "mrro"
+    validation_rank: 9
+    unit: "kg m-2 s-1"
+    description: "Total runoff (surface + subsurface), grid-cell diagnostic flux"
+    emitted_in: "per-variable netCDF (mrro_d/_mo/_yr.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Runoff is an unrouted grid-cell water-balance flux; CLASSIC has no channel routing, so compare as a flux/water-budget term, not as routed streamflow."]
+      detrending_options: ["none"]
+  - var: "snw"
+    validation_rank: 2
+    unit: "kg m-2"
+    description: "Snow water equivalent"
+    emitted_in: "per-variable netCDF (snw_d/_mo/_yr.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["SWE is highly sensitive to forcing precipitation and sub-grid topography; single-layer snowpack."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Snow-cover-fraction bias in mountains depends on sub-grid topography parameterization."]
+      detrending_options: ["none"]
+  - var: "lai"
+    validation_rank: 10
+    unit: "m2 m-2"
+    description: "Leaf area index"
+    emitted_in: "per-variable netCDF (lai_d/_mo/_yr.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Satellite LAI (e.g. MODIS) saturates at high LAI; PFT-level aggregation differs from per-pixel land cover."]
+      detrending_options: ["none"]
+  - var: "cSoil"
+    validation_rank: 11
+    unit: "kgC m-2"
+    description: "Soil carbon stock"
+    emitted_in: "per-variable netCDF (cSoil_yr.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Observation-based SOC maps (e.g. WoSIS-derived) carry large structural uncertainty; valid only after carbon spin-up to equilibrium."]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Profile depth of the obs must match the modeled soil column depth."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - {from: "vmax (maximum carboxylation rate)", to: "gpp", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", citations: ["raj2024_classic_gsa"]}
+    - {from: "vmax (maximum carboxylation rate)", to: "nep", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", citations: ["raj2024_classic_gsa"]}
+    - {from: "vmax (maximum carboxylation rate)", to: "nbp", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", citations: ["raj2024_classic_gsa", "raj2025_classic_future_sink", "raj2025_classic_historical_biomes"]}
+    - {from: "vmax (maximum carboxylation rate)", to: "hfls", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", citations: ["raj2024_classic_gsa"]}
+    - {from: "vmax (maximum carboxylation rate)", to: "hfss", sensitivity_grade: "MEDIUM", basis: "literature_quantitative", lever_type: "parameter", citations: ["raj2024_classic_gsa"]}
+    - {from: "quantum efficiency", to: "gpp", sensitivity_grade: "MEDIUM", basis: "literature_quantitative", lever_type: "parameter", citations: ["raj2024_classic_gsa"]}
+    - {from: "specific leaf area (SLA)", to: "gpp", sensitivity_grade: "MEDIUM", basis: "literature_quantitative", lever_type: "parameter", citations: ["raj2024_classic_gsa"]}
+    - {from: "stomatal conductance parameters", to: "hfls", sensitivity_grade: "MEDIUM", basis: "literature_quantitative", lever_type: "parameter", citations: ["raj2024_classic_gsa"]}
+    - {from: "roughness length", to: "hfss", sensitivity_grade: "MEDIUM", basis: "literature_quantitative", lever_type: "parameter", citations: ["raj2024_classic_gsa"]}
+    - {from: "rooting depth / root distribution parameters", to: "nbp", sensitivity_grade: "MEDIUM", basis: "literature_quantitative", lever_type: "parameter", applicability: "long-term / future carbon sink", citations: ["raj2025_classic_future_sink"]}
+    - {from: "soil carbon decomposition / turnover rate parameters", to: "cSoil", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", citations: ["gauthier2025_classic_soc"]}
+    - {from: "soil respiration temperature sensitivity (Q10) parameters", to: "rh", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", citations: ["gauthier2025_classic_soc"]}
+    - {from: "meteorological forcing precipitation (amount / wet-day frequency)", to: "snw", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "boundary_forcing", citations: ["wang2025_classic_snow"]}
+    - {from: "sub-grid topography (std. dev. of topography, SL12 parameterization)", to: "snw", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "structural", applicability: "mountain / complex-terrain snow cover fraction", citations: ["wang2025_classic_snow"]}
+    - {from: "air temperature forcing (rain-snow partitioning)", to: "snw", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "boundary_forcing", citations: ["wang2025_classic_snow"]}
+  citation_index:
+    raj2024_classic_gsa:
+      short_citation: "Raj Deepak, Seiler & Monahan 2024"
+      doi: "10.1080/07055900.2024.2396426"
+      note: "First global SA of CLASSIC: Morris screening of 90 parameters + Sobol' over 17 outputs; vmax explains ~88% of GPP variance and dominates NEE/NBP/LE."
+    raj2025_classic_future_sink:
+      short_citation: "Raj Deepak, Seiler & Monahan 2025 (future sink)"
+      doi: "10.1080/07055900.2025.2540430"
+      note: "GSA of projected NBP; vmax dominance declines over time while rooting/respiration parameters grow in influence on the long-term sink."
+    raj2025_classic_historical_biomes:
+      short_citation: "Raj Deepak, Seiler & Monahan 2025 (historical biomes)"
+      doi: "10.1080/07055900.2025.2552952"
+      note: "Biome-resolved Sobol' SA of the historical land carbon sink; photosynthetic parameters consistently lead, ranking varies by biome."
+    gauthier2025_classic_soc:
+      short_citation: "Gauthier et al. 2025"
+      doi: "10.1029/2024MS004577"
+      note: "Sobol' SA of 16 SOC parameters + Bayesian optimization vs WoSIS SOC and SRDB respiration; decomposition/turnover and temperature-sensitivity parameters control SOC and soil respiration."
+    wang2025_classic_snow:
+      short_citation: "Wang et al. 2025"
+      doi: "10.5194/gmd-18-6597-2025"
+      note: "Forcing/topography intercomparison for CLASSIC snow; precipitation choice gives largest SWE/snow-cover differences and SL12 sub-grid topography cuts mountain SCF bias ~75%. Reports effect magnitudes, not a formal variance-based sensitivity index."
+
+safety:
+  hazards:
+    - {id: "weather_TA_kelvin_not_celsius", kind: "weather_file_semantic", description: "Air temperature supplied in Kelvin instead of Celsius; driver re-converts to K, producing ~300 K soil temperatures and a broken energy balance.", severity: "silent"}
+    - {id: "weather_PRE_depth_not_flux", kind: "weather_file_semantic", description: "Precipitation supplied as mm/day or mm/hr instead of kg m-2 s-1, scaling runoff/water balance by up to 86400x.", severity: "silent"}
+    - {id: "weather_QA_gkg_not_kgkg", kind: "weather_file_semantic", description: "Specific humidity in g/kg instead of kg/kg makes the atmosphere ~1000x too moist; evapotranspiration explodes and soil dries out.", severity: "silent"}
+    - {id: "weather_PRES_hpa_not_pa", kind: "weather_file_semantic", description: "Surface pressure in hPa/kPa instead of Pa gives 100-1000x wrong air density and turbulent fluxes.", severity: "degraded"}
+    - {id: "weather_time_encoding_non_cf", kind: "weather_file_semantic", description: "Time axis encoded as CF 'days since' instead of CLASSIC's non-standard 'day as %Y%m%d.%f'; all dates are shifted or garbled.", severity: "fatal_or_silent"}
+    - {id: "soil_texture_fraction_not_percent", kind: "soil_semantic", description: "Soil texture SAND/CLAY/ORGM as 0-1 fraction instead of 0-100 percent yields wrong hydraulic properties (sand reads as ~0).", severity: "silent"}
+    - {id: "init_carbon_pools_wrong_mass_units", kind: "initial_condition_semantic", description: "Carbon pools initialized in gC/m2 or tC/ha instead of kgC/m2 make pools ~1000x too large and NEP hugely negative.", severity: "silent"}
+    - {id: "init_tbar_celsius_not_kelvin", kind: "initial_condition_semantic", description: "Init-file soil temperature TBAR supplied in Celsius instead of Kelvin (note: forcing TA is the opposite convention).", severity: "degraded"}
+    - {id: "shortwave_negative_after_disagg", kind: "weather_file_semantic", description: "Night-time shortwave not clipped to zero after temporal interpolation across the day-night boundary, injecting negative SW / NaN into radiation.", severity: "silent"}
+    - {id: "numerics_newton_raphson_diverges", kind: "numerical_instability", description: "ITC/ITCG/ITG=2 (Newton-Raphson surface-temperature solve) diverges to NaN; bisection (=1) always converges.", severity: "fatal"}
+    - {id: "control_refheight_below_canopy", kind: "control_semantic", description: "Reference height ZRFH/ZRFM set below vegetation canopy height; surface-atmosphere exchange cannot be computed (division-by-zero crash).", severity: "fatal"}
+    - {id: "control_pft_count_mismatch", kind: "control_semantic", description: "ican/icc in run_parameters does not match init-file ic/icc dimensions; array-bounds segfault at startup.", severity: "fatal"}
+    - {id: "control_met_not_start_day1", kind: "control_semantic", description: "Meteorological forcing does not begin at 00:00 of Jan 1 of the start year; model hangs or writes no output.", severity: "fatal_or_silent"}
+    - {id: "control_coords_off_grid", kind: "control_semantic", description: "Requested lon/lat does not match any init-file grid cell; model exits with 'No valid gridcells'.", severity: "fatal"}
+    - {id: "control_restart_aliases_init", kind: "control_semantic", description: "rs_file_to_overwrite points at the init file; the in-place restart write destroys the initial state.", severity: "fatal_or_silent"}
+    - {id: "control_ctem_off_zero_carbon", kind: "control_semantic", description: "ctem_on=.false. (physics-only) yields all-zero GPP/NPP/NEP despite vegetation present.", severity: "degraded"}
+    - {id: "control_spinfast_breaks_carbon_budget", kind: "control_semantic", description: "spinfast>1 accelerates soil-carbon decomposition (inflates Rh) and breaks NEP=GPP-Ra-Rh closure; use spinfast=1 for transient/budget runs.", severity: "degraded"}
+    - {id: "control_output_window_outside_sim", kind: "control_semantic", description: "Monthly/daily output start years (JMOSTY/JDSTY) set after the simulation end produce empty monthly/daily output.", severity: "warning"}
+  validation_limits:
+    - "No lateral inter-cell exchange; cannot represent hillslope/lateral routing — runoff is an unrouted grid-cell diagnostic."
+    - "Four CLASS PFTs are insufficient to represent shrublands."
+    - "No nitrogen cycle in v1.0; nitrogen limitation on productivity is not represented."
+    - "Carbon pools reach equilibrium only after repeated spin-up cycling of the forcing; transient runs require a pre-spun-up state."
+    - "Single-layer snowpack cannot resolve internal snow stratigraphy."
+    - "Daily CTEM biogeochemistry timestep cannot directly resolve sub-daily carbon-flux dynamics (physics runs sub-daily)."
+  warnings:
+    - "GPP/NPP/NEP/NBP are emitted in kgC m-2 s-1 (instantaneous) or kgC m-2 month-1 (accumulated) depending on output frequency; do not assume a single unit."
+    - "Carbon-budget closure (NEP=GPP-Ra-Rh) holds only at spinfast=1."
+    - "Energy-balance closure is enforced in the model; flux-tower LE+H carry a 10-30% closure residual and should not be force-closed for comparison."
+  assumptions:
+    - statement: "Each grid cell/tile is an independent 1-D vertical column with no lateral heat or moisture exchange (except under MESH coupling)."
+      scope: "Domain geometry / spatial structure"
+      source: "Melton et al. 2020, GMD 13:2825 (model framework); CCCma CLASS documentation"
+      status: "adopted"
+    - statement: "Surface energy budget closure is enforced by construction, unlike eddy-covariance towers which leave a 10-30% residual."
+      scope: "Energy-balance closure and flux-tower comparison"
+      source: "Melton et al. 2020, GMD 13:2825 (limitations); CCCma CLASS documentation"
+      status: "adopted"
+    - statement: "Modeled NEE/NEP is a closed carbon mass balance (sums to zero at equilibrium) only when spinfast=1; accelerated soil-carbon spin-up (spinfast>1) intentionally breaks the budget."
+      scope: "Carbon mass-balance closure"
+      source: "CTEM carbon-balance behavior in CLASSIC docs and diagnostics (spinfast / NEP=GPP-Ra-Rh check)"
+      status: "adopted"
+    - statement: "Forcing air temperature (TA) is supplied to the driver in deg C and converted to Kelvin internally, whereas the init-file soil temperature TBAR is in Kelvin."
+      scope: "Temperature input unit conventions"
+      source: "CLASSIC met-forcing and soil-init skill docs (s1/s2) and convert_soil_to_classic header; an internal docs contradiction is noted"
+      status: "tentative"
+    - statement: "Vegetation is represented at plant-functional-type level (CLASS 4 PFTs, CTEM 9 PFTs), not at species level."
+      scope: "Vegetation representation"
+      source: "Melton et al. 2020, GMD 13:2825 (CTEM component)"
+      status: "adopted"

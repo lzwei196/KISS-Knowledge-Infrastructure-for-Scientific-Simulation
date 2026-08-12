@@ -1,0 +1,828 @@
+# ===========================================================================
+# Calibration contract for HYPE 5.35.0 at the TARGET CASE
+#
+#   case_id      OBS:grdc_asia_discharge_daily_20260511
+#   gauge / obs  GRDC 2178951 — CHANGTAIGUAN, HUAI HE (淮河), CN
+#                32.314167N 114.060556E, catchment 3090.0 km2
+#                GRDC Asia-Region Daily Discharge Export (250 stations, 2026-05-11)
+#                <DATA>/china_data/GRDC_asia_discharge_daily_20260511/2178951_Q_Day.Cmd.txt
+#   quantity     discharge — dag var `cout`, obs_shape point_time_series,
+#                determining_metric nse
+#   provenance   HYPE_20260717T014155Z  (validated real_case: full NSE 0.1404,
+#                KGE 0.0412, PBIAS -22.52, r 0.3949 over 1981-01-01..1990-12-31)
+#
+# This is the UPPER Huai headwater gauge. It is NOT 蚌埠/Bengbu (GRDC 2181950, the
+# next downstream station) and NOT 王家坝/Wangjiaba — both appear in other Huai KIs
+# and in HYPE's own "regionalized from validated Bengbu" run notes. The Bengbu
+# parameter SHAPE was transferred into this run; the SCORED gauge was always 2178951.
+#
+# ---------------------------------------------------------------------------
+# WHY runner MODE
+# ---------------------------------------------------------------------------
+# HYPE parameters live in modelfiles/par.txt, a class-indexed Fortran text deck where
+# one line carries nlanduse (3) or nsoil (2) or 1 value depending on the parameter's
+# type — a model-specific layout no generic address kind reaches, and whose value
+# COUNT must equal the MAX land-use/soil ID in GeoClass.txt (dag hazard
+# `par_value_count_mismatch`: too few is fatal, too many silently ignored).
+# tools/calib_run.py REGENERATES the whole par.txt from scratch on every eval (so the
+# count always matches the deck it just staged), which means anything written into
+# par.txt before the run would be overwritten. => runner mode.
+#
+# tools/calib_run.py: reads KDT_CALIB_PARAMS -> stages the validated deck (GeoClass,
+# GeoData, Pobs, Tobs, info.txt) into the eval workdir -> rebuilds Qobs from the PINNED
+# GRDC file -> writes par.txt -> reads every value BACK out of the par.txt the HYPE
+# binary opens -> runs HYPE through the KI's own s7 run_hype.py -> parses timeCOUT.txt
+# through s8 parse_hype_output.py -> scores `cout` vs GRDC 2178951 with
+# ki_tools_common.metrics.all_metrics -> echoes __kdt__.applied_params / case_id /
+# scored_obs. Nothing about the model is reimplemented.
+#
+# ---------------------------------------------------------------------------
+# COMMISSIONED 2026-08-05 — live, real HYPE 5.35.0 binary
+#   /mnt/disk1/Hydrocraft_server/model/hype/hype, ~1.3-2.5 s per eval
+# ---------------------------------------------------------------------------
+# * RECIPE FIDELITY. Dropping the validated real_case par.txt verbatim into the staged
+#   deck this driver builds reproduces the validated run EXACTLY:
+#       full NSE 0.1404  KGE 0.0412  PBIAS -22.52  r 0.3949  (n = 3652 paired days)
+#       cal  NSE 0.2105  KGE 0.1646  PBIAS -18.10
+#       val  NSE 0.0935  KGE -0.0651 PBIAS -27.72
+#   — identical to real_case_result.json. Same model, same obs, same windows.
+#
+# * DEFAULT VECTOR (this contract's `default`s; see the note under `parameters`):
+#       full NSE 0.1591  KGE 0.1246  PBIAS -2.50   (n = 3652)
+#       cal  NSE 0.2319 | holdout NSE 0.1104
+#   Already >= the validated 0.1404 headline, so the optimizer starts from a
+#   known-good, physically in-range point and can only improve.
+#
+# * RESPONSIVENESS — the injected values reach the SCORED run, not just a file:
+#       default                                    full NSE +0.1591  PBIAS   -2.50
+#       perturbed (cevp .45 rrcs3 .03 rrcs1 .12
+#                  wcep .38 lp .35 srrcs .20)      full NSE +0.2231  PBIAS  -63.19
+#       cevp 0.286 -> 0.10                         full NSE +0.0453  PBIAS +114.34
+#       rivvel 1.0 -> 0.15                         full NSE +0.0144  PBIAS   -2.54
+#       srrcs 0.029 -> 0.50                        full NSE +0.5123  KGE +0.6954
+#
+# * HEADROOM IS REAL (single hand-probe, no search): srrcs 0.35 / cevpam 0.10 /
+#   rivvel 2.5 / cevp 0.32 / wcep 0.36 / damp 0.2 gives full NSE 0.5732
+#   (cal 0.6282, holdout 0.5366, r 0.7590) — 4x the validated 0.1404. The single-cevp
+#   sweep behind the baseline did not come close to exhausting this basin.
+#
+# * RANGE-BOUND READ-BACK: all 30 bounds (15 params x lo/hi, others at default) apply
+#   EXACTLY — __kdt__.applied_params[name] == requested at rel_tol 1e-9 — with all 15
+#   params echoed and a FINITE NSE at every one. No bound clamps, so a Morris screen
+#   corner cannot fail closed. Per-bound NSE recorded in each param's `range_source`.
+#
+# * FEASIBLE BOX: the soil ranges are chosen so that wcwp_hi (0.120) < wcfc_lo (0.140)
+#   < wcep_lo (0.360) and max(wcwp+wcfc+wcep) = 0.960 < 1.0 EVERYWHERE in the box, and
+#   rrcs2_hi (0.010) <= rrcs1_lo (0.010). The `constraints` below are therefore never
+#   violated by any point the optimizer can propose — they are declared as defence in
+#   depth against the dag's SILENT `soil_retention_ordering_violation` hazard
+#   (wcwp<wcfc<wcep or pore-sum>=1 suppresses percolation -> zero discharge, exit 0).
+#
+# * FAIL-CLOSED verified live (rc=1, NO metrics file written, every time):
+#     - unknown parameter name handed to the runner
+#     - obs value changed on ONE day inside the scored window (envelope mean drifts)
+#     - one day removed from the obs record (header "Data lines" vs parsed rows)
+#     - GRDC-No. / latitude / catchment area edited in the obs header
+#     - KDT_HYPE_TEMPLATE pointed at a deck for a DIFFERENT basin (Bengbu lat/lon)
+#     - forcing truncated so it no longer covers the simulation window
+#     - GeoClass corrupted so HYPE aborts (log ERROR / no "Job finished date:")
+#
+# ---------------------------------------------------------------------------
+# KNOWN STRUCTURAL FINDING (reported, NOT fixed here — fixing it would change the
+# model structure, which is outside a calibration contract's remit)
+# ---------------------------------------------------------------------------
+# The validated deck's GeoClass.txt has streamdepth (col 10) = 0 for ALL THREE SLC
+# classes. That is the dag's documented SILENT hazard `streamdepth_zero`: soil-runoff
+# generation returns early, so ALL discharge in this setup is produced by the surface
+# route. Consequence, measured: rrcs1 / rrcs2 / rrcs3 / wcwp are COMPLETELY inert here
+# — identical metrics to every printed digit at both bounds, both at the default vector
+# and at srrcs=0.5. Proof they are inert for a STRUCTURAL reason and not a wiring bug:
+# setting streamdepth=1.0 m in a scratch copy makes rrcs1 immediately live
+# (NSE 0.1709 at rrcs1=0.010 -> 0.3687 at rrcs1=0.200).
+# These four parameters are KEPT IN THE POOL, unpruned: they are genuine HYPE
+# calibratables with HIGH/MEDIUM dag influence edges, the kit's Morris screen will
+# correctly demote them on THIS deck, and they become first-order levers the moment the
+# streamdepth defect is fixed upstream. Literature is a PRIOR, never a pruning oracle.
+# ===========================================================================
+template_version: "calib-0.1"
+model_id: HYPE
+
+identity:
+  domain: hydrology
+  binding: "HYPE 5.35.0 (SMHI), lumped 1-subbasin deck, daily timestep, petmodel 1 (temperature index), snowmeltmodel 2"
+  case_id: "OBS:grdc_asia_discharge_daily_20260511"
+  site: >
+    Changtaiguan (长台关) on the Huai He, Henan, China — 32.314167N 114.060556E,
+    3090 km2 upper-Huai headwater. Lumped single subbasin (SUBID 1, AREA 3.09e9 m2,
+    RIVLEN 55029 m), 3 SLC classes on 2 soil types (SLC fractions 0.45 / 0.35 / 0.20),
+    forced by CMFD 0.1deg 3-hourly basin-averaged precipitation and temperature
+    (1980-01-01..1990-12-31).
+  obs_source: "GRDC Asia-Region Daily Discharge Export (250 stations, 2026-05-11 download)"
+  obs_id: "GRDC:2178951 (CHANGTAIGUAN, HUAI HE, CN)"
+  obs_file: "/mnt/disk1/Hydrocraft_server/data/china_data/GRDC_asia_discharge_daily_20260511/2178951_Q_Day.Cmd.txt"
+  baseline_run: >
+    real_case HYPE_20260717T014155Z (2026-07-17) — full NSE 0.1404 / KGE 0.0412 /
+    PBIAS -22.52 / r 0.3949 over 1981-01-01..1990-12-31 (3652 paired days);
+    cal 1981-1985 NSE 0.2105, held-out 1986-1990 NSE 0.0935. Only the single cevp
+    volume lever was tuned (x0.90 of the Bengbu-regionalized Huai shape).
+    Water balance FAIL (20.1% residual, attributed to implied dS in the slow rrcs3
+    groundwater store); reproduced bit-for-bit by tools/calib_run.py.
+
+# ---------------------------------------------------------------------------
+injection:
+  mode: runner
+
+# ---------------------------------------------------------------------------
+# C2 — `cout` is dag.outputs rank 1 with a mapped obs (point_time_series, GRDC 2178951).
+# Its comparable_obs_shapes entry declares metric_families
+# [temporal_pattern_match, magnitude_accuracy] and determining_metric nse, so the kit
+# derives an NSE objective (temporal_pattern_match) and a PBIAS objective
+# (magnitude_accuracy). calib_run.py emits nse / kge / pbias / rmse / r; it does NOT
+# emit a timing_accuracy metric, and none is declared for this obs_shape.
+targets:
+  - var: cout
+    weight: 1.0
+
+# ---------------------------------------------------------------------------
+# THE OBS ENVELOPE THIS CONTRACT DECLARES — every field is ASSERTED by
+# tools/calib_run.py::load_obs() before any run, and a violation exits nonzero with NO
+# metrics file. The GRDC file is opened READ-ONLY (`open(path, "r", encoding="latin-1")`)
+# so scoring works on a read-only mount / review sandbox.
+obs_contract:
+  file: "/mnt/disk1/Hydrocraft_server/data/china_data/GRDC_asia_discharge_daily_20260511/2178951_Q_Day.Cmd.txt"
+  format: "GRDC STATION DATA FILE, DOS-ASCII / latin-1, ';' delimited, header commented with '#'"
+  station_identity:
+    grdc_no: 2178951
+    river: "HUAI HE"
+    station: "CHANGTAIGUAN"
+    country: "CN"
+  georeference:
+    latitude_dd: 32.314167          # asserted to 1e-4
+    longitude_dd: 114.060556        # asserted to 1e-4
+    catchment_area_km2: 3090.0      # asserted to 0.5 km2
+  quantity:
+    content: "MEAN DAILY DISCHARGE (Q)"
+    unit: "m3/s"                    # header carries the latin-1 'm³/s'
+    missing_value: -999.000         # values <= -999 dropped, never scored as 0
+  record:
+    data_lines: 7183                # header "# Data lines:" AND rows actually parsed
+    series_span: "1974-01 .. 1993-08"
+    duplicate_dates_allowed: false
+  scored_window_envelope:           # over 1981-01-01..1990-12-31, missing days dropped
+    n_valid_days: 3652
+    min_m3s: 0.0
+    max_m3s: 2930.0
+    mean_m3s: 36.9363               # tol 5e-3
+    sum_m3s: 134891.2               # tol 5.0
+  run_health:                       # fail-closed; a missing/None diagnostic FAILS the eval
+    - "s7 run_hype.py must return success (HYPE exit code 0)"
+    - "a hyss_*.log must exist and contain 'Job finished date:' (HYPE's normal-termination marker)"
+    - "the log must contain no ERROR lines (parse_log_for_errors)"
+    - "timeCOUT.txt must exist, declare variable=cout and unit=m3/s in its header line"
+    - "timeCOUT.txt must have exactly 3653 rows spanning 1980-12-31..1990-12-31"
+    - "simulated discharge must be everywhere finite and not everywhere <= 0"
+    - "Pobs.txt/Tobs.txt must cover 1980-01-01..1990-12-31 (HYPE never gap-fills; dag hazard forcing_date_gaps)"
+    - "the staged deck's GeoData must be SUBID 1, AREA 3.09e9 m2, at 32.314167N/114.060556E"
+
+# ---------------------------------------------------------------------------
+# POOL — 15 parameters: every hydrological parameter HYPE 5.35.0 reads from this deck's
+# par.txt. Seeded from dag.yaml influence.edges, which carry the model's OWN sensitivity
+# literature:
+#   HIGH   : wcep -> cout / soil_runoff   (brendel2023 rank 1, lindstrom2010)
+#            rivvel -> cout peak timing   (brendel2023)
+#            cevp -> PET (and -> cout)    (brendel2023, lindstrom2010, pechlivanidis2015)
+#            ttmp, cmlt -> snowmelt_runoff (bajracharya2020, cold-region windows)
+#   MEDIUM : rrcs1, rrcs2 -> streamflow_recession (fuentesandino2022, lindstrom2010)
+#            wcfc -> cout                 (lindstrom2010, brendel2023)
+# Every edge's citations are carried verbatim into the corresponding param's `cite`.
+# The residual parameters with NO influence edge (srrcs, wcwp, rrcs3, lp, damp, cevpam,
+# cevpph) are RETAINED UNPRUNED so the kit's Morris screen can confirm-or-demote them on
+# THIS site — and that retention is load-bearing here: `srrcs`, which has no edge, turns
+# out to be the single most powerful lever on this deck (NSE 0.159 -> 0.512 alone).
+#
+# ERROR MODE THIS POOL MUST BE ABLE TO CLOSE. The validated run is wrong in BOTH
+# families at once: PBIAS -22.52% (a large VOLUME deficit) on a badly-shaped hydrograph
+# (r = 0.395, NSE 0.140). So the pool spans
+#   volume / ET partition : cevp, cevpam, cevpph, lp, wcfc, wcep, wcwp
+#   runoff generation     : srrcs, rrcs1, rrcs2, rrcs3
+#   routing + attenuation : rivvel, damp
+#   snow                  : ttmp, cmlt
+# The deep/slow-groundwater lever the validated run's own water-balance note blames for
+# the 20% residual (rrcs3, plus rrcs1/rrcs2) is in the pool even though it lives on a
+# different par.txt line type and is structurally inert in this deck — see the
+# streamdepth finding above.
+#
+# RANGES are the model's OWN documented calibration ranges: HYPE's built-in optimizer
+# bounds as shipped in this KI's tools/s10_calibration/setup_calibration.py
+# HYDROLOGY_PARAMS (name, type, min, max, precision) — the min/max triplets that tool
+# writes into optpar.txt — cross-checked against SKILL.md's "Key Parameters" tables.
+# They are narrowed ONLY where a wider bound would risk the SILENT
+# soil_retention_ordering_violation hazard (wcwp/wcfc/wcep, rrcs1/rrcs2); every narrowing
+# is stated in that parameter's `range_source`. Every bound was verified LIVE to apply
+# EXACTLY with a finite NSE.
+#
+# DEFAULTS are the validated real_case par.txt collapsed to one value per parameter by
+# SLC-area weighting (SLC fractions 0.45 / 0.35 / 0.20; soil 1 carries SLC 1+3 = 0.65,
+# soil 2 carries SLC 2 = 0.35). E.g. cevp 0.2700/0.3060 -> 0.286, wcfc 0.26/0.36 -> 0.295.
+# The collapse is required because `scope: global` writes one scalar into every class of
+# a par.txt line; it also removes the validated deck's zeros on land class 3 (cmlt, cevp
+# and srrcs were 0.0 there, i.e. 20% of the basin had no ET and snow that could never
+# melt). That is a pure PARAMETER change, and it is why the default vector already scores
+# NSE 0.1591 vs the validated 0.1404.
+# ---------------------------------------------------------------------------
+parameters:
+
+  # ================= evapotranspiration / volume =============================
+  - name: cevp
+    description: >
+      Potential-evapotranspiration rate coefficient of the temperature-index PET model
+      (petmodel 1): PET = cevp * (T - ttmp_pet) modulated by the cevpam/cevpph seasonal
+      cycle. The primary control on how much precipitation leaves as ET rather than
+      discharge — i.e. the primary lever on this site's -22.5% volume deficit. Written
+      to every land-use class.
+    type: continuous
+    units: "mm/degC/day"
+    default: 0.286
+    range: [0.05, 0.50]
+    hard_bounds: [0.05, 0.50]
+    transform: identity
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    range_source: >
+      setup_calibration.HYDROLOGY_PARAMS ('cevp', 'landuse', 0.05, 0.50, 3); identical to
+      SKILL.md "Land-Use Dependent Parameters" cevp 0.05-0.5. Verified clamp-free:
+      applied == requested at both bounds (NSE -0.0458 at 0.05 / +0.0260 at 0.50, both
+      finite; PBIAS +146.6 / -75.2 — this is the dominant volume lever).
+    cite:
+      - brendel2023_hype_multiobjective
+      - lindstrom2010_hype_development
+      - pechlivanidis2015_indiahype_pub
+      - ki_s10_optpar_ranges
+    address:
+      kind: runner
+      file: "modelfiles/par.txt"
+      note: >
+        Line `cevp`, all nlanduse (=3) columns set to the same scalar. dag influence
+        edges cevp->potential_evapotranspiration (HIGH) and cevp->cout (MEDIUM).
+
+  - name: cevpam
+    description: >
+      Amplitude of the sinusoidal seasonal modulation of PET. Reshapes the ANNUAL CYCLE
+      of ET without changing its mean much, so it is the cleanest lever on the seasonal
+      phase error behind this site's low r (0.395) rather than on total volume.
+    type: continuous
+    units: "dimensionless"
+    default: 0.42
+    range: [0.0, 1.0]
+    hard_bounds: [0.0, 1.0]
+    transform: identity
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: high
+    confidence: medium
+    range_source: >
+      setup_calibration.HYDROLOGY_PARAMS ('cevpam', 'general', 0.0, 1.0, 3); SKILL.md
+      "General Parameters" cevpam 0.0-1.0, sensitivity High. Verified clamp-free at both
+      bounds (NSE +0.1970 at 0.0 / +0.0746 at 1.0) — one of the strongest single levers
+      measured, and it moves NSE in the OPPOSITE direction from the validated 0.42.
+    cite:
+      - ki_skill_md_key_parameters
+      - ki_s10_optpar_ranges
+      - pechlivanidis2015_indiahype_pub
+    address:
+      kind: runner
+      file: "modelfiles/par.txt"
+      note: "Line `cevpam`, single general value. No dag influence edge — retained unpruned for the screen."
+
+  - name: cevpph
+    description: >
+      Phase shift (days) of the PET seasonal sine. Moves WHEN the ET maximum falls
+      relative to the East-Asian monsoon precipitation peak; together with cevpam it
+      controls the seasonal timing of the simulated hydrograph.
+    type: continuous
+    units: "day"
+    default: 30.0
+    range: [0.0, 60.0]
+    hard_bounds: [0.0, 60.0]
+    transform: identity
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: medium
+    confidence: medium
+    range_source: >
+      setup_calibration.HYDROLOGY_PARAMS ('cevpph', 'general', 0.0, 60.0, 1) — the
+      model's own optpar band, deliberately narrower than SKILL.md's 0-365 statement of
+      the parameter's full domain, because the sine is periodic and 0-60 already spans
+      the physically meaningful NH shift. Verified clamp-free at both bounds
+      (NSE +0.1643 at 0 / +0.1566 at 60; PBIAS +10.9 / -14.6).
+    cite:
+      - ki_s10_optpar_ranges
+      - ki_skill_md_key_parameters
+    address:
+      kind: runner
+      file: "modelfiles/par.txt"
+      note: "Line `cevpph`, single general value. No dag influence edge — retained unpruned for the screen."
+
+  - name: lp
+    description: >
+      Soil-moisture threshold (as a fraction of field capacity) above which actual ET
+      proceeds at the potential rate; below it, ET is reduced linearly. Sets how hard
+      the basin dries down between monsoon events — a volume lever that acts only in
+      dry spells, so it trades against cevp rather than duplicating it.
+    type: continuous
+    units: "fraction of wcfc"
+    default: 0.9
+    range: [0.10, 1.00]
+    hard_bounds: [0.10, 1.00]
+    transform: identity
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: medium
+    confidence: medium
+    range_source: >
+      setup_calibration.HYDROLOGY_PARAMS ('lp', 'general', 0.1, 1.0, 3); SKILL.md
+      "General Parameters" lp default 0.8, range 0.1-1.0, sensitivity High. Verified
+      clamp-free at both bounds (NSE +0.1572 at 0.10 / +0.1594 at 1.00).
+    cite:
+      - ki_s10_optpar_ranges
+      - ki_skill_md_key_parameters
+      - lindstrom2010_hype_development
+    address:
+      kind: runner
+      file: "modelfiles/par.txt"
+      note: "Line `lp`, single general value. No dag influence edge — retained unpruned for the screen."
+
+  # ================= runoff generation =======================================
+  - name: srrcs
+    description: >
+      Surface-runoff recession coefficient — the fraction per day released from the
+      saturated-surface store to the stream. Controls how much of a rainfall event
+      reaches the outlet as a fast peak versus being held back. On THIS deck it is the
+      dominant control on hydrograph shape (see the streamdepth finding at the top: with
+      soil runoff structurally switched off, the surface route carries all discharge).
+    type: continuous
+    units: "1/day"
+    default: 0.029
+    range: [0.001, 0.50]
+    hard_bounds: [0.001, 0.50]
+    transform: log
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: high
+    confidence: medium
+    range_source: >
+      setup_calibration.HYDROLOGY_PARAMS ('srrcs', 'landuse', 0.001, 0.50, 4); SKILL.md
+      states 0.0-1.0 but the model's own optpar band 0.001-0.50 is used (a 0.0 bound
+      would freeze the surface store entirely). log transform — the band spans ~2.7
+      orders of magnitude. Verified clamp-free at both bounds
+      (NSE -0.0003 at 0.001 / +0.5123 at 0.50 — the largest single-parameter move measured).
+    cite:
+      - ki_s10_optpar_ranges
+      - lindstrom2010_hype_development
+      - arheimer2020_wwh_stepwise
+    address:
+      kind: runner
+      file: "modelfiles/par.txt"
+      note: "Line `srrcs`, all nlanduse (=3) columns. No dag influence edge — retained unpruned, and it is the strongest lever on this site."
+
+  - name: rrcs1
+    description: >
+      Recession coefficient of the UPPERMOST soil layer — the fast soil-runoff pathway
+      to the stream. With rrcs2 it sets the shape of the falling limb and the
+      partition between quick interflow and slow baseflow.
+    type: continuous
+    units: "1/day"
+    default: 0.0264
+    range: [0.010, 0.200]
+    hard_bounds: [0.001, 0.50]
+    transform: log
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    range_source: >
+      Narrowed from setup_calibration.HYDROLOGY_PARAMS ('rrcs1', 'soil', 0.001, 0.50, 4)
+      to [0.010, 0.200] so that rrcs2_hi (0.010) <= rrcs1_lo (0.010) holds EVERYWHERE in
+      the box — HYPE's layer recession must not increase with depth, and a whole-box
+      guarantee means a Morris corner can never be rejected as infeasible. Verified
+      clamp-free at both bounds (applied == requested; NSE +0.1591 at both — inert on
+      THIS deck because GeoClass streamdepth = 0, see the header finding; with
+      streamdepth = 1.0 m the same two bounds give NSE 0.1709 vs 0.3687).
+    cite:
+      - fuentesandino2022_hype_paramtransfer
+      - lindstrom2010_hype_development
+      - ki_s10_optpar_ranges
+    address:
+      kind: runner
+      file: "modelfiles/par.txt"
+      note: "Line `rrcs1`, all nsoil (=2) columns. dag edge rrcs1->streamflow_recession (MEDIUM)."
+
+  - name: rrcs2
+    description: >
+      Recession coefficient of the LOWEST soil layer (the slow soil-runoff pathway;
+      HYPE interpolates the middle layer between rrcs1 and rrcs2). The baseflow-shape
+      lever.
+    type: continuous
+    units: "1/day"
+    default: 0.00215
+    range: [0.001, 0.010]
+    hard_bounds: [0.001, 0.20]
+    transform: log
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    range_source: >
+      Narrowed from setup_calibration.HYDROLOGY_PARAMS ('rrcs2', 'soil', 0.001, 0.20, 4)
+      to [0.001, 0.010] so rrcs2 <= rrcs1 holds across the whole box (see rrcs1).
+      Verified clamp-free at both bounds (NSE +0.1591 at both — structurally inert on
+      this deck, streamdepth = 0).
+    cite:
+      - fuentesandino2022_hype_paramtransfer
+      - lindstrom2010_hype_development
+      - ki_s10_optpar_ranges
+    address:
+      kind: runner
+      file: "modelfiles/par.txt"
+      note: "Line `rrcs2`, all nsoil (=2) columns. dag edge rrcs2->streamflow_recession (MEDIUM)."
+
+  - name: rrcs3
+    description: >
+      Deep / regional groundwater recession coefficient (general parameter, one value).
+      This is the lever the validated run's OWN water-balance diagnostic blames for its
+      20.1% residual — "residual = implied dS (slow rrcs3 GW store, 1-yr warmup)" — i.e.
+      the named suspect for the -22.5% volume deficit, which is why it is in the pool
+      even though it lives on a different par.txt line type from the volume levers.
+    type: continuous
+    units: "1/day"
+    default: 0.0004
+    range: [0.0001, 0.1]
+    hard_bounds: [0.0001, 0.1]
+    transform: log
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: medium
+    confidence: medium
+    range_source: >
+      setup_calibration.HYDROLOGY_PARAMS ('rrcs3', 'general', 0.0001, 0.1, 5); SKILL.md
+      "General Parameters" rrcs3 default 0.001, range 0.0-0.1 (the 0.0 bound is replaced
+      by the optpar min 0.0001 so the log transform is defined). Verified clamp-free at
+      both bounds (NSE +0.1591 at both — structurally inert on this deck, streamdepth = 0).
+    cite:
+      - ki_s10_optpar_ranges
+      - ki_skill_md_key_parameters
+      - lindstrom2010_hype_development
+    address:
+      kind: runner
+      file: "modelfiles/par.txt"
+      note: "Line `rrcs3`, single general value. No dag influence edge — retained unpruned for the screen."
+
+  # ================= soil water retention ====================================
+  # wcwp + wcfc + wcep is HYPE's pore-volume decomposition. The box below guarantees
+  # wcwp < wcfc < wcep and sum <= 0.960 at EVERY point, so the SILENT
+  # soil_retention_ordering_violation hazard is structurally unreachable.
+  - name: wcep
+    description: >
+      Effective porosity — the drainable pore volume above field capacity, i.e. the
+      store that actually generates soil runoff. Ranked the single most sensitive HYPE
+      discharge parameter in the pan-European multi-objective PEST calibration.
+    type: continuous
+    units: "volume fraction"
+    default: 0.438
+    range: [0.360, 0.520]
+    hard_bounds: [0.10, 0.70]
+    transform: identity
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    range_source: >
+      Narrowed from setup_calibration.HYDROLOGY_PARAMS ('wcep', 'soil', 0.10, 0.70, 3)
+      / SKILL.md 0.1-0.7 to [0.360, 0.520], the sub-band that keeps wcfc_hi (0.320) <
+      wcep_lo (0.360) and wcwp+wcfc+wcep <= 0.960 < 1.0 across the entire box. Verified
+      clamp-free at both bounds (NSE +0.1605 at 0.360 / +0.1581 at 0.520).
+    cite:
+      - brendel2023_hype_multiobjective
+      - lindstrom2010_hype_development
+      - ki_s10_optpar_ranges
+    address:
+      kind: runner
+      file: "modelfiles/par.txt"
+      note: "Line `wcep`, all nsoil (=2) columns. dag edges wcep->cout (HIGH) and wcep->soil_runoff (HIGH)."
+
+  - name: wcfc
+    description: >
+      Field capacity — the pore volume held against gravity and available to
+      transpiration. Sets the size of the ET reservoir, and with lp determines how
+      much of a wet season is consumed before runoff is generated.
+    type: continuous
+    units: "volume fraction"
+    default: 0.295
+    range: [0.140, 0.320]
+    hard_bounds: [0.05, 0.50]
+    transform: identity
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    range_source: >
+      Narrowed from setup_calibration.HYDROLOGY_PARAMS ('wcfc', 'soil', 0.05, 0.50, 3)
+      / SKILL.md 0.05-0.5 to [0.140, 0.320], keeping wcwp_hi (0.120) < wcfc_lo (0.140)
+      and wcfc_hi (0.320) < wcep_lo (0.360) across the box. Verified clamp-free at both
+      bounds (NSE +0.1605 at 0.140 / +0.1590 at 0.320).
+    cite:
+      - lindstrom2010_hype_development
+      - brendel2023_hype_multiobjective
+      - ki_s10_optpar_ranges
+    address:
+      kind: runner
+      file: "modelfiles/par.txt"
+      note: "Line `wcfc`, all nsoil (=2) columns. dag edge wcfc->cout (MEDIUM)."
+
+  - name: wcwp
+    description: >
+      Wilting point — the pore volume held so tightly that it is unavailable to plants.
+      The floor of the soil-water decomposition; raising it removes water from the
+      active ET store without adding drainable capacity.
+    type: continuous
+    units: "volume fraction"
+    default: 0.108
+    range: [0.010, 0.120]
+    hard_bounds: [0.01, 0.30]
+    transform: identity
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: low
+    confidence: medium
+    range_source: >
+      Narrowed from setup_calibration.HYDROLOGY_PARAMS ('wcwp', 'soil', 0.01, 0.30, 3)
+      / SKILL.md 0.01-0.3 to [0.010, 0.120] so wcwp < wcfc holds across the box.
+      Verified clamp-free at both bounds (NSE +0.1591 at both — inert on this deck,
+      streamdepth = 0). No dag influence edge; retained unpruned for the screen.
+    cite:
+      - ki_s10_optpar_ranges
+      - lindstrom2010_hype_development
+    address:
+      kind: runner
+      file: "modelfiles/par.txt"
+      note: "Line `wcwp`, all nsoil (=2) columns."
+
+  # ================= routing / attenuation ===================================
+  - name: rivvel
+    description: >
+      Main-river flow velocity. With RIVLEN = 55029 m fixed in GeoData.txt, rivvel sets
+      the channel translation time (~0.64 d at 1 m/s), i.e. WHEN a simulated peak
+      arrives at the gauge. The primary timing lever, and a direct control on r.
+    type: continuous
+    units: "m/s"
+    default: 1.0
+    range: [0.1, 5.0]
+    hard_bounds: [0.1, 5.0]
+    transform: log
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    range_source: >
+      setup_calibration.HYDROLOGY_PARAMS ('rivvel', 'general', 0.1, 5.0, 2); identical
+      to SKILL.md "General Parameters" rivvel default 1.0, range 0.1-5.0. log transform
+      — 1.7 orders of magnitude. Verified clamp-free at both bounds
+      (NSE -0.0026 at 0.1 / +0.1948 at 5.0 — a strong, sign-changing timing lever).
+    cite:
+      - brendel2023_hype_multiobjective
+      - ki_s10_optpar_ranges
+    address:
+      kind: runner
+      file: "modelfiles/par.txt"
+      note: "Line `rivvel`, single general value. dag edge rivvel->cout peak timing (HIGH)."
+
+  - name: damp
+    description: >
+      Fraction of the river translation time used for DAMPING rather than pure delay —
+      HYPE's channel-attenuation knob. The dag's own validation_limits flag that a
+      lumped 1-subbasin deck has no inter-subbasin routing attenuation and therefore
+      over-predicts peaks; damp is the only in-model lever that can partly compensate.
+    type: continuous
+    units: "fraction"
+    default: 0.5
+    range: [0.0, 1.0]
+    hard_bounds: [0.0, 1.0]
+    transform: identity
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: medium
+    confidence: medium
+    range_source: >
+      setup_calibration.HYDROLOGY_PARAMS ('damp', 'general', 0.0, 1.0, 3); SKILL.md
+      "General Parameters" damp default 0.5, range 0.0-1.0. Verified clamp-free at both
+      bounds, including the degenerate ends (NSE +0.1602 at 0.0 / +0.1595 at 1.0, both
+      finite — no instability at damp = 1.0).
+    cite:
+      - ki_s10_optpar_ranges
+      - ki_skill_md_key_parameters
+      - fuentesandino2022_hype_paramtransfer
+    address:
+      kind: runner
+      file: "modelfiles/par.txt"
+      note: "Line `damp`, single general value. No dag influence edge — retained unpruned for the screen."
+
+  # ================= snow ====================================================
+  - name: ttmp
+    description: >
+      Threshold air temperature separating snowfall from rainfall AND gating degree-day
+      melt. At 32.3N the Huai headwater sees only episodic winter snow, but ttmp also
+      shifts the rain/snow partition of every cold-season event, so it moves the winter
+      water balance well beyond its snowmelt role.
+    type: continuous
+    units: "degC"
+    default: 0.0
+    range: [-3.0, 3.0]
+    hard_bounds: [-3.0, 3.0]
+    transform: identity
+    scope: global
+    tie: null
+    activation: always                # dag applicability is "cold-region snowmelt windows"
+    expected_sensitivity: medium
+    confidence: high
+    range_source: >
+      setup_calibration.HYDROLOGY_PARAMS ('ttmp', 'landuse', -3.0, 3.0, 2); identical to
+      SKILL.md "Land-Use Dependent Parameters" ttmp -3 to 3. Verified clamp-free at both
+      bounds (NSE +0.1351 at -3.0 / +0.1591 at +3.0; PBIAS -28.9 / +27.0 — a much larger
+      volume effect at this latitude than its "cold-region" applicability suggests).
+    cite:
+      - bajracharya2020_hype_tvsa
+      - ki_s10_optpar_ranges
+    address:
+      kind: runner
+      file: "modelfiles/par.txt"
+      note: "Line `ttmp`, all nlanduse (=3) columns. dag edge ttmp->snowmelt_runoff (HIGH, cold-region windows)."
+
+  - name: cmlt
+    description: >
+      Degree-day snowmelt factor — mm of melt per degree above ttmp per day. Sets how
+      abruptly an accumulated winter snowpack is released.
+    type: continuous
+    units: "mm/degC/day"
+    default: 3.75
+    range: [1.0, 10.0]
+    hard_bounds: [1.0, 10.0]
+    transform: identity
+    scope: global
+    tie: null
+    activation: always                # dag applicability is "cold-region snowmelt windows"
+    expected_sensitivity: low
+    confidence: high
+    range_source: >
+      setup_calibration.HYDROLOGY_PARAMS ('cmlt', 'landuse', 1.0, 10.0, 2); identical to
+      SKILL.md "Land-Use Dependent Parameters" cmlt 1-10. Verified clamp-free at both
+      bounds (NSE +0.1586 at 1.0 / +0.1591 at 10.0 — nearly flat here, as expected for a
+      32N basin; kept in the pool because the dag grades it HIGH and the screen, not
+      literature, decides on THIS site).
+    cite:
+      - bajracharya2020_hype_tvsa
+      - ki_s10_optpar_ranges
+    address:
+      kind: runner
+      file: "modelfiles/par.txt"
+      note: "Line `cmlt`, all nlanduse (=3) columns. dag edge cmlt->snowmelt_runoff (HIGH, cold-region windows)."
+
+# ---------------------------------------------------------------------------
+# C5 — hard feasibility, checked WITHOUT a model run. These encode the dag's SILENT
+# `soil_retention_ordering_violation` hazard (wcwp<wcfc<wcep, pore-sum < 1: violating it
+# suppresses percolation and yields zero discharge while HYPE still exits 0) and HYPE's
+# requirement that layer recession not increase with depth. The ranges above are chosen
+# so NO point in the box can violate them — these are defence in depth, so a future
+# range widening cannot silently reintroduce the hazard.
+constraints:
+  - "wcwp < wcfc"
+  - "wcfc < wcep"
+  - "wcwp + wcfc + wcep <= 0.98"
+  - "rrcs2 <= rrcs1"
+
+# ---------------------------------------------------------------------------
+runner:
+  kind: subprocess
+  command: ["python3", "tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]
+  metrics_file: "{metrics_json}"
+  cwd: "/mnt/disk1/Hydrocraft_server/models/HYPE/knowledge_infrastructure"
+  timeout: 900          # soft hint; one eval is ~1.3-2.5 s wall clock
+
+# ---------------------------------------------------------------------------
+strategy:
+  cost_class: cheap                 # ~2 s/eval: lumped 1-subbasin, 11 simulated years
+  default_algorithm: dds            # single scalarized objective, no gradients, cheap evals
+  max_evaluations: 400
+  staged: true                      # Morris-screen the 15-param pool -> calibrate few -> escalate
+  staged_start: 4                   # begin with the 4 highest-mu* parameters
+  staged_step: 2                    # escalate two at a time until the holdout passes
+  screen_trajectories: 6            # 15 params: 6 trajectories = 96 screen evals ~ 4 min
+  holdout:
+    kind: years
+    protocol: blocked_temporal      # contiguous block, the default for point_time_series
+    grouping_key: "water_year"
+    generalization_axis: "time — performance in years never seen by the optimizer"
+    fraction: 0.5
+    calibration_window: "1981-01-01 .. 1985-12-31"
+    holdout_window: "1986-01-01 .. 1990-12-31"
+    rationale: >
+      Exactly the split the validated real_case used (cal 1981-1985, HELD OUT
+      1986-1990), so a calibrated holdout NSE is directly comparable to the validated
+      val NSE 0.0935 / KGE -0.0651. Contiguous 5-year blocks, not interleaved years,
+      because daily discharge is strongly autocorrelated and interleaving would leak
+      the same events across the split. 1980 is HYPE warmup and is scored in neither
+      window. The holdout block deliberately contains the record maximum
+      (2930 m3/s, 1986-1990) so the split tests extrapolation, not interpolation.
+    cite:
+      - ki_real_case_HYPE_20260717T014155Z
+      - klemes1986_split_sample
+
+# ---------------------------------------------------------------------------
+citation_index:
+  lindstrom2010_hype_development:
+    short_citation: "Lindström et al. 2010"
+    doi: "10.2166/nh.2010.007"
+    note: >
+      Foundational HYPE development/testing; the stepwise calibration identifies wcep,
+      wcfc, rrcs1/rrcs2, cevp and rivvel as controlling soil runoff, recession, ET and
+      discharge. Carried from dag.yaml influence.citation_index.
+    confidence: high
+  pechlivanidis2015_indiahype_pub:
+    short_citation: "Pechlivanidis & Arheimer 2015"
+    doi: "10.5194/hess-19-4559-2015"
+    note: >
+      India-HYPE modified-PUB stepwise calibration; cevp, the rrcs family and
+      soil-water capacity dominate discharge across climates — the closest climatic
+      analogue in the HYPE literature to a monsoon-driven Huai headwater.
+    confidence: high
+  bajracharya2020_hype_tvsa:
+    short_citation: "Bajracharya et al. 2020"
+    doi: "10.3390/w12040961"
+    note: >
+      Time-variant VARS sensitivity analysis (Nelson-Churchill); snowmelt parameters
+      ttmp and cmlt are highly influential in seasonal windows. Applicability at 32.3N
+      is limited, which is exactly why they are screened rather than assumed.
+    confidence: medium
+  brendel2023_hype_multiobjective:
+    short_citation: "Brendel et al. 2023"
+    doi: "10.1016/j.ejrh.2023.101544"
+    note: >
+      Pan-European multi-objective PEST calibration; wcep ranks 1st, with rivvel and
+      cevp next, for discharge. Carried from dag.yaml influence.citation_index.
+    confidence: high
+  fuentesandino2022_hype_paramtransfer:
+    short_citation: "Fuentes-Andino et al. 2022"
+    doi: "10.1080/02626667.2022.2121165"
+    note: >
+      Daily-to-hourly parameter transfer over Sweden; the recession parameters
+      (rrcs1/rrcs2) and the routing parameters are the most time-step-sensitive controls
+      on hydrograph shape.
+    confidence: high
+  arheimer2020_wwh_stepwise:
+    short_citation: "Arheimer et al. 2020 (World-Wide HYPE)"
+    doi: "10.5194/hess-24-535-2020"
+    note: >
+      Global catchment modelling with stepwise parameter estimation; the source of the
+      climate-zone default parameter sets shipped in this KI
+      (tools/s5_parameter_setup/setup_parameters.py PARAMETER_DEFAULTS).
+    confidence: high
+  ki_s10_optpar_ranges:
+    short_citation: "HYPE KI tools/s10_calibration/setup_calibration.py :: HYDROLOGY_PARAMS"
+    note: >
+      The model's OWN documented calibration bounds — the (name, type, min, max,
+      precision) triplets this KI writes into HYPE's optpar.txt for the built-in
+      DDS/DEMC/MC optimizer. Primary range source for every parameter in this pool.
+    confidence: high
+  ki_skill_md_key_parameters:
+    short_citation: "HYPE KI SKILL.md :: Key Parameters (General / Land-Use / Soil-Type tables)"
+    note: >
+      Per-parameter default, range and sensitivity grade as documented in the KI,
+      derived from the SMHI HYPE model description. Cross-check on every optpar bound.
+    confidence: high
+  ki_real_case_HYPE_20260717T014155Z:
+    short_citation: "HYPE real_case_result.json (2026-07-17)"
+    note: >
+      The validated run this calibration must reproduce and improve: cal 1981-1985 /
+      held-out 1986-1990, full NSE 0.1404. Source of the holdout split.
+    confidence: high
+  klemes1986_split_sample:
+    short_citation: "Klemeš 1986, Operational testing of hydrological simulation models"
+    doi: "10.1080/02626668609491024"
+    note: >
+      The split-sample test: a hydrological model is credible only when validated on a
+      contiguous period withheld from calibration. Basis for `protocol: blocked_temporal`.
+    confidence: high

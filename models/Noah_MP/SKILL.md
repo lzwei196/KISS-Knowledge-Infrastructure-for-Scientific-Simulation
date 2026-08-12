@@ -26,8 +26,8 @@
 **Package**: `hydrocraft-noahmp-lsm` v1.0.0
 **Model**: Noah-MP v5.2.0 (HRLDAS offline driver)
 **Created by**: Auto-dissect pipeline
-**Last updated**: 2026-03-26
-**Stats**: 4 tools | 5 skill documents | 18 diagnostic triplets | ~1,800 lines of validated Python
+**Last updated**: 2026-08-02
+**Stats**: 5 tools | 5 skill documents | 26 diagnostic triplets | ~2,300 lines of validated Python
 **Validation status**: `initial` (compilation and structural validation)
 
 ---
@@ -40,6 +40,146 @@
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
 See `data_ki/FLUXNET/SKILL.md` for eddy covariance flux observations.
+
+### Flux-tower (FLUXNET2015) site runs — the native LE/HFX validation path
+
+A flux tower is Noah-MP's NATIVE evaluation unit: a 1-D column against a point
+energy-flux observation, with no routing and no spatial aggregation in between.
+`convert_forcing_to_noahmp.py --source fluxnet` drives the column with the
+tower's OWN meteorology (FULLSET `*_F` gap-filled TA/SW_IN/LW_IN/VPD/PA/WS/P),
+which is the standard site-level protocol and removes reanalysis forcing error
+from the verdict.
+
+```bash
+python tools/convert_forcing_to_noahmp.py \
+  --input_dir /mnt/disk1/Hydrocraft_server/data/obs/fluxnet/sites/US-MMS \
+  --output_dir ./forcing/ --lat 39.3232 --lon -86.4131 \
+  --start_date 2007-01-01 --end_date 2013-01-02 \
+  --timestep 3600 --source fluxnet --utc_offset -5      # <- REQUIRED
+```
+
+Three hard constraints, each with a triplet:
+
+1. **`--utc_offset` is mandatory (dt_019).** FLUXNET timestamps are LOCAL
+   STANDARD TIME; HRLDAS reads the LDASIN stamp as UTC (`CALC_DECLIN`:
+   `TLOCTIM = hour + LONGITUDE/15`). Without the shift the solar geometry is out
+   of phase with the observed radiation by the site's UTC offset. Take the value
+   from the FLUXNET BADM/BIF variable `UTC_OFFSET`
+   (`raw_zips/FLX_AA-Flx_BIF_ALL_20200501.zip`, sheet `..._BIF_HH_...xlsx`) —
+   the same file supplies `LOCATION_LAT/LONG/ELEV`, `IGBP`, `HEIGHTC`
+   (canopy height) and `VAR_INFO_HEIGHT` (measurement height → `ZLVL`).
+   Verify: the LDASIN file holding the daily SWDOWN maximum must sit within
+   ~1 h of `(12 - longitude/15) mod 24` UTC.
+2. **Hourly only.** This HRLDAS build constructs LDASIN filenames as
+   `YYYYMMDDHH` with no minutes field, so sub-hourly forcing is unreachable.
+   The reader aggregates `*_HH` (half-hourly) sites to hourly — precipitation
+   summed, everything else averaged — and `validate_inputs` rejects
+   `--timestep < 3600` outright. (The shipped `single_point` example writes
+   12-character `YYYYMMDDHHMM` names with `FORCING_TIMESTEP=1800`; that example
+   is inconsistent with this driver build.)
+3. **`ZLVL` must exceed the canopy top `HVT`** for the vegetation class
+   (MODIS DBF = 16 m, ENF/EBF = 20 m). Use the tower's actual measurement
+   height, not the 10 m default.
+
+Scoring convention: LDASOUT stamps are UTC, FLUXNET daily aggregates are local
+standard time — shift the simulation back by `UTC_OFFSET` before taking daily
+means or the two daily windows are offset. Score `LH` against `LE_F_MDS`
+(obs_shape `point_time_series`, determining metric NSE) and report `LE_CORR`
+(energy-balance-closure-corrected LE) as a secondary series, since the dag's
+caveat for this shape is EC non-closure of ~10–30 %.
+
+With `dynamic_veg_option=4` (the documented default), `VegFrac = SHDMAX/100`
+exactly (`PhenologyMainMod.F90`) and LAI comes from the NoahmpTable monthly
+climatology — so SHDMAX is a first-order lever on the LE partition, not a
+cosmetic field. Derive it from the SAME table
+(`SHDMAX = 100·max_month(1 − exp(−0.52·(LAI+SAI)))`) rather than pasting a
+default, so canopy fraction and canopy LAI stay consistent.
+
+
+### Cropland and IRRIGATED sites — the CROP_OPTION / IRRIGATION_OPTION path
+
+A FLUXNET/ARM cropland site (BADM `IGBP = CRO`, `DOM_DIST_MGMT = Agriculture`) is
+NOT a dryland default run.  Skipping the crop model or the irrigation scheme at an
+irrigated site is a RUN error, not a KI limitation — both are fully wired in this
+HRLDAS build.  Four things have to line up; each has a triplet.
+
+1. **Land use must be a cropland class.**  `FlagCropland` — the gate on the crop
+   model AND on every irrigation method — is set only for MODIS-IGBP `IVGTYP`
+   12 (croplands) or 14 (cropland/natural mosaic) (`GeneralInitMod.F90`).  A site
+   mapped to grassland never irrigates whatever the namelist says (dt_024).
+
+2. **Crop fields live in the SETUP file, irrigation fractions in a SEPARATE file.**
+   `READ_CROP_INPUT` reads `CROPTYPE` / `PLANTING` / `HARVEST` / `SEASON_GDD` from
+   `HRLDAS_SETUP_FILE` (only when `CROP_OPTION=1`); `READ_AGRICULTURE_DATA` reads
+   `IRFRACT` / `SIFRACT` / `MIFRACT` / `FIFRACT` from `AGDATA_FLNM` (only when
+   `IRRIGATION_OPTION>=1`).  Leave `AGDATA_FLNM` blank and IRFRACT stays 0.0, so
+   the trigger's `IRFRACT >= IRR_FRAC` test (table default 0.10) never passes and
+   irrigation is silently dead (dt_023).
+
+3. **Ranks are load-bearing.**  Those reads use raw `nf90_get_var` with explicit
+   start/count, so `CROPTYPE` must be 3-D `(crop=5, south_north, west_east)` with
+   **no Time dimension**, and `PLANTING`/`HARVEST`/`SEASON_GDD`/`IRFRACT`&co must be
+   strictly 2-D `(south_north, west_east)`.  Copying the `(Time, south_north,
+   west_east)` shape used for `XLAT`/`IVGTYP` reads past the record (dt_023).
+   `CROPTYPE` slot 5 is the crop FRACTION and must be `>= 0.5` to activate the
+   category at all; slots 1..4 are class weights and the largest wins
+   (1 = corn, 2 = soybean).
+
+4. **Initialise a cropped column BARE.**  The setup-file `LAI` becomes leaf biomass
+   (`LFMASSXY = LAI/0.015` for corn) and nothing resets it until the first HARVEST
+   date, so a January cold start seeded with the table LAI maximum transpires a
+   phantom canopy all winter (dt_026).  Use `LAI = 0.05`.
+
+`tools/build_hrldas_setup.py` writes all of this and re-opens the file to check the
+ranks, the percent-vs-fraction of VEGFRA, the Kelvin of TMN and the CROPTYPE slot-5
+activation:
+
+```bash
+python tools/build_hrldas_setup.py --output run/hrldas_setup.nc \
+  --lat 41.16506 --lon -96.47664 --elev 361 --igbp CRO --isltyp 6 \
+  --tmn 283.9 --table parameters/NoahmpTable.TBL \
+  --croptype corn --planting 132 --harvest 278 --lai 0.05 \
+  --agdata run/agdata.nc --irfract 1.0 --sifract 1.0
+```
+
+Planting/harvest days come from `ki_tools_common.crop_calendar.get_planting_harvest`
+(GGCMI Phase 3), not from a hardcoded guess — the NoahmpTable defaults (corn
+PLTDAY 111 / HSDAY 300) are a global compromise.
+
+Namelist side, for a centre-pivot (sprinkler) maize site:
+
+```
+ CROP_OPTION=1
+ IRRIGATION_OPTION=2        ! 1=always, 2=crop season (needs CROP_OPTION=1), 3=LAI threshold
+ IRRIGATION_METHOD=1        ! 0=use the SIFRACT/MIFRACT/FIFRACT split, 1=sprinkler, 2=micro, 3=flood
+ AGDATA_FLNM = "run/agdata.nc"
+```
+
+`IRRIGATION_OPTION=2` reads PLANTING/HARVEST only when `CROP_OPTION=1`; with the
+crop model off it silently falls back to the NoahmpTable dates, so use option 3
+(LAI threshold) instead in that case (dt_024).
+
+Verifying that irrigation actually fired (do this before trusting any cropland
+verdict): `IRSIVOL` / `IRMIVOL` / `IRFIVOL` / `IRELOSS` / `IRRSPLH` only appear in
+LDASOUT when `IRRIGATION_OPTION>0`, and they are **running totals** — sum the
+`*_INC` columns `parse_noahmp_output.py` derives, not the raw series (dt_025).
+Sprinkler water enters the column as extra rainfall AFTER the in-air evaporation
+loss is removed, and that loss is added to `LH` via `HeatLatentIrriEvap`, so the
+closed budget is
+
+```
+P + IRSIVOL = (ECAN + EDIR + ETRAN) + IRELOSS + (SFCRNOFF + UGDRNOFF) + dS
+```
+
+Calibratable irrigation knobs in NoahmpTable.TBL: `IRR_MAD` (management allowable
+deficit, 0.60 — the single biggest control on how much water is applied),
+`SPRIR_RATE` (6.4 mm/h), `IRR_FRAC` (0.10 area threshold), `IRR_HAR` (stop 20 days
+before harvest), `IRR_LAI` (0.10, the option-3 trigger), `IR_RAIN` (skip the
+trigger above 1 mm/h of rain).
+
+Noah-MP has **no fertilisation input** — the v5.2 crop model carries carbon only,
+with no nitrogen limitation — so a "fertilisation step" does not exist for this
+model and its absence is not a skipped stage.
 
 
 ## Overview
@@ -116,7 +256,7 @@ netCDF4, numpy, pandas, xarray, matplotlib, scipy, PyYAML
 | # | Stage | Tool(s) | Description |
 |---|-------|---------|-------------|
 | 0 | Configuration | (manual) | Basin, period, resolution, paths, physics options |
-| 1 | Domain setup | (WPS/manual) | Define grid from DEM, create HRLDAS setup file |
+| 1 | Domain setup | `build_hrldas_setup` | HRLDAS setup NetCDF (+ crop / irrigation fields, + agdata file) |
 | 2 | Soil parameters | `convert_soil_to_noahmp` | HWSD/SoilGrids to Noah-MP soil types |
 | 3 | Vegetation/land cover | (WPS/manual) | MODIS/AVHRR to IVGTYP classification |
 | 4 | Meteorological forcing | `convert_forcing_to_noahmp` | CMFD/MSWX/ERA5 to LDASIN NetCDF format |
@@ -138,12 +278,13 @@ Stages 7 and 8 depend on 6.
 
 | Tool | Stage | Script Path | Lines | Purpose |
 |------|-------|-------------|------:|---------|
-| `convert_forcing_to_noahmp` | s4 | `tools/convert_forcing_to_noahmp.py` | ~480 | CMFD/MSWX/ERA5 to LDASIN NetCDF (unit conversions) |
+| `build_hrldas_setup` | s1 | `tools/build_hrldas_setup.py` | ~380 | HRLDAS setup NetCDF + AGDATA irrigation file, with rank/unit validation |
+| `convert_forcing_to_noahmp` | s4 | `tools/convert_forcing_to_noahmp.py` | ~480 | CMFD/MSWX/ERA5/FLUXNET to LDASIN NetCDF (unit conversions) |
 | `convert_soil_to_noahmp` | s2 | `tools/convert_soil_to_noahmp.py` | ~350 | HWSD/SoilGrids to Noah-MP ISLTYP mapping |
 | `run_noahmp` | s6 | `tools/run_noahmp.py` | ~320 | Compile, preflight check, execute HRLDAS binary |
 | `parse_noahmp_output` | s7 | `tools/parse_noahmp_output.py` | ~400 | Parse LDASOUT NetCDF to CSV timeseries |
 
-**Total**: 4 tools, ~1,550 lines of validated Python code.
+**Total**: 5 tools, ~1,930 lines of validated Python code.
 
 ---
 
@@ -339,21 +480,34 @@ Located at `parameters/NoahmpTable.TBL`. Must be in the run directory.
 
 One file per output_timestep, named: `YYYYMMDDHH00.LDASOUT_DOMAIN1`
 
+**Two format facts the table below used to get wrong (dt_020, dt_021):**
+
+* Layered fields are written as **`(Time, south_north, soil_layers_stag, west_east)`**
+  -- the layer axis sits BETWEEN the two horizontal axes, not before them.
+  Index LDASOUT by dimension NAME; positional `var[0, k, iy, ix]` reads the layer
+  axis with the row index and silently returns one layer on a 1x1 column.
+* The **`t=0` record is entirely `-9999`** (dumped before any physics has run) and
+  carries no `_FillValue` attribute. Mask `<= -9990`, or set
+  `SKIP_FIRST_OUTPUT=.true.`. Note `-9999 > -1e6`, so a `> -1e6` guard misses it.
+* The v5.2 HRLDAS driver names the soil fields **`SOIL_T` / `SOIL_M` / `SOIL_W`**
+  in LDASOUT (`TSLB` / `SMOIS` / `SH2O` are the *setup-file* spellings), and
+  runoff is `SFCRNOFF` / `UGDRNOFF` in **mm**.
+
 Key output variables:
 
 | Variable | Dimensions | Unit | Description |
 |----------|-----------|------|-------------|
-| TSLB | (ns,y,x) | K | Soil temperature per layer |
-| SMOIS | (ns,y,x) | m³/m³ | Volumetric soil moisture per layer |
-| SH2O | (ns,y,x) | m³/m³ | Liquid soil moisture per layer |
+| SOIL_T | (Time,y,ns,x) | K | Soil temperature per layer |
+| SOIL_M | (Time,y,ns,x) | m³/m³ | Volumetric soil moisture per layer |
+| SOIL_W | (Time,y,ns,x) | m³/m³ | Liquid soil moisture per layer |
 | SNOW | (y,x) | mm | Snow water equivalent |
 | SNOWH | (y,x) | m | Snow depth |
 | TSK | (y,x) | K | Skin temperature |
 | HFX | (y,x) | W/m² | Sensible heat flux |
 | LH | (y,x) | W/m² | Latent heat flux |
 | GRDFLX | (y,x) | W/m² | Ground heat flux |
-| SFCRUNOFF | (y,x) | m | Accumulated surface runoff |
-| UDRUNOFF | (y,x) | m | Accumulated subsurface runoff |
+| SFCRNOFF | (Time,y,x) | mm | Accumulated surface runoff (v5.2; legacy SFCRUNOFF in m) |
+| UGDRNOFF | (Time,y,x) | mm | Accumulated subsurface runoff (v5.2; legacy UDRUNOFF in m) |
 | ALBEDO | (y,x) | - | Surface albedo |
 | EMISS | (y,x) | - | Surface emissivity |
 | ACSNOM | (y,x) | mm | Accumulated snowmelt |
@@ -438,6 +592,7 @@ ki/
 ├── SKILL.md                              # This file
 ├── knowledge_infrastructure.yaml         # Pipeline YAML specification
 ├── tools/
+│   ├── build_hrldas_setup.py             # s1: HRLDAS setup + agdata file
 │   ├── convert_forcing_to_noahmp.py      # s4: Met forcing converter
 │   ├── convert_soil_to_noahmp.py         # s2: Soil parameter converter
 │   ├── run_noahmp.py                     # s6: Execution wrapper
@@ -449,7 +604,7 @@ ki/
 │   ├── s6_model_execution.md             # Running Noah-MP
 │   └── s7_output_analysis.md             # Output parsing and analysis
 └── diagnostics/
-    └── triplets.yaml                     # 18 symptom→diagnosis→remedy entries
+    └── triplets.yaml                     # 26 symptom→diagnosis→remedy entries
 ```
 
 ---
@@ -486,3 +641,34 @@ python ki/tools/parse_noahmp_output.py \
   --variables SMOIS,TSK,HFX,LH,SFCRUNOFF \
   --output results.csv
 ```
+
+---
+
+## Non-routed validation protocol (runoff output — MANDATORY)
+
+Noah-MP emits COLUMN runoff (SFCRUNOFF+UDRUNOFF), which is NOT streamflow. Stage 8
+(routing) is external and optional; when it is absent the following rules bind.
+
+**Verdict selection.** With only a GAUGED DISCHARGE obs and no coupled external
+router (WRF-Hydro/CaMa-Flood), the HEADLINE verdict is basin WATER-BALANCE CLOSURE
+(dag/validation_convention: "without routing only basin water-balance closure is
+defensible"). A linear-reservoir "reference routing" may be reported ONLY as clearly
+labelled reference and MUST NOT populate metrics.nse/kge/pbias. For real runoff skill
+without routing, compare basin-aggregated runoff to a gridded RUNOFF product
+(GRUN: /mnt/datasets/obs/grun-v1-runoff) aggregated over the basin — matches the dag's
+regional_aggregate_time_series runoff obs shape (runoff-to-runoff).
+
+**Closure computation.** Closure MUST (a) use PROGNOSTIC ET = accumulated
+ECAN+EDIR+ETRAN from LDASOUT, NOT ET back-derived from the LH energy flux
+(LH/Lv overstates realized water-flux ET); and (b) subtract basin storage change
+dS = dSMOIS*layer_thickness + dSNEQV + dWA(SIMGM) between the first and last scored
+timestep, passed as validate_water_balance(delta_storage_mm=dS). Passing
+delta_storage_mm=None (dS=0) makes any non-stationary basin FAIL spuriously —
+Noah-MP closes water per column each timestep, so a large aggregate residual is a
+measurement/spin-up artifact, never a model verdict.
+
+**SIMGM spin-up.** SIMGM (SUBSURFACE_RUNOFF_OPTION=1 / OPT_RUN=1) cold-starts the
+aquifer at WA=WT=4900 mm, which equilibrates over decades. SPINUP_LOOPS=0 with a
+short discard leaves the aquifer draining its initialization (inflates subsurface
+runoff AND breaks closure). Use SPINUP_LOOPS>=3 or a multi-decade equilibration
+before scoring.

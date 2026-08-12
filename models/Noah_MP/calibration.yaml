@@ -1,0 +1,577 @@
+template_version: "calib-0.1"
+model_id: Noah_MP
+
+identity:
+  domain: land_surface
+  binding: noahmp-hrldas-v52
+  # The EXACT physics configuration the validated real case selected as its
+  # headline at this site (best calibration-period NSE among the site-valid
+  # configurations).  Calibration reproduces this configuration bit-for-bit and
+  # varies ONLY the parameter vector.
+  configuration:
+    dynamic_veg_option: 3            # table (MODIS climatology) LAI
+    crop_option: 0
+    irrigation_option: 3
+    irrigation_method: 1             # sprinkler (centre pivot, BADM SITE_DESC)
+    canopy_stomatal_resistance_option: 1   # Ball-Berry
+    btr_option: 2                    # CLM soil-moisture stress (uses PSIWLT)
+    surface_runoff_option: 1         # SIMTOP (uses FSATMX)
+    subsurface_runoff_option: 1      # SIMGM groundwater (uses TIMEAN)
+    surface_resistance_option: 4     # Sakaguchi & Zeng (uses RSURF_EXP)
+    soil_data_option: 1              # soil properties straight from the STAS table
+    spinup_loops: 3
+    ivgtyp: 12                       # MODIS-IGBP croplands
+    isltyp: 6                        # STAS loam (HWSD sand 35% / clay 24%)
+
+case:
+  case_id: "SITE:US-Ne1"
+  station_id: "US-Ne1"
+  network: FLUXNET2015
+  description: "Mead, Nebraska - irrigated continuous maize (UNL ARDC)"
+  lat: 41.16506
+  lon: -96.47664
+  elevation_m: 361.0
+  utc_offset_h: -6.0
+  obs_file: "/mnt/disk1/Hydrocraft_server/data/obs/fluxnet/sites/US-Ne1/FULLSET_DD.csv"
+  obs_variable: "LE_F_MDS"
+  obs_qc_variable: "LE_F_MDS_QC"
+  obs_qc_min: 0.8
+  obs_unit: "W m-2"
+  target_quantity: evapotranspiration
+  determining_metric: nse
+  provenance: "Noah_MP_20260802T022005Z_001590"
+  prior_validated_metric: {metric: nse, value: 0.7230461556028438}
+  # The obs envelope tools/calib_run.py ASSERTS before any metric is computed.
+  # Any deviation -> nonzero exit and NO metrics file.
+  obs_contract:
+    full:        {start: "2004-01-01", end: "2012-12-31", rows: 3288, n_qc: 3271,
+                  mean: 52.828716, min: -6.2203, max: 275.5560, std: 51.647000,
+                  precip_mm: 7531.231}
+    calibration: {start: "2004-01-01", end: "2008-12-31", rows: 1827, n_qc: 1821,
+                  mean: 52.344279, min: -6.2203, max: 275.5560, std: 51.250724,
+                  precip_mm: 4462.911}
+    holdout:     {start: "2009-01-01", end: "2012-12-31", rows: 1461, n_qc: 1450,
+                  mean: 53.437102, min: -5.1784, max: 248.2010, std: 52.151742,
+                  precip_mm: 3068.320}
+
+targets:
+  - var: LH                          # dag.outputs[].var; determining_metric nse
+    weight: 1.0
+
+# ---------------------------------------------------------------------------
+# injection
+# ---------------------------------------------------------------------------
+# RUNNER mode is mandatory here: the KI REGENERATES every model input on each
+# run (hrldas_setup.nc, agdata.nc, namelist.hrldas and a fresh copy of
+# NoahmpTable.TBL are all written by tools/build_hrldas_setup.py +
+# tools/run_noahmp.py inside the eval workdir), so anything the kit wrote
+# beforehand would be overwritten.  tools/calib_run.py injects the vector into
+# the per-eval NoahmpTable.TBL AFTER regeneration, reads every value back out of
+# that written table, and fails closed on any mismatch.  The `address` blocks
+# below are therefore DOCUMENTATION of where each value lands.
+injection:
+  mode: runner
+  artifact: "<eval workdir>/run/NoahmpTable.TBL"
+  notes: >-
+    NoahmpTable.TBL is a stack of Fortran namelist groups.  Vegetation rows are
+    indexed by the MODIS-IGBP land category (column 12 = croplands) and soil rows
+    by the STAS soil category (column 6 = loam); global rows are scalars.  Values
+    are written with %.10g and read back from the same tokens, so the round trip
+    is exact.  LAI_SCALE is a synthetic multiplier applied to the twelve monthly
+    LAI rows of the cropland column and read back as
+    sum(LAI_JAN..LAI_DEC)/sum(default LAI_JAN..LAI_DEC).
+
+# ---------------------------------------------------------------------------
+# parameters
+# ---------------------------------------------------------------------------
+# Pool seeded from dag.yaml influence edges into LH (VCMX25 HIGH; SMCMAX HIGH;
+# BEXP, SMCWLT, SLA, FXEXP MEDIUM; DKSAT HIGH into runoff, which sets how much
+# water is left for ET) plus the levers the CONFIGURED physics actually reads:
+# PSIWLT (BTR_OPTION=2), RSURF_EXP (SURFACE_RESISTANCE_OPTION=4), FSATMX
+# (SURFACE_RUNOFF_OPTION=1) and TIMEAN (SUBSURFACE_RUNOFF_OPTION=1).  The
+# validated run's error mode is a +21% latent-heat bias (sim 63.9 vs obs 52.8
+# W m-2) with r = 0.90, i.e. a VOLUME error, so the pool deliberately spans all
+# three ET terms (transpiration, canopy evaporation, bare-soil evaporation) AND
+# the runoff/groundwater partition that controls the water available to them.
+parameters:
+
+  # --- transpiration: photosynthesis / stomatal conductance --------------
+  - name: VCMX25
+    description: "Maximum rate of carboxylation at 25 degC, MODIS croplands"
+    type: continuous
+    units: "umol CO2 m-2 s-1"
+    default: 80.0
+    range: [30.0, 100.0]
+    hard_bounds: [10.0, 150.0]
+    transform: identity
+    scope: per-zone
+    zone_key: "modis_igbp_category"
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "dag.yaml influence: VCMX25 -> LH, sensitivity_grade HIGH (arsenault2018_noahmp_dynveg_sensitivity, 10.1175/JHM-D-17-0205.1)"
+      - "NoahmpTable.TBL &noahmp_modis_parameters ships 40-80 across vegetated categories (croplands = 80)"
+      - "Kattge et al. 2009 / Bonan et al. 2011: C3 crop Vcmax25 40-100 umol m-2 s-1"
+    address:
+      kind: table_cell
+      file: "run/NoahmpTable.TBL"
+      section: "noahmp_modis_parameters"
+      row: "VCMX25"
+      col: 12
+      delimiter: ","
+
+  - name: MP
+    description: "Ball-Berry slope of the conductance-photosynthesis relationship, MODIS croplands"
+    type: continuous
+    units: "-"
+    default: 9.0
+    range: [4.0, 12.0]
+    hard_bounds: [2.0, 15.0]
+    transform: identity
+    scope: per-zone
+    zone_key: "modis_igbp_category"
+    activation: "canopy_stomatal_resistance_option == 1"   # Ball-Berry (configured)
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "Ball, Woodrow & Berry 1987: m ~ 9 for C3 species (Noah-MP table default)"
+      - "Collatz et al. 1991/1992: m spans 4-12 across C3/C4 species"
+      - "NoahmpTable.TBL &noahmp_modis_parameters ships 6.0-9.0"
+    address:
+      kind: table_cell
+      file: "run/NoahmpTable.TBL"
+      section: "noahmp_modis_parameters"
+      row: "MP"
+      col: 12
+      delimiter: ","
+
+  - name: LAI_SCALE
+    description: >-
+      Multiplier on the twelve MODIS monthly LAI climatology rows of the cropland
+      column.  With DYNAMIC_VEG_OPTION=3 the canopy LAI is taken directly from
+      that table, so this is the applicable form of the dag's SLA -> LH and
+      LTOVRC -> LAI levers when the dynamic-vegetation/carbon model is off; it
+      also moves SHDMAX/VEGFRA, which tools/build_hrldas_setup.py re-derives from
+      the SAME (injected) table via Noah-MP's own 1-exp(-0.52*(LAI+SAI)) closure.
+    type: continuous
+    units: "-"
+    default: 1.0
+    range: [0.6, 1.6]
+    hard_bounds: [0.3, 2.0]
+    transform: identity
+    scope: per-zone
+    zone_key: "modis_igbp_category"
+    activation: "dynamic_veg_option in (2, 3, 5, 6, 7, 8)"   # table-LAI branches
+    expected_sensitivity: high
+    confidence: medium
+    cite:
+      - "dag.yaml influence: SLA -> LH MEDIUM and LTOVRC -> LAI MEDIUM (arsenault2018_noahmp_dynveg_sensitivity)"
+      - "Yang et al. 2011 (10.1029/2010JD015140): the MODIS 2000-2008 monthly LAI climatology in NoahmpTable.TBL; cropland annual max 3.0"
+      - "Bounds keep peak LAI in 1.8-4.8, bracketing observed maize peak LAI at US-Ne1 (~4-5, AmeriFlux BADM) and the table climatology"
+    address:
+      kind: table_cell
+      file: "run/NoahmpTable.TBL"
+      section: "noahmp_modis_parameters"
+      row: "LAI_JAN..LAI_DEC (multiplicative)"
+      col: 12
+      delimiter: ","
+
+  - name: CWPVT
+    description: "Empirical canopy wind-absorption coefficient, MODIS croplands"
+    type: continuous
+    units: "-"
+    default: 1.67
+    range: [0.18, 5.0]
+    hard_bounds: [0.05, 8.0]
+    transform: log
+    scope: per-zone
+    zone_key: "modis_igbp_category"
+    activation: always
+    expected_sensitivity: medium
+    confidence: medium
+    cite:
+      - "Goudriaan 1977, Crop Micrometeorology (the source NoahmpTable.TBL cites for CWPVT)"
+      - "Range = the full span the shipped &noahmp_modis_parameters table itself uses (0.18-5.0), so both bounds are values the model already runs with"
+      - "Cuntz et al. 2016 (10.1002/2016JD025097): leaf/canopy resistance parameters among the leading LH controls"
+    address:
+      kind: table_cell
+      file: "run/NoahmpTable.TBL"
+      section: "noahmp_modis_parameters"
+      row: "CWPVT"
+      col: 12
+      delimiter: ","
+
+  # --- canopy interception evaporation -----------------------------------
+  - name: CH2OP
+    description: "Maximum intercepted water per unit LAI+SAI, MODIS croplands"
+    type: continuous
+    units: "mm"
+    default: 0.1
+    range: [0.02, 0.5]
+    hard_bounds: [0.01, 1.0]
+    transform: log
+    scope: per-zone
+    zone_key: "modis_igbp_category"
+    activation: always
+    expected_sensitivity: medium
+    confidence: medium
+    cite:
+      - "Niu et al. 2011 (10.1029/2010JD015139) canopy hydrology; NoahmpTable.TBL default 0.1 mm for every category"
+      - "Dickinson et al. 1993 BATS canopy interception capacity 0.05-0.5 mm per unit LAI"
+      - "Controls ECAN, one of the three terms of the LH being scored"
+    address:
+      kind: table_cell
+      file: "run/NoahmpTable.TBL"
+      section: "noahmp_modis_parameters"
+      row: "CH2OP"
+      col: 12
+      delimiter: ","
+
+  # --- bare-soil evaporation ---------------------------------------------
+  - name: RSURF_EXP
+    description: "Shape exponent of the dry-surface-layer soil resistance (Sakaguchi & Zeng)"
+    type: continuous
+    units: "-"
+    default: 5.0
+    range: [1.0, 10.0]
+    hard_bounds: [0.5, 20.0]
+    transform: identity
+    scope: global
+    activation: "surface_resistance_option in (1, 4)"        # 4 is configured
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "Sakaguchi & Zeng 2009: dry-surface-layer thickness ~ exp((1-theta/theta_s)^RSURF_EXP)-1; Noah-MP global default 5.0"
+      - "dag.yaml influence: FXEXP (bare-soil evaporation exponent) -> LH MEDIUM (cuntz2016_noahmp_hardcoded_sobol); RSURF_EXP is the v5 equivalent lever under SURFACE_RESISTANCE_OPTION=4"
+      - "Base of the power is confined to [0,1], so no bound in [1,10] can overflow or clamp"
+    address:
+      kind: namelist
+      file: "run/NoahmpTable.TBL"
+      group: "noahmp_global_parameters"
+      key: "RSURF_EXP"
+
+  # --- transpiration water stress ----------------------------------------
+  - name: PSIWLT
+    description: "Soil matric potential at wilting used by the CLM transpiration-stress scheme"
+    type: continuous
+    units: "m"
+    default: -150.0
+    range: [-300.0, -50.0]
+    hard_bounds: [-500.0, -20.0]
+    transform: identity
+    scope: global
+    activation: "btr_option in (2, 3)"                       # 2 (CLM) is configured
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "Noah-MP v5.0 technical description (He et al. 2023, 10.5065/ew8g-yr95) &noahmp_global_parameters PSIWLT = -150 m"
+      - "src/SoilWaterTranspirationMod.F90 OptSoilWaterTranspiration=2: BTRAN = (1-psi/PSIWLT)/(1+PSISAT/PSIWLT) — the direct water-stress lever for the configured BTR_OPTION=2"
+      - "Bounds span about -0.5 to -3.0 MPa (plant wilting range) and stay two orders of magnitude below SATPSI, so the CLM denominator can never approach zero"
+    address:
+      kind: namelist
+      file: "run/NoahmpTable.TBL"
+      group: "noahmp_global_parameters"
+      key: "PSIWLT"
+
+  # --- runoff / groundwater partition: how much water reaches ET ---------
+  - name: FSATMX
+    description: "Maximum saturated surface fraction (SIMTOP surface runoff)"
+    type: continuous
+    units: "-"
+    default: 0.38
+    range: [0.05, 0.60]
+    hard_bounds: [0.01, 0.95]
+    transform: identity
+    scope: global
+    activation: "surface_runoff_option == 1"                 # configured
+    expected_sensitivity: medium
+    confidence: high
+    cite:
+      - "Niu et al. 2005 TOPMODEL/SIMTOP; NoahmpTable.TBL global mean 0.38"
+      - "dag.yaml influence: surface_runoff_option -> LH HIGH (gan2019_noahmp_physics_uncertainty, li2022_noahmp_global_scheme_eval) — FSATMX is that scheme's tunable parameter"
+      - "Zhang et al. 2022 (10.1016/j.jhydrol.2022.128991) grid-based WRF-Hydro/Noah-MP calibration varies the SIMTOP saturated-fraction parameter over 0.05-0.6"
+    address:
+      kind: namelist
+      file: "run/NoahmpTable.TBL"
+      group: "noahmp_global_parameters"
+      key: "FSATMX"
+
+  - name: TIMEAN
+    description: "Gridcell mean topographic index (SIMGM groundwater discharge)"
+    type: continuous
+    units: "-"
+    default: 10.5
+    range: [5.0, 20.0]
+    hard_bounds: [2.0, 30.0]
+    transform: identity
+    scope: global
+    activation: "subsurface_runoff_option == 1"              # configured
+    expected_sensitivity: medium
+    confidence: medium
+    cite:
+      - "Niu et al. 2007 simple groundwater model (SIMGM); NoahmpTable.TBL global mean 10.5"
+      - "src/GroundWaterTopModelMod.F90 uses GridTopoIndex to set the baseflow/water-table coupling that drains the root zone"
+      - "Global topographic-index distributions concentrate in 5-20 (Niu et al. 2007 Fig. 2)"
+    address:
+      kind: namelist
+      file: "run/NoahmpTable.TBL"
+      group: "noahmp_global_parameters"
+      key: "TIMEAN"
+
+  # --- soil hydraulics (STAS loam column) --------------------------------
+  - name: MAXSMC
+    description: "Saturated volumetric soil moisture (porosity), STAS loam"
+    type: continuous
+    units: "m3 m-3"
+    default: 0.439
+    range: [0.38, 0.50]
+    hard_bounds: [0.34, 0.55]
+    transform: identity
+    scope: per-zone
+    zone_key: "stas_soil_category"
+    activation: "soil_data_option == 1"
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "dag.yaml influence: SMCMAX (porosity) -> LH, sensitivity_grade HIGH — the single most sensitive parameter for latent heat (cuntz2016_noahmp_hardcoded_sobol, 10.1002/2016JD025097)"
+      - "Clapp & Hornberger 1978 / Cosby et al. 1984: loam porosity 0.43 +/- 0.06"
+      - "NoahmpTable.TBL &noahmp_soil_stas_parameters MAXSMC spans 0.339-0.484 over mineral textures; the lower bound is held above the fixed REFSMC (0.329) so SMCWLT < SMCREF < SMCMAX can never invert"
+    address:
+      kind: table_cell
+      file: "run/NoahmpTable.TBL"
+      section: "noahmp_soil_stas_parameters"
+      row: "MAXSMC"
+      col: 6
+      delimiter: ","
+
+  - name: WLTSMC
+    description: "Wilting-point volumetric soil moisture, STAS loam"
+    type: continuous
+    units: "m3 m-3"
+    default: 0.066
+    range: [0.02, 0.15]
+    hard_bounds: [0.005, 0.25]
+    transform: identity
+    scope: per-zone
+    zone_key: "stas_soil_category"
+    activation: "soil_data_option == 1"
+    expected_sensitivity: medium
+    confidence: high
+    cite:
+      - "dag.yaml influence: SMCWLT (wilting point) -> LH MEDIUM, -> SMOIS HIGH (arsenault2018_noahmp_dynveg_sensitivity)"
+      - "src/ResistanceGroundEvaporationMod.F90: SMCWLT enters the reduced vapour diffusivity that sets bare-soil evaporation resistance under SURFACE_RESISTANCE_OPTION=4"
+      - "NoahmpTable.TBL WLTSMC spans 0.006-0.138 over mineral textures; the upper bound stays below the fixed REFSMC (0.329)"
+    address:
+      kind: table_cell
+      file: "run/NoahmpTable.TBL"
+      section: "noahmp_soil_stas_parameters"
+      row: "WLTSMC"
+      col: 6
+      delimiter: ","
+
+  - name: BB
+    description: "Clapp-Hornberger b exponent, STAS loam"
+    type: continuous
+    units: "-"
+    default: 5.25
+    range: [3.0, 9.0]
+    hard_bounds: [2.0, 12.0]
+    transform: identity
+    scope: per-zone
+    zone_key: "stas_soil_category"
+    activation: "soil_data_option == 1"
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "dag.yaml influence: BEXP -> SMOIS HIGH and BEXP -> LH MEDIUM (arsenault2018_noahmp_dynveg_sensitivity, cuntz2016_noahmp_hardcoded_sobol)"
+      - "Cosby et al. 1984: loam b = 5.39 +/- 1.87; NoahmpTable.TBL BB spans 2.79-11.55 over mineral textures"
+      - "src/RunoffSurfaceTopModelGrdMod.F90 additionally sets RunoffDecayFac = BB/3 under SURFACE_RUNOFF_OPTION=1"
+    address:
+      kind: table_cell
+      file: "run/NoahmpTable.TBL"
+      section: "noahmp_soil_stas_parameters"
+      row: "BB"
+      col: 6
+      delimiter: ","
+
+  - name: SATDK
+    description: "Saturated soil hydraulic conductivity, STAS loam"
+    type: continuous
+    units: "m s-1"
+    default: 3.38e-06
+    range: [1.0e-06, 2.0e-05]
+    hard_bounds: [1.0e-07, 1.0e-04]
+    transform: log
+    scope: per-zone
+    zone_key: "stas_soil_category"
+    activation: "soil_data_option == 1"
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "dag.yaml influence: DKSAT -> SFCRUNOFF+UDRUNOFF, sensitivity_grade HIGH (cuntz2016_noahmp_hardcoded_sobol) — it sets the infiltration/runoff split and hence the water left for ET"
+      - "Clapp & Hornberger 1978 / Cosby et al. 1984 loam Ksat ~3.4e-06 m/s with a measured spread of roughly 1e-06 to 2e-05 m/s"
+      - "NoahmpTable.TBL SATDK spans 9.74e-07 to 1.41e-04 over mineral textures; the range stays well inside that"
+    address:
+      kind: table_cell
+      file: "run/NoahmpTable.TBL"
+      section: "noahmp_soil_stas_parameters"
+      row: "SATDK"
+      col: 6
+      delimiter: ","
+
+  - name: SATPSI
+    description: "Saturated soil matric potential (magnitude), STAS loam"
+    type: continuous
+    units: "m"
+    default: 0.355
+    range: [0.10, 0.80]
+    hard_bounds: [0.03, 1.0]
+    transform: log
+    scope: per-zone
+    zone_key: "stas_soil_category"
+    activation: "soil_data_option == 1"
+    expected_sensitivity: medium
+    confidence: medium
+    cite:
+      - "Cosby et al. 1984 / Clapp & Hornberger 1978 loam air-entry potential ~0.35 m with a 0.1-0.8 m spread"
+      - "src/SoilWaterTranspirationMod.F90 (CLM BTRAN) and src/ResistanceGroundEvaporationMod.F90 (surface relative humidity) both read it, so it co-controls transpiration stress and bare-soil evaporation"
+      - "NoahmpTable.TBL SATPSI spans 0.036-0.955 over mineral textures"
+    address:
+      kind: table_cell
+      file: "run/NoahmpTable.TBL"
+      section: "noahmp_soil_stas_parameters"
+      row: "SATPSI"
+      col: 6
+      delimiter: ","
+
+# ---------------------------------------------------------------------------
+# hard feasibility constraints (checked before a run, never scored if False)
+# ---------------------------------------------------------------------------
+constraints:
+  # Noah-MP requires SMCWLT < SMCREF < SMCMAX; REFSMC is NOT calibrated (it is
+  # inert under BTR_OPTION=2 + SURFACE_RUNOFF_OPTION=1) and stays at the STAS
+  # loam value 0.329, so both inequalities are pinned against that constant.
+  - "WLTSMC < 0.329"
+  - "MAXSMC > 0.329"
+  - "WLTSMC < MAXSMC"
+
+# ---------------------------------------------------------------------------
+# how to run + score one candidate
+# ---------------------------------------------------------------------------
+runner:
+  kind: subprocess
+  # calibration_kit/runner.py substitutes ONLY the brace tokens {workdir},
+  # {ki_path} and {metrics_json}.  `cwd: "<ki_path>"` was NOT a token — it was
+  # passed through verbatim, so subprocess.run(cwd="<ki_path>") raised OSError on
+  # EVERY evaluation and run_model() returned {} (no metrics, no baseline, the
+  # whole screen +inf).  The command now also carries an ABSOLUTE script path, so
+  # the driver is reachable regardless of the working directory.
+  command: ["python3", "{ki_path}/tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]
+  metrics_file: "{metrics_json}"
+  timeout: 3600
+  cwd: "{ki_path}"
+  env_contract:
+    KDT_CALIB_PARAMS: "JSON object {name: value}; every key is echoed in __kdt__.applied_params"
+    KDT_CALIB_SPLIT: "'calibration' | 'holdout'; unset scores the full 2004-2012 record"
+  notes: >-
+    One evaluation = a fresh single-column HRLDAS run over the whole
+    2004-01-01..2013-01-02 forcing record with SPINUP_LOOPS=3 (the model is
+    always integrated over the full record so the spin-up state and the
+    holdout years are identical between splits; only the SCORED window
+    changes).  Wall time about 9-10 minutes.  The forcing (stage s4, 78937
+    LDASIN files) and the soil lookup (stage s2) are prepared ONCE into
+    --prep-dir and reused by every evaluation.  Emitted metrics: nse, kge,
+    pbias, rmse, r.
+
+strategy:
+  cost_class: expensive
+  default_algorithm: dds
+  max_evaluations: 200
+  staged: true
+  staged_start: 4
+  staged_step: 3
+  holdout:
+    kind: years
+    protocol: blocked_temporal
+    grouping_key: year
+    generalization_axis: time
+    fraction: 0.444                  # 4 held-out years of 9 (2009-2012)
+    calibration_window: ["2004-01-01", "2008-12-31"]
+    holdout_window: ["2009-01-01", "2012-12-31"]
+    rationale: >-
+      obs_shape is point_time_series at a single tower, so the only honest
+      generalization axis is time: a contiguous BLOCK of later years, never
+      random days (adjacent days of a latent-heat series are strongly
+      autocorrelated, so a random split leaks the answer).  The held-out block
+      deliberately contains 2012, the severe US drought year — the year where an
+      over-wet ET parameterisation is most exposed.  This is the same split the
+      validated real case used, so the calibrated result is directly comparable
+      to the prior nse = 0.7230.
+    cite:
+      - "Klemes 1986 split-sample / differential split-sample testing"
+      - "Roberts et al. 2017 (10.1111/ecog.02881): blocked cross-validation for temporally autocorrelated data"
+      - "run_and_score_usne1.py: the validated real case's own CAL 2004-2008 / VAL 2009-2012 split"
+
+commissioning:
+  # Evidence that the injection reaches the SCORED run, recorded from real runs
+  # (see notes in the authoring report).  Every parameter was additionally probed
+  # at BOTH range bounds with `calib_run.py --readback-probe`, which reruns the
+  # model over the peak growing season and confirms
+  # __kdt__.applied_params[name] == the requested bound EXACTLY.
+  default_vector_metric: {nse: 0.7230461556028438}      # full 2004-2012 record
+  responsiveness: "documented in the authoring report; perturbed vector moves NSE far outside the default"
+  # 2026-08-02 driver repair — real hrldas.exe runs, calibration split (2004-2008,
+  # n_paired 1821), the FULL 14-parameter vector handed via KDT_CALIB_PARAMS:
+  #   default   VCMX25 80  MP 9    LAI_SCALE 1.0 RSURF_EXP 5 WLTSMC 0.066 SATDK 3.38e-6
+  #             -> nse 0.6918069  kge 0.7361250  pbias  +22.26  sim mean LE 63.996 W m-2
+  #   perturbed VCMX25 40  MP 5.5  LAI_SCALE 0.7 RSURF_EXP 3 WLTSMC 0.14  SATDK 8.0e-6
+  #             -> nse 0.2806773  kge 0.2217353  pbias  -55.39  sim mean LE 23.352 W m-2
+  # dNSE = -0.4111.  The two candidates ran CONCURRENTLY in separate --workdirs and
+  # each scored its own <workdir>/run; the default candidate reproduced a sequential
+  # run of the same vector bit-for-bit, and a third run through
+  # calibration_kit.runner.make_run_model() (this runner block) returned the same
+  # baseline — i.e. the kit-level default-params baseline now exists.
+  calibration_split_default_metric: {nse: 0.6918069105975949}
+
+  # ------------------------------------------------------------------------
+  # 2026-08-04 RE-COMMISSIONING (real hrldas.exe; six full-length evaluations run
+  # CONCURRENTLY in fresh workdirs, each handed its vector through the kit's own
+  # runner contract: KDT_CALIB_PARAMS + KDT_CALIB_SPLIT).  Every case echoed all
+  # 14 handed keys with requested == applied (mismatch {}), declared
+  # case_id = SITE:US-Ne1, and passed the water-balance check.
+  #   case       split         nse                    pbias    n_paired  secs
+  #   default    full          +0.7230461556028438    +21.00    3271     467
+  #   def_cal    calibration   +0.6918069105975949    +22.26    1821     468
+  #   def_val    holdout       +0.7608720107770901    +19.45    1450     467
+  #   pert       full          +0.613842984585625     -13.72    3271     456
+  #   corner_lo  full          -0.583131286234001     -88.40    3271     458
+  #   corner_hi  full          +0.5767206321387846    +26.66    3271     475
+  # `default` reproduces the validated real-case metric 0.7230461556028438 BIT-
+  # EXACTLY, and the metric MOVES far outside it under perturbation, so the
+  # injection provably reaches the SCORED run.  corner_lo / corner_hi are the very
+  # box corners a Morris/Sobol screen samples with EVERY parameter at a range
+  # bound: both return finite metrics, so the screen cannot return `screen_failed`
+  # for a clamped-parameter reason.
+  range_bound_readback: >-
+    28/28 bounds (14 parameters x lo/hi) verified with
+    `calib_run.py --readback-probe`: __kdt__.applied_params[name] reads back
+    EXACTLY equal to the requested bound out of the per-eval NoahmpTable.TBL, with
+    hrldas.exe rc=0 and finite LH at every bound.  No range clamps.
+  kit_runner_baseline: >-
+    One evaluation driven straight through calibration_kit.runner.make_run_model()
+    built from THIS `runner` block (the path that used to return {} on every eval,
+    the responsiveness probe, the Morris screen AND the baseline because
+    `cwd: "<ki_path>"` was an angle-bracket placeholder the kit never substitutes):
+    returns real metrics — nse 0.6918069105975949 on the calibration split,
+    n_paired 1821, case_id SITE:US-Ne1, all 14 handed keys echoed with
+    requested == applied.  The kit-level default-params baseline provably exists,
+    so a `screen_failed` with an empty baseline cannot recur from this cause.
+  fail_closed_gates: >-
+    7/7 sabotage gates produce a nonzero exit and NO metrics file: unknown
+    parameter name; unrecognised KDT_CALIB_SPLIT; obs values perturbed +5% for the
+    SAME station; one obs day dropped; driver pointed at another station (US-MMS);
+    run_noahmp.py return_code forced to None; run_noahmp.py n_output_files forced
+    to None.  A lock-contention run with a stale metrics file already at --out
+    also exits nonzero and REMOVES it (the metrics artifact is cleared as the very
+    first action of main(), before the workdir is created or locked).

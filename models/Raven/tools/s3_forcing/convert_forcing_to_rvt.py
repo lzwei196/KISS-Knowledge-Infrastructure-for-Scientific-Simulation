@@ -38,6 +38,7 @@ import os
 import sys
 import warnings
 from datetime import datetime, timedelta
+from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
@@ -64,7 +65,8 @@ BOUNDS = {
 def validate_inputs(args):
     """Validate inputs."""
     errors = []
-    if not os.path.isdir(args.forcing_dir):
+    point_mode = args.lat is not None and args.lon is not None
+    if not point_mode and (not args.forcing_dir or not os.path.isdir(args.forcing_dir)):
         errors.append(f"Forcing directory not found: {args.forcing_dir}")
     if args.grid_nc and not os.path.isfile(args.grid_nc):
         errors.append(f"Grid NetCDF not found: {args.grid_nc}")
@@ -128,6 +130,67 @@ def read_cmfd_netcdf_for_cell(forcing_dir, lat, lon, start_year, end_year):
     result = np.column_stack([np.array(all_timesteps[i][:min_len]) for i in range(7)])
 
     # Convert specific humidity to vapor pressure: vp = q * P / (0.622 + 0.378*q)
+    q = result[:, 5]
+    p_kpa = result[:, 2]
+    result[:, 5] = q * p_kpa / (0.622 + 0.378 * q)
+
+    return result
+
+
+def read_mswx_netcdf_for_cell(forcing_dir, lat, lon, start_year, end_year):
+    """
+    Read MSWX 3-hourly forcing from annual NetCDF files at basin-nearest cell.
+
+    MSWX layout (yearly files per variable):
+      P/P_YYYY.nc           precipitation (mm/3hr)
+      Tair/Tair_YYYY.nc     air temperature (already degC)
+      Pres/Pres_YYYY.nc     surface pressure (Pa)
+      SWd/SWd_YYYY.nc       shortwave down (W/m2)
+      LWd/LWd_YYYY.nc       longwave down (W/m2)
+      spechum/spechum_YYYY.nc specific humidity (kg/kg)
+      wind/Wind_YYYY.nc     wind speed (m/s)
+
+    Returns: np.array with same 7-column format as VIC forcing:
+        0: air_temp (C), 1: prec (mm/3hr), 2: pressure (kPa),
+        3: swdown (W/m2), 4: lwdown (W/m2), 5: vp (kPa), 6: wind (m/s)
+    """
+    import xarray as xr
+
+    forcing_dir = Path(forcing_dir)
+    mswx_vars = [
+        ('Tair',    'Tair',    lambda x: x),               # already degC
+        ('P',       'P',       lambda x: x),               # mm/3hr as-is
+        ('Pres',    'Pres',    lambda x: x / 1000.0),      # Pa -> kPa
+        ('SWd',     'SWd',     lambda x: x),               # W/m2
+        ('LWd',     'LWd',     lambda x: x),               # W/m2
+        ('spechum', 'spechum', lambda x: x),               # kg/kg (will convert to vp later)
+        ('wind',    'Wind',    lambda x: x),               # m/s
+    ]
+
+    all_timesteps = {i: [] for i in range(7)}
+
+    for year in range(start_year, end_year + 1):
+        for v_idx, (subdir, prefix, convert) in enumerate(mswx_vars):
+            fpath = forcing_dir / subdir / f"{prefix}_{year}.nc"
+            if not fpath.is_file():
+                return None
+            ds = xr.open_dataset(fpath)
+            vname = list(ds.data_vars)[0]
+            grid_lats = ds['lat'].values if 'lat' in ds else ds['latitude'].values
+            grid_lons = ds['lon'].values if 'lon' in ds else ds['longitude'].values
+            lat_idx = int(np.argmin(np.abs(grid_lats - lat)))
+            lon_idx = int(np.argmin(np.abs(grid_lons - lon)))
+            vals = ds[vname][:, lat_idx, lon_idx].values
+            all_timesteps[v_idx].extend(convert(vals))
+            ds.close()
+
+    if not all_timesteps[0]:
+        return None
+
+    min_len = min(len(v) for v in all_timesteps.values())
+    result = np.column_stack([np.array(all_timesteps[i][:min_len]) for i in range(7)])
+
+    # Convert specific humidity to vapor pressure (kPa): vp = q * P / (0.622 + 0.378*q)
     q = result[:, 5]
     p_kpa = result[:, 2]
     result[:, 5] = q * p_kpa / (0.622 + 0.378 * q)
@@ -300,7 +363,13 @@ def generate_rvt_gauge_block(station_name, lat, lon, elev, daily_data,
             values = daily_data[:, col]
 
         for v in values:
-            lines.append(f"    {v:.4f}")
+            # Raven's time-series parser rejects the token "-0.0000" (negative
+            # zero) as non-numeric. Tiny negative values (e.g. -1e-5) round to
+            # "-0.0000" under %.4f, so normalise the sign before writing.
+            s = f"{v:.4f}"
+            if s.startswith("-") and float(s) == 0.0:
+                s = s[1:]
+            lines.append(f"    {s}")
 
         lines.append(f"  :EndData")
         lines.append("")
@@ -311,8 +380,53 @@ def generate_rvt_gauge_block(station_name, lat, lon, elev, daily_data,
     return "\n".join(lines)
 
 
+def read_point_forcing(args):
+    """
+    Standalone forcing path (GAP-3 fix): load daily forcing for a single
+    basin-centroid point via ki_tools_common.load_forcing — no VIC pipeline
+    or grid NetCDF required. Returns daily array in Raven's 7-column format:
+      0: PRECIP (mm/d), 1: TEMP_MAX (C), 2: TEMP_MIN (C), 3: WIND (m/s),
+      4: SHORTWAVE (MJ/m2/d), 5: LONGWAVE (MJ/m2/d), 6: PRESSURE (kPa)
+
+    All unit conversions happen HERE (Raven ignores units):
+      precip_mm  -> already mm/d (load_daily_forcing returns daily totals)
+      temp_*_c   -> already degC
+      srad_wm2   -> MJ/m2/d  (x 0.0864)
+      lrad_wm2   -> MJ/m2/d  (x 0.0864)
+      pres_pa    -> kPa      (/ 1000)
+    """
+    from ki_tools_common.load_forcing import load_daily_forcing
+
+    fc = load_daily_forcing(
+        args.forcing_source.lower(), args.lat, args.lon,
+        args.start_year, args.end_year,
+        forcing_dir=(args.forcing_dir if args.forcing_dir and os.path.isdir(args.forcing_dir) else None),
+    )
+
+    n = len(fc["dates"])
+    daily = np.zeros((n, 7))
+    daily[:, 0] = np.asarray(fc["precip_mm"], dtype=float)          # mm/d
+    daily[:, 1] = np.asarray(fc["temp_max_c"], dtype=float)         # degC
+    daily[:, 2] = np.asarray(fc["temp_min_c"], dtype=float)         # degC
+    daily[:, 3] = np.asarray(fc["wind_ms"], dtype=float)            # m/s
+    daily[:, 4] = np.asarray(fc["srad_wm2"], dtype=float) * 0.0864  # W/m2 -> MJ/m2/d
+    if "lrad_wm2" in fc and fc["lrad_wm2"] is not None:
+        daily[:, 5] = np.asarray(fc["lrad_wm2"], dtype=float) * 0.0864
+    daily[:, 6] = np.asarray(fc["pres_pa"], dtype=float) / 1000.0   # Pa -> kPa
+
+    return daily, float(args.lat), float(args.lon), 1
+
+
 def process(args):
     """Main processing: read forcing files and generate .rvt."""
+
+    # Standalone point mode (GAP-3): load forcing directly via ki_tools_common
+    if args.lat is not None and args.lon is not None:
+        daily, mean_lat, mean_lon, files_read = read_point_forcing(args)
+        cells = [{"lat": mean_lat, "lon": mean_lon}]
+        if daily is None or len(daily) == 0:
+            return {"status": "error", "message": "ki_tools_common returned no forcing for point"}
+        return _finalize_rvt(args, daily, cells, files_read, mean_lat, mean_lon)
 
     # Read grid cells
     cells = []
@@ -385,11 +499,16 @@ def process(args):
                     found = True
                     break
 
-    # If no VIC files found, try reading CMFD NetCDF directly from subdirectories
+    # If no VIC files found, try NetCDF direct read from subdirectories (CMFD or MSWX)
     if files_read == 0:
-        print(f"No VIC ASCII files found. Trying CMFD NetCDF direct read from {args.forcing_dir}...")
+        if args.forcing_source.lower() == "mswx":
+            print(f"No VIC ASCII files found. Trying MSWX NetCDF direct read from {args.forcing_dir}...")
+            reader = read_mswx_netcdf_for_cell
+        else:
+            print(f"No VIC ASCII files found. Trying CMFD NetCDF direct read from {args.forcing_dir}...")
+            reader = read_cmfd_netcdf_for_cell
         for cell in cells:
-            data = read_cmfd_netcdf_for_cell(
+            data = reader(
                 args.forcing_dir, cell['lat'], cell['lon'],
                 args.start_year, args.end_year
             )
@@ -398,7 +517,7 @@ def process(args):
                 files_read += 1
 
     if files_read == 0:
-        return {"status": "error", "message": f"No forcing files found in {args.forcing_dir} (tried VIC ASCII and CMFD NetCDF)"}
+        return {"status": "error", "message": f"No forcing files found in {args.forcing_dir} (tried VIC ASCII and {args.forcing_source.upper()} NetCDF)"}
 
     # Compute basin-mean forcing
     min_len = min(len(d) for d in all_data)
@@ -414,13 +533,19 @@ def process(args):
     if daily is None:
         return {"status": "error", "message": "Not enough data for even 1 complete day"}
 
-    # Bounds checking (CRITICAL)
-    var_names = ["PRECIP", "TEMP_MAX", "TEMP_MIN", "WIND_VEL", "SW_RADIA", "LW_INCOMING", "AIR_PRES"]
-    warnings_all.extend(bounds_check(daily, var_names, args.forcing_dir))
-
-    # Basin centroid
     mean_lat = np.mean([c["lat"] for c in cells])
     mean_lon = np.mean([c["lon"] for c in cells])
+    return _finalize_rvt(args, daily, cells, files_read, mean_lat, mean_lon)
+
+
+def _finalize_rvt(args, daily, cells, files_read, mean_lat, mean_lon):
+    """Shared tail: bounds-check daily array, build gauge block, write .rvt."""
+    warnings_all = []
+
+    # Bounds checking (CRITICAL)
+    var_names = ["PRECIP", "TEMP_MAX", "TEMP_MIN", "WIND_VEL", "SW_RADIA", "LW_INCOMING", "AIR_PRES"]
+    warnings_all.extend(bounds_check(daily, var_names, args.forcing_dir or "point"))
+
     mean_elev = 500.0  # default, will be overridden by .rvh
 
     # Determine which variables to include in .rvt
@@ -441,10 +566,10 @@ def process(args):
     rvt_content.append(f"# Period: {args.start_year}-01-01 to {args.end_year}-12-31")
     rvt_content.append(f"# CRITICAL: Raven ignores units. All conversions done in this tool.")
     rvt_content.append(f"# Unit conversions applied:")
-    rvt_content.append(f"#   PRECIP: mm/3hr -> mm/d (summed over 8 timesteps)")
-    rvt_content.append(f"#   TEMP: already Celsius from VIC forcing pipeline")
+    rvt_content.append(f"#   PRECIP: -> mm/d")
+    rvt_content.append(f"#   TEMP: degC")
     rvt_content.append(f"#   SHORTWAVE: W/m2 -> MJ/m2/d (x 0.0864)")
-    rvt_content.append(f"#   PRESSURE: already kPa from VIC forcing pipeline")
+    rvt_content.append(f"#   PRESSURE: -> kPa")
     rvt_content.append(f"# Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     rvt_content.append("")
 
@@ -535,8 +660,10 @@ def validate_outputs(results, args):
 
 def main():
     parser = argparse.ArgumentParser(description="Convert forcing to Raven .rvt format")
-    parser.add_argument("--forcing_dir", required=True, help="Directory with VIC forcing files")
+    parser.add_argument("--forcing_dir", default=None, help="Directory with VIC forcing files (not needed in point mode)")
     parser.add_argument("--grid_nc", default=None, help="VIC basin_grid.nc for cell coordinates")
+    parser.add_argument("--lat", type=float, default=None, help="Basin-centroid latitude (enables standalone point mode via ki_tools_common)")
+    parser.add_argument("--lon", type=float, default=None, help="Basin-centroid longitude (enables standalone point mode via ki_tools_common)")
     parser.add_argument("--output_dir", required=True, help="Output directory for .rvt file")
     parser.add_argument("--basin_name", required=True, help="Basin name")
     parser.add_argument("--start_year", type=int, required=True, help="Start year")

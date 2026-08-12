@@ -29,7 +29,7 @@ import os
 import json
 import logging
 
-SIM_PATH = ""
+SIM_PATH = "/mnt/disk1/Hydrocraft_server/outputs/qinghai_lake_1951_2024/modflow6/workspace"
 COMPLEXITY = "MODERATE"
 DVCLOSE = 0.001           # Head change criterion (m)
 RCLOSE = 0.1              # Residual criterion (m3/day)
@@ -69,7 +69,7 @@ def process():
         outer_maximum=OUTER_MAXIMUM,
         inner_maximum=INNER_MAXIMUM,
         inner_dvclose=DVCLOSE / 10,
-        inner_rclose=RCLOSE,
+        rcloserecord=[RCLOSE, "strict"],
     )
 
     # Register IMS with all models

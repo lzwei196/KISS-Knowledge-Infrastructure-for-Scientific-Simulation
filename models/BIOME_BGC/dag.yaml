@@ -1,0 +1,430 @@
+template_version: "3.5"
+
+identity:
+  model_id: "BIOME_BGC"
+  scientific_reference_version: "Biome-BGC 4.2 (NTSG/Thornton lineage; documented against UMT User's Guide v4.1.2, April 2002)"
+  implementation:
+    id: "biome-bgc-42"
+    version: "4.2"
+    provenance: "C (ANSI C89); University of Montana NTSG / Thornton-Running base Biome-BGC release, point-scale pointbgc executable."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c"
+  license: "Copyrighted (not GPL); free download from NTSG, no redistribution"
+  repo_url: "https://www.umt.edu/numerical-terradynamic-simulation-group/project/biome-bgc.php"
+
+boundary:
+  scope_in:
+    - "Daily carbon fluxes (C3/C4 photosynthesis, maintenance + growth respiration, allocation)"
+    - "Nitrogen cycling (deposition, fixation, mineralization, immobilization, leaching, denitrification)"
+    - "Water cycling (canopy interception, snow accumulation/melt, bare-soil evaporation, transpiration, single-bucket soil water, drainage outflow)"
+    - "Litter and soil organic matter decomposition (CENTURY-style 4 litter + 4 soil pools)"
+    - "Temperature- and photoperiod-driven deciduous/evergreen phenology"
+    - "Whole-plant, livewood, leaf/fine-root, and fire mortality turnover"
+    - "Multi-century spinup to soil C/N steady state"
+  scope_out:
+    - "Cropland / managed agricultural systems (natural vegetation only; AVHRR classes 1-10)"
+    - "Lateral hydrology, channel routing, and discharge (ET is diagnostic-only when coupled to a hydrology model that owns the water balance)"
+    - "Discrete timed fire events (fire is a constant long-term fractional loss)"
+    - "Carbon retranslocation from leaves prior to litterfall (only nitrogen retranslocates)"
+    - "Sub-daily processes and leap days (365-day year hardcoded)"
+    - "Seasonally-structured climate change (only additive/multiplicative offsets supported)"
+  spatial: "0-D point"
+  temporal: "daily"
+  closure: "mass-balance"
+  notes: "Mass-conservative C, N, and water budgets across vegetation/litter/soil pools, enforced daily by check_balance (run aborts on imbalance). Single homogeneous stand per execution; gridded coverage is achieved by running one site per cell, not by internal spatial resolution. Soil water uses a single-bucket Clapp-Hornberger column, not a multi-layer scheme. Spinup loops the met record until soil C and N pools equilibrate; soil texture fractions must sum to 100% and litter labile+cellulose+lignin fractions to 1.0."
+
+inputs:
+  forcing:
+    - {category: meteorology, name: "Tmax", unit: "deg C", source_kind: forcing, model_input_format: "daily met file column 3 (space-separated, 365-day years)", notes: "Celsius required; Kelvin silently corrupts respiration and phenology"}
+    - {category: meteorology, name: "Tmin", unit: "deg C", source_kind: forcing, model_input_format: "daily met file column 4"}
+    - {category: meteorology, name: "Tday", unit: "deg C", source_kind: forcing, model_input_format: "daily met file column 5", notes: "Daytime mean = Tmin + 0.45*(Tmax-Tmin); read but discarded by the model (metarr_init.c %*lf) yet must be present for column alignment"}
+    - {category: meteorology, name: "prcp", unit: "cm/day", source_kind: forcing, model_input_format: "daily met file column 6", notes: "Model expects cm NOT mm; mm input silently inflates GPP/NPP ~10x"}
+    - {category: meteorology, name: "VPD", unit: "Pa", source_kind: forcing, model_input_format: "daily met file column 7", notes: "Daylight average; Pa NOT kPa (typical 200-4000 Pa); kPa leaves stomata always open"}
+    - {category: meteorology, name: "srad", unit: "W/m2", source_kind: forcing, model_input_format: "daily met file column 8", notes: "Daylight average shortwave flux density"}
+    - {category: meteorology, name: "daylen", unit: "s", source_kind: forcing, model_input_format: "daily met file column 9", notes: "Daylength sunrise-to-sunset; must be computed from latitude and day-of-year; daylen=0 yields PAR=0 and GPP=0"}
+    - {category: atmosphere, name: "atmospheric CO2", unit: "ppm", source_kind: forcing, model_input_format: "constant in CO2_CONTROL block or annual co2.txt file", notes: "ppm NOT mole-fraction or ppb; 280 pre-industrial for spinup, 370+ or time-varying for normal run"}
+    - {category: nitrogen, name: "atmospheric N deposition (wet+dry)", unit: "kgN/m2/yr", source_kind: forcing, model_input_format: "constant or ramped (RAMP_NDEP) or annual file", notes: "Pre-industrial (~0.0001) required for spinup or SOC never equilibrates"}
+  parameters:
+    - {category: site, name: "latitude", unit: "degrees", source_kind: user_provided, model_input_format: ".ini SITE block (negative for S hemisphere)"}
+    - {category: site, name: "elevation", unit: "m", source_kind: user_provided, model_input_format: ".ini SITE block"}
+    - {category: site, name: "effective soil depth (rooting zone)", unit: "m", source_kind: user_provided, model_input_format: ".ini SITE block", notes: "Meters NOT cm; wrong scale causes instant soil drydown and runaway transpiration"}
+    - {category: soil, name: "sand/silt/clay fractions", unit: "%", source_kind: dataset_lookup, model_input_format: ".ini SITE block", notes: "Must sum to 100 exactly; otherwise segfault in soil water capacity calc"}
+    - {category: site, name: "shortwave albedo", unit: "DIM", source_kind: user_provided, model_input_format: ".ini SITE block"}
+    - {category: nitrogen, name: "N fixation (symbiotic+asymbiotic)", unit: "kgN/m2/yr", source_kind: user_provided, model_input_format: ".ini SITE block"}
+    - {category: ecophysiology, name: "specific leaf area (SLA)", unit: "m2/kgC", source_kind: calibrated, model_input_format: ".epc line-ordered (epc_init.c)", notes: "Per-PFT; high SLA overestimates GPP vs FLUXNET"}
+    - {category: ecophysiology, name: "leaf, leaf-litter, fine-root, live-wood, dead-wood C:N ratios", unit: "kgC/kgN", source_kind: calibrated, model_input_format: ".epc line-ordered", notes: "leaf-litter C:N must be >= live-leaf C:N"}
+    - {category: ecophysiology, name: "fraction of leaf N in Rubisco (FLNR)", unit: "DIM", source_kind: calibrated, model_input_format: ".epc line-ordered"}
+    - {category: ecophysiology, name: "max stomatal / cuticular / boundary-layer conductance", unit: "m/s", source_kind: calibrated, model_input_format: ".epc line-ordered", notes: "Boundary-layer and cuticular conductance assumed constant; boundary-layer defined at constant 1 m/s windspeed"}
+    - {category: ecophysiology, name: "canopy light extinction coefficient (Beer's law)", unit: "DIM", source_kind: calibrated, model_input_format: ".epc line-ordered"}
+    - {category: ecophysiology, name: "canopy water interception coefficient", unit: "1/LAI/d", source_kind: calibrated, model_input_format: ".epc line-ordered"}
+    - {category: ecophysiology, name: "allocation ratios (froot:leaf, stem:leaf, livewood:totalwood, croot:stem, current-growth proportion)", unit: "ratio", source_kind: calibrated, model_input_format: ".epc line-ordered", notes: "Transposed ratios route all C to wood with no leaf growth"}
+    - {category: ecophysiology, name: "annual leaf+fine-root / livewood / whole-plant / fire mortality fractions", unit: "1/yr", source_kind: calibrated, model_input_format: ".epc line-ordered"}
+    - {category: ecophysiology, name: "litter & deadwood labile/cellulose/lignin proportions", unit: "DIM", source_kind: calibrated, model_input_format: ".epc line-ordered", notes: "Must sum to 1.0"}
+    - {category: ecophysiology, name: "leaf water potential and VPD conductance-reduction start/complete thresholds", unit: "MPa, Pa", source_kind: calibrated, model_input_format: ".epc line-ordered"}
+  initial_conditions:
+    - {category: water, name: "initial soil water", unit: "proportion of saturation", source_kind: user_provided, model_input_format: ".ini W_STATE block"}
+    - {category: water, name: "initial snowpack water", unit: "kg/m2", source_kind: user_provided, model_input_format: ".ini W_STATE block"}
+    - {category: carbon, name: "initial leaf / stem / coarse-woody-debris / 4 litter / 4 soil carbon pools", unit: "kgC/m2", source_kind: user_provided, model_input_format: ".ini C_STATE block", notes: "Non-equilibrated states produce misleading NEE for hundreds of years; spinup endpoint normally seeds these"}
+    - {category: nitrogen, name: "initial litter labile N and soil mineral N", unit: "kgN/m2", source_kind: user_provided, model_input_format: ".ini N_STATE block"}
+    - {category: state, name: "restart endpoint", unit: "-", source_kind: derived, model_input_format: ".endpoint binary restart file written by spinup", notes: "Must be read by the exact same compiled binary that wrote it (struct layout); cross-version transfer corrupts state"}
+  boundary_conditions:
+    - {category: control, name: "run mode", unit: "-", source_kind: user_provided, model_input_format: "CLI flag -s spinup / -n normal / -g spin-and-go", notes: "Selects MODE_SPINUP vs MODE_MODEL loop in bgc()"}
+    - {category: control, name: "simulation time frame (start year, n years)", unit: "-", source_kind: user_provided, model_input_format: ".ini TIME_DEFINE block"}
+    - {category: control, name: "CO2_CONTROL flag", unit: "-", source_kind: user_provided, model_input_format: ".ini CO2_CONTROL block (constant vs annual-file mode)"}
+    - {category: control, name: "N-deposition control (RAMP_NDEP)", unit: "-", source_kind: user_provided, model_input_format: ".ini RAMP_NDEP block (constant/ramped/file)"}
+    - {category: control, name: "phenology control flag (model-driven vs user onday/offday)", unit: "-", source_kind: user_provided, model_input_format: ".epc phenology flags"}
+    - {category: control, name: "climate-change offsets (CLIM_CHANGE)", unit: "-", source_kind: user_provided, model_input_format: ".ini CLIM_CHANGE block (additive T offset, multiplicative prcp/VPD/srad scaling)"}
+    - {category: control, name: "output variable selection (daily/annual indices)", unit: "-", source_kind: user_provided, model_input_format: ".ini DAILY_OUTPUT / ANNUAL_OUTPUT blocks (output codes into NMAP map)"}
+
+processes:
+  modules:
+    - {name: "pointbgc_driver", role: "driver", brief: "main() in pointbgc.c: parses CLI mode, reads .ini, initializes site/epc/co2/ndep and met arrays, calls bgc()"}
+    - {name: "bgc_core_loop", role: "driver", brief: "bgc() nested annual(simyr)/daily(yday 1-365) loop orchestrating all process modules in fixed order; also drives spinup steady-state control. Corrects metv.tsoil toward annual-mean tair each day (0.83 with snow, 0.2 without)"}
+    - {name: "prephenology", role: "process_solver", brief: "Precomputes onset/offset day arrays over the whole met record (White GDD onset eq for trees; precip-ratio criteria for grass)"}
+    - {name: "phenology", role: "process_solver", brief: "Moves C/N from transfer to displayed pools and schedules litterfall via daily phenology day counters"}
+    - {name: "radtrans", role: "process_solver", brief: "Computes LAI, sunlit/shaded fractions, SLA, and Beer-law canopy shortwave/PAR interception and transmission"}
+    - {name: "canopy_et", role: "process_solver", brief: "Penman-Monteith leaf/canopy conductance, transpiration, and canopy-intercepted-water evaporation"}
+    - {name: "photosynthesis", role: "process_solver", brief: "Farquhar C3 / Collatz C4 enzyme-kinetic GPP for sunlit and shaded canopy (psn_sun/psn_shade into cpool)"}
+    - {name: "maint_resp", role: "process_solver", brief: "Q10=2.0, N-based maintenance respiration for leaf (day/night), fine root, live stem, live coarse root"}
+    - {name: "growth_resp", role: "process_solver", brief: "Growth respiration as a fixed 0.3 fraction (GRPERC) of newly grown carbon"}
+    - {name: "soil_hydrology", role: "process_solver", brief: "Canopy interception, snow accumulation/melt, bare-soil evaporation (days-since-rain decay), single-bucket Clapp-Hornberger soil water potential, and drainage outflow"}
+    - {name: "decomp", role: "process_solver", brief: "Litter/SOM cascade decomposition with Lloyd-Taylor temperature scalar and psi-based water scalar (minpsi -10 MPa); computes potential immobilization vs net mineralization"}
+    - {name: "daily_allocation", role: "allocator", brief: "Resolves decomp N immobilization vs plant N demand in the same timestep; allocates cpool/npool to leaf/froot/stem/croot (+storage). Spinup variant supplements N on the rising limb (naddfrac)"}
+    - {name: "annual_rates", role: "process_solver", brief: "Once-per-year recompute of livewood->deadwood turnover and evergreen leaf/froot litterfall increments, gated on the annual_alloc phenology day (remdays_litfall==1)"}
+    - {name: "nleaching", role: "process_solver", brief: "Post-state-update mineral-N leaching using mobile-N fraction (0.1) scaled by drainage outflow; guards sminn against going negative"}
+    - {name: "mortality", role: "process_solver", brief: "Daily whole-plant and fire mortality turnover fluxes to litter/CWD; runs last with a dedicated state-update path to avoid flux conflicts"}
+    - {name: "state_update", role: "integrator", brief: "daily_water/carbon/nitrogen_state_update apply the day's fluxes to ws/cs/ns pools by forward Euler"}
+    - {name: "check_balance", role: "process_solver", brief: "Daily water/carbon/nitrogen mass-balance closure tests; aborts the run on imbalance"}
+    - {name: "summary", role: "integrator", brief: "csummary/wsummary roll daily fluxes into GPP/NPP/NEP/NEE, veg/litter/soil/total C, and cumulative totals"}
+  internal_edges:
+    - {from: "pointbgc_driver", to: "bgc_core_loop", kind: "invokes", brief: "main() parses CLI mode (-s/-n/-g), reads the .ini, initializes site/epc/co2/ndep and met arrays, and calls bgc()"}
+    - {from: "Inputs", to: "bgc_core_loop", kind: "consumes_input", brief: "daily met (Tmax/Tmin/prcp/VPD/srad/daylen), annual CO2, and N deposition drive the loop via metv"}
+    - {from: "bgc_core_loop", to: "tsoil", kind: "writes_state", brief: "soil temperature corrected toward annual-mean tair by 0.83 (snow) or 0.2 (no snow) before decomp/maint_resp"}
+    - {from: "prephenology", to: "phenology", kind: "invokes", brief: "supplies precomputed onset/offset day arrays for the current met day"}
+    - {from: "phenology", to: "leafc", kind: "writes_state", brief: "transfer->displayed C/N fluxes and litterfall scheduling"}
+    - {from: "leafc", to: "radtrans", kind: "reads_state", brief: "leaf carbon and SLA set projected LAI and sun/shade partition"}
+    - {from: "radtrans", to: "proj_lai", kind: "writes_state", brief: "projected and sunlit/shaded LAI"}
+    - {from: "radtrans", to: "photosynthesis", kind: "invokes", brief: "supplies absorbed PAR per sunlit/shaded LAI"}
+    - {from: "soil_hydrology", to: "psi", kind: "writes_state", brief: "soil water potential from soilw via Clapp-Hornberger"}
+    - {from: "psi", to: "canopy_et", kind: "reads_state", brief: "leaf water potential limits stomatal conductance and transpiration"}
+    - {from: "canopy_et", to: "soilw", kind: "writes_state", brief: "transpiration and canopy evaporation deplete soil/canopy water"}
+    - {from: "psi", to: "decomp", kind: "reads_state", brief: "soil water potential drives the decomposition water scalar"}
+    - {from: "tsoil", to: "decomp", kind: "reads_state", brief: "soil temperature drives the Lloyd-Taylor temperature scalar"}
+    - {from: "maint_resp", to: "photosynthesis", kind: "invokes", brief: "maintenance-respiration demand resolved alongside GPP for the carbon balance"}
+    - {from: "photosynthesis", to: "cpool", kind: "writes_state", brief: "GPP deposited into the temporary photosynthate pool"}
+    - {from: "decomp", to: "sminn", kind: "writes_state", brief: "potential immobilization and net mineralization update soil mineral N"}
+    - {from: "decomp", to: "daily_allocation", kind: "invokes", brief: "immobilization vs plant N demand resolved together in one timestep"}
+    - {from: "cpool", to: "daily_allocation", kind: "reads_state", brief: "photosynthate and available N partitioned to plant pools (+storage)"}
+    - {from: "daily_allocation", to: "annual_rates", kind: "invokes", brief: "annual_alloc day (remdays_litfall==1) triggers annual turnover recompute"}
+    - {from: "daily_allocation", to: "growth_resp", kind: "invokes", brief: "growth respiration charged as 0.3 of newly grown carbon"}
+    - {from: "soil_hydrology", to: "snoww", kind: "writes_state", brief: "snow accumulation/melt and drainage outflow"}
+    - {from: "daily_allocation", to: "state_update", kind: "invokes", brief: "daily water/carbon/nitrogen fluxes applied to pools by forward Euler"}
+    - {from: "state_update", to: "soilc", kind: "writes_state", brief: "forward-Euler integration of carbon/nitrogen/water state into the soil organic-C aggregate (soil1c..soil4c) summarized as soilc"}
+    - {from: "state_update", to: "nleaching", kind: "invokes", brief: "mobile-N (0.1) leaching scaled by drainage outflow, guarding sminn"}
+    - {from: "nleaching", to: "sminn", kind: "writes_state", brief: "removes leached mineral N"}
+    - {from: "state_update", to: "mortality", kind: "invokes", brief: "mortality/fire fluxes applied last with a special update path"}
+    - {from: "mortality", to: "litterc", kind: "writes_state", brief: "mortality and fire turnover routed to the litter+CWD pools summarized as litterc"}
+    - {from: "state_update", to: "check_balance", kind: "invokes", brief: "daily C/N/water mass-balance closure tests; abort on imbalance"}
+    - {from: "summary", to: "Outputs", kind: "produces_output", brief: "csummary/wsummary roll up GPP/NPP/NEP/NEE and stocks; selected daycodes/anncodes written binary + optional ASCII"}
+    - {from: "soilc", to: "bgc_core_loop", kind: "reads_state", brief: "spinup steady-state detection compares the summary soil-C trend (summary.soilc/totalc) against SPINUP_TOLERANCE (0.0005 kgC/m2/yr)"}
+
+states:
+  variables:
+    - {name: "soilw", unit: "kgH2O/m2", role: "prognostic"}
+    - {name: "snoww", unit: "kgH2O/m2", role: "prognostic"}
+    - {name: "canopyw", unit: "kgH2O/m2", role: "prognostic"}
+    - {name: "leafc", unit: "kgC/m2", role: "prognostic"}
+    - {name: "frootc", unit: "kgC/m2", role: "prognostic"}
+    - {name: "livestemc/deadstemc/livecrootc/deadcrootc", unit: "kgC/m2", role: "prognostic"}
+    - {name: "cwdc", unit: "kgC/m2", role: "prognostic"}
+    - {name: "cpool", unit: "kgC/m2", role: "prognostic"}
+    - {name: "gresp_storage/gresp_transfer", unit: "kgC/m2", role: "prognostic"}
+    - {name: "litr1c/litr2c/litr3c/litr4c", unit: "kgC/m2", role: "prognostic"}
+    - {name: "soil1c/soil2c/soil3c/soil4c", unit: "kgC/m2", role: "prognostic"}
+    - {name: "sminn", unit: "kgN/m2", role: "prognostic"}
+    - {name: "litter N and soil organic N pools (full N analogue of C pools)", unit: "kgN/m2", role: "prognostic"}
+    - {name: "retransn", unit: "kgN/m2", role: "prognostic"}
+    - {name: "soilc", unit: "kgC/m2", role: "diagnostic"}
+    - {name: "litterc", unit: "kgC/m2", role: "diagnostic"}
+    - {name: "proj_lai", unit: "m2/m2", role: "diagnostic"}
+    - {name: "psi", unit: "MPa", role: "diagnostic"}
+    - {name: "vwc", unit: "DIM", role: "diagnostic"}
+    - {name: "tsoil", unit: "deg C", role: "diagnostic"}
+    - {name: "dsr (days since rain)", unit: "days", role: "diagnostic"}
+    - {name: "t_scalar/w_scalar/rate_scalar", unit: "DIM", role: "diagnostic"}
+    - {name: "annmax_leafc/frootc/livestemc/livecrootc", unit: "kgC/m2", role: "accumulator"}
+    - {name: "remdays_curgrowth/transfer/litfall", unit: "days", role: "diagnostic"}
+    - {name: "cum_gpp/npp/nep/nee/mr/gr/hr/fire", unit: "kgC/m2", role: "accumulator"}
+  provenance: "populated"
+
+outputs:
+  - var: "daily_gpp"
+    validation_rank: 1
+    unit: "kgC/m2/d"
+    description: "Gross primary production (sunlit + shaded canopy photosynthesis)"
+    emitted_in: ".dayout (binary, optional .dayout.ascii); annual summary as ann NPP/NPB text"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Compare against eddy-covariance / FLUXNET tower GPP at the simulated point; SLA and FLNR mis-set can bias magnitude with little timing error"]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Only valid when run per-cell over natural-vegetation cells; satellite GPP (MODIS) underestimates relative to BIOME-BGC tropical defaults unless EBF tropical params used"]
+      detrending_options: ["none"]
+  - var: "daily_npp"
+    validation_rank: 2
+    unit: "kgC/m2/d"
+    description: "Net primary production = GPP - maintenance - growth respiration"
+    emitted_in: ".dayout; annual ann NPP (gC/m2/yr) in text summary"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Annual NPP comparable to biometric inventory or MODIS NPP at the site"]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["When paired with a regional/national aggregate, compare detrended trend; aggregate may carry land-use signal the point model does not represent"]
+      detrending_options: ["none", "linear_residual", "decadal_mean"]
+  - var: "daily_nee"
+    validation_rank: 4
+    unit: "kgC/m2/d"
+    description: "Net ecosystem exchange = NEP - fire losses (negative = sink)"
+    emitted_in: ".dayout; annual NBP in text summary"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Eddy-covariance NEE; NEE realism requires completed spinup (cold-start NEE dominated by initial-condition artifacts persisting hundreds of years); CO2 mismatch between spinup and run drives a spurious source for 50+ yr"]
+      detrending_options: ["none"]
+  - var: "daily_nep"
+    validation_rank: 5
+    unit: "kgC/m2/d"
+    description: "Net ecosystem production = NPP - heterotrophic respiration"
+    emitted_in: ".dayout"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Same spinup-dependence as NEE"]
+      detrending_options: ["none"]
+  - var: "daily_hr"
+    validation_rank: 6
+    unit: "kgC/m2/d"
+    description: "Heterotrophic (decomposition) respiration"
+    emitted_in: ".dayout"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Partition of measured soil respiration into heterotrophic vs autotrophic is observationally uncertain"]
+      detrending_options: ["none"]
+  - var: "proj_lai"
+    validation_rank: 7
+    unit: "m2/m2"
+    description: "Projected leaf area index"
+    emitted_in: ".dayout (binary index 509); annual max LAI in text summary"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "timing_accuracy", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["MODIS LAI at the site; timing of green-up/senescence tests phenology, magnitude tests SLA/allocation"]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Peak-season satellite LAI map when run per-cell"]
+      detrending_options: ["none"]
+  - var: "vegc"
+    validation_rank: 8
+    unit: "kgC/m2"
+    description: "Total vegetation carbon stock"
+    emitted_in: ".annout (annual index 636)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Biomass inventory at the stand; equilibrium value depends on completed spinup"]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Biomass-carbon map when run per-cell"]
+      detrending_options: ["none"]
+  - var: "soilc"
+    validation_rank: 9
+    unit: "kgC/m2"
+    description: "Soil organic carbon stock (4 CENTURY-style SOM pools)"
+    emitted_in: ".annout (annual index 638)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Measured SOC stock; only meaningful after multi-century spinup to steady state"]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["SOC map (e.g. HWSD) when run per-cell"]
+      detrending_options: ["none"]
+  - var: "soilw"
+    validation_rank: 10
+    unit: "kgH2O/m2"
+    description: "Single-bucket soil water content"
+    emitted_in: ".dayout (binary index 20)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Single-bucket Clapp-Hornberger soil water is structurally different from multi-layer schemes; use for internal carbon control rather than as authoritative hydrology (magnitude is not directly comparable to a multi-layer scheme's column storage)"]
+      detrending_options: ["none"]
+  - var: "net_nmin"
+    validation_rank: 11
+    unit: "kgN/m2/d"
+    description: "Daily net nitrogen mineralization"
+    emitted_in: ".dayout"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["In-situ net mineralization assays are sparse and method-dependent"]
+      detrending_options: ["none"]
+  - var: "ET"
+    validation_rank: 3
+    unit: "kgH2O/m2/d"
+    description: "Evapotranspiration (Penman-Monteith): transpiration + canopy + bare-soil evaporation"
+    emitted_in: ".dayout / annual ann ET text summary"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Diagnostic-only when coupled to a hydrology model that owns the water balance; never add to discharge (double-counts basin ET)"]
+      detrending_options: ["none"]
+
+influence:
+  _caveat: "BIOME-BGC sensitivity-analysis studies typically vary ecophysiological/site parameters under fixed or single-site weather, so weather/boundary-forcing drivers (precipitation, ambient CO2) cannot be graded HIGH from the available quantitative SA literature even though they are mechanistically dominant — the quantitative variance/Morris/eFAST indices simply do not cover them. Forcing-driver edges are therefore capped at MEDIUM/literature_qualitative."
+  edges:
+    - {from: "leaf C:N", to: "daily_npp", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", applicability: "all biomes", citations: ["white2000_biomebgc_npp_sensitivity", "raj2014_biomebgc_variance_gpp_npp"]}
+    - {from: "fine-root C:N", to: "daily_npp", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", applicability: "all biomes", citations: ["white2000_biomebgc_npp_sensitivity", "raj2014_biomebgc_variance_gpp_npp"]}
+    - {from: "fraction of leaf N in Rubisco (FLNR)", to: "daily_gpp", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", citations: ["liu2022_biomebgc_rubber_gpp_efast", "raj2014_biomebgc_variance_gpp_npp", "fecs2022_biomebgcmuso_china_forests_gpp_npp"]}
+    - {from: "fraction of leaf N in Rubisco (FLNR)", to: "daily_npp", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", applicability: "woody biomes", citations: ["white2000_biomebgc_npp_sensitivity", "raj2014_biomebgc_variance_gpp_npp"]}
+    - {from: "specific leaf area (SLA)", to: "daily_gpp", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", citations: ["liu2022_biomebgc_rubber_gpp_efast", "fecs2022_biomebgcmuso_china_forests_gpp_npp"]}
+    - {from: "specific leaf area (SLA)", to: "daily_npp", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "parameter", applicability: "woody biomes", citations: ["white2000_biomebgc_npp_sensitivity"]}
+    - {from: "canopy light extinction coefficient (k)", to: "daily_gpp", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", citations: ["liu2022_biomebgc_rubber_gpp_efast"]}
+    - {from: "canopy light extinction coefficient (k)", to: "daily_nee", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", citations: ["liu2022_biomebgc_rubber_gpp_efast"]}
+    - {from: "maximum stomatal conductance", to: "daily_npp", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "parameter", applicability: "woody biomes", citations: ["white2000_biomebgc_npp_sensitivity"]}
+    - {from: "fine-root:leaf C allocation (FRC:LC)", to: "proj_lai", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", citations: ["jms2025_biomebgcmuso_grassland_fluxes", "liu2022_biomebgc_rubber_gpp_efast"]}
+    - {from: "stem:leaf C allocation (SC:LC)", to: "proj_lai", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", citations: ["jms2025_biomebgcmuso_grassland_fluxes", "liu2022_biomebgc_rubber_gpp_efast"]}
+    - {from: "shaded:sunlit SLA ratio (SLAshd:sun)", to: "daily_gpp", sensitivity_grade: "MEDIUM", basis: "literature_quantitative", lever_type: "parameter", citations: ["liu2022_biomebgc_rubber_gpp_efast"]}
+    - {from: "precipitation", to: "daily_npp", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "boundary_forcing", citations: ["white2000_biomebgc_npp_sensitivity"]}
+    - {from: "rooting depth", to: "daily_npp", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "parameter", citations: ["white2000_biomebgc_npp_sensitivity"]}
+    - {from: "soil sand fraction", to: "daily_npp", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "parameter", citations: ["white2000_biomebgc_npp_sensitivity"]}
+    - {from: "ambient CO2", to: "daily_npp", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "boundary_forcing", citations: ["white2000_biomebgc_npp_sensitivity"]}
+    - {from: "fire mortality fraction", to: "daily_npp", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "parameter", applicability: "nonwoody biomes", citations: ["white2000_biomebgc_npp_sensitivity"]}
+  citation_index:
+    white2000_biomebgc_npp_sensitivity:
+      short_citation: "White et al. 2000"
+      doi: "10.1175/1087-3562(2000)004<0003:PASAOT>2.0.CO;2"
+      note: "Foundational +/-20% factorial parameterization/sensitivity of BIOME-BGC NPP across biomes; leaf and fine-root C:N sensitive in all biomes, FLNR/SLA/gs-max and site drivers (precip, rooting depth, sand, CO2) in woody biomes, fire mortality in nonwoody; negligible parameter interactions"
+    raj2014_biomebgc_variance_gpp_npp:
+      short_citation: "Raj et al. 2014"
+      doi: "10.1016/j.ecolmodel.2014.08.012"
+      note: "Variance-based (Sobol) global SA of BIOME-BGC GPP/NPP; FLNR, leaf and fine-root C:N, and SLA dominant"
+    liu2022_biomebgc_rubber_gpp_efast:
+      short_citation: "Liu et al. 2022"
+      doi: "10.3390/ijerph192114068"
+      note: "eFAST global SA of BIOME-BGC GPP for a rubber plantation; top-7 carbon-flux params SLA, k, leaf C:N, FLNR, SLAshd:sun, FRC:LC, SC:LC; k and FLNR more sensitive to carbon than water flux"
+    fecs2022_biomebgcmuso_china_forests_gpp_npp:
+      short_citation: "Forest Ecosystems 2022"
+      doi: "10.1016/j.fecs.2022.100011"
+      note: "Morris + eFAST SA of Biome-BGCMuSo (sibling) for GPP/NPP across Chinese forests; SLA, FLNR, leaf/fine-root C:N, allocation ratios most sensitive"
+    jms2025_biomebgcmuso_grassland_fluxes:
+      short_citation: "J. Mountain Science 2025"
+      doi: "10.1007/s11629-025-9753-6"
+      note: "Sensitivity/optimization of Biome-BGCMuSo (sibling) grassland C/water fluxes; LAI highly sensitive to FRC:LC and SC:LC allocation ratios"
+
+safety:
+  hazards:
+    - {id: "precip_mm_not_cm", kind: "weather_file_semantic", description: "Precipitation supplied in mm/day instead of cm/day silently inflates GPP/NPP ~10x; met column 6 should be 0.0-3.0 cm (dt_007)", severity: "silent"}
+    - {id: "vpd_kpa_not_pa", kind: "weather_file_semantic", description: "VPD in kPa instead of Pa (1000x too low) leaves stomata always open and transpiration runaway; expected 200-4000 Pa (dt_008)", severity: "silent"}
+    - {id: "daylen_zero_missing", kind: "weather_file_semantic", description: "Day-length column 0/missing forces PAR=0 and GPP=0 every day while LAI still grows; daylen must be computed from latitude and day-of-year (~28000-60000 s mid-latitude) (dt_009)", severity: "silent"}
+    - {id: "temperature_kelvin", kind: "weather_file_semantic", description: "Air temperature in Kelvin instead of Celsius causes extreme respiration and wrong phenology timing (dt_010)", severity: "silent"}
+    - {id: "tday_column_missing", kind: "weather_file_semantic", description: "Tday column is read-but-discarded yet required for column alignment; omitting it shifts all subsequent met columns", severity: "silent"}
+    - {id: "met_header_or_delimiter", kind: "weather_file_semantic", description: "Wrong header_lines count or tab/inconsistent whitespace breaks the 9-column-per-day fscanf (parse failure or wrong day count) (dt_011)", severity: "fatal"}
+    - {id: "soil_texture_not_100", kind: "soil_semantic", description: "sand+silt+clay not summing to 100 or a negative texture value causes bad/negative soil-water-capacity allocation and a segfault at startup (dt_003)", severity: "fatal"}
+    - {id: "soil_depth_cm_not_m", kind: "soil_semantic", description: "Effective soil depth given in cm or wrong scale instead of meters causes instant soil drydown and runaway transpiration (dt_006)", severity: "silent"}
+    - {id: "co2_wrong_units", kind: "control_semantic", description: "CO2 in mole-fraction (0.00038) or ppb instead of ppm silently produces near-zero or massive GPP (dt_005)", severity: "silent"}
+    - {id: "ini_line_shift", kind: "control_semantic", description: "An extra/missing line or keyword in the .ini shifts every subsequent sequential scan_value() parameter by one line, silently producing wrong fluxes with no crash (dt_004)", severity: "silent"}
+    - {id: "ini_bad_file_path", kind: "control_semantic", description: "A met/epc/restart path in the .ini (relative to working directory, not the .ini location) pointing to a nonexistent file causes immediate exit with no output (dt_002)", severity: "fatal"}
+    - {id: "co2_spinup_run_mismatch", kind: "initial_condition_semantic", description: "CO2 (or N deposition) differing between spinup and the normal-run start year makes the ecosystem a spurious C source for 50+ years (dt_014)", severity: "degraded"}
+    - {id: "modern_ndep_in_spinup", kind: "initial_condition_semantic", description: "Modern (not pre-industrial ~0.0001) N deposition during spinup continuously fertilizes the ecosystem so SOC never equilibrates after 6000 model years (dt_012)", severity: "degraded"}
+    - {id: "sminn_goes_negative", kind: "initial_condition_semantic", description: "Centuries of high-C:N litter immobilization exceeding N inputs (fixation+deposition) drive soil mineral N negative during spinup (dt_013)", severity: "degraded"}
+    - {id: "restart_version_mismatch", kind: "initial_condition_semantic", description: "A .endpoint binary restart written by an incompatible/differently-compiled binary (different struct layout) yields read error or garbage state (dt_015)", severity: "fatal"}
+    - {id: "spinup_oscillation", kind: "numerical_instability", description: "Short (5-10 yr) high-variability met records recycled in spinup make SOC oscillate at the met-cycle length and never converge (dt_016)", severity: "degraded"}
+    - {id: "allocation_ratios_transposed", kind: "coefficient_runtime_silent_fallback", description: "Transposed/wrong .epc allocation ratios (froot:leaf, stem:leaf, livewood:wood, croot:stem) route all carbon to wood with no leaf growth (dt_019)", severity: "silent"}
+    - {id: "sla_too_high", kind: "coefficient_runtime_silent_fallback", description: "SLA set too high for the PFT increases leaf area per unit carbon, overestimating light interception and GPP vs FLUXNET (dt_018)", severity: "silent"}
+    - {id: "tropical_temperate_phenology", kind: "coefficient_runtime_silent_fallback", description: "Temperate DBF model-phenology .epc in a tropical climate never drops below the deciduous-offset threshold, so leaf-off never triggers (false-evergreen behavior) (dt_017)", severity: "silent"}
+  validation_limits:
+    - "Natural vegetation only (AVHRR classes 1-10); running on cropland/bare/urban/water (classes 11-14) produces physically meaningless results — route cropland to a crop model"
+    - "Default .epc parameters are generalized to coarse temperate vegetation classes; temperate ENF/DBF defaults underestimate tropical-forest GPP by 30-50% vs MODIS without tropical (EBF) parameterization"
+    - "Point/stand scale only; no internal lateral hydrology or routing — gridded coverage requires running one site per cell"
+    - "Single-bucket Clapp-Hornberger soil water cannot represent multi-layer infiltration; use an external hydrology model's soil water as authoritative when coupled"
+    - "Daily 365-day timestep with no leap years; cannot resolve sub-daily processes"
+    - "Spinup may fail to equilibrate (hit max spinup years) in boreal climates where the model predicts long-term net C accumulation / peat formation"
+  warnings:
+    - "NEE/NEP realism requires a completed multi-century spinup; cold-start net ecosystem exchange is dominated by initial-condition artifacts that persist for hundreds of years"
+    - "BIOME-BGC ET is diagnostic-only when coupled to a hydrology model that owns the water balance; never add it to discharge (double-counts basin ET ~2x)"
+    - ".ini files must never be hand-edited (keyword-section sequential parsing) and .epc files are strictly line-order-based (epc_init.c)"
+    - "Many internal rate constants are compile-time hardcoded and not user-adjustable: SOM-pool C:N (12/12/10/10), decomposition rate constants (KL1=0.7 ... KS4=0.0001 /day), respiration cascade fractions, Q10=2.0 maintenance respiration, growth-respiration fraction 0.3, DENITRIF_PROPORTION 0.01, MOBILEN_PROPORTION 0.1"
+  assumptions:
+    - statement: "Point-scale, single homogeneous stand per execution; spatial coverage is achieved by independent per-cell runs, not internal spatial resolution"
+      scope: "spatial geometry"
+      source: "Biome-BGC v4.1.2 User's Guide (UMT/NTSG), INPUT FILES OVERVIEW and project page"
+      status: "adopted"
+    - statement: "Mass-balance closure holds for carbon, nitrogen, and water across vegetation/litter/soil pools, enforced daily by check_balance; there is no closed surface energy budget"
+      scope: "conservation / closure"
+      source: "check_balance, daily_water/carbon/nitrogen_state_update behavior in bgc.c source and User's Guide closure notes"
+      status: "adopted"
+    - statement: "Soil temperature is corrected toward the simulation-wide annual-mean air temperature each day (0.83 of the way when snow is present, 0.2 without) as an in-driver side-effect of bgc.c, not an encapsulated soil-thermal module"
+      scope: "soil thermal state"
+      source: "soil_temp_correction coefficients in bgclib/bgc.c"
+      status: "adopted"
+    - statement: "Fire is a constant long-term fractional loss (e.g. 0.01/yr for a 100-yr return interval, default 20% combustion of dead woody material), not discrete timed events"
+      scope: "disturbance representation"
+      source: "Biome-BGC v4.1.2 User's Guide, epc fire-mortality line / UPDATES section"
+      status: "adopted"
+    - statement: "Only nitrogen retranslocates from leaves prior to litterfall (not carbon); leaf-litter C:N must be >= live-leaf C:N"
+      scope: "litterfall / N cycling"
+      source: "Biome-BGC v4.1.2 User's Guide, ecophysiology C:N notes"
+      status: "adopted"
+    - statement: "Boundary-layer and cuticular conductance are constant under all conditions, with boundary-layer conductance defined at an assumed constant 1 m/s windspeed"
+      scope: "canopy conductance"
+      source: "Biome-BGC v4.1.2 User's Guide, epc conductance lines 39-40"
+      status: "adopted"

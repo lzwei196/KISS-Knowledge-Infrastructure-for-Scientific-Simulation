@@ -16,6 +16,7 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -102,7 +103,8 @@ def convert_runoff(input_path: str, output_path: str, source_type: str,
                    surface_var: str, subsurface_var: str,
                    source_units: str, wetland_var: str = None,
                    time_var: str = 'time', lat_var: str = 'lat',
-                   lon_var: str = 'lon') -> dict:
+                   lon_var: str = 'lon',
+                   total_var: str = None, surface_fraction: float = 0.6) -> dict:
     """Convert runoff data to mosartwmpy format.
 
     Args:
@@ -116,6 +118,13 @@ def convert_runoff(input_path: str, output_path: str, source_type: str,
         time_var: Name of time dimension
         lat_var: Name of latitude dimension
         lon_var: Name of longitude dimension
+        total_var: Name of a single COMBINED total-runoff variable. When given,
+            the source provides total runoff in one field (e.g. VIC-for-CaMa
+            'Runoff') and it is partitioned into QOVER/QDRAI by surface_fraction
+            instead of reading separate surface/subsurface variables.
+        surface_fraction: Fraction of total runoff assigned to surface QOVER
+            when total_var is used (subsurface QDRAI gets 1-fraction). Default
+            0.6 (typical surface/subsurface partition; matches Bengbu setup).
 
     Returns:
         Dictionary with conversion statistics
@@ -134,17 +143,39 @@ def convert_runoff(input_path: str, output_path: str, source_type: str,
     # Open source dataset
     ds = xr.open_dataset(input_path)
 
-    # Validate input
-    input_errors = validate_input(ds, surface_var, subsurface_var,
-                                  time_var, lat_var, lon_var)
-    if input_errors:
-        ds.close()
-        raise ValueError("Input validation failed:\n  " +
-                         "\n  ".join(input_errors))
+    if total_var:
+        # Combined total-runoff source: split into surface/subsurface by fraction.
+        if not (0.0 <= surface_fraction <= 1.0):
+            ds.close()
+            raise ValueError(
+                f"surface_fraction must be in [0,1], got {surface_fraction}")
+        if total_var not in ds:
+            ds.close()
+            raise ValueError(
+                f"Total runoff variable '{total_var}' not found. "
+                f"Available: {list(ds.data_vars)}")
+        for cv, label in ((time_var, 'Time'), (lat_var, 'Latitude'),
+                          (lon_var, 'Longitude')):
+            if cv not in ds.dims and cv not in ds.coords:
+                ds.close()
+                raise ValueError(f"{label} coordinate '{cv}' not found.")
+        print(f"[convert_runoff] Splitting combined '{total_var}' into "
+              f"QOVER={surface_fraction:.2f}, QDRAI={1-surface_fraction:.2f}")
+        total = ds[total_var].values * conversion_factor
+        surface = total * surface_fraction
+        subsurface = total * (1.0 - surface_fraction)
+    else:
+        # Validate input (separate surface + subsurface variables)
+        input_errors = validate_input(ds, surface_var, subsurface_var,
+                                      time_var, lat_var, lon_var)
+        if input_errors:
+            ds.close()
+            raise ValueError("Input validation failed:\n  " +
+                             "\n  ".join(input_errors))
 
-    # Apply unit conversion
-    surface = ds[surface_var].values * conversion_factor
-    subsurface = ds[subsurface_var].values * conversion_factor
+        # Apply unit conversion
+        surface = ds[surface_var].values * conversion_factor
+        subsurface = ds[subsurface_var].values * conversion_factor
 
     # Replace NaN with 0 (mosartwmpy expects finite values)
     surface = np.where(np.isfinite(surface), surface, 0.0)
@@ -187,6 +218,12 @@ def convert_runoff(input_path: str, output_path: str, source_type: str,
         })
 
     out_ds = xr.Dataset(out_vars, coords=coords)
+    # mosartwmpy's load_runoff index-aligns runoff to the grid by flattening
+    # (lat-major) and applying the grid mask — it does NOT align by coordinate.
+    # So runoff lat/lon order MUST match the model grid. Canonicalize to
+    # ascending lat/lon (the standard orientation grids are built in); this
+    # flips sources like VIC-for-CaMa that store descending latitudes.
+    out_ds = out_ds.sortby('lat').sortby('lon')
     out_ds.attrs['source_type'] = source_type
     out_ds.attrs['source_file'] = str(input_path)
     out_ds.attrs['conversion_factor'] = conversion_factor
@@ -243,6 +280,12 @@ def main():
     parser.add_argument('--time-var', default='time')
     parser.add_argument('--lat-var', default='lat')
     parser.add_argument('--lon-var', default='lon')
+    parser.add_argument('--total-var', default=None,
+                        help='Single combined total-runoff variable to split '
+                             'into QOVER/QDRAI (e.g. VIC-for-CaMa "Runoff")')
+    parser.add_argument('--surface-fraction', type=float, default=0.6,
+                        help='Surface fraction when --total-var is used '
+                             '(default 0.6 surface / 0.4 subsurface)')
 
     args = parser.parse_args()
 
@@ -252,9 +295,11 @@ def main():
             args.surface_var, args.subsurface_var,
             args.source_units, args.wetland_var,
             args.time_var, args.lat_var, args.lon_var,
+            args.total_var, args.surface_fraction,
         )
         print("[convert_runoff] SUCCESS")
-        sys.exit(0)
+        sys.stdout.flush(); sys.stderr.flush()
+        os._exit(0)
     except Exception as e:
         print(f"[convert_runoff] FAILED: {e}", file=sys.stderr)
         sys.exit(1)

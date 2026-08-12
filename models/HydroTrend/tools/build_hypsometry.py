@@ -239,7 +239,15 @@ def build_manual(min_elev, max_elev, total_area, n_bins):
         x = i / (n_bins - 1)
         # Power-law cumulative area (concave-up)
         area = total_area * (x ** 1.5)
-        elevations.append(round(elev, 1))
+        # CRITICAL: hydroreadhypsom.c requires EVERY elevation bin size to be
+        # equal to within masscheck (~1e-5 m); it computes binsize from
+        # bins 0->1 and aborts ("elevation bin size is not equal") on any later
+        # pair that differs. Rounding the elevation to 1 decimal makes the
+        # spacing unequal whenever (max-min)/(n-1) is not a clean 1-decimal
+        # number (e.g. 1200/45 = 26.666... -> 26.7, 53.3, ... diff 0.1 >> 1e-5).
+        # Keep full float precision so consecutive differences stay exactly
+        # bin_size. (DEM/CSV paths already step by an exact bin_size.)
+        elevations.append(elev)
         areas.append(round(area, 2))
 
     # Ensure first area is 0
@@ -289,6 +297,12 @@ def main():
                         help="Number of bins (manual mode)")
     parser.add_argument("--prefix", default="HYDRO",
                         help="File prefix for header")
+    parser.add_argument("--no-anchor", action="store_true",
+                        help="Do NOT shift the curve so its first bin is 0 m. "
+                             "By default the hypsometry is anchored to 0 m "
+                             "(height above the river mouth) as required by "
+                             "HydroTrend's 0-based bin interpolation. Only use "
+                             "this if the basin floor is already at/near 0 m.")
     args = parser.parse_args()
 
     # Step 1: Validate inputs
@@ -312,6 +326,28 @@ def main():
     except Exception as e:
         print(json.dumps({"status": "error", "message": str(e)}, indent=2))
         sys.exit(1)
+
+    # Step 2b: Anchor the curve to elevation 0 (height above the river mouth).
+    # HydroTrend's hydrohypsom.c builds elevation bins as elevbins[kk] = kk *
+    # elevbinsize starting at 0, then linearly interpolates the cumulative area
+    # for every bin from the supplied hypsometry. Any bin BELOW the first
+    # hypsometry elevation cannot be interpolated and the model aborts with
+    # "Hypsometric elevation not interpolated". For an inland/upland basin whose
+    # floor sits well above sea level (e.g. 597 m), absolute-ASL elevations make
+    # the model fail. HydroTrend treats hypsometry elevation as height ABOVE the
+    # river mouth, so we shift the curve down by its minimum, giving a first
+    # point at 0 m with 0 area. Relief and per-bin areas are unchanged; the
+    # lapse-rate freezing line is computed relative to the outlet, which is
+    # exactly HydroTrend's convention.
+    if not args.no_anchor and elevations and elevations[0] > 0:
+        offset = elevations[0]
+        elevations = [round(e - offset, 2) for e in elevations]
+        print(
+            f"INFO: shifted hypsometry down by {offset} m so the first bin is "
+            f"0 m (height above river mouth) — required by HydroTrend "
+            f"hydrohypsom 0-based bin interpolation.",
+            file=sys.stderr,
+        )
 
     # Step 3: Validate outputs
     warnings = validate_hypsometry(elevations, areas)

@@ -1,0 +1,676 @@
+template_version: "3.5"
+
+identity:
+  model_id: CWatM
+  long_name: Community Water Model
+  ki_class: forward_model
+  scientific_reference_version: "CWatM v1.04 (Burek et al. 2020, GMD 13:3267-3298, doi:10.5194/gmd-13-3267-2020)"
+  implementation:
+    id: cwatm
+    version: "1.5 (develop branch, commit 5e5c455)"
+    provenance: "Python 3.8+ terrestrial water-cycle model with a C++ kinematic-routing acceleration library (t5 shared object); IIASA Water Security group, repo iiasa/CWatM."
+  language: python
+  license: GPL-3.0
+  repo_url: "https://github.com/iiasa/CWatM"
+  developer: "IIASA Water Security Research Group"
+  _note: "scientific_reference_version pins the canonical Burek 2020 v1.04 science spec; implementation.version is the actual runnable develop-branch binding this KI wraps. Docs site (1.1.0) and GitHub release (1.081) are sibling versions — see OBSERVED CONFLICTS."
+
+boundary:
+  scope_in:
+    - "Terrestrial water cycle simulated daily: precipitation/snow partitioning, evapotranspiration, soil water dynamics, groundwater, surface-water and channel routing"
+    - "Water availability, demand and water stress across river basins"
+    - "Human water use and abstraction (irrigation, industry, domestic, livestock) including return flows"
+    - "Water-infrastructure effects: reservoirs, lakes, groundwater pumping, irrigation"
+    - "Groundwater (linear-reservoir baseflow; optional MODFLOW 6 distributed coupling)"
+    - "Environmental-flow assessment; optional limited water-quality metrics (water temperature, travel time)"
+  scope_out:
+    - "Detailed water-quality chemistry"
+    - "Sediment transport"
+    - "Explicit glacier dynamics (high-altitude ice melt is emulated unless OGGM-coupled)"
+  spatial: distributed-stream
+  temporal: daily
+  closure: mass-balance
+  notes: "Gridded distributed model (0.5 deg / 5 arcmin / 1 km) with kinematic-wave stream routing on a local-drain-direction network; sub-grid heterogeneity via up to 10 DEM elevation zones and six fractional land-cover classes, real cell flux = fraction-weighted sum. Mass-balance closure applies to water (DeltaS = P - ET - Q_out + Q_in, closes to within ~1% over multi-year periods). River routing advances on sub-daily substeps internally while most processes and I/O are daily. No surface energy-balance closure: PET is a demand-side Penman-Monteith/Priestley-Taylor flux, not a closed energy budget."
+
+inputs:
+  forcing:
+    - category: forcing
+      name: Precipitation
+      unit: "kg m-2 s-1 (or m/day, mm/day)"
+      source_kind: atmospheric_forcing
+      model_input_format: "daily gridded NetCDF over model domain; multiplied internally by precipitation_coversion (default 86.4) to m/day"
+      notes: "Conversion factor must match input units; mismatch is silent (see safety)."
+    - category: forcing
+      name: Average air temperature (Tavg)
+      unit: "K (or degC)"
+      source_kind: atmospheric_forcing
+      model_input_format: "daily gridded NetCDF; unit governed by TemperatureInKelvin flag"
+    - category: forcing
+      name: Minimum / maximum air temperature (Tmin, Tmax)
+      unit: "K"
+      source_kind: atmospheric_forcing
+      model_input_format: "daily gridded NetCDF"
+      notes: "Penman-Monteith ET path only."
+    - category: forcing
+      name: Surface pressure
+      unit: "Pa"
+      source_kind: atmospheric_forcing
+      model_input_format: "daily gridded NetCDF; Penman-Monteith path"
+    - category: forcing
+      name: Humidity (relative % or specific kg/kg)
+      unit: "% or kg/kg"
+      source_kind: atmospheric_forcing
+      model_input_format: "daily gridded NetCDF; RhsMaps or QAirMaps (useHuss flag)"
+    - category: forcing
+      name: Wind speed (10 m)
+      unit: "m/s"
+      source_kind: atmospheric_forcing
+      model_input_format: "daily gridded NetCDF; Penman-Monteith path"
+    - category: forcing
+      name: Downward shortwave radiation
+      unit: "W m-2"
+      source_kind: atmospheric_forcing
+      model_input_format: "daily gridded NetCDF; converted internally W/m2 -> MJ"
+    - category: forcing
+      name: Downward longwave radiation
+      unit: "W m-2"
+      source_kind: atmospheric_forcing
+      model_input_format: "daily gridded NetCDF; Penman-Monteith path"
+    - category: forcing
+      name: Reference ET (pre-computed, water E0 / crop ET)
+      unit: "m/day"
+      source_kind: atmospheric_forcing
+      model_input_format: "daily gridded NetCDF; ALTERNATIVE to computing PET from meteo when calc_evaporation off"
+    - category: forcing
+      name: CO2 concentration
+      unit: "ppm"
+      source_kind: atmospheric_forcing
+      model_input_format: "optional time series; enables CO2-sensitive stomatal term in Penman-Monteith"
+  parameters:
+    - category: parameters
+      name: Local drain direction (Ldd)
+      unit: "1-9 PCRaster code (5=pit)"
+      source_kind: dataset
+      model_input_format: "static NetCDF/PCRaster map defining channel connectivity"
+    - category: parameters
+      name: Digital elevation model + elevation std dev
+      unit: "m"
+      source_kind: dataset
+      model_input_format: "static NetCDF (SRTM <=60N, Hydro1k >60N); std dev drives snow-zone partitioning"
+    - category: parameters
+      name: River channel properties (length, gradient, width, depth, Manning n)
+      unit: "m, dimensionless, s/m^(1/3)"
+      source_kind: dataset
+      model_input_format: "static NetCDF maps; chanGrad enforced >= 0.0001"
+    - category: parameters
+      name: Soil hydraulic parameters (KSat1/2/3, alpha, lambda, thetas, thetar, StorDepth)
+      unit: "cm/day, 1/cm, -, -, -, m"
+      source_kind: dataset
+      model_input_format: "static NetCDF per 3 soil layers; van Genuchten retention"
+    - category: parameters
+      name: Land-cover fractions + per-type vegetation params (root depth, interception capacity, crop coefficient, depletion factor)
+      unit: "fraction, m, -"
+      source_kind: dataset
+      model_input_format: "NetCDF fractional coverage of 6 classes summing to 1.0 per cell"
+    - category: parameters
+      name: Groundwater recession constant and reservoir/storage coefficient
+      unit: "frac, day"
+      source_kind: calibrated
+      model_input_format: "map or scalar; recessionCoeff clamped [5e-4,1.0], specificYield clamped [0.01,1.0] in code"
+    - category: parameters
+      name: Lakes & reservoirs (HydroLakes geometry; reservoir operating rules)
+      unit: "m3, fraction"
+      source_kind: dataset
+      model_input_format: "static maps + storage thresholds (conservative/normal/flood) and outflow functions"
+    - category: parameters
+      name: Monthly water-demand maps (industry, domestic)
+      unit: "volume per timestep"
+      source_kind: dataset
+      model_input_format: "monthly NetCDF demand maps"
+    - category: parameters
+      name: Calibration parameters (SnowMeltCoef, arnoBeta_add, soildepth_factor, factor_interflow, recessionCoeff_factor, crop_correct, manningsN, preferentialFlowConstant, normalStorageLimit, lakeAFactor, lakeEvaFactor)
+      unit: "various (dimensionless multipliers/shape factors)"
+      source_kind: calibrated
+      model_input_format: "scalar multipliers/shape factors in settings; tuned against observed discharge via KGE'"
+      notes: "Curated Burek 2020 set; the dominant controls on simulated streamflow (see influence)."
+  initial_conditions:
+    - category: initial_conditions
+      name: Initial soil moisture (3 layers), groundwater storage, snow cover, channel storage, lake/reservoir storage
+      unit: "m / m3"
+      source_kind: warm_start_or_default
+      model_input_format: "NetCDF state snapshot (load_initial/initLoad) or zero defaults"
+      notes: "Defaults of zero storage require 3-5 yr spinup for groundwater/soil equilibration; output written only after SpinUp date."
+  boundary_conditions:
+    - category: boundary_conditions
+      name: Process/method switches
+      unit: "boolean / enum"
+      source_kind: user_choice
+      model_input_format: "settings flags: calc_evaporation (PM vs Priestley-Taylor/Hamon vs pre-computed), includeIrrigation, includeWaterDemand, includeWaterBodies, includeRouting, modflow coupling, TemperatureInKelvin"
+      notes: "Structural switches selecting which processes/numerics are active."
+    - category: boundary_conditions
+      name: Water-demand / abstraction scenario
+      unit: "volume per timestep"
+      source_kind: user_choice
+      model_input_format: "sectoral demand drivers (domestic/industry/livestock/irrigation) and source-priority (surface/groundwater/desalination/fossil)"
+    - category: boundary_conditions
+      name: Simulation period and calendar
+      unit: "date"
+      source_kind: user_choice
+      model_input_format: "StepStart/StepEnd (DD/MM/YYYY); standard or 360-day calendar"
+    - category: boundary_conditions
+      name: Optional upstream couplings (MODFLOW 6 groundwater, OGGM glacier inflow)
+      unit: "m/day flux"
+      source_kind: coupling
+      model_input_format: "external model fluxes injected when coupling enabled"
+
+processes:
+  modules:
+    - name: readmeteo
+      role: driver
+      brief: "Reads/interpolates meteorological forcing (precip, temperature, radiation, wind, humidity) each timestep and elevation-downscales; supports radiation-only datasets."
+    - name: evaporationPot
+      role: process_solver
+      brief: "Potential ET via Penman-Monteith (FAO-56) or Priestley-Taylor/Hamon; hardcoded FAO radiation/emissivity/psychrometric constants; optional CO2-sensitive stomatal term."
+    - name: snow_frost
+      role: process_solver
+      brief: "Rain/snow partition at ~1 C threshold; modified degree-day snow/ice melt with seasonal factor and optional radiation term over up to 10 elevation zones; Molnau-Bissell frost index gates infiltration."
+    - name: interception
+      role: process_solver
+      brief: "Canopy/surface interception storage and interception evaporation per land cover; passes throughfall to the soil column."
+    - name: soil
+      role: process_solver
+      brief: "3-layer soil column with Arno/Xinanjiang heterogeneous-runoff scheme, van Genuchten percolation under a Courant-limited substep loop; top layer fixed at 0.05 m; produces direct runoff, interflow and recharge."
+    - name: landcoverType
+      role: allocator
+      brief: "Splits each cell into six land-cover fractions (forest/grassland/irrigated/paddy/sealed/water) and invokes the soil and evaporation solvers once per fraction; handles irrigation fraction and dynamic land cover."
+    - name: evaporation
+      role: process_solver
+      brief: "Actual ET per land cover from PET via crop coefficients (Kc) and soil-moisture water-stress limitation."
+    - name: capillarRise
+      role: process_solver
+      brief: "Upward capillary flux from groundwater into the lower soil layers."
+    - name: groundwater
+      role: process_solver
+      brief: "Single linear-reservoir groundwater: recharge in, baseflow = recessionCoeff x storage out; updates storGroundwater."
+    - name: groundwater_modflow
+      role: optional_module
+      brief: "Optional MODFLOW 6 / Flopy distributed groundwater replacing the linear reservoir when modflow coupling is enabled; feeds groundwater_storage_available and requires finalize() at run end."
+    - name: runoff_concentration
+      role: integrator
+      brief: "Concentrates direct runoff + interflow + baseflow to the cell outlet via a triangular-weighting delay before channel routing."
+    - name: lakes_res_small
+      role: process_solver
+      brief: "Sub-grid small lakes/wetlands storage and weir/linear outflow with small-lake evaporation; attenuates runoff before routing."
+    - name: routing_kinematic
+      role: integrator
+      brief: "Kinematic-wave river routing solving channelStorage/discharge with Manning's relation on sub-daily substeps (C++ t5 acceleration); channel evaporation."
+    - name: lakes_reservoirs
+      role: process_solver
+      brief: "Large lakes (Poleni weir) and reservoirs (three storage limits + three outflow functions) inline with the channel network; lake/reservoir storage and evaporation."
+    - name: water_demand
+      role: allocator
+      brief: "Sectoral demand (domestic/industry/livestock/irrigation) and abstraction allocation across surface, groundwater and optional desalination/fossil sources; produces unmetDemand and irrigation return flow."
+    - name: environflow
+      role: optional_module
+      brief: "Environmental-flow requirement assessment from routed discharge; can run as a standalone EF-only mode or after the main run."
+    - name: waterquality1
+      role: optional_module
+      brief: "Optional water-quality module operating on routed flow and soil/groundwater stores."
+  internal_edges:
+    - from: Climate
+      to: readmeteo
+      kind: consumes_input
+      brief: "Reads precip, temperature, radiation, wind and humidity forcing into shared meteo arrays each timestep."
+    - from: readmeteo
+      to: evaporationPot
+      kind: invokes
+      brief: "PET solver consumes radiation, temperature, humidity and wind."
+    - from: readmeteo
+      to: snow_frost
+      kind: invokes
+      brief: "Temperature drives rain/snow partition and day-degree melt."
+    - from: snow_frost
+      to: SnowCover
+      kind: writes_state
+      brief: "Accumulation/melt over elevation zones updates snow water equivalent."
+    - from: snow_frost
+      to: FrostIndex
+      kind: writes_state
+      brief: "Updates the Molnau-Bissell continuous frost index."
+    - from: FrostIndex
+      to: soil
+      kind: reads_state
+      brief: "Frost index above threshold halts infiltration/percolation/capillary rise."
+    - from: snow_frost
+      to: interception
+      kind: invokes
+      brief: "Rain plus snowmelt supplied as throughfall input."
+    - from: interception
+      to: soil
+      kind: invokes
+      brief: "Net rainfall after canopy interception enters the soil column."
+    - from: landcoverType
+      to: soil
+      kind: invokes
+      brief: "Drives the soil solver once per land-cover fraction."
+    - from: landcoverType
+      to: evaporation
+      kind: invokes
+      brief: "Applies crop coefficients per land cover to compute actual ET."
+    - from: evaporationPot
+      to: evaporation
+      kind: invokes
+      brief: "Actual ET scales PET by Kc and soil-moisture availability."
+    - from: soil
+      to: soil_moisture
+      kind: writes_state
+      brief: "Updates the 3-layer soil water content (w1/w2/w3)."
+    - from: soil
+      to: groundwater
+      kind: invokes
+      brief: "Percolation/recharge from the bottom soil layer feeds the groundwater store."
+    - from: capillarRise
+      to: soil_moisture
+      kind: writes_state
+      brief: "Upward flux from groundwater raises lower-layer soil moisture."
+    - from: groundwater
+      to: storGroundwater
+      kind: writes_state
+      brief: "Linear reservoir updates storage and emits baseflow."
+    - from: groundwater_modflow
+      to: storGroundwater
+      kind: writes_state
+      brief: "When MODFLOW coupling is enabled this module replaces the linear reservoir and feeds groundwater_storage_available into TWS instead of storGroundwater."
+    - from: soil
+      to: runoff_concentration
+      kind: invokes
+      brief: "Direct runoff and interflow components passed to concentration."
+    - from: groundwater
+      to: runoff_concentration
+      kind: invokes
+      brief: "Baseflow passed to concentration."
+    - from: lakes_res_small
+      to: runoff_concentration
+      kind: invokes
+      brief: "Small lakes intercept/attenuate runoff before routing."
+    - from: runoff_concentration
+      to: routing_kinematic
+      kind: invokes
+      brief: "Concentrated lateral inflow enters the channel network."
+    - from: routing_kinematic
+      to: channelStorage
+      kind: writes_state
+      brief: "Kinematic wave updates channel storage and discharge."
+    - from: lakes_reservoirs
+      to: routing_kinematic
+      kind: invokes
+      brief: "Lakes/reservoirs modify channel inflow/outflow inline with routing."
+    - from: lakes_reservoirs
+      to: lakeResStorage
+      kind: writes_state
+      brief: "Updates large lake and reservoir storage."
+    - from: routing_kinematic
+      to: water_demand
+      kind: invokes
+      brief: "Available channel/surface water supplies abstraction allocation."
+    - from: storGroundwater
+      to: water_demand
+      kind: reads_state
+      brief: "Groundwater storage availability constrains groundwater abstraction."
+    - from: water_demand
+      to: soil
+      kind: invokes
+      brief: "Irrigation application returns water to irrigated/paddy soil fractions."
+    - from: water_demand
+      to: unmetDemand_runningSum
+      kind: writes_state
+      brief: "Unsatisfied demand accumulated as fossil-groundwater/unmet-demand running sum."
+    - from: routing_kinematic
+      to: environflow
+      kind: invokes
+      brief: "Discharge time series feeds environmental-flow assessment."
+    - from: routing_kinematic
+      to: waterquality1
+      kind: invokes
+      brief: "Routed flow drives optional water-quality computations."
+    - from: routing_kinematic
+      to: Outputs
+      kind: produces_output
+      brief: "Channel discharge is the primary reported output; configured stores/fluxes written to NetCDF/TSS."
+
+states:
+  provenance: populated
+  variables:
+    - name: soil_moisture
+      role: prognostic
+      unit: "m (per layer w1/w2/w3; docs report mm)"
+      brief: "3-layer Arno/van Genuchten soil water content; carryover store per land-cover fraction."
+    - name: SnowCover
+      role: prognostic
+      unit: "m SWE (summed over elevation layers; SnowCoverS is the per-zone list; docs report mm)"
+      brief: "Snow water equivalent accumulated/melted by snow_frost."
+    - name: FrostIndex
+      role: prognostic
+      unit: "Molnau-Bissell continuous frost index (maxFrostIndex carries the seasonal max; docs report C-days)"
+      brief: "Frozen-ground index gating soil processes; daily decay coefficient ~0.97."
+    - name: storGroundwater
+      role: prognostic
+      unit: "m"
+      brief: "Non-fossil groundwater storage of the linear reservoir; groundwater_storage_available substitutes under MODFLOW."
+    - name: channelStorage
+      role: prognostic
+      unit: "m3"
+      brief: "Kinematic-wave channel storage."
+    - name: lakeResStorage
+      role: prognostic
+      unit: "m3"
+      brief: "Large lakes + reservoirs storage; smalllakeStorage and lakeReservoirStorage are the related small-body and combined stores."
+    - name: totalSto
+      role: prognostic
+      unit: "m"
+      brief: "Total soil + snow + vegetation storage per cell."
+    - name: tws
+      role: prognostic
+      unit: "m"
+      brief: "Total water storage = groundwater + soil + lakes/reservoirs + channel; integrated each step in cwatm_dynamic."
+    - name: unmetDemand_runningSum
+      role: accumulator
+      unit: "m"
+      brief: "Cumulative integral of unmet water demand (fossil-groundwater proxy); the clearest cumulative store in the model."
+    - name: totalET
+      role: diagnostic
+      unit: "m"
+      brief: "Total actual ET per cell across land covers; per-timestep, no carryover (totalET_WB includes waterbody evaporation)."
+    - name: SnowMelt
+      role: diagnostic
+      unit: "m"
+      brief: "Per-timestep snowmelt flux."
+    - name: IceMelt
+      role: diagnostic
+      unit: "m"
+      brief: "Per-timestep emulated high-altitude ice melt."
+    - name: Rain
+      role: diagnostic
+      unit: "m"
+      brief: "Liquid precipitation (precip less snow) per timestep."
+    - name: Snow
+      role: diagnostic
+      unit: "m"
+      brief: "Solid precipitation per timestep."
+    - name: EvapWaterBodyM
+      role: diagnostic
+      unit: "m"
+      brief: "Per-timestep evaporation from lakes/reservoirs (smallevapWaterBody for small lakes, EvapoChannel for channel)."
+  note: "Units follow the model-internal source values (m for water depths, continuous index for frost); the CWatM docs report the same quantities in mm and C-days. Input/parameter/flag fields surfaced by the source reader (Tavg, Precipitation, Rsds/Rsdl, EAct, InvCellArea, soildepth, fracVegCover, fracGlacierCover, recessionCoeff, specificYield, modflow, dynamicLandcover) are deliberately excluded from variables[] - they are forcing/parameters/switches, not state."
+
+outputs:
+  - var: discharge
+    validation_rank: 1
+    unit: "m3/s"
+    description: "Channel/river flow - the primary reported and calibrated variable."
+    emitted_in: "NetCDF map / TSS time series at the configured aggregation suffix"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["Exclude spinup period; daily NSE structurally lower than monthly; filter near-zero negative discharge from routing numerics; check gauge-to-grid-cell upstream-area mapping on coarse grids."]
+        - obs_shape: regional_aggregate_time_series
+          comparison_mode: aggregate_trend_comparison
+          metric_families: [trend_match, magnitude_accuracy]
+          determining_metric: "pbias"
+          caveats: ["Basin-aggregate or long-term-mean comparison when point gauges are unavailable."]
+      detrending_options: []
+  - var: tws
+    validation_rank: 2
+    unit: "m"
+    description: "Total water storage anomaly (groundwater + soil + surface water + snow)."
+    emitted_in: "NetCDF map"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: spatial_time_series
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match, temporal_pattern_match]
+          determining_metric: "r"
+          caveats: ["GRACE-class TWS is a coarse anomaly; compare anomalies not absolute storage; resolution mismatch."]
+      detrending_options: ["anomaly relative to multi-year mean"]
+  - var: totalET
+    validation_rank: 3
+    unit: "m"
+    description: "Total actual evapotranspiration."
+    emitted_in: "NetCDF map at requested aggregation"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: spatial_time_series
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match, magnitude_accuracy]
+          determining_metric: "csi"
+          caveats: ["Remote-sensing ET products carry their own structural bias."]
+      detrending_options: []
+  - var: SnowCover
+    validation_rank: 4
+    unit: "m SWE"
+    description: "Snow water equivalent (state, reportable)."
+    emitted_in: "NetCDF map"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: spatial_time_series
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match, timing_accuracy]
+          determining_metric: "csi"
+          caveats: ["Satellite snow-cover-area is fractional extent, not SWE depth; compare melt-out timing carefully."]
+      detrending_options: []
+  - var: storGroundwater
+    validation_rank: 5
+    unit: "m"
+    description: "Linear-reservoir groundwater storage (state)."
+    emitted_in: "NetCDF map"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match]
+          determining_metric: "nse"
+          caveats: ["Water-table fluctuations reproduce better than absolute storage; absolute depth is resolution-sensitive (Guillaumot 2022)."]
+      detrending_options: []
+  - var: baseflow
+    validation_rank: 6
+    unit: "m"
+    description: "Groundwater contribution to streamflow."
+    emitted_in: "NetCDF map at requested aggregation"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match]
+          determining_metric: "nse"
+          caveats: ["Baseflow separation from observed hydrographs is itself uncertain."]
+      detrending_options: []
+  - var: sum_gwRecharge
+    validation_rank: 7
+    unit: "m"
+    description: "Groundwater recharge flux."
+    emitted_in: "NetCDF map at requested aggregation"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: regional_aggregate_time_series
+          comparison_mode: aggregate_trend_comparison
+          metric_families: [magnitude_accuracy]
+          determining_metric: "pbias"
+          caveats: ["Rarely directly observed; compared against recharge estimates with large uncertainty."]
+      detrending_options: []
+  - var: unmetDemand
+    validation_rank: 8
+    unit: "m"
+    description: "Unsatisfied water demand (water-stress indicator)."
+    emitted_in: "NetCDF map / TSS"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: regional_aggregate_time_series
+          comparison_mode: aggregate_trend_comparison
+          metric_families: [magnitude_accuracy, ranking_quality]
+          determining_metric: "spearman"
+          caveats: ["No direct observation; benchmarked against reported water-stress/abstraction statistics."]
+      detrending_options: []
+
+influence:
+  _caveat: "No peer-reviewed study reporting variance-based (Sobol) or screening (Morris/EFAST) global sensitivity indices specific to CWatM was found. All edges below are grounded only in CWatM's curated calibration-parameter set (Burek 2020) plus coupling-paper process findings (Guillaumot 2022, Hanus 2024) - i.e. documented hydrological role, NOT quantified sensitivity indices. Per the unified evidence standard, none of these edges qualifies for HIGH (which requires a quantitative Sobol St>=0.3 / Morris top-3 / EFAST main>=0.3); every edge is therefore capped at MEDIUM with basis literature_qualitative until a quantitative CWatM SA is published."
+  edges:
+    - from: "snow-melt degree-day factor (SnowMeltCoef)"
+      to: discharge
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "snow- and glacier-dominated basins"
+      citations: ["burek2020_cwatm_development", "hanus2024_oggm_cwatm"]
+    - from: "soil infiltration-capacity shape parameter (arnoBeta)"
+      to: surface_runoff
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["burek2020_cwatm_development"]
+    - from: "groundwater recession coefficient (recessionCoeff_factor)"
+      to: baseflow
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["burek2020_cwatm_development", "guillaumot2022_cwatm_modflow"]
+    - from: "groundwater reservoir constant (Tbase)"
+      to: baseflow
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["burek2020_cwatm_development", "guillaumot2022_cwatm_modflow"]
+    - from: "soil-depth factor (soildepth_factor)"
+      to: discharge
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["burek2020_cwatm_development"]
+    - from: "preferential/bypass-flow shape (preferentialFlowConstant)"
+      to: groundwater_recharge
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["burek2020_cwatm_development", "guillaumot2022_cwatm_modflow"]
+    - from: "interflow factor (factor_interflow)"
+      to: discharge
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["burek2020_cwatm_development"]
+    - from: "crop-factor correction (crop_correct)"
+      to: evapotranspiration
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["burek2020_cwatm_development"]
+    - from: "runoff concentration factor"
+      to: discharge
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["burek2020_cwatm_development"]
+    - from: "Manning's roughness coefficient (manningsN)"
+      to: discharge
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["burek2020_cwatm_development"]
+    - from: "precipitation correction factor"
+      to: discharge
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "mountain / data-sparse basins"
+      citations: ["hanus2024_oggm_cwatm"]
+  citation_index:
+    burek2020_cwatm_development:
+      short_citation: "Burek et al. 2020"
+      doi: "10.5194/gmd-13-3267-2020"
+      note: "CWatM v1.04 model-description paper; defines the curated calibration-parameter set (snowmelt degree-day, Arno b, soil-depth factor, interflow, recession/reservoir constant, runoff concentration, Manning) selected for dominant control on simulated discharge via DEAP/NSGA-II KGE' calibration. Qualitative role, not a quantitative SA."
+    guillaumot2022_cwatm_modflow:
+      short_citation: "Guillaumot et al. 2022"
+      doi: "10.5194/gmd-15-7099-2022"
+      note: "CWatM-MODFLOW6 coupling; recession/reservoir constant and preferential-flow partitioning strongly control baseflow and water-table dynamics; absolute depth resolution-sensitive."
+    hanus2024_oggm_cwatm:
+      short_citation: "Hanus et al. 2024"
+      doi: "10.5194/gmd-17-5123-2024"
+      note: "OGGM-CWatM coupling; snowmelt degree-day factor and precipitation correction strongly control summer/melt-season discharge in glacierized basins."
+
+safety:
+  hazards:
+    - id: precip_conversion_silent_scale
+      kind: weather_file_semantic
+      description: "precipitation_coversion factor mismatched to input units silently rescales precip (86.4x / 86400x), giving 100-1000x discharge error or near-zero runoff; no error raised. Note CWatM's code key is the misspelling 'coversion'."
+      severity: silent
+    - id: temperature_kelvin_flag_mismatch
+      kind: weather_file_semantic
+      description: "TemperatureInKelvin flag inconsistent with input units makes snow partitioning/melt/ET catastrophically wrong (Celsius-as-Kelvin -> all snow; double-converted Kelvin -> extreme melt); silent. Check: T>200 means Kelvin."
+      severity: silent
+    - id: ksat_units_wrong
+      kind: soil_semantic
+      description: "Saturated conductivity not converted to cm/day (SoilGrids mm/hr needs x2.4, m/s needs x8.64e6) -> instant drainage or waterlogging; silent."
+      severity: silent
+    - id: vangenuchten_alpha_units
+      kind: soil_semantic
+      description: "van Genuchten alpha in 1/m instead of 1/cm is 100x too large, soil appears far sandier; wrong retention curve; silent."
+      severity: silent
+    - id: penman_monteith_input_units
+      kind: weather_file_semantic
+      description: "Penman-Monteith pressure in hPa (not Pa) makes psychrometric constant 100x wrong, or radiation in MJ/m2/day (not W/m2) ~11.6x wrong -> ET grossly wrong; silent."
+      severity: silent
+    - id: ldd_coding_convention
+      kind: control_semantic
+      description: "ArcGIS D8 power-of-2 LDD used instead of PCRaster 1-9 (5=pit) convention disconnects the drainage network, driving outlet discharge to near zero."
+      severity: fatal_or_silent
+    - id: channel_gradient_zero
+      kind: numerical_instability
+      description: "Zero channel gradient causes division by zero in the kinematic-wave solver; chanGrad must be enforced >= 0.0001."
+      severity: fatal
+    - id: nan_forcing_propagation
+      kind: numerical_instability
+      description: "A single NaN in forcing or soil parameters propagates through all calculations to NaN discharge everywhere; the model does not guard missing values."
+      severity: silent
+    - id: insufficient_spinup
+      kind: initial_condition_semantic
+      description: "Spinup shorter than 3-5 years leaves groundwater/soil storage unequilibrated, inflating early-year discharge before it stabilizes."
+      severity: degraded
+    - id: forcing_grid_mismatch
+      kind: control_semantic
+      description: "Meteorological forcing grid in a different CRS/shape than the model grid produces an array-shape mismatch; forcing must share CRS (WGS84) and be same-or-coarser resolution."
+      severity: fatal
+  validation_limits:
+    - "Daily I/O timestep cannot resolve sub-daily flood peaks (routing substeps internally but reports daily)."
+    - "No explicit glacier model: high-altitude ice melt is emulated by summer snow melt in elevation zones unless OGGM-coupled."
+    - "Single linear-reservoir groundwater cannot represent confined-aquifer or lateral groundwater flow unless MODFLOW 6 coupling is enabled."
+    - "Out of scope: detailed water-quality chemistry and sediment transport."
+    - "Key parameters (Arno b, recession coefficient, interflow factor, snowmelt factor) are calibration targets; uncalibrated runs are structurally biased and daily NSE is structurally lower than monthly."
+  warnings:
+    - "groundwater_modflow silently substitutes for the linear-reservoir groundwater when modflow coupling is True (and not in calibration), changing which state (groundwater_storage_available vs storGroundwater) feeds TWS."
+    - "crop_correct (ET scaling) miscalibration produces systematic PBIAS (>30%) in discharge magnitude; calibrate it before soildepth_factor."
+    - "arnoBeta_add and recessionCoeff_factor jointly control hydrograph peak sharpness and recession-limb slope; sharp peaks -> decrease arno / increase recession."
+    - "crop_correct and arnoBeta_add are compensating (equifinality): different combinations yield similar discharge but different internal water balance."
+    - "Exclude the spinup period from all metrics and filter near-zero negative discharge arising from routing numerics."
+  assumptions:
+    - statement: "Rain/snow partition uses a fixed ~1 C air-temperature threshold."
+      scope: "snow_frost module"
+      source: "CWatM hydrological-processes documentation (82_processes)"
+      status: adopted
+    - statement: "Soil processes (transpiration, evaporation, infiltration) are set to zero when the frost index exceeds its critical threshold; the source carries a continuous Molnau-Bissell index while the docs state a 56 C-day threshold."
+      scope: "snow_frost / soil coupling"
+      source: "CWatM processes docs and snow_frost module behavior"
+      status: adopted
+    - statement: "Prognostic stores are carried internally in metres of water depth (and a continuous frost index); the published docs report the same quantities in mm and C-days. State units follow the model-internal source values."
+      scope: "states block"
+      source: "CWatM source module variables (soil, groundwater, snow_frost) vs processes docs"
+      status: adopted
+    - statement: "Grid-cell fluxes/states are the fraction-weighted sum over six land-cover classes; the cell is treated as a mosaic of independent column processes, not laterally interacting sub-units."
+      scope: "landcoverType allocation"
+      source: "CWatM land-cover-differentiation documentation"
+      status: adopted
+    - statement: "Water mass balance closes (DeltaS = P - ET - Q_out + Q_in to within ~1% over multi-year periods); there is no closed surface energy budget - PET is a demand-side flux."
+      scope: "whole-model closure"
+      source: "CWatM model description (Burek 2020) and water-balance documentation"
+      status: adopted

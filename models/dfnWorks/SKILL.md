@@ -349,6 +349,12 @@ DFN.dfn_trans()           # Requires DFNTrans
 
 ---
 
+## Output Description
+
+dfnWorks produces outputs across its pipeline stages: (1) network generation writes fracture coordinates and properties to `radii.dat`, `normal_vectors.dat`, `translations.dat`, and `connectivity.dat` in the working directory; (2) the flow solver (PFLOTRAN or graph-based) writes pressure and velocity fields -- graph flow stores results in a NetworkX graph object with edge-level flow rates (m^3/s) and node-level pressures (Pa); (3) transport produces particle arrival times in `partime_file.dat` (one travel time per particle, in seconds) and fracture sequence files. Use `parse_dfnworks_output.py` to extract breakthrough curves (cumulative particle arrivals vs time), total flow rate through the network, and travel time statistics (median, mean, variance) to CSV.
+
+---
+
 ## Diagnostic Triplets Summary
 
 | ID | Severity | Domain | Summary |

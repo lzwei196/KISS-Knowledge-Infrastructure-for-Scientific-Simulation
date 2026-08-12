@@ -204,13 +204,27 @@ def collect_outputs(output_dir, basin_name):
 
 
 def extract_diagnostics(output_dir, basin_name):
-    """Extract performance diagnostics from Diagnostics.csv."""
+    """Extract performance diagnostics from Raven's Diagnostics.csv.
+
+    Two defects fixed here (dt_rav_037):
+      1. The file is prefixed with the .rvi :RunName, which is
+         "<basin>_<template>", NOT the bare basin name — so the fixed-name
+         lookup never found it in an ensemble run and diagnostics came back {}.
+      2. Diagnostics.csv is a HEADER row plus one DATA row per observation
+         series ("observed_data_series,filename,DIAG_NASH_SUTCLIFFE,..."), not
+         name,value pairs. Reading it row-wise parsed nothing.
+    """
     diag_file = None
     for fname in ["Diagnostics.csv", f"{basin_name}_Diagnostics.csv"]:
         path = os.path.join(output_dir, fname)
         if os.path.isfile(path):
             diag_file = path
             break
+    if not diag_file and os.path.isdir(output_dir):
+        matches = sorted(f for f in os.listdir(output_dir)
+                         if f.lower().endswith("diagnostics.csv"))
+        if matches:
+            diag_file = os.path.join(output_dir, matches[0])
 
     if not diag_file:
         return {}
@@ -218,19 +232,20 @@ def extract_diagnostics(output_dir, basin_name):
     metrics = {}
     try:
         with open(diag_file) as f:
-            lines = f.readlines()
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith("*") or line.startswith("#"):
-                continue
-            parts = line.split(",")
-            if len(parts) >= 2:
+            rows = [[c.strip() for c in ln.strip().split(",")]
+                    for ln in f if ln.strip() and not ln.startswith(("*", "#"))]
+        if len(rows) >= 2:
+            header, data = rows[0], rows[1]
+            for name, value in zip(header, data):
+                if not name:
+                    continue
                 try:
-                    metric_name = parts[0].strip()
-                    metric_value = float(parts[1].strip())
-                    metrics[metric_name] = metric_value
+                    metrics[name] = float(value)
                 except ValueError:
                     continue
+                # Also expose the metric without Raven's DIAG_ prefix
+                if name.startswith("DIAG_"):
+                    metrics[name[len("DIAG_"):]] = metrics[name]
     except Exception:
         pass
 

@@ -198,6 +198,10 @@ def write_dwf(filepath, station_meta, data, columns_config):
     columns_config : list of dict
         Each entry: {"name": "GlobRad", "unit": "W/m^2"}
     """
+    # Ensure the output directory exists (tool was previously failing with
+    # FileNotFoundError when given an output path in a not-yet-created dir).
+    out_dir = os.path.dirname(os.path.abspath(filepath))
+    os.makedirs(out_dir, exist_ok=True)
     with open(filepath, "w") as f:
         # Header
         f.write(f"dwf-0.0 -- Weather data for {station_meta.get('Station', 'Unknown')}.\n\n")

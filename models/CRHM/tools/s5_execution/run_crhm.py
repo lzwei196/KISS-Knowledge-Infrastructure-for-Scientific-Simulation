@@ -84,6 +84,27 @@ def validate_inputs(crhm_exe, prj_path, output_path):
     logger.info("Input validation passed.")
 
 
+def read_prj_obs_paths(prj_path):
+    """Return the obs file paths listed in the .prj Observations block."""
+    paths = []
+    in_block = False
+    try:
+        for line in Path(prj_path).read_text(errors="ignore").splitlines():
+            s = line.strip()
+            if s.startswith("Observations"):
+                in_block = True
+                continue
+            if in_block:
+                if s.startswith("#") or not s:
+                    if paths:
+                        break
+                    continue
+                paths.append(s)
+    except OSError:
+        pass
+    return paths
+
+
 def process(crhm_exe, prj_path, output_path, obs_dir, progress, time_format):
     """Run CRHM and capture output."""
     # Build command
@@ -96,7 +117,21 @@ def process(crhm_exe, prj_path, output_path, obs_dir, progress, time_format):
     ]
 
     if obs_dir:
-        cmd.extend(["--obs_file_directory", str(obs_dir)])
+        # CRHM (CRHMmain.cpp:445) prepends obs_file_directory to EVERY obs
+        # path in the .prj by raw string concatenation, including absolute
+        # paths -> "<obs_dir>/mnt/.../basin.obs" -> "Cannot find observation
+        # file. Exiting." Only pass the flag when the .prj actually uses
+        # relative obs paths.
+        obs_paths = read_prj_obs_paths(prj_path)
+        rel_paths = [pp for pp in obs_paths if not os.path.isabs(pp)]
+        if rel_paths:
+            cmd.extend(["--obs_file_directory", str(obs_dir)])
+        else:
+            logger.warning(
+                "Ignoring --obs_dir=%s: no relative obs path found in %s "
+                "(parsed obs paths: %s); CRHM prepends the directory to "
+                "every obs path, which breaks absolute paths.",
+                obs_dir, prj_path, obs_paths if obs_paths else "none")
 
     cmd.append(str(prj_path))
 
@@ -153,8 +188,10 @@ def validate_outputs(output_path):
     elif p.stat().st_size == 0:
         errors.append("Output file is empty -- CRHM may have run but produced no output")
     else:
-        # Check first few lines for STD format header
-        with open(p) as f:
+        # Check first few lines for STD format header.
+        # errors="replace": CRHM writes Latin-1 degree signs in the units row
+        # (e.g. hru_t "(ºC)" = byte 0xBA), which crashes a strict-UTF-8 read.
+        with open(p, encoding="utf-8", errors="replace") as f:
             first_lines = [f.readline() for _ in range(5)]
         if len(first_lines) < 3:
             errors.append("Output file has fewer than 3 lines")

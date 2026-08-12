@@ -16,26 +16,44 @@
 > **DEBUGGING PROTOCOL** — When something goes wrong (model crashes, wrong output,
 > unexpected values), follow this order. Do NOT skip steps or write debug scripts:
 > 1. **Check triplets** — `diagnostics/triplets.yaml` may already cover this error
-> 2. **Read official docs** — Check the model's own documentation (PDF manual, README,
->    official examples) for expected input formats, variable names, and units
-> 3. **Find working examples** — Look in `examples/` for the validated working case
->    (FARM 1 AT WRE OK, 35.54N -98.05W, 1979-1993). Compare your inputs against these.
+> 2. **Check the XLSM editor** — `reference/apexeditorrev2203.xlsm` contains the
+>    EXACT format specification for every APEX input file (APEXCONT.DAT, OPC, SOL,
+>    SIT, list files). Open with `openpyxl` to read column names, parameter IDs,
+>    and valid ranges. Also see `reference/apex_formats.json` for pre-extracted specs.
+> 3. **Read official docs / Find working examples** — Look in the example workspace
+>    for the validated working case. Compare your inputs against these.
 > 4. **Fix the tool** — Now that you know what "correct" looks like, make targeted fixes
 >
-> Resist the urge to write diagnostic/debug Python scripts. The answers are almost
-> always in the official docs and working examples, not in reverse-engineering the binary.
+> **XLSM Editor Reference** (`reference/apexeditorrev2203.xlsm`):
+> The official APEX parameter editor contains complete format specs for ALL input files.
+> Key sheets: APEXCONT.DAT (86 control params), MNGT.MNG (operations format),
+> SOIL.SOL, SITE.SIT, APEXPLANT.TAB (crop database), APEXTILL.TAB (tillage),
+> APEXFERT.TAB (fertilizers), all list files. Use `reference/apex_formats.json`
+> for the pre-extracted machine-readable version.
+>
+> **OPC Management File Format** (from XLSM):
+> Col 1: YEAR, Col 2: MONTH, Col 3: DAY, Col 4: TILLAGE_ID (from TILLTABLE),
+> Col 5: MACHINE_ID, **Col 6: PLANT_ID** (from CROPCOM.DAT), Col 7: OPV,
+> Col 8: OPV1, Col 9: OPV2. To change crop: modify **column 6**, NOT column 4.
 
 ---
 
 # APEX 1501 (Agricultural Policy / Environmental eXtender) — Knowledge Infrastructure
 
-**Model**: APEX1501 v20231214 (released 2023-12-14)
+**Model**: APEX v0806 (PE32 Windows binary via Wine)
 **Distributor**: Texas A&M AgriLife / Blackland Research and Extension Center
 **Source**: https://epicapex.tamu.edu/software/
-**Language**: Fortran 90 (Intel Fortran compiled, statically linked ELF)
+**Language**: Fortran 90 (Intel Fortran compiled, PE32 executable)
 **Domain**: Field- and watershed-scale agronomy / hydrology / water-quality
-**Validation status**: `analytic` — successfully runs the published USDA-ARS WRE
-Mesonet OK pasture-grazing example dataset (1.63 ha subarea, 1979–1993 simulation).
+**Validation status**: `validated` — Bengbu China corn 6.21 t/ha vs 5.6 observed (+11% bias).
+Multi-subarea farm (4 fields) validated with CMFD weather, HWSD soil, GGCMI calendar.
+
+**CRITICAL: Use v0806, NOT v1501.** The v1501 binary has a confirmed issue where annual
+crops produce zero biomass (BIOM=0.01) due to P cycling NaN in the Century C/N model.
+Exhaustively tested with 25 PARM fixes, soil P initialization 3-50 ppm, Century pool
+initialization from OC — still zero yield. v0806 produces 4.46-6.21 t/ha corn.
+Template: Riesel TX cropland (ex1_RiselTX), NOT WRE pasture.
+Binary: `reference/APEX0806.exe` (run via `wine APEX0806.exe`).
 
 ---
 
@@ -249,10 +267,18 @@ ws = setup("/tmp/apex_bengbu")                                   # copy template
 build_forcing(ws, lat=32.94, lon=117.36, year1=2010, year2=2015) # CMFD → DLY+WP1+WND
 build_soil(ws,    lat=32.94, lon=117.36)                         # HWSD → SOL
 update_site(ws,   lat=32.94, lon=117.36, elev_m=23.0)
-update_control(ws, year1=2010, year2=2015, ngn=2345)             # read all 5 weather vars
-run(ws)                                                           # binary
-df = parse(ws)                                                    # → DataFrame of annual results
+# spinup_years=25 prepends 25 extra years (soil equilibration). ngn=2 = generate
+# TMAX from WP1 monthly stats, read all other variables from DLY.
+update_control(ws, year1=2010, year2=2015, ngn=2, spinup_years=25)
+run(ws)                                                           # wine APEX0806.exe
+df = parse(ws)                                                    # → DataFrame; spinup rows marked
+df_actual = df[~df["spinup"]]                                    # filter to analysis period
 ```
+
+**Important**: also copy a validated OPC file to the workspace (or generate one
+with s9_generate_crop_opc.py) and update OPSCCOM.DAT to point subareas at it.
+s9 generates APEX0806-compatible op codes (136/261/292) and fertilizer codes (53/54).
+Do NOT use OPC files from APEX1501 runs — the op codes are different.
 
 ---
 
@@ -284,6 +310,77 @@ Closure: `PCP ≈ WYLD + ET + DPRK + ΔS` (within ±5%).
 
 ---
 
+## APEX0806 vs APEX1501 — critical differences
+
+The KI uses **APEX0806** (PE32 Windows binary via Wine). APEX1501 is a native Linux
+binary but has a confirmed P-cycling NaN bug that produces zero biomass for annual
+crops. Never use apex1501 for crop yield work.
+
+### Operation codes (DIFFERENT between versions — mixing them silently misfires)
+
+| Action | APEX0806 code | APEX1501 code |
+|--------|:---:|:---:|
+| Plant / drill | **136** | 132 |
+| Fertilize | **261** | 580 |
+| Harvest grain | **292** | 316 |
+| Field cultivator | 151 | 151 (same) |
+| Cultivation | 157 | 157 (same) |
+| Kill crop | 451 | 397 |
+
+### Fertilizer codes (APEX0806 FERTCOM.DAT only has entries 1–72)
+
+| Nutrient | Safe code | Name | Notes |
+|----------|:---------:|------|-------|
+| Nitrogen | **53** | Elem-N, 100%N | Use this, not 92 |
+| Phosphorus | **54** | Elem-P, 100%P | Use this, not 93 |
+
+**Fert codes 92/93 do NOT exist in APEX0806's FERTCOM.DAT.** They trigger a
+Fortran `PAUSE` that blocks the process indefinitely when running via Wine
+without a tty (see triplet `fert_code_pause`).
+
+### File ecosystem differences
+
+APEX0806 uses **COM-style list files** (CRLF required):
+
+| APEX0806 file | APEX1501 equivalent | Purpose |
+|---|---|---|
+| `WDLSTCOM.DAT` | `WDLYLIST.DAT` | Daily weather station list |
+| `WPM1.DAT` | `WPM1LIST.DAT` | Monthly weather parameter list |
+| `WINDCOM.DAT` | `WINDLIST.DAT` | Wind parameter list |
+| `SITECOM.DAT` | `SITELIST.DAT` | Site list |
+| `SOILCOM.DAT` | `SOILLIST.DAT` | Soil list |
+| `OPSCCOM.DAT` | `MNGTLIST.DAT` | Operation schedule list |
+| `SUBACOM.DAT` | `SUBSLIST.DAT` | Subarea list |
+
+COM-style list files require **CRLF** (`\r\n`) line endings. APEXCONT.DAT and
+OPC files use LF. Writing COM files with LF-only causes silent misreads.
+
+### Wine execution — CONOUT$ trap
+
+APEX0806 writes status messages to the Windows console handle `CONOUT$`. When
+running under Wine without a controlling tty (nohup, background `&`, systemd),
+Fortran `WRITE(*,...)` fails with:
+
+```
+forrtl: severe (38): error during write, unit -1, file CONOUT$
+```
+
+**Fix**: always invoke via Python subprocess with `capture_output=True` (s6 already
+does this). Never launch with `nohup wine APEX0806.exe &` directly from the shell.
+
+### Spin-up requirement
+
+The ex1_RiselTX template has Texas soil at Texas-climate equilibrium. For any
+non-Texas location, a **minimum 20–25 year spin-up** is required before the soil
+water/nutrient pools reach steady state for the new climate. Without spin-up:
+WS > 50, yields < 2 t/ha for the first several years regardless of management.
+
+s5_update_control.py handles this via `--spinup-years N` (default 25). The forcing
+dataset is recycled over the spin-up years. s7_parse_output.py marks spin-up rows
+with `spinup=True` for easy filtering.
+
+---
+
 ## Known traps & quirks (from the 1501 binary specifically)
 
 1. **Filenames are case-sensitive on Linux** — APEX1501 reads filenames literally
@@ -312,6 +409,40 @@ Closure: `PCP ≈ WYLD + ET + DPRK + ΔS` (within ±5%).
 10. **Exit code is always 0 even on Fortran severe errors** — never trust the exit
     code; always check whether `RUN1501.SUM` was written and whether `*.OUT`
     contains the closing `TOTAL RUN TIME` line.
+
+---
+
+## Scoring YLDG (or BIOM) against a gridded / regional-aggregate yield (GDHY, SPAM, FAOSTAT)
+
+When the obs is a **GDHY 0.5-degree cell** (~2500 km2 cropland area-average), a
+SPAM pixel/region, or a national FAOSTAT series, it is a
+`regional_aggregate_time_series`, **NOT** a `point_time_series`. A GDHY cell is an
+area-average over an entire 0.5-deg of mixed cropland, not a field trial. Two
+MANDATORY setup rules (dag.yaml `outputs[YLDG].observability`, lines 146-151):
+
+1. **Classify as an aggregate and DETREND before scoring variability.**
+   Set `obs_shape=regional_aggregate_time_series`,
+   `comparison_mode=aggregate_trend_comparison`. Regional/gridded yields carry a
+   technology/management **trend** (e.g. the Bengbu 32.75N,117.25E GDHY cell rises
+   ~3.0 -> 4.7 t/ha over 1981-2016) that a fixed-management, weather-driven APEX
+   run structurally CANNOT reproduce. Before comparing inter-annual variability,
+   apply a `detrending_option` (`linear_residual` or `first_difference`) to BOTH
+   sim and obs and compute r on the residuals; report level `pbias` for magnitude
+   AND detrended `r` for pattern. NEVER score the raw levels of a trended aggregate
+   as `point_time_series` -- that yields spuriously catastrophic scores (this case:
+   nse -20.5, r 0.06 against a trend the model was never expected to track).
+
+2. **Management must be CELL-AVERAGE representative, not field-optimal.**
+   A single high-input subarea (PHU1800, N=184.8 kg/ha at full potential) yields
+   the field-trial optimum ~6.7 t/ha -- nearly 2x the GDHY cell average of ~3.4 t/ha
+   (this case: pbias +96%). Disabling auto-irrigation ALONE is insufficient. For a
+   0.5-deg area-average, configure management representative of the actual regional
+   cropping: reduce N toward the regional mean application rate, use the regional
+   cultivar/PHU, keep the dominant water regime (rainfed/supplemental for the Huai
+   plain), and/or apply an area-weighted marginal-land fraction, so the simulated
+   MEAN targets the GDHY cell mean (~3.4 t/ha) rather than the field-trial validation
+   target (5.6-6.2 t/ha). This is a *representativeness* setup choice (dag `scope_in`:
+   management/fertilization/irrigation), NOT parameter calibration.
 
 ---
 

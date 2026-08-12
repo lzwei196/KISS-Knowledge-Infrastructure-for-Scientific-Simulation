@@ -119,7 +119,7 @@ cd /path/to/working_directory
 |-------|-------|---------------|-----------|
 | 1 | Experiment Design | [s1_experiment_design_skill.md](docs/s1_experiment_design_skill.md) | FileX template generation |
 | 2 | Weather Prep | [s2_weather_prep_skill.md](docs/s2_weather_prep_skill.md) | CMFD/MSWX → .WTH conversion |
-| 3 | Soil Setup | [s3_soil_setup_skill.md](docs/s3_soil_setup_skill.md) | HWSD → SOIL.SOL conversion |
+| 3 | Soil Setup | [s3_soil_setup_skill.md](docs/s3_soil_setup_skill.md) | HWSD → SOIL.SOL conversion; SoilGrids → SOIL.SOL (6-layer, global) |
 | 4 | Genotype Config | [s4_genotype_config_skill.md](docs/s4_genotype_config_skill.md) | Cultivar selection from library |
 | 5 | Simulation Controls | [s5_simulation_controls_skill.md](docs/s5_simulation_controls_skill.md) | DSSAT48.INP, DSSBATCH.v48 |
 | 6 | Initial Conditions | [s6_initial_conditions_skill.md](docs/s6_initial_conditions_skill.md) | Soil water/N initialization |
@@ -127,10 +127,70 @@ cd /path/to/working_directory
 | 8 | Batch Execution | [s8_batch_execution_skill.md](docs/s8_batch_execution_skill.md) | Run dscsm048 |
 | 9 | Output Parsing | [s9_output_parsing_skill.md](docs/s9_output_parsing_skill.md) | Parse Summary.OUT, PlantGro.OUT |
 
-**Additional tools**: `convert_cmfd_to_wth.py` (CMFD → .WTH conversion) and `convert_hwsd_to_sol.py` (HWSD → SOIL.SOL conversion).
+**Additional tools**: `convert_cmfd_to_wth.py` (CMFD → .WTH conversion), `convert_hwsd_to_sol.py` (HWSD → SOIL.SOL, 2-layer), and `convert_soilgrids_to_sol.py` (SoilGrids → SOIL.SOL, 6-layer, global coverage — **preferred for new simulations**).
+
+**Soil tool selection guide:**
+| Situation | Tool |
+|---|---|
+| China, quick setup | `convert_hwsd_to_sol.py` |
+| Any region, best accuracy | `convert_soilgrids_to_sol.py` ← preferred |
+| NE China (Mollisol zone) | `convert_soilgrids_to_sol.py` — includes BD correction |
+
+`convert_soilgrids_to_sol.py` advantages: 6 depth layers (vs 2), Saxton-Rawls 2006 PTF (vs 1986), direct bdod from SoilGrids, depth-varying SOC/pH, Mollisol BD correction for NE China black soils. Uses `/mnt/disk3/soilgrids_global/` (global) with China-optimised fallback to `/mnt/disk3/soilgrids/`.
 
 **Stages 1-7 can run in parallel** — they each write a section of the FileX or prepare external files.
 Stage 8 depends on all of 1-7. Stage 9 depends on 8.
+
+**Stage validators are now CLI-invocable** (they used to require editing a module-level
+global, which is why running them straight from the shell exited 1):
+```bash
+python tools/s1_experiment_design/validate_filex_structure.py  /path/EXP0001.MZX
+python tools/s2_weather_prep/validate_weather_file.py          /path/SITE0001.WTH
+python tools/s3_soil_setup/validate_soil_profile.py            /path/SOIL.SOL
+```
+
+### Stage 7 — management is a `create_workdir(**management_kwargs)` dict (NO tools/s7_* files)
+
+`tools/s4..s7` are EMPTY directories; every management decision is a keyword to
+`create_workdir()`. Source them from data, not from the defaults:
+
+| Key | Meaning | Where to get it |
+|---|---|---|
+| `fert_n`, `fert_date_offset` | total N kg/ha, split 40% at planting / 60% sidedress | `ki_tools_common.fertilizer.get_fertilizer_rates` (NPKGRIDS v1.08) |
+| `planting_date` (YYDDD) | sowing | `ki_tools_common.crop_calendar.get_planting_harvest` — but in the Huang-Huai belt (32–35N) the GGCMI *global* maize calendar returns late May; maize there is the SUMMER crop after winter wheat, so clamp to DOY ≈ 165 (see China crop calendar below) |
+| `ppop`, `plrs` | plants/m², row spacing cm | China maize: ~6.0 plants/m² at **60 cm** rows, not the 76 cm US default |
+| `irrigation` | `"rainfed"` (default, non-rice) / `"auto"` / `"reported"` | set `"auto"` for any IRRIGATED site |
+| `irr_ithrl`, `irr_amt`, `irr_imdep`, `irr_eff` | automatic-irrigation trigger %, mm applied, depth cm, efficiency | NCP supplemental: `irr_ithrl=40, irr_amt=40` (rice paddy default is 80/50) |
+| `irrigation_events` | `[(yyddd, mm), ...]` explicit dated events → `IRRIG=R`, `MI=1` | single-season runs only — a multi-season (`NYERS>1`) run needs `irrigation="auto"`, since fixed calendar dates exist for the first season only |
+
+> **Trap (fixed 2026-08-10):** before this, `irrigation_events` was accepted, documented
+> and then **silently discarded**, and `IRRIG` was hard-wired to `N` for every non-rice
+> crop — an irrigated site ran as dryland with no error. Also, `fert_n` from NPKGRIDS is a
+> **float** and used to crash FileX generation; and `convert_cmfd_to_wth.py` threw away a
+> completed multi-minute extraction if `--output`'s directory did not exist yet.
+
+### GDHY (`--obs gdhy`) = `point_time_series` — expect a large POSITIVE PBIAS
+
+`validate_yield_timeseries.py --obs gdhy` tags `point_time_series`
+(valid families `[temporal_pattern_match, magnitude_accuracy, ranking_quality]`,
+determining metric `pbias`), so NSE/KGE/r/PBIAS are ALL gate-valid — unlike the FAOSTAT
+case below. It also writes `scored_series.csv` (`date,obs,sim`) and passes `dates=` to
+`all_metrics`, so the metric is re-derivable from the evidence.
+
+**Interpret the magnitude before you retune anything:** DSSAT HWAM is one well-managed,
+pest- and weed-free field at **attainable** yield; a GDHY 0.5° pixel is an **area-average
+actual** yield over ~2 500 km² including marginal land, pests, weeds and harvest losses.
+The Global Yield Gap Atlas puts Chinese maize actual/attainable at ≈0.6, so a
+**+40…60 % PBIAS at a Chinese maize cell is the structural yield gap, not a chain bug** —
+no cultivar/forcing/soil switch removes it (the same gap produced the +297 % São Paulo
+row in the 3×3 table). The DSSAT-sanctioned way to represent an area average is
+`SLPF < 1`; this KI ships it as `convert_soilgrids_to_sol.py --soc_slpf` (≈0.80 for a
+20 g/kg-SOC topsoil), but **`SLPF = 1.00` is the declared baseline and `--soc_slpf` is a
+named sensitivity test** — do not flip it just to move PBIAS, and say which you used.
+Also match the *period* to the cultivar: GDHY runs 1981–2016, but the dag's
+`point_time_series` caveat requires **consistent cultivar/management**, so a 2000-released
+hybrid (e.g. CN0001 Zhengdan958) + present-day NPKGRIDS N rates should be scored from
+2000 onward, not against 1981–99 farming.
 
 ---
 
@@ -182,6 +242,58 @@ See `diagnostics/triplets.yaml` for the full set. Top 5 most common:
 | Blue Nile (Ethiopia) | Wheat | 1,482 | Uncalibrated | 2005-2015 |
 | Blue Nile (Ethiopia) | Maize | 4,810 | Uncalibrated | 2005-2015 |
 
+### Temporal yield validation — Pearson r / NSE / KGE require ≥2 simulation years
+
+The single-year SPAM scalar (`crop_obs.get_observed_yield`) gives ONE (sim,obs) pair,
+and `ki_tools_common/metrics.py` returns NaN for <2 pairs, so **r/nse/kge are
+structurally undefined** and the orchestrator's `r<0.5` gate retries forever.
+To get a DEFINED r, the DSSAT run must span **≥2 simulation years** (set `NYERS`/
+`start_year..end_year` so `Summary.OUT` has ≥2 WYEAR rows), then pair each year's
+HWAM against the multi-year GDHY series via
+`tools/s9_output_parsing/validate_yield_timeseries.py`
+(`--workdir <wd> --lat <Y> --lon <X> --crop maize`). It writes
+`validation_metrics.json` with `{nse,kge,r,pbias}`. A single-year FileX still yields
+one pair → tool exits rc=2 with a warning. Use single-year SPAM only for
+%bias/nRMSE point checks (the 3×3 table below).
+
+> **OBS-SCALE RULE for the `r<0.5` gate** — the default `--obs gdhy` is the
+> ONLY obs valid for the interannual r/NSE/KGE gate at a single site. GDHY is a
+> 0.5° gridded yield product, so its pixel is **co-located and scale-matched**
+> to the simulated point. Do **NOT** use `--obs faostat` for the r-gate: FAOSTAT
+> is a **national aggregate** dominated by a smooth technology/fertilizer trend
+> and by the production-weighted centroid (NE China + Henan/Shandong North China
+> Plain). A single non-representative point (e.g. Bengbu, humid monsoon S. Anhui,
+> 32.9N/117.4E) has ~4–5× the national interannual variance and can even
+> **anti-correlate** with the national series — Bengbu maize 2005–2020 gave
+> PBIAS +8.94% (good mean bias) but r = −0.083 / NSE −12.47 against
+> `China, mainland`. The same national series tracks at r≈0.80 when the sim sits
+> on a *production-representative* point (AquaCrop at Henan 34.0N/113.0E), so the
+> failure is **obs location/scale**, not model physics. FAOSTAT national is
+> **%bias-only** for a single point; for the r-gate either (a) re-run with
+> `--obs gdhy` at the simulated pixel [recommended, runnable today: GDHY maize
+> covers 2005–2016 on disk], or (b) build a multi-site ensemble at the national
+> production centroid before comparing to the aggregate. FAOSTAT has no
+> sub-national `Area`, so provincial (Anhui) is not available as a middle ground.
+
+> **FAOSTAT IS NOT A FAILURE CASE — it has a VALID metric family; do not chase
+> the r-gate (verified 2026-06-15).** `validate_yield_timeseries.py --obs faostat`
+> classifies the comparison as `obs_shape: regional_aggregate_time_series` (see
+> `dag.yaml outputs.HWAM.observability`), whose valid families are
+> **`[magnitude_accuracy, trend_match]`** — NOT `temporal_pattern_match`. The tool
+> therefore emits `pbias` (magnitude_accuracy) + `sim_slope_kgha_yr/obs_slope_kgha_yr/
+> trend_sign_agree` (trend_match) and **nulls `nse/kge/r`** (kept under
+> `_raw_invalid_*` only). For Bengbu maize 2005–2020 vs `China, mainland` this is a
+> **PASS**: PBIAS +8.94% (good mean bias) and `trend_sign_agree: true` (both rising).
+> The dag-driven gate scores on PBIAS + trend-sign, NOT on the raw `_raw_invalid_r`
+> (−0.08) / `_raw_invalid_nse` (−12.5) — those are structurally intrinsic to a
+> weather-only point process simulating a smooth, technology-trending national
+> aggregate, and switching cultivar/forcing/parameters CANNOT rescue them. Do not
+> re-run with `--obs gdhy` merely to satisfy an r<0.5 gate that does not apply to
+> this obs_shape; only switch to GDHY if the *task* genuinely asks for the
+> `point_time_series` interannual-pattern comparison. The slope_ratio (~0.19, sim
+> captures ~1/5 of the national trend) reflects fixed cultivar+management across all
+> years — it is a documented limitation, not a tool bug.
+
 ### 3×3 Validation Results (2026-04-10)
 
 | Site | Crop | Simulated | SPAM Ref | Bias | Cultivar |
@@ -219,11 +331,22 @@ python skills/vic-auto-run/s2_forcing/forcing_nasa_power.py \
 # Then convert to DSSAT .WTH format using the forcing-converter skill
 ```
 
-Or use the validated DSSAT weather tool:
-```python
-from models.DSSAT.knowledge_infrastructure.tools.fetch_weather import fetch_nasa_power_dssat
-fetch_nasa_power_dssat(lat=45.5, lon=-73.6, start=2005, end=2023, output="MTRL0501.WTH")
+Or, for China sites, convert CMFD directly to DSSAT `.WTH` with this KI's
+validated S2 tool (the canonical weather recipe — there is **no**
+`tools/fetch_weather.py`):
+```bash
+python tools/s2_weather_prep/convert_cmfd_to_wth.py \
+  --forcing_dir /media/server/hc_ssd/forcing/Data_forcing_03hr_010deg/ \
+  --lat 32.9 --lon 117.4 --start_year 2005 --end_year 2020 \
+  --output /tmp/run/weather/SITE.WTH --station_name SITE
 ```
+Notes: (1) run this in a conda env with a working NetCDF backend (e.g.
+`/home/server/miniconda3/envs/ohq/bin/python`) — the tool now falls back
+h5netcdf→netcdf4→scipy automatically, but the default `lisflood` env has a
+broken numpy/netCDF4 binary. (2) Point extraction over the 3-hourly store is
+I/O-bound (~8–10 min for 16 years). For global sites, load via
+`ki_tools_common.load_forcing.load_daily_forcing` and write the same `.WTH`
+columns (DATE/SRAD/TMAX/TMIN/RAIN/WIND).
 
 ### Step 2: Set up and run using dssat_workdir_setup.py (MANDATORY)
 

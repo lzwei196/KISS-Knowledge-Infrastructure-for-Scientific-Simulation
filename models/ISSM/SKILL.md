@@ -26,9 +26,17 @@
 **Package**: `hydrocraft-issm-cryosphere` v1.0.0
 **Model**: ISSM v2026.1 (Ice-sheet and Sea-level System Model)
 **Created by**: Jianyun Zhang Research Group, Hohai University
-**Last updated**: 2026-03-26
+**Last updated**: 2026-04-30
 **Stats**: 4 tools | 5 skill documents | 20 diagnostic triplets | ~2,000 lines of validated Python
-**Validation status**: `dissection_complete` (SquareIceShelf benchmark)
+**Validation status**: `synthetic_only` — only the SquareIceShelf/SquareSheet
+NightlyRun benchmarks have been executed (`_work/ISSM/issm_run_test{101,201,301}.py`,
+domain `Square.exp` is a 5-point square, not a real glacier).
+**Real-site validation**: NOT DONE. Before claiming a real-site result, fetch
+BedMachine geometry + MEaSUREs surface velocity for a chosen target
+(e.g. Pine Island Glacier, Thwaites, Jakobshavn) and use
+`tools/convert_geometry_to_issm.py` to build a real `md` from them. Today
+the KI's `outputs/` and `_work/ISSM/` contain no real-glacier mesh,
+geometry, friction, or velocity data.
 
 ---
 
@@ -39,7 +47,7 @@
 **Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
 
 **Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for atmospheric forcing documentation.
-See `data_ki/SNOTEL/SKILL.md` for snow observations.
+See `data_ki/SNOTEL/SKILL.md` ONLY for context. NOTE: point seasonal-snow SWE (e.g. SNOTEL) is NOT a valid ISSM validation target — ISSM has no snowpack SWE output (see NON-PRODUCIBLE VARIABLES below).
 See `data_ki/BedMachine/SKILL.md` for ice topography.
 See `data_ki/MEaSUREs/SKILL.md` for ice velocity.
 
@@ -50,6 +58,19 @@ This knowledge infrastructure enables autonomous ice sheet and sea-level simulat
 
 **What ISSM does**: Finite-element model for ice sheet dynamics. Simulates:
 - Ice flow velocity (SSA, SIA, HO, Full Stokes, L1L2, MOLHO formulations)
+
+> **NON-PRODUCIBLE VARIABLES / VALID DOMAIN (dag gate guard)**
+> ISSM is an unstructured-mesh finite-element ICE-SHEET DYNAMICS model. Its dag.yaml
+> outputs are: Vel/Vx/Vy/Vz (m/yr), Thickness/Surface/Base (m), Temperature (K),
+> grounding-line position, IceVolume/GroundedArea/TotalSmb, and relative sea level.
+> It produces **NO point snowpack SWE** (md.smb.mass_balance is a PRESCRIBED forcing
+> in m/yr ice-equivalent, not a computed seasonal snow water equivalent).
+> Valid real-site targets: glacier/ice-sheet surface velocity (MEaSUREs), ice
+> thickness / surface / base elevation (BedMachine), grounding-line position, and
+> ice volume / TotalSmb, over a polar or alpine GLACIATED domain in projected (meter)
+> coordinates. Any target whose observed variable is SWE/snowpack, or whose site has
+> no glacier/ice sheet (e.g. a mid-latitude SNOTEL site), is STRUCTURALLY INVALID and
+> MUST be rejected by the dag gate with no retry.
 - Thermal evolution (cold-ice temperature or enthalpy formulation)
 - Mass transport (thickness evolution via continuity equation)
 - Transient dynamics (coupled time-stepping of velocity + thickness + temperature)

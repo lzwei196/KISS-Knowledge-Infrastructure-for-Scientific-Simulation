@@ -1,0 +1,23 @@
+{
+    "model_id": "PIHM",
+    "fix_type": "config_fix",
+    "commands_run": [
+        {"command": "python3 - <<'PY' (patch preflight_check.py: stale hardcoded binary path -> path relative to KI dir)", "exit_code": 0, "stdout_tail": "preflight patched OK", "stderr_tail": ""},
+        {"command": "python3 - <<'PY' (patch run_pihm.py: move '.lc' from REQUIRED_EXTENSIONS to OPTIONAL_EXTENSIONS)", "exit_code": 0, "stdout_tail": "run_pihm patched OK", "stderr_tail": ""},
+        {"command": "python3 .../preflight_check.py; echo '--- exit '$?", "exit_code": 0, "stdout_tail": "OK  PIHM binary: /mnt/disk1/Hydrocraft_server/models/PIHM/source/repo/pihm\n  Results: 2 passed, 0 failed\n--- exit 0", "stderr_tail": ""},
+        {"command": "OMP_NUM_THREADS=4 python3 .../run_pihm.py --binary .../pihm --project ShaleHills --input-dir .../input/ShaleHills --output-dir kdt_fix_verify --brief --threads 4", "exit_code": 0, "stdout_tail": "{\"status\": \"success\", \"return_code\": 0, ... \"stdout_tail\": \"Simulation completed.\\n\", \"warnings\": [\"No spin-up and INIT_MODE=0: starting from relaxation IC (dt_012)\"]}\n--- exit 0", "stderr_tail": ""}
+    ],
+    "files_verified": [
+        {"file": "/mnt/disk1/Hydrocraft_server/models/PIHM/knowledge_infrastructure/preflight_check.py", "expected_change": "stale /home/server/.../auto_dissect/_work/PIHM/source/repo/pihm absent; binary now computed via os.path relative to KI dir (_model_root/source/repo/pihm)", "found": true},
+        {"file": "/mnt/disk1/Hydrocraft_server/models/PIHM/knowledge_infrastructure/tools/run_pihm.py", "expected_change": "'.lc' removed from REQUIRED_EXTENSIONS, added to OPTIONAL_EXTENSIONS", "found": true}
+    ],
+    "rerun": {
+        "command": "OMP_NUM_THREADS=4 python3 .../tools/run_pihm.py --binary .../source/repo/pihm --project ShaleHills --input-dir .../source/repo/input/ShaleHills --output-dir kdt_fix_verify --brief --threads 4",
+        "exit_code": 0,
+        "outputs_produced": ["output/kdt_fix_verify/ShaleHills.gw.txt", "output/kdt_fix_verify/ShaleHills.surf.txt", "output/kdt_fix_verify/ShaleHills.river.flx1.txt", "output/kdt_fix_verify/ShaleHills.river.stage.txt", "output/kdt_fix_verify/ShaleHills.ett.txt", "output/kdt_fix_verify/ShaleHills.recharge.txt", "output/kdt_fix_verify/ShaleHills.unsat.txt", "output/kdt_fix_verify/ShaleHills.snow.txt", "output/kdt_fix_verify/ShaleHills.infil.txt", "output/kdt_fix_verify/ShaleHills.ec.txt", "output/kdt_fix_verify/restart/", "output/kdt_fix_verify/metadata.txt"],
+        "metrics": {"nse": null, "kge": null, "pbias": null}
+    },
+    "test_runs": [],
+    "fix_status": "applied",
+    "fix_status_reason": "Both KI-tool bugs are fixed and verified: preflight now passes (2/2, binary resolved relative to KI dir) and run_pihm.py no longer rejects the ShaleHills example for a missing .lc, so the developer example reproduces (Simulation completed, full output set written); the Bengbu discharge comparison remains a separate structural protocol_gap (no headless meshgen tool) and is not addressable by this config patch."
+}

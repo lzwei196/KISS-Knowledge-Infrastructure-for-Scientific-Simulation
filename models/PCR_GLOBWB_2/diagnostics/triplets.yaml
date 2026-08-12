@@ -1,8 +1,9 @@
 # ============================================================================
 # PCR-GLOBWB 2 Diagnostic Triplets
 # ============================================================================
-# 20 diagnostic triplets covering 5 failure domains.
+# 26 diagnostic triplets covering 5 failure domains.
 # Generated during PCR-GLOBWB 2 knowledge dissection for HydroCraft platform.
+# dt_021..dt_026 added from Rhine-Kaub production run 2026-04-29.
 # ============================================================================
 
 # --- Unit Conversion (HIGHEST PRIORITY — Silent Errors) ---
@@ -494,3 +495,369 @@
     prevention: "This is a known PCRaster limitation — cannot be fixed"
   severity: cosmetic
   cross_references: []
+
+# --- Production Run Lessons (dt_021..dt_026) — Rhine-Kaub 2026-04-29 ---
+
+- id: dt_021
+  stage: s5_execution
+  failure_domain: runtime
+  symptom:
+    description: "Crash on startup: IndexError: list index out of range at virtualOS.py:1842."
+    error_pattern: "IndexError: list index out of range"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "'mapattr' binary not in PATH used by subprocess"
+    explanation: >
+      virtualOS.getMapAttributesALL() calls subprocess.Popen('mapattr -p <cloneMap>', shell=True).
+      The mapattr binary lives in the conda env's bin/ directory, which is NOT in the
+      shell PATH when launching Python from outside that activated environment (e.g., via
+      nohup, cron, or a different venv). The call silently returns empty output, causing
+      an IndexError when parsing the result. The error manifests on line 1842 of virtualOS.py.
+    affected_components: [virtualOS.py, deterministic_runner.py]
+  remedy:
+    action: "Prepend the conda env bin directory to PATH before running the model"
+    manual_steps:
+      - "CONDA_BIN=/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/bin"
+      - "Run: env PATH=$CONDA_BIN:$PATH $CONDA_BIN/python deterministic_runner.py setup.ini"
+      - "Verify first: env PATH=$CONDA_BIN:$PATH mapattr --version"
+    prevention: "Always use 'env PATH=...' prefix; never rely on ambient shell PATH for subprocess calls"
+  severity: crash
+  cross_references: []
+
+- id: dt_022
+  stage: s1_configuration
+  failure_domain: input_format
+  symptom:
+    description: "Crash on startup: KeyError: 'refETPotFileNC' in configuration.py:268."
+    error_pattern: "KeyError: 'refETPotFileNC'"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "refETPotFileNC key missing from [meteoOptions] when referenceETPotMethod = Hamon"
+    explanation: >
+      configuration.py iterates over ALL expected [meteoOptions] keys (including
+      refETPotFileNC) and checks if they differ from 'None'. Even when Hamon ET method
+      is selected (which does not use a refET file), the key must be present in the .ini
+      file — the model does not conditionally skip missing keys. Omitting refETPotFileNC
+      entirely causes a KeyError before any model computation begins.
+    affected_components: [configuration.py]
+  remedy:
+    action: "Always include 'refETPotFileNC = None' in [meteoOptions] regardless of ET method"
+    manual_steps:
+      - "The key must be PRESENT for every ET method, including Hamon: refETPotFileNC = None"
+      - "The 'None' value tells the model to skip reading the file"
+      - "This is a config-parse requirement only -- it is NOT a reason to prefer Hamon; choose the ET method per dt_031"
+    prevention: "Use the template .ini in workflow/workflow.md which includes all required keys"
+  severity: crash
+  cross_references: [dt_031]
+
+- id: dt_023
+  stage: s6_transient_run
+  failure_domain: runtime
+  symptom:
+    description: "RuntimeError: NetCDF: DAP failure for large static parameter files (>5MB)."
+    error_pattern: "RuntimeError: NetCDF: DAP failure"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "virtualOS.py line 187 reads full global array before spatial subsetting"
+    explanation: >
+      singleTryNetcdf2PCRobjCloneWithoutTime() reads data as:
+        cropData = f.variables[varName][:,:]   # reads ENTIRE global array
+      This sends a request for the full global data volume to the 4TU OPeNDAP server,
+      which enforces size limits (typically 500MB). Files exceeding this limit — including
+      topography (~20MB), soilProperties (~15MB), land cover time series (~362MB each),
+      and forcing (~12GB each) — all fail. Small files (<4MB, e.g., IC files) succeed.
+      This is an upstream bug in virtualOS.py, not in user configuration.
+    affected_components: [virtualOS.py, meteo.py, parameterSoilAndTopo.py]
+  remedy:
+    action: "Download static inputs via HTTP fileServer and subset locally; use MSWX for forcing"
+    manual_steps:
+      - "HTTP fileServer base: https://opendap.4tu.nl/thredds/fileServer/data2/pcrglobwb/version_2019_11_beta/pcrglobwb2_input/"
+      - "Download: wget -q $FS/$rel -O /tmp/full_global.nc"
+      - "Subset: ncks -O -d lat,45.75,52.75 -d lon,3.25,12.25 /tmp/full_global.nc $LOCAL/$rel"
+      - "Delete temp file after subset"
+      - "For forcing, use MSWX local files at /mnt/disk3/msxw/ — do NOT download 12GB CRU-ERA files"
+    prevention: "Set inputDir to local directory; use download_static_inputs.sh for bulk download"
+  severity: crash
+  cross_references: [dt_014, dt_025]
+
+- id: dt_024
+  stage: s1_configuration
+  failure_domain: input_format
+  symptom:
+    description: "FileNotFoundError for dzRel0200.nc, dzRel0300.nc etc. during routing init."
+    error_pattern: "dzRel0200"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "dzRel filenames use level*100 format, not level*1000"
+    explanation: >
+      The relativeElevationFiles format string is 'dzRel%04d.nc'. The model computes
+      the filename as: relZFileName % (areaFractions[iCnt] * 100)  [routing.py line 489].
+      For level 0.20, this gives dzRel0020.nc — NOT dzRel0200.nc.
+      The correct set of 13 files on the 4TU server is:
+        dzRel0000, dzRel0001, dzRel0005, dzRel0010, dzRel0020, dzRel0030, dzRel0040,
+        dzRel0050, dzRel0060, dzRel0070, dzRel0080, dzRel0090, dzRel0100.nc
+      relativeElevationLevels = 0.0, 0.01, 0.05, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60,
+                                0.70, 0.80, 0.90, 1.00
+    affected_components: [routing.py]
+  remedy:
+    action: "Download dzRel0000, 0001, 0005, 0010, 0020, 0030, 0040, 0050, 0060, 0070, 0080, 0090, 0100.nc"
+    manual_steps:
+      - "FS=https://opendap.4tu.nl/thredds/fileServer/data2/pcrglobwb/version_2019_11_beta/pcrglobwb2_input"
+      - "for L in 0000 0001 0005 0010 0020 0030 0040 0050 0060 0070 0080 0090 0100:"
+      - "  wget $FS/global_30min/routing/channel_properties/dzRel${L}.nc"
+      - "  ncks -O -d lat,... -d lon,... dzRel${L}_global.nc dzRel${L}.nc"
+    prevention: "Never use level*1000 numbering — always level*100"
+  severity: crash
+  cross_references: []
+
+- id: dt_025
+  stage: s2_forcing_preparation
+  failure_domain: performance
+  symptom:
+    description: "MSWX forcing prep extremely slow (>20 min/year). Python hangs reading MSWX files."
+    error_pattern: ""
+    detection_method: timing
+  diagnosis:
+    root_cause: "MSWX files have HDF5 chunk layout [1, 1800, 3600] — full global per timestep"
+    explanation: >
+      MSWX 3-hourly files at /mnt/disk3/msxw/ are structured with one HDF5 chunk per timestep,
+      each covering the full 1800×3600 global grid. P_YYYY.nc is 3.0GB, Tair_YYYY.nc is 9.0GB.
+      Reading a spatial subset in Python (e.g., arr[:, 375:440, 1835:1920]) forces decompression
+      of ALL 2928 chunks (one full-globe chunk per timestep) because the spatial extents do not
+      respect the desired subset boundaries. The CPU is ~100% from decompression, taking >2.5
+      min/file. Direct ncks extraction also requires full-file decompression: ~2.5 min for P
+      and ~7.5 min for Tair per year.
+    affected_components: [prepare_mswx_forcing.py]
+  remedy:
+    action: "Pre-extract Rhine region with ncks in parallel (all 6 years × 2 vars = 12 jobs)"
+    manual_steps:
+      - "Run all 12 ncks extractions in parallel — CPU-bound, 192-core machine handles it"
+      - "ncks -O -d lat,46.05,52.45 -d lon,3.55,11.95 /mnt/disk3/msxw/P/P_YYYY.nc /tmp/P_YYYY_rhine.nc"
+      - "Total parallel wall time: ~7 min (bottleneck is Tair at 9GB × 6 years)"
+      - "Then run prepare_mswx_forcing_v2.py on the small extracted files (<20MB each)"
+    prevention: "Always pre-extract spatial subset before Python processing of MSWX files"
+  severity: performance
+  cross_references: [dt_023, dt_026]
+
+- id: dt_026
+  stage: s2_forcing_preparation
+  failure_domain: input_format
+  symptom:
+    description: "ValueError: cannot reshape array of size 15310512 into shape (366,8,65,85)."
+    error_pattern: "cannot reshape array"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "ncks float32 boundary exclusion yields 63×83 cells instead of expected 65×85"
+    explanation: >
+      MSWX lat/lon coordinates are stored as float32, which cannot represent values like 46.05
+      or 52.45 exactly (e.g., stored as 46.04999... or 52.45001...). ncks's coordinate-based
+      subsetting with -d lat,46.05,52.45 uses exact floating-point comparison, so boundary cells
+      whose float32 values fall just outside the specified range are excluded. This produces 63
+      instead of 65 lat cells and 83 instead of 85 lon cells, breaking the 5×5 block-mean
+      assumption for 0.1°→0.5° regridding.
+    affected_components: [prepare_mswx_forcing_v2.py]
+  remedy:
+    action: "Pad 1 cell on each edge with np.pad(..., mode='edge') or use wider ncks bounds"
+    manual_steps:
+      - "After reading extracted file, check shape: ntime, ny, nx = p_raw.shape"
+      - "If ny != 65 or nx != 85: p_raw = np.pad(p_raw, [(0,0),(1,1),(1,1)], mode='edge')"
+      - "Alternative: use -d lat,46.0,52.5 -d lon,3.5,12.0 (wider) to guarantee full coverage"
+      - "Wider bounds give 65 lat × 85 lon exactly for the Rhine-Meuse 30min clone"
+    prevention: "Always use bounds 0.05° wider than needed to account for float32 rounding"
+  severity: crash
+  cross_references: [dt_025]
+
+- id: dt_030
+  stage: s1b_input_acquisition
+  failure_domain: input_format
+  symptom:
+    description: "Subsetting an OPeNDAP input to a local NetCDF dies immediately on the first file."
+    error_pattern: "NetCDF: String match to name in use"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "Copying the reserved global attribute '_NCProperties' onto a new NetCDF file"
+    explanation: >
+      THREDDS/OPeNDAP exposes the netCDF-library-reserved global attribute
+      '_NCProperties' through Dataset.ncattrs(). A verbatim
+      dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()}) then tries to
+      SET that reserved name and netCDF4 raises NC_ENAMEINUSE
+      ("NetCDF: String match to name in use"). The library owns every
+      underscore-prefixed attribute. The same applies to variable attributes
+      ('_FillValue' must go through fill_value= at creation, not setncatts).
+    affected_components: [fetch_pcrglobwb_inputs.py]
+  remedy:
+    action: "Skip underscore-prefixed attributes when copying"
+    manual_steps:
+      - "dst.setncatts({k: src.getncattr(k) for k in src.ncattrs() if not k.startswith('_')})"
+      - "out.setncatts({k: var.getncattr(k) for k in var.ncattrs() if not k.startswith('_')})"
+    prevention: "Never copy underscore-prefixed NetCDF attributes to a new file."
+  severity: crash
+  cross_references: [dt_023]
+
+- id: dt_027
+  stage: s7_output_analysis
+  failure_domain: silent_wrong_result
+  symptom:
+    description: >
+      parse_pcrglobwb_output.py returns an EMPTY CSV (header only) for a short run,
+      or -- far worse -- a handful of ANNUAL values silently presented as a daily
+      discharge series for a multi-year run.
+    error_pattern: "Output CSV has only 1 line(s)"
+    detection_method: output_inspection
+  diagnosis:
+    root_cause: "Output file selected by first-alphabetical match instead of temporal aggregation"
+    explanation: >
+      [reportingOptions] emits the same variable at several aggregations, one
+      file each: discharge_dailyTot_output.nc, discharge_monthAvg_output.nc,
+      discharge_monthMax_output.nc, discharge_annuaAvg_output.nc. The old
+      extractor looped over sorted(os.listdir(...)) and took the FIRST file that
+      contained the variable -- and 'annuaAvg' sorts before 'dailyTot'. A run
+      shorter than one year yields zero annual steps (empty CSV, the loud
+      failure); a multi-year run yields N annual means that look like a valid
+      time series (the silent, dangerous failure) and score as garbage NSE.
+    affected_components: [parse_pcrglobwb_output.py]
+  remedy:
+    action: "Select the output file by aggregation token, never by sort order"
+    manual_steps:
+      - "parse_pcrglobwb_output.py --variable discharge --aggregation dailyTot ..."
+      - "dag.yaml declares the canonical file: outputs[discharge].emitted_in = discharge_dailyTot_output.nc"
+      - "Without --aggregation the tool now prefers dailyTot and WARNs when it falls back."
+    prevention: "Always pass --aggregation for time-series extraction; cross-check row count against the simulated day count."
+  severity: silent_wrong_result
+  cross_references: []
+
+- id: dt_028
+  stage: s2_forcing_preparation
+  failure_domain: unit_conversion
+  symptom:
+    description: "Basin is dead: near-zero runoff and discharge everywhere, soil never wets up."
+    error_pattern: ""
+    detection_method: range_check
+  diagnosis:
+    root_cause: "CMFD precipitation treated as mm/day when it is kg/m2/s"
+    explanation: >
+      CMFD V0200 (Data_forcing_01dy_010deg and Data_forcing_03hr_010deg) stores
+      'prec' with units "kg m-2 s-1", i.e. mm/s, and 'temp' in K. The variables
+      are named 'prec'/'temp' -- there is no 'prcp' and no 'pet'. Applying the
+      generic mm/day -> m/day factor (1/1000) to kg/m2/s understates
+      precipitation by 86400x. Correct factor is 86400/1000 = 86.4.
+      ki_tools_common.load_forcing already returns mm/day and degC, so when
+      building forcing through that loader only the /1000 step remains.
+    affected_components: [convert_forcing_to_pcrglobwb.py]
+  remedy:
+    action: "Use precip_factor = 86.4 for raw CMFD NetCDF"
+    manual_steps:
+      - "Raw-file mode: precip_varname='prec', temp_varname='temp', precip_factor=86400/1000"
+      - "CMFD DOES ship srad/wind/shum/pres: derive Penman-Monteith refET and set referenceETPotMethod = Input -- do NOT fall back to Hamon (dt_031)"
+      - "Sanity check: domain-mean annual precipitation must land in 300-800 mm for NE China"
+    prevention: "Always read the 'units' attribute of the source variable before choosing a factor."
+  severity: silent_wrong_result
+  cross_references: [dt_001, dt_009, dt_031]
+
+- id: dt_029
+  stage: s1b_input_acquisition
+  failure_domain: runtime
+  symptom:
+    description: >
+      Parallel OPeNDAP downloads fail with "NetCDF: String match to name in use"
+      or a bogus "[Errno -90] NetCDF: file not found" on files that plainly exist
+      and download fine one at a time.
+    error_pattern: "NetCDF: file not found"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "netCDF4/HDF5 C library is not thread-safe"
+    explanation: >
+      The netCDF4 build in pcrglobwb_python3 is compiled without the HDF5
+      thread-safety option. Concurrent nc.Dataset() opens from a ThreadPoolExecutor
+      corrupt each other's handle table, producing errors that point at the wrong
+      file. Symptoms are non-deterministic and disappear under serial execution,
+      which makes this easy to misdiagnose as a flaky server.
+    affected_components: [fetch_pcrglobwb_inputs.py]
+  remedy:
+    action: "Parallelise with ProcessPoolExecutor, not ThreadPoolExecutor"
+    manual_steps:
+      - "Each worker PROCESS gets its own netCDF/HDF5 library state."
+      - "Keep --workers modest (2-6); the 4TU THREDDS server also throttles, and genuine transient 'NetCDF: DAP failure' / 'I/O failure' still occur -- retry per file (dt_023)."
+    prevention: "Never share netCDF4 Dataset handles or open them concurrently across threads."
+  severity: crash
+  cross_references: [dt_023, dt_030]
+
+- id: dt_031
+  stage: s2_forcing_preparation
+  failure_domain: parameterization
+  symptom:
+    description: >
+      Simulated discharge tracks the observed hydrograph well (r ~ 0.85-0.90) but sits
+      uniformly too high: PBIAS strongly positive in nearly every month AND every scored
+      year, NSE negative. A pure volume offset on a well-correlated hydrograph.
+    error_pattern: ""
+    detection_method: range_check
+  diagnosis:
+    root_cause: "referenceETPotMethod = Hamon selected although the forcing ships radiation, wind and humidity"
+    explanation: >
+      Temperature-only Hamon PET under-estimates reference ET in cold continental
+      monsoon basins (~665 vs ~907 mm/yr FAO-56 Penman-Monteith at Songhua).
+      PCR-GLOBWB caps actualET by referencePotET (model/meteo.py:133,144,453), so the
+      water the basin fails to evaporate leaves as runoff and routes to the outlet.
+      Measured at Songhua/Harbin: P 500.0, totalEvaporation 369.9, totalRunoff 119.2
+      mm/yr against an observed 70.0 mm/yr (868.99 m3/s over 391,310 km2); NSE -0.537,
+      PBIAS +75.9%, r 0.864. The run completes without warning and the hydrograph shape
+      looks right, so the defect is silent.
+    affected_components: [meteo.py, convert_forcing_to_pcrglobwb.py, run_and_score.py]
+  remedy:
+    action: "Check the forcing for radiation/wind/humidity/pressure BEFORE choosing a PET method"
+    manual_steps:
+      - "CMFD V0200 ships srad/wind/shum/pres -- Penman-Monteith refET IS computable"
+      - "convert_forcing_to_pcrglobwb.build_from_ki_forcing(..., refet_method='penman') is the default; it writes referencePotET.nc"
+      - "Set referenceETPotMethod = Input and refETPotFileNC = global_30min/meteo/forcing/referencePotET.nc"
+      - "The NetCDF variable must be named 'evapotranspiration' (model/meteo.py:177) or overridden via referenceEPotVariableName"
+      - "Reserve Hamon for forcings that genuinely lack those fields"
+    prevention: >
+      Diagnostic tell: PBIAS positive uniformly across BOTH months and years while
+      r > 0.8 points at the prescribed PET method -- not at routing, timing or
+      parameters. Inspect the forcing's variable list before setting referenceETPotMethod.
+  severity: silent_wrong_result
+  cross_references: [dt_003, dt_009, dt_022, dt_028]
+
+- id: dt_032
+  name: wrong_river_snap
+  stage: s1
+  symptom:
+    description: >
+      make_clone_map reports an EXCELLENT area match (< 1-2%) at a gauge whose basin
+      is known to be poorly resolved at 30 arcmin, and the snapped cell centre sits
+      one or more cells away from the reported lon/lat in a direction perpendicular
+      to the river. Discharge then correlates poorly with the gauge for no apparent
+      reason, or correlates well with the WRONG season.
+    error_pattern: ""
+    detection_method: topology_check
+  diagnosis:
+    root_cause: "snap_gauge selected on |area - target| ALONE, with no test that the candidate cell is on the reported location's river"
+    explanation: >
+      A neighbouring tributary can carry a near-identical upstream area and win the
+      area contest while being a completely different river. Measured at Wangjiaba
+      (Huai, 2026-07-19): reported (32.4275, 115.595), target 30,630 km2. With
+      --snap-search 2 the area-only rule chose (33.25, 115.75) = 30,884 km2 (+0.83%),
+      which is on the Shaying/Ying TRIBUTARY -- the Huai mainstem gauges upstream of
+      Wangjiaba (Xixian 息县, Huaibin 淮滨) are NOT inside its catchment, and it drains
+      south into the mainstem at Yingshang. The true mainstem cell containing the
+      gauge, (32.25, 115.75), carries 44,414 km2 (+45.0%). The area-only rule
+      therefore traded a HONEST +45% resolution error for a SILENT wrong-river error
+      that looks like a near-perfect snap.
+    affected_components: [make_clone_map.py]
+  remedy:
+    action: "Require the cell containing the reported lon/lat to lie on the snapped cell's flow path"
+    manual_steps:
+      - "make_clone_map.py now applies a river-identity guard: the reported location's own cell must be in the candidate's upstream catchment (or be the candidate), which restricts candidates to the gauge cell and its DOWNSTREAM chain and excludes tributaries."
+      - "Among on-path candidates the best area match wins, tie-broken on distance."
+      - "The result is recorded as river_identity_guard: PASS|FAIL in <prefix>.clone.json -- CHECK IT."
+      - "A FAIL means no candidate had the gauge on its flow path: reduce --snap-search or verify the gauge coordinates."
+      - "Independent confirmation: a known gauge UPSTREAM on the same river must fall inside the traced catchment. At Wangjiaba, Xixian and Huaibin do; on the Shaying candidate they do not."
+    prevention: >
+      Treat a sub-1% area match at a coarse resolution with suspicion rather than
+      relief: 30 arcmin cells aggregate tributaries early, so Huai MAINSTEM gauges
+      are legitimately +31 to +55% (Xixian +54.6, Huaibin +31.2, Wangjiaba +45.0)
+      while Shaying gauges resolve well (Zhoukou -0.4, Fuyang -5.0). An unexpectedly
+      perfect match usually means the trace found a different river, not a better one.
+  severity: silent_wrong_result
+  cross_references: [dt_011, dt_027]

@@ -1,0 +1,780 @@
+template_version: "3.5"
+
+identity:
+  model_id: "CAESAR_Lisflood"
+  scientific_reference_version: "CAESAR-Lisflood (Coulthard et al. 2013, ESPL 38:1897-1906) — LISFLOOD-FP inertial shallow-water routing (Bates et al. 2010) coupled to the CAESAR cellular-automaton LEM with spatially variable TOPMODEL hydrology"
+  implementation:
+    id: "hail-caesar"
+    version: "v1.0"
+    provenance: "C++ (OpenMP-parallel); HAIL-CAESAR, the High-performance Architecture-Independent LISFLOOD-CAESAR port of CAESAR-Lisflood (D. Valters), github.com/dvalters/HAIL-CAESAR"
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c++"
+  license: "GPL"
+  repo_url: "https://github.com/dvalters/HAIL-CAESAR"
+
+boundary:
+  scope_in:
+    - "Non-steady-state 2D hydrodynamic surface flow / inundation (LISFLOOD-FP inertial shallow-water approximation)"
+    - "Spatially variable TOPMODEL rainfall-runoff generation"
+    - "Fluvial sediment transport over 9 grain-size fractions (Wilcock-Crowe or Einstein-Brown laws)"
+    - "Erosion/deposition and surface-elevation (DEM) evolution"
+    - "Active-layer / subsurface grain stratigraphy"
+    - "Hillslope processes: soil creep and landsliding"
+    - "Optional: lateral channel/bank erosion, vegetation effect on critical shear, BGS groundwater (basic/SLiM)"
+  scope_out:
+    - "Evaporation: code path exists (evaporate/k_evap) but is not exercised by the documented KI workflow"
+    - "Bedrock incision physics — bedrock acts only as a hard lower floor on erosion"
+    - "Surface energy balance / ET demand (no atmospheric energy closure)"
+    - "Sub-grid channel geometry — single uniform square-cell grid only"
+  spatial: "2-D grid"
+  temporal: "sub-hourly"
+  closure: "mass-balance"
+  notes: "Water and sediment are mass-conserved on a uniform square-cell grid. The domain is closed except for rainfall input and exit through grid-edge cells; reported outlet discharge is summed over ALL boundary (edge) cells, so a multi-edge-outlet DEM over-reports outlet Q. Adaptive internal timestep (between min_time_step and max_time_step) is set by a Courant-Friedrichs-Lewy condition; the model resolves sub-second to hourly flow steps while simulated periods range from hours (floods) to thousands of years (landscape evolution). No surface energy budget is closed."
+
+inputs:
+  forcing:
+    - category: "precipitation"
+      name: "Rainfall timeseries"
+      unit: "mm/hr (instantaneous rate, independent of timestep)"
+      source_kind: "forcing"
+      model_input_format: "Headerless space-delimited text; one row per timestep, N columns matching N hydroindex zones (1 column for uniform rainfall)"
+      notes: "rain_data_time_step (minutes) must match the file's temporal resolution exactly. Wrong units (mm/day, m/s, kg/m2/s) silently mis-scale runoff. Drives the TOPMODEL runoff module."
+  parameters:
+    - category: "hydrology"
+      name: "topmodel_m_value (TOPMODEL m / soil-store decay)"
+      unit: "m"
+      source_kind: "calibrated"
+      model_input_format: "param-file key:value"
+      notes: "Controls hydrograph shape; ~0.002-0.005 flashy, ~0.02 slow. Expects metres, not mm."
+    - category: "hydraulics"
+      name: "mannings_n (Manning roughness)"
+      unit: "s/m^(1/3)"
+      source_kind: "calibrated"
+      model_input_format: "param-file key:value (can be spatially variable raster)"
+      notes: "0.03-0.06 channels, 0.1+ floodplains. Default 0.04."
+    - category: "sediment"
+      name: "grain-size fractions and proportions (9 fractions)"
+      unit: "m diameter; proportions sum to 1"
+      source_kind: "dataset_lookup"
+      model_input_format: "param-file values or optional grain data file (index x y [9 surface] [9 subsurface] fractions)"
+      notes: "Default Swale diameters [0.000065..0.128 m] and proportions used if no grain data file supplied."
+    - category: "sediment"
+      name: "active_layer_thickness"
+      unit: "m"
+      source_kind: "calibrated"
+      model_input_format: "param-file key:value"
+      notes: "Default 0.2; must be >= 4x erode_limit or numerical instability results."
+    - category: "sediment"
+      name: "erode_limit (max erode limit)"
+      unit: "m"
+      source_kind: "calibrated"
+      model_input_format: "param-file key:value"
+      notes: "Max erosion/deposition per cell per step; ~0.01 for DEMs <=10 m to prevent instability."
+    - category: "sediment"
+      name: "chann_lateral_erosion / lateral erosion rate"
+      unit: "dimensionless"
+      source_kind: "calibrated"
+      model_input_format: "param-file key:value"
+      notes: "In-channel ~10-20; bank rate 0.01-0.001 braided to ~0.0001 meandering."
+    - category: "hillslope"
+      name: "creep_rate (soil creep)"
+      unit: "m/yr"
+      source_kind: "calibrated"
+      model_input_format: "param-file key:value"
+    - category: "hillslope"
+      name: "slope_failure_thresh (landslide critical angle)"
+      unit: "degrees"
+      source_kind: "calibrated"
+      model_input_format: "param-file key:value"
+      notes: "Default 45 deg; can vary with j_mean soil saturation."
+    - category: "vegetation"
+      name: "vegetation critical shear / grass maturity"
+      unit: "shear-stress threshold; maturity 0-1"
+      source_kind: "calibrated"
+      model_input_format: "param-file key:value (vegetation_on)"
+    - category: "substrate"
+      name: "Bedrock DEM (optional)"
+      unit: "m elevation"
+      source_kind: "dataset_lookup"
+      model_input_format: "ESRI ASCII Grid (.asc), same extent as DEM; elevations below surface"
+      notes: "Hard floor below which erosion cannot occur (bedrock_layer_on)."
+  initial_conditions:
+    - category: "topography"
+      name: "DEM (surface elevation)"
+      unit: "m above datum"
+      source_kind: "dataset_lookup"
+      model_input_format: "ESRI ASCII Grid (.asc): exactly 6 header lines + grid; cellsize in metres; NODATA -9999; Unix line endings"
+      notes: "Sets DX, grid dimensions, no_data. Must be hydrologically conditioned: sinks removed, continuous non-NODATA path from interior to a single grid-edge outlet. read_fname must NOT include the .asc extension."
+    - category: "sediment"
+      name: "initial grain-size distribution per cell"
+      unit: "9 fractions across active + subsurface layers"
+      source_kind: "default"
+      model_input_format: "default proportions or grain data file"
+    - category: "subsurface"
+      name: "initial groundwater store (optional)"
+      unit: "m head"
+      source_kind: "default"
+      model_input_format: "groundwater_mode (basic/SLiM) initialisation"
+  boundary_conditions:
+    - category: "domain"
+      name: "Outlet / water-and-sediment exit boundary"
+      unit: "grid-edge cell"
+      source_kind: "user_provided"
+      model_input_format: "DEM edge cell(s); discharge exits through edge"
+      notes: "Outlet must touch DEM edge through a continuous non-NODATA path; Q is summed over ALL edge cells."
+    - category: "run-control"
+      name: "max_run_duration"
+      unit: "hours"
+      source_kind: "user_provided"
+      model_input_format: "param-file key:value"
+      notes: "Must be set to T-1 (loop condition cycle/60 < maxcycle); e.g. 71 for a 72 hr run."
+    - category: "numerics"
+      name: "courant_number"
+      unit: "dimensionless"
+      source_kind: "user_provided"
+      model_input_format: "param-file key:value"
+      notes: "0.3 for fine (<2 m) DEMs, up to 0.7 for 20-50 m DEMs; must not be < 0.3."
+    - category: "numerics"
+      name: "froude_num_limit"
+      unit: "dimensionless"
+      source_kind: "user_provided"
+      model_input_format: "param-file key:value"
+      notes: "Subcritical-flow cap; reduce to 0.7 if checkerboarding appears."
+    - category: "numerics"
+      name: "min_time_step / max_time_step"
+      unit: "seconds"
+      source_kind: "user_provided"
+      model_input_format: "param-file key:value"
+      notes: "Bound the adaptive CFL timestep; reduce max_time_step (60/30 s) to cure NaN instability."
+    - category: "method-switch"
+      name: "transport_law (Wilcock-Crowe vs Einstein-Brown)"
+      unit: "categorical"
+      source_kind: "user_provided"
+      model_input_format: "param-file key:value"
+    - category: "method-switch"
+      name: "hydro_model_only (erosion on/off)"
+      unit: "boolean"
+      source_kind: "user_provided"
+      model_input_format: "param-file key:value"
+      notes: "yes = hydrology only, no sediment; no = full morphodynamic model."
+    - category: "method-switch"
+      name: "spatial_var_rain + hydroindex raster + num_unique_rain_cells"
+      unit: "boolean / integer zone IDs"
+      source_kind: "user_provided"
+      model_input_format: "param-file flags + .asc hydroindex raster matching rainfall column count"
+    - category: "run-control"
+      name: "output intervals (raster_output_interval, timeseries_save_interval) and write flags"
+      unit: "minutes / boolean"
+      source_kind: "user_provided"
+      model_input_format: "param-file key:value (write_path must exist before running)"
+
+processes:
+  modules:
+    - name: "Driver_main_loop"
+      role: "driver"
+      brief: "main.cpp do-while loop orders each iteration (water inputs -> flow_route -> depth_update -> wetted-area -> erosion -> water_flux_out -> hillslope/veg -> groundwater -> output); terminates when cycle/60 >= maxcycle."
+    - name: "RainfallRunoff_TOPMODEL"
+      role: "process_solver"
+      brief: "topmodel_runoff() + runoffGrid: TOPMODEL saturation-excess runoff per zone/cell from the rainfall timeseries; produces j_mean runoff rates (m/s)."
+    - name: "CatchmentWaterInputs"
+      role: "allocator"
+      brief: "catchment_waterinputs / get_catchment_input_points: distributes TOPMODEL runoff into water_depth at qualifying input cells (min_q .. max_q_for_depth_calc, baseflow)."
+    - name: "DrainageArea_D8"
+      role: "process_solver"
+      brief: "drainage_area_D8: steepest-descent D8 drainage area used to weight which cells receive catchment runoff input."
+    - name: "FlowRoute_LISFLOOD"
+      role: "process_solver"
+      brief: "flow_route(): Bates et al. (2010) inertial shallow-water approximation; updates qx/qy with Manning friction and Froude/discharge limiters."
+    - name: "DepthUpdate"
+      role: "integrator"
+      brief: "depth_update(): mass-conserving water_depth update from qx/qy divergence over DX; advects suspended sediment Vsusptot; tracks maxdepth."
+    - name: "TimestepControl_CFL"
+      role: "integrator"
+      brief: "set_maximum_timestep / CFL condition / get_flow_timestep: adaptive timestep dt = courant*DX/sqrt(g*maxdepth) bounded by min/max_time_step."
+    - name: "ScanArea_WettedMask"
+      role: "optional_module"
+      brief: "scan_area / check_wetted_area: builds the down_scan wetted-cell list every scan interval so all solvers iterate only over wet cells."
+    - name: "Erosion_FluvialTransport"
+      role: "process_solver"
+      brief: "erode(): bed shear and bedload/suspended transport via Wilcock-Crowe (2003) or Einstein-Brown laws across 9 grain fractions; updates elev, grain, strata; also advances the global time_step."
+    - name: "GrainSize_ActiveLayer"
+      role: "allocator"
+      brief: "addGS / sort_active / slide_GS / d50: manages active-layer and subsurface grain stratigraphy and grain redistribution during erosion."
+    - name: "LateralErosion"
+      role: "optional_module"
+      brief: "lateral_channel_erode / call_lateral: meander/bank erosion using water-surface edge arrays; experimental, gated by lateral_erosion_on."
+      applicability: "when lateral_erosion_on"
+    - name: "SlopeProcesses_Landslide_Creep"
+      role: "optional_module"
+      brief: "in_channel_landsliding / global_landsliding / creep: mass-wasting above the failure angle (default 45 deg) and soil creep, called at fixed iteration/time intervals."
+    - name: "Vegetation"
+      role: "optional_module"
+      brief: "grow_vegetation / grow_grass: grass growth that raises critical shear (vegTauCrit) and restricts lateral erosion."
+      applicability: "when vegetation_on"
+    - name: "Groundwater_BGS"
+      role: "optional_module"
+      brief: "initialise_groundwater / groundwater_flow / wpgw_water_input: optional BGS basic or SLiM groundwater (heads, recharge, baseflow) feeding water_depth."
+      applicability: "when groundwater_mode on"
+    - name: "Evaporation"
+      role: "optional_module"
+      brief: "evaporate(): removes water_depth via the k_evap coefficient; present in source but not exercised by the documented KI workflow."
+      applicability: "when evaporation enabled (not used in documented workflow)"
+    - name: "IO_RasterTimeseries"
+      role: "driver"
+      brief: "load_data / read_rainfalldata / output_data / save_raster_data: param-file ingest, DEM/rainfall/grain input, catchment.dat timeseries and .asc raster output."
+  internal_edges:
+    - from: "Driver_main_loop"
+      to: "RainfallRunoff_TOPMODEL"
+      kind: "invokes"
+      brief: "main loop drives the water-inputs step, calling topmodel_runoff to regenerate j_mean runoff each iteration."
+    - from: "Driver_main_loop"
+      to: "CatchmentWaterInputs"
+      kind: "invokes"
+      brief: "main loop calls catchment_waterinputs to inject runoff each iteration."
+    - from: "Driver_main_loop"
+      to: "FlowRoute_LISFLOOD"
+      kind: "invokes"
+      brief: "main loop calls flow_route each iteration."
+    - from: "Driver_main_loop"
+      to: "DepthUpdate"
+      kind: "invokes"
+      brief: "main loop calls depth_update after flow_route."
+    - from: "Driver_main_loop"
+      to: "ScanArea_WettedMask"
+      kind: "invokes"
+      brief: "main loop rebuilds the wetted-cell mask every scan interval."
+    - from: "Driver_main_loop"
+      to: "Erosion_FluvialTransport"
+      kind: "invokes"
+      brief: "main loop calls erode when hydro_model_only=no."
+    - from: "Driver_main_loop"
+      to: "SlopeProcesses_Landslide_Creep"
+      kind: "invokes"
+      brief: "main loop calls hillslope/landslide/creep at their fixed iteration intervals."
+    - from: "Driver_main_loop"
+      to: "Groundwater_BGS"
+      kind: "invokes"
+      brief: "main loop calls groundwater_flow when groundwater_mode is on."
+    - from: "Driver_main_loop"
+      to: "IO_RasterTimeseries"
+      kind: "invokes"
+      brief: "main loop triggers output_data/save_raster_data at the configured intervals."
+    - from: "IO_RasterTimeseries"
+      to: "surface elevation"
+      kind: "writes_state"
+      brief: "load_data reads the DEM into elev/bedrock and sets DX, grid dimensions, no_data."
+    - from: "Inputs"
+      to: "RainfallRunoff_TOPMODEL"
+      kind: "consumes_input"
+      brief: "hourly rainfall indexed by cycle/rain_data_time_step drives runoff generation."
+    - from: "RainfallRunoff_TOPMODEL"
+      to: "j_mean runoff rate"
+      kind: "writes_state"
+      brief: "topmodel_runoff computes new_j_mean/j_mean runoff-rate state per zone/cell."
+    - from: "j_mean runoff rate"
+      to: "CatchmentWaterInputs"
+      kind: "reads_state"
+      brief: "catchment water input converts j_mean*area into added water at input cells."
+    - from: "DrainageArea_D8"
+      to: "CatchmentWaterInputs"
+      kind: "invokes"
+      brief: "D8 drainage area weights which cells receive runoff."
+    - from: "CatchmentWaterInputs"
+      to: "water depth"
+      kind: "writes_state"
+      brief: "runoff added to water_depth at catchment input points."
+    - from: "water depth"
+      to: "FlowRoute_LISFLOOD"
+      kind: "reads_state"
+      brief: "flow_route reads water_depth + elev to compute hflow and water-surface slope."
+    - from: "FlowRoute_LISFLOOD"
+      to: "discharge per unit width"
+      kind: "writes_state"
+      brief: "Bates inertial update writes qx/qy discharge per unit width (and directional velocities)."
+    - from: "discharge per unit width"
+      to: "DepthUpdate"
+      kind: "reads_state"
+      brief: "depth_update reads qx/qy divergence."
+    - from: "DepthUpdate"
+      to: "water depth"
+      kind: "writes_state"
+      brief: "mass-conserving water_depth integration; updates maxdepth."
+    - from: "DepthUpdate"
+      to: "TimestepControl_CFL"
+      kind: "invokes"
+      brief: "maxdepth from depth_update feeds the CFL timestep computation."
+    - from: "TimestepControl_CFL"
+      to: "FlowRoute_LISFLOOD"
+      kind: "invokes"
+      brief: "get_flow_timestep clamps dt to the CFL limit for the next flow_route/depth_update."
+    - from: "ScanArea_WettedMask"
+      to: "FlowRoute_LISFLOOD"
+      kind: "invokes"
+      brief: "down_scan wetted-cell list lets flow_route/depth_update/erode iterate only over wet cells (shared mask)."
+    - from: "water depth"
+      to: "Erosion_FluvialTransport"
+      kind: "reads_state"
+      brief: "erode gated by water_depth > water_depth_erosion_threshold; computes bed shear Tau and Vel."
+    - from: "Erosion_FluvialTransport"
+      to: "surface elevation"
+      kind: "writes_state"
+      brief: "erode raises/lowers elev by net sediment flux per grain fraction."
+    - from: "Erosion_FluvialTransport"
+      to: "grain-size distribution per cell"
+      kind: "writes_state"
+      brief: "erode/addGS update active-layer grain mass and subsurface strata."
+    - from: "GrainSize_ActiveLayer"
+      to: "Erosion_FluvialTransport"
+      kind: "invokes"
+      brief: "addGS/d50/sand_fraction called inside erode for grain bookkeeping and the Wilcock hiding function."
+    - from: "Erosion_FluvialTransport"
+      to: "TimestepControl_CFL"
+      kind: "invokes"
+      brief: "erode multiplies the global time_step by 1.5, silently coupling erosion to the next hydrological timestep."
+    - from: "Erosion_FluvialTransport"
+      to: "suspended sediment store"
+      kind: "writes_state"
+      brief: "suspended fraction entrained into Vsusptot, then advected by flow_route/depth_update."
+    - from: "SlopeProcesses_Landslide_Creep"
+      to: "surface elevation"
+      kind: "writes_state"
+      brief: "landsliding/creep redistribute elevation above the failure angle / creep gradient."
+    - from: "Vegetation"
+      to: "Erosion_FluvialTransport"
+      kind: "invokes"
+      brief: "vegetation raises critical shear (vegTauCrit) and restricts lateral erosion."
+    - from: "Groundwater_BGS"
+      to: "water depth"
+      kind: "writes_state"
+      brief: "wpgw_water_input/groundwater_flow add recharge/baseflow to water_depth when groundwater_mode is on."
+    - from: "Evaporation"
+      to: "water depth"
+      kind: "writes_state"
+      brief: "evaporate removes water via k_evap (path not exercised in documented workflow)."
+    - from: "discharge per unit width"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "water_flux_out sums boundary discharge into the catchment.dat hydrograph (Qw, Jw, Qs)."
+    - from: "surface elevation"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "save_raster_data writes Elevations/WaterDepths/ElevationDiff/Grainz/flowvel .asc rasters."
+
+states:
+  variables:
+    - name: "surface elevation"
+      unit: "m"
+      role: "prognostic"
+    - name: "bedrock elevation"
+      unit: "m"
+      role: "diagnostic"
+    - name: "water depth"
+      unit: "m"
+      role: "prognostic"
+    - name: "discharge per unit width"
+      unit: "m2/s"
+      role: "prognostic"
+    - name: "flow velocity"
+      unit: "m/s"
+      role: "diagnostic"
+    - name: "bed shear stress"
+      unit: "Pa"
+      role: "diagnostic"
+    - name: "grain-size distribution per cell"
+      unit: "9 fractions across active + subsurface layers"
+      role: "prognostic"
+    - name: "suspended sediment store"
+      unit: "m3 per cell"
+      role: "prognostic"
+    - name: "j_mean runoff rate"
+      unit: "m/s"
+      role: "prognostic"
+    - name: "groundwater head store"
+      unit: "m"
+      role: "prognostic"
+    - name: "vegetation maturity"
+      unit: "0-1"
+      role: "prognostic"
+    - name: "cumulative sediment discharge (globalsediq)"
+      unit: "m3"
+      role: "accumulator"
+    - name: "adaptive flow timestep (time_step)"
+      unit: "s"
+      role: "diagnostic"
+  provenance: "populated"
+
+outputs:
+  - var: "Actual discharge (Qw)"
+    validation_rank: 1
+    unit: "m3/s"
+    description: "Instantaneous mean water discharge summed over the grid-edge outlet cell(s)"
+    emitted_in: "catchment.dat timeseries (column 2)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Q is summed over ALL DEM edge cells; mask the DEM to a single outlet before comparing against a gauge."
+            - "Reported time index is interval count x save interval, not clock time."
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Peak-discharge magnitude only."]
+      detrending_options: ["none"]
+  - var: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+    validation_rank: 2
+    unit: "m3 per save interval (interval total, NOT a rate)"
+    description: "Sediment volume leaving the outlet per save interval, total and per grain fraction"
+    emitted_in: "catchment.dat timeseries (columns 5-14)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Interval totals (m3), not a rate; divide by interval*60 for m3/s before comparing to a sediment-flux gauge."
+            - "Choice of sediment transport law can change yields by an order of magnitude (see influence)."
+        - obs_shape: "regional_aggregate_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Integrated catchment sediment yield over a period; deeply uncertain absolute magnitude."]
+      detrending_options: ["none"]
+  - var: "Water depth raster"
+    validation_rank: 3
+    unit: "m"
+    description: "Per-cell flow depth from the shallow-water routing"
+    emitted_in: "WaterDepths_NNNN.asc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "event_detection"]
+          determining_metric: "csi"
+          caveats: ["Inundation extent comparison (wet/dry hit-rate) against observed flood maps; check NODATA masking."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Raster cadence set by raster_output_interval."]
+      detrending_options: ["none"]
+  - var: "Flow velocity raster"
+    validation_rank: 4
+    unit: "m/s"
+    description: "Per-cell depth-averaged flow speed from the shallow-water routing"
+    emitted_in: "flowvel_NNNN.asc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Compare against surface velocimetry (LSPIV) or point velocity gauges; check NODATA masking and that velocity is depth-averaged, not surface."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Extract a single gauge cell; point velocity obs are rare for floods."]
+      detrending_options: ["none"]
+  - var: "Surface elevation raster"
+    validation_rank: 5
+    unit: "m"
+    description: "Current evolving surface DEM"
+    emitted_in: "Elevations_NNNN.asc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Compare to a measured post-event/post-period DEM."]
+      detrending_options: ["none"]
+  - var: "Elevation difference raster"
+    validation_rank: 6
+    unit: "m"
+    description: "Net erosion/deposition (elev - initial elev)"
+    emitted_in: "ElevationDiff_NNNN.asc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Compare against DEM-of-difference / measured erosion-deposition surveys."]
+      detrending_options: ["none"]
+  - var: "Surface grain size (D50) raster"
+    validation_rank: 7
+    unit: "m"
+    description: "Median surface-layer grain size per cell"
+    emitted_in: "Grainz_NNNN.asc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Compare to field grain-size surveys; subject to default-distribution bias if no grain data file supplied."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "sediment transport law (Wilcock-Crowe vs Einstein-Brown)"
+      to: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["skinner2018_caesarlisflood_morris_gsa", "skinner2023_caesarlisflood_gridcell"]
+    - from: "sediment transport law (Wilcock-Crowe vs Einstein-Brown)"
+      to: "Elevation difference raster"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["skinner2018_caesarlisflood_morris_gsa"]
+    - from: "mannings_n (Manning roughness)"
+      to: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["skinner2018_caesarlisflood_morris_gsa"]
+    - from: "mannings_n (Manning roughness)"
+      to: "Elevation difference raster"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "catchment-dependent"
+      citations: ["skinner2018_caesarlisflood_morris_gsa"]
+    - from: "grain-size fractions and proportions (9 fractions)"
+      to: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["skinner2018_caesarlisflood_morris_gsa"]
+    - from: "grain-size fractions and proportions (9 fractions)"
+      to: "Elevation difference raster"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["skinner2018_caesarlisflood_morris_gsa"]
+    - from: "vegetation critical shear stress"
+      to: "Elevation difference raster"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "catchment-dependent (strong in Tin Camp Creek)"
+      citations: ["skinner2018_caesarlisflood_morris_gsa"]
+    - from: "vegetation critical shear stress"
+      to: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["skinner2018_caesarlisflood_morris_gsa"]
+    - from: "input/output difference allowed (IOD)"
+      to: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["skinner2018_caesarlisflood_morris_gsa"]
+    - from: "min_q_for_depth_calc (minimum Q)"
+      to: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "catchment-dependent"
+      citations: ["skinner2018_caesarlisflood_morris_gsa"]
+    - from: "topmodel_m_value (TOPMODEL m)"
+      to: "Actual discharge (Qw)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["skinner2023_caesarlisflood_gridcell"]
+    - from: "topmodel_m_value (TOPMODEL m)"
+      to: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "fine grid (rises to HIGH at coarse cell sizes)"
+      citations: ["skinner2023_caesarlisflood_gridcell"]
+    - from: "DEM grid cell size"
+      to: "Actual discharge (Qw)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["skinner2023_caesarlisflood_gridcell"]
+    - from: "DEM grid cell size"
+      to: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "total yield stable; event composition changes markedly"
+      citations: ["skinner2023_caesarlisflood_gridcell"]
+    - from: "rainfall spatial/temporal resolution"
+      to: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      applicability: "long (multi-century) runs"
+      citations: ["coulthard2016_rainfall_resolution"]
+    - from: "rainfall spatial/temporal resolution"
+      to: "Elevation difference raster"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      applicability: "long (multi-century) runs"
+      citations: ["coulthard2016_rainfall_resolution"]
+    - from: "flow routing scheme (LISFLOOD-FP hydrodynamic vs steady-state)"
+      to: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "model-form (fixed in this implementation)"
+      citations: ["coulthard2013_caesarlisflood_model"]
+    - from: "erode_limit (max erode limit)"
+      to: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+      sensitivity_grade: LOW
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["skinner2018_caesarlisflood_morris_gsa"]
+    - from: "slope_failure_thresh (landslide threshold)"
+      to: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+      sensitivity_grade: LOW
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["skinner2018_caesarlisflood_morris_gsa"]
+    - from: "lateral erosion rate"
+      to: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+      sensitivity_grade: LOW
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["skinner2018_caesarlisflood_morris_gsa"]
+    - from: "creep_rate (soil creep)"
+      to: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+      sensitivity_grade: LOW
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["skinner2018_caesarlisflood_morris_gsa"]
+    - from: "evaporation rate"
+      to: "Total sediment discharge (Qs) and per-fraction sediment (Qg 1-9)"
+      sensitivity_grade: LOW
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["skinner2018_caesarlisflood_morris_gsa"]
+  citation_index:
+    skinner2018_caesarlisflood_morris_gsa:
+      short_citation: "Skinner et al. 2018"
+      doi: "10.5194/gmd-11-4873-2018"
+      note: "Morris-method global sensitivity analysis of 15 CAESAR-Lisflood parameters across Upper Swale and Tin Camp Creek; SED ranked #1 for sediment yield, MNR/GSS/VEG also high."
+    skinner2023_caesarlisflood_gridcell:
+      short_citation: "Skinner & Coulthard 2023"
+      doi: "10.5194/esurf-11-695-2023"
+      note: "Morris-method sensitivity to DEM grid cell size; cell size comparable in influence to SED and TOPMODEL m; m most influential on yield at coarse cells."
+    coulthard2016_rainfall_resolution:
+      short_citation: "Coulthard & Skinner 2016"
+      doi: "10.5194/esurf-4-757-2016"
+      note: "Spatial/temporal rainfall resolution drives >100% sediment-yield change with minimal hydrological-output change over 1000-year runs."
+    coulthard2013_caesarlisflood_model:
+      short_citation: "Coulthard et al. 2013"
+      doi: "10.1002/esp.3478"
+      note: "Foundational coupling of LISFLOOD-FP into CAESAR; hydrodynamic vs steady-state flow routing materially changes sediment transport and morphology (descriptive, not a quantitative SA)."
+
+safety:
+  hazards:
+    - id: "rainfall_units_overscale_flood"
+      kind: "weather_file_semantic"
+      description: "Rainfall authored in mm/day or m/s but read as mm/hr (>=24x over) floods the whole catchment within the first timesteps."
+      severity: "silent"
+    - id: "rainfall_units_underscale_zero_q"
+      kind: "weather_file_semantic"
+      description: "Rainfall in m/hr or with rain_data_time_step not matching the file resolution yields near-zero discharge for the whole run."
+      severity: "silent"
+    - id: "dem_units_not_metres"
+      kind: "soil_semantic"
+      description: "DEM in cm/feet or with NODATA read as elevation gives elevations >10000 or negative and corrupts hydraulics."
+      severity: "fatal_or_silent"
+    - id: "topmodel_m_units_mm_not_m"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "topmodel_m_value supplied in mm instead of metres distorts hydrograph shape; literature mm values must be divided by 1000."
+      severity: "silent"
+    - id: "outlet_q_summed_over_all_edges"
+      kind: "control_semantic"
+      description: "Reported outlet discharge is summed over ALL DEM edge cells, so a DEM with multiple low edge cells over-reports Q."
+      severity: "silent"
+    - id: "interior_sink_traps_water"
+      kind: "soil_semantic"
+      description: "Interior depressions or a NODATA-surrounded outlet trap water so it never reaches the edge; DEM must be pit-filled with a continuous non-NODATA path to a single edge outlet."
+      severity: "silent"
+    - id: "max_run_duration_off_by_one"
+      kind: "control_semantic"
+      description: "Loop condition cycle/60 < maxcycle truncates the run by one hour unless max_run_duration is set to T-1."
+      severity: "degraded"
+    - id: "courant_froude_checkerboard"
+      kind: "numerical_instability"
+      description: "Courant/Froude limits too high for a fine DEM produce a checkerboard wet/dry pattern; courant must be 0.3 for <2 m DEMs."
+      severity: "degraded"
+    - id: "timestep_nan_instability"
+      kind: "numerical_instability"
+      description: "Too-large timestep or extreme slope gradients produce NaN in outputs; reduce max_time_step (60/30 s) and courant_number."
+      severity: "fatal_or_silent"
+    - id: "active_layer_vs_erode_limit"
+      kind: "control_semantic"
+      description: "active_layer_thickness < 4x erode_limit causes numerical instability in the grain stratigraphy."
+      severity: "degraded"
+    - id: "hydro_only_zero_sediment"
+      kind: "control_semantic"
+      description: "hydro_model_only=yes (or too-high water_depth_erosion_threshold) yields all-zero sediment output despite erosion being expected."
+      severity: "silent"
+    - id: "mixed_units_timeseries"
+      kind: "parser_semantic"
+      description: "In catchment.dat, discharge is an instantaneous rate (m3/s) while sediment columns are interval totals (m3) — a documented mixed-units trap."
+      severity: "silent"
+    - id: "pow_integer_division_friction"
+      kind: "numerical_instability"
+      description: "Manning friction term uses std::pow(hflow, 10/3) where 10/3 evaluates to integer 3 (not 3.333) at LSDCatchmentModel.cpp lines 3115/3210 — a latent friction-slope error in the LISFLOOD routing."
+      severity: "silent"
+  validation_limits:
+    - "Soil-erosion (USLE-type) module has not been calibrated or tested against field data."
+    - "Lateral/bank-erosion module is experimental and untested in this implementation."
+    - "Bedrock is a hard erosion floor only; no bedrock-incision physics."
+    - "Groundwater (basic/SLiM) and vegetation modules are exposed via flags but minimally parameterised in this workflow."
+    - "No surface energy balance / ET; evaporation path present but not exercised."
+    - "Uniform square-cell grid only; grid cell size materially affects results (documented sensitivity)."
+  warnings:
+    - "Default grain-size diameters/proportions (Swale catchment) are used silently if no grain data file is supplied (read_in_graindata_from_file=no)."
+    - "Suspended-sediment settling velocities and grain diameters are hardcoded in source (commented 'should be read from a file') and are not user-configurable."
+    - "erode() multiplies the global hydrological timestep by 1.5 each call, so enabling erosion silently changes the flow timestep relative to a hydro-only run."
+    - "flow_route tests the literal -9999 NODATA while the configured no_data_value is -9999.9; a mismatched NODATA can be handled inconsistently."
+  assumptions:
+    - statement: "The runnable implementation is the C++ OpenMP HAIL-CAESAR port, not the C# CAESAR-Lisflood 1.9 GUI build; the science (LISFLOOD-FP routing + CAESAR LEM + TOPMODEL) is shared but this dag describes the C++ binding."
+      scope: "identity / implementation selection"
+      source: "HAIL-CAESAR repo (github.com/dvalters/HAIL-CAESAR) and the C++ source at src/main.cpp, LSDCatchmentModel.cpp/.hpp"
+      status: "adopted"
+    - statement: "Geometry is a 2-D uniform square-cell grid; each cell is a cellular-automaton element carrying its own elevation, water depth, velocity, sediment and grain state."
+      scope: "spatial discretisation"
+      source: "CSDMS Model:CAESAR_Lisflood page and HAIL-CAESAR documentation"
+      status: "adopted"
+    - statement: "Mass-balance closure holds for water and sediment; there is no surface energy-balance closure and evaporation is effectively inactive in the documented workflow."
+      scope: "conservation / closure"
+      source: "SourceForge CAESAR-Lisflood parameter wiki and HAIL-CAESAR source (evaporate/k_evap path)"
+      status: "adopted"
+    - statement: "TOPMODEL m is interpreted in metres (HAIL-CAESAR convention), distinct from mm-based literature values."
+      scope: "hydrology parameter units"
+      source: "HAIL-CAESAR docs/03_parameter_configuration and LSDCatchmentModel default M=0.005"
+      status: "adopted"

@@ -1,0 +1,201 @@
+schema_version: 1
+model_id: OpenHydroQual
+domain: hydrology
+generated_by: "self-improve session (Claude Opus 4.8) — validation-convention Step-B, general schema"
+generated_at: 2026-07-09
+
+# OpenHydroQual is a block/link water-resource + water-quality system model (hydraulic flow through
+# channels/weirs/pipes/Darcy links, per-block head & storage, ET source, and per-block/per-link
+# water-quality constituents O2/DOM/NH3/NOx...). domain_hint said "groundwater" but the actual
+# gradeable quantities are surface/network hydrology + water quality, so domain = hydrology.
+#
+# Grounding: the field's numeric conventions come from the two ASABE watershed-model evaluation
+# standards (Moriasi 2007 = general NSE/PBIAS/RSR tiers; Moriasi 2015 = flow + N/P water-quality
+# tiers), both read from cached full text, and the SWAT multi-site ET benchmark (Devia/HESS 2019)
+# which states explicit satisfactory ET thresholds (NSE>0.50, PBIAS<=+/-25%). Flow is strongly
+# grounded (2 standards). Water-quality constituents are grounded on the Moriasi 2015 N/P tiers as
+# the closest cited convention (moderate — OpenHydroQual constituents include DO/temp/pH beyond N/P,
+# a transfer). ET is grounded on 1 solid benchmark. water_table/level has NO cited numeric threshold
+# for the dag metric (r) in the fetched set -> null band + low confidence. Bands are plain numbers
+# read via `direction` (see VALIDATION_CONVENTION_SCHEMA.md). NEVER used to loosen a gate.
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_trans.58.10715.txt
+  hess2019swatet:
+    doi: 10.5194/hess-23-1113-2019
+    title: "Multi-site calibration and validation of SWAT with satellite-based evapotranspiration"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2019
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-23-1113-2019.txt
+
+validation:
+
+  # ===================== FLOW / discharge — point_time_series (well grounded) =====================
+  # dag canonical_quantity for `flow` is null; obs binding is discharge_m3s -> canonical = discharge.
+  - canonical_quantity: discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        cites: [moriasi2015, moriasi2007]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 5.0, good: 10.0, satisfactory: 15.0}
+        pass_band: satisfactory
+        cites: [moriasi2015]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Moriasi 2015 co-reports R2 for flow (monthly R2 > 0.85 very good, satisfactory > 0.70); informative, not the decision metric."
+        cites: [moriasi2015]
+    validated_when: "monthly/daily NSE >= 0.50 (satisfactory) AND |PBIAS| <= 15% (Moriasi flow tiers)"
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      Moriasi 2015 recommended flow criteria (D-M-A): "NSE > 0.80 [very good], 0.70 < NSE <= 0.80
+      [good], 0.50 < NSE <= 0.70 [satisfactory], NSE <= 0.50 [unsatisfactory]" and "PBIAS < +/-5 [very
+      good] ... 10 <= PBIAS < +/-15 [satisfactory], PBIAS >= +/-15 [unsatisfactory]". Moriasi 2007
+      corroborates the general satisfactory boundary "NSE > 0.50 and RSR < 0.70". dag determining_metric
+      (nse) retained as headline; PBIAS added as a co-headline per the standard.
+
+  # ============ WATER-QUALITY CONSTITUENTS / trace_gas — point_time_series (transferred N/P) ========
+  # OpenHydroQual `constituent_concentration` (O2/DOM/NH3/NOx + DO/temp/pH). Closest cited convention
+  # = Moriasi 2015 nutrient (N/P) tiers; applying to non-N/P species (DO, temperature, pH) is a
+  # transfer -> moderate / reduced confidence.
+  - canonical_quantity: trace_gas
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.65, good: 0.50, satisfactory: 0.35}
+        pass_band: satisfactory
+        cites: [moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 15.0, good: 20.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        cites: [moriasi2015]
+    secondary_metrics: []
+    validated_when: "constituent NSE >= 0.35 (satisfactory) AND |PBIAS| <= 30% (Moriasi 2015 N/P water-quality tiers)"
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Moriasi 2015 recommended N/P criteria (monthly): "NSE > 0.65 [very good], 0.50 < NSE <= 0.65
+      [good], 0.35 < NSE <= 0.50 [satisfactory], NSE <= 0.35 [unsatisfactory]" and "PBIAS < +/-15 [very
+      good] ... 20 <= PBIAS < +/-30 [satisfactory], PBIAS >= +/-30 [unsatisfactory]". Moriasi 2007
+      general table gives a looser N/P PBIAS envelope (satisfactory +/-40 to +/-70), superseded here by
+      the stricter 2015 tiers. Confidence reduced because OpenHydroQual constituents extend beyond N/P
+      (DO, temperature, pH) for which these are the nearest-available cited threshold, not species-exact.
+
+  # ================ WATER-QUALITY CONSTITUENTS / trace_gas — point_snapshot (grab sample) ===========
+  - canonical_quantity: trace_gas
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 15.0, good: 20.0, satisfactory: 30.0}
+        pass_band: satisfactory
+        cites: [moriasi2015]
+    secondary_metrics: []
+    validated_when: "grab-sample/effluent-event |PBIAS| <= 30% (Moriasi 2015 N/P magnitude tier)"
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: >-
+      Instantaneous grab-sample/effluent concentration: only magnitude accuracy is gradeable (no
+      temporal series), so PBIAS is the sole headline, band transferred from Moriasi 2015 N/P
+      (satisfactory +/-30%). Same non-N/P-species transfer caveat as the time-series block.
+
+  # ===================== EVAPOTRANSPIRATION / point_time_series (1 solid benchmark) ==================
+  - canonical_quantity: evapotranspiration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: 0.50}
+        pass_band: satisfactory
+        cites: [hess2019swatet, moriasi2007]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: 25.0}
+        pass_band: satisfactory
+        cites: [hess2019swatet]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "SWAT-ET benchmark co-reports R2 > 0.60 as a satisfactory companion threshold for monthly AET; supportive, not decisive."
+        cites: [hess2019swatet]
+    validated_when: "monthly AET NSE >= 0.50 AND |PBIAS| <= 25% (SWAT satellite-ET multi-site benchmark)"
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      HESS 2019 SWAT satellite-ET benchmark states (citing Moriasi 2007, 2015): "NSE > 0.50, R2 > 0.60,
+      KGE >= 0.50 and PBIAS <= +/-25% are the required satisfactory thresholds" and reports "satisfactory
+      model performance (PBIAS <= +/-25) in the six" catchments for monthly AET. NSE 0.50 boundary also
+      per Moriasi 2007. Single benchmark -> moderate; convert OpenHydroQual volumetric ET flux to depth
+      over block area before comparing (dag caveat).
+
+  # ===================== HEAD / STORAGE (water level) — point_time_series (UNGROUNDED metric) ========
+  # dag determining_metric = r (correlation). No cited numeric r-tier for water level/head in the
+  # fetched set -> null band + low confidence. NEVER loosens the gate.
+  - canonical_quantity: water_table
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no cited numeric r (correlation) threshold for water level / head in the fetched set"
+        cites: []
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          Water level/stage time series is commonly graded like a flow hydrograph; Moriasi 2015 flow
+          NSE satisfactory boundary (0.50) is the nearest cited convention but is defined for discharge,
+          not head, and the dag decision metric here is r (not nse), so this is contextual only.
+        cites: [moriasi2015]
+    validated_when: "UNRESOLVED — no cited r-threshold for water level; treat as data/convention gap. Contextually, stage skill is often judged like flow (NSE >= 0.50, Moriasi 2015) but that is not the dag metric."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Per-block head/water-level output vs well/pond/stage observations. None of the fetched papers
+      report a numeric threshold for the correlation coefficient (r) on water level; the SUDS paper's
+      "NSE > 0.70" refers to ML prediction accuracy, not a level-validation convention. Band null per
+      no-fabrication rule; block may contextualize (suppress spurious fix_ki) but MUST NOT loosen the
+      gate. A stage/head RMSE or normalized-RMSE convention paper (e.g. Anderson & Woessner) would
+      raise this — see deferred_paywalled.
+
+deferred_paywalled:
+  - ref: "Anderson & Woessner / Hill 1998 — groundwater head calibration targets (head RMSE / normalized RMSE convention)"
+    doi: null
+    needed_for: [water_table]
+  - ref: "A species-specific water-quality evaluation benchmark reporting DO / temperature / pH RMSE-PBIAS-NSE tiers (beyond the Moriasi N/P transfer)"
+    doi: null
+    needed_for: [trace_gas]

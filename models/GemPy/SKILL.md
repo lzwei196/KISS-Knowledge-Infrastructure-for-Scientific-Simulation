@@ -32,7 +32,7 @@
 | Language          | Python 3.10–3.12                                   |
 | License           | EUPL-1.2                                           |
 | Repository        | https://github.com/cgre-aachen/gempy               |
-| Validation status | Phase 2 — KI authored, build pending               |
+| Validation status | Phase 3 — DTB validated (model-to-model, 2026-05-13)|
 
 ---
 
@@ -43,6 +43,39 @@
 **Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
 
 **Data Validation Reference**: See `data_ki/DTB/SKILL.md` for depth-to-bedrock data.
+
+## DTB Validation Record (2026-05-13)
+
+**Reference dataset**: `DTB_CHINA_100.tif` — ML-derived product (machine learning
+applied to geological, topographic, and remote-sensing predictors). **Not borehole
+measurements.** This is a model-to-model consistency check, not an observational validation.
+
+**Validation type**: GemPy implicit surface co-kriging (150 train pts) vs. ML DTB raster.
+
+**Key implementation notes confirmed by debugging**:
+- Use **DENSE grid** (`resolution=[nx,ny,nz]`), NOT octree (octree hangs for DTB-scale data)
+- GemPy block ID mapping: `ID=1` = above ground surface (z>0), `ID=2` = soil layer
+  (0 > z > −DTB), `ID=3` = basement/bedrock (z < −DTB). **Extract DTB as first
+  occurrence of ID=3** in a surface-to-depth probe column — NOT the first change from ID=1
+  (that triggers at z≈0, giving wrong near-zero DTB predictions)
+- Custom grid via `gp.set_custom_grid(model.grid, test_profiles)` then
+  `model.solutions.raw_arrays.custom.lith_block`
+
+**Results across 3 Chinese sites** (Loess Plateau, Sichuan Basin, Tibetan Plateau):
+
+| Site          | Mean DTB | PBIAS   | RMSE   | R     |
+|---------------|----------|---------|--------|-------|
+| Loess Plateau | 36.6 m   | +13.7%  | 12.5 m | 0.17  |
+| Sichuan Basin | 14.9 m   | −2.9%   | 5.6 m  | 0.31  |
+| Tibetan Plat. | 21.2 m   | +3.3%   | 10.9 m | 0.25  |
+
+**Primary KPI: |PBIAS| < 15% (all sites pass).** R is NOT the primary KPI —
+GemPy fits a smooth geological surface and cannot reproduce fine-scale ML raster
+variability (sub-km spatial correlation). R is stable at 0.15–0.35 regardless of
+training density (confirmed by sensitivity test). Alice (external reviewer) confirmed
+results are reasonable and comparable to other model outputs against this reference.
+
+**Outputs**: `/mnt/disk1/Hydrocraft_server/outputs/gempy_dtb_multisite/`
 
 
 ## 1. Overview

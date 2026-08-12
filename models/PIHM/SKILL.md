@@ -111,12 +111,12 @@ make test   # Compiles Flux-PIHM and runs ShaleHills example
 
 | # | Stage | Description | Input | Output | Tool |
 |---|-------|-------------|-------|--------|------|
-| S1 | Mesh generation | Create TIN from DEM using PIHMgis | DEM, watershed boundary | `.mesh` file | PIHMgis (external) |
-| S2 | Attribute assignment | Assign soil/lc/forcing to elements | Soil map, LC map | `.att` file | PIHMgis (external) |
+| S1 | Mesh generation | Create TIN from DEM (headless: whitebox delineation + meshpy constrained Delaunay) | DEM, outlet lon/lat | `.mesh` file | `mesh_builder.py` |
+| S2 | Attribute assignment | Assign soil/geol/lc/meteo/lai indices to elements | Soil map, LC map | `.att` file | `mesh_builder.py` |
 | S3 | Forcing preparation | Convert met data to PIHM format | ERA5/NLDAS/station data | `.meteo` file | `forcing_converter.py` |
 | S4 | Soil parameterization | Convert soil database to PIHM format | HWSD/SSURGO | `.soil`, `.geol` files | `soil_converter.py` |
-| S5 | Parameter configuration | Set control and calibration params | User choices | `.para`, `.calib` files | Manual / PIHMgis |
-| S6 | Initial conditions | Set or generate IC file | Prior run / defaults | `.ic` file | Manual / spin-up |
+| S5 | Parameter configuration | Set control and calibration params | User choices | `.para`, `.calib`, `.lsm`, `.lai` | `config_writer.py` |
+| S6 | Initial conditions | Spin-up (SIMULATION_MODE 1) then INIT_MODE 1 | Prior run / defaults | `.ic` file | `config_writer.py` + `run_pihm.py` |
 | S7 | Model execution | Run PIHM binary | All input files | Binary output | `run_pihm.py` |
 | S8 | Output analysis | Parse and visualize results | Binary `.dat` files | CSV, plots | `output_parser.py` |
 | S9 | Calibration | Adjust multipliers for performance | Observed data | Updated `.calib` | Manual iteration |
@@ -125,6 +125,52 @@ make test   # Compiles Flux-PIHM and runs ShaleHills example
 - S1 → S2 → S3,S4,S5,S6 (parallel) → S7 → S8 → S9 → S7 (iterate)
 
 ---
+
+## ✅ NEW BASINS ARE SUPPORTED HEADLESSLY (since 2026-08-02)
+
+Stages **S1 (TIN mesh)** and **S2 (attribute assignment)** used to require
+**PIHMgis**, an interactive QGIS-plugin GUI that is not installed and is not a
+batch executable (so the WINE pattern does NOT apply). That block is CLOSED:
+
+    tools/mesh_builder.py
+
+generates `<project>.mesh` / `.att` / `.riv` for an arbitrary watershed from a
+DEM + outlet coordinate, using
+`ki_tools_common.terrain_ops.delineate_basin` (whitebox breach → D8 →
+accumulation → snap → watershed) +
+`extract_river_centerline_from_streams` for the main stem, then a
+**constrained-Delaunay TIN** (meshpy/Triangle) in which the basin boundary and
+the river centreline are CONSTRAINED segments — so every river reach lands on
+element edges, which is what `InitRiver` requires.
+
+```bash
+python tools/mesh_builder.py --dem /mnt/datasets/MERIT_DEM/n40e005_dem.tif \
+    --outlet-lon 8.6124 --outlet-lat 42.1771 \
+    --out-dir input/ChiuniFR --project ChiuniFR \
+    --target-elem-area-km2 0.12 --aquifer-thickness-m 15
+```
+
+Verified 2026-08-02: 49.5 km² Chiuni catchment (Corsica, FR) → 752 elements,
+446 nodes, 14 river segments; `flux-pihm` runs it end to end.
+
+**Conventions the generator encodes** (all verified against `input/ShaleHills`):
+
+| Rule | Why | Failure if broken |
+|---|---|---|
+| Elements must be **counter-clockwise** | `InitTopo` uses a SIGNED area `0.5*((x1-x0)(y2-y0)-(y1-y0)(x2-x0))` | negative element area → negative storage, silent |
+| `NABR[j]` = neighbour across the edge **OPPOSITE node j**, 0 = none | verified 1544/1544 ShaleHills records | fluxes routed to the wrong neighbour |
+| River `LEFT`/`RIGHT` must be **mesh neighbours of each other** | `InitRiver` looks up `elem[left].nabr[j] == right` | river never couples to the hillslope |
+| Node elevations must **decrease** along the river | outlet `DOWN = -3` (ZERO_DPTH_GRAD) computes `sqrt(grad_h)` | NaN discharge → CVODE dies on step 1 |
+| Drainage area for channel width must be a **running maximum** | a segment midpoint can miss the 1-cell stream raster | 1 m wide channel mid-mainstem |
+
+**Still true (dt_023):** a headless TIN gives a SINGLE-THREAD main stem, so
+**basin-outlet DISCHARGE on a large basin is still not trustworthy** — tributary
+inflow is not accumulated. Use the headless path for small/medium basins and for
+**state** variables (GW head, soil moisture, ET), and validate discharge only
+where the delineated main stem carries the basin.
+
+**S5/S6** (`.para` / `.calib` / `.lsm` / `.lai`, spin-up IC) are likewise no
+longer "Manual": see `tools/config_writer.py`.
 
 ## 4. Input Files Reference
 
@@ -144,13 +190,20 @@ INDEX  X(m)  Y(m)  ZMIN(m)  ZMAX(m)
 
 ### 4.2 Attribute File (`.att`)
 ```
-NUMATT  535
 INDEX  SOIL  GEOL  LC  METEO  LAI  BC1  BC2  BC3
 1      1     1     28  1      0    0    0    0
 ```
+- **There is NO `NUMATT` record.** `src/read_att.c` CheckHeaders the FIRST line
+  against `INDEX SOIL GEOL LC METEO LAI BC1 BC2 BC3` and takes the row count
+  from `nelem` in the `.mesh`. Writing a leading `NUMATT <n>` aborts with
+  "input file format error ... at Line 1" (dt_024).
 - BC values: 0 = no flow, >0 = boundary condition series index
+- `GEOL 0` is valid (no `.geol` file); the soil column is then used throughout.
 
 ### 4.3 Soil File (`.soil`)
+`src/read_soil.c` calls `CheckHeader(16, INDEX SILT CLAY OM BD KINF KSATV KSATH
+MAXSMC MINSMC ALPHA BETA MACHF MACVF DMAC QTZ)` on the line after `NUMSOIL` —
+the column header is MANDATORY (dt_024).
 ```
 NUMSOIL  5
 INDEX SILT(%) CLAY(%) OM(%) BD(g/cm3) KINF(m/s) KSATV(m/s) KSATH(m/s)
@@ -163,11 +216,17 @@ KMACH_RO  1000.0
 
 ### 4.4 Meteorological Forcing (`.meteo`)
 ```
-METEO_TS  1
-WIND_LVL  10.0
-TIME              PRCP(kg/m2/s)  SFCTMP(K)  RH(%)  SFCSPD(m/s)  SOLAR(W/m2)  LONGWV(W/m2)  PRES(Pa)
-2009-01-01 00:00  0.0            271.55     65.0   2.3          0.0          280.5         101325.0
+METEO_TS  1   WIND_LVL  10.0
+TIME              PRCP     SFCTMP  RH   SFCSPD  SOLAR  LONGWV  PRES
+#TS               kg/m2/s  K       %    m/s     W/m2   W/m2    Pa
+2009-01-01 00:00  0.0      271.55  65.0 2.3     0.0    280.5   101325.0
 ```
+- **`METEO_TS` and `WIND_LVL` are ONE line.** `src/read_forc.c` does
+  `sscanf(cmdstr, "%s %d %s %lf", ...)` and requires `match == 4`, then
+  `CheckHeader(8, TIME PRCP SFCTMP RH SFCSPD SOLAR LONGWV PRES)`. Two separate
+  lines, or a missing column header, is ERR_WRONG_FORMAT (dt_024).
+- `WIND_LVL` must match the forcing's wind measurement height: **2.0 for NASA
+  POWER** (`ki_tools_common` requests `WS2M`), 10.0 for MSWX/CMFD.
 
 ### 4.5 River File (`.riv`)
 ```
@@ -236,6 +295,8 @@ TIME           VALUE(m or m3/s)
 
 | # | Tool | Stage | Purpose | Lines |
 |---|------|-------|---------|-------|
+| 0 | `mesh_builder.py` | S1+S2 | **Headless** DEM+outlet → `.mesh`/`.att`/`.riv` | ~470 |
+| 0b | `config_writer.py` | S5+S6 | `.para`/`.calib`/`.lsm`/`.lai` (+ spin-up modes) | ~180 |
 | 1 | `forcing_converter.py` | S3 | Convert ERA5/CSV met data → PIHM `.meteo` format | ~280 |
 | 2 | `soil_converter.py` | S4 | Convert HWSD/SSURGO → PIHM `.soil` and `.geol` | ~250 |
 | 3 | `run_pihm.py` | S7 | Execute PIHM binary with validation | ~200 |
@@ -289,7 +350,7 @@ massive output files that fill disk.
 |----------|-------------|------|-------------|
 | SURF | `.surf.dat` | m | Surface water depth |
 | UNSAT | `.unsat.dat` | m | Unsaturated zone storage |
-| GW | `.gw.dat` | m | Groundwater head |
+| GW | `.gw.dat` | m | Groundwater head **above the element's aquifer bottom (`zmin`)**, NOT depth-to-water. Water-table elevation = `elem.topo.zmin + GW`; depth below ground = `zmax - zmin - GW` (`lat_flow.c`: `elem.ws.gw + elem.topo.zmin`) |
 | SNOW | `.snow.dat` | m | Snow water equivalent |
 | CMC | `.cmc.dat` | m | Canopy moisture storage |
 | INFIL | `.infil.dat` | m/s | Infiltration rate |
@@ -455,6 +516,10 @@ python3 ki/tools/output_parser.py \
 | dt_018 | S4 | parameter_format | silent | Soil type index mismatch |
 | dt_019 | S8 | output_format | degraded | Binary endianness mismatch |
 | dt_020 | S7 | runtime | fatal | Negative state variable crash |
+| dt_021 | S1 | capability | fatal | New-basin mesh block — **RESOLVED by `mesh_builder.py`** |
+| dt_022 | — | domain_validity | n/a | Pumped-aquifer water-table obs are out of PIHM's domain |
+| dt_023 | S1 | mesh_quality | degraded | Headless TIN = single-thread stem → discharge under-accumulates |
+| dt_024 | S2/S3/S4 | input_format | fatal | `.att` has no NUMATT; `.meteo` header is ONE line; `.soil` needs its column header |
 
 ---
 

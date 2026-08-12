@@ -1,0 +1,378 @@
+template_version: "3.5"
+
+identity:
+  model_id: "pyGIMLi"
+  scientific_reference_version: "pyGIMLi generalized Gauss-Newton inversion + FEM/FVM forward framework (Rücker, Günther & Wagner 2017, Computers & Geosciences 109:106-123)"
+  implementation:
+    id: "pygimli"
+    version: "1.5.5 (git describe v1.5.5.post2-56-ge792d84b)"
+    provenance: "Python frontend over a C++ numerical core (libgimli / pgcore); multi-method geophysical forward + inverse modelling library by Rücker, Günther, Wagner et al."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "python"
+  license: "Apache-2.0"
+  repo_url: "https://github.com/gimli-org/pyGIMLi"
+
+boundary:
+  scope_in:
+    - "Geophysical forward modelling (FEM/FVM PDE solve) of synthetic data from a subsurface property model"
+    - "Regularized Gauss-Newton inversion to recover spatially-distributed physical properties from field data"
+    - "Electrical Resistivity Tomography (ERT)"
+    - "Seismic Refraction / first-arrival Traveltime Tomography (SRT)"
+    - "Spectral Induced Polarization (SIP / IP), Electromagnetics (FDEM/TDEM), Vertical Electrical Sounding (VES), gravity"
+    - "Unstructured 2-D / 3-D finite-element mesh generation and management"
+    - "Flexible regularization (smoothness, geostatistical, region-wise, anisotropic) and structurally-coupled joint inversion"
+    - "Model appraisal: coverage / cumulative sensitivity and resolution analysis"
+  scope_out:
+    - "Not a time-evolving / forced physical model — a single survey snapshot is solved; 'iterations' are Gauss-Newton steps, not physical time"
+    - "Not a turnkey single-method processing package; exposes building blocks (meshes, operators, frameworks)"
+    - "No built-in optimal-lambda selector (regularization strength must be supplied or swept)"
+    - "Operates in local Cartesian metres, not geographic lat/lon"
+  spatial: "2-D / 3-D unstructured FEM mesh (also 1-D layered for VES/EM sounding); local Cartesian metres"
+  temporal: ""
+  closure: "none"
+  notes: "pyGIMLi is a steady-state forward/inverse PDE library, not a conservation-balance simulator: 'closure: none' reflects that there is no mass/energy budget being closed — the forward problem is a discretized FEM/FVM PDE solve and the inverse problem is a regularized Gauss-Newton minimization (data misfit + lambda x regularization), converging on a target chi^2 = Phi_d/N = 1 (data fitted within noise). temporal left empty because no enum value applies: the model resolves one survey snapshot and the iteration loop is the Gauss-Newton optimizer, not a physical time axis."
+
+inputs:
+  forcing:
+    - {category: "observed_data", name: "ERT apparent resistivity (rhoa)", unit: "Ohm·m", source_kind: "user_provided", model_input_format: "DataContainer from BERT/GIMLI .dat/.ohm, Res2DInv/ABEM/Syscal exports, or generic CSV (a,b,m,n,rhoa)", notes: "The observation the inversion fits; consumed every Gauss-Newton iteration to form the data residual d_obs - d_pred. Must be apparent resistivity (geometric factor k applied), not raw resistance."}
+    - {category: "observed_data", name: "SRT first-arrival traveltime (t)", unit: "s", source_kind: "user_provided", model_input_format: "SEG-2 .sg2, GIMLI .sgt/.gtt, or CSV picks (sx,rx,t)", notes: "Seconds, NOT milliseconds; ms input yields velocities 1000x too high."}
+    - {category: "observed_data", name: "IP apparent phase (ipa)", unit: "mrad", source_kind: "user_provided", model_input_format: "instrument export into DataContainer", notes: "Negative (lag) sign convention expected; SIP/IP only."}
+    - {category: "observed_data", name: "EM apparent conductivity", unit: "S/m", source_kind: "user_provided", model_input_format: "FDEM/TDEM data (in-phase / quadrature components)", notes: "EM methods only."}
+  parameters:
+    - {category: "geometry", name: "electrode / sensor positions", unit: "m (local Cartesian)", source_kind: "user_provided", model_input_format: "positions embedded in DataContainer", notes: "Must be unique nodes (duplicates segfault Triangle) and in metres, local origin."}
+    - {category: "error_model", name: "data error estimate (relative + absolute)", unit: "fraction 0-1", source_kind: "user_provided", model_input_format: "per-datum error vector; default ert.estimateError() relativeError=0.03 + absolute-V from assumed 0.1 A current", notes: "Fraction, NOT percent; sets the data-weighting matrix W_d and therefore chi^2."}
+    - {category: "discretization", name: "FEM mesh (parameter + forward)", unit: "m", source_kind: "user_provided", model_input_format: ".bms native binary, .poly PLC, .msh Gmsh v2/v4, .vtk; or auto createParaMesh from geometry", notes: "Parametric (investigation) domain ~0.2-0.5x sensor spread; boundary region 2-5x spread to avoid FEM boundary leakage."}
+    - {category: "regularization", name: "regularization strength lambda", unit: "dimensionless", source_kind: "default", model_input_format: "scalar; InversionBase default 20", notes: "Trade-off between model smoothness and data fit; held constant per iteration unless lambdaFactor<1 sets a cooling schedule."}
+    - {category: "regularization", name: "zWeight (vertical smoothness anisotropy)", unit: "dimensionless", source_kind: "default", model_input_format: "per-region scalar; default 1.0 (isotropic)", notes: "<1 permits more vertical structure / improves depth resolution."}
+    - {category: "petrophysics", name: "physical/petrophysical model parameters & region table", unit: "method-dependent", source_kind: "dataset_lookup", model_input_format: "per-region startModel/limits/transform; petrophysical relations (pygimli.physics.petro)", notes: "Rock-type / borehole-log priors and phase-model constants for petrophysical joint inversion."}
+  initial_conditions:
+    - {category: "starting_state", name: "starting model (m0)", unit: "method-dependent", source_kind: "default", model_input_format: "homogeneous or layered; default = median of apparent data (ERT exp(mean(log(rhoa))); SRT vTop=500/vBottom=5000 m/s gradient)", notes: "Gauss-Newton is locally convergent; a poor start stalls convergence (chi^2 plateau >2)."}
+    - {category: "starting_state", name: "reference model (m_ref)", unit: "method-dependent", source_kind: "default", model_input_format: "reference vector in the Tikhonov term lambda W_m (m - m_ref)", notes: "Default equals the starting model unless a prior reference is supplied."}
+  boundary_conditions:
+    - {category: "method_selection", name: "geophysical method", unit: "categorical", source_kind: "user_provided", model_input_format: "Manager choice: ERTManager / TravelTimeManager / SIP SpectrumManager / FDEM-TDEM / VESManager / JointInversion", notes: "Selects the forward operator, units, tokens and transforms — all input/output/state semantics are method-conditional."}
+    - {category: "acquisition_scheme", name: "electrode / measurement scheme", unit: "categorical", source_kind: "user_provided", model_input_format: "Wenner | Schlumberger | Dipole-Dipole | Gradient | custom (ABMN indices)", notes: "Determines the analytical geometric factor k; non-standard/borehole geometry requires numerical createGeometricFactors()."}
+    - {category: "transform_choice", name: "data & model transforms", unit: "categorical", source_kind: "default", model_input_format: "data transform (ERT TransLogLU / SRT TransLin) and model transform (TransLog/TransLogLU/TransCotLU); region default 'Log'", notes: "Model transform must keep the inverted property positive; wrong transform diverges or yields negative resistivity."}
+    - {category: "structural_switch", name: "singularity removal (sr)", unit: "boolean", source_kind: "default", model_input_format: "ERTManager(sr=True) default", notes: "Subtracts the analytical primary potential at current electrodes; disabling causes checkerboard FEM artifacts."}
+    - {category: "structural_switch", name: "robust data norm (robustData)", unit: "boolean", source_kind: "default", model_input_format: "InversionBase robustData default False", notes: "True -> L1 (outlier-robust) data misfit; False -> L2."}
+
+processes:
+  modules:
+    - {name: "MeshGeneration", role: "allocator", brief: "Builds the PLC from sensor positions and creates the unstructured parameter + forward FEM mesh (Triangle 2D / TetGen 3D) via createParaMesh, controlling paraDepth/paraDX/quality/boundary; defines the cell discretization the inversion operates on."}
+    - {name: "ERTForwardOperator", role: "process_solver", brief: "Finite-element resistivity forward solve returning apparent resistivity response and Jacobian; handles complex/IP phase conjugation and singularity removal.", applicability: "ERT / SIP-resistivity"}
+    - {name: "SRTForwardOperator", role: "process_solver", brief: "Shortest-path (Dijkstra) seismic traveltime forward solve over a slowness field with secondary-node refinement; Fatray variants add Fresnel-zone fat-ray sensitivity.", applicability: "SRT only"}
+    - {name: "SIPForwardOperator", role: "optional_module", brief: "Spectral IP forward/inverse for Cole-Cole parameters (rho0, m, tau, c).", applicability: "SIP/IP only"}
+    - {name: "EMForwardOperator", role: "optional_module", brief: "FDEM/TDEM/VES electromagnetic and 1-D layered forward modelling and conductivity/sounding inversion.", applicability: "EM / VES only"}
+    - {name: "GaussNewtonInversion", role: "process_solver", brief: "Core regularized Gauss-Newton/Occam loop: assembles normal equations from Jacobian + smoothness constraints, line-searches the model update, tracks chi^2/phi, cools lambda in place, stops at chi^2<=1, relative-objective-change < minDPhi, or maxIter."}
+    - {name: "Regularization", role: "allocator", brief: "Tikhonov smoothness / minimum-length / geostatistical constraints via the RegionManager: partitions mesh into regions, assembles the constraint matrix C, applies zWeight anisotropy and per-region start models / bounds."}
+    - {name: "Transforms", role: "allocator", brief: "TransLog/TransLogLU/TransCotLU/TransLin map physical quantities (resistivity, slowness, phase) to and from the unconstrained inversion space, enforcing positivity."}
+    - {name: "LineSearch", role: "integrator", brief: "1-D (inter/quadratic) line search selecting step length tau along the Gauss-Newton update direction to guarantee objective decrease."}
+    - {name: "JointInversion", role: "optional_module", brief: "Structurally-coupled (cross-gradient) and petrophysical joint inversion of multiple methods (e.g. ERT+SRT) on a common mesh, steering models toward shared interfaces.", applicability: "joint / multi-method only"}
+    - {name: "CoverageDiagnostics", role: "process_solver", brief: "Computes cumulative per-cell sensitivity (sumCols of the Jacobian, standardized coverage, threshold 0.01) to flag reliable vs poorly-constrained model regions for masking."}
+    - {name: "pgcore", role: "process_solver", brief: "Compiled C++ pgcore: Mesh, sparse FE assembly, response()/createJacobian(), Dijkstra graph, RegionManager and least-squares (lsqr) solver that the Python forward operators delegate to."}
+  internal_edges:
+    - {from: "Inputs", to: "MeshGeneration", kind: "consumes_input", brief: "sensor geometry + DataContainer drive parameter/forward mesh creation"}
+    - {from: "MeshGeneration", to: "ERTForwardOperator", kind: "invokes", brief: "parameter mesh set on the forward operator before inversion"}
+    - {from: "GaussNewtonInversion", to: "ERTForwardOperator", kind: "invokes", brief: "response() and createJacobian() requested each iteration"}
+    - {from: "GaussNewtonInversion", to: "SRTForwardOperator", kind: "invokes", brief: "traveltime forward + ray Jacobian requested each iteration (SRT runs)"}
+    - {from: "ERTForwardOperator", to: "pgcore", kind: "invokes", brief: "FE assembly and Jacobian delegated to compiled core"}
+    - {from: "ERTForwardOperator", to: "response", kind: "produces_output", brief: "predicted apparent resistivity / traveltime returned"}
+    - {from: "ERTForwardOperator", to: "Jacobian", kind: "produces_output", brief: "sensitivity matrix returned for the current model"}
+    - {from: "Regularization", to: "model_vector", kind: "reads_state", brief: "per-region zWeight/cType feed assembly of the smoothness constraint on m"}
+    - {from: "Transforms", to: "GaussNewtonInversion", kind: "invokes", brief: "physical<->inversion space mapping enforcing positivity of m"}
+    - {from: "Jacobian", to: "GaussNewtonInversion", kind: "reads_state", brief: "normal equations (J^T W_d J + lambda W_m) built from Jacobian + residual"}
+    - {from: "GaussNewtonInversion", to: "LineSearch", kind: "invokes", brief: "step-length selection along the update direction"}
+    - {from: "GaussNewtonInversion", to: "model_vector", kind: "writes_state", brief: "model update delta-m applied to m each iteration"}
+    - {from: "model_vector", to: "ERTForwardOperator", kind: "reads_state", brief: "updated m re-evaluated by the forward operator (fixed-point feedback)"}
+    - {from: "GaussNewtonInversion", to: "chi2", kind: "writes_state", brief: "weighted data misfit recomputed and tested against target ~1.0"}
+    - {from: "chi2", to: "lambda", kind: "reads_state", brief: "lambda cooling / stop test keyed on chi^2 trajectory"}
+    - {from: "Jacobian", to: "CoverageDiagnostics", kind: "reads_state", brief: "cumulative sensitivity (sumCols) computed for coverage masking"}
+    - {from: "CoverageDiagnostics", to: "coverage", kind: "produces_output", brief: "standardized per-cell coverage emitted, threshold 0.01"}
+    - {from: "JointInversion", to: "ERTForwardOperator", kind: "invokes", brief: "couples ERT and SRT operators via cross-gradient on a common mesh"}
+    - {from: "model_vector", to: "Outputs", kind: "produces_output", brief: "final inverted property field exported to mesh/.vtk/.npy"}
+
+states:
+  variables:
+    - {name: "model_vector", unit: "method-dependent (ERT Ohm·m, SRT slowness s/m)", role: "prognostic"}
+    - {name: "lambda", unit: "dimensionless", role: "prognostic"}
+    - {name: "chi2", unit: "dimensionless", role: "diagnostic"}
+    - {name: "response", unit: "matches data token (Ohm·m or s)", role: "diagnostic"}
+    - {name: "Jacobian", unit: "sensitivity (sparse)", role: "diagnostic"}
+    - {name: "coverage", unit: "normalized 0-1", role: "diagnostic"}
+    - {name: "phi", unit: "dimensionless", role: "diagnostic"}
+  provenance: "populated"
+
+outputs:
+  - var: "inverted_resistivity_model"
+    validation_rank: 1
+    unit: "Ohm·m"
+    description: "Spatially-distributed electrical resistivity per mesh cell recovered by ERT inversion (inverted in log-space)"
+    emitted_in: ".vtk / .bms / .npy (per-mesh-cell array) + model-cells CSV"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Restrict comparison to cells with coverage above threshold; low-coverage cells are controlled by regularization/start model, not data", "Resolution decreases with depth and away from electrodes"]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Borehole/lab resistivity log compared at a sampled cell; smoothing regularization biases point values toward the local mean"]
+      detrending_options: ["none"]
+  - var: "inverted_velocity_model"
+    validation_rank: 3
+    unit: "m/s (inverted as slowness s/m, reported as velocity = 1/slowness)"
+    description: "Seismic P-wave velocity field per mesh cell recovered by refraction traveltime inversion"
+    emitted_in: ".vtk / .npy (per-mesh-cell array)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["SRT inverts slowness, not velocity; ensure obs and model are compared in the same space", "Ray coverage concentrates near refractors; deep/low-coverage zones poorly constrained"]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Sonic/borehole velocity at a point; subject to smoothing bias and the slowness-vs-velocity unit distinction"]
+      detrending_options: ["none"]
+  - var: "inverted_conductivity_or_coleCole_model"
+    validation_rank: 4
+    unit: "S/m (EM) or (rho0, m, tau, c) (SIP)"
+    description: "Electrical conductivity (EM) or Cole-Cole spectral parameters (SIP) recovered by inversion"
+    emitted_in: ".vtk / .npy"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["SIP Cole-Cole parameters are non-unique (ice/rock-matrix and tau/c ambiguity); compare with petrophysical priors in mind"]
+      detrending_options: ["none"]
+  - var: "forward_response"
+    validation_rank: 2
+    unit: "Ohm·m or s (matches data token)"
+    description: "Predicted data (apparent resistivity / traveltime) from the forward operator for the current model"
+    emitted_in: ".npy + residual pseudosection"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["magnitude_accuracy", "spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Compared against the observed data pseudosection; structured residuals indicate systematic data error not captured by the random-noise model"]
+      detrending_options: ["none"]
+  - var: "data_fit_chi2"
+    validation_rank: 5
+    unit: "dimensionless"
+    description: "Error-weighted data misfit chi^2 = Phi_d/N tracked across iterations; convergence target ~1.0"
+    emitted_in: "metrics.json / chi2History"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Internal convergence diagnostic relative to the supplied error model, NOT an independent observable; chi^2 meaning shifts if error units (fraction vs percent) are wrong"]
+      detrending_options: ["none"]
+  - var: "coverage_sensitivity"
+    validation_rank: 6
+    unit: "normalized 0-1"
+    description: "Cumulative per-cell sensitivity (sumCols of Jacobian); flags reliable vs poorly-constrained regions"
+    emitted_in: "model-cells CSV / .vtk attribute"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Diagnostic of resolution, not a physical observable; used to mask the inverted model for fair comparison"]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "regularization strength lambda"
+      to: "inverted_resistivity_model"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "all methods"
+      citations: ["paniagua2022_optimal_regularization_pygimli", "rucker2017_pygimli_library"]
+    - from: "regularization strength lambda"
+      to: "data_fit_chi2"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "all methods"
+      citations: ["rucker2017_pygimli_library", "paniagua2022_optimal_regularization_pygimli"]
+    - from: "regularization strength lambda"
+      to: "model smoothness/roughness"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "all methods"
+      citations: ["rucker2017_pygimli_library", "paniagua2022_optimal_regularization_pygimli"]
+    - from: "data error / noise estimate"
+      to: "inverted_resistivity_model"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "all methods"
+      citations: ["rucker2017_pygimli_library"]
+    - from: "smoothness anisotropy weighting (zWeight / region weighting)"
+      to: "inverted_resistivity_model"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "all methods"
+      citations: ["rucker2017_pygimli_library"]
+    - from: "horizontal correlation length (geostatistical operator)"
+      to: "inverted_resistivity_model"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "geostatistical regularization"
+      citations: ["jordi2018_geostatistical_regularization"]
+    - from: "vertical correlation length (geostatistical operator)"
+      to: "inverted_resistivity_model"
+      sensitivity_grade: "LOW"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "geostatistical regularization"
+      citations: ["jordi2018_geostatistical_regularization"]
+    - from: "petrophysical / four-phase model parameters"
+      to: "estimated water/ice/air contents"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "petrophysical joint inversion"
+      citations: ["wagner2019_petrophysical_joint_inversion"]
+    - from: "structural coupling constraint (cross-gradient)"
+      to: "jointly inverted model"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "structural"
+      applicability: "structural joint inversion"
+      citations: ["jordi2020_structural_joint_inversion"]
+  citation_index:
+    rucker2017_pygimli_library:
+      short_citation: "Rücker, Günther & Wagner 2017"
+      doi: "10.1016/j.cageo.2017.07.011"
+      note: "Foundational pyGIMLi paper; generalized Gauss-Newton framework, lambda-scaled regularization, target chi^2=1"
+    paniagua2022_optimal_regularization_pygimli:
+      short_citation: "Paniagua & Bustamante 2022"
+      doi: ""
+      note: "IEEE conference paper on optimal lambda selection; shows lambda strongly controls smoothness-vs-fit trade-off (no stable DOI confirmed)"
+    jordi2018_geostatistical_regularization:
+      short_citation: "Jordi et al. 2018"
+      doi: "10.1093/gji/ggy055"
+      note: "Geostatistical regularization operators; inversion robust but more sensitive to reduced horizontal than vertical correlation length"
+    wagner2019_petrophysical_joint_inversion:
+      short_citation: "Wagner et al. 2019"
+      doi: "10.1093/gji/ggz402"
+      note: "Petrophysical four-phase ERT+SRT joint inversion; model-covariance analysis of parameter sensitivity and ice/rock ambiguity"
+    jordi2020_structural_joint_inversion:
+      short_citation: "Jordi et al. 2020"
+      doi: "10.1093/gji/ggz550"
+      note: "Cross-gradient structural joint inversion on irregular meshes"
+
+safety:
+  hazards:
+    - id: "rhoa_resistance_unit_confusion"
+      kind: "weather_file_semantic"
+      description: "Apparent resistivity supplied in Ohm (resistance) instead of Ohm·m because geometric factor k not applied; inverted model ~1000x too high (dt_001)"
+      severity: "silent"
+    - id: "traveltime_ms_vs_s"
+      kind: "weather_file_semantic"
+      description: "Traveltimes in milliseconds instead of seconds; SRT velocities come out ~1000x too high (dt_002)"
+      severity: "silent"
+    - id: "error_percent_vs_fraction"
+      kind: "weather_file_semantic"
+      description: "Data error given as percent (0-100) rather than fraction (0-1); chi^2 ~100x off (overfitting). estimateError also silently divides relativeError by 100 when >=0.5 (dt_005)"
+      severity: "degraded"
+    - id: "ip_phase_sign"
+      kind: "weather_file_semantic"
+      description: "IP phase positive instead of negative (lag); yields nonsensical Cole-Cole parameters (dt_004)"
+      severity: "silent"
+    - id: "em_conductivity_units"
+      kind: "weather_file_semantic"
+      description: "EM apparent conductivity in mS/m instead of S/m; 1000x error"
+      severity: "silent"
+    - id: "coords_latlon_or_cm"
+      kind: "numerical_instability"
+      description: "Sensor coordinates in lat/lon degrees (or cm/ft) instead of local metres; degenerate mesh / failed triangulation, or 100x-compressed depth axis (dt_003 lat/lon; dt_016 cm/ft depth-axis compression)"
+      severity: "fatal_or_silent"
+    - id: "duplicate_electrodes_segfault"
+      kind: "numerical_instability"
+      description: "Duplicate / overlapping electrode positions; Triangle requires unique nodes and segfaults in createParaMesh (dt_006)"
+      severity: "fatal"
+    - id: "nonpositive_data_or_zero_error"
+      kind: "numerical_instability"
+      description: "Zero/negative apparent resistivity or zero error with a log/LU transform produces NaN/Inf and diverges (dt_010)"
+      severity: "fatal"
+    - id: "mesh_too_fine_oom"
+      kind: "numerical_instability"
+      description: "paraMaxCellSize too small / quality too high -> >50000 cells; normal equations scale O(n^3), inversion runs hours or OOMs; target 2000-20000 cells in 2D (dt_008)"
+      severity: "degraded"
+    - id: "slowness_velocity_transform_confusion"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "SRT inverts slowness (s/m); manually applying a log/velocity model transform breaks the linear forward operator and produces velocity-inversion artifacts (dt_012)"
+      severity: "silent"
+    - id: "analytical_k_nonstandard_geometry"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Analytical geometric factor (homogeneous half-space assumption) used for borehole/crosshole/topographic geometry; systematically biased apparent resistivities. Use numerical createGeometricFactors() (dt_017)"
+      severity: "silent"
+    - id: "singularity_removal_disabled"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "ERT singularity removal disabled (sr=False); FEM point-source error at current electrodes produces checkerboard artifacts mimicking structure (dt_011)"
+      severity: "silent"
+    - id: "lambda_misset"
+      kind: "control_semantic"
+      description: "Lambda too high over-smooths (anomalies hidden, chi^2>1); lambda too low overfits noise (spurious small-scale structure, chi^2<0.5) (dt_009 too-high over-smooth; dt_015 too-low overfit)"
+      severity: "degraded"
+    - id: "boundary_region_too_small"
+      kind: "control_semantic"
+      description: "FEM boundary region too close to the sensor array; zero-flux boundary condition leaks into the parametric domain causing edge artifacts. Use boundary 3-5x spread (dt_007)"
+      severity: "degraded"
+    - id: "poor_start_model"
+      kind: "initial_condition_semantic"
+      description: "Starting model far from truth; Gauss-Newton is locally convergent so convergence stalls (chi^2 plateaus >2) or lands in a local minimum (dt_014)"
+      severity: "degraded"
+  validation_limits:
+    - "Steady-state: a single survey snapshot is solved; no time-evolving physics (no time-lapse coupling within one inversion)"
+    - "Local Cartesian metres only — no geographic (lat/lon) coordinate handling"
+    - "2-D inversion assumes negligible off-plane (3-D) structure (2.5-D assumption)"
+    - "Gauss-Newton is locally convergent and regularization-dependent; subject to local minima and non-uniqueness, no global optimization"
+    - "No built-in optimal-lambda selector; regularization strength must be supplied or swept (Paniagua & Bustamante 2022)"
+    - "Units, tokens, transforms and property ranges are method-conditional (ERT/SRT/SIP/EM/VES), not global"
+  warnings:
+    - "SRT model is slowness (s/m) internally but reported as velocity (=1/slowness); the framework reassigns fw.model to its reciprocal after inversion, so consumers reading fw.model vs the returned value get different unit spaces"
+    - "Display the inverted model with a coverage mask/alpha; low-coverage cells are controlled by regularization and the start model, not data, and are geophysically misleading at full opacity"
+    - "An Inversion object reused across runs inherits the cooled lambda from the prior run unless reset (shared mutable regularization state)"
+    - "Manager-level invert() kwargs (zWeight, limits, cType, correlationLengths) are promoted to setRegionProperties('*'), silently overwriting all per-region regularization configured separately"
+    - "TravelTimeManager secNodes default (2) differs from TravelTimeDijkstraModelling default (3); effective forward accuracy depends on which entry path set it"
+    - "TravelTimeManager.invert reinterprets kwargs['limits'] in velocity units (limits[0]>1) and silently inverts them to slowness limits"
+  assumptions:
+    - statement: "The model is solved at a single steady survey snapshot; the iteration loop is the Gauss-Newton optimizer, not a physical time axis"
+      scope: "all methods"
+      source: "Rücker, Günther & Wagner 2017 (doi:10.1016/j.cageo.2017.07.011); pyGIMLi user guide"
+      status: "adopted"
+    - statement: "Geometry is point/local-Cartesian in metres with a consistent z-axis sign convention (positive-down or ASL applied uniformly)"
+      scope: "mesh generation and all forward/inverse operators"
+      source: "pyGIMLi meshtools docs; ERT/TravelTime manager coordinate handling"
+      status: "adopted"
+    - statement: "The inverted physical property is strictly positive and parameterized in log-space (TransLog/TransLogLU) by default"
+      scope: "resistivity / slowness / conductivity inversion"
+      source: "pygimli.frameworks.modelling region default transform; pg.trans"
+      status: "adopted"
+    - statement: "Convergence targets chi^2 = Phi_d/N = 1 (data fitted to the supplied noise level); chi^2<<1 overfits, chi^2>>1 underfits"
+      scope: "Gauss-Newton inversion stopping rule"
+      source: "Rücker, Günther & Wagner 2017 (doi:10.1016/j.cageo.2017.07.011)"
+      status: "adopted"
+    - statement: "No conservation-balance closure is enforced; the forward problem is a discretized FEM/FVM PDE solve and the inverse problem a regularized minimization"
+      scope: "boundary.closure"
+      source: "pyGIMLi solver and frameworks documentation"
+      status: "adopted"

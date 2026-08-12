@@ -72,6 +72,56 @@ Key vegetation parameters:
 **TRAP:** Carbon/nitrogen pool values in the worldfile must be in **kg/m^2**,
 not g/m^2 (dt_009). Initializing with g/m^2 values gives 1000x too much carbon.
 
+### Step 2b: Carbon Pool Initialization (REQUIRED for -g runs)
+
+**This step is always missing from bare worldfiles and causes LAI=0 / trans=0
+throughout the entire simulation when running with the `-g` (carbon cycling) flag.**
+
+The standard RHESSys workflow (RHESSysWorkflows by Nairb 2013) uses a `lairead`
+utility to initialize carbon stores from an LAI raster. Our KI tool provides an
+equivalent computation without requiring GRASS GIS.
+
+**How it works (allometric equations from `util/GRASS/lairead/change_world.c`):**
+```
+leafc        = LAI / proj_sla
+frootc       = leafc / alloc_frootc_leafc
+leafn        = leafc / leaf_cn
+frootn       = frootc / froot_cn
+```
+
+**Start-month semantics for DECIDUOUS (critical):**
+
+| Start period | cs.leafc | cs.leafc_transfer | cs.leafc_store |
+|---|---|---|---|
+| Growing season (day_leafon..day_leafoff) | LAI/proj_sla | 0 | LAI/proj_sla |
+| Dormant (Jan 1 for day_leafon=91) | 0 | max_lai/proj_sla | LAI/proj_sla |
+
+**Why two pools matter:**
+- `cs.leafc_transfer` is consumed during leaf expansion at day_leafon
+- `cs.leafc_store` gets converted to `leafc_transfer` at annual allocation (end of growing season)
+- Setting only `cs.leafc_store` for a dormant start leaves Year 1 with no leaves
+  because annual allocation hasn't run yet (it runs at day_leafoff + ndays_litfall)
+
+**Tool:**
+```bash
+python ki/tools/init_carbon_pools.py \
+  --world worldfiles/basin_v1.world \
+  --output worldfiles/basin_v1_init.world \
+  --lai 3.5 \
+  --proj-sla 20.0 \
+  --max-lai 4.0 \
+  --alloc-frootc-leafc 1.0 \
+  --leaf-cn 35.0 \
+  --froot-cn 60.0 \
+  --veg-type GRASS \
+  --phenology-type DECIDUOUS \
+  --day-leafon 91 \
+  --day-leafoff 270 \
+  --start-month 1
+```
+
+Reference: https://github.com/selimnairb/RHESSysWorkflows
+
 ### Step 3: Land Use Parameters
 
 ```
@@ -139,6 +189,13 @@ python ki/tools/convert_soil_params.py \
 | Soil depth in cm | Model treats as m, 100x too deep | Divide by 100 | dt_004 |
 | C/N pools in g/m^2 | 1000x excess biomass | Divide by 1000 | dt_009 |
 | Psi air entry in kPa | Wrong suction curve | Convert to m of water | dt_010 |
+| Zero carbon pools | LAI=0, trans=0 all run (silent) | Run init_carbon_pools.py | dt_011 |
+| leafc_store only (dormant start) | LAI=0 Year 1 (leafc_transfer=0) | Also set cs.leafc_transfer | dt_012 |
+| porosity_decay ≈ 4 | 100x slowdown, ~0.75 days/min | Use porosity_decay=3000 | dt_013 |
+| Kdown_direct without Kdown_diffuse | Clear-sky radiation all days → vegetation collapse in 3-5 yr | Split total Kdown with Erbs model → provide both Kdown_direct (beam) + Kdown_diffuse | dt_014 |
+| tmax−tmin constant (tavg±4°C) | MTCLIM cloud correction broken → same clear-sky fraction every day | Use measured tmax/tmin OR provide Kdown_direct+Kdown_diffuse (dt_014) | dt_015 |
+| No daytime_rain_duration file | trans=0 on every rainy day (80-90% of days in monsoon climates) → annual trans 3-10x too low | Run gen_rain_duration.py to create `.daytime_rain_duration`; add to station file | dt_022 |
+| rnet_evap bug (RHESSys 7.4) | trans=0 on cloudy days even when Kdown>0 (canopy_stratum_daily_F.c line 1160 typo) | Patch line 1160: `rnet_evap_night=0` → `rnet_evap_day=0`; recompile | dt_021 |
 
 ## Example
 

@@ -1,0 +1,489 @@
+template_version: "3.5"
+
+identity:
+  model_id: "GEOtop"
+  scientific_reference_version: "GEOtop 2.0 (Endrizzi et al. 2014, GMD 7, 2831-2857)"
+  implementation:
+    id: "geotop-3.0"
+    version: "3.0 (revised December 2024)"
+    provenance: "C++; GEOtop community model (geotopmodel.github.io), GPLv3 source-built distributed energy-water balance solver."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c++"
+  license: "GPL-3.0-only"
+  repo_url: "https://github.com/geotopmodel/geotop"
+
+boundary:
+  scope_in:
+    - "Coupled surface energy balance (net radiation partitioned into H, LE, ground heat flux)"
+    - "Variably-saturated subsurface water flow via 3D Richards equation (1D column in point mode)"
+    - "Soil temperature including freeze/thaw and permafrost"
+    - "Multi-layer snowpack mass and energy balance (accumulation, melt, compaction, albedo aging)"
+    - "Glacier accumulation/ablation mass balance"
+    - "Two-layer canopy + ground vegetation energy and water partitioning (interception, transpiration)"
+    - "Terrain-resolved radiation (sky view factor, cast shadows, horizon obstruction)"
+    - "Blowing-snow redistribution across pixels (PBSM)"
+    - "Channel-network discharge at basin outlet"
+  scope_out:
+    - "DEM / slope / aspect / sky-view-factor preparation (external GIS step)"
+    - "Land-cover / LSAI classification (external)"
+    - "MeteoIO-library forcing integration (absent in v3.0, present in v2.1.1)"
+    - "Detailed grassland vegetation dynamics (handled by separate 1D extension GEOtop_DV)"
+  spatial: "distributed-stream"
+  temporal: "sub-hourly"
+  closure: "both"
+  notes: "Couples a mass-balance water budget (Richards equation, snow/glacier SWE, channel routing) with a surface energy budget (radiative + turbulent fluxes, soil/snow heat diffusion). Non-linear water-energy coupling is explicit during soil phase change: the energy balance is solved before the water balance each sub-step so that soil temperature and ice content are current, and soil ice content reduces hydraulic conductivity via frozen-soil impedance. In point mode the 3D Richards solver collapses to a 1D vertical column with prescribed point topography; in distributed mode the full planar+vertical 3D grid is used."
+
+inputs:
+  forcing:
+    - {category: forcing, name: "AirT", unit: "Celsius", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column, DD/MM/YYYY hh:mm dates, -9999 nodata", notes: "Required. Kelvin input drives energy-balance non-convergence / hanging."}
+    - {category: forcing, name: "Iprec", unit: "mm per time step", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Accumulated depth per model time step, NOT a rate; wrong rate units scale total precipitation by ~1000x."}
+    - {category: forcing, name: "RelHum", unit: "% (0-100)", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Required. Fraction (0-1) is read as 0.x% (near-zero ET)."}
+    - {category: forcing, name: "WindSp", unit: "m/s", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column"}
+    - {category: forcing, name: "WindDir", unit: "degrees (0-360)", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Recommended; drives terrain wind redistribution and blowing snow."}
+    - {category: forcing, name: "Swglobal", unit: "W/m2", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Instantaneous incoming shortwave; accumulated J/m2 (e.g. ERA5) must be deaccumulated."}
+    - {category: forcing, name: "LWin", unit: "W/m2", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Optional incoming longwave; if absent, parameterized from cloudiness (Konzelmann/Angstrom)."}
+    - {category: forcing, name: "CloudTrans", unit: "0-1 or -9999", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Optional cloud transmissivity; supplying both LWin and CloudTrans double-parameterizes longwave."}
+    - {category: forcing, name: "DewT", unit: "Celsius", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Optional dew-point temperature."}
+    - {category: forcing, name: "AirPress", unit: "mbar", source_kind: forcing, model_input_format: "meteoXXXX.txt CSV column", notes: "Optional air pressure."}
+  parameters:
+    - {category: soil, name: "Dz", unit: "mm", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV, one row per layer top-to-bottom", notes: "Soil layer thickness (range ~10-500 mm); m or cm input collapses sub-mm layers and diverges the Richards solver."}
+    - {category: soil, name: "Kh", unit: "m/s", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Lateral saturated hydraulic conductivity (1E-7 to 1E-3 m/s)."}
+    - {category: soil, name: "Kv", unit: "m/s", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Vertical (normal) saturated hydraulic conductivity (1E-7 to 1E-3 m/s)."}
+    - {category: soil, name: "vwc_r", unit: "m3/m3", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Residual water content; must satisfy vwc_r < vwc_w < vwc_fc < vwc_s."}
+    - {category: soil, name: "vwc_w", unit: "m3/m3", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Wilting point."}
+    - {category: soil, name: "vwc_fc", unit: "m3/m3", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Field capacity."}
+    - {category: soil, name: "vwc_s", unit: "m3/m3", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Saturated water content."}
+    - {category: soil, name: "alpha", unit: "1/mm", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Van Genuchten alpha (0.0001-0.01 1/mm); 1/cm input distorts the retention curve by 10x."}
+    - {category: soil, name: "n", unit: "-", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Van Genuchten n (1.1-3.0); n<=1.0 makes m=1-1/n non-positive (FPE)."}
+    - {category: soil, name: "stor", unit: "1/m", source_kind: dataset_lookup, model_input_format: "soilXXXX.txt CSV column", notes: "Specific storativity (~5E-7)."}
+    - {category: vegetation, name: "VegHeight", unit: "mm", source_kind: calibrated, model_input_format: "geotop.inpts keyword", notes: "Canopy height (meadow 300-600, shrub 1000-3000, forest 5000-30000 mm); m input treated as mm (effectively bare ground)."}
+    - {category: vegetation, name: "LSAI", unit: "m2/m2", source_kind: calibrated, model_input_format: "geotop.inpts keyword", notes: "Leaf+stem area index (0.5-8.0); below LSAIthres (~0.1) canopy is treated as absent."}
+    - {category: vegetation, name: "MinStomatalRes", unit: "s/m", source_kind: calibrated, model_input_format: "geotop.inpts keyword", notes: "Minimum stomatal resistance controlling transpiration demand."}
+    - {category: terrain, name: "dem.txt", unit: "m (elevation)", source_kind: dataset_lookup, model_input_format: "ESRI ASCII Grid (distributed mode)", notes: "Distributed mode only; all maps must share ncols/nrows/cellsize/origin/NODATA."}
+    - {category: terrain, name: "slope.txt", unit: "degrees (0-90)", source_kind: dataset_lookup, model_input_format: "ESRI ASCII Grid (distributed mode)", notes: "Percent instead of degrees distorts runoff response."}
+    - {category: terrain, name: "aspect.txt", unit: "degrees from N clockwise (0-360)", source_kind: dataset_lookup, model_input_format: "ESRI ASCII Grid (distributed mode)", notes: "Radians instead of degrees flattens/reverses radiation pattern."}
+    - {category: terrain, name: "sky.txt", unit: "sky view factor (0-1)", source_kind: dataset_lookup, model_input_format: "ESRI ASCII Grid (distributed mode)"}
+    - {category: terrain, name: "curvature.txt", unit: "plan/profile curvature", source_kind: dataset_lookup, model_input_format: "ESRI ASCII Grid (distributed mode)"}
+    - {category: terrain, name: "horizonXXXX.txt", unit: "azimuth (deg), horizon height (deg)", source_kind: dataset_lookup, model_input_format: "CSV per met station, azimuths 0-360", notes: "Required when FlagSkyViewFactor=1; missing file silently sets horizon angles to 0, over-predicting direct beam."}
+    - {category: lapse_rate, name: "LapseRateTair", unit: "C/km", source_kind: default, model_input_format: "geotop.inpts keyword or LapseRateFile", notes: "Hardcoded default 6.5 C/km applied silently in meteo_distr when no LapseRateFile supplied."}
+    - {category: lapse_rate, name: "LapseRateTdew", unit: "C/km", source_kind: default, model_input_format: "geotop.inpts keyword or LapseRateFile", notes: "Hardcoded default 2.5 C/km dew-point lapse-rate fallback."}
+  initial_conditions:
+    - {category: soil, name: "InitWaterTableDepth", unit: "mm", source_kind: user_provided, model_input_format: "geotop.inpts keyword", notes: "Sets initial soil moisture profile (range 100-5000 mm); high calibration priority."}
+    - {category: soil, name: "initial soil temperature", unit: "Celsius", source_kind: user_provided, model_input_format: "geotop.inpts / soil profile (Manual Ch. 18.2.3)", notes: "Initial soil/rock temperature profile."}
+    - {category: snow, name: "snow initial state", unit: "depth mm / SWE", source_kind: user_provided, model_input_format: "geotop.inpts (Manual Ch. 18.2.1)", notes: "Initial snowpack state; defaults to no snow."}
+    - {category: glacier, name: "glacier initial conditions", unit: "mass / depth", source_kind: user_provided, model_input_format: "geotop.inpts (Manual Ch. 18.2.2)", notes: "Active only when glacier layers enabled."}
+  boundary_conditions:
+    - {category: control, name: "PointSim", unit: "switch (0/1)", source_kind: user_provided, model_input_format: "geotop.inpts keyword", notes: "1 = point/1D column; 0 = distributed/3D catchment. Selects whether DEM/maps are required."}
+    - {category: control, name: "InitDate / EndDate", unit: "DD/MM/YYYY", source_kind: user_provided, model_input_format: "geotop.inpts keyword", notes: "Simulation period; European day-first dates."}
+    - {category: control, name: "TimeStep", unit: "s", source_kind: user_provided, model_input_format: "geotop.inpts keyword", notes: "Nominal step (default 900 s); solver sub-steps adaptively below this on non-convergence."}
+    - {category: control, name: "FlagSkyViewFactor", unit: "switch (0/1)", source_kind: user_provided, model_input_format: "geotop.inpts keyword", notes: "Enables horizon-obstruction shading; requires horizon files."}
+    - {category: control, name: "BlowingSnow", unit: "switch (0/1)", source_kind: user_provided, model_input_format: "geotop.inpts keyword", notes: "Enables PBSM blowing-snow redistribution (optional module)."}
+    - {category: control, name: "LWinParameterization", unit: "code", source_kind: user_provided, model_input_format: "geotop.inpts keyword", notes: "Selects incoming-longwave parameterization when LWin not measured."}
+    - {category: water_bc, name: "bottom/lateral water balance BC", unit: "head / flux", source_kind: user_provided, model_input_format: "geotop.inpts (Manual Ch. 18.1.2)", notes: "Subsurface bottom and lateral boundary specification for the Richards solver."}
+    - {category: energy_bc, name: "energy balance BC", unit: "flux", source_kind: user_provided, model_input_format: "geotop.inpts (Manual Ch. 18.1.1)", notes: "Surface/bottom energy-balance boundary specification."}
+
+processes:
+  modules:
+    - {name: "input/get_all_input", role: "driver", brief: "Parses geotop.inpts keyword tables, reads DEM/land-cover/soil/meteo, allocates the coupled state containers consumed by the time loop."}
+    - {name: "time_loop", role: "integrator", brief: "Top-level adaptive sub-stepping loop: halves the time step on non-convergence and orders meteo -> energy -> water -> output each step."}
+    - {name: "meteodistr", role: "process_solver", brief: "Spatially distributes station meteo to the grid via lapse rates and MicroMet-style wind/precip/RH terrain corrections; overwrites the meteo grids consumed by energy and water balance."}
+    - {name: "radiation", role: "process_solver", brief: "Solar geometry, atmospheric transmissivity, beam/diffuse split, cast-shadow and sky-view-factor handling for complex terrain."}
+    - {name: "clouds", role: "process_solver", brief: "Estimates cloud transmissivity and incoming-longwave parameterization (Konzelmann/Angstrom) when not measured."}
+    - {name: "turbulence", role: "process_solver", brief: "Monin-Obukhov surface-layer fluxes: aerodynamic resistances and stability functions producing sensible (H) and latent (LE) heat."}
+    - {name: "vegetation", role: "process_solver", brief: "Two-layer canopy energy/water: canopy temperature, shortwave/longwave partitioning, rain/snow interception, transpiration and root uptake."}
+    - {name: "energy.balance", role: "integrator", brief: "Coupled column heat equation for soil+snow+glacier+canopy; Backward-Euler diffusion with Newton iteration solved jointly over ground and vegetation temperature."}
+    - {name: "snow", role: "process_solver", brief: "Snowpack: new-snow density, compaction, layer combination/merging/splitting, albedo aging, internal-energy partition."}
+    - {name: "blowingsnow/PBSM", role: "optional_module", brief: "Prairie Blowing Snow Model: saltation + suspended transport and sublimation, redistributing SWE across neighbouring pixels.", applicability: "BlowingSnow=1"}
+    - {name: "glacier", role: "optional_module", brief: "Accumulation/ablation mass balance for glacier layers.", applicability: "max_glac_layers>0"}
+    - {name: "water.balance", role: "integrator", brief: "3D Richards equation via Newton + BiCGSTAB linear solve; coupled subsurface, surface (supflow) and channel routing with Courant sub-stepping."}
+    - {name: "pedo.funct", role: "process_solver", brief: "Van Genuchten/Mualem pedotransfer: psi<->theta, dtheta/dpsi, hydraulic conductivity with frozen-soil impedance and freezing-point depression."}
+    - {name: "channels", role: "process_solver", brief: "Channel-network enumeration and routing of surface/subsurface discharge to the basin outlet (weir model)."}
+    - {name: "output", role: "driver", brief: "Aggregates point/basin/profile/map variables over plot intervals, computes basin mass-balance error, writes output-tabs/maps."}
+    - {name: "recovering", role: "optional_module", brief: "Checkpoint/restart of full prognostic state (soil psi/ice/temp, snow & glacier layers, canopy water/temp).", applicability: "RecoverSim or ContinuousRecovery set"}
+  internal_edges:
+    - {from: "Inputs", to: "input/get_all_input", kind: "consumes_input", brief: "geotop.inpts, soil/meteo/DEM files parsed into state containers."}
+    - {from: "input/get_all_input", to: "time_loop", kind: "invokes", brief: "Populated state hands off to the top-level sub-stepping loop."}
+    - {from: "time_loop", to: "meteodistr", kind: "invokes", brief: "Distributes station meteo to the grid at the start of each sub-step."}
+    - {from: "time_loop", to: "energy.balance", kind: "invokes", brief: "Energy solve called first each sub-step before the water solve."}
+    - {from: "time_loop", to: "water.balance", kind: "invokes", brief: "Water solve gated on energy convergence (en==0) so soil T and ice content are current."}
+    - {from: "time_loop", to: "output", kind: "invokes", brief: "Flushes point/basin/profile/map files per plot interval."}
+    - {from: "meteodistr", to: "energy.balance", kind: "produces_output", brief: "Distributed Tair/RH/wind/SW/LW grids feed surface energy fluxes."}
+    - {from: "meteodistr", to: "water.balance", kind: "produces_output", brief: "Net precipitation drives the infiltration boundary."}
+    - {from: "radiation", to: "energy.balance", kind: "invokes", brief: "Beam/diffuse SW and sky-view supply incoming shortwave to surface EB."}
+    - {from: "clouds", to: "radiation", kind: "invokes", brief: "Cloud transmissivity modulates incoming SW/LW."}
+    - {from: "turbulence", to: "energy.balance", kind: "invokes", brief: "Monin-Obukhov resistances produce H and LE."}
+    - {from: "vegetation", to: "energy.balance", kind: "writes_state", brief: "Canopy temperature and intercepted water/snow couple into the joint Newton solve."}
+    - {from: "energy.balance", to: "soil_temperature", kind: "writes_state", brief: "Updates soil/snow/glacier layer temperatures each sub-step."}
+    - {from: "energy.balance", to: "soil_ice_content", kind: "writes_state", brief: "Phase change updates soil ice content (freezing)."}
+    - {from: "energy.balance", to: "glacier_mass", kind: "writes_state", brief: "Surface energy balance drives glacier-layer accumulation/ablation when glacier layers are active."}
+    - {from: "soil_ice_content", to: "water.balance", kind: "reads_state", brief: "Frozen-soil impedance reduces hydraulic conductivity (implicit energy->water feedback)."}
+    - {from: "energy.balance", to: "water.balance", kind: "invokes", brief: "time_loop gates water.balance on energy convergence so T and ice are current."}
+    - {from: "pedo.funct", to: "water.balance", kind: "invokes", brief: "theta_from_psi / k_from_psi / dtheta_dpsi evaluate Van Genuchten retention and conductivity."}
+    - {from: "pedo.funct", to: "energy.balance", kind: "invokes", brief: "theta and freezing-point depression feed heat-capacity / latent terms."}
+    - {from: "water.balance", to: "soil_matric_potential", kind: "writes_state", brief: "Richards Newton+BiCGSTAB updates soil pressure head (psi)."}
+    - {from: "water.balance", to: "channels", kind: "produces_output", brief: "Surface/subsurface drainage routed into channel storage."}
+    - {from: "snow", to: "energy.balance", kind: "writes_state", brief: "Layer combination/merging restructures the snow discretization the heat solver sees."}
+    - {from: "energy.balance", to: "snowpack", kind: "writes_state", brief: "Melt/refreeze updates snow layer liquid/ice/temperature."}
+    - {from: "snow", to: "radiation", kind: "produces_output", brief: "Age-dependent snow albedo feeds shortwave absorption."}
+    - {from: "blowingsnow/PBSM", to: "snowpack", kind: "writes_state", brief: "windtrans_snow redistributes SWE and sublimates, mutating neighbouring pixels' snow."}
+    - {from: "blowingsnow/PBSM", to: "meteodistr", kind: "reads_state", brief: "Uses the distributed wind field and fetch for saltation/suspension."}
+    - {from: "energy.balance", to: "output", kind: "produces_output", brief: "Accumulates Rn, H, LE, Ts means into output vectors."}
+    - {from: "water.balance", to: "output", kind: "produces_output", brief: "Water-table depth, soil-moisture profiles, discharge, basin mass-balance error written."}
+    - {from: "output", to: "Outputs", kind: "produces_output", brief: "Flushes point/basin/profile/map files per plot interval."}
+    - {from: "recovering", to: "time_loop", kind: "writes_state", brief: "Restores/saves full prognostic state for restart."}
+
+states:
+  variables:
+    - {name: "soil_matric_potential", unit: "mm", role: "prognostic"}
+    - {name: "soil_temperature", unit: "Celsius", role: "prognostic"}
+    - {name: "soil_ice_content", unit: "m3/m3", role: "prognostic"}
+    - {name: "soil_liquid_water_content", unit: "m3/m3", role: "diagnostic"}
+    - {name: "snowpack", unit: "depth mm / ice kg/m2 / liquid kg/m2 / temperature C", role: "prognostic"}
+    - {name: "snow_age", unit: "- (non-dimensional)", role: "prognostic"}
+    - {name: "glacier_mass", unit: "ice mass kg/m2", role: "prognostic"}
+    - {name: "canopy_temperature", unit: "Celsius", role: "prognostic"}
+    - {name: "canopy_intercepted_water", unit: "mm", role: "prognostic"}
+    - {name: "canopy_intercepted_snow", unit: "mm", role: "prognostic"}
+    - {name: "surface_ponding_head", unit: "mm", role: "prognostic"}
+    - {name: "channel_storage", unit: "m3", role: "prognostic"}
+    - {name: "snow_melt_sublimation_accumulators", unit: "mm / kg/m2", role: "accumulator"}
+  provenance: "populated"
+
+outputs:
+  - var: "discharge"
+    validation_rank: 1
+    unit: "m3/s"
+    description: "Catchment discharge at the basin outlet from the channel network."
+    emitted_in: "output-tabs/discharge*.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Requires a calibrated channel network; routing skill is conditional on saturated hydraulic conductivity calibration."]
+      detrending_options: ["none"]
+  - var: "SWE"
+    validation_rank: 3
+    unit: "kg/m2 (mm w.e.)"
+    description: "Snow water equivalent of the multi-layer snowpack."
+    emitted_in: "output-tabs/point*.txt, snowIce*.txt; spatial SWE maps"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["SWE accuracy is dominated by precipitation and air-temperature forcing accuracy via rain/snow partitioning."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Distributed mode only; blowing-snow redistribution couples neighbouring pixels."]
+      detrending_options: ["none"]
+  - var: "snowDepth"
+    validation_rank: 4
+    unit: "mm"
+    description: "Snowpack depth."
+    emitted_in: "output-tabs/snowDepth*.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["GEOtop systematically overestimates snow density from late winter, biasing late-season snow depth."]
+      detrending_options: ["none"]
+  - var: "soilTz"
+    validation_rank: 5
+    unit: "Celsius"
+    description: "Soil temperature profile by layer (including freeze/thaw)."
+    emitted_in: "output-tabs/soilTz*.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Mean annual ground temperature is strongly sensitive to ground albedo and to vertical/temporal discretization (<20 mm upper layer, <=1 h step)."]
+      detrending_options: ["none"]
+  - var: "thetaliq"
+    validation_rank: 6
+    unit: "m3/m3"
+    description: "Liquid volumetric soil water content profile by layer."
+    emitted_in: "output-tabs/thetaliq*.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Governed primarily by saturated hydraulic conductivity and Van Genuchten retention parameters."]
+      detrending_options: ["none"]
+  - var: "thetaice"
+    validation_rank: 7
+    unit: "m3/m3"
+    description: "Soil ice content profile by layer (permafrost/seasonal freezing)."
+    emitted_in: "output-tabs/thetaice*.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Thaw-depth / active-layer timing is the typical comparison target for permafrost validation."]
+      detrending_options: ["none"]
+  - var: "LE"
+    validation_rank: 2
+    unit: "W/m2"
+    description: "Latent heat flux (surface evapotranspiration energy)."
+    emitted_in: "output-tabs/point*.txt, basin*.txt; spatial flux maps"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Eddy-covariance comparison; constrained by soil-water availability (Ks, retention)."]
+      detrending_options: ["none"]
+  - var: "H"
+    validation_rank: 8
+    unit: "W/m2"
+    description: "Sensible heat flux."
+    emitted_in: "output-tabs/point*.txt, basin*.txt; spatial flux maps"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Eddy-covariance comparison; responds to energy-balance partitioning once LE is constrained."]
+      detrending_options: ["none"]
+  - var: "Tsurface"
+    validation_rank: 9
+    unit: "Celsius"
+    description: "Land surface temperature."
+    emitted_in: "output-tabs/point*.txt, basin*.txt; spatial maps"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: []
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Distributed mode; comparable to remote-sensing LST snapshots."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "saturated_hydraulic_conductivity_Ks"
+      to: "discharge"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["soltani2019_geotop_inverse_sensitivity"]
+    - from: "van_Genuchten_retention_parameters"
+      to: "discharge"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["soltani2019_geotop_inverse_sensitivity"]
+    - from: "saturated_hydraulic_conductivity_Ks"
+      to: "LE"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["soltani2019_geotop_inverse_sensitivity"]
+    - from: "van_Genuchten_retention_parameters"
+      to: "LE"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["soltani2019_geotop_inverse_sensitivity"]
+    - from: "soil_hydraulic_parameters"
+      to: "H"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["soltani2019_geotop_inverse_sensitivity"]
+    - from: "ground_albedo"
+      to: "soilTz"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["gubler2013_geotop_ground_temp_sensitivity"]
+    - from: "soil_hydraulic_properties"
+      to: "soilTz"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "peat/gravel/sand soils; negligible for rock/clay"
+      citations: ["gubler2013_geotop_ground_temp_sensitivity", "soltani2026_geotop3_permafrost_optimization"]
+    - from: "soil_thermal_conductivity"
+      to: "soilTz"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["soltani2026_geotop3_permafrost_optimization", "endrizzi2014_geotop2_model"]
+    - from: "ground_snow_time_discretization"
+      to: "soilTz"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: structural
+      citations: ["gubler2013_geotop_ground_temp_sensitivity"]
+    - from: "precipitation_forcing"
+      to: "SWE"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      citations: ["terzago2020_geotop_snow_forcing_sensitivity"]
+    - from: "air_temperature_forcing"
+      to: "SWE"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      citations: ["terzago2020_geotop_snow_forcing_sensitivity"]
+    - from: "shortwave_radiation_forcing"
+      to: "SWE"
+      sensitivity_grade: LOW
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      citations: ["terzago2020_geotop_snow_forcing_sensitivity"]
+    - from: "snow_density_parameterization"
+      to: "snowDepth"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      citations: ["terzago2020_geotop_snow_forcing_sensitivity"]
+    - from: "saturated_hydraulic_conductivity_Ks"
+      to: "thetaliq"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["endrizzi2014_geotop2_model", "soltani2019_geotop_inverse_sensitivity"]
+  citation_index:
+    soltani2019_geotop_inverse_sensitivity:
+      short_citation: "Soltani et al. 2019"
+      doi: "10.1016/j.jhydrol.2019.02.033"
+      note: "GEOtop-PEST inverse modelling, Rott catchment; LHOAT sensitivity of streamflow and turbulent fluxes — soil hydraulic params most controlling."
+    gubler2013_geotop_ground_temp_sensitivity:
+      short_citation: "Gubler et al. 2013"
+      doi: "10.5194/gmd-6-1319-2013"
+      note: "GEOtop ground-temperature sensitivity over synthetic alpine topography; ground albedo dominant, discretization adds >1 degC."
+    endrizzi2014_geotop2_model:
+      short_citation: "Endrizzi et al. 2014"
+      doi: "10.5194/gmd-7-2831-2014"
+      note: "GEOtop 2.0 reference description; grounds Ks/retention/thermal-conductivity parameter-to-output edges."
+    terzago2020_geotop_snow_forcing_sensitivity:
+      short_citation: "Terzago et al. 2020"
+      doi: "10.5194/hess-24-4061-2020"
+      note: "Snow-model forcing sensitivity at Torgnon; GEOtop SWE most sensitive to precip and air temperature, shortwave minimal."
+    soltani2026_geotop3_permafrost_optimization:
+      short_citation: "Soltani et al. 2026"
+      doi: "10.1016/j.coldregions.2026.104513"
+      note: "GEOtop 3.0 + Morris global SA + PSO at Hornsund, Svalbard; permafrost thermal stability governed by hydraulic as much as thermal properties. DOI inferred from publisher PII — re-verify."
+  citation_index_caveat: "All edges are graded from LHOAT/Morris ranking position and qualitative magnitude in the cited studies, not standardized variance-based (Sobol) indices."
+
+safety:
+  hazards:
+    - id: "soil_Dz_units_diverge"
+      kind: "soil_semantic"
+      description: "Soil layer thickness Dz in meters/cm instead of mm collapses sub-mm layers and diverges the Richards solver within the first time steps."
+      severity: "fatal"
+    - id: "vwc_ordering_violation"
+      kind: "soil_semantic"
+      description: "Van Genuchten residual >= saturated water content (vwc_r >= vwc_s) leaves the retention curve undefined; immediate soil crash."
+      severity: "fatal"
+    - id: "van_genuchten_n_below_one"
+      kind: "soil_semantic"
+      description: "Van Genuchten n <= 1.0 makes m = 1 - 1/n non-positive, causing a floating-point exception in pedotransfer."
+      severity: "fatal"
+    - id: "inpts_tab_separator_parse_fail"
+      kind: "parser_semantic"
+      description: "geotop.inpts requires TAB separators between key, '=', and value (dt_009); tabs replaced by spaces cause the get_all_input keyword parser to fail on the first keyword."
+      severity: "fatal"
+    - id: "ksat_units_silent_infiltration"
+      kind: "soil_semantic"
+      description: "Hydraulic conductivity in cm/day instead of m/s (8.64e6x) silently produces instant drainage or permanent saturation."
+      severity: "silent"
+    - id: "vg_alpha_units_retention"
+      kind: "soil_semantic"
+      description: "Van Genuchten alpha in 1/cm instead of 1/mm (10x) silently distorts the soil retention curve."
+      severity: "silent"
+    - id: "precip_rate_vs_per_step"
+      kind: "weather_file_semantic"
+      description: "Precipitation supplied as a rate (mm/hr, m/s, mm/day) instead of mm accumulated per model time step scales total precipitation by ~1000x."
+      severity: "silent"
+    - id: "relhum_fraction_vs_percent"
+      kind: "weather_file_semantic"
+      description: "Relative humidity as fraction (0-1) instead of percent (0-100) is read as ~0.x% humidity, collapsing ET and inflating sensible heat."
+      severity: "silent"
+    - id: "date_format_misparse"
+      kind: "weather_file_semantic"
+      description: "Forcing dates in MM/DD/YYYY instead of European DD/MM/YYYY silently shift seasonal patterns in time."
+      severity: "silent"
+    - id: "nodata_not_minus_9999"
+      kind: "weather_file_semantic"
+      description: "Missing values encoded as NaN/-999/blank instead of exactly -9999 are read as literal values (often 0), producing flat forcing curves."
+      severity: "silent"
+    - id: "accumulated_radiation_not_deaccumulated"
+      kind: "weather_file_semantic"
+      description: "Accumulated radiation (J/m2, e.g. ERA5) not converted to instantaneous W/m2 yields shortwave >2000 W/m2 or zero."
+      severity: "silent"
+    - id: "vegheight_units_bare_ground"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "VegHeight in meters instead of mm treats a tall canopy as effectively bare ground, removing interception and altering turbulence."
+      severity: "silent"
+    - id: "missing_horizon_overpredicts_solar"
+      kind: "control_semantic"
+      description: "With FlagSkyViewFactor=1 but the horizon file missing, horizon angles silently default to 0, over-predicting direct-beam radiation."
+      severity: "silent"
+    - id: "lwin_cloudtrans_double_param"
+      kind: "control_semantic"
+      description: "Supplying both LWin and CloudTrans (neither -9999) under LWinParameterization>0 double-parameterizes longwave, degrading energy-balance closure."
+      severity: "degraded"
+    - id: "slope_aspect_units_distributed"
+      kind: "soil_semantic"
+      description: "Slope map in percent (not degrees) or aspect map in radians (not degrees from N) distorts runoff response and radiation/shadow geometry in distributed mode."
+      severity: "degraded"
+    - id: "topo_grid_mismatch"
+      kind: "control_semantic"
+      description: "ESRI ASCII input maps with mismatched ncols/nrows/cellsize/origin cause out-of-bounds indexing (segfault) on startup in distributed mode."
+      severity: "fatal"
+    - id: "energy_water_nonconvergence_collapse"
+      kind: "numerical_instability"
+      description: "Extreme forcing (e.g. Kelvin instead of Celsius) drives energy-balance non-convergence; the adaptive solver hangs or shrinks Mean_Time_Step far below the nominal step."
+      severity: "fatal_or_silent"
+  validation_limits:
+    - "Designed and validated for mountain catchments and permafrost / seasonally-frozen soils at high altitude and latitude; uncalibrated outside that regime."
+    - "v3.0 is declared not fully stable when run with the full 3D water and energy budget; use with caution for fully-coupled distributed simulations."
+    - "v3.0 lacks the MeteoIO forcing-integration library present in v2.1.1."
+    - "Sub-hourly default step (900 s); coarser vertical/temporal discretization injects >1 degC ground-temperature error and is structurally inadequate for permafrost."
+  warnings:
+    - "Mean_Time_Step persistently below the configured nominal step signals the adaptive solver struggling with non-physical parameters or forcing."
+    - "Energy solve must precede the water solve each sub-step; soil ice content feeds back into hydraulic conductivity within the step, so thermal and water states are not independently interpretable."
+    - "Blowing-snow redistribution couples neighbouring pixels' snow state, so single-pixel SWE in distributed mode is not a closed column budget when BlowingSnow=1."
+    - "Cumulative basin mass-balance error should stay small (~<1 mm); a growing error indicates Richards-solver trouble."
+  assumptions:
+    - statement: "Point mode (PointSim=1) is a 1-D vertical soil column with topography set directly in geotop.inpts; distributed mode (PointSim=0) is the full 3D planar+vertical grid."
+      scope: "model geometry"
+      source: "Endrizzi et al. 2014 (GMD 7, 2831-2857) and GEOtop user manual Ch. 3"
+      status: "adopted"
+    - statement: "The model closes a coupled mass (water/snow/glacier/channel) and energy (radiative+turbulent+heat-diffusion) budget, with explicit non-linear water-energy coupling during soil phase change."
+      scope: "conservation / closure"
+      source: "Endrizzi et al. 2014 abstract; geotopmodel.github.io key features"
+      status: "adopted"
+    - statement: "Default air- and dew-point lapse rates (6.5 and 2.5 C/km) are applied silently in meteo distribution when no LapseRateFile is supplied."
+      scope: "forcing distribution"
+      source: "GEOtop source constants.h GTConst defaults and meteodistr module behavior"
+      status: "adopted"
+    - statement: "Backward Euler (fully implicit) is the heat-equation time-integration scheme; the Crank-Nicholson option is not user-exposed."
+      scope: "numerical method"
+      source: "GEOtop source constants.h (KNe=0) and energy.balance module"
+      status: "adopted"

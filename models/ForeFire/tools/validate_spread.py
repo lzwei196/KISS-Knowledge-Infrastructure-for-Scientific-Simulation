@@ -104,61 +104,103 @@ def load_geojson(filepath):
     return perimeters
 
 
-def compute_burned_area_raster(coords, resolution=30):
-    """Rasterize a perimeter and compute burned area in hectares."""
-    coords = np.array(coords)
-    if len(coords) < 3:
-        return 0.0, None
+def shared_grid(coord_sets, resolution=30, margin_cells=5):
+    """Build ONE regular grid that covers every perimeter passed in.
 
-    xmin, ymin = coords.min(axis=0)
-    xmax, ymax = coords.max(axis=0)
+    This is the whole point of the function. Rasterising the simulated and the
+    observed fire on their OWN bounding boxes and then padding both from index
+    (0,0) silently TRANSLATES one fire onto the other: two fires 5 km apart can
+    then score a high overlap, and two concentric fires can score zero. Every
+    area-overlap score (Sorensen, Jaccard/CSI, POD, FAR) is only defined on a
+    common, co-registered grid.
+    """
+    pts = [np.asarray(c, dtype=float) for c in coord_sets if c is not None and len(c) >= 3]
+    if not pts:
+        return None
+    allpts = np.vstack(pts)
+    xmin, ymin = allpts.min(axis=0)
+    xmax, ymax = allpts.max(axis=0)
+    pad = margin_cells * resolution
+    xmin -= pad; ymin -= pad; xmax += pad; ymax += pad
+    nx = max(int(np.ceil((xmax - xmin) / resolution)), 1)
+    ny = max(int(np.ceil((ymax - ymin) / resolution)), 1)
+    return {"xmin": float(xmin), "ymin": float(ymin), "nx": int(nx), "ny": int(ny),
+            "res": float(resolution)}
 
-    nx = max(int((xmax - xmin) / resolution) + 1, 1)
-    ny = max(int((ymax - ymin) / resolution) + 1, 1)
 
-    # Simple point-in-polygon rasterization using ray casting
-    raster = np.zeros((ny, nx), dtype=bool)
+def rasterize_on_grid(coords, grid):
+    """Rasterise one closed perimeter onto the SHARED grid (even-odd fill)."""
+    if grid is None or coords is None or len(coords) < 3:
+        return None
+    c = np.asarray(coords, dtype=float)
+    if not np.allclose(c[0], c[-1]):
+        c = np.vstack([c, c[:1]])
+    res, xmin, ymin = grid["res"], grid["xmin"], grid["ymin"]
+    nx, ny = grid["nx"], grid["ny"]
+    xs = xmin + (np.arange(nx) + 0.5) * res
+    ys = ymin + (np.arange(ny) + 0.5) * res
+    X, Y = np.meshgrid(xs, ys)
 
-    for iy in range(ny):
-        y = ymin + iy * resolution + resolution / 2
-        for ix in range(nx):
-            x = xmin + ix * resolution + resolution / 2
-            # Ray casting algorithm
-            inside = False
-            n = len(coords)
-            j = n - 1
-            for i_pt in range(n):
-                xi, yi = coords[i_pt]
-                xj, yj = coords[j]
-                if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
-                    inside = not inside
-                j = i_pt
-            raster[iy, ix] = inside
+    try:                                    # exact, fast C fill when available
+        from matplotlib.path import Path as _MPath
+        inside = _MPath(c).contains_points(
+            np.column_stack([X.ravel(), Y.ravel()])).reshape(ny, nx)
+        return inside
+    except Exception:
+        pass
 
-    area_ha = np.sum(raster) * (resolution ** 2) / 10000.0
-    return area_ha, raster
+    # Vectorised even-odd ray casting (no per-cell Python loop).
+    inside = np.zeros((ny, nx), dtype=bool)
+    x1, y1 = c[:-1, 0], c[:-1, 1]
+    x2, y2 = c[1:, 0], c[1:, 1]
+    for xa, ya, xb, yb in zip(x1, y1, x2, y2):
+        if ya == yb:
+            continue
+        straddles = (Y > min(ya, yb)) & (Y <= max(ya, yb))
+        xint = xa + (Y - ya) * (xb - xa) / (yb - ya)
+        inside ^= straddles & (X < xint)
+    return inside
+
+
+def raster_area_ha(raster, grid):
+    if raster is None or grid is None:
+        return 0.0
+    return float(raster.sum()) * grid["res"] ** 2 / 10000.0
+
+
+def overlap_scores(sim, obs):
+    """Area-overlap scores for two co-registered burned masks.
+
+    Reference convention (Filippi et al. 2014, NHESS 14, 3077, Sect. 3): burned
+    footprints are graded by area overlap -- Sorensen SC = 2|A n B|/(|A|+|B|)
+    and Jaccard, which for two binary masks IS the Critical Success Index
+    CSI = hits/(hits+misses+false_alarms). CSI is the determining score for the
+    dag's `event_detection` family, so it must be emitted, not just Sorensen.
+    """
+    out = {"sorensen_coefficient": np.nan, "csi": np.nan, "pod": np.nan, "far": np.nan}
+    if sim is None or obs is None or sim.shape != obs.shape:
+        return out
+    hits = int((sim & obs).sum())
+    false_alarms = int((sim & ~obs).sum())
+    misses = int((obs & ~sim).sum())
+    denom = hits + misses + false_alarms
+    out["hits"] = hits
+    out["misses"] = misses
+    out["false_alarms"] = false_alarms
+    out["csi"] = round(hits / denom, 4) if denom else 0.0
+    tot = int(sim.sum()) + int(obs.sum())
+    out["sorensen_coefficient"] = round(2.0 * hits / tot, 4) if tot else 0.0
+    out["pod"] = round(hits / (hits + misses), 4) if (hits + misses) else 0.0
+    out["far"] = round(false_alarms / (hits + false_alarms), 4) if (hits + false_alarms) else 0.0
+    if obs.sum():
+        out["overestimation"] = round(false_alarms / int(obs.sum()), 4)
+        out["underestimation"] = round(misses / int(obs.sum()), 4)
+    return out
 
 
 def sorensen_coefficient(raster_a, raster_b):
-    """Compute Sorensen coefficient between two binary rasters."""
-    if raster_a is None or raster_b is None:
-        return np.nan
-
-    # Pad to same size
-    max_y = max(raster_a.shape[0], raster_b.shape[0])
-    max_x = max(raster_a.shape[1], raster_b.shape[1])
-
-    a = np.zeros((max_y, max_x), dtype=bool)
-    b = np.zeros((max_y, max_x), dtype=bool)
-    a[:raster_a.shape[0], :raster_a.shape[1]] = raster_a
-    b[:raster_b.shape[0], :raster_b.shape[1]] = raster_b
-
-    intersection = np.sum(a & b)
-    total = np.sum(a) + np.sum(b)
-
-    if total == 0:
-        return 0.0
-    return 2.0 * intersection / total
+    """Backward-compatible wrapper; both rasters MUST share one grid."""
+    return overlap_scores(raster_a, raster_b)["sorensen_coefficient"]
 
 
 def perimeter_length(coords):
@@ -184,11 +226,31 @@ def process(args):
 
     results = {"simulated_file": args.simulated, "n_sim_perimeters": len(sim_perims)}
 
-    # Compute simulated area and perimeter for last timestep
+    sim_coords = None
     if sim_perims:
         last_key = max(sim_perims.keys())
         sim_coords = sim_perims[last_key]["coords"]
-        sim_area, sim_raster = compute_burned_area_raster(sim_coords)
+
+    obs_coords = None
+    if args.observed:
+        ext_obs = Path(args.observed).suffix.lower()
+        if ext_obs == ".geojson":
+            obs_perims = load_geojson(args.observed)
+        else:
+            obs_perims = load_perimeter_csv(args.observed)
+        print(f"Observed: {len(obs_perims)} perimeters loaded")
+        if obs_perims:
+            obs_coords = obs_perims[max(obs_perims.keys())]["coords"]
+
+    # ONE grid covering both fires -> the masks are co-registered in space.
+    grid = shared_grid([sim_coords, obs_coords], resolution=args.resolution)
+    results["grid"] = grid
+
+    sim_raster = rasterize_on_grid(sim_coords, grid)
+    obs_raster = rasterize_on_grid(obs_coords, grid)
+
+    if sim_coords is not None:
+        sim_area = raster_area_ha(sim_raster, grid)
         sim_perim_len = perimeter_length(sim_coords)
         results["simulated_area_ha"] = round(sim_area, 2)
         results["simulated_perimeter_m"] = round(sim_perim_len, 1)
@@ -196,36 +258,20 @@ def process(args):
         print(f"Simulated burned area: {sim_area:.1f} ha")
         print(f"Simulated perimeter: {sim_perim_len:.0f} m")
 
-    # If observed data provided, compute comparison metrics
-    if args.observed:
-        ext_obs = Path(args.observed).suffix.lower()
-        if ext_obs == ".geojson":
-            obs_perims = load_geojson(args.observed)
-        else:
-            obs_perims = load_perimeter_csv(args.observed)
+    if obs_coords is not None:
+        obs_area = raster_area_ha(obs_raster, grid)
+        results["observed_area_ha"] = round(obs_area, 2)
+        results["observed_perimeter_m"] = round(perimeter_length(obs_coords), 1)
 
-        print(f"Observed: {len(obs_perims)} perimeters loaded")
+        results.update(overlap_scores(sim_raster, obs_raster))
 
-        if obs_perims:
-            last_obs_key = max(obs_perims.keys())
-            obs_coords = obs_perims[last_obs_key]["coords"]
-            obs_area, obs_raster = compute_burned_area_raster(obs_coords)
-            obs_perim_len = perimeter_length(obs_coords)
+        if obs_area > 0:
+            results["area_ratio"] = round(results["simulated_area_ha"] / obs_area, 3)
 
-            results["observed_area_ha"] = round(obs_area, 2)
-            results["observed_perimeter_m"] = round(obs_perim_len, 1)
-
-            # Sorensen coefficient
-            sc = sorensen_coefficient(sim_raster, obs_raster)
-            results["sorensen_coefficient"] = round(sc, 4)
-
-            # Area ratio
-            if obs_area > 0:
-                results["area_ratio"] = round(sim_area / obs_area, 3)
-
-            print(f"Observed burned area: {obs_area:.1f} ha")
-            print(f"Sorensen coefficient: {sc:.4f}")
-            print(f"Area ratio (sim/obs): {sim_area / max(obs_area, 0.01):.3f}")
+        print(f"Observed burned area: {obs_area:.1f} ha")
+        print(f"CSI: {results['csi']}  Sorensen: {results['sorensen_coefficient']}  "
+              f"POD: {results['pod']}  FAR: {results['far']}")
+        print(f"Area ratio (sim/obs): {results.get('area_ratio')}")
 
     # Generate validation figure
     if args.figure and HAS_MATPLOTLIB:
@@ -294,6 +340,9 @@ def main():
     parser.add_argument("--observed", default=None, help="Observed perimeters (CSV or GeoJSON)")
     parser.add_argument("--output", default="validation_results.json", help="Output JSON path")
     parser.add_argument("--figure", default=None, help="Output figure path (PNG)")
+    parser.add_argument("--resolution", type=float, default=30.0,
+                        help="Shared-grid cell size, in the CRS units of the inputs "
+                             "(metres for UTM). Both fires are rasterised on this ONE grid.")
     args = parser.parse_args()
 
     validate_inputs(args)

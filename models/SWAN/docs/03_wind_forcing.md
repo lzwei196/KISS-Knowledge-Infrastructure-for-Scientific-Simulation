@@ -8,7 +8,7 @@ Prepare wind forcing fields for SWAN from reanalysis or forecast data. SWAN can 
 
 | Input | Format | Source | Units |
 |-------|--------|--------|-------|
-| Wind speed (U10) | NetCDF, ASCII grid | ERA5, CFSR, GFS | m/s at 10m elevation |
+| Wind speed (U10) | NetCDF, ASCII grid | ERA5, CFSR, GFS, or RSS CCMP V3.1 via `tools/fetch_gridded_wind.py` | m/s at 10m elevation |
 | Wind direction | NetCDF, ASCII grid | Same as speed | degrees (meteorological) |
 | Time series | CSV | Station data | m/s, degrees |
 
@@ -122,3 +122,29 @@ OFF QUAD            $ Disable quadruplet interactions (saves computation)
 ```
 
 This is the configuration used in the PySWaN test cases — waves are prescribed at the boundary and propagate through the domain without wind growth.
+
+
+## Choosing the wind source (added after the NDBC 46050 real case)
+
+ERA5/CFSR/GFS are named above, but none of them is in
+`/mnt/disk1/Hydrocraft_server/data_ki/dataset_index.yaml` - every
+`forcing.reanalysis` entry there is China CMFD, which has no marine coverage.
+On this server the working gridded route is `tools/fetch_gridded_wind.py`
+(NOAA CoastWatch ERDDAP griddap, no credentials):
+
+| dataset id | product | grid | cadence | record |
+|---|---|---|---|---|
+| `ccmp_31_LonPM180` | RSS CCMP V3.1 L4 | 0.25 deg | 6 h | 1993-01-02..2024-01-31 |
+| `pifscCcmpDailyV21NRT_LonPM180` | CCMP V2.1 NRT | 0.25 deg | 6 h | 2016-present |
+| `erdNavgem05D10mWind_LonPM180` | NAVGEM 10 m | 0.5 deg | 3 h | 2013-present |
+
+**Never force the model with the anemometer of the buoy you are scoring.** The
+wind field is the dominant control on HSIGN in deep/open water, so a run whose
+wind comes from the validation instrument measures the buoy against itself. If
+no independent gridded field can be obtained for the period, say so and report
+the run as wind-circular rather than reporting its NSE as SWAN skill.
+
+CCMP is 6-hourly while a SWAN NONSTATIONARY wind grid carries a single `[dt]`.
+Interpolate the U and V COMPONENTS to the SWAN times - never speed and
+direction, which rotates through the wrong quadrant when the direction crosses
+360 deg.

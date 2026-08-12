@@ -1,0 +1,534 @@
+template_version: "3.5"
+identity:
+  model_id: "ADCIRC"
+  name: "ADCIRC (ADvanced CIRCulation)"
+  long_name: "A (Parallel) Advanced Circulation Model for Oceanic, Coastal and Estuarine Waters"
+  ki_class: forward_model
+  language: fortran
+  repo_url: "https://github.com/adcirc/adcirc"
+  license: "LGPL-3.0"
+  model_class: "coastal_ocean_circulation"
+  scientific_reference_version: "ADCIRC v56.2.1 (Luettich/Westerink GWCE finite-element formulation)"
+  is_family_dag: false
+  description: >
+    Unstructured finite-element hydrodynamic model solving time-dependent free-surface
+    circulation and transport in 2D depth-integrated (2DDI, IM=0) or 3D baroclinic
+    (IM=21) mode. Elevation is solved from the Generalized Wave Continuity Equation
+    (GWCE); velocity from the depth-integrated (or 3D) momentum equations with nonlinear
+    terms retained. Used for tidal circulation, storm-surge prediction, and coastal
+    inundation. The HydroCraft binding exercises the 2DDI barotropic path.
+  implementation:
+    id: "adcirc-v562"
+    version: "v56.2.1"
+    provenance: "Fortran 2008 finite-element coastal-circulation code (serial adcirc / parallel padcirc) from the Luettich/Westerink ADCIRC distribution realizing the GWCE formulation; optional padcswan SWAN coupling."
+  authors: "R. Luettich (UNC Chapel Hill) and J. Westerink (University of Notre Dame)"
+  references:
+    - "Luettich, Westerink, Scheffner (1992) ADCIRC Theory Report DRP-92-6"
+    - "Westerink et al. (2008) Monthly Weather Review 136(3):833-864"
+    - "Kinnmark (1986) Shallow Water Wave Equations, LNE 15"
+
+boundary:
+  scope_in:
+    - "Time-dependent free-surface circulation and transport in 2DDI and 3D modes"
+    - "Tidal circulation, storm surge, wind-driven circulation, coastal inundation (wetting/drying)"
+    - "Elevation via the Generalized Wave Continuity Equation (GWCE); velocity via 2DDI/3D momentum equations with nonlinear terms retained"
+    - "Unstructured triangular finite-element mesh, variable resolution (km deep ocean to m nearshore), Cartesian (ICS=1) or spherical (ICS=2)"
+  scope_out:
+    - "Non-hydrostatic dynamics (governing equations assume hydrostatic pressure + Boussinesq approximations)"
+    - "Wind-wave generation and spectral wave physics (computed externally by SWAN; radiation-stress wave setup enters only via coupled padcswan, not native)"
+    - "Vertical velocity structure / baroclinic density-driven currents in the 2DDI barotropic path (only the optional 3D IM=21 mode resolves these)"
+  spatial: "2-D grid"
+  temporal: "sub-hourly"
+  closure: "mass-balance"
+  notes: >
+    Spatial grain is the 2DDI (depth-integrated) unstructured FE mesh exercised by this
+    binding; the optional 3D (IM=21) mode is "3-D" but is not covered by the HydroCraft
+    2DDI tooling. Time stepping is sub-hourly finite-difference (DTDP ~0.5-10 s, CFL-limited).
+    The GWCE is a mass-conserving continuity formulation, so closure is mass-balance (the 3D
+    transport mode additionally conserves the advected scalar/heat budget). The hydrostatic
+    pressure and Boussinesq approximations are governing simplifications of the momentum
+    equations, recorded here rather than in the closure field.
+
+inputs:
+  forcing:
+    - category: forcing
+      name: "Meteorological forcing (wind + atmospheric pressure)"
+      unit: "wind m/s; pressure mb (hPa) in OWI input, m H2O internally"
+      source_kind: "NWP / parametric (GFS/ERA5/HRRR/HWRF or Holland parametric track)"
+      model_input_format: "fort.22 control + fort.221 pressure (mb) + fort.222 wind u,v (m/s) for OWI NWS=12; NWS selects format (8=Holland, 12=OWI, 13=OWI netCDF, 14=GRIB2)"
+      notes: "Required when NWS!=0. OWI header (iLat,iLong,DX,DY,SWLat,SWLon,DT) is rigid fixed-width; off-by-one grid dims shift the field (dt_007). Internal pressure unit is m H2O = P_Pa/9806.65."
+  parameters:
+    - category: parameters
+      name: "Bathymetric depth DP"
+      unit: "m, POSITIVE below geoid (NEGATIVE above)"
+      source_kind: "DEM (GEBCO/ETOPO/local) via mesh generation"
+      model_input_format: "fort.14 node coordinate column 4"
+      notes: "Sign convention couples to all elevation outputs; flipping sign silently inverts bathymetry (dt_001)."
+    - category: parameters
+      name: "Manning's n at sea floor"
+      unit: "s/m^(1/3) (typical 0.02-0.12)"
+      source_kind: "land-cover lookup (NLCD/GlobCover) by depth/class"
+      model_input_format: "fort.13 nodal attribute mannings_n_at_sea_floor"
+      notes: "Bottom-friction parameter; n outside ~0.01-0.20 causes div-by-zero (n=0) or blocked flow (dt_014)."
+    - category: parameters
+      name: "Mesh geometry and connectivity"
+      unit: "degrees (ICS=2) or meters (ICS=1)"
+      source_kind: "external mesh generator (SMS, OceanMesh2D)"
+      model_input_format: "fort.14 node coordinates + element connectivity + boundary node lists"
+      notes: "Boundary nodes must be ordered counter-clockwise (dt_018); mesh must be connected for the METIS-based domain partitioning used by the parallel solver (dt_020). The partitioning itself is execution-layer preprocessing (adcprep), not a physics step."
+    - category: parameters
+      name: "GWCE/numerical/friction control parameters"
+      unit: "mixed (DTDP s; G m/s^2; TAU0 dimensionless; ESLM m^2/s)"
+      source_kind: "calibrated / model defaults"
+      model_input_format: "fort.15 (ICS, IM, G, DTDP, RNDAY, DRAMP, NOLIBF/CF, TAU0, ESLM, NOLIFA/H0/VELMIN, output control)"
+      notes: "G must be 9.81 when ICS=2 (metric); G=32.174 (feet) is silently fatal (dt_002). DTDP must satisfy CFL DTDP < dx_min/sqrt(g*h_max) (dt_006)."
+  initial_conditions:
+    - category: initial_conditions
+      name: "Hot-start restart state"
+      unit: "Fortran unformatted binary"
+      source_kind: "previous ADCIRC run"
+      model_input_format: "fort.67 / fort.68 (IHOT=67/68)"
+      notes: "Compiler/endianness/flag-specific; not portable across builds (dt_009). Optional — cold start (IHOT=0) otherwise."
+  boundary_conditions:
+    - category: boundary_conditions
+      name: "Tidal harmonic open-boundary forcing"
+      unit: "amplitude m; phase deg; period s"
+      source_kind: "tidal database (TPXO9/FES2014/OTPS)"
+      model_input_format: "fort.15 harmonic constituents (NBFR) + tidal potential (NTIP); periods in seconds (dt_012)"
+      notes: "30+ constituents; NTIP=1 tidal potential, NTIP=2 adds self-attraction/loading."
+    - category: boundary_conditions
+      name: "Non-periodic elevation boundary condition"
+      unit: "time s vs elevation m"
+      source_kind: "user / external surge model"
+      model_input_format: "fort.19 at each open-boundary node"
+    - category: boundary_conditions
+      name: "Non-periodic normal-flux boundary condition (e.g. river discharge)"
+      unit: "time s vs normal flux m^2/s"
+      source_kind: "user / coupled river model (e.g. CaMa-Flood)"
+      model_input_format: "fort.20 at boundary nodes"
+    - category: boundary_conditions
+      name: "Self-attraction and earth-load tide forcing"
+      unit: "SAL amplitude / phase per node"
+      source_kind: "tidal-loading database"
+      model_input_format: "fort.24 (required when NTIP=2)"
+
+processes:
+  modules:
+    - name: "GWCE solver"
+      role: process_solver
+      brief: "Solves the Generalized Wave Continuity Equation for water surface elevation (zeta) on the unstructured FE mesh; numerical behavior governed by the TAU0 weighting factor."
+    - name: "Momentum equations (2DDI)"
+      role: process_solver
+      brief: "Depth-integrated horizontal momentum balance producing depth-averaged velocity (U,V); includes Coriolis, lateral viscosity (ESLM), and bottom friction. Nonlinear terms retained."
+    - name: "Bottom friction"
+      role: process_solver
+      brief: "Linear (TAU, NOLIBF=0), quadratic (CF, NOLIBF=1), or hybrid (NOLIBF=2) bed stress; spatially varying via Manning's n in fort.13."
+    - name: "Wind drag / surface stress"
+      role: process_solver
+      brief: "Garratt (1977) drag law Cd=0.001*(0.75+0.067*W10), capped at 0.003 above 33.6 m/s; Powell 2003 / Donelan 2004 alternatives available."
+    - name: "Wetting and drying"
+      role: process_solver
+      brief: "Dynamic wet/dry node switching (NOLIFA=2) controlled by H0 threshold and VELMIN, for coastal inundation."
+    - name: "Tidal forcing"
+      role: process_solver
+      brief: "Harmonic constituent forcing at open boundaries (NBFR) plus tidal potential (NTIP) and optional self-attraction/loading (SAL, fort.24)."
+    - name: "Atmospheric pressure forcing"
+      role: process_solver
+      brief: "Inverse-barometer pressure-gradient forcing; internal unit m H2O (P_mH2O = P_Pa/9806.65)."
+    - name: "3D baroclinic transport"
+      role: optional_module
+      brief: "Optional (IM=21) salinity/temperature/density-driven currents and passive scalar transport. NOT exercised by the 2DDI HydroCraft binding."
+    - name: "Time integrator"
+      role: integrator
+      brief: "Finite-difference time stepping (DTDP) with implicit/explicit weighting; advances GWCE + momentum each step. CFL-limited (dt_006)."
+  internal_edges:
+    - from: "Wind drag / surface stress"
+      to: "Momentum equations (2DDI)"
+      kind: writes_state
+      brief: "Surface wind stress enters the momentum balance."
+    - from: "Atmospheric pressure forcing"
+      to: "GWCE solver"
+      kind: writes_state
+      brief: "Inverse-barometer pressure gradient drives the continuity/elevation solution."
+    - from: "Tidal forcing"
+      to: "GWCE solver"
+      kind: writes_state
+      brief: "Open-boundary harmonic elevation forcing enters the GWCE."
+    - from: "Bottom friction"
+      to: "Momentum equations (2DDI)"
+      kind: writes_state
+      brief: "Bed stress dissipates momentum."
+    - from: "Momentum equations (2DDI)"
+      to: "GWCE solver"
+      kind: writes_state
+      brief: "Velocity divergence / flux feeds the wave-continuity elevation update."
+    - from: "GWCE solver"
+      to: "Momentum equations (2DDI)"
+      kind: writes_state
+      brief: "Elevation gradient drives the momentum equations."
+    - from: "GWCE solver"
+      to: "Wetting and drying"
+      kind: writes_state
+      brief: "Water surface elevation determines wet/dry node state."
+    - from: "Time integrator"
+      to: "GWCE solver"
+      kind: invokes
+      brief: "Advances the GWCE solution each timestep."
+    - from: "Time integrator"
+      to: "Momentum equations (2DDI)"
+      kind: invokes
+      brief: "Advances the momentum solution each timestep."
+
+states:
+  provenance: populated
+  variables:
+    - name: "zeta"
+      symbol: "zeta"
+      unit: "m"
+      kind: prognostic
+      description: "Free-surface water elevation relative to geoid, evolved via the GWCE. ASCII fort.63, netCDF 'zeta'."
+    - name: "depth_averaged_velocity_u"
+      symbol: "u"
+      unit: "m/s"
+      kind: prognostic
+      description: "Depth-averaged eastward velocity, evolved via the 2DDI momentum equations. netCDF 'u-vel', ASCII fort.64."
+    - name: "depth_averaged_velocity_v"
+      symbol: "v"
+      unit: "m/s"
+      kind: prognostic
+      description: "Depth-averaged northward velocity, evolved via the 2DDI momentum equations. netCDF 'v-vel', ASCII fort.64."
+    - name: "zeta_max"
+      symbol: "zeta_max"
+      unit: "m"
+      kind: accumulator
+      description: "Maximum water surface elevation per node over the simulation (running extremum). ASCII maxele.63."
+    - name: "DP"
+      symbol: "DP"
+      unit: "m (positive below geoid)"
+      kind: static_parameter
+      description: "Bathymetric depth at each node (fort.14 column 4); static, not prognostic."
+    - name: "mannings_n_at_sea_floor"
+      unit: "s/m^(1/3)"
+      kind: static_parameter
+      description: "Per-node bottom-friction Manning's n (fort.13); static nodal attribute, not prognostic."
+    - name: "wet_dry_state"
+      unit: "boolean per node"
+      kind: prognostic
+      description: "Wet/dry switch (NOLIFA=2) governed by H0 threshold and VELMIN; drives inundation. Dry nodes carry sentinel DRY_VALUE=-99999."
+    - name: "salinity_temperature_density_3D"
+      unit: "psu, degC, kg/m^3, m/s"
+      kind: prognostic
+      description: "3D baroclinic-mode (IM=21) state; structural/docs-only — not exercised by the 2DDI binding."
+      applicability: "3D mode (IM=21) only"
+
+outputs:
+  - var: "water_surface_elevation_stations"
+    validation_rank: 1
+    unit: "m"
+    description: "Elevation time series at specified recording stations (rel. geoid)."
+    emitted_in: "fort.61"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Dry periods carry the DRY_VALUE=-99999 sentinel; mask before comparison."
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Peak storm-surge magnitude at a station; default Garratt drag cap can bias Cat3+ peaks 30-50% low (dt_004)."
+      detrending_options: []
+  - var: "water_surface_elevation_all_nodes"
+    validation_rank: 2
+    unit: "m"
+    description: "Elevation time series at all mesh nodes (rel. geoid). ASCII/binary per NOUTGE, also netCDF."
+    emitted_in: "fort.63"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats:
+            - "Dry nodes carry DRY_VALUE=-99999; mask before comparison."
+      detrending_options: []
+  - var: "depth_averaged_velocity_stations"
+    validation_rank: 3
+    unit: "m/s"
+    description: "Depth-averaged velocity (u,v) time series at recording stations."
+    emitted_in: "fort.62"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: []
+  - var: "depth_averaged_velocity_all_nodes"
+    validation_rank: 4
+    unit: "m/s"
+    description: "Depth-averaged velocity (u,v) time series at all nodes. Also netCDF."
+    emitted_in: "fort.64"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: []
+      detrending_options: []
+  - var: "max_water_surface_elevation"
+    validation_rank: 5
+    unit: "m"
+    description: "Maximum elevation per node over the simulation (storm-surge envelope)."
+    emitted_in: "maxele.63"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats:
+            - "High-water-mark inundation envelope; dry nodes carry DRY_VALUE=-99999."
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Peak surge at a gauge; sensitive to wind drag cap (dt_004) and Manning's n."
+      detrending_options: []
+  - var: "max_velocity"
+    validation_rank: 6
+    unit: "m/s"
+    description: "Maximum velocity magnitude per node over the simulation."
+    emitted_in: "maxvel.63"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: []
+      detrending_options: []
+  - var: "atmospheric_pressure_all_nodes"
+    validation_rank: 7
+    unit: "m H2O"
+    description: "Atmospheric pressure across the domain (diagnostic forcing field echoed at all nodes)."
+    emitted_in: "fort.73"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats:
+            - "fort.73 = atmospheric pressure per docs_reader (authoritative); ki_reader swaps fort.73/74 — see safety.warnings. Internal unit m H2O."
+      detrending_options: []
+  - var: "wind_velocity_all_nodes"
+    validation_rank: 8
+    unit: "m/s"
+    description: "Wind stress/velocity across the domain (diagnostic forcing field echoed at all nodes)."
+    emitted_in: "fort.74"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats:
+            - "fort.74 = wind stress/velocity per docs_reader (authoritative); ki_reader swaps fort.73/74 — see safety.warnings."
+      detrending_options: []
+  - var: "min_atmospheric_pressure"
+    validation_rank: 9
+    unit: "m H2O"
+    description: "Minimum pressure per node over the simulation."
+    emitted_in: "minpr.63"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: []
+      detrending_options: []
+  - var: "max_wind_velocity"
+    validation_rank: 10
+    unit: "m/s"
+    description: "Maximum wind speed per node over the simulation."
+    emitted_in: "maxwvel.63"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: []
+      detrending_options: []
+
+influence:
+  edges:
+    - from: "wind_drag_coefficient"
+      to: "peak_surge_elevation"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["akbar2017_adcirc_rita_friction_drag"]
+    - from: "meteorological_wind_forcing"
+      to: "peak_surge_elevation"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      citations: ["akbar2017_adcirc_rita_friction_drag"]
+    - from: "manning_n_bottom_friction"
+      to: "peak_surge_elevation"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations:
+        - "akbar2017_adcirc_rita_friction_drag"
+        - "garzon2016_adcirc_chesapeake_sensitivity"
+        - "passeri2012_adcirc_manning_n_sensitivity"
+    - from: "manning_n_bottom_friction"
+      to: "overland_inundation_extent"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations:
+        - "passeri2012_adcirc_manning_n_sensitivity"
+        - "ferreira2014_adcirc_landcover_uncertainty"
+    - from: "land_cover_specification"
+      to: "overland_inundation_extent"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["ferreira2014_adcirc_landcover_uncertainty"]
+    - from: "manning_n_bottom_friction"
+      to: "M2_tidal_amplitude"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["garzon2016_adcirc_chesapeake_sensitivity"]
+    - from: "mesh_resolution"
+      to: "peak_surge_elevation"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      citations: ["dietrich2012_swan_adcirc_mesh_performance"]
+    - from: "wave_radiation_stress_coupling"
+      to: "peak_surge_elevation"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "coupled SWAN+ADCIRC only"
+      citations: ["dietrich2012_swan_adcirc_mesh_performance"]
+  citation_index:
+    akbar2017_adcirc_rita_friction_drag:
+      short_citation: "Akbar et al. 2017"
+      doi: "10.3390/jmse5030038"
+      note: "SWAN+ADCIRC Hurricane Rita hindcast; systematic +/- perturbation of bottom friction, wind drag, met forcing. Qualitative ('dominant control') — no quantitative SA index."
+    garzon2016_adcirc_chesapeake_sensitivity:
+      short_citation: "Garzon & Ferreira 2016"
+      doi: "10.3390/jmse4030045"
+      note: "Chesapeake Bay ADCIRC sensitivity; high friction reduced M2 ~0.20 m and max elevation up to ~0.56 m. Magnitude-of-effect reported, not a normalized sensitivity index."
+    passeri2012_adcirc_manning_n_sensitivity:
+      short_citation: "Passeri et al. 2012"
+      doi: "10.1061/9780784412411.00027"
+      note: "Low/avg/high Manning's n scenarios; inland/river/max-envelope most sensitive. Qualitative."
+    ferreira2014_adcirc_landcover_uncertainty:
+      short_citation: "Ferreira et al. 2014"
+      doi: "10.1002/2013JC009604"
+      note: "Land-cover-driven friction/roughness uncertainty in overland surge. Qualitative ('substantial uncertainty')."
+    dietrich2012_swan_adcirc_mesh_performance:
+      short_citation: "Dietrich et al. 2012"
+      doi: "10.1007/s10915-011-9555-6"
+      note: "SWAN+ADCIRC validation vs Katrina/Rita/Gustav/Ike; mesh resolution and wave setup critical. Qualitative."
+
+safety:
+  hazards:
+    - id: "depth_sign_not_negated"
+      kind: "soil_semantic"
+      description: "DEM elevation (positive up) used without negation; ADCIRC DP is positive below geoid, so ocean goes dry and land floods (domain inverted)."
+      severity: "silent"
+    - id: "gravity_unit_mismatch_ICS"
+      kind: "control_semantic"
+      description: "G=32.174 (feet) used with ICS=2 (spherical/degrees, metric); ~3.28x error in all gravity terms, no error message (dt_002)."
+      severity: "silent"
+    - id: "pressure_Pa_not_mb"
+      kind: "weather_file_semantic"
+      description: "OWI fort.221 pressure supplied in Pa instead of mb; ~100x surge or NaN crash (dt_003). Internal unit is m H2O."
+      severity: "fatal_or_silent"
+    - id: "wind_drag_cap_conservative"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Default Garratt drag cap Cd=0.003 above 33.6 m/s suppresses stress for Cat3+ winds; peak surge 30-50% low (dt_004)."
+      severity: "silent"
+    - id: "wind_speed_knots_not_ms"
+      kind: "weather_file_semantic"
+      description: "Wind in knots not m/s; stress ~0.26x, ~50% low surge (dt_010)."
+      severity: "silent"
+    - id: "coordinates_radians_not_degrees"
+      kind: "soil_semantic"
+      description: "Coordinates in radians with ICS=2; domain ~57x too small/mislocated (dt_011)."
+      severity: "silent"
+    - id: "tidal_period_hours_not_seconds"
+      kind: "control_semantic"
+      description: "Tidal constituent periods in hours not seconds in fort.15; ~3600x wrong frequency (dt_012)."
+      severity: "silent"
+    - id: "tau0_too_small"
+      kind: "numerical_instability"
+      description: "TAU0 < 0.001 reduces GWCE artificial diffusion; mass-balance errors and 2dx oscillations (dt_005)."
+      severity: "degraded"
+    - id: "cfl_violation_dtdp"
+      kind: "numerical_instability"
+      description: "DTDP violates CFL (DTDP < dx_min/sqrt(g*h_max)); growing oscillations to NaN. ADCIRC does not auto-check CFL (dt_006)."
+      severity: "fatal"
+    - id: "owi_header_offbyone"
+      kind: "weather_file_semantic"
+      description: "OWI iLat/iLong off-by-one shifts the entire wind/pressure field and storm track (dt_007)."
+      severity: "silent"
+    - id: "h0_threshold_too_large"
+      kind: "control_semantic"
+      description: "H0 wet/dry threshold too large (~1 m) underestimates inundation extent (dt_008)."
+      severity: "degraded"
+    - id: "friction_TAU_vs_CF_mismatch"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Linear TAU (1/s) confused with quadratic CF (dimensionless); friction orders of magnitude wrong, must match NOLIBF (dt_013)."
+      severity: "silent"
+    - id: "manning_n_out_of_range"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Manning's n outside 0.01-0.20 in fort.13; n=0 div-by-zero, n>0.3 blocks flow (dt_014)."
+      severity: "degraded"
+    - id: "eslm_too_large"
+      kind: "numerical_instability"
+      description: "Lateral eddy viscosity ESLM too large for mesh (rule ESLM < 0.5*dx_min^2/DTDP); NaN in velocity (dt_016)."
+      severity: "fatal"
+    - id: "time_axis_seconds_vs_days"
+      kind: "parser_semantic"
+      description: "Output fort.63 timestamps are seconds since cold start; misreading as days gives 86400x wrong time axis (dt_015)."
+      severity: "silent"
+  validation_limits:
+    - "2DDI (depth-integrated) HydroCraft binding cannot resolve vertical structure or baroclinic density currents; use 3D IM=21 mode for those."
+    - "No native wind-wave generation; wave setup requires external SWAN coupling (padcswan)."
+    - "Hydrostatic + Boussinesq governing assumptions: non-hydrostatic dynamics out of scope."
+    - "KI validation_status = build_tested only; no real-basin validation case documented (s7 RMSE/bias/R2 targets are guidance, not achieved results)."
+  warnings:
+    - "fort.73/fort.74 are swapped between docs_reader (fort.73=pressure, fort.74=wind) and ki_reader (fort.73=wind, fort.74=pressure); docs_reader is authoritative — fort.73 = atmospheric pressure at all nodes, fort.74 = wind stress/velocity at all nodes."
+    - "Pressure output unit is m H2O (internal) on fort.74-domain/minpr.63, while OWI input fort.221 is mb; downstream consumers must distinguish input (mb) from internal/output (m H2O)."
+    - "Dry nodes in node-field outputs carry sentinel DRY_VALUE=-99999; values <= this must be masked as NaN before any comparison or statistic."
+  assumptions:
+    - statement: "This dag describes the 2DDI barotropic path; 3D baroclinic (IM=21) state and transport are documented as a capability but not exercised by the HydroCraft tooling."
+      scope: "whole model"
+      source: "ADCIRC v50/v56 User's Manual (Introduction, 2DDI vs 3D modes) and KI 2DDI-focused tooling"
+      status: adopted
+    - statement: "Closure is mass-balance: the GWCE is a mass-conserving continuity formulation; hydrostatic-pressure and Boussinesq approximations are governing simplifications, not a conservation-closure category."
+      scope: "continuity / momentum"
+      source: "ADCIRC User's Manual Introduction (GWCE form, hydrostatic + Boussinesq approximations)"
+      status: adopted
+    - statement: "fort.73 = atmospheric pressure, fort.74 = wind, per the ADCIRC output-file documentation (resolving the cross-stream swap)."
+      scope: "outputs"
+      source: "ADCIRC v52 Output File Descriptions"
+      status: adopted

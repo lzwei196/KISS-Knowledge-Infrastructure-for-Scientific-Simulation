@@ -543,6 +543,8 @@ def run_calibration(args):
     best_nse = -999
     best_value = None
     best_idx = -1
+    outlet_idx = None  # initialized here; set on first successful CHRTOUT trial
+    outlet_fid = None
 
     for i, val in enumerate(values):
         print(f"\n  === Trial {i + 1}/{len(values)}: {args.param} = {val} ===")
@@ -572,8 +574,8 @@ def run_calibration(args):
                 })
                 continue
 
-        # Find outlet (re-detect for first trial, reuse for subsequent)
-        if i == 0:
+        # Find outlet (detect on first successful trial, reuse for subsequent)
+        if outlet_idx is None:
             try:
                 outlet_idx, outlet_fid = find_outlet_feature(run_dir)
             except FileNotFoundError as e:

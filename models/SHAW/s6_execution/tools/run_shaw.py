@@ -21,7 +21,10 @@ import sys
 import time
 from pathlib import Path
 
-SHAW_EXE = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "model/shaw/Code/shaw303")
+# Canonical compiled binary: model/shaw/shaw303 (symlink -> model/shaw/Shaw303/shaw303,
+# produced by model/shaw/compile.sh). The old "model/shaw/Code/shaw303" path never
+# existed (there is no Code/ directory) — fixed 2026-06-28 RISMA run.
+SHAW_EXE = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "model/shaw/shaw303")
 
 
 def create_inp_file(args, workdir):
@@ -192,7 +195,8 @@ def run_shaw(inp_file, shaw_exe, workdir, timeout=3600):
     try:
         result = subprocess.run(
             [str(shaw_exe)],
-            input=inp_name + '\n',
+            # Two newlines: filename + the "Press Enter to end" prompt (triplet shaw_024)
+            input=inp_name + '\n\n',
             capture_output=True,
             text=True,
             cwd=str(workdir),
@@ -201,15 +205,22 @@ def run_shaw(inp_file, shaw_exe, workdir, timeout=3600):
 
         elapsed = time.time() - start_time
 
-        if result.returncode == 0:
+        # SHAW typically STOPs at end-of-weather-file with a benign Fortran
+        # EOF backtrace and a NON-ZERO return code, yet writes complete output
+        # (triplet shaw_018: "SHAW may STOP with no error message -- check
+        # output files exist"). So success is judged by output presence, not
+        # solely by returncode.
+        produced = [p for p in Path(workdir).glob("*.out")
+                    if p.stat().st_size > 0]
+        if result.returncode == 0 and produced:
             print(f"\nSHAW completed successfully in {elapsed:.1f}s")
-            if result.stdout:
-                # Print last few lines of stdout
-                stdout_lines = result.stdout.strip().split('\n')
-                for line in stdout_lines[-5:]:
-                    print(f"  {line}")
+        elif produced:
+            print(f"\nSHAW finished in {elapsed:.1f}s with returncode "
+                  f"{result.returncode} but produced {len(produced)} non-empty "
+                  f"output files (benign EOF STOP — accepting).")
         else:
-            print(f"\nSHAW FAILED with return code {result.returncode}")
+            print(f"\nSHAW FAILED with return code {result.returncode} "
+                  f"and produced no output files")
             print(f"  Elapsed: {elapsed:.1f}s")
             if result.stderr:
                 print(f"  STDERR: {result.stderr[:500]}")

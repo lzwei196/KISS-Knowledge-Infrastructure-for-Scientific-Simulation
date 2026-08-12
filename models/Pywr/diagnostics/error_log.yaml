@@ -11,5 +11,30 @@
 #   - resolution: what fixed it
 # ============================================================================
 
-errors: []
+errors:
+  - timestamp: "2026-05-12"
+    triplet_id: dt_pywr_006
+    context: >
+      Revalidation of all 9 Pywr runs (bengbu/miyun/wangjiaba x3) showed reservoir
+      storage frozen at the initial volume (or drifting monotonically to capacity),
+      r ~= 0 / NSE strongly negative vs the monthly control curve. Root cause: the
+      operating-rule parameters from create_operating_rules.py (s5) were copied into
+      the model JSON by assemble_pywr_model.py (s7) but never referenced -- the storage
+      node carried a hard-coded constant cost=-500 instead of a ControlCurveParameter.
+      Compounded by a units mismatch: storage volumes in m3 but inflow/release/demand
+      values in m3/s with a 1-day timestep, so flows were 86400x too small relative to
+      storage and the reservoir could not move.
+    resolution: >
+      Patched s7 assemble_pywr_model.py: new wire_control_curve_and_units() builds a
+      `controlcurve`-type cost parameter ({res}_cost) referencing {res}_control_curve
+      and assigns it to the storage node (above-curve cost +50 -> release toward target;
+      below-curve cost -500 -> refill); wraps the inflow dataframe in an aggregated
+      product x 86400 and scales all *_m3s / *_max_flow parameters x 86400 (m3/s -> m3/day).
+      Patched s5 create_operating_rules.py: above_curve_cost 1.0 -> 50.0 (must exceed the
+      downstream output benefit of 10, else the curve never holds the reservoir).
+      After the fix, storage genuinely operates (sim_std 40-2400 MCM, was ~0). Remaining
+      gap: the generic auto-generated rule curves still fit the monsoon inflow regimes
+      poorly, so storage-vs-curve r is only 0.1-0.4 -- a rule-curve calibration issue,
+      separate from this (now-fixed) wiring bug. Backups: assemble_pywr_model.py.bak,
+      create_operating_rules.py.bak.
 # Entries will be appended as errors are encountered during operation.

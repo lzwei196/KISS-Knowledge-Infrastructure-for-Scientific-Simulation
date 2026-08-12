@@ -1,216 +1,285 @@
 model:
-  name: "LISFLOOD"
-  version: "4.3.1"
-  domain: "Large-scale spatially distributed rainfall-runoff, flood forecasting, water resources"
-  developer: "European Commission Joint Research Centre (EC-JRC)"
-  language: "Python (with Numba JIT-compiled soil loop)"
-  binary_path: "/home/server/miniconda3/envs/lisflood/bin/lisflood"
-  source_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/LISFLOOD/source/repo/src/lisf1.py"
-  settings_format: "XML (lisfloodSettings.xml)"
-  spatial_discretization: "Gridded (PCRaster/NetCDF maps with LDD drainage network)"
-  timestep: "Sub-daily to daily (typical: DtSec=21600 s = 6-hourly)"
-
+  name: LISFLOOD
+  version: 4.3.1
+  domain: flood
+  developer: European Commission Joint Research Centre (EC-JRC)
+  language: Python (with Numba JIT-compiled soil loop)
+  binary_path: /home/server/miniconda3/envs/lisflood/bin/lisflood
+  source_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/LISFLOOD/source/repo/src/lisf1.py
+  settings_format: XML (lisfloodSettings.xml)
+  spatial_discretization: Gridded (PCRaster/NetCDF maps with LDD drainage network)
+  timestep: 'Sub-daily to daily (typical: DtSec=21600 s = 6-hourly)'
 inputs:
   forcing:
-    - name: "pr"
-      description: "Precipitation (rainfall + snowfall)"
-      unit: "mm/day"
-      valid_range: [0, 500]
-      format: "NetCDF stack or PCRaster maps"
-      note: "ERA5 gives m/timestep — multiply by 1000. CMFD gives mm/3hr — sum to daily."
-    - name: "ta"
-      description: "Air temperature"
-      unit: "degrees_C (or K with TemperatureInKelvin=1)"
-      valid_range: [-50, 55]
-      format: "NetCDF stack or PCRaster maps"
-      note: "Set TemperatureInKelvin option to match input units"
-    - name: "et0"
-      description: "Reference evapotranspiration (POTENTIAL, not actual)"
-      unit: "mm/day"
-      valid_range: [0, 25]
-      format: "NetCDF stack or PCRaster maps"
-    - name: "e0"
-      description: "Open water evaporation (POTENTIAL)"
-      unit: "mm/day"
-      valid_range: [0, 30]
-      format: "NetCDF stack or PCRaster maps"
-
+  - name: pr
+    description: Precipitation (rainfall + snowfall)
+    unit: mm/day
+    valid_range:
+    - 0
+    - 500
+    format: NetCDF stack or PCRaster maps
+    note: "ERA5 gives m/timestep \u2014 multiply by 1000. CMFD gives mm/3hr \u2014\
+      \ sum to daily."
+  - name: ta
+    description: Air temperature
+    unit: degrees_C (or K with TemperatureInKelvin=1)
+    valid_range:
+    - -50
+    - 55
+    format: NetCDF stack or PCRaster maps
+    note: Set TemperatureInKelvin option to match input units
+  - name: et0
+    description: Reference evapotranspiration (POTENTIAL, not actual)
+    unit: mm/day
+    valid_range:
+    - 0
+    - 25
+    format: NetCDF stack or PCRaster maps
+  - name: e0
+    description: Open water evaporation (POTENTIAL)
+    unit: mm/day
+    valid_range:
+    - 0
+    - 30
+    format: NetCDF stack or PCRaster maps
   parameters:
     critical:
-      - name: "UpperZoneTimeConstant"
-        valid_range: [1, 100]
-        unit: "days"
-        description: "Quick baseflow response time constant"
-        sensitivity: "HIGH"
-      - name: "LowerZoneTimeConstant"
-        valid_range: [10, 5000]
-        unit: "days"
-        description: "Slow baseflow / recession time constant"
-        sensitivity: "HIGH"
-      - name: "b_Xinanjiang"
-        valid_range: [0.01, 1.0]
-        unit: "dimensionless"
-        description: "Saturation excess runoff shape parameter"
-        sensitivity: "HIGH"
-      - name: "PowerPrefFlow"
-        valid_range: [1.0, 4.0]
-        unit: "dimensionless"
-        description: "Preferential flow nonlinearity exponent"
-        sensitivity: "MEDIUM"
-      - name: "CalChanMan"
-        valid_range: [0.1, 10.0]
-        unit: "dimensionless"
-        description: "Channel Manning's n MULTIPLIER (not n itself)"
-        sensitivity: "MEDIUM"
-      - name: "SnowMeltCoef"
-        valid_range: [1.0, 10.0]
-        unit: "mm/degC/day"
-        description: "Degree-day snowmelt coefficient"
-        sensitivity: "MEDIUM (snow basins)"
-      - name: "GwPercValue"
-        valid_range: [0.1, 10.0]
-        unit: "mm/day"
-        description: "Maximum upper zone to lower zone percolation"
-        sensitivity: "MEDIUM"
-      - name: "GwLoss"
-        valid_range: [0.0, 5.0]
-        unit: "mm/day"
-        description: "Groundwater loss to deep aquifer"
-        sensitivity: "LOW"
-
+    - name: UpperZoneTimeConstant
+      valid_range:
+      - 1
+      - 100
+      unit: days
+      description: Quick baseflow response time constant
+      sensitivity: HIGH
+    - name: LowerZoneTimeConstant
+      valid_range:
+      - 10
+      - 5000
+      unit: days
+      description: Slow baseflow / recession time constant
+      sensitivity: HIGH
+    - name: b_Xinanjiang
+      valid_range:
+      - 0.01
+      - 1.0
+      unit: dimensionless
+      description: Saturation excess runoff shape parameter
+      sensitivity: HIGH
+    - name: PowerPrefFlow
+      valid_range:
+      - 1.0
+      - 4.0
+      unit: dimensionless
+      description: Preferential flow nonlinearity exponent
+      sensitivity: MEDIUM
+    - name: CalChanMan
+      valid_range:
+      - 0.1
+      - 10.0
+      unit: dimensionless
+      description: Channel Manning's n MULTIPLIER (not n itself)
+      sensitivity: MEDIUM
+    - name: SnowMeltCoef
+      valid_range:
+      - 1.0
+      - 10.0
+      unit: mm/degC/day
+      description: Degree-day snowmelt coefficient
+      sensitivity: MEDIUM (snow basins)
+    - name: GwPercValue
+      valid_range:
+      - 0.1
+      - 10.0
+      unit: mm/day
+      description: Maximum upper zone to lower zone percolation
+      sensitivity: MEDIUM
+    - name: GwLoss
+      valid_range:
+      - 0.0
+      - 5.0
+      unit: mm/day
+      description: Groundwater loss to deep aquifer
+      sensitivity: LOW
     soil:
-      - name: "ThetaSat"
-        valid_range: [0.3, 0.6]
-        unit: "m3/m3"
-        description: "Saturated water content (Van Genuchten)"
-      - name: "ThetaRes"
-        valid_range: [0.01, 0.15]
-        unit: "m3/m3"
-        description: "Residual water content (Van Genuchten)"
-      - name: "GenuAlpha"
-        valid_range: [0.001, 0.5]
-        unit: "1/cm"
-        description: "Van Genuchten alpha (NOT Brooks-Corey)"
-      - name: "Lambda"
-        valid_range: [0.05, 0.8]
-        unit: "dimensionless"
-        description: "Van Genuchten pore-size distribution index"
-      - name: "KSat"
-        valid_range: [1, 10000]
-        unit: "mm/day"
-        description: "Saturated hydraulic conductivity"
-      - name: "SoilDepth1"
-        valid_range: [50, 300]
-        unit: "mm"
-        description: "Top soil layer depth (NOT meters)"
-      - name: "SoilDepth2"
-        valid_range: [300, 1500]
-        unit: "mm"
-        description: "Middle soil layer depth"
-      - name: "SoilDepth3"
-        valid_range: [300, 1500]
-        unit: "mm"
-        description: "Bottom soil layer depth"
-
+    - name: ThetaSat
+      valid_range:
+      - 0.3
+      - 0.6
+      unit: m3/m3
+      description: Saturated water content (Van Genuchten)
+    - name: ThetaRes
+      valid_range:
+      - 0.01
+      - 0.15
+      unit: m3/m3
+      description: Residual water content (Van Genuchten)
+    - name: GenuAlpha
+      valid_range:
+      - 0.001
+      - 0.5
+      unit: 1/cm
+      description: Van Genuchten alpha (NOT Brooks-Corey)
+    - name: Lambda
+      valid_range:
+      - 0.05
+      - 0.8
+      unit: dimensionless
+      description: Van Genuchten pore-size distribution index
+    - name: KSat
+      valid_range:
+      - 1
+      - 10000
+      unit: mm/day
+      description: Saturated hydraulic conductivity
+    - name: SoilDepth1
+      valid_range:
+      - 50
+      - 300
+      unit: mm
+      description: Top soil layer depth (NOT meters)
+    - name: SoilDepth2
+      valid_range:
+      - 300
+      - 1500
+      unit: mm
+      description: Middle soil layer depth
+    - name: SoilDepth3
+      valid_range:
+      - 300
+      - 1500
+      unit: mm
+      description: Bottom soil layer depth
   static_maps:
-    - name: "MaskMap"
-      description: "Domain mask defining computational extent"
-      format: "PCRaster boolean or NetCDF"
-    - name: "Ldd"
-      description: "Local drainage direction (PCRaster convention 1-9, 5=pit)"
-      format: "PCRaster LDD"
-      note: "NOT ArcGIS D8 encoding"
-    - name: "Elevation"
-      description: "DEM"
-      unit: "m"
-      format: "PCRaster/NetCDF"
-    - name: "ChanBottomWidth"
-      description: "Channel bottom width"
-      unit: "m"
-    - name: "ChanGrad"
-      description: "Channel slope"
-      unit: "m/m"
-    - name: "ChanLength"
-      description: "Channel segment length"
-      unit: "m"
-    - name: "ChanManMaps"
-      description: "Channel Manning's n map (modified by CalChanMan multiplier)"
-      unit: "s/m^(1/3)"
-
+  - name: MaskMap
+    description: Domain mask defining computational extent
+    format: PCRaster boolean or NetCDF
+  - name: Ldd
+    description: Local drainage direction (PCRaster convention 1-9, 5=pit)
+    format: PCRaster LDD
+    note: NOT ArcGIS D8 encoding
+  - name: Elevation
+    description: DEM
+    unit: m
+    format: PCRaster/NetCDF
+  - name: ChanBottomWidth
+    description: Channel bottom width
+    unit: m
+  - name: ChanGrad
+    description: Channel slope
+    unit: m/m
+  - name: ChanLength
+    description: Channel segment length
+    unit: m
+  - name: ChanManMaps
+    description: Channel Manning's n map (modified by CalChanMan multiplier)
+    unit: s/m^(1/3)
 outputs:
   primary:
-    - name: "dis"
-      unit: "m3/s"
-      valid_range: [0, 100000]
-      description: "Discharge at every channel pixel"
-      file: "dis.nc"
-    - name: "rain"
-      unit: "mm"
-      valid_range: [0, 500]
-      description: "Rainfall (liquid precipitation)"
-      file: "rain.nc"
-    - name: "snow"
-      unit: "mm"
-      valid_range: [0, 500]
-      description: "Snowfall"
-      file: "snow.nc"
-    - name: "snowcov"
-      unit: "mm"
-      valid_range: [0, 5000]
-      description: "Snow water equivalent"
-      file: "snowcov.nc"
+  - name: dis
+    unit: m3/s
+    valid_range:
+    - 0
+    - 100000
+    description: Discharge at every channel pixel
+    file: dis.nc
+  - name: rain
+    unit: mm
+    valid_range:
+    - 0
+    - 500
+    description: Rainfall (liquid precipitation)
+    file: rain.nc
+  - name: snow
+    unit: mm
+    valid_range:
+    - 0
+    - 500
+    description: Snowfall
+    file: snow.nc
+  - name: snowcov
+    unit: mm
+    valid_range:
+    - 0
+    - 5000
+    description: Snow water equivalent
+    file: snowcov.nc
+  - name: flood_depth
+    canonical_id: flood_depth
+    unit: m
+  - name: water_surface_elevation
+    canonical_id: water_surface_elevation
+    unit: m
+  - name: inundation_extent
+    canonical_id: inundation_extent
+    unit: km2
   soil_moisture:
-    - name: "theta1"
-      unit: "m3/m3"
-      valid_range: [0, 1]
-      description: "Soil moisture layer 1"
-    - name: "theta2"
-      unit: "m3/m3"
-      valid_range: [0, 1]
-      description: "Soil moisture layer 2"
-    - name: "theta3"
-      unit: "m3/m3"
-      valid_range: [0, 1]
-      description: "Soil moisture layer 3"
+  - name: theta1
+    unit: m3/m3
+    valid_range:
+    - 0
+    - 1
+    description: Soil moisture layer 1
+  - name: theta2
+    unit: m3/m3
+    valid_range:
+    - 0
+    - 1
+    description: Soil moisture layer 2
+  - name: theta3
+    unit: m3/m3
+    valid_range:
+    - 0
+    - 1
+    description: Soil moisture layer 3
   groundwater:
-    - name: "uz"
-      unit: "mm"
-      valid_range: [0, 1000]
-      description: "Upper zone storage"
-    - name: "lz"
-      unit: "mm"
-      valid_range: [0, 5000]
-      description: "Lower zone storage"
+  - name: uz
+    unit: mm
+    valid_range:
+    - 0
+    - 1000
+    description: Upper zone storage
+  - name: lz
+    unit: mm
+    valid_range:
+    - 0
+    - 5000
+    description: Lower zone storage
   diagnostics:
-    - name: "twb"
-      unit: "mm"
-      valid_range: [-1, 1]
-      description: "Total water balance residual (should be near zero)"
-    - name: "surfr"
-      unit: "mm"
-      valid_range: [0, 500]
-      description: "Surface runoff"
-    - name: "gwperc"
-      unit: "mm"
-      valid_range: [0, 50]
-      description: "Groundwater percolation"
-
+  - name: twb
+    unit: mm
+    valid_range:
+    - -1
+    - 1
+    description: Total water balance residual (should be near zero)
+  - name: surfr
+    unit: mm
+    valid_range:
+    - 0
+    - 500
+    description: Surface runoff
+  - name: gwperc
+    unit: mm
+    valid_range:
+    - 0
+    - 50
+    description: Groundwater percolation
 known_issues:
-  - id: "dt_001"
-    description: "Precipitation unit mismatch (mm/day vs m/day) causes 1000x discharge error with no warning"
-    severity: "silent"
-  - id: "dt_002"
-    description: "TemperatureInKelvin flag mismatch causes snow model failure"
-    severity: "silent"
-  - id: "dt_005"
-    description: "Van Genuchten alpha in 1/m instead of 1/cm produces wrong soil hydraulics"
-    severity: "silent"
-  - id: "dt_007"
-    description: "SoilDepth in meters instead of mm gives 1000x error in water storage"
-    severity: "silent"
-  - id: "dt_009"
-    description: "CalChanMan treated as Manning's n value instead of multiplier"
-    severity: "silent"
-  - id: "dt_017"
-    description: "Numba JIT compilation failure silently falls back to slow Python"
-    severity: "degraded"
+- id: dt_001
+  description: Precipitation unit mismatch (mm/day vs m/day) causes 1000x discharge
+    error with no warning
+  severity: silent
+- id: dt_002
+  description: TemperatureInKelvin flag mismatch causes snow model failure
+  severity: silent
+- id: dt_005
+  description: Van Genuchten alpha in 1/m instead of 1/cm produces wrong soil hydraulics
+  severity: silent
+- id: dt_007
+  description: SoilDepth in meters instead of mm gives 1000x error in water storage
+  severity: silent
+- id: dt_009
+  description: CalChanMan treated as Manning's n value instead of multiplier
+  severity: silent
+- id: dt_017
+  description: Numba JIT compilation failure silently falls back to slow Python
+  severity: degraded

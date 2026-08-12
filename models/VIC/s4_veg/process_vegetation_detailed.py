@@ -1,3 +1,6 @@
+# KDT dt_vic_023: netCDF4 MUST be imported before xarray, and every
+# xr.open_dataset() MUST pin `engine=`. See diagnostics/triplets.md.
+import netCDF4  # noqa: F401  # isort:skip  -- must precede `import xarray`
 import xarray as xr
 import pandas as pd
 import numpy as np
@@ -13,15 +16,33 @@ import rioxarray
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", message="The 'band' dimension is ignored by rasterio")
 
+
+def open_nc(path) -> xr.Dataset:
+    """Engine-pinned NetCDF read (dt_vic_023).
+
+    Mirrors the shipped siblings s2_forcing/forcing_1d.py,
+    s2_forcing/process_forcing.py and s3_soil/fill_parameters1.py. Pinning the
+    engine skips xarray's backend-entrypoint probe, which otherwise dlopen's a
+    foreign libhdf5 and SIGSEGVs at interpreter exit -- after the data has
+    already been read correctly.
+    """
+    try:
+        return xr.open_dataset(path, engine="netcdf4")
+    except Exception:
+        return xr.open_dataset(path, engine="h5netcdf")
+
 # ====================================================================
 # --- 1. 配置路径 ---
 # ====================================================================
 # 改为使用“流域格网文件(grid.nc)”作为主格网模板
-MASTER_GRID_NC = Path(r"/mnt/disk1/Hydrocraft_server/outputs/xixian_rerun_71379b42/vic_temp/grid/grid_xixian_rerun_71379b42_025deg.nc")
+_BASIN = os.environ.get("VIC_BASIN_NAME", "xixian_rerun_71379b42")
+_OUT_ROOT = Path(os.environ.get("VIC_OUT_ROOT", "/mnt/disk1/Hydrocraft_server/outputs"))
+
+MASTER_GRID_NC = _OUT_ROOT / _BASIN / "vic_temp" / "grid" / f"grid_{_BASIN}_025deg.nc"
 
 VEG_RASTER_IN = Path(r"/mnt/disk1/Hydrocraft_server/data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif")
 VEGLIB_FILE = Path(r"/mnt/disk1/Hydrocraft_server/data/vic_param/veglib.LDAS")
-VEG_PARAM_OUT = Path(r"/mnt/disk1/Hydrocraft_server/outputs/xixian_rerun_71379b42/vic_temp/veg/vic_veg_param_final.txt")
+VEG_PARAM_OUT = _OUT_ROOT / _BASIN / "vic_temp" / "veg" / "vic_veg_param_final.txt"
 
 # grid.nc 中变量名（与你生成脚本一致）
 MASK_VAR_NAME = "mask"
@@ -71,7 +92,7 @@ print("植被库和根系参数查找表创建完成。")
 print(f"正在从 {MASTER_GRID_NC.name} 创建主格网...")
 
 try:
-    with xr.open_dataset(MASTER_GRID_NC) as ds_template:
+    with open_nc(MASTER_GRID_NC) as ds_template:
         # 坐标名兼容：优先 y/x，否则 lat/lon
         if ("y" in ds_template.coords) and ("x" in ds_template.coords):
             lat_name, lon_name = "y", "x"

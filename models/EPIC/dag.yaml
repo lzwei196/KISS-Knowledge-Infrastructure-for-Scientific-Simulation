@@ -1,0 +1,731 @@
+template_version: "3.5"
+
+identity:
+  model_id: "EPIC"
+  scientific_reference_version: "EPIC 1102 (Environmental Policy Integrated Climate; User's Manual v.1102, Doro et al., 2024)"
+  implementation:
+    id: "epic-1102"
+    version: "1102 (official release v2025-05-25)"
+    provenance: "Fortran; USDA / Texas A&M Blackland Research Center EPIC 1102 console binary (epic1102-official_release.exe)."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: ""
+  repo_url: "https://epicapex.tamu.edu/epic/"
+
+boundary:
+  scope_in:
+    - "Crop/plant growth and yield (~80-150 crop types, one growth model with per-crop parameters)"
+    - "Field hydrology (NRCS curve-number runoff, percolation, lateral flow, ET)"
+    - "Water erosion (MUSLE/USLE/MUSS/MUST/RUSLE family) and wind erosion"
+    - "Nutrient cycling (N, P, K) with leaching, volatilization, denitrification"
+    - "Soil organic carbon dynamics (CENTURY sub-model)"
+    - "Pesticide fate and transport"
+    - "Soil temperature, snow accumulation and melt"
+    - "Tillage, irrigation, fertilization, grazing, residue management and economics"
+    - "Atmospheric CO2 / climate-change effects on growth and water use"
+  scope_out:
+    - "Explicit tillering (plant population must be estimated from yield-producing tiller number)"
+    - "Spatially distributed / gridded simulation across heterogeneous land units (single homogeneous HLU only)"
+    - "Channel routing across heterogeneous areas"
+    - "Deep percolation / lateral subsurface flow are excluded from the .ANN Q (surface-runoff-only) column"
+  spatial: "0-D point"
+  temporal: "daily"
+  closure: "mass-balance"
+  notes: "Single hydrologic land use unit (HLU) homogeneous in climate, soil, land use, and topography, generally field-size up to ~100 ha (erosion equations valid to ~250 km2 sediment yield). Mass-balance closure applies to water and to the N/P/K and C accounting pools (the .OUT BALANCE section reports near-zero PER/DF residuals). The .ANN Q column is surface runoff only, so a naive P-ET-Q closure check on .ANN will show an intentionally non-zero residual (~200-600 mm/yr at humid sites) because deep percolation and lateral flow are excluded from that column. Optional Green & Ampt infiltration resolves rainfall-excess at sub-daily (0.1 h) intervals."
+
+inputs:
+  forcing:
+    - category: "weather"
+      name: "SRAD (solar radiation)"
+      unit: "MJ m-2 day-1"
+      source_kind: "forcing"
+      model_input_format: "daily .DLY fixed-width record (3I4,6F6.2), no column labels; order YEAR MON DAY SRAD TMX TMN PRCP RH WSPD"
+      notes: "Range 0.01-900; 999.0 triggers weather-generator backfill. W m-2 vs MJ m-2 day-1 confusion silently depresses yields."
+    - category: "weather"
+      name: "TMX (maximum air temperature)"
+      unit: "degC"
+      source_kind: "forcing"
+      model_input_format: "daily .DLY fixed-width record"
+      notes: "Range -50 to 100; Kelvin input inflates PET to ~6000 mm/yr silently."
+    - category: "weather"
+      name: "TMN (minimum air temperature)"
+      unit: "degC"
+      source_kind: "forcing"
+      model_input_format: "daily .DLY fixed-width record"
+    - category: "weather"
+      name: "PRCP / RFV (precipitation, required)"
+      unit: "mm day-1"
+      source_kind: "forcing"
+      model_input_format: "daily .DLY fixed-width record"
+      notes: "Range 0-900; raw kg m-2 s-1 input gives yields 10-100x too small silently."
+    - category: "weather"
+      name: "RH / RHD (relative humidity, fraction) or dew point"
+      unit: "fraction 0-1"
+      source_kind: "forcing"
+      model_input_format: "daily .DLY fixed-width record"
+    - category: "weather"
+      name: "WSPD / U10 (wind velocity at 10 m)"
+      unit: "m s-1"
+      source_kind: "forcing"
+      model_input_format: "daily .DLY fixed-width record"
+      notes: "Penman-Monteith PET is sensitive to wind-speed errors; Hargreaves is more robust."
+    - category: "atmospheric"
+      name: "CO2 (atmospheric concentration)"
+      unit: "ppm"
+      source_kind: "forcing"
+      model_input_format: "X1 column of .DLY (held constant between provided values) or EPICCONT.DAT control default"
+      notes: "Drives radiation-use-efficiency / water-use-efficiency CO2 response; CO2 set to zero causes near-zero yield. EPIC's built-in EPICCONT.DAT default CO2 is 370.0 ppm (held constant between any X1 values provided in .DLY)."
+    - category: "remote_sensing"
+      name: "EVI (vegetation index, optional)"
+      unit: "dimensionless"
+      source_kind: "forcing"
+      model_input_format: ".DLY column, active only when IEVI flag set"
+      notes: "Range -1 to 1; optional remote-sensing driver."
+  parameters:
+    - category: "site"
+      name: "Latitude / longitude / elevation / aspect / slope / channel geometry / SCS curve number"
+      unit: "deg, m, m/m, dimensionless"
+      source_kind: "dataset_lookup"
+      model_input_format: ".SIT site file"
+      notes: "Slope valid 0.001-0.2 m/m; CN2 75-85 typical for row crops."
+    - category: "soil"
+      name: "Soil profile per layer (up to 10): depth bottom, bulk density, wilting point, field capacity, sand/silt/clay, rock fragment, organic C, pH, CEC, Ksat, albedo, hydrologic group, USLE_K"
+      unit: "mixed (m, t/m3, m3/m3, %, cmol/kg, mm/hr)"
+      source_kind: "dataset_lookup"
+      model_input_format: ".SOL soil file"
+      notes: "Bulk density 1.35-1.55 t/m3 typical; organic C expected as percent (0-100), C/N near 10 and N/P near 8. Hydrologic soil group must not be confused with curve number on soil line 2."
+    - category: "crop"
+      name: "Crop parameter database (~58 columns, 150+ crops): harvest index, biomass-energy ratio, leaf-area, heat-unit coefficients"
+      unit: "mixed"
+      source_kind: "dataset_lookup"
+      model_input_format: "CROPCOM.DAT"
+    - category: "calibration"
+      name: "Global equation/calibration coefficients (S-curve and 64 general parameters: root growth, N mineralization, denitrification, CENTURY rates, Hargreaves coefficients, etc.)"
+      unit: "mixed"
+      source_kind: "calibrated"
+      model_input_format: "PARM1102.DAT"
+      notes: "Shipped values are Texas A&M Blackland defaults; PARM(13)=0.6 and PARM(38)=0.0032 are model-modified Hargreaves PET coefficients (raised from origin 0.5/0.0023)."
+    - category: "database"
+      name: "Fertilizer / tillage-implement / pesticide databases"
+      unit: "mixed"
+      source_kind: "dataset_lookup"
+      model_input_format: "FERT2012.DAT, TILLCOM.DAT, PESTCOM.DAT"
+  initial_conditions:
+    - category: "soil_state"
+      name: "Initial soil water, nitrate/ammonium, organic C/N pools, residue per layer"
+      unit: "mm, kg/ha"
+      source_kind: "user_provided"
+      model_input_format: ".SOL profile initial values; first ~2 years treated as spin-up and discarded"
+      notes: "EPIC carries field state forward over the full multi-year run; soil-water pool must equilibrate (>=2-yr spin-up) or water-balance residual grows."
+  boundary_conditions:
+    - category: "management"
+      name: "Operation schedule: plant, fertilize, irrigate, harvest, kill, tillage operations"
+      unit: "date + equipment/crop/material codes + OPV1..OPV9 operation values"
+      source_kind: "user_provided"
+      model_input_format: ".OPC fixed-width op lines (YR MO DY equip tractor crop_id context OPV1..OPV9); Julian day must match month+day"
+      notes: "Wrong crop or equipment code yields zero/tiny yields silently; OPV6=0 in plant row applies a lifetime (not annual) max-N cap from CROPCOM."
+    - category: "control"
+      name: "Simulation control: NBYR years, start year/month/day, print code IPD, weather-input mode NGN, leap-year flag LPYR"
+      unit: "integer flags"
+      source_kind: "user_provided"
+      model_input_format: "EPICCONT.DAT (7 lines)"
+      notes: "NBYR*365 must be <= rows in .DLY or EPIC reads past EOF and crashes."
+    - category: "control"
+      name: "PET method selector IET (1=Penman-Monteith, 2=Penman, 3=Priestley-Taylor, 4=Hargreaves, 5=Baier-Robertson)"
+      unit: "method code"
+      source_kind: "user_provided"
+      model_input_format: "EPICCONT.DAT control flag"
+      notes: "Penman-Monteith most accurate but wind-sensitive; Hargreaves most robust; Baier-Robertson for cold climates."
+    - category: "control"
+      name: "Water-erosion equation selector DRV (0=MUST, 2=USLE, 3=MUSS, 4=MUSL, 6=RUSL, 7=RUS2)"
+      unit: "method code"
+      source_kind: "user_provided"
+      model_input_format: "EPICCONT.DAT control flag"
+    - category: "control"
+      name: "Irrigation flag IRR (0=dryland, 1=scheduled, 2=auto-stress, 3=auto-deficit)"
+      unit: "method code"
+      source_kind: "user_provided"
+      model_input_format: "EPICCONT.DAT control flag"
+      notes: "At water-surplus monsoon sites auto-irrigation never fires (WS=0) by correct physics."
+    - category: "control"
+      name: "Output variable / output-file selection (32 file-class toggles)"
+      unit: "print flags"
+      source_kind: "user_provided"
+      model_input_format: "PRNT1102.DAT"
+      notes: "A blank selection block yields 0-byte / header-only output files."
+
+processes:
+  modules:
+    - name: "WeatherGenerator"
+      role: "driver"
+      brief: "Reads daily .DLY weather (SRAD,TMX,TMN,PRCP,RH,WSPD) or backfills missing days from monthly .WP1/.WND statistics; PARM(79) weights station selection by distance vs elevation."
+    - name: "PET_PenmanMonteith_Hargreaves"
+      role: "process_solver"
+      brief: "Potential ET via the selected method (Penman-Monteith / Penman / Priestley-Taylor / Hargreaves PARM(13)=0.6,PARM(38)=0.0032 / Baier-Robertson)."
+    - name: "Hydrology_Runoff_NRCS_CN"
+      role: "process_solver"
+      brief: "NRCS curve-number surface runoff; S-curve SCRP(4)/SCRP(30) interpolate CN2/CN3 by soil water; PARM(42) PET effect, PARM(65) frozen-soil, PARM(73) S upper limit."
+    - name: "SoilWaterBalance_Percolation"
+      role: "integrator"
+      brief: "Per-layer (up to 10) soil-water storage, infiltration, percolation, lateral flow, crack flow (PARM(17)) and evaporation; maintains layer water-storage state ST(ISL)."
+    - name: "SoilTemperature_eCOSINE_PHT"
+      role: "process_solver"
+      brief: "Soil-layer temperature via eCOSINE / pseudo-heat-transfer schemes; PRMT(94)-(103) damping depth and heat-transfer coefficients; feeds microbial-process rate modifiers."
+    - name: "PlantGrowth_HeatUnits_LAI_HI"
+      role: "process_solver"
+      brief: "Radiation-use-efficiency biomass accumulation, heat-unit phenology, LAI development (PARM(70)), harvest-index S-curve; water/N/P/aeration/temperature stress factors; emits YLDG/BIOM/HI."
+    - name: "NutrientCycling_N_P_K"
+      role: "process_solver"
+      brief: "N mineralization/nitrification/volatilization, P labile/active/stable pools, K pools; leaching ratios PARM(14),(18); supplies plant N/P stress factors."
+    - name: "CENTURY_SOM_ResidueDecay"
+      role: "process_solver"
+      brief: "CENTURY soil-organic-matter sub-model: structural/metabolic litter and slow & passive humus transformation (PARM(45),(47),(48)), tillage effect on decay; emits YOC and .ACN."
+    - name: "Denitrification_NDNIT_N2O"
+      role: "process_solver"
+      brief: "Subroutine NDNIT: daily denitrification limited by PARM(4); N2:N2O partition PARM(80); water-content S-curve SCRP(25); produces DN/DN2O."
+    - name: "Erosion_MUSLE_RUSLE_WindErosion"
+      role: "process_solver"
+      brief: "Water erosion via the selected MUSLE/USLE/MUSS/MUST/RUSLE equation (C-factor PARM(23),(26),(32),(60)) and wind erosion (threshold wind speed PARM(67)=6.0); emits MUSS/MUST/USLE/YW."
+    - name: "PesticideFate"
+      role: "optional_module"
+      brief: "Pesticide application/decay/leaching from PESTCOM and .OPC spray ops; leaching ratio PARM(18); application suppressed when runoff exceeds PARM(58); emits PSTF."
+    - name: "SnowAccumulationMelt"
+      role: "process_solver"
+      brief: "Snow accumulation and melt from tmax/tmin and PARM1102 snow parameters; emits SNOF/SNOM and snow-water-equivalent state SNOA."
+    - name: "Management_Tillage_Fert_Irrig_Harvest"
+      role: "driver"
+      brief: "Executes scheduled .OPC operations: planting, tillage (updates bulk density), fertilization (auto-fert PARM(28),(39),(46)), irrigation, pesticide, harvest, burning; emits IRGA/RSDC/BURC/BURN."
+    - name: "EconomicsBudget"
+      role: "optional_module"
+      brief: "Management-economics accounting of operation costs and yield value (the 'Policy' integration in EPIC)."
+  internal_edges:
+    - from: "WeatherGenerator"
+      to: "PET_PenmanMonteith_Hargreaves"
+      kind: "consumes_input"
+      brief: "SRAD/TMX/TMN/RH/WSPD drive the PET equations"
+    - from: "WeatherGenerator"
+      to: "Hydrology_Runoff_NRCS_CN"
+      kind: "consumes_input"
+      brief: "daily PRCP drives the runoff / infiltration partition"
+    - from: "WeatherGenerator"
+      to: "SnowAccumulationMelt"
+      kind: "consumes_input"
+      brief: "tmax/tmin/precip drive snow accumulation and melt"
+    - from: "PET_PenmanMonteith_Hargreaves"
+      to: "SoilWaterBalance_Percolation"
+      kind: "invokes"
+      brief: "PET demand drives soil evaporation and plant transpiration extraction"
+    - from: "Hydrology_Runoff_NRCS_CN"
+      to: "SoilWaterBalance_Percolation"
+      kind: "writes_state"
+      brief: "infiltration (PRCP minus Q) updates layer water storage ST(ISL)"
+    - from: "SoilWaterBalance_Percolation"
+      to: "Hydrology_Runoff_NRCS_CN"
+      kind: "reads_state"
+      brief: "SCRP(4)/SCRP(30) read soil water to set CN between CN2 and CN3"
+    - from: "SoilWaterBalance_Percolation"
+      to: "SoilTemperature_eCOSINE_PHT"
+      kind: "reads_state"
+      brief: "soil moisture modifies thermal conductivity / damping depth"
+    - from: "SoilTemperature_eCOSINE_PHT"
+      to: "Hydrology_Runoff_NRCS_CN"
+      kind: "writes_state"
+      brief: "second-layer temperature (SCRP(18), PARM(65)) reduces CN retention for frozen soil"
+    - from: "SoilTemperature_eCOSINE_PHT"
+      to: "CENTURY_SOM_ResidueDecay"
+      kind: "invokes"
+      brief: "temperature factor regulates microbial decay rates"
+    - from: "SoilTemperature_eCOSINE_PHT"
+      to: "Denitrification_NDNIT_N2O"
+      kind: "invokes"
+      brief: "temperature modifies the denitrification rate"
+    - from: "SoilWaterBalance_Percolation"
+      to: "Denitrification_NDNIT_N2O"
+      kind: "reads_state"
+      brief: "NDNIT reads (ST-FC)/(PO-FC) via SCRP(25) to trigger denitrification"
+    - from: "NutrientCycling_N_P_K"
+      to: "Denitrification_NDNIT_N2O"
+      kind: "reads_state"
+      brief: "soil nitrate pool WNO3 is consumed by denitrification"
+    - from: "CENTURY_SOM_ResidueDecay"
+      to: "NutrientCycling_N_P_K"
+      kind: "writes_state"
+      brief: "humus/litter mineralization releases mineral N/P into the soil pools"
+    - from: "NutrientCycling_N_P_K"
+      to: "PlantGrowth_HeatUnits_LAI_HI"
+      kind: "invokes"
+      brief: "available soil N/P set plant N/P stress factors"
+    - from: "SoilWaterBalance_Percolation"
+      to: "PlantGrowth_HeatUnits_LAI_HI"
+      kind: "reads_state"
+      brief: "plant-available water sets the water-stress factor"
+    - from: "PET_PenmanMonteith_Hargreaves"
+      to: "PlantGrowth_HeatUnits_LAI_HI"
+      kind: "invokes"
+      brief: "potential plant water use / actual-ET-over-PET drives the HI water-stress term"
+    - from: "PlantGrowth_HeatUnits_LAI_HI"
+      to: "NutrientCycling_N_P_K"
+      kind: "reads_state"
+      brief: "crop N/P uptake demand removes mineral N/P from soil pools"
+    - from: "PlantGrowth_HeatUnits_LAI_HI"
+      to: "Erosion_MUSLE_RUSLE_WindErosion"
+      kind: "invokes"
+      brief: "biomass and residue cover set the erosion C-factor"
+    - from: "Hydrology_Runoff_NRCS_CN"
+      to: "Erosion_MUSLE_RUSLE_WindErosion"
+      kind: "invokes"
+      brief: "runoff volume Q drives MUSLE sediment yield"
+    - from: "Hydrology_Runoff_NRCS_CN"
+      to: "PesticideFate"
+      kind: "invokes"
+      brief: "runoff above PARM(58) suppresses same-day pesticide application; runoff carries pesticide loss"
+    - from: "SnowAccumulationMelt"
+      to: "SoilWaterBalance_Percolation"
+      kind: "writes_state"
+      brief: "snowmelt SNOM adds liquid water to the surface soil-water balance"
+    - from: "Management_Tillage_Fert_Irrig_Harvest"
+      to: "NutrientCycling_N_P_K"
+      kind: "writes_state"
+      brief: "fertilizer operations add N/P to the soil pools (auto-fert PARM(28),(39),(46))"
+    - from: "Management_Tillage_Fert_Irrig_Harvest"
+      to: "SoilWaterBalance_Percolation"
+      kind: "writes_state"
+      brief: "irrigation adds water (IRGA); tillage resets bulk density and residue mix"
+    - from: "Management_Tillage_Fert_Irrig_Harvest"
+      to: "PlantGrowth_HeatUnits_LAI_HI"
+      kind: "invokes"
+      brief: "planting op initiates the crop; harvest op extracts YLDG/BIOM and resets the heat-unit index"
+    - from: "Management_Tillage_Fert_Irrig_Harvest"
+      to: "EconomicsBudget"
+      kind: "reads_state"
+      brief: "operation costs (tillage/fertilizer/irrigation/pesticide ops) feed the management-economics budget"
+    - from: "PlantGrowth_HeatUnits_LAI_HI"
+      to: "EconomicsBudget"
+      kind: "reads_state"
+      brief: "harvested yield value (YLDG/YLDF) drives the economic return calculation"
+    - from: "SoilWaterBalance_Percolation"
+      to: "Management_Tillage_Fert_Irrig_Harvest"
+      kind: "reads_state"
+      brief: "tillage delayed and germination gated by soil-water state (PARM(59), PARM(11))"
+    - from: "PlantGrowth_HeatUnits_LAI_HI"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "annual YLDG/YLDF/BIOM/HI/YLN/YLP written to .ACY"
+    - from: "SoilWaterBalance_Percolation"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "annual ET/Q/PET/IRGA/PRK/SSF water-balance terms written to .ANN"
+    - from: "Denitrification_NDNIT_N2O"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "DN/DN2O annual denitrification and N2O emission written to .ANN"
+    - from: "SnowAccumulationMelt"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "SNOF/SNOM snowfall/snowmelt written to .ANN; SNOA snow-water-equivalent state"
+
+states:
+  variables:
+    - name: "soil water content per layer ST(ISL)"
+      unit: "mm"
+      role: "prognostic"
+    - name: "soil temperature per layer"
+      unit: "degC"
+      role: "prognostic"
+    - name: "soil nitrate pool WNO3(ISL)"
+      unit: "kg/ha"
+      role: "prognostic"
+    - name: "soil ammonium pool WNH3(ISL)"
+      unit: "kg/ha"
+      role: "prognostic"
+    - name: "labile / active mineral / stable mineral P pools WPML/WPMA/WPMS"
+      unit: "kg/ha"
+      role: "prognostic"
+    - name: "exchangeable / fixed / soluble K pools"
+      unit: "kg/ha"
+      role: "prognostic"
+    - name: "CENTURY slow & passive humus pools"
+      unit: "kg/ha"
+      role: "prognostic"
+    - name: "structural & metabolic litter pools (LS/LM and C/N components LSC/LMC/BMC/HSC/HPC)"
+      unit: "kg/ha"
+      role: "prognostic"
+    - name: "above-ground biomass BIOM"
+      unit: "t/ha"
+      role: "prognostic"
+    - name: "leaf area index LAI"
+      unit: "dimensionless"
+      role: "prognostic"
+    - name: "heat-unit index (fraction of maturity 0-1)"
+      unit: "fraction"
+      role: "accumulator"
+    - name: "harvest index HI (S-curve driven)"
+      unit: "fraction"
+      role: "diagnostic"
+    - name: "root mass / root depth"
+      unit: "t/ha, m"
+      role: "prognostic"
+    - name: "standing dead and flat crop residue STD/STL/RSD"
+      unit: "Mg/ha"
+      role: "prognostic"
+    - name: "snow water equivalent SNOA; time since last snowfall"
+      unit: "mm, d"
+      role: "prognostic"
+    - name: "NRCS curve-number retention parameter S"
+      unit: "mm"
+      role: "diagnostic"
+    - name: "soil bulk density per layer (tillage-updated)"
+      unit: "t/m3"
+      role: "prognostic"
+    - name: "groundwater storage GWST / depth to water table WTBL"
+      unit: "mm, m"
+      role: "prognostic"
+  provenance: "populated"
+
+outputs:
+  - var: "YLDG"
+    validation_rank: 1
+    unit: "t/ha"
+    description: "Annual grain / economic crop yield (reported kg/ha internally, t/ha in .ACY)"
+    emitted_in: ".ACY"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "pbias"
+          caveats: ["Discard first ~2 spin-up years; harvest should occur at HUSC 0.9-1.2 or yields are suspect."]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["National/regional yield aggregates carry a technology trend a weather-driven point model cannot reproduce; compare detrended trend, not inter-annual r."]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Single-season mean yield at a calibrated field site."]
+      detrending_options: ["none", "linear_residual", "decadal_mean"]
+  - var: "BIOM"
+    validation_rank: 3
+    unit: "t/ha"
+    description: "Total above-ground biomass"
+    emitted_in: ".ACY"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: []
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Regional biomass aggregates carry a technology trend a weather-driven point model cannot reproduce; compare detrended trend, not inter-annual r."]
+      detrending_options: ["none", "linear_residual", "decadal_mean"]
+  - var: "ET"
+    validation_rank: 2
+    unit: "mm/yr"
+    description: "Actual evapotranspiration"
+    emitted_in: ".ANN"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Point-scale flux; energy-balance closure is not enforced (demand-side ET)."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Only meaningful when many HLU points are mosaicked to a grid."]
+      detrending_options: ["none"]
+  - var: "Q"
+    validation_rank: 4
+    unit: "mm/yr"
+    description: "Surface runoff (surface only; excludes deep percolation and lateral subsurface flow)"
+    emitted_in: ".ANN"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Do not close P-ET-Q on .ANN; Q is surface runoff only and SSF/PRK are separate columns."]
+      detrending_options: ["none"]
+  - var: "MUSS/MUST/USLE (water erosion sediment yield)"
+    validation_rank: 5
+    unit: "Mg/ha"
+    description: "Soil loss by water erosion via the selected MUSLE/USLE/MUSS/MUST/RUSLE equation"
+    emitted_in: ".ANN"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Equation valid for sediment yield from watersheds up to ~250 km2; RUSLE preferred for slopes >20%."]
+      detrending_options: ["none"]
+  - var: "DN2O / VN2O"
+    validation_rank: 6
+    unit: "kg/ha"
+    description: "Nitrous-oxide loss from denitrification / nitrification (annual)"
+    emitted_in: ".ANN"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Strongly controlled by PARM1102 denitrification coefficients; high parametric uncertainty."]
+      detrending_options: ["none"]
+  - var: "QNO3 / SNO3 (nitrate loss / soil nitrate)"
+    validation_rank: 7
+    unit: "kg/ha"
+    description: "Mineral N lost with runoff/leaching and residual soil nitrate"
+    emitted_in: ".ANN"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "YOC / TOC (soil organic carbon)"
+    validation_rank: 8
+    unit: "kg/ha"
+    description: "Organic carbon in sediment / total soil-profile organic carbon (CENTURY)"
+    emitted_in: ".ANN / .ACN"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "trend_match"]
+          determining_metric: "pbias"
+          caveats: ["SOC changes are slow; multi-decadal runs needed to resolve a trend."]
+      detrending_options: ["none", "linear_residual"]
+  - var: "NPPC"
+    validation_rank: 9
+    unit: "kg/ha"
+    description: "Net primary productivity (carbon); VAR(99) = dry matter x 420.0"
+    emitted_in: ".ANN"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: []
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Regional NPP aggregates may carry land-use / management trend a weather-driven point model cannot reproduce; compare detrended trend, not inter-annual r."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Requires multi-point mosaic to a grid."]
+      detrending_options: ["none", "linear_residual", "decadal_mean"]
+
+influence:
+  edges:
+    - from: "WA (biomass-energy conversion ratio)"
+      to: "YLDG (crop grain yield)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "maize and soybean (most sensitive); a primary growth-defining calibration parameter for all crops"
+      citations: ["qiao2018_scale_sensitivity_northchina", "wang2012_epic_apex_calibration", "worou2015_nerica_sensitive_params"]
+    - from: "HI (harvest index)"
+      to: "YLDG (crop grain yield)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "most sensitive for rice / spring wheat / winter wheat; one of four dominant calibration parameters"
+      citations: ["qiao2018_scale_sensitivity_northchina", "xiong2016_calibration_uncertainty_maize", "wang2012_epic_apex_calibration", "worou2015_nerica_sensitive_params"]
+    - from: "PHU (potential heat units to maturity)"
+      to: "YLDG (crop grain yield)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "controls phenology / maturity timing"
+      citations: ["xiong2016_calibration_uncertainty_maize", "wang2012_epic_apex_calibration", "worou2015_nerica_sensitive_params"]
+    - from: "WSYF (minimum harvest index under water stress)"
+      to: "YLDG under drought"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "water-limited conditions"
+      citations: ["worou2015_nerica_sensitive_params"]
+    - from: "PET method selector"
+      to: "soil water balance / YLDG"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["balkovic2013_paneuropean_epic"]
+    - from: "OT (optimum temperature for plant growth)"
+      to: "YLDG (crop grain yield)"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "one of four parameters in calibration-uncertainty study"
+      citations: ["xiong2016_calibration_uncertainty_maize"]
+    - from: "nitrogen fertilizer / nutrient management"
+      to: "YLDG (crop grain yield)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: management
+      applicability: "always"
+      citations: ["balkovic2013_paneuropean_epic"]
+    - from: "irrigation / water supply"
+      to: "YLDG (crop grain yield)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: management
+      applicability: "water-limited conditions"
+      citations: ["balkovic2013_paneuropean_epic"]
+    - from: "soil coarse-fragment content / soil water holding capacity (FC-WP)"
+      to: "YLDG (crop grain yield)"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["worou2015_nerica_sensitive_params"]
+    - from: "DLAP1/DLAP2 (leaf-area development curve parameters)"
+      to: "LAI (leaf area index)"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["worou2015_nerica_sensitive_params"]
+    - from: "FBM (fraction of microbial biomass) / microbial decay coefficient"
+      to: "nitrogen mineralization"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "low-input systems"
+      citations: ["worou2015_nerica_sensitive_params"]
+  citation_index:
+    wang2012_epic_apex_calibration:
+      short_citation: "Wang et al. 2012"
+      doi: "10.13031/2013.42253"
+      note: "EPIC and APEX model use, calibration, and validation; identifies WA, HI, PHU as the key growth-controlling parameters and prescribes the calibration sequence."
+    xiong2016_calibration_uncertainty_maize:
+      short_citation: "Xiong et al. 2016"
+      doi: "10.1002/2016MS000625"
+      note: "Calibration of PHU, OT, HI, planting date caused ~26% of uncertainty in projected global maize yield change; PHU/HI/OT dominate yield sensitivity."
+    qiao2018_scale_sensitivity_northchina:
+      short_citation: "Qiao et al. 2018"
+      doi: "10.1016/j.ecolmodel.2018.10.021"
+      note: "Local sensitivity analysis: WA most sensitive for maize/soybean yield, HI most sensitive for rice/spring & winter wheat; sensitivity is scale-dependent."
+    balkovic2013_paneuropean_epic:
+      short_citation: "Balkovic et al. 2013"
+      doi: "10.1016/j.agsy.2013.05.008"
+      note: "Pan-European gridded EPIC; modelled yield strongly depends on the chosen PET method and on N / water management inputs (descriptive sensitivity, no quantitative index)."
+    worou2015_nerica_sensitive_params:
+      short_citation: "Worou et al. 2015"
+      doi: "10.5897/AJAR2014.9423"
+      note: "Most sensitive EPIC parameters under water/nutrient-limited NERICA rice: WA, HI, WSYF, DLAP1/DLAP2, coarse-fragment content, FBM."
+
+safety:
+  hazards:
+    - id: "weather_precip_unit_kgm2s"
+      kind: "weather_file_semantic"
+      description: "Precipitation left in kg m-2 s-1 instead of mm/day yields 10-100x too small, silently; verify .ANN PRCP ~500-2000 mm/yr."
+      severity: "silent"
+    - id: "weather_temp_kelvin"
+      kind: "weather_file_semantic"
+      description: "Temperature supplied in Kelvin instead of degC inflates PET to ~6000 mm/yr and depresses yields, silently."
+      severity: "silent"
+    - id: "weather_srad_units"
+      kind: "weather_file_semantic"
+      description: "Solar radiation in W m-2 instead of MJ m-2 day-1 gives low yields despite correct-looking P/T; valid SRAD 5-30 for temperate latitudes."
+      severity: "silent"
+    - id: "weather_sentinel_as_zero"
+      kind: "weather_file_semantic"
+      description: "NaN / sentinel values (-99, 9999) in .DLY are read as zeros, giving PRCP=0 and ET=PET."
+      severity: "silent"
+    - id: "weather_co2_zero_zero_yield"
+      kind: "weather_file_semantic"
+      description: "Atmospheric CO2 set to zero (X1 column / EPICCONT) causes near-zero crop yield."
+      severity: "fatal_or_silent"
+    - id: "soil_low_bd_or_unset_cn_zero_runoff"
+      kind: "soil_semantic"
+      description: "Unset curve number or bulk density <1.2 t/m3 suppresses surface runoff Q to zero in a wet basin; CN2 75-85 and BD 1.35-1.55 t/m3 typical."
+      severity: "degraded"
+    - id: "soil_organic_c_percent_scaling"
+      kind: "soil_semantic"
+      description: ".SOL organic C expects percent (0-100); supplying g/g (or doubling the x100) gives a 100x error and inflates N mineralization."
+      severity: "silent"
+    - id: "soil_layer_depth_order_or_cn_on_group_line"
+      kind: "soil_semantic"
+      description: "Soil-layer depths out of order, or a curve number entered where the hydrologic soil group is expected on soil line 2, cause run failure or wrong runoff."
+      severity: "fatal_or_silent"
+    - id: "ic_spinup_too_short"
+      kind: "initial_condition_semantic"
+      description: "Insufficient spin-up leaves the soil-water pool un-equilibrated; water-balance residual exceeds 100 mm/yr and grows. Discard first ~2 years."
+      severity: "degraded"
+    - id: "nbyr_exceeds_dly_eof"
+      kind: "control_semantic"
+      description: "NBYR*365 exceeding the number of rows in .DLY makes EPIC read past EOF and crash with SUBSCRIPT OUT OF RANGE after the first year."
+      severity: "fatal"
+    - id: "opc_wrong_crop_code"
+      kind: "control_semantic"
+      description: "A wrong CROPCOM crop code in the .OPC plant line produces zero/negative yields, silently; EPIC grows whatever crop it finds (cross-check ACY CPNM echo)."
+      severity: "silent"
+    - id: "opc_wrong_equipment_code"
+      kind: "control_semantic"
+      description: "A harvest equipment code in the plant row means the crop is never seeded; right crop name but YLDG ~0."
+      severity: "silent"
+    - id: "opc_julian_day_mismatch"
+      kind: "control_semantic"
+      description: "Julian-day column not synced to month/day in .OPC plants crops a day early/late."
+      severity: "degraded"
+    - id: "opc_opv6_zero_lifetime_n_cap"
+      kind: "control_semantic"
+      description: "OPV6=0 in the plant row applies the CROPCOM default max-N (~200 kg/ha) as a cumulative LIFETIME cap, not annual; fertilizer drops to zero from year 3."
+      severity: "silent"
+    - id: "format_fixed_width_break"
+      kind: "parser_semantic"
+      description: "Fixed-width Fortran input files (SIT/SOL/OPC/DLY) regenerated from scratch break on a single misplaced space, causing FORMAT ERROR and no .ACY/.ANN; patch exact column ranges of a template instead."
+      severity: "fatal"
+    - id: "prnt_blank_output_block"
+      kind: "parser_semantic"
+      description: "A blank PRNT1102.DAT output-selection block produces 0-byte / header-only output files."
+      severity: "degraded"
+    - id: "ann_q_naive_closure_false_flag"
+      kind: "parser_semantic"
+      description: ".ANN Q is surface runoff only; a naive P-ET-Q closure check falsely flags the intentionally non-zero residual (deep percolation/lateral flow are separate columns)."
+      severity: "warning"
+  validation_limits:
+    - "MUSLE/MUSS/MUST water-erosion equations are appropriate for sediment yield from watersheds up to ~250 km2; RUSLE is preferred for steep slopes >20%."
+    - "Single homogeneous HLU (field to ~100 ha); not a spatially distributed/gridded model and does not route across heterogeneous land units."
+    - "Daily time step (with optional 0.1 h Green & Ampt infiltration); cannot resolve general sub-daily processes."
+    - "Crop parameters (CROPCOM) are calibrated for U.S. conditions and may need revision for international use."
+    - "Shipped umstead example is water-balance-checked only ('analytic' tier); absolute output accuracy is not independently validated against observed yield/ET/discharge within the KI."
+  warnings:
+    - "Grain crops should normally be harvested at HUSC (heat-unit fraction) 0.9-1.2; values outside indicate planting/harvest date or PHU errors."
+    - "Soil C/N should be near 10 and N/P near 8; large deviations indicate parameter/input errors."
+    - "Aluminum saturation >90 (pH <5) causes large root-stress yield reductions."
+    - "At water-surplus / monsoon sites, daily water stress is zero so auto-irrigation never fires and scheduled irrigation ops may apply zero water; IRGA=0 / WS=0 is correct physics, not a bug."
+    - "Penman-Monteith PET is most accurate but wind-sensitive; Hargreaves is most robust; Baier-Robertson is recommended for cold climates."
+    - "Multirun (MLRN) results are appended after the normal-run results in ACY/OUT; account for this when parsing."
+  assumptions:
+    - statement: "EPIC simulates a single homogeneous point/field hydrologic land use unit (0-D, 1-D vertical soil column up to 10 layers)."
+      scope: "spatial geometry of every output"
+      source: "EPIC 1102 User's Manual (Doro et al. 2024), Model Overview, p.1"
+      status: "adopted"
+    - statement: "Mass-balance closure holds for water and the N/P/K and CENTURY-C accounting pools; the .ANN Q column is surface runoff only, so .ANN-level water closure intentionally carries a non-zero residual."
+      scope: "water and nutrient balance interpretation"
+      source: "EPIC 1102 User's Manual OUT BALANCE section; .ANN output-column definitions"
+      status: "adopted"
+    - statement: "PARM1102.DAT shipped values (incl. modified Hargreaves PARM(13)=0.6, PARM(38)=0.0032 and CENTURY rates) are treated as EPIC's own model defaults, not wrapper defaults."
+      scope: "calibration parameter provenance"
+      source: "PARM1102.TXT parameter definitions shipped with EPIC 1102"
+      status: "adopted"

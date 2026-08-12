@@ -14,6 +14,7 @@ naming conventions.
 | ERA5 | ECMWF Reanalysis v5 | t2m, d2m, u10, v10, sp, ssrd, strd, tp | K, K, m/s, m/s, Pa, J/m², J/m², m |
 | MSWX | Multi-Source Weather | Temp, Humidity, Wind, ... | °C, varies |
 | NASA POWER | NASA Prediction of Energy | T2M, QV2M, WS2M, PS, ... | °C, kg/kg, m/s, kPa |
+| FLUXNET2015 | Eddy-covariance tower FULLSET | TA_F, SW_IN_F, LW_IN_F, VPD_F, PA_F, WS_F, P_F | °C, W/m², W/m², hPa, **kPa**, m/s, mm/interval |
 
 ## Outputs
 
@@ -37,6 +38,13 @@ These conversions are **mandatory** and failure to apply them causes silent mode
 | SWDOWN | **W/m²** | Already W/m² | J/m² ÷ 3600 → W/m² |
 | LWDOWN | **W/m²** | Already W/m² | J/m² ÷ 3600 → W/m² |
 | RAINRATE | **mm/s** | mm/hr ÷ 3600 | m/hr × 1000 ÷ 3600 |
+
+FLUXNET2015 → Noah-MP (`--source fluxnet`): `TA_F + 273.15`; `PA_F × 1000`
+(**kPa**, not hPa — `convert_pressure()` now tests the kPa branch first, it used
+to be dead code and turned 100 kPa into 10 kPa); `P_F ÷ interval_seconds`;
+`Q2D` from `VPD_F`/`TA_F`/`PA_F` via
+`RH = 100·(1 − VPD/e_s(TA))` then `ki_tools_common.humidity.rh_to_specific_humidity`;
+`U2D = WS_F`, `V2D = 0` (Noah-MP only uses `sqrt(u²+v²)`).
 
 ### 2. Humidity conversion (ERA5 specific)
 
@@ -92,11 +100,31 @@ Files are named by their valid time: `YYYYMMDDHH.LDASIN_DOMAIN1`
 - For hourly: `2010010100`, `2010010101`, `2010010102`, ...
 - **No minutes** in filename (HH only, no MM)
 
+**This is a hard limit, not a style note.** The driver rebuilds the input path
+from the model clock as `olddate(1:4)//(6:7)//(9:10)//(12:13)` — 10 characters,
+minutes discarded (`module_NoahMP_hrldas_driver.F`). Forcing finer than hourly is
+therefore unreachable in this build: `forcing_timestep < 3600` makes two model
+times resolve to the same filename. `validate_inputs` rejects sub-hourly
+timesteps, and `--source fluxnet` aggregates half-hourly (`*_HH`) sites to hourly
+first (precip summed, states/fluxes averaged).
+
+### 6b. Timestamps are UTC — site networks are not (dt_019)
+
+HRLDAS computes the solar hour angle from the LDASIN timestamp as
+`TLOCTIM = hour + longitude/15` (`CALC_DECLIN`), i.e. it treats the stamp as UTC.
+FLUXNET (and most site networks) report LOCAL STANDARD TIME. Converting a site
+record without shifting it puts COSZ out of phase with the observed SWDOWN by the
+site's UTC offset — the energy balance is then solved for the wrong time of day
+with no error message. `--source fluxnet` therefore REQUIRES `--utc_offset`.
+
+Check after conversion: the LDASIN file carrying the daily maximum SWDOWN must
+lie within ~1 h of `(12 − longitude/15) mod 24` UTC.
+
 ### 7. Using the tool
 
 ```bash
 python ki/tools/convert_forcing_to_noahmp.py \
-  --input_dir /mnt/disk1/Hydrocraft_server/data/forcing/cmfd/ \
+  --input_dir /media/server/hc_ssd/forcing/cmfd/ \
   --output_dir ./forcing/ \
   --lat 33.0 --lon 117.0 \
   --start_date 2010-01-01 --end_date 2010-12-31 \
@@ -113,6 +141,12 @@ python ki/tools/convert_forcing_to_noahmp.py \
 - [ ] LWDOWN in range [50, 500] W/m²
 - [ ] Number of files matches expected: `period_hours / forcing_timestep_hours`
 - [ ] File naming follows `YYYYMMDDHH.LDASIN_DOMAIN1` convention
+- [ ] Run the universal preflight on the OUTPUT directory:
+      `python auto_dissect_multi_agent/validators/preflight_forcing.py <ldasin_dir>`
+      — it now auto-detects the `noahmp_ldasin` profile and samples up to 200
+      timesteps across the period (LDASIN files are not `*.nc`, so before this
+      the check returned "unable to detect data source" and silently did nothing)
+- [ ] For site forcing: SWDOWN daily peak sits at the expected UTC solar noon
 
 ## Traps
 

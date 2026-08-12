@@ -61,7 +61,7 @@ def validate_inputs(args):
     if len(areas) != len(outlets):
         errors.append(f"Number of areas ({len(areas)}) must match outlets ({len(outlets)})")
     for i, a in enumerate(areas):
-        if a > 1e6:
+        if a > 1e9:  # 1e9 ha = 1e7 km^2, larger than any real river basin
             errors.append(
                 f"Area for {outlets[i]}={a} ha seems too large. "
                 f"Did you pass m² instead of ha? (1 ha = 10000 m²)"

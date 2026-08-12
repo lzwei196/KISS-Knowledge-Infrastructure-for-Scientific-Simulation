@@ -297,6 +297,18 @@ def parse_args():
     p.add_argument("--end_year", type=int, required=True)
     p.add_argument("--grid_nc", default=None,
                     help="Optional VIC grid NC: each VIC cell = one subbasin")
+    p.add_argument("--channel_topology", default="",
+                    help="channel_topology.json from tools/s1/build_channel_topology.py. "
+                         "Supplies the real downstream id, network-accumulated upstream "
+                         "area, Strahler order, reach length and slope per channel. "
+                         "WITHOUT it the deck falls back to a one-hop STAR topology, "
+                         "which is a lumped water-yield proxy and NOT a routed hydrograph.")
+    p.add_argument("--esco", type=float, default=0.15,
+                    help="hydrology.hyd soil-evap comp. 0.15=max ET (over-predicting humid e.g. Bengbu); 0.85=restrict ET (under-predicting e.g. Xixian)")
+    p.add_argument("--cn3_swf", type=float, default=0.0,
+                    help="hydrology.hyd wet-season CN3 adj. 0.0 over-predicting; ~0.5 amplifies wet-season quickflow for under-predicting basins")
+    p.add_argument("--perco", type=float, default=0.75,
+                    help="hydrology.hyd percolation coef. 0.75 routes to slow baseflow (over-predicting); ~0.30 keeps quickflow (under-predicting). NOT in cal_parms.cal -> can ONLY be set here, never via calibration.cal")
     return p.parse_args()
 
 
@@ -366,8 +378,85 @@ def create_subbasins_from_grid_nc(grid_nc_path, basin_shp):
     return gdf
 
 
+def warn_rectangular_subbasins():
+    """The rectangular fallback is not a hydrologic partition. Say so."""
+    logger.warning("=" * 78)
+    logger.warning("WARNING: no --subbasin_shp supplied -- subbasins will be cut "
+                   "as a RECTANGULAR LAT/LON GRID clipped to the basin outline.")
+    logger.warning("WARNING: those are grid cells, not hydrologic subbasins. Each "
+                   "one's 'channel' is not a real reach, so even a correct "
+                   "flow-network cascade built over them is a cell-to-cell "
+                   "routing graph rather than the dag's distributed STREAM "
+                   "network.")
+    logger.warning("WARNING: delineate real subbasins first with "
+                   "tools/s1/delineate_watershed.py (it runs wbt.subbasins() on "
+                   "the flow network and writes subbasins.shp) and pass them via "
+                   "--subbasin_shp.")
+    logger.warning("=" * 78)
+
+
+def load_subbasins_from_shapefile(subbasin_shp):
+    """Load REAL flow-network subbasins (e.g. subbasins.shp from
+    tools/s1/delineate_watershed.py, produced by wbt.subbasins()).
+
+    Returns the same schema the rest of this tool expects: sub_id / lat / lon /
+    area_ha in EPSG:4326, sorted by sub_id so that channel ids stay positional
+    (cha{idx+1} <-> sub_ids[idx]) and therefore consistent with
+    build_channel_topology.py and define_subbasins.py.
+    """
+    import geopandas as gpd
+
+    logger.info(f"Loading flow-network subbasins from: {subbasin_shp}")
+    gdf = gpd.read_file(subbasin_shp)
+    if gdf.empty:
+        raise RuntimeError(f"Subbasin shapefile is empty: {subbasin_shp}")
+    gdf = gdf.to_crs("EPSG:4326")
+
+    # whitebox raster_to_vector_polygons names the id column VALUE/FID; accept
+    # the common spellings rather than silently renumbering, because the ids
+    # must agree with whatever build_channel_topology.py read.
+    id_col = next((c for c in ("sub_id", "SUB_ID", "VALUE", "value", "FID", "DN")
+                   if c in gdf.columns), None)
+    if id_col is None:
+        logger.warning("No id column (sub_id/VALUE/FID/DN) in %s -- assigning "
+                       "1..N in file order. build_channel_topology.py must be "
+                       "run against this SAME file or the two will "
+                       "desynchronize.", subbasin_shp)
+        gdf["sub_id"] = range(1, len(gdf) + 1)
+    else:
+        gdf["sub_id"] = gdf[id_col].astype(int)
+        if id_col != "sub_id":
+            logger.info("  Using '%s' as sub_id", id_col)
+
+    if gdf["sub_id"].duplicated().any():
+        dups = sorted(gdf.loc[gdf["sub_id"].duplicated(), "sub_id"].unique())
+        raise RuntimeError(
+            f"Duplicate sub_id values in {subbasin_shp}: {dups[:10]}. Each "
+            "subbasin must be a single dissolved polygon; a multipart subbasin "
+            "split into several rows would create duplicate channels.")
+
+    gdf = gdf.sort_values("sub_id").reset_index(drop=True)
+
+    gdf_ea = gdf.to_crs(epsg=6933)
+    gdf["area_ha"] = gdf_ea.geometry.area / 10000.0
+    centroids = gdf.geometry.centroid
+    gdf["lat"] = centroids.y
+    gdf["lon"] = centroids.x
+
+    total_km2 = gdf["area_ha"].sum() / 100.0
+    logger.info(f"  Loaded {len(gdf)} flow-network subbasins, "
+                f"{total_km2:.0f} km2 total "
+                f"(min {gdf['area_ha'].min()/100:.1f} / "
+                f"max {gdf['area_ha'].max()/100:.1f} km2)")
+    return gdf[["sub_id", "lat", "lon", "area_ha", "geometry"]]
+
+
 def create_subbasins_from_basin(basin_shp, dem_path, n_subbasins):
-    """Create subbasins by subdividing the basin using a regular grid."""
+    """Create subbasins by subdividing the basin using a regular grid.
+
+    NOT a hydrologic partition -- see warn_rectangular_subbasins(). Retained as
+    a last-resort fallback for when no delineation is available.
+    """
     import geopandas as gpd
     from shapely.geometry import box
 
@@ -1117,7 +1206,16 @@ def write_routing_units(subbasins_gdf, hrus, n_subbasins, output_dir):
             rtu_name = f"rtu{sub_id:04d}"
             sta_name = f"sta{((sub_id-1) % n_subbasins) + 1:02d}"
 
-            # Simple routing: each RTU sends to channel, aquifer
+            # Routing (SWAT+ Editor convention, verified against the test_lrew
+            # and test_osu decks written by SWAT+ Editor v2.1.0 / v2.2.0):
+            #   cha <id> tot 1.00000   -> the FULL surface+lateral hydrograph
+            #   aqu <id> rhg 1.00000   -> the RECHARGE (percolation) hydrograph
+            # Surface-water outflow fractions must sum to 1.0. Sending `tot` to
+            # the aquifer makes it re-release the same surq+latq the channel
+            # already received (mass creation, ~1.7x at the outlet) and orphans
+            # soil percolation, which then never recharges any aquifer.
+            # The rev59-era demo uses cha 0.70 only because a reservoir takes
+            # the other 0.30; this tool emits no reservoir.
             # Last subbasin is outlet (channel 1), others chain
             out_cha_id = min(idx + 1, n_subs)
 
@@ -1136,10 +1234,10 @@ def write_routing_units(subbasins_gdf, hrus, n_subbasins, output_dir):
                     f"{'cha':>12}"
                     f"{out_cha_id:>10}"
                     f"{'tot':>12}"
-                    f"{0.70:>14.5f}"
+                    f"{1.0:>14.5f}"
                     f"{'aqu':>12}"
                     f"{idx+1:>10}"
-                    f"{'tot':>12}"
+                    f"{'rhg':>12}"
                     f"{1.0:>14.5f}  \n")
 
     # ---- rout_unit.def ----
@@ -1195,9 +1293,118 @@ def write_routing_units(subbasins_gdf, hrus, n_subbasins, output_dir):
 
 
 # ---------------------------------------------------------------------------
+# Channel topology (from tools/s1/build_channel_topology.py)
+# ---------------------------------------------------------------------------
+def load_channel_topology(topology_path, sub_ids):
+    """Load the flow-network-derived channel cascade.
+
+    FALLBACK DISCIPLINE (do not loosen): the legacy star is permitted for exactly
+    ONE case -- no topology was requested at all (--channel_topology empty). In
+    that case this returns None and the caller emits warn_star_fallback().
+
+    If a topology WAS supplied but is missing, unparseable, mismatched or
+    otherwise invalid, this is a hard failure (sys.exit(2)). Silently degrading a
+    broken-but-supplied topology to the star is how a run that the operator
+    believed was routed gets scored as a lumped water-yield proxy -- exactly the
+    failure this whole tool exists to prevent. An explicit request for a routed
+    deck must never be answered with an unrouted one.
+    """
+    if not topology_path:
+        return None
+
+    def fatal(msg, *fmt):
+        logger.error(msg, *fmt)
+        logger.error("A channel topology WAS supplied (%s), so this is fatal: "
+                     "refusing to silently fall back to the legacy star. Rebuild "
+                     "it with tools/s1/build_channel_topology.py from the SAME "
+                     "subbasin partition, or omit --channel_topology if you "
+                     "knowingly want an unrouted lumped-proxy deck.", topology_path)
+        sys.exit(2)
+
+    p = Path(topology_path)
+    if not p.exists():
+        fatal("Channel topology file not found: %s", p)
+    try:
+        raw = json.loads(p.read_text())
+    except Exception as e:
+        fatal("Could not parse channel topology %s: %s", p, e)
+
+    meta = raw.pop("_meta", {})
+    topo = {}
+    for k, v in raw.items():
+        try:
+            topo[int(k)] = v
+        except (TypeError, ValueError):
+            continue
+
+    n_ch = len(sub_ids)
+    if len(topo) != n_ch:
+        fatal("Channel topology has %d channels but the HRU set has %d subbasins.",
+              len(topo), n_ch)
+
+    expected = set(range(1, n_ch + 1))
+    if set(topo.keys()) != expected:
+        fatal("Channel topology keys are not exactly 1..%d (got %s).",
+              n_ch, sorted(topo.keys()))
+
+    # ---- sub_id alignment ------------------------------------------------
+    # Channel ids are POSITIONAL: this writer emits cha{idx+1} for sub_ids[idx].
+    # A topology with the right channel COUNT but a different sub_id ordering
+    # would bind each channel's connectivity and accumulated area to the wrong
+    # subbasin's HRUs -- silently, since every count check still passes. Verify
+    # the actual identity, not just the cardinality.
+    misaligned = []
+    for idx, sid in enumerate(sub_ids):
+        topo_sid = topo[idx + 1].get("sub_id")
+        if topo_sid is None:
+            fatal("Channel topology entry cha%d has no 'sub_id' field; cannot "
+                  "verify alignment with the HRU subbasin ordering.", idx + 1)
+        if int(topo_sid) != int(sid):
+            misaligned.append((idx + 1, int(topo_sid), int(sid)))
+    if misaligned:
+        preview = ", ".join(f"cha{c}: topology sub_id={t} vs HRU sub_id={h}"
+                            for c, t, h in misaligned[:5])
+        fatal("Channel topology sub_id ordering does not match the HRU subbasin "
+              "ordering for %d of %d channels (%s%s). The topology was built from "
+              "a DIFFERENT subbasin partition or a different sort order; using it "
+              "would bind channels to the wrong HRUs.",
+              len(misaligned), n_ch, preview,
+              ", ..." if len(misaligned) > 5 else "")
+
+    terminals = [cid for cid, v in topo.items() if v.get("downstream_id") is None]
+    if len(terminals) != 1:
+        fatal("Channel topology has %d terminal channels (%s); exactly one is "
+              "required (s9/extract_discharge auto-detects the scored outlet as "
+              "the channel with out_tot==0).", len(terminals), terminals)
+
+    logger.info("Loaded channel topology: %d channels, outlet=cha%d, "
+                "max Strahler order=%s, sub_id alignment verified for all %d "
+                "channels", len(topo), terminals[0],
+                meta.get("max_strahler_order", "?"), n_ch)
+    return topo
+
+
+def warn_star_fallback(context):
+    """Loud, unmissable warning that the deck is NOT a routed network."""
+    logger.warning("=" * 78)
+    logger.warning("WARNING: no channel topology supplied -- falling back to the "
+                   "LEGACY STAR for %s.", context)
+    logger.warning("WARNING: every channel will discharge directly into cha1. "
+                   "SWAT+ ChannelRouting will NOT execute as a cascade: there is "
+                   "no travel-time lag and no floodplain attenuation.")
+    logger.warning("WARNING: the resulting outlet series is a LUMPED BASIN WATER "
+                   "YIELD PROXY, not a routed hydrograph. Any NSE/KGE computed "
+                   "from it is NOT a model verdict.")
+    logger.warning("WARNING: build a real cascade with "
+                   "tools/s1/build_channel_topology.py and pass "
+                   "--channel_topology.")
+    logger.warning("=" * 78)
+
+
+# ---------------------------------------------------------------------------
 # Write channel files
 # ---------------------------------------------------------------------------
-def write_channel_files(subbasins_gdf, hrus, output_dir):
+def write_channel_files(subbasins_gdf, hrus, output_dir, channel_topology=None):
     """Write channel.con, channel.cha, hydrology.cha, sediment.cha, nutrients.cha."""
     hrus_by_sub = defaultdict(list)
     for h in hrus:
@@ -1205,6 +1412,10 @@ def write_channel_files(subbasins_gdf, hrus, output_dir):
 
     sub_ids = sorted(hrus_by_sub.keys())
     n_ch = len(sub_ids)
+
+    topo = load_channel_topology(channel_topology, sub_ids)
+    if topo is None:
+        warn_star_fallback("channel.con connectivity and hydrology.cha geometry")
 
     # ---- channel.con ----
     CW = 12
@@ -1220,23 +1431,42 @@ def write_channel_files(subbasins_gdf, hrus, output_dir):
             sub_hrus = hrus_by_sub[sub_id]
             total_area = sum(h['area_ha'] for h in hrus)
             sub_area_tot = sum(h['area_ha'] for h in sub_hrus)
-            # Accumulate upstream area for this channel
-            cum_area = sum(
-                sum(h2['area_ha'] for h2 in hrus_by_sub[sid])
-                for sid in sub_ids[:idx+1]
-            )
+            # Upstream area accumulated along the FLOW NETWORK. The legacy
+            # fallback below sums in sorted-subbasin-id order, which is not a
+            # network accumulation at all and hands the terminal channel the
+            # smallest area in the basin.
+            if topo is not None:
+                cum_area = topo[idx + 1]['upstream_accumulated_area_ha']
+            else:
+                cum_area = sum(
+                    sum(h2['area_ha'] for h2 in hrus_by_sub[sid])
+                    for sid in sub_ids[:idx+1]
+                )
             cha_name = f"cha{idx+1}"
             sub_lat = sub_hrus[0]['lat']
             sub_lon = sub_hrus[0]['lon']
             sta_name = f"sta{((sub_id-1) % n_ch) + 1:02d}"
 
-            # Outlet channel (first) has out_tot=0, others route to it
-            if idx == 0:
-                out_tot = 0
-                obj_typ, obj_id, hyd_typ, frac = "null", 0, "null", 0.0
+            # Downstream target from the flow network. Exactly one channel (the
+            # true terminal) carries out_tot=0; every other channel routes to its
+            # network-derived downstream neighbour, NOT to a hardcoded cha1.
+            if topo is not None:
+                ds_id = topo[idx + 1]['downstream_id']
+                if ds_id is None:
+                    out_tot = 0
+                    obj_typ, obj_id, hyd_typ, frac = "null", 0, "null", 0.0
+                else:
+                    out_tot = 1
+                    obj_typ, obj_id, hyd_typ, frac = "cha", int(ds_id), "tot", 1.0
             else:
-                out_tot = 1
-                obj_typ, obj_id, hyd_typ, frac = "cha", 1, "tot", 1.0
+                # LEGACY STAR FALLBACK -- lumped water-yield proxy. See
+                # warn_star_fallback() above.
+                if idx == 0:
+                    out_tot = 0
+                    obj_typ, obj_id, hyd_typ, frac = "null", 0, "null", 0.0
+                else:
+                    out_tot = 1
+                    obj_typ, obj_id, hyd_typ, frac = "cha", 1, "tot", 1.0
 
             f.write(f"{idx+1:>8}  {cha_name:<20}"
                     f"{idx+1:>{CW}}"
@@ -1261,8 +1491,11 @@ def write_channel_files(subbasins_gdf, hrus, output_dir):
                 f"{'cha_nut':>16}{'cha_pst':>16}"
                 f"{'cha_ls_lnk':>16}{'cha_aqu_lnk':>16}  \n")
         for idx in range(n_ch):
+            # Bind each channel to its OWN hydrology.cha row. Pointing every
+            # channel at 'hydcha1' would make the per-channel hydraulic geometry
+            # written below completely inert.
             f.write(f"{idx+1:>8}  {f'cha{idx+1}':<20}"
-                    f"{'initcha1':>16}{'hydcha1':>16}{'sedcha1':>16}"
+                    f"{'initcha1':>16}{f'hydcha{idx+1}':>16}{'sedcha1':>16}"
                     f"{'nutcha1':>16}{'pestcha1':>16}"
                     f"{0:>16}{0:>16}  \n")
 
@@ -1274,13 +1507,25 @@ def write_channel_files(subbasins_gdf, hrus, output_dir):
                 f"{'wdr':>14}{'alpha_bnk':>14}{'side_slp':>14}  description\n")
         for idx, sub_id in enumerate(sub_ids):
             sub_hrus = hrus_by_sub[sub_id]
-            sub_area_km2 = sum(h['area_ha'] for h in sub_hrus) / 100.0
+            # Channel hydraulic geometry must be sized from the area the channel
+            # actually CONVEYS (network-accumulated), not from the local subbasin
+            # area -- otherwise no channel can ever be sized as a mainstem and the
+            # outlet is a rivulet asked to carry the whole basin.
+            if topo is not None:
+                geom_area_km2 = topo[idx + 1]['upstream_accumulated_area_ha'] / 100.0
+            else:
+                geom_area_km2 = sum(h['area_ha'] for h in sub_hrus) / 100.0
+            sub_area_km2 = geom_area_km2
             # Empirical channel geometry from drainage area
             wd = max(1.0, 2.71 * (sub_area_km2 ** 0.557))
             dp = max(0.1, 0.349 * (sub_area_km2 ** 0.341))
             mean_slp = np.mean([h['slope'] for h in sub_hrus])
-            ch_len = max(0.5, math.sqrt(sub_area_km2) * 1.3)  # km
-            ch_slp = max(0.0001, mean_slp * 0.5)
+            if topo is not None:
+                ch_len = max(0.5, float(topo[idx + 1]['length_km']))
+                ch_slp = max(0.0001, float(topo[idx + 1]['slope']))
+            else:
+                ch_len = max(0.5, math.sqrt(sub_area_km2) * 1.3)  # km
+                ch_slp = max(0.0001, mean_slp * 0.5)
             wdr = max(3.0, wd / dp if dp > 0 else 10.0)
 
             f.write(f"{f'hydcha{idx+1}':<20}"
@@ -1459,13 +1704,21 @@ def write_object_cnt(hrus, n_subbasins, basin_name, total_area_ha, output_dir):
         cols = ['name', 'ls_area', 'tot_area', 'obj', 'hru', 'lhru',
                 'rtu', 'mfl', 'aqu', 'cha', 'res', 'rec', 'exco',
                 'dlr', 'can', 'pmp', 'out', 'lcha', 'aqu2d', 'hrd', 'wro']
-        f.write("".join(f"{c:>12}" for c in cols) + "  \n")
+        # NOTE: prepend a space to every field (" {v:>12}" not "{v:>12}") so
+        # there is ALWAYS >=1 whitespace separator between tokens. SWAT+ reads
+        # object.cnt list-directed; a value that exactly fills its 12-char field
+        # (e.g. a basin-scale ls_area like "151683475.87" = 12 chars, i.e.
+        # >~1e6 km2) would otherwise touch its neighbour, merging name+ls_area+
+        # tot_area into ONE token. That shifts every count left by two fields ->
+        # 'obj' misread as 0 -> SWAT+ crashes in hyd_read_connect.f90 with
+        # "Attempting to allocate already allocated variable 'ob'" (dt_048).
+        f.write("".join(f" {c:>12}" for c in cols) + "  \n")
 
         vals = [basin_name[:12], f"{total_area_ha:.2f}", f"{total_area_ha:.2f}",
                 str(total_obj), str(n_hrus), '0',
                 str(n_subs), '0', str(n_aqu), str(n_cha), '0', '0', '0',
                 '0', '0', '0', '0', '0', '0', '0', '0']
-        f.write("".join(f"{v:>12}" for v in vals) + "  \n")
+        f.write("".join(f" {v:>12}" for v in vals) + "  \n")
 
     logger.info(f"Wrote object.cnt: {total_obj} objects "
                 f"({n_hrus} HRUs, {n_subs} RTUs, {n_cha} channels, {n_aqu} aquifers)")
@@ -1538,8 +1791,22 @@ def write_print_prt(output_dir, warmup=2):
             f.write(f"{obj:<25}{daily:>5}{'n':>12}{yearly:>13}{'n':>14}\n")
 
 
-def write_hydrology_hyd(output_dir):
-    """Write hydrology.hyd with default parameters."""
+def write_hydrology_hyd(output_dir, esco=0.15, cn3_swf=0.0, perco=0.75):
+    """Write hydrology.hyd with humid-basin defaults.
+
+    The previous defaults (esco=0.95, cn3_swf=0.5, perco=0.0) were hostile to
+    humid monsoon basins: esco=0.95 suppresses soil evaporation, cn3_swf=0.5
+    amplifies the wet-season curve number, and perco=0.0 blocks ALL percolation
+    to the aquifer — forcing nearly every mm of rain to leave as surface runoff
+    (Wangjiaba quickstart: surq=591, latq=0, perc=0, wateryld=592 mm/yr vs
+    obs 215 mm/yr, PBIAS +315%).
+
+    These three fields are NOT in cal_parms.cal, so the SKILL's
+    "humid_subtropical" calibration preset (esco 0.15, cn3_swf 0.0, perco 0.75)
+    could never take effect through calibration.cal — they MUST be set here at
+    generation time. The new defaults match the validated Bengbu setup
+    (NSE 0.751, wateryld 134 mm/yr) and the SKILL preset exactly.
+    """
     with open(Path(output_dir) / "hydrology.hyd", 'w') as f:
         f.write("hydrology.hyd: written by SWAT+ HRU generator (HydroCraft)\n")
         cols = ['name', 'lat_ttime', 'lat_sed', 'can_max', 'esco',
@@ -1547,7 +1814,7 @@ def write_hydrology_hyd(output_dir):
                 'bio_mix', 'perco', 'lat_orgn', 'lat_orgp',
                 'harg_pet', 'cn_plntet']
         f.write("".join(f"{c:>{16}}" for c in cols) + "  \n")
-        vals = [0.0, 0.0, 1.0, 0.95, 1.0, 0.0, 0.0, 0.5, 0.2, 0.0,
+        vals = [0.0, 0.0, 1.0, esco, 1.0, 0.0, 0.0, cn3_swf, 0.2, perco,
                 0.0, 0.0, 0.0, 1.0]
         f.write(f"{'hyd1':<16}" + "".join(f"{v:>16.5f}" for v in vals) + "  \n")
 
@@ -2107,10 +2374,14 @@ def process(args):
     dem_path = resolve_dem_path(args.dem_path, args.basin_shp)
     logger.info(f"Using DEM: {dem_path}")
 
-    # Step 1: Create subbasins
-    if args.grid_nc:
+    # Step 1: Create subbasins.
+    # Priority: real flow-network subbasins > VIC grid > rectangular fallback.
+    if args.subbasin_shp:
+        subbasins_gdf = load_subbasins_from_shapefile(args.subbasin_shp)
+    elif args.grid_nc:
         subbasins_gdf = create_subbasins_from_grid_nc(args.grid_nc, args.basin_shp)
     else:
+        warn_rectangular_subbasins()
         subbasins_gdf = create_subbasins_from_basin(
             args.basin_shp, dem_path, args.n_subbasins)
 
@@ -2148,9 +2419,10 @@ def process(args):
     write_hru_data(hrus, str(output_dir / "hru-data.hru"))
     write_topography_hyd(hrus, str(output_dir / "topography.hyd"))
     write_topography_rtu(subbasins_gdf, hrus, slopes, str(output_dir))
-    write_hydrology_hyd(str(output_dir))
+    write_hydrology_hyd(str(output_dir), esco=args.esco, cn3_swf=args.cn3_swf, perco=args.perco)
     write_routing_units(subbasins_gdf, hrus, n_subbasins, str(output_dir))
-    write_channel_files(subbasins_gdf, hrus, str(output_dir))
+    write_channel_files(subbasins_gdf, hrus, str(output_dir),
+                        channel_topology=args.channel_topology)
     write_aquifer_files(subbasins_gdf, hrus, str(output_dir))
     write_landuse_lum(hrus, str(output_dir))
     write_object_cnt(hrus, n_subbasins, args.basin_name, total_area_ha,

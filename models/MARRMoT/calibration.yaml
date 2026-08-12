@@ -1,0 +1,117 @@
+# Calibration contract for MARRMoT (m_07_gr4j_4p_2s, GR4J) at the validated
+# real-case gauge: Bengbu 51080, Huai River, China (121,330 km2), daily Q.
+#
+# The forward model exposes its parameters as a single theta vector passed on the
+# CLI to tools/run_marrmot.py (--theta). To give a generic optimizer a stable,
+# round-trippable edit surface, theta is materialized as four named scalars in
+# calib/params.json (json_path addresses). tools/calib_run.py reads that file,
+# assembles theta=[x1,x2,x3,x4], runs the KI's run_marrmot.py over the cached
+# CMFD/Oudin forcing, and scores Q vs the Bengbu obs on the requested split.
+#
+# GR4J has exactly four calibratable parameters and ALL of them are in the pool:
+# x1 (production store) and x2 (groundwater exchange) are the volume/magnitude
+# levers that drive the run's error mode (PBIAS +16.8), while x3 (routing store)
+# and x4 (unit-hydrograph time base) shape the hydrograph timing/recession that
+# NSE (the determining metric) rewards. Ranges are the model's own parRanges
+# (m_07_gr4j_4p_2s.m: obj.parRanges). Few free params by design (C4) — the kit
+# sensitivity-screens and starts with the 2 most-sensitive, escalating as needed.
+template_version: "calib-0.1"
+model_id: MARRMoT
+identity:
+  domain: hydrology
+  binding: m_07_gr4j_4p_2s        # GR4J, 4 parameters, 2 stores (lumped, snow-free)
+
+# Calibrate toward simulated streamflow Q (dag rank-1 output), scored vs the
+# Bengbu 51080 gauge (m3/s -> mm/d). determining_metric for Q/point_time_series
+# is NSE (temporal_pattern_match); magnitude_accuracy (PBIAS) is also gate-valid.
+targets:
+  - var: Q
+    weight: 1.0
+
+parameters:
+  - name: x1
+    description: "Maximum capacity of the production (soil-moisture) store; GR4J x1. Primary control on the ET/runoff partition and thus streamflow volume (PBIAS)."
+    type: continuous
+    units: "mm"
+    default: 395.385601
+    range: [1.0, 2000.0]           # m_07 parRanges row 1
+    transform: log                 # spans 1..2000 mm; log makes the search scale-uniform
+    scope: global
+    tie: null
+    activation: always
+    address:
+      kind: json_path
+      file: "calib/params.json"
+      root: "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
+      path: "x1"
+
+  - name: x2
+    description: "Groundwater exchange coefficient; GR4J x2. Positive imports / negative exports water across the catchment boundary — a direct volume-bias (PBIAS) lever. Can be negative, so identity transform."
+    type: continuous
+    units: "mm/d"
+    default: 2.733195
+    range: [-20.0, 20.0]           # m_07 parRanges row 2
+    transform: identity            # range straddles 0 -> log/logit invalid
+    scope: global
+    tie: null
+    activation: always
+    address:
+      kind: json_path
+      file: "calib/params.json"
+      root: "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
+      path: "x2"
+
+  - name: x3
+    description: "Maximum capacity of the (nonlinear) routing store; GR4J x3. Sets baseflow storage/recession — shapes hydrograph timing and low-flow dynamics that NSE rewards."
+    type: continuous
+    units: "mm"
+    default: 145.275789
+    range: [1.0, 300.0]            # m_07 parRanges row 3
+    transform: log                 # positive, ~2 orders of magnitude
+    scope: global
+    tie: null
+    activation: always
+    address:
+      kind: json_path
+      file: "calib/params.json"
+      root: "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
+      path: "x3"
+
+  - name: x4
+    description: "Time base of the unit hydrographs; GR4J x4. Controls the rising/falling limb timing (flood-peak lag) — a pure temporal-pattern (NSE) lever."
+    type: continuous
+    units: "day"
+    default: 6.523232
+    range: [0.5, 15.0]             # m_07 parRanges row 4
+    transform: identity            # narrow bounded range; linear search is fine
+    scope: global
+    tie: null
+    activation: always
+    address:
+      kind: json_path
+      file: "calib/params.json"
+      root: "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
+      path: "x4"
+
+# GR4J's four parameters are structurally independent (no ordering relation), so no
+# hard cross-parameter constraints. Feasibility is enforced purely by the ranges.
+constraints: []
+
+# One evaluation = a single Octave forward run of m_07 over ~12 yr daily forcing
+# (~5 s wall). That is CHEAP -> DDS single-objective, no subset/surrogate needed.
+runner:
+  kind: subprocess
+  command: ["/usr/bin/python3", "tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]
+  metrics_file: "{metrics_json}"
+  timeout: 300
+
+strategy:
+  cost_class: cheap
+  default_algorithm: dds
+  max_evaluations: 250
+  staged: true
+  staged_start: 2                  # begin with the 2 most-sensitive (screened by the kit)
+  staged_step: 1                   # escalate one parameter at a time until holdout passes
+  holdout:
+    kind: years
+    fraction: 0.5                  # cal 1981-1985 (5 yr) vs holdout 1986-1990 (5 yr)

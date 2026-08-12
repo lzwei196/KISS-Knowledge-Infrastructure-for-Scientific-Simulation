@@ -430,6 +430,12 @@ Models can be saved/loaded with `model.save()` / `model.load()`:
 
 ---
 
+## Output Description
+
+WSIMOD's `model.run()` returns four DataFrames: `flows`, `tanks`, `_, surfaces`. The `flows` DataFrame records water volumes (m^3 or ML) and VQIP pollutant masses/concentrations transferred along each arc per timestep. The `tanks` DataFrame logs storage levels at each node. The `surfaces` DataFrame tracks land surface states (soil moisture, runoff, percolation). These are returned as lists of dictionaries convertible to pandas DataFrames via `pd.DataFrame(flows)`. Use `parse_wsimod_output.py` to export results to CSV files (`flows.csv`, `tanks.csv`, `surfaces.csv`) with columns including `date, arc/node_name, volume, and pollutant values`, and to compute mass-balance checks across the network.
+
+---
+
 ## 14. Quick Start
 
 ```python

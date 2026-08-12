@@ -55,8 +55,12 @@ def validate_inputs(args):
     """Validate input arguments. Exit with JSON error on failure."""
     errors = []
 
-    if not os.path.isfile(args.input):
-        errors.append(f"Input file not found: {args.input}")
+    # API-backed sources (nasa_power / cmfd_lf / mswx_lf) load via
+    # ki_tools_common.load_forcing and do not require a local --input file.
+    api_sources = ("nasa_power", "cmfd_lf", "mswx_lf")
+    if args.source not in api_sources:
+        if not args.input or not os.path.isfile(args.input):
+            errors.append(f"Input file not found: {args.input}")
 
     if args.lat is None or not (-90 <= args.lat <= 90):
         errors.append(f"Latitude must be between -90 and 90, got: {args.lat}")
@@ -64,8 +68,12 @@ def validate_inputs(args):
     if args.lon is None or not (-180 <= args.lon <= 360):
         errors.append(f"Longitude must be between -180 and 360, got: {args.lon}")
 
-    if args.source not in ("era5", "cmfd", "mswx", "csv", "auto"):
-        errors.append(f"Unknown source: {args.source}. Use era5, cmfd, mswx, csv, or auto")
+    if args.source not in ("era5", "cmfd", "mswx", "csv", "auto") + api_sources:
+        errors.append(f"Unknown source: {args.source}. Use era5, cmfd, mswx, csv, auto, "
+                      f"nasa_power, cmfd_lf, or mswx_lf")
+
+    if args.source in api_sources and (args.start is None or args.end is None):
+        errors.append(f"Source '{args.source}' requires --start and --end (YYYY-MM-DD).")
 
     if args.source == "csv" and pd is None:
         errors.append("pandas is required for CSV input. Install with: pip install pandas")
@@ -78,29 +86,49 @@ def validate_inputs(args):
         sys.exit(1)
 
 
-def compute_tav_amp(maxt, mint):
+def compute_tav_amp(maxt, mint, doy=None):
     """Compute annual average temperature (tav) and amplitude (amp).
 
     tav = mean of all daily mean temperatures
-    amp = mean of (monthly_max_mean - monthly_min_mean) across months
+    amp = (mean of hottest calendar month) - (mean of coldest calendar month),
+          per the APSIM .met specification.
+
+    The previous implementation sliced the *whole* (possibly multi-year) record
+    into 12 equal blocks. For a multi-year record each block spans all seasons,
+    so the inter-block spread collapses toward zero (e.g. amp=2.3 instead of 17).
+    That distorts the CERES soil-temperature model (diagnostic dt_002). When the
+    day-of-year (`doy`) is supplied we build a true monthly climatology instead.
     """
-    mean_t = (np.array(maxt) + np.array(mint)) / 2.0
+    mean_t = (np.array(maxt, dtype=float) + np.array(mint, dtype=float)) / 2.0
     tav = float(np.nanmean(mean_t))
 
-    # Compute monthly means for amplitude
-    if len(mean_t) >= 365:
-        # Group by approximate month (30-day blocks)
-        n_months = min(len(mean_t) // 30, 12)
-        if n_months >= 12:
-            monthly_means = []
-            chunk = len(mean_t) // 12
-            for i in range(12):
-                start = i * chunk
-                end = start + chunk
-                monthly_means.append(np.nanmean(mean_t[start:end]))
-            amp = float(max(monthly_means) - min(monthly_means))
-        else:
-            amp = float(np.nanmax(mean_t) - np.nanmin(mean_t)) * 0.5
+    monthly_means = None
+    if doy is not None and len(doy) == len(mean_t):
+        # Map day-of-year -> calendar month (non-leap boundaries; climatology only)
+        month_end = [31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 366]
+        doy_arr = np.array(doy, dtype=int)
+        months = np.ones(len(doy_arr), dtype=int)
+        for m, end in enumerate(month_end, start=1):
+            months[doy_arr <= end] = np.where(months[doy_arr <= end] > 1,
+                                              months[doy_arr <= end], m)
+        # Simpler robust assignment
+        months = np.searchsorted(month_end, doy_arr, side="left") + 1
+        months = np.clip(months, 1, 12)
+        mm = []
+        for m in range(1, 13):
+            sel = mean_t[months == m]
+            if sel.size:
+                mm.append(float(np.nanmean(sel)))
+        if len(mm) >= 2:
+            monthly_means = mm
+
+    if monthly_means is not None:
+        amp = float(max(monthly_means) - min(monthly_means))
+    elif len(mean_t) >= 360:
+        # Fallback (no doy): assume a single contiguous year, 30-day blocks
+        chunk = len(mean_t) // 12
+        blocks = [np.nanmean(mean_t[i * chunk:(i + 1) * chunk]) for i in range(12)]
+        amp = float(max(blocks) - min(blocks))
     else:
         amp = float(np.nanmax(mean_t) - np.nanmin(mean_t)) * 0.5
 
@@ -184,6 +212,68 @@ def read_netcdf_era5(filepath, lat, lon, start, end):
     return records
 
 
+def read_load_forcing(args):
+    """Read daily forcing via ki_tools_common.load_forcing (NASA POWER / CMFD / MSWX).
+
+    This is the SKILL-documented loader path. Returns APSIM .met records with
+    radn already converted to MJ/m^2/day (load_forcing returns srad in W/m^2).
+    vp (hPa) is derived from specific humidity + pressure when available.
+    """
+    from ki_tools_common.load_forcing import load_daily_forcing
+
+    src_map = {"nasa_power": "nasa_power", "cmfd_lf": "cmfd", "mswx_lf": "mswx"}
+    lf_source = src_map[args.source]
+
+    start_year = int(args.start[:4])
+    end_year = int(args.end[:4])
+    d = load_daily_forcing(lf_source, args.lat, args.lon, start_year, end_year,
+                           forcing_dir=args.forcing_dir)
+
+    # Normalize dates to python datetime (load_forcing may return numpy datetime64)
+    raw_dates = d["dates"]
+    dates = []
+    for x in raw_dates:
+        if isinstance(x, np.datetime64):
+            dates.append(datetime.utcfromtimestamp(
+                (x - np.datetime64("1970-01-01T00:00:00")) / np.timedelta64(1, "s")))
+        elif hasattr(x, "year"):
+            dates.append(x)
+        else:
+            dates.append(datetime.strptime(str(x)[:10], "%Y-%m-%d"))
+    precip = d["precip_mm"]
+    tmax = d["temp_max_c"]
+    tmin = d["temp_min_c"]
+    srad = d.get("srad_wm2")
+    shum = d.get("shum_kgkg")
+    pres = d.get("pres_pa")
+    wind = d.get("wind_ms")
+
+    records = []
+    for i, dt in enumerate(dates):
+        # Filter to exact start/end day bounds
+        ds = dt.strftime("%Y-%m-%d")
+        if ds < args.start or ds > args.end:
+            continue
+        rec = {"year": dt.year, "day": dt.timetuple().tm_yday}
+        # Radiation: W/m^2 (daily mean) -> MJ/m^2/day
+        if srad is not None and not (srad[i] != srad[i]):  # not NaN
+            rec["radn"] = round(float(srad[i]) * 0.0864, 1)
+        rec["maxt"] = round(float(tmax[i]), 1)
+        rec["mint"] = round(float(tmin[i]), 1)
+        rec["rain"] = round(max(0.0, float(precip[i])), 1)
+        # Vapour pressure (hPa) from specific humidity + pressure: e = q*p/(0.622+0.378q)
+        if shum is not None and pres is not None:
+            q = float(shum[i]); p = float(pres[i])
+            if q == q and p == p and q > 0:
+                e_pa = q * p / (0.622 + 0.378 * q)
+                rec["vp"] = round(e_pa / 100.0, 1)  # Pa -> hPa
+        if wind is not None and wind[i] == wind[i]:
+            rec["wind"] = round(float(wind[i]), 1)
+        records.append(rec)
+
+    return records
+
+
 def read_csv_input(filepath, args):
     """Read CSV input with user-specified column mappings."""
     df = pd.read_csv(filepath, parse_dates=[args.csv_date_col or "date"])
@@ -220,7 +310,9 @@ def read_csv_input(filepath, args):
 
 def process(args):
     """Main processing: read input data and build met file content."""
-    if args.source in ("era5", "cmfd", "mswx"):
+    if args.source in ("nasa_power", "cmfd_lf", "mswx_lf"):
+        records = read_load_forcing(args)
+    elif args.source in ("era5", "cmfd", "mswx"):
         records = read_netcdf_era5(args.input, args.lat, args.lon,
                                    args.start, args.end)
     elif args.source == "csv":
@@ -236,11 +328,13 @@ def process(args):
     # Compute tav and amp
     maxt_vals = [r.get("maxt", 20) for r in records]
     mint_vals = [r.get("mint", 10) for r in records]
-    tav, amp = compute_tav_amp(maxt_vals, mint_vals)
+    doy_vals = [r.get("day", 1) for r in records]
+    tav, amp = compute_tav_amp(maxt_vals, mint_vals, doy=doy_vals)
 
     # Determine which optional columns are present
     has_vp = any("vp" in r for r in records)
     has_pan = any("pan" in r for r in records)
+    has_wind = any("wind" in r for r in records)
 
     # Build header
     lines = []
@@ -261,6 +355,9 @@ def process(args):
     if has_vp:
         cols.append("vp")
         units.append("(hPa)")
+    if has_wind:
+        cols.append("wind")
+        units.append("(m/s)")
 
     lines.append("  ".join(f"{c:>8}" for c in cols))
     lines.append("  ".join(f"{u:>8}" for u in units))
@@ -279,6 +376,8 @@ def process(args):
             vals.append(f"{rec.get('pan', 0.0):8.1f}")
         if has_vp:
             vals.append(f"{rec.get('vp', 10.0):8.1f}")
+        if has_wind:
+            vals.append(f"{rec.get('wind', 2.0):8.1f}")
         lines.append("  ".join(vals))
 
     return {
@@ -339,8 +438,12 @@ def main():
     parser = argparse.ArgumentParser(
         description="Convert global forcing data to APSIM .met format"
     )
-    parser.add_argument("--input", required=True, help="Input file (NetCDF or CSV)")
+    parser.add_argument("--input", required=False, default=None,
+                        help="Input file (NetCDF or CSV). Not needed for API sources "
+                             "nasa_power/cmfd_lf/mswx_lf.")
     parser.add_argument("--output", required=True, help="Output .met file path")
+    parser.add_argument("--forcing-dir", type=str, default=None,
+                        help="Root dir for cmfd_lf/mswx_lf load_forcing sources")
     parser.add_argument("--lat", type=float, required=True, help="Site latitude (decimal degrees)")
     parser.add_argument("--lon", type=float, required=True, help="Site longitude (decimal degrees)")
     parser.add_argument("--station", type=str, default="Unknown", help="Station name")

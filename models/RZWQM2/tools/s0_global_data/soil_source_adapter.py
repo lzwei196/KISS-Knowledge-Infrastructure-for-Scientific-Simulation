@@ -567,7 +567,7 @@ def process(args):
             # Delegate to hwsd_soil_adapter
             from hwsd_soil_adapter import _get_mu_global, _lookup_hwsd, _build_horizons
             hwsd_raster = source_path or '/mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img'
-            hwsd_mdb = '/mnt/disk1/Hydrocraft_server/data/forcing/huaihe_raw/soil/HWSD.mdb'
+            hwsd_mdb = '/media/server/hc_ssd/forcing/huaihe_raw/soil/HWSD.mdb'
             mu, err_mu = _get_mu_global(lat, lon, hwsd_raster)
             if err_mu:
                 return False, err_mu, None

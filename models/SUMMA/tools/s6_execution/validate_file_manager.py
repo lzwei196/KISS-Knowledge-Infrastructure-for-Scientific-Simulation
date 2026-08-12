@@ -130,7 +130,11 @@ def process():
         if os.path.exists(flist_path):
             with open(flist_path) as fl:
                 for line in fl:
-                    fname = line.strip().strip("'\"")
+                    # SUMMA's forcing-list parser treats lines / trailing text
+                    # after '!' as comments and skips blank lines. Mirror that
+                    # so a commented header line is not read as a filename
+                    # (KI fix 2026-06-29: '! forcing file list' false-negative).
+                    fname = line.split('!')[0].strip().strip("'\"")
                     if fname:
                         fpath = os.path.join(forcing, fname)
                         if not os.path.exists(fpath):
@@ -143,6 +147,79 @@ def process():
         val = config.get(key, '')
         if not re.match(r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}', val):
             errors.append(f"{key}='{val}' does not match 'YYYY-MM-DD hh:mm' format")
+
+    # 5b. Check the sim window actually lies inside the forcing time axis.
+    #
+    # dt_033. SUMMA forcing timestamps are PERIOD-ENDING, so a year file built
+    # by the s2 tools starts at 00:00 + data_step (03:00 for 3-hourly CMFD),
+    # NOT at 00:00. A sim_start of 'YYYY-01-01 00:00' -- the obvious thing to
+    # write, and what every worked example in this KI used to show -- is
+    # therefore one step BEFORE the first available record, and SUMMA dies
+    # with:
+    #     FATAL ERROR: summa_readForcing/read_force/getFirstTimestep/
+    #                  first requested simulation timestep not in any forcing file
+    # That message names neither the requested time nor the available range, so
+    # it reads as a corrupt-forcing problem when it is an off-by-one-step
+    # config problem. Catch it here, where both numbers are in hand.
+    if not errors and forcing_list and settings:
+        flist_path = os.path.join(settings, forcing_list)
+        if os.path.exists(flist_path):
+            try:
+                from netCDF4 import Dataset, num2date
+                from datetime import datetime
+
+                fnames = []
+                with open(flist_path) as fl:
+                    for line in fl:
+                        fname = line.split('!')[0].strip().strip("'\"")
+                        if fname:
+                            fnames.append(fname)
+
+                t_first = t_last = None
+                for fname in fnames:
+                    fpath = os.path.join(forcing, fname)
+                    if not os.path.exists(fpath):
+                        continue
+                    with Dataset(fpath) as ds:
+                        if 'time' not in ds.variables:
+                            continue
+                        tv = ds.variables['time']
+                        if len(tv) == 0:
+                            continue
+                        edges = num2date(
+                            [tv[0], tv[-1]], tv.units,
+                            getattr(tv, 'calendar', 'standard'),
+                            only_use_cftime_datetimes=False,
+                            only_use_python_datetimes=True)
+                        lo, hi = edges[0], edges[-1]
+                        t_first = lo if t_first is None else min(t_first, lo)
+                        t_last = hi if t_last is None else max(t_last, hi)
+
+                if t_first is not None:
+                    fmt = '%Y-%m-%d %H:%M'
+                    sim_s = datetime.strptime(config['simStartTime'], fmt)
+                    sim_e = datetime.strptime(config['simEndTime'], fmt)
+                    logger.info(f"  forcing time axis: {t_first} .. {t_last}")
+                    if sim_s < t_first:
+                        errors.append(
+                            f"simStartTime='{config['simStartTime']}' is BEFORE the "
+                            f"first forcing record '{t_first:%Y-%m-%d %H:%M}'. SUMMA "
+                            f"forcing stamps are PERIOD-ENDING, so the first record "
+                            f"of a year sits at 00:00 + data_step, not at 00:00. "
+                            f"Set simStartTime to '{t_first:%Y-%m-%d %H:%M}' or later "
+                            f"(dt_033).")
+                    if sim_e > t_last:
+                        errors.append(
+                            f"simEndTime='{config['simEndTime']}' is AFTER the last "
+                            f"forcing record '{t_last:%Y-%m-%d %H:%M}'. Extend the "
+                            f"forcing or pull simEndTime back (dt_033).")
+                    if sim_e < sim_s:
+                        errors.append(
+                            f"simEndTime='{config['simEndTime']}' precedes "
+                            f"simStartTime='{config['simStartTime']}'")
+            except Exception as e:
+                warnings.append(f"Could not verify sim window against forcing "
+                                f"time axis: {e}")
 
     # 6. Check NetCDF dimension consistency
     nc_files = ['attributeFile', 'initConditionFile', 'trialParamFile']

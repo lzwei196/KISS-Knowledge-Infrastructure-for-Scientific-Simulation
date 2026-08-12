@@ -129,10 +129,49 @@ data/
 | 0 | Configuration | (manual) | Define domain, grid, physics, boundary conditions |
 | 1 | Bathymetry prep | `convert_bathymetry` | Prepare bottom grid from GEBCO/survey data |
 | 2 | Boundary spectra | `convert_boundary_spectra` | Generate/convert boundary wave spectra (TPAR, 1D, 2D) |
-| 3 | Wind forcing | `convert_wind_forcing` | Prepare wind fields (ERA5/CFSR to SWAN format) |
+| 3 | Wind forcing | `fetch_gridded_wind` + `convert_wind_forcing` | Fetch an INDEPENDENT gridded 10 m analysis, then write the SWAN wind input grid |
 | 4 | SWN command file | (manual/template) | Assemble SWAN input file (.swn) |
 | 5 | Execution | `run_swan` | Execute SWAN binary with preflight checks |
 | 6 | Output parsing | `parse_swan_output` | Read TABLE/SPEC output to CSV/arrays |
+
+### Stage 3 decision rule - the wind field must be INDEPENDENT of the obs
+
+`wind input field -> HSIGN` is a HIGH-sensitivity edge in this model's dag, so
+the wind source decides the score. At a buoy validation site the tempting
+shortcut is the buoy's own anemometer: NDBC stdmet ships WSPD/WDIR in the SAME
+file as the scored WVHT, `convert_wind_forcing` accepts station series, and one
+station IDW-interpolates to a constant field. That run is CIRCULAR - the
+model's dominant driver is an in-situ measurement taken AT the scored point -
+and it is not a hindcast, whatever NSE it returns. It is also physically wrong
+for anything but a point: SWAN then sees `INPGRID WIND ... 1 1` (a single mesh,
+four identical corners) across the whole shelf.
+
+Use `tools/fetch_gridded_wind.py` instead. It pulls RSS CCMP V3.1 6-hourly
+0.25-deg L4 ocean surface winds (`ccmp_31_LonPM180`, `uwnd`/`vwnd` at 10 m,
+1993-01-02 .. 2024-01-31) from the credential-free NOAA CoastWatch ERDDAP
+griddap endpoint - the same route this KI already documents for etopo180
+bathymetry - and hands `convert_wind_forcing.convert_gridded_wind_forcing`
+u/v at the SWAN input-grid nodes:
+
+```bash
+/mnt/disk1/Hydrocraft_server/python_env/bin/python tools/fetch_gridded_wind.py \
+    --lon0 -128 --lon1 -122 --lat0 43 --lat1 47 \
+    --start 2020-01-01T00 --end 2021-01-01T00 --cache-dir ./wind_cache
+```
+
+Reserve the station path (`convert_wind_forcing.convert_wind_forcing`) for
+sites where the anemometers are NOT the scored instrument, and record which
+route was used - a run report that claims "measured wind from both buoys" while
+the log says one station was dropped is a self-report bug, not a wind field.
+
+Two traps this stage hides, both handled inside `fetch_gridded_wind`:
+* griddap resolves an OFF-AXIS `(value)` time constraint to the NEAREST
+  available level instead of erroring, so requesting 03:00Z on a 6-hourly
+  analysis returns a record that starts at 06:00Z with nothing saying so. The
+  axis is probed by index and the window is snapped OUTWARD onto it.
+* the endpoint intermittently answers 200 with a ZERO-length body for a
+  well-formed request. Size-check every chunk and retry; a bare `urlretrieve`
+  writes the empty file and the wind record is silently short.
 
 ---
 

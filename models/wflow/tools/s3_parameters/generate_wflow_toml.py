@@ -52,6 +52,92 @@ def validate_inputs(args):
         sys.exit(1)
 
 
+def _resolve_staticmaps_path(staticmaps, output_path):
+    """Locate staticmaps.nc on disk.
+
+    The TOML records a path relative to dir_input, so the value passed in may
+    not resolve from the current working directory.
+    """
+    if os.path.exists(staticmaps):
+        return staticmaps
+    cand = os.path.join(os.path.dirname(os.path.abspath(output_path)), staticmaps)
+    return cand if os.path.exists(cand) else None
+
+
+def resolve_outlet(staticmaps, output_path, outlet_lat=None, outlet_lon=None):
+    """Determine the coordinates of the outlet/gauge cell to sample.
+
+    Q_outlet must read the discharge OF THE GAUGE CELL. There is no acceptable
+    fallback: `reducer = "maximum"` reports the largest river_water__volume_flow_rate
+    anywhere in the domain, which coincides with the outlet only by accident, so
+    a silent fallback produces a plausible-looking hydrograph from the wrong cell.
+    Every source below is resolved from the build tool's own delineation; if none
+    is available we fail rather than emit a domain-wide reducer.
+
+    Order: explicit CLI args -> outlet.json sidecar -> staticmaps global attrs ->
+    the single LDD pit cell inside the active subcatchment.
+    """
+    if outlet_lat is not None and outlet_lon is not None:
+        return float(outlet_lat), float(outlet_lon), "explicit --outlet_lat/--outlet_lon"
+
+    sm_path = _resolve_staticmaps_path(staticmaps, output_path)
+    if sm_path is None:
+        raise ValueError(
+            f"cannot resolve outlet: staticmaps not found at '{staticmaps}'. "
+            "Pass --outlet_lat/--outlet_lon explicitly."
+        )
+
+    sidecar = os.path.join(os.path.dirname(os.path.abspath(sm_path)), "outlet.json")
+    if os.path.exists(sidecar):
+        try:
+            with open(sidecar) as f:
+                meta = json.load(f)
+            if meta.get("outlet_lat") is not None and meta.get("outlet_lon") is not None:
+                return (float(meta["outlet_lat"]), float(meta["outlet_lon"]),
+                        f"outlet.json sidecar ({sidecar})")
+        except (ValueError, KeyError, OSError):
+            pass
+
+    try:
+        import numpy as np
+        import xarray as xr
+    except ImportError as e:
+        raise ValueError(
+            f"cannot resolve outlet from staticmaps ({e}); "
+            "pass --outlet_lat/--outlet_lon explicitly."
+        )
+
+    with xr.open_dataset(sm_path) as ds:
+        if ds.attrs.get("outlet_lat") is not None and ds.attrs.get("outlet_lon") is not None:
+            return (float(ds.attrs["outlet_lat"]), float(ds.attrs["outlet_lon"]),
+                    f"staticmaps global attributes ({sm_path})")
+
+        if "wflow_ldd" not in ds:
+            raise ValueError(
+                f"{sm_path} has no outlet attributes and no wflow_ldd to derive one "
+                "from. Pass --outlet_lat/--outlet_lon explicitly."
+            )
+
+        ldd = ds["wflow_ldd"].values
+        active = np.isfinite(ldd)
+        if "wflow_subcatch" in ds:
+            sub = ds["wflow_subcatch"].values
+            active &= np.isfinite(sub) & (np.nan_to_num(sub) > 0)
+        # LDD 5 = pit. A correctly delineated domain has exactly one.
+        pits = np.argwhere(active & (np.nan_to_num(ldd) == 5))
+        if len(pits) != 1:
+            raise ValueError(
+                f"{sm_path} has {len(pits)} LDD pit cell(s) (expected exactly 1), so "
+                "the outlet cell is ambiguous. Rebuild the domain or pass "
+                "--outlet_lat/--outlet_lon explicitly."
+            )
+        oj, oi = int(pits[0][0]), int(pits[0][1])
+        ycoord = "y" if "y" in ds.coords else "lat"
+        xcoord = "x" if "x" in ds.coords else "lon"
+        return (float(ds[ycoord].values[oj]), float(ds[xcoord].values[oi]),
+                f"wflow_ldd pit cell ({oj},{oi}) in {sm_path}")
+
+
 def generate_toml_content(
     staticmaps_path,
     forcing_path,
@@ -67,6 +153,8 @@ def generate_toml_content(
     outstates_nc="outstates.nc",
     instates_nc="",
     legacy=False,
+    outlet_lat=None,
+    outlet_lon=None,
 ):
     """Generate the TOML configuration string.
 
@@ -141,7 +229,10 @@ def generate_toml_content(
     lines.append('snowpack__degree_day_coefficient = "cfmax"')
     lines.append("")
     lines.append("# Soil parameters")
-    lines.append("soil_layer_water__brooks_corey_exponent.value = [10.0, 10.0, 10.0, 10.0]")
+    # Read the Brooks-Corey exponent from the staticmaps map (layer, y, x) so the
+    # HWSD-derived, spatially varying value is actually used. A hard-coded
+    # .value list silently overrides whatever the build tool wrote.
+    lines.append('soil_layer_water__brooks_corey_exponent = "c"')
     lines.append('soil_surface_water__vertical_saturated_hydraulic_conductivity = "KsatVer"')
     lines.append('soil_water__vertical_saturated_hydraulic_conductivity_scale_parameter = "f"')
     lines.append('compacted_soil_surface_water__infiltration_capacity = "InfiltCapPath"')
@@ -198,6 +289,15 @@ def generate_toml_content(
 
     lines.append("[output.netcdf_grid.variables]")
     lines.append('river_water__volume_flow_rate = "q_river"')
+    # Actual ET is needed to close the water balance (P - ET - Q - dS).
+    # Without it the closure check can only be computed with ET as the
+    # residual, which makes it vacuous.
+    lines.append('land_surface__evapotranspiration_volume_flux = "actevap"')
+    # Storage terms, so delta-S in the closure check is measured rather than
+    # assumed zero.
+    lines.append('soil_water_saturated_zone__depth = "satwaterdepth"')
+    lines.append('soil_layer_water_unsaturated_zone__depth = "ustorelayerdepth"')
+    lines.append('snowpack_dry_snow__leq_depth = "snow"')
     lines.append("")
 
     # CSV output
@@ -205,10 +305,21 @@ def generate_toml_content(
     lines.append('path = "output.csv"')
     lines.append("")
 
+    # Q_outlet ALWAYS samples the gauge/outlet cell by coordinate. A reducer
+    # such as "maximum" takes the largest q anywhere in the domain, which is the
+    # outlet only by accident — on any basin with a larger neighbouring channel,
+    # or during a tributary flood peak, it silently reports the wrong cell. The
+    # caller must resolve the outlet (see resolve_outlet) before getting here.
+    if outlet_lat is None or outlet_lon is None:
+        raise ValueError(
+            "outlet_lat/outlet_lon are required: Q_outlet must sample the gauge "
+            "cell explicitly and there is no valid domain-wide fallback."
+        )
     lines.append("[[output.csv.column]]")
     lines.append('header = "Q_outlet"')
     lines.append('parameter = "river_water__volume_flow_rate"')
-    lines.append('reducer = "maximum"')
+    lines.append(f"coordinate.x = {outlet_lon}")
+    lines.append(f"coordinate.y = {outlet_lat}")
     lines.append("")
 
     return "\n".join(lines)
@@ -235,6 +346,13 @@ def main():
     parser.add_argument("--output_dir", type=str, default="output")
     parser.add_argument("--legacy", action="store_true",
                         help="Generate pre-v1.0 TOML format")
+    parser.add_argument("--outlet_lat", type=float, default=None,
+                        help="Gauge latitude for the Q_outlet CSV column. Optional: "
+                             "when omitted it is resolved from outlet.json, the "
+                             "staticmaps attributes, or the single LDD pit cell. "
+                             "If none of those resolve, the tool fails — Q_outlet "
+                             "is never a domain-wide reducer.")
+    parser.add_argument("--outlet_lon", type=float, default=None)
     parser.add_argument("--output", type=str, required=True)
     args = parser.parse_args()
 
@@ -265,6 +383,26 @@ def main():
         output_dir = args.output_dir
         timestep = args.timestep
 
+    # Q_outlet must sample the gauge cell; resolve it before writing the TOML so
+    # a missing outlet is a hard, visible failure rather than a silent
+    # domain-wide maximum.
+    outlet_lat, outlet_lon = args.outlet_lat, args.outlet_lon
+    if (outlet_lat is None or outlet_lon is None) and args.config:
+        basin = config.get("basin", {}) if isinstance(config, dict) else {}
+        if basin.get("outlet_lat") is not None and basin.get("outlet_lon") is not None:
+            outlet_lat = float(basin["outlet_lat"])
+            outlet_lon = float(basin["outlet_lon"])
+    try:
+        outlet_lat, outlet_lon, outlet_source = resolve_outlet(
+            staticmaps, args.output, outlet_lat, outlet_lon)
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(1)  # see os._exit note below: xarray/libgmt teardown SIGSEGV
+    print(f"Q_outlet sampled at ({outlet_lat}, {outlet_lon}) "
+          f"from {outlet_source}", file=sys.stderr)
+
     content = generate_toml_content(
         staticmaps_path=staticmaps,
         forcing_path=forcing,
@@ -276,6 +414,8 @@ def main():
         sediment=sediment,
         glacier=glacier,
         instates_nc=args.instates,
+        outlet_lat=outlet_lat,
+        outlet_lon=outlet_lon,
     )
 
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
@@ -291,10 +431,18 @@ def main():
         "timestep_seconds": timestep,
         "sediment": sediment,
         "glacier": glacier,
+        "outlet_lat": outlet_lat,
+        "outlet_lon": outlet_lon,
+        "outlet_source": outlet_source,
     }
 
     print(json.dumps(result, indent=2))
-    sys.exit(0)
+    # Resolving the outlet imports xarray, which can pull in a broken libgmt
+    # backend that SIGSEGVs at interpreter teardown AFTER the TOML is written —
+    # turning a successful run into exit 139. Flush and hard-exit instead.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
 
 
 if __name__ == "__main__":

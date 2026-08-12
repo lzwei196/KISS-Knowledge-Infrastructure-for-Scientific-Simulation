@@ -42,6 +42,31 @@ DEFAULT_TEMPLATES = ["gr4j", "hbv_ec", "hmets", "hymod", "sac_sma"]
 RAVEN_EXE_DEFAULT = "/mnt/disk1/Hydrocraft_server/model/raven/Raven.exe"
 
 
+def _load_parse_diagnostics():
+    """Import the canonical Diagnostics.csv parser from the s7 output tool.
+
+    Diagnostics.csv is a header row plus one data row per observation series,
+    NOT name,value pairs. Re-implementing that parse here is what left ensemble
+    diagnostics empty and every model ranked at -999 (dt_rav_037), so the s7
+    parser is the single source of truth.
+    """
+    try:
+        from parse_raven_output import parse_diagnostics
+        return parse_diagnostics
+    except ImportError:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "parse_raven_output",
+            os.path.join(TOOLS_DIR, "s7_output", "parse_raven_output.py"),
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.parse_diagnostics
+
+
+parse_diagnostics = _load_parse_diagnostics()
+
+
 def setup_ensemble_run(base_dir, basin_name, template, start_date, end_date):
     """
     Set up a single ensemble member's run directory.
@@ -59,7 +84,8 @@ def setup_ensemble_run(base_dir, basin_name, template, start_date, end_date):
     # Generate template-specific .rvi
     try:
         from select_model_template import TEMPLATES, generate_rvi_content
-        rvi_content = generate_rvi_content(template, basin_name, start_date, end_date)
+        rvi_content, _ = generate_rvi_content(template, basin_name, start_date,
+                                              end_date, run_dir=run_dir)
         with open(os.path.join(run_dir, f"{basin_name}.rvi"), "w") as f:
             f.write(rvi_content)
     except ImportError:
@@ -71,7 +97,8 @@ def setup_ensemble_run(base_dir, basin_name, template, start_date, end_date):
         )
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        rvi_content = mod.generate_rvi_content(template, basin_name, start_date, end_date)
+        rvi_content, _ = mod.generate_rvi_content(template, basin_name, start_date,
+                                                  end_date, run_dir=run_dir)
         with open(os.path.join(run_dir, f"{basin_name}.rvi"), "w") as f:
             f.write(rvi_content)
 
@@ -152,19 +179,8 @@ def run_single_model(run_dir, basin_name, raven_exe, timeout=1800):
             diag_file = os.path.join(output_dir, f)
             break
 
-    diagnostics = {}
-    if diag_file:
-        try:
-            with open(diag_file) as f:
-                for line in f:
-                    parts = [p.strip() for p in line.split(",")]
-                    if len(parts) >= 2:
-                        try:
-                            diagnostics[parts[0]] = float(parts[1])
-                        except ValueError:
-                            pass
-        except Exception:
-            pass
+    # Canonical parser (s7): header row + one data row per observation series.
+    diagnostics = parse_diagnostics(diag_file) if diag_file else {}
 
     return {
         "status": "success" if success else "error",
@@ -211,15 +227,23 @@ def compute_ensemble_stats(ensemble_results):
             "n_models": len(all_means),
         }
 
-    # Rank models by NSE (if available)
+    # Rank models by NSE. A member whose Diagnostics.csv carried no NSE is
+    # reported as null and sorted last — never as a -999 "score", which reads
+    # like a real (terrible) fit instead of a missing measurement.
     ranked = []
     for t, result in ensemble_results.items():
-        nse = result.get("diagnostics", {}).get("NASH_SUTCLIFFE", -999)
-        kge = result.get("diagnostics", {}).get("KLING_GUPTA", -999)
-        ranked.append({"template": t, "NSE": nse, "KGE": kge})
+        diag = result.get("diagnostics") or {}
+        ranked.append({
+            "template": t,
+            "NSE": diag.get("NASH_SUTCLIFFE"),
+            "KGE": diag.get("KLING_GUPTA"),
+            "diagnostics_available": bool(diag),
+        })
 
-    ranked.sort(key=lambda x: x.get("NSE", -999), reverse=True)
+    ranked.sort(key=lambda x: (x["NSE"] is not None, x["NSE"] if x["NSE"] is not None else 0.0),
+                reverse=True)
     stats["ranking"] = ranked
+    stats["n_ranked_with_diagnostics"] = sum(1 for r in ranked if r["NSE"] is not None)
 
     return stats
 

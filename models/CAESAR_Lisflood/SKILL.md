@@ -99,7 +99,29 @@ test/input_data/boscastle/boscastle_input_data/
   boscastle_test_72hr_50m_u_erosion.params    # Parameter file (with erosion)
 ```
 
-**Run**: `./bin/HAIL-CAESAR.exe ./test/input_data/boscastle/boscastle_input_data/ boscastle_test_72hr_50m_u.params`
+**Run** — from `<repo>/test`, exactly as the shipped `test/run_tests.sh` does.
+The paths inside the shipped `.params` are relative to `<repo>/test`, NOT to the
+repo root and NOT to the data dir; running it from the repo root fails with
+"No terrain DEM found" (triplet T003 / T022):
+
+```bash
+cd <repo>/test
+mkdir -p ./results/boscastle50m_72_u/
+../bin/HAIL-CAESAR.exe ./input_data/boscastle/boscastle_input_data/ boscastle_test_72hr_50m_u.params
+```
+
+Equivalently through the KI tool:
+
+```bash
+python tools/run_caesar.py --source_dir <repo> --cwd <repo>/test \
+    --data_dir <repo>/test/input_data/boscastle/boscastle_input_data/ \
+    --param_file boscastle_test_72hr_50m_u.params --skip_compile --num_threads 8
+```
+
+**Binary argument 1 locates only the PARAMETER file.** Every *data* file is built
+as `read_path + "/" + fname` and resolved against the process working directory
+(`src/main.cpp`), so a relative `read_path` depends on where you `cd`. In your own
+runs use ABSOLUTE `read_path` / `write_path` and the ambiguity disappears.
 
 ---
 

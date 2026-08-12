@@ -1,0 +1,661 @@
+template_version: "calib-0.1"
+model_id: SUMMA
+
+identity:
+  domain: land_surface_hydrology
+  binding: summa-ncar-FILE_MANAGER_V3.0.0
+  # The EXACT physics configuration the validated real case ran (site_settings/
+  # decisions.txt of the staged case dir).  Calibration reproduces this decision
+  # set bit-for-bit and varies ONLY the parameter vector.  The decisions listed
+  # here are the ones that decide which parameters are even READ by the model.
+  configuration:
+    soilCatTbl: ROSETTA           # soil params come from trialParams.nc (ROSETTA vGn)
+    vegeParTbl: USGS              # vegTypeIndex 7 = grassland/open alpine
+    f_Richards: mixdform          # theta_sat / vGn_alpha / vGn_n / k_soil all live
+    hc_profile: constant          # -> zScale_TOPMODEL is NOT a conductivity lever here
+    groundwatr: noXplict          # NO explicit aquifer -> bigAquifer.f90 never runs
+    spatial_gw: localColumn
+    bcLowrSoiH: drainage          # free drainage at the soil base; k_soil IS the baseflow lever
+    soilStress: NoahType          # critSoilWilting / critSoilTranspire active
+    stomResist: BallBerry
+    alb_method: varDecay          # snowAlbedo.f90 varDecay branch: albedoDecayRate + albedo*Visible/NearIR
+    snowLayers: CLM_2010
+    compaction: anderson
+    subRouting: timeDlay          # sub-grid gamma routing -> averageRoutedRunoff (the SCORED series)
+    snowIncept: lightSnow
+    windPrfile: logBelowCanopy
+    astability: louisinv
+    # snowDenNew is deliberately ABSENT (KI fix 2026-06-29: its presence triggers a
+    # canopySnow mass-convergence abort on a cold-region cold start).
+
+# ---------------------------------------------------------------------------
+# case — the ONE gauge/obs this capability calibrates against
+# ---------------------------------------------------------------------------
+case:
+  case_id: "OBS:hydat"
+  obs_id: "hydat"
+  station_id: "08NH120"
+  station_name: "MOYIE RIVER ABOVE NEGRO CREEK"
+  network: "HYDAT (ECCC National Water Data Archive)"
+  description: "Moyie River, Kootenay region, British Columbia — 239 km2 snowmelt-dominated
+    (nival) mountain basin; single GRU / 3 elevation-band HRUs (1150 / 1550 / 1950 m)."
+  lat: 49.4221
+  lon: -115.9413
+  drainage_area_gross_km2: 239.0        # HYDAT STATIONS.DRAINAGE_AREA_GROSS
+  obs_source: "/mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3"
+  obs_table: "DLY_FLOWS (FLOW1..FLOW31 per YEAR/MONTH row)"
+  obs_variable: "daily mean discharge"
+  obs_unit: "m3 s-1"
+  target_quantity: discharge
+  obs_shape: point_time_series
+  determining_metric: nse
+  provenance: "SUMMA_20260629T153311Z"
+  prior_validated_metric: {metric: nse, value: 0.611}
+  # Reproduced by tools/calib_run.py at the default vector (2026-08-04):
+  #   calibration split nse 0.5444707 (validated nse_cal 0.5445)
+  #   holdout     split nse 0.6466874 (validated nse_val 0.6467)
+  staged_inputs: "/mnt/disk1/Hydrocraft_server/outputs/moyie_08nh120_summa"
+  simulation_window: "2005-01-01 01:00 .. 2015-12-31 23:00 (hourly NASA POWER forcing)"
+  spinup: "2005 (cold start, never scored)"
+  scored_series: "averageRoutedRunoff(gru) x 239.0e6 m2, aggregated to daily mean (m3 s-1)"
+
+  # The obs envelope tools/calib_run.py ASSERTS (station identity + the exact date
+  # set + the observed n/mean/min/max/std/sum) BEFORE any metric is computed.  Any
+  # deviation -> nonzero exit and NO metrics file, so a changed or corrupted series
+  # for the SAME station can never be silently scored.
+  obs_contract:
+    identity:
+      station_number: "08NH120"
+      station_name: "MOYIE RIVER ABOVE NEGRO CREEK"
+      latitude: 49.4221                 # asserted to +/- 0.01 deg
+      longitude: -115.9413              # asserted to +/- 0.01 deg
+      drainage_area_gross_km2: 239.0    # also the m3/s conversion area (asserted == sum(HRUarea))
+    calibration: {start: "2006-01-01", end: "2010-12-31", n: 1826,
+                  mean: 3.819237135, min: 0.119000, max: 67.099998,
+                  std: 7.298766785, sum: 6973.927008}
+    holdout:     {start: "2011-01-01", end: "2015-12-31", n: 1826,
+                  mean: 5.218852687, min: 0.092000, max: 70.000000,
+                  std: 9.332155319, sum: 9529.625006}
+    gap_policy: "both windows must be gap-free (n == calendar days spanned); enforced"
+
+# ---------------------------------------------------------------------------
+# targets
+# ---------------------------------------------------------------------------
+targets:
+  # dag.outputs[0]; observability.point_time_series -> families
+  # [temporal_pattern_match, magnitude_accuracy], determining_metric nse.
+  # SUMMA has no channel router; its OWN sub-grid gamma time-delay routing
+  # (subRouting = timeDlay) of scalarTotalRunoff is emitted as averageRoutedRunoff,
+  # which is what the validated run scored and what calib_run.py scores.
+  - var: scalarTotalRunoff
+    weight: 1.0
+
+# ---------------------------------------------------------------------------
+# injection
+# ---------------------------------------------------------------------------
+# RUNNER mode is MANDATORY here: the KI REGENERATES trialParams.nc on every run
+# (tools/s4_parameters/set_trial_parameters.py writes a brand-new NetCDF), so any
+# value the kit wrote beforehand would be overwritten.  tools/calib_run.py reads
+# $KDT_CALIB_PARAMS, injects the vector through that same KI tool (--parameters for
+# the hru-dimension block, --basin_parameters for the gru-dimension routing block),
+# reads every value BACK out of the written trialParams.nc that SUMMA then opens,
+# and exits nonzero with NO metrics if any value fails to round-trip.  The
+# `address` blocks below are therefore DOCUMENTATION of where each value lands.
+injection:
+  mode: runner
+  artifact: "<eval workdir>/site_settings/trialParams.nc"
+  notes: >-
+    trialParams.nc carries SUMMA local (HRU) parameters on the `hru` dimension and
+    basin (GRU) parameters on the `gru` dimension.  A basin parameter written on
+    `hru` is SILENTLY ignored and SUMMA falls back to basinParamInfo.txt, so
+    routingGammaShape/Scale MUST go through append_basin_parameters().  All values
+    are float64 in and float64 out, so the round trip is bit-exact (verified at
+    both range bounds for every parameter, 2026-08-04).  Parameters are injected
+    uniformly across the three elevation-band HRUs (lumped single-GRU domain).
+
+# ---------------------------------------------------------------------------
+# parameters
+# ---------------------------------------------------------------------------
+# POOL PROVENANCE.  Seeded from dag.yaml influence.edges whose lever_type is
+# `parameter` and whose sensitivity_grade is MEDIUM (SUMMA's dag carries no HIGH
+# edges) — these name, verbatim:
+#   k_soil, qSurfScale                              -> scalarTotalRunoff
+#   theta_sat, vGn_alpha, vGn_n                     -> scalarTotalRunoff
+#   aquiferScaleFactor                              -> scalarTotalRunoff (baseflow recession)
+#   rootingDepth, critSoilTranspire                 -> scalarTotalRunoff (water-balance partition)
+#   tempCritRain, frozenPrecipMultip                -> scalarTotalRunoff (snow-affected basins)
+# plus the levers the CONFIGURED physics actually reads that control THIS site's
+# error mode.  The validated run's residual is a nival TIMING/SHAPE error (r 0.851,
+# NSE 0.611, PBIAS only -5.0%): the freshet is the whole signal, so the pool also
+# spans (a) snowmelt ENERGY — albedoDecayRate + albedoMaxVisible, the two snow-albedo
+# levers the configured alb_method=varDecay branch of snowAlbedo.f90 reads, and
+# (b) the HYDROGRAPH DELAY itself — routingGammaShape/Scale, the parameters of the
+# gamma time-delay histogram that PRODUCES the scored averageRoutedRunoff series.
+#
+# RANGE GROUNDING.  Every range is taken from SUMMA's own shipped parameter-limit
+# tables — localParamInfo.txt (HRU) and basinParamInfo.txt (GRU) of the SUMMA
+# test-cases v3 distribution at
+# /mnt/disk1/Hydrocraft_server/model/summa/case_study/base_settings/ — kept STRICTLY
+# INSIDE the documented [lower, upper], and further narrowed to the physically
+# realizable envelope of the ROSETTA texture table (Schaap et al. 2001, shipped in
+# tools/s4_parameters/set_trial_parameters.py) for the van-Genuchten soil params.
+# COMMISSIONED 2026-08-04: every parameter was run at its `lo` AND its `hi`; all 28
+# runs terminated normally and `__kdt__.applied_params[name]` read back EXACTLY equal
+# to the requested bound (rel. diff 0) — no clamping anywhere, so the Morris screen's
+# corner samples cannot fail closed.
+parameters:
+
+  # ---------- soil hydraulics: infiltration / drainage / baseflow ----------
+  - name: k_soil
+    description: "Saturated hydraulic conductivity of the soil matrix. With
+      bcLowrSoiH=drainage and groundwatr=noXplict this is THE baseflow lever:
+      free drainage at the soil base is k_soil x relative conductivity."
+    type: continuous
+    units: "m s-1"
+    default: 6.95e-06
+    range: [1.0e-06, 9.5e-06]
+    hard_bounds: [1.0e-07, 1.0e-05]
+    transform: log
+    scope: per-HRU
+    zone_key: "hruId"
+    tie: all_hru                       # lumped domain: one value across the 3 elevation bands
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "dag.yaml influence: 'infiltration / soil hydraulic parameters (k_soil, qSurfScale)'
+         -> scalarTotalRunoff, sensitivity_grade MEDIUM (farahani2025_summa_camels_emulator,
+         10.5194/hess-29-4515-2025)"
+      - "SUMMA localParamInfo.txt: k_soil default 7.5e-06, limits [1.0e-07, 1.0e-05]"
+      - "ROSETTA texture table (Schaap et al. 2001, set_trial_parameters.py ROSETTA_VGN):
+         Ksat 1.03e-06 (silty clay) .. 1.76e-04 (sand); site texture = loam, 6.95e-06.
+         Range spans silty-clay to just under SUMMA's ceiling."
+      - "commissioning 2026-08-04: lo -> nse 0.4629, hi -> nse 0.5497 (default 0.5445); applied == requested at both"
+    address:
+      kind: api
+      setter: "tools.s4_parameters.set_trial_parameters:generate_manual"
+      file: "site_settings/trialParams.nc"
+      variable: "k_soil"
+      dimension: "hru"
+
+  - name: theta_sat
+    description: "Soil porosity (saturated volumetric water content) — total storage
+      available before saturation-excess runoff."
+    type: continuous
+    units: "-"
+    default: 0.451
+    range: [0.38, 0.55]
+    hard_bounds: [0.30, 0.60]
+    transform: identity
+    scope: per-HRU
+    zone_key: "hruId"
+    tie: all_hru
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    cite:
+      - "dag.yaml influence: 'soil storage and transmission parameters (theta_sat, vGn_alpha,
+         vGn_n)' -> scalarTotalRunoff, MEDIUM (farahani2025_summa_camels_emulator)"
+      - "SUMMA localParamInfo.txt: theta_sat default 0.55, limits [0.30, 0.60]"
+      - "ROSETTA theta_sat 0.395 (sand) .. 0.492 (silty clay); site loam 0.451"
+      - "SUMMA paramCheck.f90 requires theta_res <= {critSoilTranspire, critSoilWilting,
+         fieldCapacity} <= theta_sat; the site's fixed theta_res=0.155 /
+         fieldCapacity=0.3072 / critSoilWilting=0.1812 all sit inside [0.38, 0.55]"
+      - "commissioning 2026-08-04: lo -> nse 0.5862, hi -> nse 0.4876; applied == requested at both"
+    address:
+      kind: api
+      setter: "tools.s4_parameters.set_trial_parameters:generate_manual"
+      file: "site_settings/trialParams.nc"
+      variable: "theta_sat"
+      dimension: "hru"
+
+  - name: vGn_alpha
+    description: "van Genuchten alpha — inverse air-entry head; sets how sharply the
+      soil desaturates and therefore the recession shape."
+    type: continuous
+    units: "m-1"
+    default: -1.112
+    range: [-1.65, -0.60]
+    hard_bounds: [-3.60, -0.50]
+    transform: identity                # range is negative -> log/logit are invalid
+    scope: per-HRU
+    zone_key: "hruId"
+    tie: all_hru
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    cite:
+      - "dag.yaml influence: 'soil storage and transmission parameters (theta_sat, vGn_alpha,
+         vGn_n)' -> scalarTotalRunoff, MEDIUM (farahani2025_summa_camels_emulator)"
+      - "ROSETTA alpha -3.524 (sand) .. -0.506 (silt loam); site loam -1.112. Range brackets
+         clay-loam (-1.581) through silty-clay-loam (-0.839) — the textures adjacent to loam."
+      - "SUMMA localParamInfo.txt lists limits [-1.00, -0.01], but SUMMA has NO trial-parameter
+         range check (only paramCheck.f90 dependency checks), and the VALIDATED NSE-0.611 run
+         itself used -1.112 i.e. outside that table entry; hard_bounds therefore follow the
+         ROSETTA physical envelope. Verified clamp-free at both range bounds."
+      - "commissioning 2026-08-04: lo -> nse 0.5522, hi -> nse 0.5333; applied == requested at both"
+    address:
+      kind: api
+      setter: "tools.s4_parameters.set_trial_parameters:generate_manual"
+      file: "site_settings/trialParams.nc"
+      variable: "vGn_alpha"
+      dimension: "hru"
+
+  - name: vGn_n
+    description: "van Genuchten n — pore-size distribution index; controls the slope of
+      the retention curve and the unsaturated conductivity fall-off."
+    type: continuous
+    units: "-"
+    default: 1.472
+    range: [1.21, 1.80]
+    hard_bounds: [1.05, 3.00]
+    transform: identity
+    scope: per-HRU
+    zone_key: "hruId"
+    tie: all_hru
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "dag.yaml influence: 'soil storage and transmission parameters (theta_sat, vGn_alpha,
+         vGn_n)' -> scalarTotalRunoff, MEDIUM (farahani2025_summa_camels_emulator)"
+      - "SUMMA localParamInfo.txt: vGn_n default 1.30, limits [1.00, 3.00]. The lower limit is
+         SINGULAR (m = 1 - 1/n -> 0), so the calibration floor is held well above it at 1.21."
+      - "ROSETTA n 1.208 (sandy clay) .. 3.177 (sand); site loam 1.472. Range spans the
+         fine-to-medium texture band appropriate to a mountain-forest loam."
+      - "commissioning 2026-08-04: lo -> nse 0.2854, hi -> nse 0.4640; applied == requested at both"
+    address:
+      kind: api
+      setter: "tools.s4_parameters.set_trial_parameters:generate_manual"
+      file: "site_settings/trialParams.nc"
+      variable: "vGn_n"
+      dimension: "hru"
+
+  - name: qSurfScale
+    description: "Scaling factor for the surface-runoff / infiltration partition
+      (soilLiqFlx): larger = more infiltration, smaller = more saturation-excess
+      surface runoff and a flashier freshet."
+    type: continuous
+    units: "-"
+    default: 50.0
+    range: [5.0, 95.0]
+    hard_bounds: [1.0, 100.0]
+    transform: identity
+    scope: per-HRU
+    zone_key: "hruId"
+    tie: all_hru
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "dag.yaml influence: 'infiltration / soil hydraulic parameters (k_soil, qSurfScale)'
+         -> scalarTotalRunoff, MEDIUM (farahani2025_summa_camels_emulator)"
+      - "SUMMA localParamInfo.txt: qSurfScale default 50.0, limits [1.0, 100.0]; range held
+         strictly inside both limits"
+      - "commissioning 2026-08-04: lo -> nse 0.7886 (a +0.24 jump over the 0.5445 default),
+         hi -> nse 0.5444; applied == requested at both — this is the single strongest lever
+         found on this site"
+    address:
+      kind: api
+      setter: "tools.s4_parameters.set_trial_parameters:generate_manual"
+      file: "site_settings/trialParams.nc"
+      variable: "qSurfScale"
+      dimension: "hru"
+
+  - name: aquiferScaleFactor
+    description: "Aquifer storage scaling factor of SUMMA's big-bucket baseflow store."
+    type: continuous
+    units: "m"
+    default: 0.35
+    range: [0.15, 5.0]
+    hard_bounds: [0.10, 100.0]
+    transform: log
+    scope: per-HRU
+    zone_key: "hruId"
+    tie: all_hru
+    # bigAquifer.f90 is the ONLY consumer, and it is reached only when
+    # groundwatr is bigBuckt (or via the qTopmodl path). The validated
+    # configuration is groundwatr=noXplict, so this lever is EXPECTED INERT here.
+    # It is kept in the pool because the dag's own literature edge names it: the
+    # Morris screen confirms it on THIS site rather than the literature pruning it.
+    activation: "configuration.groundwatr in ['bigBuckt', 'qTopmodl']"
+    expected_sensitivity: none
+    confidence: high
+    cite:
+      - "dag.yaml influence: 'aquifer storage and release parameters (aquiferScaleFactor)'
+         -> scalarTotalRunoff, MEDIUM, applicability 'baseflow recession'
+         (farahani2025_summa_camels_emulator)"
+      - "SUMMA localParamInfo.txt: aquiferScaleFactor default 0.35, limits [0.10, 100.0]"
+      - "SUMMA source engine/bigAquifer.f90 lines 98-115 are the only readers; unreachable
+         under decisions.txt groundwatr=noXplict"
+      - "commissioning 2026-08-04: lo and hi BOTH give nse 0.5445 == default, i.e. measured
+         inert on this site exactly as the source analysis predicts; applied == requested at both"
+    address:
+      kind: api
+      setter: "tools.s4_parameters.set_trial_parameters:generate_manual"
+      file: "site_settings/trialParams.nc"
+      variable: "aquiferScaleFactor"
+      dimension: "hru"
+
+  # ---------- vegetation / ET: the water-balance partition ----------
+  - name: rootingDepth
+    description: "Depth of the root zone — how much of the soil column can be drawn
+      down by transpiration, i.e. how much water is left for runoff."
+    type: continuous
+    units: "m"
+    default: 1.0
+    range: [0.30, 3.0]
+    hard_bounds: [0.01, 10.0]
+    transform: log
+    scope: per-HRU
+    zone_key: "hruId"
+    tie: all_hru
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    cite:
+      - "dag.yaml influence: 'ET / vegetation parameters (rootingDepth, critSoilTranspire)'
+         -> scalarTotalRunoff, MEDIUM, applicability 'water-balance partition'
+         (farahani2025_summa_camels_emulator, clark2015b_summa_implementation
+         10.1002/2015WR017200)"
+      - "SUMMA localParamInfo.txt: rootingDepth default 2.0, limits [0.01, 10.0]; the KI's
+         s4 tool sets 1.0 for this site. 0.3-3.0 m spans shallow alpine grassland to a deep
+         montane-forest root zone and stays far inside the model limits."
+      - "commissioning 2026-08-04: lo -> nse 0.5485 (pbias +2.6), hi -> nse 0.5117
+         (pbias -10.6); applied == requested at both"
+    address:
+      kind: api
+      setter: "tools.s4_parameters.set_trial_parameters:generate_manual"
+      file: "site_settings/trialParams.nc"
+      variable: "rootingDepth"
+      dimension: "hru"
+
+  - name: critSoilTranspire
+    description: "Volumetric liquid water content below which transpiration becomes
+      moisture-limited (soilStress = NoahType)."
+    type: continuous
+    units: "-"
+    default: 0.24420163791992677
+    range: [0.19, 0.35]
+    hard_bounds: [0.1551, 0.3799]      # theta_res(0.155) < x < min(theta_sat range)=0.38
+    transform: identity
+    scope: per-HRU
+    zone_key: "hruId"
+    tie: all_hru
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    cite:
+      - "dag.yaml influence: 'ET / vegetation parameters (rootingDepth, critSoilTranspire)'
+         -> scalarTotalRunoff, MEDIUM (farahani2025_summa_camels_emulator)"
+      - "SUMMA localParamInfo.txt: critSoilTranspire default 0.175, limits [0.0, 1.0]"
+      - "SUMMA engine/paramCheck.f90 ABORTS the run unless theta_res <= critSoilTranspire
+         <= theta_sat AND critSoilTranspire >= critSoilWilting.  The site's fixed values are
+         theta_res 0.155 and critSoilWilting 0.1812, so the range floor is 0.19 and the
+         ceiling 0.35 stays below the theta_sat floor of 0.38 — the box can never trip
+         paramCheck, at any corner."
+      - "commissioning 2026-08-04: lo -> nse 0.5346, hi -> nse 0.5329; applied == requested at both"
+    address:
+      kind: api
+      setter: "tools.s4_parameters.set_trial_parameters:generate_manual"
+      file: "site_settings/trialParams.nc"
+      variable: "critSoilTranspire"
+      dimension: "hru"
+
+  # ---------- snow: accumulation, phase partition and melt energy ----------
+  - name: tempCritRain
+    description: "Air temperature threshold separating rainfall from snowfall — sets
+      how much of winter precipitation is stored as snow and when it is released."
+    type: continuous
+    units: "K"
+    default: 273.16
+    range: [272.66, 273.86]
+    hard_bounds: [272.16, 274.16]
+    transform: identity
+    scope: per-HRU
+    zone_key: "hruId"
+    tie: all_hru
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "dag.yaml influence: 'snow accumulation and melt parameters (tempCritRain,
+         frozenPrecipMultip)' -> scalarTotalRunoff, MEDIUM, applicability
+         'snow-affected basins' (farahani2025_summa_camels_emulator)"
+      - "SUMMA localParamInfo.txt: tempCritRain default 273.16, limits [272.16, 274.16]
+         (-1 .. +1 degC); range held at -0.5 .. +0.7 degC, strictly inside"
+      - "commissioning 2026-08-04: lo -> nse 0.5860, hi -> nse 0.4466; applied == requested at both"
+    address:
+      kind: api
+      setter: "tools.s4_parameters.set_trial_parameters:generate_manual"
+      file: "site_settings/trialParams.nc"
+      variable: "tempCritRain"
+      dimension: "hru"
+
+  - name: frozenPrecipMultip
+    description: "Multiplier on frozen precipitation — the standard SUMMA lever for
+      snowfall gauge undercatch and orographic snow bias; the dominant control on the
+      freshet VOLUME in a nival basin."
+    type: continuous
+    units: "-"
+    default: 1.0
+    range: [0.75, 1.35]
+    hard_bounds: [0.50, 1.50]
+    transform: identity
+    scope: per-HRU
+    zone_key: "hruId"
+    tie: all_hru
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "dag.yaml influence: 'snow accumulation and melt parameters (tempCritRain,
+         frozenPrecipMultip)' -> scalarTotalRunoff, MEDIUM (farahani2025_summa_camels_emulator)"
+      - "SUMMA localParamInfo.txt: frozenPrecipMultip default 1.0, limits [0.50, 1.50];
+         range held strictly inside"
+      - "dag.yaml influence: 'precipitation rate (pptrate)' -> scalarTotalRunoff / scalarSWE,
+         MEDIUM (vanbeusekom2022_summa_forcing, 10.1175/JHM-D-21-0111.1) — this parameter is
+         the in-model handle on that forcing sensitivity"
+      - "commissioning 2026-08-04: lo -> nse 0.6035 / pbias -33.2, hi -> nse -0.2622 /
+         pbias +33.2; applied == requested at both"
+    address:
+      kind: api
+      setter: "tools.s4_parameters.set_trial_parameters:generate_manual"
+      file: "site_settings/trialParams.nc"
+      variable: "frozenPrecipMultip"
+      dimension: "hru"
+
+  - name: albedoDecayRate
+    description: "e-folding time of snow-albedo decay — the main control on how fast the
+      snowpack darkens and therefore on melt-energy input and freshet TIMING."
+    type: continuous
+    units: "s"
+    default: 1.0e+06
+    range: [2.0e+05, 4.0e+06]
+    hard_bounds: [1.0e+05, 5.0e+06]
+    transform: log
+    scope: per-HRU
+    zone_key: "hruId"
+    tie: all_hru
+    activation: "configuration.alb_method in ['varDecay', 'conDecay']"
+    expected_sensitivity: high
+    confidence: medium
+    cite:
+      - "SUMMA localParamInfo.txt: albedoDecayRate default 1.0d+06, limits
+         [0.1d+06, 5.0d+06]; range held strictly inside"
+      - "SUMMA source engine/snowAlbedo.f90:126,163,186 — read by BOTH decay branches;
+         the configured alb_method=varDecay uses it at line 186"
+      - "dag.yaml influence: 'shortwave radiation (SWRadAtm)' -> scalarSWE, MEDIUM,
+         applicability 'melt season' (vanbeusekom2022_summa_forcing) — albedo is the in-model
+         multiplier on that absorbed shortwave"
+      - "commissioning 2026-08-04: lo -> nse 0.5669, hi -> nse 0.1726; applied == requested at both"
+    address:
+      kind: api
+      setter: "tools.s4_parameters.set_trial_parameters:generate_manual"
+      file: "site_settings/trialParams.nc"
+      variable: "albedoDecayRate"
+      dimension: "hru"
+
+  - name: albedoMaxVisible
+    description: "Maximum (fresh-snow) albedo in the visible band — the varDecay-branch
+      ceiling that sets peak shortwave rejection by new snow."
+    type: continuous
+    units: "-"
+    default: 0.95
+    range: [0.85, 0.95]
+    hard_bounds: [0.70, 0.95]
+    transform: identity
+    scope: per-HRU
+    zone_key: "hruId"
+    tie: all_hru
+    activation: "configuration.alb_method == 'varDecay'"
+    expected_sensitivity: medium
+    confidence: medium
+    cite:
+      - "SUMMA localParamInfo.txt: albedoMaxVisible default 0.95, limits [0.70, 0.95].  The
+         DEFAULT SITS ON the documented ceiling, so the calibration range can only open
+         DOWNWARD; 0.85 is the lower edge of the observed fresh-snow visible-albedo band and
+         stays well inside the model limit."
+      - "SUMMA source engine/snowAlbedo.f90:122,188 — used by the varDecay spectral branch"
+      - "Lumbrazo et al. 2022 (10.1029/2021WR030852, dag citation_index
+         lumbrazo2022_summa_canopy_unloading) report ~10% winter canopy-albedo changes from
+         SUMMA snow-albedo treatment — the scale this range spans"
+      - "commissioning 2026-08-04: lo(0.85) -> nse 0.6291, hi(0.95) -> nse 0.5445 (== default,
+         since the default IS the upper bound); applied == requested at both"
+    address:
+      kind: api
+      setter: "tools.s4_parameters.set_trial_parameters:generate_manual"
+      file: "site_settings/trialParams.nc"
+      variable: "albedoMaxVisible"
+      dimension: "hru"
+
+  # ---------- sub-grid routing: the parameters that PRODUCE the scored series ----------
+  - name: routingGammaShape
+    description: "Shape parameter of the gamma time-delay histogram SUMMA convolves
+      basin runoff with (subRouting = timeDlay) — controls hydrograph PEAKEDNESS."
+    type: continuous
+    units: "-"
+    default: 2.5
+    range: [2.05, 2.95]
+    hard_bounds: [2.00, 3.00]
+    transform: identity
+    scope: per-GRU
+    zone_key: "gruId"
+    activation: "configuration.subRouting == 'timeDlay'"
+    expected_sensitivity: low
+    confidence: high
+    cite:
+      - "SUMMA basinParamInfo.txt: routingGammaShape default 2.5, limits [2.0, 3.0];
+         range held strictly inside both"
+      - "SUMMA source engine/var_derive.f90:417-471 — the timeDelay branch that builds
+         fractionFuture and hence averageRoutedRunoff, THE SCORED SERIES"
+      - "dag.yaml influence: 'flux parameterization choice (model decisions)' ->
+         scalarTotalRunoff, MEDIUM (clark2015a/clark2015b/vanbeusekom2022); subRouting is one
+         of those decisions and these are its two free parameters"
+      - "commissioning 2026-08-04: lo -> nse 0.5489, hi -> nse 0.5397; applied == requested at both"
+    address:
+      kind: api
+      setter: "tools.s4_parameters.set_trial_parameters:append_basin_parameters"
+      file: "site_settings/trialParams.nc"
+      variable: "routingGammaShape"
+      dimension: "gru"
+
+  - name: routingGammaScale
+    description: "Scale parameter (seconds) of the gamma time-delay histogram — the mean
+      basin lag is shape x scale, i.e. the direct handle on freshet timing."
+    type: continuous
+    units: "s"
+    default: 20000.0
+    range: [3600.0, 172800.0]
+    hard_bounds: [1.0, 5.0e+06]
+    transform: log
+    scope: per-GRU
+    zone_key: "gruId"
+    activation: "configuration.subRouting == 'timeDlay'"
+    expected_sensitivity: medium
+    confidence: high
+    cite:
+      - "SUMMA basinParamInfo.txt: routingGammaScale default 20000.0 s, limits
+         [1.0, 5.0e+06] s"
+      - "SUMMA source engine/var_derive.f90:445-475: the histogram has nTimeDelay=1000 bins of
+         one forcing step (1 h), so the delay distribution must be exhausted well inside 1000 h
+         or SUMMA warns that the histogram is truncated.  The 1 h .. 48 h range gives a mean lag
+         of shape x scale = 2 h .. 142 h, comfortably inside the 1000 h window — verified: no
+         truncation warning at either bound."
+      - "commissioning 2026-08-04: lo -> nse 0.5601, hi -> nse 0.4534; applied == requested at both"
+    address:
+      kind: api
+      setter: "tools.s4_parameters.set_trial_parameters:append_basin_parameters"
+      file: "site_settings/trialParams.nc"
+      variable: "routingGammaScale"
+      dimension: "gru"
+
+# ---------------------------------------------------------------------------
+# constraints — hard feasibility, checked BEFORE any model run (schema C5)
+# ---------------------------------------------------------------------------
+# SUMMA's engine/paramCheck.f90 ABORTS the run when the transpiration/wilting/field-
+# capacity thresholds fall outside [theta_res, theta_sat].  The site's theta_res
+# (0.155), critSoilWilting (0.1812) and fieldCapacity (0.3072) are held FIXED at the
+# validated ROSETTA-loam values, so the only pair that can conflict is the one below.
+# The declared ranges already make it structurally impossible, but it is asserted
+# here so a future range widening cannot silently start producing aborted runs.
+constraints:
+  - "critSoilTranspire < theta_sat"
+  - "critSoilTranspire > 0.1812"          # >= the fixed critSoilWilting
+  - "theta_sat > 0.155"                   # > the fixed theta_res
+
+# ---------------------------------------------------------------------------
+# runner — one candidate -> gate-valid metrics JSON
+# ---------------------------------------------------------------------------
+runner:
+  kind: subprocess
+  command: ["python3", "tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]
+  metrics_file: "{metrics_json}"
+  timeout: 900              # soft hint only; the kit does not bound a real-binary run
+  notes: >-
+    ~62 s wall per evaluation (11 model-years, hourly, 1 GRU / 3 HRUs; ~29 s SUMMA
+    physics).  Each evaluation runs in a fresh scratch dir under
+    <workdir>/_evals/, staged by symlink from the validated case dir — no download,
+    no forcing rebuild, no domain rebuild per eval.  Emits nse / kge / pbias / r /
+    rmse plus the reserved __kdt__ block (applied_params, case_id, scored_obs,
+    split, n_paired_days, station identity, obs_stats).
+
+# ---------------------------------------------------------------------------
+# strategy
+# ---------------------------------------------------------------------------
+strategy:
+  cost_class: moderate
+  default_algorithm: dds            # single scalarized objective, ~1 min per eval
+  max_evaluations: 240              # TOTAL across all staged rounds
+  screen_trajectories: 4            # Morris R; 4 x (14 + 1) = 60 screening evals
+  staged: true                      # screen -> calibrate few -> escalate
+  staged_start: 4
+  staged_step: 3
+  min_round_evaluations: 25
+  probe_objectives: true
+  triage:
+    pattern_tol: 0.5
+    mag_tol: 0.1
+  holdout:
+    kind: years
+    protocol: blocked_temporal
+    grouping_key: calendar_year
+    generalization_axis: temporal
+    fraction: 0.5                   # 5 held-out years of the 10 scored years
+    calibration_window: "2006-01-01..2010-12-31"
+    holdout_window: "2011-01-01..2015-12-31"
+    rationale: >-
+      obs_shape is point_time_series, so the schema default is a CONTIGUOUS blocked
+      temporal split, and the promotion claim is temporal transfer at this gauge.
+      The two blocks are exactly the validated run's own period_calibration /
+      period_validation, so a calibrated NSE is directly comparable to the validated
+      cal 0.5445 / val 0.6467 pair.  2005 is excluded from both blocks as cold-start
+      spinup.  The holdout block is wetter (mean 5.22 vs 3.82 m3/s) and contains the
+      record maximum (70.0 m3/s), so it is a genuinely harder, non-interpolated test.
+    cite:
+      - "CALIBRATION_YAML_SCHEMA.md v2: 'Default per obs_shape: point_time_series ->
+         contiguous blocked temporal'"
+      - "validated run SUMMA_20260629T153311Z: period_calibration 2006-01-01..2010-12-31,
+         period_validation 2011-01-01..2015-12-31 (val NSE 0.6467 >= cal NSE 0.5445, i.e. the
+         uncalibrated model is already not over-fit on this split)"
+    confidence: high

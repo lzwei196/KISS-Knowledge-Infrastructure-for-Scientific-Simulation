@@ -151,7 +151,24 @@ def build_control_variables(start_dt: datetime, end_dt: datetime,
     variables.append(("model_output_file", 1, 4, [model_output]))
     variables.append(("csv_output_file", 1, 4, [csv_file]))
     variables.append(("csvON_OFF", 1, 1, [1 if csv_output else 0]))
+
+    # --- Basin summary output ---
+    # PRMS basin_summary module ABORTS ("ERROR, basin_summary requested with
+    # basinOutVars equal 0") and read_error's on basinOutBaseFileName unless ALL
+    # of basinOutVars / basinOutVar_names / basinOut_freq / basinOutBaseFileName
+    # are supplied whenever basinOutON_OFF=1. The previous version of this tool
+    # emitted only the ON_OFF flag, so every generated control crashed the binary.
+    # The four variables below restore the proven working configuration (matches
+    # the shipped nuxia example control). basinOutVar_names MUST be scalar DOUBLE
+    # PRMS variables; basin_cfs/basin_ppt/basin_actet/basin_potet all qualify.
+    basin_out_vars = ["basin_cfs", "basin_ppt", "basin_actet", "basin_potet"]
+    basin_summary_base = os.path.join(out_dir, "basin_summary")
     variables.append(("basinOutON_OFF", 1, 1, [1]))
+    variables.append(("basinOutVars", 1, 1, [len(basin_out_vars)]))
+    variables.append(("basinOutVar_names", len(basin_out_vars), 4, basin_out_vars))
+    variables.append(("basinOut_freq", 1, 1, [1]))  # 1 = daily
+    variables.append(("basinOutBaseFileName", 1, 4, [basin_summary_base]))
+
     variables.append(("nhruOutON_OFF", 1, 1, [0]))
     variables.append(("nsegmentOutON_OFF", 1, 1, [0]))
     variables.append(("NsubOutON_OFF", 1, 1, [0]))

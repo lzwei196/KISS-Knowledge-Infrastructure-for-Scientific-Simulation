@@ -1,0 +1,366 @@
+template_version: "3.5"
+
+identity:
+  model_id: "CLM5_CTSM"
+  scientific_reference_version: "CLM5/CTSM (CTSM 5.4 framework; CLM4.5/CLM5.0/CLM6.0 selectable physics)"
+  implementation:
+    id: "clm5-ctsm"
+    version: "CTSM 5.4"
+    provenance: "Fortran 2003+; NCAR/UCAR CTSM 5.4, the land component of CESM, realizing the CLM5/CLM6 land-surface science."
+  ki_class: "forward_model"
+  is_family_dag: true
+  language: "fortran"
+  license: ""
+  _reason_license: "No SPDX license declared in the KI streams; CTSM ships under an academic/community license not stated in the provided facts."
+  repo_url: "https://github.com/ESCOMP/CTSM"
+
+boundary:
+  scope_in:
+    - "Terrestrial biogeophysics: surface radiation, surface energy balance, canopy and ground turbulent fluxes"
+    - "Soil and snow thermal dynamics (25 soil layers to ~8.5 m; up to 12 snow layers)"
+    - "Soil and snow hydrology: infiltration, soil moisture, surface/subsurface runoff, drainage"
+    - "Carbon-nitrogen biogeochemistry: photosynthesis, autotrophic/heterotrophic respiration, vegetation/litter/soil-organic-matter pools"
+    - "Vegetation phenology and dynamics; prognostic crops (calendars, irrigation, fertilization, harvest)"
+    - "Methane emissions, fire disturbance, urban canyon climate"
+  scope_out:
+    - "Atmospheric dynamics (prescribed or coupled via DATM/NUOPC, not solved here)"
+    - "River/streamflow routing (external MOSART / mizuRoute)"
+    - "Ice-sheet dynamics (external CISM)"
+    - "Ocean processes"
+  spatial: "2-D grid"
+  temporal: "sub-hourly"
+  closure: "both"
+  notes: "Gridded (e.g. f09_g17 ~0.9x1.25 deg) or single-point (1PT/CLM_USRDAT) with a nested landunit/column/PFT subgrid hierarchy and vertical 1-D soil columns. Closes water, carbon and inorganic-nitrogen mass budgets and the surface energy balance. BGC carbon pools require multi-century spinup (200-600+ yr) to equilibrate; satellite-phenology (Sp) mode bypasses prognostic carbon. Calendar is noleap (365-day) by default."
+
+inputs:
+  forcing:
+    - {category: meteorology, name: TBOT, unit: K, source_kind: forcing, model_input_format: "DATM atmospheric forcing stream (NetCDF)", notes: "bottom-atmosphere air temperature; physical range ~200-330 K"}
+    - {category: meteorology, name: QBOT, unit: kg/kg, source_kind: forcing, model_input_format: "DATM stream (NetCDF)", notes: "specific humidity; expected 0-0.04 kg/kg, NOT relative humidity"}
+    - {category: meteorology, name: WIND, unit: m/s, source_kind: forcing, model_input_format: "DATM stream (NetCDF)", notes: "wind at the forcing reference height (height mismatch biases aerodynamic resistance)"}
+    - {category: meteorology, name: PRECTmms, unit: "mm/s (kg/m2/s)", source_kind: forcing, model_input_format: "DATM stream (NetCDF)", notes: "total precipitation rate; must be kg/m2/s, NOT mm/day or mm/hr"}
+    - {category: radiation, name: FSDS, unit: W/m2, source_kind: forcing, model_input_format: "DATM stream (NetCDF)", notes: "downward shortwave; range 0-1400"}
+    - {category: radiation, name: FLDS, unit: W/m2, source_kind: forcing, model_input_format: "DATM stream (NetCDF)", notes: "downward (not net) longwave, positive 50-600 W/m2"}
+    - {category: meteorology, name: PSRF, unit: Pa, source_kind: forcing, model_input_format: "DATM stream (NetCDF)", notes: "surface pressure; range 50000-110000"}
+    - {category: atmospheric_composition, name: co2_ppmv, unit: ppmv, source_kind: forcing, model_input_format: "clm_inparm namelist value or CO2 stream (NetCDF)", notes: "atmospheric CO2; expects ppmv (~367 for year 2000), NOT mole fraction"}
+  parameters:
+    - {category: surface, name: "PFT/CFT fractions", unit: fraction, source_kind: dataset_lookup, model_input_format: "surface dataset fsurdat (NetCDF)", notes: "natural-veg/crop/lake/wetland/glacier/urban fractions must sum to 1.0 per gridcell"}
+    - {category: soil, name: "soil texture (sand/clay/silt %)", unit: "%", source_kind: dataset_lookup, model_input_format: "surface dataset (NetCDF)", notes: "mapped to 25 CLM layers via pedotransfer functions"}
+    - {category: soil, name: "soil organic matter", unit: kg/m3, source_kind: dataset_lookup, model_input_format: "surface dataset (NetCDF)", notes: "OM density per layer; held to depth without decay overestimates deep soil C"}
+    - {category: soil, name: "soil bulk density / soil color", unit: "kg/m3 / index", source_kind: dataset_lookup, model_input_format: "surface dataset (NetCDF)"}
+    - {category: parameter_file, name: "PFT physiological parameters", unit: various, source_kind: dataset_lookup, model_input_format: "paramfile (NetCDF)", notes: "per-PFT photosynthesis/allocation/turnover coefficients"}
+    - {category: calibration, name: medlynslope, unit: dimensionless, source_kind: calibrated, model_input_format: "clm_inparm namelist", notes: "Medlyn stomatal-conductance slope (~1-15)"}
+    - {category: calibration, name: baseflow_scalar, unit: dimensionless, source_kind: calibrated, model_input_format: "clm_inparm namelist", notes: "subsurface drainage scalar (~1e-4 to 1e-2)"}
+    - {category: calibration, name: fff, unit: "1/m", source_kind: calibrated, model_input_format: "clm_inparm namelist", notes: "decay of saturated hydraulic conductivity with depth (~0.02-2.0)"}
+  initial_conditions:
+    - {category: restart, name: "finidat", unit: "n/a", source_kind: user_provided, model_input_format: "initial-conditions file (NetCDF)", notes: "full prognostic state at simulation start; optional (cold start otherwise)"}
+    - {category: carbon, name: "soil/vegetation carbon-nitrogen pools", unit: gC/m2, source_kind: derived, model_input_format: "finidat / spinup output (NetCDF)", notes: "must be near-equilibrium for BGC modes; reached via 200-600+ yr spinup"}
+    - {category: hydrology, name: "initial soil moisture/temperature, snow state", unit: "mm3/mm3, K, mm", source_kind: derived, model_input_format: "finidat (NetCDF)"}
+  boundary_conditions:
+    - {category: configuration, name: "physics/compset mode", unit: "n/a", source_kind: user_provided, model_input_format: "compset (e.g. I2000Clm60Sp/Bgc/BgcCrop/Fates)", notes: "selects Sp (satellite phenology), Bgc (CN), BgcCrop, or Fates"}
+    - {category: configuration, name: "calendar", unit: "n/a", source_kind: user_provided, model_input_format: "CALENDAR xml / time encoding", notes: "noleap (365-day) by default; must match forcing calendar"}
+    - {category: configuration, name: "spinup_state / CLM_ACCELERATED_SPINUP", unit: "n/a", source_kind: user_provided, model_input_format: "namelist / xml switch", notes: "0/1/2 controls accelerated decomposition for BGC carbon equilibration"}
+    - {category: land_use, name: "land use transitions", unit: fraction, source_kind: dataset_lookup, model_input_format: "land-use timeseries (NetCDF)", notes: "transient PFT/management change for historical/scenario runs"}
+    - {category: configuration, name: "co2_type", unit: "n/a", source_kind: user_provided, model_input_format: "clm_inparm namelist", notes: "constant vs diagnostic CO2 source selector"}
+    - {category: domain, name: "resolution / domain file", unit: "n/a", source_kind: user_provided, model_input_format: "domain file (NetCDF)", notes: "spatial grid; must match forcing dimensions"}
+
+processes:
+  modules:
+    - {name: SurfaceAlbedoMod, role: process_solver, brief: "Surface and canopy albedo / radiative transfer; partitions absorbed shortwave between canopy, soil and snow."}
+    - {name: CanopyFluxesMod, role: process_solver, brief: "Canopy energy and water balance: latent/sensible heat, transpiration, leaf and ground temperatures, aerodynamic resistance."}
+    - {name: SoilTemperatureMod, role: process_solver, brief: "Soil (and snow) heat conduction; evolves temperature across the 25 soil layers to ~8.5 m."}
+    - {name: SoilHydrologyMod, role: process_solver, brief: "Soil water balance: infiltration, redistribution, surface (QOVER) and subsurface (QDRAI) runoff, total runoff (QRUNOFF)."}
+    - {name: SnowHydrologyMod, role: process_solver, brief: "Snow accumulation/melt, up to 12 snow layers; snow water equivalent, depth and cover fraction."}
+    - {name: PhotosynthesisMod, role: process_solver, brief: "Leaf photosynthesis / GPP with LUNA acclimation (CLM5) and Medlyn stomatal conductance."}
+    - {name: CNPhenologyMod, role: allocator, brief: "Carbon-nitrogen allocation, phenology and vegetation dynamics; updates vegetation C/N pools and LAI.", applicability: "Bgc/BgcCrop modes"}
+    - {name: SoilBiogeochemDecompCascadeMod, role: process_solver, brief: "Litter and soil-organic-matter decomposition cascade; heterotrophic respiration and soil carbon pools.", applicability: "Bgc/BgcCrop modes"}
+    - {name: FUNMod, role: optional_module, brief: "Fixation and Uptake of Nitrogen: plant N acquisition coupling carbon cost to N supply.", applicability: "Bgc/BgcCrop modes"}
+    - {name: ch4Mod, role: optional_module, brief: "Methane production, oxidation and transport from wetlands and inundated soils.", applicability: "Bgc modes with CH4 enabled"}
+    - {name: CNFireBaseMod, role: optional_module, brief: "Process-based fire: ignition, spread and combustion effects on vegetation and carbon pools.", applicability: "Bgc/BgcCrop modes"}
+    - {name: UrbanFluxesMod, role: optional_module, brief: "CLMU urban canyon energy/water balance for the urban landunit.", applicability: "gridcells with urban landunit"}
+    - {name: FATES, role: optional_module, brief: "Functionally Assembled Terrestrial Ecosystem Simulator: size-structured demographic vegetation.", applicability: "Fates mode only"}
+    - {name: CropMod, role: optional_module, brief: "Prognostic crop growth: phenology, irrigation, fertilization, harvest for crop functional types.", applicability: "BgcCrop mode only"}
+  internal_edges:
+    - {from: Inputs, to: SurfaceAlbedoMod, kind: consumes_input, brief: "downward shortwave/longwave (FSDS/FLDS) drive radiative transfer"}
+    - {from: Inputs, to: CanopyFluxesMod, kind: consumes_input, brief: "TBOT/QBOT/WIND/PSRF drive canopy and surface flux solution"}
+    - {from: Inputs, to: SoilHydrologyMod, kind: consumes_input, brief: "precipitation (PRECTmms) drives infiltration and runoff"}
+    - {from: SurfaceAlbedoMod, to: CanopyFluxesMod, kind: invokes, brief: "absorbed radiation partitioned to canopy/ground feeds the energy balance"}
+    - {from: CanopyFluxesMod, to: TV, kind: writes_state, brief: "solves canopy/vegetation temperature"}
+    - {from: CanopyFluxesMod, to: TG, kind: writes_state, brief: "solves ground temperature / ground heat flux"}
+    - {from: CanopyFluxesMod, to: SoilTemperatureMod, kind: invokes, brief: "ground heat flux is the upper boundary condition for soil heat conduction"}
+    - {from: SoilTemperatureMod, to: TSOI, kind: writes_state, brief: "updates per-layer soil temperature"}
+    - {from: SoilHydrologyMod, to: H2OSOI, kind: writes_state, brief: "updates per-layer soil moisture"}
+    - {from: SoilHydrologyMod, to: Outputs, kind: produces_output, brief: "emits QRUNOFF/QDRAI/QOVER"}
+    - {from: SnowHydrologyMod, to: H2OSNO, kind: writes_state, brief: "updates snow water equivalent"}
+    - {from: SnowHydrologyMod, to: SNOW_DEPTH, kind: writes_state, brief: "updates snow depth (and cover fraction)"}
+    - {from: SoilHydrologyMod, to: SnowHydrologyMod, kind: invokes, brief: "snowmelt and throughfall couple snow to soil water"}
+    - {from: CanopyFluxesMod, to: PhotosynthesisMod, kind: invokes, brief: "leaf temperature, humidity and absorbed PAR set photosynthesis conditions"}
+    - {from: PhotosynthesisMod, to: Outputs, kind: produces_output, brief: "emits GPP (and feeds NPP/NEE)"}
+    - {from: PhotosynthesisMod, to: CNPhenologyMod, kind: invokes, brief: "assimilated carbon is allocated to plant pools"}
+    - {from: CNPhenologyMod, to: TOTVEGC, kind: writes_state, brief: "updates total vegetation carbon"}
+    - {from: FUNMod, to: CNPhenologyMod, kind: invokes, brief: "nitrogen supply limits carbon allocation/growth"}
+    - {from: CNPhenologyMod, to: SoilBiogeochemDecompCascadeMod, kind: invokes, brief: "litterfall transfers carbon/nitrogen to litter pools"}
+    - {from: SoilBiogeochemDecompCascadeMod, to: TOTLITC, kind: writes_state, brief: "updates litter carbon pool"}
+    - {from: SoilBiogeochemDecompCascadeMod, to: TOTSOMC, kind: writes_state, brief: "updates soil organic carbon pool"}
+    - {from: SoilBiogeochemDecompCascadeMod, to: ch4Mod, kind: invokes, brief: "decomposition substrate supplies methanogenesis"}
+    - {from: SoilHydrologyMod, to: SoilTemperatureMod, kind: reads_state, brief: "soil moisture sets thermal conductivity and heat capacity"}
+
+states:
+  variables:
+    - {name: H2OSOI, unit: mm3/mm3, role: prognostic}
+    - {name: TSOI, unit: K, role: prognostic}
+    - {name: TV, unit: K, role: diagnostic}
+    - {name: TG, unit: K, role: diagnostic}
+    - {name: TSA, unit: K, role: diagnostic}
+    - {name: H2OSNO, unit: mm, role: prognostic}
+    - {name: SNOW_DEPTH, unit: m, role: prognostic}
+    - {name: FSNO, unit: fraction, role: diagnostic}
+    - {name: TLAI, unit: m2/m2, role: prognostic}
+    - {name: ELAI, unit: m2/m2, role: diagnostic}
+    - {name: TOTSOMC, unit: gC/m2, role: prognostic}
+    - {name: TOTVEGC, unit: gC/m2, role: prognostic}
+    - {name: TOTLITC, unit: gC/m2, role: prognostic}
+    - {name: soil_nitrogen_pools, unit: gN/m2, role: prognostic}
+  provenance: "populated"
+
+outputs:
+  - var: GPP
+    validation_rank: 1
+    unit: gC/m2/s
+    description: "Gross primary production (canopy photosynthetic carbon uptake)"
+    emitted_in: "$CASE.clm2.h0.*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["eddy-covariance GPP is a flux-partitioning estimate; gridcell (~100 km) vs tower footprint (~1 km) representativeness — use single-point mode for fair comparison", "convert per-second flux by 86400*365 (noleap) for annual totals"]
+        - obs_shape: spatial_time_series
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match, magnitude_accuracy]
+          determining_metric: "csi"
+          caveats: ["satellite/upscaled GPP products carry their own structural uncertainty"]
+      detrending_options: [none]
+  - var: NPP
+    validation_rank: 2
+    unit: gC/m2/s
+    description: "Net primary production (GPP minus autotrophic respiration)"
+    emitted_in: "$CASE.clm2.h0.*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: spatial_time_series
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match, magnitude_accuracy]
+          determining_metric: "csi"
+          caveats: ["NPP observations are sparse and largely model/inventory-derived"]
+      detrending_options: [none]
+  - var: NEE
+    validation_rank: 3
+    unit: gC/m2/s
+    description: "Net ecosystem exchange (net land-atmosphere CO2 flux)"
+    emitted_in: "$CASE.clm2.h0.*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["sign convention and gap-filling differ between products", "insufficient BGC spinup produces an artificial NEE sink"]
+      detrending_options: [none]
+  - var: EFLX_LH_TOT
+    validation_rank: 4
+    unit: W/m2
+    description: "Total latent heat flux"
+    emitted_in: "$CASE.clm2.h0.*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["eddy-covariance energy-balance non-closure (~10-30%); footprint vs gridcell scale mismatch"]
+      detrending_options: [none]
+  - var: FSH
+    validation_rank: 5
+    unit: W/m2
+    description: "Sensible heat flux"
+    emitted_in: "$CASE.clm2.h0.*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["energy-balance non-closure at flux towers"]
+      detrending_options: [none]
+  - var: QRUNOFF
+    validation_rank: 6
+    unit: mm/s
+    description: "Total runoff (surface + subsurface)"
+    emitted_in: "$CASE.clm2.h0.*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["gridcell runoff is not routed streamflow; gauge comparison requires MOSART/mizuRoute routing and basin aggregation"]
+        - obs_shape: regional_aggregate_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [magnitude_accuracy, temporal_pattern_match]
+          determining_metric: "nse"
+          caveats: ["basin water-balance closure needed"]
+      detrending_options: [none]
+  - var: QDRAI
+    validation_rank: 7
+    unit: mm/s
+    description: "Subsurface drainage"
+    emitted_in: "$CASE.clm2.h0.*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["rarely directly observed; usually inferred from baseflow separation"]
+      detrending_options: [none]
+  - var: H2OSOI
+    validation_rank: 8
+    unit: mm3/mm3
+    description: "Volumetric soil moisture by layer"
+    emitted_in: "$CASE.clm2.h0.*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["in-situ probes sample a specific depth; match to the corresponding CLM layer"]
+        - obs_shape: spatial_time_series
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match, temporal_pattern_match]
+          determining_metric: "nse"
+          caveats: ["satellite soil moisture senses only the top few cm; compare to shallow layers"]
+      detrending_options: [none]
+  - var: TSOI
+    validation_rank: 9
+    unit: K
+    description: "Soil temperature by layer"
+    emitted_in: "$CASE.clm2.h0.*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["match observation depth to CLM layer; near-surface diurnal cycle vs daily/monthly history averaging"]
+      detrending_options: [none]
+  - var: TOTSOMC
+    validation_rank: 10
+    unit: gC/m2
+    description: "Total soil organic carbon pool"
+    emitted_in: "$CASE.clm2.h0.*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: spatial_snapshot
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match, magnitude_accuracy]
+          determining_metric: "csi"
+          caveats: ["requires equilibrated multi-century spinup; soil-C maps (e.g. gridded SOC products) carry large uncertainty and depth-integration assumptions; mask 1e36 fill before statistics"]
+        - obs_shape: regional_aggregate_snapshot
+          comparison_mode: scalar_comparison
+          metric_families: [magnitude_accuracy]
+          determining_metric: "pbias"
+          caveats: ["integration depth must match between model and inventory"]
+      detrending_options: [none]
+  - var: TOTVEGC
+    validation_rank: 11
+    unit: gC/m2
+    description: "Total vegetation carbon pool"
+    emitted_in: "$CASE.clm2.h0.*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: spatial_snapshot
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match, magnitude_accuracy]
+          determining_metric: "csi"
+          caveats: ["biomass maps estimate aboveground C; CLM TOTVEGC includes roots — partition consistently"]
+      detrending_options: [none]
+  - var: SNOW_DEPTH
+    validation_rank: 12
+    unit: m
+    description: "Snow depth"
+    emitted_in: "$CASE.clm2.h0.*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy, timing_accuracy]
+          determining_metric: "nse"
+          caveats: ["point snow course vs gridcell-average depth; onset/melt timing sensitive to forcing"]
+      detrending_options: [none]
+  - var: FSNO
+    validation_rank: 13
+    unit: fraction
+    description: "Fraction of ground covered by snow"
+    emitted_in: "$CASE.clm2.h0.*.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: spatial_time_series
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match, event_detection]
+          determining_metric: "csi"
+          caveats: ["satellite snow-cover fraction is cloud-affected; compare clear-sky composites"]
+      detrending_options: [none]
+
+influence:
+  edges: []
+  _reason: "No sensitivity literature was supplied (lit_facts is null). The KI asserts high sensitivity for medlynslope, baseflow_scalar, fff, co2_ppmv and spinup/finidat, but no quantitative published SA (Sobol/Morris/EFAST) citation is available in the streams, so no citation-backed influence edge can be emitted."
+  citation_index: {}
+
+safety:
+  hazards:
+    - {id: precip_units_mm_per_day_as_mm_per_s, kind: weather_file_semantic, description: "Precipitation in mm/day or mm/hr used directly as kg/m2/s (mm/s) is 86400x/3600x too high -> runaway runoff or NaN soil moisture (dt_001)", severity: silent}
+    - {id: temperature_celsius_as_kelvin, kind: weather_file_semantic, description: "TBOT in Celsius read as Kelvin freezes all soil layers and zeroes GPP/NEE/latent heat (dt_002)", severity: silent}
+    - {id: net_longwave_as_downward_FLDS, kind: weather_file_semantic, description: "Net longwave used as downward longwave (FLDS) drives a persistent energy deficit and progressive surface cooling (dt_003)", severity: silent}
+    - {id: relative_humidity_as_specific_humidity, kind: weather_file_semantic, description: "Relative humidity used as specific humidity QBOT (kg/kg) causes crash or extreme latent-heat/surface-drying errors (dt_004)", severity: fatal_or_silent}
+    - {id: co2_mole_fraction_as_ppmv, kind: weather_file_semantic, description: "co2_ppmv given as mole fraction instead of ppmv leaves photosynthesis near zero (dt_008)", severity: silent}
+    - {id: wind_wrong_reference_height, kind: weather_file_semantic, description: "Wind at wrong reference height biases aerodynamic resistance and turbulent fluxes (dt_011)", severity: silent}
+    - {id: forcing_domain_grid_mismatch, kind: weather_file_semantic, description: "Forcing spatial dimensions not matching the domain file cause a NetCDF dimension-mismatch crash at initialization (dt_012)", severity: fatal}
+    - {id: soil_om_constant_to_depth, kind: soil_semantic, description: "Topsoil organic matter held constant to 8.5 m overestimates deep soil carbon and thermal conductivity (dt_005)", severity: degraded}
+    - {id: soc_g_per_kg_as_kg_per_m3, kind: soil_semantic, description: "SoilGrids SOC in g/kg used directly as kg/m3 makes organic-matter content 10-100x off, biasing soil temperature/moisture (dt_014)", severity: silent}
+    - {id: pft_fractions_not_summing_to_one, kind: soil_semantic, description: "PCT land-type fractions not summing to 100% violate mass conservation and create artificial bare ground (dt_006)", severity: degraded}
+    - {id: surface_dataset_not_found, kind: soil_semantic, description: "fsurdat/domain path wrong in lnd_in -> immediate surface-dataset file-not-found crash at startup (dt_010)", severity: fatal}
+    - {id: insufficient_bgc_spinup, kind: initial_condition_semantic, description: "Insufficient BGC spinup (<200-600 yr) leaves TOTSOMC rising and produces an artificial NEE carbon sink (dt_009)", severity: degraded}
+    - {id: calendar_noleap_vs_gregorian, kind: control_semantic, description: "Gregorian forcing (with Feb 29) against noleap CLM5 causes a leap-year crash or an accumulating 1-day drift (dt_007)", severity: fatal}
+    - {id: precip_temporal_interpolation, kind: control_semantic, description: "Linear temporal interpolation of precipitation creates artificial drizzle / interval-boundary spikes (set tintalgo per variable) (dt_013)", severity: degraded}
+    - {id: namelist_fortran_syntax, kind: control_semantic, description: "Fortran namelist syntax errors in user_nl_clm (quotes, .true./.false., commas) crash the namelist read at startup (dt_015)", severity: fatal}
+    - {id: fill_value_not_masked, kind: parser_semantic, description: "CLM 1e36 fill value for inactive/masked cells not masked before analysis contaminates statistics with NaN/huge values (dt_017)", severity: silent}
+  validation_limits:
+    - "Gridcell scale (~100 km on f09) is not directly comparable to point flux-tower/in-situ observations; use single-point (1PT/CLM_USRDAT) mode for fair site comparison"
+    - "BGC carbon pools (TOTSOMC, NEE) are only meaningful after 200-600+ yr spinup to equilibrium; transient/short runs carry artificial carbon drift"
+    - "Gridcell runoff is not routed streamflow; gauge/streamflow validation requires external MOSART/mizuRoute routing"
+    - "Default (uncalibrated) namelist parameters are not site-tuned; expect biases without calibration"
+  warnings:
+    - "History output is per-UNIT-AREA (landunit), not per-gridcell; gridcell totals require multiplying by landunit area fraction (the wrapper parser does not apply this)"
+    - "Output dimensionality is the unstructured landunit grid unless hist_dov2xy=.true. remaps to lat/lon"
+    - "Per-second fluxes (gC/m2/s, mm/s) must be multiplied by 86400 (daily) or 86400*365 (noleap annual) for accumulated totals"
+    - "noleap (365-day) model calendar must be aligned with leap-year observations by day-of-year"
+    - "Too many or too-frequent history fields generate enormous I/O (50+ GB/yr on f09) and very low throughput; restrict hist_fincl/hist_fexcl and set hist_nhtfrq for monthly defaults (dt_016)"
+  assumptions:
+    - statement: "Land surface is represented as a 2-D grid of independent columns with 1-D vertical soil/snow physics; no lateral subsurface flow between gridcells"
+      scope: "spatial geometry of all simulated processes"
+      source: "CLM5/CTSM Technical Note (Lawrence et al. 2019) and CTSM subgrid (landunit/column/PFT) structure"
+      status: adopted
+    - statement: "Water, carbon and inorganic-nitrogen budgets and the surface energy balance are closed; closed carbon budgets require an equilibrated spinup"
+      scope: "conservation/closure of BGC and energy-balance modes"
+      source: "CLM5/CTSM Technical Note; SoilBiogeochem and Biogeophysics module documentation"
+      status: adopted
+    - statement: "noleap (365-day) calendar is the default time base; per-second fluxes convert to annual totals via 365*86400 s"
+      scope: "time integration and flux accumulation"
+      source: "CTSM history-file conventions and DATM stream calendar settings"
+      status: adopted
+    - statement: "History output is reported per landunit area and on the unstructured landunit grid unless hist_dov2xy remaps to lat/lon; gridcell aggregation requires area weighting"
+      scope: "interpretation of output spatial support"
+      source: "CTSM history-tape (h0..h9) conventions"
+      status: adopted

@@ -288,3 +288,71 @@ triplets:
       hydrotrend PREFIX INPUT_DIR
     severity: low
     tags: [build, getopt, portability]
+
+  - id: ht_021
+    symptom: "Daily discharge r ~0.3 and NSE negative at a low-relief prairie/seasonal gauge, even though magnitude matches (PBIAS small, sim peak ~ obs peak, variance similar)"
+    diagnosis: >
+      HydroTrend's lumped degree-day snow routine releases melt basin-wide the
+      moment air temp crosses the melt point, with no snowpack cold-content/
+      ripening delay, no distributed-melt spreading, and no frozen-soil or
+      depression-storage (fill-and-spill) routing. On a low-relief snowmelt
+      prairie basin the simulated freshet leads observed by a constant ~6 days
+      and is over-broad, structurally capping daily Pearson r near 0.3
+      (NSE <= r^2 ~ 0.08) no matter how magnitude is tuned.
+    remedy: >
+      Treat as a domain limit, not a bug. Validate against monthly/seasonal Q
+      or annual suspended-sediment yield (the model's design output) instead of
+      the daily gauge. Reserve daily-Q-vs-gauge validation for nival/rainfall
+      basins whose freshet timing is channel-routing-controlled. Per-basin melt-
+      timing tuning (cooling via lapse rate / elevation) is calibration, not a
+      KI fix, and the residual broadening still caps r near 0.5.
+    severity: medium
+    tags: [domain_mismatch, snowmelt, daily_timing, prairie, structural_ceiling]
+
+  - id: ht_021
+    symptom: >
+      Run aborts immediately: "hydrotrend ERROR; hydroreadhypsom.c  The
+      elevation bin size is not equal in the hypsometry file at number N.
+      Elevation bin size was set to 26.700000, calculated binsize at N is
+      26.600000."
+    diagnosis: >
+      hydroreadhypsom.c computes the elevation bin size from the first two
+      hypsometry rows and requires EVERY subsequent pair to match to within
+      masscheck (~1e-5 m). build_hypsometry.py --manual rounded elevations to
+      1 decimal (round(elev,1)); whenever (max_elev-min_elev)/(n_bins-1) is not
+      a clean 1-decimal number (e.g. 1200/45 = 26.666... -> 26.7, 53.3, 80.0,
+      diffs 26.6/26.7) the spacing is unequal and the model exits(-1).
+    remedy: >
+      Use the fixed build_hypsometry.py (manual mode now keeps full float
+      precision so consecutive elevation differences stay exactly bin_size).
+      If editing a HYPS by hand, ensure constant elevation spacing to <1e-5 m,
+      OR choose n_bins / max_elev so the bin size is an exact decimal (e.g.
+      max_elev=1125, n_bins=46 -> 25.0 m bins). The DEM/CSV paths already step
+      by an exact bin_size and are unaffected.
+    severity: critical
+    tags: [input_format, hypsometry, bin_size, tool_bug, fatal]
+
+  - id: ht_022
+    symptom: >
+      Daily Q correlates in phase with a routed reference/gauge but peaks are
+      2-5x too high and NSE is negative on a large (>~10000 km2) lowland basin,
+      even after the mean (PBIAS) is calibrated.
+    diagnosis: >
+      HydroTrend's only hydrograph attenuation is the channel travel-time lag
+      in hydrorain.c (distbins), set by basin length (line 28, km) divided by
+      mean river velocity (line 32, m/s). With a short length / fast velocity
+      (e.g. 300 km / 1.2 m/s ~ 3-day spread) a lumped basin dumps each day's
+      runoff almost instantly, so storm peaks vastly exceed a network-routed
+      product (GloFAS/LISFLOOD) that spreads flow over ~1-2 weeks.
+    remedy: >
+      Calibrate the routing travel time L/v to attenuate peaks: increase basin
+      length and/or lower mean velocity until the simulated hydrograph spread
+      (~L/v in seconds /86400 days) matches the basin's concentration time.
+      Verified on Huai @ Wangjiaba (30,630 km2): L=600 km, v=0.6 m/s (~12-day
+      spread) lifted pooled daily NSE from -0.96 to 0.73 and r from 0.56 to
+      0.86 vs GloFAS dis24. This makes daily-Q validation viable for large
+      RAINFALL-dominated lowland basins (contrast the snowmelt-prairie ceiling
+      in ht_020). Also raise groundwater storage (line 33) to add baseflow
+      damping; set evaporation (lines 26/26b) to fix the mean independently.
+    severity: medium
+    tags: [routing, daily_timing, peak_attenuation, lowland, calibration]

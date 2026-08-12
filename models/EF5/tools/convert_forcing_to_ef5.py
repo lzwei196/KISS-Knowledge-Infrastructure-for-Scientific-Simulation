@@ -361,20 +361,150 @@ def convert_forcing(
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+def hargreaves_pet_mm_day(tmin_c, tmax_c, tmean_c, lat_deg, doy):
+    """FAO-56 Hargreaves reference ET (mm/day) from temperature extremes.
+
+    PET = 0.0023 * Ra * (Tmean + 17.8) * sqrt(Tmax - Tmin)
+    Ra (extraterrestrial radiation, MJ/m2/day) expressed as equivalent mm/day
+    via division by 2.45. Used because load_forcing exposes temperature but no
+    PET field; Hargreaves needs only Tmin/Tmax/Tmean + latitude + day-of-year.
+    """
+    lat = np.radians(lat_deg)
+    dr = 1.0 + 0.033 * np.cos(2.0 * np.pi / 365.0 * doy)        # inverse rel. Earth-Sun dist
+    decl = 0.409 * np.sin(2.0 * np.pi / 365.0 * doy - 1.39)     # solar declination
+    ws_arg = np.clip(-np.tan(lat) * np.tan(decl), -1.0, 1.0)
+    ws = np.arccos(ws_arg)                                      # sunset hour angle
+    # Ra in MJ/m2/day; Gsc=0.0820
+    Ra = (24.0 * 60.0 / np.pi) * 0.0820 * dr * (
+        ws * np.sin(lat) * np.sin(decl) + np.cos(lat) * np.cos(decl) * np.sin(ws)
+    )
+    Ra_mm = Ra / 2.45                                          # MJ/m2/day -> mm/day
+    dt = np.maximum(tmax_c - tmin_c, 0.0)
+    pet = 0.0023 * Ra_mm * (tmean_c + 17.8) * np.sqrt(dt)
+    return np.maximum(pet, 0.0)
+
+
+def convert_forcing_from_load(source, lat, lon, bbox, start_year, end_year,
+                              output_dir, output_format="asc", forcing_dir=None,
+                              write_temp=True, precip_scale=1.0):
+    """Build EF5 daily forcing grids from a ki_tools_common point time series.
+
+    This is the SKILL-mandated path: load a daily point series (CMFD/MSWX/NASA
+    POWER) via ki_tools_common.load_forcing, derive PET (Hargreaves), and write
+    spatially-uniform daily grids over `bbox` for precip, pet and (optionally)
+    temperature. Grids are a single cell spanning the bbox with correct WGS84
+    georeference so EF5 samples the same value at every model cell (lumped
+    forcing). File naming matches the validated control template:
+        precip/forcing_YYYYMMDD0000.asc   (UNIT=mm/h, FREQ=d)
+        pet/forcing_YYYYMMDD0000.asc      (UNIT=mm/h, FREQ=d)
+        temp/forcing_YYYYMMDD0000.asc     (UNIT=C,    FREQ=d, for Snow-17)
+    Precip/PET written as mm/h rate = daily_mm / 24.
+    """
+    from ki_tools_common.load_forcing import load_daily_forcing
+
+    f = load_daily_forcing(source=source, lat=lat, lon=lon,
+                           start_year=start_year, end_year=end_year,
+                           forcing_dir=forcing_dir)
+    dates = f["dates"]
+    precip = np.asarray(f["precip_mm"], dtype=np.float64)
+    # Optional gauge-undercatch / area-deficit correction. A single multiplicative
+    # factor on precip (e.g. interior-BC NASA POWER undercatch, or compensating a
+    # MERIT under-delineated contributing area) — mirrors the documented
+    # MARRMoT/Sac-SMA `--precip-scale` convention. precip_scale=1.0 is a no-op.
+    if precip_scale != 1.0:
+        precip = precip * float(precip_scale)
+    tmean = np.asarray(f["temp_mean_c"], dtype=np.float64)
+    tmax = np.asarray(f.get("temp_max_c"), dtype=np.float64) if f.get("temp_max_c") is not None else tmean + 5.0
+    tmin = np.asarray(f.get("temp_min_c"), dtype=np.float64) if f.get("temp_min_c") is not None else tmean - 5.0
+
+    west, south, east, north = bbox
+    cellsize = max(east - west, north - south)   # single cell covers whole bbox
+    xll, yll = west, south
+
+    writer = {"asc": write_asc_grid, "tif": write_tif_grid, "bif": write_bif_grid}.get(
+        output_format, write_asc_grid)
+    ext = output_format
+    pdir = os.path.join(output_dir, "precip"); os.makedirs(pdir, exist_ok=True)
+    edir = os.path.join(output_dir, "pet");    os.makedirs(edir, exist_ok=True)
+    tdir = os.path.join(output_dir, "temp");   os.makedirs(tdir, exist_ok=True)
+
+    def _to_dt(x):
+        if isinstance(x, np.datetime64):
+            return x.astype("datetime64[s]").astype(datetime)
+        if hasattr(x, "timetuple"):
+            return x
+        return datetime.utcfromtimestamp(float(np.datetime64(x, "s").astype("int64")))
+
+    n = 0
+    for i, draw in enumerate(dates):
+        d = _to_dt(draw)
+        doy = int(d.timetuple().tm_yday)
+        p_mmhr = float(precip[i]) / 24.0
+        if not (p_mmhr == p_mmhr) or p_mmhr < 0:
+            p_mmhr = 0.0
+        pet_mmday = float(hargreaves_pet_mm_day(tmin[i], tmax[i], tmean[i], lat, doy))
+        pet_mmhr = pet_mmday / 24.0
+        tval = float(tmean[i]) if (tmean[i] == tmean[i]) else 0.0
+        stamp = d.strftime("%Y%m%d") + "0000"
+        writer(os.path.join(pdir, f"forcing_{stamp}.{ext}"),
+               np.array([[p_mmhr]], dtype=np.float32), xll, yll, cellsize)
+        writer(os.path.join(edir, f"forcing_{stamp}.{ext}"),
+               np.array([[pet_mmhr]], dtype=np.float32), xll, yll, cellsize)
+        if write_temp:
+            writer(os.path.join(tdir, f"forcing_{stamp}.{ext}"),
+                   np.array([[tval]], dtype=np.float32), xll, yll, cellsize)
+        n += 1
+
+    print(f"[OK] Wrote {n} daily precip/pet" + ("/temp" if write_temp else "") +
+          f" grids from {source} to {output_dir}")
+    print(f"[INFO] precip range {np.nanmin(precip):.2f}..{np.nanmax(precip):.2f} mm/day; "
+          f"tmean {np.nanmin(tmean):.1f}..{np.nanmax(tmean):.1f} C")
+    return n > 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="Convert forcing data to EF5 format")
-    parser.add_argument("--precip-dir", required=True, help="Source precipitation directory")
+    # --- load_forcing mode (SKILL-mandated): build grids from a point series ---
+    parser.add_argument("--load-source", choices=["cmfd", "mswx", "nasa_power"],
+                        help="If set, use ki_tools_common.load_forcing instead of --precip-dir")
+    parser.add_argument("--lat", type=float, help="Basin latitude (load_forcing mode)")
+    parser.add_argument("--lon", type=float, help="Basin longitude (load_forcing mode)")
+    parser.add_argument("--start-year", type=int, help="Start year (load_forcing mode)")
+    parser.add_argument("--end-year", type=int, help="End year (load_forcing mode)")
+    parser.add_argument("--forcing-dir", help="Root dir for cmfd/mswx (load_forcing mode)")
+    parser.add_argument("--no-temp", action="store_true", help="Skip temperature grids")
+    parser.add_argument("--precip-scale", type=float, default=1.0,
+                        help="Multiplicative precip correction (gauge undercatch / "
+                             "area-deficit), load_forcing mode. 1.0 = no-op")
+    parser.add_argument("--precip-dir", help="Source precipitation directory")
     parser.add_argument("--pet-dir", help="Source PET directory")
     parser.add_argument("--output-dir", required=True, help="Output directory")
     parser.add_argument("--bbox", nargs=4, type=float, metavar=("W", "S", "E", "N"),
                         help="Bounding box [west south east north]")
-    parser.add_argument("--start", required=True, help="Start date YYYYMMDD")
-    parser.add_argument("--end", required=True, help="End date YYYYMMDD")
+    parser.add_argument("--start", help="Start date YYYYMMDD (required in --precip-dir mode)")
+    parser.add_argument("--end", help="End date YYYYMMDD (required in --precip-dir mode)")
     parser.add_argument("--precip-unit", default="mm/h", help="Source precip unit")
     parser.add_argument("--pet-unit", default="mm/h", help="Source PET unit")
     parser.add_argument("--format", default="tif", choices=["tif", "asc", "bif"])
     parser.add_argument("--freq", type=int, default=1, help="Forcing frequency in hours")
     args = parser.parse_args()
+
+    if args.load_source:
+        missing = [k for k in ("lat", "lon", "start_year", "end_year", "bbox")
+                   if getattr(args, k) in (None, [])]
+        if missing:
+            parser.error(f"--load-source requires: {', '.join('--'+m.replace('_','-') for m in missing)}")
+        fmt = args.format if args.format != "tif" else "asc"  # EF5 prefers ASC
+        ok = convert_forcing_from_load(
+            args.load_source, args.lat, args.lon, args.bbox,
+            args.start_year, args.end_year, args.output_dir,
+            output_format=fmt, forcing_dir=args.forcing_dir,
+            write_temp=not args.no_temp, precip_scale=args.precip_scale,
+        )
+        sys.exit(0 if ok else 1)
+
+    if not args.precip_dir:
+        parser.error("--precip-dir is required unless --load-source is given")
 
     start = datetime.strptime(args.start, "%Y%m%d")
     end = datetime.strptime(args.end, "%Y%m%d")

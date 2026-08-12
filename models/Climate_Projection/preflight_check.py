@@ -99,7 +99,7 @@ def check_common_data():
     global PASS, FAIL
     common = [
         ("/mnt/disk1/Hydrocraft_server/data/obs", "Observation data"),
-        ("/mnt/disk1/Hydrocraft_server/data/forcing", "Forcing data"),
+        ("/media/server/hc_ssd/forcing", "Forcing data"),
         ("/mnt/disk1/Hydrocraft_server/data/dem", "DEM data"),
         ("/mnt/disk1/Hydrocraft_server/data/soil", "Soil data"),
     ]
@@ -123,7 +123,7 @@ def main():
     # Python package: scipy (interpolation)
     check_import("scipy", "scipy (interpolation)")
     # Directory: Baseline forcing data
-    check_dir("/mnt/disk1/Hydrocraft_server/data/forcing", "Baseline forcing data")
+    check_dir("/media/server/hc_ssd/forcing", "Baseline forcing data")
 
     print()
 

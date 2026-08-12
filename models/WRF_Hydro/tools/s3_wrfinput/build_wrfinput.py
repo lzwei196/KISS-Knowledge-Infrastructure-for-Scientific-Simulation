@@ -149,6 +149,12 @@ def build_wrfinput(geo_em_path, output_path, start_month=1, soilparm_tbl=None):
     # SHDMAX, SHDMIN from GREENFRAC (0-1 in geo_em -> 0-100 %)
     shdmax = np.max(gf, axis=0).astype(np.float32) * 100.0
     shdmin = np.min(gf, axis=0).astype(np.float32) * 100.0
+    # dt_v005 fix: barren / high-altitude land cells with SHDMAX=0 and VAI=0 drive
+    # Noah-MP ground temperature to ~630 K in summer and abort the run. Enforce a
+    # small minimum green fraction (0.01 = 1%) on LAND cells (IVGTYP != water=16).
+    land2d = lu_idx != 16
+    shdmax[land2d & (shdmax < 1.0)] = 1.0
+    shdmin = np.minimum(shdmin, shdmax)
 
     # TMN = SOILTEMP (annual mean deep-soil temperature, K)
     # Fix zero/missing values: SOILTEMP=0 means nodata (water cells etc.)

@@ -1,0 +1,250 @@
+schema_version: 1
+model_id: CAESAR_Lisflood
+domain: hydrology_geomorphology   # landscape-evolution + flood-inundation + sediment model
+generated_by: "self-improve step-B agent (Claude Opus 4.8) — validation-convention campaign, general schema"
+generated_at: 2026-07-07
+
+# CAESAR-Lisflood couples a LISFLOOD-FP 2D hydrodynamic solver (water discharge, flow depth
+# = flood inundation, velocity) with the CAESAR cellular landscape-evolution engine (sediment
+# transport, an evolving DEM, erosion/deposition). Its obs-bindable, gradeable quantities are
+# therefore split between a HYDROLOGY/HAZARD side (discharge, flood extent, velocity) and a
+# GEOMORPHOLOGY side (sediment yield, evolving elevation / geomorphic change).
+#
+# GROUNDING SUMMARY (only fetched full texts cited; bands read via `direction`, see
+# VALIDATION_CONVENTION_SCHEMA.md):
+#  * Discharge NSE/PBIAS + sediment PBIAS tiers = Moriasi et al. 2007 performance-rating
+#    convention, reproduced and attributed in the fetched OA paper Me et al. 2015 (HESS,
+#    Table 5). Moriasi 2007/2015 themselves are closed (ASABE) -> deferred_paywalled.
+#  * Flood-inundation-extent acceptance = MdAPE < 20% areal error from the fetched OA paper
+#    Papaioannou et al. 2017 (Adv. Geosci.); the standard categorical metric CSI/TS is used
+#    there only qualitatively, so NO fetched CSI numeric band exists -> csi headline is null.
+#  * The two cached CAESAR-Lisflood sensitivity papers (Skinner et al. 2018 GMD; Skinner &
+#    Coulthard 2023 ESurf) EXPLICITLY document that LEM elevation / geomorphic-change validation
+#    has no established objective-function convention (data paucity + pixel-to-pixel
+#    incomparability), and that absolute sediment yield is order-of-magnitude / sediment-
+#    transport-law dependent. These ground the structural ceilings, NOT numeric skill bands.
+# Net: discharge = moderate (canonical convention, 1 fetched restatement); flood extent +
+# velocity = weak (no fetched CSI/velocity threshold); elevation change = moderate ceiling,
+# null band; sediment yield = moderate PBIAS band with a documented magnitude caveat.
+
+references:
+  hess2015:
+    doi: 10.5194/hess-19-4127-2015
+    title: "Effects of hydrologic conditions on SWAT model performance and parameter sensitivity for a small, mixed land use catchment"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2015
+    oa: gold
+    resolves: https://hess.copernicus.org/articles/19/4127/2015/hess-19-4127-2015.pdf
+  adgeo2017:
+    doi: 10.5194/adgeo-44-23-2017
+    title: "Probabilistic flood inundation mapping at ungauged streams due to roughness coefficient uncertainty in hydraulic modelling"
+    venue: "Adv. Geosci."
+    year: 2017
+    oa: gold
+    resolves: https://adgeo.copernicus.org/articles/44/23/2017/adgeo-44-23-2017.pdf
+  skinner2018:
+    doi: 10.5194/gmd-11-4873-2018
+    title: "Global sensitivity analysis of parameter uncertainty in landscape evolution models"
+    venue: "Geosci. Model Dev."
+    year: 2018
+    oa: gold
+    resolves: https://gmd.copernicus.org/articles/11/4873/2018/gmd-11-4873-2018.pdf
+  skinner2023:
+    doi: 10.5194/esurf-11-695-2023
+    title: "Testing the sensitivity of the CAESAR-Lisflood landscape evolution model to grid cell size"
+    venue: "Earth Surf. Dynam."
+    year: 2023
+    oa: gold
+    resolves: https://esurf.copernicus.org/articles/11/695/2023/esurf-11-695-2023.pdf
+
+validation:
+
+  # ===================== WATER DISCHARGE / time series (Moriasi convention) =====================
+  - canonical_quantity: discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.5}
+        pass_band: satisfactory
+        cites: [hess2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        cites: [hess2015]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Co-reported goodness-of-fit; Moriasi R2 tiers <0.5 unsat / 0.5-0.6 sat / 0.6-0.7 good / 0.7-1 very good (Me 2015 Table 5)."
+        cites: [hess2015]
+    validated_when: "NSE >= 0.5 (satisfactory) AND |PBIAS| <= 25% (satisfactory) at a gauged outlet cell — Moriasi et al. 2007 monthly-flow ratings as reproduced by Me et al. 2015."
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: >-
+      Me et al. 2015 (Table 5) reproduces and attributes the Moriasi et al. (2007) discharge (Q)
+      performance-rating convention: NSE ratings <0.5 unsatisfactory / 0.5-0.65 satisfactory /
+      0.65-0.75 good / 0.75-1 very good; PBIAS(Q) <10 very good / 10-15 good / 15-25 satisfactory
+      / >25 unsatisfactory. Moriasi "derived these criteria based on extensive literature review".
+      CAESAR-Lisflood-specific caveat (from the model's own KI/dag): Q is summed over ALL DEM edge
+      cells, so mask the DEM to a single outlet before comparing to a gauge, and the reported time
+      index is interval-count x save-interval, not clock time. These are monthly-timestep tiers;
+      Moriasi 2015 relaxes them for finer timesteps (closed -> deferred_paywalled).
+
+  # ===================== WATER DISCHARGE / peak snapshot (transferred PBIAS band) =====================
+  - canonical_quantity: discharge
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        cites: [hess2015]
+    secondary_metrics: []
+    validated_when: "|PBIAS| <= 25% on peak-discharge magnitude — Moriasi Q ratings (Me et al. 2015)."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      Peak-discharge magnitude only (single event). No snapshot-specific threshold in the fetched
+      papers; the PBIAS magnitude band is transferred from the same Moriasi Q performance-rating
+      table (Me 2015), hence reduced confidence.
+
+  # ===================== SEDIMENT YIELD / regional aggregate snapshot (magnitude, deep uncertainty) =====================
+  - canonical_quantity: discharge          # dag lumps sediment discharge under canonical_quantity "discharge"; this is catchment SEDIMENT YIELD
+    obs_shape: regional_aggregate_snapshot
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 15, good: 30, satisfactory: 55}
+        pass_band: satisfactory
+        cites: [hess2015]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          Absolute sediment yield in CAESAR-Lisflood is deeply uncertain: the choice of sediment
+          transport law alone can change predicted yields by an order of magnitude, and equal
+          catchment yields can conceal very different internal geomorphic behaviour ("right answer
+          for the wrong reasons"). Temporal-pattern skill (NSE) on sediment flux is therefore a
+          model-structure/forcing ceiling, not a KI defect. Documented in Skinner & Coulthard 2023
+          and Skinner et al. 2018.
+        cites: [skinner2023, skinner2018]
+    validated_when: "|PBIAS| <= 55% (satisfactory, sediment/SS tier) on integrated catchment sediment yield; temporal NSE NOT required due to order-of-magnitude transport-law/loading uncertainty."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: >-
+      Me et al. 2015 (Table 5) gives the Moriasi 2007 suspended-sediment (SS) PBIAS tiers: <15 very
+      good / 15-30 good / 30-55 satisfactory / >55 unsatisfactory — a much wider magnitude envelope
+      than discharge, reflecting sediment's intrinsic uncertainty. The dag marks the sediment var
+      has_obs_binding=false, but model_obs_map does bind sediment_yield/sediment_load (pbias) and
+      SSC (nse); this block grounds the magnitude convention for that binding. Skinner & Coulthard
+      2023: coarse grids give "the right answer but for the wrong reasons"; sediment-transport law
+      is the single most influential parameter (Skinner 2018). Keep PBIAS as the only headline;
+      confidence 0.5 => gate may contextualize the NSE failure (do not fix_ki on sediment NSE alone)
+      but must NEVER loosen the PBIAS requirement.
+
+  # ===================== FLOW DEPTH = FLOOD INUNDATION EXTENT / spatial snapshot =====================
+  - canonical_quantity: depth
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi                     # dag determining_metric; retained but NO fetched numeric CSI band
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no fetched paper gives a numeric CSI/Threat-Score threshold for flood extent; the standard flood-extent benchmark (collective validation of fluvial flood models) was fetch_failed -> deferred_paywalled"
+        cites: []
+    secondary_metrics:
+      - metric: mdape                   # Median Absolute Percentage areal Error of flood extent
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Papaioannou et al. 2017: 'Acceptable behavioural models are selected when MdAPE is lower than 20%' for observed-vs-simulated flood areal extent; CSI/TS are used only qualitatively there. Grounded flood-extent acceptance proxy (HEC-RAS study; cross-model transfer to CAESAR-Lisflood inundation)."
+        cites: [adgeo2017]
+    validated_when: "UNRESOLVED for CSI (no fetched numeric band). Grounded proxy: flood-extent areal error MdAPE < 20% (Papaioannou 2017). A CSI/hit-rate flood benchmark is needed to set the categorical band."
+    evidence_strength: weak
+    confidence: 0.4
+    notes: >-
+      Water depth raster is graded as wet/dry inundation extent against observed flood maps (mask
+      NODATA). The field's standard categorical metric is CSI/Threat-Score (Horritt & Bates
+      lineage, inherited via LISFLOOD-FP), but no fetched paper reports a CSI numeric threshold, so
+      the csi headline band is null (must not loosen the gate). Papaioannou et al. 2017 does give a
+      real, fetched areal-error acceptance criterion (MdAPE < 20%), retained as a supportive
+      secondary metric. Raise to moderate once a CSI/hit-rate flood-extent benchmark is fetched.
+
+  # ===================== FLOW VELOCITY / spatial snapshot (no fetched threshold) =====================
+  - canonical_quantity: velocity
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi                     # dag determining_metric; no fetched threshold
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "no fetched paper reports a velocity validation threshold; point/spatial flood-velocity obs (LSPIV) are rare and no convention was found within the capped search"
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED — no cited velocity threshold; treat as data-gap until a flood-velocity (LSPIV / gauge) evaluation is fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Depth-averaged flow-speed raster. Compare against surface velocimetry (LSPIV) or point
+      velocity gauges (rare for floods; check that model velocity is depth-averaged, not surface).
+      No numeric convention in the fetched set -> band null per the no-fabrication rule; may
+      contextualize but must never loosen the gate.
+
+  # ===================== EVOLVING SURFACE ELEVATION / geomorphic change / spatial snapshot =====================
+  - canonical_quantity: water_level        # dag canonical_quantity for the evolving surface-elevation raster (DEM)
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi                     # dag determining_metric; NO objective-function convention exists for LEM elevation change
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "LEM elevation / geomorphic-change validation has no established numeric objective-function convention (Skinner 2018; Skinner & Coulthard 2023) -> band null, structural not a KI defect"
+        cites: []
+    secondary_metrics:
+      - metric: csi
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          The evolving DEM / net erosion-deposition surface cannot be validated by a standard
+          objective function. Skinner et al. 2018: LEM evaluation "has long been limited by a lack
+          of suitable observational data and statistical measures", and pixel-to-pixel comparison
+          is intrinsically poor ("gross patterns of erosion and deposition may be identical but with
+          the channel on the other side of the valley — yielding a poor pixel-to-pixel comparison";
+          "although the metrics often suggested good agreement, visual analysis of the final DEMs
+          indicated clear differences"). The field instead uses 'model functions' / qualitative
+          landform comparison. A low CSI/spatial-match score on the evolving DEM is therefore a
+          documented data/structural ceiling, not a KI defect.
+        cites: [skinner2018, skinner2023]
+    validated_when: "STRUCTURAL CEILING — no objective-function convention for LEM geomorphic change; graded qualitatively / via model functions, not a numeric CSI band (Skinner 2018)."
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: >-
+      Surface-elevation / DEM-of-difference output. Both cached CAESAR-Lisflood papers make the
+      SAME explicit point: there is no accepted numeric skill metric for LEM landscape change; the
+      authors deliberately eschew objective functions in favour of 'model functions' (Skinner 2018)
+      precisely because obs data and comparison measures are lacking. Band null (never loosens);
+      the structurally_limited flag routes acquire_data / data-ceiling, NEVER fix_ki, if a spatial
+      elevation-change comparison scores low. This is the best-grounded ceiling in the file.
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2007 — Model evaluation guidelines for systematic quantification of accuracy in watershed simulations (origin of the NSE/PBIAS/RSR tiers; cited here via its faithful reproduction in Me et al. 2015)"
+    doi: 10.13031/2013.23153
+    needed_for: [discharge]
+  - ref: "Moriasi et al. 2015 — Hydrologic and water quality models: performance measures and evaluation criteria (updated, finer-timestep tiers)"
+    doi: 10.13031/trans.58.10715
+    needed_for: [discharge]
+  - ref: "Bernhofen et al. 2018 — A first collective validation of global fluvial flood models for major floods (CSI / hit-rate / critical-success flood-extent benchmark) — fetch_failed"
+    doi: 10.1088/1748-9326/aae014
+    needed_for: [depth]
+  - ref: "Coulthard et al. 2013 — Integrating the LISFLOOD-FP 2D hydrodynamic model with the CAESAR model (the model-description paper; would ground depth/velocity hydrodynamic skill) — fetch_failed"
+    doi: 10.1002/esp.3478
+    needed_for: [depth, velocity]

@@ -1,0 +1,93 @@
+{
+  "summary": {
+    "GPP": {
+      "n_total": 132,
+      "n_valid": 132,
+      "pct_valid": 100.0,
+      "min": 0.8003,
+      "max": 7.2596,
+      "mean": 4.5148,
+      "std": 2.1614,
+      "median": 5.0503,
+      "unit": "umol/m2/s"
+    },
+    "NEE": {
+      "n_total": 132,
+      "n_valid": 132,
+      "pct_valid": 100.0,
+      "min": -3.7165,
+      "max": 1.8854,
+      "mean": -0.8097,
+      "std": 0.9934,
+      "median": -0.7459,
+      "unit": "umol/m2/s"
+    },
+    "RECO": {
+      "n_total": 132,
+      "n_valid": 132,
+      "pct_valid": 100.0,
+      "min": 0.9985,
+      "max": 8.235,
+      "mean": 3.7051,
+      "std": 1.9799,
+      "median": 3.6102,
+      "unit": "umol/m2/s"
+    },
+    "RA": {
+      "n_total": 132,
+      "n_valid": 132,
+      "pct_valid": 100.0,
+      "min": 0.3211,
+      "max": 2.6365,
+      "mean": 1.5964,
+      "std": 0.7864,
+      "median": 1.6764,
+      "unit": "umol/m2/s"
+    },
+    "RH": {
+      "n_total": 132,
+      "n_valid": 132,
+      "pct_valid": 100.0,
+      "min": 0.6093,
+      "max": 5.6955,
+      "mean": 2.1087,
+      "std": 1.3145,
+      "median": 1.7909,
+      "unit": "umol/m2/s"
+    },
+    "LAI": {
+      "n_total": 132,
+      "n_valid": 132,
+      "pct_valid": 100.0,
+      "min": 1.288,
+      "max": 5.9926,
+      "mean": 4.3029,
+      "std": 1.4691,
+      "median": 4.6798,
+      "unit": "m2/m2"
+    },
+    "LE": {
+      "n_total": 132,
+      "n_valid": 132,
+      "pct_valid": 100.0,
+      "min": 14.3897,
+      "max": 83.797,
+      "mean": 54.137,
+      "std": 23.1584,
+      "median": 59.0476,
+      "unit": "W/m2"
+    },
+    "H": {
+      "n_total": 132,
+      "n_valid": 132,
+      "pct_valid": 100.0,
+      "min": 11.6717,
+      "max": 82.1003,
+      "mean": 42.882,
+      "std": 17.2463,
+      "median": 40.24,
+      "unit": "W/m2"
+    }
+  },
+  "metrics": {}
+}

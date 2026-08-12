@@ -151,7 +151,7 @@ def process(args):
         discharge = discharge * cell_area_m2 / (86400.0 * 1000.0)
 
     # Filter to simulation period
-    mask = (dates.year >= args.start_year) & (dates.year <= args.end_year)
+    mask = (dates.dt.year >= args.start_year) & (dates.dt.year <= args.end_year)
     dates = dates[mask]
     discharge = discharge[mask]
 

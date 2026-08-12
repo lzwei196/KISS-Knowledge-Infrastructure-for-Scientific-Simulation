@@ -36,7 +36,13 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect")
+# NOTE: do NOT add the auto_dissect copy of ki_tools_common to sys.path here.
+# That copy carries a stale _load_nasa_power that reads only the near-zero
+# WS2M wind (~0.05 m/s -> no lake mixing -> runaway surface warming), and the
+# path-based finder would shadow the canonical editable-installed package.
+# The canonical pip-installed ki_tools_common (models/ki_tools_common) has the
+# WS10M-preferring fix (see feedback_nasa_power_wind_height) and ships units,
+# humidity and load_forcing, so it resolves correctly with no path edits.
 from ki_tools_common.units import celsius_to_kelvin, kelvin_to_celsius
 from ki_tools_common.humidity import saturation_vapor_pressure
 
@@ -45,9 +51,11 @@ def validate_inputs(args):
     """Validate input arguments."""
     errors = []
 
-    if args.forcing_dir is None and args.vic_forcing_dir is None:
-        errors.append("Must provide either --forcing_dir (CMFD/MSWX) or "
-                      "--vic_forcing_dir (VIC forcing files)")
+    if (getattr(args, "forcing_source", None) != "nasa_power"
+            and args.forcing_dir is None and args.vic_forcing_dir is None):
+        errors.append("Must provide --forcing_source nasa_power, or "
+                      "--forcing_dir (CMFD/MSWX), or --vic_forcing_dir "
+                      "(VIC forcing files)")
 
     if args.forcing_dir and not os.path.isdir(args.forcing_dir):
         errors.append(f"Forcing directory not found: {args.forcing_dir}")
@@ -357,9 +365,63 @@ def read_cmfd_mswx_at_point(forcing_dir, lat, lon, start_date, end_date):
     return df
 
 
+def read_nasa_power_forcing(lat, lon, start_date, end_date):
+    """Read NASA POWER daily forcing via ki_tools_common.load_forcing and
+    convert to GLM met format.
+
+    NASA POWER is the SKILL-endorsed point forcing for lakes OUTSIDE the
+    on-disk CMFD (China) / MSWX NetCDF coverage (e.g. North-American
+    reservoirs). load_daily_forcing("nasa_power", ...) returns native daily
+    arrays: srad_wm2, lrad_wm2, temp_mean_c, wind_ms (WS10M preferred over
+    the often near-zero WS2M), shum_kgkg, pres_pa, precip_mm (mm/day).
+    """
+    from ki_tools_common.load_forcing import load_daily_forcing
+
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    data = load_daily_forcing("nasa_power", lat, lon,
+                              start_dt.year, end_dt.year)
+
+    dates = pd.to_datetime(data["dates"])
+    n = len(dates)
+    temp_c = np.asarray(data["temp_mean_c"], dtype=float)
+    sw = np.maximum(np.asarray(data["srad_wm2"], dtype=float), 0.0)
+    lw = np.asarray(data.get("lrad_wm2", np.zeros(n)), dtype=float)
+    wind = np.asarray(data["wind_ms"], dtype=float)
+    precip_mm_day = np.asarray(data["precip_mm"], dtype=float)  # NASA: mm/day
+    precip_m_day = precip_mm_day / 1000.0                       # mm/day -> m/day
+
+    # specific humidity (kg/kg) + surface pressure (Pa) -> vapour pressure (kPa)
+    shum = np.asarray(data["shum_kgkg"], dtype=float)
+    sp_kpa = np.asarray(data["pres_pa"], dtype=float) / 1000.0
+    vp_kpa = shum * sp_kpa / (0.622 + 0.378 * shum)
+    rh = vp_to_rh(vp_kpa, temp_c)
+
+    rain, snow = partition_rain_snow(precip_m_day, temp_c)
+
+    df = pd.DataFrame({
+        'time': dates,
+        'ShortWave': sw,
+        'LongWave': lw,
+        'AirTemp': temp_c,
+        'RelHum': rh,
+        'WindSpeed': wind,
+        'Rain': rain,
+        'Snow': snow,
+    })
+    mask = (df['time'] >= start_dt) & (df['time'] <= end_dt)
+    df = df[mask].reset_index(drop=True)
+    print(f"NASA POWER daily forcing: {len(df)} days at "
+          f"{lat:.3f},{lon:.3f}", file=sys.stderr)
+    return df
+
+
 def process(args):
     """Read forcing data and convert to GLM format."""
-    if args.vic_forcing_dir:
+    if getattr(args, "forcing_source", None) == "nasa_power":
+        df = read_nasa_power_forcing(args.lat, args.lon,
+                                     args.start_date, args.end_date)
+    elif args.vic_forcing_dir:
         df = read_vic_forcing(args.vic_forcing_dir, args.lat, args.lon,
                               args.start_date, args.end_date)
     else:
@@ -432,6 +494,11 @@ def main():
         description="Convert forcing data to GLM meteorological CSV format")
     parser.add_argument("--forcing_dir", type=str,
                         help="CMFD or MSWX forcing directory")
+    parser.add_argument("--forcing_source", type=str, default=None,
+                        choices=["nasa_power"],
+                        help="Point forcing source loaded via "
+                             "ki_tools_common.load_forcing (nasa_power). "
+                             "Use for lakes outside on-disk CMFD/MSWX coverage.")
     parser.add_argument("--vic_forcing_dir", type=str,
                         help="VIC ASCII forcing files directory")
     parser.add_argument("--lat", type=float, required=True,

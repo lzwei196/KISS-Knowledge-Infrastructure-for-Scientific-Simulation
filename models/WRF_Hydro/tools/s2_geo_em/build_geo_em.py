@@ -654,6 +654,25 @@ def main():
             arr[5][zero_mask] = 1.0
 
     print(f"  HWSD MDB lookup: {mdb_hits}/{e_sn * e_we} cells have real soil properties")
+
+    # dt_v036 fix: HWSD nodata (mu==0) on LAND cells were assigned the water soil
+    # type (ISOILWATER=14) above. On land that produces SMCRT<=0 during dry/frozen
+    # months and a SILENT segfault in Noah_distr_routing.F:1143 (no diag message).
+    # High-altitude / arid basins (Yellow R. source, Tibetan tributaries) hit this
+    # because HWSD has gaps at >3500 m. Force any LAND cell that still carries the
+    # water soil type back to the default Loam (6).
+    land_mask2d = lu_index != ISWATER
+    bad_soil = land_mask2d & (sct_dom == ISOILWATER)
+    n_bad_soil = int(bad_soil.sum())
+    if n_bad_soil:
+        sct_dom[bad_soil] = 6.0
+        scb_dom[bad_soil] = 6.0
+        soilctop[:, bad_soil] = 0.0
+        soilctop[5, bad_soil] = 1.0
+        soilcbot[:, bad_soil] = 0.0
+        soilcbot[5, bad_soil] = 1.0
+        print(f"  dt_v036: reassigned {n_bad_soil} land cells water-soil-type(14) -> Loam(6)")
+
     unique_sct, sct_counts = np.unique(sct_dom, return_counts=True)
     print(f"  SCT_DOM classes: {dict(zip(unique_sct.astype(int), sct_counts))}")
 

@@ -38,24 +38,26 @@ def main():
         if not cfg.PATHS.get('working_dir'):
             cfg.initialize(logging_level='WARNING')
             cfg.PATHS['working_dir'] = str(working_dir)
+            cfg.PARAMS['use_multiprocessing'] = True
+            cfg.PARAMS['mp_processes'] = 16
 
-        # Load glacier directories
-        gdirs = workflow.init_glacier_directories(
-            utils.get_rgi_glacier_entities(str(working_dir)),
-            reset=False, force=False
-        )
+        # Load glacier directories from per_glacier directory structure
+        per_glacier = working_dir / 'per_glacier'
+        rgi_ids = []
+        if per_glacier.exists():
+            for region_dir in sorted(per_glacier.iterdir()):
+                if region_dir.is_dir():
+                    for sub_dir in sorted(region_dir.iterdir()):
+                        if sub_dir.is_dir():
+                            for gdir_path in sorted(sub_dir.iterdir()):
+                                if gdir_path.is_dir():
+                                    rgi_ids.append(gdir_path.name)
 
-        if not gdirs:
-            # Try alternative: read from per_glacier directory
-            per_glacier = working_dir / 'per_glacier'
-            if per_glacier.exists():
-                rgi_ids = []
-                for region_dir in per_glacier.iterdir():
-                    if region_dir.is_dir():
-                        for gdir in region_dir.iterdir():
-                            if gdir.is_dir():
-                                rgi_ids.append(gdir.name)
-                gdirs = workflow.init_glacier_directories(rgi_ids, reset=False)
+        if not rgi_ids:
+            print("ERROR: No glacier directories found in per_glacier/")
+            sys.exit(1)
+
+        gdirs = workflow.init_glacier_directories(rgi_ids, reset=False)
 
         print(f"Processing {args.source} climate for {len(gdirs)} glaciers...")
 

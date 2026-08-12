@@ -116,7 +116,7 @@ shutil.copytree(
 
 **HWSD data paths (this server)**:
 - Raster: `/mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img`
-- Database: `/mnt/disk1/Hydrocraft_server/data/forcing/huaihe_raw/soil/HWSD.mdb`
+- Database: `/media/server/hc_ssd/forcing/huaihe_raw/soil/HWSD.mdb`
 - Requires: `mdbtools` system package
 
 **SoilGrids standard depths**: 0-5cm, 5-15cm, 15-30cm, 30-60cm, 60-100cm, 100-200cm (6 layers)
@@ -144,7 +144,7 @@ shutil.copytree(
 ```bash
 for each site (lat, lon):
     python forcing_source_adapter.py <lat> <lon> <start> <end> cmfd \
-        /mnt/disk1/Hydrocraft_server/data/forcing/Data_forcing_03hr_010deg \
+        /media/server/hc_ssd/forcing/Data_forcing_03hr_010deg \
         weather_csv/<site_id>_weather.csv
 ```
 The tool handles all unit conversions (K→C, kg/m²/s→mm, W/m²→MJ/m²/day) and sets E-pan=0, PAR=0.

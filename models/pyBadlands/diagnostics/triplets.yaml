@@ -429,3 +429,49 @@
     prevention: "Always set porosity if using stratigraphic output."
   severity: silent
   cross_references: []
+
+- id: dt_021
+  stage: s4_parameters
+  failure_domain: calibration
+  symptom:
+    description: "Increasing Kd by orders of magnitude has no effect on denudation rate in a low-relief domain"
+    error_pattern: "denudation rate unchanged despite 100-1000x change in erodibility"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "In low-relief landscapes (<200 m), hillslope diffusion (caerial) dominates over SPL fluvial incision"
+    explanation: "The SPL term E = Kd·A^m·S^n requires slope S. On flat coastal plains, S is near zero, making SPL erosion negligible regardless of Kd. Hillslope diffusion (caerial) becomes the primary sediment transport mechanism. Validated on Pearl River (USA): Kd spanning 1000x had zero effect, but caerial=0.5 matched observations."
+    affected_components: [erosion, creep, sp_law]
+  remedy:
+    action: "For low-relief domains, calibrate caerial (not Kd). Use unconsolidated class: caerial=0.1-0.5 m2/yr."
+    tool_to_run: null
+    manual_steps:
+      - "Check domain relief: max_elev - min_elev"
+      - "If relief < 200 m: focus on caerial, set Kd to a reasonable default (5e-5)"
+      - "If relief > 500 m: focus on Kd, keep caerial low (0.005-0.02)"
+      - "Mixed relief: both parameters matter"
+    prevention: "Always check relief before calibrating. See s4_parameter_calibration.md Section 3."
+  severity: silent
+  cross_references: [dt_006, dt_007]
+
+- id: dt_022
+  stage: s4_parameters
+  failure_domain: calibration
+  symptom:
+    description: "Model denudation 10-100x higher than published rates in high-relief bedrock domain"
+    error_pattern: "denudation > 100 mm/kyr on well-lithified bedrock with < 2000 m relief"
+    detection_method: value_comparison
+  diagnosis:
+    root_cause: "Kd set too high for well-lithified rock; used generic sandstone class instead of site-appropriate value"
+    explanation: "Well-lithified Karoo-type sandstones require Kd ~8e-7, between granite (1e-7) and generic limestone (1e-6). The generic sandstone value (5e-6) is for friable/weakly cemented sandstone and gives 15x too much erosion on indurated formations. Validated on Modder River (South Africa): Kd=8e-7 gave 12.76 mm/kyr vs observed 5-20 mm/kyr."
+    affected_components: [sp_law, erosion]
+  remedy:
+    action: "Reduce Kd to 5e-7 to 1e-6 for well-lithified sedimentary rocks"
+    tool_to_run: null
+    manual_steps:
+      - "Check if study lithology is well-cemented/indurated vs friable"
+      - "Well-lithified sandstone/mudstone: Kd = 5e-7 to 1e-6"
+      - "Friable/weakly cemented: Kd = 5e-6 to 5e-5"
+      - "Run Kd sweep: test 3-4 values spanning one order of magnitude"
+    prevention: "Assess lithification degree before selecting Kd from lookup table."
+  severity: silent
+  cross_references: [dt_006, dt_021]

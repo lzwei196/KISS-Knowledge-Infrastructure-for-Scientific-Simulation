@@ -13,9 +13,13 @@ print("=" * 80)
 # ============================================================================
 # 1. 配置路径
 # ============================================================================
-SOIL_PARAM_IN = Path(r"/mnt/disk1/Hydrocraft_server/outputs/xixian_rerun_71379b42/vic_temp/soil/SOIL_PARAM_FINAL.txt")
+import os as _os
+_BASIN = _os.environ.get("VIC_BASIN_NAME", "xixian_rerun_71379b42")
+_SOIL_DIR = Path(_os.environ.get("VIC_OUT_ROOT", "/mnt/disk1/Hydrocraft_server/outputs")) / _BASIN / "vic_temp" / "soil"
+
+SOIL_PARAM_IN = _SOIL_DIR / "SOIL_PARAM_FINAL.txt"
 GLOBAL_SOIL_FILE = Path(r"/mnt/disk1/Hydrocraft_server/data/插值/global_soil_param_new.txt")
-SOIL_PARAM_OUT = Path(r"/mnt/disk1/Hydrocraft_server/outputs/xixian_rerun_71379b42/vic_temp/soil/SOIL_PARAM_COMPLETE.txt")
+SOIL_PARAM_OUT = _SOIL_DIR / "SOIL_PARAM_COMPLETE.txt"
 
 # ============================================================================
 # 2. 定义参数映射
@@ -185,6 +189,43 @@ print(f"{'行号':<6} {'第24列':<10} {'第25列':<10}")
 print("─" * 30)
 for i in range(min(5, len(df_soil))):
     print(f"{i+1:<6} {df_soil.iloc[i, 23]:<10.2f} {df_soil.iloc[i, 24]:<10.2f}")
+
+# ============================================================================
+# 5.6 bubble (VIC cols 28-30) + fs_active (VIC col 53)  —  dt_vic_031
+# ============================================================================
+# fill_parameters1.py leaves bubble = -9999 and fs_active = 0.  Both are ignored
+# while FULL_ENERGY/FROZEN_SOIL are FALSE, so no reference basin ever noticed —
+# but together they make `FROZEN_SOIL TRUE` unusable: VIC's
+# estimate_layer_ice_content() reads bubble, and read_soilparam() skips any cell
+# whose fs_active is 0.  A snow-dominated basin (哈尔滨) needs the frozen-soil
+# module, so derive both here rather than leaving them as sentinels.
+#
+# bubble = 0.32 * expt + 4.3  is VIC's own texture relation (expt = 3 + 2b, so
+# this maps the Campbell exponent onto the Clapp-Hornberger bubbling pressure in
+# cm).  It is the relation used to build the Maurer/Livneh CONUS soil files and is
+# documented in the VIC soil-parameter reference.
+print(f"\n{'─' * 80}")
+print("步骤3.6: 推导 bubble (第28-30列) 与 fs_active (第53列)")
+print(f"{'─' * 80}")
+
+_EXPT_IDX = [9, 10, 11]      # VIC cols 10-12
+_BUBBLE_IDX = [27, 28, 29]   # VIC cols 28-30
+
+for _b, _e in zip(_BUBBLE_IDX, _EXPT_IDX):
+    _expt = pd.to_numeric(df_soil.iloc[:, _e], errors="coerce")
+    if _expt.isna().any() or (_expt <= 0).any():
+        raise ValueError(
+            f"cannot derive bubble for VIC col {_b + 1}: expt (col {_e + 1}) "
+            f"contains NaN or non-positive values — run fill_parameters1.py first"
+        )
+    df_soil.iloc[:, _b] = (0.32 * _expt + 4.3).round(3)
+
+df_soil.iloc[:, 52] = 1      # fs_active: let VIC solve frozen soil on every cell
+
+_bub = pd.to_numeric(df_soil.iloc[:, 27])
+print(f"✓ bubble (第28-30列): {_bub.min():.3f} … {_bub.max():.3f} cm  (= 0.32*expt + 4.3)")
+print(f"✓ fs_active (第53列) 全部设置为: 1")
+assert (_bub > 0).all(), "bubble must be > 0 for FROZEN_SOIL TRUE"
 
 # ============================================================================
 # 6. 写入最终文件

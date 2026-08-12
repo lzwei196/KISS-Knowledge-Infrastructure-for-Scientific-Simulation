@@ -67,6 +67,16 @@ The model reads an **XML configuration file** and a **DEM raster**, then outputs
 - Salles, 2016, PLoS ONE, 11(4), e0154295
 - Braun & Willett, 2013, Geomorphology, 170-179
 
+**Validated Real Sites** (see `docs/REFERENCES.md` for full details):
+- Pearl River, MS/LA, USA — 21.5 mm/kyr model vs 21.5 mm/kyr obs (PBIAS=0.0%)
+- Modder River, Free State, ZA — 12.8 mm/kyr model vs 5–20 mm/kyr obs (PBIAS=+2.1%)
+- Multi-site stats: r=0.71, NSE=0.48, KGE=0.51, RMSE=4.9 mm/kyr
+
+**Critical Calibration Insight**: The dominant erosion process depends on relief.
+Low-relief (<200 m): caerial (hillslope diffusion) controls denudation, Kd is irrelevant.
+High-relief (>500 m): Kd (SPL erodibility) controls denudation, caerial is secondary.
+See `docs/s4_parameter_calibration.md` Section 3 for details.
+
 ---
 
 ## Installation

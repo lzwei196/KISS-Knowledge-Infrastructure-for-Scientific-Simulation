@@ -1,0 +1,416 @@
+template_version: "calib-0.1"
+model_id: WRF_Hydro
+
+identity:
+  domain: hydrology
+  binding: "wrf-hydro-standalone-520 / Config A — Noah-MP (RUNOFF_OPTION=3 Schaake96)
+            + gridded diffusive-wave channel routing (channel_option=3, UDMP_OPT=0)
+            + conceptual exponential GW bucket (GWBASESWCRT=1)"
+
+# --------------------------------------------------------------------------
+# TARGET CASE — the coupling this contract calibrates.  Scoring any other gauge
+# is a failed capability, so tools/calib_run.py pins these values in code and
+# derives its __kdt__.scored_obs declaration from the gauge it actually read.
+# --------------------------------------------------------------------------
+case:
+  case_id: "SITE:wangjiaba"
+  gauge: "王家坝 Wangjiaba, Huai River main stem"
+  gauge_id: "china_gaugeflux stcd 50101100 (== gauge 51030), ~30,630 km2"
+  gauge_lat: 32.4275
+  gauge_lon: 115.595
+  obs_dataset: china_gaugeflux
+  obs_file: "/mnt/datasets/china_water_level/淮河txt/王家坝.txt"
+  obs_shape: point_time_series
+  determining_metric: nse
+  provenance: "WRF_Hydro_20260719T082141Z_172227"
+  baseline_uncalibrated:
+    nse: 0.40282177474318415
+    kge: 0.4756
+    pbias: -21.35
+    r: 0.652
+    period: "1981-01-01..1990-12-31"
+    note: "Reproduced from the completed reference run's discharge_sim.csv with the
+           DOMAIN in its current state (refkdt 3.0, GW Coeff 44.845 / Expon 3 /
+           Zmax 250 / Zinit 25), which is the default vector below.  The error mode
+           is a -21% volume UNDERESTIMATE with a degraded pattern correlation
+           (r 0.65 vs 0.84 in the earlier Zmax=50 configuration), so the pool must
+           carry both the volume/baseflow levers and the surface-runoff partition —
+           not just the routing-timing pair."
+
+# --------------------------------------------------------------------------
+# Runner mode is REQUIRED here: every parameter lives in a NetCDF DOMAIN file or
+# in the fixed-format CHANPARM.TBL, none of which are generic applicator kinds,
+# and CHANPARM.TBL is re-symlinked to the shared model table by the KI's own
+# run tool (run_wrfhydro.setup_symlinks) — a value written before the run would
+# be silently discarded.  calib_run.py injects after that step and reads back.
+# --------------------------------------------------------------------------
+injection:
+  mode: runner
+
+targets:
+  - var: streamflow
+    weight: 1.0
+
+parameters:
+
+  # ---------------- surface runoff partition (dag: REFKDT -> streamflow, HIGH)
+  - name: refkdt
+    description: "Schaake96 infiltration-vs-surface-runoff partition coefficient.
+                  KDT = REFKDT * DKSAT(layer1)/REFDK; raising it sends more water
+                  to infiltration and starves the storm-runoff pathway."
+    type: continuous
+    units: "-"
+    default: 3.0
+    range: [0.3, 8.0]
+    hard_bounds: [0.1, 10.0]
+    transform: identity
+    scope: global
+    tie: null
+    activation: "RUNOFF_OPTION == 3"
+    address: {kind: api, setter: "tools.calib_run:apply_params",
+              file: "DOMAIN/soil_properties.nc", variable: refkdt}
+    cite: ["liu2020_wrfhydro_param_sensitivity", "yucel2015_wrfhydro_flood_calibration",
+           "dixit2025_wrfhydro_himalaya_sensitivity", "docs/calibration_guide.md#tier-1"]
+    confidence: high
+    prior: "Model default 3.0.  docs/calibration_guide.md Tier 1 gives the calibration
+            range 0.1-10; the KI's own Chaohe sweep found REFKDT=0.1 overshoots peaks
+            5x, so the search range is tightened to [0.3, 8.0] — inside the documented
+            band on both sides and clamp-free (Noah-MP applies no bound to REFKDT)."
+    expected_sensitivity: high
+
+  # ---------------- bottom drainage / baseflow partition
+  - name: slope
+    description: "Noah-MP SLOPE index — the fraction of soil-bottom gravitational
+                  drainage released as recharge to the GW bucket.  The primary
+                  total-volume lever, and the direct control on this case's -21% bias."
+    type: continuous
+    units: "-"
+    default: 0.1
+    range: [0.1, 1.0]
+    hard_bounds: [0.0, 1.0]
+    transform: identity
+    scope: global
+    tie: null
+    activation: always
+    address: {kind: api, setter: "tools.calib_run:apply_params",
+              file: "DOMAIN/soil_properties.nc", variable: slope}
+    cite: ["docs/calibration_guide.md#tier-2", "mascaro2023_wrfhydro_process_calibration"]
+    confidence: high
+    prior: "calibration_guide.md Tier 2 gives default 0.1-1.0 over the range 0-1.
+            0 is excluded from the search because it shuts the recharge pathway off
+            entirely (a degenerate corner, not a calibration point); SLOPE is a
+            fraction so 1.0 is the true physical ceiling and applies exactly."
+    expected_sensitivity: medium
+
+  # ---------------- storage capacity (dag: SMCMAX -> streamflow, MEDIUM)
+  - name: smcmax_mult
+    description: "Multiplier on maximum soil moisture (porosity) across all four
+                  Noah layers; sets the storage deficit that must be filled before
+                  saturation-excess runoff is generated."
+    type: continuous
+    units: "-"
+    default: 1.0
+    range: [0.85, 1.10]
+    hard_bounds: [0.7, 1.15]
+    transform: identity
+    scope: global
+    tie: "all soil layers and cells move together (single multiplier)"
+    activation: always
+    address: {kind: api, setter: "tools.calib_run:apply_params",
+              file: "DOMAIN/soil_properties.nc", variable: smcmax}
+    cite: ["hr2024_wrfhydro_flood_precip_sensitivity"]
+    confidence: medium
+    prior: "The literature grades SMCMAX sensitive for flood generation in humid
+            basins but publishes no calibration range, so per the contract rules the
+            bound is set conservatively about the dataset default.  The multiplier is
+            applied ONLY to cells whose base porosity is < 0.9 (136 of 2112 layer-cells
+            carry the 1.0 open-water sentinel); scaling those would push porosity above
+            unity.  At +10% the highest real soil cell reaches 0.524, well under the
+            ~0.7 physical porosity ceiling, and smcref/smcwlt maxima (0.412/0.138) stay
+            below smcmax at the -15% bound, so the ordering the LSM requires holds."
+    expected_sensitivity: medium
+
+  # ---------------- groundwater bucket (error-mode lever: volume + recession)
+  - name: gw_coeff
+    description: "Exponential bucket discharge coefficient C in Q = C*(exp(E*z/Zmax)-1).
+                  Sets baseflow magnitude — the dominant contributor to total volume
+                  in this sparse 0.25-degree channel network."
+    type: continuous
+    units: "m^3/s"
+    default: 44.84479904174805
+    range: [9.0, 225.0]
+    hard_bounds: [1.0, 500.0]
+    transform: log
+    scope: per-zone
+    zone_key: "GWBUCKPARM feature_id (this domain has a single basin, Area_sqkm 112112)"
+    tie: null
+    activation: "GWBASESWCRT == 1"
+    address: {kind: api, setter: "tools.calib_run:apply_params",
+              file: "DOMAIN/GWBUCKPARM.nc", variable: Coeff}
+    cite: ["docs/s6_groundwater_skill.md", "docs/calibration_guide.md#tier-1",
+           "mascaro2023_wrfhydro_process_calibration"]
+    confidence: medium
+    prior: "calibration_guide.md Tier 1 quotes Coeff 0.001-0.5 around a 0.04 default,
+            but that is the NWM per-catchment convention.  This domain uses ONE
+            basin-wide bucket over 112,112 km2, so C is area-scaled: the build tool
+            produced 44.845, which at z=Zmax yields C*(e^3-1) = 857 m3/s — the right
+            order for this gauge.  The range is therefore the same 0.2x-5x span that
+            per-catchment studies sweep, applied to the basin-scaled default, in log
+            space.  No floor exists in module_GW_baseflow beyond positivity."
+    expected_sensitivity: high
+
+  - name: gw_expon
+    description: "Exponent E in the bucket storage-discharge law; controls recession
+                  nonlinearity (how sharply baseflow falls as the bucket drains)."
+    type: continuous
+    units: "-"
+    default: 3.0
+    range: [1.0, 6.0]
+    hard_bounds: [1.0, 8.0]
+    transform: identity
+    scope: per-zone
+    zone_key: "GWBUCKPARM feature_id"
+    activation: "GWBASESWCRT == 1"
+    address: {kind: api, setter: "tools.calib_run:apply_params",
+              file: "DOMAIN/GWBUCKPARM.nc", variable: Expon}
+    cite: ["docs/calibration_guide.md#tier-2", "docs/s6_groundwater_skill.md"]
+    confidence: high
+    prior: "calibration_guide.md Tier 2 gives 1-8 about a default of 3.  Capped at 6
+            for the search because exp(E) grows to 3e3 at E=8, which makes the bucket
+            a numerical near-step; 6 keeps the response smooth and clamp-free."
+    expected_sensitivity: medium
+
+  - name: gw_zmax
+    description: "Bucket capacity — the storage depth at which the exponential law
+                  saturates.  Sets baseflow memory; too shallow and the bucket pins at
+                  Zmax and degenerates to pass-through with no recession dynamics."
+    type: continuous
+    units: "mm"
+    default: 250.0
+    range: [50.0, 500.0]
+    hard_bounds: [10.0, 500.0]
+    transform: identity
+    scope: per-zone
+    zone_key: "GWBUCKPARM feature_id"
+    activation: "GWBASESWCRT == 1"
+    address: {kind: api, setter: "tools.calib_run:apply_params",
+              file: "DOMAIN/GWBUCKPARM.nc", variable: Zmax}
+    cite: ["docs/calibration_guide.md#tier-1", "docs/s6_groundwater_skill.md",
+           "SKILL.md#dt_v013"]
+    confidence: high
+    prior: "calibration_guide.md Tier 1 gives 10-500 mm; SKILL.md dt_v013 records that
+            the 50 mm default fills instantly on large humid basins and recommends
+            200-500.  The floor is held at 50 rather than 10 so that gw_zinit's whole
+            range stays strictly below Zmax (see constraints) and the bucket depth is
+            never clamped at initialisation."
+    expected_sensitivity: medium
+
+  - name: gw_zinit
+    description: "Initial bucket storage depth at the start of each evaluation."
+    type: continuous
+    units: "mm"
+    default: 25.0
+    range: [5.0, 45.0]
+    hard_bounds: [0.0, 50.0]
+    transform: identity
+    scope: per-zone
+    zone_key: "GWBUCKPARM feature_id"
+    activation: "GWBASESWCRT == 1 and GW_RESTART == 0"
+    address: {kind: api, setter: "tools.calib_run:apply_params",
+              file: "DOMAIN/GWBUCKPARM.nc", variable: Zinit}
+    cite: ["docs/s6_groundwater_skill.md"]
+    confidence: low
+    prior: "An initial condition rather than a physical property, and each evaluation
+            gives it a 6-month spinup before the first scored day, so it is expected to
+            be near-inert.  It is kept in the pool (never pruned) and bounded strictly
+            below the gw_zmax floor of 50 mm so the model's z<=Zmax clamp can never
+            engage — a Zinit above Zmax would be silently truncated by the bucket."
+    expected_sensitivity: low
+
+  # ---------------- routing timing (dag: MannN HIGH, OVROUGHRTFAC MEDIUM,
+  #                                  RETDEPRTFAC LOW — kept, screenable, not pruned)
+  - name: mann_n_mult
+    description: "Multiplier on channel Manning's n across every Strahler order in
+                  CHANPARM.TBL; controls hydrograph peak timing and attenuation."
+    type: continuous
+    units: "-"
+    default: 1.0
+    range: [0.5, 2.0]
+    hard_bounds: [0.3, 3.0]
+    transform: log
+    scope: global
+    tie: "all Strahler orders scaled by one factor"
+    zone_key: null
+    activation: "channel_option == 3"
+    address: {kind: api, setter: "tools.calib_run:write_chanparm",
+              file: "CHANPARM.TBL", variable: MannN}
+    cite: ["liu2020_wrfhydro_param_sensitivity", "dixit2025_wrfhydro_himalaya_sensitivity",
+           "docs/calibration_guide.md#tier-1"]
+    confidence: high
+    prior: "calibration_guide.md Tier 1 sweeps MannN over x0.5-3.0.  The upper bound is
+            pulled back to 2.0 so the scaled values stay inside the natural-channel
+            Manning band: this domain only reaches order 3, whose base n are
+            0.09/0.07/0.06, giving 0.045-0.18 (order 1) and 0.030-0.12 (order 3).  At
+            x3.0 order 1 would reach 0.27, outside any published natural-channel n."
+    expected_sensitivity: high
+
+  - name: ovroughrtfac
+    description: "Scale factor on overland-flow Manning roughness (OV_ROUGH2D) on the
+                  routing grid; controls hillslope travel time and peak delay."
+    type: continuous
+    units: "-"
+    default: 1.0
+    range: [0.1, 5.0]
+    hard_bounds: [0.01, 10.0]
+    transform: log
+    scope: global
+    tie: "uniform 2-D field on the routing grid"
+    activation: "OVRTSWCRT == 1"
+    address: {kind: api, setter: "tools.calib_run:apply_params",
+              file: "DOMAIN/Fulldom_hires.nc", variable: OVROUGHRTFAC}
+    cite: ["liu2020_wrfhydro_param_sensitivity", "mascaro2023_wrfhydro_process_calibration",
+           "docs/calibration_guide.md#tier-1"]
+    confidence: high
+    prior: "dag notes and calibration_guide.md Tier 1 both give 0.1-10 about a default
+            of 1.0.  Capped at 5.0: base OV_ROUGH2D reaches 0.2, so x5 already gives an
+            overland n of 1.0, the practical ceiling for dense vegetation; the 0.1 floor
+            leaves the smallest cell at 5e-4, still strictly positive."
+    expected_sensitivity: medium
+
+  - name: retdeprtfac
+    description: "Scale factor on surface retention (ponding) depth before overland
+                  flow initiates; dampens peaks."
+    type: continuous
+    units: "-"
+    default: 1.0
+    range: [0.1, 5.0]
+    hard_bounds: [0.0, 10.0]
+    transform: log
+    scope: global
+    tie: "uniform 2-D field on the routing grid"
+    activation: "OVRTSWCRT == 1"
+    address: {kind: api, setter: "tools.calib_run:apply_params",
+              file: "DOMAIN/Fulldom_hires.nc", variable: RETDEPRTFAC}
+    cite: ["liu2020_wrfhydro_param_sensitivity", "docs/calibration_guide.md#tier-2"]
+    confidence: high
+    prior: "Graded LOW in the dag (least sensitive of the four principal routing
+            parameters) but retained — literature is a prior, not a pruning oracle, so
+            it stays in the Morris screen.  Range 0.1-10 per calibration_guide.md Tier 2,
+            capped at 5.0 to match ovroughrtfac; 0 is excluded as a degenerate corner."
+    expected_sensitivity: low
+
+  # ---------------- lateral subsurface flow
+  - name: lksatfac
+    description: "Multiplier on lateral saturated hydraulic conductivity for the
+                  Dupuit-Forchheimer subsurface routing; sets how much water moves
+                  downslope as shallow interflow rather than deep recharge."
+    type: continuous
+    units: "-"
+    default: 1000.0
+    range: [10.0, 10000.0]
+    hard_bounds: [1.0, 100000.0]
+    transform: log
+    scope: global
+    tie: "uniform 2-D field on the routing grid"
+    activation: "SUBRTSWCRT == 1"
+    address: {kind: api, setter: "tools.calib_run:apply_params",
+              file: "DOMAIN/Fulldom_hires.nc", variable: LKSATFAC}
+    cite: ["docs/calibration_guide.md#tier-2", "mascaro2023_wrfhydro_process_calibration"]
+    confidence: high
+    prior: "calibration_guide.md Tier 2 gives exactly 10-10000 about the WRF-Hydro
+            default of 1000; swept in log space because it spans three decades."
+    expected_sensitivity: medium
+
+# --------------------------------------------------------------------------
+# Hard feasibility — checked before any model run (C5)
+# --------------------------------------------------------------------------
+constraints:
+  # The bucket clamps stored depth at Zmax; an initial depth above capacity would be
+  # silently truncated, so the requested value would not be the value the model used.
+  - "gw_zinit <= gw_zmax"
+
+# --------------------------------------------------------------------------
+# NOT calibratable in this coupling — recorded so the omissions are deliberate
+# --------------------------------------------------------------------------
+excluded_levers:
+  - lever: "precipitation forcing multiplier"
+    dag_grade: MEDIUM
+    reason: "Graded MEDIUM in the dag and mechanistically dominant, but the forcing is
+             96,432 hourly LDASIN files shared by every evaluation via symlink.
+             Rewriting them per candidate would cost far more than the model run and
+             would make evaluations non-reentrant.  A bias-correction lever belongs in
+             the forcing-preparation stage, not in per-candidate calibration."
+  - lever: "NEXP (transmissivity depth-decay exponent)"
+    reason: "Listed in dag.inputs.parameters but has no field in this domain's
+             hydro2dtbl.nc (which carries only LKSAT, OV_ROUGH2D, SMCMAX1, SMCREF1,
+             SMCWLT1) and no hydro.namelist entry in v5.2.0 Config A — there is no
+             artifact to inject it into, so it cannot be read back."
+  - lever: "DKSAT / REFDK"
+    reason: "Enters Schaake96 only through the ratio DKSAT/REFDK, which multiplies
+             REFKDT.  With refdk == dksat everywhere in this domain the ratio is 1 and
+             the lever is exactly collinear with refkdt — freeing both would create
+             textbook equifinality (C4)."
+
+# --------------------------------------------------------------------------
+# HOW to run + score one candidate
+# --------------------------------------------------------------------------
+runner:
+  kind: subprocess
+  command: ["python3", "tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]
+  metrics_file: "{metrics_json}"
+  # One evaluation is a 42-month warm-started run (6-month spinup + 3 scored years)
+  # at 8 MPI ranks.  MEASURED on this host: ~0.3-0.5 simulated days per wall second
+  # with two evaluations running concurrently, i.e. ~40-65 min per evaluation; a solo
+  # evaluation is faster because the diffusive-wave channel solver is the bottleneck
+  # and it contends for memory bandwidth.  Cost is strongly seasonal — a monsoon month
+  # costs ~5x a winter month — so the timeout is set well above the mean rather than
+  # near it.  7200 s is ~2x the slowest observed evaluation.
+  timeout: 7200
+  env:
+    KDT_CALIB_NPROC: "8"     # measured optimum; 16 ranks is slower on a 22x24 LSM grid
+  notes: "calib_run.py reuses the KI's own tools — run_wrfhydro.preflight_check /
+          setup_symlinks / run_model to execute the model, and
+          s11_output/extract_discharge.find_gauge_feature / extract_daily_discharge to
+          pull discharge at the Wangjiaba-matched channel feature.  Metrics come from
+          ki_tools_common.metrics.all_metrics, the same implementation the dag gates on.
+          DOMAIN parameter files are copied and FORCING is symlinked per evaluation, so
+          nothing is downloaded or rebuilt; the model is warm-started from the completed
+          reference run's monthly RESTART + HYDRO_RST pair rather than repeating the
+          11-year cold-start spinup (2 h -> 10 min per evaluation).
+          On any staging, injection, read-back, run or extraction failure the script
+          exits non-zero having written NO metrics file."
+
+strategy:
+  cost_class: expensive
+  default_algorithm: dds
+  # ~40-65 min per evaluation (see runner.timeout), so 80 evaluations is roughly
+  # 2-3 days of wall clock.  DDS is the right choice at this budget: it is a
+  # single-objective greedy search that degrades gracefully when stopped early,
+  # unlike a population method that needs its generations to finish.
+  max_evaluations: 80
+  staged: true
+  staged_start: 4      # Morris screen first, then free the 4 highest-effect params
+  staged_step: 3       # escalate 3 at a time as the objective keeps improving
+  holdout:
+    kind: years
+    protocol: blocked_temporal
+    grouping_key: calendar_year
+    generalization_axis: time
+    fraction: 0.40
+    calibration_period: "1981-01-01..1983-12-31"   # 1095 scoreable days
+    holdout_period: "1987-01-01..1988-12-31"       #  731 scoreable days
+    rationale: "Contiguous blocked-temporal split, the schema default for a
+                point_time_series obs.  The two blocks are separated by a three-year
+                gap (1984-1986) so slow soil/groundwater storage carried across a block
+                boundary cannot leak calibration information into the holdout.  Each
+                block gets its own 6-month warm-started spinup (restart at 1980-07-01
+                and 1986-07-01) so the holdout is scored from a state the calibration
+                period never touched.  1980 is excluded everywhere as cold-start
+                spinup, consistent with the validated run.  The holdout stops at 1988
+                because all 365 days of 1989 in the obs file carry the -99 missing
+                marker, so a 1989 model year would add cost and no scoreable day —
+                hence 3 calibration years vs 2 holdout years, fraction 0.40.  The split
+                is deliberately conservative for a basin whose validated run already
+                showed a cal/val NSE drop of 0.728 -> 0.550."
+    cite: ["docs/validation_convention.yaml", "CALIBRATION_YAML_SCHEMA.md#holdout"]
+    confidence: high

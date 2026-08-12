@@ -1,0 +1,415 @@
+template_version: "3.5"
+
+identity:
+  model_id: "SWMM"
+  scientific_reference_version: "EPA SWMM 5 (Reference Manual Vol I Hydrology, EPA/600/R-15/162A rev. Jan 2016; engine line SWMM 5.2.x)"
+  implementation:
+    id: "pyswmm-swmm5"
+    version: "SWMM 5.2.x engine (pyswmm 1.x/2.1 + swmm-toolkit bindings)"
+    provenance: "C; EPA SWMM5 open-source engine (US EPA + CDM-Smith), driven through the pyswmm Python API which bundles the compiled engine."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c"
+  license: "Public-Domain"
+  repo_url: "https://github.com/USEPA/Stormwater-Management-Model"
+
+boundary:
+  scope_in:
+    - "Rainfall-runoff generation from urban subcatchments (nonlinear-reservoir overland flow over pervious/impervious subareas)"
+    - "Infiltration losses (Horton, Modified Horton, Green-Ampt, Curve Number)"
+    - "Snow accumulation and melt; evaporation of standing surface water"
+    - "Groundwater (two-zone aquifer) percolation and lateral interflow to the drainage network"
+    - "Conveyance hydraulic routing through pipes, channels, storage units, pumps, and regulators (steady / kinematic-wave / dynamic-wave)"
+    - "Low Impact Development (LID) green-infrastructure controls (bioretention, permeable pavement, green roof, rain barrel, infiltration trench, rain garden, rooftop disconnection, vegetative swale)"
+    - "Rainfall-Dependent Inflow and Infiltration (RDII) via unit hydrographs"
+    - "Water quality: pollutant buildup, washoff, treatment, and advective transport through the network"
+    - "Urban flooding: node surcharging, flooding volumes, and surface ponding"
+  scope_out:
+    - "Watershed/basin-scale rural hydrology (delegated to land-surface models; SWMM operates at ~0.01-100 km2 urban scale)"
+    - "Basin-scale river-channel routing (delegated to dedicated river-routing models; river stage enters only as an outfall boundary)"
+    - "DEM-only topographic delineation without built-environment detail (subcatchments must reflect impervious surfaces, inlets, lot grading)"
+    - "Closed surface energy budget (evaporation is a demand-side flux, not an energy-balance solve)"
+  spatial: "distributed-stream"
+  temporal: "sub-hourly"
+  closure: "mass-balance"
+  notes: "Mass-balance closure on water (and on pollutant mass when water quality is active) is the governing principle: surface runoff is a nonlinear-reservoir mass balance on ponded depth d (dd/dt = i - e - f - q), and node/link/groundwater balances are tracked as separate continuity errors (runoff, flow-routing, groundwater, quality). Separate runoff, routing, and reporting timesteps advance state as X_t = f(X_{t-1}, I_t, P). Mass closure is NOT guaranteed when ALLOW_PONDING=NO and a node floods, since flood water is then removed from the system as a sink."
+
+inputs:
+  forcing:
+    - {category: "meteorology", name: "Precipitation (rainfall)", unit: "mm/hr (intensity) or mm/interval (volume), CMS; in/hr or in (CFS)", source_kind: "forcing", model_input_format: "[RAINGAGES] + [TIMESERIES] in INP; FORMAT INTENSITY|VOLUME|CUMULATIVE, held constant within a runoff timestep", notes: "FORMAT (INTENSITY vs VOLUME) must match the data encoding; an interval mismatch scales runoff by intervals-per-hour with no warning."}
+    - {category: "meteorology", name: "Air temperature", unit: "deg C/F", source_kind: "forcing", model_input_format: "[TEMPERATURE] daily max-min or continuous series", notes: "Drives snowmelt partitioning and Hargreaves evaporation."}
+    - {category: "meteorology", name: "Evaporation", unit: "mm/day (SI) or in/day (US)", source_kind: "forcing", model_input_format: "[EVAPORATION] time series (actual; pan x ~0.7) or Hargreaves from temperature", notes: "SWMM expects actual evaporation; Hargreaves needs a multi-day (7-day running) temperature average."}
+    - {category: "meteorology", name: "Wind speed", unit: "km/hr (SI) or mph (US)", source_kind: "forcing", model_input_format: "[WIND] series", notes: "Refines snowmelt rate during rain-on-snow."}
+  parameters:
+    - {category: "subcatchment_geometry", name: "Area (A)", unit: "ha (CMS) / acre (CFS)", source_kind: "user_provided", model_input_format: "[SUBCATCHMENTS]"}
+    - {category: "subcatchment_geometry", name: "Characteristic width (W)", unit: "m (CMS) / ft (CFS)", source_kind: "user_provided", model_input_format: "[SUBCATCHMENTS]", notes: "Implied overland flow length L = Area/Width; over-large W (e.g., sqrt(Area) shortcut) artificially peaks the hydrograph."}
+    - {category: "subcatchment_geometry", name: "Slope (S)", unit: "ft/ft (dimensionless)", source_kind: "user_provided", model_input_format: "[SUBCATCHMENTS]"}
+    - {category: "subcatchment_geometry", name: "Percent imperviousness", unit: "%", source_kind: "user_provided", model_input_format: "[SUBCATCHMENTS]"}
+    - {category: "subcatchment_geometry", name: "% Zero-Imperv (impervious area with no depression storage)", unit: "%", source_kind: "user_provided", model_input_format: "[SUBAREAS]"}
+    - {category: "surface_roughness", name: "Manning's n (pervious n_P, impervious n_I)", unit: "dimensionless", source_kind: "calibrated", model_input_format: "[SUBAREAS]", notes: "No range check; a dropped/added zero shifts velocity 10-13x. Typical range [0.005, 0.100]."}
+    - {category: "surface_storage", name: "Depression storage (pervious S-perv, impervious S-imperv)", unit: "mm (CMS) / in (CFS)", source_kind: "calibrated", model_input_format: "[SUBAREAS]"}
+    - {category: "infiltration", name: "Infiltration parameters", unit: "rates mm/hr; decay /hr; suction mm", source_kind: "calibrated", model_input_format: "[INFILTRATION]: Horton (MaxRate,MinRate,Decay,DryTime,MaxInfil), Green-Ampt (Suction,Ksat,IMD), or SCS CN", notes: "Column layout MUST match the method in [OPTIONS] INFILTRATION; mismatch silently misreads columns."}
+    - {category: "groundwater", name: "Aquifer parameters (up to 14 per subcatchment)", unit: "mixed", source_kind: "calibrated", model_input_format: "[AQUIFERS]/[GROUNDWATER]", notes: "Only required when groundwater is modeled."}
+    - {category: "network_geometry", name: "Node attributes (invert elev, max depth, surcharge depth, ponded area Aponded)", unit: "m (CMS) / ft (CFS); Aponded m2", source_kind: "user_provided", model_input_format: "[JUNCTIONS], [STORAGE]"}
+    - {category: "network_geometry", name: "Conduit attributes (length, Manning roughness, inlet/outlet offsets, cross-section)", unit: "m (CMS) / ft (CFS)", source_kind: "user_provided", model_input_format: "[CONDUITS] + [XSECTIONS]", notes: "Length=0 (coincident nodes) causes division-by-zero/NaN."}
+    - {category: "lid", name: "LID layer properties (Surface/Soil/Pavement/Storage/Drain)", unit: "thicknesses mm; porosity/FC/WP fractions; conductivity mm/hr", source_kind: "calibrated", model_input_format: "[LID_CONTROLS]", notes: "Soil layer must satisfy Wilting Point < Field Capacity < Porosity; SWMM does not validate this."}
+    - {category: "water_quality", name: "Pollutant buildup/washoff and treatment coefficients", unit: "mixed (mass, mass/volume)", source_kind: "calibrated", model_input_format: "[POLLUTANTS], [BUILDUP], [WASHOFF], [LANDUSES], [TREATMENT]"}
+  initial_conditions:
+    - {category: "runoff", name: "Ponded runoff depth d", unit: "mm", source_kind: "default", model_input_format: "initialized to 0"}
+    - {category: "infiltration", name: "Infiltration sub-states / antecedent dry time", unit: "mixed", source_kind: "default", model_input_format: "Horton DryTime / soil moisture storage S", notes: "Most infiltration sub-states (t_p, F_e, Fu, T, P) start at 0; soil moisture storage S is user-supplied."}
+    - {category: "snowmelt", name: "Snow pack initial state (w_snow, fw, ati)", unit: "mm water equivalent; deg", source_kind: "user_provided", model_input_format: "[SNOWPACKS] initial conditions"}
+    - {category: "groundwater", name: "Initial unsaturated moisture theta_u and saturated depth d_L", unit: "fraction; m", source_kind: "user_provided", model_input_format: "[GROUNDWATER] initial values"}
+    - {category: "network", name: "Node initial depth / link initial flow", unit: "m (CMS); m3/s (CMS)", source_kind: "user_provided", model_input_format: "[JUNCTIONS] Init_Depth (usually 0); link initial flow"}
+    - {category: "lid", name: "LID initial soil saturation (InitSat)", unit: "%", source_kind: "user_provided", model_input_format: "[LID_USAGE]", notes: "30-50% typical for event runs; washes out over continuous simulation."}
+  boundary_conditions:
+    - {category: "control_switch", name: "FLOW_UNITS", unit: "enum CFS|GPM|MGD|CMS|LPS|MLD", source_kind: "user_provided", model_input_format: "[OPTIONS]", notes: "Silently sets the unit system for ALL inputs and outputs; no dimension validation. Single most dangerous silent error."}
+    - {category: "control_switch", name: "INFILTRATION method", unit: "enum HORTON|MOD_HORTON|GREEN_AMPT|CURVE_NUMBER", source_kind: "user_provided", model_input_format: "[OPTIONS]"}
+    - {category: "control_switch", name: "ROUTING_MODEL", unit: "enum STEADY|KINWAVE|DYNWAVE", source_kind: "user_provided", model_input_format: "[OPTIONS]", notes: "Kinematic wave cannot represent adverse slopes, backwater, or surcharging; only dynamic wave handles reverse flow."}
+    - {category: "control_switch", name: "ALLOW_PONDING", unit: "enum YES|NO", source_kind: "user_provided", model_input_format: "[OPTIONS]", notes: "Default NO removes flood water as a mass sink; YES with Aponded>0 conserves it."}
+    - {category: "control_switch", name: "Timesteps (WET_STEP, DRY_STEP, ROUTING_STEP, REPORT_STEP) and VARIABLE_STEP", unit: "s; min for report", source_kind: "user_provided", model_input_format: "[OPTIONS]", notes: "ROUTING_STEP must satisfy the Courant condition for dynamic wave."}
+    - {category: "boundary_data", name: "Outfall stage boundary", unit: "m (CMS) / ft (CFS)", source_kind: "user_provided", model_input_format: "[OUTFALLS] FREE|NORMAL|FIXED|TIDAL|TIMESERIES (+ [TIMESERIES] for a head series)", notes: "Time-varying head boundary (e.g., downstream river stage). TIMESERIES name must exist and span the simulation period."}
+    - {category: "boundary_data", name: "External inflow hydrographs / pollutographs at nodes", unit: "m3/s (CMS); mass/volume", source_kind: "user_provided", model_input_format: "[INFLOWS]", notes: "External lateral inflow (e.g., upstream rural runoff coupling)."}
+    - {category: "boundary_data", name: "Dry-weather sanitary flow", unit: "FLOW_UNITS", source_kind: "user_provided", model_input_format: "[DWF] + optional [PATTERNS]", notes: "Required for combined-sewer dry-weather base flow."}
+    - {category: "management", name: "Control rules for pumps and regulators", unit: "n/a", source_kind: "user_provided", model_input_format: "[CONTROLS] IF-THEN-ELSE rules"}
+
+processes:
+  modules:
+    - {name: "RainGage", role: "driver", brief: "Reads rainfall time series/intensity per gage and assigns it to subcatchments (intensity, volume, or cumulative format)."}
+    - {name: "Snowmelt", role: "process_solver", brief: "Snow-pack accumulation and degree-day/energy-balance melt with areal depletion; partitions precipitation into rain vs snow and releases meltwater.", applicability: "when Snow Pack objects are defined"}
+    - {name: "Evaporation", role: "process_solver", brief: "Actual evaporation from a time series (pan x coefficient) or the Hargreaves method; removes standing surface water and reduces snow/soil water."}
+    - {name: "Infiltration", role: "process_solver", brief: "Horton / Modified Horton / Green-Ampt / Curve-Number loss of rainfall into pervious soil; f=0 on impervious subareas."}
+    - {name: "RunoffSubcatchment", role: "process_solver", brief: "Nonlinear-reservoir overland flow per subcatchment, mass balance dd/dt = i - e - f - q solved per pervious(A1)/impervious(A2,A3) subarea via Manning's equation."}
+    - {name: "Groundwater", role: "process_solver", brief: "Two-zone aquifer water balance; tracks unsaturated moisture theta_u and saturated depth d_L and routes lateral groundwater interflow to a conveyance node.", applicability: "when Aquifer objects are modeled"}
+    - {name: "LID", role: "optional_module", brief: "Low Impact Development controls; multi-layer (Surface/Soil/Pavement/Storage/Drain) capture, infiltration, storage, and slow release of subcatchment runoff.", applicability: "when LID controls are placed on subcatchments"}
+    - {name: "RDII_UnitHydrograph", role: "process_solver", brief: "Triangular R-T-K unit hydrographs convert rainfall to wet-weather inflow/infiltration injected at conveyance nodes.", applicability: "when RDII unit hydrographs are defined"}
+    - {name: "FlowRouting", role: "integrator", brief: "Conveyance routing of all inflows through conduits/nodes/storage/regulators via STEADY, kinematic-wave, or full dynamic-wave (Saint-Venant) solve; handles surcharging, backwater, reverse flow, ponding."}
+    - {name: "Nodes_Links", role: "allocator", brief: "Junction/outfall/divider/storage nodes and conduit/pump/orifice/weir/outlet links holding the hydraulic state vector the router updates."}
+    - {name: "WaterQuality", role: "process_solver", brief: "Pollutant buildup/washoff by land use on subcatchments and advective routing/treatment of pollutant mass through the network.", applicability: "when pollutants/land uses are defined"}
+    - {name: "ContinuityCheck", role: "process_solver", brief: "Mass-balance continuity-error accounting for runoff, groundwater, flow routing, and water quality; the primary numerical-stability diagnostic."}
+  internal_edges:
+    - {from: "RainGage", to: "Snowmelt", kind: "produces_output", brief: "Precipitation time series partitioned by the snowmelt module."}
+    - {from: "RainGage", to: "RunoffSubcatchment", kind: "consumes_input", brief: "Rainfall intensity drives overland-flow generation."}
+    - {from: "Snowmelt", to: "RunoffSubcatchment", kind: "produces_output", brief: "Rain plus meltwater is the effective inflow i onto the subcatchment surface."}
+    - {from: "Evaporation", to: "RunoffSubcatchment", kind: "produces_output", brief: "Evaporation rate e enters the surface mass balance."}
+    - {from: "RainGage", to: "Infiltration", kind: "consumes_input", brief: "Snow-free precipitation available for infiltration."}
+    - {from: "Infiltration", to: "RunoffSubcatchment", kind: "produces_output", brief: "Infiltration rate f subtracted from the pervious surface mass balance."}
+    - {from: "Infiltration", to: "Groundwater", kind: "produces_output", brief: "Percolated infiltration becomes aquifer recharge."}
+    - {from: "RunoffSubcatchment", to: "d", kind: "writes_state", brief: "Updates ponded depth d each runoff timestep."}
+    - {from: "RunoffSubcatchment", to: "LID", kind: "invokes", brief: "Runon/runoff routed through LID units before reaching the network."}
+    - {from: "LID", to: "RunoffSubcatchment", kind: "produces_output", brief: "LID drain/surface flow returns to the parent subcatchment outlet, reducing effective runoff."}
+    - {from: "RunoffSubcatchment", to: "Nodes_Links", kind: "produces_output", brief: "Subcatchment runoff hydrograph becomes lateral inflow at its outlet node."}
+    - {from: "Groundwater", to: "Nodes_Links", kind: "produces_output", brief: "Lateral groundwater interflow enters routing nodes as inflow."}
+    - {from: "RDII_UnitHydrograph", to: "Nodes_Links", kind: "produces_output", brief: "RDII wet-weather flow added at conveyance nodes."}
+    - {from: "Nodes_Links", to: "FlowRouting", kind: "reads_state", brief: "Node heads and link flows are the routing solver's state vector."}
+    - {from: "FlowRouting", to: "Nodes_Links", kind: "writes_state", brief: "Saint-Venant solve updates node depth/head (y) and link flow/area (q,a) each routing step."}
+    - {from: "RunoffSubcatchment", to: "WaterQuality", kind: "produces_output", brief: "Washoff loads enter the network as pollutant mass."}
+    - {from: "FlowRouting", to: "WaterQuality", kind: "produces_output", brief: "Hydraulic flow field advects pollutant concentrations in the same timestep."}
+    - {from: "RunoffSubcatchment", to: "ContinuityCheck", kind: "produces_output", brief: "Runoff mass balance yields the runoff continuity error."}
+    - {from: "Groundwater", to: "ContinuityCheck", kind: "produces_output", brief: "Groundwater mass balance yields the gw continuity error."}
+    - {from: "FlowRouting", to: "ContinuityCheck", kind: "produces_output", brief: "Routing mass balance yields the flow-routing continuity error."}
+    - {from: "WaterQuality", to: "ContinuityCheck", kind: "produces_output", brief: "Quality mass balance yields the quality continuity error."}
+    - {from: "RunoffSubcatchment", to: "Outputs", kind: "produces_output", brief: "Subcatchment RAIN/INFIL/RUNOFF written to results."}
+    - {from: "Nodes_Links", to: "Outputs", kind: "produces_output", brief: "Node depth/head/flooding and link flow/depth/velocity written to .out/.rpt."}
+    - {from: "WaterQuality", to: "Outputs", kind: "produces_output", brief: "Pollutant concentrations/loads written per element."}
+
+states:
+  variables:
+    - {name: "d", unit: "depth (mm/in)", role: "prognostic"}
+    - {name: "t_p", unit: "s", role: "prognostic"}
+    - {name: "F_e", unit: "depth", role: "accumulator"}
+    - {name: "Fu", unit: "fraction", role: "prognostic"}
+    - {name: "T", unit: "s", role: "prognostic"}
+    - {name: "P", unit: "depth", role: "prognostic"}
+    - {name: "S", unit: "depth", role: "prognostic"}
+    - {name: "theta_u", unit: "fraction", role: "prognostic"}
+    - {name: "d_L", unit: "m", role: "prognostic"}
+    - {name: "w_snow", unit: "mm water equiv.", role: "prognostic"}
+    - {name: "fw", unit: "mm", role: "prognostic"}
+    - {name: "ati", unit: "deg", role: "prognostic"}
+    - {name: "cc", unit: "energy/depth equiv.", role: "accumulator"}
+    - {name: "y", unit: "m", role: "prognostic"}
+    - {name: "q", unit: "m3/s", role: "prognostic"}
+    - {name: "a", unit: "m2", role: "diagnostic"}
+    - {name: "soil_moisture (LID)", unit: "fraction", role: "prognostic"}
+    - {name: "storage_depth (LID)", unit: "mm", role: "prognostic"}
+    - {name: "m_B", unit: "mass", role: "prognostic"}
+    - {name: "m_P", unit: "mass", role: "prognostic"}
+    - {name: "c_N", unit: "mass/volume", role: "prognostic"}
+    - {name: "c_L", unit: "mass/volume", role: "prognostic"}
+    - {name: "t_sweep", unit: "days", role: "accumulator"}
+  provenance: "populated"
+
+outputs:
+  - var: "subcatchment_runoff"
+    validation_rank: 1
+    unit: "m3/s (CMS) or cfs (US)"
+    description: "Surface runoff flow rate generated by a subcatchment."
+    emitted_in: ".out (SubcatchResult RUNOFF) and .rpt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Subcatchment runoff is rarely observed directly; usually compared at a gauged outlet/link rather than per-subcatchment."]
+      detrending_options: ["none"]
+  - var: "node_depth_head"
+    validation_rank: 2
+    unit: "m (CMS) or ft (US)"
+    description: "Water depth above invert and hydraulic head at a node (junction, storage, outfall)."
+    emitted_in: ".out (NodeResult DEPTH/HEAD)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "r"
+          caveats: ["Compared against pressure-transducer/stage records at instrumented manholes; requires datum alignment between model invert and sensor reference."]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Peak-stage or high-water-mark comparison at a single node."]
+      detrending_options: ["none"]
+  - var: "node_flooding"
+    validation_rank: 3
+    unit: "flow m3/s; volume m3"
+    description: "Overflow rate and total flood volume at a node when capacity is exceeded."
+    emitted_in: ".out (NodeResult FLOOD) and .rpt node flooding summary"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Flood volume is mass-balance-sensitive to ALLOW_PONDING; compare only when ponding is configured consistently with the observation context."]
+        - obs_shape: "categorical_event"
+          comparison_mode: "categorical_event_comparison"
+          metric_families: ["event_detection"]
+          determining_metric: "csi"
+          caveats: ["Flood/no-flood per node against reported flooding locations; threshold-dependent."]
+      detrending_options: ["none"]
+  - var: "link_flow"
+    validation_rank: 4
+    unit: "m3/s (CMS) or cfs (US)"
+    description: "Flow rate through a conduit/link; outfall discharge equals total inflow at the outfall node."
+    emitted_in: ".out (LinkResult FLOW) and .rpt outfall loading summary"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Primary calibration target; compared against flow-gauge records at an outfall or trunk conduit."]
+      detrending_options: ["none"]
+  - var: "link_depth_velocity"
+    validation_rank: 5
+    unit: "depth m; velocity m/s; capacity fraction"
+    description: "Flow depth, velocity, and fraction-of-full capacity in a conduit."
+    emitted_in: ".out (LinkResult DEPTH/velocity)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Velocity rarely directly observed; depth comparable where a sensor exists in the conduit."]
+      detrending_options: ["none"]
+  - var: "subcatchment_infiltration"
+    validation_rank: 6
+    unit: "mm/hr"
+    description: "Infiltration rate into pervious soil per subcatchment."
+    emitted_in: ".out (SubcatchResult INFILTRATION)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Seldom directly observed; usually inferred from a runoff-coefficient or water-balance closure rather than a direct sensor."]
+      detrending_options: ["none"]
+  - var: "groundwater_outflow"
+    validation_rank: 7
+    unit: "flow m3/s; table elev m"
+    description: "Groundwater table elevation and lateral groundwater outflow per subcatchment."
+    emitted_in: ".out (SubcatchResult / SystemAttribute GW_INFLOW)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Compared against monitoring-well table elevations where aquifer parameters are calibrated; only meaningful when groundwater is enabled."]
+      detrending_options: ["none"]
+  - var: "pollutant_concentration_load"
+    validation_rank: 8
+    unit: "mass/volume; mass"
+    description: "Pollutant concentration and washoff load at subcatchments, nodes, and links."
+    emitted_in: ".out (pollutant per element) and .rpt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Grab-sample / EMC data are sparse and noisy; event-mean concentration comparison is often the only defensible match."]
+      detrending_options: ["none"]
+  - var: "continuity_error"
+    validation_rank: 9
+    unit: "percent"
+    description: "Runoff-quantity and flow-routing continuity error; primary internal mass-balance/numerical-stability diagnostic."
+    emitted_in: ".rpt continuity tables"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Self-diagnostic, not an observation; checked against acceptance thresholds (<5%, <1% for dynamic wave), not against field data."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "PctImperv (percent imperviousness)"
+      to: "subcatchment_runoff (runoff volume)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["barco2008_swmm_autocalibration", "swmm2024_sensitivity_runoff_pollution", "ema2019_swmm_greenland_runoff"]
+    - from: "PctImperv (percent imperviousness)"
+      to: "link_flow (peak flow)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["barco2008_swmm_autocalibration", "swmm2024_sensitivity_runoff_pollution"]
+    - from: "DStore-Imperv (impervious depression storage)"
+      to: "subcatchment_runoff (runoff volume)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["barco2008_swmm_autocalibration", "yazdi2019_swmm_review_gap"]
+    - from: "DStore-Perv (pervious depression storage)"
+      to: "subcatchment_runoff (runoff volume)"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "pervious-dominated catchments"
+      citations: ["yazdi2019_swmm_review_gap", "wst2023_swmm_airport_sensitivity"]
+    - from: "Width (subcatchment width)"
+      to: "link_flow (peak flow)"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["wst2023_swmm_airport_sensitivity", "ema2019_swmm_greenland_runoff"]
+    - from: "N-Perv (Manning's N, pervious overland flow)"
+      to: "link_flow (peak flow)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "pervious-dominated catchments"
+      citations: ["yazdi2019_swmm_review_gap", "wst2023_swmm_airport_sensitivity"]
+    - from: "N-Imperv (Manning's N, impervious overland flow)"
+      to: "link_flow (peak flow)"
+      sensitivity_grade: LOW
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["barco2008_swmm_autocalibration"]
+    - from: "Saturated hydraulic conductivity / infiltration capacity"
+      to: "subcatchment_runoff (runoff volume)"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "low-imperviousness catchments (impervious cover < 20%)"
+      citations: ["yazdi2019_swmm_review_gap", "ema2019_swmm_greenland_runoff"]
+    - from: "Infiltration rate parameters (Horton max/min rate, decay)"
+      to: "link_flow (peak flow)"
+      sensitivity_grade: LOW
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "low-imperviousness catchments"
+      citations: ["yazdi2019_swmm_review_gap"]
+    - from: "PctImperv (percent imperviousness)"
+      to: "pollutant_concentration_load"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "when water quality is active"
+      citations: ["swmm2024_sensitivity_runoff_pollution"]
+  citation_index:
+    barco2008_swmm_autocalibration:
+      short_citation: "Barco, Wong & Stenstrom 2008"
+      doi: "10.1061/(ASCE)0733-9429(2008)134:4(466)"
+      note: "Automatic calibration of EPA SWMM for the Ballona Creek urban catchment; imperviousness and impervious depression storage most sensitive, surface Manning n least sensitive."
+    yazdi2019_swmm_review_gap:
+      short_citation: "Nayeb Yazdi et al. 2019"
+      doi: "10.1061/JSWBAY.0000884"
+      note: "Review of 34 SWMM studies; pervious Manning n, depression storage, and saturated conductivity sensitive, infiltration mainly when impervious cover < 20%."
+    swmm2024_sensitivity_runoff_pollution:
+      short_citation: "J. Hydrology 2024 (improved Morris SWMM SA)"
+      doi: "10.1016/j.jhydrol.2024.130963"
+      note: "Improved Morris sensitivity of outfall peak flow, total volume, timing, and pollutant load; effective impervious fraction and overland-flow parameters dominate."
+    ema2019_swmm_greenland_runoff:
+      short_citation: "Environ. Monit. Assess. 2019 (urban green-land SWMM SA)"
+      doi: "10.1007/s10661-019-7445-9"
+      note: "SA/calibration of SWMM runoff parameters for urban green-land; imperviousness, depression storage, width, and infiltration control runoff in low-impervious land."
+    wst2023_swmm_airport_sensitivity:
+      short_citation: "Water Sci. Technol. 2023 (airport SWMM GSA)"
+      doi: "10.2166/wst.2023.351"
+      note: "Global SA at an airport catchment; width, percent imperviousness, Manning n, and depression storage directly impact overland flow, peak, and timing."
+
+safety:
+  hazards:
+    - {id: "flow_units_mismatch", kind: "control_semantic", description: "FLOW_UNITS (CFS vs CMS) inconsistent with pipe dimensions/areas/rainfall/elevations; SWMM trusts numbers with no dimension check, giving order-of-magnitude-wrong results.", severity: "silent"}
+    - {id: "rainfall_intensity_vs_volume", kind: "weather_file_semantic", description: "Rain-gage FORMAT (INTENSITY vs VOLUME) not matching the data encoding; runoff scaled by intervals-per-hour with no warning.", severity: "silent"}
+    - {id: "subcatchment_width_too_large", kind: "control_semantic", description: "Width set via sqrt(Area)/Area shortcut shortens overland flow length L=Area/Width, artificially peaking the hydrograph; volume may stay correct.", severity: "silent"}
+    - {id: "infiltration_method_column_mismatch", kind: "control_semantic", description: "[INFILTRATION] column layout not matching the [OPTIONS] INFILTRATION method; SWMM silently misreads columns, biasing runoff.", severity: "degraded"}
+    - {id: "manning_n_typo", kind: "control_semantic", description: "Manning's n with a dropped/added zero; no range check, velocity and peak timing off by ~10-13x.", severity: "silent"}
+    - {id: "lid_soil_ordering_violation", kind: "soil_semantic", description: "LID soil layer with Wilting Point >= Field Capacity or Field Capacity >= Porosity gives negative available water capacity; layer never retains or never drains. Not validated by SWMM.", severity: "degraded"}
+    - {id: "lid_area_exceeds_subcatchment", kind: "soil_semantic", description: "Sum of Number*Area in [LID_USAGE] exceeds subcatchment area; clipping/negative-remainder behavior is version-dependent.", severity: "fatal_or_silent"}
+    - {id: "ponding_mass_sink", kind: "control_semantic", description: "ALLOW_PONDING=NO (default) or Aponded=0 removes flooded-node water from the system, producing a negative continuity error that worsens over continuous runs.", severity: "degraded"}
+    - {id: "courant_routing_instability", kind: "numerical_instability", description: "ROUTING_STEP too large for the dynamic-wave Courant condition (dt <= dx/sqrt(g*h)); routing continuity error climbs above 5%.", severity: "degraded"}
+    - {id: "adverse_slope_oscillation", kind: "numerical_instability", description: "Conduit with outlet invert higher than inlet makes the dynamic-wave solver oscillate forward/reverse flow; high continuity error, NaN, possible crash. Kinematic wave cannot represent adverse slopes at all.", severity: "fatal_or_silent"}
+    - {id: "surcharge_transition_oscillation", kind: "numerical_instability", description: "Repeated free-surface <-> pressurized transition (many pipes filling near-simultaneously) drives routing oscillation and adaptive-step slowdown.", severity: "degraded"}
+    - {id: "zero_length_conduit", kind: "control_semantic", description: "Conduit length=0 (coincident nodes) makes slope/velocity/friction divisions undefined; division-by-zero/NaN crash (ERROR 141).", severity: "fatal"}
+    - {id: "subcatchment_outlet_undefined", kind: "control_semantic", description: "Subcatchment Outlet references a nonexistent node (ERROR 142); simulation will not start.", severity: "fatal"}
+    - {id: "no_outfall_defined", kind: "control_semantic", description: "No outfall in the network (ERROR 143); inflow accumulates and every node floods.", severity: "fatal"}
+    - {id: "outfall_timeseries_undefined", kind: "control_semantic", description: "Outfall Type=TIMESERIES references a series absent from [TIMESERIES] or not spanning the simulation period; fatal error or a constant (wrong) boundary.", severity: "fatal_or_silent"}
+    - {id: "dwf_missing_combined_sewer", kind: "control_semantic", description: "Missing [DWF] on a combined sewer yields zero dry-weather base flow and underestimated CSO frequency.", severity: "degraded"}
+    - {id: "inp_encoding_parse_failure", kind: "parser_semantic", description: "INP with a UTF-8 BOM, non-ASCII characters, or tabs mixed with spaces cannot be parsed by the SWMM C engine.", severity: "fatal"}
+  validation_limits:
+    - "Intended primarily for urban areas (0.01-100 km2); not calibrated for watershed/basin-scale rural hydrology or basin river-channel routing."
+    - "Over 150 user-supplied parameters; many require calibration, and groundwater (14 params/subcatchment) is meaningful only when explicitly enabled."
+    - "Hargreaves evaporation requires temperatures averaged over >=5 days (SWMM uses a 7-day running average); pan-to-actual conversion uses approximate monthly coefficients (~0.7)."
+    - "Steady-flow and kinematic-wave routing cannot represent backwater, surcharging, or reverse flow; kinematic wave additionally cannot represent adverse slopes."
+    - "Reference-manual disclaimer: the programs are experimental and EPA assumes no liability for results."
+  warnings:
+    - "Routing continuity error should be <5% (<1% for dynamic wave) and runoff continuity error <5%; larger values mean results are numerically unreliable."
+    - "Manning's n outside ~[0.005, 0.100] for overland flow, or pipe roughness outside material tables, is almost always an input error rather than a real value."
+    - "Default ALLOW_PONDING=NO silently violates mass conservation at flooded nodes; for flood-volume analysis set ALLOW_PONDING=YES with Aponded>0."
+    - "Precipitation and infiltration are held constant within a runoff timestep (no interpolation); other reported quantities are linearly interpolated."
+  assumptions:
+    - statement: "Each subcatchment is idealized as a rectangular surface of uniform slope and characteristic width draining to a single outlet, with overland flow treated as uniform flow in a wide rectangular channel (Manning's equation), so cross-section area A_x = W(d-d_s) and hydraulic radius R_x = d-d_s."
+      scope: "Surface runoff generation on all subcatchments"
+      source: "EPA SWMM Reference Manual Vol I Hydrology, Ch.3 Governing Equations (EPA/600/R-15/162A)"
+      status: "adopted"
+    - statement: "Runoff occurs only when ponded depth d exceeds depression storage d_s (else q=0 and dd/dt = i - e - f), and impervious subareas have infiltration f=0 by definition."
+      scope: "Surface runoff mass balance"
+      source: "EPA SWMM Reference Manual Vol I Hydrology, Ch.3.2-3.3"
+      status: "adopted"
+    - statement: "Closure is mass-balance on water (and pollutant mass when active); evaporation is a demand-side flux, not a closed surface energy budget, so there is no energy-balance closure."
+      scope: "Whole-model conservation semantics"
+      source: "EPA SWMM Reference Manual Vol I Hydrology, Ch.1.4 / Ch.2.5 Evaporation"
+      status: "adopted"
+    - statement: "This dag describes the EPA SWMM5 C engine as driven through pyswmm; pyswmm bundles (does not reimplement) the compiled engine, so the science is the EPA engine's, not the Python wrapper's."
+      scope: "Implementation binding"
+      source: "USEPA Stormwater-Management-Model engine + pyswmm API"
+      status: "adopted"
+    - statement: "Conveyance flow-routing detail (Vol II) and water-quality/LID detail (Vol III) are represented at the structural level documented in Vol I cross-references; per-process Vol II/III equations were not independently re-derived."
+      scope: "Hydraulic routing and water-quality/LID modules"
+      source: "EPA SWMM Reference Manual Vol I (cross-references to Vols II and III)"
+      status: "tentative"

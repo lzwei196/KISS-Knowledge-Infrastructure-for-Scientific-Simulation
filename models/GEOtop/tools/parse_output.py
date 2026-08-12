@@ -231,16 +231,36 @@ def read_soil_profile(sim_dir, point_id=1, variables=None):
             except Exception:
                 dates = pd.to_datetime(df[date_cols[0]], dayfirst=True)
 
-            # Layer columns are everything except date/time columns
+            # Layer columns are everything except the leading metadata columns.
+            #
+            # BUGFIX (2026-07-21, GEOtop NCP MODIS-LST real case): `IDpoint`
+            # was NOT in the skip set, so the point-id column was emitted as
+            # "layer 1" -- a fake layer holding the constant 1.0 -- and EVERY
+            # real soil layer was shifted one index deeper. A profile
+            # validation against, say, a 5 cm soil-moisture probe therefore
+            # silently read the 15 cm model layer, and any depth-weighted
+            # storage sum picked up a bogus 1.0 * Dz term. GEOtop point
+            # profiles have exactly these six leading columns:
+            #   Date12, JulianDayFromYear0, TimeFromStart, Simulation_Period,
+            #   Run, IDpoint
             skip = {c for c in df.columns if "Date" in c or "Julian" in c or
-                    "Time" in c or "Simulation" in c or "Run" in c}
+                    "Time" in c or "Simulation" in c or "Run" in c or
+                    "IDpoint" in c or "IDbasin" in c}
             layer_cols = [c for c in df.columns if c not in skip]
 
+            # The layer column HEADERS are the layer mid-point depths in mm
+            # (e.g. "5.000000", "15.000000", ...). Carry them through: depth,
+            # not layer ordinal, is what a profile observation is matched on.
             for i, col in enumerate(layer_cols):
+                try:
+                    depth_mm = float(str(col).strip())
+                except ValueError:
+                    depth_mm = np.nan
                 layer_df = pd.DataFrame({
                     "datetime": dates,
                     "variable": var_name,
                     "layer": i + 1,
+                    "depth_mm": depth_mm,
                     "value": df[col].replace(NODATA, np.nan),
                     "unit": unit,
                 })

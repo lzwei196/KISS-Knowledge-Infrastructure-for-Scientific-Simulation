@@ -13,12 +13,108 @@ Usage:
 """
 
 import argparse
+import hashlib
 import os
 import subprocess
 import sys
 import time
 import re
 from pathlib import Path
+
+# The SWAP executable this KI is validated against: the Meson build of the
+# pinned v4.2.0 source tree. Recorded so a run's evidence is attributable.
+PINNED_SWAP_BINARY = ("/home/server/knowledge-dissection-toolkit/auto_dissect/"
+                      "_work/SWAP/source/repo/builddir/swap")
+PINNED_SWAP_SHA256 = \
+    "a696efc5344daa53b3ddeebd3664656d0822959a5b2f4f863efc710469f1cf97"
+
+
+def resolve_binary(requested=None, allow_unpinned=False):
+    """
+    Resolve the SWAP executable, FAILING LOUDLY rather than substituting.
+
+    Rules:
+      * default is the pinned build (PINNED_SWAP_BINARY);
+      * any other --binary needs an explicit --allow-unpinned-binary;
+      * $PATH is NEVER searched and no fallback is ever chosen — a stray
+        `swap` on PATH could be any program, and a metric produced by an
+        unidentified binary is unattributable evidence;
+      * missing / non-executable / non-ELF aborts with exit status 2;
+      * the sha256 actually executed is printed every run, and a mismatch
+        against the recorded pin is reported as a loud WARNING (a legitimate
+        rebuild changes the hash — a silent swap must still be visible).
+    """
+    path = os.path.abspath(requested or PINNED_SWAP_BINARY)
+    pinned = os.path.abspath(PINNED_SWAP_BINARY)
+
+    if path != pinned and not allow_unpinned:
+        print(f"ERROR: --binary is not the pinned SWAP build.\n"
+              f"       requested: {path}\n"
+              f"       pinned:    {pinned}\n"
+              f"       Pass --allow-unpinned-binary to run a different build "
+              f"deliberately.", file=sys.stderr)
+        sys.exit(2)
+
+    if not os.path.isfile(path):
+        print(f"ERROR: SWAP binary not found: {path}\n"
+              f"       This wrapper never searches $PATH and never substitutes "
+              f"another executable.\n"
+              f"       Build the pinned source first:\n"
+              f"         meson setup builddir && meson compile -C builddir\n"
+              f"       (SWAP v4.2.0, github.com/SWAP-model/swap)",
+              file=sys.stderr)
+        sys.exit(2)
+    if not os.access(path, os.X_OK):
+        print(f"ERROR: SWAP binary is not executable: {path}", file=sys.stderr)
+        sys.exit(2)
+
+    with open(path, "rb") as f:
+        magic = f.read(4)
+        f.seek(0)
+        digest = hashlib.sha256(f.read()).hexdigest()
+    if magic != b"\x7fELF":
+        print(f"ERROR: {path} is not an ELF executable (magic "
+              f"{magic!r}) — refusing to run it as SWAP", file=sys.stderr)
+        sys.exit(2)
+
+    tag = "PINNED" if path == pinned else "UNPINNED (--allow-unpinned-binary)"
+    print(f"[OK] SWAP binary [{tag}]: {path}")
+    print(f"     sha256 {digest}")
+    if digest != PINNED_SWAP_SHA256:
+        print(f"WARNING: this binary's sha256 differs from the recorded pin "
+              f"{PINNED_SWAP_SHA256} — it is a different build than the one "
+              f"the KI's validated numbers came from")
+    return path
+
+
+def swap_run_succeeded(result, work_dir):
+    """
+    Decide whether a SWAP invocation actually succeeded.
+
+    SWAP 4.2.0 signals NORMAL COMPLETION with exit code 100
+    (src/swap_main.f90 `Call Exit(100)`), so a plain `returncode == 0` test
+    reports every successful run as a failure and skips output validation
+    entirely (dt_018 / CDK #9).
+
+    Success is rc == 0, or rc == 100 confirmed by either 'normal completion'
+    on stdout or a *.ok file written into the work directory.
+    """
+    rc = result.get("returncode")
+    if rc == 0:
+        return True
+    if rc != 100:
+        return False
+
+    stdout = (result.get("stdout") or "").lower()
+    if "normal completion" in stdout:
+        return True
+    try:
+        for f_name in os.listdir(work_dir):
+            if f_name.lower().endswith(".ok"):
+                return True
+    except OSError:
+        pass
+    return False
 
 
 def validate_inputs(binary, work_dir, swp_file):
@@ -95,13 +191,17 @@ def validate_inputs(binary, work_dir, swp_file):
             if not os.path.isfile(crp_path):
                 warnings.append(f"Crop file not found: {cf}.crp")
 
-    # Extract drainage file
+    # Extract drainage file — only relevant when drainage is switched on.
+    # SWAP never opens DRFIL when SWDRA = 0, so warning about a missing .dra
+    # there is pure noise.
+    swdra_match = re.search(r"^[ \t]*SWDRA[ \t]*=[ \t]*(\d+)", content, re.MULTILINE)
+    swdra = int(swdra_match.group(1)) if swdra_match else 0
     dra_match = re.search(r"DRFIL\s*=\s*'([^']+)'", content)
-    if dra_match:
+    if swdra != 0 and dra_match:
         dra_file = dra_match.group(1) + ".dra"
         dra_path = os.path.join(work_dir, dra_file)
         if not os.path.isfile(dra_path):
-            warnings.append(f"Drainage file not found: {dra_file}")
+            errors.append(f"SWDRA = {swdra} but drainage file not found: {dra_file}")
 
     # Check for uppercase filenames (Linux trap)
     for f_name in os.listdir(work_dir):
@@ -162,8 +262,9 @@ def run_swap(binary, work_dir, swp_file, timeout=300):
             "elapsed_seconds": round(elapsed, 2),
         }
 
-        if result.returncode == 0:
-            print(f"[OK] SWAP completed successfully in {elapsed:.1f}s")
+        if swap_run_succeeded(output, work_dir):
+            print(f"[OK] SWAP completed successfully in {elapsed:.1f}s "
+                  f"(exit code {result.returncode})")
         else:
             print(f"[FAIL] SWAP exited with code {result.returncode}")
             if result.stderr:
@@ -289,8 +390,12 @@ def validate_outputs(work_dir, swp_file):
 
 def main():
     parser = argparse.ArgumentParser(description="Run SWAP model with validation")
-    parser.add_argument("--binary", type=str, required=True,
-                        help="Path to SWAP executable")
+    parser.add_argument("--binary", type=str, default=None,
+                        help="Path to the SWAP executable (default: the pinned "
+                             "build, see PINNED_SWAP_BINARY)")
+    parser.add_argument("--allow-unpinned-binary", action="store_true",
+                        help="Permit a --binary other than the pinned build; "
+                             "the substitution is reported on stdout")
     parser.add_argument("--work-dir", type=str, required=True,
                         help="Working directory with input files")
     parser.add_argument("--swp-file", type=str, default="swap.swp",
@@ -301,19 +406,26 @@ def main():
                         help="Skip preflight validation")
     args = parser.parse_args()
 
+    # Binary resolution happens FIRST, before --skip-preflight can skip
+    # anything: an unidentified or absent executable must never reach
+    # subprocess.run().
+    binary = resolve_binary(args.binary,
+                            allow_unpinned=args.allow_unpinned_binary)
+
     # Preflight
     if not args.skip_preflight:
-        if not validate_inputs(args.binary, args.work_dir, args.swp_file):
+        if not validate_inputs(binary, args.work_dir, args.swp_file):
             sys.exit(1)
 
     # Execute
-    result = run_swap(args.binary, args.work_dir, args.swp_file, args.timeout)
+    result = run_swap(binary, args.work_dir, args.swp_file, args.timeout)
 
-    if result["returncode"] != 0:
+    if not swap_run_succeeded(result, args.work_dir):
         sys.exit(1)
 
     # Validate outputs
-    validate_outputs(args.work_dir, args.swp_file)
+    if not validate_outputs(args.work_dir, args.swp_file):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

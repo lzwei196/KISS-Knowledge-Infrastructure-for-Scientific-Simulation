@@ -28,8 +28,23 @@
 **Domain**: Groundwater flow and transport in porous media
 **Created by**: Knowledge Dissection Toolkit
 **Last updated**: 2026-03-25
-**Stats**: 4 tools | 5 skill documents | 18 diagnostic triplets | ~1,500 lines of validated Python
-**Validation status**: `example_validated` (1ptracer example, Sparkling-like domain)
+**Stats**: 4 tools | 5 skill documents | 22 diagnostic triplets | ~1,500 lines of validated Python | 4 new obs_datasets entries
+**Validation status**: `production_validated` — 4 independent real-case tests (2026-04-29/30)
+
+| Case | Domain | Obs source | Key metric | Output |
+|---|---|---|---|---|
+| **s7 binary** | 1ptracer synthetic | — | 2500 cells, 26.85 s, PASS | stage_log s7 |
+| **HP-2019** | High Plains KS 37–40°N 100–102°W | D2WT 2019, Zenodo #5851676 (14,351 wells) | NSE=0.74 R²=0.85 RMSE=53.5m | `outputs/dumux_highplains_validation/` |
+| **HP-1989** | Same domain | D2WT 1989, Zenodo #5851676 | NSE=0.71 R²=0.83 RMSE=55.4m | `outputs/dumux_cases/case_a/` |
+| **HP-depletion** | Same domain | D2WT 2019−1989 change | Obs mean −9.3m, Sim −8.7m; excess depletion map reveals pumping hotspots | `outputs/dumux_cases/case_a/case_a_depletion.png` |
+| **Po Plain** | N Italy 9–11°E 44.5–46°N | 421 NGWMN wells (Zenodo #14013762) | Darcy flux 160mm/yr ✓ (lit 50–300); confined amp < unconfined (p=0.045) ✓; K–amp r=−0.165 ✓ | `outputs/dumux_cases/case_b/case_b_poplain.png` |
+| **NCP** | N China Plain 114–120°E 34–40°N | China TWSA 0.1° 2002–2019 (Zenodo #19502907) | TWSA depletion −22.4mm/yr (r=−0.915) consistent with NCP GW crisis; Darcy 24mm/yr | `outputs/dumux_cases/case_c/case_c_ncp.png` |
+
+**Key limitations documented:**
+- Uniform K (GLHYMPS median per domain) — real heterogeneity reduces NSE
+- Fan WTD unreliable for confined/artesian basins (Po Plain, NCP mountain edge) — use D2WT or published head maps instead
+- Steady-state only — pumping wells need transient mode + source/sink terms
+- High Plains depletion NSE=0.09: spatial pumping pattern not captured by uniform-K model (expected)
 
 ---
 

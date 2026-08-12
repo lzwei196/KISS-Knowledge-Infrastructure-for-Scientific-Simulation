@@ -1,0 +1,733 @@
+template_version: "3.5"
+
+identity:
+  model_id: "Amanzi_ATS"
+  scientific_reference_version: "Amanzi/ATS integrated surface-subsurface thermal hydrology framework (Amanzi multi-process core + ATS ecohydrology PKs; Painter/Coon formulation, WRR 2016)"
+  implementation:
+    id: "amanzi-ats"
+    version: "Amanzi v1.7-dev (git f8b03562e, master); ATS docs 1.6 lineage"
+    provenance: "C++; DOE Amanzi/ATS multi-physics framework (LANL/LBNL/PNNL/ORNL) built on Trilinos, with XML (Teuchos ParameterList) input."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c++"
+  license: "BSD-3-Clause"
+  repo_url: "https://github.com/amanzi/amanzi"
+
+boundary:
+  scope_in:
+    - "Variably-saturated subsurface flow (Richards equation, van Genuchten/Brooks-Corey retention, Mualem rel-perm)"
+    - "Saturated / constant (Darcy) flow"
+    - "Advective-dispersive reactive solute transport"
+    - "Geochemistry (sorption, mineral precipitation, decay chains) via native beaker or Alquimia engines"
+    - "Energy transport (conduction, advection, phase change incl. ice)"
+    - "Integrated surface-subsurface coupling (overland diffusion-wave flow, infiltration/exfiltration)"
+    - "Permafrost / frozen-soil thermal hydrology and snow processes (ATS)"
+    - "Surface energy balance and evapotranspiration (ATS)"
+    - "Discrete fracture network (DFN) and matrix-fracture coupling"
+    - "Poroelastic deformation / subsidence"
+  scope_out:
+    - "Official docs state no explicit applicability limits; surface-atmosphere meteorological forcing variable set is implementation-/PK-specific and not exhaustively enumerated in the canonical docs"
+  spatial: "3-D"
+  temporal: "sub-hourly"
+  closure: "both"
+  notes: "Internally always 3-D (2-D as nx×1×nz, 1-D as 1×1×nz); internal time in seconds. Adaptive seconds-based timestepping (init_dt ~1e-8–100 s, max_dt up to ~3.15e10 s/~1000 yr); steady-state mode also supported. Mass-balance closure applies to water content, solute mass, and (when active) inorganic geochemistry; energy closure applies when the Energy PK / surface energy balance PKs are active. Conserved quantities: water_content (flow), total_component_concentration (transport), energy (thermal). Integrated runs close mass jointly across coupled surface and subsurface domains via the multi-process coupler."
+
+inputs:
+  forcing:
+    - category: forcing
+      name: "Precipitation / recharge mass flux"
+      unit: "kg/m^2/s (internal); inputs commonly mm/hr, mm/yr, cm/yr"
+      source_kind: forcing
+      model_input_format: "boundary_conditions inward_mass_flux (XML ParameterList)"
+      notes: "Surface water input; unit conversion to kg/m^2/s required (see hazards)."
+    - category: forcing
+      name: "Atmospheric temperature"
+      unit: "K (internal); input °C or K"
+      source_kind: forcing
+      model_input_format: "boundary/initial condition for energy equation; Surface Energy Balance PK forcing (ATS)"
+      notes: "Active only when energy / surface-energy-balance PKs are enabled."
+    - category: forcing
+      name: "Meteorological surface forcing (radiation, humidity, wind, snow/rain partition)"
+      unit: "PK-specific (W/m^2, -, m/s, kg/m^2/s)"
+      source_kind: forcing
+      model_input_format: "independent variables consumed by Surface Energy Balance / snow / canopy evaluators (ATS)"
+      notes: "Drives evapotranspiration, snowpack and surface energy balance; specific variable set is PK-dependent."
+  parameters:
+    - category: parameters
+      name: "Intrinsic permeability k"
+      unit: "m^2"
+      source_kind: dataset_lookup
+      model_input_format: "materials block (tensor); derived from soil texture/K_sat"
+      notes: "NOT hydraulic conductivity; typical 1e-16–1e-9 m^2. Highest-sensitivity flow parameter."
+    - category: parameters
+      name: "van Genuchten alpha"
+      unit: "1/Pa (internal; literature commonly 1/cm)"
+      source_kind: dataset_lookup
+      model_input_format: "materials cap_pressure (WRM) block"
+      notes: "Typical 1e-6–1e-2 1/Pa."
+    - category: parameters
+      name: "van Genuchten n"
+      unit: "dimensionless (>1)"
+      source_kind: dataset_lookup
+      model_input_format: "materials cap_pressure (WRM) block"
+      notes: "Typical 1.1–3.0; high n (>2.5) gives stiff retention curves."
+    - category: parameters
+      name: "van Genuchten m"
+      unit: "dimensionless"
+      source_kind: derived
+      model_input_format: "derived internally from n; m=1-1/n under Mualem (n=1/(1-m)), m=1-2/n under Burdine"
+      notes: "Wrapper-supplied n reconciles only under the Mualem rel-perm branch (default)."
+    - category: parameters
+      name: "Mualem rel-perm pore-connectivity exponent l"
+      unit: "dimensionless"
+      source_kind: default
+      model_input_format: "materials WRM block"
+      notes: "Defaults to 0.5 when 'van Genuchten l' not supplied."
+    - category: parameters
+      name: "Porosity"
+      unit: "dimensionless (0–1)"
+      source_kind: dataset_lookup
+      model_input_format: "materials mechanical_properties block"
+      notes: "Typical 0.01–0.6."
+    - category: parameters
+      name: "Residual saturation S_r"
+      unit: "dimensionless"
+      source_kind: dataset_lookup
+      model_input_format: "materials cap_pressure (WRM) block"
+      notes: "S_r = theta_r/theta_s; must be <1.0 (typical 0.05–0.35)."
+    - category: parameters
+      name: "Specific storage"
+      unit: "1/m"
+      source_kind: calibrated
+      model_input_format: "materials mechanical_properties block"
+      notes: "Typical ~1e-5 1/m."
+    - category: parameters
+      name: "Longitudinal/transverse dispersivity"
+      unit: "m"
+      source_kind: calibrated
+      model_input_format: "transport block"
+      notes: "Typical 0.1–100 m."
+    - category: parameters
+      name: "Sorption distribution coefficient Kd"
+      unit: "m^3/kg (internal; literature mL/g)"
+      source_kind: calibrated
+      model_input_format: "chemistry block"
+      notes: "Typical 0.001–1.0 m^3/kg; high transport sensitivity."
+    - category: parameters
+      name: "Gravity vector"
+      unit: "m/s^2 (3-vector)"
+      source_kind: default
+      model_input_format: "global block (typically 0,0,-9.81)"
+      notes: "Wrong sign/magnitude inverts the hydrostatic gradient."
+  initial_conditions:
+    - category: initial_conditions
+      name: "Initial pressure"
+      unit: "Pa"
+      source_kind: user_provided
+      model_input_format: "initial_conditions: linear_pressure (hydrostatic, gradient rho*g) or uniform"
+    - category: initial_conditions
+      name: "Initial solute concentration"
+      unit: "mol/L"
+      source_kind: user_provided
+      model_input_format: "initial_conditions (transport)"
+    - category: initial_conditions
+      name: "Initial temperature"
+      unit: "K"
+      source_kind: user_provided
+      model_input_format: "initial_conditions (energy)"
+  boundary_conditions:
+    - category: boundary_conditions
+      name: "Prescribed pressure / water-table boundary"
+      unit: "Pa (internal; input m head)"
+      source_kind: user_provided
+      model_input_format: "boundary_conditions uniform_pressure"
+      notes: "Head must be converted to pressure (P = P_atm + rho*g*h)."
+    - category: boundary_conditions
+      name: "Recharge rate"
+      unit: "mm/yr (converted to kg/m^2/s)"
+      source_kind: user_provided
+      model_input_format: "boundary_conditions inward_mass_flux"
+      notes: "Typical 0–500 mm/yr."
+    - category: boundary_conditions
+      name: "Flow model selection"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "process_kernels flow_model: richards | saturated | constant"
+    - category: boundary_conditions
+      name: "Transport algorithm selection"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "process_kernels transport: explicit first-order | explicit second-order"
+    - category: boundary_conditions
+      name: "Chemistry engine selection"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "process_kernels chemistry engine: amanzi | pflotran | crunchflow | none"
+    - category: boundary_conditions
+      name: "Relative-permeability / WRM model selection"
+      unit: "-"
+      source_kind: user_provided
+      model_input_format: "materials WRM: van Genuchten (Mualem default) | Brooks-Corey"
+    - category: boundary_conditions
+      name: "Execution / timestepping controls"
+      unit: "s (times); dimensionless (factors)"
+      source_kind: user_provided
+      model_input_format: "execution_control: start, end, init_dt, max_dt, increase_factor, reduction_factor, mode (steady/transient)"
+    - category: boundary_conditions
+      name: "Mesh and regions"
+      unit: "m"
+      source_kind: user_provided
+      model_input_format: "mesh: internal box (nx/ny/nz, mstk/simple) or Exodus II (.exo); regions: box/plane/point/labeled_set"
+      notes: "Exodus labeled_set integer IDs must match XML region definitions or BCs silently default to no-flow."
+
+processes:
+  modules:
+    - name: "CycleDriver"
+      role: integrator
+      brief: "Top-level time-stepping loop over time periods; advances the root PK, selects dt, and schedules checkpoint/vis/observation cadence."
+    - name: "MPC_PK (multi-process coupler)"
+      role: integrator
+      brief: "Couples sub-PKs weakly/strongly/sequentially/subcycled (FlowEnergy, ReactiveTransport, SurfaceSubsurface, matrix-fracture); orchestrates operator-splitting across physics."
+    - name: "Flow_PK (Richards / Darcy)"
+      role: process_solver
+      brief: "Variably-saturated Richards (nonlinear) or saturated Darcy flow; assembles diffusion + accumulation operators; primary unknown pressure, conserved water_content."
+    - name: "WRM (water retention / rel-perm)"
+      role: process_solver
+      brief: "van Genuchten / Brooks-Corey / tabular constitutive models mapping capillary pressure to saturation and Mualem/Burdine relative permeability."
+    - name: "Transport_PK"
+      role: process_solver
+      brief: "Advective-dispersive solute transport (explicit FV with slope limiters or implicit), CFL-bounded sub-cycling; consumes flow flux and saturation."
+    - name: "Chemistry_PK"
+      role: process_solver
+      applicability: "when chemistry engine != none"
+      brief: "Geochemistry via native Amanzi beaker or Alquimia/PFloTran/CrunchFlow engines; reactive source/sink terms for transport (sorption, precipitation, decay chains)."
+    - name: "Energy_PK"
+      role: process_solver
+      applicability: "when energy equation active"
+      brief: "Thermal energy balance (conduction, advection, phase change incl. ice); primary unknown temperature, conserved energy."
+    - name: "Mechanics_PK"
+      role: process_solver
+      applicability: "when poroelastic deformation active"
+      brief: "Linear/poro-elasticity producing volumetric strain that feeds back into flow storativity."
+    - name: "Overland Flow PK"
+      role: process_solver
+      applicability: "ATS integrated surface-subsurface runs"
+      brief: "Diffusion-wave surface flow (dTheta/dt - div[nl k grad h(p)] = Qw); primary variable ponded pressure, conserved surface water_content; couples to subsurface Richards."
+    - name: "Surface Energy Balance / ET PK"
+      role: process_solver
+      applicability: "ATS ecohydrology runs"
+      brief: "Surface energy exchange with atmosphere, evapotranspiration (Priestley-Taylor), snowpack energy balance; consumes meteorological forcing."
+    - name: "Snow Distribution PK"
+      role: process_solver
+      applicability: "ATS snow-enabled runs"
+      brief: "Heuristic diffusion-wave redistribution of incoming snow downhill, controlled by distribution interval and Manning coefficient."
+    - name: "Discrete fracture network (DFN)"
+      role: optional_module
+      applicability: "fractured-media / matrix-fracture runs"
+      brief: "Fracture-matrix coupling for mixed-dimensional flow and transport."
+    - name: "Operators (PDE_Diffusion/Advection/Accumulation)"
+      role: process_solver
+      brief: "Mimetic-FD/FV discretization operators assembled by the PKs on the mesh."
+    - name: "TimeIntegration (BDF1 / Explicit RK)"
+      role: integrator
+      brief: "Implicit BDF1 and explicit Runge-Kutta integrators with adaptive dt and nonlinear-solver hooks."
+    - name: "Solvers (Newton / NKA / Krylov)"
+      role: process_solver
+      brief: "Newton/inexact-Newton/NKA nonlinear and GMRES Krylov linear solvers (Hypre BoomerAMG preconditioner) for implicit PKs."
+    - name: "State + Evaluators (EOS)"
+      role: allocator
+      brief: "Field registry holding all primary/secondary variables; lazy evaluator DAG computes density, viscosity, enthalpy, water content, retention, etc."
+    - name: "Mesh (MSTK)"
+      role: allocator
+      brief: "Structured/unstructured polyhedral mesh framework (MSTK/MOAB/SimpleMesh) providing geometry/topology and Exodus II region labeling to the operators."
+  internal_edges:
+    - from: "CycleDriver"
+      to: "MPC_PK (multi-process coupler)"
+      kind: invokes
+      brief: "Advances the root PK each timestep, queries get_dt/set_dt."
+    - from: "MPC_PK (multi-process coupler)"
+      to: "Flow_PK (Richards / Darcy)"
+      kind: invokes
+      brief: "Sub-cycles/couples the flow PK."
+    - from: "MPC_PK (multi-process coupler)"
+      to: "Transport_PK"
+      kind: invokes
+      brief: "Couples transport sequentially after flow."
+    - from: "MPC_PK (multi-process coupler)"
+      to: "Energy_PK"
+      kind: invokes
+      brief: "Couples the thermal energy PK (FlowEnergy)."
+    - from: "MPC_PK (multi-process coupler)"
+      to: "Chemistry_PK"
+      kind: invokes
+      brief: "ReactiveTransport operator-splitting."
+    - from: "MPC_PK (multi-process coupler)"
+      to: "Overland Flow PK"
+      kind: invokes
+      brief: "Couples surface overland flow to subsurface (integrated SurfaceSubsurface MPC)."
+    - from: "Flow_PK (Richards / Darcy)"
+      to: "Pressure"
+      kind: writes_state
+      brief: "Primary unknown solved each step."
+    - from: "Flow_PK (Richards / Darcy)"
+      to: "Liquid saturation"
+      kind: writes_state
+      brief: "Saturation from pressure via WRM."
+    - from: "Flow_PK (Richards / Darcy)"
+      to: "Darcy velocity"
+      kind: writes_state
+      brief: "Flux field provided to transport."
+    - from: "Flow_PK (Richards / Darcy)"
+      to: "WRM (water retention / rel-perm)"
+      kind: invokes
+      brief: "Evaluates saturation and relative permeability from pressure."
+    - from: "WRM (water retention / rel-perm)"
+      to: "Relative permeability"
+      kind: writes_state
+      brief: "krel(pc) consumed by the flow diffusion operator."
+    - from: "Flow_PK (Richards / Darcy)"
+      to: "Temperature"
+      kind: reads_state
+      brief: "Temperature-dependent liquid viscosity — silent thermo-hydro coupling whenever a temperature field exists."
+    - from: "Flow_PK (Richards / Darcy)"
+      to: "Operators (PDE_Diffusion/Advection/Accumulation)"
+      kind: invokes
+      brief: "Assembles PDE_Diffusion + PDE_Accumulation."
+    - from: "Transport_PK"
+      to: "Darcy velocity"
+      kind: reads_state
+      brief: "Advective velocity from flow."
+    - from: "Transport_PK"
+      to: "Liquid saturation"
+      kind: reads_state
+      brief: "Water content for advection."
+    - from: "Transport_PK"
+      to: "Solute concentration"
+      kind: writes_state
+      brief: "Primary transported unknown (total_component_concentration)."
+    - from: "Chemistry_PK"
+      to: "Solute concentration"
+      kind: writes_state
+      brief: "Reactive source/sink modifies tcc (operator split with transport)."
+    - from: "Energy_PK"
+      to: "Temperature"
+      kind: writes_state
+      brief: "Thermal unknown fed back to flow (two-way thermo-hydro coupling through State)."
+    - from: "Mechanics_PK"
+      to: "Volumetric strain"
+      kind: writes_state
+      brief: "Strain feeds flow storativity (poroelastic coupling)."
+    - from: "Surface Energy Balance / ET PK"
+      to: "Snow Distribution PK"
+      kind: invokes
+      brief: "Surface energy balance provides snow source distributed downhill by the snow PK."
+    - from: "Overland Flow PK"
+      to: "Flow_PK (Richards / Darcy)"
+      kind: invokes
+      brief: "Surface ponded head couples to subsurface infiltration/exfiltration."
+    - from: "TimeIntegration (BDF1 / Explicit RK)"
+      to: "Flow_PK (Richards / Darcy)"
+      kind: invokes
+      brief: "BDF1 calls PK FunctionalResidual / ApplyPreconditioner."
+    - from: "TimeIntegration (BDF1 / Explicit RK)"
+      to: "Solvers (Newton / NKA / Krylov)"
+      kind: invokes
+      brief: "Nonlinear/linear solve per implicit step."
+    - from: "State + Evaluators (EOS)"
+      to: "Flow_PK (Richards / Darcy)"
+      kind: invokes
+      brief: "EOS evaluators supply density(P,T) and viscosity to flow."
+    - from: "Operators (PDE_Diffusion/Advection/Accumulation)"
+      to: "Mesh (MSTK)"
+      kind: reads_state
+      brief: "Geometry/connectivity for discretization."
+    - from: "Inputs"
+      to: "Flow_PK (Richards / Darcy)"
+      kind: consumes_input
+      brief: "Material params (k, porosity, vG) and recharge/pressure BCs parameterize the flow solve."
+    - from: "CycleDriver"
+      to: "Outputs"
+      kind: produces_output
+      brief: "Writes HDF5/XDMF visualization, ASCII observation time-series, and restart checkpoints."
+
+states:
+  variables:
+    - name: "Pressure"
+      unit: "Pa"
+      role: prognostic
+    - name: "Liquid saturation"
+      unit: "dimensionless (0–1)"
+      role: diagnostic
+    - name: "Water storage"
+      unit: "mol or kg per cell"
+      role: prognostic
+    - name: "Relative permeability"
+      unit: "dimensionless"
+      role: diagnostic
+    - name: "Darcy velocity"
+      unit: "m/s (or m^3/s flux)"
+      role: diagnostic
+    - name: "Solute concentration"
+      unit: "mol/L (total_component_concentration)"
+      role: prognostic
+    - name: "Temperature"
+      unit: "K"
+      role: prognostic
+    - name: "Energy"
+      unit: "J"
+      role: prognostic
+    - name: "Saturation ice"
+      unit: "dimensionless"
+      role: diagnostic
+    - name: "Volumetric strain"
+      unit: "dimensionless"
+      role: prognostic
+    - name: "Liquid mass density"
+      unit: "kg/m^3"
+      role: diagnostic
+    - name: "Liquid viscosity"
+      unit: "Pa*s"
+      role: diagnostic
+    - name: "Hydraulic head"
+      unit: "m"
+      role: diagnostic
+    - name: "prev_saturation_liquid"
+      unit: "dimensionless"
+      role: accumulator
+    - name: "prev_water_storage"
+      unit: "mol or kg per cell"
+      role: accumulator
+  provenance: populated
+
+outputs:
+  - var: "pressure"
+    validation_rank: 2
+    unit: "Pa"
+    description: "Liquid pressure field (subsurface, and ponded pressure for surface domains); primary flow unknown."
+    emitted_in: "HDF5+XDMF visualization ({base}_data.h5/.xmf) and observation time-series (.out)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["Compare as hydraulic head (m) after P->h conversion when obs are piezometric heads."]
+        - obs_shape: point_snapshot
+          comparison_mode: scalar_comparison
+          metric_families: [magnitude_accuracy]
+          determining_metric: "pbias"
+          caveats: []
+        - obs_shape: spatial_snapshot
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match]
+          determining_metric: "csi"
+          caveats: ["Emitted as an HDF5/XDMF visualization field; requires gridded/remote-sensed obs co-registered to the mesh."]
+      detrending_options: [none]
+  - var: "hydraulic_head"
+    validation_rank: 1
+    unit: "m"
+    description: "Derived hydraulic head / water-table position from pressure (h = (P - P_atm)/(rho*g) + z)."
+    emitted_in: "observation time-series (.out)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy, timing_accuracy]
+          determining_metric: "r"
+          caveats: ["Water-table depth obs (well hydrographs) are the natural target."]
+        - obs_shape: point_snapshot
+          comparison_mode: scalar_comparison
+          metric_families: [magnitude_accuracy]
+          determining_metric: "pbias"
+          caveats: []
+      detrending_options: [none, linear_residual]
+  - var: "saturation_liquid"
+    validation_rank: 3
+    unit: "dimensionless (0–1)"
+    description: "Liquid saturation field derived from pressure via the retention curve."
+    emitted_in: "HDF5+XDMF visualization"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["Compare against volumetric soil-moisture obs after theta = S*porosity conversion."]
+        - obs_shape: spatial_snapshot
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match]
+          determining_metric: "csi"
+          caveats: ["Requires gridded/remote-sensed moisture co-registered to the mesh."]
+      detrending_options: [none]
+  - var: "darcy_velocity"
+    validation_rank: 4
+    unit: "m/s"
+    description: "Darcy flux field; also integrated to volumetric flux / discharge at observation regions."
+    emitted_in: "HDF5+XDMF visualization and observation time-series (.out, volumetric_flux)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy, timing_accuracy]
+          determining_metric: "nse"
+          caveats: ["Streamflow/discharge hydrographs (integrated surface-subsurface runs) are the natural target; NSE/KGE apply."]
+        - obs_shape: spatial_snapshot
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match]
+          determining_metric: "csi"
+          caveats: ["Emitted as an HDF5/XDMF visualization field; requires gridded/remote-sensed obs co-registered to the mesh."]
+      detrending_options: [none]
+  - var: "total_component_concentration"
+    validation_rank: 5
+    unit: "mol/L"
+    description: "Per-solute aqueous concentration (reactive transport primary unknown)."
+    emitted_in: "HDF5+XDMF visualization and observation time-series (.out, aqueous_conc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy, timing_accuracy]
+          determining_metric: "nse"
+          caveats: ["Breakthrough-curve timing is the key signal; convert mg/L obs to mol/L before comparison."]
+        - obs_shape: spatial_snapshot
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match]
+          determining_metric: "csi"
+          caveats: ["Emitted as an HDF5/XDMF visualization field; requires gridded/remote-sensed obs co-registered to the mesh."]
+      detrending_options: [none]
+  - var: "temperature"
+    validation_rank: 6
+    unit: "K"
+    description: "Subsurface/surface temperature field (energy PK); drives ice phase in permafrost runs."
+    emitted_in: "HDF5+XDMF visualization and observation time-series (.out)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, magnitude_accuracy, timing_accuracy]
+          determining_metric: "nse"
+          caveats: ["Soil/ground-temperature sensor series at depth; freeze-thaw timing matters for permafrost."]
+        - obs_shape: spatial_snapshot
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match]
+          determining_metric: "csi"
+          caveats: ["Emitted as an HDF5/XDMF visualization field; requires distributed land-surface / ground-temperature retrievals co-registered to the mesh."]
+      detrending_options: [none]
+  - var: "saturation_ice"
+    validation_rank: 7
+    unit: "dimensionless"
+    description: "Ice saturation field for permafrost / frozen-soil flow."
+    emitted_in: "HDF5+XDMF visualization"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: point_time_series
+          comparison_mode: time_series_comparison
+          metric_families: [temporal_pattern_match, timing_accuracy, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats: ["Active-layer thickness / freeze-thaw front timing are the practical observables."]
+        - obs_shape: spatial_snapshot
+          comparison_mode: spatial_field_comparison
+          metric_families: [spatial_pattern_match]
+          determining_metric: "csi"
+          caveats: ["Emitted as an HDF5/XDMF visualization field; requires active-layer / freeze-thaw extent maps co-registered to the mesh."]
+      detrending_options: [none]
+
+influence:
+  edges:
+    - from: "subsurface permeability (perm_s3, perm_g1)"
+      to: "discharge (darcy_velocity / streamflow)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "integrated watershed runs, low-flow period"
+      citations: ["jiang2023_ats_coalcreek_calibration", "jiang2022_mi_watershed_sensitivity"]
+    - from: "snowmelt rate / degree-day parameters"
+      to: "discharge (darcy_velocity / streamflow)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "snow-dominated basins, high-flow period"
+      citations: ["jiang2023_ats_coalcreek_calibration", "jiang2022_mi_watershed_sensitivity"]
+    - from: "Priestley-Taylor transpiration alpha"
+      to: "evapotranspiration"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "ATS ecohydrology runs"
+      citations: ["jiang2023_ats_coalcreek_calibration"]
+    - from: "Priestley-Taylor snow-evaporation alpha"
+      to: "evapotranspiration"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "ATS snow-enabled runs"
+      citations: ["jiang2023_ats_coalcreek_calibration"]
+    - from: "Manning's n (overland roughness)"
+      to: "discharge (darcy_velocity / streamflow)"
+      sensitivity_grade: LOW
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "Coal Creek integrated runs"
+      citations: ["jiang2023_ats_coalcreek_calibration"]
+    - from: "saturated hydraulic conductivity / permeability"
+      to: "hydraulic_head (water-table depth / drawdown)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "polygonal-tundra permafrost runs"
+      citations: ["jan2020_ats_permafrost_eval"]
+    - from: "bare-soil evaporation (desiccated-layer thickness)"
+      to: "summer water-table drawdown / evaporation"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "permafrost runs (compensatory null space with Ksat)"
+      citations: ["jan2020_ats_permafrost_eval"]
+    - from: "snow thermal conductivity / aging-compaction"
+      to: "temperature (winter ground temperature)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "permafrost / frozen-soil runs"
+      citations: ["jan2020_ats_permafrost_eval"]
+    - from: "snow precipitation undercatch adjustment"
+      to: "temperature (winter ground temperature)"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      applicability: "permafrost / frozen-soil runs"
+      citations: ["jan2020_ats_permafrost_eval"]
+    - from: "rim height (microtopography)"
+      to: "temperature (ice-wedge winter ground temperature)"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "ice-wedge polygon runs"
+      citations: ["abolt2018_ats_microtopo_sensitivity", "jan2020_ats_permafrost_eval"]
+    - from: "trough depth (microtopography)"
+      to: "temperature (ice-wedge winter ground temperature)"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "ice-wedge polygon runs"
+      citations: ["abolt2018_ats_microtopo_sensitivity"]
+    - from: "surface microtopography (rim elevation)"
+      to: "surface-subsurface flow partitioning (storage, flow direction)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "integrated surface-subsurface runs (proof-of-concept)"
+      citations: ["jan2020_ats_permafrost_eval", "painter2016_ats_formulation"]
+  citation_index:
+    jiang2023_ats_coalcreek_calibration:
+      short_citation: "Jiang et al. 2023"
+      doi: "10.5194/hess-27-2621-2023"
+      note: "ATS Coal Creek; MI-based global sensitivity narrowing 14->7 parameters; permeability, snowmelt, Priestley-Taylor alpha dominant."
+    jiang2022_mi_watershed_sensitivity:
+      short_citation: "Jiang et al. 2022"
+      doi: "10.1029/2022WR032932"
+      note: "Mutual-information GSA for ATS-style integrated hydrology; discharge sensitivity to subsurface permeability / snow parameters."
+    jan2020_ats_permafrost_eval:
+      short_citation: "Jan, Coon & Painter 2020"
+      doi: "10.5194/gmd-13-2259-2020"
+      note: "ATS v0.88 permafrost thermal hydrology vs polygonal tundra; Ksat, desiccated-layer, snow conductivity, microtopography sensitivities."
+    abolt2018_ats_microtopo_sensitivity:
+      short_citation: "Abolt et al. 2018"
+      doi: "10.5194/tc-12-1957-2018"
+      note: "Amanzi-ATS one-at-a-time microtopography sweep; rim height (2.1 C/25 cm) and trough depth (1.1 C/40 cm) controls on ground temperature."
+    painter2016_ats_formulation:
+      short_citation: "Painter et al. 2016"
+      doi: "10.1002/2015WR018427"
+      note: "Foundational ATS formulation / proof-of-concept; topography regulates flow partitioning (qualitative)."
+
+safety:
+  hazards:
+    - id: "permeability_vs_conductivity"
+      kind: soil_semantic
+      description: "Hydraulic conductivity K (m/s) used directly as intrinsic permeability k (m^2), ~7 orders of magnitude too permeable; domain drains instantly (k = K*mu/(rho*g))."
+      severity: silent
+    - id: "head_vs_pressure"
+      kind: control_semantic
+      description: "Hydraulic head (m) entered where pressure (Pa) is expected; near-zero pressure, no flow (P = P_atm + rho*g*h)."
+      severity: silent
+    - id: "concentration_unit_mg_vs_mol"
+      kind: control_semantic
+      description: "Concentration in mg/L used where mol/L is expected; transport/breakthrough off by MW/1000."
+      severity: silent
+    - id: "vangenuchten_alpha_per_cm_vs_per_pa"
+      kind: soil_semantic
+      description: "van Genuchten alpha in 1/cm used as 1/Pa, ~1e6 too large; soil drains with no capillary retention (alpha_Pa = alpha_cm/980665)."
+      severity: silent
+    - id: "exodus_label_region_mismatch"
+      kind: control_semantic
+      description: "Exodus mesh label IDs do not match XML region definitions; mismatched sideset silently defaults to zero-flux no-flow BC."
+      severity: silent
+    - id: "time_unit_years_vs_seconds"
+      kind: control_semantic
+      description: "Time values in years used where seconds are expected; simulation ~3.156e7x too long/short (internal time is seconds)."
+      severity: fatal_or_silent
+    - id: "gravity_vector_sign"
+      kind: control_semantic
+      description: "Gravity Z component positive (or wrong magnitude) inverts the hydrostatic gradient; water flows upward."
+      severity: silent
+    - id: "recharge_cm_per_yr_conversion"
+      kind: control_semantic
+      description: "Recharge in cm/yr not fully converted to kg/m^2/s (missing /100 cm->m); recharge ~100x too high, instant saturation."
+      severity: silent
+    - id: "sorption_kd_ml_per_g_vs_m3_per_kg"
+      kind: control_semantic
+      description: "Sorption Kd in mL/g used where m^3/kg expected; retardation 1000x too high, plume stuck at source (x0.001)."
+      severity: silent
+    - id: "residual_saturation_ge_one"
+      kind: soil_semantic
+      description: "Residual saturation S_r >= 1.0 or theta_r > theta_s; negative effective saturation -> nonsensical pressures, crash/NaN."
+      severity: silent
+    - id: "recharge_bc_region_name_mismatch"
+      kind: control_semantic
+      description: "Recharge BC missing or assigned to a mis-cased/mismatched region name; unspecified faces default to zero-flux, no water enters."
+      severity: silent
+    - id: "extreme_permeability_nan"
+      kind: numerical_instability
+      description: "Extreme permeability (>1e-6 m^2, often K used as k) or large BC magnitudes cause overflow / NaN in residual; solver crash."
+      severity: fatal
+    - id: "stiff_vangenuchten_nonconvergence"
+      kind: numerical_instability
+      description: "Stiff van Genuchten parameters (high n >2.5, sharp retention) cause nonlinear non-convergence and timestep collapse."
+      severity: degraded
+    - id: "sharp_wetting_front_timestep_collapse"
+      kind: numerical_instability
+      description: "Sharp dry-to-wet infiltration front causes repeated timestep cutting; physically correct but ~100x slowdown."
+      severity: degraded
+    - id: "mesh_dimension_mismatch"
+      kind: control_semantic
+      description: "XML dimension tag disagrees with mesh dimensionality (2-D input vs 3-D mesh); fatal dimension-mismatch at startup."
+      severity: fatal
+    - id: "missing_required_xml_block"
+      kind: control_semantic
+      description: "A required XML block (mesh/regions/materials/initial_conditions/process_kernels) is missing; fatal parse error."
+      severity: fatal
+  validation_limits:
+    - "ATS-specific surface/snow/ET/permafrost PKs (src/physics/ats) are a distinct physics suite; an Amanzi-core-only build does not include them."
+    - "MPI rank count affects mesh partitioning and solver convergence path; results can vary 0.1–1% at observation points, so cross-run comparisons should fix the rank count."
+    - "Adaptive seconds-based timestepping; sub-process behavior is resolved only as finely as init_dt/max_dt and solver tolerances permit."
+  warnings:
+    - "Flow PK silently reads any existing 'temperature' field for temperature-dependent liquid viscosity, coupling flow to energy state even in nominally isothermal setups."
+    - "Wrapper-supplied van Genuchten n maps to internal m via m=1-1/n only under the Mualem rel-perm branch; a Burdine run (n=1/(1-2m) relation) mismatches the reported vG parameters."
+    - "Flow PKs default to Neumann zero normal flux on unspecified boundaries; an intended recharge/pressure BC that is mis-named or mis-typed silently becomes no-flow."
+  assumptions:
+    - statement: "The model is always solved on a 3-D mesh internally; 2-D and 1-D problems are represented as degenerate 3-D meshes (nx×1×nz, 1×1×nz)."
+      scope: "Spatial discretization / dimensionality."
+      source: "Amanzi/ATS input specification (mesh) and dimension-mismatch behavior in the Mesh framework."
+      status: adopted
+    - statement: "Internal units are SI with time in seconds, pressure in Pa, intrinsic permeability in m^2, concentration in mol/L; all inputs in other units require explicit conversion."
+      scope: "Unit system across flow/transport/energy inputs."
+      source: "Amanzi flow/transport defaults (FlowDefs.hh, TransportDefs.hh) and Amanzi docs."
+      status: adopted
+    - statement: "Relative permeability defaults to the Mualem model unless Brooks-Corey or another krel_function is specified."
+      scope: "Water-retention / relative-permeability constitutive choice."
+      source: "WRM_vanGenuchten module default in Amanzi flow PK source and docs."
+      status: adopted
+    - statement: "Mass-balance closure holds for water content, solute mass, and inorganic geochemistry; surface-energy closure applies only when energy / surface energy balance PKs are active."
+      scope: "Conservation closure."
+      source: "Amanzi/ATS flow, transport, and energy PK formulation (Painter et al. 2016 WRR; ATS flow PK docs)."
+      status: adopted

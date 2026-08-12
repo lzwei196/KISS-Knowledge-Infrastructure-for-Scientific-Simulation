@@ -1,0 +1,541 @@
+template_version: "3.5"
+
+identity:
+  model_id: "SUMMA"
+  scientific_reference_version: "SUMMA (Clark et al. 2015 WRR concept+implementation; SUMMA_FILE_MANAGER_V3.0.0 configuration era)"
+  implementation:
+    id: "summa-ncar"
+    version: "FILE_MANAGER_V3.0.0-era build (NCAR/CH-Earth summa)"
+    provenance: "Fortran 90; NCAR RAL / CH-Earth open-source SUMMA, NetCDF I/O, reuses Noah-MP land-surface parameter tables."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: "GPL-3.0"
+  repo_url: "https://github.com/CH-Earth/summa"
+
+boundary:
+  scope_in:
+    - "Per-HRU vertical land-surface mass and energy conservation: vegetation canopy, snowpack, soil column, aquifer"
+    - "Radiation transmission and wind attenuation through canopy"
+    - "Snow interception, accumulation, phase change, compaction, and melt"
+    - "Evapotranspiration (canopy/ground evaporation, transpiration, sublimation)"
+    - "Soil water flow (Richards equation, van Genuchten-Mualem retention)"
+    - "Runoff generation, soil drainage, groundwater recharge and baseflow"
+    - "Systematic comparison of alternative process parameterizations via model decisions (multi-physics framework)"
+  scope_out:
+    - "Lateral exchange of moisture between GRUs (GRUs are hydrologically independent)"
+    - "Channel/river-network routing (only sub-grid gamma time-delay or instantaneous routing internally; full routing is external, e.g. mizuRoute)"
+    - "Distributed surface water flow between HRUs beyond the conceptual shared aquifer"
+  spatial: "distributed-stream"
+  temporal: "hourly"
+  closure: "both"
+  notes: "Each HRU is a 1-D vertical column solving coupled energy and mass (water) balance on a common conservation core; the conservation equations are decoupled from the numerical solver. Distributed over GRUs (typically grid cells) subdivided into HRUs, with no lateral moisture exchange between GRUs. The model's operating temporal grain is the forcing data_step, commonly 3600 s (hourly) to 10800 s (3-hourly); the implicit solver adaptively sub-steps WITHIN the data_step (varSubstep), which is a numerical detail, not a sub-hourly forcing grain. Total runoff is emitted as a flux (m/s) per HRU; discharge requires multiplying by HRU area and applying external routing."
+
+inputs:
+  forcing:
+    - {category: forcing, name: "pptrate", unit: "kg m-2 s-1", source_kind: forcing, model_input_format: "forcing NetCDF (time, hru)", notes: "precipitation rate; partitioned to rain/snow by air temperature relative to tempCritRain; temperate mean ~1e-5 to 1e-4 kg/m2/s"}
+    - {category: forcing, name: "airtemp", unit: "K", source_kind: forcing, model_input_format: "forcing NetCDF (time, hru)", notes: "air temperature at measurement height; controls rain/snow phase partition and melt energy"}
+    - {category: forcing, name: "SWRadAtm", unit: "W m-2", source_kind: forcing, model_input_format: "forcing NetCDF (time, hru)", notes: "downward shortwave radiation at upper boundary"}
+    - {category: forcing, name: "LWRadAtm", unit: "W m-2", source_kind: forcing, model_input_format: "forcing NetCDF (time, hru)", notes: "downward longwave radiation at upper boundary"}
+    - {category: forcing, name: "windspd", unit: "m s-1", source_kind: forcing, model_input_format: "forcing NetCDF (time, hru)", notes: "wind speed at measurement height"}
+    - {category: forcing, name: "airpres", unit: "Pa", source_kind: forcing, model_input_format: "forcing NetCDF (time, hru)", notes: "air pressure at measurement height; expected ~80000-105000 Pa, in kPa breaks saturation-vapour-pressure/energy balance"}
+    - {category: forcing, name: "spechum", unit: "g g-1", source_kind: forcing, model_input_format: "forcing NetCDF (time, hru)", notes: "specific humidity (mass ratio, numerically kg/kg); expected ~0.002-0.015; sets vapour-pressure deficit for ET"}
+  parameters:
+    - {category: parameter, name: "k_soil (saturated hydraulic conductivity)", unit: "m s-1", source_kind: calibrated, model_input_format: "trialParams.nc / localParamInfo.txt", notes: "range ~1e-7 to 1e-3"}
+    - {category: parameter, name: "theta_sat (porosity / saturated water content)", unit: "-", source_kind: calibrated, model_input_format: "trialParams.nc / SOILPARM.TBL", notes: "range ~0.30-0.55"}
+    - {category: parameter, name: "theta_res (residual water content)", unit: "-", source_kind: calibrated, model_input_format: "trialParams.nc / SOILPARM.TBL", notes: "must be < theta_sat; range ~0.01-0.15"}
+    - {category: parameter, name: "vGn_alpha (van Genuchten alpha)", unit: "m-1", source_kind: calibrated, model_input_format: "trialParams.nc", notes: "matric-head sign convention: SUMMA requires NEGATIVE values (valid ~[-1.0,-0.01]); positive yields NaN"}
+    - {category: parameter, name: "vGn_n (van Genuchten n shape)", unit: "-", source_kind: calibrated, model_input_format: "trialParams.nc", notes: "range ~1.1-3.0"}
+    - {category: parameter, name: "critSoilWilting (wilting point)", unit: "-", source_kind: calibrated, model_input_format: "trialParams.nc", notes: "ET shutoff; must satisfy theta_res < critSoilWilting < critSoilTranspire < fieldCapacity < theta_sat"}
+    - {category: parameter, name: "critSoilTranspire (transpiration threshold)", unit: "-", source_kind: calibrated, model_input_format: "trialParams.nc", notes: "range ~0.15-0.40"}
+    - {category: parameter, name: "fieldCapacity", unit: "-", source_kind: calibrated, model_input_format: "trialParams.nc", notes: "theta at -33 kPa; ~0.30"}
+    - {category: parameter, name: "heightCanopyTop (canopy height)", unit: "m", source_kind: dataset_lookup, model_input_format: "trialParams.nc / VEGPARM.TBL", notes: "controls radiation and roughness; ~0.1-40 m"}
+    - {category: parameter, name: "rootingDepth (root zone depth)", unit: "m", source_kind: calibrated, model_input_format: "trialParams.nc", notes: "~0.5-3.0 m"}
+    - {category: parameter, name: "qSurfScale (surface runoff scaling)", unit: "-", source_kind: calibrated, model_input_format: "trialParams.nc", notes: "~10-100"}
+    - {category: parameter, name: "aquiferScaleFactor (aquifer response time)", unit: "m", source_kind: calibrated, model_input_format: "basinParamInfo.txt / trialParams.nc", notes: "~10-500"}
+    - {category: parameter, name: "tempCritRain (rain/snow threshold)", unit: "K", source_kind: calibrated, model_input_format: "trialParams.nc", notes: "~272-275 K"}
+    - {category: parameter, name: "frozenPrecipMultip (snow undercatch correction)", unit: "-", source_kind: calibrated, model_input_format: "trialParams.nc", notes: "~0.8-1.5"}
+    - {category: parameter, name: "vegTypeIndex / soilTypeIndex / slopeTypeIndex", unit: "-", source_kind: dataset_lookup, model_input_format: "attributes.nc", notes: "classification indices selecting Noah-MP VEGPARM/SOILPARM/GENPARM lookup-table defaults unless overridden by trialParams"}
+    - {category: parameter, name: "HRU geometry (HRUarea, elevation, tan_slope, contourLength, mHeight, downHRUindex)", unit: "mixed (m2, m, m/m, m)", source_kind: dataset_lookup, model_input_format: "attributes.nc", notes: "local spatial attributes; downHRUindex=0 marks the outlet"}
+  initial_conditions:
+    - {category: initial_condition, name: "mLayerTemp (initial soil/snow layer temperature)", unit: "K", source_kind: user_provided, model_input_format: "coldState.nc (midToto)", notes: "cold-start ~ mean annual air temperature; unrealistic values motivate nrg_flux convergence failure / two-phase spinup"}
+    - {category: initial_condition, name: "mLayerVolFracLiq / mLayerVolFracIce (initial layer moisture)", unit: "-", source_kind: user_provided, model_input_format: "coldState.nc (midToto)", notes: "cold-start ~field capacity 0.25-0.35; too dry causes 5+ yr spinup, above theta_sat causes runoff spikes"}
+    - {category: initial_condition, name: "mLayerMatricHead (initial soil matric head)", unit: "m", source_kind: user_provided, model_input_format: "coldState.nc (midSoil)"}
+    - {category: initial_condition, name: "scalarSWE / nSnow (initial snow water equivalent / snow layer count)", unit: "kg m-2 / -", source_kind: user_provided, model_input_format: "coldState.nc", notes: "typically SWE=0, nSnow=0; snow builds up naturally"}
+    - {category: initial_condition, name: "canopy state (scalarCanopyLiq, scalarCanopyIce)", unit: "kg m-2", source_kind: user_provided, model_input_format: "coldState.nc"}
+    - {category: initial_condition, name: "scalarAquiferStorage (initial aquifer storage)", unit: "m", source_kind: user_provided, model_input_format: "coldState.nc", notes: "high initial storage can absorb all water and yield near-zero runoff"}
+    - {category: initial_condition, name: "nSoil / soil layer discretization", unit: "-", source_kind: user_provided, model_input_format: "coldState.nc", notes: "default 8 layers to ~4 m; must match model configuration exactly (else dimension-mismatch abort)"}
+    - {category: initial_condition, name: "dt_init (initial time sub-step length)", unit: "s", source_kind: user_provided, model_input_format: "coldState.nc"}
+  boundary_conditions:
+    - {category: boundary_condition, name: "model decisions (~35 physics-option categories)", unit: "-", source_kind: user_provided, model_input_format: "decisions.txt (case-sensitive <keyword> <value>)", notes: "selects flux parameterizations and numerics: snowLayers, thCondSnow, snowIncept, compaction, f_Richards, groundwatr, hc_profile, stomResist, soilStress, canopySrad, num_method, fDerivMeth, etc. — these change the structural model, not just parameters"}
+    - {category: boundary_condition, name: "bcUpprTdyn / bcUpprSoiH (upper temperature/soil-head boundary)", unit: "-", source_kind: user_provided, model_input_format: "decisions.txt", notes: "presTemp/nrg_flux/zeroFlux (energy) and presHead/liq_flux (water); presTemp diagnostic mode bypasses energy balance and yields zero ET hence zero runoff"}
+    - {category: boundary_condition, name: "bcLowrTdyn / bcLowrSoiH (lower temperature/soil-head boundary)", unit: "-", source_kind: user_provided, model_input_format: "decisions.txt", notes: "presTemp/zeroFlux (energy) and presHead/bottmPsi/drainage/zeroFlux (water); constrained by groundwater choice"}
+    - {category: boundary_condition, name: "simStartTime / simEndTime / data_step", unit: "datetime / s", source_kind: user_provided, model_input_format: "fileManager.txt", notes: "simulation window and forcing timestep (period-ending stamps)"}
+    - {category: boundary_condition, name: "output control (variables, frequency, statistics)", unit: "-", source_kind: user_provided, model_input_format: "outputControl.txt", notes: "selects retained variables, output frequency (multiple of forcing step), and statistic (instantaneous/sum/mean/variance/min/max/mode)"}
+
+processes:
+  modules:
+    - {name: "mDecisions", role: "driver", brief: "Reads and validates the ~35 model-decision categories and enforces cross-decision constraints at init (e.g. groundwatr=qTopmodl forces bcLowrSoiH=zeroFlux + hc_profile=pow_prof; spatial_gw=singleBasin forces groundwatr=bigBuckt)."}
+    - {name: "derivforce", role: "driver", brief: "Derives model forcing from raw forcing NetCDF: rain/snow partition, vapour pressure, cosine solar zenith."}
+    - {name: "vegPhenlgy", role: "process_solver", brief: "Vegetation phenology: exposed LAI/SAI and growing-season index."}
+    - {name: "vegSWavRad", role: "process_solver", brief: "Shortwave radiation transfer through and below the canopy (two-stream / canopySrad options)."}
+    - {name: "canopySnow", role: "process_solver", brief: "Canopy snow interception, unloading, and phase change; runs every timestep and is the source of cold-region convergence stiffness."}
+    - {name: "vegNrgFlux", role: "process_solver", brief: "Vegetation/canopy energy balance: sensible/latent heat, longwave, surface (stomatal/aerodynamic) resistances."}
+    - {name: "vegLiqFlux", role: "process_solver", brief: "Canopy liquid water flux: interception, throughfall, drainage."}
+    - {name: "ssdNrgFlux", role: "process_solver", brief: "Sub-surface soil/snow-domain thermal energy flux (vertical heat conduction); drives phase change."}
+    - {name: "soilLiqFlx", role: "process_solver", brief: "Richards-equation soil liquid water flux with van Genuchten-Mualem retention; only analytic derivatives implemented."}
+    - {name: "snowLiqFlx", role: "process_solver", brief: "Liquid water percolation and drainage through the snowpack."}
+    - {name: "groundwatr", role: "optional_module", brief: "TOPMODEL-style soil-zone baseflow / groundwater.", applicability: "groundwatr=qTopmodl"}
+    - {name: "bigAquifer", role: "optional_module", brief: "Lumped 'big bucket' aquifer storage-discharge baseflow.", applicability: "groundwatr=bigBuckt"}
+    - {name: "computFlux", role: "process_solver", brief: "Aggregates all process fluxes (vegetation energy/water, soil/snow energy and liquid flux, groundwater) for a trial state vector."}
+    - {name: "eval8summa", role: "process_solver", brief: "Evaluates flux + residual for a trial state (computFlux + computResid + soilCmpres); the function the Newton solver minimizes. Soil compressibility is folded silently into the residual."}
+    - {name: "summaSolve", role: "process_solver", brief: "Newton root-finder with line-search/trust-region refinement; builds the Jacobian and calls the LAPACK band/full solver."}
+    - {name: "systemSolv", role: "process_solver", brief: "Sets up and drives the implicit (Backward-Euler/Newton) solution of the coupled state equations."}
+    - {name: "varSubstep", role: "integrator", brief: "Adaptive sub-step time integration wrapping the implicit solver; updates prognostic state."}
+    - {name: "opSplittin", role: "integrator", brief: "Operator-splitting controller that partitions the state vector and steps each split via varSubstep."}
+    - {name: "coupled_em", role: "driver", brief: "Coupled energy+mass driver for one HRU per timestep; manages adaptive snow layering (divide/merge/densify) then invokes the operator-split solver. Snow-layer count changes the solver state-vector length each step."}
+    - {name: "qTimeDelay", role: "integrator", brief: "Basin sub-grid routing via gamma-distribution time-delay histogram, producing averageRoutedRunoff (not channel routing)."}
+    - {name: "REDPRM", role: "process_solver", brief: "Noah-MP vegetation/soil parameter-table read reused by SUMMA before the energy-mass solve (external upstream coupling).", applicability: "always"}
+  internal_edges:
+    - {from: "Inputs", to: "derivforce", kind: "consumes_input", brief: "raw forcing NetCDF derived into model forcing fields"}
+    - {from: "derivforce", to: "coupled_em", kind: "invokes", brief: "derived forcing feeds the per-HRU energy-mass driver"}
+    - {from: "REDPRM", to: "coupled_em", kind: "consumes_input", brief: "Noah-MP veg/soil parameter tables supply lookup defaults (external coupling)"}
+    - {from: "mDecisions", to: "groundwatr", kind: "invokes", brief: "decision constraints select the active groundwater path"}
+    - {from: "mDecisions", to: "bigAquifer", kind: "invokes", brief: "decision constraints select the big-bucket aquifer path"}
+    - {from: "coupled_em", to: "vegPhenlgy", kind: "invokes", brief: "update exposed LAI/SAI before fluxes"}
+    - {from: "coupled_em", to: "vegSWavRad", kind: "invokes", brief: "canopy shortwave radiation transfer"}
+    - {from: "coupled_em", to: "canopySnow", kind: "invokes", brief: "canopy snow interception and phase change"}
+    - {from: "coupled_em", to: "opSplittin", kind: "invokes", brief: "after snow-layer management, invoke the operator-split solver"}
+    - {from: "opSplittin", to: "varSubstep", kind: "invokes", brief: "each state split solved by adaptive sub-stepping"}
+    - {from: "varSubstep", to: "systemSolv", kind: "invokes", brief: "implicit solution of coupled equations for the sub-step"}
+    - {from: "systemSolv", to: "summaSolve", kind: "invokes", brief: "Newton root-finder driving the implicit step"}
+    - {from: "systemSolv", to: "eval8summa", kind: "invokes", brief: "residual/flux evaluation for trial state"}
+    - {from: "summaSolve", to: "eval8summa", kind: "invokes", brief: "Newton iteration evaluates flux+residual each trial"}
+    - {from: "eval8summa", to: "computFlux", kind: "invokes", brief: "compute all process fluxes for the current state"}
+    - {from: "computFlux", to: "vegNrgFlux", kind: "invokes", brief: "canopy/ground energy balance"}
+    - {from: "computFlux", to: "vegLiqFlux", kind: "invokes", brief: "canopy liquid water flux"}
+    - {from: "computFlux", to: "ssdNrgFlux", kind: "invokes", brief: "soil/snow thermal flux"}
+    - {from: "computFlux", to: "soilLiqFlx", kind: "invokes", brief: "Richards soil water flux"}
+    - {from: "computFlux", to: "snowLiqFlx", kind: "invokes", brief: "snowpack liquid drainage"}
+    - {from: "computFlux", to: "groundwatr", kind: "invokes", brief: "optional TOPMODEL baseflow"}
+    - {from: "computFlux", to: "bigAquifer", kind: "invokes", brief: "optional big-bucket aquifer baseflow"}
+    - {from: "vegNrgFlux", to: "scalarCanopyTemp", kind: "writes_state", brief: "updates canopy/canopy-air temperatures"}
+    - {from: "canopySnow", to: "scalarCanopyIce", kind: "writes_state", brief: "canopy ice interception/unloading and phase change"}
+    - {from: "ssdNrgFlux", to: "mLayerTemp", kind: "writes_state", brief: "updates soil/snow layer temperatures (phase change)"}
+    - {from: "soilLiqFlx", to: "mLayerMatricHead", kind: "writes_state", brief: "updates soil matric head / volumetric liquid"}
+    - {from: "coupled_em", to: "scalarSWE", kind: "writes_state", brief: "snow-layer divide/merge/densify update SWE and depth"}
+    - {from: "groundwatr", to: "scalarAquiferStorage", kind: "writes_state", brief: "aquifer storage update and baseflow"}
+    - {from: "bigAquifer", to: "scalarAquiferStorage", kind: "writes_state", brief: "lumped aquifer storage update and baseflow"}
+    - {from: "soilLiqFlx", to: "scalarTotalRunoff", kind: "produces_output", brief: "surface runoff + drainage + baseflow aggregated to total runoff (m/s)"}
+    - {from: "vegNrgFlux", to: "scalarTotalET", kind: "produces_output", brief: "canopy+ground evaporation/transpiration summed to total ET (kg/m2/s)"}
+    - {from: "vegSWavRad", to: "Outputs", kind: "produces_output", brief: "canopy vs ground absorbed shortwave radiation"}
+    - {from: "coupled_em", to: "qTimeDelay", kind: "invokes", brief: "overland gamma-distribution routing producing averageRoutedRunoff"}
+
+states:
+  variables:
+    - {name: "mLayerTemp", unit: "K", role: prognostic}
+    - {name: "mLayerVolFracLiq", unit: "-", role: prognostic}
+    - {name: "mLayerVolFracIce", unit: "-", role: prognostic}
+    - {name: "mLayerVolFracWat", unit: "-", role: diagnostic}
+    - {name: "mLayerMatricHead", unit: "m", role: prognostic}
+    - {name: "mLayerDepth", unit: "m", role: prognostic}
+    - {name: "mLayerHeight", unit: "m", role: diagnostic}
+    - {name: "iLayerHeight", unit: "m", role: diagnostic}
+    - {name: "scalarCanopyIce", unit: "kg m-2", role: prognostic}
+    - {name: "scalarCanopyLiq", unit: "kg m-2", role: prognostic}
+    - {name: "scalarCanopyWat", unit: "kg m-2", role: diagnostic}
+    - {name: "scalarCanairTemp", unit: "K", role: prognostic}
+    - {name: "scalarCanopyTemp", unit: "K", role: prognostic}
+    - {name: "scalarSnowAlbedo", unit: "-", role: prognostic}
+    - {name: "scalarSnowDepth", unit: "m", role: prognostic}
+    - {name: "scalarSWE", unit: "kg m-2", role: prognostic}
+    - {name: "scalarSfcMeltPond", unit: "kg m-2", role: prognostic}
+    - {name: "scalarAquiferStorage", unit: "m", role: prognostic}
+    - {name: "scalarSurfaceTemp", unit: "K", role: diagnostic}
+    - {name: "nSnow", unit: "-", role: prognostic}
+    - {name: "scalarLAI / scalarSAI (exposed leaf/stem area index)", unit: "m2 m-2", role: diagnostic}
+    - {name: "scalarGrowingSeasonIndex", unit: "-", role: diagnostic}
+  provenance: "populated"
+
+outputs:
+  - var: "scalarTotalRunoff"
+    validation_rank: 1
+    unit: "m s-1"
+    description: "Total runoff (surface runoff + soil drainage + baseflow) per HRU as a flux; discharge Q(m3/s) = scalarTotalRunoff x HRUarea(m2), no /1000."
+    emitted_in: "SUMMA output NetCDF (variables selected in outputControl.txt; defined in def_output.f90)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "SUMMA has no channel routing; comparison to gauged streamflow requires external routing of HRU runoff to the outlet."
+            - "Discard 1-2 yr (5+ for groundwater basins) cold-start spinup before scoring."
+            - "Runoff is m/s while ET/precip are kg/m2/s; mixing the unit families biases the water balance."
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats:
+            - "Per-HRU/GRU runoff fields, not channel discharge."
+      detrending_options: ["none"]
+  - var: "scalarTotalET"
+    validation_rank: 2
+    unit: "kg m-2 s-1"
+    description: "Total evapotranspiration (canopy + ground evaporation, transpiration, sublimation). Negative = evaporation (water leaving surface), positive = condensation."
+    emitted_in: "SUMMA output NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Sign convention: negative ET is upward (evaporative) flux."
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "scalarSWE"
+    validation_rank: 3
+    unit: "kg m-2"
+    description: "Snow water equivalent of the snowpack per HRU."
+    emitted_in: "SUMMA output NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Point SNOTEL-style SWE; timing of accumulation/melt onset matters as much as peak magnitude."
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats:
+            - "Gridded/remote-sensing SWE; sub-canopy SWE is sensitive to canopy-snow unloading scheme."
+      detrending_options: ["none"]
+  - var: "scalarSnowDepth"
+    validation_rank: 4
+    unit: "m"
+    description: "Total snow depth per HRU."
+    emitted_in: "SUMMA output NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "mLayerVolFracLiq"
+    validation_rank: 5
+    unit: "-"
+    description: "Volumetric liquid water fraction at soil layer midpoints (soil moisture profile)."
+    emitted_in: "SUMMA output NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Layer-specific; must match the observation's measurement depth to a model layer."
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats:
+            - "Satellite surface soil moisture compares to near-surface layers only."
+      detrending_options: ["none"]
+  - var: "scalarNetRadiation"
+    validation_rank: 6
+    unit: "W m-2"
+    description: "Net radiation at the land surface (canopy + ground)."
+    emitted_in: "SUMMA output NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Flux-tower energy-balance comparison; sub-daily resolution required."
+      detrending_options: ["none"]
+  - var: "scalarLatHeatTotal"
+    validation_rank: 7
+    unit: "W m-2"
+    description: "Total latent heat flux (turbulent moisture flux), energy-balance counterpart of total ET."
+    emitted_in: "SUMMA output NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Flux-tower eddy-covariance comparison; energy-balance non-closure in observations is a known caveat."
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "precipitation rate (pptrate)"
+      to: "scalarTotalRunoff"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["vanbeusekom2022_summa_forcing"]
+    - from: "precipitation rate (pptrate)"
+      to: "scalarSWE"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "snow-affected basins"
+      citations: ["vanbeusekom2022_summa_forcing"]
+    - from: "air temperature (airtemp)"
+      to: "scalarSWE"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "snow-affected basins"
+      citations: ["vanbeusekom2022_summa_forcing", "clark2015b_summa_implementation"]
+    - from: "shortwave radiation (SWRadAtm)"
+      to: "scalarSWE"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "melt season"
+      citations: ["vanbeusekom2022_summa_forcing"]
+    - from: "longwave radiation (LWRadAtm)"
+      to: "scalarSWE"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "snowpack energy balance"
+      citations: ["vanbeusekom2022_summa_forcing"]
+    - from: "shortwave radiation (SWRadAtm)"
+      to: "scalarTotalET"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["vanbeusekom2022_summa_forcing"]
+    - from: "specific humidity (spechum)"
+      to: "scalarTotalET"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["vanbeusekom2022_summa_forcing"]
+    - from: "air temperature (airtemp)"
+      to: "scalarTotalET"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["vanbeusekom2022_summa_forcing"]
+    - from: "infiltration / soil hydraulic parameters (k_soil, qSurfScale)"
+      to: "scalarTotalRunoff"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["farahani2025_summa_camels_emulator"]
+    - from: "soil storage and transmission parameters (theta_sat, vGn_alpha, vGn_n)"
+      to: "scalarTotalRunoff"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["farahani2025_summa_camels_emulator"]
+    - from: "aquifer storage and release parameters (aquiferScaleFactor)"
+      to: "scalarTotalRunoff"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "baseflow recession"
+      citations: ["farahani2025_summa_camels_emulator"]
+    - from: "ET / vegetation parameters (rootingDepth, critSoilTranspire)"
+      to: "scalarTotalRunoff"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "water-balance partition"
+      citations: ["farahani2025_summa_camels_emulator", "clark2015b_summa_implementation"]
+    - from: "snow accumulation and melt parameters (tempCritRain, frozenPrecipMultip)"
+      to: "scalarTotalRunoff"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "snow-affected basins"
+      citations: ["farahani2025_summa_camels_emulator"]
+    - from: "canopy-snow unloading parameterization (snowUnload decision)"
+      to: "scalarSWE"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "forested snow basins (sub-canopy SWE)"
+      citations: ["lumbrazo2022_summa_canopy_unloading"]
+    - from: "canopy-snow unloading parameterization (snowUnload decision)"
+      to: "canopy albedo"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "forested snow basins"
+      citations: ["lumbrazo2022_summa_canopy_unloading"]
+    - from: "flux parameterization choice (model decisions)"
+      to: "scalarTotalRunoff"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "always (multi-physics framework)"
+      citations: ["clark2015a_summa_concept", "clark2015b_summa_implementation", "vanbeusekom2022_summa_forcing"]
+  citation_index:
+    clark2015a_summa_concept:
+      short_citation: "Clark et al. 2015a"
+      doi: "10.1002/2015WR017198"
+      note: "SUMMA modeling concept; controlled experiments attribute output differences to specific modeling decisions/parameters. Qualitative (no global SA index)."
+    clark2015b_summa_implementation:
+      short_citation: "Clark et al. 2015b"
+      doi: "10.1002/2015WR017200"
+      note: "SUMMA implementation + case studies; snow/ET/runoff response to alternative parameterizations. Qualitative."
+    vanbeusekom2022_summa_forcing:
+      short_citation: "Van Beusekom et al. 2022"
+      doi: "10.1175/JHM-D-21-0111.1"
+      note: "SUMMA forcing-importance study over 671 CONUS CAMELS basins; relative forcing influence on 14 outputs varies by variable/location/physics. Process-importance, not reported Sobol/Morris indices."
+    farahani2025_summa_camels_emulator:
+      short_citation: "Farahani et al. 2025"
+      doi: "10.5194/hess-29-4515-2025"
+      note: "SUMMA+mizuRoute CAMELS calibration; 23 parameters selected as the controlling set for streamflow (KGE). Parameter-selection rationale, not a variance-based SA index."
+    lumbrazo2022_summa_canopy_unloading:
+      short_citation: "Lumbrazo et al. 2022"
+      doi: "10.1029/2021WR030852"
+      note: "Three canopy-snow unloading schemes in SUMMA; choice changes sub-canopy ground SWE by ~20% and winter canopy albedo by ~10% (quantitative effect sizes, not a normalized variance index)."
+
+safety:
+  hazards:
+    - id: "precip_unit_or_timestep_silent_runoff_bias"
+      kind: "weather_file_semantic"
+      description: "Precipitation rate scaled by the wrong factor (e.g. divided by 86400 instead of the 10800 s 3-hourly step) leaves runoff multiples too high/low with no error; verify mean pptrate ~1e-5 to 1e-4 kg/m2/s."
+      severity: "silent"
+    - id: "airpres_kPa_energy_balance_NaN"
+      kind: "weather_file_semantic"
+      description: "Air pressure supplied in kPa instead of Pa breaks saturation vapour pressure / Penman-Monteith; soil temperatures diverge >400K or <200K and NaN propagates. Expect ~80000-105000 Pa."
+      severity: "fatal_or_silent"
+    - id: "spechum_g_per_kg_high_ET"
+      kind: "weather_file_semantic"
+      description: "Specific humidity in g/kg instead of g/g (or pressure in kPa) yields wrong vapour-pressure deficit and ET >10 mm/day or negative, with no error. Expect spechum ~0.002-0.015."
+      severity: "silent"
+    - id: "vGn_alpha_positive_NaN"
+      kind: "soil_semantic"
+      description: "van Genuchten vGn_alpha must be NEGATIVE (matric-head convention); a positive value makes (alpha*psi)^n NaN for non-integer n, giving NaN soil moisture and runoff. Valid range ~[-1.0,-0.01]."
+      severity: "silent"
+    - id: "soil_param_ordering_violation"
+      kind: "soil_semantic"
+      description: "Soil parameters mixed from different pedotransfer frameworks (e.g. Saxton-Rawls vs ROSETTA) can violate the required ordering theta_res < critSoilWilting < critSoilTranspire < fieldCapacity < theta_sat, causing an out-of-range crash. Derive all soil parameters from one framework."
+      severity: "fatal"
+    - id: "theta_res_ge_theta_sat"
+      kind: "soil_semantic"
+      description: "theta_res must be strictly less than theta_sat; otherwise the retention curve is ill-posed and the run crashes / produces NaN."
+      severity: "fatal"
+    - id: "trialparams_name_silent_fallback"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "trialParams.nc variable names must match SUMMA's case-sensitive internal names (var_lookup.f90); unrecognized names are silently ignored and lookup-table defaults are used with no warning."
+      severity: "silent"
+    - id: "coldstate_nsoil_dimension_mismatch"
+      kind: "initial_condition_semantic"
+      description: "Number of soil layers in coldState.nc must match the model's nSoil configuration exactly; a mismatch aborts at the layer dimension check."
+      severity: "fatal"
+    - id: "coldstart_spinup_unrealistic"
+      kind: "initial_condition_semantic"
+      description: "Cold-start initial conditions far from equilibrium produce 1-2 yr (5+ for groundwater basins) of unrealistic runoff/storage that must be discarded; over-dry init causes long spinup, above-theta_sat init causes runoff spikes."
+      severity: "degraded"
+    - id: "nrg_flux_convergence_failure_subtropical"
+      kind: "numerical_instability"
+      description: "canopySnow phase-change equations are stiff; on warm/subtropical basins the first freezing event under nrg_flux can fail to converge ('failed to converge [mass]') for all GRUs. presTemp avoids the crash but yields zero ET / zero runoff (diagnostic only); two-phase spinup mitigates."
+      severity: "fatal_or_silent"
+    - id: "convergence_dt_below_dtmin"
+      kind: "numerical_instability"
+      description: "Unrealistic forcing (e.g. negative shortwave), steep terrain/thin layers, or incompatible decisions drive 'dt < dtmin' / 'failed to converge' and STOP 40; clean forcing, raise dt_init, or coarsen soil layers."
+      severity: "fatal"
+    - id: "fDerivMeth_numerical_unimplemented"
+      kind: "control_semantic"
+      description: "fDerivMeth=numericl is not implemented for the coupled hydro-thermal solver; soilLiqFlx returns err=20 and the run crashes. Only fDerivMeth=analytic works."
+      severity: "fatal"
+    - id: "groundwater_decision_incompatibility"
+      kind: "control_semantic"
+      description: "groundwatr=qTopmodl requires bcLowrSoiH=zeroFlux AND hc_profile=pow_prof; spatial_gw=singleBasin requires groundwatr=bigBuckt. Incompatible decision combinations are fatal at init (enforced in mDecisions)."
+      severity: "fatal"
+    - id: "invalid_decision_option"
+      kind: "control_semantic"
+      description: "Case-sensitive decision keywords with a typo/invalid value (and intentionally-abbreviated options like 'itertive', 'numericl', 'consettl') trigger STOP 30 'unknown option'."
+      severity: "fatal"
+    - id: "hru_id_inconsistency_across_files"
+      kind: "control_semantic"
+      description: "hruId/gruId values and order must be identical across attributes, forcing, coldState and trialParams NetCDFs; a single missing/extra/reordered HRU is fatal at startup."
+      severity: "fatal"
+    - id: "netcdf_varname_or_dim_order"
+      kind: "parser_semantic"
+      description: "Misspelled or mis-cased NetCDF variable names (ppt_rate vs pptrate) or wrong (time,hru) dimension order cause STOP 20 NetCDF dimension errors (Fortran names are case-sensitive)."
+      severity: "fatal"
+    - id: "mixed_output_unit_families"
+      kind: "parser_semantic"
+      description: "SUMMA emits runoff fluxes (scalarTotalRunoff, drainage, baseflow) in m/s but ET/throughfall/pptrate in kg/m2/s. Treating them with a single unit conversion (e.g. dividing runoff by water density) makes discharge ~1000x too low and opens a spurious ~1000 mm/yr water-balance gap; consult each variable's units attribute."
+      severity: "silent"
+    - id: "presTemp_boundary_zero_ET"
+      kind: "control_semantic"
+      description: "A presTemp upper/lower thermodynamic boundary bypasses the energy balance and silently produces zero ET and hence zero runoff (diagnostic mode only)."
+      severity: "silent"
+    - id: "averageRoutedRunoff_scored_as_channel_discharge"
+      kind: "workflow_semantic"
+      description: "Scoring averageRoutedRunoff x basin area against a gauge on a large basin yields the signature r >= 0.7 with NSE <= 0.3: the shape is right but all channel travel time is missing. This is a workflow error, not a model verdict. Gauged-discharge validation requires the external s8_routing (mizuRoute) stage."
+      severity: "silent"
+    - id: "mizuroute_hybas_id_int32_overflow_and_unit_double_conversion"
+      kind: "coupling_semantic"
+      description: "When wiring mizuRoute, HydroBASINS HYBAS_ID overflows mizuRoute's int32 river-network id payload (max 4,071,348,160 vs int32 max 2,147,483,647; read_streamSeg.f90:254 loads NTOPO via i4b); ids must be renumbered 1..N. mizuRoute accepts m/s natively (read_control.f90:457 case('m') -> length_conv=1.0), which is already SUMMA's scalarTotalRunoff unit -- do not convert, or discharge is 1000x wrong."
+      severity: "fatal_or_silent"
+    - id: "lumped_discretisation_cannot_be_routed"
+      kind: "workflow_semantic"
+      description: "A river-network router requires runoff per sub-basin. A lumped single-GRU / elevation-band discretisation cannot be routed; re-discretise to one GRU per sub-basin first."
+      severity: "fatal"
+  validation_limits:
+    - "No channel/stream-network routing inside SUMMA; gauged-discharge comparison requires external routing (e.g. mizuRoute) of HRU runoff."
+    - "No lateral moisture exchange between GRUs; lateral hillslope/hydraulic connectivity between distinct GRUs cannot be represented."
+    - "Designed for cold-region / snow-dominated / mountain / Arctic-subarctic basins where canopy-snow interception matters; the canopySnow phase-change path is poorly conditioned on warm/subtropical basins under nrg_flux."
+    - "Single 1-D vertical column per HRU; sub-HRU spatial heterogeneity within a land-cover/soil class is not resolved."
+    - "Same parameterization applies across the entire model domain in this version (no per-region physics mixing within one run)."
+  warnings:
+    - "presTemp diagnostic boundary yields zero ET / zero runoff that looks like a successful but physically meaningless run."
+    - "All-zero runoff and unrealistically-high ET are silent symptoms (no STOP) of forcing-unit or boundary-condition errors, not necessarily model failure."
+    - "Soil/vegetation lookup parameters are applied by successive overwriting (local attributes -> local params -> basin params -> Noah-MP tables -> trialParams); a later source silently overrides an earlier one."
+    - "Total runoff and ET are per-HRU surface fluxes; averageRoutedRunoff is sub-grid gamma routing, not channel discharge."
+  assumptions:
+    - statement: "Each HRU is treated as an independent 1-D vertical column (canopy + snow + soil + aquifer) with no lateral moisture exchange between GRUs."
+      scope: "spatial geometry / domain decomposition"
+      source: "SUMMA configuration docs (https://summa.readthedocs.io/en/latest/configuration/SUMMA_configuration/)"
+      status: "adopted"
+    - statement: "The model closes both a water mass balance and a surface energy balance on a common conservation core, with the conservation equations decoupled from the numerical solver."
+      scope: "conservation / closure"
+      source: "Clark et al. 2015 WRR (DOI:10.1002/2015WR017198) and https://ral.ucar.edu/model/summa"
+      status: "adopted"
+    - statement: "vGn_alpha is interpreted under SUMMA's negative matric-head sign convention (valid ~[-1.0,-0.01]); positive values are treated as an error, not an alternative convention."
+      scope: "soil-parameter sign convention"
+      source: "soil_utils.f90 / soilLiqFlx.f90 behavior and SUMMA parameter guidance"
+      status: "adopted"
+    - statement: "Only fDerivMeth=analytic is a valid numerical-derivative method; the numericl option is regarded as unimplemented rather than a selectable alternative."
+      scope: "numerical solver configuration"
+      source: "soilLiqFlx.f90 (err=20 cross-derivative guard) and mDecisions.f90"
+      status: "adopted"
+    - statement: "scalarTotalRunoff is a flux in m/s; gauged discharge is obtained as runoff x HRUarea with no division by water density, and runoff/ET unit families are kept distinct."
+      scope: "output-units interpretation"
+      source: "multiconst.f90 (iden_water=1000) and SUMMA output-units documentation"
+      status: "adopted"
+    - statement: "Soil-layer count nSoil in the cold state must equal the model's configured soil discretization; the default is 8 layers to ~4 m depth."
+      scope: "state-vector / discretization"
+      source: "SUMMA initial-conditions documentation and runtime dimension check"
+      status: "adopted"

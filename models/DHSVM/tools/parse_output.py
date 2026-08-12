@@ -317,6 +317,13 @@ def process(args):
             "segments": sorted(segments),
         }
 
+        # Write CSV (was previously only done for --aggregated, so a
+        # documented `--streamflow ... --output results.csv` call silently
+        # produced no file). Write the parsed streamflow records too.
+        if args.output and args.output.endswith(".csv"):
+            write_csv(records, args.output)
+            result["csv_output"] = args.output
+
         # Compute metrics if observed data provided
         if args.observed:
             metrics = compute_validation_metrics(

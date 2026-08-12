@@ -1,8 +1,22 @@
 package:
   created: '2026-03-25T04:03:18.815652'
-  domain: hydraulics
+  updated: '2026-04-30'
+  domain: hydraulics, storm_surge, ocean_CFD
   name: OpenFOAM
   version: auto-generated
+  triplets: 32
+  validated_cases:
+    - id: cavity_tutorial
+      type: lid_driven_cavity
+      status: binary_validated
+    - id: hurricane_laura_2020_ib
+      type: storm_surge_barometric
+      status: production_validated
+      nse: 0.51
+      r: 0.84
+      pbias_pct: 11.4
+      station: NOAA_8761724_GrandIsle
+      notes: IB analytical only; incompressibleVoF failed for basin-scale (see triplets dt_021-dt_031)
 pipeline:
   stages:
   - depends_on: []

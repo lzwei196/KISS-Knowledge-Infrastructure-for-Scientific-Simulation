@@ -176,12 +176,18 @@ def process(args):
     print(f"Executing: {cmd_str}", file=sys.stderr)
 
     start_time = time.time()
+    # Some PISM builds link an HDF5 whose header/library versions disagree, which
+    # aborts/segfaults on NetCDF reads. Silence the version check (NetCDF-3 inputs
+    # avoid the corruption path entirely; see convert_geometry.py default format).
+    run_env = dict(os.environ)
+    run_env.setdefault("HDF5_DISABLE_VERSION_CHECK", "2")
     try:
         proc = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=args.timeout or 86400,
+            env=run_env,
         )
         elapsed = time.time() - start_time
 

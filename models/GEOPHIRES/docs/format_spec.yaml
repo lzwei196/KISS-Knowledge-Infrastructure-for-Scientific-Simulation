@@ -1,143 +1,200 @@
 model:
-  name: "GEOPHIRES-X"
-  version: "3.11.25"
-  domain: "geothermal techno-economic simulation"
-  developer: "NREL (National Renewable Energy Laboratory)"
-  license: "MIT"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GEOPHIRES/venv/bin/python"
-  entry_point: "geophires_x.GEOPHIRESv3"
-  description: >
-    Geothermal techno-economic simulator combining reservoir models,
-    wellbore models, surface plant models, and economic models to estimate
-    LCOE/LCOH for geothermal energy projects.
+  name: GEOPHIRES-X
+  version: 3.11.25
+  domain: geophysics
+  developer: NREL (National Renewable Energy Laboratory)
+  license: MIT
+  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/GEOPHIRES/venv/bin/python
+  entry_point: geophires_x.GEOPHIRESv3
+  description: 'Geothermal techno-economic simulator combining reservoir models, wellbore
+    models, surface plant models, and economic models to estimate LCOE/LCOH for geothermal
+    energy projects.
 
+    '
 inputs:
-  format: "comma-separated text file (.txt)"
+  format: comma-separated text file (.txt)
   format_rules:
-    - "One parameter per line: Name, Value, ---Optional comment"
-    - "Lines starting with # are comments"
-    - "Unknown parameters silently ignored"
-    - "Parameters can appear in any order"
-    - "Units are implicit per parameter"
+  - 'One parameter per line: Name, Value, ---Optional comment'
+  - 'Lines starting with # are comments'
+  - Unknown parameters silently ignored
+  - Parameters can appear in any order
+  - Units are implicit per parameter
   forcing:
-    - name: "Reservoir Depth"
-      unit: "km"
-      valid_range: [0.5, 10.0]
-      description: "Depth to geothermal reservoir"
-    - name: "Gradient 1"
-      unit: "degC/km"
-      valid_range: [20, 100]
-      description: "Geothermal temperature gradient"
-    - name: "Production Flow Rate per Well"
-      unit: "kg/s"
-      valid_range: [20, 150]
-      description: "Mass flow rate per production well"
-    - name: "Injection Temperature"
-      unit: "degC"
-      valid_range: [40, 90]
-      description: "Temperature of reinjected fluid"
+  - name: Reservoir Depth
+    unit: km
+    valid_range:
+    - 0.5
+    - 10.0
+    description: Depth to geothermal reservoir
+  - name: Gradient 1
+    unit: degC/km
+    valid_range:
+    - 20
+    - 100
+    description: Geothermal temperature gradient
+  - name: Production Flow Rate per Well
+    unit: kg/s
+    valid_range:
+    - 20
+    - 150
+    description: Mass flow rate per production well
+  - name: Injection Temperature
+    unit: degC
+    valid_range:
+    - 40
+    - 90
+    description: Temperature of reinjected fluid
   parameters:
     critical:
-      - name: "Reservoir Model"
-        valid_range: [0, 8]
-        description: "Reservoir model type (0=Cylindrical, 1=MPF, 2=LHS, 3=SF, 4=PTD default, 5=User, 6=TOUGH2, 7=SUTRA, 8=SBT)"
-      - name: "End-Use Option"
-        valid_range: [1, 2]
-        description: "1=Electricity, 2=Direct-Use Heat"
-      - name: "Power Plant Type"
-        valid_range: [1, 9]
-        description: "Surface plant type (1=SubORC, 2=SupORC, 3=SingleFlash, 4=DoubleFlash, 5=AbsChiller, 6=HeatPump, 7=DistrictHeat, 8=SUTRA, 9=IndustrialHeat)"
-      - name: "Economic Model"
-        valid_range: [1, 5]
-        description: "Economic model (1=FCR, 2=Standard, 3=BICYCLE, 4=CLGS, 5=SAM)"
-      - name: "Number of Production Wells"
-        valid_range: [1, 20]
-        description: "Count of production wells"
-      - name: "Number of Injection Wells"
-        valid_range: [1, 20]
-        description: "Count of injection wells"
-      - name: "Production Well Diameter"
-        unit: "inches"
-        valid_range: [5, 12]
-        description: "Production well casing inner diameter"
-      - name: "Injection Well Diameter"
-        unit: "inches"
-        valid_range: [5, 12]
-        description: "Injection well casing inner diameter"
-      - name: "Plant Lifetime"
-        unit: "yr"
-        valid_range: [20, 50]
-        description: "Project lifetime for economic calculation"
-      - name: "Fixed Charge Rate"
-        unit: "fraction"
-        valid_range: [0.01, 0.20]
-        description: "FCR for economic model 1"
-      - name: "Maximum Temperature"
-        unit: "degC"
-        valid_range: [200, 600]
-        description: "Cap on calculated bottom-hole temperature"
-      - name: "Reservoir Heat Capacity"
-        unit: "J/kg/K"
-        valid_range: [500, 2000]
-        description: "Rock heat capacity"
-      - name: "Reservoir Density"
-        unit: "kg/m3"
-        valid_range: [2000, 3500]
-        description: "Rock density"
-      - name: "Reservoir Thermal Conductivity"
-        unit: "W/m/K"
-        valid_range: [1.0, 5.0]
-        description: "Rock thermal conductivity"
-
+    - name: Reservoir Model
+      valid_range:
+      - 0
+      - 8
+      description: Reservoir model type (0=Cylindrical, 1=MPF, 2=LHS, 3=SF, 4=PTD
+        default, 5=User, 6=TOUGH2, 7=SUTRA, 8=SBT)
+    - name: End-Use Option
+      valid_range:
+      - 1
+      - 2
+      description: 1=Electricity, 2=Direct-Use Heat
+    - name: Power Plant Type
+      valid_range:
+      - 1
+      - 9
+      description: Surface plant type (1=SubORC, 2=SupORC, 3=SingleFlash, 4=DoubleFlash,
+        5=AbsChiller, 6=HeatPump, 7=DistrictHeat, 8=SUTRA, 9=IndustrialHeat)
+    - name: Economic Model
+      valid_range:
+      - 1
+      - 5
+      description: Economic model (1=FCR, 2=Standard, 3=BICYCLE, 4=CLGS, 5=SAM)
+    - name: Number of Production Wells
+      valid_range:
+      - 1
+      - 20
+      description: Count of production wells
+    - name: Number of Injection Wells
+      valid_range:
+      - 1
+      - 20
+      description: Count of injection wells
+    - name: Production Well Diameter
+      unit: inches
+      valid_range:
+      - 5
+      - 12
+      description: Production well casing inner diameter
+    - name: Injection Well Diameter
+      unit: inches
+      valid_range:
+      - 5
+      - 12
+      description: Injection well casing inner diameter
+    - name: Plant Lifetime
+      unit: yr
+      valid_range:
+      - 20
+      - 50
+      description: Project lifetime for economic calculation
+    - name: Fixed Charge Rate
+      unit: fraction
+      valid_range:
+      - 0.01
+      - 0.2
+      description: FCR for economic model 1
+    - name: Maximum Temperature
+      unit: degC
+      valid_range:
+      - 200
+      - 600
+      description: Cap on calculated bottom-hole temperature
+    - name: Reservoir Heat Capacity
+      unit: J/kg/K
+      valid_range:
+      - 500
+      - 2000
+      description: Rock heat capacity
+    - name: Reservoir Density
+      unit: kg/m3
+      valid_range:
+      - 2000
+      - 3500
+      description: Rock density
+    - name: Reservoir Thermal Conductivity
+      unit: W/m/K
+      valid_range:
+      - 1.0
+      - 5.0
+      description: Rock thermal conductivity
 outputs:
   formats:
-    - type: "text report"
-      extension: ".out"
-      description: "Human-readable formatted report"
-    - type: "JSON export"
-      extension: ".json"
-      description: "Machine-readable structured data"
+  - type: text report
+    extension: .out
+    description: Human-readable formatted report
+  - type: JSON export
+    extension: .json
+    description: Machine-readable structured data
   primary:
-    - name: "Average Net Electricity Production"
-      unit: "MW"
-      valid_range: [0.1, 500]
-      description: "Average net power output (electricity mode)"
-    - name: "Electricity breakeven price (LCOE)"
-      unit: "cents/kWh"
-      valid_range: [3, 50]
-      description: "Levelized cost of electricity"
-    - name: "Average Direct-Use Heat Production"
-      unit: "MW"
-      valid_range: [0.1, 500]
-      description: "Average heat output (direct-use mode)"
-    - name: "Direct-Use heat breakeven price (LCOH)"
-      unit: "USD/MMBTU"
-      valid_range: [3, 30]
-      description: "Levelized cost of heat"
-    - name: "Project NPV"
-      unit: "MUSD"
-      valid_range: [-500, 500]
-      description: "Net present value"
-    - name: "Project IRR"
-      unit: "%"
-      valid_range: [-20, 50]
-      description: "Internal rate of return"
+  - name: Average Net Electricity Production
+    unit: MW
+    valid_range:
+    - 0.1
+    - 500
+    description: Average net power output (electricity mode)
+  - name: Electricity breakeven price (LCOE)
+    unit: cents/kWh
+    valid_range:
+    - 3
+    - 50
+    description: Levelized cost of electricity
+  - name: Average Direct-Use Heat Production
+    unit: MW
+    valid_range:
+    - 0.1
+    - 500
+    description: Average heat output (direct-use mode)
+  - name: Direct-Use heat breakeven price (LCOH)
+    unit: USD/MMBTU
+    valid_range:
+    - 3
+    - 30
+    description: Levelized cost of heat
+  - name: Project NPV
+    unit: MUSD
+    valid_range:
+    - -500
+    - 500
+    description: Net present value
+  - name: Project IRR
+    unit: '%'
+    valid_range:
+    - -20
+    - 50
+    description: Internal rate of return
+  - name: subsurface_resistivity
+    canonical_id: subsurface_resistivity
+    unit: ohm.m
+  - name: hydraulic_conductivity
+    canonical_id: hydraulic_conductivity
+    unit: m/s
+  - name: porosity
+    canonical_id: porosity
+    unit: fraction
   sections:
-    - "Summary of Results"
-    - "Economic Parameters"
-    - "Engineering Parameters"
-    - "Resource Characteristics"
-    - "Reservoir Parameters"
-    - "Reservoir Simulation Results"
-    - "Capital Costs"
-    - "O&M Costs"
-    - "Production Profile (year-by-year)"
-    - "Energy Profile (annual kWh/GWh)"
-    - "Revenue & Cashflow"
-
+  - Summary of Results
+  - Economic Parameters
+  - Engineering Parameters
+  - Resource Characteristics
+  - Reservoir Parameters
+  - Reservoir Simulation Results
+  - Capital Costs
+  - O&M Costs
+  - Production Profile (year-by-year)
+  - Energy Profile (annual kWh/GWh)
+  - Revenue & Cashflow
 known_issues:
-  - "Parameters with typos or wrong capitalization are silently ignored"
-  - "Depth in meters instead of km produces extreme results without error"
-  - "Gradient in degC/m instead of degC/km gives near-zero temperature"
-  - "Financial rates as percentages instead of fractions inflate LCOE 100x"
-  - "SBT/SUTRA models can take minutes to hours for complex configurations"
+- Parameters with typos or wrong capitalization are silently ignored
+- Depth in meters instead of km produces extreme results without error
+- Gradient in degC/m instead of degC/km gives near-zero temperature
+- Financial rates as percentages instead of fractions inflate LCOE 100x
+- SBT/SUTRA models can take minutes to hours for complex configurations

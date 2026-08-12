@@ -1,0 +1,686 @@
+template_version: "3.5"
+
+identity:
+  model_id: "EPANET"
+  scientific_reference_version: "EPANET 2.2 (Rossman et al., USEPA, 2020; engine CODEVERSION 20200)"
+  implementation:
+    id: "epanet-22"
+    version: "2.2.0"
+    provenance: "C reference solver shipped by USEPA with OWA (Open Water Analytics); the official EPANET 2.2 engine realizing the Rossman/USEPA 2.2 specification."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c"
+  license: "MIT"
+  repo_url: "https://github.com/USEPA/EPANET2.2"
+
+boundary:
+  scope_in:
+    - "Pressurized pipe-network hydraulics: flow, velocity, head, pressure at every node and link"
+    - "Single-period (snapshot) and extended-period simulation (EPS) with time-varying demands and operations"
+    - "Demand-driven (DDA) and pressure-driven (PDA) demand satisfaction"
+    - "Water-quality fate/transport: single chemical constituent decay, water age, and source tracing"
+    - "Tank water-level dynamics with four tank-mixing models (complete-mix, two-compartment, FIFO, LIFO)"
+    - "Bulk and pipe-wall chemical reaction kinetics"
+    - "Pump energy consumption and cost accounting"
+  scope_out:
+    - "Open-channel / free-surface flow, rainfall-runoff, groundwater"
+    - "Transient / water-hammer (surge) analysis"
+    - "Longitudinal dispersion in pipes (advective transport with complete junction mixing only)"
+    - "Processes upstream of where water enters the distribution system from reservoirs"
+  spatial: "distributed-stream"
+  temporal: "hourly"
+  closure: "both"
+  notes: >
+    Spatial discretization is the user-defined network graph of nodes (junctions,
+    reservoirs, tanks) and links (pipes, pumps, valves), not a fixed mesh; default
+    hydraulic/pattern/report time step is 3600 s (1 hr), but the actual step is
+    event-limited (shortened by tank fill/empty, control activation, and rule
+    firing). Closure combines conservation of mass (flow continuity at all nodes)
+    and conservation of energy (head loss) solved together via Todini's Global
+    Gradient Algorithm; the "energy" here is mechanical/hydraulic head-loss energy,
+    not a surface or thermal energy budget (see safety.assumptions). Water-quality
+    transport additionally closes a constituent mass balance. Reservoirs act as
+    infinite source/sinks whose head and quality are unaffected by the network; at
+    least one fixed-grade node (reservoir or tank) is required as a boundary
+    condition.
+
+inputs:
+  forcing:
+    - category: "demand_driver"
+      name: "Demand time pattern multipliers"
+      unit: "dimensionless"
+      source_kind: "user_provided"
+      model_input_format: ".inp [PATTERNS] section, applied cyclically over the simulation"
+      notes: "Dimensionless multipliers scale junction base demand (and optionally reservoir head / source strength) per pattern time step."
+    - category: "boundary_supply"
+      name: "Reservoir head pattern"
+      unit: "ft or m (head)"
+      source_kind: "user_provided"
+      model_input_format: ".inp [RESERVOIRS] head + optional time pattern"
+      notes: "Time-varying fixed-grade boundary head; reservoir is an infinite source/sink."
+  parameters:
+    - category: "pipe"
+      name: "Pipe roughness coefficient"
+      unit: "Hazen-Williams C (unitless) | Darcy-Weisbach roughness height (10^-3 ft US / mm SI) | Chezy-Manning n (unitless)"
+      source_kind: "calibrated"
+      model_input_format: ".inp [PIPES] Roughness column; meaning set by [OPTIONS] Headloss"
+      notes: "Roughness scale MUST match the selected head-loss formula (H-W C ~50-160, D-W height, C-M n ~0.011-0.017); no internal validation of roughness-vs-formula consistency."
+    - category: "pipe"
+      name: "Pipe length, diameter, minor-loss coefficient"
+      unit: "length (ft/m), diameter (in US / mm SI), minor-loss (unitless)"
+      source_kind: "dataset_lookup"
+      model_input_format: ".inp [PIPES] Length/Diameter/MinorLoss"
+    - category: "node"
+      name: "Node elevation"
+      unit: "ft or m"
+      source_kind: "dataset_lookup"
+      model_input_format: ".inp [JUNCTIONS]/[TANKS] elevation, [RESERVOIRS] head"
+    - category: "node"
+      name: "Junction base demand"
+      unit: "flow units (GPM/LPS/...)"
+      source_kind: "calibrated"
+      model_input_format: ".inp [JUNCTIONS] Demand / [DEMANDS] categories"
+      notes: "Base demand is scaled by the demand pattern at each time step; co-dominant calibrated quantity with roughness."
+    - category: "tank"
+      name: "Tank geometry (diameter, min/max level, min volume, bottom elevation)"
+      unit: "diameter (ft US / m SI), level (ft/m), volume (ft^3/m^3)"
+      source_kind: "dataset_lookup"
+      model_input_format: ".inp [TANKS]"
+      notes: "Tank diameter is in ft (US) or m (SI), NOT inches/mm; wrong unit yields near-zero volume."
+    - category: "pump"
+      name: "Pump characteristic curve / power / speed"
+      unit: "head (ft/m) vs flow units; POWER in HP (US) / kW (SI)"
+      source_kind: "dataset_lookup"
+      model_input_format: ".inp [PUMPS] + [CURVES]"
+      notes: "HEAD curve must be monotonically decreasing head with flow; mis-specification yields XHEAD/XFLOW non-delivery."
+    - category: "valve"
+      name: "Valve type and setting"
+      unit: "PRV/PSV/PBV setting (psi or m), FCV (flow units), TCV (unitless loss coeff), GPV (curve ID)"
+      source_kind: "user_provided"
+      model_input_format: ".inp [VALVES] Type/Setting/Diameter/MinorLoss"
+    - category: "water_quality"
+      name: "Bulk reaction coefficient"
+      unit: "1/day"
+      source_kind: "calibrated"
+      model_input_format: ".inp [REACTIONS] Global Bulk / per-pipe Bulk"
+      notes: "Negative = decay (chlorine loss), positive = growth (e.g. DBP formation); same in US and SI."
+    - category: "water_quality"
+      name: "Wall reaction coefficient"
+      unit: "ft/day (US) or m/day (SI) for first-order"
+      source_kind: "calibrated"
+      model_input_format: ".inp [REACTIONS] Global Wall / per-pipe Wall"
+      notes: "Unit-system dependent (ft/day vs m/day); pipe material/condition dependent."
+    - category: "emitter"
+      name: "Emitter (leakage) coefficient and exponent"
+      unit: "flow per pressure^Qexp; Qexp default 2.0"
+      source_kind: "calibrated"
+      model_input_format: ".inp [EMITTERS]"
+      notes: "Models pressure-dependent outflow d = C*p^Qexp at a node."
+  initial_conditions:
+    - category: "tank"
+      name: "Tank initial water level"
+      unit: "ft or m"
+      source_kind: "user_provided"
+      model_input_format: ".inp [TANKS] InitLevel (must satisfy MinLevel < InitLevel < MaxLevel)"
+    - category: "water_quality"
+      name: "Initial node water quality / water age"
+      unit: "mg/L (chemical) or hr (age)"
+      source_kind: "user_provided"
+      model_input_format: ".inp [QUALITY]"
+      notes: "Zero initial quality with no source leaves the constituent at zero everywhere; existing systems may need a warm-up or non-zero initial age."
+    - category: "link"
+      name: "Initial link status"
+      unit: "open/closed"
+      source_kind: "user_provided"
+      model_input_format: ".inp [STATUS] / [PIPES] Status"
+  boundary_conditions:
+    - category: "structural_switch"
+      name: "Head-loss formula selection"
+      unit: "H-W | D-W | C-M"
+      source_kind: "user_provided"
+      model_input_format: ".inp [OPTIONS] Headloss"
+      notes: "Selects which roughness law relates flow to head loss; dictates the meaning of the roughness column."
+    - category: "structural_switch"
+      name: "Flow units selection"
+      unit: "CFS/GPM/MGD/IMGD/AFD (US) | LPS/LPM/MLD/CMH/CMD (SI)"
+      source_kind: "user_provided"
+      model_input_format: ".inp [OPTIONS] Units"
+      notes: "Flow-unit choice cascades to determine the unit system of ALL other parameters and outputs."
+    - category: "structural_switch"
+      name: "Demand model selection (DDA / PDA)"
+      unit: "DDA | PDA (with Pmin, Preq, Pexp)"
+      source_kind: "user_provided"
+      model_input_format: ".inp [OPTIONS] Demand Model / Minimum Pressure / Required Pressure / Pressure Exponent"
+      notes: "DDA forces full demand (can produce negative pressures); PDA makes delivered demand a power function of pressure (Pexp default 0.5)."
+    - category: "structural_switch"
+      name: "Water-quality analysis type"
+      unit: "NONE | CHEMICAL | AGE | TRACE node"
+      source_kind: "user_provided"
+      model_input_format: ".inp [OPTIONS] Quality"
+      notes: "Single-period (Duration=0) runs silently force Qualflag to NONE."
+    - category: "water_quality"
+      name: "Quality source specification"
+      unit: "CONCEN/MASS/SETPOINT/FLOWPACED strength"
+      source_kind: "user_provided"
+      model_input_format: ".inp [SOURCES]"
+      notes: "CONCEN only sets concentration of external inflow; on a node with no external inflow use SETPOINT or FLOWPACED."
+    - category: "operation"
+      name: "Simple controls and rule-based controls"
+      unit: "IF/THEN level/pressure/time logic"
+      source_kind: "user_provided"
+      model_input_format: ".inp [CONTROLS] (simple) and [RULES] (IF/THEN/ELSE)"
+      notes: "Open/close/set pumps and valves on tank level, node pressure, or time; controls without hysteresis can oscillate."
+    - category: "tank"
+      name: "Tank mixing model selection"
+      unit: "MIXED | 2COMP | FIFO | LIFO"
+      source_kind: "user_provided"
+      model_input_format: ".inp [MIXING]"
+    - category: "solver_control"
+      name: "Solver tolerances and limits"
+      unit: "TRIALS (count), ACCURACY (ratio), UNBALANCED, DAMPLIMIT, VISCOSITY, DIFFUSIVITY"
+      source_kind: "user_provided"
+      model_input_format: ".inp [OPTIONS]"
+      notes: "Defaults: TRIALS 200, ACCURACY 0.001, DAMPLIMIT 0 (disabled), viscosity 1.1e-5 sq ft/s, diffusivity 1.3e-8 sq ft/s."
+    - category: "timing"
+      name: "Simulation timing parameters"
+      unit: "seconds/hours"
+      source_kind: "user_provided"
+      model_input_format: ".inp [TIMES] Duration / Hydraulic / Quality / Pattern / Report timesteps"
+      notes: "Quality timestep must be <= hydraulic timestep (default Hstep/10); Hstep is clamped to <= pattern and <= report steps."
+
+processes:
+  modules:
+    - name: "InputParser"
+      role: "driver"
+      brief: "Reads .inp sections, applies defaults (setdefaults), validates/adjusts data (adjustdata), converts to internal cfs/ft working units (convertunits), and builds the Network struct."
+    - name: "ProjectNetworkSetup"
+      role: "driver"
+      brief: "Allocates data, builds node/link hash tables and adjacency lists, manages files and error messaging."
+    - name: "HydraulicsDriver"
+      role: "driver"
+      brief: "Per-time-step controller (runhyd): applies simple controls, invokes the hydraulic solve, and computes the next event-limited step."
+    - name: "HydSolverGGA"
+      role: "process_solver"
+      brief: "Global Gradient Algorithm Newton loop (hydsolve): assembles, solves, and updates flows/heads; checks DDA and PDA convergence."
+    - name: "HeadlossCoeffs"
+      role: "process_solver"
+      brief: "Computes per-link resistance R, head-loss coefficients and derivatives (Hazen-Williams / Darcy-Weisbach / Chezy-Manning), plus emitter and PDA-demand head loss."
+    - name: "SparseMatrixSolve"
+      role: "integrator"
+      brief: "Minimum-degree ordering and sparse symmetric Cholesky factor/solve of the GGA nodal-head linear system."
+    - name: "LinkStatus"
+      role: "process_solver"
+      brief: "Evaluates and updates link open/closed/active status (check valves, pumps, PRV/PSV/FCV/TCV) between Newton iterations."
+    - name: "DemandModel"
+      role: "process_solver"
+      brief: "Determines delivered junction demand; DDA delivers full demand regardless of pressure, PDA solves demand as a power function of pressure."
+    - name: "Controls"
+      role: "optional_module"
+      brief: "Simple level/time controls that open/close/set links before each solve."
+    - name: "Rules"
+      role: "optional_module"
+      brief: "Rule-based control interpreter (IF/THEN/ELSE premises and actions) evaluated on the rule time step."
+    - name: "TimeStepping"
+      role: "integrator"
+      brief: "Determines the next event-limited hydraulic step from tank fill/empty (tanktimestep), control activation (controltimestep), and rule evaluation (ruletimestep)."
+    - name: "QualityDriver"
+      role: "driver"
+      brief: "Opens the WQ solver, reads hydraulics back from the binary hydraulics file, topologically sorts nodes, advances quality steps, and accumulates mass balance."
+      applicability: "when [OPTIONS] Quality != NONE and Duration > 0"
+    - name: "QualTransport"
+      role: "process_solver"
+      brief: "Lagrangian segment transport of constituent mass through pipes: advects, merges segments, applies source input and complete junction mixing."
+      applicability: "when [OPTIONS] Quality != NONE and Duration > 0"
+    - name: "QualReact"
+      role: "process_solver"
+      brief: "Bulk and wall reaction kinetics in pipes plus tank reactions and mixing models (MIXED/2COMP/FIFO/LIFO)."
+      applicability: "when [OPTIONS] Quality != NONE and Duration > 0"
+    - name: "ReportWriter"
+      role: "integrator"
+      brief: "Formats the text .rpt report (summary, status, node/link result tables, energy usage, mass-balance) and writes the binary .out results file."
+  internal_edges:
+    - from: "InputParser"
+      to: "Inputs"
+      kind: "consumes_input"
+      brief: "Reads .inp sections, defaults, unit conversions; populates the network."
+    - from: "DemandModel"
+      to: "HydSolverGGA"
+      kind: "invokes"
+      brief: "Delivered demands set node withdrawals for the hydraulic solve (DDA fixed, PDA solved)."
+    - from: "HydraulicsDriver"
+      to: "Controls"
+      kind: "invokes"
+      brief: "Applies simple controls to set link status/setting before solving."
+    - from: "Controls"
+      to: "Link status / setting"
+      kind: "writes_state"
+      brief: "Opens/closes/sets links based on tank grade, pressure, or time."
+    - from: "HydraulicsDriver"
+      to: "HydSolverGGA"
+      kind: "invokes"
+      brief: "Calls hydsolve to compute heads and flows for the current period."
+    - from: "HeadlossCoeffs"
+      to: "Pipe flow resistance (Slink.R)"
+      kind: "writes_state"
+      brief: "resistcoeff sets per-link flow resistance from roughness and the selected head-loss formula."
+    - from: "HeadlossCoeffs"
+      to: "SparseMatrixSolve"
+      kind: "invokes"
+      brief: "matrixcoeffs fills the sparse system coefficients from head-loss derivatives."
+    - from: "SparseMatrixSolve"
+      to: "Node hydraulic head"
+      kind: "writes_state"
+      brief: "Cholesky linsolve produces the updated nodal heads (GGA solution vector)."
+    - from: "HydSolverGGA"
+      to: "Pipe flow rate"
+      kind: "writes_state"
+      brief: "newflows applies flow corrections to link flows each Newton iteration."
+    - from: "HydSolverGGA"
+      to: "LinkStatus"
+      kind: "invokes"
+      brief: "hydstatus re-evaluates link status every CHECKFREQ/MAXCHECK iterations, feeding back into matrix coefficients."
+    - from: "LinkStatus"
+      to: "Link status / setting"
+      kind: "writes_state"
+      brief: "Updates open/closed/active status mid-solve."
+    - from: "HydraulicsDriver"
+      to: "TimeStepping"
+      kind: "invokes"
+      brief: "Computes the next hydraulic step from tank, control, and rule events."
+    - from: "TimeStepping"
+      to: "Tank water level"
+      kind: "reads_state"
+      brief: "tanktimestep integrates tank volume/level to find the fill/empty time limiting the step."
+    - from: "Rules"
+      to: "Link status / setting"
+      kind: "writes_state"
+      brief: "checkrules fires actions that change link status/settings between periods."
+    - from: "HydraulicsDriver"
+      to: "QualityDriver"
+      kind: "invokes"
+      brief: "Saved per-period flows/heads drive the water-quality solve (read back from the binary hydraulics file)."
+    - from: "HydSolverGGA"
+      to: "Pipe flow rate"
+      kind: "writes_state"
+      brief: "Solved flows are the input that QualTransport advects on (consumed via saved hydraulics)."
+    - from: "QualityDriver"
+      to: "QualTransport"
+      kind: "invokes"
+      brief: "sortnodes orders nodes and sets pipe flow directions; advances Lagrangian transport."
+    - from: "QualTransport"
+      to: "Water quality concentration"
+      kind: "writes_state"
+      brief: "Advects Lagrangian segments and applies source input and junction mixing."
+    - from: "QualTransport"
+      to: "QualReact"
+      kind: "invokes"
+      brief: "Calls reactpipes/reacttanks to apply bulk + wall + tank reaction kinetics over the step."
+    - from: "QualReact"
+      to: "Water quality concentration"
+      kind: "writes_state"
+      brief: "Updates tank and pipe-segment concentrations via reaction and mixing models."
+    - from: "QualReact"
+      to: "Tank water level"
+      kind: "reads_state"
+      brief: "Tank mixing/reaction depends on integrated tank volume and stored concentration."
+    - from: "ReportWriter"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "Writes the binary .out (prolog magic 516114521, energy, per-period arrays, epilog) and text .rpt report."
+
+states:
+  variables:
+    - name: "Node hydraulic head"
+      unit: "ft (internal); ft/m reported"
+      role: "prognostic"
+    - name: "Node pressure"
+      unit: "psi (US) / m (SI)"
+      role: "diagnostic"
+    - name: "Pipe flow rate"
+      unit: "cfs (internal); flow units reported"
+      role: "prognostic"
+    - name: "Pipe flow resistance (Slink.R)"
+      unit: "head/flow^B (internal cfs/ft units)"
+      role: "diagnostic"
+    - name: "Node demand / emitter flow"
+      unit: "cfs (internal); flow units reported"
+      role: "diagnostic"
+    - name: "Tank water level"
+      unit: "ft or m"
+      role: "prognostic"
+    - name: "Tank volume"
+      unit: "ft^3 or m^3"
+      role: "accumulator"
+    - name: "Link status / setting"
+      unit: "open/closed/active; pump speed / valve setting"
+      role: "prognostic"
+    - name: "Water quality concentration"
+      unit: "mg/L (chemical), hr (age), % (trace)"
+      role: "prognostic"
+    - name: "Pipe water-quality segments (Lagrangian volume + concentration)"
+      unit: "ft^3 segment volume, mg/L"
+      role: "prognostic"
+    - name: "Convergence metrics (RelativeError, MaxHeadError, MaxFlowChange, Iterations)"
+      unit: "ratio / ft / cfs / count"
+      role: "diagnostic"
+    - name: "Constituent mass balance (initial/inflow/outflow/reacted/final)"
+      unit: "mass"
+      role: "accumulator"
+    - name: "Per-pump energy (TimeOnLine, Efficiency, KwHrs, MaxKwatts, TotalCost)"
+      unit: "hr / % / kWh / kW / cost"
+      role: "accumulator"
+  provenance: "populated"
+
+outputs:
+  - var: "Pressure"
+    validation_rank: 1
+    unit: "psi (US) / m (SI)"
+    description: "Gage pressure at each node (head minus elevation, expressed as pressure)."
+    emitted_in: "Binary .out per-period node arrays; text .rpt node table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats:
+            - "Field pressure-logger comparisons require matched node and consistent elevation datum; systematic elevation-unit error shifts all pressures by ~3.28x."
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Single-period (snapshot) hydraulic check."
+      detrending_options: ["none"]
+  - var: "Head"
+    validation_rank: 4
+    unit: "ft (US) / m (SI)"
+    description: "Hydraulic head (elevation + pressure head) at each node."
+    emitted_in: "Binary .out per-period node arrays; text .rpt node table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "r"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "Flow"
+    validation_rank: 5
+    unit: "flow units (GPM/CFS/LPS/...)"
+    description: "Flow rate in each link; negative indicates reverse flow (Node2 to Node1)."
+    emitted_in: "Binary .out per-period link arrays; text .rpt link table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats:
+            - "Compare against metered pipe/district flow; sign convention is direction-dependent."
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "Velocity"
+    validation_rank: 3
+    unit: "ft/s (US) / m/s (SI)"
+    description: "Mean flow velocity in each link."
+    emitted_in: "Binary .out per-period link arrays; text .rpt link table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats:
+            - "Rarely measured directly; usually diagnostic of scouring (>10 ft/s) rather than a calibration target."
+      detrending_options: ["none"]
+  - var: "Tank water level"
+    validation_rank: 2
+    unit: "ft (US) / m (SI)"
+    description: "Water-surface elevation in each storage tank, integrated over the extended-period simulation."
+    emitted_in: "Binary .out per-period node arrays (tank); text .rpt node table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "SCADA tank-level traces test fill/empty timing; bounded by MinLevel/MaxLevel which can clip the modeled trace."
+      detrending_options: ["none"]
+  - var: "Node quality (chemical concentration)"
+    validation_rank: 6
+    unit: "mg/L or ug/L"
+    description: "Concentration of the simulated constituent (e.g., chlorine) at each node."
+    emitted_in: "Binary .out per-period node arrays; text .rpt node table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats:
+            - "Chlorine residual comparison requires correct source specification and reaction coefficient signs; zero-everywhere indicates quality not enabled or no source."
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Good residual range 0.2-4.0 mg/L."
+      detrending_options: ["none"]
+  - var: "Water age"
+    validation_rank: 7
+    unit: "hours"
+    description: "Cumulative residence time since water entered from a source, at each node."
+    emitted_in: "Binary .out per-period node arrays; text .rpt node table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats:
+            - "Not directly measured; usually validated indirectly (tracer studies). Age can exceed sim duration at dead-end nodes (expected, not a bug)."
+      detrending_options: ["none"]
+  - var: "Source trace percentage"
+    validation_rank: 8
+    unit: "percent"
+    description: "Percentage of water at a node originating from a designated source node."
+    emitted_in: "Binary .out per-period node arrays; text .rpt node table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats:
+            - "Validated against tracer/blending studies where source provenance is known."
+      detrending_options: ["none"]
+  - var: "Pump energy and cost"
+    validation_rank: 9
+    unit: "kWh, kW, cost/day, % efficiency"
+    description: "Per-pump utilization, efficiency, energy use, peak power, and operating cost; plus system peak energy demand."
+    emitted_in: "Binary .out energy section; text .rpt energy usage summary"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats:
+            - "Compare against metered pump energy/billing; depends on pump efficiency curves and global EPUMP default (75%)."
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "pipe_roughness"
+      to: "nodal_pressure"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["abbasimoghaddam2021_sobol_sampling", "hutton2014_bayesian_calibration", "kang2011_demand_roughness_estimation", "gao2024_ga_roughness_optimization"]
+    - from: "pipe_roughness"
+      to: "pipe_flow"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["abbasimoghaddam2021_sobol_sampling", "kang2011_demand_roughness_estimation"]
+    - from: "nodal_demand"
+      to: "nodal_pressure"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["abbasimoghaddam2021_sobol_sampling", "hutton2014_bayesian_calibration", "kang2011_demand_roughness_estimation"]
+    - from: "nodal_demand"
+      to: "pipe_flow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["kang2011_demand_roughness_estimation"]
+    - from: "bulk_decay_coefficient"
+      to: "chlorine_concentration"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "chemical water-quality analysis"
+      citations: ["abbasimoghaddam2021_sobol_sampling", "goli2019_wq_calibration_ga"]
+    - from: "wall_decay_coefficient"
+      to: "chlorine_concentration"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "chemical water-quality analysis"
+      citations: ["abbasimoghaddam2021_sobol_sampling", "goli2019_wq_calibration_ga"]
+    - from: "emitter_coefficient"
+      to: "nodal_pressure"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["kang2011_demand_roughness_estimation"]
+    - from: "pipe_diameter"
+      to: "pipe_flow"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["abbasimoghaddam2021_sobol_sampling"]
+  citation_index:
+    abbasimoghaddam2021_sobol_sampling:
+      short_citation: "Abbasi Moghaddam & Tabesh 2021"
+      doi: "10.1061/(ASCE)WR.1943-5452.0001390"
+      note: "Sobol global sensitivity analysis on EPANET hydraulic + quality models; roughness and demand dominate pressure, bulk/wall decay dominate chlorine."
+    hutton2014_bayesian_calibration:
+      short_citation: "Hutton et al. 2014"
+      doi: "10.1061/(ASCE)WR.1943-5452.0000412"
+      note: "Formal/informal Bayesian (SCEM-UA) hydraulic calibration; roughness and demand are dominant calibrated parameters for nodal pressures and flows."
+    kang2011_demand_roughness_estimation:
+      short_citation: "Kang & Lansey 2011"
+      doi: "10.1061/(ASCE)WR.1943-5452.0000086"
+      note: "Coupled demand/roughness estimation; sensitivity/Jacobian analysis shows pressure and flow highly sensitive to demand and roughness."
+    goli2019_wq_calibration_ga:
+      short_citation: "Goli et al. 2019"
+      doi: "10.1016/j.mex.2019.03.008"
+      note: "GA/PSO/hybrid calibration of EPANET water-quality models; wall and bulk decay coefficients control chlorine residual predictions."
+    gao2024_ga_roughness_optimization:
+      short_citation: "Gao et al. 2024"
+      doi: "10.1007/s11269-023-03672-0"
+      note: "GA optimization of Hazen-Williams roughness; pressure/head-loss predictions strongly sensitive to roughness."
+
+safety:
+  hazards:
+    - id: "unsolvable_hydraulics_error110"
+      kind: "numerical_instability"
+      description: "Disconnected network, no fixed-grade node (reservoir/tank), or zero-diameter pipe creates a singular hydraulic matrix (Error 110)."
+      severity: "fatal"
+    - id: "dda_negative_pressures"
+      kind: "control_semantic"
+      description: "Demand-driven analysis forces full demand regardless of pressure; insufficient supply yields physically impossible negative pressures."
+      severity: "degraded"
+    - id: "diameter_unit_mismatch"
+      kind: "soil_semantic"
+      description: "Pipe diameters in mm under a US-unit model (or vice versa) yield unrealistic head losses; pipes use in (US) / mm (SI), tanks use ft (US) / m (SI)."
+      severity: "silent"
+    - id: "elevation_unit_mismatch"
+      kind: "soil_semantic"
+      description: "Elevations in the wrong length unit shift every node pressure by the ~3.28x ft/m factor since head = elevation + pressure/gamma."
+      severity: "silent"
+    - id: "roughness_formula_mismatch"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Roughness entered on the wrong scale for the selected head-loss formula (D-W height vs H-W C-factor vs C-M n) produces silently wrong head losses; no internal roughness-vs-formula validation."
+      severity: "silent"
+    - id: "tank_init_out_of_range"
+      kind: "initial_condition_semantic"
+      description: "Tank initial level outside MinLevel/MaxLevel, or tank diameter in wrong units (near-zero volume), causes immediate overflow/empty at simulation start."
+      severity: "degraded"
+    - id: "pump_xhead_xflow"
+      kind: "control_semantic"
+      description: "Mis-specified or out-of-range pump curve yields XHEAD (insufficient head) or XFLOW (flow above rated max) and no delivered flow."
+      severity: "degraded"
+    - id: "quality_stays_zero"
+      kind: "control_semantic"
+      description: "Constituent stays zero everywhere when quality analysis is not enabled, initial quality is zero, or no source is defined; single-period (Duration=0) runs silently force Quality to NONE."
+      severity: "silent"
+    - id: "wrong_reaction_sign"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Bulk/wall reaction coefficient with the wrong sign grows the constituent instead of decaying it (negative = decay, positive = growth)."
+      severity: "silent"
+    - id: "wall_reaction_unit_error"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "First-order wall reaction coefficient in the wrong unit system (ft/day US vs m/day SI) offsets wall decay by the ft/m factor."
+      severity: "silent"
+    - id: "concen_source_no_inflow"
+      kind: "control_semantic"
+      description: "A CONCEN source only sets concentration of external inflow at a node; with no external inflow it has no downstream effect (use SETPOINT or FLOWPACED)."
+      severity: "silent"
+    - id: "pattern_timestep_mismatch"
+      kind: "control_semantic"
+      description: "Pattern Timestep not equal to Duration/n_multipliers, or a missing pattern ID, leaves demand effectively constant."
+      severity: "silent"
+    - id: "control_oscillation"
+      kind: "numerical_instability"
+      description: "Simple controls without hysteresis toggle a pump/valve open/closed every timestep (oscillation); mitigated by hysteresis, DAMPLIMIT, or rules."
+      severity: "degraded"
+    - id: "flow_unit_mismatch"
+      kind: "control_semantic"
+      description: "Demand magnitudes in a flow unit inconsistent with [OPTIONS] Units (e.g., LPS data under a GPM model) are off by the unit-conversion factor (1 LPS = 15.85 GPM)."
+      severity: "silent"
+    - id: "binary_out_parse_error"
+      kind: "parser_semantic"
+      description: "The 4-byte-aligned binary .out file mis-parses on wrong offset, endianness, or truncation; validity is bracketed by magic number 516114521 at start and end."
+      severity: "fatal_or_silent"
+  validation_limits:
+    - "No open-channel/free-surface, rainfall-runoff, or groundwater representation; pressurized pipe networks only."
+    - "No hydraulic transient / water-hammer (surge) analysis."
+    - "No longitudinal dispersion in pipes; advective transport with complete instantaneous junction mixing only."
+    - "Reservoirs are infinite source/sinks; their head and quality are unaffected by the network."
+    - "Requires at least one fixed-grade node (reservoir or tank) as a hydraulic boundary."
+  warnings:
+    - "Quality timestep must be <= hydraulic timestep (default Hstep/10); a quality step longer than the hydraulic step is invalid."
+    - "The actual hydraulic step is event-limited: tank fill/empty, control activation, and rule firing can shorten it below the nominal Hstep, coupling results to time discretization."
+    - "Convergence path depends on iteration count (CHECKFREQ/MAXCHECK status checks), so results can shift if those controls change even with the same network."
+    - "Status checks during the GGA loop change link status mid-iteration; non-convergence (UNBALANCED) at a timestep produces a warning exit code (1-99) but results may still be usable."
+    - "By default EPANET reports no node/link results unless [REPORT] specifies Nodes/Links and a Report Timestep."
+  assumptions:
+    - statement: "Hydraulics are solved as a coupled mass + energy balance via Todini's Global Gradient Algorithm (Newton-Raphson with sparse Cholesky and minimum-degree reordering)."
+      scope: "all hydraulic solves"
+      source: "EPANET 2.2 manual, Analysis Algorithms — Hydraulics (usepa.github.io/EPANET2.2/12_analysis_algorithms.html)"
+      status: "adopted"
+    - statement: "Water-quality transport is advective with complete instantaneous mixing at junctions and no longitudinal dispersion in pipes (Lagrangian time-based segment transport)."
+      scope: "chemical, age, and trace analyses"
+      source: "EPANET 2.2 manual, Analysis Algorithms — Water Quality"
+      status: "adopted"
+    - statement: "The spatial grain is the user-defined network graph; the model is point-network, not gridded or 1-D water body, and is parameter/topology-driven, not weather-forced."
+      scope: "model geometry and inputs"
+      source: "EPANET 2.2 manual, Network Model — Physical Components"
+      status: "adopted"
+    - statement: "Flow-unit selection cascades to fix the unit system of all other inputs and outputs; US vs SI is determined solely by the chosen flow unit."
+      scope: "all dimensional inputs/outputs"
+      source: "EPANET 2.2 manual, Units of Measurement (back_matter.html); input1.c initunits/convertunits"
+      status: "adopted"
+    - statement: "Mass-balance closure covers water (flow continuity) and, when quality is active, constituent mass; the energy-balance closure is mechanical/hydraulic head-loss energy only — there is no surface-energy or thermal closure."
+      scope: "conservation properties"
+      source: "EPANET 2.2 manual, Network Model — Computational Methods; quality MassBalance accounting in source"
+      status: "adopted"

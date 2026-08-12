@@ -1,0 +1,444 @@
+template_version: "3.5"
+
+identity:
+  model_id: "PyDeltaRCM"
+  scientific_reference_version: "DeltaRCM reduced-complexity delta morphodynamics (Liang, Voller & Paola 2015 Part 1 + Liang, Geleynse, Edmonds & Passalacqua 2015 Part 2), as realized by pyDeltaRCM 2.x"
+  implementation:
+    id: "pydeltarcm"
+    version: "2.2.0"
+    provenance: "Python; pyDeltaRCM package (Moodie, Hariharan, Barefoot, Passalacqua / UT Austin), numba JIT-compiled routing kernels."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "python"
+  license: "MIT"
+  repo_url: "https://github.com/DeltaRCM/pyDeltaRCM"
+
+boundary:
+  scope_in:
+    - "River delta morphodynamics (delta formation, growth, and planform evolution)"
+    - "Reduced-complexity hydrodynamics via weighted-random-walk routing of water parcels"
+    - "Sand (bedload) and mud (suspended-load) sediment transport and deposition/erosion"
+    - "Topographic (bed-elevation) evolution by sediment mass conservation"
+    - "Relative sea-level rise and optional radial ground subsidence"
+    - "Stratigraphy / subsurface sand-fraction recording"
+  scope_out:
+    - "Full hydrodynamic (Navier-Stokes / shallow-water) solution — flow is approximated by a weighted random walk, not solved mechanistically"
+    - "Resolved hydrograph — a single bankfull discharge is assumed; the hydrograph is collapsed and mapped to real time via an intermittency factor"
+    - "Meteorological forcing — the model takes no rainfall/weather input and generates its own water/sediment supply from prescribed inlet conditions"
+    - "Wave, tide, and longshore processes"
+  spatial: "2-D grid"
+  temporal: "event"
+  closure: "mass-balance"
+  notes: "Each timestep represents one bankfull flood event; the derived timestep dt = dVs / Qs0 (seconds of model time) and real time = model_time / If, with If the intermittency factor applied at config time. Mass-balance closure is on sediment volume: bed change Delta_eta = Delta_V / dx^2, with water depth and velocity adjusted by continuity after each bed change. The free surface is reconstructed statistically from parcel walks (smoothing + under-relaxation), not from an energy budget. Domain x-axis is downstream-oriented, not standard Cartesian."
+
+inputs:
+  forcing: []
+  parameters:
+    - {category: domain_geometry, name: "Length", unit: "m", source_kind: user_provided, model_input_format: "YAML key in config (default.yml)", notes: "Domain length parallel to inlet; default 5000 m. Must be in meters (km gives 1000x-too-small domain)."}
+    - {category: domain_geometry, name: "Width", unit: "m", source_kind: user_provided, model_input_format: "YAML key", notes: "Domain width perpendicular to inlet; default 10000 m."}
+    - {category: domain_geometry, name: "dx", unit: "m", source_kind: user_provided, model_input_format: "YAML key", notes: "Cell face length / grid resolution; default 50 m. Must satisfy 0 < dx < Length and dx < Width."}
+    - {category: domain_geometry, name: "L0_meters", unit: "m", source_kind: user_provided, model_input_format: "YAML key", notes: "Inlet channel length; default 150 m. Realized inlet length L0 (in cells) is silently capped at L//4."}
+    - {category: domain_geometry, name: "N0_meters", unit: "m", source_kind: user_provided, model_input_format: "YAML key", notes: "Inlet channel width; default 250 m. Realized N0 (cells) is floored at 3 and capped at W//4; N0_meters/dx >= 3 required."}
+    - {category: domain_geometry, name: "S0", unit: "-", source_kind: calibrated, model_input_format: "YAML key", notes: "Characteristic dimensionless topset slope; default 0.00015. Enters the stability coefficient gamma = g*S0*dx/u0^2."}
+    - {category: inlet_flow, name: "u0", unit: "m/s", source_kind: user_provided, model_input_format: "YAML key", notes: "Reference inlet velocity; default 1.0. Sets Qw0, gamma, and the velocity cap u_max = 2*u0."}
+    - {category: inlet_flow, name: "h0", unit: "m", source_kind: user_provided, model_input_format: "YAML key", notes: "Reference inlet depth; default 5.0. Sets reference cell volume V0 = h0*dx^2 and dry_depth = min(0.1, 0.1*h0)."}
+    - {category: inlet_flow, name: "hb", unit: "m", source_kind: user_provided, model_input_format: "YAML key", notes: "Basin depth; default null => hb = h0."}
+    - {category: inlet_flow, name: "C0_percent", unit: "%", source_kind: user_provided, model_input_format: "YAML key", notes: "Inlet sediment concentration as volume percent; default 0.1. Internally C0 = C0_percent/100; authoring as a fraction (0.001) makes supply 100x too low."}
+    - {category: sediment_partition, name: "f_bedload", unit: "fraction (0-1)", source_kind: user_provided, model_input_format: "YAML key", notes: "Fraction of sediment routed as sand/bedload; default 0.5. Natural deltas 0.2-0.7; 0 or 1 gives all-mud or all-sand."}
+    - {category: routing, name: "Np_water", unit: "count", source_kind: user_provided, model_input_format: "YAML key", notes: "Number of water parcels routed per timestep; default 2000. Too low -> checkerboard/noisy free surface."}
+    - {category: routing, name: "Np_sed", unit: "count", source_kind: user_provided, model_input_format: "YAML key", notes: "Number of sediment parcels per timestep; default 2000. Split f_bedload sand / (1-f_bedload) mud."}
+    - {category: routing, name: "itermax", unit: "count", source_kind: user_provided, model_input_format: "YAML key", notes: "Water-routing iterations per timestep; default 3; >=3 for free-surface convergence."}
+    - {category: routing, name: "theta_water", unit: "-", source_kind: calibrated, model_input_format: "YAML key", notes: "Depth-weighting exponent in routing weights (R_i = 1/h_i^theta); default 1.0. Higher concentrates flow into deep channels."}
+    - {category: routing, name: "coeff_theta_sand", unit: "-", source_kind: calibrated, model_input_format: "YAML key", notes: "Multiplier on theta_water for sand routing; default 2.0."}
+    - {category: routing, name: "coeff_theta_mud", unit: "-", source_kind: calibrated, model_input_format: "YAML key", notes: "Multiplier on theta_water for mud routing; default 1.0."}
+    - {category: sediment_thresholds, name: "beta", unit: "-", source_kind: calibrated, model_input_format: "YAML key", notes: "Exponent in sand transport capacity q_s_cap = q_s0 (u_loc/u0)^beta (Meyer-Peter & Muller 1948)."}
+    - {category: sediment_thresholds, name: "coeff_U_ero_sand", unit: "-", source_kind: calibrated, model_input_format: "YAML key", notes: "Velocity-threshold coefficient (x u0) for sand erosion."}
+    - {category: sediment_thresholds, name: "coeff_U_ero_mud", unit: "-", source_kind: calibrated, model_input_format: "YAML key", notes: "Velocity-threshold coefficient (x u0) for mud erosion."}
+    - {category: sediment_thresholds, name: "coeff_U_dep_mud", unit: "-", source_kind: calibrated, model_input_format: "YAML key", notes: "Velocity-threshold coefficient (x u0) below which mud deposits."}
+    - {category: sediment_thresholds, name: "alpha", unit: "-", source_kind: calibrated, model_input_format: "YAML key", notes: "Topographic cross-stream diffusion coefficient (bank erodibility / cross-slope sediment flux)."}
+    - {category: sediment_thresholds, name: "sed_lag", unit: "-", source_kind: calibrated, model_input_format: "YAML key", notes: "Lambda-style lag weighting on mud deposition."}
+    - {category: numerical_smoothing, name: "Csmooth / omega_sfc / omega_flow / Nsmooth", unit: "-", source_kind: calibrated, model_input_format: "YAML keys", notes: "Free-surface smoothing and flow under-relaxation coefficients controlling stability of the reconstructed stage and flow fields."}
+    - {category: numerical_smoothing, name: "stepmax", unit: "cells", source_kind: default, model_input_format: "YAML key (default null)", notes: "Max parcel walk steps; when null defaults to 2*(L+W) cells."}
+  initial_conditions:
+    - {category: bed, name: "eta (initial bed)", unit: "m", source_kind: derived, model_input_format: "constructed by init_tools.create_domain", notes: "Initial bed elevation built from S0 topset slope, h0, and basin geometry; not a user-supplied field."}
+    - {category: sea_level, name: "H_SL", unit: "m", source_kind: user_provided, model_input_format: "YAML key", notes: "Initial sea-level elevation; default 0.0. Advances each timestep by SLR*dt."}
+    - {category: rng, name: "seed", unit: "integer", source_kind: user_provided, model_input_format: "YAML key", notes: "Random seed (numba RNG, not numpy). If unset a random seed is generated and always logged; required for reproducible runs."}
+    - {category: resume, name: "resume_checkpoint state", unit: "-", source_kind: user_provided, model_input_format: "pyDeltaRCM_checkpoint.npz", notes: "Optional restart: restores all grids, counters, H_SL, and RNG state from a prior checkpoint."}
+  boundary_conditions:
+    - {category: sea_level, name: "SLR", unit: "m/s (model time)", source_kind: user_provided, model_input_format: "YAML key", notes: "Sea-level-rise rate; default 0.0. Must be m/s of model time (convert mm/yr via /1000/(365.25*86400)*If); realistic O(1e-12)-O(1e-9)."}
+    - {category: subsidence, name: "toggle_subsidence", unit: "boolean", source_kind: user_provided, model_input_format: "YAML key", notes: "Enables the radial subsidence sub-system; default false."}
+    - {category: subsidence, name: "subsidence_rate", unit: "m/s (model time)", source_kind: user_provided, model_input_format: "YAML key", notes: "Maximum subsidence rate; default 2e-9. Same unit pitfall as SLR (mm/yr vs m/s)."}
+    - {category: subsidence, name: "start_subsidence", unit: "s (model time)", source_kind: user_provided, model_input_format: "YAML key", notes: "Model time at which subsidence begins; default 216000 s. Authoring in years starts subsidence immediately."}
+    - {category: run_control, name: "timesteps / target model time", unit: "count or s", source_kind: user_provided, model_input_format: "loop / Preprocessor time_years", notes: "Run length; the run ends when elapsed model time >= requested time, so realized duration may exceed the request."}
+    - {category: output_control, name: "save_dt", unit: "s (model time)", source_kind: user_provided, model_input_format: "YAML key", notes: "Output save interval in seconds of model time; default 86400 (=daily). save_dt=1 yields per-second frames."}
+    - {category: output_control, name: "save_<var>_grids flags", unit: "boolean", source_kind: user_provided, model_input_format: "YAML keys (save_eta_grids, save_depth_grids, ...)", notes: "Select which fields are written; with none enabled the NetCDF has coordinates only."}
+
+processes:
+  modules:
+    - {name: "init_tools", role: "allocator", brief: "Parses default.yml + user config, type-checks inputs, derives constants (gamma, V0, dVs, dt, u_max, dry_depth, thresholds), allocates all L x W grids and the cell_type domain, initializes Sand/Mud routers, sets up NetCDF and subsidence. Silently caps L0 at L//4 and N0 at [3, W//4]."}
+    - {name: "water_tools", role: "process_solver", brief: "Reduced-complexity hydrodynamics: routes Np_water parcels as depth-weighted random walks over itermax iterations (get_water_weight_array -> run_water_iteration), reconstructs the free surface from parcel visits (compute_free_surface: sfc_visit/sfc_sum, smoothing, under-relaxation), then updates qx/qy/qw and ux/uy/uw with uw clamped to u_max."}
+    - {name: "sed_tools", role: "process_solver", brief: "Sediment routing orchestration: route_sediment runs sand parcels, then topo_diffusion, then mud parcels; computes Exner-style bed updates and adjusts depth/velocity by continuity."}
+    - {name: "SandRouter", role: "process_solver", brief: "Numba jitclass routing bedload (sand) parcels; transport-capacity deposition (q_s_loc vs q_s_cap = q_s0 (u_loc/u0)^beta) and velocity-threshold erosion (coeff_U_ero_sand); per-step volume change capped at 1/4 local cell water volume."}
+    - {name: "MudRouter", role: "process_solver", brief: "Numba jitclass routing suspended-load (mud) parcels; deposition below coeff_U_dep_mud and erosion above coeff_U_ero_mud (no transport capacity); sed_lag weighting; shares BaseRouter mechanics with SandRouter."}
+    - {name: "topo_diffusion", role: "process_solver", brief: "Cross-slope topographic diffusion of eta via convolution kernels, repeated N_crossdiff = round(dVs/V0) times between sand and mud routing; alpha sets bank erodibility / cross-slope flux."}
+    - {name: "iteration_tools", role: "integrator", brief: "Timestep integration and I/O: solve_water_and_sediment_timestep (snapshots eta0, calls route_water then route_sediment), apply_subsidence, finalize_timestep (flooding correction, inlet BC reset, sea-level advance H_SL += SLR*dt), compute_sand_frac active-layer bookkeeping, and NetCDF/figure/checkpoint output."}
+    - {name: "subsidence", role: "optional_module", brief: "Radial subsidence sub-system (off by default): builds a subsidence_mask, computes sigma = mask*subsidence_rate*dt (max at domain edges), and lowers eta after start_subsidence.", applicability: "toggle_subsidence=true"}
+    - {name: "shared_tools", role: "process_solver", brief: "Jitted numerical primitives reused by both routing schemes: random_pick (D8 draw from normalized weights), pad/ravel/unravel helpers, weight builders, and RNG-state management (the model's own get_random_uniform)."}
+    - {name: "hook_tools", role: "optional_module", brief: "No-op hook_<operation> methods called before/after each major update step, letting subclasses customize behavior without overriding core methods."}
+  internal_edges:
+    - {from: "Inputs", to: "init_tools", kind: consumes_input, brief: "default.yml + user YAML parsed and type-checked into model variables"}
+    - {from: "init_tools", to: "cell_type", kind: writes_state, brief: "lays out land/channel/ocean/edge cells and the inlet array"}
+    - {from: "init_tools", to: "eta", kind: writes_state, brief: "initializes bed elevation from slope and basin geometry"}
+    - {from: "init_tools", to: "SandRouter", kind: invokes, brief: "boxes derived constants (dt,dx,Vp_sed,u_max,qs0,U_ero_sand,...) into the jitclass"}
+    - {from: "init_tools", to: "MudRouter", kind: invokes, brief: "boxes constants (U_dep_mud,U_ero_mud,sed_lag,...) into the jitclass"}
+    - {from: "iteration_tools", to: "water_tools", kind: invokes, brief: "solve_water_and_sediment_timestep snapshots eta0, then runs itermax water iterations using the derived stability coefficient gamma=g*S0*dx/u0^2"}
+    - {from: "water_tools", to: "depth", kind: reads_state, brief: "routing weights depend on neighbor depth, stage, qx/qy, gamma, theta_water"}
+    - {from: "water_tools", to: "stage", kind: writes_state, brief: "compute_free_surface accumulates sfc_visit/sfc_sum, smooths and under-relaxes into stage"}
+    - {from: "water_tools", to: "uw", kind: writes_state, brief: "finalize_water_iteration sets qw/qx/qy and uw/ux/uy (uw clamped to u_max)"}
+    - {from: "iteration_tools", to: "sed_tools", kind: invokes, brief: "sediment routing consumes the updated flow/velocity fields; per-timestep sediment volume dVs and derived timestep dt=dVs/Qs0 set the parcel volumes"}
+    - {from: "sed_tools", to: "SandRouter", kind: invokes, brief: "routes f_bedload*Np_sed sand parcels through the jitted router"}
+    - {from: "SandRouter", to: "eta", kind: writes_state, brief: "deposit/erode updates bed elevation (Exner) and writes back to model eta"}
+    - {from: "SandRouter", to: "uw", kind: writes_state, brief: "_update_fields recomputes depth and velocity after each bed change"}
+    - {from: "sed_tools", to: "topo_diffusion", kind: invokes, brief: "cross-slope diffusion of eta between sand and mud passes"}
+    - {from: "topo_diffusion", to: "eta", kind: writes_state, brief: "diffuses bed elevation N_crossdiff times using kernels and qs"}
+    - {from: "sed_tools", to: "MudRouter", kind: invokes, brief: "routes (1-f_bedload)*Np_sed mud parcels"}
+    - {from: "MudRouter", to: "eta", kind: writes_state, brief: "suspended-load deposition/erosion updates bed elevation and depth/velocity"}
+    - {from: "iteration_tools", to: "subsidence", kind: invokes, brief: "apply_subsidence lowers eta by sigma if toggle_subsidence and time>=start_subsidence"}
+    - {from: "subsidence", to: "eta", kind: writes_state, brief: "eta -= sigma, creating accommodation space"}
+    - {from: "iteration_tools", to: "H_SL", kind: writes_state, brief: "finalize_timestep advances sea level H_SL += SLR*dt and re-imposes inlet eta/depth boundary"}
+    - {from: "iteration_tools", to: "sand_frac", kind: writes_state, brief: "compute_sand_frac active-layer bookkeeping from eta0 vs eta and Vp_dep_sand/Vp_dep_mud"}
+    - {from: "eta", to: "water_tools", kind: reads_state, brief: "updated topography changes routing weights next timestep, closing the morphodynamic feedback"}
+    - {from: "iteration_tools", to: "Outputs", kind: produces_output, brief: "output_data writes selected grids/metadata to pyDeltaRCM_output.nc every save_dt and checkpoints state"}
+    - {from: "water_tools", to: "shared_tools", kind: invokes, brief: "both routing schemes draw the next D8 cell via shared_tools.random_pick"}
+    - {from: "sed_tools", to: "shared_tools", kind: invokes, brief: "sediment routing reuses the same jitted weight/random primitives"}
+
+states:
+  variables:
+    - {name: "eta", unit: "m", role: prognostic}
+    - {name: "stage", unit: "m", role: prognostic}
+    - {name: "depth", unit: "m", role: diagnostic}
+    - {name: "qx", unit: "m2/s", role: diagnostic}
+    - {name: "qy", unit: "m2/s", role: diagnostic}
+    - {name: "qw", unit: "m2/s", role: diagnostic}
+    - {name: "ux", unit: "m/s", role: diagnostic}
+    - {name: "uy", unit: "m/s", role: diagnostic}
+    - {name: "uw", unit: "m/s", role: diagnostic}
+    - {name: "qs", unit: "m3/s", role: diagnostic}
+    - {name: "sand_frac", unit: "-", role: prognostic}
+    - {name: "active_layer", unit: "-", role: prognostic}
+    - {name: "Vp_dep_sand", unit: "m3", role: diagnostic}
+    - {name: "Vp_dep_mud", unit: "m3", role: diagnostic}
+    - {name: "cell_type", unit: "-", role: prognostic}
+    - {name: "inlet", unit: "-", role: diagnostic}
+    - {name: "sigma", unit: "m", role: diagnostic}
+    - {name: "H_SL", unit: "m", role: prognostic}
+    - {name: "_time", unit: "s", role: accumulator}
+    - {name: "rng_state", unit: "-", role: prognostic}
+  provenance: "populated"
+
+outputs:
+  - var: "eta"
+    validation_rank: 3
+    unit: "m"
+    description: "Bed (topographic) elevation field; the primary morphodynamic state defining delta planform and topography."
+    emitted_in: "pyDeltaRCM_output.nc (save_eta_grids)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: [spatial_pattern_match, magnitude_accuracy]
+          determining_metric: "csi"
+          caveats:
+            - "Stochastic parcel routing makes a single realization non-deterministic except under a fixed seed; compare planform statistics/morphometrics rather than cell-by-cell elevation against a natural or experimental delta."
+            - "Model x-axis is downstream-oriented, not standard Cartesian; align orientation before comparison."
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: [spatial_pattern_match, timing_accuracy]
+          determining_metric: "csi"
+          caveats:
+            - "Model time is bankfull-event time; map to real years via the intermittency factor before temporal alignment."
+      detrending_options: [none]
+  - var: "stage"
+    validation_rank: 2
+    unit: "m"
+    description: "Water-surface elevation reconstructed from the weighted-random-walk free-surface scheme."
+    emitted_in: "pyDeltaRCM_output.nc (save_stage_grids)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: [spatial_pattern_match]
+          determining_metric: "csi"
+          caveats:
+            - "Stage is a smoothed statistical reconstruction, not a momentum-conserving solution; treat as a coarse free-surface proxy."
+      detrending_options: [none]
+  - var: "depth"
+    validation_rank: 4
+    unit: "m"
+    description: "Water flow depth, depth = max(stage - eta, 0)."
+    emitted_in: "pyDeltaRCM_output.nc (save_depth_grids)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: [spatial_pattern_match, magnitude_accuracy]
+          determining_metric: "csi"
+          caveats:
+            - "Cells below the dry_depth threshold (min(0.1, 0.1*h0)) are treated as dry; compare wet-cell distributions, not absolute depths in shallow areas."
+      detrending_options: [none]
+  - var: "velocity"
+    validation_rank: 5
+    unit: "m/s"
+    description: "Flow-velocity magnitude uw = sqrt(ux^2 + uy^2), clamped to u_max = 2*u0."
+    emitted_in: "pyDeltaRCM_output.nc (save_velocity_grids)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: [spatial_pattern_match]
+          determining_metric: "csi"
+          caveats:
+            - "Velocity is hard-capped at 2*u0 by the flow limiter; peak velocities are not physically resolved."
+      detrending_options: [none]
+  - var: "discharge"
+    validation_rank: 1
+    unit: "m3/s"
+    description: "Water-discharge magnitude (CF long_name channel_water_flowing__volume_rate)."
+    emitted_in: "pyDeltaRCM_output.nc (save_discharge_grids)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: [spatial_pattern_match]
+          determining_metric: "csi"
+          caveats:
+            - "Discharge partitioning is meaningful for channel-network pattern comparison, not for absolute gauged-discharge magnitude."
+            - "The saved NetCDF discharge variable carries volume-rate units (m3/s, CF channel_water_flowing__volume_rate); the model's internal qw field is per-unit-cell-width discharge (m2/s = sqrt(qx^2+qy^2)). Do not conflate the two when comparing magnitudes."
+      detrending_options: [none]
+  - var: "sedflux"
+    validation_rank: 6
+    unit: "m3/s"
+    description: "Sediment flux field qs (combined sand + mud transport)."
+    emitted_in: "pyDeltaRCM_output.nc (save_sedflux_grids)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: [spatial_pattern_match]
+          determining_metric: "csi"
+          caveats:
+            - "Reduced-complexity transport (capacity for sand, threshold for mud) is phenomenological; suited to pattern, not absolute load validation."
+      detrending_options: [none]
+  - var: "sandfrac"
+    validation_rank: 7
+    unit: "-"
+    description: "Surface bed sand fraction (0-1) from active-layer mixing during deposition."
+    emitted_in: "pyDeltaRCM_output.nc (save_sandfrac_grids)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: [spatial_pattern_match, magnitude_accuracy]
+          determining_metric: "csi"
+          caveats:
+            - "Sand fraction is sensitive to the prescribed f_bedload partition; compare relative sand/mud distribution patterns."
+      detrending_options: [none]
+  - var: "strata_sand_frac"
+    validation_rank: 8
+    unit: "-"
+    description: "Stratigraphic (subsurface) sand fraction recorded at each bed elevation over time; reconstructable from saved eta + sandfrac surfaces."
+    emitted_in: "pyDeltaRCM_output.nc (stratigraphy) / reconstructed from eta + sandfrac"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: [spatial_pattern_match]
+          determining_metric: "csi"
+          caveats:
+            - "Compares subsurface sand-body connectivity / stratigraphic architecture against cores or seismic interpretation; statistical, not deterministic."
+      detrending_options: [none]
+
+influence:
+  edges:
+    - from: "f_bedload (input sand fraction / bedload partition)"
+      to: "channel depth and mobility"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["liang2016_deltarcm_slr_sandfraction", "lauzon2018_cohesion_vegetation", "liang2015_deltarcm_part1"]
+    - from: "f_bedload (input sand fraction / bedload partition)"
+      to: "shoreline roughness"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["liang2016_deltarcm_slr_sandfraction", "lauzon2018_cohesion_vegetation"]
+    - from: "f_bedload (input sand fraction / bedload partition)"
+      to: "subsurface sand connectivity / stratigraphy"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["liang2016_deltarcm_slr_sandfraction", "lauzon2018_cohesion_vegetation"]
+    - from: "SLR rate"
+      to: "net land / wetted area growth"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["liang2016_deltarcm_slr_sandfraction", "hariharan2022_slr_acceleration"]
+    - from: "SLR rate"
+      to: "channel mobility"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["hariharan2022_slr_acceleration"]
+    - from: "SLR trajectory / acceleration"
+      to: "delta surface evolution"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["hariharan2022_slr_acceleration"]
+    - from: "theta_water (routing depth-weighting exponent)"
+      to: "flow routing field / channelization"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["moodie2021_pydeltarcm_joss", "liang2015_deltarcm_part1"]
+    - from: "f_bedload (sand/mud partition)"
+      to: "delta planform / bifurcation order"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["liang2015_deltarcm_part1", "moodie2021_pydeltarcm_joss"]
+    - from: "S0 (topset slope)"
+      to: "delta topset geometry"
+      sensitivity_grade: LOW
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["moodie2021_pydeltarcm_joss"]
+    - from: "Np_water / Np_sed (parcel counts)"
+      to: "numerical resolution / free-surface noise"
+      sensitivity_grade: LOW
+      basis: mechanistic_inference
+      lever_type: structural
+      applicability: "always"
+      citations: ["moodie2021_pydeltarcm_joss"]
+  citation_index:
+    liang2015_deltarcm_part1:
+      short_citation: "Liang, Voller & Paola 2015 (Part 1)"
+      doi: "10.5194/esurf-3-67-2015"
+      note: "Foundational DeltaRCM; sediment-routing exponent, bedload partition, and inlet config control channel dynamics and planform."
+    liang2016_deltarcm_slr_sandfraction:
+      short_citation: "Liang, Van Dyk & Passalacqua 2016"
+      doi: "10.1002/2015JF003653"
+      note: "Controlled sweeps of input sand fraction and steady SLR; Kullback-Leibler ranking of diagnostic morphometrics (not a variance-based index)."
+    lauzon2018_cohesion_vegetation:
+      short_citation: "Lauzon & Murray 2018"
+      doi: "10.1029/2018GL079405"
+      note: "DeltaRCM cohesion (mud fraction / vegetation) controls channel geometry, mobility, levees, shoreline rugosity."
+    hariharan2022_slr_acceleration:
+      short_citation: "Hariharan et al. 2022"
+      doi: "10.1029/2022JF006762"
+      note: "pyDeltaRCM under steady/abrupt/accelerating SLR (5-40 mm/yr); SLR rate and trajectory drive channel mobility and land-area change."
+    moodie2021_pydeltarcm_joss:
+      short_citation: "Moodie et al. 2021"
+      doi: "10.21105/joss.03398"
+      note: "pyDeltaRCM software paper; documents configurable parameter set and parcel-count resolution/cost trade-off."
+
+safety:
+  hazards:
+    - id: "C0_percent_fraction_vs_percent"
+      kind: "control_semantic"
+      description: "C0_percent authored as a fraction (e.g. 0.001) instead of percent (0.1); internally C0 = C0_percent/100 makes sediment supply ~100x too low and no delta forms. (dt_001)"
+      severity: "silent"
+    - id: "SLR_unit_mmyr_vs_mps"
+      kind: "control_semantic"
+      description: "SLR given in mm/yr instead of m/s of model time; a few mm/yr passed as m/s floods the basin instantly, while a correct O(1e-9) value looks like zero change. (dt_002)"
+      severity: "silent"
+    - id: "subsidence_unit_or_time_mismatch"
+      kind: "control_semantic"
+      description: "start_subsidence in years not seconds, or subsidence_rate in mm/yr not m/s; subsidence then starts immediately/never or has absurd magnitude. (dt_003)"
+      severity: "silent"
+    - id: "save_dt_seconds_vs_days"
+      kind: "control_semantic"
+      description: "save_dt is in seconds of model time, not days; a user wanting daily output who sets save_dt=1 gets per-second frames (millions of timesteps of output), while save_dt=86400 is correct for daily. (dt_004)"
+      severity: "silent"
+    - id: "spatial_dims_non_meters"
+      kind: "control_semantic"
+      description: "Length/Width in km or dx in cm instead of meters; domain becomes tiny or enormous, causing MemoryError or an instant finish. (dt_005)"
+      severity: "fatal_or_silent"
+    - id: "gamma_stability_exceeded"
+      kind: "numerical_instability"
+      description: "gamma = g*S0*dx/u0^2 > 0.1 makes routing weights over-sensitive, producing free-surface oscillation, NaNs, and crashes; reduce dx or S0, or raise u0. (dt_006)"
+      severity: "fatal_or_silent"
+    - id: "Np_water_too_low"
+      kind: "numerical_instability"
+      description: "Np_water too low for the grid leaves unvisited cells, producing a checkerboard/noisy free surface (>= wet_cells/10 recommended). (dt_007)"
+      severity: "degraded"
+    - id: "dx_geometry_invalid"
+      kind: "control_semantic"
+      description: "dx >= Length/Width or dx <= 0 raises ValueError at init; keep 0 < dx < Length and dx < Width. (dt_008)"
+      severity: "fatal"
+    - id: "inlet_underresolved"
+      kind: "control_semantic"
+      description: "N0_meters/dx < 3 under-resolves the inlet (also silently floored to 3 cells / capped at W//4), distorting inlet geometry vs requested. (dt_009)"
+      severity: "silent"
+    - id: "yaml_key_misspelled_or_wrong_type"
+      kind: "parser_semantic"
+      description: "Misspelled or wrong-case YAML key (e.g. 'length' vs 'Length') is silently ignored; a quoted numeric raises a TypeError at config load. (dt_010, dt_011)"
+      severity: "fatal_or_silent"
+    - id: "f_bedload_extremes"
+      kind: "control_semantic"
+      description: "f_bedload set to 0 or 1 makes the delta all-mud or all-sand; natural deltas are 0.2-0.7. (dt_012)"
+      severity: "silent"
+    - id: "routing_over_channelization"
+      kind: "control_semantic"
+      description: "theta_water or coeff_theta_sand set too high over-concentrates flow into the deepest path, yielding a single narrow channel with no bifurcation/distributary network; lower theta_water toward 0.5 or raise Np_water. (dt_014)"
+      severity: "silent"
+    - id: "no_save_grids_empty_output"
+      kind: "control_semantic"
+      description: "With no save_<var>_grids flag enabled, the model runs but writes a coordinates-only NetCDF with no usable data variables. (dt_015)"
+      severity: "silent"
+    - id: "silent_inlet_geometry_override"
+      kind: "initial_condition_semantic"
+      description: "init_tools silently caps realized inlet length L0 at L//4 and inlet width N0 at [3, W//4], so the realized inlet geometry can differ from the requested L0_meters/N0_meters."
+      severity: "silent"
+  validation_limits:
+    - "Reduced-complexity, rule-based hydrodynamics — not a momentum/shallow-water solver; absolute velocities, stage, and discharge are statistical proxies, not physically resolved fields."
+    - "Single bankfull discharge with collapsed hydrograph; cannot resolve flood-event variability, sub-bankfull flow, or sub-daily processes."
+    - "Single inlet channel into an idealized rectangular basin; no native multi-distributary inlets, tides, waves, or longshore transport."
+    - "Stochastic parcel realization: a single run is one draw; ensembles/fixed seeds are needed for reproducible or statistically meaningful comparison."
+  warnings:
+    - "Velocity is hard-capped at u_max = 2*u0 by the flow limiter; peak velocities are intentionally not resolved."
+    - "Per-step deposition/erosion is capped at 1/4 of local cell water volume, limiting per-timestep bed change."
+    - "Reproducible custom code must use the model's get_random_uniform (numba RNG), not numpy/scipy random generators."
+    - "Calling delta.update() after delta.finalize() raises RuntimeError; finalize() must be called once after the update loop."
+    - "Changing u0/h0/N0/C0 silently re-derives the timestep dt = dVs/Qs0 and re-initializes the sediment routers; direct attribute mutation that bypasses the property setters leaves stale jitclass router constants."
+  assumptions:
+    - statement: "The model is point-/event-driven on a single bankfull discharge; the hydrograph is collapsed to one discharge and mapped to real years via an intermittency factor applied at config time."
+      scope: "all temporal interpretation of model output"
+      source: "pyDeltaRCM Model Time docs (deltarcm.org/pyDeltaRCM/info/modeltime.html)"
+      status: adopted
+    - statement: "Conservation closure is on sediment volume (Delta_eta = Delta_V/dx^2) with water depth and velocity adjusted by continuity; the free surface is a smoothed statistical reconstruction, not an energy-conserving solution."
+      scope: "boundary.closure and stage/velocity outputs"
+      source: "pyDeltaRCM Morphodynamics + Hydrodynamics docs (deltarcm.org/pyDeltaRCM/info/morphodynamics.html, info/hydrodynamics.html)"
+      status: adopted
+    - statement: "Sand is routed as bed-material load with a Meyer-Peter & Muller (1948) capacity q_s_cap = q_s0 (u_loc/u0)^beta; mud is fully suspended load with velocity-threshold deposition/erosion and no transport capacity."
+      scope: "sediment-routing modules (SandRouter, MudRouter)"
+      source: "pyDeltaRCM Morphodynamics docs (deltarcm.org/pyDeltaRCM/info/morphodynamics.html)"
+      status: adopted
+    - statement: "The emitted NetCDF 'discharge' variable carries volume-rate units (m3/s, CF channel_water_flowing__volume_rate); the model's internal qw field is per-unit-cell-width discharge (m2/s = sqrt(qx^2+qy^2)). The outputs block describes the emitted m3/s variable; comparisons must use m3/s observations, not the internal m2/s field."
+      scope: "outputs.discharge unit interpretation"
+      source: "pyDeltaRCM source output_variables schema (save_discharge_grids) and CF standard-name channel_water_flowing__volume_rate"
+      status: adopted
+    - statement: "Literature sensitivity grades rest on controlled one/few-at-a-time parameter sweeps and Kullback-Leibler metric ranking (Liang 2016), not formal variance-based indices; all influence edges are therefore capped below HIGH."
+      scope: "influence block grading"
+      source: "Liang et al. 2016 (doi:10.1002/2015JF003653); no Sobol/Morris/EFAST study exists for DeltaRCM"
+      status: adopted

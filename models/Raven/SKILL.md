@@ -124,6 +124,34 @@ numpy, pandas, geopandas, rasterio, shapely, netCDF4 (all in HydroCraft venv)
 
 ---
 
+## Site-adaptive s0 flags — READ BEFORE RUNNING A MOUNTAIN BASIN
+
+`select_model_template.py` reads the `.rvh` and `.rvt` already staged in
+`--output_dir`, so **stage the basin and forcing files BEFORE calling s0**. It
+then makes three site-dependent decisions and reports each in its JSON:
+
+| Flag | Default | What it decides |
+|------|---------|-----------------|
+| `--pet_method` | `auto` | Substitutes `PET_PRIESTLEY_TAYLOR` for the Appendix-F `PET_OUDIN` when the forcing carries SHORTWAVE. Temperature-index PET collapses at high elevation (dt_rav_039). `template` keeps Appendix F verbatim. |
+| `--orographic` | `auto` | Emits `:OroTempCorrect`/`:OroPrecipCorrect OROCORR_SIMPLELAPSE` when the `.rvh` has ≥100 m of relief. **Raven's default is OROCORR_NONE, which silently forces every elevation band with the gauge's own temperature — the elevation-band HRU strategy of s1 does nothing without this** (dt_rav_040). |
+| (automatic) | — | Emits `:SWRadiationMethod SW_RAD_DATA` when a radiation-based PET is used and the `.rvt` supplies shortwave; otherwise Raven discards the supplied radiation and drives PET with clear-sky values (dt_rav_041). |
+
+With orographic corrections on, `build_rvp_parameters.py` emits `ADIABATIC_LAPSE`
+and `PRECIP_LAPSE` automatically (it queries the binary via `:CreateRVPTemplate`)
+and `calibrate_raven_dds.py` calibrates them.
+
+`calibrate_raven_dds.py` takes `--seed`, `--cal_start`, `--cal_end` — **always
+pass the calibration window**, otherwise the objective is Raven's whole-simulation
+Diagnostics.csv and any held-out score you report afterwards is a fitted number.
+It reports `skipped_parameters_absent_from_rvp`: check that list, a name that is
+absent was never optimised. Each template's OWN melt parameters are calibrated
+(UBCWM multipliers, HMETS min/max melt factors, HBV refreeze) — a wider set needs
+a bigger `--n_iterations`, not fewer parameters (dt_rav_043).
+
+Select the reported emulation with `parse_raven_output.select_best_member(...,
+cal_key="cal")` — ranking on the held-out window makes structure choice a form
+of tuning (dt_rav_036).
+
 ## Tools Reference
 
 | Tool | Stage | Script Path | Lines | Purpose |
@@ -213,6 +241,63 @@ Correct: `:GlobalParameter PARAM1 val` (one parameter per line, no block delimit
 ### 10. .rvc file is REQUIRED even if empty (err_004)
 
 Raven v4.1 exits with "Cannot find or read .rvc file" if no .rvc exists. Create a minimal file with just a comment line. Use `generate_rvc_initial.py`.
+
+### 11. Hydrographs.csv is PERIOD-ENDING — never label-join it to a gauge (dt_rav_034)
+
+`Hydrographs.csv`, `ForcingFunctions.csv` and the precip rates in
+`WatershedStorage.csv` are **period-ending**: the row stamped date `d` holds the
+time-averaged value for the timestep *preceding* `d` (RavenUsersManual v4.1,
+"Output files"), and row 0 (stamped `:StartDate`) is only the initial condition.
+Observation *input* (`:ObservationData`) has been **period-starting** since v2.7,
+so a gauge value for calendar day `d` is written at date `d` and Raven prints it
+in the row stamped `d+1`. Consequence: joining a calendar-dated gauge series on
+Raven's raw date label scores `sim(day d)` against `obs(day d-1)` — a silent
+one-timestep lag in every external metric, and it will not match Raven's own
+`Diagnostics.csv`.
+
+```python
+# THE canonical reader — applies the period-ending -> calendar-day correction.
+sys.path.insert(0, f"{KI}/tools/s7_output")
+from parse_raven_output import load_discharge_series, compute_water_balance
+sim, raven_obs = load_discharge_series(f"{run_dir}/output", basin_name)   # calendar dates
+```
+
+Do **not** write your own `read_hydrograph()` helper in a run script; that is how
+the lag gets reintroduced. Proof the correction is right: after the shift,
+Raven's own `(observed)` column equals the raw gauge file on identical calendar
+dates (Tangnaihai, 3286 days, max abs diff 0.0).
+
+### 12. WatershedStorage "Total [mm]" is NOT physical storage (dt_rav_035)
+
+`Total [mm]` bundles the **`Cum. Losses to Atmosphere` accumulator** (6744.8 of
+6828.6 mm after 12 alpine years at Tangnaihai). Using `delta(Total)` as ΔS
+double-counts ET and reports a ~77% closure FAIL on a run whose native
+`MB Error [mm]` closes to machine zero. Use the KI tool:
+
+```python
+wb = compute_water_balance(f"{run_dir}/output", basin_name, start=..., end=...)
+# P/ET/Q from Cum. Inputs / Cum. Losses to Atmosphere / Cum. Outflow;
+# dS from the physical stores only. Also returns raven_mb_error_mm —
+# if THAT is large, the fault is genuinely in the model/config.
+```
+CLI: `parse_raven_output.py --water_balance --wb_start ... --wb_end ...`
+
+### 13. Never select the reported emulation on the held-out window (dt_rav_036)
+
+Choosing "best of N emulations" by its validation-period score (or by Raven's
+`Diagnostics.csv` NASH_SUTCLIFFE, which spans the *whole* `:ObservationData`
+record, held-out years included) makes the reported held-out number a fitted
+statistic. Rank on the calibration window and report the held-out score of the
+cal-selected member:
+
+```python
+from parse_raven_output import select_best_member
+best, ranked = select_best_member(emulation_table, cal_key="cal", metric="nse")
+```
+`run_ensemble_comparison.py` now emits `rank_basis` (and a `rank_warning` when it
+had to fall back to the full-period diagnostic). Drive DDS with
+`calibrate_raven_dds.py --cal_start/--cal_end` so the objective itself never sees
+the held-out years.
 
 ---
 

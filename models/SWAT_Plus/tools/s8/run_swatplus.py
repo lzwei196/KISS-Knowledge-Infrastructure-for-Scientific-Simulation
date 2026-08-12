@@ -71,9 +71,15 @@ def process():
         if any(kw in line_lower for kw in ['stop', 'error', 'segmentation fault', 'nan', 'infinity']):
             errors_found.append(line.strip())
 
-    # Check output files
+    # Check output files. Names depend on which channel module and print
+    # interval are active: sd_channel emits channel_sd_*; the lte channel
+    # module emits channel_*. Accept any of the common markers so a successful
+    # run is not falsely reported as producing no output.
     output_files = []
-    for pattern in ["channel_sd_day.txt", "basin_wb_day.txt", "basin_nb_day.txt"]:
+    for pattern in ["channel_sd_day.txt", "channel_day.txt",
+                    "channel_sd_yr.txt", "channel_yr.txt",
+                    "basin_wb_day.txt", "basin_wb_yr.txt",
+                    "basin_nb_day.txt", "basin_nb_yr.txt"]:
         if (txtinout / pattern).exists():
             size = (txtinout / pattern).stat().st_size
             output_files.append({"file": pattern, "size_bytes": size})

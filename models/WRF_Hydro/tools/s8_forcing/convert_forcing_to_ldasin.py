@@ -52,7 +52,7 @@ from ki_tools_common.units import celsius_to_kelvin, kelvin_to_celsius
 # ===================================================================
 
 def celsius_to_kelvin(t_c):
-    return celsius_to_kelvin(t_c)
+    return np.asarray(t_c) + 273.15
 
 
 def precip_mm3hr_to_mmps(p):

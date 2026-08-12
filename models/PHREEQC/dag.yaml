@@ -1,0 +1,593 @@
+template_version: "3.5"
+
+identity:
+  model_id: "PHREEQC"
+  scientific_reference_version: "PHREEQC version 3 (USGS Techniques and Methods 6-A43, Parkhurst & Appelo 2013)"
+  implementation:
+    id: "phreeqc-3"
+    version: "3.8.9"
+    provenance: "C++ (C++11); USGS public-domain PHREEQC version 3 command-line executable, evolved from the Fortran PHREEQE lineage, with an embedded Basic interpreter for user-defined rate equations."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c++"
+  license: "Public Domain (USGS)"
+  repo_url: "https://www.usgs.gov/software/phreeqc-version-3"
+
+boundary:
+  scope_in:
+    - "Aqueous speciation (saturation indices, species distribution, density, specific conductance)"
+    - "Batch-reaction whole-system equilibrium with minerals, gases, ion exchange, surface complexation, and binary solid solutions"
+    - "1-D advection-dispersion-diffusion reactive transport (operator-splitting, column geometry, optional dual-porosity/stagnant zones)"
+    - "Kinetically controlled reactions via RATES/KINETICS rate expressions (Runge-Kutta / CVODE ODE integration)"
+    - "Inverse modeling of geochemical mass transfer along a flow path (linear programming)"
+    - "Solution mixing (MIX) and isotope tracking"
+    - "Charge-balance and mass-balance computation"
+  scope_out:
+    - "Multi-dimensional (2-D/3-D) flow and transport — only 1-D transport is built in; higher dimensions require external coupling (e.g., PHAST, PHT3D/MODFLOW)"
+    - "Native flow-field solution — an external flow model must supply the velocity field in coupled mode"
+    - "Ternary nonideal solid solutions"
+    - "Rayleigh isotope fractionation in precipitating minerals within inverse modeling"
+  spatial: "0-D point"
+  temporal: "event"
+  closure: "mass-balance"
+  notes: "Default mode is 0-D batch reactors solved to thermodynamic equilibrium; TRANSPORT extends to a 1-D sequence of cells (cell 0 = influent boundary, cells 1..N = domain). Closure is mass-balance on water, elements, and charge: solutions are treated as charge-balanced and charge balance may be enforced on a chosen element or on pH. Equilibrium is assumed for batch reactions unless KINETICS is specified. The aqueous model is ion-association (Debye-Huckel/Davies/B-dot) by default; Pitzer or SIT activity models apply only when the corresponding database is selected."
+
+inputs:
+  forcing:
+    - category: "boundary_solute_flux"
+      name: "Influent boundary solution composition (TRANSPORT cell 0)"
+      unit: "mol/kgw"
+      source_kind: "user_provided"
+      model_input_format: "SOLUTION 0 block; advected into the domain each transport shift"
+      notes: "Time-varying driver only in transport mode; in batch mode there is no per-timestep forcing."
+    - category: "external_flow"
+      name: "Flow/velocity field (coupled mode)"
+      unit: "m/s"
+      source_kind: "forcing"
+      model_input_format: "supplied by external flow model in PHT3D/PHAST-style coupling; not native to standalone PHREEQC"
+  parameters:
+    - category: "thermodynamic_database"
+      name: "Thermodynamic database (log_k, delta_h, activity-model parameters)"
+      unit: "log_k dimensionless; delta_h kJ/mol"
+      source_kind: "dataset_lookup"
+      model_input_format: ".dat file selected via DATABASE (phreeqc.dat, wateq4f.dat, minteq.dat, llnl.dat, pitzer.dat, sit.dat, iso.dat); must define SOLUTION_MASTER_SPECIES for every element used"
+      notes: "Database choice fixes element coverage, equilibrium constants, and activity model (ion-association vs Pitzer vs SIT)."
+    - category: "mineral_thermodynamics"
+      name: "Mineral/phase log_k"
+      unit: "dimensionless"
+      source_kind: "calibrated"
+      model_input_format: "PHASES block; high sensitivity"
+    - category: "kinetics"
+      name: "Kinetic rate constant"
+      unit: "mol/m2/s (rate-expression dependent)"
+      source_kind: "calibrated"
+      model_input_format: "RATES Basic expression; typical 1e-12 to 1e-6; time in seconds"
+    - category: "exchange"
+      name: "Cation exchange capacity / selectivity coefficients"
+      unit: "mol/kgw; selectivity dimensionless"
+      source_kind: "calibrated"
+      model_input_format: "EXCHANGE / EXCHANGE_SPECIES blocks; typical CEC 0.001-1 mol/kgw"
+    - category: "surface"
+      name: "Surface site density and area; intrinsic surface-complexation constants"
+      unit: "site density mol/kgw; area m2/g; log_k dimensionless"
+      source_kind: "calibrated"
+      model_input_format: "SURFACE block; site density typically 0.001-1 mol/kgw"
+    - category: "transport_geometry"
+      name: "Dispersivity, diffusion coefficient, porosity, cell length, number of cells"
+      unit: "dispersivity m; diffusion m2/s; porosity fraction; length m; cells count"
+      source_kind: "calibrated"
+      model_input_format: "TRANSPORT block; dispersivity 0.01-100 m, diffusion 1e-10 to 1e-9 m2/s, porosity 0.01-0.5"
+      notes: "Dispersivity and porosity are high-sensitivity; cell count is a grid parameter governed by Peclet/Courant constraints."
+  initial_conditions:
+    - category: "domain_chemistry"
+      name: "Initial domain solution composition (TRANSPORT cells 1..N)"
+      unit: "mol/kgw"
+      source_kind: "user_provided"
+      model_input_format: "SOLUTION 1-N blocks defining starting per-cell chemistry"
+    - category: "phase_inventory"
+      name: "Initial mineral/phase moles in EQUILIBRIUM_PHASES"
+      unit: "mol"
+      source_kind: "user_provided"
+      model_input_format: "second numeric field after the SI target; 0 = precipitate-only, large value = dissolution allowed"
+    - category: "reactant_state"
+      name: "Initial exchanger / surface / gas / solid-solution / kinetic reactant amounts"
+      unit: "mol or mol/kgw"
+      source_kind: "user_provided"
+      model_input_format: "EXCHANGE / SURFACE / GAS_PHASE / SOLID_SOLUTIONS / KINETICS blocks; SAVE/USE-able numbered states"
+  boundary_conditions:
+    - category: "solution_state"
+      name: "Solution temperature, pH, pe (or Eh), pressure, density, concentration units"
+      unit: "temp C; pH/pe dimensionless; pressure atm; density kg/L; units mg/L|ug/L|mmol/kgw|mol/kgw"
+      source_kind: "user_provided"
+      model_input_format: "SOLUTION block headers; -Eh keyword supplies redox in mV (pe = Eh(mV)/59.16 at 25C); 'units' keyword controls interpretation of all element concentrations"
+    - category: "element_specification"
+      name: "Element total concentrations with oxidation-state and reporting-basis qualifiers"
+      unit: "per units keyword"
+      source_kind: "user_provided"
+      model_input_format: "SOLUTION element lines; oxidation-state notation S(6)/C(4)/N(-3)/N(5); 'as' qualifier (as HCO3, as CaCO3, as SiO2, as SO4)"
+    - category: "reaction_control"
+      name: "Reaction/temperature/pressure sweeps, mixing, charge-balance target"
+      unit: "dimensionless / per-block"
+      source_kind: "user_provided"
+      model_input_format: "REACTION / REACTION_TEMPERATURE / REACTION_PRESSURE / MIX blocks; 'charge' keyword on a chosen ion or pH"
+    - category: "database_selection"
+      name: "Thermodynamic database selector"
+      unit: "n/a"
+      source_kind: "user_provided"
+      model_input_format: "DATABASE keyword (first line) or command-line database argument"
+    - category: "transport_control"
+      name: "Transport time step, shifts, boundary condition type, stagnant-zone options"
+      unit: "time step s; shifts count"
+      source_kind: "user_provided"
+      model_input_format: "TRANSPORT -time_step / -shifts / -boundary_conditions; ADVECTION for dispersion-free 1-D"
+
+processes:
+  modules:
+    - name: "Speciation"
+      role: "process_solver"
+      brief: "Newton-Raphson solution of aqueous speciation: distributes element totals into species molalities and activities given pH/pe and the active activity model. Core of every calculation."
+    - name: "ActivityModel"
+      role: "process_solver"
+      brief: "Computes activity coefficients. Ion-association (Davies/B-dot Debye-Huckel) by default; Pitzer or SIT virial models when pitzer.dat/sit.dat is active."
+    - name: "EquilibriumPhases"
+      role: "process_solver"
+      brief: "Dissolves/precipitates pure mineral and gas phases toward target saturation indices, transferring moles to/from solution."
+    - name: "Exchange"
+      role: "process_solver"
+      brief: "Ion-exchange equilibrium (e.g., clay CEC) repartitioning cations between solution and exchanger sites."
+    - name: "Surface"
+      role: "process_solver"
+      brief: "Surface-complexation (sorption) equilibrium on mineral surfaces (e.g., ferrihydrite), including diffuse-layer options."
+    - name: "GasPhase"
+      role: "process_solver"
+      brief: "Gas-water equilibrium at fixed pressure or fixed volume."
+    - name: "SolidSolution"
+      role: "optional_module"
+      brief: "Ideal/nonideal binary solid-solution equilibrium as a reactant assemblage."
+    - name: "Kinetics"
+      role: "integrator"
+      brief: "Time-integrates user-defined rate expressions (RATES Basic interpreter) via Runge-Kutta / CVODE ODE solvers; couples reaction extent to solution composition."
+    - name: "Transport"
+      role: "integrator"
+      brief: "1-D advection-dispersion-diffusion via operator-splitting; moves solutes between cells then re-equilibrates each cell chemically."
+    - name: "InverseModeling"
+      role: "optional_module"
+      brief: "Linear-programming (CL1/CL1MP) deduction of mineral/gas mole transfers explaining compositional change between waters under uncertainty constraints."
+    - name: "Mixing"
+      role: "allocator"
+      brief: "Combines numbered solutions by user-specified fractions (MIX) before equilibration."
+  internal_edges:
+    - from: "Inputs"
+      to: "Speciation"
+      kind: "consumes_input"
+      brief: "Element totals, pH/pe, temperature, and units feed the speciation solver."
+    - from: "ActivityModel"
+      to: "Speciation"
+      kind: "invokes"
+      brief: "Speciation queries activity coefficients each Newton-Raphson iteration."
+    - from: "Speciation"
+      to: "EquilibriumPhases"
+      kind: "invokes"
+      brief: "Species activities yield saturation indices that drive mineral dissolution/precipitation."
+    - from: "EquilibriumPhases"
+      to: "Speciation"
+      kind: "writes_state"
+      brief: "Mole transfers change solution composition, re-triggering speciation to convergence."
+    - from: "Exchange"
+      to: "Speciation"
+      kind: "writes_state"
+      brief: "Exchange repartitioning of cations updates solution composition."
+    - from: "Surface"
+      to: "Speciation"
+      kind: "writes_state"
+      brief: "Sorption repartitioning updates dissolved concentrations."
+    - from: "GasPhase"
+      to: "Speciation"
+      kind: "writes_state"
+      brief: "Gas dissolution/exsolution updates dissolved gas-component totals."
+    - from: "SolidSolution"
+      to: "Speciation"
+      kind: "writes_state"
+      brief: "Solid-solution precipitation/dissolution repartitions component activities, updating dissolved concentrations."
+    - from: "Mixing"
+      to: "Speciation"
+      kind: "produces_output"
+      brief: "Mixed solution becomes the input composition for equilibration."
+    - from: "Kinetics"
+      to: "Speciation"
+      kind: "writes_state"
+      brief: "Time-integrated kinetic mole changes update solution composition each sub-step."
+    - from: "Speciation"
+      to: "Kinetics"
+      kind: "reads_state"
+      brief: "Rate expressions read current species molalities/saturation state to compute rates."
+    - from: "Transport"
+      to: "Speciation"
+      kind: "invokes"
+      brief: "After each advective/dispersive shift, every cell is re-equilibrated chemically (operator-splitting)."
+    - from: "Transport"
+      to: "Kinetics"
+      kind: "invokes"
+      brief: "Reactive transport couples per-cell kinetic integration within the transport time step."
+    - from: "Speciation"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "Converged species, totals, saturation indices, and balances are written to output."
+    - from: "InverseModeling"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "Linear-programming mole-transfer solutions are emitted as feasible reaction models."
+
+states:
+  variables:
+    - name: "Solution composition (element totals)"
+      unit: "mol/kgw"
+      role: "prognostic"
+    - name: "Species molality"
+      unit: "mol/kgw"
+      role: "diagnostic"
+    - name: "Species activity"
+      unit: "dimensionless"
+      role: "diagnostic"
+    - name: "pH"
+      unit: "dimensionless"
+      role: "prognostic"
+    - name: "pe"
+      unit: "dimensionless"
+      role: "prognostic"
+    - name: "Ionic strength"
+      unit: "mol/kgw"
+      role: "diagnostic"
+    - name: "Saturation index (per phase)"
+      unit: "dimensionless"
+      role: "diagnostic"
+    - name: "Phase assemblage moles (and delta moles)"
+      unit: "mol"
+      role: "prognostic"
+    - name: "Exchange site occupancy"
+      unit: "mol/kgw"
+      role: "prognostic"
+    - name: "Surface site occupancy"
+      unit: "mol/kgw"
+      role: "prognostic"
+    - name: "Gas-phase partial pressures / amounts"
+      unit: "atm / mol"
+      role: "prognostic"
+    - name: "Kinetic reaction extent"
+      unit: "mol"
+      role: "accumulator"
+    - name: "Charge-balance residual"
+      unit: "eq"
+      role: "diagnostic"
+    - name: "Water mass (solvent)"
+      unit: "kg"
+      role: "prognostic"
+    - name: "Cell concentrations (transport)"
+      unit: "mol/kgw"
+      role: "prognostic"
+  provenance: "populated"
+
+outputs:
+  - var: "pH"
+    validation_rank: 1
+    unit: "dimensionless"
+    description: "Negative log of hydrogen-ion activity of the solution"
+    emitted_in: "output.pqo; .sel via SELECTED_OUTPUT -pH"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Equilibrium endpoint; compare against measured field/lab pH at the same temperature and CO2 condition."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Time series only meaningful in KINETICS/TRANSPORT mode."]
+      detrending_options: ["none"]
+  - var: "pe"
+    validation_rank: 2
+    unit: "dimensionless"
+    description: "Negative log of electron activity (redox state)"
+    emitted_in: "output.pqo; .sel via SELECTED_OUTPUT -pe"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Field Eh is often poorly poised; convert measured Eh to pe (pe = Eh(mV)/59.16 at 25C) before comparison."]
+      detrending_options: ["none"]
+  - var: "element_totals"
+    validation_rank: 3
+    unit: "mol/kgw"
+    description: "Total dissolved concentration of each element in solution"
+    emitted_in: "output.pqo; .sel via SELECTED_OUTPUT -totals"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Output is molal (mol/kgw); convert to mg/L for lab comparison (mg/L = molality * MW * 1000 * density)."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Time series applies to transport breakthrough or kinetic evolution at a fixed cell."]
+      detrending_options: ["none"]
+  - var: "species_distribution"
+    validation_rank: 4
+    unit: "mol/kgw molality; dimensionless activity"
+    description: "Speciated aqueous species molalities, activities, and activity coefficients"
+    emitted_in: "output.pqo; .sel via -molalities / -activities"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Individual species activities are rarely measured directly; usually validated indirectly via totals, pH, and SI."]
+      detrending_options: ["none"]
+  - var: "saturation_index"
+    validation_rank: 5
+    unit: "dimensionless"
+    description: "log(IAP/K) per mineral phase; >0 supersaturated, <0 undersaturated, 0 equilibrium"
+    emitted_in: "output.pqo; .sel via -saturation_indices"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["SI depends strongly on the chosen thermodynamic database; benchmark cases expect SI~0 for equilibrated minerals (e.g., calcite)."]
+      detrending_options: ["none"]
+  - var: "ionic_strength"
+    validation_rank: 6
+    unit: "mol/kgw"
+    description: "Solution ionic strength"
+    emitted_in: "output.pqo; .sel via -ionic_strength"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Diagnostic; >0.7 mol/kgw signals the ion-association activity model is out of range and Pitzer should be used."]
+      detrending_options: ["none"]
+  - var: "specific_conductance"
+    validation_rank: 7
+    unit: "uS/cm"
+    description: "Calculated electrical conductivity of the solution"
+    emitted_in: "output.pqo"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Directly comparable to field EC measurements."]
+      detrending_options: ["none"]
+  - var: "phase_amounts"
+    validation_rank: 8
+    unit: "mol"
+    description: "Moles transferred (dissolved/precipitated) for each mineral, gas, exchanger, surface, or solid-solution reactant"
+    emitted_in: "output.pqo; .sel via -equilibrium_phases"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Mass-transfer amounts compared against batch-experiment or inverse-model mole balances."]
+      detrending_options: ["none"]
+  - var: "transport_profiles"
+    validation_rank: 9
+    unit: "mol/kgw vs cell/time"
+    description: "Solute concentration profiles along the 1-D column over cells and time shifts (breakthrough curves)"
+    emitted_in: "output.pqo; .sel per shift"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Breakthrough at a fixed column position; validate against analytical Ogata-Banks solution or column-experiment data."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["1-D profile along the column at a fixed time."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "surface-complexation log K (U(VI)-quartz, K1/K2/K5)"
+      to: "sorbed_uranium_fraction"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "surface-complexation (SURFACE) models"
+      citations: ["abdelaziz2019_phreeqc_pso_sc_constants"]
+    - from: "surface-complexation log K (K3/K4/K6)"
+      to: "sorbed_uranium_fraction"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "surface-complexation (SURFACE) models"
+      citations: ["abdelaziz2019_phreeqc_pso_sc_constants"]
+    - from: "intrinsic surface-complexation log K"
+      to: "distribution_coefficient_Kd"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["abdelaziz2019_phreeqc_pso_sc_constants", "nitzsche2000_database_uncertainty_reactive_transport"]
+    - from: "cation-exchange selectivity coefficient (Na/K)"
+      to: "porewater_K_concentration"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "ion-exchange (EXCHANGE) models"
+      citations: ["sochala2022_phreeqc_porewater_pce_gsa"]
+    - from: "mineral solubility log K (quartz)"
+      to: "porewater_Si_concentration"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["sochala2022_phreeqc_porewater_pce_gsa"]
+    - from: "mineral solubility log K (illite)"
+      to: "porewater_Al_concentration"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["sochala2022_phreeqc_porewater_pce_gsa"]
+    - from: "mineral solubility log K (ripidolite, illite)"
+      to: "porewater_Fe_and_S_concentration"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["sochala2022_phreeqc_porewater_pce_gsa"]
+    - from: "carbonate-system mineral solubility log K (calcite/dolomite)"
+      to: "porewater_pH"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["sochala2022_phreeqc_porewater_pce_gsa"]
+    - from: "leached-anion and exchanged-cation input composition (Cl, SO4, Na, Ca, Sr)"
+      to: "porewater_major_ion_concentration"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      citations: ["sochala2022_phreeqc_porewater_pce_gsa"]
+    - from: "thermodynamic database choice (aqueous-complex equilibrium constants)"
+      to: "aqueous_species_concentration"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: structural
+      citations: ["nitzsche2000_database_uncertainty_reactive_transport", "lu2022_phreeqc_tdf_comparison"]
+    - from: "thermodynamic database choice (mineral log K + activity model Pitzer/B-dot)"
+      to: "mineral_saturation_index_and_precipitation"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: structural
+      citations: ["lu2022_phreeqc_tdf_comparison", "nitzsche2000_database_uncertainty_reactive_transport"]
+    - from: "end-member composition and allowed-reaction set"
+      to: "inverse_mixing_fraction_and_mass_transfer"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "inverse / mass-balance modeling"
+      citations: ["pelayo2008_mixing_massbalance_sensitivity"]
+  citation_index:
+    abdelaziz2019_phreeqc_pso_sc_constants:
+      short_citation: "Abdelaziz et al. 2019"
+      doi: "10.5194/gmd-12-167-2019"
+      note: "Particle-swarm calibration of U(VI)-quartz surface-complexation log K in PHREEQC; K1/K2/K5 dominate simulated U sorption (R2=0.89)"
+    sochala2022_phreeqc_porewater_pce_gsa:
+      short_citation: "Sochala et al. 2022"
+      doi: "10.1038/s41598-022-18411-5"
+      note: "Polynomial-chaos surrogate + Sobol GSA of a PHREEQC Callovo-Oxfordian clay pore-water model over 19 inputs"
+    nitzsche2000_database_uncertainty_reactive_transport:
+      short_citation: "Nitzsche et al. 2000"
+      doi: "10.1016/S0169-7722(00)00106-6"
+      note: "Monte-Carlo propagation of thermodynamic-database (equilibrium-constant) uncertainty through U(VI) reactive transport; database uncertainty often the limiting control"
+    lu2022_phreeqc_tdf_comparison:
+      short_citation: "Lu et al. 2022"
+      doi: "10.1016/j.earscirev.2021.103888"
+      note: "Systematic comparison of PHREEQC thermodynamic data files; database/activity-model choice substantially changes SI, speciation, and solubility"
+    pelayo2008_mixing_massbalance_sensitivity:
+      short_citation: "Pelayo et al. 2008"
+      doi: "10.1016/j.apgeochem.2007.12.030"
+      note: "Sensitivity/uncertainty of inverse mixing and mass-balance calculations; end-member chemistry and allowed-reaction set propagate strongly to mixing fractions"
+
+safety:
+  hazards:
+    - id: "concentration_units_mismatch"
+      kind: "control_semantic"
+      description: "Element concentrations given in mg/L but the SOLUTION 'units' keyword set to mol/kgw (or vice versa) silently scales all concentrations by ~molar mass (~1000x)."
+      severity: "silent"
+    - id: "eh_entered_as_pe"
+      kind: "control_semantic"
+      description: "Eh in mV entered directly as pe without conversion (pe = Eh(mV)/59.16 at 25C) inverts redox speciation and makes the system appear extremely oxidizing."
+      severity: "silent"
+    - id: "alkalinity_basis_missing_qualifier"
+      kind: "control_semantic"
+      description: "Alkalinity reported as mg/L CaCO3 but entered without the 'as CaCO3'/'as HCO3' qualifier gives 2x-8x wrong DIC / C(4)."
+      severity: "silent"
+    - id: "cec_unit_conversion"
+      kind: "control_semantic"
+      description: "Cation exchange capacity in cmol+/kg entered directly as mol in EXCHANGE makes capacity ~500x too large; convert via mol_kgw = CEC_cmol/100 * bulk_density/porosity."
+      severity: "silent"
+    - id: "surface_area_cm2_vs_m2"
+      kind: "control_semantic"
+      description: "Mineral surface area entered in cm2/g instead of m2/g in the SURFACE block makes surface-complexation site density / adsorption ~10000x off (1 m2/g = 10,000 cm2/g; e.g. ferrihydrite ~600 m2/g, goethite ~50 m2/g). (dt_018)"
+      severity: "silent"
+    - id: "dispersivity_cm_vs_m"
+      kind: "control_semantic"
+      description: "Dispersivity entered in cm instead of m makes TRANSPORT dispersion 100x too large and drops the grid Peclet number below 2, smearing fronts."
+      severity: "degraded"
+    - id: "transport_cell0_indexing"
+      kind: "control_semantic"
+      description: "Confusing influent boundary (cell 0) with the first domain cell (cell 1) shifts the breakthrough profile by one cell."
+      severity: "degraded"
+    - id: "newton_raphson_nonconvergence"
+      kind: "numerical_instability"
+      description: "Initial conditions far from equilibrium (e.g., pH 2 with high alkalinity, extreme redox) cause the Newton-Raphson solver to exceed maximum iterations and exit non-zero."
+      severity: "fatal"
+    - id: "transport_oom"
+      kind: "numerical_instability"
+      description: "Too many transport cells (>1000) with a large database (llnl.dat) or excessive SELECTED_OUTPUT triggers OOM kill or segmentation fault."
+      severity: "fatal"
+    - id: "element_not_in_database"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "A SOLUTION element absent from the selected database's SOLUTION_MASTER_SPECIES (phreeqc.dat lacks As/U/Se/Ni) terminates the run with 'Element not found'."
+      severity: "fatal"
+    - id: "activity_model_out_of_range"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Using an ion-association database (Davies/B-dot valid only for I<~0.7 mol/kgw) at high ionic strength, or using Pitzer keywords with a non-Pitzer database, silently yields wrong activity coefficients and saturation indices."
+      severity: "silent"
+    - id: "charge_imbalance"
+      kind: "control_semantic"
+      description: "Missing major ion (SO4/Na/K) or wrong alkalinity yields >5-10% charge-balance error and unreliable speciation; resolve with the 'charge' keyword on one ion."
+      severity: "degraded"
+    - id: "equilibrium_phase_zero_moles"
+      kind: "initial_condition_semantic"
+      description: "EQUILIBRIUM_PHASES initial moles set to 0 makes the phase precipitate-only; the mineral cannot dissolve despite undersaturation (delta moles never negative)."
+      severity: "silent"
+    - id: "kinetic_time_unit_mismatch"
+      kind: "control_semantic"
+      description: "Rate constant in per-day/per-year while KINETICS -steps and RATES use seconds runs reactions ~86400x/31.5Mx too fast or slow."
+      severity: "silent"
+    - id: "selected_output_tab_delimited"
+      kind: "parser_semantic"
+      description: "SELECTED_OUTPUT .sel files are tab-delimited; parsing with a comma/semicolon separator collapses all data into one column."
+      severity: "silent"
+  validation_limits:
+    - "Standalone PHREEQC has no multi-dimensional flow or transport; only 1-D ADVECTION/TRANSPORT is built in (2-D/3-D requires PHAST/PHT3D coupling)."
+    - "Ion-association databases (phreeqc.dat, wateq4f.dat, minteq.dat) are structurally invalid above ~0.7 mol/kgw ionic strength; brines require pitzer.dat or sit.dat."
+    - "Ternary nonideal solid solutions are not implemented."
+    - "Inverse modeling cannot perform Rayleigh isotope fractionation for precipitating minerals."
+    - "The explicit finite-difference transport scheme exhibits numerical dispersion on coarse grids (require grid Peclet > 2, Courant <= 1)."
+    - "Database internal inconsistency: equilibrium constants across databases are not guaranteed mutually consistent, and database choice is itself a dominant uncertainty."
+  warnings:
+    - "Output totals are always molal (mol/kgw) regardless of input units; convert to mg/L (= molality * MW * 1000 * density) before comparing to lab reports."
+    - "Charge-balance percent error >5% indicates unreliable speciation even when the run completes."
+    - "Pitzer/SIT activity corrections apply only when the corresponding database is loaded; otherwise the model silently uses ion-association."
+  assumptions:
+    - statement: "PHREEQC is treated as a 0-D point-scale equilibrium chemistry solver by default, extended to a 1-D cell column only under ADVECTION/TRANSPORT."
+      scope: "spatial geometry"
+      source: "USGS Techniques and Methods 6-A43 (Parkhurst & Appelo 2013), Introduction / Types of calculations"
+      status: "adopted"
+    - statement: "Closure is mass-balance on water, elements, and charge; solutions are charge-balanced (optionally enforced on a chosen element or pH), and equilibrium is assumed unless KINETICS is active."
+      scope: "conservation / closure"
+      source: "https://water.usgs.gov/water-resources/software/PHREEQC/documentation/phreeqc3-html/phreeqc3-2.htm (Theoretical basis)"
+      status: "adopted"
+    - statement: "The default activity model is ion-association (Debye-Huckel/Davies/B-dot); Pitzer or SIT virial models are in effect only when pitzer.dat or sit.dat is the active database."
+      scope: "activity-coefficient method"
+      source: "Lu et al. 2022 (10.1016/j.earscirev.2021.103888); USGS phreeqc3 documentation"
+      status: "adopted"
+    - statement: "The thermodynamic database is the dominant source of structural uncertainty; reported saturation indices and speciation are conditional on the selected .dat file."
+      scope: "parameter / structural uncertainty"
+      source: "Nitzsche et al. 2000 (10.1016/S0169-7722(00)00106-6); Lu et al. 2022 (10.1016/j.earscirev.2021.103888)"
+      status: "adopted"

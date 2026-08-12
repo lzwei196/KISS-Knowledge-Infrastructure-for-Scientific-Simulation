@@ -102,13 +102,35 @@ def preflight_check(run_dir):
             elif line.startswith("nmax"):
                 nmax = int(line.split("=")[1].strip())
 
-        if mmax > 0 and nmax > 0:
+        # dt_v023: sfincs.dep/.msk/.man are COMPRESSED maps of exactly n_active values,
+        # not nmax*mmax grids. Cross-check every binary map against sfincs.ind's header;
+        # a size mismatch means SFINCS will silently simulate a scrambled fragment.
+        ind_path = run_dir / "sfincs.ind"
+        if ind_path.exists():
+            n_active = int(np.fromfile(str(ind_path), dtype=np.int32, count=1)[0])
+            n_idx = ind_path.stat().st_size // 4 - 1
+            if n_active != n_idx:
+                warnings.append(f"CRITICAL: sfincs.ind header says {n_active} active cells "
+                                f"but carries {n_idx} indices (dt_v001)")
+            if n_active == 0:
+                warnings.append("CRITICAL: Mask file has NO active cells — output will be "
+                                "all zeros! (dt_020)")
+            expect = {"sfincs.msk": n_active, "sfincs.dep": n_active * 4,
+                      "sfincs.man": n_active * 4}
+            for fname, want in expect.items():
+                f = run_dir / fname
+                if f.exists() and f.stat().st_size != want:
+                    warnings.append(
+                        f"CRITICAL (dt_v023): {fname} is {f.stat().st_size} bytes but a "
+                        f"COMPRESSED SFINCS binary map for {n_active} active cells must be "
+                        f"{want}. SFINCS will read the first {n_active} values as if they "
+                        f"were the compressed array and simulate a scrambled domain WITHOUT "
+                        f"any error. Rebuild with build_sfincs_topobathy.py / "
+                        f"build_sfincs_roughness.py --index_file.")
+        elif mmax > 0 and nmax > 0:
             msk = np.fromfile(str(msk_path), dtype=np.uint8)
-            if len(msk) >= mmax * nmax:
-                msk = msk[:mmax * nmax].reshape(nmax, mmax)
-                active = int(np.sum(msk > 0))
-                if active == 0:
-                    warnings.append("CRITICAL: Mask file has NO active cells — output will be all zeros! (dt_020)")
+            if int(np.sum(msk > 0)) == 0:
+                warnings.append("CRITICAL: Mask file has NO active cells — output will be all zeros! (dt_020)")
 
     # Check CFL condition
     dt = dx = None

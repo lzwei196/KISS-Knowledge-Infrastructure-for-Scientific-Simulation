@@ -74,24 +74,30 @@ MODEL_PARAMS = {
             ("pfree", 0, 1, "-", "Fraction perc going to lower free"),
         ],
     },
-    "m_37_hbv96_15p_5s": {
+    # NOTE: the MARRMoT model file is named ``m_37_hbv_15p_5s.m`` (NOT
+    # ``m_37_hbv96_15p_5s``). The parameter order/ranges below were corrected
+    # 2026-06-23 to match the real ``m_37_hbv_15p_5s`` parRanges property
+    # exactly (the previous block had a fabricated order/param set — k0/k1/k2,
+    # ddf, Smax — that does not exist in the shipped model and produced garbage
+    # when fed to octave feval). Order matches obj.parRanges row-for-row.
+    "m_37_hbv_15p_5s": {
         "n_params": 15, "n_stores": 5,
         "params": [
-            ("TT", -3, 5, "degC", "Threshold temperature rain/snow"),
-            ("TTI", 0, 5, "degC", "Temperature interval for mixed precip"),
-            ("TTM", -3, 5, "degC", "Threshold temperature for melt"),
-            ("ddf", 0, 20, "mm/d/C", "Degree-day melt factor"),
-            ("Smax", 1, 2000, "mm", "Maximum soil moisture storage"),
-            ("beta", 0, 7, "-", "Soil moisture non-linearity"),
-            ("fc", 0, 1, "-", "Fraction field capacity"),
-            ("k0", 0, 1, "1/d", "Near-surface flow rate"),
-            ("k1", 0, 1, "1/d", "Interflow rate"),
-            ("k2", 0, 0.1, "1/d", "Baseflow rate"),
-            ("lp", 0, 1, "-", "Limit for PET reduction"),
-            ("perc", 0, 20, "mm/d", "Max percolation rate"),
-            ("cflux", 0, 5, "mm/d", "Max capillary rise"),
-            ("alpha", 0, 5, "-", "Response box non-linearity"),
-            ("maxbas", 1, 10, "d", "Routing UH time base"),
+            ("TT", -3, 5, "degC", "Threshold temperature for snowfall"),
+            ("TTI", 0, 17, "degC", "Interval length of rain-snow spectrum"),
+            ("TTM", -3, 3, "degC", "Threshold temperature for snowmelt"),
+            ("CFR", 0, 1, "-", "Coefficient of refreezing of melted snow"),
+            ("CFMAX", 0, 20, "mm/d/C", "Degree-day factor of snowmelt/refreeze"),
+            ("WHC", 0, 1, "-", "Max water holding content of snow pack"),
+            ("CFLUX", 0, 4, "mm/d", "Max rate of capillary rise"),
+            ("FC", 1, 2000, "mm", "Maximum soil moisture storage"),
+            ("LP", 0.05, 0.95, "-", "Wilting point as fraction of FC"),
+            ("BETA", 0, 10, "-", "Non-linearity of upper zone recharge"),
+            ("K0", 0, 1, "1/d", "Runoff coefficient from upper zone"),
+            ("ALPHA", 0, 4, "-", "Non-linearity of runoff from upper zone"),
+            ("PERC", 0, 20, "mm/d", "Max rate of percolation to lower zone"),
+            ("K1", 0, 1, "1/d", "Runoff coefficient from lower zone"),
+            ("MAXBAS", 1, 120, "d", "Flow routing delay"),
         ],
     },
 }

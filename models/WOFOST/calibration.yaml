@@ -1,0 +1,487 @@
+template_version: "calib-0.1"
+model_id: WOFOST
+
+identity:
+  domain: crop
+  binding: Wofost72_PP            # the engine variant the validated case runs (PP = potential production)
+  implementation: "PCSE 6.0.12 / WOFOST 7.2 (pcse-wofost72)"
+
+# ---------------------------------------------------------------------------
+# TARGET CASE — the gauge/obs this capability calibrates toward. PINNED in
+# tools/calib_run.py as well; the runner self-declares __kdt__.case_id derived
+# from the obs record it actually scored, so a wrong-site score is detectable.
+# ---------------------------------------------------------------------------
+case:
+  case_id: "OBS:spam2020"
+  obs_id: spam2020
+  obs_source: "SPAM 2020 V2r0 (IFPRI) — all-technology maize yield (Y_TA) + harvested area (H_TA)"
+  obs_shape: regional_aggregate_time_series
+  comparison_mode: aggregate_trend_comparison
+  determining_metric: pbias
+  region: "US Corn Belt (Iowa) maize — lat [40.0, 43.0], lon [-96.0, -91.0], 1.0 deg boxes"
+  provenance: "WOFOST_20260704T091928Z"
+  validated_metric: {pbias: -13.746346372413093}
+  validated_recipe: >-
+    Wofost72_PP, crop=maize variety=Grain_maize_205, NASA POWER forcing, HWSD soil,
+    campaign 04-20 / sowing 05-01 / max_duration 200, 15 SPAM cells, years 2016-2020
+    averaged per cell, TWSO (dry matter) converted to 15.5% market moisture, harvested-
+    area-weighted regional mean vs the SPAM regional mean. tools/calib_run.py at the
+    DEFAULT vector reproduces pbias = -13.7463463724131 (bit-level).
+
+# Obs-envelope fields the driver MUST read and ASSERT on every eval (fail-closed).
+# A changed/corrupted SPAM record for the same region can never be silently scored.
+obs_contract:
+  identity: "obs_id 'spam2020'; SPAM 2020 V2r0 Global_CSV yield (Y_TA) + harvested-area (H_TA) zips, opened read-only"
+  crop: maize
+  spatial_domain: "lat [40.0, 43.0] x lon [-96.0, -91.0], step 1.0 deg"
+  n_cells: 15
+  cell_coordinate_set: "the exact 15 (lat, lon) box centres 40.5/41.5/42.5 N x -95.5..-91.5 E"
+  per_cell_values: "every cell's SPAM yield (kg/ha) AND harvested area (ha), rel-tol 1e-6"
+  regional_area_weighted_mean_kgha: 12633.255207533377
+  regional_unweighted_mean_kgha: 12470.871732685764
+  cell_yield_min_kgha: 10100.026034576642
+  cell_yield_max_kgha: 14612.1539978241
+  total_harvested_area_ha: 3886936.2
+
+targets:
+  - var: TWSO                     # dag.outputs.TWSO — the variable the SPAM obs measures
+    weight: 1.0
+
+# ---------------------------------------------------------------------------
+# INJECTION — runner mode is REQUIRED here:
+#  * the KI REGENERATES its agromanagement YAML on every run (a pre-written value
+#    would be overwritten), and
+#  * the crop parameters live inside the PCSE crop-parameter library consumed via
+#    YAMLCropDataProvider/ParameterProvider, not in a stable file in the workdir.
+# tools/calib_run.py injects them the model's OWN way (ParameterProvider.set_override,
+# PCSE's documented calibration hook) and reads every value back from the effective
+# provider state snapshotted at CROP_FINISH + from the regenerated agro YAML on disk.
+# `address` below is therefore DOCUMENTATION of where each value lands.
+# ---------------------------------------------------------------------------
+injection:
+  mode: runner
+
+# ---------------------------------------------------------------------------
+# PARAMETERS
+# Pool seeded from dag.yaml influence.edges with sensitivity_grade HIGH/MEDIUM whose
+# lever_type is `parameter`/`management` AND whose `applicability` holds for THIS case
+# (Wofost72_PP, spring-sown maize):
+#   HIGH  : TSUM1->DOA/DVS, TSUM2->DOM, SLATB->LAI, AMAXTB->TAGP, AMAXTB->TWSO, FOTB->TWSO
+#   MEDIUM: TSUM1->TWSO, SLATB->TWSO, EFFTB->TAGP, KDIFTB->LAI, CVO->TWSO, SPAN->LAI,
+#           sowing date->DOA/TWSO
+#   LOW   : Q10->TAGP/TWSO  (kept as a screenable residual — never silently pruned)
+# Plus two library-documented growth levers the EFAST/Morris studies carry alongside
+# the above (TDWI, RGRLAI).
+#
+# DELIBERATELY EXCLUDED, with the dag's own reason:
+#   * SMW / SMFCF / SM0 (HIGH -> TWSO) — the edge's `applicability` is
+#     "water-limited production levels (WLP_FD / WLP_CWB)". The validated case runs
+#     Wofost72_PP, where the soil-water balance does not limit growth: these are INERT
+#     levers here (PCSE 6.0 still REQUIRES the soil block at construction, which is why
+#     the KI supplies it). Calibrating them would burn the screen on a dead axis.
+#   * IRRAD / TMIN / TMAX / RAIN (HIGH) — lever_type boundary_forcing, not parameters.
+#   * production_level PP vs WLP (HIGH) — lever_type structural; PP is the
+#     SKILL-validated framing for the high-input Corn Belt and is not a tunable.
+#   * VERNSAT / VERNBASE / photoperiod (MEDIUM) — "winter cereals only"; maize has
+#     IDSL=0 and DLO/DLC=-99, so they are unreachable code paths.
+#
+# RANGES are grounded, in this order, in
+#   (1) the WOFOST crop-parameter library shipped with PCSE 6.0.12
+#       (pcse/data/crop/maize.yaml: 7 maize varieties — Maize_VanHeemst_1988,
+#        Grain_maize_201..205, Fodder_maize_nl), i.e. the model's own documented
+#        parameter space, and
+#   (2) the perturbation ranges the WOFOST GSA/calibration literature actually varied
+#       (Wang 2013 EFAST, Gilardelli 2018 Morris, Li 2023 EFAST, Ceglar 2019),
+# and were then VERIFIED CLAMP-FREE on THIS site: every parameter was run at its `lo`
+# and its `hi` (and at the ALL-LO / ALL-HI / phenology-worst box corners) and read back
+# EQUAL to the request, with all 75 cell-years passing WOFOST's maturity gate.
+# The TSUM upper bounds are set by that verification: TSUM1=TSUM2=1150 (and 1000, 975)
+# leave the crop immature at the cool 2019 northern cells, which fails the eval closed —
+# 940/940 with the latest sowing (+15 d) is the clamp-free frontier.
+# ---------------------------------------------------------------------------
+parameters:
+
+  - name: TSUM1
+    description: "Temperature sum from emergence to anthesis"
+    type: continuous
+    units: "degC.day"
+    default: 935.0
+    range: [700.0, 940.0]
+    transform: identity
+    scope: per-crop
+    zone_key: "crop_variety"          # maize / Grain_maize_205
+    tie: null
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite: >-
+      dag influence edge TSUM1->DOA/DVS (HIGH) + TSUM1->TWSO (MEDIUM), citations
+      wang2013_wofost_efast (10.1016/j.envsoft.2013.06.007), ceglar2019_wofost_wheat_phenology
+      (10.1016/j.agsy.2018.05.002), li2023_wofost_efast_spring_wheat (10.3390/agronomy13092294).
+      Range = the WOFOST maize library span (600-935 degC.d across the 7 shipped maize
+      varieties; Grain_maize_201/202 = 695, 203 = 775, 204 = 855, 205 = 935 is the library
+      maximum), restricted at the top to the on-site clamp-free frontier (940).
+    address:                          # documentation (runner mode injects via set_override)
+      kind: api
+      setter: "pcse.base.ParameterProvider:set_override"
+      path: "cropdata.TSUM1"
+    targets: [TWSO]
+
+  - name: TSUM2
+    description: "Temperature sum from anthesis to maturity"
+    type: continuous
+    units: "degC.day"
+    default: 920.0
+    range: [800.0, 940.0]
+    transform: identity
+    scope: per-crop
+    zone_key: "crop_variety"
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite: >-
+      dag influence edge TSUM2->DOM (HIGH), citations wang2013_wofost_efast,
+      ceglar2019_wofost_wheat_phenology, li2023_wofost_efast_spring_wheat. Range = the
+      WOFOST maize library span for the grain-maize classes (800-920; Fodder_maize_nl
+      reaches 1211 but is a different crop use), capped at 940 by the on-site clamp-free
+      frontier: TSUM1+TSUM2 >= ~1950 leaves the crop immature in the cool 2019 season at
+      the northern cells, which fails the eval closed.
+    address:
+      kind: api
+      setter: "pcse.base.ParameterProvider:set_override"
+      path: "cropdata.TSUM2"
+    targets: [TWSO]
+
+  - name: SPAN
+    description: "Life span of leaves growing at 35 degC (leaf senescence rate control)"
+    type: continuous
+    units: "day"
+    default: 33.0
+    range: [28.0, 42.0]
+    transform: identity
+    scope: per-crop
+    zone_key: "crop_variety"
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    cite: >-
+      dag influence edge SPAN->LAI (MEDIUM), citation li2023_wofost_efast_spring_wheat
+      (ranks SPAN among the priority parameters). Range brackets the WOFOST maize library
+      span (33 for Grain_maize_201..205, 40 for Maize_VanHeemst_1988 and Fodder_maize_nl)
+      with the +-25% GSA perturbation convention of wang2013_wofost_efast.
+    address:
+      kind: api
+      setter: "pcse.base.ParameterProvider:set_override"
+      path: "cropdata.SPAN"
+    targets: [TWSO]
+
+  - name: AMAXTB_MULT
+    description: "Multiplier on the AMAXTB table (max leaf CO2 assimilation rate vs DVS); 1.0 = library default (70 kg CO2 ha-1 h-1 at DVS<=1.25)"
+    type: continuous
+    units: "-"
+    default: 1.0
+    range: [0.75, 1.25]
+    transform: identity
+    scope: per-crop
+    zone_key: "crop_variety"
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite: >-
+      dag influence edges AMAXTB->TAGP (HIGH) and AMAXTB->TWSO (HIGH), citations
+      wang2013_wofost_efast, gilardelli2018_wofost_climate_sensitivity,
+      li2023_wofost_efast_spring_wheat (AMAXTB is top-ranked in every WOFOST EFAST study).
+      +-25% is the perturbation band those GSA studies apply around the default; it maps
+      AMAX to 52.5-87.5 kg CO2 ha-1 h-1, inside the C4-maize literature band (~50-90).
+    address:
+      kind: api
+      setter: "pcse.base.ParameterProvider:set_override"
+      path: "cropdata.AMAXTB[y]"      # every y-value of the AFGEN table scaled uniformly
+    targets: [TWSO]
+
+  - name: SLATB_MULT
+    description: "Multiplier on the SLATB table (specific leaf area vs DVS); 1.0 = library default (0.0026 -> 0.0012 ha kg-1)"
+    type: continuous
+    units: "-"
+    default: 1.0
+    range: [0.75, 1.30]
+    transform: identity
+    scope: per-crop
+    zone_key: "crop_variety"
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite: >-
+      dag influence edges SLATB->LAI (HIGH) and SLATB->TWSO (MEDIUM), citations
+      wang2013_wofost_efast, li2023_wofost_efast_spring_wheat (SLATB is the top-ranked
+      parameter in Li 2023). Upper bound from the WOFOST maize library itself
+      (Maize_VanHeemst_1988 SLA at DVS 0 = 0.0035 vs 0.0026 = +35%; Fodder_maize_nl
+      0.0032 = +23%); lower bound is the symmetric -25% GSA band.
+    address:
+      kind: api
+      setter: "pcse.base.ParameterProvider:set_override"
+      path: "cropdata.SLATB[y]"
+    targets: [TWSO]
+
+  - name: EFFTB_MULT
+    description: "Multiplier on the EFFTB table (light-use efficiency of a single leaf at low light); 1.0 = library default 0.45 kg ha-1 h-1 / (J m-2 s-1)"
+    type: continuous
+    units: "-"
+    default: 1.0
+    range: [0.88, 1.12]
+    transform: identity
+    scope: per-crop
+    zone_key: "crop_variety"
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    cite: >-
+      dag influence edge EFFTB->TAGP (MEDIUM), citations wang2013_wofost_efast,
+      li2023_wofost_efast_spring_wheat. Band kept deliberately narrow so EFF stays in
+      0.396-0.504, i.e. inside the WOFOST maize library range (0.45 for Grain_maize_201..205,
+      0.47 Fodder_maize_nl, 0.50 Maize_VanHeemst_1988) and the C4 initial-light-use-efficiency
+      literature band 0.40-0.50.
+    address:
+      kind: api
+      setter: "pcse.base.ParameterProvider:set_override"
+      path: "cropdata.EFFTB[y]"
+    targets: [TWSO]
+
+  - name: KDIFTB_MULT
+    description: "Multiplier on the KDIFTB table (extinction coefficient for diffuse PAR); 1.0 = library default 0.60"
+    type: continuous
+    units: "-"
+    default: 1.0
+    range: [0.75, 1.30]
+    transform: identity
+    scope: per-crop
+    zone_key: "crop_variety"
+    activation: always
+    expected_sensitivity: medium
+    confidence: medium
+    cite: >-
+      dag influence edge KDIFTB->LAI (MEDIUM), citation wang2013_wofost_efast. Range maps
+      KDIF to 0.45-0.78, spanning the WOFOST maize library values (0.60 / 0.62) and the
+      canopy-extinction band reported for maize (~0.4-0.8).
+    address:
+      kind: api
+      setter: "pcse.base.ParameterProvider:set_override"
+      path: "cropdata.KDIFTB[y]"
+    targets: [TWSO]
+
+  - name: CVO
+    description: "Efficiency of conversion of assimilates into storage organs (grain)"
+    type: continuous
+    units: "kg.kg-1"
+    default: 0.671
+    range: [0.60, 0.74]
+    transform: identity
+    scope: per-crop
+    zone_key: "crop_variety"
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    cite: >-
+      dag influence edge CVO->TWSO (MEDIUM), citations wang2013_wofost_efast,
+      li2023_wofost_efast_spring_wheat. Range brackets the WOFOST maize library values
+      (0.670-0.720) with the GSA perturbation band, and stays well below the
+      thermodynamic ceiling of 1 kg glucose-equivalent per kg product.
+    address:
+      kind: api
+      setter: "pcse.base.ParameterProvider:set_override"
+      path: "cropdata.CVO"
+    targets: [TWSO]
+
+  - name: FOTB_EXP
+    description: >-
+      Shape exponent of the storage-organ partitioning table: FO'(DVS) = FO(DVS)**p, with
+      FLTB/FSTB renormalised on the union DVS grid so WOFOST's partitioning identity
+      FL+FS+FO == 1 holds exactly at every knot. p<1 shifts assimilate to the ear EARLIER
+      (higher grain yield), p>1 later. p = 1 reproduces the library tables exactly.
+    type: continuous
+    units: "-"
+    default: 1.0
+    range: [0.60, 1.60]
+    transform: identity
+    scope: per-crop
+    zone_key: "crop_variety"
+    activation: always
+    expected_sensitivity: high
+    confidence: medium
+    cite: >-
+      dag influence edge FOTB->TWSO (HIGH), citation gilardelli2018_wofost_climate_sensitivity
+      (Morris GSA across European sites: the FOTB partitioning family is the most influential
+      on simulated yield). A plain multiplier is NOT usable here — the maize FOTB already
+      saturates at 1.0 for DVS>=1.2, so any factor >1 would be CLAMPED by the partitioning
+      identity; the exponent form is the monotone reparametrisation that stays inside
+      [0,1] by construction. p in [0.6, 1.6] moves FO at DVS 1.1 over 0.66..0.33 (the
+      ~+-33% partitioning perturbation Gilardelli applies) and was verified to preserve
+      FL+FS+FO = 1 to 1e-9 at every knot.
+    address:
+      kind: api
+      setter: "pcse.base.ParameterProvider:set_override"
+      path: "cropdata.{FOTB,FLTB,FSTB}"
+    targets: [TWSO]
+
+  - name: TDWI
+    description: "Initial total crop dry weight at emergence"
+    type: continuous
+    units: "kg.ha-1"
+    default: 50.0
+    range: [25.0, 75.0]
+    transform: identity
+    scope: per-crop
+    zone_key: "crop_variety"
+    activation: always
+    expected_sensitivity: low
+    confidence: medium
+    cite: >-
+      WOFOST maize parameter library (PCSE 6.0.12): 20.0 (Maize_VanHeemst_1988) to 50.0
+      (Grain_maize_201..205, Fodder_maize_nl); carried in the initial-state group screened
+      by wang2013_wofost_efast. Bounded conservatively around the default (+-50%) since no
+      dag edge ranks it — kept in the pool as a screenable residual, not pruned.
+    address:
+      kind: api
+      setter: "pcse.base.ParameterProvider:set_override"
+      path: "cropdata.TDWI"
+    targets: [TWSO]
+
+  - name: RGRLAI
+    description: "Maximum relative increase of LAI during the exponential (juvenile) phase"
+    type: continuous
+    units: "ha.ha-1.d-1"
+    default: 0.0294
+    range: [0.022, 0.050]
+    transform: identity
+    scope: per-crop
+    zone_key: "crop_variety"
+    activation: always
+    expected_sensitivity: low
+    confidence: medium
+    cite: >-
+      WOFOST maize parameter library (PCSE 6.0.12): 0.0294 (Grain_maize_201..205,
+      Fodder_maize_nl) to 0.0500 (Maize_VanHeemst_1988) — the range is the library span,
+      extended slightly downward (-25%). Companion of the SLATB/LAI edge
+      (wang2013_wofost_efast); screenable residual.
+    address:
+      kind: api
+      setter: "pcse.base.ParameterProvider:set_override"
+      path: "cropdata.RGRLAI"
+    targets: [TWSO]
+
+  - name: Q10
+    description: "Relative increase of maintenance respiration per 10 degC temperature rise"
+    type: continuous
+    units: "-"
+    default: 2.0
+    range: [1.7, 2.3]
+    transform: identity
+    scope: per-crop
+    zone_key: "crop_variety"
+    activation: always
+    expected_sensitivity: low
+    confidence: medium
+    cite: >-
+      dag influence edge Q10->TAGP/TWSO (LOW), citation wang2013_wofost_efast. The WOFOST
+      library fixes Q10 = 2.0 for every maize variety, so the range is a conservative
+      +-15% band around that documented default (the classical respiration Q10 range
+      1.5-2.5). Retained as a residual screenable lever, per the "literature is a prior,
+      not a pruning oracle" rule.
+    address:
+      kind: api
+      setter: "pcse.base.ParameterProvider:set_override"
+      path: "cropdata.Q10"
+    targets: [TWSO]
+
+  - name: SOW_OFFSET_DAYS
+    description: >-
+      Sowing-date shift in days relative to the validated 05-01 sowing (campaign start
+      moves with it, keeping the validated 11-day lead). Injected by REGENERATING the
+      agromanagement YAML with the KI's s4 tool, then read back from the written file.
+    type: integer
+    units: "day"
+    default: 0
+    range: [-15, 15]
+    transform: identity
+    scope: global
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    cite: >-
+      dag influence edge "sowing date"->DOA/TWSO (MEDIUM, lever_type management), citations
+      ceglar2019_wofost_wheat_phenology, dewit2019_wofost_25years. +-15 d around 05-01 is the
+      operational US Corn Belt maize planting window (mid-April to mid-May); wider shifts
+      leave the crop immature in cool seasons at the northern cells (verified: the +15 d
+      corner is the clamp-free frontier used to cap the TSUM ranges).
+    address:
+      kind: yaml_path
+      file: "agro_{year}.yaml"        # regenerated per eval in the eval workdir
+      path: "[0].<campaign>.CropCalendar.crop_start_date"
+    targets: [TWSO]
+
+# No cross-parameter ordering relations: the phenology pair is bounded so that EVERY box
+# corner (including TSUM1=TSUM2=940 with the latest sowing) matures at all 15 cells x 5
+# years, which is stronger than a constraint the screen's corner samples would trip on.
+constraints: []
+
+# ---------------------------------------------------------------------------
+# RUNNER — programmatic run+score, ~6 s per eval on the calibration split
+# (9 cells x 5 years; the site-invariant NASA POWER forcing, HWSD soil and the SPAM
+# obs record are built ONCE into <ki>/.calib_cache and reused; `--prepare` does it).
+# ---------------------------------------------------------------------------
+runner:
+  kind: subprocess
+  command: ["python3", "tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]
+  metrics_file: "{metrics_json}"
+  cwd: "{ki_path}"
+  timeout: 1800
+  emits:
+    - pbias                        # determining metric (magnitude_accuracy)
+  not_emitted:
+    - trend_error                  # dag also allows trend_match for this obs_shape, but SPAM
+                                   # 2020 is a SINGLE-year snapshot — no trend is computable.
+                                   # The kit keeps only the families the runner emits.
+  prepare: ["python3", "tools/calib_run.py", "--workdir", "{workdir}", "--prepare"]
+
+strategy:
+  cost_class: moderate             # ~6 s / eval (calibration split), ~13 s full domain
+  default_algorithm: dds           # cheap single-objective (|pbias|)
+  max_evaluations: 300
+  staged: true                     # sensitivity screen -> calibrate few -> escalate
+  staged_start: 5
+  staged_step: 4
+  holdout:
+    kind: regions
+    protocol: leave_region_out     # blocked spatial, not random
+    grouping_key: spam_lon_column
+    generalization_axis: "spatial transfer across the Corn Belt gradient (western vs eastern Iowa/Illinois-border cells)"
+    fraction: 0.4                  # the 2 easternmost longitude columns = 6 of 15 cells
+    rationale: >-
+      The obs is a GRIDDED single-year product aggregated over a region, so the promotion
+      claim is spatial ("this parameter set gives the right regional yield magnitude over
+      the Corn Belt"), not temporal — and a random cell split would leak the neighbouring
+      cells' climate. Per the schema default for gridded obs, the holdout is a contiguous
+      SPATIAL BLOCK: calibration = lon columns -95.5/-94.5/-93.5 (9 cells), holdout =
+      -92.5/-91.5 (6 cells). Verified split-aware: at the default vector pbias is
+      -14.12 (calibration) vs -13.19 (holdout), and at a perturbed vector +15.07 vs +13.61,
+      so the kit's split-awareness probe sees a material difference.
+      A YEARS split is not usable: SPAM 2020 is a single-year snapshot, so both splits
+      would score the identical obs value.
+    cite: >-
+      CALIBRATION_YAML_SCHEMA.md v2 holdout defaults (gridded -> spatial block);
+      dag observability for TWSO @ regional_aggregate_time_series.
+
+# ---------------------------------------------------------------------------
+# COMMISSIONING (run 2026-08-04, tools/calib_run.py, this contract)
+#   default vector, full domain : pbias = -13.7463463724131  (validated: -13.746346372413093)
+#   perturbed vector, full      : pbias = +14.487            -> the metric MOVES (28 pp)
+#   split-awareness             : cal -14.12 / holdout -13.19 (default),
+#                                 cal +15.07 / holdout +13.61 (perturbed)
+#   range bounds                : every parameter run at its lo AND hi — applied value
+#                                 read back EQUAL to the request in all 26 runs, no clamp,
+#                                 all 75 cell-years mature
+#   box corners                  : ALL-LO (pbias -87.4), ALL-HI (+13.5), phenology-worst
+#                                 (TSUM1=TSUM2=940, sowing +15: -15.1) and 2 mixed corners
+#                                 all succeed with exact read-back
+#   => the optimum (pbias = 0) is bracketed strictly inside the declared box.
+# ---------------------------------------------------------------------------

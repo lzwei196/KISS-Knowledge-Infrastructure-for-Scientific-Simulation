@@ -41,19 +41,22 @@ def validate_inputs():
 def process():
     import pandas as pd
 
-    df = pd.read_csv(WEATHER_CSV, comment='#')
-
-    # Auto-detect header section (skip lines starting with ##)
-    if 'DAY' not in df.columns:
-        # Try reading with comment character
-        with open(WEATHER_CSV) as f:
-            lines = f.readlines()
-        data_start = 0
-        for i, line in enumerate(lines):
-            if line.strip().startswith('DAY'):
-                data_start = i
-                break
+    # PCSE CSVWeatherDataProvider files carry a "## Site Characteristics" meta
+    # block whose lines (e.g. "Country = 'unknown'") are not comma-delimited and
+    # are NOT prefixed with '#', so a naive read_csv(comment='#') raises a
+    # tokenizing error. Locate the "DAY,..." column header and skip everything
+    # above it; fall back to a plain read for already-clean generic CSVs.
+    with open(WEATHER_CSV) as f:
+        lines = f.readlines()
+    data_start = None
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith('DAY'):
+            data_start = i
+            break
+    if data_start is not None:
         df = pd.read_csv(WEATHER_CSV, skiprows=data_start)
+    else:
+        df = pd.read_csv(WEATHER_CSV, comment='#')
 
     checks = []
 
@@ -84,24 +87,45 @@ def process():
                 "value": f"max={irrad_max:.0f}, mean={irrad_mean:.0f} kJ/m2/day"
             })
 
-    # === RAIN UNIT CHECK (THE #2 SILENT ERROR) ===
+    # === RAIN UNIT CHECK ===
+    # KDT 5.0 fix (2026-06-08): the previous check FAILED any file with
+    # RAIN max > 50, claiming "LIKELY IN mm/day! PCSE needs cm/day. Divide by 10",
+    # which is BACKWARDS. The PCSE CSVWeatherDataProvider RAIN column convention is
+    # mm/day — the provider divides /10 -> cm internally. This is the ground truth
+    # per create_csv_weather_file.py's docstring, SKILL.md ("the RAIN column is
+    # mm/day"), and the CORRECTIVE triplets dt_016 / dt_009_csv_rain_mm_not_cm
+    # that supersede the old dt_004 cm/day belief. The old check rejected every
+    # correctly-authored weather file containing a >50 mm/day rain day (common in
+    # any humid or Mediterranean-storm climate) and would have wrongly PASSED the
+    # actual bug (column written in cm/day, 10x too low). Validate the mm/day
+    # convention instead: flag only implausibly HIGH (data spike) or, over a long
+    # record, implausibly LOW maxima (column likely still in cm/day).
     if 'RAIN' in df.columns:
         rain_max = df['RAIN'].max()
         rain_mean = df['RAIN'].mean()
 
-        if rain_max > 50:
+        if rain_max > 500:
             checks.append({
                 "check": "RAIN_units",
                 "status": "FAIL",
                 "value": f"max={rain_max:.1f}",
-                "message": f"RAIN max={rain_max:.1f} — LIKELY IN mm/day! "
-                           f"PCSE needs cm/day. Divide by 10. See dt_004."
+                "message": f"RAIN max={rain_max:.1f} mm/day — unreasonably high; "
+                           f"check for a data error or wrong units."
+            })
+        elif len(df) > 60 and rain_max < 5:
+            checks.append({
+                "check": "RAIN_units",
+                "status": "WARNING",
+                "value": f"max={rain_max:.2f}",
+                "message": f"RAIN max={rain_max:.2f} over a long record — column may "
+                           f"still be in cm/day (PCSE CSV expects mm/day; multiply "
+                           f"by 10). See dt_016 / dt_009_csv_rain_mm_not_cm."
             })
         else:
             checks.append({
                 "check": "RAIN_units",
                 "status": "PASS",
-                "value": f"max={rain_max:.2f}, mean={rain_mean:.3f} cm/day"
+                "value": f"max={rain_max:.2f}, mean={rain_mean:.3f} mm/day"
             })
 
     # === TEMPERATURE CHECKS ===
@@ -151,7 +175,10 @@ def process():
 
     # === DATE COMPLETENESS ===
     if 'DAY' in df.columns:
-        df['DAY'] = pd.to_datetime(df['DAY'])
+        # PCSE DAY column is YYYYMMDD; parse explicitly so integer dates are not
+        # misread as nanoseconds-since-epoch (which collapsed all dates to 1970).
+        _day = df['DAY'].astype(str).str.replace('-', '', regex=False)
+        df['DAY'] = pd.to_datetime(_day, format='%Y%m%d', errors='coerce')
         expected_range = pd.date_range(df['DAY'].min(), df['DAY'].max())
         missing_days = len(expected_range) - len(df)
 

@@ -10,11 +10,14 @@
   "fss_scale_px": 20,
   "motion_method": "proesmans",
   "nowcast_method": "extrapolation",
-  "motion_time_s": 0.348,
-  "nowcast_time_s": 0.018,
-  "total_time_s": 0.371,
+  "motion_time_s": 0.347,
+  "nowcast_time_s": 0.021,
+  "total_time_s": 0.374,
   "mean_CSI": 0.9950502732247429,
   "mean_FSS": 0.9999602927520016,
+  "nse": 0.9999859928569044,
+  "r": 0.9999932928993132,
+  "kge": 0.9991834700275859,
   "per_lead": [
     {
       "lead": 1,

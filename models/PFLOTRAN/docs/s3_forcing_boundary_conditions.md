@@ -142,6 +142,76 @@ BOUNDARY_CONDITION river_bc
 END
 ```
 
+### Step 7: ET as Root-Zone SOURCE_SINK (1D Vadose Column)
+
+For vadose-zone column validation against FLUXNET soil moisture, apply ET
+as a distributed volumetric sink using `SCALED_VOLUMETRIC_RATE VOLUME`.
+This avoids single-cell depletion that occurs when ET is applied as a
+negative Neumann top BC.
+
+**Physical basis**: PFLOTRAN divides the specified rate [m³/s] by the SOURCE_SINK
+region volume [m³] to get a uniform per-volume extraction rate [1/s], then
+applies it to every cell in the region.
+
+**Critical rules**:
+- Rate sign: **NEGATIVE** = extraction. Positive = injection (wrong for ET).
+- Rate units: `DATA_UNITS m^3/sec` — for a 1m×1m column, rate [m³/s] = ET [m/s]
+- `VOLUME` keyword: required; tells PFLOTRAN to scale by region volume
+- Root-zone depth selection (see dt_020 for crash thresholds):
+  - Alpine meadow (CN-HaM type): 1.0 m
+  - Subtropical/temperate forest: 1.5–2.0 m (never < 1.0 m if dry spells > 10 days)
+
+```python
+# Python: build time-varying ET source/sink for PFLOTRAN deck
+ROOT_ZONE_DEPTH = 1.5   # m — adjust by site type (see dt_020)
+rz_z_bot = COL_DEPTH - ROOT_ZONE_DEPTH   # z at bottom of root zone
+
+et_entries = []
+for r in records:
+    et_ms = max(0.0, r["le_wm2"] * 86400.0 / 2.45e6) / (1000.0 * 86400.0)
+    et_entries.append(f"    {r['day_offset']}.  {-et_ms:.6e}")   # NEGATIVE
+et_list_block = "\n".join(et_entries)
+```
+
+```
+! In PFLOTRAN input deck:
+REGION root_zone
+  COORDINATES
+    0.d0 0.d0 {rz_z_bot}d0
+    1.d0 1.d0 {COL_DEPTH}d0
+  /
+END
+
+FLOW_CONDITION et_extraction
+  TYPE
+    RATE scaled_volumetric_rate VOLUME
+  /
+  RATE LIST
+    TIME_UNITS d
+    DATA_UNITS m^3/sec
+    0.   -5.556e-09    ! day 0: ET = 0.48 mm/d → -0.48/(1000*86400)
+    1.   -8.102e-09    ! day 1: ET = 0.70 mm/d
+    ...
+  /
+END
+
+SOURCE_SINK et_sink
+  FLOW_CONDITION et_extraction
+  REGION root_zone
+END
+```
+
+**Separation of P and ET at top BC** (prevents crash from P-ET negative flux):
+
+```python
+# CORRECT: P-only at top BC, ET separately as root-zone sink
+net_ms = max(0.0, p_mm) / (1000.0 * 86400.0)   # top BC: always ≥ 0
+et_ms  = et_mm / (1000.0 * 86400.0)             # sink: always ≥ 0 before negation
+```
+
+Do NOT use P-ET as the top BC — on dry days (P=0, ET>0), the negative Neumann
+flux pulls water upward through the top face and rapidly depletes the 5-cm top cell.
+
 ## Verification
 
 1. Recharge values in range 1e-11 to 1e-7 m/s (roughly 0.3 to 3000 mm/yr)

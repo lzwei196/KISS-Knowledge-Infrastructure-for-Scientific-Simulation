@@ -74,6 +74,23 @@ import argparse
 import math
 from pathlib import Path
 from datetime import datetime, timedelta
+
+# dt_v010: the HDF5 load-order guard is ONE implementation in the KI, not a
+# copy per entry point. Importing netcdf_safe IS the guard -- it pre-imports
+# netCDF4 so its bundled libhdf5 wins the race against h5py's, which xarray
+# pulls in via its h5netcdf backend-entrypoint scan. MUST stay above every
+# import that can reach xarray/h5py (ki_tools_common.humidity below, and the
+# in-function ki_tools_common.load_forcing import).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    import netcdf_safe                       # noqa: F401  -- import == guard
+    netCDF4 = netcdf_safe.netCDF4
+except Exception:                            # last-resort inline bootstrap
+    try:
+        import netCDF4
+    except ImportError:
+        netCDF4 = None
+
 from ki_tools_common.humidity import saturation_vapor_pressure
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -81,9 +98,22 @@ logger = logging.getLogger(__name__)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Convert VIC forcing to CRHM .obs")
-    parser.add_argument("--forcing_dir", type=str, required=True, help="VIC forcing directory")
-    parser.add_argument("--grid_nc", type=str, required=True, help="VIC grid NetCDF")
+    parser = argparse.ArgumentParser(description="Convert forcing to CRHM .obs")
+    parser.add_argument("--source", type=str, default="vic",
+                        choices=["vic", "nasa_power", "cmfd", "mswx"],
+                        help="Forcing source. 'vic' = VIC forcing dir + grid_nc (file-based). "
+                             "'nasa_power'/'cmfd'/'mswx' = POINT forcing via "
+                             "ki_tools_common.load_forcing (needs --lat/--lon). Default: vic")
+    parser.add_argument("--lat", type=float, default=None,
+                        help="Basin centroid latitude (required for point sources)")
+    parser.add_argument("--lon", type=float, default=None,
+                        help="Basin centroid longitude (required for point sources)")
+    parser.add_argument("--precip_scale", type=float, default=1.0,
+                        help="Multiplicative precip correction (e.g. 1.7 for NASA POWER Rockies "
+                             "undercatch, per SKILL Belly River validation). Default: 1.0")
+    parser.add_argument("--forcing_dir", type=str, default=None,
+                        help="VIC forcing directory (vic source) or cmfd/mswx root (point sources)")
+    parser.add_argument("--grid_nc", type=str, default=None, help="VIC grid NetCDF (vic source only)")
     parser.add_argument("--output_path", type=str, required=True, help="Output .obs file path")
     parser.add_argument("--start_year", type=int, required=True, help="Start year")
     parser.add_argument("--end_year", type=int, required=True, help="End year")
@@ -95,6 +125,73 @@ def parse_args():
                         help="VIC forcing column format: 'classic' (prec,tmax,tmin,wind,sw,lw,pres) "
                              "or 'mswx' (air_temp,prec_mm3hr,pres,sw,lw,vp,wind). Default: mswx")
     return parser.parse_args()
+
+
+def process_point_source(source, lat, lon, output_path, start_year, end_year,
+                         forcing_dir=None, precip_scale=1.0):
+    """Build a CRHM .obs from a POINT forcing source via ki_tools_common.
+
+    Fetches hourly forcing (NASA POWER / CMFD / MSWX) at (lat, lon) and writes
+    a CRHM .obs with the EXACT column convention CRHM expects:
+
+        t  (C)  | p (mm/interval) | rh (%) | u (m/s) | Qsi (W/m^2) | Qli (W/m^2)
+
+    CRHM ClassObs.cpp:85 defines `p` as INTERVAL precipitation (mm/int) — this is
+    the correct variable for sub-daily forcing. Do NOT declare `p (kPa)`; CRHM has
+    no air-pressure obs variable, so a `p (kPa)` column silently injects pressure
+    (~80-100) as rain. A `####` delimiter line MUST separate the variable
+    declarations from the data rows or the binary segfaults ('u not in Data file').
+    """
+    import numpy as np
+    from ki_tools_common.load_forcing import load_hourly_forcing
+
+    logger.info(f"Loading hourly {source} forcing at ({lat}, {lon}) {start_year}-{end_year}")
+    d = load_hourly_forcing(source, lat, lon, start_year, end_year, forcing_dir=forcing_dir)
+
+    dates = d["dates"].astype("datetime64[s]").tolist()
+    temp = np.asarray(d["temp_c"], dtype=float)
+    precip = np.asarray(d["precip_mm"], dtype=float) * precip_scale  # mm per interval
+    srad = np.asarray(d["srad_wm2"], dtype=float)
+    lrad = np.asarray(d.get("lrad_wm2", np.zeros_like(temp)), dtype=float)
+    wind = np.asarray(d["wind_ms"], dtype=float)
+    shum = np.asarray(d["shum_kgkg"], dtype=float)
+    pres_pa = np.asarray(d["pres_pa"], dtype=float)
+
+    n = len(dates)
+    # Convert specific humidity -> relative humidity (the #1 silent CRHM error)
+    rh = np.zeros(n)
+    for i in range(n):
+        p_kpa = pres_pa[i] / 1000.0 if np.isfinite(pres_pa[i]) and pres_pa[i] > 0 else 101.3
+        t_c = temp[i] if np.isfinite(temp[i]) else 0.0
+        q = shum[i] if np.isfinite(shum[i]) and shum[i] > 0 else 1e-4
+        rh[i] = specific_to_relative_humidity(q, t_c, p_kpa)
+
+    # Physical guards / NaN fill
+    temp = np.nan_to_num(temp, nan=0.0)
+    precip = np.clip(np.nan_to_num(precip, nan=0.0), 0.0, None)
+    srad = np.clip(np.nan_to_num(srad, nan=0.0), 0.0, None)
+    lrad = np.clip(np.nan_to_num(lrad, nan=0.0), 0.0, None)
+    wind = np.clip(np.nan_to_num(wind, nan=0.0), 0.0, None)
+
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_file, "w") as f:
+        f.write(f"CRHM forcing from {source} at ({lat}, {lon}) {start_year}-{end_year}\n")
+        f.write("t 1 (C)\n")
+        f.write("p 1 (mm)\n")          # interval precip (ClassObs.cpp:85)
+        f.write("rh 1 (%)\n")
+        f.write("u 1 (m/s)\n")
+        f.write("Qsi 1 (W/m^2)\n")
+        f.write("Qli 1 (W/m^2)\n")
+        f.write("#" * 44 + "\n")        # MANDATORY delimiter before data (dt_v001)
+        for i in range(n):
+            dt = dates[i]
+            f.write(f"{dt.year} {dt.month} {dt.day} {dt.hour} 0 "
+                    f"{temp[i]:.2f} {precip[i]:.3f} {rh[i]:.1f} {wind[i]:.2f} "
+                    f"{srad[i]:.2f} {lrad[i]:.2f}\n")
+    logger.info(f"Wrote {n} hourly timesteps to {output_file} "
+                f"(P_total={precip.sum():.0f} mm, max RH={rh.max():.1f}%)")
+    return str(output_file)
 
 
 def specific_to_relative_humidity(q_kgkg, t_celsius, p_kpa):
@@ -321,7 +418,9 @@ def validate_outputs(output_path):
 
         # Check header structure
         has_t = any("t " in line and "(C)" in line for line in lines[:10])
-        has_ppt = any("ppt " in line and "(mm" in line for line in lines[:10])
+        # precip may be declared as 'ppt' (daily) or 'p' (interval, ClassObs.cpp:85)
+        has_ppt = any((line.startswith("ppt ") or line.startswith("p "))
+                      and "(mm" in line for line in lines[:10])
         if not has_t:
             errors.append("Header missing temperature variable declaration")
         if not has_ppt:
@@ -340,6 +439,31 @@ if __name__ == "__main__":
 
     logger.info(f"Running tool: {os.path.basename(__file__)}")
 
+    if args.source != "vic":
+        if args.lat is None or args.lon is None:
+            logger.error(f"--lat and --lon are required for source '{args.source}'")
+            sys.exit(1)
+        if args.start_year > args.end_year:
+            logger.error(f"Start year ({args.start_year}) > end year ({args.end_year})")
+            sys.exit(1)
+        try:
+            output_path = process_point_source(
+                args.source, args.lat, args.lon, args.output_path,
+                args.start_year, args.end_year,
+                forcing_dir=args.forcing_dir, precip_scale=args.precip_scale,
+            )
+        except Exception as e:
+            logger.error(f"Processing failed: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(2)
+        validate_outputs(output_path)
+        print(json.dumps({"status": "success", "output": output_path}))
+        sys.exit(0)
+
+    if not args.forcing_dir or not args.grid_nc:
+        logger.error("--forcing_dir and --grid_nc are required for source 'vic'")
+        sys.exit(1)
     validate_inputs(args.forcing_dir, args.grid_nc, args.output_path,
                     args.start_year, args.end_year)
 

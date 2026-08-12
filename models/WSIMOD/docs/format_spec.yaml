@@ -1,0 +1,262 @@
+model:
+  name: WSIMOD Knowledge Infrastructure v1.0.0
+  domain: urban
+  binary_path: ''
+  language: unknown
+inputs:
+  forcing:
+  - name: Precipitation
+    unit: m/timestep
+    format: ''
+    source: skill_md
+  - name: Radiation
+    unit: "MJ/m\xB2"
+    format: ''
+    source: skill_md
+outputs:
+  primary:
+  - name: ET
+    unit: m/timestep
+    format: ''
+    source: skill_md
+  - name: Flood
+    unit: unknown
+    format: ''
+    source: skill_md
+  - name: discharge
+    canonical_id: discharge
+    unit: m3/s
+  - name: water_surface_elevation
+    canonical_id: water_surface_elevation
+    unit: m
+  - name: surcharge_volume
+    canonical_id: surcharge_volume
+    unit: m3
+known_issues:
+- id: dt_001
+  description: '{''description'': ''All nodes flood, river overflows, storage tanks
+    overflow every timestep.'', ''error_pattern'': '''', ''detection_method'': ''value_comparison''}'
+  affected_output: "{'root_cause': 'Precipitation in mm/day instead of m/day \u2014\
+    \ 1000\xD7 too much rainfall.', 'explanation': 'WSIMOD expects precipitation in\
+    \ meters per timestep. Most weather datasets provide mm/day. If MM_T"
+  detection: "{'root_cause': 'Precipitation in mm/day instead of m/day \u2014 1000\xD7\
+    \ too much rainfall.', 'explanation': 'WSIMOD expects precipitation in meters\
+    \ per timestep. Most weather datasets provide mm/day. If MM_T"
+  fix: "{'action': 'Multiply precipitation values by constants.MM_TO_M (1e-3)', 'tool_to_run':\
+    \ 'convert_forcing_data', 'manual_steps': ['Check max(precipitation) \u2014 should\
+    \ be < 0.5 m/d for most climates', 'If "
+- id: dt_002
+  description: "{'description': 'Mass balance violations in storage nodes. Volume\
+    \ numbers 1000\xD7 too large or small.', 'error_pattern': '', 'detection_method':\
+    \ 'value_comparison'}"
+  affected_output: "{'root_cause': 'Mixing ML (megalitres) and m\xB3 units \u2014\
+    \ ML_TO_M3 = 1000.', 'explanation': \"WSIMOD's default simulation volume is ML\
+    \ (megalitres). Some node parameters like sewer capacity use m\xB3. Mixing "
+  detection: "{'root_cause': 'Mixing ML (megalitres) and m\xB3 units \u2014 ML_TO_M3\
+    \ = 1000.', 'explanation': \"WSIMOD's default simulation volume is ML (megalitres).\
+    \ Some node parameters like sewer capacity use m\xB3. Mixing "
+  fix: "{'action': 'Verify all volume parameters use consistent units \u2014 ML for\
+    \ storage, m\xB3/d for sewer', 'tool_to_run': 'convert_parameters', 'manual_steps':\
+    \ ['Check node capacity units in the model documenta"
+- id: dt_003
+  description: '{''description'': ''Pollutant concentrations double when two flows
+    merge at a junction node.'', ''error_pattern'': '''', ''detection_method'': ''value_comparison''}'
+  affected_output: "{'root_cause': 'Non-additive pollutant (DO, temperature, pH) treated\
+    \ as additive \u2014 masses summed instead of volume-weighted average.', 'explanation':\
+    \ 'WSIMOD has two pollutant types: additive (kg, mas"
+  detection: "{'root_cause': 'Non-additive pollutant (DO, temperature, pH) treated\
+    \ as additive \u2014 masses summed instead of volume-weighted average.', 'explanation':\
+    \ 'WSIMOD has two pollutant types: additive (kg, mas"
+  fix: '{''action'': ''Ensure custom pollutants are in the correct list in constants.py'',
+    ''tool_to_run'': None, ''manual_steps'': [''Check if pollutant is mass-based (additive)
+    or concentration-based (non-additive)'''
+- id: dt_004
+  description: "{'description': 'KeyError during model.run() \u2014 model cannot find\
+    \ forcing data for any timestep.', 'error_pattern': 'KeyError', 'detection_method':\
+    \ 'log_match'}"
+  affected_output: '{''root_cause'': ''data_input_dict keys use string dates instead
+    of Timestamp/to_datetime objects.'', ''explanation'': "WSIMOD looks up forcing
+    data using (variable, model_date) where model_date is a to_dat'
+  detection: '{''root_cause'': ''data_input_dict keys use string dates instead of
+    Timestamp/to_datetime objects.'', ''explanation'': "WSIMOD looks up forcing data
+    using (variable, model_date) where model_date is a to_dat'
+  fix: '{''action'': ''Ensure dates are converted to Timestamps before building data_input_dict'',
+    ''tool_to_run'': ''convert_forcing_data'', ''manual_steps'': [''data.date = pd.to_datetime(data.date)
+    before set_index()'
+- id: dt_005
+  description: "{'description': 'KeyError when calling model.add_arcs() \u2014 node\
+    \ name not found.', 'error_pattern': 'KeyError', 'detection_method': 'log_match'}"
+  affected_output: '{''root_cause'': ''Arc in_port or out_port name does not match
+    any defined node name (case-sensitive).'', ''explanation'': "WSIMOD looks up nodes
+    by exact name match. ''My_River'' != ''my_river''. The error occ'
+  detection: '{''root_cause'': ''Arc in_port or out_port name does not match any defined
+    node name (case-sensitive).'', ''explanation'': "WSIMOD looks up nodes by exact
+    name match. ''My_River'' != ''my_river''. The error occ'
+  fix: '{''action'': ''Verify all arc in_port/out_port values match node names exactly'',
+    ''tool_to_run'': ''run_wsimod'', ''manual_steps'': ["List all node names: [n[''name'']
+    for n in nodes]", "Check each arc''s in_port'
+- id: dt_006
+  description: '{''description'': ''No combined sewer overflow (CSO) events even during
+    heavy rainfall.'', ''error_pattern'': '''', ''detection_method'': ''value_comparison''}'
+  affected_output: "{'root_cause': 'Sewer capacity specified in ML/d instead of m\xB3\
+    /d \u2014 1000\xD7 too high.', 'explanation': 'Sewer capacity parameter is in\
+    \ m\xB3/d. If the user provides ML/d values (e.g., capacity=10 meaning 10"
+  detection: "{'root_cause': 'Sewer capacity specified in ML/d instead of m\xB3/d\
+    \ \u2014 1000\xD7 too high.', 'explanation': 'Sewer capacity parameter is in m\xB3\
+    /d. If the user provides ML/d values (e.g., capacity=10 meaning 10"
+  fix: "{'action': 'Use m\xB3/d for sewer capacity. If you have ML/d, multiply by\
+    \ ML_TO_M3 (1000)', 'tool_to_run': 'convert_parameters', 'manual_steps': ['Check\
+    \ sewer capacity: typical urban = 0.001 \xD7 contributi"
+- id: dt_007
+  description: "{'description': 'Pollutant decay rates are wildly wrong \u2014 too\
+    \ fast or too slow.', 'error_pattern': '', 'detection_method': 'value_comparison'}"
+  affected_output: "{'root_cause': 'Temperature not in \xB0C \u2014 decay rate adjusts\
+    \ exponentially using T-20.', 'explanation': \"WSIMOD's DecayObj uses k(T) = k_ref\
+    \ \xD7 (coeff ^ (T - 20)). If temperature is in Kelvin (e.g., 293 "
+  detection: "{'root_cause': 'Temperature not in \xB0C \u2014 decay rate adjusts exponentially\
+    \ using T-20.', 'explanation': \"WSIMOD's DecayObj uses k(T) = k_ref \xD7 (coeff\
+    \ ^ (T - 20)). If temperature is in Kelvin (e.g., 293 "
+  fix: "{'action': 'Ensure temperature input is in \xB0C, not Kelvin or Fahrenheit',\
+    \ 'tool_to_run': 'convert_forcing_data', 'manual_steps': ['Check temperature range:\
+    \ should be -30 to +45\xB0C for most locations', "
+- id: dt_008
+  description: "{'description': 'Runoff volume 1e6\xD7 too high or too low compared\
+    \ to expected.', 'error_pattern': '', 'detection_method': 'value_comparison'}"
+  affected_output: "{'root_cause': 'Land surface area in km\xB2 instead of m\xB2 \u2014\
+    \ missing KM2_TO_M2 conversion.', 'explanation': 'WSIMOD expects surface area\
+    \ in m\xB2. If area is given as 50 (meaning 50 km\xB2) but interpreted as 5"
+  detection: "{'root_cause': 'Land surface area in km\xB2 instead of m\xB2 \u2014\
+    \ missing KM2_TO_M2 conversion.', 'explanation': 'WSIMOD expects surface area\
+    \ in m\xB2. If area is given as 50 (meaning 50 km\xB2) but interpreted as 5"
+  fix: "{'action': 'Multiply km\xB2 by KM2_TO_M2 (1e6) before passing to surface area\
+    \ parameter', 'tool_to_run': 'convert_parameters', 'manual_steps': ['Verify: area\
+    \ in m\xB2 for a 50 km\xB2 catchment = 50e6 m\xB2', 'If "
+- id: dt_009
+  description: "{'description': 'Mass balance violations occur but are not reported\
+    \ \u2014 errors silently masked.', 'error_pattern': '', 'detection_method': 'value_comparison'}"
+  affected_output: '{''root_cause'': ''FLOAT_ACCURACY = 1e-11 tolerance masks small
+    but accumulating errors.'', ''explanation'': ''WSIMOD checks mass balance at each
+    node with tolerance 1e-11. Floating-point arithmetic can accu'
+  detection: '{''root_cause'': ''FLOAT_ACCURACY = 1e-11 tolerance masks small but
+    accumulating errors.'', ''explanation'': ''WSIMOD checks mass balance at each
+    node with tolerance 1e-11. Floating-point arithmetic can accu'
+  fix: '{''action'': ''Monitor cumulative mass balance over the full simulation period'',
+    ''tool_to_run'': ''parse_wsimod_output'', ''manual_steps'': [''Compare total inflow
+    vs total outflow + storage change'', ''If cumul'
+- id: dt_010
+  description: '{''description'': ''A pollutant appears in VQIP but with constant
+    zero value throughout simulation.'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': "Pollutant defined in POLLUTANTS list but not
+    initialized in any node''s VQIP or pollutant_load.", ''explanation'': ''If a pollutant
+    is in the global POLLUTANTS list but no node generates i'
+  detection: '{''root_cause'': "Pollutant defined in POLLUTANTS list but not initialized
+    in any node''s VQIP or pollutant_load.", ''explanation'': ''If a pollutant is
+    in the global POLLUTANTS list but no node generates i'
+  fix: '{''action'': ''Add pollutant loads to relevant surfaces or use set_simple_pollutants()'',
+    ''tool_to_run'': None, ''manual_steps'': [''Check which pollutants you need to
+    track'', ''Set pollutant_load in each surf'
+- id: dt_011
+  description: '{''description'': ''Soil saturates instantly after first rain event,
+    or never saturates.'', ''error_pattern'': '''', ''detection_method'': ''value_comparison''}'
+  affected_output: "{'root_cause': 'Soil depth in mm instead of m \u2014 depth=500\
+    \ interpreted as 500 m, not 0.5 m.', 'explanation': 'PerviousSurface depth parameter\
+    \ is in meters. If soil depth from HWSD (typically in mm, e.g"
+  detection: "{'root_cause': 'Soil depth in mm instead of m \u2014 depth=500 interpreted\
+    \ as 500 m, not 0.5 m.', 'explanation': 'PerviousSurface depth parameter is in\
+    \ meters. If soil depth from HWSD (typically in mm, e.g"
+  fix: '{''action'': ''Convert depth from mm to m using MM_TO_M (1e-3) only if source
+    is in mm'', ''tool_to_run'': ''convert_parameters'', ''manual_steps'': [''Check
+    source units: HWSD typically gives mm'', ''depth_m = de'
+- id: dt_012
+  description: "{'description': 'Nutrient export from land surfaces is 1000\xD7 too\
+    \ high or too low.', 'error_pattern': '', 'detection_method': 'value_comparison'}"
+  affected_output: "{'root_cause': 'Pollutant load in wrong units \u2014 g/m\xB2 vs\
+    \ kg/km\xB2 vs kg/m\xB2.', 'explanation': 'Surface pollutant_load is in kg per\
+    \ timestep per unit. Literature values may be in g/m\xB2/yr, kg/km\xB2/yr, or\
+    \ mg/"
+  detection: "{'root_cause': 'Pollutant load in wrong units \u2014 g/m\xB2 vs kg/km\xB2\
+    \ vs kg/m\xB2.', 'explanation': 'Surface pollutant_load is in kg per timestep\
+    \ per unit. Literature values may be in g/m\xB2/yr, kg/km\xB2/yr, or mg/"
+  fix: "{'action': 'Convert literature values to kg/timestep using appropriate constants',\
+    \ 'tool_to_run': 'convert_parameters', 'manual_steps': ['Typical phosphate load:\
+    \ 1e-8 to 1e-6 kg/timestep for 100 m\xB2 su"
+- id: dt_013
+  description: "{'description': 'KeyError during simulation \u2014 model cannot find\
+    \ data for a specific date.', 'error_pattern': 'KeyError', 'detection_method':\
+    \ 'log_match'}"
+  affected_output: '{''root_cause'': ''data_input_dict does not cover the full simulation
+    date range.'', ''explanation'': "If model.dates includes dates not present in
+    data_input_dict, a KeyError occurs when the model tries to'
+  detection: '{''root_cause'': ''data_input_dict does not cover the full simulation
+    date range.'', ''explanation'': "If model.dates includes dates not present in
+    data_input_dict, a KeyError occurs when the model tries to'
+  fix: '{''action'': ''Ensure data_input_dict covers all dates in model.dates'', ''tool_to_run'':
+    ''convert_forcing_data'', ''manual_steps'': [''Compare date ranges: min/max of
+    data vs min/max of model.dates'', ''Fill gap'
+- id: dt_014
+  description: '{''description'': ''Same model produces different results when orchestration
+    order is changed.'', ''error_pattern'': '''', ''detection_method'': ''value_comparison''}'
+  affected_output: '{''root_cause'': "WSIMOD''s orchestration sequence determines
+    when each node processes water.", ''explanation'': ''The order in which nodes
+    are called each timestep matters. If a Land node runs before Deman'
+  detection: '{''root_cause'': "WSIMOD''s orchestration sequence determines when each
+    node processes water.", ''explanation'': ''The order in which nodes are called
+    each timestep matters. If a Land node runs before Deman'
+  fix: '{''action'': ''Use the default orchestration order unless you have a specific
+    reason to change'', ''tool_to_run'': None, ''manual_steps'': [''Check model.orchestration
+    to see the current order'', ''Only customiz'
+- id: dt_015
+  description: '{''description'': ''Evapotranspiration dries out all storage in a
+    few days, or has no effect.'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: "{'root_cause': 'ET\u2080 in mm/day instead of m/day \u2014 1000\xD7\
+    \ too high or too low.', 'explanation': \"Like precipitation, ET\u2080 must be\
+    \ in m/timestep. If ET\u2080 is 5 mm/d and not converted, it's interpreted as\
+    \ 5 m"
+  detection: "{'root_cause': 'ET\u2080 in mm/day instead of m/day \u2014 1000\xD7\
+    \ too high or too low.', 'explanation': \"Like precipitation, ET\u2080 must be\
+    \ in m/timestep. If ET\u2080 is 5 mm/d and not converted, it's interpreted as\
+    \ 5 m"
+  fix: "{'action': 'Apply MM_TO_M conversion to ET\u2080 only if source is in mm/day',\
+    \ 'tool_to_run': 'convert_forcing_data', 'manual_steps': ['Typical ET\u2080: 0.001\
+    \ to 0.008 m/d (1-8 mm/d)', 'If ET\u2080 > 0.02 m/d, like"
+- id: dt_016
+  description: '{''description'': ''ImportError when importing wsimod or running CLI.'',
+    ''error_pattern'': ''ImportError|ModuleNotFoundError'', ''detection_method'':
+    ''log_match''}'
+  affected_output: "{'root_cause': 'Missing Python dependency \u2014 PyYAML, pandas,\
+    \ dill, or tqdm not installed.', 'explanation': 'WSIMOD requires PyYAML, pandas,\
+    \ dill, and tqdm. If any is missing, import fails. This is comm"
+  detection: "{'root_cause': 'Missing Python dependency \u2014 PyYAML, pandas, dill,\
+    \ or tqdm not installed.', 'explanation': 'WSIMOD requires PyYAML, pandas, dill,\
+    \ and tqdm. If any is missing, import fails. This is comm"
+  fix: '{''action'': ''Install WSIMOD with all dependencies: pip install wsimod'',
+    ''tool_to_run'': None, ''manual_steps'': [''pip install PyYAML pandas dill tqdm'',
+    ''Or pip install wsimod (installs all automatically)'''
+- id: dt_017
+  description: '{''description'': ''Cumulative water balance drifts over long simulations
+    (>5 years).'', ''error_pattern'': '''', ''detection_method'': ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Floating-point precision in VQIP operations
+    accumulates over many timesteps.'', ''explanation'': ''Each VQIP operation (blend,
+    dilute, extract) involves floating-point arithmetic. Over tho'
+  detection: '{''root_cause'': ''Floating-point precision in VQIP operations accumulates
+    over many timesteps.'', ''explanation'': ''Each VQIP operation (blend, dilute,
+    extract) involves floating-point arithmetic. Over tho'
+  fix: '{''action'': ''Monitor cumulative mass balance and report drift as percentage
+    of total flow'', ''tool_to_run'': ''parse_wsimod_output'', ''manual_steps'': [''Sum
+    all inflows and outflows over the full simulation'
+- id: dt_018
+  description: "{'description': 'River flow values are 86400\xD7 too high or too low.',\
+    \ 'error_pattern': '', 'detection_method': 'value_comparison'}"
+  affected_output: "{'root_cause': 'Flow rate in m\xB3/s not converted to m\xB3/d\
+    \ \u2014 missing \xD7 M3_S_TO_M3_DT (86400).', 'explanation': \"If flow data is\
+    \ in m\xB3/s and used directly as m\xB3/timestep (where timestep is 1 day), the\
+    \ flo"
+  detection: "{'root_cause': 'Flow rate in m\xB3/s not converted to m\xB3/d \u2014\
+    \ missing \xD7 M3_S_TO_M3_DT (86400).', 'explanation': \"If flow data is in m\xB3\
+    /s and used directly as m\xB3/timestep (where timestep is 1 day), the flo"
+  fix: "{'action': 'Apply M3_S_TO_M3_DT (86400) conversion only if source is in m\xB3\
+    /s', 'tool_to_run': 'convert_forcing_data', 'manual_steps': ['Check source flow\
+    \ units: m\xB3/s, m\xB3/d, ML/d?', 'm\xB3/s \xD7 86400 = m\xB3/"
+unit_conversions: []

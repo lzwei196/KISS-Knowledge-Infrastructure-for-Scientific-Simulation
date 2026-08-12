@@ -29,22 +29,65 @@
 | Domain           | Hydrology / Land-surface energy-water balance             |
 | Language          | C++11                                                    |
 | Build System      | CMake 3.0+ (also Meson)                                 |
-| Last Updated      | 2026-03-25                                               |
-| Tools             | 4                                                        |
+| Last Updated      | 2026-07-21                                               |
+| Tools             | 6                                                        |
 | Skill Documents   | 5                                                        |
-| Diagnostic Triplets| 20                                                      |
+| Diagnostic Triplets| 25                                                      |
 
 ---
 
 ## Data Preparation
 
+All forcing / soil / observation access goes through **`ki_tools_common`** plus this
+KI's own `tools/`. The old `data_ki/<X>/tools/...` and `data_ki/<X>/SKILL.md`
+references were removed in KDT 5.0 — do NOT look for them.
+
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+| Region | Dataset | Path | Native step |
+|--------|---------|------|-------------|
+| **China** | CMFD V2.0 0.1° | `/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg/` | 3-hourly |
+| China (daily models) | CMFD V2.0 0.1° | `/media/server/hc_ssd/forcing/Data_forcing_01dy_010deg/` | daily |
+| Global | MSWX 0.1° | `/mnt/disk3/msxw/` | 3-hourly |
+| Point fallback | NASA POWER | online API | hourly |
 
-**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
-See `data_ki/HWSD/SKILL.md` for soil property documentation.
-See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
+**A China basin must use local CMFD.** NASA POWER is daily-only, routes through the
+local proxy and stalls at 0/N. Working invocation (verified 2026-07-21, NCP pixel):
+
+```bash
+python tools/convert_forcing.py --source cmfd \
+    --input /media/server/hc_ssd/forcing/Data_forcing_03hr_010deg \
+    --lat 36.0 --lon 116.0 --start "01/11/2017 00:00" --end "01/02/2018 00:00" \
+    --dt 10800 --output <sim>/meteo/meteo0001.txt
+```
+
+`--source cmfd` routes through `ki_tools_common.load_forcing.load_hourly_forcing`,
+which knows the per-variable subdirectory layout (`Temp/ Prec/ SRad/ LRad/ Wind/
+SHum/ Pres/`, one file per month) and the unit conversions (K→°C,
+precip kg/m²/s → mm per 3-h step).
+
+**Set `--dt` to the forcing's NATIVE step** (CMFD/MSWX 3-hourly → `10800`, daily →
+`86400`). Any change of record spacing has to redistribute Iprec as a *depth*, not
+interpolate it — see dt_022. GEOtop interpolates between meteo records internally,
+so a coarser meteo file does not force a coarser `TimeStepEnergyAndWater`.
+
+**CMFD timestamps are UTC.** Verified at 36 N/116 E: the SRad diurnal peak falls at
+03–06 UTC, bracketing solar noon 12:00 − 116/15 = 04:27 UTC. So set both
+`StandardTimeSimulation = 0` and `MeteoStationStandardTime = 0` (Greenwich).
+Getting this wrong shifts the whole solar cycle — see dt_021.
+
+### Soil data
+
+`python tools/convert_soil.py --source hwsd --lat <lat> --lon <lon> --layers <mm,...>`
+resolves HWSD through `ki_tools_common.soil_utils.lookup_hwsd` (hwsd.bil raster →
+MU_GLOBAL → attribute table). `--input` is optional and only overrides the raster
+path. Use `--source manual` only when the site is genuinely outside HWSD.
+
+### Observations
+
+`tools/read_modis_lst.py` extracts MOD11A2 land surface temperature at a point from
+`/mnt/datasets/obs/nasa/modis_lst/` (sinusoidal reprojection, scale factors, QC
+bits, local-solar view times, clear-sky counts). See §13.
 
 
 ## 1. Overview
@@ -125,12 +168,14 @@ cd build && ctest -R Matsch_B2_Ref_007 --output-on-failure
 
 ## 4. Tool Reference
 
-| Stage | Tool Script                     | Lines | Purpose                                       |
-|-------|---------------------------------|-------|-----------------------------------------------|
-| s4    | `tools/convert_forcing.py`      | ~350  | Convert global met data to GEOtop meteo CSV   |
-| s2    | `tools/convert_soil.py`         | ~280  | Convert HWSD/SoilGrids to GEOtop soil CSV     |
-| s6    | `tools/run_geotop.py`           | ~200  | Execute GEOtop binary with timeout/logging     |
-| s7    | `tools/parse_output.py`         | ~300  | Extract basin/point/soil outputs to tidy CSV   |
+| Stage | Tool Script                     | Purpose                                       |
+|-------|---------------------------------|-----------------------------------------------|
+| s1    | `tools/build_domain.py`         | DEM → basin delineation → ESRI-ASCII input maps (distributed mode only) |
+| s2    | `tools/convert_soil.py`         | HWSD/SoilGrids → GEOtop soil CSV (Van Genuchten) |
+| s4    | `tools/convert_forcing.py`      | CMFD/MSWX/NASA POWER → GEOtop meteo CSV       |
+| s6    | `tools/run_geotop.py`           | Execute GEOtop binary with timeout/logging    |
+| s7    | `tools/parse_output.py`         | Extract basin/point/soil/snow outputs to tidy CSV |
+| s8    | `tools/read_modis_lst.py`       | MOD11A2 LST at a point (obs side of an LST validation) |
 
 ---
 
@@ -179,7 +224,25 @@ The configuration file uses `key<TAB>=<TAB>value` format.
 Some editors convert tabs to spaces, which may cause parse failures.
 Comments start with `!`.
 
-### 5.10 Horizon Files Are Required for Radiation (dt_010)
+### 5.10 JDfrom0 Carries the Solar Clock (dt_021)
+GEOtop takes the sun's position from the **fractional part of `JDfrom0`**, not from
+the `Date` column: `h = (JDfrom0 - floor(JDfrom0))*24 + lon/15 - StandardTime + Et`
+(`radiation.cc::SolarHeight`). So `frac(JDfrom0)*24` **must equal the hour of day**
+— midnight is `.0000`, 01:00 is `.0417`. A fractional day offset (e.g. `365.25+1`)
+silently shifts the sun by 6 h: the shortwave pulse lands hours after true solar
+noon, daytime skin temperature comes out ~10 K too cold, and air temperature —
+which GEOtop reads directly — still looks fine. Anchor against the shipped test
+`tests/1D/Matsch_B2_Ref_007`: `02/10/2009 00:00 = 734047.0000`.
+
+### 5.11 Iprec Is an Accumulated Depth, Not a Rate (dt_004, dt_022)
+The value on the record at time *t* is the depth accumulated over *(t−dt, t]*.
+GEOtop derives the intensity itself (`meteodata.cc::fill_Pint` divides by the
+record spacing). Two consequences: (a) never rescale Iprec "to an intensity";
+(b) if you change the record spacing you must redistribute the depth (split on
+upsample, sum on downsample) — interpolating it multiplies total precipitation by
+`native_step / target_step`.
+
+### 5.12 Horizon Files Are Required for Radiation (dt_010)
 If `FlagSkyViewFactor=1` and `HorizonMeteoStationFile` is set, the horizon file
 must exist. Missing it silently sets all horizon angles to 0, overpredicting solar input.
 
@@ -260,14 +323,14 @@ must exist. Missing it silently sets all horizon angles to 0, overpredicting sol
 
 | Failure Domain   | Count | Silent | Fatal | Degraded |
 |------------------|-------|--------|-------|----------|
-| unit_conversion  | 8     | 7      | 1     | 0        |
-| parameter_format | 4     | 1      | 2     | 1        |
-| file_structure   | 3     | 1      | 2     | 0        |
+| unit_conversion  | 9     | 8      | 1     | 0        |
+| parameter_format | 5     | 2      | 2     | 1        |
+| file_structure   | 4     | 2      | 2     | 0        |
 | runtime          | 3     | 0      | 2     | 1        |
-| initialization   | 2     | 2      | 0     | 0        |
-| **Total**        | **20**| **11** | **7** | **2**    |
+| initialization   | 3     | 2      | 0     | 1        |
+| **Total**        | **25**| **14** | **7** | **3**    |
 
-55% of failures are **silent** -- the model runs without error but produces wrong results.
+56% of failures are **silent** -- the model runs without error but produces wrong results.
 See `diagnostics/triplets.yaml` for full symptom-diagnosis-remedy entries.
 
 ---
@@ -327,3 +390,70 @@ ki/
 Reference test case from GEOtop repository (`tests/1D/Matsch_B2_Ref_007`).
 This is a point simulation (1D column) exercising energy balance, water balance,
 and snow processes over a representative Alpine grassland site.
+
+---
+
+## 13. Validated Recipe: Point LST vs MODIS MOD11A2
+
+Reproduced end-to-end 2026-07-21 at the **North China Plain cropland pixel**
+(36.0 N, 116.0 E, 44 m, MODIS tile h27v05), Nov 2017 spin-up → Jan 2018:
+
+| Metric | Value |
+|--------|-------|
+| NSE  | **0.601** |
+| r    | **0.968** |
+| KGE  | 0.447 |
+| PBIAS| +0.62 % |
+| RMSE | 4.18 K |
+| n    | 8 (4 windows × day+night) |
+
+Uncalibrated. Water balance closes: P 23.3 − ET 35.4 − ΔS (−12.3) = 0.1 mm
+residual (0.6 %), GEOtop's own cumulative `Mass_balance_error` = 0.0004 mm.
+Runner: `models/GEOtop/run_and_score.py` (resumable at every stage).
+
+### The chain
+
+1. **s0** `ki_tools_common.terrain.get_terrain` → elevation. Force slope/aspect = 0
+   on a flat plain; a 90 m DEM produces noisy sub-degree slopes that only perturb
+   the radiation geometry.
+2. **s2** `convert_soil.py --source hwsd` → 17 layers to 3160 mm. Keep the **top
+   layer ≤ 20 mm** — the dag records that a coarser upper discretization injects
+   >1 °C of ground-temperature error.
+3. **s4** `convert_forcing.py --source cmfd --dt 10800` (see Data Preparation).
+4. **s5** `geotop.inpts` from `tests/1D/Matsch_B2_Ref_007`, changing:
+   `PointSim=1`, `StandardTimeSimulation=0`, `MeteoStationStandardTime=0`,
+   `FlagSkyViewFactor=0` + `CalculateCastShadow=0` (flat plain — sky view factor
+   is 1 by construction, and this sidesteps dt_010), `HeaderAirPress="AirPress"`
+   (the Matsch template says `"AirP"`, which does **not** match what
+   `convert_forcing.py` writes — a silently dropped pressure column),
+   `FreeDrainageAtBottom=0` (closed column ⇒ the water balance is checkable),
+   `InitSoilTemp` = the November mean air temperature.
+5. **s6** `run_geotop.py` — 92 days at a 900 s step runs in seconds.
+6. **s7** `parse_output.py --output-type point` → `Tsurface[C]`.
+7. **s8** `read_modis_lst.py` → pair → `ki_tools_common.metrics.all_metrics`.
+
+### Comparing a model instant to an 8-day composite
+
+MOD11A2 is **not** an 8-day mean of daily means. It is the average, at a fixed
+overpass instant, over only the **clear-sky** days of the window. So:
+
+* sample the model at `view_time_local_solar − lon/15` **UTC** on each day
+  (never at a fixed UTC hour, never at local noon);
+* average over `Clear_sky_days` / `Clear_sky_nights` days, choosing the clearest
+  (day: largest daily ΣSwglobal; night: lowest LWin/σT⁴) — dt_025;
+* score in **Kelvin**. In Celsius the winter series straddles 0 and the
+  ratio-based metrics detonate: PBIAS −96.7 % / KGE −0.12 in °C versus
+  +0.62 % / +0.45 in K for the identical series — dt_024.
+
+### Known residual: diurnal amplitude deficit
+
+Simulated day−night contrast is 4–6 K against 11–15 K observed (day too cold,
+night too warm) even after clear-sky matching, while r stays 0.97. This is *not*
+a clock error — dt_021 would depress r as well. The leading explanation is that
+`Tsurface` is the **ground** skin temperature beneath the canopy, whereas MODIS
+sees the effective radiometric temperature of the canopy+soil mixture; with
+`CanopyFraction > 0` the ground term is damped relative to the satellite view.
+A pixel-effective comparison would mix `Tsurface` and `Tvegetation` by the
+fourth power weighted on cover fraction and emissivity. Not yet implemented —
+it changes the scored quantity away from the dag variable `Tsurface`, so it
+belongs in a dedicated `Trad` output rather than in the pairing code.

@@ -1,0 +1,308 @@
+template_version: "3.5"
+
+identity:
+  model_id: "ELM"
+  scientific_reference_version: "E3SM Land Model (ELM), E3SM v2/v3 lineage — CLM4.5-derived land-surface scheme with CN(P) biogeochemistry and optional FATES vegetation demography"
+  implementation:
+    id: "elm-e3sm"
+    version: "E3SM v2/v3-era ELM (components/elm)"
+    provenance: "Fortran; E3SM Land Model component of DOE E3SM, CLM4.5-derived, DATM-forced offline, with optional FATES vegetation demography."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  # license: not surfaced by available streams; E3SM is permissive open-source, SPDX id unconfirmed — left blank rather than guessed
+  license: ""
+  repo_url: "https://github.com/E3SM-Project/E3SM"
+
+boundary:
+  scope_in:
+    - "Terrestrial water balance (soil moisture, infiltration, surface runoff, sub-surface drainage, water-table depth, total water storage)"
+    - "Surface energy balance (latent and sensible heat flux, ground/soil heat, soil temperature with phase change)"
+    - "Canopy hydrology (interception, throughfall, canopy water)"
+    - "Photosynthesis and canopy fluxes (stomatal conductance, GPP, transpiration)"
+    - "Carbon-nitrogen biogeochemistry (NPP, NEE, soil organic matter carbon)"
+    - "Optional dynamic vegetation demography (FATES)"
+  scope_out:
+    - "River / channel routing of runoff to streamflow (separate routing component; optional downstream stage)"
+    - "Lateral 3-D subsurface / groundwater flow between columns (absent unless an external subsurface model is coupled)"
+    - "Atmospheric dynamics (prescribed offline via the DATM data-atmosphere component)"
+    - "Human water management / withdrawals / reservoir operation"
+  spatial: "1-D column"
+  temporal: "sub-hourly"
+  closure: "both"
+  notes: "ELM solves an independent 1-D vertical column (multi-layer soil over levgrnd/levsoi) at each land gridcell; it is run distributed over a 2-D grid of columns with NO lateral hydrologic exchange between columns inside ELM (lateral transport requires the separate routing/subsurface components). Model integration timestep is sub-hourly (half-hourly is typical); history output is aggregated to daily and monthly. Closure is 'both': per-column mass balance is enforced for water and for carbon/nitrogen pools, and a surface energy balance is closed each timestep; in offline mode the atmospheric state itself is prescribed, not closed."
+
+inputs:
+  forcing:
+    - {category: "atmosphere", name: "TBOT (near-surface air temperature)", unit: "K", source_kind: "forcing", model_input_format: "DATM atmospheric forcing stream (per-timestep gridded)"}
+    - {category: "atmosphere", name: "QBOT (near-surface specific humidity)", unit: "kg/kg", source_kind: "forcing", model_input_format: "DATM atmospheric forcing stream"}
+    - {category: "atmosphere", name: "WIND (near-surface wind speed)", unit: "m/s", source_kind: "forcing", model_input_format: "DATM atmospheric forcing stream"}
+    - {category: "atmosphere", name: "PRECTmms (total precipitation rate)", unit: "mm/s", source_kind: "forcing", model_input_format: "DATM atmospheric forcing stream", notes: "Partitioned into rain/snow by the model; precipitation is supplied as a mass flux rate, not an accumulation."}
+    - {category: "atmosphere", name: "FSDS (downward shortwave radiation)", unit: "W/m2", source_kind: "forcing", model_input_format: "DATM atmospheric forcing stream"}
+    - {category: "atmosphere", name: "FLDS (downward longwave radiation)", unit: "W/m2", source_kind: "forcing", model_input_format: "DATM atmospheric forcing stream"}
+    - {category: "atmosphere", name: "PSRF (surface pressure)", unit: "Pa", source_kind: "forcing", model_input_format: "DATM atmospheric forcing stream"}
+    - {category: "atmosphere", name: "ZBOT (atmospheric reference height)", unit: "m", source_kind: "forcing", model_input_format: "DATM atmospheric forcing stream"}
+    - {category: "atmosphere", name: "Atmospheric CO2 mixing ratio", unit: "ppmv", source_kind: "forcing", model_input_format: "DATM / namelist scalar or time series", notes: "Drives photosynthesis CO2 response; can be a constant or time-varying atmospheric driver."}
+  parameters:
+    - {category: "soil_hydraulic", name: "WATSAT (saturated volumetric water content / porosity)", unit: "mm3/mm3", source_kind: "dataset_lookup", model_input_format: "surface dataset (per soil layer)", notes: "Derived from soil texture via Clapp-Hornberger / Cosby et al. (1984) pedotransfer functions."}
+    - {category: "soil_hydraulic", name: "SUCSAT (saturated soil matric potential)", unit: "mm", source_kind: "dataset_lookup", model_input_format: "surface dataset (per soil layer)"}
+    - {category: "soil_hydraulic", name: "BSW (Clapp-Hornberger b exponent)", unit: "dimensionless", source_kind: "dataset_lookup", model_input_format: "surface dataset (per soil layer)"}
+    - {category: "soil_hydraulic", name: "HKSAT (saturated hydraulic conductivity)", unit: "mm/s", source_kind: "dataset_lookup", model_input_format: "surface dataset (per soil layer)"}
+    - {category: "vegetation", name: "PFT composition and plant functional type parameters", unit: "mixed", source_kind: "dataset_lookup", model_input_format: "surface dataset", notes: "Vegetation class fractions and physiological coefficients per gridcell."}
+    - {category: "grid_structure", name: "Soil layer discretization (levgrnd / levsoi depths and thicknesses)", unit: "m", source_kind: "default", model_input_format: "model configuration"}
+  initial_conditions:
+    - {category: "soil_water", name: "Initial H2OSOI / SOILLIQ / SOILICE (soil water and ice)", unit: "mm3/mm3 ; kg/m2", source_kind: "user_provided", model_input_format: "restart / initial-conditions file (finidat) or cold start"}
+    - {category: "soil_thermal", name: "Initial TSOI (soil temperature profile)", unit: "K", source_kind: "user_provided", model_input_format: "restart / initial-conditions file or cold start"}
+    - {category: "hydrology", name: "Initial ZWT (water-table depth)", unit: "m", source_kind: "user_provided", model_input_format: "restart / initial-conditions file or cold start"}
+    - {category: "biogeochem", name: "Initial carbon-nitrogen pools (TOTSOMC and associated C/N pools)", unit: "gC/m2", source_kind: "user_provided", model_input_format: "spin-up restart file", notes: "Soil organic carbon and biogeochemical pools require multi-century spin-up to equilibrate; cold start is far from steady state."}
+    - {category: "vegetation", name: "Initial TLAI (leaf area index)", unit: "m2/m2", source_kind: "user_provided", model_input_format: "restart file or prognostically grown from CN allocation"}
+  boundary_conditions:
+    - {category: "model_switch", name: "use_cn (carbon-nitrogen biogeochemistry enabled)", unit: "boolean", source_kind: "user_provided", model_input_format: "namelist switch", notes: "Selects prognostic CN cycling vs prescribed-phenology mode; governs whether GPP/NPP/NEE/TOTSOMC are prognostic and whether LAI is grown."}
+    - {category: "model_switch", name: "use_vertsoilc (vertically-resolved soil carbon)", unit: "boolean", source_kind: "user_provided", model_input_format: "namelist switch"}
+    - {category: "model_switch", name: "use_fates (FATES vegetation demography enabled)", unit: "boolean", source_kind: "user_provided", model_input_format: "namelist switch", notes: "Activates the optional dynamic vegetation demography module in place of the default prescribed/CN vegetation."}
+    - {category: "domain", name: "Simulation domain / surface dataset selection and run period", unit: "n/a", source_kind: "user_provided", model_input_format: "domain + surface dataset + namelist run period"}
+
+processes:
+  modules:
+    - {name: "DATM_data_atmosphere", role: "driver", brief: "Data-atmosphere component that supplies the prescribed atmospheric forcing (temperature, humidity, wind, precipitation, radiation, pressure, CO2) to the land model each timestep."}
+    - {name: "CanopyHydrology", role: "process_solver", brief: "Canopy interception, throughfall, and canopy water storage; partitions precipitation between canopy and ground."}
+    - {name: "SoilHydrology", role: "process_solver", brief: "Soil water movement, infiltration, and unsaturated-zone flow using Clapp-Hornberger hydraulic properties; updates layered soil water, ice partition, and water-table depth."}
+    - {name: "SoilThermal", role: "process_solver", brief: "Vertical soil heat conduction and temperature evolution including freeze-thaw phase change between SOILLIQ and SOILICE."}
+    - {name: "SurfaceEnergyBalance", role: "process_solver", brief: "Partitions net radiation into latent heat, sensible heat, and ground heat flux; closes the per-column surface energy budget."}
+    - {name: "Photosynthesis_CanopyFluxes", role: "process_solver", brief: "Stomatal conductance and leaf photosynthesis (CO2-responsive) yielding GPP and transpiration, coupled to the energy balance."}
+    - {name: "CN_Biogeochemistry", role: "process_solver", brief: "Carbon-nitrogen cycling: autotrophic/heterotrophic respiration, NPP, NEE, allocation, litterfall, and soil organic matter (TOTSOMC) turnover.", applicability: "use_cn=true"}
+    - {name: "Hydrology_Runoff", role: "process_solver", brief: "Computes surface runoff (QOVER), sub-surface drainage (QDRAI), and total runoff (QRUNOFF) from soil-column water state."}
+    - {name: "FATES_vegetation_demography", role: "optional_module", brief: "Size- and age-structured dynamic vegetation demography (cohort growth, mortality, recruitment) replacing prescribed/CN vegetation when active.", applicability: "use_fates=true"}
+  internal_edges:
+    - {from: "DATM_data_atmosphere", to: "Inputs", kind: "consumes_input", brief: "Reads atmospheric forcing variables."}
+    - {from: "DATM_data_atmosphere", to: "CanopyHydrology", kind: "invokes", brief: "Supplies precipitation and atmospheric state to canopy interception."}
+    - {from: "DATM_data_atmosphere", to: "SoilHydrology", kind: "invokes", brief: "Supplies precipitation/throughfall driver to soil water solver."}
+    - {from: "DATM_data_atmosphere", to: "SoilThermal", kind: "invokes", brief: "Supplies radiative/atmospheric boundary to the soil thermal solver."}
+    - {from: "DATM_data_atmosphere", to: "Photosynthesis_CanopyFluxes", kind: "invokes", brief: "Supplies radiation, humidity, and CO2 to photosynthesis."}
+    - {from: "CanopyHydrology", to: "SurfaceEnergyBalance", kind: "invokes", brief: "Canopy water state feeds evaporation in the energy balance."}
+    - {from: "SoilHydrology", to: "SoilThermal", kind: "invokes", brief: "Liquid/ice water content controls soil thermal properties."}
+    - {from: "SoilHydrology", to: "Hydrology_Runoff", kind: "invokes", brief: "Soil-column saturation state drives surface runoff and drainage."}
+    - {from: "SoilHydrology", to: "CN_Biogeochemistry", kind: "invokes", brief: "Soil moisture controls decomposition and N availability."}
+    - {from: "SoilThermal", to: "SurfaceEnergyBalance", kind: "invokes", brief: "Soil temperature sets the ground heat flux term."}
+    - {from: "SoilThermal", to: "CN_Biogeochemistry", kind: "invokes", brief: "Soil temperature controls respiration and decomposition rates."}
+    - {from: "SurfaceEnergyBalance", to: "Photosynthesis_CanopyFluxes", kind: "invokes", brief: "Leaf/canopy temperature and available energy constrain photosynthesis and transpiration."}
+    - {from: "Photosynthesis_CanopyFluxes", to: "CN_Biogeochemistry", kind: "invokes", brief: "GPP feeds carbon allocation and the biogeochemical cycle."}
+    - {from: "Photosynthesis_CanopyFluxes", to: "FATES_vegetation_demography", kind: "invokes", brief: "Carbon assimilation drives cohort growth in FATES."}
+    - {from: "CN_Biogeochemistry", to: "FATES_vegetation_demography", kind: "invokes", brief: "Nutrient/carbon state informs demographic dynamics when FATES is active."}
+    - {from: "SoilHydrology", to: "H2OSOI", kind: "writes_state", brief: "Updates layered volumetric soil water."}
+    - {from: "SoilHydrology", to: "ZWT", kind: "writes_state", brief: "Updates water-table depth."}
+    - {from: "SoilThermal", to: "TSOI", kind: "writes_state", brief: "Updates layered soil temperature."}
+    - {from: "SoilThermal", to: "H2OSOI", kind: "writes_state", brief: "Freeze-thaw repartitions liquid and ice fractions of soil water."}
+    - {from: "CN_Biogeochemistry", to: "TOTSOMC", kind: "writes_state", brief: "Updates total soil organic matter carbon."}
+    - {from: "CN_Biogeochemistry", to: "TLAI", kind: "writes_state", brief: "Grows prognostic leaf area index from allocated carbon."}
+    - {from: "SoilHydrology", to: "Inputs", kind: "consumes_input", brief: "Reads static texture-derived soil hydraulic parameters (WATSAT, SUCSAT, BSW, HKSAT) to solve unsaturated flow."}
+    - {from: "Hydrology_Runoff", to: "Outputs", kind: "produces_output", brief: "Emits QRUNOFF, QOVER, QDRAI."}
+    - {from: "SurfaceEnergyBalance", to: "Outputs", kind: "produces_output", brief: "Emits EFLX_LH_TOT and FSH."}
+    - {from: "Photosynthesis_CanopyFluxes", to: "Outputs", kind: "produces_output", brief: "Emits GPP."}
+    - {from: "CN_Biogeochemistry", to: "Outputs", kind: "produces_output", brief: "Emits NPP and NEE."}
+
+states:
+  variables:
+    - {name: "H2OSOI", unit: "mm3/mm3", role: "prognostic"}
+    - {name: "SOILLIQ", unit: "kg/m2", role: "prognostic"}
+    - {name: "SOILICE", unit: "kg/m2", role: "prognostic"}
+    - {name: "TSOI", unit: "K", role: "prognostic"}
+    - {name: "ZWT", unit: "m", role: "prognostic"}
+    - {name: "TLAI", unit: "m2/m2", role: "prognostic"}
+    - {name: "TOTSOMC", unit: "gC/m2", role: "prognostic"}
+    - {name: "TWS", unit: "mm", role: "diagnostic"}
+  provenance: "structural"
+
+outputs:
+  - var: "QRUNOFF"
+    validation_rank: 1
+    unit: "mm/s"
+    description: "Total runoff (surface runoff plus sub-surface drainage) leaving the land column."
+    emitted_in: "ELM history file (*.elm.h0/h1*.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["ELM runoff is per-column; comparing to a gauge requires routing runoff through a river network to streamflow first."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Gridded runoff products carry their own structural uncertainty."]
+      detrending_options: ["none"]
+  - var: "QDRAI"
+    validation_rank: 2
+    unit: "mm/s"
+    description: "Sub-surface drainage flux from the soil column."
+    emitted_in: "ELM history file"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Rarely measured directly; usually evaluated as part of total runoff or baseflow separation."]
+      detrending_options: ["none"]
+  - var: "H2OSOI"
+    validation_rank: 3
+    unit: "mm3/mm3"
+    description: "Volumetric soil moisture by layer."
+    emitted_in: "ELM history file"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Model and probe layer depths must be matched; absolute volumetric water content is sensitive to soil texture parameters."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Satellite soil moisture senses only the top few centimeters; compare to the shallowest model layer."]
+      detrending_options: ["none"]
+  - var: "EFLX_LH_TOT"
+    validation_rank: 4
+    unit: "W/m2"
+    description: "Total latent heat flux (evapotranspiration in energy units)."
+    emitted_in: "ELM history file"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Compare against eddy-covariance flux towers; tower energy-balance closure error affects the reference."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Remote-sensing ET products are themselves model-derived."]
+      detrending_options: ["none"]
+  - var: "FSH"
+    validation_rank: 5
+    unit: "W/m2"
+    description: "Sensible heat flux to the atmosphere."
+    emitted_in: "ELM history file"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Eddy-covariance reference; closure error shared with latent heat."]
+      detrending_options: ["none"]
+  - var: "GPP"
+    validation_rank: 6
+    unit: "gC/m2/s"
+    description: "Gross primary production (canopy photosynthetic carbon uptake)."
+    emitted_in: "ELM history file"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Tower GPP is a partitioned (not directly measured) quantity derived from NEE."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Satellite GPP products are upscaled/model-assisted estimates."]
+      detrending_options: ["none"]
+  - var: "NEE"
+    validation_rank: 7
+    unit: "gC/m2/s"
+    description: "Net ecosystem exchange of carbon (negative = net uptake)."
+    emitted_in: "ELM history file"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["NEE is the directly-measured flux-tower quantity but is biased by long spin-up disequilibrium in TOTSOMC."]
+      detrending_options: ["none"]
+  - var: "TSOI"
+    validation_rank: 8
+    unit: "K"
+    description: "Soil temperature by layer."
+    emitted_in: "ELM history file"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Match model and sensor depths."]
+      detrending_options: ["none"]
+  - var: "TWS"
+    validation_rank: 9
+    unit: "mm"
+    description: "Total terrestrial water storage (soil water + ice + canopy + snow + aquifer)."
+    emitted_in: "ELM history file"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "temporal_pattern_match"]
+          determining_metric: "r"
+          caveats: ["GRACE observes basin-scale storage ANOMALIES, not absolute storage; compare anomalies/trends after removing the mean, and at basin aggregation scale."]
+      detrending_options: ["linear_residual", "decadal_mean"]
+
+influence:
+  # No sensitivity literature was available: the lit stream returned null
+  # (reader did not emit). Per the synthesizer rule, edges[] is left empty.
+  edges: []
+  _reason: "no sensitivity literature surfaced — lit_facts stream was null (lit reader produced no record); sensitivity edges cannot be asserted without citations"
+  citation_index: {}
+
+safety:
+  hazards:
+    - id: "datm_forcing_unit_mismatch"
+      kind: "weather_file_semantic"
+      description: "DATM expects forcing in specific units (precipitation as mm/s mass flux, radiation in W/m2, pressure in Pa, temperature in K); a wrong-unit or wrong-name input is consumed without complaint and silently biases the entire water/energy balance."
+      severity: "fatal_or_silent"
+    - id: "soil_hydraulic_param_inconsistency"
+      kind: "soil_semantic"
+      description: "Inconsistent Clapp-Hornberger soil hydraulic properties (e.g. saturated water content below field capacity, or out-of-range BSW/HKSAT) distort infiltration, drainage, and the runoff partition."
+      severity: "degraded"
+    - id: "cold_start_biogeochem_disequilibrium"
+      kind: "initial_condition_semantic"
+      description: "Carbon-nitrogen and soil-carbon pools require multi-century spin-up; a short run from cold start leaves TOTSOMC far from steady state and silently biases NPP/NEE and the long-term carbon balance."
+      severity: "silent"
+    - id: "freeze_thaw_energy_imbalance"
+      kind: "numerical_instability"
+      description: "Soil freeze-thaw phase change couples the thermal and hydrologic solvers; an over-long timestep or extreme cold-season forcing can produce energy-balance errors in TSOI / SOILICE partitioning."
+      severity: "degraded"
+    - id: "cn_switch_phenology_mismatch"
+      kind: "control_semantic"
+      description: "Mismatched configuration (e.g. use_cn enabled but lacking spun-up initial pools, or prescribed-phenology expectations with CN active) yields inconsistent LAI/GPP relative to the intended mode."
+      severity: "degraded"
+  validation_limits:
+    - "Offline land-only configuration (DATM-forced): there is no land-atmosphere feedback, so near-surface atmospheric outputs are largely dictated by the prescribed forcing."
+    - "No native river routing: column runoff (QRUNOFF) must be routed through an external river network before comparison to gauge discharge."
+    - "Independent 1-D columns with no lateral subsurface exchange inside ELM; performance degrades in strongly lateral / groundwater-dominated or floodplain terrain unless an external subsurface/routing model is coupled."
+    - "Biogeochemical outputs are only meaningful after adequate spin-up; transient short runs are not structurally valid for carbon-pool evaluation."
+  warnings:
+    - "TSA (2 m air temperature) and other near-surface atmospheric outputs are strongly constrained by the prescribed DATM forcing in offline mode and should not be treated as independent predictions."
+    - "Absolute volumetric soil moisture (H2OSOI) magnitude is sensitive to the texture-derived hydraulic parameters; temporal/anomaly agreement is more diagnostic than absolute magnitude."
+  assumptions:
+    - statement: "Each land gridcell is represented as an independent 1-D vertical column (multi-layer soil) with no lateral hydrologic exchange between columns inside the land model."
+      scope: "model geometry / spatial structure"
+      source: "ELM / CLM technical description (E3SM v3 land description, https://e3sm.org/model/e3sm-model-description/v3-description/v3-land/)"
+      status: "adopted"
+    - statement: "Per-column mass balance is closed for water and for carbon/nitrogen pools, and a surface energy balance is closed each timestep."
+      scope: "conservation / closure"
+      source: "E3SM Land Model description and Zhu et al. (2019), https://doi.org/10.1029/2018MS001571"
+      status: "adopted"
+    - statement: "The atmosphere is prescribed offline through the DATM data-atmosphere component; ELM does not feed back to atmospheric state in this configuration."
+      scope: "forcing / coupling mode"
+      source: "ELM DATM (data-atmosphere) component documentation, https://docs.e3sm.org/"
+      status: "adopted"
+    - statement: "Per-layer soil hydraulic properties (WATSAT, SUCSAT, BSW, HKSAT) are static parameters derived from soil texture via Clapp-Hornberger / Cosby et al. (1984) pedotransfer functions, not prognostic state."
+      scope: "input routing / parameter treatment"
+      source: "Cosby et al. (1984) pedotransfer scheme as used in CLM/ELM soil hydrology"
+      status: "adopted"

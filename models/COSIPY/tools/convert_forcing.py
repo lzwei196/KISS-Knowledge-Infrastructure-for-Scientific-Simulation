@@ -272,8 +272,60 @@ def validate_forcing(df: pd.DataFrame) -> list:
     return warnings
 
 
+def read_nasa_power_data(lat: float, lon: float, start_year: int, end_year: int,
+                         freq: str = "hourly") -> pd.DataFrame:
+    """Fetch NASA POWER forcing via ki_tools_common.load_forcing and map to COSIPY.
+
+    This is the canonical HydroCraft forcing path referenced in SKILL.md
+    ("Use ki_tools_common.load_forcing for CMFD/MSWX/NASA POWER"). It returns a
+    time-indexed DataFrame with COSIPY variable columns already in COSIPY units:
+        T2 (K), RH2 (%), U2 (m/s, 2 m), G (W/m2), LWin (W/m2), PRES (hPa),
+        RRR (mm per timestep).
+    RH2 is derived from NASA POWER specific humidity (QV2M) using the shared
+    ki_tools_common.humidity converter.
+
+    Args:
+        lat, lon: point location (deg).
+        start_year, end_year: inclusive period.
+        freq: "hourly" (dt=3600 s) or "daily" (dt=86400 s).
+
+    Returns:
+        DataFrame indexed by timestamp with COSIPY forcing columns.
+    """
+    from ki_tools_common.load_forcing import load_hourly_forcing, load_daily_forcing
+    from ki_tools_common.humidity import specific_humidity_to_rh
+
+    if freq == "hourly":
+        d = load_hourly_forcing("nasa_power", lat, lon, start_year, end_year)
+    elif freq == "daily":
+        d = load_daily_forcing("nasa_power", lat, lon, start_year, end_year)
+    else:
+        raise ValueError(f"freq must be 'hourly' or 'daily', got {freq}")
+
+    # hourly returns 'temp_c'; daily returns 'temp_mean_c'
+    temp_c = np.asarray(d.get("temp_c", d.get("temp_mean_c")), dtype=float)
+    pres_pa = np.asarray(d["pres_pa"], dtype=float)
+    temp_k = temp_c + 273.16
+    rh = specific_humidity_to_rh(np.asarray(d["shum_kgkg"], dtype=float), temp_k, pres_pa)
+
+    out = pd.DataFrame(index=pd.DatetimeIndex(d["dates"], name="TIMESTAMP"))
+    out["T2"] = temp_k
+    out["RH2"] = np.clip(rh, 0.0, 100.0)
+    out["U2"] = np.asarray(d["wind_ms"], dtype=float)          # NASA POWER WS2M is at 2 m
+    out["G"] = np.maximum(np.asarray(d["srad_wm2"], dtype=float), 0.0)
+    if "lrad_wm2" in d and d["lrad_wm2"] is not None:
+        out["LWin"] = np.maximum(np.asarray(d["lrad_wm2"], dtype=float), 0.0)
+    out["PRES"] = pres_pa / 100.0                              # Pa -> hPa
+    out["RRR"] = np.maximum(np.asarray(d["precip_mm"], dtype=float), 0.0)  # mm per timestep
+    out.attrs["timestep_seconds"] = d.get("timestep_seconds",
+                                          3600 if freq == "hourly" else 86400)
+    return out
+
+
 def write_cosipy_netcdf(df: pd.DataFrame, static_ds: xr.Dataset,
-                        output_path: str, point_lat: float, point_lon: float):
+                        output_path: str, point_lat: float, point_lon: float,
+                        hgt: float = 5000.0, slope: float = 0.0,
+                        aspect: float = 0.0, mask: int = 1):
     """Write COSIPY-format netCDF input file.
 
     Args:
@@ -300,10 +352,13 @@ def write_cosipy_netcdf(df: pd.DataFrame, static_ds: xr.Dataset,
             if var in static_ds:
                 ds[var] = (("lat", "lon"), static_ds[var].values.reshape(1, 1))
     else:
-        ds["HGT"] = (("lat", "lon"), np.array([[5000.0]]))
-        ds["SLOPE"] = (("lat", "lon"), np.array([[0.0]]))
-        ds["ASPECT"] = (("lat", "lon"), np.array([[0.0]]))
-        ds["MASK"] = (("lat", "lon"), np.array([[1]]))
+        # Point-mode static defaults (explicit HGT critical: COSIPY uses elevation
+        # for pressure/radiation reference; the old hard-coded 5000 m is wrong for
+        # most sites). MASK=1 makes the single cell an active snow/ice column.
+        ds["HGT"] = (("lat", "lon"), np.array([[float(hgt)]]))
+        ds["SLOPE"] = (("lat", "lon"), np.array([[float(slope)]]))
+        ds["ASPECT"] = (("lat", "lon"), np.array([[float(aspect)]]))
+        ds["MASK"] = (("lat", "lon"), np.array([[int(mask)]]))
 
     # Time-varying forcing variables
     metadata = {
@@ -369,29 +424,56 @@ def validate_output(output_path: str) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(description="Convert forcing data to COSIPY format")
-    parser.add_argument("-i", "--input", required=True, help="Input data file (CSV or netCDF)")
+    parser.add_argument("-i", "--input", default=None,
+                        help="Input data file (CSV or netCDF); not needed for --source nasa_power")
     parser.add_argument("-o", "--output", required=True, help="Output COSIPY netCDF file")
     parser.add_argument("-s", "--static", default=None, help="Static file (optional)")
-    parser.add_argument("--source", default="generic", choices=["era5", "aws", "csv", "wrf", "generic"])
+    parser.add_argument("--source", default="generic",
+                        choices=["era5", "aws", "csv", "wrf", "generic", "nasa_power"])
     parser.add_argument("--start", default=None, help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end", default=None, help="End date (YYYY-MM-DD)")
     parser.add_argument("--lat", type=float, default=30.47, help="Latitude")
     parser.add_argument("--lon", type=float, default=90.64, help="Longitude")
     parser.add_argument("--temp-celsius", action="store_true", help="Temperature is in Celsius")
+    parser.add_argument("--freq", default="hourly", choices=["hourly", "daily"],
+                        help="NASA POWER timestep (sets COSIPY dt)")
+    parser.add_argument("--hgt", type=float, default=5000.0,
+                        help="Point elevation (m) embedded as static HGT")
+    parser.add_argument("--slope", type=float, default=0.0, help="Point slope (deg)")
+    parser.add_argument("--aspect", type=float, default=0.0, help="Point aspect (deg)")
+    parser.add_argument("--station-alt", type=float, default=None,
+                        help="Forcing source elevation (m) for lapse correction")
+    parser.add_argument("--target-alt", type=float, default=None,
+                        help="Target site elevation (m) for lapse correction")
+    parser.add_argument("--lapse-t", type=float, default=-0.0065,
+                        help="Temperature lapse rate (K/m) for lapse correction")
     args = parser.parse_args()
 
-    # Validate inputs
-    validate_inputs(args.input, args.source)
-
     # Read data based on source
-    if args.source == "era5":
-        df = read_era5_data(args.input, args.start, args.end)
-    elif args.source == "aws":
-        df = read_aws_data(args.input, args.start, args.end, args.temp_celsius)
+    if args.source == "nasa_power":
+        # Canonical HydroCraft forcing path (ki_tools_common.load_forcing).
+        # --input is ignored for this source (data is fetched from the API).
+        if not args.start or not args.end:
+            raise ValueError("--start and --end (YYYY-MM-DD) required for nasa_power source")
+        sy, ey = int(args.start[:4]), int(args.end[:4])
+        df = read_nasa_power_data(args.lat, args.lon, sy, ey, freq=args.freq)
+        df = df.loc[args.start:args.end]
     else:
-        df = pd.read_csv(args.input, parse_dates=["TIMESTAMP"], index_col="TIMESTAMP")
-        if args.start and args.end:
-            df = df.loc[args.start:args.end]
+        validate_inputs(args.input, args.source)
+        if args.source == "era5":
+            df = read_era5_data(args.input, args.start, args.end)
+        elif args.source == "aws":
+            df = read_aws_data(args.input, args.start, args.end, args.temp_celsius)
+        else:
+            df = pd.read_csv(args.input, parse_dates=["TIMESTAMP"], index_col="TIMESTAMP")
+            if args.start and args.end:
+                df = df.loc[args.start:args.end]
+
+    # Optional elevation lapse correction (forcing source alt -> target site alt)
+    if args.station_alt is not None and args.target_alt is not None:
+        df = apply_lapse_rates(df, args.station_alt, args.target_alt, lapse_T=args.lapse_t)
+        print(f"Applied lapse correction: {args.station_alt:.0f} m -> {args.target_alt:.0f} m "
+              f"(dT={args.lapse_t * (args.target_alt - args.station_alt):+.2f} K)")
 
     # Validate forcing
     warnings = validate_forcing(df)
@@ -408,7 +490,8 @@ def main():
         static_ds = static_ds.sel(lat=args.lat, lon=args.lon, method="nearest")
 
     # Write output
-    write_cosipy_netcdf(df, static_ds, args.output, args.lat, args.lon)
+    write_cosipy_netcdf(df, static_ds, args.output, args.lat, args.lon,
+                        hgt=args.hgt, slope=args.slope, aspect=args.aspect)
 
     # Validate output
     validate_output(args.output)

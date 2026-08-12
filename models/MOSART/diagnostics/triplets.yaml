@@ -179,3 +179,26 @@
     The error may instead be that output_resolution < timestep.
     Check: output_resolution=3600 with timestep=10800 will fail.
     Use output_resolution: 86400 for standard daily output.
+
+- id: T021
+  symptom: "River discharge is exactly 0 at the gauge cell, but a neighbouring cell carries the full basin flow"
+  diagnosis: "The gauge cell was made the terminal outlet (dnID == -1). mosartwmpy treats a dnID==-1 cell as the OCEAN outlet, so its RIVER_DISCHARGE_OVER_LAND_LIQ (runoff_land) is 0 — the basin discharge lands in the cell one step UPSTREAM. Interior gauges (not river mouths) must be THROUGH-cells."
+  remedy: |
+    Do NOT terminate the network at an interior gauge. Redirect the primary outlet to
+    a downstream sink so the gauge cell has a valid dnID and its channel_outflow == basin
+    discharge. tools/build_mosart_grid.py does this automatically (steepest-descent inactive
+    neighbour becomes a frac=0 terminal sink) and records the cell to score in grid attrs
+    scoring_lat/scoring_lon. Extract with parse_mosart_output.py --mode point at THAT cell.
+    Verify: build_grid prints "outlet (...) -> through-cell; terminal sink at (...)" and a
+    short synthetic-runoff run shows non-zero Q at the scoring cell approaching
+    (sum(frac*area)*runoff) mass balance.
+
+- id: T022
+  symptom: "No gridded runoff / QOVER-QDRAI file for a China basin; convert_grid_parameters --source-type merit produces nothing new"
+  diagnosis: "MOSART is a routing model. It has no runoff-generation tool, and convert_grid_parameters only VALIDATES an existing grid (the merit flag builds no topology). No ERA5-Land/GSWP3/runoff product ships on the server."
+  remedy: |
+    Run the VIC KI over the basin first (its soil/veg/forcing/global param persist under
+    outputs/<basin>/vic_temp/); re-run vic_classic.exe -g global_param to regenerate per-cell
+    flux, grid it (cols 16=OUT_RUNOFF 17=OUT_BASEFLOW, mm/day, skiprows=3), then
+    convert_runoff_forcing.py --source-units mm/day. Build the grid from the VIC/Lohmann D8
+    with build_mosart_grid.py. See models/MOSART/run_and_score.py for the full VIC->MOSART chain.

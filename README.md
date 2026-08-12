@@ -102,23 +102,31 @@ now stands at **453**.
 |---|:---:|:---:|
 | KI packages | 453 | 127 |
 | `SKILL.md` operational references | 2,021 docs | 127 |
-| Diagnostic triplets | 5,268 | ~2,266 |
-| Tool scripts | 1,742 | 1,036 |
-| `preflight_check.py` | 334 | 125 |
-| `format_spec.yaml` | 238 | 102 |
-| `knowledge_infrastructure.yaml` | — | 115 |
+| Diagnostic triplets | 5,268 | 2,826 |
+| Tool scripts | 1,742 | 1,263 |
+| `preflight_check.py` | 334 | 127 |
+| `format_spec.yaml` | 238 | 127 |
+| `dag.yaml` execution graphs | — | 124 |
+| `knowledge_infrastructure.yaml` | — | 116 |
 | `REFERENCES.md` | — | 102 |
+| `validation_convention.yaml` | — | 24 |
+| `calibration.yaml` + `calib_run.py` | — | 14 |
 
-Library counts are from the model registry as of **2026-08-11**. The KISS paper
-(arXiv 2605.17856) describes the 123-package release; this repository tracks the
-library as it currently stands.
+The 127 packages were refreshed from the working tree on **2026-08-12**; library
+counts are from the model registry. The KISS paper (arXiv 2605.17856) describes
+the 123-package release; this repository tracks the library as it currently
+stands.
+
+Only knowledge artifacts are published -- operational documentation, format
+specifications, diagnostic triplets, execution graphs, and tools. Run outputs,
+calibration scratch, snapshots, and forcing archives are not.
 
 > **Note on the shared library.** The KI packages were authored against a shared
 > helper library, `ki_tools_common` (unit conversions, humidity, forcing loaders,
 > soil utilities, metrics). **That library is not distributed as source in this
-> repository** -- 123 of the 127 shipped `SKILL.md` files reference it, so
-> `from ki_tools_common... import ...` lines in the documentation will not resolve
-> against a fresh clone. An archived snapshot is retained in
+> repository** -- 126 of the 127 packages reference it (121 in their `SKILL.md`,
+> 54 as a real import in `tools/*.py`), so `from ki_tools_common... import ...`
+> will not resolve against a fresh clone. An archived snapshot is retained in
 > [`kdt-release.zip`](kdt-release.zip). Every other part of a KI package -- the
 > operational documentation, format specifications, diagnostic triplets, and the
 > model-specific tools -- stands on its own.
@@ -228,10 +236,16 @@ operate any model the same way. A package bundles:
   pipeline structure, variable list, and tool inventory.
 - **`format_spec.yaml`** -- exact input/output file layouts, including
   fixed-width column positions for Fortran models.
+- **`dag.yaml`** -- the execution graph: stages, inputs, outputs, and the gate
+  and metric definitions used to judge a run.
 - **`preflight_check.py`** -- physical-range and unit validation for the forcing
   the model consumes.
 - **`docs/REFERENCES.md`** -- literature and source-code references backing the
   operational claims.
+- **`validation_convention.yaml`** (24 packages) -- the literature-grounded
+  convention for what counts as an acceptable result for this model.
+- **`calibration.yaml` + `calib_run.py`** (14 packages) -- parameter bounds and
+  a runnable calibration entry point.
 
 The validation status of each package is labelled `binary_only`,
 `partial_replacement`, `full_replacement`, or `production_validated` so that
@@ -300,9 +314,9 @@ reasonableness checks. This proves the knowledge infrastructure works.
 ```
 
 Package contents vary by model: not every package has reached the same
-completeness. Across the 127 shipped packages, 127 carry a `SKILL.md`,
-125 a `preflight_check.py`, 118 a `triplets.yaml`, 115 a
-`knowledge_infrastructure.yaml`, and 102 each a `format_spec.yaml` and a
+completeness. Across the 127 shipped packages, all 127 carry a `SKILL.md`,
+a `preflight_check.py`, and a `format_spec.yaml`; 125 a `triplets.yaml`,
+124 a `dag.yaml`, 116 a `knowledge_infrastructure.yaml`, and 102 a
 `REFERENCES.md`.
 
 ---

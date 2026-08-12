@@ -45,40 +45,43 @@ def main():
         at_bounds = []
         all_params = []
 
-        for region_dir in per_glacier.iterdir():
+        for region_dir in sorted(per_glacier.iterdir()):
             if not region_dir.is_dir():
                 continue
-            for gdir in region_dir.iterdir():
-                if not gdir.is_dir():
+            for sub_dir in sorted(region_dir.iterdir()):
+                if not sub_dir.is_dir():
                     continue
+                for gdir in sorted(sub_dir.iterdir()):
+                    if not gdir.is_dir():
+                        continue
 
-                ci_path = gdir / 'climate_info.pkl'
-                if ci_path.exists():
-                    try:
-                        with open(ci_path, 'rb') as f:
-                            ci = pickle.load(f)
+                    ci_path = gdir / 'climate_info.pkl'
+                    if ci_path.exists():
+                        try:
+                            with open(ci_path, 'rb') as f:
+                                ci = pickle.load(f)
 
-                        mu_star = ci.get('mu_star', None)
-                        pcf = ci.get('prcp_fac', ci.get('pcf', None))
-                        tbias = ci.get('temp_bias', ci.get('tbias', 0))
+                            mu_star = ci.get('mu_star', None)
+                            pcf = ci.get('prcp_fac', ci.get('pcf', None))
+                            tbias = ci.get('temp_bias', ci.get('tbias', 0))
 
-                        if mu_star is not None:
-                            mu_stars.append(mu_star)
-                            if pcf is not None:
-                                pcfs.append(pcf)
-                            tbiases.append(tbias if tbias is not None else 0)
+                            if mu_star is not None:
+                                mu_stars.append(mu_star)
+                                if pcf is not None:
+                                    pcfs.append(pcf)
+                                tbiases.append(tbias if tbias is not None else 0)
 
-                            all_params.append({
-                                'rgi_id': gdir.name,
-                                'mu_star': mu_star,
-                                'pcf': pcf,
-                                'tbias': tbias
-                            })
+                                all_params.append({
+                                    'rgi_id': gdir.name,
+                                    'mu_star': mu_star,
+                                    'pcf': pcf,
+                                    'tbias': tbias
+                                })
 
-                            if mu_star <= 0 or mu_star >= 1000:
-                                at_bounds.append(gdir.name)
-                    except Exception:
-                        pass
+                                if mu_star <= 0 or mu_star >= 1000:
+                                    at_bounds.append(gdir.name)
+                        except Exception:
+                            pass
 
         if not mu_stars:
             print("ERROR: No calibration parameters found")

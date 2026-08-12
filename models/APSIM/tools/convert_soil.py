@@ -197,10 +197,83 @@ def read_hwsd_csv(filepath, lat, lon):
     return layers
 
 
+# Standard APSIM/APSoil discretisation. SKILL.md 4.2 and dag.yaml both give the
+# valid Thickness range as 100-300 mm; HWSD only supplies two horizons (0-30 cm
+# and 30-100 cm), so a naive 1-layer-per-horizon mapping emits a 700 mm layer —
+# 2.3x outside the documented range. A single thick layer makes soil evaporation,
+# root water extraction (KL is applied per layer) and N mineralisation all
+# resolve at the wrong depth scale. Resample onto this grid instead.
+APSIM_LAYER_GRID_MM = [150, 150, 200, 200, 300, 300, 300, 300, 300, 300]
+
+
+def resample_to_apsim_layers(layers, grid=None):
+    """Resample arbitrary input horizons onto the standard APSIM layer grid.
+
+    Each output layer takes thickness-weighted averages of the input horizons it
+    overlaps, so a 0-30/30-100 cm HWSD pair becomes 150/150/200/200/300 mm
+    layers carrying the correct horizon properties. Layer-independent fields
+    (thickness) are rebuilt; every other property is depth-weighted.
+    """
+    if not layers:
+        return layers
+    grid = list(grid or APSIM_LAYER_GRID_MM)
+    total = sum(l["thickness_mm"] for l in layers)
+
+    # Truncate/trim the grid to the depth actually supplied by the input data.
+    bounds, acc = [], 0.0
+    for t in grid:
+        if acc >= total - 1e-6:
+            break
+        t = min(t, total - acc)
+        bounds.append((acc, acc + t))
+        acc += t
+    if acc < total - 1e-6:           # deeper than the grid — extend at 300 mm
+        while acc < total - 1e-6:
+            t = min(300.0, total - acc)
+            bounds.append((acc, acc + t))
+            acc += t
+
+    # Input horizon depth ranges.
+    src, top = [], 0.0
+    for l in layers:
+        src.append((top, top + l["thickness_mm"], l))
+        top += l["thickness_mm"]
+
+    keys = [k for k in layers[0].keys() if k != "thickness_mm"]
+    out = []
+    for lo, hi in bounds:
+        w_total, agg = 0.0, {k: 0.0 for k in keys}
+        for s_lo, s_hi, l in src:
+            w = max(0.0, min(hi, s_hi) - max(lo, s_lo))
+            if w <= 0:
+                continue
+            w_total += w
+            for k in keys:
+                agg[k] += w * float(l[k])
+        if w_total <= 0:             # should not happen; fall back to nearest
+            agg = {k: float(src[-1][2][k]) for k in keys}
+            w_total = 1.0
+        rec = {"thickness_mm": round(hi - lo, 0)}
+        for k in keys:
+            rec[k] = round(agg[k] / w_total, 3)
+        out.append(rec)
+    return out
+
+
 def build_apsim_soil_json(layers, crop, lat, lon):
     """Build APSIM soil JSON structure from layer data."""
 
     n = len(layers)
+
+    # Midpoint depth (mm) of each layer. EVERY depth-dependent soil parameter
+    # below is a function of this, NOT of the layer index: an index-based decay
+    # is only correct when all layers happen to be the same thickness, and gives
+    # (for example) a 30-100 cm horizon the same FInert as a 15-30 cm one.
+    _cum = 0.0
+    mid_depth = []
+    for l in layers:
+        mid_depth.append(_cum + l["thickness_mm"] / 2.0)
+        _cum += l["thickness_mm"]
 
     # Extract arrays
     thickness = [l["thickness_mm"] for l in layers]
@@ -209,6 +282,19 @@ def build_apsim_soil_json(layers, crop, lat, lon):
     ll15 = [l["ll15"] for l in layers]
     dul = [l["dul"] for l in layers]
     sat = [l["sat"] for l in layers]
+    # APSIM requires SAT <= porosity implied by bulk density:
+    # porosity = 1 - BD/particle_density (2.65 g/cc). The Saxton-Rawls SAT can
+    # slightly exceed this for dense layers, causing a hard "Saturation above
+    # acceptable value" abort. Cap SAT to just below porosity and keep DUL<SAT.
+    PARTICLE_DENSITY = 2.65
+    for i in range(n):
+        max_sat = round(1.0 - bd[i] / PARTICLE_DENSITY - 0.005, 3)
+        if sat[i] > max_sat:
+            sat[i] = max_sat
+        if dul[i] >= sat[i]:
+            dul[i] = round(sat[i] - 0.01, 3)
+        if ll15[i] >= dul[i]:
+            ll15[i] = round(dul[i] - 0.01, 3)
     ks = [l["ks"] for l in layers]
     sand = [l["sand"] for l in layers]
     clay = [l["clay"] for l in layers]
@@ -217,10 +303,13 @@ def build_apsim_soil_json(layers, crop, lat, lon):
 
     # Crop-specific lower limit (slightly above LL15)
     crop_ll = [round(l["ll15"] * 1.05, 3) for l in layers]
-    # KL decreases with depth
-    kl = [round(max(0.01, 0.08 - i * 0.01), 3) for i in range(n)]
-    # XF = 1.0 for all layers with roots, decreasing for deep layers
-    xf = [round(max(0.0, 1.0 - max(0, i - 4) * 0.2), 1) for i in range(n)]
+    # KL (root water extraction rate) declines with DEPTH, not layer number.
+    # APSoil cereal profiles: ~0.07-0.08 /d in the topsoil, ~0.04 at 50 cm,
+    # ~0.02 at 1 m.
+    kl = [round(max(0.01, 0.08 * math.exp(-d / 700.0)), 3) for d in mid_depth]
+    # XF (root exploration) full down to ~60 cm, then declining with depth.
+    xf = [round(min(1.0, max(0.2, 1.0 - max(0.0, d - 600.0) / 1000.0)), 2)
+          for d in mid_depth]
 
     # SWCON (drainage rate) — higher for sandy, lower for clay
     swcon = [round(min(0.9, max(0.1, 0.5 + (l["sand"] - 50) * 0.005)), 2)
@@ -232,9 +321,15 @@ def build_apsim_soil_json(layers, crop, lat, lon):
     # Initial water at 50% PAWC
     init_sw = [round(ll15[i] + 0.5 * (dul[i] - ll15[i]), 3) for i in range(n)]
 
-    # Initial nitrogen (decreasing with depth)
-    no3 = [round(max(1.0, 20.0 / (i + 1)), 1) for i in range(n)]
-    nh4 = [round(max(0.1, 2.0 / (i + 1)), 2) for i in range(n)]
+    # Initial mineral nitrogen. InitialValuesUnits=0 means kg/ha PER LAYER, so
+    # the value must scale with the mass of soil in the layer (BD x thickness),
+    # not with the layer index: kg/ha = ppm x BD(g/cc) x thickness(mm) / 100.
+    # A depth-decaying concentration keeps the profile total near 20-25 kg N/ha
+    # regardless of how the profile is discretised.
+    no3 = [round(max(0.5, 4.0 * math.exp(-mid_depth[i] / 500.0)
+                     * bd[i] * layers[i]["thickness_mm"] / 100.0), 1) for i in range(n)]
+    nh4 = [round(max(0.1, 0.4 * math.exp(-mid_depth[i] / 500.0)
+                     * bd[i] * layers[i]["thickness_mm"] / 100.0), 2) for i in range(n)]
 
     soil_json = {
         "$type": "Models.Soils.Soil, Models",
@@ -275,8 +370,26 @@ def build_apsim_soil_json(layers, crop, lat, lon):
                 "Name": "Organic",
                 "Thickness": thickness,
                 "Carbon": oc,
-                "FBiom": [round(max(0.01, 0.04 - i * 0.005), 3) for i in range(n)],
-                "FInert": [round(min(0.99, 0.4 + i * 0.1), 2) for i in range(n)],
+                "CarbonUnits": 0,
+                # SoilCNRatio is required: Organic.Nitrogen = Carbon / SoilCNRatio.
+                # A missing array crashes with a NullReferenceException in
+                # MathUtilities.Divide (Organic.get_Nitrogen).
+                "SoilCNRatio": [12.0 for _ in range(n)],
+                "FOMCNRatio": 40.0,
+                # Fresh organic matter is a per-layer MASS (kg/ha), so it scales
+                # with layer thickness as well as decaying with depth.
+                "FOM": [round(1.2 * layers[i]["thickness_mm"]
+                              * math.exp(-mid_depth[i] / 300.0), 1) for i in range(n)],
+                # FBiom / FInert are depth functions. Deep soil carbon is almost
+                # entirely inert (APSoil: FInert ~0.4 at the surface rising to
+                # 0.9-0.99 below ~60 cm). The previous index-based ramp left a
+                # 30-100 cm horizon at FInert 0.5, i.e. half of a very large deep
+                # carbon pool treated as actively mineralisable — a silent N
+                # source that inflates yield on high-organic-carbon soils.
+                "FBiom": [round(max(0.01, 0.04 * math.exp(-max(0.0, d - 150.0) / 600.0)), 3)
+                          for d in mid_depth],
+                "FInert": [round(min(0.99, 0.4 + 0.6 * (1.0 - math.exp(-max(0.0, d - 150.0) / 350.0))), 2)
+                           for d in mid_depth],
             },
             {
                 "$type": "Models.WaterModel.WaterBalance, Models",
@@ -308,16 +421,42 @@ def build_apsim_soil_json(layers, crop, lat, lon):
                 "Name": "Temperature",
             },
             {
-                "$type": "Models.Soils.Nutrient, Models",
+                # Nutrient lives in Models.Soils.Nutrients (not Models.Soils) and is
+                # resource-backed — the wrong $type/missing ResourceName makes ApsimX
+                # fail with "Could not find type 'Models.Soils.Nutrient'".
+                "$type": "Models.Soils.Nutrients.Nutrient, Models",
                 "Name": "Nutrient",
+                "ResourceName": "Nutrient",
+                "Enabled": True,
+                "ReadOnly": False,
+                "Children": [],
+            },
+            # Initial mineral N is carried by Solute nodes (kg/ha per layer,
+            # InitialValuesUnits=0), as in the shipped APSIM examples. A bare
+            # Models.Soils.Sample node does not initialise the Nutrient solutes.
+            {
+                "$type": "Models.Soils.Solute, Models",
+                "Name": "NO3",
+                "Thickness": thickness,
+                "InitialValues": no3,
+                "InitialValuesUnits": 0,
                 "Children": [],
             },
             {
-                "$type": "Models.Soils.Sample, Models",
-                "Name": "Initial nitrogen",
+                "$type": "Models.Soils.Solute, Models",
+                "Name": "NH4",
                 "Thickness": thickness,
-                "NO3N": no3,
-                "NH4N": nh4,
+                "InitialValues": nh4,
+                "InitialValuesUnits": 0,
+                "Children": [],
+            },
+            {
+                "$type": "Models.Soils.Solute, Models",
+                "Name": "Urea",
+                "Thickness": thickness,
+                "InitialValues": [0.0 for _ in range(n)],
+                "InitialValuesUnits": 0,
+                "Children": [],
             },
         ],
     }
@@ -337,6 +476,10 @@ def process(args):
 
     if not layers:
         return {"status": "error", "errors": ["No soil layers extracted from input"]}
+
+    # HWSD/SoilGrids horizons are far thicker than APSIM's documented 100-300 mm
+    # layer range (SKILL.md 4.2). Resample before parameterising.
+    layers = resample_to_apsim_layers(layers)
 
     soil_json = build_apsim_soil_json(layers, args.crop, args.lat, args.lon)
 

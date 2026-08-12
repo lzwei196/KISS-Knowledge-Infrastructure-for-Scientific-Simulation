@@ -1,0 +1,378 @@
+template_version: "3.5"
+
+identity:
+  model_id: GEOPHIRES
+  name: GEOPHIRES-X
+  ki_class: forward_model
+  repo_url: "https://github.com/NREL/python-geophires-x"
+  full_name: "GEOthermal Energy for the Production of Heat and electricity (IR) Economically Simulated — X (object-oriented)"
+  developer: "NREL (National Renewable Energy Laboratory)"
+  license: "MIT"
+  language: "Python"
+  domain: "geothermal techno-economic simulation"
+  scientific_reference_version: "GEOPHIRES-X (object-oriented v3 lineage)"
+  is_family_dag: false
+  implementation:
+    id: geophires-x
+    version: "3.11.25"
+    provenance: "Python; NREL GEOPHIRES-X (geophires_x package), object-oriented v3 lineage; repo NREL/python-geophires-x."
+  model_class: "process-based techno-economic simulator (deterministic; optional Monte Carlo uncertainty mode)"
+  description: >
+    Free, open-source geothermal techno-economic simulator that couples a reservoir
+    thermal-drawdown model, a wellbore heat/pressure-transport model, a surface-plant
+    energy-conversion model, and an economic model to estimate the production
+    temperature profile, net power/heat output, capital and O&M costs, and the
+    levelized cost of electricity/heat (LCOE/LCOH) over a geothermal project lifetime.
+
+boundary:
+  scope_in:
+    - "Reservoir thermal drawdown / transient production-temperature simulation"
+    - "Wellbore heat-loss and pressure-drop / pumping-power modeling"
+    - "Surface-plant energy conversion (electricity ORC/flash, direct-use heat, cogeneration)"
+    - "Techno-economic estimation: capital cost, O&M cost, LCOE/LCOH, NPV, IRR over plant lifetime"
+  scope_out:
+    - "Detailed multiphase/compressible reservoir flow (delegated to external TOUGH2/SUTRA)"
+    - "Mineral scaling / precipitation chemistry (not modeled)"
+    - "Brine-specific fluid-property corrections (pure-water properties assumed by default)"
+    - "Spatially distributed (gridded) reservoir fields (lumped well-field representation only)"
+  spatial: "0-D"
+  temporal: "annual"
+  closure: "energy-balance"
+  notes: >
+    Spatial representation is a lumped reservoir / well-field system (single project site,
+    no spatial mesh; gridded behavior only via external TOUGH2/SUTRA coupling). Time
+    discretization is annual by default (configurable Time-steps-per-year, default sub-annual
+    ~4). 'energy-balance' closure refers to reservoir heat extraction / thermal-drawdown
+    energy accounting plus an economic accounting closed over the plant lifetime (default
+    30 yr); it is NOT a closed surface energy budget — the surface plant uses
+    efficiency/exergy correlations, not a resolved energy-balance solve.
+
+inputs:
+  forcing:
+    - _reason: >
+        GEOPHIRES is a site techno-economic model, not a weather/time-series-forced model.
+        No external time-varying driver is consumed each timestep; the time-evolving
+        production temperature is a COMPUTED state (thermal drawdown), not an input forcing.
+        (HydroCraft CMFD/MSWX/NASA POWER scaffolding referenced in the KI is wrapper plumbing,
+        not a GEOPHIRES input.)
+  parameters:
+    - {category: reservoir, name: "Geothermal Gradient (Gradient 1..N, up to 4 segments)", unit: "degC/km", source_kind: user_specified, model_input_format: "comma-separated .txt line 'Gradient 1, <value>'", notes: "Stored internally as degC/m (CurrentUnits DEGREESCPERM) though PreferredUnits is degC/km; default 0.05 degC/m = 50 degC/km."}
+    - {category: reservoir, name: "Reservoir Depth", unit: "km", source_kind: user_specified, model_input_format: "comma-separated .txt line", notes: "Default 3.0 km; Min 0.1, Max 15. Drives bottom-hole temperature and well drilling cost."}
+    - {category: reservoir, name: "Maximum Temperature", unit: "degC", source_kind: user_specified, model_input_format: "comma-separated .txt line", notes: "Default 400 degC; silently caps bottom-hole temperature (depth capped so Trock <= Tmax)."}
+    - {category: reservoir, name: "Surface Temperature", unit: "degC", source_kind: user_specified, model_input_format: "comma-separated .txt line", notes: "Default 15 degC; baseline for bottom-hole T = Tsurf + gradient*depth."}
+    - {category: reservoir, name: "Reservoir Heat Capacity", unit: "J/kg/K", source_kind: user_specified, model_input_format: "comma-separated .txt line", notes: "Sets thermal inertia / drawdown rate; typical 700-1200."}
+    - {category: reservoir, name: "Reservoir Density", unit: "kg/m3", source_kind: user_specified, model_input_format: "comma-separated .txt line", notes: "Typical 2000-3500."}
+    - {category: reservoir, name: "Reservoir Thermal Conductivity", unit: "W/m/K", source_kind: user_specified, model_input_format: "comma-separated .txt line", notes: "Typical 1.0-5.0."}
+    - {category: reservoir, name: "Drawdown Parameter", unit: "fraction/year", source_kind: user_specified, model_input_format: "comma-separated .txt line", notes: "Used only by Reservoir Model 4 (Percentage Thermal Drawdown); silently ignored otherwise."}
+    - {category: reservoir, name: "Fracture geometry (Number of Fractures / Shape / Height / Width)", unit: "-, m", source_kind: user_specified, model_input_format: "comma-separated .txt line", notes: "Used only by Reservoir Models 1 (Multiple Parallel Fractures) and 3 (Single Fracture); silently ignored otherwise."}
+    - {category: reservoir, name: "Reservoir Porosity", unit: "-", source_kind: user_specified, model_input_format: "comma-separated .txt line", notes: "Used by Model 2 (1-D Linear Heat Sweep)."}
+    - {category: wellbore, name: "Production / Injection Well Diameter", unit: "inch", source_kind: user_specified, model_input_format: "comma-separated .txt line", notes: "Standard sizes ~5-12 in; drives pressure-drop calculation."}
+    - {category: wellbore, name: "Circulation Pump Efficiency", unit: "fraction", source_kind: user_specified, model_input_format: "comma-separated .txt line", notes: "Typical 0.6-0.9."}
+    - {category: surface_plant, name: "Utilization Factor", unit: "fraction", source_kind: user_specified, model_input_format: "comma-separated .txt line", notes: "Typical 0.8-0.95."}
+    - {category: economics, name: "Discount Rate", unit: "fraction", source_kind: user_specified, model_input_format: "comma-separated .txt line", notes: "Standard economic model; default 0.07; typical 0.03-0.15. Express as fraction not percent."}
+    - {category: economics, name: "Fixed Charge Rate", unit: "fraction", source_kind: user_specified, model_input_format: "comma-separated .txt line", notes: "FCR economic model; typical 0.01-0.20."}
+    - {category: economics, name: "BICYCLE financial parameters (bond fraction, inflated bond/equity interest, inflation rate, combined income tax rate)", unit: "fraction", source_kind: user_specified, model_input_format: "comma-separated .txt lines", notes: "Used only by BICYCLE economic model (3)."}
+    - {category: economics, name: "Cost overrides (drilling, surface plant CAPEX, O&M)", unit: "MUSD", source_kind: user_specified, model_input_format: "comma-separated .txt line", notes: "Optional overrides of internally correlated costs."}
+  initial_conditions:
+    - _reason: >
+        GEOPHIRES derives its start-state reservoir/bottom-hole temperature at runtime from
+        Surface Temperature + Gradient*Depth (capped by Maximum Temperature); there is no
+        user-supplied prognostic start-state field. Reservoir heat content and thermal
+        drawdown are initialized internally.
+  boundary_conditions:
+    - {category: model_selector, name: "Reservoir Model", unit: "enum 0-8", source_kind: user_choice, model_input_format: "comma-separated .txt line", notes: "Selects Cylindrical/MPF(Gringarten)/1-D Linear Heat Sweep/Single Fracture(m/A)/TDP Percentage(default 4=GETEM)/User-Provided/TOUGH2/SUTRA/SBT."}
+    - {category: model_selector, name: "End-Use Option", unit: "enum (1 Electricity, 2 Direct-Use Heat, 31-52 Cogeneration)", source_kind: user_choice, model_input_format: "comma-separated .txt line", notes: "Must be compatible with Power Plant Type or yields zero/negative power."}
+    - {category: model_selector, name: "Power Plant Type", unit: "enum 1-9", source_kind: user_choice, model_input_format: "comma-separated .txt line", notes: "Subcritical/Supercritical ORC, Single/Double Flash, Absorption Chiller, Heat Pump, District Heating, SUTRA, Industrial Heat (9, default before parameter read)."}
+    - {category: model_selector, name: "Economic Model", unit: "enum 1-5 (FCR, Standard, BICYCLE, CLGS, SAM PPA)", source_kind: user_choice, model_input_format: "comma-separated .txt line", notes: "Default 2 (Standard Levelized Cost)."}
+    - {category: design_choice, name: "Number of Production Wells / Number of Injection Wells", unit: "-", source_kind: user_choice, model_input_format: "comma-separated .txt line", notes: "Typical 1-20 production wells."}
+    - {category: design_choice, name: "Production Flow Rate per Well", unit: "kg/s", source_kind: user_choice, model_input_format: "comma-separated .txt line", notes: "Typical 20-150; design lever strongly setting energy output per well."}
+    - {category: design_choice, name: "Injection Temperature", unit: "degC", source_kind: user_choice, model_input_format: "comma-separated .txt line", notes: "Constant reservoir inlet temperature; typical 40-90. Sets usable deltaT."}
+    - {category: design_choice, name: "Plant Lifetime", unit: "years", source_kind: user_choice, model_input_format: "comma-separated .txt line", notes: "Default 30; valid 10-100. Sets simulation horizon and amortization."}
+    - {category: control, name: "Time steps per year / Construction Years", unit: "integer / years", source_kind: user_choice, model_input_format: "comma-separated .txt line", notes: "Default time discretization ~4 steps/yr too coarse for seasonal effects; raise to 12-8760."}
+    - {category: external_file, name: "User-provided temperature-vs-time / external simulator files", unit: "file", source_kind: external_file, model_input_format: "referenced file path", notes: "Model 5 needs temperature-vs-time file; Model 6 TOUGH2 output; Model 7 SUTRA config."}
+
+processes:
+  modules:
+    - name: Model
+      role: driver
+      brief: >
+        Physics-ordering orchestrator (Model.py): reads the input file, selects the
+        reservoir/wellbore/surface-plant/economics subclasses from the option enums, and
+        invokes read_parameters -> Calculate (Reservoir -> WellBores -> SurfacePlant ->
+        Economics) -> Outputs in fixed order. Originates the invoke edges to every solver
+        and to Outputs; physics-ordering orchestration, not a workflow runner.
+    - name: Reservoir
+      role: process_solver
+      brief: >
+        Thermal reservoir model computing bottom-hole rock temperature (Trock), the
+        depth/gradient temperature profile, and the production-temperature time series
+        Tresoutput(t) from thermal drawdown.
+      applicability: >
+        Base/default TDPReservoir (GETEM percentage drawdown, id 4); variants selected by
+        'Reservoir Model': Cylindrical, MPF (Gringarten parallel fractures), LHS (1-D linear
+        heat sweep), SF (single fracture m/A), UPP (user-provided profile), TOUGH2, SUTRA, SBT.
+    - name: WellBores
+      role: process_solver
+      brief: >
+        Wellbore heat/pressure-transport model: Ramey (1962) time-dependent wellbore heat
+        loss giving produced (wellhead) temperature, pressure drops (reservoir/well/buoyancy
+        via Darcy-Weisbach Colebrook-White friction + hydrostatic), pump setting depth, and
+        pumping power.
+      applicability: "AGS / SUTRA / SBT wellbore variants swapped in for closed-loop / storage paths."
+    - name: SurfacePlant
+      role: process_solver
+      brief: >
+        Surface energy-conversion model mapping produced-fluid enthalpy/exergy to gross/net
+        electricity, heat, cooling, and plant availability (utilization efficiency vs
+        production and ambient temperature with linear interpolation across 5/15/25 degC).
+      applicability: >
+        Subcritical/Supercritical ORC, Single/Double Flash, Absorption Chiller, Heat Pump,
+        District Heating, Industrial Heat (default 9), SUTRA, AGS subclasses by 'Power Plant Type'.
+    - name: Economics
+      role: process_solver
+      brief: >
+        Techno-economic model computing capital-cost components (well/stimulation/exploration/
+        plant/gathering with contingency + indirect), O&M, revenue streams, and LCOE/LCOH/NPV/IRR.
+      applicability: >
+        FCR, Standard levelized, BICYCLE, CLGS, or SAM Single-Owner PPA (via nrel-pysam) paths;
+        AGS/SUTRA/SBT/S-DAC-GT/AddOns specialized economics swapped in by option.
+    - name: Outputs
+      role: integrator
+      brief: >
+        Assembles the HDR.out / HDR.json report: summary metrics, economic/engineering/resource
+        sections, production-profile and cashflow tables. Reads economics + reservoir + wellbore
+        + surface-plant state.
+    - name: OptionList
+      role: optional_module
+      brief: "Enumerations (EndUseOptions, PlantType, ReservoirModel, EconomicModel) that drive which subclasses Model instantiates."
+    - name: Parameter
+      role: optional_module
+      brief: "Parameter framework (floatParameter/intParameter/listParameter, ParameterDict/OutputParameterDict); every module declares its state through it."
+    - name: Units
+      role: optional_module
+      brief: "pint-based unit-conversion system supporting Units:/currency auto-conversion of parameters and outputs."
+    - name: GeoPHIRESUtils
+      role: optional_module
+      brief: "read_input_file plus water-property correlations (heat_capacity_water, density_water) consumed by Reservoir/WellBores."
+  internal_edges:
+    - {from: Inputs, to: Model, kind: consumes_input, brief: "read_input_file parses the comma-separated .txt parameter file into Model.InputParameters."}
+    - {from: Inputs, to: Reservoir, kind: consumes_input, brief: "'Reservoir Model' id selects the TDP(default)/Cylindrical/MPF/LHS/SF/UPP/TOUGH2/SUTRA/SBT subclass."}
+    - {from: Inputs, to: SurfacePlant, kind: consumes_input, brief: "'Power Plant Type' selects ORC/Flash/Chiller/HeatPump/DistrictHeating/Industrial subclass."}
+    - {from: Inputs, to: Economics, kind: consumes_input, brief: "'Economic Model' selects FCR/Standard/BICYCLE/CLGS/SAM costing path."}
+    - {from: Model, to: Reservoir, kind: invokes, brief: "reserv.Calculate(self) first in Model.Calculate."}
+    - {from: Model, to: WellBores, kind: invokes, brief: "wellbores.Calculate(self) after reservoir."}
+    - {from: Model, to: SurfacePlant, kind: invokes, brief: "surfaceplant.Calculate(self) after wellbores."}
+    - {from: Model, to: Economics, kind: invokes, brief: "economics.Calculate(self) last."}
+    - {from: Model, to: Outputs, kind: invokes, brief: "outputs.PrintOutputs(model) writes HDR.out/HDR.json."}
+    - {from: Reservoir, to: SurfacePlant, kind: reads_state, brief: "Reservoir builds its timevector from the surface plant's plant_lifetime (undocumented forward coupling)."}
+    - {from: Reservoir, to: WellBores, kind: reads_state, brief: "Reservoir evaluates cpwater/rhowater using the wellbore injection temperature Tinj."}
+    - {from: Reservoir, to: Reservoir.Tresoutput, kind: writes_state, brief: "Reservoir produces the production-temperature time series."}
+    - {from: Reservoir, to: Reservoir.Trock, kind: writes_state, brief: "Reservoir computes bottom-hole rock temperature from surface T + gradient*depth, capped by Tmax."}
+    - {from: Reservoir.Tresoutput, to: WellBores.ProducedTemperature, kind: reads_state, brief: "Wellbore applies Ramey heat-loss temperature drop to the reservoir output temperature."}
+    - {from: WellBores, to: WellBores.PumpingPower, kind: writes_state, brief: "Wellbore computes pumping power from reservoir/well/buoyancy pressure drops."}
+    - {from: WellBores.ProducedTemperature, to: SurfacePlant.TenteringPP, kind: reads_state, brief: "Surface-plant inlet temperature from the wellhead temperature."}
+    - {from: SurfacePlant, to: SurfacePlant.NetElectricityProduced, kind: writes_state, brief: "Surface plant computes net electricity (gross minus parasitic/pumping)."}
+    - {from: WellBores.PumpingPower, to: SurfacePlant.NetElectricityProduced, kind: reads_state, brief: "Parasitic pumping load subtracted from gross power."}
+    - {from: SurfacePlant, to: SurfacePlant.RemainingReservoirHeatContent, kind: writes_state, brief: "Surface plant accumulates extracted heat and tracks remaining reservoir heat content."}
+    - {from: SurfacePlant, to: Reservoir, kind: invokes, brief: "District-heating re-iteration: surface plant updates the utilization factor, triggering a second Reservoir/WellBores/SurfacePlant Calculate pass."}
+    - {from: SurfacePlant.NetElectricityProduced, to: Economics.LCOE, kind: reads_state, brief: "Economics levelizes capital + O&M over produced net energy."}
+    - {from: WellBores, to: Economics, kind: reads_state, brief: "Drilling cost (Cwell) derived from total drilled length and well count."}
+    - {from: Reservoir, to: Economics, kind: reads_state, brief: "Well drilling cost scales with reservoir depth."}
+    - {from: SurfacePlant, to: Economics, kind: reads_state, brief: "Surface-plant capital cost (Cplant) scales with extracted plant thermal/electric size."}
+    - {from: Economics, to: Economics.LCOE, kind: writes_state, brief: "Produces LCOE/LCOH/NPV/IRR financial metrics."}
+    - {from: Economics, to: Outputs, kind: produces_output, brief: "Outputs reads economics + reservoir + wellbore + surface-plant state to assemble the report."}
+
+states:
+  provenance: populated
+  variables:
+    - name: Reservoir.Trock
+      role: diagnostic
+      brief: "Bottom-hole rock temperature, computed once as Tsurf + gradient*depth and capped by Maximum Temperature."
+    - name: Reservoir.Tresoutput
+      role: prognostic
+      brief: "Reservoir production-temperature time series; declines over the project lifetime due to thermal drawdown, advanced each timestep by the selected reservoir model."
+    - name: WellBores.ProducedTemperature
+      role: prognostic
+      brief: "Wellhead produced temperature; reservoir output temperature minus the Ramey time-dependent wellbore heat-loss temperature drop, per timestep."
+    - name: WellBores.PumpingPower
+      role: diagnostic
+      brief: "Pumping power requirement derived from reservoir/well/buoyancy pressure drops; subtracted as parasitic load."
+    - name: SurfacePlant.TenteringPP
+      role: diagnostic
+      brief: "Geofluid temperature entering the power plant, set from the wellhead produced temperature each timestep."
+    - name: SurfacePlant.NetElectricityProduced
+      role: diagnostic
+      brief: "Net electricity (gross conversion minus parasitic pumping load), per timestep."
+    - name: SurfacePlant.RemainingReservoirHeatContent
+      role: accumulator
+      brief: "Remaining reservoir heat content, depleting as heat is mined over the lifetime (tracked via percentage heat mined)."
+    - name: Economics.LCOE
+      role: diagnostic
+      brief: "Levelized cost of electricity (terminal economic metric); LCOH/NPV/IRR computed alongside."
+
+outputs:
+  - var: "LCOE"
+    validation_rank: 2
+    unit: "cents/kWh"
+    description: "Levelized cost of electricity (electricity breakeven price) over the plant lifetime."
+    emitted_in: "HDR.out / HDR.json — Summary of Results"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Compare against reported plant/study LCOE for matched resource grade and financing assumptions; sensitive to discount rate and drilling-cost basis."]
+      detrending_options: []
+  - var: "LCOH"
+    validation_rank: 3
+    unit: "$/MMBTU"
+    description: "Levelized cost of heat (direct-use breakeven price)."
+    emitted_in: "HDR.out / HDR.json — Summary of Results"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Direct-use LCOH comparison complicated by application-specific surface-infrastructure costs not fully captured by GEOPHIRES."]
+      detrending_options: []
+  - var: "Average Net Power"
+    validation_rank: 4
+    unit: "MW (MWe or MWth)"
+    description: "Average net electricity or direct-use heat production over the lifetime."
+    emitted_in: "HDR.out — Summary of Results"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Net of parasitic pumping; check end-use/plant-type compatibility (mismatch yields zero/negative power)."]
+      detrending_options: []
+  - var: "geofluid_production_temperature"
+    validation_rank: 1
+    unit: "degC"
+    description: "Year-by-year production (geofluid) temperature profile reflecting thermal drawdown."
+    emitted_in: "HDR.out — Production Profile table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Drawdown trajectory governed by selected reservoir model; compare against measured production-temperature decline at a matched site."]
+      detrending_options: []
+  - var: "total_capex"
+    validation_rank: 5
+    unit: "MUSD"
+    description: "Total capital cost (drilling + surface plant + exploration + stimulation + gathering)."
+    emitted_in: "HDR.out — Capital Costs"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Dominated by drilling-cost correlation and well count/depth."]
+      detrending_options: []
+  - var: "annual_energy_production"
+    validation_rank: 6
+    unit: "GWh/year"
+    description: "Average annual electricity (or heat) generation profile."
+    emitted_in: "HDR.out — Energy Profile table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Declines with reservoir thermal drawdown; depends on utilization and capacity factor."]
+      detrending_options: []
+
+influence:
+  _caveat: >
+    GEOPHIRES sensitivity literature is techno-economic (tornado / Monte-Carlo on cost and
+    resource drivers), NOT variance-based global sensitivity analysis. None of the cited
+    papers report Sobol St, Morris elementary-effect rank, or EFAST main-effect indices, so
+    every edge basis is 'literature_qualitative'. Because literature_qualitative cannot
+    support a HIGH grade under the unified evidence standard, all edges the readers ranked as
+    'dominant drivers' (geothermal_gradient, drilling_cost, discount_rate,
+    flow_rate_per_production_well, thermal_drawdown_rate, reservoir_depth -> LCOE/LCOH) are
+    graded MEDIUM here; their grade reflects reported tornado rank / stated dominant-driver
+    conclusions, not numeric SA indices.
+  edges:
+    - {from: "geothermal_gradient", to: "LCOE", sensitivity_grade: MEDIUM, basis: literature_qualitative, lever_type: parameter, applicability: "EGS resource grade", citations: ["beckers2014_geophires_levelized_costs", "beckers2019_geophires_v2"]}
+    - {from: "drilling_cost", to: "LCOE", sensitivity_grade: MEDIUM, basis: literature_qualitative, lever_type: parameter, applicability: "always (largest capital component)", citations: ["beckers2014_geophires_levelized_costs", "beckers2019_geophires_v2"]}
+    - {from: "discount_rate", to: "LCOE", sensitivity_grade: MEDIUM, basis: literature_qualitative, lever_type: parameter, applicability: "always", citations: ["beckers2019_geophires_v2", "beckers2014_geophires_levelized_costs"]}
+    - {from: "flow_rate_per_production_well", to: "LCOE", sensitivity_grade: MEDIUM, basis: literature_qualitative, lever_type: management, applicability: "always", citations: ["beckers2014_geophires_levelized_costs", "holmes2022_geothermal_cost_uncertainty"]}
+    - {from: "thermal_drawdown_rate", to: "LCOE", sensitivity_grade: MEDIUM, basis: literature_qualitative, lever_type: parameter, applicability: "always", citations: ["holmes2022_geothermal_cost_uncertainty", "beckers2014_geophires_levelized_costs", "beckers2019_geophires_v2"]}
+    - {from: "reservoir_depth", to: "LCOE", sensitivity_grade: MEDIUM, basis: literature_qualitative, lever_type: parameter, applicability: "always", citations: ["beckers2014_geophires_levelized_costs", "beckers2013_geophires_v1"]}
+    - {from: "power_plant_capital_cost", to: "LCOE", sensitivity_grade: MEDIUM, basis: literature_qualitative, lever_type: parameter, applicability: "secondary tornado bar", citations: ["beckers2019_geophires_v2", "beckers2014_geophires_levelized_costs"]}
+    - {from: "plant_lifetime", to: "LCOE", sensitivity_grade: MEDIUM, basis: literature_qualitative, lever_type: management, applicability: "via amortization", citations: ["beckers2019_geophires_v2"]}
+    - {from: "power_plant_OM_cost", to: "LCOE", sensitivity_grade: MEDIUM, basis: literature_qualitative, lever_type: parameter, applicability: "moderate tornado bar", citations: ["beckers2019_geophires_v2"]}
+    - {from: "well_field_OM_cost", to: "LCOE", sensitivity_grade: LOW, basis: literature_qualitative, lever_type: parameter, applicability: "low-impact bar", citations: ["beckers2019_geophires_v2"]}
+    - {from: "resource_exploration_cost", to: "LCOE", sensitivity_grade: LOW, basis: literature_qualitative, lever_type: parameter, applicability: "minor", citations: ["beckers2019_geophires_v2"]}
+    - {from: "reservoir_stimulation_cost", to: "LCOE", sensitivity_grade: LOW, basis: literature_qualitative, lever_type: parameter, applicability: "EGS only", citations: ["beckers2019_geophires_v2", "beckers2013_geophires_v1"]}
+    - {from: "geothermal_gradient", to: "LCOH", sensitivity_grade: MEDIUM, basis: literature_qualitative, lever_type: parameter, applicability: "direct-use heat", citations: ["beckers2014_geophires_levelized_costs", "beckers2019_geophires_v2"]}
+    - {from: "drilling_cost", to: "LCOH", sensitivity_grade: MEDIUM, basis: literature_qualitative, lever_type: parameter, applicability: "direct-use heat", citations: ["beckers2014_geophires_levelized_costs", "beckers2019_geophires_v2"]}
+    - {from: "discount_rate", to: "LCOH", sensitivity_grade: MEDIUM, basis: literature_qualitative, lever_type: parameter, applicability: "direct-use heat", citations: ["beckers2019_geophires_v2"]}
+    - {from: "fluid_distribution_cost", to: "LCOH", sensitivity_grade: MEDIUM, basis: literature_qualitative, lever_type: parameter, applicability: "direct-use heat only", citations: ["beckers2019_geophires_v2"]}
+  citation_index:
+    beckers2014_geophires_levelized_costs:
+      short_citation: "Beckers et al. 2014"
+      doi: "10.1063/1.4865575"
+      note: "Introduced GEOPHIRES; LCOE/LCOH across gradient/flow/drawdown grades; tornado sensitivity naming gradient, drilling cost, flow rate, discount rate, thermal drawdown as dominant drivers (J. Renewable Sustainable Energy 6:013141)."
+    beckers2019_geophires_v2:
+      short_citation: "Beckers & McCabe 2019"
+      doi: "10.1186/s40517-019-0119-6"
+      note: "GEOPHIRES v2.0 release; built-in LCOE/LCOH tornado over ~10 cost parameters; drilling cost, discount rate, thermal drawdown rate highest-impact (Geothermal Energy 7:5)."
+    beckers2013_geophires_v1:
+      short_citation: "Beckers et al. 2013"
+      doi: ""
+      note: "Original GEOPHIRES v1.0 (38th Stanford Geothermal Workshop); reservoir/wellbore/plant chain feeding LCOE/LCOH; cost vs stimulated volume / well configuration. OSTI 1137085."
+    ross2023_geophires_x:
+      short_citation: "Ross & Beckers 2023"
+      doi: ""
+      note: "GEOPHIRES-X object-oriented update (GRC Transactions Vol. 47); unit/currency auto-conversion, Monte Carlo / sensitivity batch support; retains v2 LCOE/LCOH cost model and parameter-influence structure."
+    holmes2022_geothermal_cost_uncertainty:
+      short_citation: "Holmes et al. 2022"
+      doi: ""
+      note: "Geothermal cost estimation under uncertainty + flexible design (47th Stanford Geothermal Workshop); thermal-drawdown rate found the most critical LCOE uncertainty, ahead of flow rate and drilling cost."
+
+safety:
+  hazards:
+    - {id: "depth_unit_m_vs_km", kind: "control_semantic", description: "Reservoir Depth authored in meters instead of km multiplies effective depth ~1000x, giving runaway bottom-hole temperature and astronomical costs (dt_001).", severity: silent}
+    - {id: "gradient_unit_permK_vs_perm_km", kind: "control_semantic", description: "Temperature gradient given in degC/m instead of degC/km yields near-zero bottom-hole temperature and negligible power (dt_002).", severity: silent}
+    - {id: "flow_rate_unit_volumetric", kind: "control_semantic", description: "Production flow rate per well in m3/s or L/s instead of kg/s (1 m3/s ~ 958 kg/s) gives extreme or zero power and cost errors (dt_003).", severity: silent}
+    - {id: "well_diameter_unit_in_vs_cm", kind: "control_semantic", description: "Production/Injection Well Diameter given in cm or m instead of inches distorts the Darcy-Weisbach pressure-drop and pumping-power calculation; standard sizes are ~5-12 inches (dt_004).", severity: silent}
+    - {id: "heat_capacity_unit_kJ_vs_J", kind: "control_semantic", description: "Reservoir Heat Capacity in kJ/kg/K instead of J/kg/K gives 1000x less thermal inertia and far-too-fast thermal drawdown (dt_006).", severity: silent}
+    - {id: "financial_rate_percent_vs_fraction", kind: "control_semantic", description: "Fixed Charge Rate or Discount Rate given as percent instead of fraction inflates LCOE ~100x (dt_005).", severity: silent}
+    - {id: "max_temperature_silent_cap", kind: "control_semantic", description: "depth*gradient + surface temp exceeding Maximum Temperature (default 400 degC) silently caps bottom-hole temperature, capping power for deep/hot systems (dt_014).", severity: silent}
+    - {id: "unknown_param_silently_ignored", kind: "control_semantic", description: "Misspelled / wrong-case parameter names (and missing-comma lines) are silently ignored and defaults are used, so customized inputs have no effect (dt_008, dt_017).", severity: degraded}
+    - {id: "enduse_planttype_mismatch", kind: "control_semantic", description: "Incompatible End-Use Option and Power Plant Type combination yields contradictory output or zero/negative power (dt_009).", severity: silent}
+    - {id: "ags_classical_silent_revert", kind: "control_semantic", description: "If AGS is declared but wellbore Tini < 375 degC with a single non-vertical section, the surface plant silently reverts to the AGS/classical path (undocumented hardcoded switch).", severity: silent}
+    - {id: "missing_temperature_profile_file", kind: "control_semantic", description: "Reservoir Model 5 (User-Provided) selected without its temperature-vs-time data file present aborts the run; a missing/unreadable input file path likewise halts execution (dt_012, dt_007).", severity: fatal}
+    - {id: "heavy_model_timeout", kind: "numerical_instability", description: "SBT (Model 8) or SUTRA (Model 7) with a large parameter space / fine time-stepping can hang past the run timeout (dt_011).", severity: fatal}
+    - {id: "output_header_drift_parse", kind: "parser_semantic", description: "A GEOPHIRES version change altering output section headers makes header-string parsing return an empty production profile; HDR.json is the more stable format (dt_015).", severity: silent}
+  validation_limits:
+    - "No mineral scaling / precipitation chemistry modeled — may violate injection-temperature constraints in practice."
+    - "Pure-water fluid properties by default; brines require modified correlations."
+    - "Default linear time discretization (~4 steps/year) too coarse for seasonal effects; use 12-8760 steps/year."
+    - "Two-phase or compressible reservoir flow requires external simulators (TOUGH2/SUTRA); built-in models are lumped analytical."
+    - "Lumped 0-D well-field representation — no native spatially distributed reservoir field."
+    - "Models validated primarily against GETEM results and a small number (2-3) of published case studies."
+  warnings:
+    - "Reservoir Model defaults to 4 (TDP / GETEM percentage drawdown) and surface plant to Industrial Heat (type 9) before parameters are read; omitting the intended selection silently uses these defaults."
+    - "Drawdown Parameter is honored only by Reservoir Model 4, and fracture geometry only by Models 1 and 3; supplying them with other models has no effect (dt_010, dt_016)."
+    - "Injection temperature set close to production temperature leaves minimal usable deltaT, giving valid-but-useless near-zero net power (dt_013)."
+    - "Default output path HDR.out overwrites previous results."
+    - "Multi-segment gradients whose thicknesses do not sum to total depth (or mismatch Number of Segments) distort the temperature profile; remainder is dumped on the last segment (dt_018)."
+  assumptions:
+    - {statement: "Pure-water fluid properties are used by default; brine-specific corrections are not applied.", scope: "all reservoir/wellbore/plant thermodynamics", source: "GEOPHIRES-X Theoretical-Basis documentation and Reservoir.py water-property correlations", status: adopted}
+    - {statement: "Vertical wells of equal depth, diameter, and flow rate are assumed (Ramey heat-transmission validity).", scope: "wellbore heat-loss model", source: "GEOPHIRES-X Theoretical-Basis (Wellbore Model) and WellBores.py", status: adopted}
+    - {statement: "Reservoir inlet (injection) temperature is constant over the simulation.", scope: "reservoir thermal-drawdown model", source: "GEOPHIRES-X Theoretical-Basis documentation", status: adopted}
+    - {statement: "The wellbore fluid is incompressible single-phase liquid with constant specific heat.", scope: "Ramey wellbore model", source: "GEOPHIRES-X Theoretical-Basis (Wellbore Model)", status: adopted}
+    - {statement: "The reservoir/well-field is represented as a lumped 0-D system with no spatial mesh.", scope: "spatial geometry", source: "GEOPHIRES-X documentation and Reservoir.py module structure", status: adopted}
+    - {statement: "Energy and economic accounting are closed over the plant lifetime (default 30 yr); the surface plant uses efficiency/exergy correlations rather than a resolved surface energy balance.", scope: "closure", source: "GEOPHIRES-X Theoretical-Basis (Surface Plant Conversion, Economic Calculation Methods)", status: adopted}
+    - {statement: "100% drilling success is assumed by default unless multipliers are applied.", scope: "economic cost model", source: "GEOPHIRES-X Theoretical-Basis (Key Assumptions)", status: tentative}

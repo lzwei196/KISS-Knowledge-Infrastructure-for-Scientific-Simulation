@@ -30,7 +30,7 @@ parameters that significantly affect discharge prediction.
    - Too small → flashy response, quick recession
    - Too large → slow response, long baseflow tail
 
-2. **t0** (0.1–100 m/hr): Controls total baseflow magnitude.
+2. **t0** (ln(T0), range ~ -1 to 9): Controls total baseflow magnitude. NOTE: t0 is LN-transmissivity (binary: szq=exp(t0+log(dt)-TL)), not linear m/hr.
    - Too small → low baseflow
    - Too large → excessive baseflow
 
@@ -58,7 +58,7 @@ parameters that significantly affect discharge prediction.
    ```python
    bounds = {
        'szm':   (0.005, 0.08),
-       't0':    (0.5, 50.0),
+       't0':    (-1.0, 9.0),   # ln(T0) scale
        'td':    (5.0, 80.0),
        'srmax': (0.01, 0.2),
    }
@@ -95,7 +95,7 @@ parameters that significantly affect discharge prediction.
 import numpy as np
 
 param_names = ['szm', 't0', 'td', 'srmax']
-bounds = [(0.005, 0.08), (0.5, 50), (5, 80), (0.01, 0.2)]
+bounds = [(0.005, 0.08), (-1.0, 9.0), (5, 80), (0.01, 0.2)]  # t0 is ln(T0)
 
 best_nse = -999
 best_params = None

@@ -1,175 +1,165 @@
-# TOPMODEL Diagnostic Triplets
-# symptom → diagnosis → remedy
-# Each entry identifies a specific failure mode with actionable fix
-
 triplets:
-
-  # === Unit Conversion Traps ===
-
-  - id: dt_001
-    stage: s1_forcing
-    failure_domain: unit_conversion
-    severity: silent
-    symptom: "Simulated discharge is ~24,000× too high compared to observed"
-    diagnosis: "Precipitation left in mm/day instead of converting to m/hr"
-    remedy: "Divide precipitation by 24,000 (mm→m = ÷1000, day→hr = ÷24)"
-    check: "max(rain) in inputs.dat should be < 0.01 m/hr (10 mm/hr is extreme)"
-
-  - id: dt_002
-    stage: s1_forcing
-    failure_domain: unit_conversion
-    severity: silent
-    symptom: "Simulated discharge is ~24× too high"
-    diagnosis: "Precipitation converted to m/day but not to m/hr"
-    remedy: "Divide precipitation by 24 to convert from m/day to m/hr"
-    check: "max(rain) should be < 0.01; if 0.01–0.1 likely m/day"
-
-  - id: dt_003
-    stage: s1_forcing
-    failure_domain: unit_conversion
-    severity: silent
-    symptom: "Simulated discharge ~1000× too high"
-    diagnosis: "Precipitation in mm/hr instead of m/hr"
-    remedy: "Divide precipitation by 1,000 (mm→m)"
-    check: "If max(rain) > 0.1 but < 10, likely in mm/hr"
-
-  - id: dt_004
-    stage: s1_forcing
-    failure_domain: unit_conversion
-    severity: silent
-    symptom: "No evapotranspiration, all rainfall becomes runoff, PBIAS >> 50%"
-    diagnosis: "PE (potential evapotranspiration) set to zero or not provided"
-    remedy: "Compute PET from temperature/radiation using Hargreaves or Penman-Monteith, convert to m/hr"
-    check: "sumae in topmod.out should be > 0; PE column in inputs.dat should be non-zero"
-
-  - id: dt_005
-    stage: s1_forcing
-    failure_domain: unit_conversion
-    severity: silent
-    symptom: "ET too large, no runoff produced, extremely negative water balance"
-    diagnosis: "PE left in mm/day instead of m/hr"
-    remedy: "Divide PE by 24,000"
-    check: "max(pe) in inputs.dat should be < 0.001 m/hr; if > 0.01, likely mm/day"
-
-  - id: dt_006
-    stage: s1_forcing
-    failure_domain: unit_conversion
-    severity: silent
-    symptom: "PET unrealistically high (>20 mm/day equivalent)"
-    diagnosis: "Temperature used in Kelvin in Hargreaves equation instead of Celsius"
-    remedy: "Subtract 273.15 from temperature before computing PET"
-    check: "Hargreaves uses T+17.8; if T=290K, this gives 307.8 instead of ~34.8"
-
-  - id: dt_007
-    stage: s5_output
-    failure_domain: unit_conversion
-    severity: silent
-    symptom: "Validation metrics (NSE, KGE) are nonsensical (NSE = -1e6)"
-    diagnosis: "Comparing simulated Q in m/hr with observed Q in m³/s"
-    remedy: "Convert both to same units: Q_m3s = Q_mhr × basin_area_m² / 3600"
-    check: "Simulated and observed Q should be same order of magnitude"
-
-  # === Parameter/Format Errors ===
-
-  - id: dt_008
-    stage: s2_twi
-    failure_domain: parameter_format
-    severity: fatal
-    symptom: "Segmentation fault during model execution"
-    diagnosis: "nstep in inputs.dat doesn't match actual number of data lines"
-    remedy: "Verify nstep equals the exact number of rain/pe/qobs lines in inputs.dat"
-    check: "wc -l inputs.dat should equal nstep + 1 (header line)"
-
-  - id: dt_009
-    stage: s2_twi
-    failure_domain: parameter_format
-    severity: degraded
-    symptom: "Water balance error (BAL is large), contributing area always 0 or 1"
-    diagnosis: "TWI distribution area fractions do not sum to 1.0"
-    remedy: "Normalize dist_area_lnaotb so sum equals 1.0"
-    check: "Sum area fractions in subcat.dat; should be 0.99–1.01"
-
-  - id: dt_010
-    stage: s2_twi
-    failure_domain: parameter_format
-    severity: degraded
-    symptom: "Saturated area calculation gives wrong spatial pattern"
-    diagnosis: "TWI values not sorted from high to low in subcat.dat"
-    remedy: "Sort TWI classes by lnaotb descending (highest TWI first)"
-    check: "lnaotb column in subcat.dat should decrease monotonically"
-
-  - id: dt_011
-    stage: s3_params
-    failure_domain: parameter_format
-    severity: fatal
-    symptom: "Division by zero or NaN in model output"
-    diagnosis: "szm parameter set to 0"
-    remedy: "Set szm > 0 (minimum ~0.001 m)"
-    check: "szm is first value in params.dat line 2"
-
-  - id: dt_012
-    stage: s3_params
-    failure_domain: parameter_format
-    severity: degraded
-    symptom: "Initial water balance error, model diverges from start"
-    diagnosis: "sr0 (initial root zone deficit) exceeds srmax"
-    remedy: "Ensure sr0 ≤ srmax in params.dat"
-    check: "Compare 7th value (Q0), 8th value (sr0), and 6th value (srmax)"
-
-  # === Runtime / Path Errors ===
-
-  - id: dt_013
-    stage: s4_execution
-    failure_domain: path_resolution
-    severity: fatal
-    symptom: "'Can't open control file named ./data/topmod.run'"
-    diagnosis: "Binary executed from wrong directory or topmod.run not at expected path"
-    remedy: "Run binary from directory containing data/topmod.run, or copy config to ./data/"
-    check: "ls data/topmod.run from the binary's working directory"
-
-  - id: dt_014
-    stage: s4_execution
-    failure_domain: path_resolution
-    severity: fatal
-    symptom: "'Can't open' error for inputs.dat, subcat.dat, or params.dat"
-    diagnosis: "File paths in topmod.run are wrong (absolute vs relative)"
-    remedy: "Use paths relative to the binary's working directory in topmod.run"
-    check: "Verify all paths in topmod.run resolve from the run directory"
-
-  - id: dt_015
-    stage: s4_execution
-    failure_domain: runtime
-    severity: fatal
-    symptom: "Model runs but produces no output (topmod.out, hyd.out empty)"
-    diagnosis: "stand_alone flag set to 0 in topmod.run"
-    remedy: "Set first line of topmod.run to 1 for standalone execution"
-    check: "head -1 data/topmod.run should show '1'"
-
-  - id: dt_016
-    stage: s4_execution
-    failure_domain: runtime
-    severity: degraded
-    symptom: "Model produces output but Q is constant/flat"
-    diagnosis: "Precipitation values are all zero (wrong column or file format)"
-    remedy: "Verify inputs.dat has non-zero rain values in column 1"
-    check: "awk '{print $1}' inputs.dat | sort -rn | head -5"
-
-  # === Model Physics Traps ===
-
-  - id: dt_017
-    stage: s3_params
-    failure_domain: silent_error
-    severity: silent
-    symptom: "Routing delay is 0 or 1 timestep, no hydrograph attenuation"
-    diagnosis: "Channel velocity (chv) too high relative to channel length"
-    remedy: "Reduce chv or increase channel distances in subcat.dat"
-    check: "tch[1] = dist_from_outlet[1] / (chv × dt) should be > 0"
-
-  - id: dt_018
-    stage: s2_twi
-    failure_domain: silent_error
-    severity: silent
-    symptom: "Channel distance is orders of magnitude wrong"
-    diagnosis: "dist_from_outlet in subcat.dat is in km instead of meters"
-    remedy: "Multiply channel distances by 1000"
-    check: "For basin ~100km wide, max distance should be ~100,000–500,000 m"
+- id: dt_001
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  severity: silent
+  symptom: "Simulated discharge is ~24,000\xD7 too high compared to observed"
+  diagnosis: Precipitation left in mm/day instead of converting to m/hr
+  remedy: "Divide precipitation by 24,000 (mm\u2192m = \xF71000, day\u2192hr = \xF7\
+    24)"
+  check: max(rain) in inputs.dat should be < 0.01 m/hr (10 mm/hr is extreme)
+- id: dt_002
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  severity: silent
+  symptom: "Simulated discharge is ~24\xD7 too high"
+  diagnosis: Precipitation converted to m/day but not to m/hr
+  remedy: Divide precipitation by 24 to convert from m/day to m/hr
+  check: "max(rain) should be < 0.01; if 0.01\u20130.1 likely m/day"
+- id: dt_003
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  severity: silent
+  symptom: "Simulated discharge ~1000\xD7 too high"
+  diagnosis: Precipitation in mm/hr instead of m/hr
+  remedy: "Divide precipitation by 1,000 (mm\u2192m)"
+  check: If max(rain) > 0.1 but < 10, likely in mm/hr
+- id: dt_004
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  severity: silent
+  symptom: No evapotranspiration, all rainfall becomes runoff, PBIAS >> 50%
+  diagnosis: PE (potential evapotranspiration) set to zero or not provided
+  remedy: Compute PET from temperature/radiation using Hargreaves or Penman-Monteith,
+    convert to m/hr
+  check: sumae in topmod.out should be > 0; PE column in inputs.dat should be non-zero
+- id: dt_005
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  severity: silent
+  symptom: ET too large, no runoff produced, extremely negative water balance
+  diagnosis: PE left in mm/day instead of m/hr
+  remedy: Divide PE by 24,000
+  check: max(pe) in inputs.dat should be < 0.001 m/hr; if > 0.01, likely mm/day
+- id: dt_006
+  stage: s1_forcing
+  failure_domain: unit_conversion
+  severity: silent
+  symptom: PET unrealistically high (>20 mm/day equivalent)
+  diagnosis: Temperature used in Kelvin in Hargreaves equation instead of Celsius
+  remedy: Subtract 273.15 from temperature before computing PET
+  check: Hargreaves uses T+17.8; if T=290K, this gives 307.8 instead of ~34.8
+- id: dt_007
+  stage: s5_output
+  failure_domain: unit_conversion
+  severity: silent
+  symptom: Validation metrics (NSE, KGE) are nonsensical (NSE = -1e6)
+  diagnosis: "Comparing simulated Q in m/hr with observed Q in m\xB3/s"
+  remedy: "Convert both to same units: Q_m3s = Q_mhr \xD7 basin_area_m\xB2 / 3600"
+  check: Simulated and observed Q should be same order of magnitude
+- id: dt_008
+  stage: s2_twi
+  failure_domain: parameter_format
+  severity: fatal
+  symptom: Segmentation fault during model execution
+  diagnosis: nstep in inputs.dat doesn't match actual number of data lines
+  remedy: Verify nstep equals the exact number of rain/pe/qobs lines in inputs.dat
+  check: wc -l inputs.dat should equal nstep + 1 (header line)
+- id: dt_009
+  stage: s2_twi
+  failure_domain: parameter_format
+  severity: degraded
+  symptom: Water balance error (BAL is large), contributing area always 0 or 1
+  diagnosis: TWI distribution area fractions do not sum to 1.0
+  remedy: Normalize dist_area_lnaotb so sum equals 1.0
+  check: "Sum area fractions in subcat.dat; should be 0.99\u20131.01"
+- id: dt_010
+  stage: s2_twi
+  failure_domain: parameter_format
+  severity: degraded
+  symptom: Saturated area calculation gives wrong spatial pattern
+  diagnosis: TWI values not sorted from high to low in subcat.dat
+  remedy: Sort TWI classes by lnaotb descending (highest TWI first)
+  check: lnaotb column in subcat.dat should decrease monotonically
+- id: dt_011
+  stage: s3_params
+  failure_domain: parameter_format
+  severity: fatal
+  symptom: Division by zero or NaN in model output
+  diagnosis: szm parameter set to 0
+  remedy: Set szm > 0 (minimum ~0.001 m)
+  check: szm is first value in params.dat line 2
+- id: dt_012
+  stage: s3_params
+  failure_domain: parameter_format
+  severity: degraded
+  symptom: Initial water balance error, model diverges from start
+  diagnosis: sr0 (initial root zone deficit) exceeds srmax
+  remedy: "Ensure sr0 \u2264 srmax in params.dat"
+  check: Compare 7th value (Q0), 8th value (sr0), and 6th value (srmax)
+- id: dt_013
+  stage: s4_execution
+  failure_domain: path_resolution
+  severity: fatal
+  symptom: '''Can''t open control file named ./data/topmod.run'''
+  diagnosis: Binary executed from wrong directory or topmod.run not at expected path
+  remedy: Run binary from directory containing data/topmod.run, or copy config to
+    ./data/
+  check: ls data/topmod.run from the binary's working directory
+- id: dt_014
+  stage: s4_execution
+  failure_domain: path_resolution
+  severity: fatal
+  symptom: '''Can''t open'' error for inputs.dat, subcat.dat, or params.dat'
+  diagnosis: File paths in topmod.run are wrong (absolute vs relative)
+  remedy: Use paths relative to the binary's working directory in topmod.run
+  check: Verify all paths in topmod.run resolve from the run directory
+- id: dt_015
+  stage: s4_execution
+  failure_domain: runtime
+  severity: fatal
+  symptom: Model runs but produces no output (topmod.out, hyd.out empty)
+  diagnosis: stand_alone flag set to 0 in topmod.run
+  remedy: Set first line of topmod.run to 1 for standalone execution
+  check: head -1 data/topmod.run should show '1'
+- id: dt_016
+  stage: s4_execution
+  failure_domain: runtime
+  severity: degraded
+  symptom: Model produces output but Q is constant/flat
+  diagnosis: Precipitation values are all zero (wrong column or file format)
+  remedy: Verify inputs.dat has non-zero rain values in column 1
+  check: awk '{print $1}' inputs.dat | sort -rn | head -5
+- id: dt_017
+  stage: s3_params
+  failure_domain: silent_error
+  severity: silent
+  symptom: Routing delay is 0 or 1 timestep, no hydrograph attenuation
+  diagnosis: Channel velocity (chv) too high relative to channel length
+  remedy: Reduce chv or increase channel distances in subcat.dat
+  check: "tch[1] = dist_from_outlet[1] / (chv \xD7 dt) should be > 0"
+- id: dt_018
+  stage: s2_twi
+  failure_domain: silent_error
+  severity: silent
+  symptom: Channel distance is orders of magnitude wrong
+  diagnosis: dist_from_outlet in subcat.dat is in km instead of meters
+  remedy: Multiply channel distances by 1000
+  check: "For basin ~100km wide, max distance should be ~100,000\u2013500,000 m"
+- id: dt_019
+  symptom:
+    description: "Water-balance residual ~40\u201345% (FAIL) while NSE/KGE/r are normal\
+      \ and daily P/ET/Q rates are physically realistic"
+  diagnosis:
+    root_cause: 'NOAA-OWP standalone TOPMODEL artifact: topmod.out reports ''Maximum
+      contributing area 0.00000'' so the saturation-excess contributing area never
+      closes the standalone mass balance. It is NOT a unit error and does not affect
+      dimensionless metrics.'
+  remedy:
+    action: "Confirm forcing units are correct (max rain realistic, P\u2248900\u2013\
+      1000 mm/yr), confirm rates via parse_topmodel_output, then treat the WB FAIL\
+      \ as a known structural diagnostic flag rather than a tool bug. Do not apply\
+      \ \xD71000/\xD786400 corrections (triplets dt_001\u2013dt_007 do NOT apply)."
+  format_spec_violated: none
+  canonical_intent: ki_local_if_pass
+  added_by_run: TOPMODEL_retry1

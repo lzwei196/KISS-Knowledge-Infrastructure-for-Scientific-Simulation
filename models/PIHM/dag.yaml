@@ -1,0 +1,473 @@
+template_version: "3.5"
+
+identity:
+  model_id: "PIHM"
+  scientific_reference_version: "MM-PIHM v1.0.0 — semi-discrete finite-volume coupled surface-subsurface watershed formulation (Qu & Duffy 2007, WRR)"
+  implementation:
+    id: "mm-pihm"
+    version: "v1.0.0"
+    provenance: "C (with OpenMP); Penn State PSUmodeling MM-PIHM core hydrology build, embedding SUNDIALS CVODE for implicit ODE integration."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c"
+  license: "MIT"
+  repo_url: "https://github.com/PSUmodeling/MM-PIHM"
+
+boundary:
+  scope_in:
+    - "Spatially-distributed physically-based watershed hydrology on an unstructured triangular (TIN) mesh"
+    - "Overland (surface) flow per element"
+    - "Unsaturated (vadose) zone soil water and infiltration"
+    - "Saturated (groundwater) zone lateral and vertical flow, recharge"
+    - "Channel/river routing and river-aquifer exchange"
+    - "Canopy interception and degree-day snow accumulation/melt"
+    - "Evapotranspiration partitioning (canopy evaporation, transpiration, direct soil evaporation)"
+  scope_out:
+    - "Full 3-D Richards-equation subsurface (uses lumped unsat/sat storages with van Genuchten + macropore parameters)"
+    - "Surface energy balance, soil temperature, and snow physics from a land-surface scheme (only in the compile-gated Flux-PIHM variant, out of scope for the core hydrology build)"
+    - "Carbon/nitrogen biogeochemistry and crop growth (compile-gated Flux-PIHM-BGC / Cycles variants)"
+    - "Reservoir operations and detailed hydraulic structures"
+    - "Mesh generation and per-element attribute assignment (external PIHMgis preprocessing)"
+  spatial: "distributed-stream"
+  temporal: "sub-hourly"
+  closure: "mass-balance"
+  notes: "All major hydrologic processes are fully coupled and solved as a single semi-discrete finite-volume ODE system (3*nelem + nriver states) by CVODE; PDEs are discretized in space then integrated implicitly in time. Mass-balance closure covers surface, unsaturated, groundwater, and channel water and is reported via the optional water-balance output (P ~= ET + Q + dS). Snow (SNEQV) and canopy (CMC) stores are updated by explicit Euler outside the CVODE vector at the ET step, so their conservation uses a coarser timestep. No surface energy-balance closure in the core hydrology build (that appears only in the optional Flux-PIHM Noah LSM path)."
+
+inputs:
+  forcing:
+    - {category: forcing, name: "PRCP", unit: "kg/m2/s", source_kind: forcing, model_input_format: ".meteo time series", notes: "Mass flux. 1 kg/m2/s = 3600 mm/hr; passing mm/hr directly is 3600x too high and crashes CVODE."}
+    - {category: forcing, name: "SFCTMP", unit: "K", source_kind: forcing, model_input_format: ".meteo time series", notes: "Air temperature at zlvl; also sets snow/rain partition (TSNOW=-3, TRAIN=1 degC) in the non-Noah ET path."}
+    - {category: forcing, name: "RH", unit: "% (0-100)", source_kind: forcing, model_input_format: ".meteo time series"}
+    - {category: forcing, name: "SFCSPD", unit: "m/s", source_kind: forcing, model_input_format: ".meteo time series", notes: "Measurement height set by WIND_LVL header."}
+    - {category: forcing, name: "SOLAR", unit: "W/m2", source_kind: forcing, model_input_format: ".meteo time series", notes: "Incoming shortwave."}
+    - {category: forcing, name: "LONGWV", unit: "W/m2", source_kind: forcing, model_input_format: ".meteo time series", notes: "Incoming longwave."}
+    - {category: forcing, name: "PRES", unit: "Pa", source_kind: forcing, model_input_format: ".meteo time series", notes: "Surface pressure; drives vapor-pressure / ET demand."}
+    - {category: forcing, name: "LAI", unit: "m2/m2", source_kind: forcing, model_input_format: ".lai time series", notes: "Leaf area index forcing; partitions canopy interception/transpiration."}
+  parameters:
+    - {category: parameters, name: "soil hydraulic + macropore properties (SILT, CLAY, OM, BD, KINF, KSATV, KSATH, MAXSMC, MINSMC, ALPHA, BETA, MACHF, MACVF, DMAC, QTZ; globals DINF, KMACV_RO, KMACH_RO)", unit: "% / g/cm3 / m/s / m3/m3 / 1/m / - / m", source_kind: dataset_lookup, model_input_format: ".soil per-soil-type table", notes: "van Genuchten ALPHA in 1/m, BETA dimensionless; -999 triggers pedotransfer estimation from texture. KSATH >= KSATV expected."}
+    - {category: parameters, name: "geology/bedrock hydraulic properties (KSATV, KSATH, MAXSMC, MINSMC, ALPHA, BETA, MACHF, MACVF, DMAC)", unit: "m/s / m3/m3 / 1/m / - / m", source_kind: dataset_lookup, model_input_format: ".geol per-geology-type table", notes: "Deep/saturated-zone conductivity, typically 10-1000x lower than soil."}
+    - {category: parameters, name: "land-cover/vegetation properties (roughness, albedo, rooting depth, veg fraction)", unit: "various", source_kind: dataset_lookup, model_input_format: ".lc table"}
+    - {category: parameters, name: "river topology and hydraulics (FROM/TO/DOWN/LEFT/RIGHT, DPTH, OINT, CWID, ROUGH, CWR, KH)", unit: "m / s·m^-1/3 / m/s", source_kind: dataset_lookup, model_input_format: ".riv table", notes: "Manning roughness and channel geometry govern channel routing."}
+    - {category: parameters, name: "TIN mesh topology (NUMELE elements NODE1-3/NABR1-3, NUMNODE nodes X/Y/ZMIN/ZMAX)", unit: "m", source_kind: user_provided, model_input_format: ".mesh", notes: "Built externally by PIHMgis from DEM + watershed boundary; the model binary does not generate it."}
+    - {category: parameters, name: "per-element attribute indices (SOIL, GEOL, LC, METEO, LAI)", unit: "-", source_kind: user_provided, model_input_format: ".att", notes: "SOIL index must match .soil ordering or wrong properties are applied silently."}
+    - {category: parameters, name: "calibration multipliers (KSATH, KSATV, KINFV, POROSITY, ALPHA, BETA, DMAC, AREAFH, AREAFV, KMACV, KMACH, PRCP; SFCTMP offset)", unit: "- (multiplier); SFCTMP in K (additive)", source_kind: calibrated, model_input_format: ".calib", notes: "All entries are MULTIPLIERS on base table values (1.0 = no change), applied in InitSoil as elem.soil.X = calib.X * soiltbl.X. SFCTMP is an additive K offset and PRCP is a multiplier."}
+  initial_conditions:
+    - {category: initial_conditions, name: "per-element initial states (surface water, unsaturated storage, groundwater, snow, canopy storage, soil temperature)", unit: "m (K for soil temperature)", source_kind: user_provided, model_input_format: ".ic", notes: "Used when INIT_MODE=1; otherwise set by relaxation/spin-up."}
+    - {category: initial_conditions, name: "per-river initial stage", unit: "m", source_kind: user_provided, model_input_format: ".ic"}
+  boundary_conditions:
+    - {category: boundary_conditions, name: "domain edge boundary conditions (TYPE 1 Dirichlet prescribed head, TYPE 2 Neumann prescribed flux)", unit: "m (head) / m3/s (flux)", source_kind: user_provided, model_input_format: ".bc time series referenced by .att BC1/BC2/BC3", notes: "BC index 0 = no-flow edge; >0 selects a boundary time series."}
+    - {category: boundary_conditions, name: "simulation control switches (SIMULATION_MODE spinup/normal, INIT_MODE relaxation/ic, START/END, MODEL_STEPSIZE, LSM_STEP, MAX_SPINUP_YEAR, output interval codes)", unit: "various (s)", source_kind: user_provided, model_input_format: ".para", notes: "Output interval codes: -1 yearly, -2 monthly, -3 daily, -4 hourly, 0 off, positive N = every N seconds."}
+    - {category: boundary_conditions, name: "CVODE solver controls (ABSTOL, RELTOL, MAX_NONLIN_ITER, step controls)", unit: "m (ABSTOL) / - (RELTOL)", source_kind: user_provided, model_input_format: ".para", notes: "ABSTOL default 1e-4 m; loose ABSTOL (>0.01 m) degrades mass balance across all states."}
+
+processes:
+  modules:
+    - {name: "Driver", role: driver, brief: "Per-output-step orchestrator (pihm.c): applies BC and forcing, runs ET/snow at the ET step, calls the CVODE solver for hydrology, back-calculates mass-balance fluxes, then writes output."}
+    - {name: "CVODE integrator", role: integrator, brief: "Builds the RHS of the 3*nelem + nriver coupled ODE system and integrates it implicitly via SUNDIALS CVODE (BDF + SPGMR) with adaptive sub-stepping (ode.c)."}
+    - {name: "Hydrol", role: process_solver, brief: "Top-level flux assembler called each ODE evaluation (hydrol.c): computes SurfH depression-storage transform, then dispatches ET uptake, lateral, vertical, and river flow."}
+    - {name: "EtUptake", role: process_solver, brief: "State-dependent partition of EDIR/ETT into surface/unsaturated/groundwater sink sources by water-table position relative to soil.depth - rzd/dinf (src/hydrol.c:27-89); ET is not a simple sink and responds nonlinearly to subsurface state."}
+    - {name: "VerticalFlow", role: process_solver, brief: "Infiltration (matrix vs macropore via EffKinf), recharge between unsaturated and saturated zones, vertical effective-K averaging, and van Genuchten Psi/Kr relations (vert_flow.c)."}
+    - {name: "LateralFlow", role: process_solver, brief: "Darcy subsurface flux (SubsurfFlow/EffKh) and Manning diffusive-wave overland flow between triangular elements, plus element boundary fluxes (lat_flow.c)."}
+    - {name: "RiverFlow", role: process_solver, brief: "Channel routing river-to-river, outlet flux, and 6-component element-river exchange across surface and aquifer left/right banks (river_flow.c)."}
+    - {name: "IntcpSnowEt", role: process_solver, brief: "Default (non-Noah) ET path: Penman potential ET, canopy interception/drip (Rutter-Morton), and degree-day snow accumulation/melt; updates CMC and SNEQV by explicit Euler outside CVODE and produces EDIR/EC/ETT (is_sm_et.c)."}
+    - {name: "van Genuchten hydraulics + macropore", role: process_solver, brief: "Soil constitutive relations (retention/conductivity) with a preferential-flow macropore component used by VerticalFlow and LateralFlow."}
+    - {name: "Initialize/ReadAlloc", role: allocator, brief: "Reads mesh/att/soil/geol/lc/riv/para/calib/ic inputs and allocates element/river structures; InitSoil applies .calib multipliers to soil-table parameters (initialize.c, read_alloc.c, init_soil.c)."}
+    - {name: "UpdateVar", role: integrator, brief: "Post-CVODE mass-balance back-calculation of fluxes and derived variables from the updated state vector to enforce conservation between solver steps (update.c)."}
+    - {name: "Spinup", role: optional_module, brief: "Cyclic-forcing spin-up to steady-state subsurface storage (tolerance 0.01 m); writes an initial-condition restart, then hands off to the normal run.", applicability: "when SIMULATION_MODE=1"}
+    - {name: "Noah LSM", role: optional_module, brief: "Flux-PIHM land-surface energy balance computing surface/soil temperature, snow, and ET; replaces IntcpSnowEt.", applicability: "Flux-PIHM build only (_NOAH_ compile flag)"}
+    - {name: "Biome-BGC", role: optional_module, brief: "Optional carbon/nitrogen biogeochemistry module that adds carbon/nitrogen pool state variables to the CVODE vector (src/bgc).", applicability: "Flux-PIHM-BGC build only (_BGC_ compile flag)"}
+    - {name: "Cycles", role: optional_module, brief: "Optional crop agronomy / biogeochemistry module producing yield/biomass/no3/nh4/denitrif outputs and adding agronomic state to the model (src/cycles).", applicability: "Cycles build only (_CYCLES_ compile flag)"}
+    - {name: "Transport", role: optional_module, brief: "Optional advective-dispersive solute transport module adding solute soil-column state variables to the CVODE vector (src/transpt).", applicability: "transport build only (_TRANSPORT_ compile flag)"}
+  internal_edges:
+    - {from: "Initialize/ReadAlloc", to: "van Genuchten hydraulics + macropore", kind: writes_state, brief: "InitSoil sets elem soil params = calib multiplier * soil-table base value (ksath/ksatv/kinfv/porosity/alpha/beta/dmac/areaf)."}
+    - {from: "Driver", to: "IntcpSnowEt", kind: invokes, brief: "Runs the ET/snow step before the hydrology solve."}
+    - {from: "IntcpSnowEt", to: "Inputs", kind: consumes_input, brief: "Reads meteo forcing (prcp/sfctmp/rh/sfcspd/solar/longwave/pres) and LAI."}
+    - {from: "IntcpSnowEt", to: "canopy_interception_storage", kind: writes_state, brief: "Explicit-Euler canopy storage (CMC) update outside CVODE."}
+    - {from: "IntcpSnowEt", to: "snow_water_equivalent", kind: writes_state, brief: "Degree-day snowpack accumulation/melt (SNEQV) outside CVODE."}
+    - {from: "IntcpSnowEt", to: "Hydrol", kind: invokes, brief: "Net throughfall+melt (pcpdrp) and EDIR/EC/ETT fluxes feed the hydrology RHS."}
+    - {from: "CVODE integrator", to: "Hydrol", kind: invokes, brief: "Each CVODE residual evaluation calls Hydrol to compute all fluxes."}
+    - {from: "Hydrol", to: "EtUptake", kind: invokes, brief: "Partition EDIR/ETT into surface/unsaturated/groundwater sources by water-table position."}
+    - {from: "Hydrol", to: "VerticalFlow", kind: invokes, brief: "Compute infiltration and recharge."}
+    - {from: "Hydrol", to: "LateralFlow", kind: invokes, brief: "Compute overland and subsurface inter-element fluxes."}
+    - {from: "Hydrol", to: "RiverFlow", kind: invokes, brief: "Compute channel routing and element-river exchange."}
+    - {from: "EtUptake", to: "unsaturated_zone_storage", kind: writes_state, brief: "Routes the EDIR/ETT unsat-source component as a sink on unsaturated storage when the water table is below the root/infiltration zone."}
+    - {from: "EtUptake", to: "groundwater_head", kind: writes_state, brief: "Routes the EDIR/ETT gw-source component as a sink on saturated storage when the water table is shallow enough to supply ET."}
+    - {from: "VerticalFlow", to: "unsaturated_zone_storage", kind: writes_state, brief: "Infiltration adds to unsaturated storage; can go negative (exfiltration) when GW exceeds soil depth."}
+    - {from: "VerticalFlow", to: "groundwater_head", kind: writes_state, brief: "Recharge transfers water from unsaturated to saturated zone."}
+    - {from: "LateralFlow", to: "groundwater_head", kind: reads_state, brief: "EffKh reads element GW and soil KSATH/KMACH for effective lateral conductivity."}
+    - {from: "LateralFlow", to: "surface_water_depth", kind: writes_state, brief: "Manning overland flow routes ponded surface water between elements."}
+    - {from: "RiverFlow", to: "groundwater_head", kind: reads_state, brief: "RiverToElem reads bank-element GW for aquifer-river exchange."}
+    - {from: "RiverFlow", to: "river_stage", kind: writes_state, brief: "Six river flux components (upstream/downstream/surface and aquifer banks) update channel storage."}
+    - {from: "Hydrol", to: "CVODE integrator", kind: produces_output, brief: "Assembled fluxes feed dy[SURF/UNSAT/GW/RIVER]; UNSAT and GW derivatives are divided by porosity."}
+    - {from: "CVODE integrator", to: "UpdateVar", kind: invokes, brief: "Updated state vector mapped back to elem/river; UpdateVar derives conserved fluxes."}
+    - {from: "Spinup", to: "Driver", kind: invokes, brief: "Cyclic-forcing loop reuses the normal per-step driver until subsurface storage equilibrates."}
+    - {from: "Driver", to: "Outputs", kind: produces_output, brief: "PrintData writes binary [int32 timestamp][float64 x N] records, timestamped at the END of the averaging window."}
+
+states:
+  variables:
+    - {name: "surface_water_depth", unit: "m", role: prognostic}
+    - {name: "unsaturated_zone_storage", unit: "m", role: prognostic}
+    - {name: "groundwater_head", unit: "m", role: prognostic}
+    - {name: "river_stage", unit: "m", role: prognostic}
+    - {name: "snow_water_equivalent", unit: "m", role: prognostic}
+    - {name: "canopy_interception_storage", unit: "m", role: prognostic}
+    - {name: "soil_temperature", unit: "K", role: prognostic}
+  provenance: "populated"
+
+outputs:
+  - var: "GW"
+    validation_rank: 2
+    unit: "m"
+    description: "Groundwater head / saturated-zone water table per element."
+    emitted_in: ".gw.dat"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Requires spin-up to dynamic equilibrium; uncalibrated water-table depth carries an offset bias.", "PIHM .gw.dat is HEAD above the aquifer bottom (m), NOT depth-to-water below land surface; convert via per-element ground elevation before comparing to depth-to-water obs.", "Core PIHM has NO groundwater pumping/abstraction; it cannot reproduce pumping-driven aquifer decline (e.g. China GW Level Yearbook NCP/Huai monitoring wells) — see triplet dt_022, classify as domain-validity SKIP not a calibration miss."]
+      detrending_options: ["none"]
+  - var: "RIVFLX1"
+    validation_rank: 1
+    unit: "m3/s"
+    description: "Downstream channel flux; outlet streamflow taken at the last river segment."
+    emitted_in: ".rivflx1.dat"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Output rows are stamped at the END of the averaging window (a -1 day shift for daily output); align timestamps before scoring.", "Baseflow recession needs spin-up; first 1-5 years without spin-up are unreliable."]
+      detrending_options: ["none"]
+  - var: "SURF"
+    validation_rank: 3
+    unit: "m"
+    description: "Surface ponding/overland water depth per element."
+    emitted_in: ".surf.dat"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Per-element values on the TIN mesh; mapping to a regular grid for comparison interpolates across triangles."]
+      detrending_options: ["none"]
+  - var: "UNSAT"
+    validation_rank: 4
+    unit: "m"
+    description: "Unsaturated (vadose) zone water storage per element."
+    emitted_in: ".unsat.dat"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Storage in m, not volumetric soil moisture; convert by storage/layer-thickness to compare against m3/m3 soil-moisture probes."]
+      detrending_options: ["none"]
+  - var: "SOILM"
+    validation_rank: 5
+    unit: "m"
+    description: "Total soil-column moisture per element."
+    emitted_in: ".soilm.dat"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Available in the Flux-PIHM (Noah) build; convert column storage to volumetric content for probe comparison."]
+      detrending_options: ["none"]
+  - var: "ETT"
+    validation_rank: 6
+    unit: "m/s"
+    description: "Transpiration flux per element."
+    emitted_in: ".ett.dat"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Eddy-covariance towers measure total latent-heat/ET; sum EC + ETT + EDIR before comparison."]
+      detrending_options: ["none"]
+  - var: "SNOW"
+    validation_rank: 7
+    unit: "m"
+    description: "Snow water equivalent per element."
+    emitted_in: ".snow.dat"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Default build uses a degree-day melt scheme (TSNOW/TRAIN thresholds), not energy-balance snow physics; melt timing bias expected in maritime climates."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "van Genuchten alpha (inverse air-entry, ALPHA)"
+      to: "RIVFLX1 (discharge)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      applicability: "always"
+      citations: ["shi2014_fluxpihm_sensitivity", "shi2013_fluxpihm_development"]
+    - from: "van Genuchten alpha (inverse air-entry, ALPHA)"
+      to: "GW (water table depth)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      applicability: "always"
+      citations: ["shi2014_fluxpihm_sensitivity"]
+    - from: "van Genuchten alpha (inverse air-entry, ALPHA)"
+      to: "UNSAT (soil moisture)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      applicability: "always"
+      citations: ["shi2014_fluxpihm_sensitivity"]
+    - from: "van Genuchten beta (pore-size distribution index, BETA)"
+      to: "RIVFLX1 (discharge)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      applicability: "always"
+      citations: ["shi2014_fluxpihm_sensitivity"]
+    - from: "van Genuchten beta (pore-size distribution index, BETA)"
+      to: "UNSAT (soil moisture)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      applicability: "always"
+      citations: ["shi2014_fluxpihm_sensitivity"]
+    - from: "effective porosity (POROSITY)"
+      to: "RIVFLX1 (discharge)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      applicability: "always"
+      citations: ["shi2014_fluxpihm_sensitivity"]
+    - from: "effective porosity (POROSITY)"
+      to: "GW (water table depth)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      applicability: "always"
+      citations: ["shi2014_fluxpihm_sensitivity"]
+    - from: "vertical saturated hydraulic conductivity (KSATV)"
+      to: "GW (water table depth)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      applicability: "always"
+      citations: ["shi2014_fluxpihm_sensitivity", "qu2007_pihm_formulation"]
+    - from: "vertical saturated hydraulic conductivity (KSATV)"
+      to: "UNSAT (soil moisture)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      applicability: "always"
+      citations: ["shi2014_fluxpihm_sensitivity"]
+    - from: "horizontal saturated hydraulic conductivity (KSATH)"
+      to: "RIVFLX1 (baseflow recession)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      applicability: "always"
+      citations: ["shi2013_fluxpihm_development"]
+    - from: "macropore depth / macropore conductivity (DMAC, KMACH)"
+      to: "RIVFLX1 (baseflow recession)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      applicability: "always"
+      citations: ["shi2013_fluxpihm_development"]
+    - from: "Zilitinkevich parameter (Czil, surface exchange coefficient)"
+      to: "land surface / skin temperature"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      applicability: "Flux-PIHM (Noah LSM) build only"
+      citations: ["shi2014_fluxpihm_sensitivity"]
+    - from: "Zilitinkevich parameter (Czil, surface exchange coefficient)"
+      to: "sensible heat flux"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      applicability: "Flux-PIHM (Noah LSM) build only"
+      citations: ["shi2014_fluxpihm_sensitivity"]
+    - from: "canopy minimum stomatal resistance (Rcmin)"
+      to: "ETT / latent heat flux"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      applicability: "Flux-PIHM (Noah LSM) build only"
+      citations: ["shi2014_fluxpihm_sensitivity"]
+    - from: "reference canopy water capacity (S)"
+      to: "RIVFLX1 (peak discharge)"
+      sensitivity_grade: LOW
+      basis: literature_qualitative
+      applicability: "always"
+      citations: ["shi2014_fluxpihm_sensitivity"]
+    - from: "LAI / spatial evapotranspiration estimate"
+      to: "UNSAT (soil moisture)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["yu2016_pihm_et_uncertainty"]
+    - from: "LAI / spatial evapotranspiration estimate"
+      to: "RECHARGE (groundwater recharge)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["yu2016_pihm_et_uncertainty"]
+    - from: "LAI / spatial evapotranspiration estimate"
+      to: "RIVFLX1 (discharge)"
+      sensitivity_grade: LOW
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["yu2016_pihm_et_uncertainty"]
+  citation_index:
+    shi2014_fluxpihm_sensitivity:
+      short_citation: "Shi, Davis, Zhang & Duffy 2014"
+      doi: "10.1175/JHM-D-12-0177.1"
+      note: "Flux-PIHM parameter-sensitivity / identifiability study at Shale Hills CZO; van Genuchten alpha-beta, effective porosity, vertical Ksat, and Czil most influential. Reports RMSD magnitudes and identifiability rankings, not a formal variance-based index."
+    shi2013_fluxpihm_development:
+      short_citation: "Shi, Davis, Duffy & Yu 2013"
+      doi: "10.1175/JHM-D-12-0145.1"
+      note: "Flux-PIHM development and manual calibration; horizontal conductivity and macropore depth control baseflow recession."
+    shi2019_fluxpihm_virtual_calibration:
+      short_citation: "Shi, Bhatt, Davis & Duffy 2019"
+      note: "Informativeness-weighted multi-objective calibration; streamflow most informative, improves water-table and ET fit."
+    yu2016_pihm_et_uncertainty:
+      short_citation: "Yu, Duffy, Shi et al. 2016"
+      doi: "10.1016/j.cageo.2015.05.006"
+      note: "Spatial ET/LAI estimation method drives large soil-moisture and recharge uncertainty but small streamflow/water-table uncertainty."
+    qu2007_pihm_formulation:
+      short_citation: "Qu & Duffy 2007"
+      doi: "10.1029/2006WR005752"
+      note: "Foundational semi-discrete finite-volume PIHM formulation; conductivity/porosity/topography control discharge and water-table dynamics."
+
+safety:
+  hazards:
+    - id: "precip_unit_mmhr_not_kgm2s"
+      kind: "weather_file_semantic"
+      description: "Precipitation supplied in mm/hr (or mm/day) rather than kg/m2/s is ~3600x (or 86400x) too high, causing instant flooding and CVODE CV_TOO_MUCH_WORK crash (dt_001)."
+      severity: "fatal_or_silent"
+      triplet: "dt_001"
+    - id: "temperature_celsius_not_kelvin"
+      kind: "weather_file_semantic"
+      description: "Air temperature in Celsius instead of Kelvin makes the model see ~-253 degC, so all precipitation becomes snow and ET shuts down year-round (dt_002)."
+      severity: "silent"
+      triplet: "dt_002"
+    - id: "pressure_hPa_not_Pa"
+      kind: "weather_file_semantic"
+      description: "Surface pressure in hPa/mbar instead of Pa is 100x too low, corrupting vapor pressure and ET (dt_003)."
+      severity: "silent"
+      triplet: "dt_003"
+    - id: "humidity_type_mismatch"
+      kind: "weather_file_semantic"
+      description: "Specific humidity (kg/kg) or RH fraction passed as RH percentage gives near-zero RH and excessive ET demand (dt_004)."
+      severity: "degraded"
+      triplet: "dt_004"
+    - id: "radiation_MJperday_not_Wm2"
+      kind: "weather_file_semantic"
+      description: "Shortwave/longwave radiation in MJ/m2/day instead of W/m2 is ~12x too low; snow never melts and ET collapses (dt_005)."
+      severity: "silent"
+      triplet: "dt_005"
+    - id: "wind_kmhr_not_ms"
+      kind: "weather_file_semantic"
+      description: "Wind speed in km/hr instead of m/s is 3.6x too fast, lowering aerodynamic resistance and inflating ET (dt_006)."
+      severity: "degraded"
+      triplet: "dt_006"
+    - id: "ksat_cmhr_not_ms"
+      kind: "soil_semantic"
+      description: "Hydraulic conductivity in cm/hr instead of m/s makes soil ~360000x too permeable, causing instant drainage and steep baseflow recession (dt_007)."
+      severity: "silent"
+      triplet: "dt_007"
+    - id: "vg_alpha_percm_not_perm"
+      kind: "soil_semantic"
+      description: "van Genuchten alpha in 1/cm instead of 1/m is 100x off, wrongly making soil appear sandy with too-fast drainage (dt_008)."
+      severity: "silent"
+      triplet: "dt_008"
+    - id: "elevation_depth_cm_or_feet_not_m"
+      kind: "soil_semantic"
+      description: "Elevation/depth values (ZMIN, ZMAX, DMAC, DINF) supplied in cm or feet instead of meters corrupt mesh and storage geometry: cm is 100x too thin, feet ~3x too thick, giving near-zero or massive element storage capacity (dt_009)."
+      severity: "degraded"
+      triplet: "dt_009"
+    - id: "bulk_density_kgm3_not_gcm3"
+      kind: "soil_semantic"
+      description: "Bulk density in kg/m3 instead of g/cm3 is 1000x too high, corrupting derived thermal/physical soil properties (dt_010)."
+      severity: "silent"
+      triplet: "dt_010"
+    - id: "soil_index_att_soil_mismatch"
+      kind: "soil_semantic"
+      description: "SOIL index in .att not matching the .soil table order silently assigns wrong soil properties per element; the model still runs (dt_018)."
+      severity: "silent"
+      triplet: "dt_018"
+    - id: "calib_absolute_not_multiplier"
+      kind: "coefficient_runtime_silent_fallback"
+      description: ".calib entries are multipliers on base table values (1.0 = no change); supplying absolute values (e.g. KSATH=1e-5) silently scales conductivity to near zero. SFCTMP is an additive K offset, PRCP a multiplier (dt_011)."
+      severity: "silent"
+      triplet: "dt_011"
+    - id: "no_spinup_default_ic"
+      kind: "initial_condition_semantic"
+      description: "Starting without spin-up (INIT_MODE=0 from arbitrary IC) leaves groundwater far from equilibrium; baseflow is unrealistically low for the first 1-5 years (dt_012)."
+      severity: "degraded"
+      triplet: "dt_012"
+    - id: "abstol_too_loose"
+      kind: "numerical_instability"
+      description: "CVODE ABSTOL above ~0.01 m allows up to ~1 cm unaccounted water per step, accumulating mass-balance drift over thousands of steps (dt_013)."
+      severity: "degraded"
+      triplet: "dt_013"
+    - id: "cvode_convergence_failure"
+      kind: "numerical_instability"
+      description: "Stiff system or bad input (precip spike, degenerate triangle, extreme Ksat contrast) yields CV_TOO_MUCH_WORK / CV_CONV_FAILURE; reduce MODEL_STEPSIZE or raise MAX_NONLIN_ITER. Degenerate/low-quality TIN triangles (angles <10-15 deg) are a common cause (dt_015, dt_016)."
+      severity: "fatal"
+      triplet: "dt_015"
+    - id: "negative_state_sigfpe"
+      kind: "numerical_instability"
+      description: "A state variable going negative (very permeable soil + intense rain or bad IC) triggers sqrt/log of a negative number and a SIGFPE crash (dt_020)."
+      severity: "fatal"
+      triplet: "dt_020"
+    - id: "output_interval_code_confusion"
+      kind: "control_semantic"
+      description: "Output interval codes are signed: -1 yearly, -2 monthly, -3 daily, -4 hourly, 0 off, positive N = every N seconds. Confusing -3 (daily) with 3 (every 3 s) produces GB-scale files (dt_014)."
+      severity: "degraded"
+      triplet: "dt_014"
+    - id: "output_timestamp_end_of_window"
+      kind: "parser_semantic"
+      description: "Binary output rows are timestamped at the END of the averaging window (solver time advanced before write), so a row labeled day N holds the mean for day N-1 (a -1 day shift)."
+      severity: "silent"
+    - id: "binary_endianness_mismatch"
+      kind: "parser_semantic"
+      description: "Reading binary .dat output across platforms with different endianness yields byte-swapped garbage values (dt_019)."
+      severity: "degraded"
+      triplet: "dt_019"
+    - id: "forcing_gaps_sentinel_interpolation"
+      kind: "weather_file_semantic"
+      description: "Gaps or -999 sentinels in meteorological forcing get linearly interpolated by the model, injecting extreme artifact values (dt_017)."
+      severity: "degraded"
+      triplet: "dt_017"
+  validation_limits:
+    - "Core build uses lumped unsaturated/saturated storages with van Genuchten + macropore parameters, not a full 3-D Richards solution."
+    - "Default (non-Noah) build resolves snow via a degree-day scheme, not energy-balance physics; surface energy fluxes and soil temperature require the Flux-PIHM Noah LSM variant."
+    - "Sub-daily MODEL_STEPSIZE notwithstanding, the degenerate-triangle and sink sensitivity means solution quality is bounded by external PIHMgis mesh quality (minimum angle >15 deg recommended)."
+    - "Spin-up to dynamic subsurface equilibrium is required before a credible production run."
+  warnings:
+    - "Snow (SNEQV) and canopy (CMC) stores are integrated by explicit Euler outside the CVODE vector at the ET step, so their mass balance uses a coarser timestep than the surface/unsaturated/groundwater/river states."
+    - "Infiltration can be negative (exfiltration) when groundwater exceeds soil depth; the upward unsat-gw coupling is implicit and easy to overlook when interpreting INFIL/RECHARGE output."
+    - "ET partitioning (EDIR/ETT) is state-dependent on water-table position, so it is not a simple sink and responds nonlinearly to subsurface state."
+  assumptions:
+    - statement: "Point/element-wise unsaturated and saturated zones are represented as lumped effective-depth storages with van Genuchten retention plus a macropore preferential-flow term, not a full 3-D Richards equation."
+      scope: "subsurface vadose and groundwater processes"
+      source: "Qu & Duffy 2007 (DOI 10.1029/2006WR005752) and MM-PIHM vert_flow / hydrol module structure"
+      status: "adopted"
+    - statement: "The dag describes the core PIHM hydrology build; the Noah LSM energy balance, Biome-BGC, Cycles, and solute transport are compile-flag-gated optional variants and out of scope for this implementation's default behavior."
+      scope: "model variant boundary"
+      source: "MM-PIHM README (PSUmodeling) and _NOAH_/_BGC_/_CYCLES_/_TRANSPORT_ compile flags in the MM-PIHM source"
+      status: "adopted"
+    - statement: ".calib values are interpreted as multiplicative scalars on base parameter tables (additive offset for SFCTMP, multiplier for PRCP), applied at initialization."
+      scope: "calibration parameters"
+      source: "InitSoil behavior in MM-PIHM init_soil.c and the MM-PIHM User's Guide calibration section"
+      status: "adopted"
+    - statement: "Mass-balance closure holds for water, channel, and (when enabled) accounting modules; there is no surface energy-balance closure unless the Flux-PIHM Noah LSM path is active."
+      scope: "conservation closure"
+      source: "MM-PIHM water-balance output (WATBAL_OUTPUT) and IntcpSnowEt vs Noah module structure"
+      status: "adopted"
+    - statement: "Daily/averaged output rows are timestamped at the end of the averaging window (label day N = mean of day N-1)."
+      scope: "output time convention"
+      source: "MM-PIHM PrintData/SolveCVode ordering in the model source"
+      status: "tentative"

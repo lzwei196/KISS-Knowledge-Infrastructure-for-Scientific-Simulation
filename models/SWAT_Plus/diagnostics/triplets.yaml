@@ -1305,3 +1305,292 @@ triplets:
       prevention: "Always include calibration.cal in the TxtInOut setup checklist."
     severity: "silent"
     cross_references: ["dt_033"]
+
+  - id: dt_wq_004
+    stage: "s9_output_parsing"
+    failure_domain: "silent_error"
+    symptom:
+      description: "WQ verifier against a China National guokongzhan (e.g. station 2258 Bengbu Sluice) reports r<0.5 and large negative NSE on derived in-stream concentration, despite clean run and water balance. NH3-N PBIAS approaches -3000%."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "Obs is in-stream CONCENTRATION (mg/L) of a single species at a gate-regulated station with no co-located discharge. With wq_cha=0 mandatory (Rev 59.3 QUAL2E blowup, dt_wq_001/dt_036), SWAT+ has no in-stream concentration state and exports only HRU LOADS (kg). Deriving conc as HRU_load/channel_flo_out yields ~0 mg/L in dry months (no baseflow/benthic/gate floor) so pattern correlation collapses; comparing TOTAL-N export to obs NH3-N adds a species mismatch."
+      explanation: >
+        This is a domain mismatch, not calibration or a tool bug: no in-stream
+        state variable exists to fit, so parameter tuning cannot create the
+        ~0.1 mg/L floor a real sluice holds. The reliable KI output (loads) is
+        fine (station 2258 TP load PBIAS +37.7%, within Moriasi +/-40%).
+      affected_components:
+        - "verifier WQ target selection"
+        - "basin_ls_day HRU loads"
+    remedy:
+      action: "Do not derive in-stream concentration from HRU_load/flow and do not compare TOTAL-N to NH3-N. Remap the verifier target to LOADS (kg) via validate_water_quality.py, or use concentration paired with measured discharge so load = C x Q. A bare concentration series at a guokongzhan is not a valid target for this KI."
+      steps:
+        - "Use annual/monthly LOAD (kg) comparison (PBIAS for loads, R for monthly)"
+        - "Match species: SWAT+ exports TOTAL-N (surqno3+sedorgn), not single dissolved NH3-N"
+        - "Re-enabling QUAL2E for an in-stream floor needs a Rev 60.5+ binary (requires_data), not available"
+      prevention: "See SKILL.md 'Validating WQ against CONCENTRATION observations (guokongzhan)'."
+    severity: "silent"
+    cross_references: ["dt_wq_001", "dt_036"]
+
+  - id: dt_038
+    symptom:
+      description: "Delineated basin area is 5-15% larger than the gauge's published drainage area, and the snapped outlet sits km downstream of the requested lat/lon. Sim discharge is biased high in proportion to the extra area."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "delineate_watershed.py passed snap_dist=0.15 (DEM map units = DEGREES, ~17 km) to whitebox snap_pour_points, which relocates the pour point to the MAXIMUM flow-accumulation cell within that radius. Any outlet within 17 km of a larger channel is dragged downstream past confluences."
+      explanation: >
+        snap_pour_points always moves DOWNSTREAM (toward higher accumulation),
+        so an over-large radius can never be conservative. At Zijingguan (Juma,
+        published 1760 km2) it snapped 8 km NE and delineated 1931 km2 (+10%).
+        With snap_dist=0.01 deg at the true gauge cell: 1767.2 km2 (+0.4%).
+      affected_components:
+        - "tools/s1/delineate_watershed.py"
+        - "basin area, all specific-discharge comparisons"
+    remedy:
+      action: "Pass snap_dist explicitly (6th CLI arg, default 0.01 deg ~1 km) and ALWAYS compare the tool's reported delineated_area_km2 against the gauge's published drainage area before proceeding."
+      steps:
+        - "python tools/s1/delineate_watershed.py <dem> <lat> <lon> <out_dir> 25 0.01"
+        - "Locate the true gauge cell first: find the flow-accumulation cell whose upstream area matches the published drainage area, and delineate from THAT lat/lon"
+        - "Reject the delineation if |area - published| / published > 0.05"
+      prevention: "The tool now reports delineated_area_km2 + snapped_outlet_lat/lon in its result JSON."
+    severity: "silent"
+    cross_references: ["dt_008"]
+
+  - id: dt_039
+    symptom:
+      description: "SWAT+ runs but every HRU/subbasin behaves as if at sea level; station files (.pcp/.tmp) all carry elev 0.0 in their 3rd header line even in a mountain basin."
+      error_pattern: ""
+      detection_method: "file_inspection"
+    diagnosis:
+      root_cause: "prepare_weather_files.py did `from ki_tools_common.terrain import point_elevation` inside a bare try/except. That symbol does not exist (the module exports get_terrain), so ImportError was swallowed and elev fell back to 0.0 for every station in every basin."
+      explanation: >
+        A bare `except Exception` around an import turns a missing-symbol bug
+        into a silent wrong default. Station elevation feeds the wgn record and
+        the orographic temperature/precipitation lapse.
+      affected_components:
+        - "tools/s3/prepare_weather_files.py"
+        - "weather-wgn.cli elevation, lapse rates"
+    remedy:
+      action: "Use get_terrain(lat, lon)['elevation']; warn (do not silently accept) when elev == 0."
+      steps:
+        - "python3 -c \"from ki_tools_common.terrain import get_terrain; print(get_terrain(39.32, 114.58))\""
+        - "Check line 3 of each .pcp: `nbyr tstep lat lon elev`"
+      prevention: "Never wrap an import of a specific symbol in a broad except that falls back to a plausible constant."
+    severity: "silent"
+    cross_references: ["dt_012"]
+
+  - id: dt_040
+    symptom:
+      description: "SWAT+ cannot bind weather to objects, or reads the wrong file per variable: hru.con/rout_unit.con name station `sta01` while pcp.cli lists `p000001.pcp`; or weather-sta.cli exists but SWAT+ behaves as if there were no precipitation."
+      error_pattern: ""
+      detection_method: "file_inspection"
+    diagnosis:
+      root_cause: "Two contract breaks between S2 and S3. (a) prepare_weather_files.py hardcoded station names p%06d while generate_hru_from_global.py writes wst=staNN. (b) generate_weather_stations.py wrote weather-sta.cli in the WRONG column order (pcp first, wgn last, no wnd_dir/atmo_dep) using bare stems, and wrote `wgn.wgn` instead of the `weather-wgn.cli` that rev59's file.cio names."
+      explanation: >
+        SWAT+ matches spatial objects to weather stations BY NAME, and reads
+        weather-sta.cli positionally. The verified layout, from the shipped
+        developer example run_lrew/swatplus_rev59_demo/weather-sta.cli, is:
+            name  wgn  pcp  tmp  slr  hmd  wnd  wnd_dir  atmo_dep
+        with the pcp..wnd columns holding FILE names including extension.
+      affected_components:
+        - "tools/s3/prepare_weather_files.py"
+        - "tools/s3/generate_weather_stations.py"
+        - "docs/s3_weather_preparation_skill.md (documents the wrong spec)"
+    remedy:
+      action: "Pass S2's station names into S3 (7th arg), and let generate_weather_stations reuse the names already declared in weather-sta.cli."
+      steps:
+        - "names=$(python3 -c \"print([l.split()[8] for l in open('TxtInOut/rout_unit.con').read().split(chr(10))[2:] if l.strip()])\")"
+        - "python tools/s3/prepare_weather_files.py cmfd <dir> <coords> <start> <end> <out> \"$names\""
+        - "python tools/s3/generate_weather_stations.py TxtInOut/pcp.cli <coords> <coords> TxtInOut"
+        - "Verify: head -3 TxtInOut/weather-sta.cli  ->  name wgn pcp tmp slr hmd wnd wnd_dir atmo_dep"
+      prevention: "Diff any generated weather-sta.cli against the LREW demo before running."
+    severity: "fatal"
+    cross_references: ["dt_002"]
+
+  - id: dt_041
+    symptom:
+      description: "After calling configure_print_prt.py the model produces the wrong output files, or reads garbage flags: requested daily channel output never appears, or SWAT+ stops with a read error in print.prt."
+      error_pattern: "print.prt"
+      detection_method: "file_inspection"
+    diagnosis:
+      root_cause: "configure_print_prt.py regenerated print.prt from a 21-entry object list that was in the wrong order, omitted `channel`, basin_pw/basin_res/basin_cha/basin_sd_cha, every region_*, hyd and ru, invented `channel_sdmorph`, and dropped the csvout/dbout/cdfout and soilout/mgtout/hydcon/fdcout header blocks."
+      explanation: >
+        SWAT+ reads print.prt SEQUENTIALLY. Object rows are identified by
+        POSITION, not by the name in column 1. A missing, extra, or reordered
+        row shifts every subsequent read, so flags land on the wrong objects.
+        The canonical order (37 object rows) is in the shipped demo print.prt.
+      affected_components:
+        - "tools/s7/configure_print_prt.py"
+    remedy:
+      action: "Edit the existing print.prt in place: change nyskip and only the flags of the requested categories, preserving structure and row order. The tool now does this, with a canonical 37-row fallback."
+      steps:
+        - "diff <(awk '/^objects/,0{print $1}' TxtInOut/print.prt) <(awk '/^objects/,0{print $1}' /mnt/disk1/Hydrocraft_server/models/SWAT_Plus/run_lrew/swatplus_rev59_demo/print.prt)"
+        - "Confirm 37 object rows and the csvout/soilout blocks are present"
+      prevention: "COPY-FIRST: never regenerate a fixed-layout Fortran control file from a Python list."
+    severity: "fatal"
+    cross_references: ["dt_001", "dt_005"]
+
+  - id: dt_042
+    symptom:
+      description: "calibration.cal is written and SWAT+ runs, but the simulated hydrograph is bit-identical to the uncalibrated run for some parameters (notably alpha_bf, gw_delay, perco, cn3_swf) while others (cn2, esco) do take effect."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "SWAT+ matches calibration.cal rows against the names in cal_parms.cal. Rev59 spells the aquifer recession/delay parameters `alpha` and `delay`; the SWAT2012-era `alpha_bf`/`gw_delay` do not match and are silently ignored. `perco` and `cn3_swf` are not in cal_parms.cal at all (they are hydrology.hyd fields written at HRU generation)."
+      explanation: >
+        Same silent-ignore class as the missing count line. generate_calibration_file.py's
+        VALID_PARAMS and CALIBRATION_PRESETS both used the unmatched names, so
+        the documented `semi_arid` preset silently applied only cn2 and esco.
+      affected_components:
+        - "tools/s6/generate_calibration_file.py"
+        - "SKILL.md calibration preset table"
+    remedy:
+      action: "Use the rev59 names. The tool now aliases alpha_bf->alpha and gw_delay->delay, and DROPS (with a warning) any name absent from the project's own cal_parms.cal."
+      steps:
+        - "awk 'NR>2{print $1}' TxtInOut/cal_parms.cal | grep -x alpha"
+        - "Set perco / cn3_swf structurally: tools/s2/generate_hru_from_global.py --perco 0.30 --cn3_swf 0.5"
+        - "Confirm the effect: the calibrated channel_day.txt must differ from the uncalibrated one"
+      prevention: "Always diff a calibrated run against the uncalibrated baseline before trusting a preset."
+    severity: "silent"
+    cross_references: ["dt_004"]
+
+  - id: dt_043
+    symptom:
+      description: "CMFD forcing for a year contains more days than the calendar year (e.g. 396 days for 2003), or annual precipitation shifts when the requested period changes. Tmax == Tmin on every day."
+      error_pattern: ""
+      detection_method: "value_comparison"
+    diagnosis:
+      root_cause: "TWO independent CMFD traps. (1) ki_tools_common.load_forcing._load_cmfd globbed `*{year}*.nc`, which matches the year as a SUBSTRING of another stamp: `*2003*` also matches `..._202003.nc` (March 2020). Years 2001-2012 silently absorbed a 2020 month. (2) The CMFD 01dy (daily) store carries only a daily MEAN temperature, so Tmax==Tmin; the 03hr store has the sub-daily samples needed for a real diurnal range."
+      explanation: >
+        (1) inflated 2003 precipitation from 511.7 to 530.2 mm/yr at Zijingguan
+        and produced 396 daily records for a 365-day year. (2) collapses the
+        diurnal range: Hargreaves PET (~ sqrt(Tmax-Tmin)) goes to ~0 and the
+        temperature-index snowmelt loses its melt/freeze cycle, silently.
+      affected_components:
+        - "ki_tools_common/load_forcing.py (_load_cmfd)"
+        - "tools/s3/prepare_weather_files.py"
+        - "tools/s3/validate_weather_data.py"
+    remedy:
+      action: "Anchor the year glob to the `_YYYYMM` stamp and force sub-daily forcing for temperature. Both are fixed: the loader now rejects out-of-range/duplicate dates, and validate_weather_data flags >95% Tmax==Tmin."
+      steps:
+        - "Use forcing_dir=/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg"
+        - "Assert len(dates) == 365/366 per requested year"
+        - "python tools/s3/validate_weather_data.py <weather_dir>   # must report 0 silent_errors"
+        - "For many stations use load_daily_forcing_points(): it reads each monthly NetCDF once for ALL stations (a 6-station basin then costs what 1 station did)"
+      prevention: "Never trust an unanchored year glob on files stamped YYYYMM."
+    severity: "silent"
+    cross_references: ["dt_003", "dt_012"]
+
+  - id: dt_044
+    symptom:
+      description: "SWAT+ over-predicts discharge and rchg_dp barely moves total volume. aquifer_yr.txt prints an absurd dep_wt (e.g. 976 m) and aquifer flo + seep EXCEEDS rchrg every year (the store drains its initial condition for the whole run). Raising rchg_dp 0.05 -> 0.6 changes aquifer flo only 99.84 -> 95.36 mm/yr even though seep correctly becomes 59.91 mm/yr."
+      error_pattern: ""
+    diagnosis:
+      root_cause: "tools/s2/generate_hru_from_global.py write_aquifer_files() wrote FABRICATED aquifer.aqu defaults and MIS-NAMED two columns. Against the only ground truth on disk (demo_lrew/swatplus_rev60_demo/aquifer.aqu, written by SWAT+ Editor v2.1.0): gw_flo 2500.0 vs 0.05; dep_bot (called 'gw_dp') 1000.0 m vs 10.0 m; dep_wt ('gw_ht') 1.0 vs 3.0; flo_min 1000.0 vs 3.0; revap_min 750.0 vs 5.0. Columns 7/8 were named ptl_n/ptl_p (so written 0.0) where SWAT+ expects carbon=0.5 and flo_dist=50.0. dep_bot 1000 m x spec_yld 0.05 = a 50,000 mm aquifer, so the store never equilibrates and rchg_dp is a near-dead lever."
+      evidence:
+        - "aquifer_yr.txt dep_wt = 976 m"
+        - "flo (99.84) + seep (5.00) > rchrg (99.93) mm/yr, every year"
+        - "calibration.cal `flo_min` 1000 -> 3 alone cut mean simulated Q 14.83 -> 9.24 m3/s"
+      affected_tools:
+        - "tools/s2/generate_hru_from_global.py"
+    remedy:
+      action: "Take aquifer.aqu column names and default magnitudes verbatim from the shipped SWAT+ Editor demo. FIXED in s2."
+      steps:
+        - "head -4 demo_lrew/swatplus_rev60_demo/aquifer.aqu   # ground truth"
+        - "Assert aquifer_yr.txt dep_wt is O(1-10 m), not O(1000 m)"
+        - "Assert area-weighted (flo + seep + revap) <= rchrg + storage drawdown"
+      prevention: "Never invent defaults for a model input file when a vendor-written example of that exact file ships with the KI. Diff against it column by column."
+    severity: "silent"
+    cross_references: ["dt_013", "dt_045"]
+
+  - id: dt_045
+    symptom:
+      description: "A SWAT+ calibration sweep reports 'calibrated' but successive trials produce BIT-IDENTICAL output. Sweeping surlag, awc, canmx, delay or revap_co changes nothing, even though every one of those names is present in the project's own cal_parms.cal."
+      error_pattern: ""
+    diagnosis:
+      root_cause: "Membership in cal_parms.cal is NECESSARY BUT NOT SUFFICIENT: the rev59 binary declares many parameter names it never actually applies from calibration.cal. Measured at Zijingguan 2026-07-10 by running the real binary once per parameter at an extreme value and md5-ing the 18-yr daily outlet series against the uncalibrated run. APPLIED: cn2, esco, epco, k, alpha, lat_ttime, flo_min. SILENT NO-OP: canmx, surlag, awc, delay, revap_co, slope_len, perco, dep_imp. Setting soil LYR1/LYR2 does NOT rescue awc. s6 previously wrote all of them, so a sweep over a no-op name explored nothing while reporting success."
+      evidence:
+        - "surlag absval 0.05 and 24.0 -> identical md5 of the daily outlet series"
+        - "awc pctchg +80 (with LYR1=1 LYR2=2) -> identical md5"
+        - "cn2 pctchg -30 -> md5 changes (control)"
+      affected_tools:
+        - "tools/s6/generate_calibration_file.py"
+    remedy:
+      action: "Route cal-ignored names to their real home file, and DROP the rest with a loud warning. FIXED in s6: perco/canmx/cn3_swf/harg_pet -> hydrology.hyd; awc/soil_k/dp -> soils.sol; lat_len/slope_len -> topography.hyd; revap_co -> aquifer.aqu; surlag/msk_co1/msk_co2/msk_x -> parameters.bsn (surlag lives there as `surq_lag`); only delay/dep_imp are dropped. NOTE: EVERY bsn-object name is a calibration.cal no-op — see dt_047."
+      steps:
+        - "To test whether a name is real: run the binary at two extreme values and md5 the outlet series"
+        - "Never assume a cal_parms.cal name is honoured just because it parses"
+      prevention: "Verify a calibration knob MOVES the output before you sweep over it. A greedy search over a no-op parameter silently returns the baseline."
+    severity: "silent"
+    cross_references: ["dt_042", "dt_044"]
+
+  - id: dt_046
+    symptom:
+      description: "You suspect a routing/topology error (water reaching the stream more than once) because the outlet volume exceeds the basin's `wateryld`. Ratio outlet/wateryld ~ 1.5-1.7."
+      error_pattern: ""
+    diagnosis:
+      root_cause: "outlet/wateryld is NOT a mass-balance test. SWAT+'s basin_wb `wateryld` column is surq_gen + latq ONLY; it EXCLUDES aquifer return flow. So outlet = wateryld + aquifer flo > wateryld for ANY basin with an aquifer, and the ratio trips on a perfectly mass-conserving model. The invariant that DOES catch a rout_unit.con hyd_typ error is: area-weighted aquifer `rchrg` must equal basin `perc`. If rchrg instead equals `wateryld`, rout_unit.con is sending the surface hydrograph (`tot`) to the aquifer, which then re-releases it as baseflow."
+      evidence:
+        - "Correct deck: wateryld 167.24 = surq_gen 74.14 + latq 93.11; outlet 264.80 = wateryld + aqu_flo 99.84 (0.9%); rchrg 99.93 == perc 99.93"
+        - "Broken deck (aqu ... tot): rchrg == wateryld, NOT perc"
+      affected_tools:
+        - "tools/s2/generate_hru_from_global.py"
+        - "tools/s9/check_mass_balance.py"
+    remedy:
+      action: "rout_unit.con must be `cha <id> tot 1.00000` + `aqu <id> rhg 1.00000` (rhg = recharge hydrograph; rev59 accepts it). The `cha ... tot 0.70` seen in the old SWAT+ Editor v1.0.0 demo sums to 1.0 only because a RESERVOIR takes the other 0.30 — do not copy the 0.70 without the reservoir."
+      steps:
+        - "Assert area_weighted(aquifer_yr.rchrg) == basin_wb.perc  (within 5%)"
+        - "Assert outlet_mm ~= basin_wb.wateryld + area_weighted(aquifer_yr.flo)  (within 10%)"
+        - "Do NOT assert outlet <= wateryld"
+      prevention: "Before declaring a mass-balance violation, confirm the denominator actually contains every flux that reaches the outlet."
+    severity: "silent"
+    cross_references: ["dt_044", "dt_045"]
+
+  - id: dt_047
+    symptom:
+      description: "Daily SWAT+ NSE is stuck near its r^2 ceiling and the simulated flood peak arrives exactly ONE DAY after the observed peak, no matter which parameters are swept. Shifting the simulated series back one day would raise r from 0.65 to 0.82 (do NOT do this — it is a fudge)."
+      error_pattern: ""
+    diagnosis:
+      root_cause: "The lag lives in Muskingum CHANNEL routing, whose coefficients msk_co1/msk_co2/msk_x are `bsn` objects — and EVERY bsn-object name is a calibration.cal no-op in rev59 (dt_045). So the routing could not be calibrated at all and sat at the shipped default msk_co1/msk_co2 = 0.75/0.25. Only the msk_co1:msk_co2 RATIO matters: SWAT+ normalises them, so 0.1/0.1 and 10/10 give bit-identical output. Setting codes.bsn rte_cha=0 confirms the diagnosis by throwing the peak 2 days EARLY."
+      evidence:
+        - "Zijingguan 2023-08-01 flood carries 89.2% of the observed daily variance"
+        - "default msk: peak 08-02, r_val 0.647, NSE_val 0.417 (== r^2 ceiling 0.418)"
+        - "msk_co1=msk_co2, msk_x 0.1: peak 08-01, r_val 0.823, NSE_val 0.669"
+        - "surq_lag (parameters.bsn) and hydrology.cha `mann` barely move the peak; rte_cha=0 moves it to 07-30"
+      affected_tools:
+        - "tools/s6/generate_calibration_file.py"
+    remedy:
+      action: "Calibrate msk_co1/msk_co2/msk_x STRUCTURALLY in parameters.bsn. s6 now routes them there (STRUCTURAL_BSN)."
+      steps:
+        - "If the sim peak is a day late, sweep the msk_co1:msk_co2 ratio BEFORE touching volume params"
+        - "Never fix a timing lag by shifting the simulated series"
+        - "Check NSE against its r^2 ceiling: if NSE ~= r^2, the remaining loss is PHASE, not bias/variance"
+      prevention: "Compute r on the uncalibrated run first. No parameter set can lift NSE above r^2, so if NSE is pinned at r^2, stop tuning volume and go fix the phase."
+    severity: "silent"
+    cross_references: ["dt_045", "dt_046"]
+
+  - id: dt_048
+    stage: "s8_run"
+    failure_domain: "dependency_mismatch"
+    symptom:
+      description: "SWAT+ rev59 crashes ~0.8 s into a run, immediately after 'reading from wx station file', on a LARGE basin (>~1e6 km2). It reads all the weather files fine, then dies before the daily loop. Small basins built by the SAME chain run cleanly."
+      error_pattern: "Attempting to allocate already allocated variable 'ob'|hyd_read_connect"
+      detection_method: "log_match"
+    diagnosis:
+      root_cause: "object.cnt field overflow. write_object_cnt (s2/generate_hru_from_global.py) wrote each column as f'{v:>12}' with NO separator. A basin-scale ls_area/tot_area like 151683475.87 (=1.52M km2 in ha) is EXACTLY 12 chars, so it fills its field and TOUCHES the neighbour: 'name'+'ls_area'+'tot_area' merge into one whitespace-delimited token. SWAT+ reads object.cnt list-directed, so every count shifts two fields left -> 'obj' (total objects) is read as 0 -> hyd_read_connect.f90:176 allocates ob(0)/re-derives and re-allocates -> 'already allocated ob'. Bengbu (115k km2, area 11572953.30 = 11 chars) had a leading space and never tripped it, so it was invisible until the Yangtze mainstem @ Jiujiang (1.52M km2)."
+      evidence:
+        - "object.cnt data line had 19 whitespace tokens, not 21; token[1] = 'jiujiang151683475.87151683475.87'"
+        - "space-separating name/ls_area/tot_area (21 tokens) -> binary runs to completion, exit 0"
+        - "channel.con has the SAME cumulative-area overflow (gis_id+area merge for >1e8 ha channels) but is TOLERATED (run still completes) — object.cnt is the only fatal one"
+      affected_tools:
+        - "tools/s2/generate_hru_from_global.py"
+    remedy:
+      action: "In write_object_cnt, prepend a space to EVERY field (' {v:>12}' not '{v:>12}') for both header and data rows, so there is always >=1 separator regardless of value width. FIXED 2026-07-11."
+      manual_steps:
+        - "Quick repair of an existing broken deck: rewrite object.cnt line 3 so name and the two area values are space-separated (21 tokens); re-run the binary."
+        - "Verify: awk 'NR==3{print NF}' object.cnt must print 21."
+      prevention: "Never right-justify numeric fields against each other without a guaranteed separator when the value can fill the field. List-directed Fortran reads need whitespace, not column alignment."
+    severity: "fatal"
+    cross_references: ["dt_009"]

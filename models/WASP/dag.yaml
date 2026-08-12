@@ -1,0 +1,421 @@
+template_version: "3.5"
+
+identity:
+  model_id: "WASP"
+  scientific_reference_version: "WASP (US EPA Water Analysis Simulation Program) core water-quality physics; analytic lake/reservoir reimplementation (temperature, DO, BOD, TSI)"
+  implementation:
+    id: "hydrocraft-wasp"
+    version: "1.0.0"
+    provenance: "Python; analytic reimplementation of WASP core water-quality processes (EPA public-domain lineage) for lakes and reservoirs."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "python"
+  license: "Public-Domain"
+  repo_url: ""
+
+boundary:
+  scope_in:
+    - "Seasonal surface water temperature (sinusoidal annual cycle)"
+    - "Seasonal dissolved-oxygen time series (steady-state Streeter-Phelps)"
+    - "1-D vertical temperature profile (logistic thermocline structure)"
+    - "1-D vertical dissolved-oxygen profile (epilimnion/hypolimnion)"
+    - "DO saturation from temperature (Benson-Krause)"
+    - "BOD decay and oxygen-deficit sag (time-dependent Streeter-Phelps)"
+    - "Carlson Trophic State Index from Chl-a, Secchi, TP"
+  scope_out:
+    - "Internal unit conversion (inputs must already be in expected units)"
+    - "Interannual variability in loading and stratification"
+    - "Seasonally varying thermocline depth (fixed thermocline depth)"
+    - "Horizontal transport / multi-segment advection-dispersion network"
+  spatial: "0-D point | 1-D column"
+  temporal: "daily"
+  closure: "mass-balance"
+  notes: >
+    Mass-balance closure applies to the BOD-DO oxygen budget (first-order BOD
+    decay, atmospheric reaeration, and sediment/hypolimnetic oxygen demand).
+    The seasonal temperature model and the 1-D logistic thermocline are
+    prescribed analytic structural forms (sinusoidal in day-of-year, logistic
+    in depth), not a closed surface energy budget. The seasonal DO output uses
+    a steady-state Streeter-Phelps simplification; the time-dependent oxygen-
+    deficit sag solution is a distinct mode. Profile/thermocline outputs are
+    valid only during summer stratification (Jun-Aug NH) given the fixed
+    thermocline depth.
+
+inputs:
+  forcing:
+    - category: forcing
+      name: "water temperature"
+      unit: "deg C"
+      source_kind: forcing
+      model_input_format: "observed surface/profile temperature time series in Celsius"
+      notes: "Model performs no internal conversion; Benson-Krause adds 273.15 internally, so inputs must be Celsius."
+    - category: forcing
+      name: "dissolved_oxygen"
+      unit: "mg/L"
+      source_kind: forcing
+      model_input_format: "observed DO concentration time series"
+    - category: forcing
+      name: "chlorophyll_a"
+      unit: "ug/L"
+      source_kind: forcing
+      model_input_format: "observed Chl-a; drives TSI(Chl-a)"
+    - category: forcing
+      name: "depth"
+      unit: "m"
+      source_kind: forcing
+      model_input_format: "observation depth for profile modes"
+    - category: forcing
+      name: "day_of_year"
+      unit: "integer 1-366"
+      source_kind: forcing
+      model_input_format: "day-of-year index driving the sinusoidal seasonal model"
+    - category: forcing
+      name: "secchi_depth"
+      unit: "m"
+      source_kind: forcing
+      model_input_format: "Secchi transparency; drives TSI(Secchi)"
+    - category: forcing
+      name: "total_phosphorus"
+      unit: "ug/L"
+      source_kind: forcing
+      model_input_format: "TP concentration; drives TSI(TP)"
+  parameters:
+    - category: parameters
+      name: "T_mean"
+      unit: "deg C"
+      source_kind: calibrated
+      model_input_format: "annual average surface temperature (sinusoidal model); typical 2-30"
+    - category: parameters
+      name: "amplitude"
+      unit: "deg C"
+      source_kind: calibrated
+      model_input_format: "seasonal temperature swing; typical 3-18"
+    - category: parameters
+      name: "phase"
+      unit: "day"
+      source_kind: calibrated
+      model_input_format: "day-of-year of temperature peak (~130 NH); typical 90-170"
+    - category: parameters
+      name: "kd"
+      unit: "1/d"
+      source_kind: calibrated
+      model_input_format: "BOD deoxygenation rate; 0.05-0.3 typical for lakes"
+    - category: parameters
+      name: "ka"
+      unit: "1/d"
+      source_kind: calibrated
+      model_input_format: "atmospheric reaeration rate; 0.1-1.0 typical for lakes"
+    - category: parameters
+      name: "BOD0"
+      unit: "mg/L"
+      source_kind: calibrated
+      model_input_format: "background/initial BOD loading; 1-10 typical for lakes"
+      notes: "Dual role — calibration parameter in the seasonal DO model and an initial condition for the time-dependent deficit solution."
+    - category: parameters
+      name: "DO_offset"
+      unit: "mg/L"
+      source_kind: calibrated
+      model_input_format: "systematic DO correction; typical -3 to 3"
+    - category: parameters
+      name: "T_surface"
+      unit: "deg C"
+      source_kind: calibrated
+      model_input_format: "epilimnion (summer surface) temperature; typical 15-30"
+    - category: parameters
+      name: "T_bottom"
+      unit: "deg C"
+      source_kind: calibrated
+      model_input_format: "hypolimnion temperature; typical 4-15"
+    - category: parameters
+      name: "thermo_depth"
+      unit: "m"
+      source_kind: calibrated
+      model_input_format: "depth of maximum dT/dz; typical 3-30"
+    - category: parameters
+      name: "thermo_width"
+      unit: "m"
+      source_kind: calibrated
+      model_input_format: "thermocline transition thickness; typical 0.5-10"
+    - category: parameters
+      name: "z_max"
+      unit: "m"
+      source_kind: dataset_lookup
+      model_input_format: "maximum lake depth (morphometry)"
+    - category: parameters
+      name: "z_mean"
+      unit: "m"
+      source_kind: dataset_lookup
+      model_input_format: "mean depth = volume / surface area"
+    - category: parameters
+      name: "area"
+      unit: "km2"
+      source_kind: dataset_lookup
+      model_input_format: "lake surface area"
+    - category: parameters
+      name: "volume"
+      unit: "m3"
+      source_kind: dataset_lookup
+      model_input_format: "total lake volume"
+    - category: parameters
+      name: "SOD"
+      unit: "g O2/m2/d"
+      source_kind: calibrated
+      model_input_format: "sediment oxygen demand; typical 0.1-3.0"
+    - category: parameters
+      name: "depletion_rate"
+      unit: "per meter below thermocline"
+      source_kind: calibrated
+      model_input_format: "hypolimnetic DO depletion rate; oligotrophic 0.01-0.03, eutrophic 0.05-0.15"
+  initial_conditions:
+    - category: initial_conditions
+      name: "D0"
+      unit: "mg/L"
+      source_kind: user_provided
+      model_input_format: "initial oxygen deficit (DO_sat - DO) for the Streeter-Phelps deficit solution"
+    - category: initial_conditions
+      name: "BOD0"
+      unit: "mg/L"
+      source_kind: user_provided
+      model_input_format: "initial BOD for first-order decay (time-dependent mode)"
+  boundary_conditions: []
+
+processes:
+  modules:
+    - name: "SeasonalTemperature"
+      role: "process_solver"
+      brief: "Sinusoidal annual surface temperature T(doy)=T_mean+amplitude*sin(2pi(doy-phase)/365)."
+    - name: "DOSaturation_BensonKrause"
+      role: "process_solver"
+      brief: "Temperature-dependent DO saturation, ln(DO_sat) polynomial in absolute temperature (Benson & Krause 1984)."
+    - name: "StreeterPhelps_BOD_DO"
+      role: "process_solver"
+      brief: "First-order BOD decay coupled with reaeration; analytic oxygen-deficit sag and steady-state seasonal-DO simplification."
+    - name: "LogisticThermocline"
+      role: "process_solver"
+      brief: "CE-QUAL-W2-style sigmoid T(z)=T_bottom+(T_surface-T_bottom)/(1+exp((z-thermo_depth)/thermo_width)); valid in summer stratification."
+      applicability: "summer-stratification profile mode"
+    - name: "DOProfile_1D"
+      role: "process_solver"
+      brief: "Epilimnion near saturation; hypolimnion depleted by SOD/depletion_rate below the thermocline."
+      applicability: "summer-stratification profile mode"
+    - name: "CarlsonTSI"
+      role: "process_solver"
+      brief: "Trophic State Index from Chl-a, Secchi, and/or TP (Carlson 1977 log relations)."
+  internal_edges:
+    - from: "Inputs"
+      to: "SeasonalTemperature"
+      kind: "consumes_input"
+      brief: "Reads day_of_year and the seasonal temperature parameters."
+    - from: "SeasonalTemperature"
+      to: "DOSaturation_BensonKrause"
+      kind: "invokes"
+      brief: "Modeled (or observed) temperature drives DO saturation."
+    - from: "DOSaturation_BensonKrause"
+      to: "DO_sat"
+      kind: "writes_state"
+      brief: "Computes the diagnostic DO_sat field."
+    - from: "DO_sat"
+      to: "StreeterPhelps_BOD_DO"
+      kind: "reads_state"
+      brief: "Reaeration drives DO toward saturation."
+    - from: "StreeterPhelps_BOD_DO"
+      to: "BOD"
+      kind: "writes_state"
+      brief: "First-order BOD decay BOD(t)=BOD0*exp(-kd*t)."
+    - from: "StreeterPhelps_BOD_DO"
+      to: "oxygen_deficit_D"
+      kind: "writes_state"
+      brief: "Oxygen-deficit sag D(t); peaks at t_c=ln(ka/kd)/(ka-kd)."
+    - from: "StreeterPhelps_BOD_DO"
+      to: "DO"
+      kind: "writes_state"
+      brief: "DO = DO_sat - deficit, clipped to plausible bounds."
+    - from: "StreeterPhelps_BOD_DO"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "Emits seasonal DO time series."
+    - from: "Inputs"
+      to: "LogisticThermocline"
+      kind: "consumes_input"
+      brief: "Reads depth and thermal-profile parameters."
+    - from: "LogisticThermocline"
+      to: "DOProfile_1D"
+      kind: "invokes"
+      brief: "Vertical thermal structure conditions the vertical DO structure."
+    - from: "DOProfile_1D"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "Emits 1-D vertical DO profile."
+    - from: "Inputs"
+      to: "CarlsonTSI"
+      kind: "consumes_input"
+      brief: "Reads Chl-a, Secchi, TP."
+    - from: "CarlsonTSI"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "Emits Carlson TSI."
+
+states:
+  variables:
+    - name: "BOD"
+      unit: "mg/L"
+      role: "prognostic"
+    - name: "DO"
+      unit: "mg/L"
+      role: "prognostic"
+    - name: "oxygen_deficit_D"
+      unit: "mg/L"
+      role: "prognostic"
+    - name: "DO_sat"
+      unit: "mg/L"
+      role: "diagnostic"
+    - name: "T_z"
+      unit: "deg C"
+      role: "diagnostic"
+    - name: "T_doy"
+      unit: "deg C"
+      role: "diagnostic"
+    - name: "TSI"
+      unit: "dimensionless"
+      role: "diagnostic"
+  provenance: "structural"
+
+outputs:
+  - var: "temperature_timeseries"
+    validation_rank: 4
+    unit: "deg C"
+    description: "Seasonal surface water temperature time series (sinusoidal annual cycle)."
+    emitted_in: "WASP output (seasonal time-series mode)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Single seasonal cycle; cannot reproduce interannual variability. Exclude warmup year."]
+      detrending_options: ["none"]
+  - var: "do_timeseries"
+    validation_rank: 1
+    unit: "mg/L"
+    description: "Seasonal dissolved-oxygen time series (steady-state Streeter-Phelps)."
+    emitted_in: "WASP output (seasonal time-series mode)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Steady-state seasonal simplification; reduced skill where interannual loading variability dominates."]
+      detrending_options: ["none"]
+  - var: "temperature_profile"
+    validation_rank: 5
+    unit: "deg C"
+    description: "1-D vertical temperature profile vs depth (logistic thermocline)."
+    emitted_in: "WASP output (profile mode)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Per-depth comparison; valid only for summer stratification (Jun-Aug NH) given fixed thermocline depth."]
+      detrending_options: ["none"]
+  - var: "do_profile"
+    validation_rank: 2
+    unit: "mg/L"
+    description: "1-D vertical DO profile vs depth (epilimnion/hypolimnion)."
+    emitted_in: "WASP output (profile mode)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Hypolimnetic depletion depends on SOD/depletion_rate set per lake productivity; summer-stratification only."]
+      detrending_options: ["none"]
+  - var: "do_saturation"
+    validation_rank: 3
+    unit: "mg/L"
+    description: "Benson-Krause DO saturation as a function of temperature."
+    emitted_in: "WASP output (diagnostic)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Closed-form function of temperature; comparison is effectively a check of the temperature input."]
+      detrending_options: ["none"]
+  - var: "TSI"
+    validation_rank: 6
+    unit: "dimensionless"
+    description: "Carlson Trophic State Index from Chl-a, Secchi, and/or TP (Carlson 1977 scale)."
+    emitted_in: "WASP output (TSI mode)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy", "ranking_quality"]
+          determining_metric: "spearman"
+          caveats: ["TSI(Chl-a)/TSI(Secchi)/TSI(TP) agree only for algae-dominated systems; divergence diagnoses non-algal turbidity or P-limitation."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["When TSI is tracked across a season."]
+      detrending_options: ["none"]
+
+influence:
+  edges: []
+  _reason: "Sensitivity literature stream (lit_reader.json) returned null; no citation-backed sensitivity edges could be established. Mechanistic dependencies (temperature->DO_sat, BOD->DO, reaeration->DO, T(z)->DO_profile, Chl-a/Secchi/TP->TSI) are captured in processes.internal_edges, not here."
+  citation_index: {}
+
+safety:
+  hazards:
+    - id: "temperature_unit_not_celsius"
+      kind: "weather_file_semantic"
+      description: "Model performs no internal unit conversion and adds 273.15 internally (Benson-Krause); Fahrenheit or Kelvin temperature inputs run silently and collapse DO_sat toward zero."
+      severity: "silent"
+    - id: "do_unit_not_mgL"
+      kind: "weather_file_semantic"
+      description: "DO supplied as percent-saturation or ug/L instead of mg/L runs without error and yields physically meaningless calibrated DO_offset; DO>20 mg/L almost always signals a unit error."
+      severity: "silent"
+    - id: "depth_or_morphometry_unit_error"
+      kind: "soil_semantic"
+      description: "Depth in feet/cm or area/volume in non-canonical units (ha, m2, acre-ft) silently distort profile and morphometry-derived quantities; observation depth > 1.1*z_max indicates a depth-unit error."
+      severity: "silent"
+    - id: "rate_coefficient_unit_error"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "kd/ka supplied in 1/h instead of 1/d shifts the oxygen-deficit sag timing and magnitude (factor of 24) without raising an error."
+      severity: "silent"
+    - id: "do_clipping_masks_error"
+      kind: "numerical_instability"
+      description: "DO is clipped to [0, DO_sat] (and [0,20] in seasonal mode), so upstream errors can be silently masked by saturation/floor clamping rather than producing obvious out-of-range output."
+      severity: "silent"
+  validation_limits:
+    - "Profile/thermocline outputs are structurally invalid outside summer stratification (Jun-Aug NH): the thermocline depth is fixed and does not migrate seasonally."
+    - "Seasonal DO and temperature models cannot resolve interannual variability in loading or stratification."
+    - "Steady-state Streeter-Phelps seasonal DO mode cannot resolve sub-seasonal transient oxygen-deficit dynamics that the time-dependent deficit mode addresses."
+    - "Carlson TSI three-index agreement assumption holds only for algae-dominated systems."
+  warnings:
+    - "BOD0 has a dual role (seasonal-DO calibration parameter and time-dependent initial condition); ensure the intended mode's value is used."
+    - "Warmup data (first year) should generally be excluded for the seasonal models."
+    - "Hypolimnetic depletion_rate and SOD must be set per lake productivity (oligotrophic vs eutrophic); defaults can bias hypolimnetic DO substantially."
+    - "Negative or zero DO observations are instrument artifacts and should be filtered before calibration."
+  assumptions:
+    - statement: "Surface temperature follows a single-harmonic sinusoidal annual cycle (one mean/amplitude/phase)."
+      scope: "Seasonal temperature and seasonal DO modes."
+      source: "WASP analytic reimplementation SKILL.md seasonal-model section."
+      status: "adopted"
+    - statement: "Seasonal DO is computed with a steady-state Streeter-Phelps simplification distinct from the time-dependent oxygen-deficit sag solution."
+      scope: "do_timeseries output."
+      source: "WASP analytic reimplementation SKILL.md Streeter-Phelps physics section."
+      status: "adopted"
+    - statement: "Vertical thermal structure is a fixed-depth logistic (CE-QUAL-W2-style) three-layer profile, valid only during summer stratification."
+      scope: "temperature_profile and do_profile outputs."
+      source: "WASP analytic reimplementation SKILL.md thermal-profile section."
+      status: "adopted"
+    - statement: "Carlson TSI indices from Chl-a, Secchi and TP are mutually consistent for algae-dominated systems."
+      scope: "TSI output."
+      source: "Carlson (1977) Trophic State Index; WASP SKILL.md TSI section."
+      status: "tentative"

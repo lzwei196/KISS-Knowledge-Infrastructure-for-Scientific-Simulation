@@ -1,0 +1,649 @@
+template_version: "3.5"
+
+identity:
+  model_id: "pyBadlands"
+  scientific_reference_version: "Badlands landscape evolution model (Salles, Ding & Brocard 2018, PLOS ONE 10.1371/journal.pone.0195557; detachment-limited stream-power + diffusion formulation)"
+  implementation:
+    id: "pybadlands"
+    version: "hydrocraft-badlands-geomorph v1.0.0 (Badlands 2.x lineage)"
+    provenance: "Python driver over Fortran90 + C surface-process kernels; Tristan Salles / University of Sydney (badlands-model/badlands)."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "python"
+  license: "LGPL-3.0"
+  repo_url: "https://github.com/badlands-model/badlands"
+
+boundary:
+  scope_in:
+    - "Fluvial incision via detachment-limited Stream Power Law (E = Kd*A^m*S^n)"
+    - "Fluvial sediment transport/deposition (transport-capacity variants)"
+    - "Linear and non-linear hillslope diffusion (subaerial and marine creep)"
+    - "Slope-failure / mass-wasting diffusion"
+    - "Wave-driven shallow-marine sediment transport"
+    - "Carbonate reef and pelagic growth"
+    - "Flexural isostasy (lithospheric response to surface load)"
+    - "Tectonic forcing (vertical uplift/subsidence and 3D horizontal displacement)"
+    - "Climate forcing (uniform, spatial, and orographic rainfall)"
+    - "Sea-level / eustatic fluctuations"
+    - "Stratigraphic architecture evolution"
+  scope_out:
+    - "Individual fluvial channel-reach evolution (reduced-complexity geological-scale model)"
+    - "Fine-scale hillslope dynamics for basin areas < ~10 km^2"
+    - "Engineering-scale applications"
+    - "Complex biological/ecological interactions in wave and carbonate systems"
+  spatial: "distributed-stream"
+  temporal: "event"
+  closure: "mass-balance"
+  notes: "Surface mass-balance closure on the TIN: dz/dt = tectonics + hillslope diffusion + fluvial incision + marine/wave/carbonate deposition + flexure. Spatial discretization is a Triangulated Irregular Network (Delaunay) built from a regular DEM; drainage routing is single-flow-direction (steepest descent) with Braun & Willett O(n) stack ordering. Time integration is adaptive (mindt/maxdt) bounded by a CFL-like stability limit dt <= dx^2/(2*kappa). Coordinates are a projected Cartesian CRS in metres, not geographic lat/lon. No surface energy balance is computed."
+
+inputs:
+  forcing:
+    - category: forcing
+      name: "uniform rainfall rate (rval)"
+      unit: "m/year"
+      source_kind: forcing
+      model_input_format: "XML <precipitation>/<rain>/<rval> scalar"
+      notes: "Units are m/year, NOT mm/year or mm/day; convert mm/day via *365.25/1000. rval=0 yields zero runoff and no fluvial erosion."
+    - category: forcing
+      name: "spatial rainfall map"
+      unit: "m/year"
+      source_kind: forcing
+      model_input_format: "CSV (x y rainfall_m_per_year) referenced by <map>"
+    - category: forcing
+      name: "orographic rainfall parameters (ortime, rbgd, rmin, rmax, windx, windy)"
+      unit: "m/year, m"
+      source_kind: forcing
+      model_input_format: "XML orographic <rain> child elements"
+      notes: "Elevation-dependent precipitation recomputed every ortime interval; couples topography back to rainfall."
+    - category: forcing
+      name: "sea-level curve"
+      unit: "years, m"
+      source_kind: forcing
+      model_input_format: "2-column file (time_years sealevel_m) via <curve>"
+      notes: "Time column in years, NOT ka/Ma."
+    - category: forcing
+      name: "tectonic vertical (uplift/subsidence) displacement map (ufile)"
+      unit: "m (total over event)"
+      source_kind: forcing
+      model_input_format: "single-column z-value displacement map, no header, per displacement event"
+      notes: "Map holds TOTAL displacement over the event duration, NOT a rate (m/year)."
+    - category: forcing
+      name: "tectonic horizontal (3D) displacement map (dfile)"
+      unit: "m (total over event)"
+      source_kind: forcing
+      model_input_format: "single-column displacement map referenced by <disp3d>; triggers TIN mesh reconstruction"
+    - category: forcing
+      name: "river point input (rQw discharge, rQs sediment load, rposX/rposY)"
+      unit: "m^3/s; Mt/year; m"
+      source_kind: forcing
+      model_input_format: "XML <rivers>/<river> entries"
+      notes: "rQw in m^3/s (NOT L/s); rQs in Mt/year (internally qs_m3 = rQs*1e9/rhoS, so kg/year is 1e9x too large)."
+  parameters:
+    - category: parameter
+      name: "SPL discharge/area exponent m (SPLm)"
+      unit: "dimensionless"
+      source_kind: calibrated
+      model_input_format: "XML <sp_law>/<m>"
+      notes: "Default 0.5 when absent; canonical XML tag is <sp_law>/<m> (not <SPLm>)."
+    - category: parameter
+      name: "SPL slope exponent n (SPLn)"
+      unit: "dimensionless"
+      source_kind: calibrated
+      model_input_format: "XML <sp_law>/<n>"
+      notes: "Default 1.0 when absent."
+    - category: parameter
+      name: "SPL erodibility coefficient Kd (SPLero)"
+      unit: "m^(1-2m)/year"
+      source_kind: calibrated
+      model_input_format: "XML <sp_law>/<erodibility>"
+      notes: "Default 0.0 -> NO fluvial erosion unless set (silent no-op). Units are dimensionally m-dependent; literature Kd must be calibrated with the same m,n. Bedrock ~1e-8-1e-5, alluvial ~1e-5-1e-3."
+    - category: parameter
+      name: "precipitation exponent l"
+      unit: "dimensionless"
+      source_kind: calibrated
+      model_input_format: "XML SPL form parameter"
+      notes: "Default 0 (off); climate-dependent weathering term, secondary."
+    - category: parameter
+      name: "aerial (subaerial) hillslope diffusion coefficient (caerial)"
+      unit: "m^2/year"
+      source_kind: calibrated
+      model_input_format: "XML <creep>/<caerial>"
+      notes: "m^2/year NOT m^2/kyr. Dominant denudation control on low-relief (<200 m) domains."
+    - category: parameter
+      name: "marine (submarine) hillslope diffusion coefficient (cmarine)"
+      unit: "m^2/year"
+      source_kind: calibrated
+      model_input_format: "XML <creep>/<cmarine>"
+    - category: parameter
+      name: "critical slope Sc (non-linear diffusion threshold, cslp)"
+      unit: "m/m"
+      source_kind: calibrated
+      model_input_format: "XML <creep>/<cslp>"
+    - category: parameter
+      name: "river sediment diffusion coefficient (criver)"
+      unit: "m^2/year"
+      source_kind: calibrated
+      model_input_format: "XML <creep>/<criver>"
+    - category: parameter
+      name: "mass-failure threshold slope (sfail) and failure diffusion coefficient (cfail)"
+      unit: "m/m; m^2/year"
+      source_kind: calibrated
+      model_input_format: "XML <creep>/<sfail>, <creep>/<cfail>"
+    - category: parameter
+      name: "transport-capacity coefficients (kt, mt, nt, modeltype)"
+      unit: "variable"
+      source_kind: calibrated
+      model_input_format: "XML transport-law elements; modeltype selects detachment vs transport-limited variant"
+    - category: parameter
+      name: "flexural isostasy parameters (dmantle, dsediment, youngMod, poisson, elasticH)"
+      unit: "kg/m^3, Pa, m"
+      source_kind: calibrated
+      model_input_format: "XML <flexure> elements"
+      notes: "elasticH in metres NOT km (typical 5e3-100e3 m); youngMod default 6.5e10 Pa, dmantle ~3300, dsediment ~2500 kg/m^3."
+    - category: parameter
+      name: "sediment porosity / compaction (poro0, poroC) and grain density (rhoS)"
+      unit: "dimensionless, /km; kg/m^3"
+      source_kind: calibrated
+      model_input_format: "XML porosity (Athy) elements; <rivers> rhoS"
+      notes: "poro0/poroC default 0 disables compaction -> stratigraphic thickness 2-3x too large. rhoS default 2650 kg/m^3."
+    - category: parameter
+      name: "wave parameters (wbase, d50, hs, dir, wEro)"
+      unit: "m; m; m; degrees; m/year"
+      source_kind: calibrated
+      model_input_format: "XML <waveglobal> / wave-series elements"
+      notes: "d50 in metres NOT mm/um (sand 1e-4-1e-3 m); hs in metres NOT cm; wbase default 20 m."
+    - category: parameter
+      name: "carbonate growth rates (growth_sp1, growth_sp2) and depth/sediment/wave control curves"
+      unit: "m/year"
+      source_kind: calibrated
+      model_input_format: "XML <carb>/<species*> elements"
+      notes: "depthControl curve must be monotonic peaking in the shallow photic zone (0-20 m)."
+    - category: parameter
+      name: "multi-lithology erodibility layers (erocst/eromap, thcst/thmap, actlay)"
+      unit: "Kd m^(1-2m)/year; thickness m"
+      source_kind: dataset_lookup
+      model_input_format: "XML <erocoeff>/<erolay> with spatial maps and layer thicknesses"
+      notes: "When active, per-node erodibility is dynamically updated from net erosion depth each step (not static)."
+  initial_conditions:
+    - category: initial_condition
+      name: "initial topography (DEM)"
+      unit: "m"
+      source_kind: user_provided
+      model_input_format: "GeoTIFF/netCDF/regular-grid CSV (x y z) via <grid>/<demfile>; converted to TIN"
+      notes: "Elevation must be in metres with no NoData/NaN; regular uniform grid. cm/mm/feet silently corrupt all slope-dependent erosion."
+    - category: initial_condition
+      name: "initial erodibility/thickness layers"
+      unit: "m thickness"
+      source_kind: user_provided
+      model_input_format: "XML <erolayers>/<thcst>/<thmap>/<actlay>"
+    - category: initial_condition
+      name: "restart checkpoint (rfolder, rstep)"
+      unit: "dimensionless"
+      source_kind: user_provided
+      model_input_format: "XML <time>/<restart> referencing a prior output step"
+  boundary_conditions:
+    - category: boundary_condition
+      name: "domain boundary type"
+      unit: "category"
+      source_kind: user_provided
+      model_input_format: "XML <grid>/<boundary> in {slope, flat, wall, fixed, outlet}"
+      notes: "Must match domain geometry; 'fixed'/'wall' on an open landscape ponds water at edges and prevents erosion. 'slope' for open domains, 'outlet' for single-outlet catchments."
+    - category: boundary_condition
+      name: "flexure edge boundary conditions (boundary_W/E/S/N)"
+      unit: "category"
+      source_kind: user_provided
+      model_input_format: "XML <flexure> per-edge boundary elements"
+    - category: boundary_condition
+      name: "resolution factor (resfactor)"
+      unit: "dimensionless"
+      source_kind: user_provided
+      model_input_format: "XML <grid>/<resfactor> integer DEM sub-sampling (1-10)"
+      notes: "Too large drops effective resolution below feature scale; keep key features > 3x (DEM_res * resfactor)."
+    - category: boundary_condition
+      name: "simulation time window and adaptive timestep bounds (start, end, display, mindt, maxdt)"
+      unit: "years"
+      source_kind: user_provided
+      model_input_format: "XML <time> elements"
+      notes: "mindt default 1.0, maxdt default 1e6 yr; maxdt too large with high Kd causes numerical overshoot/NaN and checkerboard oscillation."
+
+processes:
+  modules:
+    - name: "xmlParser"
+      role: "driver"
+      brief: "Parses the XML config into a typed input object and supplies model defaults (SPLm=0.5, SPLn=1.0, SPLero=0.0, minDT=1, maxDT=1e6)."
+    - name: "buildMesh"
+      role: "allocator"
+      brief: "Converts the regular DEM into a TIN + finite-volume mesh (control volumes, neighbours, Voronoi edges); reconstructs the mesh after 3D horizontal displacement."
+    - name: "flowNetwork"
+      role: "process_solver"
+      brief: "Single-flow-direction drainage network: receivers, Braun & Willett O(n) stack ordering, accumulated discharge, and stream-power sediment flux (calls Fortran flowalgo/sfd)."
+    - name: "StreamPowerIncision"
+      role: "process_solver"
+      brief: "Fortran kernel (flowalgo.f90) implementing detachment-/transport-limited stream-power incision E = Kd*A^m*S^n with bedslope variants; eroparams() pushes SPL params into Fortran module-global state."
+    - name: "DepressionFilling"
+      role: "process_solver"
+      brief: "Planchon-Darboux pit detection/filling (pdalgo.f90 / elevationTIN) producing the depression-less surface used for routing."
+    - name: "HillslopeDiffusion"
+      role: "process_solver"
+      brief: "Linear and non-linear hillslope creep plus marine, river, and slope-failure diffusion variants (diffLinear); computes CFL stability timesteps."
+    - name: "OrographicRainfall"
+      role: "process_solver"
+      brief: "Elevation-dependent orographic precipitation (classoro/ormodel.f90) recomputed every ortime interval."
+      applicability: "when orographic rainfall enabled"
+    - name: "sediment_flux_integrator"
+      role: "integrator"
+      brief: "Per-step orchestration computing the adaptive CFL timestep and integrating fluvial + marine diffusion + slope failure + hillslope into elevation/cumdiff/cumhill/cumfail, applying boundary conditions, and advancing tNow."
+    - name: "forceSim"
+      role: "process_solver"
+      brief: "Applies time-varying forcing: rainfall maps, sea-level curve, tectonic vertical and 3D displacement, river point input; dispatches flexure."
+    - name: "FlexuralIsostasy"
+      role: "optional_module"
+      brief: "gFlex-based lithospheric flexural response to surface/sediment load; updates cumflex and elevation."
+      applicability: "when flexure enabled"
+    - name: "WaveSediment"
+      role: "optional_module"
+      brief: "Wave-driven shallow-marine sediment transport (waveseds.f90, optional SWAN coupling); writes wave-induced change into elevation/cumdiff/wavediff."
+      applicability: "when waves enabled"
+    - name: "CarbonateGrowth"
+      role: "optional_module"
+      brief: "Fuzzy-logic depth/sediment/wave-controlled reef (2 species) and pelagic growth; deposit thickness added to elevation and tracked in the carbonate stratigraphic mesh."
+      applicability: "when carbonate growth enabled"
+    - name: "Stratigraphy"
+      role: "optional_module"
+      brief: "Multi-rock stratigraphic layer mesh (straTIN) and spatially-variable erodibility maps (mapero); couple back into per-node erodibility and the flexure load."
+      applicability: "when stratigraphy/multi-lithology enabled"
+    - name: "checkPoints"
+      role: "driver"
+      brief: "Writes HDF5 outputs (tin/flow/sed/carb time-step files) and XDMF visualization metadata."
+  internal_edges:
+    - from: "xmlParser"
+      to: "Inputs"
+      kind: consumes_input
+      brief: "Reads the XML config and exposes parameters/defaults to all modules."
+    - from: "buildMesh"
+      to: "elevation"
+      kind: writes_state
+      brief: "Initial TIN elevation, control volumes, and neighbours allocated from the DEM."
+    - from: "forceSim"
+      to: "rain"
+      kind: writes_state
+      brief: "Rainfall map mapped onto TIN nodes (m/year)."
+    - from: "OrographicRainfall"
+      to: "rain"
+      kind: writes_state
+      brief: "Elevation-dependent orographic precipitation recomputed each ortime."
+    - from: "elevation"
+      to: "OrographicRainfall"
+      kind: reads_state
+      brief: "Topography feeds back into the orographic rainfall calculation."
+    - from: "rain"
+      to: "flowNetwork"
+      kind: reads_state
+      brief: "Rainfall plus river input drives accumulated discharge."
+    - from: "DepressionFilling"
+      to: "fillH"
+      kind: writes_state
+      brief: "Pit-filled depression-less surface for routing."
+    - from: "fillH"
+      to: "flowNetwork"
+      kind: reads_state
+      brief: "Receivers and stack ordering computed on the filled surface."
+    - from: "flowNetwork"
+      to: "discharge"
+      kind: writes_state
+      brief: "Accumulated water discharge per node."
+    - from: "discharge"
+      to: "StreamPowerIncision"
+      kind: reads_state
+      brief: "Discharge (drainage-area proxy) feeds E = Kd*A^m*S^n."
+    - from: "StreamPowerIncision"
+      to: "elevation"
+      kind: writes_state
+      brief: "Fluvial sediment-flux divergence added to elevation and cumdiff."
+    - from: "StreamPowerIncision"
+      to: "cumdiff"
+      kind: writes_state
+      brief: "Fluvial erosion/deposition accumulated."
+    - from: "HillslopeDiffusion"
+      to: "cumhill"
+      kind: writes_state
+      brief: "Hillslope-diffusion change added to elevation and cumhill."
+    - from: "HillslopeDiffusion"
+      to: "cumfail"
+      kind: writes_state
+      brief: "Slope-failure-diffusion variant accumulates into cumfail."
+    - from: "sediment_flux_integrator"
+      to: "HillslopeDiffusion"
+      kind: invokes
+      brief: "Marine, failure, and hillslope diffusion run as nested CFL sub-loops inside one outer step."
+    - from: "sediment_flux_integrator"
+      to: "tNow"
+      kind: writes_state
+      brief: "Advances simulation time by the adaptive CFL timestep."
+    - from: "forceSim"
+      to: "elevation"
+      kind: writes_state
+      brief: "Tectonic vertical displacement field added to elevation."
+    - from: "forceSim"
+      to: "buildMesh"
+      kind: invokes
+      brief: "3D horizontal displacement triggers a TIN mesh rebuild."
+    - from: "elevation"
+      to: "FlexuralIsostasy"
+      kind: reads_state
+      brief: "Surface/sediment load drives isostatic deflection."
+    - from: "FlexuralIsostasy"
+      to: "cumflex"
+      kind: writes_state
+      brief: "Flexural response added to elevation and cumflex."
+    - from: "WaveSediment"
+      to: "elevation"
+      kind: writes_state
+      brief: "Wave-driven sediment transport added to elevation, cumdiff, and wavediff."
+    - from: "CarbonateGrowth"
+      to: "elevation"
+      kind: writes_state
+      brief: "Reef and pelagic deposit thickness added to elevation/cumdiff and the carbonate mesh."
+    - from: "Stratigraphy"
+      to: "elevation"
+      kind: writes_state
+      brief: "Stratal/erodibility-map updates couple back into elevation and per-node erodibility."
+    - from: "checkPoints"
+      to: "Outputs"
+      kind: produces_output
+      brief: "Writes TIN/flow/sed/carb HDF5 files and XDMF metadata each display interval."
+
+states:
+  variables:
+    - name: "elevation"
+      unit: "m"
+      role: prognostic
+    - name: "cumdiff"
+      unit: "m"
+      role: accumulator
+    - name: "cumhill"
+      unit: "m"
+      role: accumulator
+    - name: "cumfail"
+      unit: "m"
+      role: accumulator
+    - name: "cumflex"
+      unit: "m"
+      role: accumulator
+    - name: "wavediff"
+      unit: "m"
+      role: accumulator
+    - name: "stratigraphic_layers"
+      unit: "m"
+      role: prognostic
+    - name: "fillH"
+      unit: "m"
+      role: diagnostic
+    - name: "discharge"
+      unit: "m^3/year"
+      role: diagnostic
+    - name: "slopeTIN"
+      unit: "dimensionless"
+      role: diagnostic
+    - name: "rain"
+      unit: "m/year"
+      role: diagnostic
+    - name: "flow_erodibility"
+      unit: "m^(1-2m)/year"
+      role: diagnostic
+    - name: "tNow"
+      unit: "years"
+      role: accumulator
+  provenance: "populated"
+
+outputs:
+  - var: "elevation"
+    validation_rank: 2
+    unit: "m"
+    description: "Current topographic surface elevation at each TIN node (z column of coords array)."
+    emitted_in: "h5/tin.time*.hdf5"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Modelled on an irregular TIN in a projected CRS; resample to the observation grid before comparison.", "Geological-scale model; absolute elevation match is meaningful only for long-integration steady or paleo-reconstructed surfaces."]
+      detrending_options: ["none"]
+  - var: "cumdiff"
+    validation_rank: 3
+    unit: "m"
+    description: "Cumulative total erosion (negative) and deposition (positive) per node."
+    emitted_in: "h5/tin.time*.hdf5"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Erosion/deposition thickness over a finite interval; the observation must integrate the same time window."]
+        - obs_shape: "regional_aggregate_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Basin-integrated denudation or sediment yield compares to the volume-aggregated cumdiff; convert to a rate using the integration interval."]
+      detrending_options: ["none"]
+  - var: "stratigraphy"
+    validation_rank: 4
+    unit: "m"
+    description: "Deposited sediment / stratigraphic layer thicknesses (multi-rock and carbonate meshes)."
+    emitted_in: "h5/sed.time*.hdf5 (and carb mesh hdf5)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Reported thickness depends on porosity/compaction (poro0/poroC); uncompacted layers are 2-3x too thick.", "Compare against interpreted seismic/well stratigraphic architecture, not raw point logs."]
+      detrending_options: ["none"]
+  - var: "discharge"
+    validation_rank: 1
+    unit: "m^3/year"
+    description: "Accumulated water discharge per node from SFD drainage routing."
+    emitted_in: "h5/flow.time*.hdf5"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Output discharge is m^3/year and is clamped (<1.0 set to 1.0, 0 below sea level) in the HDF5 writer; treat as a drainage-structure proxy, not a gauged hydrograph.", "Single-flow-direction routing concentrates flow; not comparable to multi-flow accumulation."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "SPL erodibility coefficient Kd"
+      to: "cumdiff (erosion/deposition)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "high-relief domains (>500 m); negligible on low-relief (<200 m) where slope ~0"
+      citations: ["salles2018_pybadlands_framework", "chandra2019_bayeslands", "chandra2019_pt_bayeslands"]
+    - from: "SPL erodibility coefficient Kd"
+      to: "elevation (topography)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["salles2018_pybadlands_framework", "chandra2019_bayeslands"]
+    - from: "precipitation (rainfall)"
+      to: "cumdiff (erosion/deposition)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      citations: ["salles2018_pybadlands_framework", "chandra2019_bayeslands", "chandra2019_pt_bayeslands"]
+    - from: "precipitation (rainfall)"
+      to: "elevation (topography)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      citations: ["chandra2019_bayeslands", "salles2018_pybadlands_framework"]
+    - from: "SPL area exponent m"
+      to: "cumdiff (erosion/deposition)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["salles2018_pybadlands_framework", "chandra2019_pt_bayeslands"]
+    - from: "SPL slope exponent n"
+      to: "cumdiff (erosion/deposition)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["salles2018_pybadlands_framework", "chandra2019_pt_bayeslands"]
+    - from: "marine diffusion coefficient (cmarine)"
+      to: "stratigraphy"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["chandra2019_pt_bayeslands", "chandra2020_surrogate_inversion"]
+    - from: "aerial diffusion coefficient (caerial)"
+      to: "elevation (topography)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "dominant on low-relief domains (<200 m)"
+      citations: ["chandra2019_pt_bayeslands", "chandra2020_surrogate_inversion"]
+    - from: "precipitation exponent l"
+      to: "cumdiff (erosion/deposition)"
+      sensitivity_grade: LOW
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "off by default (l=0)"
+      citations: ["salles2018_pybadlands_framework"]
+  citation_index:
+    salles2018_pybadlands_framework:
+      short_citation: "Salles, Ding & Brocard 2018"
+      doi: "10.1371/journal.pone.0195557"
+      note: "Primary pyBadlands model paper; defines SPL incision (m, n, l, Kd) and linear/non-linear hillslope diffusion."
+    chandra2019_bayeslands:
+      short_citation: "Chandra et al. 2019 (Bayeslands)"
+      doi: "10.1016/j.cageo.2019.06.012"
+      note: "MCMC Bayesian inference of Badlands; precipitation and erodibility as the two free parameters with multi-modal posteriors against elevation misfit."
+    chandra2019_pt_bayeslands:
+      short_citation: "Chandra et al. 2019 (PT-Bayeslands)"
+      doi: "10.1029/2019GC008465"
+      note: "Parallel-tempering inference of six parameters (rainfall, erodibility, m, n, marine and aerial diffusion)."
+    chandra2020_surrogate_inversion:
+      short_citation: "Chandra et al. 2020"
+      doi: "10.5194/gmd-13-2959-2020"
+      note: "Surrogate-assisted Bayesian inversion confirming the same influential parameter set."
+
+safety:
+  hazards:
+    - id: "rainfall_units_m_per_year"
+      kind: weather_file_semantic
+      description: "Rainfall (rval/map) supplied in mm/year or mm/day instead of m/year gives a 1000x-365000x over-estimate, catastrophically denuding the domain in the first steps."
+      severity: silent
+    - id: "river_sediment_load_Mt_per_year"
+      kind: weather_file_semantic
+      description: "River sediment load rQs in kg/year instead of Mt/year is multiplied by 1e9 internally, producing a 1e9x over-deposition plume."
+      severity: silent
+    - id: "river_discharge_m3_per_s"
+      kind: weather_file_semantic
+      description: "River discharge rQw in L/s instead of m^3/s makes a large river 1000x too weak, producing no delta."
+      severity: silent
+    - id: "dem_elevation_metres"
+      kind: soil_semantic
+      description: "DEM elevation in cm/mm/feet instead of metres silently corrupts all slope-dependent SPL and diffusion erosion; no unit detection is performed."
+      severity: silent
+    - id: "sea_level_time_years"
+      kind: weather_file_semantic
+      description: "Sea-level curve time column in ka/Ma instead of years runs eustatic change 1000x too fast."
+      severity: silent
+    - id: "tectonic_displacement_total_not_rate"
+      kind: weather_file_semantic
+      description: "Displacement map (ufile/dfile) holding a rate (m/year) instead of total displacement (m) under-displaces by the event-duration factor."
+      severity: silent
+    - id: "erodibility_Kd_mn_mismatch"
+      kind: coefficient_runtime_silent_fallback
+      description: "Literature Kd calibrated with different m,n than configured mis-scales erosion by orders of magnitude because Kd units are dimensionally m-dependent."
+      severity: degraded
+    - id: "default_SPLero_zero_no_erosion"
+      kind: coefficient_runtime_silent_fallback
+      description: "SPLero (Kd) defaults to 0.0 when absent from XML, silently disabling all fluvial erosion."
+      severity: silent
+    - id: "diffusion_units_m2_per_year"
+      kind: coefficient_runtime_silent_fallback
+      description: "Hillslope diffusion coefficient in m^2/kyr instead of m^2/year applies 1000x too much smoothing, flattening ridge-valley topography."
+      severity: silent
+    - id: "grain_size_d50_metres"
+      kind: coefficient_runtime_silent_fallback
+      description: "Wave D50 grain size in mm/um instead of m turns sand into gravel, producing wrong longshore transport."
+      severity: silent
+    - id: "wave_height_hs_metres"
+      kind: coefficient_runtime_silent_fallback
+      description: "Wave significant height hs in cm instead of m yields physically impossible (e.g. 150 m) waves."
+      severity: silent
+    - id: "elastic_thickness_metres"
+      kind: coefficient_runtime_silent_fallback
+      description: "Lithospheric elastic thickness elasticH in km instead of m gives an impossibly thin plate and extreme/absent flexure."
+      severity: silent
+    - id: "porosity_compaction_disabled"
+      kind: coefficient_runtime_silent_fallback
+      description: "poro0/poroC left at default 0 disables Athy compaction, leaving stratigraphic thickness 2-3x too large."
+      severity: silent
+    - id: "boundary_type_vs_geometry"
+      kind: control_semantic
+      description: "Boundary type 'fixed'/'wall' on an open landscape ponds water at the edges and prevents outflow and erosion; type must match domain geometry."
+      severity: degraded
+    - id: "maxdt_cfl_instability"
+      kind: numerical_instability
+      description: "maxdt exceeding the CFL-like stability limit dt <= dx^2/(2*kappa) with high Kd/kappa causes checkerboard oscillation and NaN-filled elevation."
+      severity: fatal_or_silent
+    - id: "nan_propagation"
+      kind: numerical_instability
+      description: "A NaN/NoData cell in the DEM or a solver overshoot propagates NaN through the elevation array, producing garbage output."
+      severity: fatal
+    - id: "missing_precipitation_no_erosion"
+      kind: control_semantic
+      description: "Absent <precipitation> section or rval=0 yields zero runoff and no fluvial erosion; only hillslope diffusion operates."
+      severity: degraded
+    - id: "resfactor_too_coarse"
+      kind: control_semantic
+      description: "resfactor too large drops effective DEM resolution below feature scale, erasing valleys and ridges."
+      severity: degraded
+    - id: "carbonate_depth_curve_inverted"
+      kind: control_semantic
+      description: "Non-monotonic or inverted carbonate depthControl curve grows reefs in deep water below the photic zone."
+      severity: degraded
+  validation_limits:
+    - "Designed for regional-to-continental scale and 10^3-10^7 (up to 10^8) year timescales."
+    - "Not suitable for individual fluvial channel / reach-scale evolution."
+    - "Hillslope diffusion approximation degrades for basin areas < ~10 km^2."
+    - "Wave and carbonate modules use simple mathematical formulations, not complex biological interactions."
+    - "Not intended for engineering-scale applications."
+    - "Single-flow-direction routing concentrates drainage along the steepest descent; does not resolve distributary/multi-flow networks."
+  warnings:
+    - "On low-relief (<200 m) domains SPL erodibility Kd is effectively irrelevant because slope S ~ 0; calibrate hillslope diffusion (caerial) instead."
+    - "Generic 'sandstone' Kd (~5e-6) applied to well-lithified bedrock over-erodes by ~15x; assess lithification before selecting Kd."
+    - "The output 'discharge' variable is clamped (<1.0 -> 1.0, 0 below sea level) in the HDF5 writer and is in m^3/year, while input river rQw is m^3/s; do not conflate the two."
+    - "Per-node erodibility becomes dynamic (updated from net erosion depth each step) when multi-lithology erodibility maps are active."
+  assumptions:
+    - statement: "Drainage routing uses the single-flow-direction (steepest-descent) approximation with Braun & Willett O(n) stack ordering on the TIN."
+      scope: "flow network / discharge / fluvial incision"
+      source: "Salles, Ding & Brocard 2018, PLOS ONE (10.1371/journal.pone.0195557), Methods - spatial discretization and flow routing"
+      status: adopted
+    - statement: "The default stream-power law is detachment-limited with precipitation exponent l=0, area exponent m=0.5, slope exponent n=1."
+      scope: "fluvial incision"
+      source: "Salles, Ding & Brocard 2018, PLOS ONE, Methods - fluvial incision; xmlParser defaults"
+      status: adopted
+    - statement: "Surface evolution is closed as a mass balance on the TIN (dz/dt = tectonics + hillslope diffusion + fluvial incision + marine/wave/carbonate deposition + flexure); no surface energy balance is computed."
+      scope: "model closure"
+      source: "Salles, Ding & Brocard 2018, PLOS ONE, Methods - model framework"
+      status: adopted
+    - statement: "Tectonics are applied as 3D deformation maps (total displacement over an event) before surface-process modification each step."
+      scope: "tectonic forcing"
+      source: "Salles, Ding & Brocard 2018, PLOS ONE, Methods; xmlParser displacement-event handling"
+      status: adopted
+    - statement: "The canonical erosion XML tags are <sp_law> with children <m>, <n>, <erodibility> (the <SPLm>/<SPLn>/<SPLero> labels in some parameter tables are aliases, not the real tag names)."
+      scope: "XML input contract"
+      source: "badlands/forcing/xmlParser.py and SKILL Input File Specification"
+      status: adopted
+    - statement: "Single-precision per-run RNG seed is randomized on every load_xml, so runs are not bit-reproducible unless a seed is externally pinned."
+      scope: "reproducibility"
+      source: "badlands/model.py seed initialization"
+      status: tentative

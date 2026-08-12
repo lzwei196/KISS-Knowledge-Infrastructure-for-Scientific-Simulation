@@ -1,0 +1,472 @@
+template_version: "3.5"
+
+identity:
+  model_id: "COSIPY"
+  scientific_reference_version: "COSIPY v1.3 (Sauter, Arndt & Schneider 2020, GMD) science spec, as realized by the v2.0.2 codebase"
+  implementation:
+    id: "cosipy-202"
+    version: "v2.0.2"
+    provenance: "Python (numba-accelerated); cryotools/COSIPY, GPL-3.0; per-grid-cell 1D column with netCDF I/O and Dask parallelism."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "python"
+  license: "GPL-3.0"
+  repo_url: "https://github.com/cryotools/cosipy"
+
+boundary:
+  scope_in:
+    - "Surface energy balance over snow/ice (net shortwave with subsurface penetration, net longwave, sensible heat, latent heat, ground/subsurface heat flux, rain heat flux)"
+    - "Iterative surface skin temperature solution constrained to the melting point"
+    - "Surface mass fluxes: melt, sublimation, evaporation, deposition, condensation"
+    - "Snow/rain partitioning and fresh-snow density / new-layer creation"
+    - "Subsurface multi-layer column: percolation, refreezing, heat-equation diffusion, densification"
+    - "Albedo and roughness-length evolution"
+    - "Adaptive vertical remeshing of the layer column"
+  scope_out:
+    - "Atmospheric forcing (prescribed as input, not modeled)"
+    - "Glacier ice dynamics / flow (mass-energy balance only, no ice motion)"
+    - "Lateral horizontal exchange of energy/mass between grid cells (1D vertical only)"
+    - "Snowdrift / wind redistribution (snowfall treated as effective accumulation)"
+    - "Soil scheme (applications restricted to frozen surfaces)"
+    - "DEM / terrain generation (prescribed via static file)"
+  spatial: "1-D column"
+  temporal: "hourly"
+  closure: "both"
+  notes: "Energy and mass balance are solved jointly: the surface energy balance is iterated for a consistent skin temperature (constrained to T_s <= T_m = 273.16 K) and the subsurface obeys a per-layer continuity constraint theta_i + theta_w + theta_a = 1, so any net mass change is accompanied by changes in ice fraction, liquid water content, and porosity. The model is distributed over a gridded lat/lon domain but each cell is an independent 1-D vertical column with no lateral coupling. Default dt is 3600 s and MUST equal the input forcing temporal resolution (the model uses raw per-timestep values and does not divide by dt)."
+
+inputs:
+  forcing:
+    - {category: forcing, name: "T2", unit: "K", source_kind: forcing, model_input_format: "netCDF4 (time,lat,lon)", notes: "2-m air temperature; valid 223.16-316.16 K. Celsius input silently forces 100% rain in the tanh snow/rain partition."}
+    - {category: forcing, name: "RH2", unit: "% (0-100)", source_kind: forcing, model_input_format: "netCDF4 (time,lat,lon)", notes: "2-m relative humidity. Supplying a 0-1 fraction collapses latent heat flux to ~0."}
+    - {category: forcing, name: "U2", unit: "m s^-1", source_kind: forcing, model_input_format: "netCDF4 (time,lat,lon)", notes: "Wind speed expected at the 2-m measurement height z; 10-m reanalysis wind without log-profile correction overestimates turbulent fluxes."}
+    - {category: forcing, name: "G", unit: "W m^-2", source_kind: forcing, model_input_format: "netCDF4 (time,lat,lon)", notes: "Instantaneous incoming shortwave; valid 0-1600. Accumulated J m^-2 is ~3600x too high."}
+    - {category: forcing, name: "PRES", unit: "hPa", source_kind: forcing, model_input_format: "netCDF4 (time,lat,lon)", notes: "Surface air pressure; Pa input makes air density and turbulent fluxes ~100x too large."}
+    - {category: forcing, name: "RRR", unit: "mm per timestep", source_kind: forcing, model_input_format: "netCDF4 (time,lat,lon)", notes: "Total (liquid+solid) precipitation per timestep; the model uses the raw value and does NOT divide by dt. Required unless SNOWFALL supplied."}
+    - {category: forcing, name: "N", unit: "fraction (0-1)", source_kind: forcing, model_input_format: "netCDF4 (time,lat,lon)", notes: "Cloud cover, used to parametrize incoming longwave when LWin is absent. Required unless LWin given; percent input inflates LWin."}
+    - {category: forcing, name: "LWin", unit: "W m^-2", source_kind: forcing, model_input_format: "netCDF4 (time,lat,lon)", notes: "Optional measured incoming longwave; when absent it is parametrized from T2, RH2 (vapour pressure) and N via a Konzelmann-type clear-sky emissivity blended with an overcast term."}
+    - {category: forcing, name: "SNOWFALL", unit: "m snow height per timestep", source_kind: forcing, model_input_format: "netCDF4 (time,lat,lon)", notes: "Optional direct snowfall as SNOW HEIGHT (not w.e.); units differ from the w.e. SNOWFALL output. mm or m-w.e. input creates hundreds of layers and hits max_layers."}
+  parameters:
+    - {category: parameter, name: "albedo_fresh_snow / albedo_firn / albedo_ice", unit: "-", source_kind: calibrated, model_input_format: "constants.toml", notes: "Endpoint albedos (defaults 0.85 / 0.55 / 0.30) for the aging decay."}
+    - {category: parameter, name: "albedo decay timescales", unit: "days", source_kind: calibrated, model_input_format: "constants.toml", notes: "Snow-aging and depth-decay timescales of the Oerlemans98 / Bougamont05 schemes."}
+    - {category: parameter, name: "roughness lengths (fresh snow / firn / ice)", unit: "m (mm in config)", source_kind: calibrated, model_input_format: "constants.toml", notes: "Moelg12 interpolates z0 between surface types by snow age; constant for ice, time-dependent for snow. Code divides the Moelg result by 1000 (mm->m)."}
+    - {category: parameter, name: "snow/rain transfer temperature threshold and spread", unit: "K", source_kind: calibrated, model_input_format: "constants.toml", notes: "Center/width of the tanh snow-fraction transfer function."}
+    - {category: parameter, name: "densification coefficients (Boone / Vionnet / empirical)", unit: "various", source_kind: default, model_input_format: "in-source (cosipy/modules/densification.py)", notes: "Boone (c1=2.8e-6, eta0=3.7e7, rho0=150, ...) and Vionnet constants are hardcoded in-source, not in constants.toml."}
+    - {category: parameter, name: "fresh-snow density coefficients", unit: "kg m^-3", source_kind: default, model_input_format: "in-source (cosipy/cpkernel/cosipy_core.py)", notes: "Empirical fit max(109 + 6*(T2-273.16) + 26*sqrt(U2), 50) with hardcoded coefficients and a 50 kg/m^3 floor; active unless densification_method=='constant'."}
+    - {category: parameter, name: "Bintanja shortwave extinction coefficients (snow 17.1, ice 2.5)", unit: "m^-1", source_kind: default, model_input_format: "in-source (cosipy/modules/penetratingRadiation.py)", notes: "Hardcoded extinction coefficients for subsurface shortwave penetration."}
+    - {category: parameter, name: "thermal conductivity / heat-equation stability factor", unit: "various", source_kind: default, model_input_format: "in-source (cosipy/modules/heatEquation.py)", notes: "Explicit-conduction Courant safety factor c_stab=0.8 hardcoded; conductivity derived per-layer in Node."}
+    - {category: parameter, name: "turbulent Prandtl number", unit: "-", source_kind: default, model_input_format: "in-source (cosipy/modules/surfaceTemperature.py)", notes: "Pr=0.8 hardcoded in the Monin-Obukhov bulk flux scheme."}
+    - {category: parameter, name: "remesh density/temperature thresholds", unit: "kg m^-3 / K", source_kind: calibrated, model_input_format: "constants.toml", notes: "Merge thresholds (density_threshold_merging, merge_max) controlling adaptive layer merging."}
+    - {category: parameter, name: "measurement height z", unit: "m", source_kind: calibrated, model_input_format: "constants.toml", notes: "Height at which forcing is assumed representative (default 2.0 m)."}
+  initial_conditions:
+    - {category: initial_condition, name: "initial_snowheight_constant", unit: "m", source_kind: user_provided, model_input_format: "constants.toml or restart netCDF", notes: "Default 0.2 m; HIGH influence on first months. Zero snowheight with no early snowfall pins albedo at the ice value 0.3."}
+    - {category: initial_condition, name: "initial_glacier_height", unit: "m", source_kind: user_provided, model_input_format: "constants.toml or restart netCDF", notes: "Default 40 m; assumed thick enough that the column does not melt through."}
+    - {category: initial_condition, name: "initial_top_density_snowpack / initial_bottom_density_snowpack", unit: "kg m^-3", source_kind: user_provided, model_input_format: "constants.toml or restart netCDF", notes: "Defaults 300 / 600 kg/m^3 setting the initial density profile."}
+    - {category: initial_condition, name: "temperature_bottom", unit: "K", source_kind: user_provided, model_input_format: "constants.toml", notes: "Bottom-boundary column temperature (default 270.16 K)."}
+    - {category: initial_condition, name: "initial_surface_temperature", unit: "K", source_kind: default, model_input_format: "in-source (cosipy/cpkernel/cosipy_core.py)", notes: "Hardcoded 270.0 K seed for the across-timestep surface_temperature scalar; read by the Bougamont05 albedo decay and used as the first energy-balance iteration guess. Not in constants.toml. Distinct from temperature_bottom (270.16 K bottom-boundary column temperature)."}
+    - {category: initial_condition, name: "restart column state", unit: "various", source_kind: user_provided, model_input_format: "restart netCDF", notes: "Full layer-resolved heights/densities/temperatures/LWC from a spinup of >=1 year; recommended for production runs."}
+  boundary_conditions:
+    - {category: boundary_condition, name: "MASK (glacier mask)", unit: "boolean (0/1)", source_kind: dataset_lookup, model_input_format: "static netCDF (lat,lon)", notes: "Only MASK=1 cells are simulated. All-zero mask yields empty output; NaN forcing in a MASK=1 cell aborts the run."}
+    - {category: boundary_condition, name: "HGT (elevation/DEM)", unit: "m", source_kind: dataset_lookup, model_input_format: "static netCDF (lat,lon)", notes: "Elevation field defining the domain."}
+    - {category: boundary_condition, name: "SLOPE / ASPECT", unit: "degrees", source_kind: dataset_lookup, model_input_format: "static netCDF (lat,lon)", notes: "Terrain slope and aspect (0=North); used for radiation geometry. Declared in the code/KI static set but not in the readthedocs static-field list."}
+    - {category: boundary_condition, name: "albedo_method", unit: "switch", source_kind: user_provided, model_input_format: "config/constants.toml", notes: "Oerlemans98 (default) vs Bougamont05 albedo evolution scheme."}
+    - {category: boundary_condition, name: "stability_correction", unit: "switch", source_kind: user_provided, model_input_format: "config/constants.toml", notes: "Ri (default) vs MO Monin-Obukhov stability correction for turbulent fluxes."}
+    - {category: boundary_condition, name: "densification_method", unit: "switch", source_kind: user_provided, model_input_format: "config/constants.toml", notes: "Boone (default) / Vionnet / empirical / constant compaction scheme."}
+    - {category: boundary_condition, name: "sfc_temperature_method", unit: "switch", source_kind: user_provided, model_input_format: "config/constants.toml", notes: "Secant (default) / L-BFGS-B / SLSQP solver for the surface energy balance; L-BFGS-B and SLSQP can give different (potentially wrong) results since a Feb 2024 update."}
+    - {category: boundary_condition, name: "remesh_method", unit: "switch", source_kind: user_provided, model_input_format: "config/constants.toml", notes: "log_profile (default, fast/smoothed) vs adaptive_profile (detailed, costlier) layer remeshing."}
+    - {category: boundary_condition, name: "dt (time step)", unit: "s", source_kind: user_provided, model_input_format: "constants.toml", notes: "Default 3600 s; MUST equal input forcing resolution because all flux-to-mass conversions use raw per-step values."}
+    - {category: boundary_condition, name: "WRF dimension flag", unit: "switch", source_kind: user_provided, model_input_format: "config.toml [DIMENSIONS]", notes: "Selects south_north/west_east WRF dimension names instead of lat/lon."}
+
+processes:
+  modules:
+    - {name: "FreshSnowDensity", role: process_solver, brief: "Computes new-snow density max(109 + 6*(T2-273.16) + 26*sqrt(U2), 50) kg/m^3 (active unless densification_method=='constant')."}
+    - {name: "SnowRainPartitioning", role: process_solver, brief: "Splits RRR into solid/liquid via a tanh temperature transfer function, or uses direct SNOWFALL; couples to fresh-snow density to back out the phase split."}
+    - {name: "GridRemeshing", role: allocator, brief: "Manages the layer column (typed list of Node): adds a fresh-snow layer when SNOWFALL>minimum_snowfall, merges/splits/remeshes via log_profile or adaptive_profile, removes melt mass."}
+    - {name: "AlbedoUpdate", role: process_solver, brief: "Surface albedo via Oerlemans98 (snow-age + depth decay toward ice) or Bougamont05 (temperature-dependent decay); Bougamont reads the prior-step surface temperature."}
+    - {name: "RoughnessUpdate", role: process_solver, brief: "Moelg12 roughness length z0 interpolated between fresh-snow/firn/ice by snow age (result divided by 1000 mm->m)."}
+    - {name: "PenetratingRadiation", role: process_solver, brief: "Bintanja extinction of net shortwave into subsurface layers; returns subsurface melt and removes G_penetrating from SWnet before the surface energy balance.", applicability: "penetrating_method=Bintanja95"}
+    - {name: "SurfaceEnergyBalance", role: process_solver, brief: "Iterates surface skin temperature (Secant/L-BFGS-B/SLSQP) balancing residual net shortwave, net longwave, sensible heat, latent heat, ground heat flux and rain heat flux via a Monin-Obukhov bulk scheme; constrained to T_s <= 273.16 K."}
+    - {name: "SurfaceMassFluxes", role: process_solver, brief: "Partitions melt energy and latent heat into surface melt, sublimation, deposition, evaporation, condensation by surface temperature vs the melting point."}
+    - {name: "Percolation", role: process_solver, brief: "Bucket scheme routing meltwater + rain + condensation down the column past irreducible water content; returns runoff Q."}
+    - {name: "Refreezing", role: process_solver, brief: "Refreezes available liquid water in cold (sub-freezing) layers, updating ice fraction, LWC and temperature; contributes to internal mass balance."}
+    - {name: "HeatEquation", role: process_solver, brief: "Explicit 1-D subsurface conduction with Courant-limited sub-stepping using per-layer thermal diffusivity."}
+    - {name: "Densification", role: process_solver, brief: "Layer compaction via Boone / Vionnet / empirical / constant methods; updates layer density and height."}
+    - {name: "MassBalance", role: integrator, brief: "Assembles surface_MB (snowfall, melt, sublimation, deposition, evaporation) + internal_MB (refreeze - subsurface melt) = total MB, and accumulates cumulative MB."}
+    - {name: "TimeLoop", role: integrator, brief: "Per-grid-cell time loop (cosipy_core) orchestrating the modules each step and assembling all output arrays; cells run independently."}
+    - {name: "InitialConditions", role: driver, brief: "Builds the initial layered snow/ice column from static fields + constants, or restores it from a restart grid."}
+    - {name: "StakeEvaluation", role: optional_module, brief: "Optional comparison of cumulative MB / snowheight against stake observations.", applicability: "when stake observations supplied"}
+  internal_edges:
+    - {from: "Inputs", to: "TimeLoop", kind: consumes_input, brief: "T2, RH2, PRES, G, U2, RRR/SNOWFALL, N/LWin per timestep per cell."}
+    - {from: "InitialConditions", to: "GridRemeshing", kind: writes_state, brief: "Builds the initial Node column (or restores from restart)."}
+    - {from: "TimeLoop", to: "FreshSnowDensity", kind: invokes, brief: "Computes fresh-snow density from T2 and U2."}
+    - {from: "FreshSnowDensity", to: "SnowRainPartitioning", kind: invokes, brief: "Fresh-snow density used to back out the solid/liquid precipitation split."}
+    - {from: "SnowRainPartitioning", to: "GridRemeshing", kind: writes_state, brief: "Adds a fresh-snow layer when snowfall exceeds minimum_snowfall."}
+    - {from: "GridRemeshing", to: "AlbedoUpdate", kind: reads_state, brief: "Albedo reads top-layer density / snow age / height."}
+    - {from: "TS", to: "AlbedoUpdate", kind: reads_state, brief: "Bougamont albedo decay depends on the prior-step surface temperature."}
+    - {from: "GridRemeshing", to: "RoughnessUpdate", kind: reads_state, brief: "Roughness from fresh-snow timestamp / surface type."}
+    - {from: "AlbedoUpdate", to: "PenetratingRadiation", kind: invokes, brief: "Net shortwave SWnet = G*(1-albedo) fed to Bintanja absorption."}
+    - {from: "PenetratingRadiation", to: "LWC", kind: writes_state, brief: "Subsurface shortwave absorption melts/heats interior layers."}
+    - {from: "PenetratingRadiation", to: "SurfaceEnergyBalance", kind: invokes, brief: "Residual net shortwave (SWnet minus penetrating fraction) drives the surface energy balance."}
+    - {from: "RoughnessUpdate", to: "SurfaceEnergyBalance", kind: invokes, brief: "z0 sets the turbulent exchange in the bulk flux scheme."}
+    - {from: "GridRemeshing", to: "SurfaceEnergyBalance", kind: reads_state, brief: "Subsurface temperatures at interpolation depths give the ground heat flux."}
+    - {from: "SurfaceEnergyBalance", to: "TS", kind: writes_state, brief: "Solved skin temperature (constrained <= 273.16 K)."}
+    - {from: "SurfaceEnergyBalance", to: "SurfaceMassFluxes", kind: invokes, brief: "Melt energy and latent heat flux drive the surface mass fluxes."}
+    - {from: "SurfaceMassFluxes", to: "LWC", kind: writes_state, brief: "Melt removes mass and adds liquid water to the column."}
+    - {from: "SurfaceMassFluxes", to: "Percolation", kind: invokes, brief: "Melt + rain + condensation routed through the column."}
+    - {from: "Percolation", to: "LWC", kind: writes_state, brief: "Updates per-layer liquid water content; returns runoff Q."}
+    - {from: "Percolation", to: "Refreezing", kind: invokes, brief: "Percolated water available for refreezing in cold layers."}
+    - {from: "Refreezing", to: "T", kind: writes_state, brief: "Refreezing updates ice fraction, LWC and releases latent heat into layer temperatures."}
+    - {from: "Refreezing", to: "HeatEquation", kind: invokes, brief: "Updated thermal state passed to conduction."}
+    - {from: "HeatEquation", to: "T", kind: writes_state, brief: "Explicit conduction updates the layer temperature profile."}
+    - {from: "HeatEquation", to: "Densification", kind: invokes, brief: "Updated temperatures feed the compaction model."}
+    - {from: "Densification", to: "RHO", kind: writes_state, brief: "Compacts layers, updating density and height."}
+    - {from: "SurfaceMassFluxes", to: "MassBalance", kind: invokes, brief: "Snowfall, melt, sublimation, deposition, evaporation assemble surface MB."}
+    - {from: "Refreezing", to: "MassBalance", kind: invokes, brief: "Refreeze minus subsurface melt gives internal MB."}
+    - {from: "MassBalance", to: "Outputs", kind: produces_output, brief: "MB = surface + internal, plus fluxes and layer profiles."}
+    - {from: "MassBalance", to: "StakeEvaluation", kind: invokes, brief: "Cumulative MB / snowheight compared to stake observations when supplied."}
+
+states:
+  variables:
+    - {name: "HEIGHT", unit: "m", role: prognostic}
+    - {name: "RHO", unit: "kg m^-3", role: prognostic}
+    - {name: "T", unit: "K", role: prognostic}
+    - {name: "LWC", unit: "m w.e. (volumetric theta_w)", role: prognostic}
+    - {name: "ICE_FRACTION", unit: "-", role: prognostic}
+    - {name: "POROSITY", unit: "-", role: diagnostic}
+    - {name: "IRREDUCIBLE_WATER", unit: "-", role: diagnostic}
+    - {name: "TS", unit: "K", role: prognostic}
+    - {name: "albedo_snow", unit: "-", role: prognostic}
+    - {name: "Z0", unit: "m", role: diagnostic}
+    - {name: "SNOWHEIGHT", unit: "m", role: diagnostic}
+    - {name: "TOTALHEIGHT", unit: "m", role: diagnostic}
+    - {name: "NLAYERS", unit: "count", role: diagnostic}
+    - {name: "fresh_snow_timestamp", unit: "s", role: prognostic}
+    - {name: "MB_cum", unit: "m w.e.", role: accumulator}
+  provenance: "populated"
+
+outputs:
+  - var: "MB"
+    validation_rank: 1
+    unit: "m w.e."
+    description: "Total surface + internal mass balance per timestep (positive = mass gain)."
+    emitted_in: "output_internal (result netCDF)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Stake/cumulative-MB observations are point/glaciological; compare cumulative or seasonally-aggregated MB rather than noisy per-step values."]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["magnitude_accuracy", "trend_match"]
+          determining_metric: "pbias"
+          caveats: ["Geodetic / glacier-wide annual MB carries multi-year geometry signal; compare decadal means or specific annual balances, not interannual r."]
+      detrending_options: ["none", "decadal_mean"]
+  - var: "surfMB"
+    validation_rank: 2
+    unit: "m w.e."
+    description: "Surface mass balance per timestep (snowfall + melt + sublimation + deposition + evaporation)."
+    emitted_in: "output_internal (result netCDF)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Surface stakes measure surface ablation/accumulation; internal MB is not captured by surface stakes."]
+      detrending_options: ["none"]
+  - var: "SNOWHEIGHT"
+    validation_rank: 4
+    unit: "m"
+    description: "Total snow height above the ice surface."
+    emitted_in: "output_internal (result netCDF)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Sonic-ranger / snow-depth sensors measure height; settling and densification confound direct depth comparison."]
+      detrending_options: ["none"]
+  - var: "TS"
+    validation_rank: 3
+    unit: "K"
+    description: "Surface skin temperature, constrained to <= 273.16 K."
+    emitted_in: "output_atm (result netCDF)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["IR surface temperature retrievals saturate at the melt cap 273.16 K; bias is one-sided near melting."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Satellite LST is clear-sky only and at coarser resolution than the per-cell column."]
+      detrending_options: ["none"]
+  - var: "ALBEDO"
+    validation_rank: 5
+    unit: "-"
+    description: "Surface broadband albedo (~0.85 fresh snow to ~0.30 ice)."
+    emitted_in: "output_atm (result netCDF)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["AWS pyranometer-pair albedo is daytime/clear-sky; brief snowfall events reset albedo and must be timed correctly."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["MODIS/Sentinel albedo products differ in spectral band integration from the model broadband albedo."]
+      detrending_options: ["none"]
+  - var: "Q"
+    validation_rank: 6
+    unit: "m w.e."
+    description: "Meltwater runoff leaving the column per timestep."
+    emitted_in: "output_internal (result netCDF)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Per-cell column runoff is not routed; gauged discharge requires external lateral routing and basin aggregation before comparison."]
+      detrending_options: ["none"]
+  - var: "H"
+    validation_rank: 7
+    unit: "W m^-2"
+    description: "Turbulent sensible heat flux."
+    emitted_in: "output_atm (result netCDF)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Eddy-covariance flux towers measure H directly; bulk-aerodynamic estimate is sensitive to z0 and stability-correction choice."]
+      detrending_options: ["none"]
+  - var: "LE"
+    validation_rank: 8
+    unit: "W m^-2"
+    description: "Turbulent latent heat flux (sublimation/evaporation)."
+    emitted_in: "output_atm (result netCDF)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Skin-layer-saturation assumption can bias LE; compare against eddy-covariance latent flux."]
+      detrending_options: ["none"]
+  - var: "layer profiles (T, RHO, theta_i, theta_w, porosity)"
+    validation_rank: 9
+    unit: "K, kg m^-3, -, -, -"
+    description: "Per-layer subsurface vertical profiles of temperature, density, ice fraction, liquid water content and porosity (only when full_field output enabled)."
+    emitted_in: "output_full (result netCDF, 4-D time,lat,lon,layer)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Snow-pit / firn-core density and temperature profiles are sparse in time; compare profile snapshots at the pit date and depth."]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "r"
+          caveats: ["Thermistor-string subsurface temperatures need depth-to-layer alignment under an evolving adaptive mesh."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "air temperature (forcing)"
+      to: "surface mass balance"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "boundary_forcing"
+      applicability: "always"
+      citations: ["arndt2023_hma_sensitivity", "arndt2021_halji_sensitivity", "krampe2022_fuerkele_uncertainty"]
+    - from: "albedo (fresh snow / firn / ice)"
+      to: "surface mass balance"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["sauter2020_cosipy_model", "krampe2022_fuerkele_uncertainty", "arndt2021_halji_sensitivity", "blau2021_79n_albedo"]
+    - from: "incoming shortwave / solar radiation (forcing)"
+      to: "surface mass balance"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      lever_type: "boundary_forcing"
+      applicability: "always"
+      citations: ["krampe2022_fuerkele_uncertainty", "blau2021_79n_albedo"]
+    - from: "precipitation (forcing)"
+      to: "surface mass balance"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "boundary_forcing"
+      applicability: "always"
+      citations: ["arndt2023_hma_sensitivity", "arndt2021_halji_sensitivity"]
+    - from: "albedo decay timescale"
+      to: "surface mass balance"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["sauter2020_cosipy_model", "krampe2022_fuerkele_uncertainty"]
+    - from: "aerodynamic roughness length (z0)"
+      to: "surface mass balance"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["krampe2022_fuerkele_uncertainty", "blau2021_79n_albedo", "sauter2020_cosipy_model"]
+    - from: "cloud cover (forcing)"
+      to: "surface mass balance"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "boundary_forcing"
+      applicability: "always"
+      citations: ["krampe2022_fuerkele_uncertainty"]
+    - from: "temperature lapse rate"
+      to: "surface mass balance"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "boundary_forcing"
+      applicability: "distributed / elevation-extrapolated forcing"
+      citations: ["krampe2022_fuerkele_uncertainty"]
+    - from: "precipitation gradient"
+      to: "surface mass balance"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "boundary_forcing"
+      applicability: "distributed / elevation-extrapolated forcing"
+      citations: ["krampe2022_fuerkele_uncertainty"]
+    - from: "snow-to-rain transfer temperature threshold"
+      to: "surface mass balance"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["krampe2022_fuerkele_uncertainty", "sauter2020_cosipy_model"]
+    - from: "relative humidity (forcing)"
+      to: "surface mass balance"
+      sensitivity_grade: "LOW"
+      basis: "literature_quantitative"
+      lever_type: "boundary_forcing"
+      applicability: "always"
+      citations: ["krampe2022_fuerkele_uncertainty"]
+    - from: "wind speed (forcing)"
+      to: "surface mass balance"
+      sensitivity_grade: "LOW"
+      basis: "literature_quantitative"
+      lever_type: "boundary_forcing"
+      applicability: "always"
+      citations: ["krampe2022_fuerkele_uncertainty"]
+  _caveat: "No formal global sensitivity analysis (Sobol/Morris/EFAST indices) of COSIPY exists. Grades derive from forcing-perturbation experiments (Arndt 2023: -0.55 to -3.4 m w.e. per +1 K; Arndt 2021) and a Monte-Carlo parameter/forcing uncertainty ensemble (Krampe 2022: model params +/-0.25, forcing +/-0.73, lapse/gradient +/-0.31 m w.e.). HIGH grades reflect cross-paper dominance of temperature, albedo and net shortwave rather than a variance-based ranking; albedo HIGH in particular rests partly on qualitative dominance statements (Blau 2021, Arndt 2021), not a quantified index."
+  citation_index:
+    sauter2020_cosipy_model:
+      short_citation: "Sauter, Arndt & Schneider 2020"
+      doi: "10.5194/gmd-13-5645-2020"
+      note: "COSIPY v1.3 model description; identifies albedo (snow/firn/ice), albedo decay timescale, roughness length, thermal conductivity and densification as the physically important tunable parameters."
+    arndt2023_hma_sensitivity:
+      short_citation: "Arndt & Schneider 2023"
+      doi: "10.1017/jog.2023.46"
+      note: "COSIPY forcing-perturbation over 16 High Mountain Asia glaciers; MB response -0.55 to -3.4 m w.e. per +1 K (temperature dominant, strongest in summer) and +0.38 to +1.96 m w.e. per +20% precipitation; both non-linear."
+    krampe2022_fuerkele_uncertainty:
+      short_citation: "Krampe, Arndt & Schneider 2022"
+      doi: "10.3389/feart.2022.814027"
+      note: "Monte-Carlo uncertainty experiment at Fuerkeleferner: 10 model parameters +/-0.25 m w.e.; forcing variables +/-0.73 m w.e. (temperature, cloud cover, solar radiation dominant); lapse/gradient +/-0.31 m w.e."
+    arndt2021_halji_sensitivity:
+      short_citation: "Arndt, Scherer & Schneider 2021"
+      doi: "10.3390/atmos12040426"
+      note: "COSIPY 40-yr Halji Glacier run; MB most sensitive to summer temperature and monsoon precipitation, strongly correlated with albedo."
+    blau2021_79n_albedo:
+      short_citation: "Blau, Turton, Sauter & Moelg 2021"
+      doi: "10.1017/jog.2021.56"
+      note: "COSIPY + Polar WRF on 79N Glacier; net shortwave / albedo feedback dominate interannual MB variability; roughness length controls turbulent fluxes."
+
+safety:
+  hazards:
+    - id: "T2_celsius_silent_all_rain"
+      kind: "weather_file_semantic"
+      description: "T2 supplied in Celsius instead of Kelvin makes the tanh snow/rain transfer return 100% rain, so snowfall and snow height stay zero."
+      severity: "silent"
+    - id: "RH2_fraction_zero_latent_heat"
+      kind: "weather_file_semantic"
+      description: "RH2 given as a 0-1 fraction instead of 0-100% drives specific humidity ~100x too low, collapsing latent heat flux and sublimation."
+      severity: "silent"
+    - id: "PRES_pa_turbulent_fluxes_100x"
+      kind: "weather_file_semantic"
+      description: "PRES in Pa instead of hPa makes air density ~100x too high and turbulent fluxes ~100x too large (crash or non-physical)."
+      severity: "fatal_or_silent"
+    - id: "RRR_per_day_not_per_timestep"
+      kind: "weather_file_semantic"
+      description: "Precipitation in mm/day rather than mm/timestep is off by the steps-per-day factor; COSIPY uses the raw value and never divides by dt."
+      severity: "silent"
+    - id: "G_accumulated_joules"
+      kind: "weather_file_semantic"
+      description: "Shortwave G supplied as accumulated J/m^2 instead of instantaneous W/m^2 is ~3600x too high and blows the model up to NaN."
+      severity: "fatal_or_silent"
+    - id: "N_percent_inflates_longwave"
+      kind: "weather_file_semantic"
+      description: "Cloud cover N in percent (0-100) instead of fraction (0-1) inflates parametrized incoming longwave above 500 W/m^2 and forces winter melt."
+      severity: "silent"
+    - id: "snowfall_units_max_layers"
+      kind: "weather_file_semantic"
+      description: "SNOWFALL given in mm or m w.e. instead of m snow height creates hundreds of layers per step and hits max_layers (200)."
+      severity: "fatal"
+    - id: "dt_mismatch_mass_scaling"
+      kind: "control_semantic"
+      description: "dt in constants.toml not equal to the input forcing resolution mis-scales every flux-to-mass conversion (melt, runoff, sublimation, MB)."
+      severity: "silent"
+    - id: "nan_in_masked_cells_abort"
+      kind: "weather_file_semantic"
+      description: "Any NaN in a forcing variable at a MASK=1 cell aborts the run with 'There are NaNs in the dataset'."
+      severity: "fatal"
+    - id: "empty_mask_or_time_slice"
+      kind: "control_semantic"
+      description: "All-zero MASK (DEM/shapefile extent mismatch) or a simulation period outside the input time range yields empty / all-NaN output without an error."
+      severity: "silent"
+    - id: "sfc_temp_solver_nonconvergence"
+      kind: "numerical_instability"
+      description: "Extreme forcing (bad G/PRES/LWin units) makes the surface-temperature root-find non-convergent, producing oscillation or NaN; TS>273.5 K signals a numerical issue."
+      severity: "fatal_or_silent"
+    - id: "zero_snowheight_albedo_stuck_ice"
+      kind: "initial_condition_semantic"
+      description: "Zero initial snowheight with no early snowfall leaves the surface as bare ice with albedo pinned at 0.30, producing excess melt during spinup."
+      severity: "silent"
+  validation_limits:
+    - "1-D vertical column with no lateral exchange; cannot represent horizontal redistribution, avalanching or basin routing of runoff."
+    - "No glacier ice dynamics/flow; geometry evolution beyond surface/internal mass balance is out of scope."
+    - "No soil scheme; applicable only to frozen (snow/ice) surfaces."
+    - "Snowdrift / wind redistribution not represented; snowfall treated as effective accumulation."
+    - "Surface skin temperature cannot exceed the melting point (273.16 K), so the model cannot represent a warm/wet surface above freezing."
+  warnings:
+    - "Surface-temperature solver choice matters: L-BFGS-B and SLSQP can give different (potentially wrong) results since a Feb 2024 code change; Secant is the recommended default."
+    - "Initial conditions strongly bias the first ~3-6 months; production runs should start from a >=1-year spinup restart file with the same forcing."
+    - "Sublimation is a mass loss typically 5-20% of total ablation and is suppressed when humidity input is mis-scaled."
+    - "Wind expected at the 2-m measurement height; using 10-m reanalysis wind without a log-profile correction overestimates turbulent fluxes by ~30-50%."
+    - "Input SNOWFALL is snow height while output SNOWFALL is water-equivalent — the same name carries different units across the model boundary."
+  assumptions:
+    - statement: "Each grid cell is an independent 1-D vertical column with no lateral energy or mass exchange."
+      scope: "Whole-domain spatial structure"
+      source: "COSIPY v1.3 model description (Sauter et al. 2020, GMD 13:5645) and readthedocs Resources"
+      status: "adopted"
+    - statement: "The model carries coupled mass and energy closure: per-layer theta_i + theta_w + theta_a = 1, and surface skin temperature is iterated to a consistent value constrained to T_s <= 273.16 K."
+      scope: "Subsurface continuity and surface energy-balance closure"
+      source: "COSIPY v1.3 model description (Sauter et al. 2020, GMD 13:5645), subsurface continuity and numerical-solution sections"
+      status: "adopted"
+    - statement: "Default daily/hourly dt must equal the input forcing temporal resolution because flux-to-mass conversions use raw per-step values without dividing by dt."
+      scope: "Time discretization of all mass fluxes"
+      source: "COSIPY constants.toml dt definition and cosipy_core flux-to-mass conversion"
+      status: "adopted"
+    - statement: "Default surface-temperature solver is taken to be Secant; the L-BFGS-B / SLSQP optimizer paths are treated as potentially divergent after the Feb 2024 change."
+      scope: "Surface energy-balance numerical solution"
+      source: "cosipy/modules/surfaceTemperature.py solver options and COSIPY changelog"
+      status: "tentative"

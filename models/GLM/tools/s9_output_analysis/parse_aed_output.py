@@ -134,14 +134,29 @@ def parse_aed_nc(output_nc_path):
     }
 
     # Find AED2 variables present in the output
+    # GLM writes profile variables as (time, z, lat, lon); lat/lon are
+    # singleton for a 1-D lake column. Squeeze trailing singleton dims so
+    # downstream surface/bottom extraction sees a clean (time, layers) array.
     aed_data = {}
     for var_name in AED2_VARIABLES:
         # Try exact name and various capitalizations
         for try_name in [var_name, var_name.lower(), var_name.upper()]:
             if try_name in ds.variables:
-                data = ds.variables[try_name][:]
-                aed_data[var_name] = np.ma.filled(data, np.nan)
+                data = np.ma.filled(ds.variables[try_name][:], np.nan)
+                # Drop singleton lat/lon dims: (time, z, 1, 1) -> (time, z)
+                while data.ndim > 2 and data.shape[-1] == 1:
+                    data = data[..., 0]
+                aed_data[var_name] = data
                 result["aed2_variables_found"].append(var_name)
+                # Flag variables that are entirely fill/NaN in output.nc.
+                # NOTE: with the glm-aed v3.3.3 binary, AED2 water-column
+                # STATE variables (OXY_oxy, NIT_*, PHS_frp, ...) are written
+                # to output.nc as all-fill; only physical vars (temp/salt)
+                # populate reliably. Validate WQ from the csv_point output
+                # (csv_point_vars in &output) instead — see SKILL.md.
+                if not np.isfinite(data).any():
+                    result.setdefault("all_fill_in_output_nc", []).append(
+                        var_name)
                 break
 
     # Get time

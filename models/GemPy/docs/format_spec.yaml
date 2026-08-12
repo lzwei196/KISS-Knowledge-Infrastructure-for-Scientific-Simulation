@@ -1,128 +1,150 @@
 model:
-  name: "GemPy"
-  version: "v3 (2024.1)"
-  domain: "3D structural geology, geophysics"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GemPy/venv/bin/python"
-  language: "Python 3.10-3.12"
-  license: "EUPL-1.2"
-  repository: "https://github.com/cgre-aachen/gempy"
+  name: GemPy
+  version: v3 (2024.1)
+  domain: geophysics
+  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/GemPy/venv/bin/python
+  language: Python 3.10-3.12
+  license: EUPL-1.2
+  repository: https://github.com/cgre-aachen/gempy
   architecture:
-    - package: "gempy"
-      role: "High-level API, data classes"
-    - package: "gempy_engine"
-      role: "Computation (NumPy/PyTorch)"
-    - package: "gempy_viewer"
-      role: "Visualization (matplotlib/PyVista)"
-    - package: "gempy_plugins"
-      role: "Extensions (topology, etc.)"
-
+  - package: gempy
+    role: High-level API, data classes
+  - package: gempy_engine
+    role: Computation (NumPy/PyTorch)
+  - package: gempy_viewer
+    role: Visualization (matplotlib/PyVista)
+  - package: gempy_plugins
+    role: Extensions (topology, etc.)
 inputs:
   forcing:
-    - name: "surface_points"
-      format: "CSV"
-      columns:
-        - name: "X"
-          unit: "meters (project CRS)"
-          type: "float64"
-        - name: "Y"
-          unit: "meters (project CRS)"
-          type: "float64"
-        - name: "Z"
-          unit: "meters (elevation)"
-          type: "float64"
-        - name: "formation"
-          unit: "string"
-          type: "string"
-    - name: "orientations"
-      format: "CSV"
-      columns:
-        - name: "X"
-          unit: "meters (project CRS)"
-          type: "float64"
-        - name: "Y"
-          unit: "meters (project CRS)"
-          type: "float64"
-        - name: "Z"
-          unit: "meters (elevation)"
-          type: "float64"
-        - name: "G_x"
-          unit: "unitless"
-          type: "float64"
-          valid_range: [-1.0, 1.0]
-        - name: "G_y"
-          unit: "unitless"
-          type: "float64"
-          valid_range: [-1.0, 1.0]
-        - name: "G_z"
-          unit: "unitless"
-          type: "float64"
-          valid_range: [-1.0, 1.0]
+  - name: surface_points
+    format: CSV
+    columns:
+    - name: X
+      unit: meters (project CRS)
+      type: float64
+    - name: Y
+      unit: meters (project CRS)
+      type: float64
+    - name: Z
+      unit: meters (elevation)
+      type: float64
+    - name: formation
+      unit: string
+      type: string
+  - name: orientations
+    format: CSV
+    columns:
+    - name: X
+      unit: meters (project CRS)
+      type: float64
+    - name: Y
+      unit: meters (project CRS)
+      type: float64
+    - name: Z
+      unit: meters (elevation)
+      type: float64
+    - name: G_x
+      unit: unitless
+      type: float64
+      valid_range:
+      - -1.0
+      - 1.0
+    - name: G_y
+      unit: unitless
+      type: float64
+      valid_range:
+      - -1.0
+      - 1.0
+    - name: G_z
+      unit: unitless
+      type: float64
+      valid_range:
+      - -1.0
+      - 1.0
   parameters:
     critical:
-      - name: "extent"
-        description: "Model bounding box [x_min, x_max, y_min, y_max, z_min, z_max] in meters"
-        valid_range: ["z_min < z_max required"]
-      - name: "refinement"
-        description: "Octree refinement level (higher = more detail, more memory)"
-        valid_range: [1, 8]
-        default: 6
-      - name: "resolution"
-        description: "Dense grid cells per axis [nx, ny, nz]"
-        valid_range: [1, 500]
-      - name: "nugget_surface_points"
-        description: "Tikhonov regularization for surface points"
-        valid_range: [1.0e-8, 0.1]
-        default: 0.00002
-      - name: "nugget_orientations"
-        description: "Tikhonov regularization for orientations"
-        valid_range: [1.0e-8, 0.1]
-        default: 0.01
+    - name: extent
+      description: Model bounding box [x_min, x_max, y_min, y_max, z_min, z_max] in
+        meters
+      valid_range:
+      - z_min < z_max required
+    - name: refinement
+      description: Octree refinement level (higher = more detail, more memory)
+      valid_range:
+      - 1
+      - 8
+      default: 6
+    - name: resolution
+      description: Dense grid cells per axis [nx, ny, nz]
+      valid_range:
+      - 1
+      - 500
+    - name: nugget_surface_points
+      description: Tikhonov regularization for surface points
+      valid_range:
+      - 1.0e-08
+      - 0.1
+      default: 2.0e-05
+    - name: nugget_orientations
+      description: Tikhonov regularization for orientations
+      valid_range:
+      - 1.0e-08
+      - 0.1
+      default: 0.01
     optional:
-      - name: "backend"
-        description: "Computation backend: numpy (CPU) or pytorch (GPU)"
-        default: "numpy"
-      - name: "mapping_object"
-        description: "Dict mapping series names to surface lists for structural frame"
-      - name: "fault_groups"
-        description: "List of group names to mark as faults"
-
+    - name: backend
+      description: 'Computation backend: numpy (CPU) or pytorch (GPU)'
+      default: numpy
+    - name: mapping_object
+      description: Dict mapping series names to surface lists for structural frame
+    - name: fault_groups
+      description: List of group names to mark as faults
 outputs:
   primary:
-    - name: "scalar_field"
-      type: "ndarray float64"
-      description: "Continuous potential values at each grid point"
-    - name: "block"
-      type: "ndarray int32"
-      description: "Discrete formation IDs at each grid point"
-    - name: "vertices"
-      type: "list[ndarray]"
-      description: "Mesh vertices per geological surface"
-    - name: "edges"
-      type: "list[ndarray]"
-      description: "Mesh triangles per geological surface"
+  - name: scalar_field
+    type: ndarray float64
+    description: Continuous potential values at each grid point
+  - name: block
+    type: ndarray int32
+    description: Discrete formation IDs at each grid point
+  - name: vertices
+    type: list[ndarray]
+    description: Mesh vertices per geological surface
+  - name: edges
+    type: list[ndarray]
+    description: Mesh triangles per geological surface
+  - name: subsurface_resistivity
+    canonical_id: subsurface_resistivity
+    unit: ohm.m
+  - name: hydraulic_conductivity
+    canonical_id: hydraulic_conductivity
+    unit: m/s
+  - name: porosity
+    canonical_id: porosity
+    unit: fraction
   serialization:
-    - format: "Binary (.gempy)"
-      tool: "save_model/load_model"
-    - format: "VTK (.vtk)"
-      tool: "gempy_viewer export"
-    - format: "CSV (.csv)"
-      tool: "pandas export"
-    - format: "JSON (.json)"
-      tool: "json_geomodel_encoder"
-
+  - format: Binary (.gempy)
+    tool: save_model/load_model
+  - format: VTK (.vtk)
+    tool: gempy_viewer export
+  - format: CSV (.csv)
+    tool: pandas export
+  - format: JSON (.json)
+    tool: json_geomodel_encoder
 known_issues:
-  - id: "dt_001"
-    description: "Coordinates in km instead of m cause paper-thin layers"
-    severity: "silent"
-  - id: "dt_005"
-    description: "Z-axis extent inverted (min > max) causes crash or empty model"
-    severity: "fatal"
-  - id: "dt_008"
-    description: "Nugget too small causes singular matrix crash"
-    severity: "fatal"
-  - id: "dt_014"
-    description: "Dense grids >100^3 can cause OOM"
-    severity: "fatal"
-  - id: "dt_016"
-    description: "gempy/gempy_engine version mismatch causes ImportError"
-    severity: "fatal"
+- id: dt_001
+  description: Coordinates in km instead of m cause paper-thin layers
+  severity: silent
+- id: dt_005
+  description: Z-axis extent inverted (min > max) causes crash or empty model
+  severity: fatal
+- id: dt_008
+  description: Nugget too small causes singular matrix crash
+  severity: fatal
+- id: dt_014
+  description: Dense grids >100^3 can cause OOM
+  severity: fatal
+- id: dt_016
+  description: gempy/gempy_engine version mismatch causes ImportError
+  severity: fatal

@@ -77,7 +77,7 @@ if len(sys.argv) > 1:
     parser.add_argument("--opti_method", type=int, default=1,
                         choices=[1, 2, 3],
                         help="1=DDS, 2=SA, 3=SCE")
-    parser.add_argument("--opti_function", type=int, default=10,
+    parser.add_argument("--opti_function", type=int, default=1,
                         help="Objective function: 10=KGE, 1=1-NSE, 9=KGE(2012)")
     parser.add_argument("--n_iterations", type=int, default=1000,
                         help="Number of optimization iterations")
@@ -339,6 +339,19 @@ def run_mhm_calibration(run_dir, mhm_binary):
             logger.error(f"stderr: {result.stderr[-2000:]}")
             sys.exit(2)
 
+        # TRAP (dt_r14). mHM exits 0 having done nothing: a Fortran `stop '<msg>'`
+        # returns status 0. mo_dds.F90:169 does exactly that when nIterations < 6.
+        # NEVER trust the return code alone -- assert the expected artefact exists.
+        final_param = Path(run_dir) / "FinalParam.nml"
+        if not final_param.exists():
+            tail = (result.stdout or "")[-2000:]
+            logger.error(
+                f"mHM exited 0 but wrote no FinalParam.nml -- a Fortran `stop` "
+                f"(exit status 0) swallowed the run. Check nIterations >= 6 (dt_r14) "
+                f"and the &optional_data requirement of opti_function (dt_r15).\n"
+                f"stdout tail:\n{tail}")
+            sys.exit(2)
+
         logger.info(f"mHM calibration completed. Logs saved to {log_dir}")
         return result.returncode
 
@@ -542,20 +555,38 @@ def process():
     nml_path = run_dir / "mhm.nml"
     param_nml = run_dir / "mhm_parameter.nml"
 
-    # Step 1: Modify mhm.nml for calibration
-    modify_mhm_nml_for_calibration(nml_path, OPTI_METHOD, OPTI_FUNCTION, N_ITERATIONS)
+    # TRAP (dt_r16). This tool used to rewrite mhm.nml on EVERY invocation. Because
+    # the documented recipe calls it three times (configure -> --execute ->
+    # --parse_results) and the last two carry no optimizer flags, the --execute call
+    # silently stamped the argparse DEFAULTS back into mhm.nml -- a run configured
+    # `--opti_function 1 --n_iterations 2000` actually executed with 10/1000.
+    # Only the CONFIGURE invocation (neither --execute nor --parse_results) may write.
+    configuring = not (EXECUTE or PARSE_RESULTS)
 
-    # Step 2: Adjust parameter bounds if basin type specified
     n_adjusted = 0
-    if BASIN_TYPE:
-        n_adjusted = adjust_parameter_bounds(param_nml, BASIN_TYPE)
+    if configuring:
+        # Step 1: Modify mhm.nml for calibration
+        modify_mhm_nml_for_calibration(nml_path, OPTI_METHOD, OPTI_FUNCTION, N_ITERATIONS)
+
+        # Step 2: Adjust parameter bounds if basin type specified
+        if BASIN_TYPE:
+            n_adjusted = adjust_parameter_bounds(param_nml, BASIN_TYPE)
+    else:
+        logger.info(f"Not the configure call (execute={EXECUTE}, "
+                    f"parse_results={PARSE_RESULTS}): leaving mhm.nml untouched (dt_r16)")
 
     # Document calibration setup
     opti_method_names = {1: "DDS", 2: "SA", 3: "SCE"}
+    # Verified against v5.13.1 source: src/mRM/mo_mrm_objective_function_runoff.F90
+    # (discharge-only) and src/mHM/mo_objective_function.F90 (multi-variable).
+    # dt_r15: 10 is NOT KGE of discharge -- it is 1 - KGE of catchment-average SOIL
+    # MOISTURE and requires &optional_data. For discharge use 1 or 9.
     opti_function_names = {
-        1: "1-NSE", 2: "1-lnNSE", 3: "1-SSE", 4: "1-lnSSE",
-        5: "BIAS^2", 6: "1-r", 7: "1-lnr", 8: "errM-MCMC",
-        9: "KGE(2012)", 10: "KGE", 14: "weighted-NSE",
+        1: "1-NSE(Q)", 2: "1-lnNSE(Q)", 3: "1-0.5*(NSE+lnNSE)(Q)",
+        9: "1-KGE(Q)", 14: "multi-gauge KGE, power-6 norm",
+        10: "1-KGE(soil moisture) [needs &optional_data]",
+        15: "KGE(Q)*RMSE(TWS) [needs &optional_data]",
+        17: "KGE(neutrons) [needs &optional_data]",
     }
 
     config = {

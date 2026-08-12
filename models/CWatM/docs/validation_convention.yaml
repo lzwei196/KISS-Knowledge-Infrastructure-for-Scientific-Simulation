@@ -1,0 +1,250 @@
+schema_version: 1
+model_id: CWatM
+domain: hydrology
+generated_by: "self-improve session (Claude Opus 4.8, 1M) — Step-B validation-convention build, general schema"
+generated_at: 2026-07-09
+
+# HOW THIS WAS GROUNDED (honesty note) --------------------------------------------------------------
+# DISCHARGE is the primary, well-grounded quantity. Numeric NSE/PBIAS bands are the Moriasi 2007/2015
+# hydrology tiers, quoted from OPEN-ACCESS papers that REPRODUCE those tables verbatim (Arnold et al.
+# 2012 SWAT calibration; Bouregreg SWAT 2011; Pan-Arctic GHM evaluation 2020) — the primary Moriasi
+# papers are paywalled (see deferred_paywalled). CWatM's own model paper (Burek et al. 2020) confirms
+# KGE' is the model's primary calibration objective and tabulates the global 1366-GRDC-station skill
+# distribution; Knoben et al. 2019 supplies the KGE mean-flow benchmark caveat. Net: discharge = STRONG.
+#
+# TWS (GRACE) and GROUNDWATER STORAGE have real obs bindings in model_obs_map (tws_anomaly_cm /
+# lwe_thickness_cm; groundwater_level_m) so blocks are emitted, but the fetched set contains NO paper
+# giving a numeric model-vs-GRACE r threshold or a groundwater-level skill tier -> those bands are null
+# with confidence <= 0.35 (they may CONTEXTUALIZE but NEVER loosen the gate). Scanlon et al. 2018 (PNAS)
+# documents a genuine STRUCTURAL ceiling: global models systematically underestimate GRACE decadal TWS
+# trends, so TWS trend/amplitude magnitude is a data/structure ceiling, not a KI defect.
+#
+# EVAPOTRANSPIRATION and SWE/snow are declared in the dag but have NO obs binding in model_obs_map
+# (has_obs_binding: false; no ET or snow observation row) -> no gradeable convention, no block emitted
+# (per schema: no obs, no convention). See notes in the discharge block.
+# Bands are plain numbers read via `direction` (see VALIDATION_CONVENTION_SCHEMA.md).
+
+references:
+  burek2020:
+    doi: 10.5194/gmd-13-3267-2020
+    title: "Development of the Community Water Model (CWatM v1.04) – a high-resolution hydrological model for global and regional assessment of integrated water resources management"
+    venue: "Geosci. Model Dev."
+    year: 2020
+    oa: gold
+    resolves: https://gmd.copernicus.org/articles/13/3267/2020/gmd-13-3267-2020.pdf
+  arnold2012:
+    doi: 10.13031/2013.42256
+    title: "SWAT: Model Use, Calibration, and Validation"
+    venue: "Transactions of the ASABE"
+    year: 2012
+    oa: manual   # reproduces Moriasi et al. 2007 monthly NSE tiers verbatim
+    resolves: manual
+  bouregreg2011:
+    doi: 10.4236/jgis.2011.34024
+    title: "Hydrologic Modeling of the Bouregreg Watershed (Morocco) Using GIS and SWAT Model"
+    venue: "Journal of Geographic Information System"
+    year: 2011
+    oa: gold      # reproduces Moriasi 2007 'very good' NSE/PBIAS/RSR ranges verbatim
+    resolves: https://www.scirp.org/journal/paperinformation?paperid=8500
+  panarctic2020:
+    doi: 10.1007/s10584-020-02892-2
+    title: "Performance evaluation of global hydrological models in six large Pan-Arctic watersheds"
+    venue: "Climatic Change"
+    year: 2020
+    oa: manual    # reproduces Moriasi 2015 monthly-runoff NSE/PBIAS tiers verbatim; applies NSE>0.5 & PBIAS<=25%
+    resolves: manual
+  knoben2019:
+    doi: 10.5194/hess-23-4323-2019
+    title: "Technical note: Inherent benchmark or not? Comparing Nash-Sutcliffe and Kling-Gupta efficiency scores"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2019
+    oa: gold
+    resolves: https://hess.copernicus.org/articles/23/4323/2019/hess-23-4323-2019.pdf
+  cwatmbench2025:
+    doi: 10.5194/hess-29-2881-2025
+    title: "Benchmarking historical performance and future projections from a large-scale hydrological model (CWatM vs VIC)"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2025
+    oa: gold
+    resolves: https://hess.copernicus.org/articles/29/2881/2025/hess-29-2881-2025.pdf
+  scanlon2018:
+    doi: 10.1073/pnas.1704665115
+    title: "Global models underestimate large decadal declining and rising water storage trends relative to GRACE satellite data"
+    venue: "PNAS"
+    year: 2018
+    oa: manual
+    resolves: manual
+  gracemascon2016:
+    doi: 10.1002/2016wr019494
+    title: "Global evaluation of new GRACE mascon products for hydrologic applications"
+    venue: "Water Resources Research"
+    year: 2016
+    oa: manual
+    resolves: manual
+  gwreview2021:
+    doi: 10.1029/2020wr029500
+    title: "Global Groundwater Modeling and Monitoring: Opportunities and Challenges"
+    venue: "Water Resources Research"
+    year: 2021
+    oa: manual
+    resolves: manual
+
+validation:
+
+  # ===================== DISCHARGE / point time series (well grounded) =====================
+  - canonical_quantity: discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.70, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi monthly tiers; daily NSE structurally lower than monthly (dag caveat) so relax for daily gauges."
+        cites: [arnold2012, panarctic2020, bouregreg2011]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Streamflow PBIAS tiers; Pan-Arctic study applies |PBIAS|<=25% as the monthly-discharge satisfactory bound."
+        cites: [panarctic2020, bouregreg2011]
+    secondary_metrics:
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          KGE' (modified Kling-Gupta) is CWatM's PRIMARY calibration/evaluation objective (Burek et al.
+          2020). Its uncalibrated global run reports 243/1366 GRDC stations at KGE>=0.5. Knoben et al.
+          2019 warns the mean-flow benchmark for KGE is KGE=1-sqrt(2)~=-0.41 (NOT 0), so a KGE 0.5
+          marker is a reporting bin, not a Moriasi-equivalent formal tier — kept supportive, not headline.
+        cites: [burek2020, knoben2019]
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "In CWatM's 1366-station global evaluation, R ranked better than KGE or NSE (858 stations R>=0.5 vs 243 KGE, 108 NSE); correlation over-credits timing without penalising bias, so it is co-reported, not decisive."
+        cites: [burek2020]
+    validated_when: "NSE >= 0.50 (Moriasi monthly satisfactory; relax for daily) AND |PBIAS| <= 25% (streamflow satisfactory). KGE'/R co-reported (CWatM primary objective is KGE')."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Well grounded. Arnold et al. 2012: "Moriasi et al. (2007) proposed that NSE values should exceed
+      0.5 ... judged satisfactory ... 'very good' meant NSE (and r2) >0.75". Pan-Arctic 2020: "Moriasi
+      et al. (2015) ... NSE >= 0.70 and PBIAS < +-10 [good] ... NSE > 0.55 and +-10 <= PBIAS <= +-15
+      [satisfactory]" and applies "NSE monthly is > 0.5 and PBIAS is within +-25%". Bouregreg 2011
+      reproduces Moriasi 'very good': "0 to 0.5 for RSR, 0.75 to 1 for NSE and -10 to 10 for PBIAS".
+      cwatmbench2025 is CWatM's own multi-basin (Atlantic Canada) evaluation vs VIC. Exclude spinup;
+      filter near-zero negative routing discharge; verify gauge->grid upstream-area mapping on coarse
+      grids. NOTE: dag also declares evapotranspiration and SWE/snow, but model_obs_map has NO ET or
+      snow obs binding (has_obs_binding: false) so no gradeable convention is emitted for them here.
+
+  # ===================== DISCHARGE / regional-aggregate time series (transferred band) =====================
+  - canonical_quantity: discharge
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Basin-aggregate / long-term-mean discharge magnitude when point gauges are unavailable."
+        cites: [panarctic2020, bouregreg2011]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Aggregate/long-term-mean comparison targets water-balance magnitude (PBIAS); temporal efficiency is co-reported where a monthly aggregate series exists."
+        cites: [panarctic2020]
+    validated_when: "|PBIAS| <= 25% on the basin-aggregate or long-term-mean discharge (Pan-Arctic satisfactory bound)."
+    evidence_strength: moderate
+    confidence: 0.6
+    notes: >-
+      Same PBIAS streamflow tiers as the point block, applied to basin-aggregate / long-term-mean flow
+      per Pan-Arctic 2020 ("for long-term mean discharge ... PBIAS within +-25%"). Used when point
+      gauges are unavailable; NSE not the headline at aggregate scale.
+
+  # ===================== TOTAL WATER STORAGE / GRACE spatial time series (thin literature) =====================
+  - canonical_quantity: tws
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a numeric model-vs-GRACE TWS-anomaly correlation threshold; field compares seasonal anomaly patterns qualitatively. Band null -> gate cannot auto-validate here."
+        cites: []
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: >-
+          Scanlon et al. 2018 (PNAS): across 186 river basins "Medians of modeled basin water storage
+          trends greatly underestimate GRACE-derived large decreasing ... and increasing ... trends"
+          (summed model trends -450 to -12 km3/yr vs GRACE +71 to +82 km3/yr). Decadal TWS trend/
+          amplitude magnitude is therefore a documented STRUCTURAL/data ceiling for global hydrological
+          models -> a low trend-magnitude score is acquire_data/data-ceiling, NOT fix_ki.
+        cites: [scanlon2018]
+    validated_when: "UNRESOLVED numerically — seasonal TWS-anomaly correlation (r) is the reportable skill but has no cited numeric tier; decadal trend magnitude is structurally underestimated (Scanlon 2018). Treat as data-gap until a model-vs-GRACE r/NSE benchmark is fetched."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      model_obs_map binds total_water_storage to GRACE tws_anomaly_cm / lwe_thickness_cm (r). Compare
+      ANOMALIES not absolute storage; GRACE is a coarse (~3 degree/mascon) anomaly with resolution
+      mismatch (gracemascon2016). No fetched paper sets an r threshold, so the band is null and MUST NOT
+      loosen the gate. Scanlon 2018 grounds a real structural ceiling on trend magnitude only.
+
+  # ===================== GROUNDWATER STORAGE / point time series (thin literature) =====================
+  - canonical_quantity: storage
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No fetched paper gives a groundwater-level/storage NSE tier for a global linear-reservoir GW store; band null -> not auto-validatable."
+        cites: []
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "model_obs_map determining_metric for storGroundwater is r (water-table fluctuation match); no cited numeric threshold in the fetched set."
+        cites: []
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: >-
+          CWatM groundwater is a lumped linear-reservoir store; absolute water-table depth is resolution-
+          sensitive so water-table FLUCTUATION correlation reproduces better than absolute storage (dag
+          caveat, Guillaumot 2022 — not fetched, hence supportive not structurally_limited). gwreview2021
+          documents that global groundwater modelling still lacks standardised head-validation benchmarks
+          and is data-limited, so no numeric tier is available to cite.
+        cites: [gwreview2021]
+    validated_when: "UNRESOLVED numerically — compare water-table fluctuations (r) not absolute storage; no cited NSE/r threshold for a global linear-reservoir groundwater store. Data-gap until a head-validation benchmark is fetched."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      storGroundwater bound to groundwater_level_m. Absolute lumped storage is not directly comparable to
+      point water-table depth; fluctuation correlation is the honest target but has no fetched numeric
+      band. Null bands MUST NOT loosen the gate. The MODFLOW-coupled CWatM variant (deferred, fetch
+      failed) is the route to a resolved head benchmark.
+
+deferred_paywalled:
+  - ref: "Moriasi et al. 2007 — Model evaluation guidelines for systematic quantification of accuracy (PRIMARY source of the monthly NSE/PBIAS/RSR tiers; reproduced here via Arnold 2012 & Bouregreg 2011)"
+    doi: 10.13031/2013.23153
+    needed_for: [discharge]
+  - ref: "Moriasi et al. 2015 — Hydrologic and water quality models: performance measures and evaluation criteria (PRIMARY source of the tightened tiers; reproduced here via Pan-Arctic 2020)"
+    doi: 10.13031/trans.58.10715
+    needed_for: [discharge]
+  - ref: "Coupling CWatM v1.1 with high-resolution MODFLOW 6 groundwater flow model (would supply a real head/storage validation benchmark for storGroundwater)"
+    doi: 10.5194/gmd-15-7099-2022
+    needed_for: [storage]
+  - ref: "Guillaumot et al. 2022 — CWatM groundwater representation / water-table fluctuation vs absolute storage (dag caveat source; not fetched)"
+    doi: unknown_not_fetched
+    needed_for: [storage]
+  - ref: "A dedicated CWatM/global-hydrology vs GRACE TWS-anomaly evaluation reporting r/NSE by basin (would close the null TWS correlation band)"
+    doi: unknown_not_fetched
+    needed_for: [tws]

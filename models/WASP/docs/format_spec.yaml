@@ -1,0 +1,356 @@
+model:
+  name: WASP Knowledge Infrastructure
+  domain: water_quality
+  binary_path: ''
+  language: unknown
+inputs:
+  forcing:
+  - name: Temperature
+    unit: '**deg C**'
+    format: ''
+    source: skill_md
+outputs:
+  primary:
+  - name: Temperature
+    unit: '**deg C**'
+    format: ''
+    source: skill_md
+  - name: total_nitrogen
+    canonical_id: total_nitrogen
+    unit: mgN/L
+  - name: total_phosphorus
+    canonical_id: total_phosphorus
+    unit: mgP/L
+  - name: dissolved_oxygen
+    canonical_id: dissolved_oxygen
+    unit: mg/L
+  - name: chlorophyll_a
+    canonical_id: chlorophyll_a
+    unit: ug/L
+known_issues:
+- id: dt_wasp_001
+  description: '{''description'': ''Surface temperature seasonal cycle shifted upward
+    by ~15-20 C; summer values exceed 40 C'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''WQP temperature data in Fahrenheit instead
+    of Celsius'', ''explanation'': "WQP observation records include a ResultMeasure/MeasureUnitCode
+    field that may be ''deg F'' for some monitoring or'
+  detection: '{''root_cause'': ''WQP temperature data in Fahrenheit instead of Celsius'',
+    ''explanation'': "WQP observation records include a ResultMeasure/MeasureUnitCode
+    field that may be ''deg F'' for some monitoring or'
+  fix: '{''action'': ''Convert Fahrenheit to Celsius: T_C = (T_F - 32) * 5/9 before
+    fitting the seasonal model'', ''tool_to_run'': ''convert_forcing_to_wasp'', ''manual_steps'':
+    [''Check ResultMeasure/MeasureUnitCode in'
+- id: dt_wasp_002
+  description: '{''description'': ''Temperature values all above 200 C; DO saturation
+    formula returns nonsensical results'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Temperature data in Kelvin instead of Celsius'',
+    ''explanation'': ''Some reanalysis or satellite-derived datasets report temperature
+    in Kelvin (e.g., 273-303 K for typical lake surface con'
+  detection: '{''root_cause'': ''Temperature data in Kelvin instead of Celsius'',
+    ''explanation'': ''Some reanalysis or satellite-derived datasets report temperature
+    in Kelvin (e.g., 273-303 K for typical lake surface con'
+  fix: '{''action'': ''Subtract 273.15 from Kelvin values to convert to Celsius'',
+    ''tool_to_run'': ''convert_forcing_to_wasp'', ''manual_steps'': [''If all temperature
+    values are between 200 and 330, data is likely in '
+- id: dt_wasp_003
+  description: '{''description'': ''Dissolved oxygen observations show values of 60-110
+    mg/L; calibration produces nonsensical DO_offset'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''DO data reported as percent saturation instead
+    of mg/L concentration'', ''explanation'': ''Some WQP records report dissolved
+    oxygen as percent saturation (typically 60-110%) rather than co'
+  detection: '{''root_cause'': ''DO data reported as percent saturation instead of
+    mg/L concentration'', ''explanation'': ''Some WQP records report dissolved oxygen
+    as percent saturation (typically 60-110%) rather than co'
+  fix: '{''action'': ''Convert percent saturation to mg/L: DO_mgL = (DO_pct / 100)
+    * DO_sat(T)'', ''tool_to_run'': ''convert_forcing_to_wasp'', ''manual_steps'':
+    [''Check ResultMeasure/MeasureUnitCode for DO records'', "'
+- id: dt_wasp_004
+  description: '{''description'': ''Dissolved oxygen values are all near zero (0.001-0.015
+    mg/L) despite the lake not being anoxic'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''DO data in ug/L instead of mg/L'', ''explanation'':
+    ''Some laboratory analyses report DO in ug/L (micrograms per liter). Typical surface
+    water DO of 8000-12000 ug/L divided by 1000 gives t'
+  detection: '{''root_cause'': ''DO data in ug/L instead of mg/L'', ''explanation'':
+    ''Some laboratory analyses report DO in ug/L (micrograms per liter). Typical surface
+    water DO of 8000-12000 ug/L divided by 1000 gives t'
+  fix: '{''action'': ''Divide ug/L values by 1000 to convert to mg/L'', ''tool_to_run'':
+    ''convert_forcing_to_wasp'', ''manual_steps'': [''If DO values are consistently
+    between 0.001 and 0.020, data may be in ug/L divid'
+- id: dt_wasp_005
+  description: '{''description'': ''Depth profile plots show observations far deeper
+    than the lake maximum depth'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Depth values in feet instead of meters'', ''explanation'':
+    "WQP ActivityDepthHeightMeasure/MeasureValue may be in feet for some monitoring
+    organizations. The WASP profile model expects de'
+  detection: '{''root_cause'': ''Depth values in feet instead of meters'', ''explanation'':
+    "WQP ActivityDepthHeightMeasure/MeasureValue may be in feet for some monitoring
+    organizations. The WASP profile model expects de'
+  fix: '{''action'': ''Multiply feet by 0.3048 to convert to meters'', ''tool_to_run'':
+    ''convert_forcing_to_wasp'', ''manual_steps'': [''Check ActivityDepthHeightMeasure/MeasureUnitCode
+    in WQP CSV'', "If unit is ''ft'' or'
+- id: dt_wasp_006
+  description: '{''description'': ''Lake area is 100x too large; volume and residence
+    time calculations are wrong'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Lake area provided in hectares instead of km2'',
+    ''explanation'': ''HydroLAKES reports lake area in km2, but some auxiliary datasets
+    (e.g., national lake registries) use hectares. 1 km2 = '
+  detection: '{''root_cause'': ''Lake area provided in hectares instead of km2'',
+    ''explanation'': ''HydroLAKES reports lake area in km2, but some auxiliary datasets
+    (e.g., national lake registries) use hectares. 1 km2 = '
+  fix: '{''action'': ''Divide hectare values by 100 to convert to km2'', ''tool_to_run'':
+    ''convert_parameters_to_wasp'', ''manual_steps'': [''Verify area source units;
+    HydroLAKES uses km2'', ''If area seems unreasonably '
+- id: dt_wasp_007
+  description: '{''description'': ''WQP CSV parsing fails with KeyError or returns
+    empty dataframe'', ''error_pattern'': ''KeyError.*ResultMeasureValue|KeyError.*CharacteristicName'',
+    ''detection_method'': ''log_match''}'
+  affected_output: '{''root_cause'': ''WQP CSV uses narrow-format column names that
+    differ from the expected wide-format headers'', ''explanation'': "WQP provides
+    two CSV formats: the full download with columns like ''ResultMea'
+  detection: '{''root_cause'': ''WQP CSV uses narrow-format column names that differ
+    from the expected wide-format headers'', ''explanation'': "WQP provides two CSV
+    formats: the full download with columns like ''ResultMea'
+  fix: '{''action'': ''Use the full WQP CSV download with standard column names'',
+    ''tool_to_run'': ''convert_forcing_to_wasp'', ''manual_steps'': ["Download from
+    WQP using ''Full'' format, not ''Narrow''", ''Verify columns'
+- id: dt_wasp_008
+  description: '{''description'': ''WQP data loads but no temperature or DO records
+    are found; model receives empty observation arrays'', ''error_pattern'': ''No
+    records found for.*Temperature|No records found for.*Dissolved oxygen'', ''detection_method'':
+    ''log_match''}'
+  affected_output: '{''root_cause'': ''CharacteristicName filter does not match WQP
+    naming convention'', ''explanation'': "WQP uses specific CharacteristicName values:
+    ''Temperature, water'' for water temperature and ''Dissolved '
+  detection: '{''root_cause'': ''CharacteristicName filter does not match WQP naming
+    convention'', ''explanation'': "WQP uses specific CharacteristicName values: ''Temperature,
+    water'' for water temperature and ''Dissolved '
+  fix: '{''action'': ''Use exact WQP CharacteristicName values with case-insensitive
+    matching'', ''tool_to_run'': ''convert_forcing_to_wasp'', ''manual_steps'': ["Filter
+    for ''Temperature, water'' (not just ''Temperature'''
+- id: dt_wasp_009
+  description: '{''description'': ''Seasonal temperature model fits poorly; R < 0.5
+    despite good data coverage'', ''error_pattern'': '''', ''detection_method'': ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Phase parameter initialized outside plausible
+    range for the hemisphere'', ''explanation'': ''The sinusoidal temperature model
+    T(doy) = T_mean + amplitude * sin(2*pi*(doy - phase)/365) has '
+  detection: '{''root_cause'': ''Phase parameter initialized outside plausible range
+    for the hemisphere'', ''explanation'': ''The sinusoidal temperature model T(doy)
+    = T_mean + amplitude * sin(2*pi*(doy - phase)/365) has '
+  fix: '{''action'': ''Set initial phase guess based on hemisphere: 130 for Northern,
+    310 for Southern'', ''tool_to_run'': ''run_wasp'', ''manual_steps'': [''Check
+    latitude of lake: positive = Northern Hemisphere'', ''Nor'
+- id: dt_wasp_010
+  description: '{''description'': ''BOD decay rate kd calibrates to boundary value
+    (0.01 or 0.5 1/d); DO model shows no oxygen sag'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''BOD decay rate kd and reaeration rate ka initialized
+    too close together (ka ~ kd)'', ''explanation'': "The Streeter-Phelps analytical
+    solution has a singularity when ka = kd: D(t) = kd * '
+  detection: '{''root_cause'': ''BOD decay rate kd and reaeration rate ka initialized
+    too close together (ka ~ kd)'', ''explanation'': "The Streeter-Phelps analytical
+    solution has a singularity when ka = kd: D(t) = kd * '
+  fix: '{''action'': ''Initialize kd = 0.1 and ka = 0.5 (ka/kd ratio ~ 5); add guard
+    for |ka - kd| < 0.01'', ''tool_to_run'': ''run_wasp'', ''manual_steps'': [''Ensure
+    ka > kd by at least 0.05 in initial parameter guess'
+- id: dt_wasp_011
+  description: '{''description'': ''Reaeration rate ka calibrates to extreme values
+    (> 5.0 1/d); DO shows rapid oscillation around saturation'', ''error_pattern'':
+    '''', ''detection_method'': ''value_comparison''}'
+  affected_output: '{''root_cause'': ''BOD loading (BOD0) set too high, forcing the
+    optimizer to compensate with unrealistic reaeration'', ''explanation'': ''If initial
+    BOD0 is set too high (e.g., 20 mg/L for a clean lake), the'
+  detection: '{''root_cause'': ''BOD loading (BOD0) set too high, forcing the optimizer
+    to compensate with unrealistic reaeration'', ''explanation'': ''If initial BOD0
+    is set too high (e.g., 20 mg/L for a clean lake), the'
+  fix: '{''action'': ''Constrain BOD0 bounds to [0.5, 10] mg/L and ka to [0.1, 2.0]
+    1/d; use literature estimates as priors'', ''tool_to_run'': ''run_wasp'', ''manual_steps'':
+    [''Check calibrated BOD0: > 10 mg/L suggest'
+- id: dt_wasp_012
+  description: '{''description'': ''Negative dissolved oxygen concentrations in output
+    despite clipping code'', ''error_pattern'': ''DO.*-[0-9]|negative.*concentration'',
+    ''detection_method'': ''value_comparison''}'
+  affected_output: '{''root_cause'': ''DO clipping applied after seasonal averaging
+    but not during sub-daily computation'', ''explanation'': ''The seasonal DO model
+    computes DO = DO_sat(T) - deficit + DO_offset. If BOD0 is high'
+  detection: '{''root_cause'': ''DO clipping applied after seasonal averaging but
+    not during sub-daily computation'', ''explanation'': ''The seasonal DO model computes
+    DO = DO_sat(T) - deficit + DO_offset. If BOD0 is high'
+  fix: '{''action'': ''Apply np.clip(DO, 0, None) at every computation step, not just
+    the final output'', ''tool_to_run'': ''run_wasp'', ''manual_steps'': [''Check
+    for negative DO in output CSV or profile arrays'', ''Add '
+- id: dt_wasp_013
+  description: '{''description'': ''Mass balance does not close; total oxygen in system
+    changes without matching inputs/outputs'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Steady-state Streeter-Phelps assumption violated
+    in a lake with time-varying BOD loading'', ''explanation'': ''The analytic WASP
+    reimplementation uses the steady-state Streeter-Phelps solu'
+  detection: '{''root_cause'': ''Steady-state Streeter-Phelps assumption violated
+    in a lake with time-varying BOD loading'', ''explanation'': ''The analytic WASP
+    reimplementation uses the steady-state Streeter-Phelps solu'
+  fix: '{''action'': ''Accept mass balance error as inherent to the analytic approximation;
+    quantify and report the error'', ''tool_to_run'': ''parse_output_wasp'', ''manual_steps'':
+    [''Compute total O2 budget: reaerati'
+- id: dt_wasp_014
+  description: '{''description'': ''Thermal profile shows no thermocline; temperature
+    is nearly uniform with depth'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Thermocline width parameter (w) set too large
+    relative to lake depth'', ''explanation'': ''The logistic thermocline model T(z)
+    = T_bottom + (T_surface - T_bottom) / (1 + exp((z - z_thermo)'
+  detection: '{''root_cause'': ''Thermocline width parameter (w) set too large relative
+    to lake depth'', ''explanation'': ''The logistic thermocline model T(z) = T_bottom
+    + (T_surface - T_bottom) / (1 + exp((z - z_thermo)'
+  fix: '{''action'': ''Set thermocline width w to 1-3 m for most lakes; constrain
+    to w < 0.2 * z_max'', ''tool_to_run'': ''convert_parameters_to_wasp'', ''manual_steps'':
+    [''Check thermo_width in parameter file; should '
+- id: dt_wasp_015
+  description: '{''description'': ''Thermocline depth is deeper than the lake bottom;
+    profile shows monotonic cooling with no inflection'', ''error_pattern'': '''',
+    ''detection_method'': ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Thermocline depth z_thermo exceeds maximum
+    lake depth z_max'', ''explanation'': ''The logistic model center (z_thermo) is
+    the depth of the steepest temperature gradient. If z_thermo > z_ma'
+  detection: '{''root_cause'': ''Thermocline depth z_thermo exceeds maximum lake depth
+    z_max'', ''explanation'': ''The logistic model center (z_thermo) is the depth
+    of the steepest temperature gradient. If z_thermo > z_ma'
+  fix: '{''action'': ''Constrain z_thermo to [0.1 * z_max, 0.8 * z_max]'', ''tool_to_run'':
+    ''convert_parameters_to_wasp'', ''manual_steps'': [''Check thermo_depth in parameter
+    file'', ''For most stratified lakes, z_therm'
+- id: dt_wasp_016
+  description: '{''description'': ''Calibration optimizer (Nelder-Mead) fails to converge;
+    returns initial parameters unchanged'', ''error_pattern'': ''Maximum number of
+    iterations.*reached|OptimizeResult.*success.*False'', ''detection_method'': ''log_match''}'
+  affected_output: '{''root_cause'': ''Parameter scales differ by orders of magnitude,
+    causing optimizer to favor one parameter'', ''explanation'': ''The 7 calibration
+    parameters span very different scales: T_mean ~ 15, amplitu'
+  detection: '{''root_cause'': ''Parameter scales differ by orders of magnitude, causing
+    optimizer to favor one parameter'', ''explanation'': ''The 7 calibration parameters
+    span very different scales: T_mean ~ 15, amplitu'
+  fix: '{''action'': ''Normalize all parameters to [0, 1] range before optimization;
+    denormalize for model evaluation'', ''tool_to_run'': ''run_wasp'', ''manual_steps'':
+    [''For each parameter p: p_norm = (p - p_min) / ('
+- id: dt_wasp_017
+  description: '{''description'': ''TSI values are NaN or negative; TSI classification
+    fails'', ''error_pattern'': ''nan|RuntimeWarning.*log.*negative|math domain error'',
+    ''detection_method'': ''log_match''}'
+  affected_output: '{''root_cause'': ''Chlorophyll-a or Total Phosphorus input values
+    are zero or negative'', ''explanation'': ''The Carlson TSI formulas use natural
+    log: TSI(Chl-a) = 9.81 * ln(Chl-a) + 30.6. If Chl-a is zero o'
+  detection: '{''root_cause'': ''Chlorophyll-a or Total Phosphorus input values are
+    zero or negative'', ''explanation'': ''The Carlson TSI formulas use natural log:
+    TSI(Chl-a) = 9.81 * ln(Chl-a) + 30.6. If Chl-a is zero o'
+  fix: '{''action'': ''Replace zero/negative Chl-a and TP values with detection limit
+    before TSI calculation'', ''tool_to_run'': ''parse_output_wasp'', ''manual_steps'':
+    [''Filter: Chl-a must be > 0 (set minimum to 0.1 '
+- id: dt_wasp_018
+  description: '{''description'': ''WQP data includes rejected or preliminary records;
+    calibration R is abnormally low'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''WQP data not filtered for quality flags before
+    calibration'', ''explanation'': "WQP includes a ResultStatusIdentifier field with
+    values like ''Accepted'', ''Preliminary'', ''Rejected'', and ''Hi'
+  detection: '{''root_cause'': ''WQP data not filtered for quality flags before calibration'',
+    ''explanation'': "WQP includes a ResultStatusIdentifier field with values like
+    ''Accepted'', ''Preliminary'', ''Rejected'', and ''Hi'
+  fix: '{''action'': "Filter WQP data: keep only ResultStatusIdentifier in [''Accepted'',
+    ''Final'', ''Historical'']", ''tool_to_run'': ''convert_forcing_to_wasp'', ''manual_steps'':
+    ["Exclude records where ResultStatusIde'
+- id: dt_wasp_019
+  description: '{''description'': ''Hypolimnetic DO depletion is too rapid or too
+    slow; DO profile RMSE > 3 mg/L'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Sediment oxygen demand (SOD) depletion rate
+    not matched to lake trophic state'', ''explanation'': ''The 1-D DO profile model
+    uses a depletion factor that increases with depth below the the'
+  detection: '{''root_cause'': ''Sediment oxygen demand (SOD) depletion rate not matched
+    to lake trophic state'', ''explanation'': ''The 1-D DO profile model uses a depletion
+    factor that increases with depth below the the'
+  fix: '{''action'': ''Set SOD depletion rate based on TSI: oligotrophic 0.02, mesotrophic
+    0.05, eutrophic 0.10'', ''tool_to_run'': ''convert_parameters_to_wasp'', ''manual_steps'':
+    [''Compute TSI from available Chl-a, '
+- id: dt_wasp_020
+  description: '{''description'': ''Validation R2 is near zero or negative despite
+    visually reasonable seasonal pattern'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Observation-model pairing uses wrong day-of-year
+    alignment'', ''explanation'': ''The seasonal DO model outputs DO at each day-of-year
+    (DOY 1-365). When comparing to WQP observations, each '
+  detection: '{''root_cause'': ''Observation-model pairing uses wrong day-of-year
+    alignment'', ''explanation'': ''The seasonal DO model outputs DO at each day-of-year
+    (DOY 1-365). When comparing to WQP observations, each '
+  fix: '{''action'': ''Verify date parsing uses the correct format; WQP ActivityStartDate
+    is typically YYYY-MM-DD'', ''tool_to_run'': ''parse_output_wasp'', ''manual_steps'':
+    [''Check ActivityStartDate format in the WQP'
+- id: dt_wasp_021
+  description: '{''description'': ''Summer thermal profile applied to spring or fall
+    data produces large depth-temperature errors'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Fixed thermocline model applied outside the
+    stable stratification period'', ''explanation'': ''The logistic thermocline model
+    uses a fixed thermocline depth and width, valid only during su'
+  detection: '{''root_cause'': ''Fixed thermocline model applied outside the stable
+    stratification period'', ''explanation'': ''The logistic thermocline model uses
+    a fixed thermocline depth and width, valid only during su'
+  fix: '{''action'': ''Restrict profile validation to summer months (June-August Northern
+    Hemisphere); flag non-summer profiles'', ''tool_to_run'': ''parse_output_wasp'',
+    ''manual_steps'': [''Filter profile observations'
+- id: dt_wasp_022
+  description: '{''description'': ''BOD decay rate kd produces DO sag 24x too fast;
+    oxygen deficit peaks within 1 hour instead of 1 day'', ''error_pattern'': '''',
+    ''detection_method'': ''value_comparison''}'
+  affected_output: '{''root_cause'': ''BOD decay rate kd provided in 1/hour instead
+    of 1/day'', ''explanation'': ''Literature values for kd are sometimes reported
+    in 1/hour (e.g., kd = 0.008 1/h for typical rivers). The WASP mo'
+  detection: '{''root_cause'': ''BOD decay rate kd provided in 1/hour instead of 1/day'',
+    ''explanation'': ''Literature values for kd are sometimes reported in 1/hour (e.g.,
+    kd = 0.008 1/h for typical rivers). The WASP mo'
+  fix: '{''action'': ''Verify kd and ka units are 1/day; multiply 1/hour values by
+    24'', ''tool_to_run'': ''convert_parameters_to_wasp'', ''manual_steps'': [''Check
+    source literature for rate constant units'', ''If kd or '
+- id: dt_wasp_023
+  description: '{''description'': ''TSI indices disagree by more than 15 points; trophic
+    classification is ambiguous'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Non-algal turbidity or nutrient limitation
+    violates the Carlson TSI independence assumption'', ''explanation'': ''The three
+    Carlson TSI indices (Chl-a, Secchi, TP) are designed to agree in'
+  detection: '{''root_cause'': ''Non-algal turbidity or nutrient limitation violates
+    the Carlson TSI independence assumption'', ''explanation'': ''The three Carlson
+    TSI indices (Chl-a, Secchi, TP) are designed to agree in'
+  fix: '{''action'': ''Report TSI discrepancy as a diagnostic indicator, not a model
+    error; interpret the deviation pattern'', ''tool_to_run'': ''parse_output_wasp'',
+    ''manual_steps'': [''Compute all three TSI indices: '
+- id: dt_wasp_024
+  description: '{''description'': ''scipy.optimize.minimize raises ValueError or returns
+    inf objective value'', ''error_pattern'': ''ValueError|objective.*inf|result.*fun.*inf'',
+    ''detection_method'': ''log_match''}'
+  affected_output: '{''root_cause'': ''Objective function returns NaN or inf when
+    parameters hit physical bounds'', ''explanation'': ''The calibration objective
+    function computes RMSE between modeled and observed T and DO. If t'
+  detection: '{''root_cause'': ''Objective function returns NaN or inf when parameters
+    hit physical bounds'', ''explanation'': ''The calibration objective function computes
+    RMSE between modeled and observed T and DO. If t'
+  fix: '{''action'': ''Add guard clauses in the objective function: return a large
+    penalty (1e6) for invalid parameter combinations'', ''tool_to_run'': ''run_wasp'',
+    ''manual_steps'': ["Check: if ka - kd < 0.01, use L'''
+- id: dt_wasp_025
+  description: '{''description'': ''Chlorophyll-a values are 1000x too low (0.001-0.01
+    ug/L); TSI computes as deeply oligotrophic'', ''error_pattern'': '''', ''detection_method'':
+    ''value_comparison''}'
+  affected_output: '{''root_cause'': ''Chlorophyll-a data in mg/L instead of ug/L'',
+    ''explanation'': ''The WASP model and Carlson TSI formula expect chlorophyll-a
+    in ug/L (micrograms per liter). Some laboratory data reports Ch'
+  detection: '{''root_cause'': ''Chlorophyll-a data in mg/L instead of ug/L'', ''explanation'':
+    ''The WASP model and Carlson TSI formula expect chlorophyll-a in ug/L (micrograms
+    per liter). Some laboratory data reports Ch'
+  fix: '{''action'': ''Multiply mg/L chlorophyll-a values by 1000 to convert to ug/L'',
+    ''tool_to_run'': ''convert_forcing_to_wasp'', ''manual_steps'': [''Check ResultMeasure/MeasureUnitCode
+    for Chl-a records'', "If unit'
+unit_conversions: []

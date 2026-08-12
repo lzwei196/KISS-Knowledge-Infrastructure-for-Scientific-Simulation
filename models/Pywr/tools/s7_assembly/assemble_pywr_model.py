@@ -179,6 +179,72 @@ def build_recorders(storage_name, release_name, spill_name, demand_nodes):
     return recorders
 
 
+# Seconds per day — Pywr daily timestep treats a "flow" value as volume per timestep,
+# so m3/s inputs (inflow CSV, release/demand profiles) must be converted to m3/day to
+# stay consistent with storage volumes that are stored in m3.
+_SECONDS_PER_DAY = 86400.0
+# Downstream output node benefit (set in build_downstream_node); the control-curve
+# above-curve cost must exceed this magnitude or the curve never holds the reservoir.
+_DOWNSTREAM_BENEFIT = 10.0
+
+
+def wire_control_curve_and_units(model, storage_name):
+    """Post-process an assembled model to (1) wire the monthly control curve into the
+    storage node's cost via a ControlCurveParameter (fixes triplet dt_pywr_006 — without
+    this the LP just fills to max or empties to min with no intermediate regulation), and
+    (2) rescale m3/s inputs to m3/day so flows are consistent with m3 storage volumes."""
+    params = model.setdefault("parameters", {})
+
+    # --- (1) control curve -> storage cost ---
+    cc_name = f"{storage_name}_control_curve"
+    if cc_name in params:
+        above = params.get(f"{storage_name}_above_curve_cost", {}).get("value", 50.0)
+        below = params.get(f"{storage_name}_below_curve_cost", {}).get("value", -500.0)
+        if above <= _DOWNSTREAM_BENEFIT:           # legacy rules.json shipped above=1.0
+            above = 50.0
+        cost_name = f"{storage_name}_cost"
+        params[cost_name] = {
+            "type": "controlcurve",
+            "storage_node": storage_name,
+            "control_curve": cc_name,
+            "values": [above, below],
+            "comment": "dt_pywr_006 fix: storage cost from monthly control curve "
+                       "(above-curve -> release toward target; below-curve -> refill)",
+        }
+        for node in model["nodes"]:
+            if node.get("type") == "storage" and node.get("name") == storage_name:
+                node["cost"] = cost_name
+
+    # --- (2) units: m3/s -> m3/day ---
+    # inflow dataframe on the catchment node
+    for node in model["nodes"]:
+        if node.get("type") == "catchment" and isinstance(node.get("flow"), dict) \
+                and node["flow"].get("type") == "dataframe":
+            df_param = node["flow"]
+            node["flow"] = {
+                "type": "aggregated",
+                "agg_func": "product",
+                "parameters": [df_param, {"type": "constant", "value": _SECONDS_PER_DAY}],
+                "comment": "m3/s inflow CSV scaled to m3/day for daily timestep",
+            }
+    # m3/s rate parameters (release profiles, demand max_flow, env/min release)
+    for k, v in list(params.items()):
+        if not isinstance(v, dict):
+            continue
+        if k.endswith("_m3s") or k.endswith("_max_flow"):
+            if v.get("type") in ("monthlyprofile", "dailyprofile") and "values" in v:
+                v["values"] = [x * _SECONDS_PER_DAY for x in v["values"]]
+                v["comment"] = (v.get("comment", "") + " [m3/s -> m3/day]").strip()
+            elif v.get("type") == "constant" and "value" in v:
+                v["value"] = v["value"] * _SECONDS_PER_DAY
+                v["comment"] = (v.get("comment", "") + " [m3/s -> m3/day]").strip()
+    # literal "unconstrained" max_flow on the release link (1e6 m3/s sentinel)
+    for node in model["nodes"]:
+        if node.get("type") == "link" and node.get("max_flow") == 1e6:
+            node["max_flow"] = 1e12
+    return model
+
+
 def validate_model(model):
     """Validate model JSON structure before writing."""
     issues = []
@@ -358,6 +424,9 @@ def main():
             "parameters": parameters,
             "recorders": recorders,
         }
+
+        # ── Wire control curve into storage cost + fix m3/s -> m3/day units ──
+        wire_control_curve_and_units(model, res_name)
 
         # ── Validate ──
         issues = validate_model(model)

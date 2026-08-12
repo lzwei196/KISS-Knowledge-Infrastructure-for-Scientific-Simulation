@@ -1,0 +1,510 @@
+template_version: "3.5"
+
+identity:
+  model_id: "tRIBS"
+  scientific_reference_version: "tRIBS 5.3.x (TIN-based Real-time Integrated Basin Simulator; Ivanov et al. 2004 WRR/JoH formulation)"
+  implementation:
+    id: "tribs-5.3.1"
+    version: "5.3.1"
+    provenance: "C++ (C++17); object-oriented tRIBS distributed hydrologic model (Ivanov/Vivoni/Bras lineage); serial and MPI-parallel (tRIBSpar) binaries."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c++"
+  license: "MIT"
+  repo_url: "https://github.com/tribshms/tRIBS"
+
+boundary:
+  scope_in:
+    - "Rainfall and snow interception by vegetation (Gray or Rutter schemes)"
+    - "Infiltration and vertical unsaturated-zone soil-moisture redistribution"
+    - "Saturated-zone / groundwater water-table dynamics and topography-driven lateral subsurface flow"
+    - "Surface runoff generation by multiple mechanisms (infiltration-excess, saturation-excess, perched return flow, groundwater exfiltration)"
+    - "Evapotranspiration and surface energy balance on sloped, sheltered terrain"
+    - "Snowpack accumulation, ablation, and melt (energy balance, optional)"
+    - "Kinematic-wave hillslope and channel routing to outlet discharge"
+    - "Reservoir operations (optional)"
+  scope_out:
+    - "Landscape evolution / geomorphic change (delegated to the sibling CHILD model)"
+    - "Dynamic vegetation growth (handled by the separate tRIBS-VEGGIE extension, not this binding)"
+    - "Detailed soil/vegetation parameter-unit tables are supplied externally via .sdt/.ldt reclassification tables, not computed"
+  spatial: "distributed-stream"
+  temporal: "sub-hourly"
+  closure: "mass-balance"
+  notes: "Each TIN node's hydrologic computations are valid over its associated Voronoi polygon, which is the control volume for mass conservation; flow is routed node-to-node along triangle edges by a finite-difference approach. Mass-balance closure applies to the coupled water column (interception, unsaturated/saturated storage, snowpack, routing); the validation target is P = ET + Q + dStorage closing within ~1% of precipitation. The surface energy balance (net radiation, latent/sensible/ground heat) is solved to drive ET and snow but is a flux computation, not an independently closed energy budget. Time stepping is continuous/event-based with adaptive steps; meteorological/rainfall forcing is ingested at hour-scale METSTEP."
+
+inputs:
+  forcing:
+    - {category: forcing, name: "Rainfall", unit: "mm/hr", source_kind: forcing, model_input_format: "point gauge (.gdf) or gridded rainfall, resampled to mesh nodes via Thiessen polygons", notes: "Rate units are mm/hr; the model applies no unit auto-detection (see safety hazards)."}
+    - {category: forcing, name: "Air temperature (TA)", unit: "degC", source_kind: forcing, model_input_format: "station .mdf columnar time series"}
+    - {category: forcing, name: "Dew point temperature (TD) / relative humidity", unit: "degC / fraction (0-1)", source_kind: forcing, model_input_format: "station .mdf columnar time series"}
+    - {category: forcing, name: "Wind speed (US)", unit: "m/s", source_kind: forcing, model_input_format: "station .mdf columnar time series"}
+    - {category: forcing, name: "Atmospheric pressure (PA)", unit: "mb (hPa)", source_kind: forcing, model_input_format: "station .mdf columnar time series"}
+    - {category: forcing, name: "Incoming shortwave / net radiation (NR)", unit: "W/m^2", source_kind: forcing, model_input_format: "station .mdf columnar time series", notes: "NR column may carry net radiation or individual SW/LW components depending on configuration."}
+    - {category: forcing, name: "Sky cover (XC)", unit: "tenths (0-10)", source_kind: forcing, model_input_format: "station .mdf columnar time series"}
+    - {category: forcing, name: "Surface temperature (TS)", unit: "degC", source_kind: forcing, model_input_format: "station .mdf columnar time series"}
+  parameters:
+    - {category: parameter, name: "Saturated hydraulic conductivity (Ks / K0n)", unit: "mm/hr", source_kind: calibrated, model_input_format: ".sdt soil reclassification table by soil class"}
+    - {category: parameter, name: "Soil porosity / saturation moisture content (ThetaS)", unit: "dimensionless (0-1)", source_kind: dataset_lookup, model_input_format: ".sdt soil reclassification table"}
+    - {category: parameter, name: "Residual soil moisture (ThetaR)", unit: "dimensionless (0-1)", source_kind: dataset_lookup, model_input_format: ".sdt soil reclassification table"}
+    - {category: parameter, name: "Air-entry pressure (PsiB)", unit: "mm", source_kind: dataset_lookup, model_input_format: ".sdt soil reclassification table"}
+    - {category: parameter, name: "Pore-size distribution index (lambda_o)", unit: "dimensionless", source_kind: calibrated, model_input_format: ".sdt soil reclassification table (Brooks-Corey)"}
+    - {category: parameter, name: "Conductivity decay parameter (f)", unit: "1/mm", source_kind: calibrated, model_input_format: ".sdt / control-file soil parameter"}
+    - {category: parameter, name: "Anisotropy ratio (ar)", unit: "dimensionless", source_kind: calibrated, model_input_format: ".sdt / control-file soil parameter"}
+    - {category: parameter, name: "Depth to bedrock (DEPTHTOBEDROCK)", unit: "mm", source_kind: calibrated, model_input_format: "control-file scalar or ASCII grid"}
+    - {category: parameter, name: "Surface soil depth / root-zone depth", unit: "mm", source_kind: default, model_input_format: "control-file scalars (SURFACESOILDEPTH default 100, ROOTZONEDEPTH default 1000)"}
+    - {category: parameter, name: "Interception coefficients (a, b1) and canopy partitioning (P, S, K)", unit: "varies", source_kind: dataset_lookup, model_input_format: ".ldt land-use table by cover class"}
+    - {category: parameter, name: "Vegetation fraction (bv / v)", unit: "dimensionless (0-1)", source_kind: calibrated, model_input_format: ".ldt land-use table"}
+    - {category: parameter, name: "Leaf area index (LAI)", unit: "m^2/m^2", source_kind: dataset_lookup, model_input_format: ".ldt land-use table"}
+    - {category: parameter, name: "Stomatal resistance (rs)", unit: "s/m", source_kind: calibrated, model_input_format: ".ldt vegetation parameter"}
+    - {category: parameter, name: "Optical transmission coefficient (Kt)", unit: "dimensionless", source_kind: calibrated, model_input_format: ".ldt vegetation parameter"}
+    - {category: parameter, name: "Hillslope velocity coefficient/exponent (cv, r)", unit: "m/s, dimensionless", source_kind: calibrated, model_input_format: "control-file routing parameter (HILLSLOPE_KSE)"}
+    - {category: parameter, name: "Channel/stream velocity coefficient (STREAM_KSE)", unit: "m/s", source_kind: calibrated, model_input_format: "control-file routing parameter"}
+    - {category: parameter, name: "Manning's channel roughness (ne)", unit: "s/m^(1/3)", source_kind: calibrated, model_input_format: "control-file / channel routing parameter"}
+    - {category: parameter, name: "TIN mesh geometry (nodes, edges, triangles, elevation)", unit: "UTM meters / m MSL", source_kind: dataset_lookup, model_input_format: ".nodes/.edges/.tri/.z (or .points) Delaunay-Voronoi mesh"}
+    - {category: parameter, name: "Terrain sheltering horizon angles", unit: "radians", source_kind: derived, model_input_format: "computed in preprocessing from the DEM/mesh"}
+  initial_conditions:
+    - {category: initial_condition, name: "Groundwater table depth (Nwt)", unit: "mm", source_kind: user_provided, model_input_format: "ASCII grid (6-line header)"}
+    - {category: initial_condition, name: "Initial soil moisture / unsaturated storage (Mu)", unit: "mm", source_kind: user_provided, model_input_format: "control-file / restart state"}
+    - {category: initial_condition, name: "Initial snow water equivalent (liqWEq / iceWEq)", unit: "mm", source_kind: user_provided, model_input_format: "control-file / restart state"}
+    - {category: initial_condition, name: "Reservoir initial water-surface elevation", unit: "m", source_kind: user_provided, model_input_format: ".res reservoir polygon file"}
+    - {category: initial_condition, name: "Full model state for warm start", unit: "mixed", source_kind: user_provided, model_input_format: "binary restart file (RESTARTFILE)"}
+  boundary_conditions:
+    - {category: boundary_condition, name: "Node boundary code", unit: "code", source_kind: user_provided, model_input_format: "per-node code in mesh: 0 interior, 1 closed, 2 open/outlet, 3 stream"}
+    - {category: boundary_condition, name: "Simulation start/end and time stepping (STARTDATE, ENDDATE, METSTEP, RAINFALL step)", unit: "date / hours", source_kind: user_provided, model_input_format: "control-file keywords (METSTEP in hours)"}
+    - {category: boundary_condition, name: "Evapotranspiration method switch (OPTEVAP)", unit: "enum", source_kind: user_provided, model_input_format: "control-file: 1=Penman-Monteith, 2=Deardorff, 3=Priestley-Taylor, 4=Pan"}
+    - {category: boundary_condition, name: "Interception scheme switch (OPTINTERC)", unit: "enum", source_kind: user_provided, model_input_format: "control-file: 1=Gray, 2=Rutter"}
+    - {category: boundary_condition, name: "Snow module toggle (OPTSNOW)", unit: "enum", source_kind: user_provided, model_input_format: "control-file: 0=off, 1=on"}
+    - {category: boundary_condition, name: "Groundwater module toggle (OPTGROUNDWATER, GFLUXOPTION)", unit: "enum", source_kind: user_provided, model_input_format: "control-file"}
+    - {category: boundary_condition, name: "Mesh input mode (OPTMESHINPUT)", unit: "enum", source_kind: user_provided, model_input_format: "control-file: 0=scratch, 1=points, 2=grid, 8=tRIBS files, 9=meshbuilder"}
+    - {category: boundary_condition, name: "Restart mode (RESTARTMODE)", unit: "enum", source_kind: user_provided, model_input_format: "control-file: 0=new, 1=continue, 2=restart from file, 3=restart with preprocessing"}
+    - {category: boundary_condition, name: "Reservoir operations rule set", unit: "elevation-discharge-storage", source_kind: user_provided, model_input_format: ".eds elevation-discharge-storage data (optional)"}
+
+processes:
+  modules:
+    - {name: "tRainfall", role: "driver", brief: "Rainfall forcing ingestion and resampling onto mesh nodes (station/gauge/grid); supplies the Rain state consumed by hydrology, ET, and snow."}
+    - {name: "tHydroMet", role: "driver", brief: "Preprocesses meteorological forcing (.mdf) and resamples it to nodes; feeds ET and the surface energy balance."}
+    - {name: "tIntercept", role: "process_solver", brief: "Canopy interception (Gray or Rutter): updates CanStorage, InterceptLoss, NetPrecipitation; runs before ET in the loop and sets effective precipitation reaching the soil."}
+    - {name: "tEvapoTrans", role: "process_solver", brief: "Evapotranspiration and surface energy balance: Penman-Monteith / Deardorff / Priestley-Taylor (alpha=1.26) / Pan options; net radiation with terrain sheltering; latent/sensible/ground heat fluxes; partitions PotEvap/ActEvap and wet-canopy/dry-canopy/soil evaporation."}
+    - {name: "tShelter", role: "process_solver", brief: "Terrain sheltering / horizon-angle computation from the DEM during preprocessing; supplies slope- and shelter-corrected incoming shortwave to tEvapoTrans."}
+    - {name: "tHydroModel", role: "process_solver", brief: "Core distributed hydrology (Cabral-Bras top-front/wetting-front/water-table formulation): infiltration, unsaturated-zone redistribution, lateral subsurface and groundwater redistribution across mesh edges; emits runoff components (hsrf, satsrf, rsrf, sbsrf, psrf, esrf) and water-table depth Nwt."}
+    - {name: "tSnowPack", role: "optional_module", brief: "Snow energy/mass balance (OPTSNOW=1): wet-bulb snow/rain partition, accumulation/melt with fixed densities and latent heats, albedo aging; feeds melt back as effective rainfall, overriding the normal precipitation path.", applicability: "when OPTSNOW=1"}
+    - {name: "tKinemat", role: "integrator", brief: "Kinematic-wave hillslope and channel routing built from the TIN flow network; consumes node runoff and routes Qin/Qout to the outlet, producing the discharge hydrograph."}
+    - {name: "tReservoir", role: "optional_module", brief: "Reservoir routing at designated reservoir nodes, intercepting and modifying routed discharge.", applicability: "when reservoir operations enabled"}
+    - {name: "tWaterBalance", role: "integrator", brief: "Tracks basin water-balance storage and fluxes and produces the mean-response (.mrf) basin-averaged outputs."}
+    - {name: "tMesh", role: "driver", brief: "TIN/Voronoi mesh construction over computational nodes; defines spatial discretization and edge connectivity used by all process modules."}
+    - {name: "tResample", role: "allocator", brief: "Maps gridded/raster forcing and parameters onto mesh nodes; shared by rainfall, ET, snow, and output modules."}
+    - {name: "tCNode", role: "process_solver", brief: "Per-node state container holding moisture-accounting (Mu/Mi/Nt/Nf/Nwt), canopy, snow, met, and runoff state on the TIN."}
+    - {name: "Simulator", role: "driver", brief: "Top-level physics integration loop: per timestep orders moisture -> flow -> ET -> interception -> water balance -> snow, plus initialization and restart handling."}
+  internal_edges:
+    - {from: "tResample", to: "tRainfall", kind: "produces_output", brief: "Maps gridded rainfall onto mesh nodes."}
+    - {from: "tHydroMet", to: "tEvapoTrans", kind: "produces_output", brief: "Resampled meteorological forcing feeds ET and the surface energy balance."}
+    - {from: "tRainfall", to: "tHydroModel", kind: "produces_output", brief: "Resampled Rain forcing is consumed by the infiltration/unsaturated-zone solver."}
+    - {from: "tRainfall", to: "tSnowPack", kind: "produces_output", brief: "Precipitation supplied to the snow module which partitions it into rain vs snow."}
+    - {from: "tIntercept", to: "tCNode", kind: "writes_state", brief: "Updates CanStorage, InterceptLoss, NetPrecipitation canopy state."}
+    - {from: "tIntercept", to: "tEvapoTrans", kind: "invokes", brief: "NetPrecipitation after interception feeds the ET/soil-evaporation calculation (loop order: Intercept before EvapoTrans)."}
+    - {from: "tShelter", to: "tEvapoTrans", kind: "produces_output", brief: "Horizon/sheltering angles correct slope-adjusted incoming shortwave radiation."}
+    - {from: "tEvapoTrans", to: "tCNode", kind: "writes_state", brief: "Writes PotEvap, ActEvap, EvapSoil, latent/sensible/ground heat fluxes, and NetRad to node state."}
+    - {from: "tEvapoTrans", to: "tHydroModel", kind: "reads_state", brief: "Reads node soil/root moisture to compute moisture-limited actual evaporation and returns soil-evap demand."}
+    - {from: "tSnowPack", to: "tHydroModel", kind: "produces_output", brief: "Snowmelt supplied as effective rainfall to infiltration when OPTSNOW=1, overriding the normal precipitation path."}
+    - {from: "tSnowPack", to: "tCNode", kind: "writes_state", brief: "Writes liqWEq, iceWEq, snTemperC, snow energy fluxes, and albedo-aging state."}
+    - {from: "tHydroModel", to: "tCNode", kind: "writes_state", brief: "Updates Nwt, Mu/Mi/Nt/Nf/Ru, and runoff components (srf/hsrf/satsrf/rsrf/sbsrf/psrf/esrf)."}
+    - {from: "tHydroModel", to: "tHydroModel", kind: "reads_state", brief: "Saturated-zone flux routines read neighbor-node water-table state across mesh edges for lateral groundwater redistribution."}
+    - {from: "tHydroModel", to: "tKinemat", kind: "produces_output", brief: "Hillslope runoff (srf components) at nodes is routed by the kinematic channel network."}
+    - {from: "tKinemat", to: "tCNode", kind: "writes_state", brief: "Writes Qin/Qout (and peak Qpin/Qpout) routed discharge back to channel nodes."}
+    - {from: "tKinemat", to: "tReservoir", kind: "invokes", brief: "Routed discharge passes through reservoir routing at reservoir nodes."}
+    - {from: "tMesh", to: "tKinemat", kind: "produces_output", brief: "TIN flow network and channel geometry built from the mesh sets up kinematic routing reaches."}
+    - {from: "tMesh", to: "tCNode", kind: "produces_output", brief: "Mesh defines the Voronoi control volumes over which node hydrology is computed."}
+    - {from: "tHydroModel", to: "tWaterBalance", kind: "produces_output", brief: "Per-node fluxes/storage are aggregated into the basin water balance and MRF means."}
+    - {from: "Simulator", to: "tHydroModel", kind: "invokes", brief: "Integration loop calls the unsaturated/saturated-zone solver each timestep."}
+    - {from: "Simulator", to: "tKinemat", kind: "invokes", brief: "Integration loop invokes channel routing after hillslope hydrology."}
+    - {from: "Simulator", to: "tEvapoTrans", kind: "invokes", brief: "Integration loop invokes the ET/energy-balance update each timestep."}
+    - {from: "Simulator", to: "tSnowPack", kind: "invokes", brief: "Integration loop invokes the snow module when OPTSNOW=1."}
+    - {from: "tKinemat", to: "Outputs", kind: "produces_output", brief: "Routed outlet discharge written to the .qout hydrograph file."}
+    - {from: "tHydroModel", to: "Outputs", kind: "produces_output", brief: "Node state written to .pixel time series and spatial snapshot files."}
+
+states:
+  variables:
+    - {name: "Nwt (depth to water table)", unit: "mm", role: "prognostic"}
+    - {name: "Mu (total moisture above water table / unsaturated storage)", unit: "mm", role: "prognostic"}
+    - {name: "Mi (saturated-zone moisture)", unit: "mm", role: "prognostic"}
+    - {name: "Nt (top front depth)", unit: "mm", role: "prognostic"}
+    - {name: "Nf (wetting front depth)", unit: "mm", role: "prognostic"}
+    - {name: "SoilMoisture (top 10 cm) / RootMoisture (top 1 m)", unit: "m^3/m^3", role: "diagnostic"}
+    - {name: "CanStorage (canopy interception storage)", unit: "mm", role: "prognostic"}
+    - {name: "liqWEq / iceWEq (liquid and ice snow water equivalent)", unit: "mm", role: "prognostic"}
+    - {name: "snTemperC (snowpack temperature)", unit: "degC", role: "prognostic"}
+    - {name: "Snowpack internal energy (Upack / dU)", unit: "kJ/m^2", role: "prognostic"}
+    - {name: "Snow albedo-aging state (crAge, densAge, EvapoTransAge)", unit: "dimensionless", role: "prognostic"}
+    - {name: "intSWEq (intercepted snow water equivalent)", unit: "mm", role: "prognostic"}
+    - {name: "Qin / Qout (node channel in/out discharge)", unit: "m^3/s", role: "prognostic"}
+    - {name: "HLevel (channel stage)", unit: "m", role: "diagnostic"}
+    - {name: "Runoff components (hsrf, satsrf, psrf, rsrf, sbsrf, esrf)", unit: "mm", role: "diagnostic"}
+    - {name: "SurfTemp / SoilTemp (surface and soil temperature)", unit: "degC", role: "prognostic"}
+    - {name: "Cumulative integrators (CumRunoff, CumET, CumIntercept, cumMelt)", unit: "mm or cm", role: "accumulator"}
+  provenance: "populated"
+
+outputs:
+  - var: "Discharge at outlet (Qstrm)"
+    validation_rank: 1
+    unit: "m^3/s"
+    description: "Streamflow discharge at the basin outlet node(s) from kinematic-wave channel routing."
+    emitted_in: ".qout (Outlet hydrograph)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Hydrograph timing is sensitive to uncalibrated routing velocities (HILLSLOPE_KSE/STREAM_KSE); compare against gauged discharge at the outlet only."]
+      detrending_options: ["none"]
+  - var: "Channel stage (HLevel)"
+    validation_rank: 3
+    unit: "m"
+    description: "Water-surface level in the channel at the outlet/reach."
+    emitted_in: ".qout"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Requires a stage-rating reference at the same cross-section."]
+      detrending_options: ["none"]
+  - var: "Total evapotranspiration (EvpTtrs / EvapoTranspiration)"
+    validation_rank: 4
+    unit: "mm/hr"
+    description: "Total actual evapotranspiration (wet-canopy + dry-canopy transpiration + soil evaporation) at a node."
+    emitted_in: ".pixel (per-node) and .mrf (basin-mean MET)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Flux-tower comparison requires footprint to align with the Voronoi cell; sub-daily flux noise limits achievable r."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Gridded ET products (e.g. remote-sensing latent heat) need Voronoi-to-grid resampling."]
+      detrending_options: ["none"]
+  - var: "Depth to groundwater table (Nwt)"
+    validation_rank: 5
+    unit: "mm"
+    description: "Water-table depth below the surface at each TIN node."
+    emitted_in: ".pixel and .mrf (mean MGW) and spatial snapshots"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Compare against well observations co-located with a node; absolute datum reconciliation required."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "Soil moisture (top 10 cm / root zone)"
+    validation_rank: 6
+    unit: "m^3/m^3 (dimensionless)"
+    description: "Volumetric soil moisture in the surface (top 10 cm) and root-zone (top 1 m) layers."
+    emitted_in: ".pixel and .mrf (MSM100 / MSMRt) and spatial snapshots"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Match observation support depth to the model layer; in-situ probes are point measurements within a Voronoi cell."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "ranking_quality"]
+          determining_metric: "csi"
+          caveats: ["Satellite soil-moisture is a near-surface retrieval; compare to the top-10-cm layer only."]
+      detrending_options: ["none"]
+  - var: "Snow water equivalent (SnWE; liqWEq/iceWEq)"
+    validation_rank: 7
+    unit: "cm (output) / mm (internal)"
+    description: "Snowpack water equivalent (sum of ice and liquid) at a node when OPTSNOW=1."
+    emitted_in: ".pixel and .mrf (AvSWE, SCA) and spatial snapshots"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["SNOTEL-style point SWE; timing of melt-out is a key skill axis."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "event_detection"]
+          determining_metric: "csi"
+          caveats: ["Snow-covered-area products compare to SCA, not depth; binary presence/absence."]
+      detrending_options: ["none"]
+  - var: "Runoff-mechanism hydrograph separation (Hsrf, Sbsrf, Psrf, Satsrf)"
+    validation_rank: 2
+    unit: "m^3/s"
+    description: "Discharge partitioned by generation mechanism: infiltration-excess, saturation-excess, perched return flow, and groundwater exfiltration."
+    emitted_in: ".rft (runoff-type file)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Mechanism separation is rarely directly observable; usually a diagnostic against tracer/conceptual baseflow separation rather than a direct gauge."]
+      detrending_options: ["none"]
+  - var: "Mean areal precipitation and basin-averaged water-balance terms"
+    validation_rank: 8
+    unit: "mm/hr and m^3/s"
+    description: "Basin-averaged MAP, surface runoff, mean soil moisture, mean groundwater depth, and mean ET over the simulation."
+    emitted_in: ".mrf (mean response file)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Basin-aggregate diagnostic; use to check water-balance closure (P = ET + Q + dStorage within ~1%)."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "saturated hydraulic conductivity (Ks / K0n)"
+      to: "Discharge at outlet (Qstrm)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["ivanov2004_joh_tribs_calibration", "ivanov2004_wrr_tribs_response", "perra2019_water_transferability"]
+    - from: "saturated hydraulic conductivity (Ks / K0n)"
+      to: "Runoff-mechanism partitioning (infiltration-excess vs saturation-excess)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["ivanov2004_wrr_tribs_response", "vivoni2007_hess_runoff_controls"]
+    - from: "conductivity decay parameter (f)"
+      to: "Discharge at outlet (Qstrm) (runoff timing & recession)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["ivanov2004_joh_tribs_calibration", "ivanov2004_wrr_tribs_response"]
+    - from: "conductivity decay parameter (f)"
+      to: "Depth to groundwater table (Nwt) / baseflow generation"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["ivanov2004_joh_tribs_calibration"]
+    - from: "anisotropy ratio (ar)"
+      to: "Discharge at outlet (Qstrm) (interflow & baseflow)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["ivanov2004_joh_tribs_calibration", "ivanov2004_wrr_tribs_response"]
+    - from: "initial / antecedent soil moisture"
+      to: "Discharge at outlet (Qstrm) / runoff ratio"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      applicability: "always"
+      citations: ["vivoni2009_jhm_soilmoisture", "vivoni2007_hess_runoff_controls"]
+    - from: "initial / antecedent soil moisture"
+      to: "Total evapotranspiration (EvpTtrs)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      applicability: "always"
+      citations: ["vivoni2009_jhm_soilmoisture"]
+    - from: "rainfall intensity / forcing"
+      to: "Runoff-mechanism partitioning & magnitude"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      applicability: "always"
+      citations: ["ivanov2004_wrr_tribs_response", "vivoni2007_hess_runoff_controls"]
+    - from: "Manning's channel roughness (ne)"
+      to: "Discharge at outlet (Qstrm) (hydrograph shape / peak timing)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["ivanov2004_joh_tribs_calibration", "ivanov2004_wrr_tribs_response"]
+    - from: "hillslope velocity coefficient/exponent (cv, r)"
+      to: "Discharge at outlet (Qstrm) (hydrograph shape / routing)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["ivanov2004_joh_tribs_calibration", "ivanov2004_wrr_tribs_response"]
+    - from: "stomatal resistance (rs)"
+      to: "Total evapotranspiration (EvpTtrs) / latent heat flux"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["ivanov2004_joh_tribs_calibration"]
+    - from: "vegetation fraction (v)"
+      to: "Total evapotranspiration (EvpTtrs) partitioning"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["ivanov2004_joh_tribs_calibration"]
+    - from: "optical transmission coefficient (Kt)"
+      to: "Total evapotranspiration (EvpTtrs) / surface energy"
+      sensitivity_grade: "LOW"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["ivanov2004_joh_tribs_calibration"]
+    - from: "pore-size distribution index (lambda_o)"
+      to: "Runoff production / soil moisture"
+      sensitivity_grade: "LOW"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["ivanov2004_joh_tribs_calibration"]
+    - from: "total porosity / saturation moisture content (n / ThetaS)"
+      to: "Discharge at outlet (Qstrm) / storage"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "parameter"
+      applicability: "always"
+      citations: ["ivanov2004_wrr_tribs_response"]
+    - from: "TIN / terrain resolution"
+      to: "Runoff generation (scale dependence)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "structural"
+      applicability: "always"
+      citations: ["vivoni2007_hess_runoff_controls"]
+  citation_index:
+    ivanov2004_joh_tribs_calibration:
+      short_citation: "Ivanov et al. 2004 (J. Hydrol.)"
+      doi: "10.1016/j.jhydrol.2004.03.041"
+      note: "tRIBS manual-calibration methodology with explicit per-parameter calibration-effort ranking (level 1=primary, 2=secondary, 3=tertiary); ordinal ranking, not a variance-based index."
+    ivanov2004_wrr_tribs_response:
+      short_citation: "Ivanov et al. 2004 (WRR)"
+      doi: "10.1029/2004WR003218"
+      note: "Foundational tRIBS paper; parameter table and DMIP-basin calibration set (K0n, f, ar, cu, r, ne) controlling streamflow."
+    vivoni2007_hess_runoff_controls:
+      short_citation: "Vivoni et al. 2007 (HESS)"
+      doi: "10.5194/hess-11-1683-2007"
+      note: "Process-based analysis of controls (soil hydraulics, initial moisture, rainfall, TIN resolution) on runoff-mechanism partitioning and its scale dependence."
+    vivoni2009_jhm_soilmoisture:
+      short_citation: "Vivoni et al. 2009 (J. Hydrometeorol.)"
+      doi: "10.1175/2008JHM1069.1"
+      note: "Ensemble sensitivity of runoff ratio, streamflow, and ET to antecedent soil moisture during the North American monsoon."
+    perra2019_water_transferability:
+      short_citation: "Perra et al. 2019 (Water)"
+      doi: "10.3390/w11112261"
+      note: "Parameter-transferability test; tRIBS hydrograph skill degrades when calibrated soil hydraulic parameters are transferred across events, underscoring their sensitivity."
+
+safety:
+  hazards:
+    - id: "rainfall_rate_unit_silent"
+      kind: "weather_file_semantic"
+      description: "Rainfall must be mm/hr; ERA5 mm/day (24x) or CMFD m/s (3.6e6x) silently scale the entire hydrograph with no error raised."
+      severity: "silent"
+    - id: "temperature_kelvin_silent"
+      kind: "weather_file_semantic"
+      description: "Air temperature must be degC; Kelvin (~293) is read as 293 degC, producing enormous ET and preventing snow formation."
+      severity: "silent"
+    - id: "relative_humidity_percent_silent"
+      kind: "weather_file_semantic"
+      description: "RH must be a fraction (0-1); percent (e.g. 65 = 6500%) is not clamped, driving ET far above precipitation and draining soil moisture within hours."
+      severity: "silent"
+    - id: "pressure_pa_vs_mb_degraded"
+      kind: "weather_file_semantic"
+      description: "Atmospheric pressure must be mb (hPa); Pa (101325 vs 1013.25) corrupts the psychrometric constant and biases Penman-Monteith ET."
+      severity: "degraded"
+    - id: "vapor_pressure_kpa_degraded"
+      kind: "weather_file_semantic"
+      description: "Vapor pressure must be mb; kPa is 10x too small, giving wrong dew point and VPD."
+      severity: "degraded"
+    - id: "metstep_minutes_vs_hours_silent"
+      kind: "control_semantic"
+      description: "METSTEP is in hours; supplying minutes (e.g. 60) makes the model read every 60th hourly record, producing 60-hour gaps and interpolation artifacts."
+      severity: "silent"
+    - id: "soil_depth_m_vs_mm_silent"
+      kind: "soil_semantic"
+      description: "Soil/bedrock depths are in mm; meters (e.g. DEPTHTOBEDROCK=2 read as 2 mm) yield an impossibly thin column that saturates from timestep 1 with runoff ratio >0.9."
+      severity: "silent"
+    - id: "ks_ms_vs_mmhr_silent"
+      kind: "soil_semantic"
+      description: "Ks must be mm/hr; m/s (~1e-6 mm/hr) gives near-zero infiltration, 100% surface runoff, and no baseflow."
+      severity: "silent"
+    - id: "porosity_percent_vs_fraction_silent"
+      kind: "soil_semantic"
+      description: "ThetaS must be a fraction (0-1); percent (e.g. 43 = 4300%) distorts moisture accounting and can drive MuNew<0 and crashes."
+      severity: "fatal_or_silent"
+    - id: "psib_unit_runoff_partition"
+      kind: "soil_semantic"
+      description: "Air-entry pressure PsiB is in mm not cm; wrong units shift the runoff partitioning."
+      severity: "degraded"
+    - id: "mesh_coords_latlon_vs_utm_silent"
+      kind: "soil_semantic"
+      description: "Mesh coordinates must be UTM meters; lat/lon degrees collapse the domain to ~0.001 km^2, so the model runs but produces garbage."
+      severity: "silent"
+    - id: "elevation_feet_vs_meters_degraded"
+      kind: "soil_semantic"
+      description: "Elevation must be meters MSL; feet give ~3x too-low slopes, biasing routing and soil-moisture redistribution."
+      severity: "degraded"
+    - id: "swe_init_m_vs_mm_silent"
+      kind: "initial_condition_semantic"
+      description: "Initial SWE is in mm internally; meters give a snowpack 1000x too small that melts instantly."
+      severity: "silent"
+    - id: "optmeshinput_mismatch_fatal"
+      kind: "control_semantic"
+      description: "OPTMESHINPUT must match the available mesh files (e.g. option 8 expects .nodes/.edges/.tri/.z); a mismatch causes a 'Cannot open file' crash or segfault at startup."
+      severity: "fatal"
+    - id: "station_sdf_wrong_basin_silent"
+      kind: "weather_file_semantic"
+      description: "An .sdf station-descriptor file pointing to the wrong .mdf paths or another basin causes tRIBS to silently use incorrect forcing."
+      severity: "silent"
+    - id: "sim_dates_outside_forcing_degraded"
+      kind: "control_semantic"
+      description: "STARTDATE/ENDDATE extending beyond the forcing period leads to silent zeros or extrapolation rather than a clear error."
+      severity: "degraded"
+    - id: "nan_forcing_propagation_fatal"
+      kind: "numerical_instability"
+      description: "NaN in forcing data propagates through ET, soil moisture, and routing into all outputs and may crash mid-simulation."
+      severity: "fatal"
+    - id: "unsat_solver_or_routing_hang"
+      kind: "numerical_instability"
+      description: "Extreme soil parameters can fail the Newton/LambertW unsaturated-zone solver, and a mesh with no outlet or circular flow paths causes an infinite routing loop (hang after Part 8)."
+      severity: "fatal"
+    - id: "water_balance_nonclosure_drift"
+      kind: "numerical_instability"
+      description: "Mismatched output vs internal computation timestep, or very large/small timesteps, produce numerical drift so P-ET-Q-dStorage exceeds 1% of P."
+      severity: "degraded"
+  validation_limits:
+    - "Physically-based but requires basin-specific calibration of soil hydraulic (K0n, f, ar) and routing (ne, hillslope/stream velocity) parameters; uncalibrated routing velocities yield wrong hydrograph timing (NSE<0.3)."
+    - "Mesh size is RAM-bounded (~500 bytes per node, 50+ doubles/node); very large basins require coarsening or the MPI-parallel tRIBSpar build."
+    - "Snow and groundwater are optional modules (OPTSNOW/OPTGROUNDWATER); when disabled, those processes are simply absent rather than approximated."
+  warnings:
+    - "Loop order is load-bearing: tIntercept runs before tEvapoTrans (interception sets effective precipitation before ET), and when OPTSNOW=1 the snow energy balance substitutes for the normal precipitation/ET path and feeds melt back as effective rainfall."
+    - "Priestley-Taylor alpha is hardcoded at 1.26 (semi-humid/humid calibration) and is not exposed as a calibration parameter; arid-region ET may be biased under OPTEVAP=3."
+    - "Expected validation envelope: water balance closes within ~1% of precipitation; ET in the regional range ~300-1200 mm/yr; soil moisture stays within 0-to-porosity bounds; discharge non-negative."
+  assumptions:
+    - statement: "Each TIN node's hydrologic computations are valid over its associated Voronoi polygon, which is the control volume for mass conservation; flow is routed node-to-node along triangle edges by a finite-difference approach."
+      scope: "Spatial discretization and mass-balance closure across the whole model."
+      source: "tRIBS Model Design documentation (https://tribshms.readthedocs.io/en/latest/man/Model%20Design.html, section 1.2 Computational Mesh)."
+      status: "adopted"
+    - statement: "The TIN mesh architecture (triangle/edge/node objects) is inherited from the CHILD landscape-evolution model framework."
+      scope: "Mesh data structures and connectivity."
+      source: "tRIBS Model Design documentation, section 1.1 Model File Structure."
+      status: "adopted"
+    - statement: "Priestley-Taylor evapotranspiration uses a fixed alpha of 1.26 representative of semi-humid/humid conditions."
+      scope: "ET under OPTEVAP=3 (Priestley-Taylor option)."
+      source: "tEvapoTrans module behavior in tRIBS source (Priestley-Taylor routine)."
+      status: "adopted"
+    - statement: "Snow water equivalent is accounted in mm internally even though pixel/spatial outputs report SWE in cm."
+      scope: "Snow state initialization and output interpretation when OPTSNOW=1."
+      source: "tSnowPack module behavior and tRIBS Output documentation."
+      status: "tentative"

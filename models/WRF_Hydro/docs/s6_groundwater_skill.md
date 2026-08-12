@@ -302,3 +302,22 @@ Run these checks before proceeding to the next stage:
 
 *This skill document is part of the `hydrocraft-wrfhydro-standalone` knowledge infrastructure.*
 *Stage s6 of 12 | Tools used: build_groundwater | Related triplets: dt_002, dt_v013, dt_v016, dt_v017*
+
+## Build-time bucket sizing rule (dag safety.hazards.gw_zmax_too_shallow; verified Wangjiaba 2026-07-19)
+
+Apply at BUILD time, not after scoring. In gridded (non-UDMP) mode `build_groundwater.py`
+legacy defaults are Coeff=1.0/Expon=3.0/Zmax=50mm — on any basin > ~10,000 km2 this pins
+the bucket at Zmax within days (GWOUT depth frozen at Zmax, inflow==outflow, pure
+pass-through, no recession; dt_v013). For large humid/alluvial basins (e.g. Huai):
+
+- `--zmax 200-500` (dag range; 250 used for the 112,112 km2 Bengbu/Wangjiaba domain)
+- `--coeff_per_100km2 0.04` — the dag's Coeff~0.04 is the NWM reach-scale (~100 km2)
+  convention; a lumped bucket needs Coeff = 0.04 * Area_sqkm/100 (~45 at 112,112 km2),
+  otherwise max release Coeff*(e^Expon - 1) is orders of magnitude below recharge and the
+  bucket stays saturated regardless of Zmax.
+- `--zinit` ~10% of Zmax; discard >=1 spinup year.
+- Check after any multi-year run: GWOUT depth at period start vs end must differ and sit
+  below Zmax; if pinned at Zmax the exponential law never operated.
+- Per-subbasin disaggregation (multiple Basin IDs) additionally requires a subbasin
+  delineation stage (not yet a KI tool) or UDMP per-reach buckets (needs Route_Link.nc
+  + reach routing, channel_option 1/2).

@@ -107,22 +107,55 @@ def parse_hydrographs(filepath):
 
 
 def parse_diagnostics(filepath):
-    """Parse Diagnostics.csv for performance metrics."""
+    """Parse Raven's Diagnostics.csv into a flat {metric_name: value} dict.
+
+    Raven writes a HEADER row plus ONE DATA ROW PER OBSERVATION SERIES, not
+    `name,value` pairs (dt_rav_037):
+
+        observed_data_series,filename,DIAG_NASH_SUTCLIFFE,DIAG_KLING_GUPTA,...
+        HYDROGRAPH_ALL[1],bengbu_obs.rvt,-1.42864,-0.285628,...
+
+    The previous row-wise `parts[0] -> float(parts[1])` parser therefore matched
+    nothing at all: on the header row column 1 is the literal "filename", and on
+    the data row it is the .rvt name. Every caller got {} and fell back to the
+    -999 sentinel. This is THE canonical Raven diagnostics parser — the s8
+    ensemble and s9 calibration tools import it rather than re-deriving it.
+
+    Returns metric names both as written (DIAG_NASH_SUTCLIFFE) and with Raven's
+    DIAG_ prefix stripped (NASH_SUTCLIFFE), taken from the FIRST data row. When
+    the file holds more than one observation series, every series is also
+    reported under "<series>:<METRIC>" keys so nothing is silently dropped.
+    """
     metrics = {}
     try:
         with open(filepath) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or line.startswith("*"):
-                    continue
-                parts = [p.strip() for p in line.split(",")]
-                if len(parts) >= 2:
-                    try:
-                        metrics[parts[0]] = float(parts[1])
-                    except ValueError:
-                        pass
+            rows = [[c.strip() for c in line.strip().split(",")]
+                    for line in f
+                    if line.strip() and not line.lstrip().startswith(("#", "*"))]
     except Exception:
-        pass
+        return metrics
+
+    if len(rows) < 2:
+        return metrics
+
+    header = rows[0]
+    data_rows = rows[1:]
+    for row_i, data in enumerate(data_rows):
+        series = data[0] if data and data[0] else f"series{row_i + 1}"
+        for name, value in zip(header, data):
+            if not name:
+                continue
+            try:
+                val = float(value)
+            except ValueError:
+                continue
+            short = name[len("DIAG_"):] if name.startswith("DIAG_") else name
+            if row_i == 0:
+                metrics[name] = val
+                metrics[short] = val
+            if len(data_rows) > 1:
+                metrics[f"{series}:{short}"] = val
+
     return metrics
 
 
@@ -147,6 +180,169 @@ def parse_watershed_storage(filepath):
         return summary
     except Exception:
         return {}
+
+
+# ---------------------------------------------------------------------------
+# Calendar-dated series + closure checks (dt_rav_034 / dt_rav_035)
+#
+# Raven writes Hydrographs.csv and WatershedStorage.csv with a PERIOD-ENDING
+# stamp: the row labelled date d holds the flow *of calendar day d-1*, and the
+# row at time=0 is the initial condition only (RavenUsersManual v4.1, "Output
+# files"). Joining the raw stamps to a gauge file therefore scores every model
+# on a ONE-DAY LAG and disagrees with Raven's own Diagnostics.csv.
+#
+# Verified at Tangnaihai (2026-07-27): shifting the stamps back one day makes
+# the "(observed)" column Raven echoes equal the raw gauge file EXACTLY on
+# identical calendar dates (3286 days, max abs diff 0.0); the unshifted join
+# differs by up to 580 m3/s.
+# ---------------------------------------------------------------------------
+
+# Columns of WatershedStorage.csv that are CUMULATIVE ACCUMULATORS or fluxes,
+# not storage. "Total [mm]" bundles "Cum. Losses to Atmosphere", so taking
+# dS = delta(Total) double-counts ET and makes the closure check FAIL on a run
+# whose native MB Error is ~1e-12 mm (dt_rav_035).
+_WS_ACCUMULATORS = (
+    "Cum. Losses to Atmosphere [mm]", "Total [mm]",
+    "Cum. Inputs [mm]", "Cum. Outflow [mm]", "MB Error [mm]",
+)
+_WS_FLUXES = ("rainfall [mm/day]", "snowfall [mm/d SWE]")
+_WS_INDEX = ("time [d]", "time", "date", "hour")
+
+
+def _read_raven_csv(path):
+    """Read a Raven output CSV, stripping the padding spaces from headers."""
+    df = pd.read_csv(path, skip_blank_lines=True)
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
+
+
+def load_discharge_series(output_dir, basin_name, date_convention="period_ending"):
+    """Return (simulated, observed) discharge as calendar-dated pandas Series.
+
+    date_convention:
+      "period_ending" (Raven's own convention, DEFAULT) -- shift stamps back one
+          day and drop the time=0 initial-condition row.
+      "as_written"    -- keep the raw stamps (only for inspecting the raw file).
+
+    Units m3/s. The observed series is Raven's echo of the :ObservationData in
+    the .rvt, with the -1.2e30 / -9999 missing markers removed.
+    """
+    path = find_output_file(output_dir, basin_name, "Hydrographs.csv")
+    if not path:
+        raise FileNotFoundError(f"Hydrographs.csv not found under {output_dir}")
+
+    df = _read_raven_csv(path)
+    if "time" in df.columns:
+        # time=0 is the initial condition, not a simulated day
+        df = df[pd.to_numeric(df["time"], errors="coerce") > 0]
+
+    date_col = "date" if "date" in df.columns else df.columns[0]
+    dates = pd.to_datetime(df[date_col], errors="coerce")
+    if date_convention == "period_ending":
+        dates = dates - pd.Timedelta(days=1)
+    elif date_convention != "as_written":
+        raise ValueError(f"unknown date_convention: {date_convention}")
+
+    sim_col = obs_col = None
+    for c in df.columns:
+        cl = c.lower()
+        if "m3/s" not in cl and "cms" not in cl:
+            continue
+        if "observed" in cl or "(obs" in cl:
+            obs_col = obs_col or c
+        elif sim_col is None:
+            sim_col = c
+    if sim_col is None:
+        raise ValueError(f"no simulated [m3/s] column in {path}: {list(df.columns)}")
+
+    def _series(col):
+        if col is None:
+            return None
+        s = pd.Series(pd.to_numeric(df[col], errors="coerce").values, index=dates)
+        s = s[~s.index.isna()]
+        s = s[~s.index.duplicated(keep="first")].sort_index()
+        return s[s > -9000].dropna()
+
+    return _series(sim_col), _series(obs_col)
+
+
+def compute_water_balance(output_dir, basin_name, start=None, end=None):
+    """Accumulator-free basin water-balance closure from WatershedStorage.csv.
+
+    P, ET and Q are read from Raven's cumulative columns as END-minus-START
+    differences; dS sums only the true STORAGE compartments (accumulators
+    excluded -- dt_rav_035). Status comes from the shared
+    ki_tools_common.validation.validate_water_balance so the verdict is the
+    same one every HydroCraft model reports.
+    """
+    path = find_output_file(output_dir, basin_name, "WatershedStorage.csv")
+    if not path:
+        return {"status": "N/A", "residual_mm": None, "residual_pct": None,
+                "diagnostics": ["WatershedStorage.csv not found"]}
+
+    df = _read_raven_csv(path)
+    dates = pd.to_datetime(df["date"], errors="coerce")
+    df = df.set_index(dates)
+    if start:
+        df = df[df.index >= pd.Timestamp(start)]
+    if end:
+        df = df[df.index <= pd.Timestamp(end)]
+    if len(df) < 2:
+        return {"status": "N/A", "residual_mm": None, "residual_pct": None,
+                "diagnostics": [f"only {len(df)} storage rows in {start}..{end}"]}
+
+    skip = set(_WS_ACCUMULATORS) | set(_WS_FLUXES) | set(_WS_INDEX)
+    storage_cols = [c for c in df.columns if c not in skip]
+    num = df.apply(pd.to_numeric, errors="coerce")
+    first, last = num.iloc[0], num.iloc[-1]
+
+    def _delta(col):
+        return float(last[col] - first[col]) if col in num.columns else 0.0
+
+    precip = _delta("Cum. Inputs [mm]")
+    et = _delta("Cum. Losses to Atmosphere [mm]")
+    runoff = _delta("Cum. Outflow [mm]")
+    d_storage = float(sum(last[c] for c in storage_cols)
+                      - sum(first[c] for c in storage_cols))
+
+    try:
+        from ki_tools_common.validation import validate_water_balance
+        wb = validate_water_balance(
+            precip_mm=precip, et_mm=et, runoff_mm=runoff,
+            delta_storage_mm=d_storage, period_days=len(df))
+        out = {"status": wb.get("status"),
+               "residual_mm": wb.get("residual_mm"),
+               "residual_pct": wb.get("residual_pct"),
+               "diagnostics": wb.get("diagnostics", [])}
+    except Exception as e:  # shared validator unavailable -> local closure only
+        resid = precip - et - runoff - d_storage
+        out = {"status": "PASS" if abs(resid) < 0.01 * max(precip, 1.0) else "FAIL",
+               "residual_mm": round(resid, 4),
+               "residual_pct": round(100.0 * resid / precip, 4) if precip else None,
+               "diagnostics": [f"ki_tools_common.validation unavailable: {e}"]}
+
+    out["totals_mm"] = {"precip": round(precip, 1), "et": round(et, 1),
+                        "runoff": round(runoff, 1),
+                        "delta_storage": round(d_storage, 1)}
+    if "MB Error [mm]" in num.columns:
+        out["raven_mb_error_mm"] = float(last["MB Error [mm]"])
+    out["storage_columns_used"] = storage_cols
+    out["period"] = [str(df.index[0].date()), str(df.index[-1].date())]
+    return out
+
+
+def select_best_member(rows, cal_key="cal", metric="nse"):
+    """Rank ensemble members on the CALIBRATION window and return (best, ranked).
+
+    Structure choice is tuning: ranking members on the held-out window and then
+    reporting that member's held-out score makes the headline a FITTED
+    statistic. Selection must therefore read `cal_key` only (dt_rav_036).
+    """
+    scored = [r for r in rows
+              if isinstance(r.get(cal_key), dict)
+              and r[cal_key].get(metric) is not None]
+    ranked = sorted(scored, key=lambda r: r[cal_key][metric], reverse=True)
+    return (ranked[0] if ranked else None), ranked
 
 
 def compute_additional_metrics(sim, obs):
@@ -241,6 +437,26 @@ def process(args):
     if sol_path:
         results["solution_rvc"] = sol_path
 
+    # Calendar-dated series (dt_rav_034) — always reported so callers can see
+    # the convention that was applied without re-deriving it.
+    try:
+        sim_s, obs_s = load_discharge_series(args.output_dir, args.basin_name)
+        results["discharge_series"] = {
+            "date_convention": "period_ending",
+            "n_days": int(len(sim_s)),
+            "start": str(sim_s.index.min().date()) if len(sim_s) else None,
+            "end": str(sim_s.index.max().date()) if len(sim_s) else None,
+        }
+    except Exception as e:
+        results["discharge_series_error"] = str(e)
+
+    # Water-balance closure (dt_rav_035) — mandatory post-run check
+    if getattr(args, "water_balance", False):
+        results["water_balance"] = compute_water_balance(
+            args.output_dir, args.basin_name,
+            start=getattr(args, "wb_start", None),
+            end=getattr(args, "wb_end", None))
+
     results["status"] = "success"
     results["output_dir"] = args.output_dir
 
@@ -253,6 +469,12 @@ def main():
     parser.add_argument("--basin_name", default="", help="Basin name (RunName prefix)")
     parser.add_argument("--obs_file", default=None, help="Observed discharge file")
     parser.add_argument("--export_csv", default=None, help="Export discharge to CSV")
+    parser.add_argument("--water_balance", action="store_true",
+                        help="Compute the accumulator-free basin water-balance closure")
+    parser.add_argument("--wb_start", default=None,
+                        help="Water-balance window start (YYYY-MM-DD)")
+    parser.add_argument("--wb_end", default=None,
+                        help="Water-balance window end (YYYY-MM-DD)")
 
     args = parser.parse_args()
 

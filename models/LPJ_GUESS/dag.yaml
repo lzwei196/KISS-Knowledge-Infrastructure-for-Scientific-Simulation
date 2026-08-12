@@ -1,0 +1,411 @@
+template_version: "3.5"
+
+identity:
+  model_id: "LPJ-GUESS"
+  scientific_reference_version: "LPJ-GUESS core flux physics (Smith et al. 2001/2014; Sitch et al. 2003; Monteith 1972 LUE) — analytic reimplementation of GPP/Ra/Rh/NEE"
+  implementation:
+    id: "lpj-guess-analytic"
+    version: "HydroCraft analytic reimplementation"
+    provenance: "Python; analytic reimplementation of LPJ-GUESS core flux processes (LUE GPP, Q10 Ra/Rh, NEE), not the full LPJ-GUESS Fortran/C++ binary."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "python"
+  license: ""
+  repo_url: ""
+
+boundary:
+  scope_in:
+    - "Gross Primary Production via radiation-driven Light Use Efficiency"
+    - "Autotrophic respiration (maintenance via Q10, growth as fixed NPP fraction)"
+    - "Heterotrophic respiration (Q10 decomposition of soil/litter organic carbon)"
+    - "Ecosystem respiration (Reco = Ra + Rh)"
+    - "Net Ecosystem Exchange and Net Primary Production as derived carbon fluxes"
+    - "Temperature and VPD limitation scalars on assimilation"
+  scope_out:
+    - "Dynamic evolution of soil/vegetation/litter carbon pools (static C_pool_scale only in this reimplementation)"
+    - "Coupled C/N cycling, N mineralization, N deposition (documented in full LPJ-GUESS but not evolved by analytic equations)"
+    - "Vegetation dynamics: PFT establishment, mortality, competition, cohort age structure"
+    - "Stochastic disturbance (fire, windthrow)"
+    - "Explicit water balance / soil moisture prognostics (precipitation optional, VPD scalar only)"
+  spatial: "0-D point"
+  temporal: "daily"
+  closure: "none"
+  notes: >-
+    This dag describes the analytic reimplementation that computes carbon fluxes
+    (GPP, Ra, Rh, Reco, NEE, NPP) diagnostically from daily meteorology and static
+    parameters. No carbon pool is dynamically evolved (C_pool_scale is a static
+    multiplier), so there is no closed daily carbon mass-balance over evolving pools;
+    NEE is a derived identity (Ra + Rh - GPP). The full LPJ-GUESS feature set
+    (C/N coupling, vegetation dynamics, disturbance, century-scale soil C) is
+    documented in the KI but is NOT realized by this implementation and is scoped out.
+
+inputs:
+  forcing:
+    - category: forcing
+      name: "SW_IN"
+      unit: "W/m2"
+      source_kind: forcing
+      model_input_format: "daily total incoming shortwave radiation at the site"
+      notes: "Must be total incoming shortwave, not net radiation; PAR derived as SW_IN*0.48."
+    - category: forcing
+      name: "TA"
+      unit: "deg C"
+      source_kind: forcing
+      model_input_format: "daily air temperature at the site"
+      notes: "Drives parabolic GPP temperature scalar and Q10 Ra/Rh; expects deg C (not Kelvin)."
+    - category: forcing
+      name: "VPD"
+      unit: "hPa"
+      source_kind: forcing
+      model_input_format: "daily vapour pressure deficit at the site"
+      notes: "Drives exponential VPD limitation scalar; parameters VPD_0/VPD_1 are in hPa."
+    - category: forcing
+      name: "P"
+      unit: "mm/day"
+      source_kind: forcing
+      model_input_format: "daily precipitation at the site (optional)"
+      notes: "Optional; for water balance. Not required by the documented analytic flux equations."
+  parameters:
+    - category: parameters
+      name: "LUE_max"
+      unit: "gC/MJ PAR"
+      source_kind: calibrated
+      model_input_format: "site/PFT light-use-efficiency coefficient"
+      notes: "Typical 1.0-3.0; ENF 1.0-1.5, DBF 1.2-2.0, grassland 0.8-1.5."
+    - category: parameters
+      name: "T_opt"
+      unit: "deg C"
+      source_kind: calibrated
+      model_input_format: "optimal photosynthesis temperature (default 20)"
+    - category: parameters
+      name: "T_min"
+      unit: "deg C"
+      source_kind: calibrated
+      model_input_format: "minimum photosynthesis temperature (default -2)"
+    - category: parameters
+      name: "T_max"
+      unit: "deg C"
+      source_kind: calibrated
+      model_input_format: "maximum photosynthesis temperature (default 38)"
+    - category: parameters
+      name: "VPD_0"
+      unit: "hPa"
+      source_kind: default
+      model_input_format: "VPD threshold before GPP decline (default 10)"
+    - category: parameters
+      name: "VPD_1"
+      unit: "hPa"
+      source_kind: default
+      model_input_format: "VPD at which GPP halves (default 35)"
+    - category: parameters
+      name: "Ra_base"
+      unit: "fraction"
+      source_kind: default
+      model_input_format: "base autotrophic respiration / GPP ratio (default 0.5)"
+    - category: parameters
+      name: "Ra_Q10"
+      unit: "dimensionless"
+      source_kind: default
+      model_input_format: "Q10 for maintenance respiration (default 2.0)"
+    - category: parameters
+      name: "Ra_Tref"
+      unit: "deg C"
+      source_kind: default
+      model_input_format: "reference temperature for maintenance respiration (default 15)"
+    - category: parameters
+      name: "Rh_base"
+      unit: "umol/m2/s"
+      source_kind: default
+      model_input_format: "base heterotrophic respiration rate (default 2.0)"
+      notes: "An absolute rate in umol/m2/s, unlike GPP/Ra which are derived fluxes."
+    - category: parameters
+      name: "Rh_Q10"
+      unit: "dimensionless"
+      source_kind: default
+      model_input_format: "Q10 for decomposition (default 2.0)"
+    - category: parameters
+      name: "Rh_Tref"
+      unit: "deg C"
+      source_kind: default
+      model_input_format: "reference temperature for decomposition (default 15)"
+    - category: parameters
+      name: "C_pool_scale"
+      unit: "dimensionless"
+      source_kind: default
+      model_input_format: "static scaling factor for soil C pool effect on Rh (default 1.0)"
+      notes: "Static multiplier; this implementation does not dynamically evolve a soil C pool."
+    - category: parameters
+      name: "leaf_N"
+      unit: "gN/m2 leaf"
+      source_kind: dataset_lookup
+      model_input_format: "leaf nitrogen content per area (optional)"
+    - category: parameters
+      name: "SLA"
+      unit: "m2/kgC"
+      source_kind: dataset_lookup
+      model_input_format: "specific leaf area (optional)"
+    - category: parameters
+      name: "Vcmax_base"
+      unit: "umol/m2/s"
+      source_kind: dataset_lookup
+      model_input_format: "base Vcmax at 25 deg C (optional, Farquhar scaling)"
+  initial_conditions: []
+  boundary_conditions:
+    - category: boundary_conditions
+      name: "vegmode"
+      unit: "categorical"
+      source_kind: user_provided
+      model_input_format: "'cohort' (individual-based) or 'population' (area-averaged) vegetation mode"
+      notes: "Vegetation-dynamics control of the full LPJ-GUESS; not exercised by the analytic flux reimplementation."
+    - category: boundary_conditions
+      name: "npatch"
+      unit: "count"
+      source_kind: user_provided
+      model_input_format: "number of replicate patches (>=25 for cohort-mode robustness)"
+    - category: boundary_conditions
+      name: "nyear_spinup"
+      unit: "years"
+      source_kind: user_provided
+      model_input_format: "spinup length for soil C equilibration (>=500 temperate, 1000+ boreal/peatland)"
+    - category: boundary_conditions
+      name: "PFT selection"
+      unit: "categorical"
+      source_kind: user_provided
+      model_input_format: "climatically appropriate PFTs enabled with bioclimatic filtering (T_min, T_max, GDD)"
+
+processes:
+  modules:
+    - name: "GPP_LightUseEfficiency"
+      role: process_solver
+      brief: "Radiation-driven LUE (Monteith 1972): GPP = LUE_max * PAR_MJ * f_T * f_VPD, with PAR = SW_IN*0.48, parabolic temperature response f_T(T,T_min,T_opt,T_max), and exponential VPD limitation f_VPD = exp(-ln2 * max(VPD-VPD_0,0)/VPD_1)."
+    - name: "AutotrophicRespiration"
+      role: process_solver
+      brief: "Maintenance respiration via Q10 temperature dependence normalized at Ra_Tref; Ra computed as a fraction of GPP scaled by the Q10 factor. Growth respiration implicit (NPP = GPP - Ra)."
+    - name: "HeterotrophicRespiration"
+      role: process_solver
+      brief: "Temperature-dependent Q10 decomposition of litter/soil organic carbon: Rh = Rh_base * C_pool_scale * Rh_Q10^((T-Rh_Tref)/10). C_pool_scale is static (no dynamic pool)."
+    - name: "EcosystemRespiration"
+      role: integrator
+      brief: "Reco = Ra + Rh."
+    - name: "NEE_NPP_Computation"
+      role: integrator
+      brief: "NEE = Reco - GPP (negative = sink); NPP = GPP - Ra."
+  internal_edges:
+    - from: "Inputs"
+      to: "GPP_LightUseEfficiency"
+      kind: consumes_input
+      brief: "GPP module consumes SW_IN, TA, VPD forcing."
+    - from: "GPP_LightUseEfficiency"
+      to: "AutotrophicRespiration"
+      kind: invokes
+      brief: "Ra computed as a Q10-scaled fraction of GPP."
+    - from: "Inputs"
+      to: "AutotrophicRespiration"
+      kind: consumes_input
+      brief: "Ra Q10 response consumes TA forcing."
+    - from: "Inputs"
+      to: "HeterotrophicRespiration"
+      kind: consumes_input
+      brief: "Rh Q10 decomposition consumes TA forcing and static C_pool_scale."
+    - from: "AutotrophicRespiration"
+      to: "EcosystemRespiration"
+      kind: invokes
+      brief: "Ra feeds Reco."
+    - from: "HeterotrophicRespiration"
+      to: "EcosystemRespiration"
+      kind: invokes
+      brief: "Rh feeds Reco."
+    - from: "EcosystemRespiration"
+      to: "NEE_NPP_Computation"
+      kind: invokes
+      brief: "Reco feeds NEE = Reco - GPP."
+    - from: "GPP_LightUseEfficiency"
+      to: "NEE_NPP_Computation"
+      kind: invokes
+      brief: "GPP feeds NEE and NPP = GPP - Ra."
+    - from: "NEE_NPP_Computation"
+      to: "Outputs"
+      kind: produces_output
+      brief: "Emits GPP, Ra, Rh, Reco, NEE, NPP."
+
+states:
+  variables: []
+  provenance: structural
+
+outputs:
+  - var: "GPP"
+    validation_rank: 1
+    unit: "umol/m2/s"
+    description: "Gross Primary Production (carbon assimilation flux)."
+    emitted_in: "model output table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy, timing_accuracy]
+          determining_metric: "nse"
+          caveats:
+            - "Eddy-covariance GPP is a partitioning-derived flux, not a direct measurement."
+            - "Internal flux may be gC/m2/day; convert to umol/m2/s (x0.9649) before comparison."
+      detrending_options: [none]
+  - var: "Ra"
+    validation_rank: 3
+    unit: "umol/m2/s"
+    description: "Autotrophic respiration."
+    emitted_in: "model output table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats:
+            - "Ra is not directly observable by eddy covariance; comparable only against partitioned/modelled estimates."
+      detrending_options: [none]
+  - var: "Rh"
+    validation_rank: 4
+    unit: "umol/m2/s"
+    description: "Heterotrophic respiration (soil/litter decomposition)."
+    emitted_in: "model output table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats:
+            - "Comparable against soil-respiration chambers or partitioned Rh, not against net tower flux directly."
+      detrending_options: [none]
+  - var: "Reco"
+    validation_rank: 5
+    unit: "umol/m2/s"
+    description: "Ecosystem respiration (Ra + Rh)."
+    emitted_in: "model output table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats:
+            - "Tower Reco is a nighttime-extrapolated/partitioned quantity carrying partitioning uncertainty."
+      detrending_options: [none]
+  - var: "NEE"
+    validation_rank: 6
+    unit: "umol/m2/s"
+    description: "Net Ecosystem Exchange (Reco - GPP); positive = net source, negative = net sink."
+    emitted_in: "model output table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats:
+            - "NEE is the most directly observed eddy-covariance flux; sign convention (positive=source) must match obs."
+            - "NEE is a small residual of large GPP and Reco; magnitude errors are amplified."
+      detrending_options: [none]
+  - var: "NPP"
+    validation_rank: 2
+    unit: "umol/m2/s"
+    description: "Net Primary Production (GPP - Ra)."
+    emitted_in: "model output table"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: [temporal_pattern_match, magnitude_accuracy]
+          determining_metric: "nse"
+          caveats:
+            - "NPP not directly observed by towers; comparable against biometric/inventory NPP at coarser cadence."
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: [trend_match, magnitude_accuracy]
+          determining_metric: "pbias"
+          caveats:
+            - "Regional/inventory NPP carries non-model (management/disturbance) signal; compare trends, not inter-annual r."
+      detrending_options: [none, decadal_mean, linear_residual]
+
+influence:
+  edges: []
+  citation_index: {}
+  _reason: "lit_reader returned null (no sensitivity literature was supplied to this run); per synthesizer rule, sensitivity-with-citation edges require >=1 citation from lit_facts.papers[], so the block is intentionally empty. Mechanistic input->output dependencies are captured in processes.internal_edges, not here."
+
+safety:
+  hazards:
+    - id: "temperature_kelvin_not_celsius"
+      kind: weather_file_semantic
+      description: "Air temperature supplied in Kelvin instead of deg C saturates the temperature scalar and makes Q10 respiration explode (~300 deg C regime)."
+      severity: fatal_or_silent
+      triplet_id: "dt_lpjguess_001"
+    - id: "precip_kg_m2_s_not_mm_day"
+      kind: weather_file_semantic
+      description: "Precipitation left in kg/m2/s instead of mm/day reads as ~0, driving permanent simulated drought."
+      severity: silent
+      triplet_id: "dt_lpjguess_002"
+    - id: "vpd_kpa_not_hpa"
+      kind: weather_file_semantic
+      description: "VPD supplied in kPa instead of hPa leaves f_VPD near 1.0 with no moisture stress on GPP (VPD_0/VPD_1 are hPa)."
+      severity: silent
+      triplet_id: "dt_lpjguess_003"
+    - id: "gpp_flux_unit_unconverted"
+      kind: parser_semantic
+      description: "GPP in gC/m2/day not converted to umol/m2/s (x0.9649) yields a ~7200x mismatch versus FLUXNET eddy-covariance."
+      severity: silent
+      triplet_id: "dt_lpjguess_004"
+    - id: "ins_parse_failure"
+      kind: control_semantic
+      description: "Malformed instruction (.ins) file (missing string quotes, unbalanced braces, trailing whitespace) causes silent parse failure and wrong PFT configuration."
+      severity: fatal_or_silent
+      triplet_id: "dt_lpjguess_005"
+    - id: "gridlist_format_invalid"
+      kind: control_semantic
+      description: "Gridlist not space-separated 'lon lat' (CSV, header rows, reversed lon/lat, out-of-range coords) yields zero gridcells or immediate crash."
+      severity: fatal
+      triplet_id: "dt_lpjguess_006"
+    - id: "driver_netcdf_not_cf_compliant"
+      kind: weather_file_semantic
+      description: "Driver NetCDF dim ordering / variable naming / calendar not matching the CF input spec causes getclimate read errors."
+      severity: fatal
+      triplet_id: "dt_lpjguess_007"
+    - id: "lue_max_too_high"
+      kind: coefficient_runtime_silent_fallback
+      description: "LUE_max set too high (~3.0 vs 1.2-2.0 for temperate forest) inflates GPP 2-3x above FLUXNET silently."
+      severity: degraded
+      triplet_id: "dt_lpjguess_011"
+    - id: "t_opt_climate_mismatch"
+      kind: coefficient_runtime_silent_fallback
+      description: "T_opt mismatched to PFT/climate (default 20 deg C) shifts the GPP temperature response and seasonal peak timing."
+      severity: degraded
+      triplet_id: "dt_lpjguess_012"
+    - id: "rh_q10_regime_mismatch"
+      kind: coefficient_runtime_silent_fallback
+      description: "Rh_Q10 inappropriate for soil regime (default 2.0) produces wrong soil-respiration seasonal amplitude."
+      severity: degraded
+      triplet_id: "dt_lpjguess_013"
+    - id: "nee_closure_fp_precision"
+      kind: numerical_instability
+      description: "Computing NEE as a small residual of large GPP and Reco loses floating-point precision unless NEE is evaluated as (Ra+Rh)-GPP in one expression."
+      severity: degraded
+      triplet_id: "dt_lpjguess_014"
+  validation_limits:
+    - "This implementation is an analytic reimplementation of LPJ-GUESS core fluxes; it does NOT evolve soil/vegetation/litter carbon pools, C/N coupling, vegetation dynamics, or disturbance, so any application requiring dynamic pool turnover, N limitation, or PFT succession is out of structural scope."
+    - "Point-scale, daily timestep: cannot resolve sub-daily flux variability or spatially distributed processes."
+    - "Spinup-dependent claims (soil C equilibration, multi-century turnover) apply to the full LPJ-GUESS, not to this static-pool reimplementation."
+  warnings:
+    - "Reference-temperature inconsistency: GPP T_opt default 20 deg C vs respiration Ra_Tref/Rh_Tref default 15 deg C — confirm intended thermal references before calibrating."
+    - "Rh_base is an absolute rate (umol/m2/s) while GPP/Ra are derived fluxes; resulting Reco consistency depends on the static C_pool_scale, not a dynamic soil C pool."
+    - "Spinup/disturbance/N-deposition pitfalls (cohort monoculture, modern-vs-pre-industrial N dep, spinup-transient CO2 jump) apply to full-model runs and are not exercised by the analytic flux path, but mislead users who expect full-model behavior from this KI."
+  assumptions:
+    - statement: "This dag describes the runnable analytic reimplementation (LUE GPP, Q10 Ra/Rh, derived Reco/NEE/NPP), not the full LPJ-GUESS Fortran/C++ binary."
+      scope: "Entire dag — module set, states, closure."
+      source: "LPJ-GUESS KI SKILL Core Physics section; analytic reimplementation validated against FLUXNET2015 eddy covariance."
+      status: adopted
+    - statement: "No daily carbon mass-balance over evolving pools is enforced (closure: none); NEE/Reco/NPP are diagnostic identities of fluxes, and soil C effect enters only via static C_pool_scale."
+      scope: "boundary.closure and states."
+      source: "LPJ-GUESS KI SKILL parameter table (static C_pool_scale) and Core Physics flux equations."
+      status: adopted
+    - statement: "Documented C/N coupling, vegetation dynamics, and disturbance are full-LPJ-GUESS features not realized by this implementation, and are therefore scoped out rather than represented as model modules/states."
+      scope: "processes, states, boundary.scope_out."
+      source: "Smith et al. 2001/2014; Sitch et al. 2003; KI Overview vs Core Physics discrepancy noted in the KI."
+      status: adopted

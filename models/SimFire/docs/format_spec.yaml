@@ -1,131 +1,150 @@
 model:
-  name: "SimFire"
-  version: "2.0.1"
-  domain: "wildfire simulation (Rothermel surface fire spread)"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/SimFire/venv/bin/python"
-  binary_type: "python_venv"
-  source_repo: "https://github.com/mitrefireline/simfire"
-  python_version: ">=3.9"
-
+  name: SimFire
+  version: 2.0.1
+  domain: wildfire
+  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/SimFire/venv/bin/python
+  binary_type: python_venv
+  source_repo: https://github.com/mitrefireline/simfire
+  python_version: '>=3.9'
 inputs:
   forcing:
-    - name: "fuel_model"
-      description: "FBFM-13 fuel model ID per pixel"
-      unit: "categorical (1-13, 91-99 non-burnable)"
-      valid_range: [1, 99]
-      source: "LandFire GeoTIFF or procedural"
-    - name: "elevation"
-      description: "Terrain elevation per pixel"
-      unit: "ft"
-      valid_range: [0, 15000]
-      source: "LandFire GeoTIFF or procedural"
-    - name: "wind_speed"
-      description: "Midflame wind speed"
-      unit: "ft/min"
-      valid_range: [0, 1000]
-      trap: "MUST be ft/min — mph requires ×88, m/s requires ×196.85"
-    - name: "wind_direction"
-      description: "Wind direction (from)"
-      unit: "degrees"
-      valid_range: [0, 360]
-    - name: "fuel_moisture"
-      description: "Dead fuel moisture content"
-      unit: "fraction"
-      valid_range: [0.001, 0.40]
-      trap: "MUST be fraction — percent (e.g. 50) will prevent fire spread"
-
+  - name: fuel_model
+    description: FBFM-13 fuel model ID per pixel
+    unit: categorical (1-13, 91-99 non-burnable)
+    valid_range:
+    - 1
+    - 99
+    source: LandFire GeoTIFF or procedural
+  - name: elevation
+    description: Terrain elevation per pixel
+    unit: ft
+    valid_range:
+    - 0
+    - 15000
+    source: LandFire GeoTIFF or procedural
+  - name: wind_speed
+    description: Midflame wind speed
+    unit: ft/min
+    valid_range:
+    - 0
+    - 1000
+    trap: "MUST be ft/min \u2014 mph requires \xD788, m/s requires \xD7196.85"
+  - name: wind_direction
+    description: Wind direction (from)
+    unit: degrees
+    valid_range:
+    - 0
+    - 360
+  - name: fuel_moisture
+    description: Dead fuel moisture content
+    unit: fraction
+    valid_range:
+    - 0.001
+    - 0.4
+    trap: "MUST be fraction \u2014 percent (e.g. 50) will prevent fire spread"
   parameters:
     critical:
-      - name: "pixel_scale"
-        unit: "ft/pixel"
-        valid_range: [10, 500]
-        description: "Spatial resolution — must match actual data resolution"
-      - name: "update_rate"
-        unit: "min/step"
-        valid_range: [0.1, 60]
-        description: "Temporal resolution of simulation steps"
-      - name: "screen_size"
-        unit: "pixels [height, width]"
-        description: "Grid dimensions of simulation domain"
-      - name: "diagonal_spread"
-        type: "boolean"
-        default: true
-        description: "8-directional spread; false halves effective spread rate"
-      - name: "max_fire_duration"
-        unit: "frames"
-        valid_range: [1, 100]
-        default: 5
-        description: "Frames before burning sprite pruned; too low causes premature burnout"
-
+    - name: pixel_scale
+      unit: ft/pixel
+      valid_range:
+      - 10
+      - 500
+      description: "Spatial resolution \u2014 must match actual data resolution"
+    - name: update_rate
+      unit: min/step
+      valid_range:
+      - 0.1
+      - 60
+      description: Temporal resolution of simulation steps
+    - name: screen_size
+      unit: pixels [height, width]
+      description: Grid dimensions of simulation domain
+    - name: diagonal_spread
+      type: boolean
+      default: true
+      description: 8-directional spread; false halves effective spread rate
+    - name: max_fire_duration
+      unit: frames
+      valid_range:
+      - 1
+      - 100
+      default: 5
+      description: Frames before burning sprite pruned; too low causes premature burnout
     fuel_particle_constants:
-      - name: "h"
-        value: 8000
-        unit: "BTU/lb"
-        description: "Low heat content"
-      - name: "S_T"
-        value: 0.0555
-        unit: "dimensionless"
-        description: "Total mineral content"
-      - name: "S_e"
-        value: 0.01
-        unit: "dimensionless"
-        description: "Effective mineral content"
-      - name: "rho_p"
-        value: 32
-        unit: "lb/ft³"
-        description: "Oven-dry particle density"
-
+    - name: h
+      value: 8000
+      unit: BTU/lb
+      description: Low heat content
+    - name: S_T
+      value: 0.0555
+      unit: dimensionless
+      description: Total mineral content
+    - name: S_e
+      value: 0.01
+      unit: dimensionless
+      description: Effective mineral content
+    - name: rho_p
+      value: 32
+      unit: "lb/ft\xB3"
+      description: Oven-dry particle density
 outputs:
   primary:
-    - name: "fire_map"
-      description: "2D array of burn status per pixel"
-      unit: "categorical (0=unburned, 1=burning, 2=burned, 3=fireline, 4=scratchline, 5=wetline)"
-      format: "numpy array (npy) or HDF5"
-      shape: "[height, width]"
-    - name: "rate_of_spread"
-      description: "Rothermel RoS at fire head"
-      unit: "ft/min"
-      valid_range: [0, 10000]
-    - name: "burned_fraction"
-      description: "Fraction of domain burned"
-      unit: "fraction"
-      valid_range: [0, 1]
+  - name: fire_map
+    description: 2D array of burn status per pixel
+    unit: categorical (0=unburned, 1=burning, 2=burned, 3=fireline, 4=scratchline,
+      5=wetline)
+    format: numpy array (npy) or HDF5
+    shape: '[height, width]'
+  - name: rate_of_spread
+    description: Rothermel RoS at fire head
+    unit: ft/min
+    valid_range:
+    - 0
+    - 10000
+  - name: burned_fraction
+    description: Fraction of domain burned
+    unit: fraction
+    valid_range:
+    - 0
+    - 1
+  - name: burned_area
+    canonical_id: burned_area
+    unit: km2
+  - name: fire_spread_rate
+    canonical_id: fire_spread_rate
+    unit: m/s
   secondary:
-    - name: "fire_spread_gif"
-      description: "Animation of fire progression"
-      format: "GIF"
-    - name: "fire_spread_graph"
-      description: "Plot of burned area vs time"
-      format: "PNG"
-
+  - name: fire_spread_gif
+    description: Animation of fire progression
+    format: GIF
+  - name: fire_spread_graph
+    description: Plot of burned area vs time
+    format: PNG
 config_format:
-  type: "yaml"
+  type: yaml
   sections:
-    - "area"
-    - "display"
-    - "simulation"
-    - "mitigation"
-    - "operational"
-    - "terrain"
-    - "fire"
-    - "environment"
-    - "wind"
-
-unit_system: "US customary (Rothermel native)"
+  - area
+  - display
+  - simulation
+  - mitigation
+  - operational
+  - terrain
+  - fire
+  - environment
+  - wind
+unit_system: US customary (Rothermel native)
 unit_traps:
-  - "Wind: input MUST be ft/min, not mph or m/s"
-  - "Fuel load: input MUST be lb/ft², not kg/m²"
-  - "Moisture: input MUST be fraction (0.03), not percent (3)"
-  - "Elevation: input MUST be ft, not m"
-  - "Operational area: config uses meters for lat/lon extent"
-
+- 'Wind: input MUST be ft/min, not mph or m/s'
+- "Fuel load: input MUST be lb/ft\xB2, not kg/m\xB2"
+- 'Moisture: input MUST be fraction (0.03), not percent (3)'
+- 'Elevation: input MUST be ft, not m'
+- 'Operational area: config uses meters for lat/lon extent'
 dependencies_mocked:
-  - "svglib (pycairo system dep)"
-  - "landfire (Python <3.12 only)"
-  - "geotiff (pycairo system dep)"
-
+- svglib (pycairo system dep)
+- landfire (Python <3.12 only)
+- geotiff (pycairo system dep)
 known_issues:
-  - "svglib/geotiff/landfire require mocking on Python 3.12"
-  - "Operational mode requires LandFire API access (may be rate-limited)"
-  - "GIF save can fail on large grids due to memory"
-  - "Rothermel is point-level; whole-fire behavior depends on unmodeled factors"
+- svglib/geotiff/landfire require mocking on Python 3.12
+- Operational mode requires LandFire API access (may be rate-limited)
+- GIF save can fail on large grids due to memory
+- Rothermel is point-level; whole-fire behavior depends on unmodeled factors

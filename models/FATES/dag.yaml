@@ -1,0 +1,564 @@
+template_version: "3.5"
+
+identity:
+  model_id: "FATES"
+  scientific_reference_version: "FATES (Functionally Assembled Terrestrial Ecosystem Simulator), NGEE-Tropics/DOE; size- and age-structured cohort demographic DGVM of the ED/PPA lineage (Moorcroft, Hurtt & Pacala 2001; Fisher et al. 2015), JSON-parameter-file era (post-2023)"
+  implementation:
+    id: "fates-ctsm"
+    version: ""
+    _reason: "No concrete FATES/CTSM tag surfaced in the streams; the runnable version is tied to the host CTSM/CLM checkout the component is compiled into."
+    provenance: "Fortran 2003+; FATES compiled as a component of the CTSM/CLM (or E3SM/ELM) host land model; runs only inside the host, not standalone."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: ""
+  _reason: "License not carried by the available streams."
+  repo_url: "https://github.com/NGEET/fates"
+
+boundary:
+  scope_in:
+    - "vegetation demographics (recruitment, growth, mortality of size-structured cohorts)"
+    - "plant carbon allocation among organs (PARTEH)"
+    - "leaf photosynthesis and autotrophic respiration"
+    - "canopy radiative transfer / light competition (PPA)"
+    - "phenology (evergreen, cold-deciduous, drought-deciduous)"
+    - "disturbance and patch dynamics (gap, fire, logging, land-use)"
+    - "fire dynamics (SPITFIRE, optional)"
+    - "plant hydraulics (experimental, optional)"
+    - "carbon-nitrogen-phosphorus cycling (optional CNP mode)"
+  scope_out:
+    - "atmospheric forcing (supplied by host data atmosphere DATM)"
+    - "soil physics, hydrology and soil temperature (host land model)"
+    - "surface energy balance (host land model)"
+    - "build/run case infrastructure (host CIME)"
+  spatial: "0-D point"
+  temporal: "sub-hourly"
+  closure: "mass-balance"
+  notes: "Each FATES site/patch represents a notional 10,000 m2 (1 ha) area with no horizontal/lateral transport between grid cells; spatial structure is internal (age-structured patches nested with height-structured cohorts) rather than horizontal. Closure is carbon mass-balance within FATES (and inorganic N/P when CNP mode is active); the water and surface-energy budgets are closed by the host land model, not FATES. Fast biophysics (photosynthesis, radiation) run on the host sub-hourly timestep while demography, allocation and disturbance integrate on daily-to-annual cycles."
+
+inputs:
+  forcing:
+    - category: "meteorology"
+      name: "TBOT (air temperature)"
+      unit: "K"
+      source_kind: "forcing"
+      model_input_format: "host DATM stream; FATES does not read forcing directly"
+      notes: "Kelvin, not degC; values of 20-30 interpreted as ~-250 degC and kill all plant processes (dt_005)."
+    - category: "meteorology"
+      name: "PRECTmms (precipitation)"
+      unit: "mm/s"
+      source_kind: "forcing"
+      model_input_format: "host DATM stream"
+      notes: "mm/s, not mm/day; passing mm/day delivers 86,400x too much water (dt_006)."
+    - category: "meteorology"
+      name: "FSDS (downwelling shortwave radiation)"
+      unit: "W/m2"
+      source_kind: "forcing"
+      model_input_format: "host DATM stream"
+      notes: "W/m2, not MJ/m2/day (dt_007)."
+    - category: "meteorology"
+      name: "FLDS (downwelling longwave radiation)"
+      unit: "W/m2"
+      source_kind: "forcing"
+      model_input_format: "host DATM stream"
+    - category: "meteorology"
+      name: "QBOT (specific humidity)"
+      unit: "kg/kg"
+      source_kind: "forcing"
+      model_input_format: "host DATM stream"
+      notes: "Specific humidity, not relative humidity or g/kg."
+    - category: "meteorology"
+      name: "WIND (scalar wind speed)"
+      unit: "m/s"
+      source_kind: "forcing"
+      model_input_format: "host DATM stream"
+    - category: "meteorology"
+      name: "PSRF (surface pressure)"
+      unit: "Pa"
+      source_kind: "forcing"
+      model_input_format: "host DATM stream"
+      notes: "Pa, not hPa/mbar."
+    - category: "atmospheric_composition"
+      name: "CO2 concentration"
+      unit: "ppmv"
+      source_kind: "forcing"
+      model_input_format: "co2_ppmv namelist / host stream (annual or fixed)"
+      notes: "ppmv, not mol/mol; 0.0004 mol/mol must be 400 ppmv or CO2 fertilization is absent (dt_012)."
+  parameters:
+    - category: "photosynthesis"
+      name: "fates_leaf_vcmax25top (max carboxylation rate at 25C)"
+      unit: "umol/m2/s"
+      source_kind: "calibrated"
+      model_input_format: "FATES JSON parameter file (per PFT)"
+    - category: "leaf_trait"
+      name: "fates_leaf_slatop (specific leaf area at canopy top)"
+      unit: "m2/gC"
+      source_kind: "calibrated"
+      model_input_format: "FATES JSON parameter file (per PFT)"
+    - category: "allometry"
+      name: "fates_allom_d2h1 / d2h2 (DBH-to-height coefficients)"
+      unit: "-"
+      source_kind: "calibrated"
+      model_input_format: "FATES JSON parameter file (per PFT)"
+    - category: "allometry"
+      name: "fates_allom_d2bl1 (DBH-to-leaf-biomass coefficient)"
+      unit: "kgC"
+      source_kind: "calibrated"
+      model_input_format: "FATES JSON parameter file (per PFT)"
+    - category: "allometry"
+      name: "fates_wood_density"
+      unit: "g/cm3"
+      source_kind: "calibrated"
+      model_input_format: "FATES JSON parameter file (per PFT)"
+    - category: "turnover"
+      name: "fates_turnover_leaf (leaf longevity)"
+      unit: "yr"
+      source_kind: "calibrated"
+      model_input_format: "FATES JSON parameter file (per PFT)"
+    - category: "mortality"
+      name: "fates_mort_scalar_cstarvation (carbon-starvation mortality scalar)"
+      unit: "-"
+      source_kind: "calibrated"
+      model_input_format: "FATES JSON parameter file (per PFT)"
+    - category: "mortality"
+      name: "fates_mort_bmort (background mortality rate)"
+      unit: "1/yr"
+      source_kind: "calibrated"
+      model_input_format: "FATES JSON parameter file (per PFT)"
+    - category: "mortality"
+      name: "fates_mort_scalar_hydrfailure (hydraulic-failure mortality scalar)"
+      unit: "-"
+      source_kind: "calibrated"
+      model_input_format: "FATES JSON parameter file (per PFT)"
+      notes: "Only active when plant hydraulics is enabled."
+    - category: "fire"
+      name: "fates_fire_nignitions (lightning ignition density)"
+      unit: "1/km2/day"
+      source_kind: "calibrated"
+      model_input_format: "FATES JSON parameter file"
+      notes: "Only active when SPITFIRE is enabled."
+    - category: "phenology"
+      name: "fates_phen_drought_threshold (drought phenology threshold)"
+      unit: "MPa"
+      source_kind: "calibrated"
+      model_input_format: "FATES JSON parameter file (per PFT)"
+    - category: "recruitment"
+      name: "fates_recruit_seed_supplement (external seed-rain supplement)"
+      unit: "-"
+      source_kind: "calibrated"
+      model_input_format: "FATES JSON parameter file (per PFT)"
+      notes: "Must be > 0 to recruit from bare ground."
+    - category: "substrate"
+      name: "soil texture (clay / sand / organic fraction per layer)"
+      unit: "%"
+      source_kind: "dataset_lookup"
+      model_input_format: "host surface dataset (NetCDF); clay+sand+silt sum to 100% per layer"
+    - category: "land_cover"
+      name: "PFT fractional coverage"
+      unit: "fraction"
+      source_kind: "dataset_lookup"
+      model_input_format: "host surface dataset; fractions sum to 1.0"
+  initial_conditions:
+    - category: "vegetation_state"
+      name: "initial vegetation structure (bare ground or inventory cohorts)"
+      unit: "DBH cm, density stems/m2"
+      source_kind: "user_provided"
+      model_input_format: "cold start (bare ground) or inventory initialization file"
+      notes: "Bare-ground default needs 50-100 yr spinup; inventory DBH must be in cm (dt_008), heights in m (dt_009)."
+    - category: "restart_state"
+      name: "restart state (all prognostic cohort/patch pools)"
+      unit: "varies"
+      source_kind: "user_provided"
+      model_input_format: "NetCDF restart file (*.clm2.r.*.nc)"
+      notes: "Restart files are not backward-compatible across major FATES versions; upgrading requires a fresh cold start (dt_018)."
+  boundary_conditions:
+    - category: "control_switch"
+      name: "use_fates"
+      unit: "logical"
+      source_kind: "user_provided"
+      model_input_format: "host namelist; .true. when a FATES compset is used"
+    - category: "control_switch"
+      name: "fates_spitfire_mode (fire module selector, 0-4)"
+      unit: "code"
+      source_kind: "user_provided"
+      model_input_format: "host namelist; default 0 (fire OFF)"
+      notes: "Default 0 yields zero fire disturbance regardless of weather (dt_016)."
+    - category: "control_switch"
+      name: "use_fates_planthydro (plant hydraulics toggle)"
+      unit: "logical"
+      source_kind: "user_provided"
+      model_input_format: "host namelist; default .false."
+      notes: "Experimental; may be unreliable or crash (dt_017)."
+    - category: "control_switch"
+      name: "fates_parteh_mode (allocation hypothesis selector)"
+      unit: "code"
+      source_kind: "user_provided"
+      model_input_format: "host namelist; default 1 (carbon-only)"
+    - category: "control_switch"
+      name: "use_fates_sp (satellite-phenology / prescribed-vegetation mode)"
+      unit: "logical"
+      source_kind: "user_provided"
+      model_input_format: "host namelist; default .false. (full ED demography active)"
+    - category: "configuration"
+      name: "compset selection"
+      unit: "label"
+      source_kind: "user_provided"
+      model_input_format: "host CIME compset (e.g. I2000Clm51Fates); determines which features are active"
+      notes: "Default compsets have fire, logging, hydraulics and CNP OFF."
+    - category: "external_driver"
+      name: "land-use transitions (LUH2)"
+      unit: "fraction/yr"
+      source_kind: "user_provided"
+      model_input_format: "host land-use stream; consumed by FatesLandUseChangeMod"
+    - category: "external_driver"
+      name: "logging / timber-harvest rates"
+      unit: "fraction/yr"
+      source_kind: "user_provided"
+      model_input_format: "host stream; consumed by EDLoggingMortalityMod"
+
+processes:
+  modules:
+    - name: "Canopy radiative transfer"
+      role: "process_solver"
+      brief: "Distributes light through the canopy (Norman or two-stream) over the PPA canopy/understory layering, setting the light environment for photosynthesis."
+    - name: "Leaf photosynthesis"
+      role: "process_solver"
+      brief: "Farquhar-type leaf assimilation (Vcmax25, Bernacchi temperature response, Medlyn stomatal conductance); produces GPP."
+    - name: "Autotrophic respiration"
+      role: "process_solver"
+      brief: "Maintenance + growth respiration; NPP = GPP - Ra."
+    - name: "PARTEH allocation"
+      role: "allocator"
+      brief: "Plant Allocation and Reactive Transport Extensible Hypotheses; partitions NPP among leaf, fine-root, sapwood, structural, storage (and reproductive) pools; mode set by fates_parteh_mode."
+    - name: "Allometry"
+      role: "process_solver"
+      brief: "PFT-specific equations mapping DBH (cm) to height, leaf/fineroot/sapwood/structural biomass and crown area."
+    - name: "Growth (DBH increment)"
+      role: "integrator"
+      brief: "Advances cohort DBH from allocated structural carbon via allometric inversion."
+    - name: "Phenology"
+      role: "process_solver"
+      brief: "Evergreen, cold-deciduous and drought-deciduous leaf display; controls exposed leaf/stem area and drives leaf-drop litter flux."
+    - name: "Mortality"
+      role: "process_solver"
+      brief: "Cohort death from background, carbon-starvation (storage-driven), hydraulic-failure, fire and logging terms; generates dead biomass to litter/CWD and gap disturbance."
+    - name: "Recruitment"
+      role: "process_solver"
+      brief: "New cohort establishment from reproductive carbon and external seed-rain supplement; sets minimum recruit height."
+    - name: "Plant hydraulics"
+      role: "optional_module"
+      applicability: "use_fates_planthydro=.true. (experimental)"
+      brief: "Organ-resolved water-potential transport (Christoffersen et al. 2016); supplies hydraulic-failure mortality signal."
+    - name: "SPITFIRE fire"
+      role: "optional_module"
+      applicability: "fates_spitfire_mode>0"
+      brief: "Process-based fire: lightning ignition, spread, scorch height and fire-induced mortality (Thonicke et al. 2010); consumes litter/CWD fuel."
+    - name: "Litter and CWD"
+      role: "integrator"
+      brief: "Accumulates leaf/root litter (6 classes) and coarse woody debris (4 size classes) from mortality and phenology; supplies fire fuel and host soil BGC."
+    - name: "Canopy structure (PPA)"
+      role: "allocator"
+      brief: "Perfect-Plasticity-Approximation sorting of cohorts into canopy vs understory; sets canopy area and LAI and feeds back the light environment."
+    - name: "Patch and disturbance dynamics"
+      role: "integrator"
+      brief: "ED patch creation/fusion from gap, fire and land-use disturbance; reorganizes age-structured patch and cohort lists and aggregates ecosystem diagnostics."
+    - name: "CNP biogeochemistry"
+      role: "optional_module"
+      applicability: "fates_parteh_mode selecting CNP allocation"
+      brief: "Optional carbon-nitrogen-phosphorus cycling coupled to host soil BGC."
+    - name: "Land use and logging disturbance"
+      role: "optional_module"
+      applicability: "land-use/logging compsets active"
+      brief: "Selective logging/timber harvest and LUH2 land-use transitions impose mortality and create new (secondary/pasture/cropland) patches."
+  internal_edges:
+    - {from: "Atmosphere", to: "Canopy radiative transfer", kind: "consumes_input", brief: "downwelling shortwave/longwave drive radiation scheme"}
+    - {from: "Canopy structure (PPA)", to: "Canopy radiative transfer", kind: "invokes", brief: "canopy/understory layering sets the light profile"}
+    - {from: "Canopy radiative transfer", to: "Leaf photosynthesis", kind: "invokes", brief: "absorbed light drives assimilation"}
+    - {from: "Atmosphere", to: "Leaf photosynthesis", kind: "consumes_input", brief: "TBOT/QBOT/PSRF/CO2 drive leaf assimilation"}
+    - {from: "Phenology", to: "Leaf photosynthesis", kind: "invokes", brief: "leaf display modulates assimilation"}
+    - {from: "Atmosphere", to: "Phenology", kind: "consumes_input", brief: "temperature/moisture cues drive leaf on/off"}
+    - {from: "Leaf photosynthesis", to: "Autotrophic respiration", kind: "invokes", brief: "GPP passed to compute NPP = GPP - Ra"}
+    - {from: "Autotrophic respiration", to: "PARTEH allocation", kind: "invokes", brief: "NPP delivered to allocator"}
+    - {from: "PARTEH allocation", to: "leaf_carbon", kind: "writes_state", brief: "allocates C to leaf pool"}
+    - {from: "PARTEH allocation", to: "fineroot_carbon", kind: "writes_state", brief: "allocates C to fine-root pool"}
+    - {from: "PARTEH allocation", to: "sapwood_carbon", kind: "writes_state", brief: "allocates C to sapwood pool"}
+    - {from: "PARTEH allocation", to: "structural_carbon", kind: "writes_state", brief: "allocates C to structural pool"}
+    - {from: "PARTEH allocation", to: "storage_carbon", kind: "writes_state", brief: "allocates C to labile storage pool (drives C-starvation)"}
+    - {from: "PARTEH allocation", to: "Growth (DBH increment)", kind: "invokes", brief: "structural-C increment drives DBH growth"}
+    - {from: "PARTEH allocation", to: "Recruitment", kind: "invokes", brief: "reproductive-C allocation supplies seeds"}
+    - {from: "PARTEH allocation", to: "CNP biogeochemistry", kind: "invokes", brief: "C/N/P fluxes when CNP mode active (optional)"}
+    - {from: "DBH", to: "Allometry", kind: "reads_state", brief: "allometric relations are functions of current DBH"}
+    - {from: "Allometry", to: "Growth (DBH increment)", kind: "invokes", brief: "converts structural C to DBH/height increment"}
+    - {from: "Growth (DBH increment)", to: "DBH", kind: "writes_state", brief: "updates cohort DBH"}
+    - {from: "Allometry", to: "LAI", kind: "writes_state", brief: "leaf biomass and SLA set leaf area index"}
+    - {from: "Phenology", to: "Litter and CWD", kind: "invokes", brief: "leaf drop delivered to the litter/CWD accumulator"}
+    - {from: "storage_carbon", to: "Mortality", kind: "reads_state", brief: "depleted storage triggers carbon-starvation mortality"}
+    - {from: "Atmosphere", to: "Plant hydraulics", kind: "consumes_input", brief: "vapor-pressure deficit/temperature drive water transport"}
+    - {from: "Plant hydraulics", to: "plant_water_potential", kind: "writes_state", brief: "updates organ water potentials"}
+    - {from: "plant_water_potential", to: "Mortality", kind: "reads_state", brief: "low water potential triggers hydraulic-failure mortality"}
+    - {from: "Mortality", to: "stem_density", kind: "writes_state", brief: "death reduces cohort number density"}
+    - {from: "Mortality", to: "Litter and CWD", kind: "invokes", brief: "dead leaf/root biomass and dead wood delivered to the litter/CWD accumulator"}
+    - {from: "Litter and CWD", to: "litter_carbon", kind: "writes_state", brief: "accumulates leaf/root litter pool from mortality and phenology"}
+    - {from: "Litter and CWD", to: "CWD_carbon", kind: "writes_state", brief: "accumulates coarse woody debris pool from mortality"}
+    - {from: "Mortality", to: "Patch and disturbance dynamics", kind: "invokes", brief: "mortality opens canopy gaps"}
+    - {from: "Recruitment", to: "stem_density", kind: "writes_state", brief: "new cohorts add to plant density"}
+    - {from: "Recruitment", to: "Canopy structure (PPA)", kind: "invokes", brief: "new recruits enter the understory layer"}
+    - {from: "Growth (DBH increment)", to: "Canopy structure (PPA)", kind: "invokes", brief: "updated sizes re-sort canopy vs understory"}
+    - {from: "Canopy structure (PPA)", to: "canopy_area", kind: "writes_state", brief: "canopy area fraction diagnostic"}
+    - {from: "Canopy structure (PPA)", to: "LAI", kind: "writes_state", brief: "aggregated exposed leaf area"}
+    - {from: "litter_carbon", to: "SPITFIRE fire", kind: "reads_state", brief: "litter provides fine-fuel load"}
+    - {from: "CWD_carbon", to: "SPITFIRE fire", kind: "reads_state", brief: "CWD provides coarse-fuel load"}
+    - {from: "Atmosphere", to: "SPITFIRE fire", kind: "consumes_input", brief: "precip/wind drive ignition and spread"}
+    - {from: "SPITFIRE fire", to: "Mortality", kind: "invokes", brief: "fire-induced crown/cambial damage kills cohorts"}
+    - {from: "SPITFIRE fire", to: "Patch and disturbance dynamics", kind: "invokes", brief: "burned area creates new patches"}
+    - {from: "Land use and logging disturbance", to: "Mortality", kind: "invokes", brief: "harvest/clearing imposes directed mortality"}
+    - {from: "Land use and logging disturbance", to: "Patch and disturbance dynamics", kind: "invokes", brief: "transitions create new land-use patches"}
+    - {from: "Patch and disturbance dynamics", to: "patch_age", kind: "writes_state", brief: "resets/advances patch disturbance age"}
+    - {from: "Leaf photosynthesis", to: "Outputs", kind: "produces_output", brief: "FATES_GPP history variable"}
+    - {from: "Autotrophic respiration", to: "Outputs", kind: "produces_output", brief: "FATES_NPP / FATES_AUTORESP history variables"}
+    - {from: "Patch and disturbance dynamics", to: "Outputs", kind: "produces_output", brief: "patch-aggregated FATES_VEGC and demographic diagnostics"}
+
+states:
+  variables:
+    - {name: "DBH", unit: "cm", role: "prognostic"}
+    - {name: "leaf_carbon", unit: "kgC/individual", role: "prognostic"}
+    - {name: "fineroot_carbon", unit: "kgC/individual", role: "prognostic"}
+    - {name: "sapwood_carbon", unit: "kgC/individual", role: "prognostic"}
+    - {name: "structural_carbon", unit: "kgC/individual", role: "prognostic"}
+    - {name: "storage_carbon", unit: "kgC/individual", role: "prognostic"}
+    - {name: "stem_density", unit: "stems/m2", role: "prognostic"}
+    - {name: "LAI", unit: "m2/m2", role: "diagnostic"}
+    - {name: "canopy_area", unit: "m2/m2", role: "diagnostic"}
+    - {name: "litter_carbon", unit: "kgC/m2", role: "accumulator"}
+    - {name: "CWD_carbon", unit: "kgC/m2", role: "accumulator"}
+    - {name: "plant_water_potential", unit: "MPa", role: "prognostic"}
+    - {name: "patch_age", unit: "yr", role: "prognostic"}
+  provenance: "structural"
+
+outputs:
+  - var: "FATES_VEGC"
+    validation_rank: 3
+    unit: "kgC/m2"
+    description: "Total live vegetation carbon (sum of leaf, fineroot, sapwood, structural and storage pools), area-normalized."
+    emitted_in: "host history stream (*.clm2.h0.*.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats:
+            - "Already kgC/m2; do NOT re-multiply by FATES_NPLANT (dt_001)."
+            - "Requires adequate spinup or inventory init, else near-zero."
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Gridded biomass products carry their own allometric assumptions."]
+      detrending_options: ["none"]
+  - var: "FATES_GPP"
+    validation_rank: 1
+    unit: "kgC/m2/s"
+    description: "Gross primary production."
+    emitted_in: "host history stream (*.clm2.h0.*.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["kgC/m2/s; x1000 x86400 -> gC/m2/day before comparing to flux-tower GPP (dt_004)."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "FATES_NPP"
+    validation_rank: 2
+    unit: "kgC/m2/s"
+    description: "Net primary production (GPP minus autotrophic respiration)."
+    emitted_in: "host history stream (*.clm2.h0.*.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["kgC/m2/s unit conversion as for GPP."]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+      detrending_options: ["decadal_mean", "linear_residual"]
+  - var: "FATES_LAI"
+    validation_rank: 4
+    unit: "m2/m2"
+    description: "Leaf area index."
+    emitted_in: "host history stream (*.clm2.h0.*.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Phenology timing (leaf-on/off DOY) is a primary evaluation target."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "FATES_NPLANT"
+    validation_rank: 5
+    unit: "stems/m2"
+    description: "Cohort plant number density (demographic state)."
+    emitted_in: "host history stream (*.clm2.h0.*.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["stems/m2; x10000 -> stems/ha for forest-inventory comparison (dt_002)."]
+      detrending_options: ["none"]
+  - var: "FATES_MORTALITY"
+    validation_rank: 6
+    unit: "stems/m2/yr"
+    description: "Total cohort mortality rate."
+    emitted_in: "host history stream (*.clm2.h0.*.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Density units as for FATES_NPLANT (dt_002)."]
+      detrending_options: ["none"]
+  - var: "FATES_DISTURBANCE_RATE_FIRE"
+    validation_rank: 7
+    unit: "fraction/yr"
+    description: "Fire disturbance rate (area fraction disturbed by fire per year)."
+    emitted_in: "host history stream (*.clm2.h0.*.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Identically zero unless fates_spitfire_mode>0 (dt_016)."]
+      detrending_options: ["none"]
+
+influence:
+  edges: []
+  _reason: "Lit stream is null (no sensitivity-analysis literature available to cite). KI-reported HIGH-sensitivity parameters (fates_leaf_vcmax25top, fates_allom_d2bl1, fates_mort_scalar_cstarvation, fates_turnover_leaf, fates_recruit_seed_supplement) are retained in the KI but cannot be promoted to citation-backed influence edges here."
+  citation_index: {}
+
+safety:
+  hazards:
+    - id: "weather_TBOT_degC_not_K"
+      kind: "weather_file_semantic"
+      description: "Air temperature passed in degC instead of K is read as ~-250 degC, killing all plant processes (near-zero GPP)."
+      severity: "silent"
+    - id: "weather_precip_mmday_not_mms"
+      kind: "weather_file_semantic"
+      description: "Precipitation in mm/day instead of mm/s delivers 86,400x too much water, wrecking the water balance."
+      severity: "silent"
+    - id: "weather_FSDS_MJ_not_W"
+      kind: "weather_file_semantic"
+      description: "Shortwave in MJ/m2/day instead of W/m2 gives ~86,400x too little radiation, stalling growth."
+      severity: "silent"
+    - id: "weather_CO2_molmol_not_ppmv"
+      kind: "weather_file_semantic"
+      description: "CO2 in mol/mol instead of ppmv makes FATES see ~zero CO2 and lose the fertilization effect."
+      severity: "silent"
+    - id: "soil_water_percent_not_fraction"
+      kind: "soil_semantic"
+      description: "Soil volumetric water given as percent (0-100) instead of fraction (0-1) causes ~40x oversaturation and stuck moisture stress."
+      severity: "silent"
+    - id: "param_PARTEH_mass_not_kg"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "PARTEH mass parameters must be kg; gC is 1000x too small, tC 1000x too large, producing unrealistic organ masses."
+      severity: "silent"
+    - id: "param_PFT_index_offbyone"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Fortran 1-based vs JSON 0-based PFT indexing (Fortran PFT N = JSON index N-1); a misindex silently edits the wrong PFT."
+      severity: "silent"
+    - id: "init_DBH_not_cm"
+      kind: "initial_condition_semantic"
+      description: "Inventory DBH in mm or m instead of cm makes allometry produce impossible tree dimensions."
+      severity: "silent"
+    - id: "init_height_not_m"
+      kind: "initial_condition_semantic"
+      description: "Heights in cm or feet instead of m mismatch field observations by 100x or 0.3048x."
+      severity: "silent"
+    - id: "output_VEGC_double_scaled"
+      kind: "parser_semantic"
+      description: "FATES_VEGC is already area-normalized (kgC/m2); re-multiplying by FATES_NPLANT double-counts the area scaling (~10000x biomass error)."
+      severity: "silent"
+    - id: "output_NPLANT_m2_vs_ha"
+      kind: "parser_semantic"
+      description: "FATES_NPLANT is stems/m2, not stems/ha; missing the x10,000 mis-scales density vs forestry data."
+      severity: "silent"
+    - id: "output_patch_area_1ha"
+      kind: "parser_semantic"
+      description: "Notional patch area is 10,000 m2 (1 ha); assuming 1 m2 yields exactly 10,000x errors in density/flux calculations."
+      severity: "silent"
+    - id: "output_GPP_unit_conversion"
+      kind: "parser_semantic"
+      description: "FATES_GPP is kgC/m2/s; missing x1000 and/or x86400 gives systematically wrong daily GPP."
+      severity: "silent"
+    - id: "output_canopy_area_fraction"
+      kind: "parser_semantic"
+      description: "Per-individual crown area (m2) confused with FATES_CANOPY_AREA fraction; values >1 indicate multi-layer canopy, not an error."
+      severity: "silent"
+    - id: "param_file_legacy_CDL"
+      kind: "parser_semantic"
+      description: "Modern FATES (post-2023) reads JSON parameter files only; a legacy CDL/netCDF parameter file crashes the read."
+      severity: "degraded"
+    - id: "config_spitfire_off_default"
+      kind: "control_semantic"
+      description: "SPITFIRE is disabled by default (fates_spitfire_mode=0), so fire disturbance and fire mortality are zero even under flammable, dry conditions."
+      severity: "degraded"
+    - id: "planthydro_experimental_crash"
+      kind: "numerical_instability"
+      description: "Experimental plant hydraulics (use_fates_planthydro) can crash or produce unrealistic water potentials on extreme climates/parameters."
+      severity: "fatal_or_silent"
+    - id: "restart_version_incompatible"
+      kind: "parser_semantic"
+      description: "Restart files are not backward-compatible across major FATES versions; dimension/variable mismatch crashes on restart."
+      severity: "fatal"
+  validation_limits:
+    - "Runs only as a component inside a host land model (CTSM/CLM, E3SM/ELM, CESM); not a standalone executable."
+    - "Bare-ground cold start produces all-zero vegetation output until vegetation establishes; needs 50-100 yr spinup or inventory initialization."
+    - "Recruitment from bare ground requires fates_recruit_seed_supplement > 0."
+    - "Default compsets have fire, logging, plant hydraulics and CNP nutrient limitation OFF; cannot produce those processes without explicitly enabling them."
+    - "Plant hydraulics is experimental and may be unreliable or crash."
+    - "Site-level demographic representation (notional 1 ha) with no horizontal/lateral transport between grid cells."
+  warnings:
+    - "Zero fire output with default fates_spitfire_mode=0 is expected, not a bug (dt_016)."
+    - "All-zero or near-zero pools early in a cold-start run reflect missing spinup, not model failure."
+    - "FATES_VEGC and FATES_CANOPY_AREA are already area-normalized history outputs; only internal cohort pools are per-individual."
+    - "Experimental plant hydraulics can crash on extreme forcing; disable unless specifically required (dt_017)."
+  assumptions:
+    - statement: "FATES is a site/point-scale, size- and age-structured demographic model with a notional 10,000 m2 (1 ha) patch area and no horizontal transport between cells."
+      scope: "spatial geometry of all density and flux outputs"
+      source: "FATES technical documentation (ED/PPA cohort-patch-site hierarchy)"
+      status: "adopted"
+    - statement: "FATES closes a carbon mass balance (and inorganic N/P in CNP mode); the water and surface-energy budgets are closed by the host land model, not FATES."
+      scope: "conservation/closure semantics"
+      source: "FATES-host (CTSM/CLM) coupling description: host provides soil physics and energy balance, FATES computes vegetation carbon"
+      status: "adopted"
+    - statement: "Atmospheric forcing is supplied by the host data atmosphere (DATM) in CLM/DATM unit conventions (K, mm/s, W/m2, kg/kg, Pa, ppmv); FATES does not read forcing files directly."
+      scope: "input forcing units and provenance"
+      source: "FATES-host DATM coupling and CLM forcing conventions"
+      status: "adopted"
+    - statement: "The post-2023 JSON parameter file is the canonical parameter input; the legacy CDL/netCDF parameter format is deprecated."
+      scope: "parameter-file format"
+      source: "FATES parameter-file modernization (JSON replaced CDL/netCDF ~2023)"
+      status: "adopted"
+    - statement: "Modules, internal edges and state variables are reconstructed from FATES interface metadata (history-variable lists, parameter dimensions, namelist switches) plus FATES domain knowledge, not verified against the Fortran source."
+      scope: "processes and states blocks"
+      source: "FATES history/parameter interface metadata (Fortran source not available in this dissection)"
+      status: "tentative"

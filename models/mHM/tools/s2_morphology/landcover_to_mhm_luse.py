@@ -61,7 +61,9 @@ logger = logging.getLogger(__name__)
 
 CONFIG_PATH = ""
 DOMAIN_INFO_PATH = ""
-AVHRR_PATH = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "data/vegetation/AVHRR/avhrr_landcover_1km.tif")
+AVHRR_PATH = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"),
+                          "data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif")
+LEGEND = "umd"
 
 if len(sys.argv) > 1:
     import argparse
@@ -69,17 +71,43 @@ if len(sys.argv) > 1:
     parser.add_argument("--config", required=True)
     parser.add_argument("--domain_info", required=True)
     parser.add_argument("--avhrr_path", default=AVHRR_PATH)
+    parser.add_argument("--legend", default="umd", choices=["umd", "igbp"],
+                        help="Legend of the land-cover raster. The shipped AVHRR "
+                             "raster is UMD, not IGBP (dt_s12).")
     args = parser.parse_args()
     CONFIG_PATH = args.config
     DOMAIN_INFO_PATH = args.domain_info
     AVHRR_PATH = args.avhrr_path
+    LEGEND = args.legend
 
-# AVHRR class -> mHM class mapping
-AVHRR_TO_MHM = {
+# TRAP (dt_s12).  The shipped raster
+#   data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif
+# uses the UMD 14-class legend, NOT IGBP -- its .vat.dbf global counts confirm it
+# (value 11 = 11.8M cells = cropland; value 12 = 87M = bare).  Under IGBP,
+# 11 = Permanent Wetlands, so an IGBP lookup relabels all Huai cropland as wetland
+# and swaps the seasonal crop LAI curve (0.0-5.2) for a flat 2-5 year-round.
+#
+# UMD: 0=water 1=evergreen-needleleaf 2=evergreen-broadleaf 3=deciduous-needleleaf
+#      4=deciduous-broadleaf 5=mixed-forest 6=woodland 7=wooded-grassland
+#      8=closed-shrubland 9=open-shrubland 10=grassland 11=cropland 12=bare 13=urban
+UMD_TO_MHM = {
+    0: 5,                  # water                 -> Sealed/Water-bodies
+    1: 1, 3: 1,            # needleleaf            -> Coniferous
+    2: 2, 4: 2,            # broadleaf             -> Deciduous
+    5: 3,                  # mixed forest          -> Mixed
+    6: 4, 7: 4, 8: 4,      # woodland / closed shrub -> Sparsely-populated-forest
+    9: 8, 10: 8,           # open shrub / grassland  -> Pasture
+    11: 9, 12: 9, 14: 9,   # cropland / bare         -> Fields
+    13: 5,                 # urban                   -> Sealed
+}
+
+IGBP_TO_MHM = {
     1: 1, 2: 2, 3: 1, 4: 2, 5: 3, 6: 4, 7: 4, 8: 4,
     9: 8, 10: 8, 11: 10, 12: 9, 13: 5, 14: 9, 15: 5, 16: 4, 17: 5,
     0: 9,  # nodata -> fields (safe default)
 }
+
+AVHRR_TO_MHM = UMD_TO_MHM if LEGEND == "umd" else IGBP_TO_MHM
 
 # Monthly LAI values for each mHM class (from test_domain LAI_classdefinition.txt)
 LAI_TABLE = {
@@ -166,8 +194,11 @@ def process():
             )
         logger.info(f"Read AVHRR land cover: {AVHRR_PATH}")
     else:
-        logger.warning(f"AVHRR not found at {AVHRR_PATH}. Using default (Fields=9)")
-        lc_grid = np.full((nrows, ncols), 12, dtype=np.int32)  # Cropland
+        # dt_s12: a UNIFORM land-cover grid is never a valid result -- it silently
+        # disables every land-cover-dependent MPR transfer function. Fail, don't fake.
+        logger.error(f"Land-cover raster not found: {AVHRR_PATH}. Refusing to fall "
+                     f"back to a uniform grid.")
+        sys.exit(1)
 
     # Reclassify AVHRR -> mHM
     mhm_lc = np.full((nrows, ncols), -9999, dtype=np.int32)

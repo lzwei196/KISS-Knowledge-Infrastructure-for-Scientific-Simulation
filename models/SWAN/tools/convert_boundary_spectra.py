@@ -31,6 +31,13 @@ import sys
 PYSWAN_ROOT = os.path.join(os.path.dirname(__file__), '..', '..', 'source', 'repo')
 if os.path.isdir(PYSWAN_ROOT):
     sys.path.insert(0, PYSWAN_ROOT)
+# pyswan is pip-installed into the HydroCraft python_env, NOT into the system
+# interpreter, and this KI ships no ../../source/repo checkout.  Mirror the
+# search path used by preflight_check.py so the tool imports under a plain
+# `python3` too.
+_PENV = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+if os.path.isdir(_PENV) and _PENV not in sys.path:
+    sys.path.append(_PENV)
 try:
     from pyswan import oceanwaves as ow, swan
 except ImportError:

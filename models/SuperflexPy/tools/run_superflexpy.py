@@ -213,7 +213,15 @@ def process(args):
 
     # Get final states
     states = model.get_states()
-    states_serializable = {k: float(v) if np.isscalar(v) else float(v) for k, v in states.items()}
+    states_serializable = {}
+    for k, v in states.items():
+        if v is None:
+            states_serializable[k] = None
+        elif np.isscalar(v):
+            states_serializable[k] = float(v)
+        else:
+            arr = np.array(v)
+            states_serializable[k] = arr.tolist()
 
     result = {
         "status": "success",

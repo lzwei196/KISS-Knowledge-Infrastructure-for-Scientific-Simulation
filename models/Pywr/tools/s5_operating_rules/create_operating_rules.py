@@ -170,10 +170,14 @@ def build_pywr_parameters(name, purpose, monthly_targets, monthly_volumes,
     # 6. Control curve index parameter (for Pywr ControlCurveParameter)
     # Above curve: prefer releasing (cost > 0) to maintain target
     # Below curve: prefer storing (cost < 0) to refill
+    # NOTE: above_curve_cost MUST exceed the magnitude of the downstream release
+    # benefit (assemble_pywr_model builds the downstream output node with cost=-10),
+    # otherwise the LP will keep releasing water past the target and the control
+    # curve never "holds" the reservoir at its monthly level (see triplet dt_pywr_006).
     parameters[f"{node_name}_above_curve_cost"] = {
         "type": "constant",
-        "value": 1.0,
-        "comment": "Cost when storage is above control curve (encourage release)"
+        "value": 50.0,
+        "comment": "Cost when storage is above control curve (encourage release; must exceed |downstream cost|=10)"
     }
     parameters[f"{node_name}_below_curve_cost"] = {
         "type": "constant",

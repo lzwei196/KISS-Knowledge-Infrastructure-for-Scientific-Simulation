@@ -51,6 +51,70 @@ def _read_table(path: Path):
     return pd.DataFrame(rows, columns=headers)
 
 
+def parse_daily_water(workspace, *, out_csv: Optional[str] = None):
+    """Parse the daily watershed file ``*.DWS`` into a daily DataFrame.
+
+    The DWS print holds one row per simulated day with the watershed water
+    balance. The column header line begins with ``Y  M  D`` and the first
+    ``WYLD`` token is the daily water yield (surface runoff + lateral + return
+    flow) in **mm** — the dag variable comparable to a gauged hydrograph. We
+    also keep ``RFV`` (rainfall, mm), ``Q`` (outlet flow, mm) and ``PET`` (mm).
+
+    Returns a DataFrame with columns: date, year, month, day, RFV, WYLD, Q, PET.
+    Requires IPD set for daily output (the s5 default / example uses IPD=6).
+    """
+    import pandas as pd
+    ws = Path(workspace).expanduser().resolve()
+    dws = sorted(ws.glob("*.DWS"))
+    if not dws:
+        raise FileNotFoundError(
+            f"No *.DWS daily watershed file in {ws}. Set a daily print code "
+            f"(IPD) in APEXCONT.DAT via s5_update_control(ipd=6)."
+        )
+    text = dws[0].read_text(errors="replace").splitlines()
+    hdr_idx = None
+    for i, line in enumerate(text):
+        toks = line.split()
+        if len(toks) >= 5 and toks[:3] == ["Y", "M", "D"] and "WYLD" in toks:
+            hdr_idx = i
+            break
+    if hdr_idx is None:
+        raise RuntimeError(f"Could not locate 'Y M D ... WYLD' header in {dws[0].name}")
+    headers = text[hdr_idx].split()
+    iw = headers.index("WYLD")          # first WYLD = total water yield (mm)
+    irfv = headers.index("RFV") if "RFV" in headers else 3
+    iq = headers.index("Q") if "Q" in headers else None
+    ipet = headers.index("PET") if "PET" in headers else None
+    rows = []
+    for line in text[hdr_idx + 1:]:
+        toks = line.split()
+        if len(toks) <= iw:
+            continue
+        if not (toks[0].isdigit() and len(toks[0]) == 4):
+            continue
+        try:
+            yr, mo, da = int(toks[0]), int(toks[1]), int(toks[2])
+            rec = {"year": yr, "month": mo, "day": da,
+                   "RFV": float(toks[irfv]), "WYLD": float(toks[iw])}
+            if iq is not None and len(toks) > iq:
+                rec["Q"] = float(toks[iq])
+            if ipet is not None and len(toks) > ipet:
+                rec["PET"] = float(toks[ipet])
+            rows.append(rec)
+        except (ValueError, IndexError):
+            continue
+    if not rows:
+        raise RuntimeError(f"No daily rows parsed from {dws[0].name}")
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df[["year", "month", "day"]])
+    df = df.sort_values("date").reset_index(drop=True)
+    if out_csv:
+        out_path = Path(out_csv).expanduser().resolve()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(out_path, index=False)
+    return df
+
+
 def parse(workspace, *, out_csv: Optional[str] = None):
     import pandas as pd
     ws = Path(workspace).expanduser().resolve()

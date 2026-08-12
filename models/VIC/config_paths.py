@@ -2,6 +2,14 @@
 """
 VIC模型路径配置脚本
 自动修改所有Python脚本中的路径为当前工作空间路径
+
+KDT 2026-07-09 — the s1..s4 stage scripts now read VIC_BASIN_NAME /
+VIC_BASIN_SHP / VIC_OUT_ROOT / VIC_CMFD_DIR / VIC_YEAR_{START,END} /
+VIC_START_DATE / VIC_END_DATE / VIC_FORCING_PREFIX from the environment, so the
+in-place regex rewriting below is no longer required to switch basins. Prefer
+exporting those variables. `create_global_param()` is still the way to build
+the VIC global parameter file, and it now substitutes the simulation period
+and OUTFILE as well as the paths.
 """
 
 import os
@@ -12,19 +20,21 @@ import re
 WORKSPACE_ROOT = Path("/mnt/disk1/Hydrocraft_server")
 
 # 流域名称配置（用于输出目录）
-BASIN_NAME = "xixian_rerun_71379b42"
+BASIN_NAME = os.environ.get("VIC_BASIN_NAME", "mekong_travinh_slr")
 
 # 路径配置字典
 PATH_CONFIG = {
     # 数据路径
-    "shp_dir": WORKSPACE_ROOT / "data" / "shp" / "xixian_025deg_shp" / "xixian_boundary_shp",
-    "shp_file": WORKSPACE_ROOT / "data" / "shp" / "xixian_025deg_shp" / "xixian_boundary_shp" / "xixian_boundary.shp",
-    "forcing_nc_dir": WORKSPACE_ROOT / "data" / "forcing" / "Data_forcing_03hr_010deg",
-    "soil_raster": WORKSPACE_ROOT / "data" / "soil" / "HWSD_China_Geo.img",
+    "shp_dir": WORKSPACE_ROOT / "data" / "shp" / "mekong_lower_shp" / "mekong_lower_boundary_shp",
+    "shp_file": Path(os.environ.get(
+        "VIC_BASIN_SHP",
+        str(WORKSPACE_ROOT / "data" / "shp" / "mekong_lower_shp" / "mekong_lower_boundary_shp" / "mekong_lower_boundary.shp"))),
+    "forcing_nc_dir": Path("/mnt/disk3/msxw"),
+    "soil_raster": WORKSPACE_ROOT / "data" / "soil" / "HWSD_RASTER" / "hwsd.bil",
     "landcover_raster": WORKSPACE_ROOT / "data" / "landcover" / "AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif",
     "global_soil_param": WORKSPACE_ROOT / "data" / "插值" / "global_soil_param_new.txt",
-    "elev_nc": WORKSPACE_ROOT / "data" / "elev" / "elev_CMFD_V0200_B-00_fx_010deg.nc",
-    "his_average_prec_nc": WORKSPACE_ROOT / "data" / "his_average_prec" / "prec_CMFD_010deg_meanAnnual_1951-2020_mm.nc",
+    "elev_nc": WORKSPACE_ROOT / "data" / "elev" / "elev_mekong_025deg.nc",
+    "his_average_prec_nc": WORKSPACE_ROOT / "data" / "his_average_prec" / "prec_mswx_mekong_meanAnnual_mm.nc",
     "his_average_prec": WORKSPACE_ROOT / "data" / "his_average_prec",
 
     # 输出路径 (使用流域专属目录)
@@ -39,7 +49,15 @@ PATH_CONFIG = {
 
     # 参数文件
     "veglib_file": WORKSPACE_ROOT / "data" / "vic_param" / "veglib.LDAS",
-    "global_param_template": WORKSPACE_ROOT / "outputs" / "xixian_1979-1990_test" / "vic_temp" / "global_param_xixian_1979-1990_test.txt",
+    # KDT 2026-07-10 — the old default pointed at
+    #   outputs/pearl_river_calibration_ai/best_run/global_param.txt
+    # which does not exist on this server, so create_global_param() aborted with
+    # "✗ 模板文件不存在" on EVERY new basin and returned False without raising.
+    # The template is now shipped INSIDE the KI so it can never go missing, and
+    # an outputs/ path is no longer a load-bearing dependency of the KI.
+    "global_param_template": Path(os.environ.get(
+        "VIC_GLOBAL_PARAM_TEMPLATE",
+        str(Path(__file__).resolve().parent / "docs" / "vic_param" / "global_param_template.txt"))),
     "global_param_output": WORKSPACE_ROOT / "outputs" / BASIN_NAME / "vic_temp" / f"global_param_{BASIN_NAME}.txt",
 
     # VIC可执行文件
@@ -100,7 +118,10 @@ def create_output_dirs():
         print(f"✓ 创建目录: {dir_path}")
 
 
-SCRIPTS_DIR = WORKSPACE_ROOT / "skills" / "vic-auto-run"
+# KDT 2026-07-09 — was WORKSPACE_ROOT/"skills"/"vic-auto-run", i.e. it rewrote a
+# COPY of the stage scripts outside this KI. Every documented step then ran the
+# unmodified KI scripts, so the "配置" step was silently a no-op.
+SCRIPTS_DIR = Path(__file__).resolve().parent
 
 
 def update_script_paths(script_rel_path, var_mapping):
@@ -159,23 +180,59 @@ def create_global_param():
     output_path = PATH_CONFIG["global_param_output"]
 
     if not template_path.exists():
-        print(f"✗ 模板文件不存在: {template_path}")
-        return False
+        # KDT 2026-07-10: this used to `return False`. Callers ignored the return
+        # value, so a missing template produced NO global param and the next stage
+        # failed far away with a confusing "file not found". Fail loudly, here.
+        raise FileNotFoundError(
+            f"global param template not found: {template_path}. Set "
+            "VIC_GLOBAL_PARAM_TEMPLATE or restore docs/vic_param/global_param_template.txt")
 
     with open(template_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
     # 替换关键路径
+    # KDT 2026-07-09: also substitute the simulation period and OUTFILE. Without
+    # these the template's STARTYEAR/ENDYEAR/FORCEYEAR survive into the new
+    # basin's global param, and VIC dies with "Not enough records in forcing
+    # file" (SKILL.md 问题2) — or worse, silently simulates the wrong years.
+    prefix = os.environ.get("VIC_FORCING_PREFIX", "huai_01dy_025deg_")
+    y0 = os.environ.get("VIC_YEAR_START")
+    y1 = os.environ.get("VIC_YEAR_END")
+
+    # KDT 2026-07-09 — every pattern is anchored with ^ + re.MULTILINE.
+    # ROOT CAUSE of SKILL.md "问题0: FROZEN_SOIL ... is neither TRUE nor FALSE":
+    # the old unanchored r'SOIL\s+.*' also matched INSIDE the line
+    #     FROZEN_SOIL             FALSE
+    # (at the "SOIL             FALSE" substring), rewriting it to
+    #     FROZEN_SOIL                    /path/SOIL_PARAM_COMPLETE.txt
+    # so VIC aborted. SKILL.md documented the symptom and told the user to hand-
+    # edit the file; the generator was the culprit. Anchoring fixes it for good.
     replacements = {
-        r'FORCING1\s+.*': f'FORCING1                {PATH_CONFIG["output_forcing_final"]}/huai_01dy_025deg_',
-        r'SOIL\s+.*': f'SOIL                    {PATH_CONFIG["output_soil_param_2"]}',
-        r'VEGLIB\s+.*': f'VEGLIB                  {PATH_CONFIG["veglib_file"]}',
-        r'VEGPARAM\s+.*': f'VEGPARAM                {PATH_CONFIG["output_veg_param"]}',
-        r'RESULT_DIR\s+.*': f'RESULT_DIR              {PATH_CONFIG["output_vic_result"]}/',
+        r'^FORCING1\s+.*$': f'FORCING1                {PATH_CONFIG["output_forcing_final"]}/{prefix}',
+        r'^SOIL\s+.*$': f'SOIL                    {PATH_CONFIG["output_soil_param_2"]}',
+        r'^VEGLIB\s+.*$': f'VEGLIB                  {PATH_CONFIG["veglib_file"]}',
+        r'^VEGPARAM\s+.*$': f'VEGPARAM                {PATH_CONFIG["output_veg_param"]}',
+        r'^RESULT_DIR\s+.*$': f'RESULT_DIR              {PATH_CONFIG["output_vic_result"]}/',
+        r'^OUTFILE\s+.*$': f'OUTFILE                 {BASIN_NAME}_fluxes',
     }
+    if y0 and y1:
+        replacements.update({
+            r'^STARTYEAR\s+.*$': f'STARTYEAR               {y0}',
+            r'^ENDYEAR\s+.*$': f'ENDYEAR                 {y1}',
+            r'^FORCEYEAR\s+.*$': f'FORCEYEAR               {y0}',
+        })
 
     for pattern, replacement in replacements.items():
-        content = re.sub(pattern, replacement, content)
+        content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
+
+    # Post-condition: these two must survive as booleans, not paths.
+    for line in content.splitlines():
+        if line.startswith(("FROZEN_SOIL", "FULL_ENERGY")):
+            val = line.split()[1] if len(line.split()) > 1 else ""
+            if val not in ("TRUE", "FALSE"):
+                raise RuntimeError(
+                    f"global param corrupted by path substitution: {line!r} "
+                    "(expected TRUE/FALSE)")
 
     # 确保输出目录存在
     output_path.parent.mkdir(parents=True, exist_ok=True)

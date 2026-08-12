@@ -48,13 +48,18 @@ The physical domain size is: `H × pixel_scale` ft tall, `W × pixel_scale` ft w
 wind:
   function: simple        # simple | perlin | cfd
   simple:
-    speed: 1760           # ft/min (= 20 mph × 88)
-    direction: 90.0       # degrees (0=N, 90=E, 180=S, 270=W)
+    speed: 20             # **mph** (config.py:860 calls mph_to_ftpm)
+    direction: 90.0       # degrees, "TO direction": 90 = wind blows TOWARD East
 ```
 
-**CRITICAL**: Wind speed must be in **ft/min**, not mph or m/s.
-- 1 mph = 88 ft/min
-- 1 m/s = 196.85 ft/min
+**CRITICAL** (verified against simfire 2.0.1 source + `docs/source/config.md`):
+- `wind.simple.speed` is in **mph**. SimFire converts to ft/min internally
+  (`config.py:860`). Writing the converted value directly results in
+  88× too-strong wind.
+- `wind.simple.direction` is "TO direction", NOT meteorological "from".
+  `direction = 90` means wind blowing TOWARD East. For "wind from NE"
+  (Diablo), use `direction: 225` (toward SW).
+- Same units apply to `wind.perlin.speed.range_min/max` (mph).
 
 ### Step 4: Set environment
 
@@ -96,7 +101,7 @@ simulation:
    ```bash
    python -c "import yaml; yaml.safe_load(open('config.yml'))"
    ```
-2. Check wind speed is reasonable in ft/min (not mph): typical range 0–4400 ft/min (0–50 mph)
+2. Check wind speed (YAML mph) is reasonable: typical 0–60 mph for surface wind
 3. Check moisture is a fraction: should be 0.001–0.40, never > 1.0
 4. Check pixel_scale is in feet: typically 30–100 ft
 
@@ -104,7 +109,8 @@ simulation:
 
 | Trap | Symptom | Fix |
 |------|---------|-----|
-| Wind in mph | Fire barely spreads | Multiply by 88 |
+| Wind written as ft/min in YAML simple.speed | Fire spreads 88× too fast / fills grid in minutes | Write the mph value directly (e.g. 20, not 1760) |
+| Wind direction interpreted as meteorological "from" | Fire spreads OPPOSITE downwind | YAML direction is "TO": for "wind from NE", use 225 not 45 |
 | Moisture as percentage | Fire never spreads | Divide by 100 |
 | `headless: false` on server | PyGame crash | Set `headless: true` |
 | `screen_size` too large | Out of memory | Keep under 500×500 for testing |

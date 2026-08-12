@@ -528,7 +528,21 @@ def validate_profile(profile):
 
 
 def main():
-    """Entry point: parse and validate soil profile(s)."""
+    """Entry point: parse and validate soil profile(s).
+
+    The target may be supplied on the command line
+    (``validate_soil_profile.py /path/to/SOIL.SOL [PEDON_ID]``) so a batch
+    driver can validate many .SOL files without rewriting the module. The
+    module globals SOIL_FILE_PATH / PEDON_ID stay the defaults when no
+    argument is given, so existing set-the-global callers are unaffected.
+    """
+    global SOIL_FILE_PATH, PEDON_ID
+    _pos = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if _pos:
+        SOIL_FILE_PATH = _pos[0]
+    if len(_pos) > 1:
+        PEDON_ID = _pos[1]
+
     # -----------------------------------------------------------------------
     # PRECONDITIONS
     # -----------------------------------------------------------------------

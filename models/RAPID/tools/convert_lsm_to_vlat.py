@@ -267,8 +267,15 @@ def write_vlat_netcdf(filepath, vlat, riv_ids, times, tau_r):
     else:
         v_time[:] = np.arange(n_time) * tau_r
 
-    # Vlat variable
-    v_vlat = ds.createVariable("Vlat", "f4", ("time", "rivid"),
+    # Lateral inflow variable.
+    # NOTE: RAPID's reader (src/rapid_open_Vlat_file.F90) looks up the lateral
+    # inflow by the NetCDF variable name 'm3_riv' — NOT 'Vlat'. If the variable
+    # is named 'Vlat', NF90_INQ_VARID fails, RAPID sets the var id to -9999 and
+    # silently routes ZEROS, producing an all-zero Qout (triplet dt_001). The
+    # variable MUST be named 'm3_riv' (this matches the shipped San_Guad example
+    # m3_riv_*.nc and the validated Bengbu run). 'Vlat' is the namelist *key*
+    # (Vlat_file), not the in-file variable name.
+    v_vlat = ds.createVariable("m3_riv", "f4", ("time", "rivid"),
                                 fill_value=-9999.0)
     v_vlat[:] = vlat
     v_vlat.long_name = "lateral inflow volume"

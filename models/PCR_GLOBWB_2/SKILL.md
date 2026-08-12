@@ -36,11 +36,21 @@
 
 ### Forcing data
 
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing`
+(or `load_daily_forcing_points` for a whole clone grid in one decompression pass)
+for CMFD/MSWX/GSWP3/NASA POWER. `convert_forcing_to_pcrglobwb.py --clone-json`
+wraps this and writes the two forcing NetCDFs directly on the clone grid.
 
-**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
-See `data_ki/HWSD/SKILL.md` for soil property documentation.
-See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
+**CMFD units** (verified against `data/forcing/Data_forcing_01dy_010deg/`):
+`prec` is **kg m-2 s-1** (NOT mm/day) and `temp` is **K**. There is no `pet`
+variable. `ki_tools_common.load_forcing` already returns mm/day and °C, so the
+only remaining PCR-GLOBWB conversion is mm/day → m/day (dt_001).
+
+**Data Validation Reference**: soil properties and observed-discharge layouts are
+described in `/mnt/disk1/Hydrocraft_server/data_ki/dataset_index.yaml` and
+`kdt_dataset_layouts.yaml`. (Earlier revisions of this file pointed at
+`data_ki/CMFD/SKILL.md`, `data_ki/HWSD/SKILL.md` and `data_ki/ObservedQ/SKILL.md`
+— those paths do not exist under KDT 5.0.)
 
 
 ## Overview
@@ -120,8 +130,9 @@ Structure:
 | # | Stage | Tool(s) | Description |
 |---|-------|---------|-------------|
 | 0 | Configuration | (manual) | Edit .ini file: set cloneMap, inputDir, outputDir, dates |
-| 1 | Clone/Landmask | (manual) | Prepare PCRaster clone map defining spatial extent and resolution |
-| 2 | Forcing Preparation | `convert_forcing_to_pcrglobwb` | Convert global forcing data to PCR-GLOBWB format (NetCDF, correct units) |
+| 1 | Clone/Landmask | `make_clone_map` | Trace the gauge's upstream catchment on the model's own LDD; write clone + landmask PCRaster maps |
+| 1b | Input Acquisition | `fetch_pcrglobwb_inputs` | Download a bbox subset (~5 MB) of `global_30min` from 4TU OPeNDAP; resumable |
+| 2 | Forcing Preparation | `convert_forcing_to_pcrglobwb` | Convert global forcing data to PCR-GLOBWB format (NetCDF, correct units), or build it on the clone grid straight from `ki_tools_common.load_forcing` |
 | 3 | Soil/Parameter Setup | `convert_soil_params` | Prepare soil properties, topography, and land cover parameters |
 | 4 | INI Configuration | (manual) | Configure all sections: global, meteo, landSurface, groundwater, routing, reporting |
 | 5 | Spin-up | `run_pcrglobwb` | Run spin-up cycles for state variable convergence |
@@ -141,10 +152,134 @@ Structure:
 
 | Tool | Stage | Script Path | Purpose |
 |------|-------|-------------|---------|
+| `make_clone_map` | s1 | `tools/make_clone_map.py` | Build clone + landmask maps from a gauge lat/lon by tracing the LDD |
+| `fetch_pcrglobwb_inputs` | s1b | `tools/fetch_pcrglobwb_inputs.py` | Fetch a bbox subset of `global_30min` inputs from 4TU OPeNDAP |
 | `convert_forcing_to_pcrglobwb` | s2 | `tools/convert_forcing_to_pcrglobwb.py` | Convert meteorological forcing to PCR-GLOBWB NetCDF format |
 | `convert_soil_params` | s3 | `tools/convert_soil_params.py` | Convert HWSD/SoilGrids data to PCR-GLOBWB soil parameters |
 | `run_pcrglobwb` | s5/s6 | `tools/run_pcrglobwb.py` | Execute PCR-GLOBWB with preflight checks |
 | `parse_pcrglobwb_output` | s7 | `tools/parse_pcrglobwb_output.py` | Parse output NetCDF to CSV time series |
+
+### New-basin recipe (validated at Songhua @ 哈尔滨, 2026-07-09)
+
+A 30-arcmin regional run needs no manual file authoring. For a gauge at
+(`LAT`, `LON`) with reported drainage area `AREA` km²:
+
+```bash
+PCR_PY=<...>/miniconda/envs/pcrglobwb_python3/bin/python
+
+# s1  clone + landmask (extent derived from the LDD, so it always contains the
+#     full contributing area; corners auto-snapped -> dt_011 cannot happen)
+$PCR_PY tools/make_clone_map.py --out-dir $O/clone --prefix MyBasin30min \
+    --gauge-lat LAT --gauge-lon LON --target-area-km2 AREA --buffer-cells 1
+# -> writes MyBasin30min.clone.json with rows/cols/xUL/yUL, the snapped gauge
+#    cell, and the traced upstream area (CHECK it against AREA before running)
+
+# s1b  localise inputs (~5 MB for a 22x20 clone; skip files already present)
+$PCR_PY tools/fetch_pcrglobwb_inputs.py --bbox LON_MIN LAT_MIN LON_MAX LAT_MAX \
+    --local-dir $O/input --year-start 2000 --year-end 2010 --ic-year 1999
+
+# s2  forcing on the clone grid, straight from the shared loader
+#     (mode (b): --clone-json; needs an interpreter with ki_tools_common)
+python tools/convert_forcing_to_pcrglobwb.py --source cmfd \
+    --clone-json $O/clone/MyBasin30min.clone.json \
+    --forcing-dir /media/server/hc_ssd/forcing/Data_forcing_01dy_010deg \
+    --output-dir $O/input/global_30min/meteo/forcing \
+    --start-date 2000-01-01 --end-date 2010-12-31 --subsample 2
+
+# s6  run, s7 extract at the SNAPPED gauge cell (not the reported lat/lon)
+$PCR_PY tools/run_pcrglobwb.py $O/setup.ini --model-dir <repo>/model
+$PCR_PY tools/parse_pcrglobwb_output.py $O/netcdf --variable discharge \
+    --aggregation dailyTot --lat <gauge_cell_lat> --lon <gauge_cell_lon> -o sim.csv
+```
+
+**Hard constraints discovered on the Songhua run:**
+
+- **Simulation end date ≤ 2010-12-31** with the shipped water-use inputs.
+  `domestic/industrial/desalination` water demand and `irrigationArea30ArcMin`
+  all stop at 2010; `livestock` stops at 2012. Running past the last year of a
+  water-demand file with `includeIrrigation = True` reads past the end of the
+  series.
+- **Initial conditions** are only published for a few years under
+  `initialConditions/non-natural/consistent_run_201903XX/<year>/`. Start the run
+  on 1 January of `ic_year + 1` and treat the first year as warm-up
+  (`maxSpinUpsInYears = 0` is then fine — this is what the Rhine/Kaub reference
+  run does).
+- **Derive reference ET whenever the forcing allows it.** CMFD V0200 ships
+  `srad`, `wind`, `shum` and `pres` alongside `prec`/`temp`, so FAO-56
+  Penman-Monteith refET is computable. Call
+  `build_from_ki_forcing(..., refet_method="penman")` from
+  `tools/convert_forcing_to_pcrglobwb.py` -- `penman` is already the default --
+  to write `referencePotET.nc`. Then set, in `[meteoOptions]`:
+  `referenceETPotMethod = Input` and
+  `refETPotFileNC = global_30min/meteo/forcing/referencePotET.nc`.
+  The NetCDF variable must be named `evapotranspiration` (`model/meteo.py:177`)
+  unless you override `referenceEPotVariableName`.
+  Reserve `referenceETPotMethod = Hamon` for forcings that genuinely lack
+  radiation/wind/humidity. Temperature-only Hamon under-estimates PET in cold
+  continental monsoon basins (~665 vs ~907 mm/yr at Songhua); PCR-GLOBWB caps
+  actualET by referencePotET, so the water the basin fails to evaporate routes
+  to the outlet and inflates discharge (+76% PBIAS while r stayed 0.864).
+  See dt_031.
+- **Always pass `--aggregation dailyTot`** when extracting a daily series
+  (see dt_027).
+
+### Before fetching anything: LOOK FOR AN EXISTING LOCAL INPUT TREE
+
+The 4TU OPeNDAP endpoint is frequently unreachable (every REQUIRED file failed
+the preflight on 2026-07-12/13, and again on 2026-07-19: the host answers at
+`/` but DAP requests stall). `fetch_pcrglobwb_inputs.py` is resumable, so a
+down endpoint does not crash — it retries for hours in a detached run where
+nobody is watching. **Do not launch a run that depends on a fetch you have not
+proved reachable.**
+
+Complete 30 arcmin trees already exist locally and cover whole regions:
+
+```
+/mnt/disk1/Hydrocraft_server/outputs_disk1/pcrglobwb2_huai_bengbu/input      # Huai   111.5-118.0E, 30.5-35.0N
+/mnt/disk1/Hydrocraft_server/outputs_disk1/pcrglobwb2_araguaia_araguatins/input
+/mnt/disk1/Hydrocraft_server/outputs_disk1/pcrglobwb2_rhine_kaub_2000_2005/input
+```
+
+Each holds ~100 NetCDFs (LDD, cell area, soil, topography, groundwater, all
+four landCover sets, the full waterUse stack) plus initial conditions and, for
+the Huai tree, CMFD forcing with Penman-Monteith refET for 1979-01-01..1997-12-31.
+**A gauge anywhere inside one of those bboxes needs NO fetch at all** — point
+`inputDir` at the existing tree and reuse its clone/landmask if your catchment
+is a topological subset of it.
+
+**TRAP — the orphaned cache (2026-07-19).**
+`/mnt/disk1/Hydrocraft_server/outputs` is now a SYMLINK to
+`/media/server/hc_ssd/hc_outputs`, but the real trees live in
+`outputs_disk1/`. The absolute paths baked into the older `.ini` files and
+`*.clone.json` still say `/mnt/disk1/Hydrocraft_server/outputs/...`, which now
+resolves to an EMPTY directory. A runner reusing those paths therefore finds no
+cache, decides it must fetch, and hangs on the dead OPeNDAP server — which is
+exactly how the 2026-07-12/13 runs burned out with null metrics. Always
+`ls` the tree and count `*.nc` before trusting a cached path.
+
+### Gauge snapping picks a river, not just an area (dt_032)
+
+`make_clone_map.py` now applies a **river-identity guard**: the cell containing
+the reported lon/lat must lie on the snapped cell's flow path. Area alone is
+NOT sufficient — at Wangjiaba the area-only rule chose a Shaying tributary cell
+at +0.83% over the correct Huai mainstem cell at +45%. Check
+`river_identity_guard: PASS|FAIL` in the emitted `clone.json`.
+
+At 30 arcmin the Huai mainstem is legitimately over-aggregated, so a *large*
+area error is the honest answer there and a *tiny* one is the suspicious one:
+
+| gauge | cell | traced km² | reported km² | err |
+|---|---|---|---|---|
+| Xixian 息县 | (32.25, 114.75) | 15,751 | 10,190 | +54.6% |
+| Huaibin 淮滨 | (32.25, 115.25) | 21,006 | 16,005 | +31.2% |
+| Wangjiaba 王家坝 | (32.25, 115.75) | 44,414 | 30,630 | +45.0% |
+| Lutaizi 鲁台子 | (32.75, 116.75) | 104,178 | 88,630 | +17.5% |
+| **Zhoukou 周口** | (33.75, 114.75) | **25,701** | **25,800** | **−0.4%** |
+| Fuyang 阜阳 | (32.75, 115.75) | 33,489 | 35,246 | −5.0% |
+
+For a 30 arcmin Huai validation, **Zhoukou (Shaying) is the well-posed gauge**;
+Fuyang's record starts in 2001 and so misses the 1979-1997 forcing window.
+Bengbu (51080) is the excluded guardrail gauge and must not be scored.
 
 ---
 
@@ -370,6 +505,23 @@ PCR-GLOBWB runs exclusively on daily timestep (`timeStep = 1.0`, `timeStepUnit =
 ### 7. Spin-up convergence criteria (dt_013)
 
 Spin-up checks convergence of: soil storage, groundwater storage, channel storage, and total storage. Set `maxSpinUpsInYears > 0` to enable. Typical: 5-30 years depending on domain.
+
+### 8b. `mapattr` must be on PATH (dt_021)
+
+`virtualOS.getMapAttributesALL()` shells out to `mapattr -p <cloneMap>` with
+`Popen(shell=True)`. If the conda env's `bin/` is not on the subprocess PATH the
+call returns empty output and the model dies with a *misleading*
+`IndexError: list index out of range` at `virtualOS.py:1842`, immediately
+followed by a cascading `KeyError: 'time'` — neither of which mentions PATH or
+`mapattr`. Read the FIRST traceback, not the last. `run_pcrglobwb.py` now
+prepends `dirname(sys.executable)` to PATH and hard-fails early if `mapattr`
+still isn't resolvable, so this trap only bites hand-rolled invocations.
+
+### 8c. Selecting the right output file (dt_027)
+
+The same variable is written once per temporal aggregation. Extract daily series
+with `--aggregation dailyTot`; `discharge_annuaAvg_output.nc` sorts first
+alphabetically and will otherwise be picked.
 
 ### 8. OPeNDAP input access (dt_014)
 

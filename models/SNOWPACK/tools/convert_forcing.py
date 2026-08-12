@@ -137,25 +137,34 @@ def convert_rh(values, source_unit):
         raise ValueError(f"Unknown RH unit: {source_unit}")
 
 
-def convert_precipitation(values, source_unit, timestep_seconds):
+def convert_precipitation(values, source_unit, timestep_seconds, precip_scale=1.0):
     """Convert precipitation to kg/m² per timestep.
 
     CRITICAL: SNOWPACK expects PSUM in kg/m² (= mm water equiv.) per timestep.
     1 mm water = 1 kg/m².
+
+    precip_scale: multiplicative gauge-undercatch correction applied AFTER the
+        unit conversion. Solid-precip (snow) gauges (incl. SNOTEL storage gauges)
+        systematically undercatch snowfall in wind; at exposed cold/maritime
+        alpine sites the catch deficit can be large (observed peak SWE exceeding
+        the gauge's annual precip is a tell-tale). Use a site factor (typically
+        1.1–1.8) to close a persistent negative SWE/HS PBIAS. Default 1.0 = off.
+        Mirrors the precip-scale knob in the Sac-SMA / MARRMoT / GR4J / COSIPY KIs.
     """
     if source_unit == "kg_per_m2":
-        return values
+        out = values
     elif source_unit == "mm_per_hour":
         # mm/hr → kg/m² per timestep
-        return values * (timestep_seconds / 3600.0)
+        out = values * (timestep_seconds / 3600.0)
     elif source_unit == "mm_per_day":
         # mm/day → kg/m² per timestep
-        return values * (timestep_seconds / 86400.0)
+        out = values * (timestep_seconds / 86400.0)
     elif source_unit == "m_per_timestep":
         # m → mm = kg/m²
-        return values * 1000.0
+        out = values * 1000.0
     else:
         raise ValueError(f"Unknown precipitation unit: {source_unit}")
+    return out * precip_scale
 
 
 def convert_wind(values, source_unit):
@@ -218,7 +227,8 @@ def process(args):
     if "RH" in df.columns:
         df["RH"] = convert_rh(df["RH"].values, args.source_rh_unit)
     if "PSUM" in df.columns:
-        df["PSUM"] = convert_precipitation(df["PSUM"].values, args.source_precip_unit, dt)
+        df["PSUM"] = convert_precipitation(df["PSUM"].values, args.source_precip_unit, dt,
+                                           precip_scale=args.precip_scale)
     if "VW" in df.columns:
         df["VW"] = convert_wind(df["VW"].values, args.source_wind_unit)
     if "ISWR" in df.columns:
@@ -320,6 +330,10 @@ def main():
     parser.add_argument("--source_rad_unit", default="W_per_m2",
                         choices=["W_per_m2", "MJ_per_m2_day", "kJ_per_m2_hr"],
                         help="Radiation unit in source")
+    parser.add_argument("--precip_scale", type=float, default=1.0,
+                        help="Gauge-undercatch multiplier applied to PSUM after "
+                             "unit conversion (1.0=off; ~1.1-1.8 for wind-exposed "
+                             "snow sites where the gauge undercatches snowfall)")
 
     args = parser.parse_args()
     if not args.station_name:

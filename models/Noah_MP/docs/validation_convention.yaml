@@ -1,0 +1,348 @@
+schema_version: 1
+model_id: Noah_MP
+domain: hydrology                 # land-surface model spanning hydrology / cryosphere / biogeochem
+generated_by: "self-improve session (Claude Opus 4.8) — validation-convention campaign, general schema"
+generated_at: 2026-07-06
+
+# Grounded ONLY in locally-fetched OA full texts (no new DOIs fetched; 28-paper cache complete).
+# Five headline quantities the Noah-MP KI produces and the obs_map binds (LE->latent-heat/ET,
+# discharge->routed runoff) or the field routinely evaluates (SWE, soil moisture, GPP):
+#   * RUNOFF  = best-grounded (PRESCRIPTIVE Moriasi 2007 NSE/PBIAS/RSR tiers, reproduced verbatim in
+#               two OA SWAT papers) -> strong.
+#   * ET/LE   = flux-tower RMSE vs eddy-covariance + post-closure-uncertainty-band tolerance -> strong.
+#   * SWE     = point RMSE / peak-SWE bias vs SNOTEL/pillow/ASO, explicit tier bands -> strong.
+#   * GPP     = FLUXNET RMSE ~30% "acceptable" (Jung 2007) + a documented dynamic-veg/LAI structural
+#               ceiling (Niu 2020, Ma 2017) -> strong but ceiling-bounded.
+#   * SOIL M  = in-situ RMSE / correlation envelope (Zhuo 2019, Gao 2015); no stated pass threshold
+#               in the fetched set -> moderate.
+# Bands are plain numbers read via `direction` (see VALIDATION_CONVENTION_SCHEMA.md). Where a paper
+# reports achieved Noah-MP skill rather than a stated pass target, the band is a benchmark envelope and
+# confidence is held moderate. NOTE: the skeleton's has_obs_binding flags are a stale name-join
+# (validation var `LH` vs obs_map `LE`; `SNEQV`/`SMOIS`/`GPP` unmatched); real obs bindings exist for
+# latent heat (ET) and routed discharge (runoff), and SWE/SM/GPP are the field-standard LSM targets.
+
+references:
+  moriasi_via_me2015:
+    doi: 10.5194/hess-19-4127-2015
+    title: "Effects of hydrologic conditions on SWAT model performance and parameter sensitivity for a small, mixed land use catchment"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2015
+    oa: gold
+    resolves: https://hess.copernicus.org/articles/19/4127/2015/
+  moriasi_via_nile2012:
+    doi: 10.5194/hess-16-3371-2012
+    title: "Critical review of SWAT applications in the upper Nile basin countries"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2012
+    oa: gold
+    resolves: https://hess.copernicus.org/articles/16/3371/2012/
+  cai2024_wus:
+    doi: 10.5194/hess-28-3079-2024
+    title: "Improving runoff simulation in the Western United States with Noah-MP and VIC"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2024
+    oa: gold
+    resolves: https://hess.copernicus.org/articles/28/3079/2024/
+  mrb2013:
+    doi: 10.1002/2013jd020792
+    title: "Hydrological evaluation of the Noah-MP land surface model for the Mississippi River Basin"
+    venue: "J. Geophys. Res. Atmos."
+    year: 2014
+    oa: manual
+    resolves: manual
+  ma2017_conus:
+    doi: 10.1002/2017jd027597
+    title: "A Systematic Evaluation of Noah-MP in Simulating Land-Atmosphere Energy, Water, and Carbon Exchanges Over the Continental United States"
+    venue: "J. Geophys. Res. Atmos."
+    year: 2017
+    oa: manual
+    resolves: manual
+  ingwersen2015:
+    doi: 10.5194/bg-12-2311-2015
+    title: "On the use of the post-closure methods uncertainty band to evaluate the performance of land surface models against eddy covariance flux data"
+    venue: "Biogeosciences"
+    year: 2015
+    oa: gold
+    resolves: https://bg.copernicus.org/articles/12/2311/2015/
+  gao2015_tibet:
+    doi: 10.1002/2015jd023404
+    title: "Assessing and improving Noah-MP land model simulations for the central Tibetan Plateau"
+    venue: "J. Geophys. Res. Atmos."
+    year: 2015
+    oa: manual
+    resolves: manual
+  niu2020_planthydraulics:
+    doi: 10.1029/2020ms002062
+    title: "Enhancing the Noah-MP Ecosystem Response to Droughts With an Explicit Representation of Plant Hydraulics"
+    venue: "J. Adv. Model. Earth Syst. (JAMES)"
+    year: 2020
+    oa: manual
+    resolves: manual
+  jung2007_gpp:
+    doi: 10.5194/bg-4-647-2007
+    title: "Assessing the ability of three land ecosystem models to simulate gross carbon uptake of forests from boreal to Mediterranean climate in Europe"
+    venue: "Biogeosciences"
+    year: 2007
+    oa: gold
+    resolves: https://bg.copernicus.org/articles/4/647/2007/
+  zhuo2019_sm:
+    doi: 10.5194/hess-23-4199-2019
+    title: "Assessment of simulated soil moisture from WRF Noah, Noah-MP, and CLM land surface schemes"
+    venue: "Hydrol. Earth Syst. Sci."
+    year: 2019
+    oa: gold
+    resolves: https://hess.copernicus.org/articles/23/4199/2019/
+  kraft2023_burned:
+    doi: 10.1029/2023jd039780
+    title: "Evaluating Noah-MP Simulated Runoff and Snowpack in Heavily Burned Pacific-Northwest Watersheds"
+    venue: "J. Geophys. Res. Atmos."
+    year: 2023
+    oa: manual
+    resolves: manual
+  compaction2023:
+    doi: 10.1029/2023ms003869
+    title: "Evaluating and Enhancing Snow Compaction Process in the Noah-MP Land Surface Model"
+    venue: "J. Adv. Model. Earth Syst. (JAMES)"
+    year: 2023
+    oa: manual
+    resolves: manual
+  sierra2023_swe:
+    doi: 10.3389/feart.2023.1106621
+    title: "Intercomparison of snow water equivalent products in the Sierra Nevada California"
+    venue: "Front. Earth Sci."
+    year: 2023
+    oa: gold
+    resolves: https://www.frontiersin.org/articles/10.3389/feart.2023.1106621/full
+  mortimer2020_nhswe:
+    doi: 10.5194/tc-14-1579-2020
+    title: "Evaluation of long-term Northern Hemisphere snow water equivalent products"
+    venue: "The Cryosphere"
+    year: 2020
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/14/1579/2020/
+  centralasia2020_swe:
+    doi: 10.5194/tc-14-331-2020
+    title: "Comparison of modeled snow properties in Afghanistan, Pakistan, and Tajikistan"
+    venue: "The Cryosphere"
+    year: 2020
+    oa: gold
+    resolves: https://tc.copernicus.org/articles/14/331/2020/
+
+validation:
+
+  # ===================== RUNOFF / regional-aggregate time series (best grounded) =====================
+  - canonical_quantity: runoff
+    obs_shape: regional_aggregate_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Moriasi et al. (2007) streamflow performance tiers, reproduced verbatim in Me et al. 2015 Table 5"
+        cites: [moriasi_via_me2015, moriasi_via_nile2012, mrb2013]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 25}
+        pass_band: satisfactory
+        band_note: "Moriasi PBIAS streamflow tiers (<=10 very good, 10-15 good, 15-25 satisfactory, >25 unsatisfactory)"
+        cites: [moriasi_via_me2015, moriasi_via_nile2012]
+    secondary_metrics:
+      - metric: rsr
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Moriasi RSR satisfactory <= 0.70 for streamflow (Nile review: 'satisfactory if NSE > 0.5 and RSR <= 0.7')."
+        cites: [moriasi_via_nile2012]
+      - metric: kge
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Noah-MP achieved daily-streamflow median KGE 0.22 (default NWM params) -> 0.54 calibrated / 0.68 validation over 263 Western-US basins; KGE > -0.41 beats the mean-flow benchmark (Knoben 2019)."
+        cites: [cai2024_wus]
+    validated_when: "NSE >= 0.50 AND |PBIAS| <= 25% at monthly step (Moriasi 2007 streamflow 'satisfactory', reproduced Me 2015 / Nile 2012). CAVEAT: Noah-MP column runoff is NOT streamflow — comparison to gauged discharge requires an external routing model (WRF-Hydro/CaMa-Flood); without routing only basin water-balance closure is defensible.NON-ROUTED HEADLINE VERDICT = GRUN runoff-to-runoff NSE/PBIAS (gridded monthly runoff, matches regional_aggregate_time_series). Basin water-balance closure is a SOFT SANITY diagnostic only, with a ~+/-30%% expected residual at daily output because prognostic ET is read from an INSTANTANEOUS daily flux snapshot x86400 (accumulated ET fields are not emitted by the offline daily HRLDAS build); Noah-MP closes water per column each timestep by construction, so this offline residual is an extraction approximation, NOT a model mass failure, and must NOT gate the verdict. For an EXACT closure use accumulated ET fields if the build emits them, else set OUTPUT_TIMESTEP sub-daily and integrate the ET flux."
+    evidence_strength: strong
+    confidence: 0.8
+    notes: >-
+      Me et al. 2015 Table 5 (attributed to Moriasi et al. 2007): NSE unsat<0.5 / 0.5-0.65 satisfactory /
+      0.65-0.75 good / 0.75-1 very good; PBIAS(Q) >25 unsat / 15-25 sat / 10-15 good / <10 very good.
+      Nile review adds RSR<=0.70 satisfactory. Noah-MP achieved (descriptive): monthly MRB NSE up to 0.77,
+      R2 0.81 after calibration (0.42 uncalibrated, below the 0.50 floor); WUS daily median KGE 0.54 calib /
+      0.68 valid; pre-fire monthly/annual Q-anomaly Spearman rho 0.89-0.92 (Kraft 2023, anomaly space).
+
+  # ===================== EVAPOTRANSPIRATION / LATENT HEAT — point time series (flux tower) ==========
+  - canonical_quantity: evapotranspiration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: W/m2
+        bands: {very_good: 15, good: 25, satisfactory: 40}
+        pass_band: satisfactory
+        band_note: >-
+          Well-configured Noah-MP daytime LE RMSE vs eddy-covariance envelope (Ingwersen 2015 Jarvis
+          scheme 11.3-41 W/m2, Ball-Berry up to 81; Gao 2015 best-config 22, default 34). PRESCRIPTIVE
+          tolerance = the post-closure uncertainty band, max width ~17-21% of net radiation (Ingwersen
+          2015); EC energy-balance non-closure ~10-30% of available energy sets the achievable floor.
+        cites: [ingwersen2015, gao2015_tibet]
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.80, good: 0.60, satisfactory: 0.40}
+        pass_band: satisfactory
+        band_note: "Niu 2020: ET NSE < 0 'unacceptable', > 0.4 usable, improves to 0.81-0.85 with plant hydraulics; Ma 2017 seasonal ET NSE > 0.8 in 15/18 CONUS regions."
+        cites: [niu2020_planthydraulics, ma2017_conus]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: structurally_limited
+        ceiling_reason: >-
+          ET relative bias is dominated by the DYNAMIC-VEGETATION / LAI scheme, not the surface-flux
+          physics: Ma 2017 / Niu 2020 report +22% ET bias with dynamic vegetation collapsing to +4% when
+          LAI is prescribed to a climatology ('the dynamic vegetation module in Noah-MP is problematic').
+          A large ET bias under dynamic vegetation is a documented model-structure/config ceiling, not a
+          KI defect -> route to config change (prescribe LAI) / acquire_data, never fix_ki.
+        cites: [niu2020_planthydraulics, ma2017_conus]
+    validated_when: "Daytime LE RMSE <= 40 W/m2 (within the post-closure uncertainty band ~17-21% of Rn) AND ET NSE >= 0.40 (Niu 2020 usability floor). Relative bias may be large under dynamic vegetation (structural LAI ceiling)."
+    evidence_strength: strong
+    confidence: 0.65
+    notes: >-
+      Ingwersen 2015: 'The root-mean-square error (RMSE) is only 11.3 W m-2 ... nearly unbiased' (best month),
+      model efficiency 78-99%; post-closure uncertainty band max width 110 W/m2 (=21% of net radiation).
+      Gao 2015 best-config LE RMSE 22.1 W/m2, bias -3.1. Ma 2017 regional annual ET RMSE 141->56 mm/yr with
+      NSE 0.33->0.90 once LAI is prescribed. The RMSE band is a well-configured achieved-skill envelope
+      (moderate confidence) anchored to the PUB tolerance; the gate may contextualize but must not loosen it.
+
+  # ===================== SWE / snow water equivalent — point time series (SNOTEL/pillow) ============
+  - canonical_quantity: swe
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: mm
+        bands: {very_good: 40, good: 80, satisfactory: 100}
+        pass_band: satisfactory
+        band_note: >-
+          Point/gridded SWE RMSE tier bands vs pillows/ASO (Sierra 2023 Table 3: best ~32-48 mm, marginal
+          ~62-82 mm, poor >100 mm; Mortimer 2020 best NH product RMSE 33-38 mm). Achieved-skill envelope.
+        cites: [sierra2023_swe, mortimer2020_nhswe]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 8, good: 12, satisfactory: 15}
+        pass_band: satisfactory
+        band_note: >-
+          Peak-SWE percent-bias band: Noah-MP 'accurately simulates peak SWE' at -2% (pre-fire), degrading
+          to -9% post-fire (Kraft 2023), Chen 2014 SNOTEL peak-SWE bias -7% (cited in Central-Asia 2020);
+          Sierra 2023 best products +-8%; Mortimer 2020 acceptable bias envelope +-15 mm.
+        cites: [kraft2023_burned, centralasia2020_swe, sierra2023_swe, mortimer2020_nhswe]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Noah-MP peak-SWE interannual Spearman rho 0.95-0.99 when 'accurate' (Kraft 2023); usable-product Pearson r floor ~0.5 excludes stand-alone passive-microwave (Mortimer 2020)."
+        cites: [kraft2023_burned, mortimer2020_nhswe]
+      - metric: melt_out_timing_error
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Noah-MP melt-out (disappearance-date) bias 4-14 days early is the documented range (Kraft 2023); timing is the key snow-albedo / compaction diagnostic (MFSNO)."
+        cites: [kraft2023_burned, compaction2023]
+    validated_when: "Point SWE RMSE <= 100 mm (well-configured ~30-50 mm) AND |peak-SWE bias| <= 15% (good ~8%). The dag determining_metric (nse) is superseded: the snow literature evaluates SWE by RMSE, peak-SWE bias, correlation and melt-out timing, not NSE."
+    evidence_strength: strong
+    confidence: 0.7
+    notes: >-
+      Six SWE benchmarks in cache. Prescriptive screens found: Abolafia-Rosenzweig 2023 accepts snow-depth
+      simulations only with '<5% median snow-depth RMSE' and evaluates only where observed depth > 30 mm;
+      Mortimer 2020 excludes products with r below ~0.5. Snow-depth ubRMSE ~125-135 mm and +6% depth bias
+      (compaction 2023). Gridded/spatial SWE has large forest/complex-terrain uncertainty -> treat spatial
+      products as cross-validation, not truth.
+
+  # ===================== SOIL MOISTURE / SMOIS — point time series (in-situ probes) =================
+  - canonical_quantity: soil_moisture
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: rmse
+        direction: minimize
+        unit: m3/m3
+        bands: {very_good: 0.04, good: 0.06, satisfactory: 0.09}
+        pass_band: satisfactory
+        band_note: >-
+          Noah-MP in-situ volumetric SM RMSE envelope (Zhuo 2019: 0.060/0.070/0.088/0.092 m3/m3 over four
+          layers, 'lowest RMSE at most soil layers' of the three LSMs; Gao 2015 best-config topsoil RMSE
+          down to 0.035 m3/m3 = 3.5 vol%). Achieved-skill envelope; no stated numeric pass target in the set.
+        cites: [zhuo2019_sm, gao2015_tibet]
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {good: 0.80, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Zhuo 2019 Noah-MP layer correlation 0.809 (surface) / 0.683 / 0.738 / 0.498; surface R = 0.809 best of three LSMs."
+        cites: [zhuo2019_sm]
+    secondary_metrics:
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Topsoil SM daily bias reducible from -11.9 to -0.4 vol% by fixing the rhizosphere/root scheme (Gao 2015); anomaly correlation is often more meaningful than absolute magnitude because probe support volume rarely matches model layer interfaces."
+        cites: [gao2015_tibet]
+    validated_when: "In-situ SM RMSE <= 0.09 m3/m3 (well-configured ~0.04-0.06) AND R >= 0.50 (surface ~0.8). The dag determining_metric (nse) is superseded: the soil-moisture literature reports RMSE, correlation and bias, not NSE, since anomaly skill matters more than absolute magnitude."
+    evidence_strength: moderate
+    confidence: 0.55
+    notes: >-
+      No fetched paper states an explicit numeric pass/fail SMOIS threshold; bands are the Noah-MP achieved
+      benchmark envelope (Zhuo 2019 solid multi-layer benchmark; Gao 2015 corroborates best-config topsoil
+      RMSE ~0.035). Moderate confidence -> gate may contextualize, never loosen. Satellite retrievals sense
+      only the top few cm; compare against the shallowest model layer.
+
+  # ===================== GPP / gross primary productivity — point time series (FLUXNET) =============
+  - canonical_quantity: gpp
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nrmse
+        direction: minimize
+        unit: percent
+        bands: {very_good: 15, good: 20, satisfactory: 30}
+        pass_band: satisfactory
+        band_note: >-
+          Jung et al. 2007: forest-GPP RMSE '~420 gC/m2/yr (~30%) for the three models ... agreement ...
+          acceptable'; ecosystem range 16-25% (best, temperate conifer) to 21-61% (worst, Mediterranean).
+          This is an explicit acceptability convention for land-ecosystem GPP vs eddy-covariance.
+        cites: [jung2007_gpp]
+    secondary_metrics:
+      - metric: nse
+        direction: maximize
+        status: structurally_limited
+        ceiling_reason: >-
+          GPP temporal skill is capped by the DYNAMIC-VEGETATION LAI (light absorption / APAR) and
+          carbon-allocation partitioning, not the photosynthesis physics: Niu 2020 finds GPP/LAI
+          'unacceptable with NSE < 0 over most of southern CONUS basins' with dynamic vegetation, and
+          prescribing LAI collapses the companion ET bias 22% -> 4% ('the dynamic vegetation module in
+          Noah-MP is problematic'); Ma 2017 attributes the +40% GPP overestimate to 'the scheme of carbon
+          allocation to shoot and root'. A low GPP NSE under dynamic vegetation is a documented
+          model-structure ceiling -> acquire_data / config change (prescribe LAI), NOT fix_ki.
+        cites: [niu2020_planthydraulics, ma2017_conus]
+      - metric: pbias
+        direction: zero_centered
+        status: supportive
+        ceiling_reason: "Noah-MP overestimates GPP by ~40% vs FLUXNET-MTE (RMSE 542.5 gC/m2/yr; Ma 2017 / Niu 2020), ~50% in highly vegetated central/eastern CONUS."
+        cites: [ma2017_conus, niu2020_planthydraulics]
+    validated_when: "GPP nRMSE <= 30% of the observed mean (Jung 2007 'acceptable'); temporal NSE is NOT required as a pass gate because it is bounded below by the dynamic-vegetation LAI/allocation ceiling (Niu 2020: NSE<0 'unacceptable' is a data/structure ceiling, not a KI defect). Only meaningful when carbon / dynamic-vegetation physics is active."
+    evidence_strength: strong
+    confidence: 0.6
+    notes: >-
+      Jung 2007 gives the cleanest prescriptive GPP acceptability convention (~30% RMSE). Noah-MP's own
+      FLUXNET-MTE skill is descriptive: +40% bias, RMSE 542.5 gC/m2/yr, annual-cycle NSE < 0.6 in highly
+      vegetated regions. The recurring structural ceiling (prescribed/simulated LAI + carbon partitioning,
+      secondarily dry-biased forcing) is documented across four papers; prescribing LAI is the standard fix.
+      With prescribed (non-prognostic) LAI, GPP echoes the input and this block should be treated as
+      diagnostic only. Luo 2012 benchmarking-framework endpoints (Taylor S=1, NMAE=0, chi2=1) define ideal
+      agreement but assign no numeric GPP pass value.
+
+deferred_paywalled:
+  - ref: "Cuntz et al. 2016 — The impact of standard and hard-coded parameters on the hydrologic fluxes in the Noah-MP LSM (Wiley; would give sensitivity-of-flux thresholds for ET/runoff)"
+    doi: 10.1002/2016jd025097
+    needed_for: [evapotranspiration, runoff]
+  - ref: "Assessment and Reduction of the Physical Parameterization Uncertainty for Noah-MP LSM (Wiley WRR; multi-flux uncertainty bands)"
+    doi: 10.1029/2019wr024814
+    needed_for: [evapotranspiration, runoff, soil_moisture]
+  - ref: "Uncertainty Quantification for the Noah-MP LSM: grassland and sandy soil region (Wiley JGR; SM/flux UQ bands)"
+    doi: 10.1029/2023jd038556
+    needed_for: [soil_moisture, evapotranspiration]

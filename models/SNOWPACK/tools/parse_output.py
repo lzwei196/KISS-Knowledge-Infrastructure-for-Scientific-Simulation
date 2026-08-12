@@ -89,7 +89,7 @@ def validate_inputs(args):
     if not args.variables:
         errors.append("No variables specified (use --variables HS,SWE,...)")
 
-    valid_types = ["met", "pro"]
+    valid_types = ["auto", "met", "pro"]
     if args.file_type not in valid_types:
         errors.append(f"file_type must be one of {valid_types}")
 
@@ -113,29 +113,83 @@ def detect_file_type(filepath):
 def parse_met_file(filepath, variables, nodata):
     """Parse SNOWPACK .met time series output.
 
-    .met files are tab-separated with:
-    - Line 1: Column names
-    - Line 2: Units
-    - Lines 3+: Data
-
-    First column is always the timestamp (ISO 8601 format).
+    SNOWPACK .met format has block headers: [STATION_PARAMETERS], [HEADER], [DATA].
+    Within [HEADER]: comment (#...), column-number row (,,1,2,3,...),
+    column-name row (ID,Date,...), units row.
+    Data rows are comma-delimited starting with field-code 0203.
+    Datetime format: DD.MM.YYYY HH:MM:SS
     """
-    # Read header to get column names
+    columns = None
+    data_rows = []
+
     with open(filepath, "r") as f:
-        header_line = f.readline().strip()
-        units_line = f.readline().strip()
+        in_header = False
+        header_subrow = 0   # tracks position inside [HEADER] block
+        for line in f:
+            line_s = line.rstrip("\n")
+            if line_s.strip() == "[HEADER]":
+                in_header = True
+                header_subrow = 0
+                continue
+            if line_s.strip() == "[DATA]":
+                in_header = False
+                continue
+            if line_s.strip().startswith("["):
+                in_header = False
+                continue
+            if in_header:
+                stripped = line_s.strip()
+                if not stripped:
+                    continue
+                if stripped.startswith("#"):   # run-info comment
+                    continue
+                parts = stripped.split(",")
+                if header_subrow == 0:
+                    # first non-comment row: column-number row (starts with empty/ID)
+                    # skip it — it's ,,1,2,3,...
+                    header_subrow += 1
+                    continue
+                if header_subrow == 1:
+                    # second non-comment, non-blank row: column names
+                    columns = [p.strip() for p in parts]
+                    header_subrow += 1
+                    continue
+                # third row and beyond: units row(s) — skip
+                continue
+            # Data rows start with 0203
+            if line_s.startswith("0203,"):
+                data_rows.append(line_s)
 
-    # Parse column names (tab-separated)
-    columns = re.split(r"\s+", header_line)
-
-    # Read data
-    df = pd.read_csv(filepath, sep=r"\s+", skiprows=2, header=None,
-                     names=columns, na_values=[str(nodata), "nodata"])
-
-    # First column is datetime
-    date_col = columns[0]
-    df[date_col] = pd.to_datetime(df[date_col])
-    df = df.rename(columns={date_col: "datetime"})
+    if columns is None or not data_rows:
+        # Fallback: treat file as simple 2-row-header whitespace-delimited
+        with open(filepath, "r") as f:
+            header_line = f.readline().strip()
+            f.readline()  # units
+        columns = re.split(r"\s+", header_line)
+        df = pd.read_csv(filepath, sep=r"\s+", skiprows=2, header=None,
+                         names=columns, na_values=[str(nodata), "nodata"])
+        date_col = columns[0]
+        df[date_col] = pd.to_datetime(df[date_col])
+        df = df.rename(columns={date_col: "datetime"})
+    else:
+        # Parse comma-delimited data rows
+        from io import StringIO
+        csv_text = "\n".join(data_rows)
+        df = pd.read_csv(StringIO(csv_text), header=None, sep=",",
+                         na_values=[str(nodata), "-999", "-99900"])
+        # Trim columns list if file has more or fewer columns
+        n_cols = df.shape[1]
+        if len(columns) < n_cols:
+            columns = columns + [f"col_{i}" for i in range(len(columns), n_cols)]
+        df.columns = columns[:n_cols]
+        # SNOWPACK date column: "Date" in DD.MM.YYYY HH:MM:SS format
+        date_col = "Date" if "Date" in df.columns else df.columns[1]
+        df[date_col] = pd.to_datetime(df[date_col], format="%d.%m.%Y %H:%M:%S",
+                                      errors="coerce")
+        df = df.rename(columns={date_col: "datetime"})
+        # Drop the record-type field (first col = 0203)
+        if df.columns[0] not in ("datetime",) and "ID" not in df.columns[0]:
+            df = df.drop(columns=df.columns[0])
 
     # Select requested variables
     available = [c for c in df.columns if c != "datetime"]

@@ -1,0 +1,588 @@
+# =============================================================================
+# DSSAT calibration contract — TARGET CASE  OBS:spam2020
+# =============================================================================
+# case_id            : OBS:spam2020
+# obs / gauge id     : spam2020  (SPAM 2020 V2r0 maize yield, IFPRI)
+# target quantity    : yield -> dag output "HWAM (harvested grain yield at maturity, dry)"
+# obs_shape          : regional_aggregate_time_series (aggregate_trend_comparison)
+# determining metric : pbias  (magnitude_accuracy)
+# provenance         : DSSAT_20260630T053443Z, validated pbias = +8.34 %
+#
+# The KI's SKILL.md worked examples show OTHER sites (Bengbu maize/wheat, rice,
+# soybean).  This contract calibrates the SPAM2020 Shandong / North-China-Plain
+# summer-maize belt case ONLY: 42 grid points, 6 lat x 7 lon, step 0.5 deg,
+# lat [35.0, 37.5] x lon [116.0, 119.0], year 2020, CERES-Maize cultivar CN0001
+# "Zhengdan 958", soil IB00000004, planting 2020-06-15, CMFD V2.0 forcing.
+# tools/calib_run.py reproduces the validated coupling exactly: at the DEFAULT
+# split (all 42 cells) and the DEFAULT vector, sim 7001.1429 vs obs 6461.9048
+# kg/ha -> pbias +8.3449 %, i.e. real_case_result.json to the digit.
+#
+# SPLIT SEMANTICS.  The driver's DEFAULT (KDT_CALIB_SPLIT unset / "" / "full") is
+# the WHOLE 42-cell target-case aggregate — the declared case is what any caller
+# gets unless it explicitly asks otherwise.  "calibration" (30 western cells) and
+# "holdout" (12 eastern cells) are the two blocks of the MANDATORY leave-region-out
+# holdout declared under strategy.holdout below, and are only ever produced when the
+# kit requests them by name.  Every eval self-declares __kdt__.split and
+# __kdt__.n_cells_scored next to the DERIVED __kdt__.case_id / __kdt__.scored_obs.
+#
+# Only `magnitude_accuracy` is scorable here.  The dag declares
+# [trend_match, magnitude_accuracy] for this obs_shape, but SPAM 2020 is a
+# SINGLE-YEAR product, so trend_error is undefined and the runner does not emit
+# it — the kit keeps only the families the runner actually reports.  The
+# cross-cell spatial NSE/KGE/r are reported under __kdt__.diagnostics ONLY
+# (spatial_snapshot, explicitly NOT gate-determining for this obs_shape), so the
+# kit can never build an objective on them.
+# =============================================================================
+template_version: "calib-0.1"
+model_id: DSSAT
+
+identity:
+  domain: crop
+  binding: "DSSAT-CSM 4.8.5 (dscsm048) / MZCER048 CERES-Maize"
+  case_id: "OBS:spam2020"
+  obs_id: "spam2020"
+  site: "SPAM 2020 maize — Shandong/NCP summer-maize belt lat(35.0,37.5) lon(116.0,119.0) step 0.5"
+
+targets:
+  - var: "HWAM (harvested grain yield at maturity, dry)"
+    weight: 1.0
+
+# -----------------------------------------------------------------------------
+# INJECTION MODE — runner (MANDATORY here, not a preference)
+# -----------------------------------------------------------------------------
+# dssat_workdir_setup.create_workdir REGENERATES every DSSAT input on each run:
+# it rewrites the FileX, DSSATPRO.v48, DSSBatch.v48 and SOIL.SOL, and REPLACES the
+# symlinked MZCER048.CUL with a fresh copy of the stock file plus the re-merged
+# China cultivar library.  Anything the kit's applicator wrote beforehand would be
+# destroyed.  tools/calib_run.py therefore injects AFTER regeneration, the model's
+# own fixed-width way, and reads every value back out of the artifacts DSSAT
+# actually consumes.  `address` below is DOCUMENTATION of the exact token only.
+injection:
+  mode: runner
+
+# -----------------------------------------------------------------------------
+# SHARED-SPEC ENFORCEMENT (interface_contracts.yaml -> shared_specs/dssat/base)
+# -----------------------------------------------------------------------------
+# Every deck the driver writes or hands to DSSAT is validated against the binding
+# shared spec BEFORE the write (tool_conventions.batch_file_writers.
+# must_validate_widths_pre_write: true):
+#   * field_widths.FILEX.record_length (92) — the *TREATMENTS record must fit 92
+#     columns AND the DSSBatch.v48 @FILEX path field must be exactly 92 wide with
+#     TRTNO/RP/SQ/OP/CO as five I6 fields at columns 93-122 (the Xinjiang A96
+#     regression: a 96-wide field shifts TRTNO by 4 columns);
+#   * field_widths.FILEX.field_layout — the *TREATMENTS field names, order and
+#     column windows, reconciled to within one column against the windows DSSAT's
+#     own PARSE_HEADERS derives from the '@N R O C TNAME... SM' header (the spec's
+#     declared starts are 1 greater than the layout every shipped DSSAT deck uses;
+#     see the calib_run.py docstring).  A 4-column shift still fails closed;
+#   * forbidden_combinations.FILEX.harvs_m_with_harvest_details;
+#   * path_constraints.FILEX (max_chars 95, must_be_relative_to_workdir) — the
+#     FILEX path in DSSBatch.v48 is rewritten to the workdir-relative basename,
+#     re-validated and read back.
+# A missing/unparseable shared spec FAILS THE EVAL CLOSED — the driver never
+# degrades to an unvalidated write.  Commissioning sabotaged each of these on a
+# real generated deck and confirmed every gate raises with no metrics written.
+#
+# -----------------------------------------------------------------------------
+# WHY EVERY PARAMETER IS AN INTEGER COUNT OF A DECK UNIT
+# -----------------------------------------------------------------------------
+# Every DSSAT lever lives in a fixed-width FORTRAN slot: 6 characters in the .CUL
+# (InputModule/IPVAR.for:240, FORMAT (A6,1X,A16,7X,A6,6F6.0)) and 5 characters in
+# the header-delimited .SOL / FileX columns (Utilities/READS.for:PARSE_HEADERS).
+# A continuous float can therefore NEVER round-trip: the deck quantises it, so
+# `applied != requested` at the kit's rel_tol=1e-6 and EVERY eval — including the
+# Morris screen corners — fails closed.  Each parameter is consequently declared as
+# an INTEGER count of that field's own finest representable unit, which writes and
+# reads back bit-exactly.  Commissioning confirmed applied == requested at BOTH
+# bounds of all 14 parameters, and that 26 of the 28 corners move pbias (the two
+# that do not ARE the default value: SRGF_SCL hi and SLPF_MD hi).
+#
+# RANGE PROVENANCE.  The primary source is the model's own shipped documentation:
+# Data/Genotype/MZCER048.CUL carries the CERES-Maize calibration box as its
+# MINIMA (VAR# 999991) and MAXIMA (VAR# 999992) records —
+#   P1 [5, 450] | P2 [0, 2] | P5 [580, 999] | G2 [248, 990] | G3 [5, 16.5] | PHINT [38, 75]
+# — and the 184 shipped cultivars span P1 5-458, P2 0-2, P5 390-1034, G2 248-1314,
+# G3 4.8-16.5, PHINT 36-75.  Data/Genotype/China/MZCER048_China.CUL gives the
+# Huang-Huai-Hai summer-maize sub-range actually used in China (P1 220-300,
+# P2 0.40-0.50, P5 750-850, G2 780-850, G3 6.90-7.50, PHINT 37.5-39.0).  Every
+# range below sits strictly inside the model's box while spanning the published
+# China + global cultivar spread.  Soil ranges come from the profile's own base
+# values in Data (run_test/SOIL.SOL, IB00000004) widened by the pedotransfer
+# uncertainty the KI's own converter uses (Saxton & Rawls), and are bounded so that
+# SLLL < SDUL < SSAT holds in EVERY layer at EVERY box corner.
+#
+# DAG INFLUENCE-EDGE COVERAGE.  Every HIGH/MEDIUM edge in dag.yaml whose source is a
+# CERES-Maize-applicable model PARAMETER is in this pool: P1, G2, G1->G3_CG,
+# P1D/P2O->P2_MD, P5, SDUL, SLLL, SRGF, SLDR, FAMN->FERT_N, SH2O->IC_SH2O.
+# Deliberately excluded, with reasons:
+#   * RAIN / TMAX / CO2 (HIGH/MEDIUM) — forcing, not calibratable model parameters;
+#     the CMFD forcing is the validated coupling and is not a tuning lever.
+#   * VEFF, P1V (CERES-Wheat vernalisation) and P2O, THOT (CERES-Rice) — these
+#     coefficients do not exist in the CERES-Maize MZCER048 cultivar record.  P2_MD
+#     carries the photoperiod-sensitivity role in the maize parameterisation.
+#   * MEEVP/EVAPO (HIGH) — its dag target is ETCM, which has NO obs in this case;
+#     changing the ET method switch would change the validated coupling itself.
+# PHINT_DD and PPOP_CG are residual (non-edge) levers kept for the Morris screen —
+# screenable, never pruned.
+
+parameters:
+
+  # ---------------- CERES-Maize cultivar coefficients (MZCER048.CUL) ----------
+  - name: P1
+    description: >-
+      Thermal time from seedling emergence to the end of the juvenile phase
+      (base 8 degC).  dag influence edge "P1 (juvenile-phase thermal time, CERES
+      cultivar) -> ADAT" and "-> HWAM", both sensitivity_grade HIGH.
+    type: integer
+    units: "degC.day"
+    default: 270
+    range: [150, 400]
+    hard_bounds: [5, 450]           # MZCER048.CUL MINIMA/MAXIMA records
+    transform: identity
+    scope: per-crop
+    zone_key: cultivar              # DSSAT cultivar code CN0001 (Zhengdan 958)
+    tie: null
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "liu2015_ceres_wheat_morris_efast (Liu et al. 2015, doi:10.11975/j.issn.1002-6819.2015.14.020) — dag influence edge, phenology dominated by P1"
+      - "zhang2021_ceres_rice_gsa (Zhang et al. 2021, doi:10.3390/agronomy11122446) — grain yield sensitive to P1"
+      - "DSSAT v4.8 Data/Genotype/MZCER048.CUL MINIMA(999991)/MAXIMA(999992) = [5, 450] degC.day; China HHH summer maize 220-300"
+    address:
+      kind: text_token
+      file: "<eval scratch>/c<NN>/MZCER048.CUL"
+      pattern: "(?m)^CN0001.{30}(.{6})"
+      note: "cols 37-42 of the CN0001 record; runner mode owns the write (both the workdir root and Genotype/ copies are edited and re-read)"
+
+  - name: P2_MD
+    description: >-
+      Photoperiod sensitivity: days of development delay per hour of photoperiod
+      above 12.5 h, carried as an INTEGER count of 0.001 d/h (450 == 0.450 d/h).
+      Analogue of the dag's HIGH-graded CERES photoperiod edges (P1D -> ADAT/HWAM,
+      P2O -> ADAT) in the CERES-Maize parameterisation.
+    type: integer
+    units: "0.001 day per hour of photoperiod"
+    default: 450
+    range: [50, 1500]
+    hard_bounds: [0, 2000]
+    transform: identity
+    scope: per-crop
+    zone_key: cultivar
+    activation: always
+    expected_sensitivity: high
+    confidence: medium
+    cite:
+      - "liu2015_ceres_wheat_morris_efast — P1D among the top phenology drivers"
+      - "chen2025_dssat_wheat_water_n_gsa (Chen et al. 2025, doi:10.1038/s41598-025-95260-y) — P1D dominates yield and biomass"
+      - "DSSAT v4.8 MZCER048.CUL MINIMA/MAXIMA P2 = [0.000, 2.000]; China library 0.30-1.27"
+    address:
+      kind: text_token
+      file: "<eval scratch>/c<NN>/MZCER048.CUL"
+      pattern: "(?m)^CN0001.{36}(.{6})"
+      note: "cols 43-48, written as %6.4f so 0.001 d/h is exact"
+
+  - name: P5
+    description: >-
+      Thermal time from silking to physiological maturity (base 8 degC) — the
+      grain-filling duration.  dag edge "P5 (grain-filling thermal time, CERES
+      cultivar) -> CWAM", sensitivity_grade HIGH; it sets the biomass available
+      for HWAM.
+    type: integer
+    units: "degC.day"
+    default: 800
+    range: [620, 980]
+    hard_bounds: [580, 999]
+    transform: identity
+    scope: per-crop
+    zone_key: cultivar
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "chen2025_dssat_wheat_water_n_gsa — P5 dominates biomass"
+      - "DSSAT v4.8 MZCER048.CUL MINIMA/MAXIMA P5 = [580, 999] degC.day; China HHH 750-850"
+    address:
+      kind: text_token
+      file: "<eval scratch>/c<NN>/MZCER048.CUL"
+      pattern: "(?m)^CN0001.{42}(.{6})"
+
+  - name: G2
+    description: >-
+      Maximum possible number of kernels per plant — the CERES-Maize analogue of the
+      dag's "G2 (kernels per spike) -> HWAM" edge, sensitivity_grade HIGH, and the
+      single most direct yield-magnitude cultivar lever.
+    type: integer
+    units: "kernels per plant"
+    default: 800
+    range: [400, 950]
+    hard_bounds: [248, 990]
+    transform: identity
+    scope: per-crop
+    zone_key: cultivar
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "liu2015_ceres_wheat_morris_efast + chen2025_dssat_wheat_water_n_gsa — G2 dominates grain yield"
+      - "zhang2021_ceres_rice_gsa — G2 among the top yield drivers"
+      - "DSSAT v4.8 MZCER048.CUL MINIMA/MAXIMA G2 = [248, 990]; China library 689-979"
+    address:
+      kind: text_token
+      file: "<eval scratch>/c<NN>/MZCER048.CUL"
+      pattern: "(?m)^CN0001.{48}(.{6})"
+
+  - name: G3_CG
+    description: >-
+      Kernel filling rate during the linear grain-filling stage under optimum
+      conditions, carried as an INTEGER count of 0.01 mg/day (690 == 6.90 mg/day).
+      With G2 it sets grain sink size; the CERES-Maize counterpart of the dag's
+      "G1 (kernel-weight coefficient) -> HWAM" HIGH edge.
+    type: integer
+    units: "0.01 mg per kernel per day"
+    default: 690
+    range: [520, 1600]
+    hard_bounds: [500, 1650]
+    transform: identity
+    scope: per-crop
+    zone_key: cultivar
+    activation: always
+    expected_sensitivity: high
+    confidence: medium
+    cite:
+      - "liu2015_ceres_wheat_morris_efast + chen2025_dssat_wheat_water_n_gsa — G1 (kernel weight) dominates yield"
+      - "zhang2021_ceres_rice_gsa — G3 graded LOW for rice tillering; the CERES-Maize G3 is a different (kernel-filling) coefficient, so it stays in the pool for the Morris screen"
+      - "DSSAT v4.8 MZCER048.CUL MINIMA/MAXIMA G3 = [5.00, 16.50] mg/day; China library 6.90-16.00"
+    address:
+      kind: text_token
+      file: "<eval scratch>/c<NN>/MZCER048.CUL"
+      pattern: "(?m)^CN0001.{54}(.{6})"
+
+  - name: PHINT_DD
+    description: >-
+      Phyllochron interval — thermal time between successive leaf-tip appearances,
+      carried as an INTEGER count of 0.1 degC.day (375 == 37.5 degC.day).  Controls
+      leaf number and canopy expansion, hence LAIX and intercepted radiation.  Not
+      on a dag edge for maize (the dag's PHINT evidence is CERES-Rice); kept as a
+      screenable residual lever, never pruned.
+    type: integer
+    units: "0.1 degC.day"
+    default: 375
+    range: [355, 600]
+    hard_bounds: [340, 750]
+    transform: identity
+    scope: per-crop
+    zone_key: cultivar
+    activation: always
+    expected_sensitivity: medium
+    confidence: low
+    cite:
+      - "zhang2021_ceres_rice_gsa — PHINT among the yield-sensitive CERES coefficients (rice)"
+      - "DSSAT v4.8 MZCER048.CUL MAXIMA PHINT = 75.0 degC.day.  The MINIMA record (38.0) is advisory only — the shipped CN0001 default is 37.5 and the 184 shipped maize cultivars span 36.0-75.0 — so the lower bound follows the cultivar library, not that record; commissioning confirms 35.5 applies exactly with no clamping"
+    address:
+      kind: text_token
+      file: "<eval scratch>/c<NN>/MZCER048.CUL"
+      pattern: "(?m)^CN0001.{60}(.{6})"
+
+  # ---------------- Soil hydraulic / fertility levers (SOIL.SOL) --------------
+  - name: SDUL_OFF
+    description: >-
+      UNIFORM additive offset applied to the drained upper limit (field capacity)
+      of EVERY layer of soil profile IB00000004, as an INTEGER count of
+      0.001 cm3/cm3 (+50 == +0.050).  dag edge "SDUL (drained upper limit, per
+      layer) -> HWAM", sensitivity_grade HIGH — the top soil-water yield lever.
+      Applied as an offset (not a multiplier) so the write lands exactly on the
+      3-decimal .SOL grid and round-trips bit-exactly.
+    type: integer
+    units: "0.001 cm3/cm3"
+    default: 0
+    range: [-30, 60]
+    hard_bounds: [-40, 80]
+    transform: identity
+    scope: per-layer
+    zone_key: soil_layer
+    tie: sdul_uniform               # all 10 layers move together (C4: 1 free dof, not 10)
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "jiang2017_dssat_soilwater_n (Jiang et al. 2017, doi:10.1007/s10705-016-9800-3) — CERES-Maize/Wheat yield highly sensitive to SDUL"
+      - "thorp2020_dssat_et_gsa (Thorp et al. 2020, doi:10.1016/j.compag.2020.105837) — SDUL drives 14/23 agroecosystem metrics"
+      - "range = base IB00000004 DUL 0.165-0.227 cm3/cm3 (DSSAT run_test/SOIL.SOL) +/- the Saxton-Rawls pedotransfer uncertainty the KI's convert_hwsd_to_sol.py uses; bounded so SDUL stays below SSAT (0.450) in every layer"
+    address:
+      kind: text_token
+      file: "<eval scratch>/c<NN>/SOIL.SOL"
+      pattern: "(?ms)^\\*IB00000004\\b.*?^@  SLB.*?\\n.{19}(.{5})"
+      note: "SDUL column window (cols 20-24) of the FIRST layer row; the same offset is applied to all 10 layer rows and read back per layer"
+
+  - name: SLLL_OFF
+    description: >-
+      UNIFORM additive offset applied to the lower limit (wilting point) of EVERY
+      layer of profile IB00000004, as an INTEGER count of 0.001 cm3/cm3.  dag edges
+      "SLLL -> HWAM" (MEDIUM) and "SLLL -> NLCM" (HIGH); it sets plant-available
+      water together with SDUL.
+    type: integer
+    units: "0.001 cm3/cm3"
+    default: 0
+    range: [-30, 30]
+    hard_bounds: [-40, 40]
+    transform: identity
+    scope: per-layer
+    zone_key: soil_layer
+    tie: slll_uniform
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    cite:
+      - "thorp2020_dssat_et_gsa — SLLL sensitivity rises under reduced water supply"
+      - "jiang2017_dssat_soilwater_n — SLLL a top driver of N leaching"
+      - "range = base IB00000004 LL 0.072-0.110 cm3/cm3 +/- Saxton-Rawls uncertainty; bounded with SDUL_OFF so LL < DUL holds in EVERY layer at EVERY corner (worst case layer 120 cm: 0.109 < 0.135)"
+    address:
+      kind: text_token
+      file: "<eval scratch>/c<NN>/SOIL.SOL"
+      pattern: "(?ms)^\\*IB00000004\\b.*?^@  SLB.*?\\n.{13}(.{5})"
+      note: "SLLL column window (cols 14-18) of the first layer row; offset applied to all layers"
+
+  - name: SRGF_SCL
+    description: >-
+      UNIFORM multiplicative scale on the root-growth factor of EVERY layer of
+      profile IB00000004, as an INTEGER count of 0.001 (1000 == x1.000, unchanged).
+      dag edge "SRGF (relative root growth factor, per layer) -> HWAM",
+      sensitivity_grade MEDIUM: it sets how much of each layer's water and N the
+      root system can actually reach.  Written with exact integer arithmetic on the
+      deck's own milli grid, new_milli = (base_milli * SRGF_SCL + 500) // 1000, so
+      every layer lands exactly on the 3-decimal .SOL grid.  Layer 1 of this profile
+      has base SRGF = 1.000, so its written value IS the requested integer and the
+      scale is recovered from the deck INDEPENDENTLY (every other layer is then
+      required to equal the exact scaling of its own base by that recovered value).
+    type: integer
+    units: "0.001 (dimensionless multiplier on the base root-growth profile)"
+    default: 1000
+    range: [300, 1000]
+    hard_bounds: [100, 1000]
+    transform: identity
+    scope: per-layer
+    zone_key: soil_layer
+    tie: srgf_uniform_scale
+    activation: always
+    expected_sensitivity: medium
+    confidence: medium
+    cite:
+      - "thorp2020_dssat_et_gsa — SRGF (per layer) among the MEDIUM-graded drivers of DSSAT yield; the dag carries this edge"
+      - "DSSAT soil-file specification: SRGF is a 0-1 relative factor, so 1.000 (the base profile's top-layer value and the DSSAT ceiling) is the upper bound — the scale can only reduce rooting, never push a layer past 1.000 where the deck would clamp"
+      - "lower bound 0.300 keeps the DEEPEST layer (base 0.018) at 0.005, still strictly positive on the 3-decimal grid; commissioning confirms 300 and 1000 both read back exactly"
+    address:
+      kind: text_token
+      file: "<eval scratch>/c<NN>/SOIL.SOL"
+      pattern: "(?ms)^\\*IB00000004\\b.*?^@  SLB.*?\\n.{31}(.{5})"
+      note: "SRGF column window (cols 32-36) of the first layer row (base 1.000); all 10 layer rows are scaled and read back per layer"
+
+  - name: SLDR_MD
+    description: >-
+      Whole-profile drainage rate (SWCON) of profile IB00000004, as an INTEGER count
+      of 0.001 (400 == 0.400).  dag edge "SLDR (drainage rate / SWCON) -> NLCM",
+      sensitivity_grade HIGH; it controls how fast water above DUL leaves the root
+      zone and therefore both the water and the N supply to the crop.
+    type: integer
+    units: "0.001 (fraction per day)"
+    default: 400
+    range: [200, 850]
+    hard_bounds: [1, 999]
+    transform: identity
+    scope: global
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    cite:
+      - "jiang2017_dssat_soilwater_n + thorp2020_dssat_et_gsa — SLDR a top driver of drainage and N leaching"
+      - "DSSAT soil-file specification: SLDR is a 0-1 fraction; the shipped generic profiles (run_test/SOIL.SOL) span 0.20-0.85, which is the calibration range used here (strictly inside 0-1 so the value never clamps)"
+    address:
+      kind: text_token
+      file: "<eval scratch>/c<NN>/SOIL.SOL"
+      pattern: "(?ms)^\\*IB00000004\\b.*?^@ SCOM.*?\\n.{19}(.{5})"
+      note: "SLDR column window (cols 20-24) of the profile-level row"
+
+  - name: SLPF_MD
+    description: >-
+      Soil fertility factor of profile IB00000004 — the multiplier DSSAT applies to
+      daily photosynthesis to represent un-modelled soil constraints — as an INTEGER
+      count of 0.001 (1000 == 1.000, i.e. no reduction).  Not on a dag influence edge
+      (the dag's soil edges are hydraulic), but it is THE documented DSSAT lever for
+      the error mode of this case: a pure regional yield-MAGNITUDE bias (+8.34 %) that
+      the phenology coefficients can only fix by distorting the growing season.
+      Included per the pool rule that the lever controlling the observed error mode
+      belongs in the pool even when it lives in a different input file.
+    type: integer
+    units: "0.001 (fraction of potential photosynthesis)"
+    default: 1000
+    range: [700, 1000]
+    hard_bounds: [500, 1000]
+    transform: identity
+    scope: global
+    activation: always
+    expected_sensitivity: high
+    confidence: medium
+    cite:
+      - "DSSAT v4.8 soil-file specification / IPSOIL_Inp.for: SLPF is a 0-1 photosynthesis-reduction factor read from the profile-level .SOL record; 1.000 = no reduction is the documented default and hence the upper bound"
+      - "Hoogenboom et al. 2019, doi:10.19103/AS.2019.0061.10 — SLPF is the standard adjustment for regional/gridded DSSAT applications where per-field soil fertility is unknown; values below ~0.7 are not used in practice, which sets the lower bound"
+    address:
+      kind: text_token
+      file: "<eval scratch>/c<NN>/SOIL.SOL"
+      pattern: "(?ms)^\\*IB00000004\\b.*?^@ SCOM.*?\\n.{37}(.{5})"
+      note: "SLPF column window (cols 38-42) of the profile-level row"
+
+  # ---------------- Management / initial-condition levers (FileX) -------------
+  - name: FERT_N
+    description: >-
+      Total inorganic fertiliser N applied, split 40 % at planting and 60 % as a
+      sidedress 30 days later (the KI's documented split).  dag edges
+      "Fertilizer N rate (FAMN) -> HWAM" and "-> NLCM", both sensitivity_grade HIGH.
+      Injected through create_workdir's documented `fert_n` management kwarg and
+      read back as the SUM of the FAMN column of the regenerated FileX.
+    type: integer
+    units: "kg N/ha"
+    default: 200
+    range: [80, 300]
+    hard_bounds: [1, 999]           # 0 removes the *FERTILIZERS block entirely; the
+                                    # FileX FAMN slot is 3 digits, so 999 is the ceiling
+    transform: identity
+    scope: global
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "jiang2017_dssat_soilwater_n — N rate among the top yield and N-leaching drivers in CERES-Maize"
+      - "KI SKILL.md / dssat_workdir_setup.DEFAULT_MANAGEMENT and the validated real case use 200 kg N/ha for NCP summer maize; the 80-300 kg N/ha band is the range actually applied across North-China-Plain summer-maize studies"
+    address:
+      kind: text_token
+      file: "<eval scratch>/c<NN>/<WSTA>2001.MZX"
+      pattern: "(?ms)^\\*FERTILIZERS.*?^@F FDATE.*?\\n.{27}(.{5})"
+      note: "FAMN column window (cols 28-32); FERT_N is the SUM over the planting + sidedress rows"
+
+  - name: IC_SH2O
+    description: >-
+      Initial volumetric soil water at the simulation start date (1 Jan 2020), set
+      uniformly in every *INITIAL CONDITIONS layer, as an INTEGER count of
+      0.001 cm3/cm3 (200 == 0.200).  dag edge "Initial soil water content (SH2O at
+      SDATE) -> HWAM", sensitivity_grade MEDIUM.
+    type: integer
+    units: "0.001 cm3/cm3"
+    default: 200
+    range: [145, 260]
+    hard_bounds: [120, 300]
+    transform: identity
+    scope: per-layer
+    zone_key: soil_layer
+    tie: ic_sh2o_uniform
+    activation: always
+    expected_sensitivity: low
+    confidence: medium
+    cite:
+      - "thorp2020_dssat_et_gsa — initial soil water matters under water-limited supply"
+      - "bounded to stay ABOVE the highest achievable lower limit (base LL max 0.110 + SLLL_OFF max 0.030 = 0.140) and BELOW saturation (SSAT 0.450) for profile IB00000004, so DSSAT's INSOIL never clamps the requested value"
+    address:
+      kind: text_token
+      file: "<eval scratch>/c<NN>/<WSTA>2001.MZX"
+      pattern: "(?ms)^\\*INITIAL CONDITIONS.*?^@C  ICBL.*?\\n.{9}(.{5})"
+      note: "SH2O column window (cols 10-14) of the first IC layer row; applied to all 9 IC layers"
+
+  - name: PPOP_CG
+    description: >-
+      Plant population at planting and at emergence (PPOP = PPOE), as an INTEGER
+      count of 0.01 plants/m2 (720 == 7.20 plants/m2).  Not on a dag influence edge,
+      but planting density is the management lever that sets yield per unit AREA,
+      which is exactly what a SPAM regional-mean yield measures; kept as a
+      screenable residual lever.
+    type: integer
+    units: "0.01 plants/m2"
+    default: 720
+    range: [450, 950]
+    hard_bounds: [100, 1500]
+    transform: identity
+    scope: global
+    activation: always
+    expected_sensitivity: medium
+    confidence: low
+    cite:
+      - "dssat_workdir_setup.DEFAULT_MANAGEMENT['MZ'].ppop = 7.2 plants/m2 (the validated real-case value)"
+      - "North-China-Plain summer maize is planted at 60,000-82,500 plants/ha (6.0-8.25 plants/m2); the 4.5-9.5 plants/m2 range brackets that band for screening"
+    address:
+      kind: text_token
+      file: "<eval scratch>/c<NN>/<WSTA>2001.MZX"
+      pattern: "(?ms)^\\*PLANTING DETAILS.*?^@P PDATE.*?\\n.{15}(.{5})"
+      note: "PPOP column window (cols 16-20); PPOE (cols 22-26) is written and read identically"
+
+# -----------------------------------------------------------------------------
+# Hard feasibility (C5) — checked WITHOUT a model run.
+# All three hold everywhere inside the declared box (min SDUL_OFF - SLLL_OFF is
+# -60; min IC_SH2O - SLLL_OFF is 115; SRGF_SCL <= 1000 by range): they are physics
+# guards that would catch a future range widening before it silently made DSSAT
+# clamp a value.
+# -----------------------------------------------------------------------------
+constraints:
+  # Keep plant-available water positive in every layer: the smallest base
+  # (SDUL - SLLL) in profile IB00000004 is 0.086 cm3/cm3 (layer 120 cm), so the
+  # combined offsets may never close the gap by more than 0.060 cm3/cm3.
+  - "SDUL_OFF - SLLL_OFF >= -60"
+  # Initial soil water must stay at or above the highest achievable lower limit
+  # (base LL max = 0.110 cm3/cm3 = 110 in 0.001 units) so INSOIL never clamps it.
+  - "IC_SH2O >= 110 + SLLL_OFF"
+  # SRGF is a 0-1 relative factor and the base top layer is already 1.000, so the
+  # scale may never exceed unity or the deck would clamp the top layers.
+  - "SRGF_SCL <= 1000"
+
+# -----------------------------------------------------------------------------
+# How ONE candidate is run + scored (NOT a claude agent).
+# ~5.8 s per evaluation for the full 42-cell target case on this host
+# (~4.3 s for the 30-cell calibration split).
+# -----------------------------------------------------------------------------
+runner:
+  kind: subprocess
+  command: ["python3",
+            "/mnt/disk1/Hydrocraft_server/models/DSSAT/knowledge_infrastructure/tools/calib_run.py",
+            "--workdir", "{workdir}", "--out", "{metrics_json}"]
+  metrics_file: "{metrics_json}"
+  timeout: 1800
+  note: >-
+    Runs the model through the KI's OWN tools only — dssat_workdir_setup.create_workdir
+    / run_dssat / parse_summary, tools/s2_weather_prep/convert_cmfd_to_wth.write_wth,
+    ki_tools_common.load_forcing.load_daily_forcing_points,
+    ki_tools_common.crop_obs.get_observed_yield and ki_tools_common.metrics.all_metrics.
+    The CMFD -> .WTH conversion and the SPAM obs lookup are ONE-TIME prepare steps
+    cached under /tmp/dssat_calib_cache (override the directory only with
+    KDT_DSSAT_CALIB_CACHE); they are never redone per evaluation.  Every immutable
+    source (the SPAM obs cache, the shared format spec) is opened read-only.  On any
+    failure the driver writes no metrics and exits non-zero, which the kit scores +inf.
+
+strategy:
+  cost_class: cheap                 # ~5.8 s/eval (42 single-season CERES-Maize runs)
+  default_algorithm: dds            # single objective (pbias) -> DDS
+  max_evaluations: 400
+  staged: true                      # Morris screen -> calibrate few -> escalate
+  staged_start: 4
+  staged_step: 3
+  holdout:
+    kind: regions
+    protocol: leave_region_out
+    grouping_key: "lon_block_0p5deg"
+    generalization_axis: >-
+      Spatial transfer across the maize belt: parameters fitted on the western /
+      inland block must still reproduce the regional-mean yield of the withheld
+      eastern (coastal Shandong) block.  This is the axis any promotion claim for a
+      gridded regional aggregate must make — the run is a single season, so a
+      temporal split is impossible.
+    fraction: 0.2857                # 12 of 42 cells (lon >= 118.5 degE)
+    rationale: >-
+      SPAM 2020 is a single-year product, so blocked-temporal holdout is undefined.
+      The obs is a regional aggregate over a 0.5-degree grid, so the honest
+      generalization axis is SPACE.  A contiguous longitudinal block (lon >= 118.5)
+      is withheld rather than a random cell sample, because neighbouring cells share
+      weather and soil and a random split would leak.  The driver only produces a
+      split when the kit ASKS for one by name; its default scores the whole 42-cell
+      target case.  Commissioning confirms the splits are materially different
+      (default vector: pbias +8.34 % over all 42 cells, +3.25 % on the calibration
+      block, +22.96 % on the holdout block), so the kit's split-awareness probe is
+      conclusive rather than inconclusive.
+    cite:
+      - "Klemes 1986 differential split-sample principle, applied on the spatial axis (leave-region-out) because the obs has no temporal axis"
+      - "dag outputs.HWAM.observability.regional_aggregate_time_series — the scored obs_shape"

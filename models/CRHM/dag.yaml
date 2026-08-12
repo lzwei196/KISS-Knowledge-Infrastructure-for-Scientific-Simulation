@@ -1,0 +1,429 @@
+template_version: "3.5"
+
+identity:
+  model_id: "CRHM"
+  scientific_reference_version: "Cold Regions Hydrological Modelling platform — Pomeroy et al. (2007, Hydrol. Process. 21:2650-2667, doi:10.1002/hyp.6787)"
+  implementation:
+    id: "crhmcode"
+    version: "1.3.5 (released 2024-05-30)"
+    provenance: "C++; Centre for Hydrology / University of Saskatchewan CRHMcode CLI build, GPL-3.0, source at github.com/CentreForHydrology/CRHM."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "cpp"
+  license: "GPL-3.0"
+  repo_url: "https://github.com/CentreForHydrology/CRHM"
+
+boundary:
+  scope_in:
+    - "Snow accumulation, blowing-snow redistribution and sublimation in HRUs"
+    - "Canopy interception and sublimation of rain and snow"
+    - "Energy-balance and temperature-index snowmelt with slope/aspect radiation correction"
+    - "Frozen and unfrozen soil infiltration"
+    - "Two-layer soil water balance with depression storage and groundwater store"
+    - "Actual evapotranspiration (Granger-Gray, Priestley-Taylor, Penman-Monteith, Shuttleworth-Wallace)"
+    - "Wetland fill-and-spill and dynamic contributing area"
+    - "HRU-to-HRU lag-and-route, Muskingum or Richards-based streamflow routing"
+    - "Glacier melt and freezing/thawing front dynamics (permafrost hydrology)"
+  scope_out:
+    - "Regular-grid distributed routing (HRU-based, not grid-based)"
+    - "Flood inundation modelling (delegated to coupled models such as CaMa-Flood)"
+    - "Crop growth physiology (only optional Grow_Crop submodule for canopy height)"
+    - "Internal automatic calibration against streamflow observations (CRHM is a self-diagnostic platform, not a calibration engine)"
+  spatial: "distributed-stream"
+  temporal: "sub-hourly"
+  closure: "mass-balance"
+  notes: "Closure is mass-balance for snow water, soil moisture, surface water, groundwater and routed streamflow within each HRU and across HRU linkages. Energy-balance closure is enforced inside the snow modules (SnobalCRHM, ebsm) but is not extended to a fully closed surface energy budget for the whole HRU. Hourly forcing is preferred; daily timesteps are supported but down-sample diurnal cycles. A small (~4-5%) un-closable residual in decadal runs is a known artefact of Netroute lag-storage stores (hruDelay, ssrDelay, runDelay, gwDelay, Kstorage/Lag) which lack declvar outputs."
+
+inputs:
+  forcing:
+    - {category: "atmospheric", name: "air_temperature (t)", unit: "degC", source_kind: "forcing", model_input_format: "column in .obs file at hourly or daily timestep", notes: "Lapsed from obs_elev to hru_elev by the obs module using lapse_rate; physical-bounds check [-80, 60] C."}
+    - {category: "atmospheric", name: "relative_humidity (rh)", unit: "%", source_kind: "forcing", model_input_format: "column in .obs file", notes: "Strictly 0-100 %, NOT 0-1; specific humidity in kg/kg interpreted as RH silently zeroes ET/sublimation."}
+    - {category: "atmospheric", name: "wind_speed (u)", unit: "m/s", source_kind: "forcing", model_input_format: "column in .obs file", notes: "Topographic amplification optional via walmsley_wind module (A, B, L coefficients)."}
+    - {category: "atmospheric", name: "precipitation (p)", unit: "mm per timestep", source_kind: "forcing", model_input_format: "column in .obs file; canonical variable name 'p' (older docs use 'ppt')", notes: "mm per CRHM timestep, NOT mm/day; snow/rain partitioned in the obs module using tmax_allrain / tmax_allsnow thresholds or the Harder (1995) routine."}
+    - {category: "atmospheric", name: "incoming_shortwave (Qsi)", unit: "W/m^2", source_kind: "forcing", model_input_format: "column in .obs file", notes: "Slope/aspect corrected by Slope_Qsi when configured; Annan module substitutes from temperature when Qsi unavailable."}
+    - {category: "atmospheric", name: "incoming_longwave (Qli)", unit: "W/m^2", source_kind: "forcing", model_input_format: "column in .obs file (optional)"}
+    - {category: "atmospheric", name: "atmospheric_pressure (press)", unit: "kPa", source_kind: "forcing", model_input_format: "column in .obs file (optional)"}
+  parameters:
+    - {category: "HRU_geometry", name: "hru_area, hru_elev, hru_GSL (slope), hru_ASL (aspect), hru_lat", unit: "km^2 / m / deg / deg / deg", source_kind: "calibrated", model_input_format: ".prj Parameters section, one value per HRU"}
+    - {category: "soil_hydraulics", name: "soil_moist_max, soil_rechr_max, gw_max, Sdmax, soil_gw_K, gw_K", unit: "mm / mm/d", source_kind: "calibrated", model_input_format: ".prj Parameters section per HRU"}
+    - {category: "soil_hydraulics", name: "soil_type (USDA texture class 0-12)", unit: "categorical", source_kind: "dataset_lookup", model_input_format: ".prj Parameters; Ksat derived internally from hardcoded soilproperties[][] table in GlobalDll.h"}
+    - {category: "vegetation", name: "Ht (canopy height), LAI, fetch distance, canopy flag, evap_type", unit: "m / m^2/m^2 / m / categorical", source_kind: "calibrated", model_input_format: ".prj Parameters per HRU"}
+    - {category: "snow_module", name: "Albedo_bare, Albedo_snow, max_z_s_0, T_g, z_u", unit: "fraction / m / degC / m", source_kind: "calibrated", model_input_format: ".prj Parameters; SnobalCRHM / albedo modules"}
+    - {category: "PBSM", name: "fetch, distrib, N_S, Walmsley_Ht (A, B, L)", unit: "m / fraction / dimensionless / m", source_kind: "calibrated", model_input_format: ".prj Parameters per HRU"}
+    - {category: "routing", name: "Kstorage, Lag, gwKstorage, gwLag, order, whereto, gwwhereto, runK, ssrK", unit: "d / d / dimensionless", source_kind: "calibrated", model_input_format: ".prj Parameters per HRU; Netroute / Netroute_M / REWroute"}
+    - {category: "physical_constants", name: "Cs, Cp, Rgas, Tm, Ls, Lv, Lf, kappa, sbc, emiss, emiss_c, em", unit: "various (J/m^3/K, J/kg/K, K, J/kg, W/m^2/K^4, dimensionless)", source_kind: "default", model_input_format: "hardcoded in src/core/CRHM_constants.h", notes: "PBSM and SnobalCRHM keep separate copies of several of these (FREEZE=273.15 vs 273.16; VON_KARMAN=0.4 vs 0.35; rho_air=1.23 vs 1.22) — module-internal inconsistency."}
+  initial_conditions:
+    - {category: "snowpack", name: "SWE_init", unit: "mm", source_kind: "user_provided", model_input_format: ".prj Initial_State section (optional)"}
+    - {category: "soil_water", name: "soil_moist, soil_rechr, gw, Sd at t=0", unit: "mm", source_kind: "user_provided", model_input_format: ".prj Initial_State section per HRU"}
+    - {category: "frozen_soil", name: "fallstat (autumn soil moisture for frozen-soil infiltration)", unit: "% saturation", source_kind: "user_provided", model_input_format: ".prj Parameters / Initial_State"}
+    - {category: "canopy", name: "SI_Lo (initial canopy interception load)", unit: "mm SWE-equivalent", source_kind: "user_provided", model_input_format: ".prj Initial_State (optional; defaults to zero)"}
+    - {category: "groundwater", name: "gw_init", unit: "mm", source_kind: "user_provided", model_input_format: ".prj Parameters per HRU"}
+  boundary_conditions:
+    - {category: "module_chain", name: "Modules section selecting the process chain (e.g., Prairie chain basin>global>obs>PBSM>PrairieInfil>Soil>Netroute)", unit: "ordered list", source_kind: "user_provided", model_input_format: ".prj Modules section, flat format ('basin CRHM 02/24/12')", notes: "Chain order must be radiation > canopy > snow > infiltration > soil > routing; consumer modules (declgetvar) must follow producer modules (declvar) or initialization fails."}
+    - {category: "module_choice", name: "snowmelt method (SnobalCRHM | ebsm | qmelt | Essery)", unit: "categorical", source_kind: "user_provided", model_input_format: ".prj Modules entry"}
+    - {category: "module_choice", name: "infiltration method (GreenAmpt | PrairieInfil | crack | Greencrack)", unit: "categorical", source_kind: "user_provided", model_input_format: ".prj Modules entry"}
+    - {category: "module_choice", name: "ET method via evap_type (Granger=0 land | Priestley-Taylor=1 water | Penman-Monteith | Shuttleworth-Wallace)", unit: "categorical", source_kind: "user_provided", model_input_format: ".prj Parameters evap_type per HRU"}
+    - {category: "module_choice", name: "routing method (Netroute | Netroute_D | Netroute_M | REWroute)", unit: "categorical", source_kind: "user_provided", model_input_format: ".prj Modules entry"}
+    - {category: "forcing_adjustment", name: "lapse_rate, precip_elev_adj, catchadjust, ClimChng_t, ClimChng_precip", unit: "degC/m / fraction / fraction / degC / fraction", source_kind: "user_provided", model_input_format: ".prj Parameters / obs module"}
+    - {category: "simulation_window", name: "Dates (start, end), Summary_period", unit: "date", source_kind: "user_provided", model_input_format: ".prj Dates section"}
+    - {category: "output_selection", name: "Display_Variable (which declvar variables to write)", unit: "list", source_kind: "user_provided", model_input_format: ".prj Display_Variable section (module-prefixed: 'Netroute basinflow 1')"}
+
+processes:
+  modules:
+    - {name: "basin", role: "driver", brief: "Required first module — declares basin geometry (basin_area, hru_area, hru_elev) used by all downstream modules."}
+    - {name: "global", role: "driver", brief: "Required second module — declares radiation geometry and Time_Offset; consumed by calcsun and radiation modules."}
+    - {name: "obs", role: "driver", brief: "Required third module — reads .obs forcing and distributes T, RH, ea, u, p, Qsi to HRUs with lapse_rate, precip_elev_adj, catchadjust and ClimChng multipliers; partitions snow/rain via thresholds or Harder (1995) routine."}
+    - {name: "calcsun", role: "process_solver", brief: "Computes solar geometry, theoretical clear-sky shortwave (Qdfo, Qdro, SunMax) and actual sunshine hours (hru_SunAct) from hru_lat."}
+    - {name: "Slope_Qsi", role: "process_solver", applicability: "required when basin mean slope > 10 deg or relief > 500 m", brief: "Slope/aspect correction of incoming shortwave using hru_GSL and hru_ASL."}
+    - {name: "Annan", role: "optional_module", brief: "Estimates shortwave from temperature when no direct Qsi observation is available."}
+    - {name: "walmsley_wind", role: "process_solver", brief: "Topographic wind amplification (Walmsley et al. 1989, coefficients A, B, L); feeds blowing-snow and energy-balance snow modules."}
+    - {name: "intcp", role: "process_solver", applicability: "forest HRUs (simple)", brief: "Simple canopy interception store SI_Lo; produces net_rain, net_snow, net_p."}
+    - {name: "CRHMCanopy", role: "process_solver", applicability: "forest HRUs (full canopy physics)", brief: "Forest canopy interception plus full sublimation physics (30-50% of snowfall in boreal forest)."}
+    - {name: "CRHMCanopyClearing", role: "optional_module", applicability: "mixed forest plus adjacent clearing HRUs", brief: "Canopy plus adjacent-clearing variant of CRHMCanopy."}
+    - {name: "Needle", role: "optional_module", applicability: "boreal needle-leaf forest", brief: "Needle-leaf forest sublimation, separate from canopy interception."}
+    - {name: "albedo", role: "process_solver", brief: "Time-varying snow surface albedo with decay (Albedo_bare, Albedo_snow); tracks meltflag, winter, newsnowcnt."}
+    - {name: "netall", role: "process_solver", brief: "Net all-wave radiation budget from Qsi, Qli, albedo; produces Rn and netD / RnD."}
+    - {name: "PBSM", role: "process_solver", applicability: "wind-exposed HRUs (prairie, tundra, alpine above treeline)", brief: "Prairie Blowing Snow Model (Pomeroy & Li 1999) — wind-driven transport (Drift) and sublimation (Subl) of SWE between HRUs; owns SWE state."}
+    - {name: "SnobalCRHM", role: "process_solver", applicability: "complex radiation on slopes or where full point energy balance is required", brief: "Two-layer point snow energy-balance model with explicit temperature, density and water-saturation state; alternative to ebsm / qmelt."}
+    - {name: "ebsm", role: "process_solver", applicability: "simpler energy-balance melt (mountain or general)", brief: "Energy-balance snowmelt (tfactor, nfactor); mutates SWE owned by PBSM via melt routine; outputs Qmelt, snowmeltD."}
+    - {name: "qmelt", role: "process_solver", applicability: "temperature-index melt", brief: "Empirical degree-day style melt energy partition (Qm snowmelt, Qg ground heat) using TIa0Mn/TIa1Mn/TIs0Mn/TIs1Mn coefficients."}
+    - {name: "GreenAmpt", role: "process_solver", applicability: "non-prairie or unfrozen soils", brief: "Standard Green-Ampt infiltration; soil_type 0-12 USDA classes with Ksat from hardcoded soilproperties table."}
+    - {name: "PrairieInfil", role: "process_solver", applicability: "cracking clay prairie soils", brief: "Gray's frozen-soil infiltration parametric scheme using fallstat and Major."}
+    - {name: "crack", role: "process_solver", applicability: "frozen-soil infiltration during melt", brief: "Crack-flow / frozen-soil infiltration during melt events (fallstat, infDays, Major)."}
+    - {name: "Greencrack", role: "optional_module", brief: "Variant of crack / GreenAmpt for crack-flow infiltration."}
+    - {name: "evap", role: "process_solver", brief: "Actual evapotranspiration; method selected by evap_type (Granger 0 = land, Priestley-Taylor 1 = water, Penman-Monteith family, Shuttleworth-Wallace); reads Rn and writes hru_actet."}
+    - {name: "Soil", role: "integrator", brief: "Soil column water balance with five storage states (soil_moist, soil_rechr, gw, Sd, soil_gw_D); handles infiltration partitioning, runoff generation, sub-surface and groundwater fluxes."}
+    - {name: "SoilX", role: "optional_module", applicability: "extended soil parameterisation", brief: "Variant of Soil with extended state handling."}
+    - {name: "SoilDS", role: "optional_module", applicability: "depression-storage emphasis", brief: "Variant of Soil with explicit depression-storage handling."}
+    - {name: "Netroute", role: "allocator", brief: "HRU-to-HRU surface, sub-surface, runoff and groundwater routing via Clark linear reservoirs (Kstorage, Lag, gwKstorage, gwLag); writes back into Sd, soil_moist, soil_rechr, gw within timestep; produces basinflow."}
+    - {name: "Netroute_D", role: "optional_module", brief: "Daily-timestep Netroute variant."}
+    - {name: "Netroute_M", role: "optional_module", brief: "Macro / multi-domain Netroute variant."}
+    - {name: "REWroute", role: "optional_module", applicability: "arctic wetland-dominated basins", brief: "Representative Elementary Watershed routing alternative to Netroute."}
+    - {name: "Grow_Crop", role: "optional_module", applicability: "agricultural HRUs", brief: "Seasonal crop canopy-height evolution."}
+    - {name: "FlowInSnow", role: "optional_module", applicability: "glacierised basins", brief: "Meltwater flow through snowpack."}
+    - {name: "Wetlands", role: "optional_module", applicability: "prairie pothole / wetland-dominated HRUs", brief: "Wetland fill-and-spill dynamics with open-water evaporation."}
+    - {name: "GlacierMelt", role: "optional_module", applicability: "glaciated HRUs", brief: "Energy-balance melt for ice / firn / snow with debris-cover options."}
+    - {name: "FreezingThawingFront", role: "optional_module", applicability: "permafrost / frozen-ground HRUs", brief: "Stefan-equation-based freezing/thawing front tracking."}
+  internal_edges:
+    - {from: "basin", to: "global", kind: "invokes", brief: "Basin geometry (basin_area, hru_area, hru_elev) initialised first; global radiation geometry and Time_Offset run after basin."}
+    - {from: "basin", to: "Soil", kind: "consumes_input", brief: "hru_area / basin_area weights used by ClassBasin-style aggregation downstream of Soil/Netroute."}
+    - {from: "Inputs", to: "obs", kind: "consumes_input", brief: "obs module reads .obs forcing rows (T, RH, ea, u, p, Qsi, Qli, press) at every timestep."}
+    - {from: "obs", to: "Climate", kind: "writes_state", brief: "Distributes hru_t, hru_rh, hru_ea, hru_u, hru_p, hru_rain, hru_snow to each HRU via lapse and adjustments."}
+    - {from: "global", to: "calcsun", kind: "invokes", brief: "Global radiation geometry / Time_Offset drives solar-angle computation."}
+    - {from: "calcsun", to: "Slope_Qsi", kind: "invokes", brief: "Solar angles fed to slope/aspect shortwave correction."}
+    - {from: "obs", to: "Slope_Qsi", kind: "consumes_input", brief: "Slope_Qsi corrects hru_Qsi using hru_GSL and hru_ASL."}
+    - {from: "Slope_Qsi", to: "netall", kind: "invokes", brief: "Slope-corrected shortwave fed to net all-wave radiation budget."}
+    - {from: "albedo", to: "netall", kind: "reads_state", brief: "Net shortwave radiation uses current snow albedo."}
+    - {from: "netall", to: "evap", kind: "invokes", brief: "Net radiation Rn drives Granger / Priestley-Taylor / Penman-Monteith ET."}
+    - {from: "netall", to: "SnobalCRHM", kind: "invokes", brief: "Net radiation drives Snobal energy-balance snowmelt."}
+    - {from: "netall", to: "ebsm", kind: "invokes", brief: "Net radiation drives ebsm energy-balance snowmelt."}
+    - {from: "walmsley_wind", to: "PBSM", kind: "invokes", brief: "Topographically amplified wind speed drives blowing-snow transport."}
+    - {from: "walmsley_wind", to: "SnobalCRHM", kind: "invokes", brief: "Amplified wind speed drives turbulent fluxes in Snobal energy balance."}
+    - {from: "obs", to: "intcp", kind: "invokes", brief: "hru_rain and hru_snow consumed by canopy interception."}
+    - {from: "obs", to: "CRHMCanopy", kind: "invokes", brief: "hru_rain and hru_snow consumed by full canopy interception/sublimation physics."}
+    - {from: "obs", to: "qmelt", kind: "invokes", brief: "Air temperature drives degree-day style melt energy partition (TIa0Mn/TIa1Mn/TIs0Mn/TIs1Mn)."}
+    - {from: "intcp", to: "PBSM", kind: "writes_state", brief: "Throughfall net_snow delivered to blowing-snow module."}
+    - {from: "CRHMCanopy", to: "SnobalCRHM", kind: "writes_state", brief: "Throughfall net_snow delivered to point energy-balance snowpack."}
+    - {from: "PBSM", to: "SWE", kind: "writes_state", brief: "PBSM owns SWE: accumulates net_snow, subtracts Drift and Subl losses."}
+    - {from: "ebsm", to: "SWE", kind: "writes_state", brief: "Non-const back-write — ebsm decrements SWE owned by PBSM via energy-balance melt."}
+    - {from: "SnobalCRHM", to: "SWE", kind: "writes_state", brief: "SnobalCRHM updates SWE via two-layer energy-balance snowpack."}
+    - {from: "qmelt", to: "SWE", kind: "writes_state", brief: "Temperature-index melt decrements SWE (alternative to ebsm/SnobalCRHM)."}
+    - {from: "qmelt", to: "GreenAmpt", kind: "produces_output", brief: "Temperature-index melt water becomes infiltration input (mirrors ebsm->GreenAmpt path)."}
+    - {from: "albedo", to: "Albedo", kind: "writes_state", brief: "Snow albedo decay with age and newsnow events; meltflag and winter state updated."}
+    - {from: "ebsm", to: "GreenAmpt", kind: "produces_output", brief: "Melt water (snowmeltD, Qmelt) becomes infiltration input."}
+    - {from: "SnobalCRHM", to: "PrairieInfil", kind: "produces_output", brief: "Melt water from energy-balance snowpack feeds frozen-soil infiltration."}
+    - {from: "GreenAmpt", to: "Soil", kind: "writes_state", brief: "Infiltrated water (infil_act) updates soil_rechr and soil_moist."}
+    - {from: "PrairieInfil", to: "Soil", kind: "writes_state", brief: "Frozen-soil infiltration partition feeds Soil storage."}
+    - {from: "crack", to: "Soil", kind: "writes_state", brief: "Crack-flow infiltration partition feeds Soil storage."}
+    - {from: "Soil", to: "evap", kind: "reads_state", brief: "Actual ET draws from soil_moist and soil_rechr (energy-limited demand)."}
+    - {from: "evap", to: "Soil", kind: "writes_state", brief: "hru_actet removed from soil column storage."}
+    - {from: "Soil", to: "soil_moist", kind: "writes_state", brief: "Updates soil column reservoirs each timestep (soil_moist_max, soil_rechr_max)."}
+    - {from: "Soil", to: "gw", kind: "writes_state", brief: "Groundwater reservoir filling and draining (gw_K, gw_max)."}
+    - {from: "Soil", to: "Sd", kind: "writes_state", brief: "Depression storage updated; excess over Sdmax becomes surface runoff."}
+    - {from: "Soil", to: "Netroute", kind: "invokes", brief: "Per-HRU runoff, sub-surface and groundwater fluxes fed to routing."}
+    - {from: "Netroute", to: "Sd", kind: "writes_state", brief: "Reverse-direction back-write — Netroute redirect tops up Sd in downstream HRU within timestep (undocumented coupling)."}
+    - {from: "Netroute", to: "soil_moist", kind: "writes_state", brief: "Routing redirect tops up downstream soil_moist (undocumented coupling)."}
+    - {from: "Netroute", to: "Outputs", kind: "produces_output", brief: "basinflow, basinflow_s, cumbasinflow, basingw written to output file."}
+    - {from: "Wetlands", to: "Netroute", kind: "produces_output", brief: "Wetland fill-and-spill discharge enters routing (contributing area dynamics)."}
+    - {from: "GlacierMelt", to: "Netroute", kind: "produces_output", brief: "Glacier melt water enters routing on glaciated HRUs."}
+    - {from: "FreezingThawingFront", to: "Soil", kind: "writes_state", brief: "Frozen-front depth modulates Soil column hydraulics in permafrost HRUs."}
+
+states:
+  variables:
+    - {name: "SWE", unit: "mm", role: "prognostic"}
+    - {name: "Albedo", unit: "dimensionless", role: "prognostic"}
+    - {name: "SnowAge", unit: "d", role: "prognostic"}
+    - {name: "DrySnow", unit: "fraction", role: "diagnostic"}
+    - {name: "snowdepth", unit: "m", role: "diagnostic"}
+    - {name: "SI_Lo", unit: "mm SWE-equivalent", role: "prognostic"}
+    - {name: "soil_moist", unit: "mm", role: "prognostic"}
+    - {name: "soil_rechr", unit: "mm", role: "prognostic"}
+    - {name: "gw", unit: "mm", role: "prognostic"}
+    - {name: "Sd", unit: "mm", role: "prognostic"}
+    - {name: "soil_gw", unit: "mm/int", role: "diagnostic"}
+    - {name: "infil_act", unit: "mm/int", role: "diagnostic"}
+    - {name: "cum_infil_act", unit: "mm", role: "accumulator"}
+    - {name: "hru_actet", unit: "mm/int", role: "diagnostic"}
+    - {name: "hru_cum_actet", unit: "mm", role: "accumulator"}
+    - {name: "cumSubl", unit: "mm", role: "accumulator"}
+    - {name: "cumDrift", unit: "mm", role: "accumulator"}
+    - {name: "cumsnowmelt", unit: "mm", role: "accumulator"}
+    - {name: "cumhru_rain", unit: "mm", role: "accumulator"}
+    - {name: "cumhru_snow", unit: "mm", role: "accumulator"}
+    - {name: "hruDelay", unit: "mm", role: "prognostic", notes: "In-transit Clark linear-reservoir storage compartment (no declvar output; one source of the ~4-5% decadal residual called out in safety.validation_limits)."}
+    - {name: "ssrDelay", unit: "mm", role: "prognostic", notes: "In-transit Clark linear-reservoir storage compartment (no declvar output; contributes to the ~4-5% decadal residual called out in safety.validation_limits)."}
+    - {name: "runDelay", unit: "mm", role: "prognostic", notes: "In-transit Clark linear-reservoir storage compartment (no declvar output; contributes to the ~4-5% decadal residual called out in safety.validation_limits)."}
+    - {name: "gwDelay", unit: "mm", role: "prognostic", notes: "In-transit Clark linear-reservoir storage compartment (no declvar output; contributes to the ~4-5% decadal residual called out in safety.validation_limits)."}
+    - {name: "Kstorage", unit: "mm", role: "prognostic", notes: "In-transit Clark linear-reservoir storage compartment (no declvar output; contributes to the ~4-5% decadal residual called out in safety.validation_limits)."}
+    - {name: "gwKstorage", unit: "mm", role: "prognostic", notes: "In-transit Clark linear-reservoir groundwater storage compartment (no declvar output; contributes to the ~4-5% decadal residual called out in safety.validation_limits)."}
+    - {name: "basinflow", unit: "m^3/int", role: "diagnostic"}
+    - {name: "cumbasinflow", unit: "m^3", role: "accumulator"}
+    - {name: "basingw", unit: "m^3/int", role: "diagnostic"}
+    - {name: "freezing_front_depth", unit: "m", role: "prognostic"}
+    - {name: "glacier_store", unit: "mm w.e.", role: "prognostic"}
+  provenance: "populated"
+
+outputs:
+  - var: "SWE"
+    validation_rank: 4
+    unit: "mm"
+    description: "Snow water equivalent per HRU; primary cold-region state variable, should peak late winter/early spring and reach zero in summer for non-glaciated basins."
+    emitted_in: "Display_Variable output file (Output.txt / .csv) when listed in .prj Display_Variable section"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Compare at the HRU containing the snow pillow / snow course; account for HRU-vs-point spatial mismatch in canopy and wind exposure."]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Snow-course / snow-survey peak-SWE on a single date; HRU-vs-point spatial mismatch (canopy, wind exposure) and date selection (use peak-SWE DOY rather than fixed calendar date) both bias the comparison."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["magnitude_accuracy", "spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Snow-cover or SWE maps must be re-aggregated to HRU polygons; CRHM does not produce gridded SWE natively."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match", "spatial_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Same HRU-to-grid aggregation caveat; align timestep before comparison."]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Basin-mean SWE products (e.g., SNODAS, passive-microwave swaths) must be re-aggregated to the basin boundary; shallow-snow and dense-forest SWE retrievals carry known retrieval bias that should be acknowledged before scoring magnitude."]
+      detrending_options: ["none"]
+  - var: "basinflow_s"
+    validation_rank: 1
+    unit: "m^3/s"
+    description: "Watershed outlet discharge at simulation timestep (m^3/s); aggregates surface, sub-surface and groundwater contributions through Netroute."
+    emitted_in: "Display_Variable output file from Netroute module"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Spring snowmelt peak timing and recession shape are the diagnostic targets; gwLag and Netroute Kstorage govern recession but Netroute lag-stores produce a structural ~4-5% un-closable storage residual on decadal runs."]
+      detrending_options: ["none"]
+  - var: "basinflow"
+    validation_rank: 2
+    unit: "m^3/int"
+    description: "Watershed outlet discharge per simulation interval; divide by 86400 for daily-timestep m^3/s; includes basingw."
+    emitted_in: "Display_Variable output file from Netroute module"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Resample to daily before pairing with daily gauge observations."]
+      detrending_options: ["none"]
+  - var: "hru_actet"
+    validation_rank: 3
+    unit: "mm/int"
+    description: "Actual evapotranspiration per HRU per timestep (Granger / Priestley-Taylor / Penman-Monteith / Shuttleworth-Wallace depending on evap_type)."
+    emitted_in: "Display_Variable output file from evap module"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Match HRU to footprint of eddy-covariance tower; aggregate sub-daily ET to flux observation timestep."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["magnitude_accuracy", "spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Re-aggregate gridded ET products to HRU polygons before comparison."]
+      detrending_options: ["none"]
+  - var: "Subl"
+    validation_rank: 5
+    unit: "mm/int"
+    description: "Blowing-snow and canopy sublimation per timestep; PBSM contributes 15-40% of snowfall in prairie, CRHMCanopy 30-50% in boreal forest."
+    emitted_in: "Display_Variable output file from PBSM / CRHMCanopy modules"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Direct sublimation observations are rare; commonly inferred from energy-balance closure at a flux tower."]
+      detrending_options: ["none"]
+  - var: "soil_moist"
+    validation_rank: 6
+    unit: "mm"
+    description: "Total soil moisture storage state per HRU (declstatvar)."
+    emitted_in: "Display_Variable output file from Soil module"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["In-situ probes report volumetric water content; convert via soil depth and porosity before comparison."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Satellite soil moisture products (SMAP, ASCAT) sense only top few cm; CRHM soil_moist is column-integrated."]
+      detrending_options: ["none"]
+  - var: "snowmeltD"
+    validation_rank: 7
+    unit: "mm/d"
+    description: "Daily snowmelt depth from ebsm or SnobalCRHM energy-balance solver."
+    emitted_in: "Display_Variable output file from ebsm / SnobalCRHM"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["timing_accuracy", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Snowmelt timing (DOY of peak) is the diagnostic; magnitude requires accurate forcing and snow albedo."]
+      detrending_options: ["none"]
+  - var: "infil_act"
+    validation_rank: 8
+    unit: "mm/int"
+    description: "Actual infiltration into soil (GreenAmpt, PrairieInfil, or crack); partitioned from melt and net rain."
+    emitted_in: "Display_Variable output file from Soil / infiltration module"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Direct infiltration measurement is rare; usually inferred from soil moisture change plus surface runoff."]
+      detrending_options: ["none"]
+
+influence:
+  _caveat: "CRHM sensitivity literature is dominated by scenario/perturbation experiments (Pomeroy 2007/2012, Fang 2007/2010) rather than formal global SA (Sobol/Morris/EFAST); only He et al. 2023 reports formal elasticity/TES indices, so several wind/PBSM, depression-storage and fall-soil-moisture edges that are mechanistically dominant are graded MEDIUM on `literature_qualitative` basis to satisfy the v3.3 HIGH-requires-quantitative rule."
+  edges:
+    - {from: "air_temperature", to: "basinflow_s", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "boundary_forcing", citations: ["he2023_prairie_classification_sensitivity", "fang2007_prairie_drought_sensitivity"]}
+    - {from: "precipitation", to: "basinflow_s", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "boundary_forcing", citations: ["he2023_prairie_classification_sensitivity", "fang2007_prairie_drought_sensitivity"]}
+    - {from: "air_temperature", to: "SWE", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "boundary_forcing", citations: ["he2023_prairie_classification_sensitivity"]}
+    - {from: "precipitation", to: "SWE", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "boundary_forcing", citations: ["he2023_prairie_classification_sensitivity", "fang2007_prairie_drought_sensitivity"]}
+    - {from: "air_temperature", to: "Subl", sensitivity_grade: "MEDIUM", basis: "literature_quantitative", lever_type: "boundary_forcing", citations: ["he2023_prairie_classification_sensitivity", "pomeroy2007_crhm_platform"]}
+    - {from: "wind_speed", to: "Subl", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "boundary_forcing", citations: ["pomeroy2007_crhm_platform", "fang2010_smithcreek_wetland"]}
+    - {from: "wind_speed", to: "SWE", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "boundary_forcing", applicability: "wind-exposed HRUs running PBSM", citations: ["pomeroy2007_crhm_platform", "fang2010_smithcreek_wetland"]}
+    - {from: "canopy_LAI", to: "SI_Lo", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", applicability: "forested HRUs (intcp / CRHMCanopy)", citations: ["pomeroy2012_marmot_forest_sensitivity", "pomeroy2007_crhm_platform"]}
+    - {from: "forest_cover_fraction", to: "snowmeltD", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", applicability: "mountain forest basins (Marmot Creek class)", citations: ["pomeroy2012_marmot_forest_sensitivity"]}
+    - {from: "forest_cover_fraction", to: "SWE", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", applicability: "mountain forest basins", citations: ["pomeroy2012_marmot_forest_sensitivity"]}
+    - {from: "slope_aspect (hru_ASL)", to: "snowmeltD", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "parameter", applicability: "mountain basins with Slope_Qsi enabled", citations: ["pomeroy2012_marmot_forest_sensitivity", "pomeroy2007_crhm_platform"]}
+    - {from: "wetland_storage_capacity (Sdmax)", to: "basinflow_s", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "parameter", applicability: "prairie / wetland-dominated basins", citations: ["fang2010_smithcreek_wetland", "he2023_prairie_classification_sensitivity"]}
+    - {from: "Sd (depression storage)", to: "contributing_area", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "parameter", applicability: "prairie pothole basins", citations: ["fang2010_smithcreek_wetland"]}
+    - {from: "fall_soil_moisture (fallstat)", to: "snowmeltD", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "parameter", applicability: "prairie basins with PrairieInfil / crack", citations: ["fang2007_prairie_drought_sensitivity", "fang2010_smithcreek_wetland"]}
+    - {from: "frozen_soil_infiltration_choice (PrairieInfil vs GreenAmpt vs crack)", to: "basinflow_s", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "structural", citations: ["pomeroy2007_crhm_platform", "fang2010_smithcreek_wetland"]}
+    - {from: "air_temperature", to: "soil_moist", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "boundary_forcing", applicability: "wetland HRUs in prairie basins", citations: ["he2023_prairie_classification_sensitivity"]}
+    - {from: "precipitation", to: "soil_moist", sensitivity_grade: "HIGH", basis: "literature_quantitative", lever_type: "boundary_forcing", citations: ["he2023_prairie_classification_sensitivity"]}
+    - {from: "vegetation_cover", to: "hru_actet", sensitivity_grade: "MEDIUM", basis: "literature_qualitative", lever_type: "parameter", citations: ["fang2007_prairie_drought_sensitivity", "pomeroy2007_crhm_platform"]}
+  citation_index:
+    pomeroy2007_crhm_platform:
+      short_citation: "Pomeroy et al. 2007"
+      doi: "10.1002/hyp.6787"
+      note: "Foundational CRHM platform paper — identifies dominant process modules and their parameter controls on cold-region streamflow and SWE."
+    fang2007_prairie_drought_sensitivity:
+      short_citation: "Fang & Pomeroy 2007"
+      doi: "10.1002/hyp.6796"
+      note: "CRHM perturbation experiments on Canadian prairie basins — 15% precipitation drop and 2.5 C warming can eliminate spring runoff."
+    pomeroy2012_marmot_forest_sensitivity:
+      short_citation: "Pomeroy et al. 2012"
+      doi: "10.1002/hyp.9248"
+      note: "40 forest-disturbance scenarios at Marmot Creek — canopy LAI / forest-cover fraction is high-sensitivity control on snowmelt volume; 60% canopy removal +45% snowmelt."
+    fang2010_smithcreek_wetland:
+      short_citation: "Fang et al. 2010"
+      doi: "10.5194/hess-14-991-2010"
+      note: "CRHM Smith Creek prairie / wetland basin — depressional storage and fall soil moisture exert strong control on snowmelt-derived streamflow."
+    he2023_prairie_classification_sensitivity:
+      short_citation: "He et al. 2023"
+      doi: "10.5194/hess-27-3525-2023"
+      note: "Virtual-basin CRHM ensemble across seven prairie basin classes — quantitative T (-6 to -31 % per C) and P (elasticity 2.3-5.4) sensitivities for streamflow; soil moisture and peak SWE ranked next."
+
+safety:
+  hazards:
+    - {id: "humidity_unit_silent_zero_ET", triplet_id: "dt_001", kind: "weather_file_semantic", description: "Specific humidity (kg/kg, 0.001-0.02) passed as relative humidity (%, 0-100) in .obs makes CRHM read atmosphere as 0.001-0.02% RH; ET and sublimation collapse to zero, SWE accumulates indefinitely, run completes with no error.", severity: "silent"}
+    - {id: "precip_rate_vs_accumulation", triplet_id: "dt_002 (also dt_crhm_012 for MSWX-side instance)", kind: "weather_file_semantic", description: "Sub-daily mm-per-timestep precipitation passed as mm/day (or vice versa) inflates totals by N timesteps; discharge peaks 3-8x too high; annual P >> climatology.", severity: "silent"}
+    - {id: "obs_header_malformed", triplet_id: "dt_003", kind: "weather_file_semantic", description: ".obs header must be 'varname N (unit)' with parenthesised units; computed variables prefixed '$'. Malformed header crashes CRHM at startup with variable-count mismatch.", severity: "fatal"}
+    - {id: "obs_two_description_lines", triplet_id: "dt_020", kind: "weather_file_semantic", description: ".obs second line interpreted as a variable declaration; two description lines shift all variable names and crash with 'not in Data file' or SIGSEGV.", severity: "fatal"}
+    - {id: "obs_timestep_mismatch", triplet_id: "dt_018", kind: "weather_file_semantic", description: ".obs timestep inferred from first two data rows; mismatch with module requirement causes zero-order hold of diurnal cycles or skipped timesteps.", severity: "degraded"}
+    - {id: "winter_gap_constant_fill", triplet_id: "dt_011", kind: "weather_file_semantic", description: "Cold-region station gap-filled with constant winter values misrepresents extreme-cold events that control frozen soil state; spring melt timing wrong.", severity: "silent"}
+    - {id: "no_temperature_lapse_multi_elevation", triplet_id: "dt_crhm_014", kind: "weather_file_semantic", description: "No lapse rate applied to forcing on multi-elevation HRUs sends lowland temperature to high-elevation HRUs; SWE accumulates 45-68x normal.", severity: "silent"}
+    - {id: "soil_zero_param_division", triplet_id: "dt_008", kind: "soil_semantic", description: "Zero-valued parameters such as soil_Depth or route_L cause runtime division-by-zero STOP/segfault inside Soil or Netroute modules.", severity: "fatal"}
+    - {id: "soil_crs_mismatch", triplet_id: "dt_012", kind: "soil_semantic", description: "CRS mismatch between DEM and basin shapefile silently yields wrong HRU areas; sum(hru_area) != basin_area.", severity: "silent"}
+    - {id: "parameter_silent_clamp_to_range", triplet_id: "dt_006", kind: "coefficient_runtime_silent_fallback", description: "Parameter values silently clamped to declared <min to max> range without warning (e.g., fetch=50000 with max=10000 silently uses 10000); .prj shows requested value, model uses clamped value.", severity: "silent"}
+    - {id: "constants_inconsistency_across_modules", kind: "coefficient_runtime_silent_fallback", description: "Three different von-Karman constants live in three constant files (kappa=0.4 in CRHM_constants, KARMAN=0.4 in PBSM_constants, VON_KARMAN=0.35 in SnobalDefines.h); FREEZE=273.15 in CRHM_constants but 273.16 in SnobalDefines; PBSM rho_air=1.23 vs CHAD pa=1.22. Runs that mix modules silently use whichever constant was linked first.", severity: "silent"}
+    - {id: "snobal_min_snow_temp_clamp", kind: "coefficient_runtime_silent_fallback", description: "SnobalCRHM silently clamps snow temperature to MIN_SNOW_TEMP = -75 C; below that, no warning.", severity: "silent"}
+    - {id: "missing_initial_state", kind: "initial_condition_semantic", description: "Missing or zeroed Initial_State (SWE_init, soil_moist, soil_rechr, gw, fallstat) starts the run with empty stores; spring runoff dynamics misaligned for several years.", severity: "degraded"}
+    - {id: "negative_snow_excess_sublimation", triplet_id: "dt_008", kind: "numerical_instability", description: "Excess sublimation can drive SWE negative inside PBSM/SnobalCRHM, triggering module STOP / segfault during winter.", severity: "fatal"}
+    - {id: "module_chain_consumer_before_producer", triplet_id: "dt_004", kind: "control_semantic", description: "declgetvar() in a module references a variable that no earlier module's declvar() supplies; CRHM crashes during initialization with unresolved-variable error.", severity: "fatal"}
+    - {id: "param_count_not_nhru", triplet_id: "dt_005", kind: "control_semantic", description: "Wrong number of per-HRU parameter values (must equal nhru exactly) cascades silent corruption across all subsequent parameter reads or crashes.", severity: "fatal_or_silent"}
+    - {id: "prj_section_delimiter_wrong", triplet_id: "dt_013", kind: "control_semantic", description: ".prj section delimiter must be exactly '######' (6 hashes) on its own line; 5 or 7 hashes misparse and fail with 'section not found'.", severity: "fatal"}
+    - {id: "empty_display_variable", triplet_id: "dt_014", kind: "control_semantic", description: "Empty Display_Variable section yields exit code 0 with an empty (header-only) output file; mass-balance close requires Display_Variable to expose all storage compartments.", severity: "degraded"}
+    - {id: "wrong_module_chain_for_landscape", triplet_id: "dt_016 (also dt_crhm_013 for prairie-template instance)", kind: "control_semantic", description: "Module chain inappropriate for landscape — PBSM in dense forest, SnobalCRHM without Slope_Qsi in mountains, ebsm conflicting with PBSM in prairie chain, or PrairieInfil omitted on cracking-clay prairie soils — runs without error but physics is wrong.", severity: "silent"}
+    - {id: "netroute_gw_sink_silent_residual", triplet_id: "dt_021", kind: "control_semantic", description: "Netroute gwwhereto sending gw_flow to a sink (gwwhereto=3 3 0) leaks 5-10% of basin water silently; gwcumdiverted equals the residual; compensated only if precipitation is also inflated (compensating-errors calibration).", severity: "silent"}
+    - {id: "snowpack_reverse_coupling_ebsm_to_pbsm_swe", kind: "control_semantic", description: "Classebsm directly writes back to SWE owned by Classpbsm via a non-const pointer; energy-balance snowmelt module mutates blowing-snow module state within one timestep. Undocumented and order-sensitive.", severity: "silent"}
+    - {id: "netroute_back_write_to_soil_within_timestep", kind: "control_semantic", description: "ClassNetroute writes Sd, soil_moist, soil_rechr and redirected_residual back into ClassSoil within the same timestep, creating an undocumented Soil to Netroute to Soil reverse-direction coupling.", severity: "silent"}
+  validation_limits:
+    - "Designed and primarily validated for small- to medium-sized cold-region basins; <100 km^2 uses 3-5 HRUs, 100-1000 km^2 uses 5-15 HRUs, >1000 km^2 uses 10-50 HRUs. CRHM does not benefit from hundreds of HRUs."
+    - "No internal automatic calibration against streamflow; the platform is a self-diagnostic tool for hydrological process understanding."
+    - "PBSM only valid for wind-exposed terrain (prairie, tundra, alpine above treeline); invalid in dense forest."
+    - "PrairieInfil only valid for cracking-clay prairie soils; use GreenAmpt elsewhere even for frozen conditions."
+    - "Slope_Qsi required for basins with mean slope > 10 deg or relief > 500 m."
+    - "Daily timestep cannot resolve sub-daily energy-balance processes; SnobalCRHM and full energy-balance snowmelt require hourly forcing."
+    - "Netroute lag-storage stores (hruDelay, ssrDelay, runDelay, gwDelay, Kstorage, Lag, gwKstorage, gwLag) have no declvar outputs; decadal runs show a structural ~4-5% un-closable water-balance residual that is a storage-accounting artefact, not a model error."
+    - "Default gwLag = 700 d is appropriate only for slow deep-bedrock aquifers; prairie alluvial basins need 30-90 d, mountain bedrock 200-400 d."
+  warnings:
+    - "Mass-balance close requires Display_Variable to expose ALL storage compartments: SWE, soil_moist, soil_rechr, gw, Sd (depression storage, commonly forgotten), SI_Lo (canopy load), hru_p, hru_actet, basinflow."
+    - "Chain ordering rule: basin > global > obs > radiation > canopy > snow > infiltration > soil > routing. Infiltration before snowmelt fails at initialization."
+    - "Sanity checks: SWE peaks late winter / early spring and reaches zero in summer for non-glaciated basins; sublimation 15-40% of snowfall in prairie, 30-50% in boreal forest; multi-year P - ET - Q - dS approximately zero."
+    - "Per-HRU parameter blocks must contain exactly nhru space-separated values; one extra or missing value cascades silent corruption into subsequent parameter reads."
+    - "Display_Variable lines must include the module prefix ('Netroute basinflow 1'), or the variable is silently not written."
+    - "Precipitation variable canonical name is 'p' (older docs use 'ppt'); pressure is 'press' (NOT 'p') to disambiguate from precipitation."
+  assumptions:
+    - statement: "CRHM discretises basins as Hydrological Response Units (HRUs) assumed homogeneous in process response; within-HRU sub-grid variability is not represented."
+      scope: "spatial representation across all modules"
+      source: "Pomeroy et al. 2007 Hydrol. Process. 21:2650-2667 (doi:10.1002/hyp.6787); Centre for Hydrology CRHM overview page"
+      status: "adopted"
+    - statement: "Mass-balance closure is enforced for snow, soil moisture, surface water, groundwater and routed streamflow within each HRU and across HRU linkages; a fully closed surface energy budget is enforced only inside SnobalCRHM and ebsm snow modules, not for the whole HRU."
+      scope: "closure semantics of the platform"
+      source: "Centre for Hydrology CRHM overview page; CRHMcode source modules ClassSoil, ClassNetroute, SnobalCRHM, ebsm"
+      status: "adopted"
+    - statement: "Modular chain is user-selected per landscape; default chains are prairie (basin>global>obs>PBSM>PrairieInfil>Soil>Netroute), mountain (basin>global>obs>Slope_Qsi>SnobalCRHM>GreenAmpt>Soil>Netroute), forest (basin>global>obs>CRHMCanopy>SnobalCRHM>GreenAmpt>Soil>Netroute), arctic (basin>global>obs>PBSM>SnobalCRHM>PrairieInfil>Soil>REWroute)."
+      scope: "module selection per landscape class"
+      source: "Pomeroy et al. 2007 classification thresholds (doi:10.1002/hyp.6787) and CRHMcode example projects in github.com/CentreForHydrology/CRHM/Projects"
+      status: "adopted"
+    - statement: "Hourly forcing is preferred; daily timesteps are supported but down-sample diurnal cycles and disable sub-daily energy-balance modules."
+      scope: "temporal resolution of inputs"
+      source: "Centre for Hydrology CRHM overview page; CRHMcode obs module documentation"
+      status: "adopted"
+    - statement: "CRHM is a self-diagnostic platform without built-in automatic calibration; users must not interpret the absence of calibration as a defect."
+      scope: "calibration philosophy"
+      source: "Centre for Hydrology CRHM overview page (Calibration Philosophy)"
+      status: "adopted"
+    - statement: "Cross-module physical constants (von-Karman, FREEZE, air density, latent heats, emissivity) are duplicated across CRHM_constants.h, PBSM_constants.h, CHAD_constants.h and SnobalDefines.h with inconsistent values; treated as a documented quirk rather than a corrected bug."
+      scope: "energy-balance and snow-physics modules"
+      source: "CRHMcode source files src/core/CRHM_constants.h, src/core/PBSM_constants.h, src/core/CHAD_constants.h, src/modules/newmodules/SnobalDefines.h"
+      status: "tentative"

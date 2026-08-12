@@ -23,12 +23,13 @@
 
 # EF5 v1.2.3 (Ensemble Framework For Flash Flood Forecasting) — Knowledge Infrastructure
 
-**Package**: `hydrocraft-ef5-flash-flood` v1.0.0
+**Package**: `hydrocraft-ef5-flash-flood` v1.1.0
 **Model**: EF5 v1.2.3
+**KDT version**: 5.1.2 (uses `ki_tools_common` for forcing/metrics/cross-platform)
 **Created by**: HyDROSLab, University of Oklahoma (Zac Flamig, Humberto Vergara, Race Clark, JJ Gourley, Yang Hong)
-**Last updated**: 2026-03-25
-**Stats**: 4 tools | 5 skill documents | 20 diagnostic triplets | ~1,200 lines of validated Python
-**Validation status**: `source_dissected`
+**Last updated**: 2026-04-28 (added Stage-1 `prepare_basic_grids` tool; corrected `ef5 -p` documentation)
+**Stats**: 5 tools | 6 skill documents | 22 diagnostic triplets | ~1,600 lines of validated Python
+**Validation status**: `source_dissected` (binary executes end-to-end at any prepared site; obs validation requires hourly TIMESTEP — see s5_execution.md)
 
 ---
 
@@ -87,12 +88,26 @@ libgeotiff   — GeoTIFF spatial metadata
 libgomp      — OpenMP parallel processing (Linux)
 ```
 
-### DEM processing mode
+### DEM processing
+
+Use the KI's Stage-1 tool to derive DEM/DDM/FAM from a raw DEM:
+```bash
+python tools/prepare_basic_grids.py --dem raw_DEM.tif --out-dir basin/grids/ \
+    --method breach --out-format asc --expected-outlet 117.35 33.05
+```
+Wraps WhiteboxTools (BreachDepressionsLeastCost → D8Pointer ESRI → D8FlowAccumulation
+cells) and writes ESRIDDM-encoded DDM with SELFFAM=true convention. See
+`docs/s1_basic_grids.md` for the full procedure.
+
+EF5 v1.2.3's argument parser also accepts `-p` and `-s` flags, but only `-s`
+(recompute FAM from existing DDM) is implemented — `-p` (pit-fill + D8 from
+scratch) is in the parser but `ProcessDEM(mode=1)` falls through silently
+(verified at `src/DEMProcessor.cpp:23`). **Do not use `ef5 -p`. Use
+`prepare_basic_grids.py`.**
 
 ```bash
-# Generate flow direction and flow accumulation from DEM
-ef5 -z DEM.tif -d DDM.tif -a FAM.tif -p    # pit-fill + process
-ef5 -z DEM.tif -d DDM.tif -a FAM.tif -s     # slope processing
+# Recompute FAM from a known-good DDM (rare; only useful for re-prepping)
+ef5 -z DEM.tif -d DDM.tif -a FAM.tif -s
 ```
 
 ---
@@ -217,6 +232,17 @@ TIME_END=200912312300
 [Execute]
 TASK=run1
 ```
+
+> **DAILY-FORCING NAME TRAP (see triplet dt_030).** The `NAME=` example above
+> (`precip_YYYYMMDDHH.tif`) is for `FREQ=1h`. EF5 only substitutes date tokens
+> **down to the FREQ resolution** (`DatedName::ProcessName` loops `i<=resolution`).
+> For daily forcing (`FREQ=d`) use `NAME=forcing_YYYYMMDD0000.asc` — the `0000` is a
+> LITERAL (HH/UU are below daily resolution and are NOT substituted). This matches
+> what `convert_forcing_to_ef5.py` writes. Using `...HHUU.asc` with `FREQ=d` makes
+> EF5 search for a nonexistent `forcing_YYYYMMDDHHUU.asc`, log a non-fatal
+> `Missing precip ... Assuming zeros` for every step, and still finish — producing
+> plausible-looking but all-zero-precip output. **Always grep the run log for
+> "Missing precip" before trusting metrics.**
 
 ---
 
@@ -360,6 +386,12 @@ Combine with `|` in OUTPUT_GRIDS:
 
 ---
 
+## Output Description
+
+EF5 produces two main output types: (1) time series CSV files at gauge points with columns `datetime, simulated_Q (m^3/s)`, written to the OUTPUT directory specified in the Task block, and (2) optional gridded output fields (GeoTIFF or ASC) for streamflow, soil moisture, SWE, return period, and inundation depth, controlled by the `OUTPUT_GRIDS` task parameter. Calibration tasks output a CSV of calibrated parameter sets with objective function values. Use `parse_ef5_output.py` to extract gauge time series, compute performance metrics (NSE, KGE, PBIAS), and generate comparison plots against observed data.
+
+---
+
 ## Projections
 
 | Key | Description |
@@ -388,10 +420,21 @@ Combine with `|` in OUTPUT_GRIDS:
 
 | Tool | Stage | Script Path | Purpose |
 |------|-------|-------------|---------|
+| `prepare_basic_grids` | s1 | `tools/prepare_basic_grids.py` | DEM → sink-filled DEM + ESRI DDM + SELFFAM=true FAM (WhiteboxTools) |
 | `convert_forcing_to_ef5` | s2 | `tools/convert_forcing_to_ef5.py` | CMFD/MSWX/GPM to EF5 precip+PET grids |
 | `convert_params_to_ef5` | s3 | `tools/convert_params_to_ef5.py` | HWSD/STATSGO soil to CREST/SAC parameter grids |
 | `run_ef5` | s5 | `tools/run_ef5.py` | Execute EF5 with preflight checks |
 | `parse_ef5_output` | s6 | `tools/parse_ef5_output.py` | Extract time series, compute NSE/KGE/PBIAS |
+
+### KDT 5.1.2 shared modules used by these tools
+
+| Module | Used by | Purpose |
+|--------|---------|---------|
+| `ki_tools_common.metrics` | `parse_ef5_output` | NSE/KGE/PBIAS/RMSE computation |
+| `ki_tools_common.load_forcing` | `convert_forcing_to_ef5` | CMFD/MSWX/NASA POWER ingestion |
+| `ki_tools_common.soil_utils` | `convert_params_to_ef5` | USDA texture + Saxton-Rawls + ROSETTA-VG (added v5.1.2) |
+| `ki_tools_common.cross_platform` | `run_ef5` | ELF/PE32 detection, broken-interpreter fix (added v5.1.2) |
+| `ki_tools_common.debug_framework` | all stages | Levels 0–3 triage on tool failure |
 
 ---
 
@@ -429,3 +472,31 @@ Combine with `|` in OUTPUT_GRIDS:
 8. **OpenMP parallelism**: Water balance loop can be parallelized (currently commented out in CREST)
 9. **Preload forcings**: Calibration mode caches all forcing data to `califorcings.bin` for speed
 10. **Time unit codes**: y=year, m=month, d=day, h=hour, u=minute, s=second — "u" for minutes is non-standard
+
+---
+
+## Scoring Contract & Out-of-Domain Observations
+
+**What this KI scores.** The only scorer shipped is `tools/parse_ef5_output.py`, which
+computes TEMPORAL metrics (NSE / KGE / PBIAS / r / RMSE) on **point streamflow time
+series** at gauge outlets. `list_gridded_outputs` / `extract_grid_stats` only report
+min/max/mean of a gridded field — they do NOT score spatial patterns.
+
+**Out-of-contract observation types (SKIP, no retry).** This KI ships **no spatial
+extent scorer**: there is no CSI/POD/FAR (critical-success-index) tool, no flood-extent
+GeoTIFF reader/thresholder, and no wrapper that runs EF5's `SimpleInundation` /
+`VCInundation` to emit water-depth grids. Therefore observations with
+`variable=flood_inundation_extent` and `obs_shape=spatial_snapshot` (e.g. the Global
+Flood Database, MODIS-derived per-event flood maps) are OUT OF CONTRACT. Their valid
+metric families are `spatial_pattern_match` / `event_detection` (CSI/POD/FAR), which this
+KI cannot deliver. Skip such obs; do not score them with temporal NSE/KGE/PBIAS.
+
+**KI-INTEGRITY CAVEAT — dag.yaml is HYPE's, not EF5's.** The installed `dag.yaml`
+(and its source `/mnt/datasets/EF5_dag_v3_5_auto.yaml`) both carry
+`identity.model_id: "HYPE"` with HYPE outputs (`cout`/`snow`/`evap`/`soim`/`gwat`).
+The dag-driven obs-shape gate therefore reads HYPE metadata for EF5 runs and CANNOT be
+trusted as an EF5 output contract. Prior EF5 streamflow PASSes matched on `var=cout`,
+which happens to exist in HYPE's dag as channel discharge, so they passed by luck.
+A genuine EF5 dag (declaring streamflow `point_time_series`, and optionally an
+inundation-depth `spatial_snapshot` output) must be regenerated upstream by a human /
+the auto-dag pipeline before any non-discharge comparison can be considered valid.

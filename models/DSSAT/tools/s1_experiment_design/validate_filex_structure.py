@@ -683,7 +683,19 @@ def validate():
 
 
 def main():
-    """Entry point: validate FileX structure."""
+    """Entry point: validate FileX structure.
+
+    The target may be supplied on the command line
+    (``validate_filex_structure.py /path/to/EXP.MZX``) so a batch driver can
+    validate many FileX files without rewriting the module. The module global
+    FILEX_PATH stays the default when no argument is given, so existing
+    set-the-global callers are unaffected.
+    """
+    global FILEX_PATH
+    _pos = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if _pos:
+        FILEX_PATH = _pos[0]
+
     # -----------------------------------------------------------------------
     # PRECONDITIONS
     # -----------------------------------------------------------------------

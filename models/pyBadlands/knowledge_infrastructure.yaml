@@ -3,6 +3,12 @@ package:
   domain: geomorphology
   name: pyBadlands
   version: auto-generated
+  last_updated: '2026-05-01'
+  validated_sites: 2
+  validation_tier: real
+  best_r: 0.71
+  best_nse: 0.48
+  best_kge: 0.51
 pipeline:
   stages:
   - depends_on: []

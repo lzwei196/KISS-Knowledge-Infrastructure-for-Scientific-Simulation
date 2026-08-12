@@ -23,6 +23,33 @@
 
 ---
 
+## Forcing Data
+
+Pywr requires time-varying forcing input files that drive the water allocation model:
+
+| Forcing Variable | Source | Format | Units |
+|-----------------|--------|--------|-------|
+| Reservoir inflow | VIC runoff+baseflow or observed discharge | CSV timeseries | m3/s |
+| Irrigation demand | DSSAT crop water stress or prescribed schedule | JSON parameter | m3/s |
+| Municipal/industrial demand | Prescribed or population-scaled | JSON parameter | m3/s |
+| Precipitation (optional) | For direct-rainfall reservoirs | CSV timeseries | mm/day |
+
+All forcing input files must cover the simulation period with daily timestep. Missing days cause Pywr to raise `DataFrameKeysError`.
+
+## Configuration
+
+Pywr models are configured through a single JSON model file assembled by `assemble_pywr_model.py`. Key configuration settings:
+
+| Setting | Location | Default | Notes |
+|---------|----------|---------|-------|
+| Simulation period | `metadata.minimum_version` + `timestepper` | — | `start`, `end`, `timestep` (days) |
+| Solver | `solver.name` | `glpk` | Only GLPK supported in this KI |
+| Node costs | Each node's `cost` parameter | varies | More negative = higher priority |
+| Control curve | `parameters` section | — | Monthly target storage levels (fraction) |
+| Demand profiles | `parameters` section | — | `monthlyprofile` or `dataframe` type |
+
+The JSON config file is the only configuration needed — no `.ini`, `.cfg`, or namelist files.
+
 ## Data Preparation
 
 ### Input data

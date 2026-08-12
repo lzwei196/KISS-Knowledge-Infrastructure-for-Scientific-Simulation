@@ -65,7 +65,8 @@ def process():
     """Configure and instantiate PCSE engine."""
     import yaml
     from pcse.input import YAMLCropDataProvider, CSVWeatherDataProvider
-    from pcse.util import WOFOST72SiteDataProvider
+    # PCSE 6.0+: WOFOST72SiteDataProvider moved from pcse.util to pcse.input (dt_v001)
+    from pcse.input import WOFOST72SiteDataProvider
     from pcse.base import ParameterProvider
 
     # 1. Crop parameters
@@ -83,8 +84,10 @@ def process():
         logger.info("PP mode — soil parameters not used")
 
     # 3. Site parameters
-    sitedata = WOFOST72SiteDataProvider(WAV=WAV, CO2=CO2)
-    logger.info(f"Site: WAV={WAV} cm, CO2={CO2} ppm")
+    # PCSE 6.0+: CO2 no longer accepted by SiteDataProvider; handled internally
+    # via crop CO2 tables (dt_v002). Use WAV only.
+    sitedata = WOFOST72SiteDataProvider(WAV=WAV)
+    logger.info(f"Site: WAV={WAV} cm (CO2 handled internally in PCSE 6.0+)")
 
     # 4. Assemble ParameterProvider
     params = ParameterProvider(cropdata=cropdata, soildata=soildata, sitedata=sitedata)

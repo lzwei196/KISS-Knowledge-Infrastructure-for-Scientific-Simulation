@@ -47,6 +47,12 @@ GAUGE_ID = 1
 GAUGE_FILENAME = "00001.txt"
 WARMUP_DAYS = 365
 OPTIMIZE = False
+EVAL_START_YEAR = 0     # 0 => config["start_year"] + (warmup consumed before it)
+EVAL_END_YEAR = 0       # 0 => config["end_year"]
+OPTI_METHOD = 1         # 1=DDS, 2=SA, 3=SCE
+OPTI_FUNCTION = 1       # 1 = 1-NSE, 9 = 1-KGE  (both discharge-only)
+N_ITERATIONS = 400
+PARAM_NML = ""          # e.g. <cal_dir>/FinalParam.nml -> copied to mhm_parameter.nml
 
 # Template parameter file from mHM source
 MHM_PARAM_TEMPLATE = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "model/mhm_src/mhm_parameter.nml")
@@ -62,6 +68,18 @@ if len(sys.argv) > 1:
     parser.add_argument("--gauge_filename", default="00001.txt")
     parser.add_argument("--warmup_days", type=int, default=365)
     parser.add_argument("--optimize", action="store_true")
+    parser.add_argument("--eval_start_year", type=int, default=0)
+    parser.add_argument("--eval_end_year", type=int, default=0)
+    parser.add_argument("--opti_method", type=int, default=1)
+    parser.add_argument("--opti_function", type=int, default=1,
+                        help="1 = 1-NSE, 9 = 1-KGE. NEVER 10 -- that is KGE of "
+                             "catchment-average SOIL MOISTURE and needs "
+                             "&optional_data (dt_r15).")
+    parser.add_argument("--n_iterations", type=int, default=400,
+                        help="DDS requires >= 6 (dt_r14)")
+    parser.add_argument("--param_nml", default="",
+                        help="Parameter namelist (e.g. FinalParam.nml from s9) to "
+                             "install as mhm_parameter.nml for a forward run")
     args = parser.parse_args()
     CONFIG_PATH = args.config
     DOMAIN_INFO_PATH = args.domain_info
@@ -69,6 +87,23 @@ if len(sys.argv) > 1:
     GAUGE_FILENAME = args.gauge_filename
     WARMUP_DAYS = args.warmup_days
     OPTIMIZE = args.optimize
+    EVAL_START_YEAR = args.eval_start_year
+    EVAL_END_YEAR = args.eval_end_year
+    OPTI_METHOD = args.opti_method
+    OPTI_FUNCTION = args.opti_function
+    N_ITERATIONS = args.n_iterations
+    PARAM_NML = args.param_nml
+
+    # NOTE: `logger` is configured below this block, so report to stderr directly.
+    if OPTIMIZE and OPTI_FUNCTION in (10, 11, 12, 13, 15, 17, 27, 29, 30):
+        print(f"ERROR: opti_function={OPTI_FUNCTION} needs a &optional_data namelist "
+              f"(soil moisture / TWS / ET / neutrons). For discharge calibration use "
+              f"1 (1-NSE) or 9 (1-KGE). See dt_r15.", file=sys.stderr)
+        sys.exit(1)
+    if OPTIMIZE and N_ITERATIONS < 6:
+        print(f"ERROR: nIterations={N_ITERATIONS} < 6: mo_dds.F90 Fortran-STOPs with "
+              f"exit status 0 and writes no FinalParam.nml (dt_r14).", file=sys.stderr)
+        sys.exit(1)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -79,6 +114,12 @@ def generate_mhm_nml(config, domain_info, run_dir):
     start_year = config["start_year"]
     end_year = config["end_year"]
     pet_method = config["pet_method"]
+
+    # eval_Per is the window the OPTIMISER sees. Set it to the calibration years and
+    # give the spin-up as warming_Days -- mHM warms up on the days immediately BEFORE
+    # eval_Per, so the forcing must start earlier than eval_start.
+    eval_start = EVAL_START_YEAR or start_year
+    eval_end = EVAL_END_YEAR or end_year
 
     # PET processCase mapping:
     # -1: PET is input, LAI driven correction
@@ -132,8 +173,8 @@ timestep = 1
 read_restart = .FALSE.
 optimize = {'.TRUE.' if OPTIMIZE else '.FALSE.'}
 optimize_restart = .FALSE.
-opti_method = 1
-opti_function = 10
+opti_method = {OPTI_METHOD}
+opti_function = {OPTI_FUNCTION}
 /
 
 &mainconfig_mrm
@@ -181,16 +222,16 @@ processCase(9) = 1
 &LCover
 nLCoverScene = 1
 LCoverYearStart(1) = {start_year}
-LCoverYearEnd(1) = {end_year}
+LCoverYearEnd(1) = {eval_end}
 LCoverfName(1) = 'lc_{start_year}.asc'
 /
 
 &time_periods
 warming_Days(1) = {WARMUP_DAYS}
-eval_Per(1)%yStart = {start_year}
+eval_Per(1)%yStart = {eval_start}
 eval_Per(1)%mStart = 01
 eval_Per(1)%dStart = 01
-eval_Per(1)%yEnd = {end_year}
+eval_Per(1)%yEnd = {eval_end}
 eval_Per(1)%mEnd = 12
 eval_Per(1)%dEnd = 31
 /
@@ -234,9 +275,15 @@ fnight_temp = -0.76, -1.30, -1.88, -2.38, -2.72, -2.75, -2.74, -3.04, -2.44, -1.
 /
 
 &Optimization
-nIterations = 100
+nIterations = {N_ITERATIONS}
 seed = 1235876
+dds_r = 0.2
+sa_temp = -9.0
 sce_ngs = 2
+sce_npg = -9
+sce_nps = -9
+mcmc_opti = .FALSE.
+mcmc_error_params = 0.01, 0.6
 /
 """
     nml_path = run_dir / "mhm.nml"
@@ -267,9 +314,19 @@ def process():
     # Generate mhm.nml
     generate_mhm_nml(config, domain_info, run_dir)
 
-    # Copy parameter, output namelists from source (they contain good defaults)
+    # Copy parameter, output namelists from source (they contain good defaults).
+    # --param_nml overrides the template with calibrated MPR global parameters
+    # (FinalParam.nml from s9); mHM always reads them from mhm_parameter.nml.
+    param_src = MHM_PARAM_TEMPLATE
+    if PARAM_NML:
+        if not Path(PARAM_NML).exists():
+            logger.error(f"--param_nml not found: {PARAM_NML}")
+            sys.exit(1)
+        param_src = PARAM_NML
+        logger.info(f"Installing calibrated parameters from {PARAM_NML}")
+
     for src, dst in [
-        (MHM_PARAM_TEMPLATE, run_dir / "mhm_parameter.nml"),
+        (param_src, run_dir / "mhm_parameter.nml"),
         (MHM_OUTPUTS_TEMPLATE, run_dir / "mhm_outputs.nml"),
         (MRM_OUTPUTS_TEMPLATE, run_dir / "mrm_outputs.nml"),
     ]:

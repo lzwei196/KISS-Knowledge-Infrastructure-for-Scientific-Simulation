@@ -1,0 +1,34 @@
+# DSSAT interface_contracts.yaml
+#
+# Phase 3 binding: declares which shared_specs this KI's tools must respect.
+# Read by tool_reviewer.py at review time. KI-side override files (if any)
+# are listed under ki_overrides.
+#
+# Authored 2026-06-05 for first real Phase 3 hook test.
+
+contracts_version: "0.1"
+target: DSSAT
+
+# Shared specs the reviewer loads. Paths relative to models/ (i.e. the parent
+# of shared_specs/). The reviewer reads each file's body and includes it in
+# the codex prompt.
+shared:
+  - shared_specs/dssat/base/format_spec.yaml
+  - shared_specs/spam2020/format_spec.yaml
+
+# KI-side overrides — paths relative to this KI dir. Used to widen, narrow,
+# or reinterpret a shared rule for THIS model. Empty until the memory
+# promoter writes one in response to a real diagnose finding.
+ki_overrides: []
+
+# Two-axis tool status — populated by the orchestrator / promoter, NOT hand-
+# edited. Listed here as a sanity hook for the reviewer to know what files
+# in tools/ are considered live.
+tool_status: {}
+
+notes: |
+  This file is a binding contract, not a spec itself. The actual rules live
+  in the files listed under `shared`. The reviewer dereferences them per
+  run; if a referenced file moves or disappears, the reviewer logs an empty
+  spec_bodies list and reviews against tool_summary + diff only (degraded
+  but non-fatal).

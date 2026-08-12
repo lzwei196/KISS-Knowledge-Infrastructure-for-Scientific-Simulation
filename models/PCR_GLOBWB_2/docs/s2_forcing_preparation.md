@@ -35,9 +35,30 @@ Convert global meteorological datasets (ERA5, CMFD, CRU-ERA-Interim, W5E5) to PC
 5. **Verify spatial extent**: Must cover the clone map domain
 6. **Match temporal coverage**: Must span startTime to endTime in the .ini file
 
-### Alternative: Hamon ET Method
+### Reference ET: derive it whenever radiation/wind/humidity exist
 
-If reference ET data is not available, set `referenceETPotMethod = Hamon` in `[meteoOptions]`. The model will compute reference ET from temperature using the Hamon (1963) method. Only precipitation and temperature forcing are needed.
+Inspect the forcing's variable list **before** choosing a PET method. If the source
+carries radiation, wind, humidity and pressure -- CMFD V0200 ships `srad`, `wind`,
+`shum`, `pres` -- compute FAO-56 Penman-Monteith refET and feed it to the model:
+
+1. `convert_forcing_to_pcrglobwb.build_from_ki_forcing(..., refet_method='penman')`
+   (the default) writes `referencePotET.nc`.
+2. Set `referenceETPotMethod = Input` and
+   `refETPotFileNC = global_30min/meteo/forcing/referencePotET.nc`.
+3. The NetCDF variable must be named `evapotranspiration` -- PCR-GLOBWB's default
+   `referenceEPotVariableName` (`model/meteo.py:177`).
+
+### Fallback: Hamon ET Method
+
+Only if the forcing genuinely lacks radiation/wind/humidity, set
+`referenceETPotMethod = Hamon` in `[meteoOptions]`; the model then computes reference
+ET from temperature alone using the Hamon (1963) method.
+
+**Caveat (dt_031):** temperature-only Hamon under-estimates PET in cold continental
+monsoon basins (~665 vs ~907 mm/yr at Songhua). PCR-GLOBWB caps actualET by
+referencePotET, so the un-evaporated water leaves as runoff and routes to the outlet,
+inflating discharge (+76% PBIAS at Songhua while r stayed 0.864, NSE -0.537). The run
+completes silently and the hydrograph *shape* still looks right.
 
 ## Verification
 

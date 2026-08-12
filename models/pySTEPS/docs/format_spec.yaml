@@ -1,0 +1,295 @@
+model:
+  name: pySTEPS
+  domain: atmosphere
+  binary_path: ''
+  language: unknown
+inputs:
+  forcing:
+  - name: precipitation
+    unit: nowcast grid cells
+    format: ''
+    source: skill_md
+outputs:
+  primary:
+  - name: precipitation_rate
+    canonical_id: precipitation_rate
+    unit: mm/day
+  - name: air_temperature
+    canonical_id: air_temperature
+    unit: degC
+  - name: wind_speed
+    canonical_id: wind_speed
+    unit: m/s
+  - name: surface_pressure
+    canonical_id: surface_pressure
+    unit: Pa
+known_issues:
+- id: dt_pysteps_001
+  description: '{''description'': ''Nowcast precipitation values are unrealistically
+    large (e.g., peak intensities of 40-60 where 5-15 mm/h is expected) or the motion
+    field estimation produces chaotic vectors. The pysteps importer returned data
+    without error but subsequent processing gives nonsensical results.\n''}'
+  affected_output: '{''root_cause'': ''The input precipitation fields are in dBZ (radar
+    reflectivity, logarithmic scale, typical range -10 to 60) but pysteps nowcast
+    routines expect mm/h (linear rainfall rate, typical range'
+  detection: '{''root_cause'': ''The input precipitation fields are in dBZ (radar
+    reflectivity, logarithmic scale, typical range -10 to 60) but pysteps nowcast
+    routines expect mm/h (linear rainfall rate, typical range'
+  fix: '{''action'': "Convert dBZ to mm/h before passing to the nowcast using the
+    Marshall-Palmer Z-R relation: R = (10^(dBZ/10) / 200)^(1/1.6). In pysteps use
+    pysteps.utils.conversion.dB_transform(R, inverse=T'
+- id: dt_pysteps_002
+  description: '{''description'': ''Nowcast output values are near zero everywhere
+    despite clearly visible precipitation in the input fields. Verification scores
+    (CSI, POD) are near zero. The input data appears correct when plotted directly.\n''}'
+  affected_output: '{''root_cause'': ''The input is in mm/h but was mistakenly passed
+    through an additional dB_transform, converting already-linear mm/h values to logarithmic
+    scale. Since mm/h values are small (e.g., 0.5-10'
+  detection: '{''root_cause'': ''The input is in mm/h but was mistakenly passed through
+    an additional dB_transform, converting already-linear mm/h values to logarithmic
+    scale. Since mm/h values are small (e.g., 0.5-10'
+  fix: '{''action'': "Check metadata[''transform''] before applying any transformation.
+    If transform is already None or ''None'', the data is in linear units and should
+    NOT be log-transformed. Remove the redundant '
+- id: dt_pysteps_003
+  description: '{''description'': ''Accumulated precipitation totals from the nowcast
+    are a factor of 2-12x too high or too low compared to gauge observations. Individual
+    frame intensities look correct but the accumulation over the forecast period is
+    wrong.\n''}'
+  affected_output: '{''root_cause'': ''Mismatch between the radar frame timestep and
+    the assumed accumulation period. Pysteps nowcast outputs instantaneous rates in
+    mm/h. To get accumulated precipitation, rates must be mult'
+  detection: '{''root_cause'': ''Mismatch between the radar frame timestep and the
+    assumed accumulation period. Pysteps nowcast outputs instantaneous rates in mm/h.
+    To get accumulated precipitation, rates must be mult'
+  fix: '{''action'': "Accumulation = sum(rate_mm_h[i] * timestep_hours) for each frame
+    i. Get timestep from metadata[''accutime''] (in minutes). Convert to hours: dt_h
+    = metadata[''accutime''] / 60.0. For a 5-min r'
+- id: dt_pysteps_004
+  description: '{''description'': ''pysteps.io.import_xxx raises FileNotFoundError,
+    ValueError, or returns None/empty array when reading radar files that appear to
+    exist on disk. The file is present but the importer cannot parse it.\n''}'
+  affected_output: '{''root_cause'': ''Wrong importer selected for the file format.
+    Pysteps has format-specific importers (import_bom_rf3, import_knmi_hdf5, import_opera_hdf5,
+    import_mch_gif, etc.) and each expects a specif'
+  detection: '{''root_cause'': ''Wrong importer selected for the file format. Pysteps
+    has format-specific importers (import_bom_rf3, import_knmi_hdf5, import_opera_hdf5,
+    import_mch_gif, etc.) and each expects a specif'
+  fix: '{''action'': "1. Identify the radar data source and format. Check the file
+    with h5dump -H file.h5 (for HDF5) or gdalinfo file.tif (for GeoTIFF). 2. Select
+    the correct pysteps importer: use pysteps.io.ge'
+- id: dt_pysteps_005
+  description: '{''description'': ''After reading HDF5 radar data, the precipitation
+    field is rotated 90 degrees, flipped upside-down, or transposed relative to the
+    expected geographic orientation. Plotting shows rain in the wrong location.\n''}'
+  affected_output: '{''root_cause'': ''HDF5 radar files from different agencies use
+    different array axis conventions. Some store data as (lat, lon) with lat increasing
+    downward (image convention), others as (y, x) with y in'
+  detection: '{''root_cause'': ''HDF5 radar files from different agencies use different
+    array axis conventions. Some store data as (lat, lon) with lat increasing downward
+    (image convention), others as (y, x) with y in'
+  fix: '{''action'': ''After import, verify orientation: (a) plot the field with correct
+    geographic coordinates, (b) check if metadata y1 < y2 (Cartesian) or y1 > y2 (image),
+    (c) if flipped, apply np.flipud(data'
+- id: dt_pysteps_006
+  description: '{''description'': ''GeoTIFF radar composites load successfully but
+    pysteps motion estimation fails with ValueError about array shape or produces
+    all-NaN motion fields. The GeoTIFF appears valid when opened in QGIS/rasterio.\n''}'
+  affected_output: '{''root_cause'': ''GeoTIFF files may include extra bands (quality
+    flags, timestamp bands), nodata values encoded as large negative numbers (e.g.,
+    -9999 or -3.4e38), or the data type is uint8/uint16 with '
+  detection: '{''root_cause'': ''GeoTIFF files may include extra bands (quality flags,
+    timestamp bands), nodata values encoded as large negative numbers (e.g., -9999
+    or -3.4e38), or the data type is uint8/uint16 with '
+  fix: '{''action'': "1. Read only band 1: data = rasterio.open(f).read(1).astype(np.float64).
+    2. Replace nodata: data[data == nodata_value] = np.nan. 3. Apply scale/offset
+    if present: data = data * scale + off'
+- id: dt_pysteps_007
+  description: '{''description'': ''The motion field estimation (Lucas-Kanade or VET)
+    returns all zeros or a uniform constant vector that does not match the visible
+    precipitation movement. The nowcast produces stationary or uniformly shifted fields.\n''}'
+  affected_output: '{''root_cause'': "The optical flow parameters are misconfigured
+    for the radar resolution and precipitation pattern. Common causes: (a) fd_method=''shitomasi''
+    with too few features detected (low precipita'
+  detection: '{''root_cause'': "The optical flow parameters are misconfigured for
+    the radar resolution and precipitation pattern. Common causes: (a) fd_method=''shitomasi''
+    with too few features detected (low precipita'
+  fix: '{''action'': "For Lucas-Kanade: increase fd_kwargs[''maxCorners''] (try 1000-2000),
+    decrease fd_kwargs[''qualityLevel''] (try 0.01), increase lk_kwargs[''winSize'']
+    (try (50,50) for coarse grids). For VET: in'
+- id: dt_pysteps_008
+  description: '{''description'': ''STEPS ensemble nowcast produces all members with
+    nearly identical fields, providing no useful spread. Probability maps show sharp
+    0%/100% boundaries instead of gradual transitions. The ensemble is effectively
+    deterministic.\n''}'
+  affected_output: '{''root_cause'': ''The stochastic perturbation parameters are
+    set too low or the noise generation is misconfigured. Key parameters: n_cascade_levels
+    (default 6) may be too few for the domain size, or the'
+  detection: '{''root_cause'': ''The stochastic perturbation parameters are set too
+    low or the noise generation is misconfigured. Key parameters: n_cascade_levels
+    (default 6) may be too few for the domain size, or the'
+  fix: '{''action'': "1. Ensure n_ens_members >= 20 (ideally 48-100) for meaningful
+    spread. 2. Check noise_method is ''nonparametric'' (default) or ''parametric''.
+    3. Increase n_cascade_levels to 8 for domains >= 5'
+- id: dt_pysteps_009
+  description: '{''description'': ''The pystepsrc configuration file is not found
+    or pysteps uses default settings ignoring user customizations. Calls to pysteps.rcparams
+    show empty or default paths. Data importers cannot find radar files even though
+    the paths are configured.\n''}'
+  affected_output: '{''root_cause'': ''Pysteps searches for pystepsrc in a specific
+    order: (1) PYSTEPSRC environment variable, (2) current directory, (3) ~/.pysteps/pystepsrc,
+    (4) site-packages/pysteps/pystepsrc. If the fil'
+  detection: '{''root_cause'': ''Pysteps searches for pystepsrc in a specific order:
+    (1) PYSTEPSRC environment variable, (2) current directory, (3) ~/.pysteps/pystepsrc,
+    (4) site-packages/pysteps/pystepsrc. If the fil'
+  fix: '{''action'': ''1. Set PYSTEPSRC environment variable: export PYSTEPSRC=/path/to/pystepsrc.
+    2. Verify it is loaded: python -c "import pysteps; print(pysteps.rcparams)". 3.
+    Ensure pystepsrc is valid JSON ('
+- id: dt_pysteps_010
+  description: '{''description'': ''STEPS/ANVIL nowcast takes extremely long to run
+    (hours instead of seconds) or the process is killed by the OOM killer. The domain
+    is a large national composite (e.g., 2000x2000 pixels or larger).\n''}'
+  affected_output: '{''root_cause'': ''Large domains with many ensemble members consume
+    O(n_ens * nx * ny * n_cascade_levels * n_leadtimes) memory. A 2000x2000 domain
+    with 48 ensemble members, 8 cascade levels, and 12 lead '
+  detection: '{''root_cause'': ''Large domains with many ensemble members consume
+    O(n_ens * nx * ny * n_cascade_levels * n_leadtimes) memory. A 2000x2000 domain
+    with 48 ensemble members, 8 cascade levels, and 12 lead '
+  fix: '{''action'': ''1. Reduce domain size: crop to the region of interest plus
+    a border of ~50 pixels for advection. 2. Reduce n_ens_members to 20 (minimum for
+    useful probabilities). 3. Reduce n_cascade_level'
+- id: dt_pysteps_011
+  description: '{''description'': ''Probability of exceedance maps from the STEPS
+    ensemble show unrealistically high probabilities everywhere (e.g., P(R > 10 mm/h)
+    = 80% across the entire domain) or unrealistically low probabilities (near 0%
+    even where heavy rain is occurring).\n''}'
+  affected_output: '{''root_cause'': ''Too few ensemble members cause sampling noise
+    in probability estimates. With n_ens_members=5, probabilities are quantized to
+    0%, 20%, 40%, 60%, 80%, 100%. Additionally, if the threshol'
+  detection: '{''root_cause'': ''Too few ensemble members cause sampling noise in
+    probability estimates. With n_ens_members=5, probabilities are quantized to 0%,
+    20%, 40%, 60%, 80%, 100%. Additionally, if the threshol'
+  fix: '{''action'': ''1. Use at least 20-48 ensemble members for stable probability
+    estimates. 2. Verify the exceedance threshold is in the same unit as the nowcast
+    output (mm/h after inverse transform, or dBR '
+- id: dt_pysteps_012
+  description: '{''description'': ''The nowcast domain is too small and precipitation
+    features advect out of the domain boundary within 2-3 lead times, causing the
+    forecast to show disappearing rain at the edges. Verification scores degrade sharply
+    at longer lead times.\n''}'
+  affected_output: '{''root_cause'': ''The advection velocity multiplied by the total
+    forecast duration exceeds the domain buffer. For example, with a motion of 50
+    km/h and a 2-hour forecast, rain can travel 100 km. If the '
+  detection: '{''root_cause'': ''The advection velocity multiplied by the total forecast
+    duration exceeds the domain buffer. For example, with a motion of 50 km/h and
+    a 2-hour forecast, rain can travel 100 km. If the '
+  fix: '{''action'': "1. Estimate required buffer: buffer_px = max_velocity_px_per_frame
+    * n_leadtimes. Add this buffer on all sides of the domain of interest. 2. Typical
+    rule of thumb: buffer = 1.5 * max_displ'
+- id: dt_pysteps_013
+  description: '{''description'': ''The extrapolation nowcast shows streak artifacts,
+    ghosting, or duplicated precipitation features. Some cells have negative precipitation
+    values. The nowcast looks blurred or smeared compared to the input.\n''}'
+  affected_output: '{''root_cause'': ''Semi-Lagrangian advection with bilinear interpolation
+    can produce numerical diffusion (smearing) and overshoots (negative values). This
+    is worse when: (a) the motion field has strong g'
+  detection: '{''root_cause'': ''Semi-Lagrangian advection with bilinear interpolation
+    can produce numerical diffusion (smearing) and overshoots (negative values). This
+    is worse when: (a) the motion field has strong g'
+  fix: '{''action'': "1. Clip negative values: nowcast = np.maximum(nowcast, 0.0).
+    2. Increase advection sub-steps: use extrap_kwargs={''n_iter'': 3-5} (default
+    is 1) to reduce CFL violations. 3. For sharp featur'
+- id: dt_pysteps_014
+  description: '{''description'': ''NaN values propagate through the entire nowcast.
+    After a few lead times, most or all grid cells are NaN. The first lead time may
+    be partially valid but subsequent ones are increasingly NaN-dominated.\n''}'
+  affected_output: '{''root_cause'': ''The input precipitation field contains NaN
+    values (missing data, radar beam blockage, quality-masked pixels) and the semi-Lagrangian
+    advection scheme propagates NaN through interpolati'
+  detection: '{''root_cause'': ''The input precipitation field contains NaN values
+    (missing data, radar beam blockage, quality-masked pixels) and the semi-Lagrangian
+    advection scheme propagates NaN through interpolati'
+  fix: '{''action'': "1. Before nowcasting, fill NaN values: R[np.isnan(R)] = 0.0
+    (conservative, assumes no rain where data is missing). Or use pysteps.utils.cleansing
+    to interpolate missing regions. 2. For qua'
+- id: dt_pysteps_015
+  description: '{''description'': ''Verification scores (CSI, FSS, RMSE) are computed
+    but are all NaN or raise errors. The nowcast and observation arrays appear to
+    have valid data but det_cat_fct or fss returns NaN for all metrics.\n''}'
+  affected_output: '{''root_cause'': ''The verification function received arrays with
+    incompatible characteristics: (a) both arrays are all-zero (no precipitation in
+    either forecast or observation), making contingency table'
+  detection: '{''root_cause'': ''The verification function received arrays with incompatible
+    characteristics: (a) both arrays are all-zero (no precipitation in either forecast
+    or observation), making contingency table'
+  fix: '{''action'': "1. Check array shapes: assert nowcast.shape == obs.shape. 2.
+    Check for all-zero: if (obs > thr).sum() == 0, CSI is undefined. 3. Verify threshold
+    unit matches data unit. If data is mm/h, t'
+- id: dt_pysteps_016
+  description: '{''description'': "Importing pysteps raises ImportError or ModuleNotFoundError
+    for ''pysteps._vet_module'' or ''pysteps.motion._proesmans''. The pure-Python
+    components import fine but compiled Cython extensions fail.\n"}'
+  affected_output: '{''root_cause'': ''Pysteps includes Cython-compiled C extensions
+    for performance-critical routines (Proesmans optical flow, VET). These are compiled
+    at install time for the specific Python version and pl'
+  detection: '{''root_cause'': ''Pysteps includes Cython-compiled C extensions for
+    performance-critical routines (Proesmans optical flow, VET). These are compiled
+    at install time for the specific Python version and pl'
+  fix: '{''action'': ''1. Reinstall pysteps with build: pip install --force-reinstall
+    --no-cache-dir pysteps. 2. Ensure a C compiler is available: apt-get install gcc
+    g++ (Debian/Ubuntu). 3. Verify Cython extens'
+- id: dt_pysteps_017
+  description: '{''description'': ''Running STEPS ensemble nowcast with many members
+    causes MemoryError or the process is killed by the system OOM killer. The crash
+    happens during the cascade decomposition or noise generation phase.\n''}'
+  affected_output: '{''root_cause'': ''The STEPS nowcast stores the full cascade decomposition
+    for all ensemble members in memory simultaneously. Memory usage scales as: n_members
+    * n_cascade_levels * 2 (real+imag) * nx * n'
+  detection: '{''root_cause'': ''The STEPS nowcast stores the full cascade decomposition
+    for all ensemble members in memory simultaneously. Memory usage scales as: n_members
+    * n_cascade_levels * 2 (real+imag) * nx * n'
+  fix: '{''action'': ''1. Reduce ensemble size: n_ens_members=20 is the practical
+    minimum. 2. Reduce domain size by cropping to area of interest with buffer. 3.
+    Use float32 if pysteps supports it (check version)'
+- id: dt_pysteps_018
+  description: '{''description'': ''Pysteps import succeeds but pysteps.rcparams.data_sources
+    is empty or points to nonexistent paths. Calling pysteps.io.archive.find_by_date
+    raises KeyError for the data source name. Importer functions work fine when called
+    directly with explicit file paths.\n''}'
+  affected_output: '{''root_cause'': ''The pystepsrc configuration file is missing,
+    malformed, or not found in the expected search path. Pysteps silently falls back
+    to a minimal default configuration with no data sources. T'
+  detection: '{''root_cause'': ''The pystepsrc configuration file is missing, malformed,
+    or not found in the expected search path. Pysteps silently falls back to a minimal
+    default configuration with no data sources. T'
+  fix: '{''action'': ''1. Create or fix ~/.pysteps/pystepsrc with correct JSON structure.
+    2. Set PYSTEPSRC=/path/to/pystepsrc before importing pysteps. 3. Verify: python
+    -c "import pysteps; print(pysteps.rcparam'
+- id: dt_pysteps_019
+  description: '{''description'': ''When overlaying the nowcast on a geographic map
+    (basemap, cartopy), the precipitation field is shifted by tens to hundreds of
+    kilometers from its true location. The field shape looks correct but is offset
+    in lat/lon space.\n''}'
+  affected_output: '{''root_cause'': "CRS/projection mismatch between the radar composite
+    projection and the map projection. Radar composites use various projections: OPERA
+    uses LAEA (EPSG:3035), BoM uses Albers Equal Area'
+  detection: '{''root_cause'': "CRS/projection mismatch between the radar composite
+    projection and the map projection. Radar composites use various projections: OPERA
+    uses LAEA (EPSG:3035), BoM uses Albers Equal Area'
+  fix: '{''action'': "1. Check metadata[''projection''] - it should be a PROJ string
+    or EPSG code matching the radar composite CRS. 2. For OPERA HDF5: projection is
+    typically +proj=laea +lat_0=52 +lon_0=10 +x_0=4'
+- id: dt_pysteps_020
+  description: '{''description'': ''Merging nowcast output with other geospatial data
+    (catchment boundaries, rain gauges, hydrological model grid) produces zero overlap
+    or incorrect spatial intersections. The nowcast grid does not align with the target
+    grid despite covering the same geographic area.\n''}'
+  affected_output: '{''root_cause'': ''The radar grid and the target grid use different
+    projections or different grid origins/cell sizes. Radar composites typically use
+    equal-area projections with 1-2 km resolution, while h'
+  detection: '{''root_cause'': ''The radar grid and the target grid use different
+    projections or different grid origins/cell sizes. Radar composites typically use
+    equal-area projections with 1-2 km resolution, while h'
+  fix: '{''action'': ''1. Reproject the nowcast to the target CRS using pysteps.utils.reprojection.reproject_grids
+    or scipy/rasterio warp. 2. Interpolate to the target grid: scipy.interpolate.RegularGridInterpol'
+unit_conversions: []

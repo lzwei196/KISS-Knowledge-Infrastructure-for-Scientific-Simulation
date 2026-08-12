@@ -10,9 +10,10 @@ with the template unchanged means only *hydrology* variables transfer — any
 This tool offers two pragmatic ways to retarget the operation schedule:
 
 1. ``replace_plant_code(workspace, old, new)``
-   — Swap every occurrence of operation code ``old`` on column 4 for ``new``.
-   Use this when you know the template's plant op code and want to swap
-   the crop for a different PLANTABLE.DAT row (e.g. 132 → 4 for CORN).
+   — Swap every occurrence of PLANT_ID ``old`` on **column 6** for ``new``.
+   IMPORTANT: Column 4 is TILLAGE_ID, Column 6 is PLANT_ID (from CROPCOM.DAT).
+   This was confirmed from the official XLSM editor (reference/apexeditorrev2203.xlsm,
+   sheet MNGT.MNG, row 6). Use this to swap crop (e.g. PAST=2 → CORN=10).
 
 2. ``rewrite_from_rows(workspace, name, rows)``
    — Overwrite ``OPSC01.MGT`` with a caller-supplied list of ``OperationRow``
@@ -84,7 +85,7 @@ def _ensure(workspace: Path, name: str = OPSC_NAME) -> Path:
 def replace_plant_code(workspace, *, old_plant_code: int, new_plant_code: int,
                        name: str = OPSC_NAME) -> Path:
     """Swap every row whose op_code column equals ``old_plant_code`` to
-    ``new_plant_code``. Only column 4 (the operation code) is rewritten; the
+    ``new_plant_code``. Only column 6 (PLANT_ID from CROPCOM.DAT) is rewritten; the
     rest of each row is preserved byte-for-byte."""
     path = _ensure(Path(workspace), name)
     lines = path.read_text().splitlines()
@@ -102,8 +103,10 @@ def replace_plant_code(workspace, *, old_plant_code: int, new_plant_code: int,
             out.append(raw)
             continue
         try:
-            if int(parts[3]) == old_plant_code:
-                parts[3] = str(new_plant_code)
+            # Column 6 (index 5) is PLANT_ID, NOT column 4 (index 3) which is TILLAGE_ID
+            # Confirmed from XLSM editor sheet MNGT.MNG row 6
+            if len(parts) > 5 and int(parts[5]) == old_plant_code:
+                parts[5] = str(new_plant_code)
                 # Rewrite the first 4 integer cols with fixed widths while
                 # keeping the param tail exactly as it was.
                 head = (

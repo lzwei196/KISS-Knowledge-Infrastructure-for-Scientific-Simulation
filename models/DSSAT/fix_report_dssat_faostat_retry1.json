@@ -1,0 +1,26 @@
+{
+  "model_id": "DSSAT",
+  "fix_type": "doc_update",
+  "commands_run": [
+    {
+      "command": "WD=$(find /mnt/disk1/Hydrocraft_server -name Summary.OUT ... ); ... validate_yield_timeseries.py --workdir \"$WD\" --lat 32.9 --lon 117.4 --crop maize --obs gdhy --out \"$WD/validation_metrics.json\"",
+      "exit_code": null,
+      "stdout_tail": "skipped by stage_fix (v0.1 P3 — this fix_command re-runs validate_yield_timeseries.py to recompute {nse,kge,r,pbias}; a metric-producing retest is reviewer-gated)",
+      "stderr_tail": ""
+    }
+  ],
+  "files_verified": [
+    {
+      "file": "/mnt/disk1/Hydrocraft_server/models/DSSAT/knowledge_infrastructure/SKILL.md",
+      "expected_change": "OBS-SCALE RULE callout inserted after the 'one pair -> rc=2 ... SPAM only for %bias/nRMSE' block (lines 208-225): mandates --obs gdhy as the only valid obs for the r<0.5 interannual gate at a single site, marks --obs faostat national as %bias-only, cites Bengbu PBIAS +8.94%/r -0.083 vs AquaCrop Henan r~0.80, notes FAOSTAT has no sub-national Area.",
+      "found": true
+    },
+    {
+      "file": "/mnt/disk1/Hydrocraft_server/models/DSSAT/knowledge_infrastructure/tools/s9_output_parsing/validate_yield_timeseries.py",
+      "expected_change": "No code change required — line 28 already declares ap.add_argument('--obs', default='gdhy', choices=['gdhy','faostat']); gdhy is the default obs.",
+      "found": true
+    }
+  ],
+  "fix_status": "applied",
+  "fix_status_reason": "The doc_update fix landed cleanly — the SKILL.md OBS-SCALE RULE callout is present (lines 208-225) and the tool already defaults to --obs gdhy (no code change needed); the lone fix_command was a metric-producing validation re-run, deferred to the reviewer-gated retest stage."
+}

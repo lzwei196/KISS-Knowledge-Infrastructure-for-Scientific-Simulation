@@ -109,7 +109,7 @@ If discharge peaks are too sharp, check timestep and infiltration parameters.
 |--------|------|--------------|
 | Raw output | `outputs/{run}/crhm/crhm_output.txt` | Non-empty, correct line count |
 | Parsed CSV | `outputs/{run}/crhm/parsed/crhm_results.csv` | Has datetime column, numeric data |
-| Parsed NetCDF | `outputs/{run}/crhm/parsed/crhm_results.nc` | xarray-readable with time dim |
+| Parsed NetCDF | `outputs/{run}/crhm/parsed/crhm_results.nc` | xarray-readable with time dim -- **`import netCDF4` FIRST under python_env** or the read fails OSError -101 (dt_v010) |
 | SWE plot | `outputs/{run}/crhm/plots/swe_timeseries.png` | SWE peaks in winter |
 | Discharge plot | `outputs/{run}/crhm/plots/discharge_timeseries.png` | Spring peak |
 

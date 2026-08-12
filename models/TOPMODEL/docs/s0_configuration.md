@@ -31,7 +31,7 @@ simulation period, forcing data source, and output options.
    - Verify forcing data covers the full period.
 
 3. **Choose forcing**: Select CMFD (China) or MSWX (global).
-   - CMFD daily 0.25°: `/mnt/disk1/Hydrocraft_server/data/forcing/huai/Data_forcing_01dy_025deg/`
+   - CMFD daily 0.25°: `/media/server/hc_ssd/forcing/huai/Data_forcing_01dy_025deg/`
    - MSWX 3-hourly: `/mnt/disk3/msxw/`
 
 4. **Set time step**: TOPMODEL uses hours. Typically dt=1 for hourly, dt=24 for daily.
@@ -66,7 +66,7 @@ config = {
     'spinup_years': 1,
     'dt_hours': 24,
     'forcing_source': 'CMFD',
-    'forcing_dir': '/mnt/disk1/Hydrocraft_server/data/forcing/huai/Data_forcing_01dy_025deg/',
+    'forcing_dir': '/media/server/hc_ssd/forcing/huai/Data_forcing_01dy_025deg/',
     'obs_file': '/mnt/disk1/Hydrocraft_server/data/obs/BB/51080_bengbu.txt',
     'obs_station': '51080',
 }

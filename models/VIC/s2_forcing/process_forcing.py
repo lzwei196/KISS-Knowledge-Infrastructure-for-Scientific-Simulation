@@ -1,3 +1,10 @@
+# KDT dt_vic_023: netCDF4 MUST be imported before xarray. A bare
+# xr.open_dataset() makes xarray enumerate every installed backend entrypoint
+# (rex -> h5py), which dlopen's h5py's bundled libhdf5 first. netCDF4's C calls
+# then bind to that foreign HDF5 and the interpreter dies with SIGSEGV during
+# HDF5 teardown -- after the data has already been read correctly. Importing
+# netCDF4 first makes its own libhdf5 win the global symbol table.
+import netCDF4  # noqa: F401  # isort:skip  -- must precede `import xarray`
 import xarray as xr
 import pandas as pd
 from pathlib import Path
@@ -8,13 +15,38 @@ import warnings
 # --- 0. 忽略不必要的警告 ---
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+
+def open_nc(path) -> xr.Dataset:
+    """Engine-pinned, eagerly-loaded, handle-closing read.
+
+    Mirrors the shipped siblings s2_forcing/forcing_1d.py and
+    s3_soil/fill_parameters1.py. Pinning the engine skips xarray's backend
+    probe; .load() inside the context manager keeps at most one live HDF5
+    handle instead of one per input file.
+    """
+    try:
+        with xr.open_dataset(path, engine="netcdf4") as ds:
+            return ds.load()
+    except Exception:
+        with xr.open_dataset(path, engine="h5netcdf") as ds:
+            return ds.load()
+
 # --- 1. 配置路径 ---
 # 输入：包含所有处理好的NC文件的文件夹
-INPUT_DATA_DIR = Path(r"/Volumes/Expansion4t/hydro-space2/outputs/xixian_1979-1980_025deg/vic_temp/forcing/forcing_1d")
+# --- Basin/period configuration via environment (KDT 2026-07-09) -----------
+# The forcing_1d NetCDF glob and the VIC forcing-file prefix used to be
+# hard-coded to `_xixian.nc` / `huai_01dy_025deg_`, so a new basin silently
+# found zero input files (or wrote files VIC could not locate via FORCING1).
+_BASIN = os.environ.get("VIC_BASIN_NAME", "xixian")
+_OUT_ROOT = Path(os.environ.get("VIC_OUT_ROOT", "/mnt/disk1/Hydrocraft_server/outputs"))
+# FORCING1 prefix in the global param file MUST equal this string.
+FORCING_PREFIX = os.environ.get("VIC_FORCING_PREFIX", "huai_01dy_025deg_")
+
+INPUT_DATA_DIR = _OUT_ROOT / _BASIN / "vic_temp" / "forcing" / "forcing_1d"
 # 输出：最终气象驱动文件存放的文件夹
-OUTPUT_FORCING_DIR = Path(r"/Volumes/Expansion4t/hydro-space2/outputs/xixian_1979-1980_025deg/vic_temp/forcing/forcing_final")
+OUTPUT_FORCING_DIR = _OUT_ROOT / _BASIN / "vic_temp" / "forcing" / "forcing_final"
 # 土壤参数文件（用于获取准确的经纬度和grid_id）
-SOIL_PARAM_FILE = Path(r"/Volumes/Expansion4t/hydro-space2/outputs/xixian_1979-1980_025deg/vic_temp/soil/SOIL_PARAM_COMPLETE.txt")
+SOIL_PARAM_FILE = _OUT_ROOT / _BASIN / "vic_temp" / "soil" / "SOIL_PARAM_COMPLETE.txt"
 
 # --- 2. 准备工作 ---
 os.makedirs(OUTPUT_FORCING_DIR, exist_ok=True)
@@ -54,16 +86,15 @@ try:
     for var in variables_to_load:
         print(f"  - 正在加载变量: {var}")
         # 使用 glob 找到所有文件并逐个打开
-        var_files = sorted(glob.glob(str(INPUT_DATA_DIR / f"{var}_*_xixian.nc")))
+        var_files = sorted(glob.glob(str(INPUT_DATA_DIR / f"{var}_*_{_BASIN}.nc")))
         if not var_files:
             raise FileNotFoundError(f"未找到 {var} 的文件")
 
-        # 打开第一个文件
-        ds_var = xr.open_dataset(var_files[0])
-        # 如果有多个文件，依次打开并合并
-        for f in var_files[1:]:
-            ds_temp = xr.open_dataset(f)
-            ds_var = xr.concat([ds_var, ds_temp], dim='time')
+        # KDT 2026-07-09: was an incremental xr.concat inside the loop, which
+        # re-copies the whole accumulated array on every file (O(n^2) in both
+        # time and memory). One concat over the full list is O(n).
+        ds_var = xr.concat([open_nc(f) for f in var_files], dim='time')
+        ds_var = ds_var.sortby('time')
 
         all_ds.append(ds_var)
 
@@ -81,9 +112,8 @@ except Exception as e:
 print(f"\n步骤3: 筛选时间范围")
 print("-"*80)
 
-# 修正：使用1970-1986年
-START_DATE = '1979-01-01'
-END_DATE = '1980-12-31'
+START_DATE = os.environ.get("VIC_START_DATE", '1979-01-01')
+END_DATE = os.environ.get("VIC_END_DATE", '1980-12-31')
 print(f"时间范围: {START_DATE} 到 {END_DATE}")
 
 ds_merged = ds_merged.sel(time=slice(START_DATE, END_DATE))
@@ -124,7 +154,7 @@ for idx, row in df_soil.iterrows():
     # 构造输出文件名（匹配VIC期望的格式）
     # 根据VIC全局参数文件中的FORCING定义，使用以下格式之一：
     # 格式1: huai_01dy_025deg_<lat>_<lon> (标准前缀，4位小数)
-    output_filename = f"huai_01dy_025deg_{lat:.4f}_{lon:.4f}"
+    output_filename = f"{FORCING_PREFIX}{lat:.4f}_{lon:.4f}"
     
     # 格式2（备选）: forcing_<lat>_<lon>
     # output_filename = f"forcing_{lat:.4f}_{lon:.4f}"

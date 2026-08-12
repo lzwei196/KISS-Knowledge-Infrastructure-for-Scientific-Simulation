@@ -113,6 +113,176 @@ The LDD (local drain direction) in `staticmaps.nc` is the #1 failure point. Thre
 
 The `run_hydromt_build.py` tool handles all of this automatically since 2026-04-10. See `diagnostics/triplets.yaml` dt_w014, dt_w027, dt_w031 for details.
 
+### Critical: the DOMAIN must come from the FLOW NETWORK, not a shapefile (2026-07-20)
+
+This is the failure that silently invalidates a basin run, and it is NOT the
+same bug as the cycle problem above. dt_w014's remedy says "if the LDD target
+leaves the active mask, set LDD = 5 (pit)". That rule is correct *given* a mask
+that agrees with the flow network — but when the mask is a rasterised shapefile
+(derived from a different, finer DEM) it does NOT agree cell-for-cell, so every
+misaligned edge cell becomes a pit. Xixian at 0.1° produced **20 outlets in a
+128-cell basin**: 19 fabricated sub-basins draining nowhere, and discharge at the
+gauge integrating only a fraction of the catchment. wflow runs happily. There is
+no error. The hydrograph just has the wrong magnitude.
+
+**Always check `n_outlets` in the s1 build output. It must be exactly 1.**
+`run_hydromt_build.py` now fails loudly instead of returning a shattered domain.
+
+The fix is to delineate the domain FROM the same coarse network the model routes
+on — trace upstream from the snapped outlet — so the domain is upstream-closed by
+construction and only the true outlet is a pit.
+
+### Critical: on low-relief basins, coarse-DEM D8 is noise — use MERIT-Hydro
+
+Deriving D8 from a nearest-neighbour-resampled DEM works on terrain with relief.
+On a floodplain it does not: neighbouring 0.1° cells on the Huai plain differ by
+a few metres, so the drainage pattern is essentially arbitrary. At Xixian this
+snapped the outlet ~30 km from the gauge and got the area +13% wrong.
+
+Pass `--merit_hydro_dir` to upscale MERIT-Hydro's hydrologically corrected
+3-arcsec D8 (`*_dir.tif`) and upstream-area (`*_upa.tif`) grids instead. Each
+coarse cell's outlet pixel is the max-`upa` basin pixel inside it; walking
+downstream on the fine network to the next active coarse cell gives the coarse
+direction. At Xixian this gave 97 cells / 10,171 km², **−0.2%** against the
+published 10,190 km², one outlet, zero cycles.
+
+MERIT-Hydro tiles ship as 30°×30° tars under `/mnt/datasets/MERIT_Hydro/v1.0.1/`.
+Do NOT hand-roll `tar xf` (the member path and the s/w hemisphere tile names are
+easy to get wrong, and the failure surfaces only as
+`no MERIT-Hydro 'dir' tiles ... for bbox`). Stage them with the KI tool — it is
+resumable and takes the bbox straight from the basin shapefile:
+
+```bash
+python tools/s1_hydromt/fetch_merit_hydro_tiles.py \
+  --shapefile data/shp/<basin>.shp --pad_deg 0.4 --kinds dir,upa,elv \
+  --out_dir /mnt/disk1/Hydrocraft_server/data/merit_hydro_cache
+```
+
+**Always pass `--kinds dir,upa,elv`.** `--kinds` defaults to `dir,upa`, which is
+only what the coarse LDD upscaling needs. Without `elv`, s1 cannot walk the fine
+3-arcsec main stem inside each cell and silently drops back to the coarse D8
+drop for `RiverSlope` — the build reports
+`"river_slope_method": "coarse_d8_fallback"` and a `river_slope_note` telling you
+to stage `elv`. Read those two fields; kinematic-wave celerity on the channel
+network is set by `RiverSlope`.
+
+### Critical: the GAUGE cell must be activated BEFORE the coarse LDD (dt_w041)
+
+In MERIT-Hydro mode a coarse cell is active when ≥ `--merit_cell_fraction`
+(default 0.5) of it lies inside the traced basin. The outlet cell sits at the
+downstream tip and is routinely far below that — 24 % at Rio Pelotas. Activating
+it *after* the upscaled LDD is built is too late: every upstream trace has
+already walked past an "inactive" gauge cell and attached to the first active
+cell **downstream** of it, so nothing drains to the outlet and the reachability
+prune deletes the entire basin (`Domain: 80 cells` → `Pruned 79 cell(s)` →
+`Domain after prune: 1 cells`). `run_hydromt_build.py` now forces the gauge cell
+active first and prints `Outlet cell (j,i) is only N% in-basin — activating it
+anyway`.
+
+### Critical: outside China the DEM default is a FLAT PLACEHOLDER (dt_w040)
+
+`run_hydromt_build.py` used to default `dem_path` to `china_dem_90m.tif`. On any
+non-China basin every sample is nodata, the gap fill has no donor, and the tool
+fell through to a **flat 500 m placeholder** — `Slope` and `RiverSlope` then
+collapse to the 1e-4 floor and kinematic-wave celerity is set by that floor
+instead of the terrain. wflow runs; the hydrograph is simply wrong.
+
+The DEM is now resolved per basin: `--dem_path` > config `data.dem_path` > auto
+(China 90 m DEM when the whole window is inside China, otherwise the global
+MERIT DEM tile directory `/mnt/datasets/MERIT_DEM`). `--dem_path` accepts either
+a single GeoTIFF or a **directory of MERIT 5°×5° `<tile>_dem.tif` tiles**, which
+are merged over the window. If the DEM covers none of the window the build now
+FAILS instead of substituting a placeholder. Always read the s1 line:
+
+```
+DEM sampled from /mnt/datasets/MERIT_DEM: 374/391 cells valid, -0 - 1738 m
+```
+
+### Critical: dt_w040's DEM fix has been ROLLED BACK once — verify it every run
+
+The auto-resolution of the elevation source (`_resolve_dem_path` /
+`_sample_dem` in `run_hydromt_build.py`) was reverted at some point between the
+2026-08-05 Rio Pelotas run and 2026-08-08, leaving the old hard default to
+`china_dem_90m.tif`. On the Saar every sample came back nodata, the
+nearest-neighbour gap fill had no donor, and the build carried on over a uniform
+-9999 surface — `DEM sampled: -9999 - -9999 m`, `RiverSlope` median 1.67e-04
+(the floor). It restores to `86 - 887 m` and 1.57e-03 once the fix is back.
+
+**Read the `DEM sampled from ...` line every single run.** It must name a real
+source and report `N/N cells valid` with a plausible elevation range. If it says
+`-9999 - -9999`, or the line is missing entirely, the fix has been rolled back
+again; the domain will still look perfect (MERIT-Hydro supplies it) and wflow
+will still run.
+
+### Critical: HWSD has NON-SOIL mapping units — a city or a lake is not an error
+
+HWSD reserves mapping units for surfaces with no soil profile: **7001 UR
+(urban)**, **7003 WR (water bodies)**, plus glacier / rock / salt-flat / dune /
+no-data units. All of them carry `ISSOIL = 0` and **every** soil attribute,
+REF_DEPTH included, is NaN by definition.
+
+`derive_landsurface_params.py` used to read ONE HWSD pixel per cell, at the cell
+centre, so a single cell centred on a city or a reservoir failed the whole build
+with `mapping unit(s) [7001, 7003] carry no usable REF_DEPTH row ... fix the soil
+join`. Nothing is wrong with the join — the Saar basin simply contains
+Saarbrücken and open water. It now samples the cell's FULL footprint and
+area-weights REF_DEPTH / texture over the SOIL units inside it, excluding the
+declared non-soil ones (`hwsd_nonsoil_mapping_units_excluded` and
+`hwsd_nonsoil_pixel_fraction` in the provenance record what was dropped). A cell
+with **no** soil pixel at all still fails, and so does a unit that claims
+`ISSOIL = 1` but carries unusable data.
+
+### Critical: a sentinel must be outside the DATA's range, not just its legend
+
+`derive_landsurface_params.py` pads its GLC_FCS30 mosaic with `LC_PAD_SENTINEL`
+so a staging gap can be told from in-tile nodata. The tiles are **uint8 with no
+declared nodata** (`nodatavals == (None,)`), so *any* value in 0-255 can appear
+as raw fill: the previous sentinel 255 was "absent from the legend" and absent
+from the Rio Pelotas tiles, yet 9,277 pixels of the Saar window carry it. The
+sentinel is now **300** with the mosaic read as int16 — outside the product's
+dtype, so it is unreachable by construction.
+
+Separately, `rasterio.merge` leaves the destination's **last row/column
+unwritten** when the requested bounds are not an exact multiple of the source
+resolution. That is a rounding artifact, not a staging gap, and no sentinel
+choice fixes it; the merge window is now padded by two source pixels so the
+artifact lands outside the model grid.
+
+### Critical: `run_wflow.py` must honour `dir_input` / `dir_output`
+
+Wflow.jl resolves `input.path_static` / `input.path_forcing` relative to the
+top-level `dir_input` (itself relative to the TOML's own directory), and writes
+every output into `dir_output`. `run_wflow.py`'s preflight used to join
+`path_static` straight onto the TOML's directory, so it refused to run any TOML
+in the standard upstream layout — including **Deltares' own shipped Moselle
+example**: `Static maps file not found: <toml_dir>/staticmaps-moselle.nc`. Both
+the preflight and the output-file scan now resolve through `dir_input` /
+`dir_output`, and the shipped example reproduces bit-exactly.
+
+### Running a basin outside China — checklist
+
+| Input | Non-China choice |
+|---|---|
+| DEM | leave `--dem_path` unset (auto → `/mnt/datasets/MERIT_DEM`) |
+| Flow network | `fetch_merit_hydro_tiles.py` → `--merit_hydro_dir <cache>` |
+| Forcing | `--forcing mswx` (s0) and `--source mswx` (s2); CMFD is China-only |
+| Soil | HWSD via `lookup_hwsd` — already global |
+| Obs | GRDC-Caravan; **`streamflow` is mm/day**, multiply by area to get m³/s |
+
+MSWX annual files are gzip-chunked one global slab per timestep, so each
+(variable, year) costs a full-year decompression regardless of how few cells are
+wanted. `convert_forcing_to_wflow.py` therefore reads only `P` and `Tair` for
+MSWX (all that Hargreaves PET needs) — ~3.5× faster than the 7-variable read.
+Budget ~10–15 min per basin-year anyway, and cache the conversion per year.
+
+### Critical: `reducer = "maximum"` is not the outlet
+
+The CSV column used to be a domain-wide maximum of `river_water__volume_flow_rate`.
+That equals outlet discharge only by accident — any larger neighbouring channel
+inside the window, or a tributary flood peak, silently reports a different cell.
+Pass `--outlet_lat/--outlet_lon` to `generate_wflow_toml.py` to emit a
+`coordinate.x/coordinate.y` column that samples the gauge cell explicitly.
+
 ### Chaohe (Partial Test, 2026-03-21)
 
 | Metric | Value |
@@ -204,6 +374,7 @@ Stages 0-1 are sequential. Stages 2 and 3 depend on 1. Stage 4 depends on 2+3. S
 | `setup_wflow_config` | s0 | `tools/s0_config/setup_wflow_config.py` | 150 | Generate wflow_config.yaml |
 | `build_data_catalog` | s1 | `tools/s1_hydromt/build_data_catalog.py` | 160 | HydroMT catalog -> HydroCraft data |
 | `run_hydromt_build` | s1 | `tools/s1_hydromt/run_hydromt_build.py` | 250 | Build staticmaps.nc |
+| `fetch_merit_hydro_tiles` | s1 | `tools/s1_hydromt/fetch_merit_hydro_tiles.py` | 160 | Stage MERIT-Hydro dir/upa/**elv** tiles for a bbox (resumable) — pass `--kinds dir,upa,elv` |
 | `convert_forcing_to_wflow` | s2 | `tools/s2_forcing/convert_forcing_to_wflow.py` | 320 | CMFD/MSWX/VIC -> wflow forcing.nc |
 | `calculate_pet` | s2 | `tools/s2_forcing/calculate_pet.py` | 220 | Hargreaves or Penman-Monteith PET |
 | `generate_wflow_toml` | s3 | `tools/s3_parameters/generate_wflow_toml.py` | 230 | wflow v1.0+ TOML generator |

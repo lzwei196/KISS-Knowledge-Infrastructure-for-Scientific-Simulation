@@ -93,6 +93,81 @@ def parse_lake_csv(lake_csv_path):
     return df
 
 
+def _nc_times(ds):
+    """Decode the GLM output.nc time axis to python datetimes."""
+    import netCDF4 as nc
+    time_var = ds.variables.get('time', None)
+    if time_var is None:
+        return None
+    try:
+        return nc.num2date(
+            time_var[:], time_var.units,
+            calendar=getattr(time_var, 'calendar', 'standard'),
+            only_use_cftime_datetimes=False, only_use_python_datetimes=True)
+    except Exception:
+        return time_var[:]
+
+
+def extract_depth_timeseries(output_nc_path, depths_m):
+    """Interpolate the simulated temperature profile onto FIXED depths below
+    the water surface (metres), one row per output timestep.
+
+    Why this exists (dag comparison caveat + dt_036): GLM's vertical grid is
+    ADAPTIVE LAGRANGIAN -- layer count (NS) and layer heights (z) change every
+    timestep, so column index != depth and no raw output variable is "the
+    temperature at 0.5 m". Every comparison against a fixed-depth observation
+    (thermistor chain, profile logger, soil/water sensor at a set depth) MUST
+    interpolate the active layers onto the observation depths first.
+
+    Reads ONE TIMESTEP AT A TIME (dt_034): a bulk `var[:]` read of the padded
+    z=500 arrays segfaults libnetcdf with no traceback on long runs.
+
+    z[] holds layer TOP heights above the lake bottom, ascending, valid only
+    for the first NS entries; the water surface is z[NS-1]. Layer centres are
+    used as the interpolation nodes, so `depth_below_surface = z[NS-1] - centre`.
+    Depths below the lake bottom return NaN (never a clamped bottom value).
+    """
+    import netCDF4 as nc
+
+    depths_m = np.asarray(depths_m, dtype=float)
+    ds = nc.Dataset(output_nc_path)
+    try:
+        times = _nc_times(ds)
+        ns_all = np.asarray(ds.variables['NS'][:]).astype(int)
+        zvar = ds.variables['z']
+        tvar = ds.variables['temp']
+        nt = len(ns_all)
+        rows = np.full((nt, len(depths_m)), np.nan)
+        surf = np.full(nt, np.nan)
+        for i in range(nt):
+            ns = int(ns_all[i])
+            if ns < 1:
+                continue
+            z = np.asarray(np.squeeze(zvar[i]), dtype=float)[:ns]
+            t = np.asarray(np.squeeze(tvar[i]), dtype=float)[:ns]
+            good = np.isfinite(z) & np.isfinite(t)
+            z, t = z[good], t[good]
+            if z.size == 0:
+                continue
+            bottoms = np.concatenate(([0.0], z[:-1]))
+            centres = 0.5 * (bottoms + z)
+            surface_h = float(z[-1])
+            surf[i] = surface_h
+            d = surface_h - centres          # depth below surface, descending
+            order = np.argsort(d)
+            d, tt = d[order], t[order]
+            vals = np.interp(depths_m, d, tt)   # clamps to surface layer above d[0]
+            vals = np.where(depths_m > surface_h, np.nan, vals)
+            rows[i] = vals
+    finally:
+        ds.close()
+
+    out = pd.DataFrame(rows, columns=[f"temp_{d:g}m" for d in depths_m])
+    out.insert(0, 'time', pd.to_datetime(times) if times is not None else np.arange(len(out)))
+    out['water_depth_m'] = surf
+    return out
+
+
 def parse_output_nc(output_nc_path):
     """Parse GLM output.nc for temperature profiles."""
     import netCDF4 as nc
@@ -105,12 +180,25 @@ def parse_output_nc(output_nc_path):
         "variables": list(ds.variables.keys()),
     }
 
-    # Extract temperature profile
+    # Extract temperature profile.
+    # dt_034: read timestep-by-timestep over the ACTIVE layers only. A bulk
+    # `[:]` read of the padded z=500 array segfaults libnetcdf on long runs,
+    # and the padding rows would poison min/max/mean anyway.
     temp = None
-    for var_name in ['temp', 'temperature', 'TEMP']:
-        if var_name in ds.variables:
-            temp = ds.variables[var_name][:]
-            break
+    tname = next((v for v in ('temp', 'temperature', 'TEMP') if v in ds.variables), None)
+    if tname is not None and 'NS' in ds.variables:
+        ns_all = np.asarray(ds.variables['NS'][:]).astype(int)
+        tvar = ds.variables[tname]
+        chunks = []
+        for i in range(len(ns_all)):
+            ns = int(ns_all[i])
+            if ns < 1:
+                continue
+            chunks.append(np.asarray(np.squeeze(tvar[i]), dtype=float)[:ns])
+        if chunks:
+            temp = np.concatenate(chunks)
+    elif tname is not None:
+        temp = ds.variables[tname][:]
 
     # Get time
     time_var = ds.variables.get('time', None)
@@ -265,11 +353,28 @@ def process(args):
         if nc_data["temp"] is not None:
             temp = nc_data["temp"]
             result["temperature_profile"] = {
-                "shape": list(temp.shape),
+                "n_active_layer_samples": int(np.asarray(temp).size),
                 "global_min_degC": round(float(np.nanmin(temp)), 2),
                 "global_max_degC": round(float(np.nanmax(temp)), 2),
                 "global_mean_degC": round(float(np.nanmean(temp)), 2),
             }
+
+        # Fixed-depth extraction (dag caveat: "interpolate to fixed observation
+        # depths" -- Lagrangian layers shift between outputs).
+        if args.depths:
+            depths = [float(x) for x in str(args.depths).split(',') if x.strip()]
+            dts = extract_depth_timeseries(args.output_nc, depths)
+            result["depth_timeseries"] = {
+                "depths_m": depths,
+                "n_records": int(len(dts)),
+                "means_degC": {c: (round(float(dts[c].mean()), 2)
+                                   if np.isfinite(dts[c].to_numpy(dtype=float)).any() else None)
+                               for c in dts.columns if c.startswith('temp_')},
+            }
+            if args.depth_timeseries:
+                os.makedirs(os.path.dirname(args.depth_timeseries) or '.', exist_ok=True)
+                dts.to_csv(args.depth_timeseries, index=False)
+                result["depth_timeseries"]["file"] = args.depth_timeseries
 
     return result
 
@@ -285,6 +390,14 @@ def main():
                         help="Output JSON summary path")
     parser.add_argument("--timeseries", type=str,
                         help="Output CSV time series path")
+    parser.add_argument("--depths", type=str,
+                        help="Comma-separated depths BELOW WATER SURFACE (m) to "
+                             "interpolate the simulated profile onto, e.g. "
+                             "'0.05,0.2,1.0'. Required for any comparison against "
+                             "fixed-depth observations (Lagrangian layers move).")
+    parser.add_argument("--depth_timeseries", type=str,
+                        help="Output CSV path for the fixed-depth temperature "
+                             "series produced by --depths")
     args = parser.parse_args()
 
     validate_inputs(args)

@@ -1,0 +1,167 @@
+# HEC-RAS Diagnostic Triplets
+# Each entry: symptom -> diagnosis -> remedy
+# Failure domains: UNIT, IO_FORMAT, CONFIGURATION, PARAMETER,
+#                  NUMERICAL, SPATIAL, OUTPUT
+# Grounded in HEC-RAS 6.x (1D/2D river hydraulics, unsteady flow,
+# sediment transport) and GR4J surrogate execution engine.
+
+triplets:
+  - id: dt_hecras_001
+    symptom:
+      description: "Simulated discharge is near zero despite significant rainfall; model appears to run but all flows are negligible"
+    diagnosis:
+      root_cause: "Precipitation fed in kg/m2/s (CMFD native) without the 86400 conversion factor to mm/day"
+    remedy:
+      action: "Multiply CMFD precipitation by 86400.0 before passing to run_hecras.py; since 1 kg/m2 = 1 mm, the conversion is P_mm_day = P_kgm2s * 86400"
+
+  - id: dt_hecras_002
+    symptom:
+      description: "PET is wildly overestimated causing excessive evaporation and unrealistically low runoff; Oudin PET values exceed 50 mm/day"
+    diagnosis:
+      root_cause: "Temperature passed in Kelvin instead of Celsius; the Oudin formula computes (T + 5)/100 so T=288 K yields (293)/100 = 2.93 instead of (20)/100 = 0.20"
+    remedy:
+      action: "Subtract 273.15 from CMFD temperature before passing to the model; verify temperature range is -40 to +50 Celsius after conversion"
+
+  - id: dt_hecras_003
+    symptom:
+      description: "Observed and simulated discharge differ by orders of magnitude even after calibration; NSE is strongly negative"
+    diagnosis:
+      root_cause: "Observed discharge in m3/s not converted to mm/day before metric comparison; the conversion Q_mm = Q_m3s * 86400 / (area_km2 * 1e6) * 1e3 was applied with area in m2 or the 1e3 factor was omitted"
+    remedy:
+      action: "Use the exact formula Q_mm = Q_m3s * 86400 / (area_km2 * 1e6) * 1e3; double-check that basin area is in km2, not m2, and that the 1e3 (meters to millimeters) factor is included"
+
+  - id: dt_hecras_004
+    symptom:
+      description: "HEC-RAS steady-state profile shows water surface elevation (WSE) in feet but cross-section geometry was entered in meters, causing impossible flow depths or program crash"
+    diagnosis:
+      root_cause: "Mixed unit system between geometry file and plan file; HEC-RAS geometry file uses SI (metric) elevations but the plan file or project settings specify US Customary units"
+    remedy:
+      action: "Ensure the project unit system is consistent across all files: set 'SI (Metric)' in the geometry editor and plan editor, or convert all station-elevation data to US Customary (feet) if that system is preferred; verify by checking that channel invert elevations and flow values are physically reasonable in the chosen unit system"
+
+  - id: dt_hecras_005
+    symptom:
+      description: "Model runs but Manning's n values appear to have no effect on water surface; computed WSE matches normal depth regardless of roughness"
+    diagnosis:
+      root_cause: "Manning's n specified in the geometry file is overridden by a calibration table in the plan file, or n values are set uniformly to 0.0 (frictionless) due to a format parsing error in the .g01 geometry file"
+    remedy:
+      action: "Open the geometry file (.g01) and verify that Manning's n values are non-zero and physically appropriate (0.01-0.15 for natural channels); check the plan file (.p01) for any roughness override tables; for the GR4J surrogate, verify that x3 (routing store, analogous to channel roughness effects) is within 10-500 mm"
+
+  - id: dt_hecras_006
+    symptom:
+      description: "Unsteady flow simulation becomes unstable with oscillating water surface; solution diverges with 'maximum iterations exceeded' warnings"
+    diagnosis:
+      root_cause: "Computational time step is too large relative to the Courant condition; for unsteady 1D flow the Courant number Cr = V * dt / dx should be <= 1.0, but large dt or small dx violates this"
+    remedy:
+      action: "Reduce the computation interval (dt) in the plan file or increase cross-section spacing (dx); as a starting point use dt <= dx / V_max where V_max is the maximum expected velocity; enable the 'Computation Level Output' to monitor Courant numbers during the run"
+
+  - id: dt_hecras_007
+    symptom:
+      description: "2D simulation runs extremely slowly or exhausts memory on a large floodplain domain"
+    diagnosis:
+      root_cause: "2D mesh cell size is too fine relative to the domain extent; a 1 m cell size on a 100 km2 floodplain creates 1e8 cells, overwhelming computational resources"
+    remedy:
+      action: "Increase 2D mesh cell size to match the hydraulic detail needed; use 10-50 m cells for floodplain areas and apply breaklines with finer resolution only along levees and channels; for the diffusion wave solver, cell sizes of 20-100 m are typically sufficient for floodplain mapping"
+
+  - id: dt_hecras_008
+    symptom:
+      description: "Boundary condition causes water to pile up at the downstream end; stages rise unrealistically at the last cross-section"
+    diagnosis:
+      root_cause: "Downstream boundary condition set to a fixed stage (known water surface) that is higher than the natural water surface for the given flow, or normal depth boundary uses an incorrect friction slope"
+    remedy:
+      action: "For subcritical flow, set the downstream boundary to 'Normal Depth' with the channel bed slope (typically 0.0001-0.01) as the friction slope estimate; if using a stage hydrograph, verify that stages are consistent with the rating curve at that location; place the downstream boundary far enough downstream that its influence does not reach the area of interest"
+
+  - id: dt_hecras_009
+    symptom:
+      description: "Bridge or culvert causes abrupt unrealistic drop in WSE upstream; flow appears choked even at low discharge"
+    diagnosis:
+      root_cause: "Contraction and expansion coefficients at the bridge are set too high (e.g., 0.5/1.0 instead of typical 0.3/0.5), or the bridge geometry low chord elevation is incorrect, forcing pressure flow prematurely"
+    remedy:
+      action: "Set contraction coefficient to 0.3 and expansion coefficient to 0.5 as standard bridge values (HEC-RAS default for bridges); verify the low chord and deck elevations match as-built survey data; check that the bridge modeling approach (energy, momentum, Yarnell, WSPRO) is appropriate for the structure type"
+
+  - id: dt_hecras_010
+    symptom:
+      description: "Supercritical flow transition causes solution instability; error messages mention 'divided flow' or 'critical depth exceeded' at steep reaches"
+    diagnosis:
+      root_cause: "The mixed flow regime option is not enabled in the plan file; by default HEC-RAS assumes subcritical flow everywhere, and steep reaches where critical/supercritical flow occurs cause the standard step method to fail"
+    remedy:
+      action: "Enable 'Mixed Flow Regime' in the Steady Flow Analysis plan settings, which activates the LPI (Local Partial Inertia) method to handle subcritical-to-supercritical transitions; for unsteady flow, set the LPI factor to 1.0-2.0 in the Unsteady Computation Options and tolerances"
+
+  - id: dt_hecras_011
+    symptom:
+      description: "Lateral structure or inline structure causes flow to leak through a levee that should be dry-side protected; water overtops at zero or negative stage"
+    diagnosis:
+      root_cause: "Lateral structure weir crest elevations were entered in the wrong vertical datum or unit system; the crest appears below the water surface even at baseflow"
+    remedy:
+      action: "Verify that the lateral structure crest elevations match the same vertical datum (e.g., NAVD88) and unit system (meters or feet) as the channel geometry cross-sections; the weir crest should be at or above the levee crown elevation from survey data"
+
+  - id: dt_hecras_012
+    symptom:
+      description: "GR4J surrogate produces flat recession curve with no peak attenuation; all events have identical shape regardless of magnitude"
+    diagnosis:
+      root_cause: "Unit hydrograph time base parameter x4 is below the 0.5-day minimum, causing the UH to collapse to a single-timestep impulse that passes all flow through without routing"
+    remedy:
+      action: "Constrain x4 to the valid range [0.5, 5.0] days during calibration; if the optimizer returns x4 < 0.5, set x4 = 0.5 as the lower bound; physically, x4 represents the travel time of flood wave through the basin"
+
+  - id: dt_hecras_013
+    symptom:
+      description: "Model produces NaN discharge for all timesteps; forcing CSV appears correct but output is entirely missing values"
+    diagnosis:
+      root_cause: "Basin shapefile does not overlap any CMFD grid cell centers, producing an empty mask; basin-averaged precipitation and temperature are NaN, which propagates through the entire GR4J computation"
+    remedy:
+      action: "Check that the basin shapefile CRS matches the CMFD grid (EPSG:4326 WGS84); for small basins relative to 0.25-degree grid resolution, expand the point-in-polygon test to include cells whose center is within one grid spacing of the boundary, or use area-weighted fractional overlap"
+
+  - id: dt_hecras_014
+    symptom:
+      description: "Calibration period shows good fit but validation period has strongly negative NSE; GR4J parameters hit upper or lower bounds"
+    diagnosis:
+      root_cause: "Production store capacity x1 is outside the physically meaningful range [100, 1500] mm; the optimizer found a local minimum at an extreme value that overfits the calibration period"
+    remedy:
+      action: "Tighten parameter bounds: x1 in [100, 1500] mm, x2 in [-5, +5] mm, x3 in [10, 500] mm, x4 in [0.5, 5.0] days; use a multi-objective function (e.g., 0.5*NSE + 0.5*KGE) to reduce overfitting; ensure the spinup period is at least 365 days so stores equilibrate before the calibration window"
+
+  - id: dt_hecras_015
+    symptom:
+      description: "Simulated hydrograph peaks are systematically early or late by 1-3 days compared to observed discharge"
+    diagnosis:
+      root_cause: "The routing store capacity x3 and unit hydrograph time base x4 are mismatched to the basin's actual travel time; alternatively the forcing data timestamps have a UTC offset not accounted for relative to local observation times"
+    remedy:
+      action: "Check that forcing timestamps and observation timestamps use the same time zone; if the timing bias persists after timezone alignment, prioritize calibrating x4 (peak timing) and x3 (recession shape) by including a peak-timing penalty in the objective function"
+
+  - id: dt_hecras_016
+    symptom:
+      description: "HEC-RAS geometry import fails or cross-sections appear garbled; station-elevation pairs are misaligned in the .g01 file"
+    diagnosis:
+      root_cause: "Geometry file (.g01) has incorrect field widths or delimiter format; HEC-RAS uses fixed-width fields (8 characters per value) for station-elevation pairs, and CSV or tab-delimited data causes misparse"
+    remedy:
+      action: "Ensure geometry data follows the HEC-RAS .g01 fixed-width format: station and elevation values in 8-character fields, with the number of station-elevation pairs declared on the header line; regenerate the geometry file from the HEC-RAS geometry editor or a validated GIS exporter"
+
+  - id: dt_hecras_017
+    symptom:
+      description: "Sediment transport simulation shows zero deposition or erosion despite active flows; bed change output is flat"
+    diagnosis:
+      root_cause: "Sediment transport function (e.g., Ackers-White, Engelund-Hansen, Yang) is mismatched to the grain size distribution, or the bed gradation curve was not specified for the cross-sections; without grain size data the transport capacity defaults to zero"
+    remedy:
+      action: "Define a bed gradation curve (d16, d50, d84, d90) for each cross-section or reach; select a transport function appropriate for the grain size: use Yang for sand-bed rivers (d50 0.1-2 mm), Ackers-White for sand-gravel (d50 0.04-7 mm), or Meyer-Peter-Mueller for gravel (d50 > 2 mm); verify that the sediment boundary condition specifies an incoming sediment load or equilibrium load"
+
+  - id: dt_hecras_018
+    symptom:
+      description: "CMFD forcing CSV contains extreme negative precipitation values (-9999) that corrupt the basin mean; model produces unrealistic negative runoff"
+    diagnosis:
+      root_cause: "CMFD NetCDF files use -9999 or negative values as fill/missing data sentinels; these were not masked before spatial averaging, dragging the basin-mean precipitation to large negative values"
+    remedy:
+      action: "In convert_forcing_to_hecras.py, replace all precipitation values <= 0 with NaN before computing the basin spatial average; use numpy masked arrays or explicit filtering: precip[precip < 0] = np.nan; verify that the output CSV contains no negative precipitation values"
+
+  - id: dt_hecras_019
+    symptom:
+      description: "First year of simulation shows poor performance metrics (NSE, KGE) even though subsequent years match well; initial discharge is far from observed"
+    diagnosis:
+      root_cause: "GR4J production store (S) and routing store (R) are initialized at zero or arbitrary values; the model requires at least 365 days of spinup for stores to equilibrate to the basin's antecedent moisture conditions"
+    remedy:
+      action: "Prepend at least 365 days (1 full year) of forcing data as spinup before the evaluation period; discard all metrics and output from the spinup window; for the Bengbu validation (1981-1990), use 1980 as the spinup year as specified in the SKILL.md pipeline"
+
+  - id: dt_hecras_020
+    symptom:
+      description: "Cross-section interpolation produces unrealistic channel geometry between surveyed sections; 2D flow area connects where it should not"
+    diagnosis:
+      root_cause: "Cross-section spacing is too large relative to channel curvature or floodplain width changes; HEC-RAS linearly interpolates geometry between cross-sections, and gaps exceeding 500 m in sinuous reaches create artificial flow paths"
+    remedy:
+      action: "Add interpolated cross-sections using the HEC-RAS XS Interpolation tool to bring spacing below the channel width or radius of curvature; as a rule of thumb, cross-section spacing should not exceed 10-20 times the channel width in 1D reaches; for 2D areas, verify that the mesh boundary correctly delineates the 1D/2D interface"

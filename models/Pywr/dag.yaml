@@ -1,0 +1,445 @@
+template_version: "3.5"
+
+identity:
+  model_id: "Pywr"
+  scientific_reference_version: "Pywr 1.30.0 (generalised network resource-allocation simulator; Tomlinson et al. 2020 EMS 104635 formulation)"
+  implementation:
+    id: "pywr-1.30"
+    version: "1.30.0"
+    provenance: "Python (Cython core); Pywr (Arnott / Tomlinson / University of Manchester) solves a per-timestep network-allocation LP via GLPK."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "python"
+  license: "GPL-3.0-or-later"
+  repo_url: "https://github.com/pywr/pywr"
+
+boundary:
+  scope_in:
+    - "Generalised directed-network resource allocation, primarily water-resource systems"
+    - "Supply-demand balance solved each timestep as a linear program over node costs and flow constraints"
+    - "Reservoir/storage operation: storage continuity, control curves, min/max volume, regulated release and spill"
+    - "River-network routing with catchments, reaches, splits, and gauging stations (minimum residual flow)"
+    - "Prioritized water allocation among environmental, municipal, irrigation, and industrial demands"
+    - "Abstraction-licence accounting via virtual storage (annual/monthly/rolling/seasonal resets)"
+  scope_out:
+    - "Internal rainfall-runoff / process hydrology — catchment inflows are supplied as exogenous forcing"
+    - "Detailed hydraulic routing within channels (delegated to downstream routing models)"
+    - "2-D/3-D hydraulic or groundwater process simulation"
+  spatial: "distributed-stream"
+  temporal: "daily"
+  closure: "mass-balance"
+  notes: "Mass-balance/continuity closure: at each timestep an independent LP enforces node mass balance and storage continuity (Inflow = Release + Spill + Evaporation + delta_Storage). Cross-timestep coupling exists only through storage (and virtual-storage) volume; there is no energy budget and no internal hydrology. Spatial grain is the user-defined node graph rather than a fixed grid; spatial: distributed-stream denotes node/edge network topology. Allocation realism is only as good as the user-specified costs and operating rules."
+
+inputs:
+  forcing:
+    - category: "forcing"
+      name: "catchment inflow"
+      unit: "m3/s"
+      source_kind: "forcing"
+      model_input_format: "time-varying flow at a Catchment node, supplied by a DataFrameParameter reading a daily CSV timeseries (datetime index + flow column)"
+      notes: "Primary exogenous driver of the network. Must cover the full simulation period at the model timestep; out-of-range dates raise a date/keys error. Inflow is supplied as flow per timestep and treated as volume-per-timestep within the LP."
+    - category: "forcing"
+      name: "irrigation demand"
+      unit: "m3/s"
+      source_kind: "forcing"
+      model_input_format: "demand at an Output node, set by a Parameter (constant, monthly profile, or dataframe)"
+      notes: "Optional. Time-varying water demand requested at a demand sink."
+    - category: "forcing"
+      name: "municipal/industrial demand"
+      unit: "m3/s"
+      source_kind: "forcing"
+      model_input_format: "demand at an Output node, set by a Parameter"
+      notes: "Optional time-varying demand."
+    - category: "forcing"
+      name: "reservoir-surface precipitation"
+      unit: "mm/day"
+      source_kind: "forcing"
+      model_input_format: "time-varying Parameter / CSV timeseries"
+      notes: "Optional direct rainfall onto the reservoir surface."
+  parameters:
+    - category: "parameters"
+      name: "max_volume (reservoir capacity)"
+      unit: "m3"
+      source_kind: "user_provided"
+      model_input_format: "Storage node max_volume field"
+      notes: "Maximum reservoir storage volume; bounds the storage state. Typical major-dam capacities exceed 1e8 m3."
+    - category: "parameters"
+      name: "min_volume / dead storage"
+      unit: "m3"
+      source_kind: "user_provided"
+      model_input_format: "Storage node min_volume field"
+      notes: "Lower bound on storage; dead storage typically 10-20% of max_volume."
+    - category: "parameters"
+      name: "node_cost (priority penalty)"
+      unit: "dimensionless"
+      source_kind: "calibrated"
+      model_input_format: "cost field on each node / cost Parameter"
+      notes: "Sets allocation priority in the LP objective: more negative cost attracts water (higher priority), positive cost repels it. Encodes demand ranking (environmental > municipal > irrigation > industrial) and spill penalty."
+    - category: "parameters"
+      name: "max_flow / min_flow (node capacity, MRF)"
+      unit: "m3/s"
+      source_kind: "user_provided"
+      model_input_format: "max_flow/min_flow fields on non-storage nodes; mrf on RiverGauge"
+      notes: "Capacity and minimum-flow constraints bounding the LP feasible region; min_flow encodes minimum residual / environmental flow (typically 10-30% of mean annual flow)."
+    - category: "parameters"
+      name: "control curve"
+      unit: "fraction of max_volume"
+      source_kind: "user_provided"
+      model_input_format: "ControlCurveParameter (monthly target storage fractions, 0-1)"
+      notes: "Monthly target storage levels; selects the storage node's cost band (above-curve vs below-curve) to produce smooth intermediate regulation. Absent it, the reservoir fills to max or empties to min."
+    - category: "parameters"
+      name: "demand profile"
+      unit: "m3/s"
+      source_kind: "user_provided"
+      model_input_format: "MonthlyProfileParameter or DataFrameParameter"
+      notes: "Temporal shape of demand at a demand node."
+  initial_conditions:
+    - category: "initial_conditions"
+      name: "initial_volume"
+      unit: "m3 (or fraction)"
+      source_kind: "user_provided"
+      model_input_format: "Storage node initial_volume / initial_frac field"
+      notes: "Required starting storage volume; the only state carried into the first timestep."
+  boundary_conditions:
+    - category: "boundary_conditions"
+      name: "simulation period"
+      unit: "date / timestep in days"
+      source_kind: "user_provided"
+      model_input_format: "timestepper.start / end / timestep"
+      notes: "Defines the daily integration window; must align with the inflow timeseries date range."
+    - category: "boundary_conditions"
+      name: "spill / overflow path"
+      unit: "n/a"
+      source_kind: "user_provided"
+      model_input_format: "Link from the storage node to a high-cost spill Output node"
+      notes: "Mandatory feasibility safeguard: a slack/spill route the LP can use when inflow exceeds demand plus available capacity. Absence causes InfeasibleError."
+    - category: "boundary_conditions"
+      name: "network topology"
+      unit: "n/a"
+      source_kind: "user_provided"
+      model_input_format: "JSON nodes[] and edges[] (directional connections; node 'name'+'type' required, edge endpoints must reference existing node names)"
+      notes: "The user-defined graph IS the spatial discretization; topology determines what is allocated where."
+    - category: "boundary_conditions"
+      name: "solver selection"
+      unit: "dimensionless"
+      source_kind: "default"
+      model_input_format: "solver.name field"
+      notes: "GLPK is the only solver supported in this implementation (solver.name='glpk')."
+
+processes:
+  modules:
+    - name: "Model driver"
+      role: "driver"
+      brief: "Top-level container: builds the network from the JSON definition and advances every timestep, invoking the solver each step."
+    - name: "Timestepper"
+      role: "integrator"
+      brief: "Daily timestep loop (start/end/timestep); each step a flow is treated as volume-per-timestep for the LP."
+    - name: "GLPK LP solver"
+      role: "process_solver"
+      brief: "Solves an independent linear program each timestep, minimizing total network cost subject to node mass-balance, max_flow/min_flow constraints, and storage continuity; the core allocation engine."
+    - name: "Storage node"
+      role: "integrator"
+      brief: "Carries reservoir volume between timesteps (max_volume/min_volume/initial_volume); the model's only true persistent state variable."
+    - name: "Catchment node"
+      role: "driver"
+      brief: "Inflow source supplying exogenous water to the network, driven by a DataFrameParameter."
+    - name: "Link node"
+      role: "allocator"
+      brief: "Release and spill links routing water from storage toward downstream and demand sinks, bounded by max_flow."
+    - name: "Output node"
+      role: "allocator"
+      brief: "Demand / downstream sinks; negative cost expresses benefit/priority so the LP delivers water to them."
+    - name: "ControlCurveParameter"
+      role: "process_solver"
+      brief: "Selects the storage node's cost band (above/below curve) from current storage fraction vs a monthly control curve — the reservoir regulation mechanism."
+    - name: "MonthlyProfileParameter"
+      role: "process_solver"
+      brief: "12-value monthly profile feeding control curves, max-release profiles, and demand profiles."
+    - name: "DataFrameParameter"
+      role: "driver"
+      brief: "Reads a timeseries (e.g. inflow) from CSV by date index/column and supplies it to a node."
+    - name: "RiverGauge (MRF constraint)"
+      role: "process_solver"
+      brief: "River gauging-station node enforcing a minimum residual flow via a high-cost penalty on shortfall."
+    - name: "Virtual storage"
+      role: "integrator"
+      brief: "Licence-accounting state that resets annually/monthly/rolling/seasonally, constraining abstraction over a window."
+      applicability: "when abstraction-licence accounting is configured"
+    - name: "Recorder"
+      role: "optional_module"
+      brief: "NumpyArray*/Total/Deficit recorders capture per-timestep flow, volume, level, and deficit arrays for output."
+  internal_edges:
+    - from: "Model driver"
+      to: "Timestepper"
+      kind: "invokes"
+      brief: "Model.run() advances the timestep loop, driving an LP solve each step."
+    - from: "DataFrameParameter"
+      to: "Catchment node"
+      kind: "consumes_input"
+      brief: "Inflow CSV timeseries drives catchment flow."
+    - from: "Catchment node"
+      to: "Storage node"
+      kind: "writes_state"
+      brief: "Inflow routed into reservoir storage."
+    - from: "Storage node"
+      to: "Link node"
+      kind: "produces_output"
+      brief: "Release and spill links draw from storage."
+    - from: "Link node"
+      to: "Output node"
+      kind: "produces_output"
+      brief: "Release allocated among downstream, environmental, irrigation, municipal, and industrial sinks plus spill."
+    - from: "Storage node"
+      to: "ControlCurveParameter"
+      kind: "reads_state"
+      brief: "Current storage fraction read to pick the cost band."
+    - from: "MonthlyProfileParameter"
+      to: "ControlCurveParameter"
+      kind: "invokes"
+      brief: "Monthly control curve supplies the per-month storage threshold."
+    - from: "ControlCurveParameter"
+      to: "Storage node"
+      kind: "writes_state"
+      brief: "Sets the storage node cost (above curve -> release, below curve -> refill)."
+    - from: "Timestepper"
+      to: "GLPK LP solver"
+      kind: "invokes"
+      brief: "Each timestep triggers an independent LP solve."
+    - from: "Output node"
+      to: "GLPK LP solver"
+      kind: "invokes"
+      brief: "Node costs and max_flow/min_flow constraints define the LP objective and feasible region."
+    - from: "RiverGauge (MRF constraint)"
+      to: "GLPK LP solver"
+      kind: "invokes"
+      brief: "Minimum-residual-flow penalty enters the LP objective."
+    - from: "GLPK LP solver"
+      to: "Storage node"
+      kind: "writes_state"
+      brief: "Net inflow-minus-outflow updates storage volume for the next timestep (continuity)."
+    - from: "GLPK LP solver"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "LP solution sets each node's flow for the timestep."
+    - from: "Storage node"
+      to: "Recorder"
+      kind: "produces_output"
+      brief: "Recorders capture storage volume and node flow arrays per timestep."
+
+states:
+  variables:
+    - name: "storage_volume"
+      unit: "m3"
+      role: "prognostic"
+    - name: "virtual_storage_volume"
+      unit: "m3"
+      role: "accumulator"
+    - name: "storage_current_pc"
+      unit: "fraction"
+      role: "diagnostic"
+    - name: "node_flow"
+      unit: "m3/s"
+      role: "diagnostic"
+  provenance: "populated"
+
+outputs:
+  - var: "storage_volume"
+    validation_rank: 3
+    unit: "m3"
+    description: "Daily reservoir storage volume per storage node, carried across timesteps with continuity."
+    emitted_in: "NumpyArrayStorageRecorder (e.g. storage timeseries CSV via CSVRecorder)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Comparison valid only against observed reservoir storage/elevation at the modeled dam; storage trajectory is governed entirely by user-set operating rules and inflow, so disagreement reflects rule/inflow error not internal physics."]
+      detrending_options: ["none"]
+  - var: "release_discharge"
+    validation_rank: 1
+    unit: "m3/s"
+    description: "Total regulated release plus spill leaving a storage node toward downstream."
+    emitted_in: "NumpyArrayNodeRecorder"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Compare against gauged downstream/regulated discharge; LP enforces non-negative flow, so negative recorded release indicates an extraction sign error."]
+      detrending_options: ["none"]
+  - var: "spill_discharge"
+    validation_rank: 2
+    unit: "m3/s"
+    description: "Uncontrolled overflow when the reservoir is at capacity."
+    emitted_in: "NumpyArrayNodeRecorder (spill link)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Event-like; spill occurs only when storage hits max_volume. Capacity-scale errors (e.g. unit mismatch) produce spurious continuous spilling."]
+      detrending_options: ["none"]
+  - var: "demand_deficit"
+    validation_rank: 4
+    unit: "m3/s"
+    description: "Unmet demand at each demand node (requested minus delivered)."
+    emitted_in: "NumpyArrayNodeDeficitRecorder / TotalDeficitNodeRecorder"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Deficit is a model-internal allocation outcome; observational counterparts (shortage records) are scarce and depend on declared demand. Deficit is intermittent/event-like in character."]
+      detrending_options: ["none"]
+  - var: "supply_reliability"
+    validation_rank: 5
+    unit: "fraction"
+    description: "Fraction of timesteps where a priority demand is fully met."
+    emitted_in: "DeficitFrequencyNodeRecorder (derived)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Scalar reliability summary over the simulation period; meaningful only relative to a stated demand and rule set."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "inflow timeseries (hydrological inflow / streamflow dataset)"
+      to: "node_flow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["tomlinson2020_pywr_simulator", "hamilton2024_pywrdrb"]
+    - from: "inflow timeseries / drought scenario"
+      to: "demand_deficit"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["hamilton2024_pywrdrb"]
+    - from: "node_cost (priority penalty / transfer-cost proxy)"
+      to: "node_flow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["tomlinson2020_pywr_simulator", "tomlinson2025_national_transfer"]
+    - from: "max_flow / node capacity"
+      to: "node_flow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["tomlinson2020_pywr_simulator", "tomlinson2025_national_transfer"]
+    - from: "reservoir control curve / operating rule"
+      to: "storage_volume"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["tomlinson2020_pywr_simulator", "hamilton2024_pywrdrb"]
+    - from: "reservoir operating rules / minimum-flow targets"
+      to: "demand_deficit"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["hamilton2024_pywrdrb"]
+    - from: "demand timeseries / demand scenario"
+      to: "demand_deficit"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["tomlinson2020_pywr_simulator", "tomlinson2025_national_transfer"]
+    - from: "transbasin diversion settings"
+      to: "node_flow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "basins with inter-basin transfers"
+      citations: ["hamilton2024_pywrdrb"]
+  citation_index:
+    tomlinson2020_pywr_simulator:
+      short_citation: "Tomlinson et al. 2020"
+      doi: "10.1016/j.envsoft.2020.104635"
+      note: "Primary Pywr methods paper; LP allocation minimizes user-defined priority penalties subject to capacity/mass-balance; multi-scenario robustness workflow (no Sobol/Morris global SA)."
+    hamilton2024_pywrdrb:
+      short_citation: "Hamilton et al. 2024"
+      doi: "10.1016/j.envsoft.2024.106185"
+      note: "Pywr-DRB Delaware diagnostic; inflow dataset choice, operating rules, min-flow (FFMP) targets, and diversions are dominant controls on simulated streamflow, low flows, and deficit risk (qualitative emphasis, no numeric SA index)."
+    tomlinson2025_national_transfer:
+      short_citation: "Tomlinson et al. 2025"
+      doi: "10.1061/JWRMD5.WRENG-6506"
+      note: "National (England & Wales) Pywr + multi-objective optimisation; distance-scaled priority penalties as transfer-cost proxy directly determine selected transfers/portfolios."
+
+safety:
+  hazards:
+    - id: "node_type_case_sensitive"
+      kind: "parser_semantic"
+      description: "Node/parameter 'type' must be lowercase (input, output, link, storage, catchment, monthlyprofile, controlcurve...); mis-cased or misspelled types abort Model.load with KeyError/unknown-type."
+      severity: "fatal"
+    - id: "orphan_edge_reference"
+      kind: "parser_semantic"
+      description: "An edge endpoint, or a recorder's 'node' field, referencing a node name not present in nodes[] causes a load failure or silently empty recorder output."
+      severity: "fatal_or_silent"
+    - id: "monthlyprofile_length"
+      kind: "parser_semantic"
+      description: "A monthlyprofile 'values' array must have exactly 12 elements; an off-by-one (11 values) raises a length-mismatch parse error."
+      severity: "fatal"
+    - id: "missing_spill_path_infeasible"
+      kind: "control_semantic"
+      description: "Demands exceeding inflow plus available storage with no spill/slack path make the per-timestep LP infeasible, raising InfeasibleError mid-run."
+      severity: "fatal"
+    - id: "missing_control_curve_oscillation"
+      kind: "control_semantic"
+      description: "Without a ControlCurveParameter linking storage level to cost, the LP fills to max or empties to min with no intermediate regulation; storage oscillates and releases are bang-bang."
+      severity: "degraded"
+    - id: "storage_cost_undercut_drains_reservoir"
+      kind: "control_semantic"
+      description: "If the storage cost band does not exceed downstream output-node benefit magnitude, the LP drains the reservoir regardless of the control curve, since GLPK couples all node costs simultaneously."
+      severity: "degraded"
+    - id: "timestepper_inflow_misalignment"
+      kind: "control_semantic"
+      description: "Timestepper start/end not covered by the inflow timeseries range causes out-of-range date requests, truncated results, or NaNs."
+      severity: "degraded"
+    - id: "release_sign_extraction"
+      kind: "parser_semantic"
+      description: "Pywr's LP enforces non-negative flows; negative release in extracted output indicates a recorder/sign error in results extraction, not a model state."
+      severity: "silent"
+    - id: "all_zero_inflow_silent"
+      kind: "numerical_instability"
+      description: "An all-zero inflow timeseries runs to completion but yields a monotonically draining reservoir and meaningless allocation — no error is raised."
+      severity: "silent"
+  validation_limits:
+    - "Deterministic LP allocation simulator, not a calibratable rainfall-runoff or physical-hydrology model; cannot generate inflow internally."
+    - "No native within-channel hydraulic routing; sub-daily processes are unresolved at the daily timestep."
+    - "Allocation realism is bounded by the user-specified costs, capacities, and operating rules; the model has no inherent skill independent of those rules."
+  warnings:
+    - "Cross-timestep behaviour is coupled only through storage (and virtual-storage) volume; each timestep's allocation is otherwise an independent LP, so transient memory effects beyond storage are not represented."
+    - "GLPK solver numerical/performance issues can arise on large or ill-conditioned networks and require handling (per the docs' GLPK error-handling section)."
+  assumptions:
+    - statement: "Mass-balance/continuity is enforced exactly each timestep; there is no surface energy budget."
+      scope: "all node and storage flows"
+      source: "Pywr problem-formulation docs (LP: maximize c^T x s.t. A x <= b, x>=0); https://pywr.github.io/pywr/formulation.html"
+      status: "adopted"
+    - statement: "Catchment inflows are exogenous forcing; the core does not simulate rainfall-runoff."
+      scope: "network inputs"
+      source: "Pywr nodes/boundary docs (Catchment supplies water to the network); https://pywr.github.io/pywr/api/pywr.nodes.html"
+      status: "adopted"
+    - statement: "Allocation each timestep is the argmin of total priority penalty under capacity and mass-balance constraints; reservoir releases are governed entirely by user-defined costs and control curves."
+      scope: "allocation and reservoir operation"
+      source: "Tomlinson et al. 2020 (10.1016/j.envsoft.2020.104635); Pywr docs"
+      status: "adopted"
+    - statement: "GLPK is the solver realized by this implementation (solver.name='glpk')."
+      scope: "solver selection"
+      source: "Pywr JSON solver docs; https://pywr.github.io/pywr/json.html"
+      status: "adopted"

@@ -1,0 +1,387 @@
+template_version: "3.5"
+
+identity:
+  model_id: "ELMFIRE"
+  scientific_reference_version: "ELMFIRE 2025.1002 (Eulerian level-set fire-spread formulation, Lautenberger 2013)"
+  implementation:
+    id: "elmfire-2025.1002"
+    version: "2025.1002"
+    provenance: "Fortran (F2008/MPI); ELMFIRE simulator from github.com/lautenberger/elmfire, with companion elmfire_post ensemble aggregator."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: "EPL-2.0"
+  repo_url: "https://github.com/lautenberger/elmfire"
+
+boundary:
+  scope_in:
+    - "Surface and crown wildland fire spread across a landscape raster"
+    - "Fire arrival time, rate of spread, fireline intensity, flame length"
+    - "Crown fire initiation and class (passive/active)"
+    - "Ensemble burn probability via Monte Carlo over perturbed weather/ignitions"
+    - "Optional ember transport / spot-fire ignition"
+  scope_out:
+    - "Combustion chemistry / CFD-level flame physics (uses empirical Rothermel/Cruz spread-rate models)"
+    - "Atmospheric / meteorological solution — wind and weather supplied as external input fields"
+    - "Internal fuel-moisture dynamics — dead/live moisture supplied as external rasters/scalars"
+    - "Smoke emissions and suppression are optional, off by default"
+  spatial: "2-D grid"
+  temporal: "sub-hourly"
+  closure: "none"
+  notes: "Solves a hyperbolic level-set advection PDE (dphi/dt + U.grad(phi) = 0) where the phi=0 isopleth tracks the fire front; the front speed U is set by empirical Rothermel surface, Cruz/Van Wagner crown, and Richards elliptical models rather than a conserved mass/energy budget. Domain is a projected (UTM-meter) raster; hourly weather forcing is linearly interpolated to the seconds-scale adaptive timestep."
+
+inputs:
+  forcing:
+    - {category: weather, name: "wind speed (20-ft)", unit: "mph", source_kind: forcing, model_input_format: "GeoTIFF/ENVI-BIL raster (WS), single- or multi-band at DT_METEOROLOGY", notes: "20-ft-above-vegetation wind; model expects mph not m/s and 20-ft not 10-m height (silent under-spread if unconverted)"}
+    - {category: weather, name: "wind direction", unit: "degrees (meteorological FROM)", source_kind: forcing, model_input_format: "GeoTIFF/ENVI-BIL raster (WD)", notes: "compass bearing the wind blows FROM (0=N); math 'TO' convention mirrors the fire"}
+    - {category: weather, name: "1-hr dead fuel moisture", unit: "percent", source_kind: forcing, model_input_format: "GeoTIFF/ENVI-BIL raster (M1)", notes: "stored internally as fraction; percent expected when DEAD_MC_IN_PERCENT=.TRUE."}
+    - {category: weather, name: "10-hr dead fuel moisture", unit: "percent", source_kind: forcing, model_input_format: "GeoTIFF/ENVI-BIL raster (M10)"}
+    - {category: weather, name: "100-hr dead fuel moisture", unit: "percent", source_kind: forcing, model_input_format: "GeoTIFF/ENVI-BIL raster (M100)"}
+    - {category: control, name: "weather update interval (DT_METEOROLOGY)", unit: "seconds", source_kind: user_provided, model_input_format: "namelist scalar", notes: "interval between weather bands; intermediate times linearly interpolated"}
+  parameters:
+    - {category: terrain, name: "elevation (DEM)", unit: "m", source_kind: dataset_lookup, model_input_format: "Float32 GeoTIFF (DEM), NODATA -9999"}
+    - {category: terrain, name: "slope", unit: "degrees (0-90)", source_kind: dataset_lookup, model_input_format: "GeoTIFF (SLP)", notes: "degrees, NOT percent rise; percent rise inflates the Rothermel slope factor"}
+    - {category: terrain, name: "aspect", unit: "degrees (0=N,90=E)", source_kind: dataset_lookup, model_input_format: "GeoTIFF (ASP)"}
+    - {category: fuel, name: "fuel model (FBFM40)", unit: "FBFM40 code (0-303)", source_kind: dataset_lookup, model_input_format: "Int16 GeoTIFF (FBFM); 0=nonburnable, 1-13 Anderson NFFL, 101-204 Scott & Burgan", notes: "indexes precomputed Rothermel coefficient table; codes >303 remap to nonburnable, <0 to 99 silently"}
+    - {category: canopy, name: "canopy cover", unit: "percent (0-100)", source_kind: dataset_lookup, model_input_format: "Int16 GeoTIFF (CC); percent when CC_IN_PERCENT=.TRUE."}
+    - {category: canopy, name: "canopy height", unit: "m (x10 integer when CH_TIMES_10)", source_kind: dataset_lookup, model_input_format: "Int16 GeoTIFF (CH)"}
+    - {category: canopy, name: "canopy base height", unit: "m (x10 integer when CBH_TIMES_10)", source_kind: dataset_lookup, model_input_format: "Int16 GeoTIFF (CBH)", notes: "drives Van Wagner critical fireline intensity; floored at 0.1 m internally"}
+    - {category: canopy, name: "canopy bulk density", unit: "kg/m3 (x100 integer when CBD_TIMES_100)", source_kind: dataset_lookup, model_input_format: "Int16 GeoTIFF (CBD)", notes: "drives Cruz/Van Wagner active-crown threshold"}
+    - {category: fuel, name: "live herbaceous moisture", unit: "percent (30-300)", source_kind: user_provided, model_input_format: "namelist scalar LH_MOISTURE_CONTENT"}
+    - {category: fuel, name: "live woody moisture", unit: "percent (60-200)", source_kind: user_provided, model_input_format: "namelist scalar LW_MOISTURE_CONTENT"}
+    - {category: fuel, name: "foliar moisture content", unit: "percent", source_kind: user_provided, model_input_format: "namelist scalar FOLIAR_MOISTURE_CONTENT", notes: "enters Van Wagner critical fireline intensity for crown initiation"}
+    - {category: calibration, name: "spread-rate adjustment factor", unit: "dimensionless (default 1.0)", source_kind: calibrated, model_input_format: "Float32 GeoTIFF (ADJ)", notes: "per-cell multiplier on no-wind ROS; the primary calibration handle; overwritten in-place by per-pyrome lookup when USE_PYROMES"}
+    - {category: numeric, name: "L/W maximum ellipse ratio", unit: "dimensionless (default 8)", source_kind: default, model_input_format: "namelist scalar", notes: "caps Richards elliptical length-to-width ratio"}
+  initial_conditions:
+    - {category: state, name: "initial level-set field (phi0)", unit: "dimensionless", source_kind: user_provided, model_input_format: "Float32 GeoTIFF (PHI); 1.0 = unburned", notes: "optional; defines pre-burned/seed region of the front"}
+  boundary_conditions:
+    - {category: domain, name: "computational domain & CRS", unit: "UTM meters", source_kind: user_provided, model_input_format: "namelist A_SRS (EPSG), COMPUTATIONAL_DOMAIN_CELLSIZE / XLLCORNER / YLLCORNER", notes: "all rasters must share this UTM zone and cell size and fully cover the domain"}
+    - {category: time, name: "time control", unit: "seconds", source_kind: user_provided, model_input_format: "namelist SIMULATION_TSTART/TSTOP, SIMULATION_DT (base, default 5 s), SIMULATION_DTMAX (default 600 s), TARGET_CFL (0.2-0.8)"}
+    - {category: ignition, name: "ignition specification", unit: "UTM meters / seconds", source_kind: user_provided, model_input_format: "namelist X_IGN/Y_IGN/T_IGN, or IGNITIONS_CSV_FILENAME, or RANDOM_IGNITIONS", notes: "ignition must fall inside the domain on a burnable fuel pixel"}
+    - {category: switch, name: "crown fire options", unit: "mixed", source_kind: user_provided, model_input_format: "namelist CROWN_FIRE_MODEL, CRITICAL_CANOPY_COVER (default 0.39)", notes: "selects whether/how crown fire is modeled"}
+    - {category: switch, name: "Monte Carlo ensemble control", unit: "mixed", source_kind: user_provided, model_input_format: "namelist NUM_ENSEMBLE_MEMBERS, SEED, RASTER_TO_PERTURB/PDF_TYPE/limits, SPATIAL/TEMPORAL_PERTURBATION", notes: "defines the perturbation ensemble for burn-probability mode"}
+    - {category: switch, name: "diurnal adjustment", unit: "mixed", source_kind: user_provided, model_input_format: "namelist USE_DIURNAL_ADJUSTMENT_FACTOR, OVERNIGHT_ADJUSTMENT_FACTOR, LATITUDE, LONGITUDE", notes: "optional nighttime ROS reduction via sunrise/sunset"}
+    - {category: switch, name: "spotting control", unit: "boolean", source_kind: user_provided, model_input_format: "namelist ENABLE_SPOTTING, USE_UMD_SPOTTING_MODEL", notes: "ember-transport submodule may also require a spotting-enabled build"}
+
+processes:
+  modules:
+    - {name: "SurfaceSpreadRate", role: process_solver, brief: "Rothermel (1972) surface fire model: from the fuel-model coefficient table plus dead/live moisture computes reaction intensity, no-wind ROS (VS0), wind and slope spread factors, fireline intensity, and heat-per-unit-area."}
+    - {name: "CrownSpreadRate", role: process_solver, brief: "Van Wagner crown-initiation (critical fireline intensity from CBH and foliar moisture) plus Cruz/Alexander active-crown rate-of-spread; classifies each cell as no/passive/active crown fire and sets a crown wind factor.", applicability: "when crown fire enabled (CROWN_FIRE_MODEL>0)"}
+    - {name: "RichardsElliptical", role: process_solver, brief: "Converts surface/crown ROS plus wind/slope vectors into elliptical (Huygens-principle) directional advection velocities (UX,UY) per front node; L/W ratio capped at the configured maximum."}
+    - {name: "LevelSetPropagation", role: integrator, brief: "Per-case narrow-band level-set time-marcher: tags the band, interpolates weather in time, integrates the phi field, and records cell time-of-arrival as the front crosses each cell."}
+    - {name: "RK2Integrate", role: integrator, brief: "Second-order Runge-Kutta update of the level-set field phi over the tagged narrow band; clamps phi to [-100,100] and resets NaN to unburned (1.0)."}
+    - {name: "CFLFluxLimiter", role: integrator, brief: "Adaptive CFL timestep control plus Superbee flux limiting of the phi gradients to suppress numerical oscillation; timestep adapts from TARGET_CFL after a 5-step warmup."}
+    - {name: "EmberSpotting", role: optional_module, brief: "UMD physics-based ember lofting/transport that spawns spot-fire ignitions and accumulates an ember-flux field.", applicability: "when ENABLE_SPOTTING and a spotting-enabled build"}
+    - {name: "DiurnalAdjustment", role: optional_module, brief: "Multiplies no-wind ROS by an overnight adjustment factor computed from latitude/longitude sunrise/sunset to reduce nighttime spread.", applicability: "when USE_DIURNAL_ADJUSTMENT_FACTOR"}
+    - {name: "PyromeCalibration", role: optional_module, brief: "Applies per-pyrome adjustment-factor tables, overwriting the ADJ raster in place before spread.", applicability: "when USE_PYROMES"}
+    - {name: "MonteCarloEnsemble", role: driver, brief: "Runs ensemble members with perturbed weather and/or random ignitions, perturbing ADJ/CBD/CBH/FMC via RNG-driven coefficients, to characterize uncertainty."}
+    - {name: "EnsembleAggregation", role: allocator, brief: "Aggregates per-member burned-cell lists into burn-probability, percentile time-of-arrival, flame-length, and fire-size-distribution products (elmfire_post)."}
+  internal_edges:
+    - {from: "Inputs", to: "SurfaceSpreadRate", kind: consumes_input, brief: "fuel model, canopy, slope, and dead/live moisture parameterize the Rothermel surface solver"}
+    - {from: "Atmosphere", to: "SurfaceSpreadRate", kind: consumes_input, brief: "wind speed/direction and time-interpolated moisture drive the surface spread rate"}
+    - {from: "SurfaceSpreadRate", to: "reaction_intensity", kind: writes_state, brief: "writes reaction intensity, no-wind ROS, wind/slope factors, and surface fireline intensity onto the front node"}
+    - {from: "PyromeCalibration", to: "SurfaceSpreadRate", kind: invokes, brief: "pyrome-adjusted ADJ raster scales the no-wind ROS"}
+    - {from: "DiurnalAdjustment", to: "SurfaceSpreadRate", kind: invokes, brief: "overnight factor multiplies VS0 inside the surface solver"}
+    - {from: "SurfaceSpreadRate", to: "CrownSpreadRate", kind: invokes, brief: "surface fireline intensity and no-wind ROS feed crown initiation/spread (surface must run first)"}
+    - {from: "CrownSpreadRate", to: "crown_fire_class", kind: writes_state, brief: "writes crown-fire class, crown wind factor, critical fireline intensity, and canopy heat-per-unit-area"}
+    - {from: "SurfaceSpreadRate", to: "RichardsElliptical", kind: invokes, brief: "combined surface ROS feeds elliptical advection-velocity computation"}
+    - {from: "CrownSpreadRate", to: "RichardsElliptical", kind: invokes, brief: "crown ROS augments/substitutes the surface rate where crown criteria are met"}
+    - {from: "RichardsElliptical", to: "advection_velocity", kind: writes_state, brief: "writes elliptical directional advection velocity (UX,UY)"}
+    - {from: "advection_velocity", to: "CFLFluxLimiter", kind: reads_state, brief: "advection velocity sets the CFL-limited adaptive timestep and limited gradients"}
+    - {from: "CFLFluxLimiter", to: "RK2Integrate", kind: invokes, brief: "limited gradients and adaptive DT feed the RK2 update"}
+    - {from: "advection_velocity", to: "RK2Integrate", kind: reads_state, brief: "RK2 advances phi using the advection velocity and limited gradients"}
+    - {from: "RK2Integrate", to: "level_set_field", kind: writes_state, brief: "narrow-band level-set field updated and clamped"}
+    - {from: "level_set_field", to: "time_of_arrival", kind: writes_state, brief: "cell arrival time recorded when phi crosses zero"}
+    - {from: "EmberSpotting", to: "level_set_field", kind: writes_state, brief: "transported embers spawn new ignitions feeding back into the front"}
+    - {from: "LevelSetPropagation", to: "Outputs", kind: produces_output, brief: "dumps per-case time-of-arrival, spread-rate, fireline-intensity, flame-length, and crown-fire rasters plus fire-size-stats CSV"}
+    - {from: "LevelSetPropagation", to: "MonteCarloEnsemble", kind: invokes, brief: "each ensemble member is one level-set propagation under perturbed inputs"}
+    - {from: "MonteCarloEnsemble", to: "EnsembleAggregation", kind: invokes, brief: "per-member burned-cell results are aggregated across the ensemble"}
+    - {from: "EnsembleAggregation", to: "Outputs", kind: produces_output, brief: "writes burn-probability, percentile time-of-arrival, and fire-size-distribution products"}
+
+states:
+  variables:
+    - {name: "level_set_field", unit: "dimensionless", role: prognostic}
+    - {name: "time_of_arrival", unit: "s", role: diagnostic}
+    - {name: "advection_velocity", unit: "ft/min", role: diagnostic}
+    - {name: "reaction_intensity", unit: "kW/m2", role: diagnostic}
+    - {name: "no_wind_ros", unit: "ft/min", role: diagnostic}
+    - {name: "surface_fireline_intensity", unit: "kW/m", role: diagnostic}
+    - {name: "flame_length", unit: "m (Byram)", role: diagnostic}
+    - {name: "crown_fire_class", unit: "0/1/2 (none/passive/active)", role: diagnostic}
+    - {name: "critical_fireline_intensity", unit: "kW/m", role: diagnostic}
+    - {name: "heat_per_unit_area", unit: "kJ/m2", role: diagnostic}
+    - {name: "ember_flux", unit: "count", role: accumulator}
+    - {name: "times_burned", unit: "count", role: accumulator}
+    - {name: "fire_area_stats", unit: "acres", role: accumulator}
+  provenance: "populated"
+
+outputs:
+  - var: "time_of_arrival"
+    validation_rank: 2
+    unit: "s"
+    description: "Time the fire front reaches each cell, measured from ignition; -1 where unburned. Contoured to isochrones/perimeters."
+    emitted_in: "time_of_arrival_*.tif/.bil"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "event_detection"]
+          determining_metric: "csi"
+          caveats: ["Final burned footprint (phi-arrived cells) vs observed final perimeter is the standard comparison: Sorensen/Dice, Jaccard, commission/omission errors, area ratio."]
+        - obs_shape: "categorical_event"
+          comparison_mode: "categorical_event_comparison"
+          metric_families: ["event_detection"]
+          determining_metric: "csi"
+          caveats: ["Per-cell burned/unburned classification vs an observed fire scar."]
+      detrending_options: ["none"]
+  - var: "spread_rate"
+    validation_rank: 3
+    unit: "ft/min"
+    description: "Rate of fire-front spread (head-fire rate at the cell)."
+    emitted_in: "spread_rate_*.tif/.bil"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["magnitude_accuracy", "spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Native ft/min; literature often m/s or chains/hr — convert before comparison. Expected grass 50-300, brush 20-100, timber 5-50 ft/min."]
+      detrending_options: ["none"]
+  - var: "fireline_intensity"
+    validation_rank: 4
+    unit: "kW/m"
+    description: "Byram fireline intensity along the front."
+    emitted_in: "flin_*.tif/.bil"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["kW/m (Byram); crown initiation ~2000-4000 kW/m. Some literature uses BTU/ft/s (x0.289)."]
+      detrending_options: ["none"]
+  - var: "flame_length"
+    validation_rank: 5
+    unit: "feet"
+    description: "Byram flame length at the front (raster emitted in feet; head-fire diagnostic computed in meters internally)."
+    emitted_in: "flame_length_*.tif/.bil"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Feet (US/NWCG suppression thresholds); convert x0.3048 for metric."]
+      detrending_options: ["none"]
+  - var: "crown_fire"
+    validation_rank: 6
+    unit: "class (0/1/2)"
+    description: "Crown fire occurrence/class (none/passive/active) per cell."
+    emitted_in: "crown_fire_*.tif"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "categorical_event_comparison"
+          metric_families: ["event_detection", "spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Compare against mapped crown-fire / severity classes; threshold-driven and sensitive to canopy-raster units."]
+      detrending_options: ["none"]
+  - var: "fire_size"
+    validation_rank: 1
+    unit: "acres (and hectares)"
+    description: "Cumulative burned area (and perimeter) time series per case."
+    emitted_in: "fire_size_stats_*.csv"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Burned-area growth curve vs observed perimeter-growth timeline; final-size scalar match via area ratio."]
+      detrending_options: ["none"]
+  - var: "burn_probability"
+    validation_rank: 7
+    unit: "fraction (0-1)"
+    description: "Fraction of Monte Carlo ensemble members that burned each cell."
+    emitted_in: "burn_probability.tif"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "ranking_quality"]
+          determining_metric: "csi"
+          caveats: ["Probabilistic field; compare spatial pattern against observed multi-fire burn frequency or a single scar (calibration/reliability framing, not a hard hit/miss)."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "wind speed (20-ft)"
+      to: "spread_rate"
+      sensitivity_grade: HIGH
+      basis: cross_family_model_literature
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["liu2015_rothermel_hdmr_gsa", "trucchia2018_turbulence_firespotting_gsa", "arxiv2024_gsa_methods_fire_spread", "lautenberger2013_elmfire_levelset_calibration"]
+    - from: "wind speed (20-ft)"
+      to: "burn_probability"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["elmfire2026_wui_input_sensitivity", "trucchia2018_turbulence_firespotting_gsa"]
+    - from: "dead/live fuel moisture"
+      to: "spread_rate"
+      sensitivity_grade: HIGH
+      basis: cross_family_model_literature
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["liu2015_rothermel_hdmr_gsa", "arxiv2024_gsa_methods_fire_spread"]
+    - from: "fuel moisture content"
+      to: "burn_probability"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["elmfire2026_wui_input_sensitivity"]
+    - from: "fuel bed depth (fuel model)"
+      to: "spread_rate"
+      sensitivity_grade: HIGH
+      basis: cross_family_model_literature
+      lever_type: parameter
+      applicability: "always"
+      citations: ["liu2015_rothermel_hdmr_gsa"]
+    - from: "fuel model (FBFM)"
+      to: "spread_rate"
+      sensitivity_grade: HIGH
+      basis: cross_family_model_literature
+      lever_type: parameter
+      applicability: "always"
+      citations: ["liu2015_rothermel_hdmr_gsa", "lautenberger2013_elmfire_levelset_calibration"]
+    - from: "spread-rate adjustment factor"
+      to: "time_of_arrival"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["lautenberger2013_elmfire_levelset_calibration"]
+    - from: "fire-spotting / firebrand distribution"
+      to: "burn_probability"
+      sensitivity_grade: MEDIUM
+      basis: cross_family_model_literature
+      lever_type: parameter
+      applicability: "when spotting enabled"
+      citations: ["trucchia2018_turbulence_firespotting_gsa"]
+    - from: "slope"
+      to: "spread_rate"
+      sensitivity_grade: LOW
+      basis: cross_family_model_literature
+      lever_type: parameter
+      applicability: "always"
+      citations: ["liu2015_rothermel_hdmr_gsa"]
+  citation_index:
+    lautenberger2013_elmfire_levelset_calibration:
+      short_citation: "Lautenberger 2013"
+      doi: "10.1016/j.firesaf.2013.08.014"
+      note: "Foundational ELMFIRE level-set formulation + genetic-algorithm calibration of spread-rate adjustment factors against observed perimeters."
+    elmfire2026_wui_input_sensitivity:
+      short_citation: "Fire Safety Journal 2026 (ELMFIRE WUI input sensitivity)"
+      doi: "10.1016/j.firesaf.2026.000019"
+      note: "ELMFIRE-specific input-sensitivity study on Tubbs/Thomas/Camp fires; wind variability (~40%) drives >50% accuracy change, FMC equally influential."
+    liu2015_rothermel_hdmr_gsa:
+      short_citation: "Liu, Hussaini & Okten 2015"
+      doi: "10.1139/cjfr-2015-0148"
+      note: "Variance-based (HDMR) global sensitivity of the Rothermel surface model (ELMFIRE's core spread physics): fuel bed depth, live fuel moisture, and wind dominate ROS (up to ~85% of variance); slope among the least influential."
+    trucchia2018_turbulence_firespotting_gsa:
+      short_citation: "Trucchia et al. 2018"
+      doi: ""
+      note: "arXiv:1809.05430; polynomial-chaos Sobol GSA of a level-set wildfire model with turbulence/fire-spotting: wind dominant, spotting parameters secondary."
+    arxiv2024_gsa_methods_fire_spread:
+      short_citation: "GSA-methods comparison 2024"
+      doi: ""
+      note: "arXiv:2407.17718; Morris/Sobol/FAST/PAWN comparison on a Rothermel-type model confirming wind and fuel moisture as leading sensitive inputs."
+
+safety:
+  hazards:
+    - id: "wind_speed_units_height"
+      kind: weather_file_semantic
+      description: "Wind given as m/s and/or at 10 m instead of mph at 20 ft (~2-3x too low) silently yields little or no spread."
+      severity: silent
+    - id: "wind_direction_convention"
+      kind: weather_file_semantic
+      description: "Wind direction in mathematical 'TO' convention instead of meteorological 'FROM' mirrors the fire 180 degrees."
+      severity: silent
+    - id: "dead_fuel_moisture_fraction"
+      kind: weather_file_semantic
+      description: "Dead fuel moisture given as fraction (0.03) instead of percent (3.0) extinguishes the fire at ignition."
+      severity: silent
+    - id: "live_fuel_moisture_fraction"
+      kind: weather_file_semantic
+      description: "Live/foliar moisture as fraction instead of percent (30-300) makes every canopy pixel crown."
+      severity: silent
+    - id: "slope_percent_not_degrees"
+      kind: soil_semantic
+      description: "Slope in percent rise instead of degrees inflates the Rothermel slope factor, giving extreme uphill spread (>1000 ft/min)."
+      severity: silent
+    - id: "canopy_raster_scaling_flags"
+      kind: soil_semantic
+      description: "CBD/CBH/CH/CC rasters not pre-scaled to match CBD_TIMES_100 / CBH_TIMES_10 / CH_TIMES_10 / CC_IN_PERCENT flags corrupt crown-fire thresholds."
+      severity: silent
+    - id: "fbfm_out_of_range_remap"
+      kind: coefficient_runtime_silent_fallback
+      description: "Fuel-model codes >303 silently remap to nonburnable (256) and <0 to 99 before spread, with no warning."
+      severity: silent
+    - id: "crs_not_utm_meters"
+      kind: control_semantic
+      description: "Rasters or ignition coordinates in lat/lon (EPSG:4326) instead of projected UTM meters give a microscopic or enormous domain / out-of-domain ignition."
+      severity: fatal_or_silent
+    - id: "time_units_not_seconds"
+      kind: control_semantic
+      description: "TSTOP/DTDUMP/DT_METEOROLOGY supplied in hours/minutes instead of seconds stops the fire early or suppresses output."
+      severity: silent
+    - id: "ignition_on_nonburnable"
+      kind: control_semantic
+      description: "Ignition on a non-burnable fuel pixel (91/92/93/98/99) or NODATA cell yields zero fire area."
+      severity: degraded
+    - id: "raster_extent_mismatch"
+      kind: numerical_instability
+      description: "Input rasters with mismatched extent/resolution cause out-of-bounds indexing and an MPI segfault."
+      severity: fatal
+    - id: "cfl_substep_hang"
+      kind: numerical_instability
+      description: "High wind or steep slope at fine cell size forces sub-second CFL timesteps and the simulation appears to hang."
+      severity: degraded
+    - id: "nodata_internal_barriers"
+      kind: soil_semantic
+      description: "NODATA (-9999) cells inside the domain are treated as non-burnable barriers, creating artificial fire breaks."
+      severity: degraded
+  validation_limits:
+    - "Empirical Rothermel/Cruz spread-rate basis: does not resolve combustion chemistry or CFD-scale flame physics."
+    - "Fuel-moisture dynamics and meteorology are external; skill is bounded by the quality of supplied wind and moisture fields."
+    - "Crown fire engages only where canopy cover exceeds ~40% (CRITICAL_CANOPY_COVER) and fireline intensity exceeds the critical value."
+    - "KI validation status is tutorial-only (constant-wind Tutorial 01); no documented real-fire perimeter validation case in the KI."
+  warnings:
+    - "Per-pyrome calibration (USE_PYROMES) overwrites the user ADJ raster in place before spread, silently replacing supplied adjustment factors."
+    - "Monte Carlo perturbations of ADJ/CBD/CBH/FMC are injected via module globals inside the spread solvers, so physics depends on RNG state not visible at the call site."
+    - "WUI building-spread, suppression, and parts of spotting are compile-flag-guarded (_WUI/_SUPPRESSION/_SPOTTING) and are absent unless the binary was built with them."
+    - "Output directories (./outputs, ./scratch) must exist before the run or rasters are silently not written."
+  assumptions:
+    - statement: "The fire front is tracked as the phi=0 isopleth of a level-set field on a projected (UTM-meter) raster, with no mass or energy conservation closure."
+      scope: "front propagation / numerical scheme"
+      source: "ELMFIRE technical reference (elmfire.io/tech_ref.html) and elmfire_level_set.f90"
+      status: adopted
+    - statement: "Front geometry is elliptical (Huygens principle), with the L/W ratio set by the Richards model and capped at 8 by default."
+      scope: "directional spread"
+      source: "ELMFIRE technical reference (elmfire.io/tech_ref.html)"
+      status: adopted
+    - statement: "Base Rothermel formulation assumes wind/slope alignment handled by a directional-independence approximation in projected coordinates."
+      scope: "surface spread rate"
+      source: "ELMFIRE technical reference / Assumptions (elmfire.io/tech_ref.html)"
+      status: adopted
+    - statement: "Hourly weather forcing is linearly interpolated to the seconds-scale adaptive (CFL-controlled) timestep."
+      scope: "temporal forcing"
+      source: "ELMFIRE user guide I/O (elmfire.io/user_guide/io.html) and LEVEL_SET_PROPAGATION weather interpolation"
+      status: adopted
+    - statement: "Unit interpretation of moisture and canopy rasters is conditional on namelist scaling flags (DEAD_MC_IN_PERCENT, CC_IN_PERCENT, CBD_TIMES_100, CBH_TIMES_10, CH_TIMES_10) rather than fixed."
+      scope: "input units"
+      source: "ELMFIRE namelist defaults (elmfire_namelists.f90) and SKILL unit-trap table"
+      status: adopted

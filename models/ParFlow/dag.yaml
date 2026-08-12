@@ -1,0 +1,522 @@
+template_version: "3.5"
+
+identity:
+  model_id: "ParFlow"
+  scientific_reference_version: "ParFlow integrated surface-subsurface hydrology (Richards + free-surface overland flow; Kollet & Maxwell 2006, Maxwell 2013, Kuffour et al. 2020)"
+  implementation:
+    id: "parflow-c-v3"
+    version: "v3.13+ (manual served at 3.14/3.15; parflow.org stable v3.12.0)"
+    provenance: "C; ParFlow simulator (LLNL / Colorado School of Mines / Juelich et al.), optional Common Land Model (CLM 4.5) land-surface component in Fortran 90/95."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c"
+  license: "LGPL-2.1"
+  repo_url: "https://github.com/parflow/parflow"
+
+boundary:
+  scope_in:
+    - "3D variably-saturated subsurface flow (vadose + saturated zones in one Richards equation)"
+    - "2D overland (surface) flow via free-surface boundary condition (kinematic or diffusive wave)"
+    - "Lateral subsurface flow: hillslope interflow, perched water tables, groundwater-fed springs"
+    - "Optional CLM 4.5 land surface: evapotranspiration, snow, canopy interception, radiation/energy balance"
+    - "Optional multi-phase flow and contaminant transport (separate solver paths)"
+  scope_out:
+    - "Atmospheric circulation (CLM is forced by externally supplied meteorology, not simulated)"
+    - "Large-scale river/channel routing beyond the basin (left to a downstream routing model)"
+    - "Detailed channel hydraulics beyond shallow-water/kinematic overland routing"
+    - "When CLM is disabled: no ET, snow, or canopy processes (pure infiltration/saturation-excess runoff)"
+  spatial: "3-D"
+  temporal: "sub-hourly"
+  closure: "mass-balance"
+  notes: "Surface and subsurface are solved as ONE coupled nonlinear system: the overland kinematic/diffusive wave is assembled into the Richards residual on the top face (free-surface overland BC, pressure continuity at the land surface), not as a separate sequentially-coupled equation. Mass balance tracks subsurface storage, surface ponding storage, overland outflow, and (with CLM) ET. The CLM energy balance, when active, supplies the surface flux but is not itself a closed coupled energy budget of the subsurface. Base timestep typically 1 hr (range 0.01-24 hr); sharp wetting fronts require dt 0.1-0.5 hr."
+
+inputs:
+  forcing:
+    - {category: "atmospheric", name: "APCP (precipitation rate)", unit: "mm/s (= kg/m2/s)", source_kind: "forcing", model_input_format: "PFB forcing field / CLM met vector prcp_forc", notes: "Always required as CLM forcing or top-BC flux. Unit is mm/s, NOT mm/hr."}
+    - {category: "atmospheric", name: "DSWR (downward shortwave radiation)", unit: "W/m2", source_kind: "forcing", model_input_format: "PFB forcing field / CLM met vector sw_forc", notes: "CLM enabled only."}
+    - {category: "atmospheric", name: "DLWR (downward longwave radiation)", unit: "W/m2", source_kind: "forcing", model_input_format: "PFB forcing field / CLM met vector lw_forc", notes: "CLM enabled only."}
+    - {category: "atmospheric", name: "Tmp (air temperature)", unit: "K", source_kind: "forcing", model_input_format: "PFB forcing field / CLM met vector tas_forc", notes: "CLM enabled only. Kelvin, not Celsius."}
+    - {category: "atmospheric", name: "UGRD (u-wind)", unit: "m/s", source_kind: "forcing", model_input_format: "PFB forcing field / CLM met vector u_forc", notes: "CLM enabled only."}
+    - {category: "atmospheric", name: "VGRD (v-wind)", unit: "m/s", source_kind: "forcing", model_input_format: "PFB forcing field / CLM met vector v_forc", notes: "CLM enabled only."}
+    - {category: "atmospheric", name: "Press (surface pressure)", unit: "Pa", source_kind: "forcing", model_input_format: "PFB forcing field / CLM met vector patm_forc", notes: "CLM enabled only. Pa, not hPa/kPa."}
+    - {category: "atmospheric", name: "SPFH (specific humidity)", unit: "kg/kg", source_kind: "forcing", model_input_format: "PFB forcing field / CLM met vector qatm_forc", notes: "CLM enabled only."}
+  parameters:
+    - {category: "subsurface", name: "permeability / saturated conductivity K (perm_x/y/z, anisotropic)", unit: "m/hr", source_kind: "dataset_lookup", model_input_format: "PFB field per cell (ProblemData permeability tensor)", notes: "Unit is m/hr in ParFlow (not m/day MODFLOW, not m/s SI). Use physical matrix Ksat from soil texture, not VIC-calibrated Ksat (includes macropores, 100-500x too high)."}
+    - {category: "subsurface", name: "porosity (phi)", unit: "dimensionless", source_kind: "dataset_lookup", model_input_format: "PFB field (ProblemDataPorosity)", notes: "Typical 0.2-0.6."}
+    - {category: "subsurface", name: "van Genuchten alpha", unit: "1/m", source_kind: "dataset_lookup", model_input_format: "Phase.Saturation/RelPerm VanGenuchten key", notes: "Unit is 1/m (not 1/cm as in Rosetta/Carsel-Parrish; factor 100). Typical 0.5 (clay) to 15 (sand)."}
+    - {category: "subsurface", name: "van Genuchten n", unit: "dimensionless", source_kind: "dataset_lookup", model_input_format: "Phase.Saturation/RelPerm VanGenuchten key", notes: "Drives BOTH the saturation curve and the relative-permeability curve. m is derived as m=1-1/n (Mualem); user cannot set m independently. Typical 1.05-4.0."}
+    - {category: "subsurface", name: "specific storage Ss", unit: "1/m", source_kind: "calibrated", model_input_format: "PFB field (specific_storage)", notes: "Elastic storage in saturated zone; typical 1e-5 to 1e-3."}
+    - {category: "subsurface", name: "Kz/Kx anisotropy ratio", unit: "dimensionless", source_kind: "calibrated", model_input_format: "permeability tensor ratio", notes: "Vertical-to-horizontal conductivity ratio; typical 0.01-1.0 (default ~0.1)."}
+    - {category: "surface", name: "Manning's roughness n", unit: "s/m^(1/3)", source_kind: "dataset_lookup", model_input_format: "PFB field (ProblemDataMannings)", notes: "Typical 0.01 (urban) to 0.4 (dense forest); values < 0.01 cause CFL instability."}
+    - {category: "topography", name: "slope_x, slope_y (terrain slopes)", unit: "dimensionless", source_kind: "derived", model_input_format: "PFB slope fields (TSlopeX/TSlopeY), derived from sink-filled DEM", notes: "Sign convention: positive slope in positive coordinate direction. Min slope ~0.0001 in flat terrain."}
+    - {category: "vegetation", name: "CLM vegetation maps (IGBP type, LAI/SAI/z0 per PFT)", unit: "IGBP class 1-17 / dimensionless", source_kind: "dataset_lookup", model_input_format: "drv_vegm.dat, drv_vegp.dat", notes: "CLM enabled only. All-barren/water (type 16/17) gives zero ET."}
+  initial_conditions:
+    - {category: "subsurface", name: "initial pressure-head field", unit: "m of water", source_kind: "user_provided", model_input_format: "constant, hydrostatic from water-table depth, or PFB file (e.g. global WTD / MODFLOW steady state)", notes: "Negative = unsaturated suction, positive = saturated, zero = water table. Spinup of 10-100 yr (or less if seeded from steady state) needed to equilibrate; equilibrium when inter-annual water-balance residual < 1% of precipitation. HydroStaticPatch with bottom RefPatch sets pressure at the BOTTOM (surface = Value - total_depth)."}
+  boundary_conditions:
+    - {category: "domain", name: "domain mask / indicator field", unit: "0/1", source_kind: "user_provided", model_input_format: "3D active/inactive cell field", notes: "Defines basin extent."}
+    - {category: "top_bc", name: "Overland flow boundary condition (top patch)", unit: "n/a", source_kind: "user_provided", model_input_format: "Patch.top.BCPressure.Type = OverlandFlow / OverlandKinematic / OverlandDiffusive", notes: "Always present at the top; couples surface and subsurface via pressure continuity. Selecting the kinematic vs diffusive overland scheme is set through the top-patch BC TYPE, not a standalone Solver boolean."}
+    - {category: "lateral_bc", name: "lateral/bottom boundary conditions", unit: "n/a (pressure m or flux)", source_kind: "user_provided", model_input_format: "FluxConst / DirEquilRefPatch / PressureConst / Dirichlet / Neumann per patch", notes: "Bottom no-flow by default; sides no-flow by default. At least one outflow boundary (e.g. DirEquilRefPatch seepage face) required, otherwise the domain is a closed box with no drainage."}
+    - {category: "solver_mode", name: "Solver mode selection (Richards vs Impes vs Diffusion)", unit: "n/a", source_kind: "user_provided", model_input_format: "Solver key", notes: "Defaults to Impes (two-phase) if omitted; integrated surface-subsurface hydrology requires Solver=Richards. CLM coupling requires Solver=Richards plus Solver.LSM=CLM (compiled --with-clm; defaults to NOT calling CLM)."}
+    - {category: "grid", name: "terrain-following grid + variable-dz (dz_mult / nzList)", unit: "dimensionless", source_kind: "user_provided", model_input_format: "TerrainFollowingGrid flag + dzScale (ProblemDataZmult)", notes: "With TerrainFollowingGrid=True, dz values are FRACTIONS of total depth summing to 1.0, not absolute thicknesses. dz_mult silently rescales vertical cell thickness in accumulation/flux terms."}
+    - {category: "phase_source", name: "PhaseSources / KnownSolution", unit: "n/a", source_kind: "user_provided", model_input_format: "PhaseSources.water.Type/GeomNames/Geom.Value; KnownSolution", notes: "Mandatory volumetric source-term keys; absence aborts the run before computation."}
+
+processes:
+  modules:
+    - {name: "Richards solver", role: "process_solver", brief: "Solves the 3D Richards equation (nl_function_eval residual: accumulation + Darcy flux + source/sink + overland BC) for pressure head across vadose and saturated zones in one coupled system."}
+    - {name: "Overland flow (free-surface BC)", role: "process_solver", brief: "2D kinematic-wave Manning routing (overlandflow_eval) of surface ponding using slopes and Manning's n; assembled into the Richards residual on the top face via pressure continuity.", applicability: "Patch.top.BCPressure.Type = OverlandFlow or OverlandKinematic"}
+    - {name: "Overland flow (diffusive wave)", role: "process_solver", brief: "Diffusive-wave overland routing (overlandflow_eval_diffusive) using friction slope, regularized by an epsilon floor on flat terrain.", applicability: "Patch.top.BCPressure.Type = OverlandDiffusive"}
+    - {name: "van Genuchten retention", role: "process_solver", brief: "Constitutive curves (problem_saturation / problem_phase_rel_perm) mapping pressure head to relative saturation and relative permeability via alpha, n (m=1-1/n)."}
+    - {name: "Darcy velocity (phase_velocity_face)", role: "allocator", brief: "Computes Darcy velocity components velx/vely/velz from pressure, relative permeability and saturation."}
+    - {name: "CLM 4.5 land surface", role: "optional_module", brief: "Computes ET, snow, canopy interception and radiation/energy balance from atmospheric forcing; supplies the surface flux and the evap_trans volumetric source/sink to Richards.", applicability: "Solver.LSM = CLM (compiled --with-clm)"}
+    - {name: "Newton-Krylov (KINSOL) solver", role: "integrator", brief: "Inexact-Newton (Eisenstat-Walker) nonlinear iteration driving nl_function_eval + analytic Jacobian; defaults MaxIter=15, ResidualTol=1e-7, KrylovDim=10."}
+    - {name: "HYPRE PFMG preconditioner", role: "integrator", brief: "Multigrid preconditioner for the linearized system; ill-conditions under K contrasts > ~6 orders of magnitude (MGSemi as fallback)."}
+    - {name: "Richards Jacobian (analytic)", role: "allocator", brief: "Assembles the analytic Jacobian (richards_jacobian_eval) for KINSOL, including the overland-BC and constitutive-curve derivatives."}
+    - {name: "Timestep controller", role: "driver", brief: "Constant or Growth dt control (select_time_step); halves dt on nonlinear non-convergence and forces dt down at BC/well time-cycle transitions."}
+    - {name: "AdvanceRichards time loop", role: "driver", brief: "SetupRichards + AdvanceRichards main transient loop (solver_richards) dispatching the nonlinear solve, CLM call, velocity computation and output each timestep."}
+  internal_edges:
+    - {from: "CLM 4.5 land surface", to: "Richards solver", kind: "writes_state", brief: "evap_trans (ET source/sink) enters the Richards mass-balance residual as a volumetric source."}
+    - {from: "CLM 4.5 land surface", to: "Overland flow (free-surface BC)", kind: "produces_output", brief: "precipitation minus ET/interception applied as the top-patch surface flux."}
+    - {from: "Overland flow (free-surface BC)", to: "Richards solver", kind: "invokes", brief: "surface kinematic wave assembled into the top-face term of the Richards residual; ponding pressure continuous with subsurface pressure head."}
+    - {from: "Overland flow (diffusive wave)", to: "Richards solver", kind: "invokes", brief: "diffusive-wave overland term assembled into the Richards residual when the diffusive top BC is selected."}
+    - {from: "Richards solver", to: "van Genuchten retention", kind: "reads_state", brief: "pressure head supplied to the retention/rel-perm curves."}
+    - {from: "van Genuchten retention", to: "Richards solver", kind: "writes_state", brief: "updated saturation and relative permeability feed back into the Richards conductance/accumulation terms."}
+    - {from: "Richards solver", to: "Richards Jacobian (analytic)", kind: "invokes", brief: "residual structure used to assemble the analytic Jacobian."}
+    - {from: "Richards Jacobian (analytic)", to: "Newton-Krylov (KINSOL) solver", kind: "invokes", brief: "Jacobian-vector products drive the inexact-Newton iteration."}
+    - {from: "Newton-Krylov (KINSOL) solver", to: "HYPRE PFMG preconditioner", kind: "invokes", brief: "preconditions the linearized system each Krylov iteration."}
+    - {from: "Richards solver", to: "Darcy velocity (phase_velocity_face)", kind: "produces_output", brief: "converged pressure/saturation yield Darcy velocity components."}
+    - {from: "AdvanceRichards time loop", to: "Newton-Krylov (KINSOL) solver", kind: "invokes", brief: "nonlinear solve called once (or retried) per timestep."}
+    - {from: "AdvanceRichards time loop", to: "CLM 4.5 land surface", kind: "invokes", brief: "CLM called from within the time loop before the nonlinear solve when LSM=CLM."}
+    - {from: "Timestep controller", to: "AdvanceRichards time loop", kind: "invokes", brief: "supplies the next dt; halves dt on non-convergence."}
+    - {from: "Inputs", to: "Richards solver", kind: "consumes_input", brief: "permeability, porosity, van Genuchten params, specific storage and boundary conditions read into ProblemData."}
+    - {from: "Inputs", to: "CLM 4.5 land surface", kind: "consumes_input", brief: "atmospheric met vectors and vegetation maps consumed by CLM."}
+    - {from: "Richards solver", to: "pressure_head", kind: "writes_state", brief: "primary solved state."}
+    - {from: "van Genuchten retention", to: "saturation", kind: "writes_state", brief: "saturation derived from pressure head."}
+    - {from: "Overland flow (free-surface BC)", to: "surface_ponding_depth", kind: "writes_state", brief: "free-surface ponding from positive top-cell pressure."}
+    - {from: "Richards solver", to: "Outputs", kind: "produces_output", brief: "pressure, saturation, velocity and derived diagnostics written to PFB."}
+
+states:
+  variables:
+    - {name: "pressure_head", unit: "m of water", role: "prognostic"}
+    - {name: "old_pressure", unit: "m of water", role: "accumulator"}
+    - {name: "saturation", unit: "fraction 0-1", role: "prognostic"}
+    - {name: "old_saturation", unit: "fraction 0-1", role: "accumulator"}
+    - {name: "surface_ponding_depth", unit: "m", role: "prognostic"}
+    - {name: "density", unit: "kg/m3", role: "prognostic"}
+    - {name: "evap_trans", unit: "1/s (volumetric source)", role: "diagnostic"}
+    - {name: "evap_trans_sum", unit: "accumulated source", role: "accumulator"}
+    - {name: "ovrl_bc_flx", unit: "overland boundary outflow", role: "diagnostic"}
+    - {name: "water_table_depth", unit: "m below surface", role: "diagnostic"}
+    - {name: "subsurface_storage", unit: "m3", role: "diagnostic"}
+    - {name: "swe_out", unit: "mm", role: "prognostic"}
+    - {name: "t_grnd", unit: "K", role: "prognostic"}
+    - {name: "t_soil", unit: "K", role: "prognostic"}
+  provenance: "populated"
+
+outputs:
+  - var: "pressure_head"
+    validation_rank: 1
+    unit: "m of water"
+    description: "3D pressure-head field, the primary solved Richards state (per output timestep)."
+    emitted_in: "<run>.out.press.*.pfb"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "r"
+          caveats: ["Pressure head is in meters of water; compare against piezometric/observation-well heads at matched depth, not raw output indices."]
+      detrending_options: ["none"]
+  - var: "saturation"
+    validation_rank: 2
+    unit: "fraction 0-1"
+    description: "3D relative saturation field, derived from pressure head via the van Genuchten retention curve."
+    emitted_in: "<run>.out.satur.*.pfb"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Per nominal layer; physical depths depend on dz_mult."]
+      detrending_options: ["none"]
+  - var: "soil_moisture"
+    validation_rank: 4
+    unit: "m3/m3"
+    description: "Volumetric soil moisture per layer = saturation * porosity."
+    emitted_in: "derived from <run>.out.satur.*.pfb and porosity"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "r"
+          caveats: ["Match the observation sensor depth to the model layer; volumetric, not saturation fraction."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Reproject from UTM grid with area-weighted remapping when comparing to lat/lon products."]
+      detrending_options: ["none"]
+  - var: "water_table_depth"
+    validation_rank: 3
+    unit: "m below surface"
+    description: "Depth to the water table, diagnosed from the saturation >= 0.99 surface (NOT the pressure=0 contour)."
+    emitted_in: "derived from <run>.out.satur.*.pfb"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "r"
+          caveats: ["Diagnose from saturation>=0.99 threshold; pressure=0 interpolation gives spurious depths."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Comparable to gridded WTD products after UTM-to-geographic reprojection."]
+      detrending_options: ["none"]
+  - var: "discharge_at_outlet"
+    validation_rank: 5
+    unit: "m3/s"
+    description: "Discharge at outlet cells from overland flow velocity * depth (outlet must lie on the slope-determined flow path)."
+    emitted_in: "derived from overland flow output (overlandsum / obf)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Overland-flow routing is physically valid only at hillslope scale (dx ~10-1000 m); basin-scale dx (~25 km) gives unrealistically long travel times. Aggregate hourly->daily with MEAN (flux), not SUM."]
+      detrending_options: ["none"]
+  - var: "surface_runoff"
+    validation_rank: 6
+    unit: "mm/day"
+    description: "Surface runoff flux for downstream routing coupling."
+    emitted_in: "derived/aggregated from overland output"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Flux: aggregate hourly->daily with MEAN, not SUM (SUM gives 24x). Do not supply both ParFlow and VIC runoff for the same basin to a downstream router (double-counting)."]
+      detrending_options: ["none"]
+  - var: "subsurface_storage"
+    validation_rank: 7
+    unit: "m3"
+    description: "Domain-integrated subsurface storage = saturation * porosity * cell volume."
+    emitted_in: "derived from <run>.out.satur.*.pfb"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Anomaly-comparable to basin-integrated storage-change products (e.g. GRACE-type TWS anomalies); use storage change, not absolute storage."]
+      detrending_options: ["first_difference"]
+  - var: "qflx_evap_tot (CLM total ET)"
+    validation_rank: 8
+    unit: "mm/s"
+    description: "CLM total evapotranspiration flux (latent-heat-equivalent water flux)."
+    emitted_in: "<run>.out.clm_output.*.C.pfb"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["CLM-enabled runs only. Flux aggregation uses MEAN."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Comparable to gridded ET products after reprojection."]
+      detrending_options: ["none"]
+  - var: "eflx_lh_tot (CLM latent heat flux)"
+    validation_rank: 9
+    unit: "W/m2"
+    description: "CLM latent heat flux (surface energy balance)."
+    emitted_in: "<run>.out.clm_output.*.C.pfb"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["CLM-enabled runs only; comparable to eddy-covariance flux-tower latent heat."]
+      detrending_options: ["none"]
+  - var: "swe_out (CLM snow water equivalent)"
+    validation_rank: 10
+    unit: "mm"
+    description: "CLM snow water equivalent."
+    emitted_in: "<run>.out.clm_output.*.C.pfb"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["CLM-enabled runs only; timing of accumulation/ablation matters as much as peak SWE."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "subsurface permeability / hydraulic conductivity (3D field)"
+      to: "runoff"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "Dunnian / saturation-excess conditions (weak under Hortonian/unsaturated)"
+      citations: ["gilbert2016_parflow_runoff_permeability_activesubspace", "meyerhoff2011_parflow_hillslope_heterogeneity"]
+    - from: "hydraulic conductivity (confined & unconfined zones)"
+      to: "latent heat flux / evapotranspiration"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "ParFlow-CLM"
+      citations: ["jefferson2015_parflowclm_energyflux_activesubspace"]
+    - from: "soil porosity"
+      to: "runoff / infiltration / soil evaporation / transpiration"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["qu2022_parflowclm_gsa_stettbach"]
+    - from: "soil porosity"
+      to: "subsurface / groundwater storage"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["qu2022_parflowclm_gsa_stettbach"]
+    - from: "van Genuchten parameter n"
+      to: "infiltration / runoff / soil evaporation"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["qu2022_parflowclm_gsa_stettbach"]
+    - from: "wilting point"
+      to: "latent heat flux / sensible heat flux / transpiration"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "ParFlow-CLM"
+      citations: ["qu2022_parflowclm_gsa_stettbach", "jefferson2015_parflowclm_energyflux_activesubspace"]
+    - from: "leaf area index (LAI)"
+      to: "latent heat flux / sensible heat flux / transpiration"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "ParFlow-CLM"
+      citations: ["qu2022_parflowclm_gsa_stettbach", "jefferson2015_parflowclm_energyflux_activesubspace"]
+    - from: "maximum carboxylation rate (Vcmax) / Ball-Berry stomatal parameters"
+      to: "transpiration / stomatal resistance"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "ParFlow-CLM"
+      citations: ["jefferson2017_parflowclm_stomatal_transpiration"]
+    - from: "stem area index (SAI)"
+      to: "latent heat flux / sensible heat flux"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "ParFlow-CLM"
+      citations: ["qu2022_parflowclm_gsa_stettbach"]
+    - from: "Manning coefficient (surface roughness)"
+      to: "surface water storage / overland flow"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["qu2022_parflowclm_gsa_stettbach"]
+    - from: "hydraulic-conductivity variance / correlation length (heterogeneity)"
+      to: "runoff / discharge uncertainty"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "deep-water-table (subsurface-controlled) hillslopes"
+      citations: ["meyerhoff2011_parflow_hillslope_heterogeneity"]
+    - from: "aerodynamic roughness length z0 / aerodynamic resistance"
+      to: "sensible heat flux / latent heat flux"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "ParFlow-CLM"
+      citations: ["qu2022_parflowclm_gsa_stettbach"]
+  citation_index:
+    gilbert2016_parflow_runoff_permeability_activesubspace:
+      short_citation: "Gilbert et al. 2016"
+      doi: "10.1016/j.advwatres.2016.03.020"
+      note: "Active-subspace global spatial sensitivity of ParFlow runoff to 3D subsurface permeability; strong under Dunnian conditions."
+    jefferson2015_parflowclm_energyflux_activesubspace:
+      short_citation: "Jefferson et al. 2015"
+      doi: "10.1016/j.cageo.2015.07.001"
+      note: "Morris + active subspaces on ParFlow-CLM energy fluxes (19 params); latent heat most sensitive to subsurface hydraulic conductivity."
+    qu2022_parflowclm_gsa_stettbach:
+      short_citation: "Qu et al. 2022"
+      doi: "10.5194/gmd-2022-131"
+      note: "LH + OAT global sensitivity analysis of ParFlow-CLM at Stettbach (12 params); sensible heat most sensitive to LAI, van Genuchten n, aerodynamic roughness length z0, and wilting point. NOTE: GMD Discussions preprint, withdrawn/non-final; rankings corroborated by the peer-reviewed active-subspace studies."
+    jefferson2017_parflowclm_stomatal_transpiration:
+      short_citation: "Jefferson et al. 2017"
+      doi: "10.1175/JHM-D-16-0053.1"
+      note: "Active subspaces over 20 Ball-Berry stomatal/photosynthesis parameters; Vcmax and Ball-Berry slope/intercept dominate transpiration."
+    meyerhoff2011_parflow_hillslope_heterogeneity:
+      short_citation: "Meyerhoff & Maxwell 2011"
+      doi: "10.1007/s10040-011-0753-y"
+      note: "Stochastic ParFlow study of subsurface heterogeneity propagation to hillslope runoff; K variance/correlation length drive runoff uncertainty for deep-water-table cases."
+
+safety:
+  hazards:
+    - id: "permeability_unit_m_per_hr"
+      kind: "soil_semantic"
+      description: "Permeability K must be m/hr; m/day (MODFLOW) is 24x too high, m/s (SI) is 3600x too low."
+      severity: "silent"
+    - id: "vg_alpha_unit_per_m"
+      kind: "soil_semantic"
+      description: "van Genuchten alpha must be 1/m; 1/cm (Rosetta/Carsel-Parrish databases) makes the soil 100x too retentive."
+      severity: "silent"
+    - id: "vic_ksat_misuse"
+      kind: "soil_semantic"
+      description: "VIC Ksat includes macropore/calibration effects (100-500x physical matrix Ksat); using it directly blocks infiltration-excess runoff. Cosby pedotransfer from VIC's Brooks-Corey exponent (=2b+3) further mislabels clay as sand."
+      severity: "silent"
+    - id: "pressure_head_unit_m_water"
+      kind: "soil_semantic"
+      description: "Pressure head is meters of water (typical -100 to +50 m); Pa (divide 9810) or kPa (divide 9.81) makes the field nonsensical."
+      severity: "silent"
+    - id: "precip_unit_mm_per_s"
+      kind: "weather_file_semantic"
+      description: "CLM precipitation must be mm/s; mm/hr (CMFD) is 3600x, mm/3hr (MSWX) is 10800x too much rain, flooding instantly."
+      severity: "silent"
+    - id: "clm_temperature_kelvin"
+      kind: "weather_file_semantic"
+      description: "CLM temperature must be Kelvin; Celsius (25 read as 25 K = -248 C) breaks the thermal regime."
+      severity: "silent"
+    - id: "clm_pressure_pa"
+      kind: "weather_file_semantic"
+      description: "CLM surface pressure must be Pa; hPa (100x) or kPa (1000x) too low corrupts humidity/ET."
+      severity: "silent"
+    - id: "clm_radiation_w_per_m2"
+      kind: "weather_file_semantic"
+      description: "CLM radiation must be W/m2; kJ/m2/day (86.4x) or MJ/m2/day (86400x) gives systematic temperature/ET bias."
+      severity: "silent"
+    - id: "clm_forcing_file_numbering"
+      kind: "weather_file_semantic"
+      description: "CLM forcing files must be named/numbered sequentially (NLDAS.<run>.NNNNNN.pfb from IstepStart, no gaps); a mismatch makes CLM read the wrong timestep."
+      severity: "fatal"
+    - id: "veg_map_all_barren"
+      kind: "control_semantic"
+      description: "Vegetation map of all IGBP type 16 (barren) or 17 (water) yields zero CLM ET/transpiration; soil stays saturated."
+      severity: "silent"
+    - id: "slope_sign_inverted"
+      kind: "soil_semantic"
+      description: "Inverted slope sign convention (ParFlow expects positive slope in positive coordinate direction) makes overland flow run uphill."
+      severity: "silent"
+    - id: "zero_or_subthreshold_slopes"
+      kind: "soil_semantic"
+      description: "All-zero or sub-threshold slopes (coarse/flat DEMs, resampling smoothing) give zero overland velocity; water ponds with no drainage. Set min slope ~0.0001."
+      severity: "degraded"
+    - id: "unfilled_dem_sinks"
+      kind: "numerical_instability"
+      description: "Unfilled DEM sinks create extreme pressure gradients that diverge the nonlinear solver (negative saturation / NaN crash). Fill sinks before computing slopes."
+      severity: "fatal"
+    - id: "crs_degrees_vs_meters"
+      kind: "control_semantic"
+      description: "Grid origin in degrees while the model expects UTM meters offsets the whole domain from the basin (verify origin_x/y > 100000 for UTM)."
+      severity: "fatal"
+    - id: "tfg_dz_absolute_not_fraction"
+      kind: "control_semantic"
+      description: "With TerrainFollowingGrid=True, dz values must be FRACTIONS of total depth summing to 1.0; absolute thicknesses give zero/negative cell volume and crash."
+      severity: "fatal"
+    - id: "variable_dz_box_geometry_single_layer"
+      kind: "control_semantic"
+      description: "Box geometry combined with dzScale nzList activates a mask only in the bottom layer; ParFlow silently solves a single layer (upper layers carry fill values). Use uniform DZ with Box geometry or an indicator-file geometry for variable dz."
+      severity: "fatal"
+    - id: "timestep_too_large_nonconvergence"
+      kind: "numerical_instability"
+      description: "Timestep too large for sharp wetting fronts or intense rain diverges the Newton solver (KINSOL MaxIter reached). Reduce TimeStep.Value (1.0->0.5->0.1 hr) or raise Nonlinear.MaxIter."
+      severity: "fatal"
+    - id: "ic_far_from_equilibrium"
+      kind: "initial_condition_semantic"
+      description: "Initial pressure far from equilibrium (e.g. uniform -5 m in complex terrain) causes >100 nonlinear iterations/timestep. Seed with hydrostatic IC, spinup, or a steady-state field."
+      severity: "degraded"
+    - id: "pfmg_extreme_k_contrast"
+      kind: "numerical_instability"
+      description: "K contrasts > ~6 orders of magnitude ill-condition the HYPRE PFMG preconditioner. Cap min K at 1e-5 m/hr or switch to MGSemi."
+      severity: "fatal"
+    - id: "mpi_topology_mismatch"
+      kind: "control_semantic"
+      description: "MPI process count must equal P*Q*R exactly, with NX/P, NY/Q, NZ/R all integers; ParFlow does not auto-redistribute."
+      severity: "fatal"
+    - id: "hydrostatic_bottom_refpatch_surface_offset"
+      kind: "initial_condition_semantic"
+      description: "HydroStaticPatch IC with a bottom RefPatch sets pressure at the BOTTOM; surface pressure = Value - total_depth, leaving the surface far drier than intended."
+      severity: "silent"
+    - id: "closed_box_no_outflow"
+      kind: "control_semantic"
+      description: "FluxConst=0 on all lateral boundaries (no DirEquilRefPatch/seepage face) makes the domain a closed box; all rain becomes storage, runoff ratio = 0."
+      severity: "silent"
+    - id: "solver_defaults_to_impes"
+      kind: "control_semantic"
+      description: "If the Solver key is omitted, ParFlow defaults to Impes (two-phase), NOT Richards; integrated surface-subsurface hydrology requires Solver=Richards."
+      severity: "fatal_or_silent"
+    - id: "missing_phasesources_keys"
+      kind: "control_semantic"
+      description: "PhaseSources.water.Type/GeomNames/Geom.Value (and KnownSolution) are mandatory; omission aborts the run before computation."
+      severity: "fatal"
+    - id: "overland_bc_type_selection"
+      kind: "control_semantic"
+      description: "The overland-flow scheme is enabled by setting the top-patch BC TYPE (Patch.top.BCPressure.Type = OverlandKinematic/OverlandDiffusive), not via a standalone Solver overland switch."
+      severity: "fatal"
+    - id: "wtd_from_pressure_zero_contour"
+      kind: "parser_semantic"
+      description: "Diagnosing water-table depth from the pressure=0 contour instead of the saturation>=0.99 threshold gives spurious depths inconsistent with saturation."
+      severity: "silent"
+    - id: "flux_aggregation_sum_not_mean"
+      kind: "parser_semantic"
+      description: "Aggregating hourly flux output (runoff, ET) to daily with SUM instead of MEAN gives 24x too much; state variables use instantaneous snapshots."
+      severity: "silent"
+    - id: "distributed_pfb_not_combined"
+      kind: "parser_semantic"
+      description: "Per-MPI-rank distributed PFB files must be combined (pfdist / read with dist=True) before reading; a partial file gives wrong dimensions."
+      severity: "fatal"
+    - id: "outlet_off_flow_path"
+      kind: "parser_semantic"
+      description: "An outlet/pour-point cell not on the slope-derived flow path reports zero discharge despite visible runoff elsewhere; pick the lowest active boundary cell where the slope points outward."
+      severity: "degraded"
+    - id: "double_counted_runoff_downstream"
+      kind: "control_semantic"
+      description: "Routing both ParFlow (internal overland flow) and VIC surface runoff for the same basin to a downstream router double-counts discharge (~2x)."
+      severity: "silent"
+  validation_limits:
+    - "Overland-flow routing is physically valid only at hillslope scale (dx ~10-1000 m); basin-scale dx (~25 km) gives negligible Manning velocity and unrealistically long travel times. For basin-scale, couple with a routing model."
+    - "Best applied to small-medium basins (< ~50,000 km2)."
+    - "Daily/sub-hourly timestep cannot resolve processes finer than the chosen dt; sharp wetting fronts require dt <= 0.1-0.5 hr."
+    - "Soil-column depth must match pedology: deep columns (>5 m) over-store rainfall and suppress saturation-excess runoff; alluvial/clay plains need ~2-3 m, mountain basins 5-10 m."
+    - "With CLM disabled there is no ET/snow/canopy process; the model is pure infiltration/saturation-excess runoff."
+    - "Phase.RelPerm.Type='Data' and Phase.Saturation.Type='Data' are documented as currently unsupported placeholders."
+  warnings:
+    - "Hortonian (infiltration-excess) overland flow is impossible when K exceeds rain intensity; a runoff-free result may simply reflect that regime, not an error."
+    - "Fully uniform K, slope, forcing and IC yield a spatially invariant solution that masks routing behaviour; use spatially variable fields for realistic runs."
+    - "Pressure/saturation outputs are per nominal layer; physical depths depend on dz_mult, so reading outputs without the dz multiplier misrepresents depth."
+    - "van Genuchten m is not independent: m = 1 - 1/n drives BOTH the saturation and relative-permeability curves, so changing n alters retention and conductivity simultaneously."
+    - "specific_storage (compressible storage) and density compressibility both add to the accumulation term and can be conflated in confined/compressible runs."
+    - "The realized timestep can differ from TimeStep.Value: AdvanceRichards halves dt on non-convergence and BC/well time-cycle transitions force dt down."
+  assumptions:
+    - statement: "Surface and subsurface are solved as one coupled nonlinear system; overland flow is a free-surface boundary condition assembled into the Richards residual on the top face, not a separately time-lagged equation."
+      scope: "Integrated surface-subsurface (Solver=Richards) configuration"
+      source: "Kollet & Maxwell (2006) Adv. Water Resour. 29(7):945-958; ParFlow models.html section 4.5 (Overland Flow, eqs 4.9-4.16); nl_function_eval OverlandFlowEval assembly"
+      status: "adopted"
+    - statement: "Water-table depth is diagnosed from the saturation >= 0.99 surface, not the pressure=0 contour."
+      scope: "Derived water_table_depth output"
+      source: "ParFlow output diagnostics (saturation-threshold convention; dt_pf_041)"
+      status: "adopted"
+    - statement: "van Genuchten m is constrained by m = 1 - 1/n (Mualem); only alpha, n, s_res, s_sat are independent inputs."
+      scope: "van Genuchten retention and relative-permeability constitutive curves"
+      source: "ParFlow source problem_saturation.c and problem_phase_rel_perm.c"
+      status: "adopted"
+    - statement: "Mass-balance closure is on water (and, with CLM, the ET source term); the CLM energy balance supplies surface flux but is not a closed coupled subsurface energy budget."
+      scope: "Whole-domain conservation"
+      source: "ParFlow models.html section 4 (water-balance closure) and CLM coupling description"
+      status: "adopted"
+    - statement: "The HydroCraft-relevant configuration is the Richards (variably-saturated, integrated surface-subsurface) solver path; Impes (two-phase) and lattice-Boltzmann solvers are out of scope for this dag."
+      scope: "Solver mode"
+      source: "ParFlow start.html section 2.1 (ParFlow Solvers); solver.c dispatcher"
+      status: "adopted"

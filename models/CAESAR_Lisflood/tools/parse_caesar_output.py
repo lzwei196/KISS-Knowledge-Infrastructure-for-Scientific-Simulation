@@ -105,7 +105,9 @@ def parse_timeseries(file_path: str, save_interval_min: float = 60) -> dict:
         "peak_discharge_m3s": float(np.max(q)),
         "peak_time_hours": float(result["time_hours"][np.argmax(q)]),
         "mean_discharge_m3s": float(np.mean(q)),
-        "total_volume_m3": float(np.trapz(q, result["time_minutes"] * 60)),
+        "total_volume_m3": float(
+            (np.trapezoid if hasattr(np, "trapezoid") else np.trapz)(
+                q, result["time_minutes"] * 60)),
         "n_timesteps": n_rows,
         "duration_hours": float(result["time_hours"][-1]),
     }

@@ -26,13 +26,40 @@ import logging
 import numpy as np
 from pathlib import Path
 
-HDS_PATH = ""
+HDS_PATH = "/mnt/disk1/Hydrocraft_server/outputs/qinghai_lake_1951_2024/modflow6/workspace/gwf.hds"
 MODEL_PATH = ""
 KSTPKPER = "last"  # "last", "all", or tuple like (0, 0)
 HDRY_THRESHOLD = 0.9e30  # Values above this are dry cells
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+
+
+def _json_safe(o):
+    """Recursively convert numpy scalars/arrays to plain Python types.
+
+    flopy's HeadFile/CellBudgetFile .get_kstpkper() returns numpy int32 pairs
+    (verified live on a real gwf.hds: (np.int32(4), np.int32(79))), which the
+    stdlib json encoder refuses to serialise.  Any consumer that json-dumps this
+    tool's result -- including this tool's OWN CLI print -- then dies with
+    "TypeError: Object of type int32 is not JSON serializable", and if it was
+    dumping to a file it leaves that file TRUNCATED and syntactically invalid.
+    See triplet dt_mf6_018.
+    """
+    import numpy as _np
+    if isinstance(o, dict):
+        return {str(k): _json_safe(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_json_safe(v) for v in o]
+    if isinstance(o, _np.ndarray):
+        return _json_safe(o.tolist())
+    if isinstance(o, _np.integer):
+        return int(o)
+    if isinstance(o, _np.floating):
+        return float(o)
+    if isinstance(o, _np.bool_):
+        return bool(o)
+    return o
 
 
 def validate_inputs():
@@ -100,16 +127,24 @@ def process():
         "water_table_max": round(float(wt_valid.max()), 3) if wt_valid.size > 0 else None,
         "water_table_mean": round(float(wt_valid.mean()), 3) if wt_valid.size > 0 else None,
         "timesteps_available": len(times),
-        "kstpkper_extracted": list(target_kstpkper) if target_kstpkper else "last",
+        "kstpkper_extracted": ([int(x) for x in target_kstpkper]
+                              if target_kstpkper is not None else "last"),
     }
 
     if dry_count > 0:
         logger.warning(f"Dry cells: {dry_count} ({result['dry_cell_pct']}%). See dt_mf6_002.")
 
-    return result
+    return _json_safe(result)
 
 
 def validate_outputs(result):
+    # regression guard (dt_mf6_018): the result MUST be JSON-serialisable, or a
+    # caller that dumps it to a file leaves that file truncated and unreadable.
+    try:
+        json.dumps(result)
+    except TypeError as e:
+        logger.error(f"result dict is not JSON-serialisable: {e}")
+        sys.exit(3)
     if result["head_min"] is None:
         logger.error("No valid head values extracted")
         sys.exit(3)

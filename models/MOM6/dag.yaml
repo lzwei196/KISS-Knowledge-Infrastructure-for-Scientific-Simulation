@@ -1,0 +1,482 @@
+template_version: "3.5"
+
+identity:
+  model_id: "MOM6"
+  scientific_reference_version: "MOM6 (NOAA-GFDL primitive-equation ocean core; ALE generalized vertical coordinate; OM4.0 lineage, Adcroft et al. 2019)"
+  implementation:
+    id: "mom6-gfdl"
+    version: "version 6 (dev/gfdl branch)"
+    provenance: "Fortran 90/95 with C FMS infrastructure; NOAA-GFDL open-development MOM6 dynamic core wrapping the ALE primitive-equation solver."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: "LGPL-3.0"
+  repo_url: "https://github.com/NOAA-GFDL/MOM6"
+
+boundary:
+  scope_in:
+    - "Ocean general circulation (horizontal velocity u, v)"
+    - "Ocean thermodynamics (temperature, salinity transport: advection + diffusion)"
+    - "Free-surface / sea surface height evolution (split barotropic mode)"
+    - "Layer thickness evolution under the generalized ALE vertical coordinate"
+    - "Mixed-layer and boundary-layer dynamics (ePBL / KPP)"
+    - "Density closure via selectable equation of state (Wright, TEOS-10, UNESCO, linear, Roquet)"
+    - "Passive and biogeochemical tracer transport"
+    - "Stand-alone ocean-only and coupled (FMS / NUOPC) operation"
+  scope_out:
+    - "Atmospheric state (supplied as prescribed surface forcing at the air-sea interface)"
+    - "Sea-ice thermodynamics/dynamics (handled by coupled SIS2 / CICE; MOM6 only the interface)"
+    - "Lateral open-boundary data for regional domains (must be prescribed externally per segment)"
+  spatial: "3-D"
+  temporal: "sub-hourly"
+  closure: "mass-balance"
+  notes: "Hydrostatic primitive equations on an Arakawa C-grid; mass/volume continuity is closed (continuity_PPM is positive-definite). Boussinesq (div.v=0) is the default/most-common mode (layer thickness in m); a non-Boussinesq mode (thickness in kg/m^2) is optional. Time integration is split barotropic-baroclinic: explicit baroclinic DT with a sub-cycled barotropic DTBT, and a thermodynamic DT_THERM (typically 1-4x DT). No surface energy-balance closure is solved internally; air-sea heat/freshwater/momentum fluxes are prescribed boundary forcing."
+
+inputs:
+  forcing:
+    - {category: forcing, name: "zonal wind stress (taux)", unit: "Pa", source_kind: forcing, model_input_format: "surface forcing field via FMS/NUOPC coupler or WIND_FILE", notes: "+ eastward; CGS dyn/cm^2 inputs must be scaled by 0.1"}
+    - {category: forcing, name: "meridional wind stress (tauy)", unit: "Pa", source_kind: forcing, model_input_format: "surface forcing field via FMS/NUOPC coupler or WIND_FILE", notes: "+ northward"}
+    - {category: forcing, name: "shortwave radiation (SW)", unit: "W/m^2", source_kind: forcing, model_input_format: "surface forcing via SHORTWAVE_FILE / coupler", notes: "+ into ocean (downward)"}
+    - {category: forcing, name: "longwave radiation (LW, net)", unit: "W/m^2", source_kind: forcing, model_input_format: "surface forcing via LONGWAVE_FILE / coupler", notes: "model expects NET LW into ocean; downwelling-only inputs add ~350 W/m^2 spurious heating"}
+    - {category: forcing, name: "latent heat flux (laten)", unit: "W/m^2", source_kind: forcing, model_input_format: "surface forcing via FORCING_FILE / coupler", notes: "+ into ocean; sign-reversed inputs drive opposite SST trend"}
+    - {category: forcing, name: "sensible heat flux (sens)", unit: "W/m^2", source_kind: forcing, model_input_format: "surface forcing via FORCING_FILE / coupler", notes: "+ into ocean"}
+    - {category: forcing, name: "evaporation (evap)", unit: "kg/m^2/s", source_kind: forcing, model_input_format: "surface forcing via FORCING_FILE / coupler", notes: "negative (water leaves ocean)"}
+    - {category: forcing, name: "precipitation (precip)", unit: "kg/m^2/s", source_kind: forcing, model_input_format: "surface forcing via PRECIP_FILE / coupler", notes: "positive (enters ocean); mm/day inputs must be divided by 86400"}
+    - {category: forcing, name: "near-surface air temperature (t_air)", unit: "degC", source_kind: forcing, model_input_format: "surface forcing via coupler (bulk-formula BUOY_CONFIG)", notes: "degC not Kelvin"}
+    - {category: forcing, name: "specific humidity (q_air)", unit: "kg/kg", source_kind: forcing, model_input_format: "surface forcing via coupler (bulk-formula)"}
+    - {category: forcing, name: "sea level pressure (slp)", unit: "Pa", source_kind: forcing, model_input_format: "surface forcing via coupler"}
+  parameters:
+    - {category: parameters, name: "horizontal supergrid geometry (ocean_hgrid)", unit: "deg, m, m^2", source_kind: dataset_lookup, model_input_format: "ocean_hgrid.nc (x, y, dx, dy, area, angle_dx)"}
+    - {category: parameters, name: "ocean bottom depth / bathymetry", unit: "m (positive down)", source_kind: dataset_lookup, model_input_format: "topog.nc depth field (TOPO_FILE/TOPO_VARNAME); MINIMUM_DEPTH/MAXIMUM_DEPTH", notes: "elevation (positive-up) inputs must be negated; depth>0 ocean, <=0 land"}
+    - {category: parameters, name: "vertical coordinate definition", unit: "m", source_kind: dataset_lookup, model_input_format: "vcoord.nc interfaces/Layer; NK, COORD_CONFIG"}
+    - {category: parameters, name: "Boussinesq reference density (RHO_0)", unit: "kg/m^3", source_kind: default, model_input_format: "MOM_input get_param (hardcoded default 1035.0, not 1025/1000)", notes: "sets H<->m conversion in Boussinesq mode"}
+    - {category: parameters, name: "gravitational acceleration (G_EARTH)", unit: "m/s^2", source_kind: default, model_input_format: "MOM_input get_param (hardcoded default 9.80, not 9.81)"}
+    - {category: parameters, name: "seawater heat capacity (C_P)", unit: "J/kg/K", source_kind: default, model_input_format: "MOM_input get_param (TEOS-10 exact default 3991.86795711963)"}
+    - {category: parameters, name: "minimum layer thickness floor (ANGSTROM)", unit: "m", source_kind: default, model_input_format: "MOM_input get_param (default 1.0e-10; clamps vanished layers in ALE remapping)"}
+    - {category: parameters, name: "lateral mixing coefficients (KH, SMAG_BI_CONST, THICKNESSDIFFUSE)", unit: "m^2/s (Laplacian), nondim (Smagorinsky)", source_kind: calibrated, model_input_format: "MOM_input parameters"}
+    - {category: parameters, name: "vertical mixing coefficients (KD background, KV)", unit: "m^2/s", source_kind: calibrated, model_input_format: "MOM_input parameters"}
+    - {category: parameters, name: "bottom drag coefficient (CDRAG)", unit: "nondim", source_kind: calibrated, model_input_format: "MOM_input parameters (BOTTOMDRAGLAW)"}
+  initial_conditions:
+    - {category: initial_conditions, name: "initial temperature (temp)", unit: "degC", source_kind: dataset_lookup, model_input_format: "MOM_IC.nc / restart (TEMP_FILE, TEMP_VAR, TS_CONFIG)", notes: "potential vs conservative must match EQUATION_OF_STATE"}
+    - {category: initial_conditions, name: "initial salinity (salt)", unit: "PSU or g/kg", source_kind: dataset_lookup, model_input_format: "MOM_IC.nc / restart (SALT_FILE, SALT_VAR)", notes: "practical vs absolute must match EQUATION_OF_STATE"}
+    - {category: initial_conditions, name: "initial layer thickness (h)", unit: "m (Boussinesq) or kg/m^2 (non-Boussinesq)", source_kind: dataset_lookup, model_input_format: "MOM_IC.nc / restart", notes: "must be in meters under default Boussinesq; sum of thicknesses equals bottom depth"}
+    - {category: initial_conditions, name: "initial velocity (u, v)", unit: "m/s", source_kind: dataset_lookup, model_input_format: "MOM_IC.nc / restart (VELOCITY_CONFIG)"}
+    - {category: initial_conditions, name: "open boundary data (regional only)", unit: "degC, PSU, m/s, m", source_kind: user_provided, model_input_format: "OBC_*.nc temp/salt/u/v/ssh per segment", notes: "required for regional domains; prescribed externally"}
+  boundary_conditions:
+    - {category: boundary_conditions, name: "equation-of-state selection (EQUATION_OF_STATE)", unit: "switch", source_kind: user_provided, model_input_format: "MOM_input (WRIGHT/TEOS10/UNESCO/LINEAR)", notes: "dictates required T/S type; mismatch causes accumulating density bias"}
+    - {category: boundary_conditions, name: "vertical coordinate mode (REGRIDDING_COORDINATE_MODE)", unit: "switch", source_kind: user_provided, model_input_format: "MOM_input (ZSTAR/SIGMA/RHO/HYCOM)"}
+    - {category: boundary_conditions, name: "baroclinic timestep (DT)", unit: "s", source_kind: user_provided, model_input_format: "MOM_input (no default; fail_if_missing)", notes: "must be seconds; CFL-limited by grid resolution"}
+    - {category: boundary_conditions, name: "thermodynamic timestep (DT_THERM)", unit: "s", source_kind: user_provided, model_input_format: "MOM_input (defaults to DT; typically 1-4x DT)"}
+    - {category: boundary_conditions, name: "barotropic timestep (DTBT)", unit: "s", source_kind: user_provided, model_input_format: "MOM_input (negative = auto-CFL)", notes: "barotropic CFL requires DTBT < dx/sqrt(g*H_max)"}
+    - {category: boundary_conditions, name: "boundary-layer scheme selection (USE_KPP / energetic PBL)", unit: "switch", source_kind: user_provided, model_input_format: "MOM_input (BULKMIXEDLAYER, USE_KPP, ePBL options)"}
+    - {category: boundary_conditions, name: "MPI domain decomposition layout (LAYOUT / MASKTABLE)", unit: "switch", source_kind: user_provided, model_input_format: "MOM_input / input.nml", notes: "global dims must be divisible by PE count or set LAYOUT explicitly"}
+    - {category: boundary_conditions, name: "domain periodicity (REENTRANT_X / REENTRANT_Y)", unit: "switch", source_kind: user_provided, model_input_format: "MOM_input"}
+    - {category: boundary_conditions, name: "open-boundary scheme (OBC_SEGMENT_* : FLATHER/ORLANSKI)", unit: "switch", source_kind: user_provided, model_input_format: "MOM_input (regional domains; OBC_NUMBER_OF_SEGMENTS)"}
+    - {category: boundary_conditions, name: "diagnostic output configuration (diag_table)", unit: "switch", source_kind: user_provided, model_input_format: "diag_table (FMS diag_manager field/frequency selection)"}
+
+processes:
+  modules:
+    - {name: "MOM_driver", role: "driver", brief: "Top-level step_MOM orchestrator (MOM.F90); dispatches dynamics, thermodynamics, tracer transport and diagnostics each timestep and owns the prognostic state (u,v,h,T,S)."}
+    - {name: "MOM_dynamics_split_RK2", role: "integrator", brief: "Split-explicit RK2 baroclinic momentum integrator; advances u,v,h and sub-cycles the barotropic solver (unsplit/RK2b variants selectable)."}
+    - {name: "MOM_barotropic", role: "process_solver", brief: "Sub-cycled barotropic free-surface solver (DTBT); computes SSH and barotropic velocities, feeding accelerations back to the baroclinic step via internal-state pointers."}
+    - {name: "MOM_continuity_PPM", role: "process_solver", brief: "PPM layer continuity / thickness-flux solver; computes uh,vh transports enforcing positive-definite thickness."}
+    - {name: "MOM_PressureForce_FV", role: "process_solver", brief: "Finite-volume analytic-integral pressure-gradient force using the equation of state and density integrals."}
+    - {name: "MOM_CoriolisAdv", role: "process_solver", brief: "Coriolis term and vector-invariant momentum advection on the C-grid."}
+    - {name: "MOM_EOS", role: "process_solver", brief: "Equation-of-state dispatcher (Wright, TEOS-10, UNESCO, Roquet, linear); converts T,S,p to density and freezing point."}
+    - {name: "MOM_diabatic_driver", role: "driver", brief: "Orchestrates vertical mixing/thermodynamics over DT_THERM (boundary layer, set_diffusivity, geothermal, boundary fluxes, entrainment); mutates T,S in place."}
+    - {name: "MOM_set_diffusivity", role: "process_solver", brief: "Builds interior diapycnal diffusivity from shear (kappa_shear), tidal/internal-tide mixing, background and convective contributions."}
+    - {name: "MOM_energetic_PBL", role: "process_solver", brief: "Energetics-based surface boundary-layer scheme; sets boundary-layer depth and near-surface mixing from a TKE budget.", applicability: "when ePBL selected"}
+    - {name: "MOM_CVMix_KPP", role: "process_solver", brief: "K-Profile Parameterization nonlocal surface boundary-layer mixing.", applicability: "when USE_KPP=True"}
+    - {name: "MOM_vert_friction", role: "process_solver", brief: "Vertical viscosity and bottom/top boundary-layer drag; reads the vertvisc structure populated by set_viscosity."}
+    - {name: "MOM_set_viscosity", role: "process_solver", brief: "Populates BBL thickness, Kv_bbl and Rayleigh drag in the vertvisc structure consumed by vert_friction."}
+    - {name: "MOM_ALE", role: "integrator", brief: "Arbitrary-Lagrangian-Eulerian engine (regridding + conservative remapping) projecting layers onto the target z*/sigma/rho/hybrid coordinate each step."}
+    - {name: "MOM_tracer_advect", role: "process_solver", brief: "Horizontal tracer advection driven by time-accumulated transports uhtr,vhtr over the registered tracer set."}
+    - {name: "MOM_tracer_hor_diff", role: "process_solver", brief: "Along-isopycnal / horizontal tracer diffusion."}
+    - {name: "MOM_thickness_diffuse", role: "process_solver", brief: "Gent-McWilliams isopycnal-thickness (mesoscale eddy) diffusion adjusting layer thicknesses."}
+    - {name: "MOM_lateral_mixing_coeffs", role: "allocator", brief: "Resolution/slope-dependent lateral mixing coefficients feeding thickness_diffuse and horizontal viscosity."}
+    - {name: "MOM_MEKE", role: "optional_module", brief: "Prognostic mesoscale-eddy-kinetic-energy field modulating the lateral mixing coefficients.", applicability: "when MEKE enabled"}
+    - {name: "MOM_state_initialization", role: "driver", brief: "Sets up bathymetry, grid, vertical coordinate and initial T,S,u,v,h from file, idealized profiles, or restart."}
+    - {name: "MOM_diagnostics", role: "optional_module", brief: "Computes and posts native and remapped diagnostic fields via the FMS diag_mediator / diag_table."}
+    - {name: "MOM_sum_output", role: "optional_module", brief: "Writes per-timestep energy, CFL and truncation counts to ocean.stats, used to detect blowups."}
+  internal_edges:
+    - {from: "MOM_state_initialization", to: "u", kind: writes_state, brief: "Initializes prognostic state arrays before timestepping."}
+    - {from: "Inputs", to: "MOM_driver", kind: consumes_input, brief: "Runtime parameter files configure timestep, scheme selection and output."}
+    - {from: "Inputs", to: "MOM_state_initialization", kind: consumes_input, brief: "Bathymetry/depth consumed to build the land mask and grid."}
+    - {from: "Atmosphere", to: "MOM_diabatic_driver", kind: consumes_input, brief: "Surface fluxes from atmosphere/sea-ice force the ocean at the air-sea interface."}
+    - {from: "MOM_driver", to: "MOM_dynamics_split_RK2", kind: invokes, brief: "step_MOM_dynamics calls the selected dynamics core each baroclinic step."}
+    - {from: "MOM_dynamics_split_RK2", to: "MOM_CoriolisAdv", kind: invokes, brief: "Baroclinic momentum step evaluates the Coriolis term and vector-invariant advection on the C-grid."}
+    - {from: "MOM_PressureForce_FV", to: "MOM_EOS", kind: invokes, brief: "Pressure gradient calls density / density-integral routines."}
+    - {from: "temp", to: "MOM_EOS", kind: reads_state, brief: "Equation of state reads temperature and salinity to compute density."}
+    - {from: "MOM_dynamics_split_RK2", to: "MOM_barotropic", kind: invokes, brief: "Baroclinic step sub-cycles the barotropic solver for the free surface."}
+    - {from: "MOM_barotropic", to: "MOM_dynamics_split_RK2", kind: writes_state, brief: "Barotropic accelerations written into internal-state pointers read back by the baroclinic step."}
+    - {from: "MOM_dynamics_split_RK2", to: "u", kind: writes_state, brief: "Updates velocity and thickness state after momentum+continuity."}
+    - {from: "MOM_continuity_PPM", to: "uh", kind: writes_state, brief: "Computes layer transports and accumulates them for tracer advection."}
+    - {from: "MOM_set_viscosity", to: "MOM_vert_friction", kind: invokes, brief: "Fills BBL/viscosity fields consumed by vertical friction."}
+    - {from: "MOM_driver", to: "MOM_diabatic_driver", kind: invokes, brief: "step_MOM_thermo calls diabatic over DT_THERM."}
+    - {from: "MOM_diabatic_driver", to: "MOM_set_diffusivity", kind: invokes, brief: "Builds interior diapycnal diffusivity each thermo step."}
+    - {from: "MOM_diabatic_driver", to: "MOM_CVMix_KPP", kind: invokes, brief: "Computes boundary-layer depth and nonlocal transport when KPP selected."}
+    - {from: "MOM_diabatic_driver", to: "MOM_energetic_PBL", kind: invokes, brief: "Alternative energetics PBL setting MLD and near-surface mixing."}
+    - {from: "MOM_diabatic_driver", to: "temp", kind: writes_state, brief: "In-place modification of temperature and salinity via mixing and surface fluxes."}
+    - {from: "MOM_diabatic_driver", to: "MLD_003", kind: writes_state, brief: "Stores mixed-layer depth for surface diagnostics and restratification."}
+    - {from: "MOM_driver", to: "MOM_tracer_hor_diff", kind: invokes, brief: "step_MOM applies along-isopycnal/horizontal tracer diffusion over the registered tracer set each step."}
+    - {from: "MOM_driver", to: "MOM_ALE", kind: invokes, brief: "ALE regrid + remap tracers/velocities to the target vertical coordinate."}
+    - {from: "MOM_ALE", to: "h", kind: writes_state, brief: "Remapping rewrites layer thickness and all tracers/velocities onto the new grid."}
+    - {from: "MOM_driver", to: "MOM_tracer_advect", kind: invokes, brief: "advect_tracer uses accumulated transports to move registered tracers."}
+    - {from: "uh", to: "MOM_tracer_advect", kind: reads_state, brief: "Tracer advection consumes the time-accumulated mass transports."}
+    - {from: "MOM_thickness_diffuse", to: "h", kind: writes_state, brief: "GM isopycnal-thickness diffusion adjusts layer thicknesses."}
+    - {from: "MOM_lateral_mixing_coeffs", to: "MOM_thickness_diffuse", kind: invokes, brief: "Resolution/slope-dependent coefficients feed thickness_diffuse and horizontal viscosity."}
+    - {from: "MOM_MEKE", to: "MOM_lateral_mixing_coeffs", kind: invokes, brief: "Prognostic eddy KE modulates the lateral mixing coefficients."}
+    - {from: "MOM_diagnostics", to: "Outputs", kind: produces_output, brief: "Computes and posts remapped diagnostic NetCDF fields via the diag mediator."}
+    - {from: "MOM_sum_output", to: "Outputs", kind: produces_output, brief: "Writes per-timestep energy, CFL and truncation counts (ocean.stats)."}
+    - {from: "MOM_driver", to: "Outputs", kind: produces_output, brief: "Extracts surface diagnostics (SST,SSS,SSH,MLD) and writes restart state."}
+
+states:
+  variables:
+    - {name: "u", unit: "m/s", role: prognostic}
+    - {name: "v", unit: "m/s", role: prognostic}
+    - {name: "h", unit: "m (Boussinesq) or kg/m^2 (non-Boussinesq)", role: prognostic}
+    - {name: "temp", unit: "degC (potential or conservative)", role: prognostic}
+    - {name: "salt", unit: "PSU or g/kg", role: prognostic}
+    - {name: "eta", unit: "m", role: prognostic}
+    - {name: "uh", unit: "m^3/s", role: diagnostic}
+    - {name: "vh", unit: "m^3/s", role: diagnostic}
+    - {name: "uhtr", unit: "m^3", role: accumulator}
+    - {name: "vhtr", unit: "m^3", role: accumulator}
+    - {name: "MEKE", unit: "m^2/s^2", role: prognostic}
+    - {name: "Kd_shear", unit: "m^2/s", role: diagnostic}
+    - {name: "MLD_003", unit: "m", role: diagnostic}
+    - {name: "ssh", unit: "m", role: diagnostic}
+    - {name: "SST", unit: "degC", role: diagnostic}
+    - {name: "SSS", unit: "PSU", role: diagnostic}
+    - {name: "KE", unit: "m^2/s^2", role: diagnostic}
+    - {name: "e", unit: "m", role: diagnostic}
+    - {name: "frazil", unit: "J/m^2", role: diagnostic}
+  provenance: "populated"
+
+outputs:
+  - var: "SSH"
+    validation_rank: 1
+    unit: "m"
+    description: "Sea surface height / dynamic free surface."
+    emitted_in: "diag_table NetCDF (e.g. ocean_month.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["satellite altimetry measures dynamic SSH anomaly; remove time-mean geoid/steric offset before comparison"]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["tide-gauge comparison needs datum alignment"]
+      detrending_options: ["linear_residual", "first_difference"]
+  - var: "SST"
+    validation_rank: 2
+    unit: "degC"
+    description: "Sea surface temperature (surface-layer temperature diagnostic)."
+    emitted_in: "diag_table NetCDF (tos / ocean_month.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["bulk SST vs satellite skin SST differ by a cool-skin offset"]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["mooring/buoy depth vs model surface layer"]
+      detrending_options: ["linear_residual", "none"]
+  - var: "thetao"
+    validation_rank: 3
+    unit: "degC"
+    description: "Three-dimensional ocean potential/conservative temperature."
+    emitted_in: "diag_table NetCDF (thetao)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["compare against gridded T climatology (e.g. WOA) on matching depth levels; potential vs conservative temperature must be reconciled with the run's EOS"]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["profile (Argo) vs model column interpolation"]
+      detrending_options: ["linear_residual"]
+  - var: "SSS"
+    validation_rank: 4
+    unit: "PSU"
+    description: "Sea surface salinity."
+    emitted_in: "diag_table NetCDF (sos / ocean_month.nc)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["practical vs absolute salinity offset (~1.00472) must match the run's EOS"]
+      detrending_options: ["linear_residual"]
+  - var: "MLD_003"
+    validation_rank: 5
+    unit: "m"
+    description: "Mixed-layer depth (0.03 kg/m^3 density criterion)."
+    emitted_in: "diag_table NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "csi"
+          caveats: ["MLD definition (density threshold value) must match the obs product's criterion"]
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["seasonal-cycle phase is the primary skill target"]
+      detrending_options: ["none"]
+  - var: "u"
+    validation_rank: 6
+    unit: "m/s"
+    description: "Zonal velocity (surface and subsurface, e.g. equatorial undercurrent)."
+    emitted_in: "diag_table NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["moored ADCP (e.g. TAO/TRITON) at fixed depth vs model layer interpolation"]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["undercurrent core depth/strength sensitive to vertical mixing"]
+      detrending_options: ["none"]
+  - var: "ocean_heat_content"
+    validation_rank: 7
+    unit: "J/m^2"
+    description: "Column-integrated ocean heat content (derived from temperature and thickness)."
+    emitted_in: "diag_table NetCDF / derived from thetao + h"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["basin/global OHC trends carry forcing-dataset and drift signals; compare detrended/decadal-mean change rather than inter-annual r"]
+      detrending_options: ["linear_residual", "decadal_mean"]
+
+influence:
+  edges:
+    - from: "MLE_FRONT_LENGTH (submesoscale mixed-layer-eddy restratification coefficient)"
+      to: "MLD_003"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "OM4 / submesoscale restratification active"
+      citations: ["adcroft2019_om4_description"]
+    - from: "MEKE / Gent-McWilliams mesoscale eddy coefficient (KHTH)"
+      to: "SST"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["adcroft2019_om4_description"]
+    - from: "MEKE / Gent-McWilliams mesoscale eddy coefficient (KHTH)"
+      to: "ocean_heat_content"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["adcroft2019_om4_description"]
+    - from: "ePBL TKE/wind-energy input coefficient (mstar)"
+      to: "MLD_003"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "when ePBL selected"
+      citations: ["reichl2018_epbl"]
+    - from: "ePBL convective/energetics coefficients"
+      to: "SST"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "when ePBL selected"
+      citations: ["reichl2018_epbl", "reichl2024_equatorial_mixing"]
+    - from: "background_vertical_viscosity (Kv background)"
+      to: "u"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "tropical / Pacific Equatorial Undercurrent"
+      citations: ["reichl2024_equatorial_mixing"]
+    - from: "background_vertical_viscosity (Kv background)"
+      to: "thetao"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "tropical thermocline"
+      citations: ["reichl2024_equatorial_mixing"]
+    - from: "shear_mixing_diurnal_cycle_coefficient"
+      to: "SST"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "tropical diurnal deep-cycle mixing"
+      citations: ["reichl2024_equatorial_mixing"]
+    - from: "lz_rescale (beta) shear-mixing turbulent decay length-scale factor"
+      to: "thetao"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "regional shelf (MOM6-NEP10k); summer thermocline stratification"
+      citations: ["seelanki2025_nep10k_decayscale"]
+    - from: "lz_rescale (beta) shear-mixing turbulent decay length-scale factor"
+      to: "ocean_heat_content"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "regional shelf bottom-temperature / water-mass properties"
+      citations: ["seelanki2025_nep10k_decayscale"]
+    - from: "horizontal_viscosity (Smagorinsky/biharmonic coefficient)"
+      to: "thetao"
+      sensitivity_grade: HIGH
+      basis: cross_family_model_literature
+      lever_type: parameter
+      applicability: "eddy-permitting resolution; spurious numerical diapycnal mixing / water-mass drift"
+      citations: ["megann2021_viscosity_numerical_mixing"]
+  _caveat: "For the OM4-description (adcroft2019), ePBL (reichl2018) and equatorial-mixing (reichl2024) papers the literature reports parameter-swap and necessity-type sensitivity rather than variance-based SA indices (Sobol/Morris/EFAST); those edges are therefore capped at MEDIUM / literature_qualitative pending a quantitative SA study. The reichl2018 page also returned HTTP 403 so its parameter-index values could not be fetched. Only the seelanki2025 edges (genuine quantitative metrics) and the megann2021 cross-family edge are graded HIGH."
+  citation_index:
+    adcroft2019_om4_description:
+      short_citation: "Adcroft et al. 2019"
+      doi: "10.1029/2019MS001726"
+      note: "GFDL OM4.0 (MOM6) description; sensitivity to submesoscale MLE restratification and MEKE/GM mesoscale closure for MLD, SST and heat uptake (reported as parameter-swap / necessity, not a variance-based SA index)."
+    reichl2018_epbl:
+      short_citation: "Reichl & Hallberg 2018"
+      doi: "10.1016/j.ocemod.2018.10.004"
+      note: "ePBL surface-mixing scheme; MLD set by TKE/wind-energy budget (mstar). Source page returned HTTP 403; no quantitative sensitivity index retrievable."
+    reichl2024_equatorial_mixing:
+      short_citation: "Reichl et al. 2024"
+      doi: "10.1029/2023EA003485"
+      note: "OM4 tropical biases sensitive to background vertical viscosity and shear/diurnal mixing (undercurrent, thermocline, SST/MLD); reported as directional improvements, not a variance-based SA index."
+    seelanki2025_nep10k_decayscale:
+      short_citation: "Seelanki et al. 2025"
+      doi: "10.5194/gmd-18-7681-2025"
+      note: "Regional MOM6-NEP10k; lz_rescale (beta) shear-mixing decay scale strongly controls thermocline stratification and bottom-temperature bias (quantitative: max shear diffusivity 3.5e-2->5e-3 m^2/s, bottom-temp bias 0.42->0.24 degC, correlation 0.82->0.90)."
+    megann2021_viscosity_numerical_mixing:
+      short_citation: "Megann & Storkey 2021"
+      doi: "10.1029/2020MS002263"
+      note: "Eddy-permitting viscosity ensemble (NEMO, cross-family proxy): horizontal viscosity controls spurious numerical diapycnal mixing / water-mass drift in z/ALE models."
+
+safety:
+  hazards:
+    - id: "air_temp_kelvin_not_degC"
+      kind: "weather_file_semantic"
+      description: "Air-temperature forcing supplied in Kelvin; model reads ~290 K as 290 degC, exploding SST and energy within a few timesteps. (dt_001)"
+      severity: "fatal"
+      triplet: "dt_001"
+    - id: "potential_vs_conservative_temp_eos_mismatch"
+      kind: "control_semantic"
+      description: "Temperature type (potential vs conservative) mismatched to EQUATION_OF_STATE; slow accumulating ~0.1-0.2 degC/decade drift invisible in short runs. (dt_002, dt_017)"
+      severity: "silent"
+      triplet: "dt_002"
+    - id: "practical_vs_absolute_salinity_eos_mismatch"
+      kind: "control_semantic"
+      description: "Salinity type (practical PSU vs absolute g/kg) mismatched to EOS; ~0.17 PSU global bias degrading density, MLD and overturning. (dt_003, dt_017)"
+      severity: "silent"
+      triplet: "dt_003"
+    - id: "topography_elevation_sign"
+      kind: "soil_semantic"
+      description: "Bathymetry given as elevation (positive-up) instead of depth (positive-down); all ocean cells masked, init aborts with 'all points are land'. (dt_005)"
+      severity: "fatal"
+      triplet: "dt_005"
+    - id: "wind_stress_cgs_units"
+      kind: "weather_file_semantic"
+      description: "Wind stress in dyn/cm^2 (CGS) instead of Pa; currents ~10x too weak, low KE, shallow MLD. (dt_007)"
+      severity: "degraded"
+      triplet: "dt_007"
+    - id: "heat_flux_sign_reversed"
+      kind: "weather_file_semantic"
+      description: "Surface heat-flux sign reversed (positive-up vs into-ocean); SST drifts the wrong direction, inverted seasonal cycle. (dt_008)"
+      severity: "fatal_or_silent"
+      triplet: "dt_008"
+    - id: "precip_mm_per_day_not_kgm2s"
+      kind: "weather_file_semantic"
+      description: "Precipitation passed in mm/day without conversion; freshwater flux ~430000x too large, SSS collapses within months. (dt_009)"
+      severity: "fatal_or_silent"
+      triplet: "dt_009"
+    - id: "evap_sign_or_unit_error"
+      kind: "weather_file_semantic"
+      description: "Evaporation positive-signed or unconverted; net surface freshwater flux adds salt, steady salinity rise. (dt_011)"
+      severity: "silent"
+      triplet: "dt_011"
+    - id: "longwave_downwelling_used_as_net"
+      kind: "weather_file_semantic"
+      description: "Downwelling LW supplied where net LW expected; ~350 W/m^2 extra heating, persistent 2-5 degC SST warm bias. (dt_019)"
+      severity: "silent"
+      triplet: "dt_019"
+    - id: "ic_pressure_dbar_not_pa"
+      kind: "initial_condition_semantic"
+      description: "Initial-condition pressure in dbar instead of Pa for external EOS prep; density at depth wrong by factor 10000, wrong deep water masses. (dt_010)"
+      severity: "silent"
+      triplet: "dt_010"
+    - id: "layer_thickness_kgm2_under_boussinesq"
+      kind: "initial_condition_semantic"
+      description: "Initial layer thickness in kg/m^2 under default Boussinesq mode (expects meters); thicknesses blow up and ALE regridding oscillates. (dt_020)"
+      severity: "degraded"
+      triplet: "dt_020"
+    - id: "dt_in_hours_not_seconds"
+      kind: "control_semantic"
+      description: "Baroclinic timestep DT specified in hours/minutes instead of seconds; immediate CFL violation, negative thickness, crash at first step. (dt_014)"
+      severity: "fatal"
+      triplet: "dt_014"
+    - id: "dtbt_too_large_for_grid"
+      kind: "numerical_instability"
+      description: "Barotropic DTBT exceeds barotropic CFL (dx/sqrt(g*H_max)); negative thickness / velocity truncation after a few steps. (dt_015)"
+      severity: "fatal"
+      triplet: "dt_015"
+    - id: "domain_decomposition_indivisible"
+      kind: "control_semantic"
+      description: "Global grid dims not divisible by MPI process count, or over-masked land PEs; domain-decomposition error at startup. (dt_016)"
+      severity: "fatal"
+      triplet: "dt_016"
+    - id: "diag_table_name_mismatch"
+      kind: "parser_semantic"
+      description: "diag_table field name does not match a registered diagnostic; MOM6 silently ignores it and writes zeros/missing output. (dt_018)"
+      severity: "silent"
+      triplet: "dt_018"
+    - id: "negative_layer_thickness_blowup"
+      kind: "numerical_instability"
+      description: "CFL/barotropic instability produces negative layer thickness; ocean.stats energy grows exponentially and velocity truncation counts rise. (consequence of dt_014/dt_015)"
+      severity: "fatal"
+  validation_limits:
+    - "Hydrostatic primitive equations: cannot resolve non-hydrostatic / convective-scale dynamics."
+    - "Regional domains require externally prescribed open-boundary data per segment; without it the interior is unconstrained."
+    - "Sea-ice and atmospheric dynamics are out of scope (coupled components / prescribed forcing only)."
+    - "Requires an orthogonal horizontal grid (spherical, tripole, regional, or cubed-sphere)."
+  warnings:
+    - "Model aborts if the RESTART/ directory is absent."
+    - "DT has no default and aborts if missing; DT_THERM defaults to DT."
+    - "Remapped diagnostics are for interpretation only and do not affect the native calculation."
+    - "Some MOM_input parameters are mandatory; MOM_parameter_doc.all enumerates all settings."
+    - "Stability monitoring: CFL<0.5 safe, <0.8 acceptable, >1.0 unstable; truncation count should stay 0 and ocean.stats energy stable or decreasing."
+  assumptions:
+    - statement: "The ocean is solved hydrostatically on an Arakawa C-grid with a generalized ALE vertical coordinate; vertical velocity is diagnosed."
+      scope: "whole-model geometry and dynamics"
+      source: "MOM6 Governing Equations and Discrete Grids docs (mom6.readthedocs.io)"
+      status: "adopted"
+    - statement: "Boussinesq mode (div.v=0, layer thickness in meters) is the default configuration; non-Boussinesq (kg/m^2) is optional."
+      scope: "mass/volume closure and thickness units"
+      source: "MOM6 Governing Equations docs; MOM_verticalGrid RHO_0 default behaviour"
+      status: "adopted"
+    - statement: "Required temperature/salinity types are dictated by EQUATION_OF_STATE (TEOS-10 = conservative T + absolute S; Wright/UNESCO = potential T + practical S); inconsistency produces accumulating density bias."
+      scope: "thermodynamic inputs and density closure"
+      source: "MOM_EOS module behaviour and MOM6 equation-of-state docs"
+      status: "adopted"
+    - statement: "Hardcoded physical-constant defaults are RHO_0=1035 kg/m^3, G_EARTH=9.80 m/s^2, C_P=3991.868 J/kg/K unless overridden in MOM_input."
+      scope: "Boussinesq scaling, pressure-gradient and heat-budget calculations"
+      source: "MOM_verticalGrid.F90 / MOM.F90 get_param defaults"
+      status: "adopted"

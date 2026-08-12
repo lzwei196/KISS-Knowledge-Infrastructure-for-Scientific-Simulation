@@ -1,0 +1,549 @@
+template_version: "3.5"
+
+identity:
+  model_id: "DNDC"
+  scientific_reference_version: "DNDCv.CAN 9.6.0 (Canadian branch of DNDC95, Aug-2015 UNH lineage; AAFC Grant & Smith)"
+  implementation:
+    id: "dndc-can-960"
+    version: "9.6.0"
+    provenance: "C++ (closed-source UNH/AAFC); Windows PE32 binary DNDC95.exe, no public source; field-scale daily biogeochemistry."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "c++"
+  license: "Non-commercial (UNH/EOS); commercial licensing via Regrow Agriculture"
+  repo_url: ""
+
+boundary:
+  scope_in:
+    - "Crop growth and development (phenology, biomass accumulation, C/N partitioning to grain/leaf/stem/root)"
+    - "Soil organic carbon decomposition and turnover (multi-pool: litter sub-pools, humads, humus, biochar)"
+    - "Nitrogen cycling (mineralization, nitrification, denitrification, leaching, NH3 volatilization)"
+    - "Trace-gas emissions (N2O, NO, N2, CO2, CH4) from soil biogeochemical processes"
+    - "Soil water balance (infiltration, ET, drainage, tile drainage, preferential/bypass flow, water table)"
+    - "Soil thermal regime (temperature profile, freeze/thaw, frost dynamics, snow cover)"
+    - "Manure and organic-amendment decomposition including biosolid carbon pool"
+    - "Management effects (tillage incl. inversion, fertilization, irrigation, grazing/cutting on perennials)"
+  scope_out:
+    - "Spatially distributed / gridded simulation (one site per .dnd; batch runs independent sites)"
+    - "Lateral hydrologic routing between fields"
+    - "Sub-daily (intra-day) gas-flux dynamics (daily internal time step)"
+  spatial: "1-D column"
+  temporal: "daily"
+  closure: "mass-balance"
+  notes: "Maintains annual plant-soil mass budgets for carbon, nitrogen, and water at a single point. 1-D soil column simulated to a fixed 2 m (200 cm) depth in up to 10 layers (DNDCv.CAN 9.6.0; the parent DNDC95 v9.5 guide describes a 0-50 cm profile). ET options include an internal Penman-Monteith path when radiation/wind/humidity are supplied; this is a demand-side flux estimate, not a closed surface energy budget. Anaerobic-balloon scheme partitions each layer into aerobic (nitrification) and anaerobic (denitrification) fractions from predicted Eh."
+
+inputs:
+  forcing:
+    - {category: forcing, name: "Maximum air temperature (MaxT)", unit: "deg C", source_kind: forcing, model_input_format: "daily climate .txt, one row per Julian day (365/366), no header; column layout set by climate format type", notes: "must be >= MinT; range -60..60"}
+    - {category: forcing, name: "Minimum air temperature (MinT)", unit: "deg C", source_kind: forcing, model_input_format: "daily climate .txt column", notes: "range -60..60"}
+    - {category: forcing, name: "Precipitation (Prec)", unit: "cm/day", source_kind: forcing, model_input_format: "daily climate .txt column", notes: "centimeters, NOT millimeters; daily total"}
+    - {category: forcing, name: "Solar radiation", unit: "MJ/m2/day", source_kind: forcing, model_input_format: "daily climate .txt column (optional by format type)", notes: "daily integral 0-45, not instantaneous flux; enables internal Penman-Monteith ET"}
+    - {category: forcing, name: "Wind speed", unit: "m/s", source_kind: forcing, model_input_format: "daily climate .txt column (optional by format type)", notes: "0-50"}
+    - {category: forcing, name: "Relative humidity", unit: "% (0-100)", source_kind: forcing, model_input_format: "daily climate .txt column (optional by format type)"}
+    - {category: forcing, name: "Atmospheric CO2 concentration", unit: "ppm", source_kind: forcing, model_input_format: "site CO2 setting (default 360) and/or optional MultiYear CO2 file, one ppm value per simulation year", notes: "affects photosynthesis; time-varying atmospheric driver"}
+    - {category: forcing, name: "N concentration in rainfall", unit: "mg N/L", source_kind: forcing, model_input_format: "atmospheric-boundary setting (default 0.5)"}
+    - {category: forcing, name: "Background atmospheric NH3", unit: "ug N/m3", source_kind: forcing, model_input_format: "atmospheric-boundary setting (default 0.06)", notes: "affects NH3 dry deposition on plants"}
+    - {category: forcing, name: "N deposition", unit: "kg N/ha/yr", source_kind: forcing, model_input_format: "atmospheric-boundary setting"}
+  parameters:
+    - {category: parameter, name: "Soil layer thickness (per layer, up to 10)", unit: "m", source_kind: dataset_lookup, model_input_format: ".spf profile or inline .dnd soil section", notes: "thicknesses must sum to exactly 2.0 m"}
+    - {category: parameter, name: "Bulk density (per layer)", unit: "g/cm3", source_kind: dataset_lookup, model_input_format: ".spf / inline soil", notes: "range 0.8-1.8"}
+    - {category: parameter, name: "Surface SOC content", unit: "kgC/kg soil", source_kind: dataset_lookup, model_input_format: ".spf / inline soil", notes: "mass fraction not percent; 0.001-0.30 mineral, surface 0.005-0.06 typical"}
+    - {category: parameter, name: "Soil texture class ID", unit: "integer 1-12 (DNDC class)", source_kind: dataset_lookup, model_input_format: ".spf / inline soil"}
+    - {category: parameter, name: "Soil pH (H2O)", unit: "pH", source_kind: dataset_lookup, model_input_format: ".spf / inline soil", notes: "range 3.0-9.0; gates NH4:NH3 equilibrium and denitrification"}
+    - {category: parameter, name: "Field capacity", unit: "WFPS fraction", source_kind: dataset_lookup, model_input_format: ".spf / inline soil", notes: "WFPS = VWC/porosity, not volumetric"}
+    - {category: parameter, name: "Wilting point", unit: "WFPS fraction", source_kind: dataset_lookup, model_input_format: ".spf / inline soil"}
+    - {category: parameter, name: "Porosity", unit: "v/v fraction", source_kind: dataset_lookup, model_input_format: ".spf / inline soil", notes: "porosity > FC > WP must hold"}
+    - {category: parameter, name: "Saturated hydraulic conductivity", unit: "m/hr", source_kind: dataset_lookup, model_input_format: ".spf / inline soil"}
+    - {category: parameter, name: "Clay fraction", unit: "0-1", source_kind: dataset_lookup, model_input_format: ".spf / inline soil"}
+    - {category: parameter, name: "SOC pool partitioning fractions", unit: "fraction", source_kind: default, model_input_format: ".dnd soil section", notes: "very labile/labile/resistant litter, humads, humus, biochar; must sum to 1.0; default ~97% humus"}
+    - {category: parameter, name: "SOC pool C/N ratios (per pool) and bulk C/N", unit: "-", source_kind: default, model_input_format: ".dnd soil section", notes: "bulk default ~10.09"}
+    - {category: parameter, name: "Topsoil SOC depth and below-topsoil decrease rate", unit: "m / factor", source_kind: default, model_input_format: ".dnd soil section", notes: "default uniform depth 0.2 m; decrease rate default 2, range 0.5-5"}
+    - {category: parameter, name: "Crop physiological coefficients (per crop type, 18+ built-in)", unit: "various", source_kind: default, model_input_format: ".dnd crop section", notes: "biomass fractions (sum 1.0), biomass C/N ratios, thermal degree days to maturity, base/optimum temperature, water demand coeff, max root length/depth, LAI max, frostkill temp, residue fraction"}
+    - {category: parameter, name: "N fixation index", unit: "0-1", source_kind: default, model_input_format: ".dnd crop section", notes: "1 for legumes (soybean/alfalfa)"}
+    - {category: parameter, name: "Perennial winterkill parameters (CHRMX, CDRMX, cTMX, pDFMX)", unit: "various", source_kind: default, model_input_format: ".dnd crop section", notes: "perennials only"}
+    - {category: parameter, name: "Site latitude", unit: "deg N (-90..90)", source_kind: user_provided, model_input_format: ".dnd site section", notes: "drives daylength / solar geometry / phenology"}
+    - {category: parameter, name: "Site longitude and elevation", unit: "deg E / m", source_kind: user_provided, model_input_format: ".dnd site section"}
+  initial_conditions:
+    - {category: initial_condition, name: "Initial NO3 / NH4 at surface", unit: "mg N/kg", source_kind: user_provided, model_input_format: ".dnd soil section", notes: "DNDC auto-defaults from SOC if unset"}
+    - {category: initial_condition, name: "Initial soil moisture / WFPS by layer", unit: "fraction", source_kind: user_provided, model_input_format: ".dnd soil section"}
+    - {category: initial_condition, name: "Initial soil temperature", unit: "deg C", source_kind: user_provided, model_input_format: ".dnd soil section"}
+    - {category: initial_condition, name: "Initial microbial activity index", unit: "0-1", source_kind: default, model_input_format: ".dnd soil section", notes: "default 1.0 (normal non-toxic soil)"}
+    - {category: initial_condition, name: "Initial SOC pool stocks / surface litter", unit: "fraction of total SOC / kgC/ha", source_kind: default, model_input_format: ".dnd soil section", notes: "equilibrated by spinup: internal reset-after-10-yr or external Result/Inter/soil_* state files; >=10 yr cropland, 50-100 yr natural"}
+  boundary_conditions:
+    - {category: boundary_condition, name: "Number of simulated years and start year", unit: "integer", source_kind: user_provided, model_input_format: ".dnd site section", notes: "1-100 yr; time-block years must sum to total"}
+    - {category: boundary_condition, name: "Climate format type", unit: "integer 0-8", source_kind: user_provided, model_input_format: ".dnd model switch", notes: "must match actual climate-file column layout; type 4/8 enables Penman-Monteith ET"}
+    - {category: boundary_condition, name: "Planting / harvest dates and harvest mode", unit: "calendar date / mode 1|2", source_kind: user_provided, model_input_format: ".dnd crop section", notes: "mode 2 (next year) required for fall-planted winter crops"}
+    - {category: boundary_condition, name: "Tillage events", unit: "date, depth cm, mixing efficiency, inversion flag", source_kind: user_provided, model_input_format: ".dnd management section", notes: "none/conventional/reduced/no-till"}
+    - {category: boundary_condition, name: "Fertilization events", unit: "kg N/ha per form", source_kind: user_provided, model_input_format: ".dnd management section", notes: "elemental N per form (urea, anhydrous NH3, ammonium bicarbonate, nitrate, ammonium, etc.); mode manual/auto/precision/fertigation; inhibitor efficiency/duration; controlled-release days"}
+    - {category: boundary_condition, name: "Manure / organic amendment events", unit: "kgC/ha, kgN/ha", source_kind: user_provided, model_input_format: ".dnd management section", notes: "type dairy/beef/swine/poultry/compost/biosolid; C/N ratio, pH, dry matter %; method/depth"}
+    - {category: boundary_condition, name: "Irrigation / controlled drainage", unit: "cm / index 0-1", source_kind: user_provided, model_input_format: ".dnd management section", notes: "event amount or trigger index; furrow/sprinkler/drip; controlled-drainage requires dynamic water table"}
+    - {category: boundary_condition, name: "Grazing (perennials)", unit: "heads/ha, hours/day, biomass fractions", source_kind: user_provided, model_input_format: ".dnd management section"}
+    - {category: boundary_condition, name: "Tile drainage / water table configuration", unit: "flag, depth m, spacing m, drain coeff 1/day, keDrain", source_kind: user_provided, model_input_format: ".dnd hydrology section", notes: "water-table flag uses REVERSED logic: 0=dynamic WT ON, 1=free drainage"}
+    - {category: boundary_condition, name: "Execution switches", unit: "flags", source_kind: user_provided, model_input_format: ".dnd model-switch / batch", notes: "record-daily-results 0/1; reset-soil-after-10-yr internal spinup; read-from-spinup-file; preferential-flow toggle; dynamic layer depth (min 1-2 cm)"}
+
+processes:
+  modules:
+    - name: "CropGrowth"
+      role: process_solver
+      brief: "Phenology, biomass accumulation and C/N partitioning to grain/leaf/stem/root, driven by thermal degree days, radiation-use efficiency, and water/N stress; 18+ built-in crop parameterizations including perennials with winterkill. Produces yield, LAI, PGI, N uptake."
+    - name: "SoilThermal"
+      role: process_solver
+      brief: "Soil temperature profile with freeze/thaw, frost dynamics and snow cover; improved winter-spring frozen-soil dynamics underpinning the spring N2O burst (DNDCv.CAN enhancement)."
+    - name: "SoilWaterBalance"
+      role: process_solver
+      brief: "Infiltration, evapotranspiration (Penman-Monteith when radiation/wind/humidity available), drainage, tile drainage, water table and preferential/bypass flow. Drives WFPS, drainage and runoff."
+    - name: "Decomposition"
+      role: process_solver
+      brief: "Multi-pool SOC decomposition (litter sub-pools / humads / humus / biochar) and microbial turnover as a function of soil temperature and moisture; drives CO2 (heterotrophic respiration), SOC change, and N mineralization."
+    - name: "NitrificationDenitrification"
+      role: process_solver
+      brief: "Anaerobic-balloon core: nitrification, denitrification, leaching and pH-sensitive NH4:NH3 equilibrium / NH3 volatilization. Produces N2O, NO, N2, NH3 and NO3 leaching."
+    - name: "Fermentation"
+      role: optional_module
+      brief: "Methanogenesis and methanotrophy under low Eh (flooded/paddy/wetland systems); computes net CH4 flux. Relevant only when water-table-driven anaerobic conditions develop."
+    - name: "Management"
+      role: driver
+      brief: "Injects management/amendment events (tillage incl. inversion, fertilization, manure/biosolid, irrigation, grazing/cutting) as C/N inputs and soil-disturbance events into the soil and crop state on their scheduled dates."
+  internal_edges:
+    - {from: "Inputs", to: "SoilThermal", kind: consumes_input, brief: "daily MaxT/MinT/radiation/snow drive the soil temperature profile"}
+    - {from: "Inputs", to: "SoilWaterBalance", kind: consumes_input, brief: "daily precipitation/radiation/wind/humidity drive infiltration and ET"}
+    - {from: "Inputs", to: "CropGrowth", kind: consumes_input, brief: "latitude/radiation/temperature drive daylength, phenology and photosynthesis"}
+    - {from: "SoilWaterBalance", to: "CropGrowth", kind: invokes, brief: "soil moisture imposes water stress on biomass growth"}
+    - {from: "SoilThermal", to: "Decomposition", kind: invokes, brief: "soil temperature modulates decomposition rate"}
+    - {from: "SoilWaterBalance", to: "Decomposition", kind: invokes, brief: "soil moisture/WFPS modulates decomposition rate"}
+    - {from: "Decomposition", to: "NitrificationDenitrification", kind: invokes, brief: "N mineralization supplies mineral-N substrate to the N cycle"}
+    - {from: "CropGrowth", to: "NitrificationDenitrification", kind: invokes, brief: "root N uptake and residue input modify soil mineral-N and litter pools"}
+    - {from: "Management", to: "NitrificationDenitrification", kind: invokes, brief: "fertilizer/manure inputs add mineral and organic N to the soil N cycle"}
+    - {from: "Management", to: "Decomposition", kind: invokes, brief: "tillage redistributes residue/SOC; manure/biosolid adds organic C pools"}
+    - {from: "SoilWaterBalance", to: "NitrificationDenitrification", kind: invokes, brief: "WFPS sets the anaerobic-balloon fraction controlling denitrification and N2O"}
+    - {from: "SoilWaterBalance", to: "Fermentation", kind: invokes, brief: "water table / low-Eh conditions activate methanogenesis"}
+    - {from: "CropGrowth", to: "Outputs", kind: produces_output, brief: "grain/biomass yield, LAI, N uptake"}
+    - {from: "NitrificationDenitrification", to: "Outputs", kind: produces_output, brief: "N2O, NO, N2, NH3 emissions and NO3 leaching"}
+    - {from: "Decomposition", to: "Outputs", kind: produces_output, brief: "CO2 respiration and SOC change"}
+    - {from: "Fermentation", to: "Outputs", kind: produces_output, brief: "net CH4 flux"}
+    - {from: "SoilWaterBalance", to: "Outputs", kind: produces_output, brief: "water-balance components and water-table depth"}
+
+states:
+  variables:
+    - {name: "SOC pools (very labile / labile / resistant litter, humads, humus, biochar)", unit: "kgC/ha", role: prognostic}
+    - {name: "Soil mineral N (NH4, NO3 by layer)", unit: "kgN/ha", role: prognostic}
+    - {name: "Soil nitrite (NO2) and NO/N2O intermediates", unit: "kgN/ha", role: prognostic}
+    - {name: "Microbial biomass C", unit: "kgC/ha", role: prognostic}
+    - {name: "Soil water content / WFPS by layer", unit: "fraction", role: prognostic}
+    - {name: "Water table depth", unit: "m", role: prognostic}
+    - {name: "Soil temperature by layer (with freeze/thaw, snow pack)", unit: "deg C", role: prognostic}
+    - {name: "Soil redox potential (Eh) / anaerobic fraction", unit: "mV / fraction", role: diagnostic}
+    - {name: "Crop biomass pools (grain/leaf/stem/root)", unit: "kgC/ha", role: prognostic}
+    - {name: "Plant Growth Index (PGI)", unit: "0-1", role: diagnostic}
+    - {name: "Leaf Area Index (LAI)", unit: "m2/m2", role: diagnostic}
+    - {name: "Accumulated thermal degree days", unit: "degree-days", role: accumulator}
+    - {name: "Surface litter / residue C", unit: "kgC/ha", role: prognostic}
+  provenance: "structural"
+
+outputs:
+  - var: "crop_grain_yield"
+    validation_rank: 2
+    unit: "kgC/ha"
+    description: "Carbon mass of harvested grain; multiply by ~2.22 (1/0.45) for dry-matter yield"
+    emitted_in: "Summary_CropYield"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "pbias"
+          caveats: ["Output is carbon mass; convert to dry matter before comparing to measured yield"]
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "aggregate_trend_comparison"
+          metric_families: ["trend_match", "magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["National/regional yield aggregates carry a technology trend a weather-driven field model cannot reproduce; compare detrended trends/decadal means, not inter-annual r"]
+      detrending_options: ["none", "linear_residual", "decadal_mean"]
+  - var: "crop_N_uptake"
+    validation_rank: 3
+    unit: "kgN/ha"
+    description: "Total crop nitrogen uptake over the season"
+    emitted_in: "Summary_CropYield"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "N2O_emission"
+    validation_rank: 4
+    unit: "kgN/ha/yr"
+    description: "Soil nitrous oxide emission, reported as N (x44/28=1.571 for kg N2O)"
+    emitted_in: "Summary (annual N budget) / Day_SoilN (daily)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Model reproduces cumulative N2O far better than daily peaks; chamber daily peaks are often poorly matched"]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Best compared as cumulative/annual flux rather than instantaneous flux"]
+      detrending_options: ["none"]
+  - var: "NO_emission"
+    validation_rank: 5
+    unit: "kgN/ha/yr"
+    description: "Soil nitric oxide emission (reported as N)"
+    emitted_in: "Summary (annual N budget)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "N2_emission"
+    validation_rank: 6
+    unit: "kgN/ha/yr"
+    description: "Dinitrogen emission from complete denitrification (reported as N)"
+    emitted_in: "Summary (annual N budget)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["N2 flux is rarely measured directly; observational constraint is weak"]
+      detrending_options: ["none"]
+  - var: "NH3_volatilization"
+    validation_rank: 7
+    unit: "kgN/ha/yr"
+    description: "Ammonia volatilization from fertilizer and manure (reported as N)"
+    emitted_in: "Summary (annual N budget)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "CO2_soil_respiration"
+    validation_rank: 8
+    unit: "kgC/ha/yr"
+    description: "Soil heterotrophic respiration / CO2 emission"
+    emitted_in: "Summary (annual C budget)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Field flux observations mix autotrophic + heterotrophic respiration; DNDC reports heterotrophic"]
+      detrending_options: ["none"]
+  - var: "CH4_flux"
+    validation_rank: 9
+    unit: "kgC/ha/yr"
+    description: "Net methane flux (production minus oxidation); relevant for rice/wetland systems"
+    emitted_in: "Summary (annual C budget)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Meaningful only where water-table-driven anaerobic conditions develop (paddy/wetland)"]
+      detrending_options: ["none"]
+  - var: "NO3_leaching"
+    validation_rank: 10
+    unit: "kgN/ha/yr"
+    description: "Nitrate leaching below the root zone or to tile drains"
+    emitted_in: "Summary (annual N budget)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "pbias"
+          caveats: ["Leaching pathway depends on the water-table/tile-drainage configuration"]
+      detrending_options: ["none"]
+  - var: "SOC_stock_and_change"
+    validation_rank: 1
+    unit: "kgC/ha (stock), kgC/ha/yr (change)"
+    description: "Soil organic carbon stock and inter-annual change / sequestration"
+    emitted_in: "Summary_SOC"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "trend_match"]
+          determining_metric: "pbias"
+          caveats: ["SOC change is a small difference of large stocks; multi-year/decadal change is the meaningful signal and depends strongly on spinup equilibration"]
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: []
+      detrending_options: ["none", "first_difference"]
+  - var: "water_balance_components"
+    validation_rank: 11
+    unit: "cm/yr"
+    description: "Annual water-balance terms (precip, irrigation, evaporation, transpiration, runoff, drainage, tile flow, delta storage)"
+    emitted_in: "Summary_WaterBalance"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "soil_temperature_profile"
+    validation_rank: 12
+    unit: "deg C (by layer)"
+    description: "Daily soil temperature by layer (with freeze/thaw, snow)"
+    emitted_in: "Day_Climate / Day_SoilWater"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Daily series emitted only when record-daily-results=1"]
+      detrending_options: ["none"]
+  - var: "soil_water_WFPS_and_water_table"
+    validation_rank: 13
+    unit: "fraction / m (by layer)"
+    description: "Daily water-filled pore space by layer and water-table depth"
+    emitted_in: "Day_SoilWater"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "r"
+          caveats: ["Daily series emitted only when record-daily-results=1"]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "N fertilizer rate"
+      to: "N2O_emission"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: management
+      applicability: "always"
+      citations: ["abdalla2020_dndc_n2o_maizewheat"]
+    - from: "N fertilizer rate"
+      to: "crop_grain_yield"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: management
+      citations: ["abdalla2020_dndc_n2o_maizewheat"]
+    - from: "initial soil organic carbon (SOC)"
+      to: "N2O_emission"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      citations: ["abdalla2020_dndc_n2o_maizewheat", "abdalla2009_dndc_ireland_n2o"]
+    - from: "initial soil organic carbon (SOC)"
+      to: "SOC_stock_and_change"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      citations: ["qin2016_dndc_soc_sensitivity"]
+    - from: "litter / humads / humus C/N ratios"
+      to: "SOC_stock_and_change"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      citations: ["qin2016_dndc_soc_sensitivity"]
+    - from: "air temperature"
+      to: "N2O_emission"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      citations: ["abdalla2009_dndc_ireland_n2o"]
+    - from: "rainfall / precipitation"
+      to: "N2O_emission"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      citations: ["abdalla2009_dndc_ireland_n2o"]
+    - from: "soil bulk density"
+      to: "N2O_emission"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      citations: ["abdalla2009_dndc_ireland_n2o", "abdalla2020_dndc_n2o_maizewheat"]
+    - from: "nitrification / denitrification rate parameters"
+      to: "N2O_emission"
+      sensitivity_grade: HIGH
+      basis: cross_family_model_literature
+      applicability: "LandscapeDNDC variant proxy"
+      citations: ["rahn2012_landscapedndc_uncertainty"]
+    - from: "nitrification / denitrification rate parameters"
+      to: "NO_emission"
+      sensitivity_grade: HIGH
+      basis: cross_family_model_literature
+      applicability: "LandscapeDNDC variant proxy"
+      citations: ["rahn2012_landscapedndc_uncertainty"]
+    - from: "soil moisture / WFPS threshold parameters"
+      to: "N2O_emission"
+      sensitivity_grade: HIGH
+      basis: cross_family_model_literature
+      applicability: "LandscapeDNDC variant proxy"
+      citations: ["rahn2012_landscapedndc_uncertainty"]
+    - from: "soil pH"
+      to: "N2O_emission"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      citations: ["abdalla2009_dndc_ireland_n2o", "abdalla2020_dndc_n2o_maizewheat"]
+    - from: "soil clay fraction / texture"
+      to: "N2O_emission"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      citations: ["abdalla2020_dndc_n2o_maizewheat"]
+    - from: "soil clay fraction / texture"
+      to: "SOC_stock_and_change"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      citations: ["qin2016_dndc_soc_sensitivity"]
+    - from: "decomposition C/N parameters"
+      to: "CO2_soil_respiration"
+      sensitivity_grade: MEDIUM
+      basis: cross_family_model_literature
+      applicability: "LandscapeDNDC variant proxy"
+      citations: ["rahn2012_landscapedndc_uncertainty"]
+  citation_index:
+    qin2016_dndc_soc_sensitivity:
+      short_citation: "Qin et al. 2016"
+      doi: "10.1016/j.compag.2016.04.017"
+      note: "Morris + Sobol' global SA of DNDC SOC dynamics over a 21-yr rice-bean rotation; initial SOC, clay fraction, litter/humads C/N dominate"
+    abdalla2020_dndc_n2o_maizewheat:
+      short_citation: "Abdalla et al. 2020"
+      doi: "10.1016/j.envpol.2020.114199"
+      note: "DNDC calibration/validation for N2O and yield in a Hebei maize-wheat system; N rate, SOC, pH, bulk density, clay drive cumulative N2O (r2=0.91)"
+    rahn2012_landscapedndc_uncertainty:
+      short_citation: "Rahn et al. 2012"
+      doi: "10.5194/bg-9-3983-2012"
+      note: "Morris screening of ~45 LandscapeDNDC parameters; microbial nitrification/denitrification rates, WFPS thresholds, decomposition C/N dominate N2O/NO/CO2 uncertainty (cross-family proxy)"
+    abdalla2009_dndc_ireland_n2o:
+      short_citation: "Abdalla et al. 2009"
+      doi: "10.1016/j.geoderma.2009.02.004"
+      note: "DNDC sensitivity for Irish grassland/cropland N2O; air temperature, rainfall, SOC, bulk density, pH most sensitive; +1.5 degC -> ~65% N2O increase"
+
+safety:
+  hazards:
+    - id: "precip_mm_not_cm"
+      kind: weather_file_semantic
+      description: "Precipitation supplied in mm instead of expected cm (10x too much water) causing near-zero yield / false drought"
+      severity: silent
+    - id: "srad_wm2_not_mj"
+      kind: weather_file_semantic
+      description: "Solar radiation given as W/m2 instantaneous instead of MJ/m2/day daily integral (~10x), distorting photosynthesis/biomass"
+      severity: silent
+    - id: "temperature_kelvin"
+      kind: weather_file_semantic
+      description: "Temperature supplied in Kelvin instead of Celsius; immediate crash / >200 deg C in logs"
+      severity: fatal
+    - id: "climate_not_starting_jday1"
+      kind: weather_file_semantic
+      description: "Climate file does not start at Julian day 1; sequential read misaligns all forcing or crashes"
+      severity: fatal
+    - id: "climate_shorter_than_simulation"
+      kind: weather_file_semantic
+      description: "Climate record shorter than n_years*365 (leap-aware); simulation silently truncated to fewer years"
+      severity: silent
+    - id: "climate_format_type_mismatch"
+      kind: control_semantic
+      description: "Climate format type does not match the actual column layout; variables silently mapped to wrong columns, producing nonsensical fluxes"
+      severity: silent
+    - id: "soc_percent_not_fraction"
+      kind: soil_semantic
+      description: "SOC entered as percent (e.g., 2.5) instead of kgC/kg mass fraction (0.025); 100x SOC/N2O overestimate"
+      severity: silent
+    - id: "bulk_density_units"
+      kind: soil_semantic
+      description: "Bulk density entered as kg/m3 instead of g/cm3 (1000x error)"
+      severity: silent
+    - id: "ksat_unit_confusion"
+      kind: soil_semantic
+      description: "Hydraulic conductivity entered in cm/min or cm/hr or um/s instead of m/hr; corrupts drainage and water-table dynamics"
+      severity: silent
+    - id: "fc_wp_volumetric_not_wfps"
+      kind: soil_semantic
+      description: "Field capacity / wilting point entered as volumetric water content instead of WFPS (= VWC/porosity); mis-sets soil-moisture state"
+      severity: silent
+    - id: "layers_not_summing_to_2m"
+      kind: soil_semantic
+      description: "Soil layer thicknesses do not sum to exactly 2.0 m (200 cm); profile error / crash at initialization"
+      severity: fatal
+    - id: "texture_id_out_of_range"
+      kind: soil_semantic
+      description: "Texture class ID outside 1-12 leaves hydraulic properties undefined; crash or silent default"
+      severity: fatal_or_silent
+    - id: "soc_pool_fractions_not_summing_to_one"
+      kind: soil_semantic
+      description: "SOC pool fractions (or biomass partition fractions) do not sum to 1.0; mass-balance error / wrong yield. GUI may silently reset pool fractions to defaults after editing a heterogeneous profile"
+      severity: silent
+    - id: "fertilizer_product_mass_not_elemental_N"
+      kind: control_semantic
+      description: "Fertilizer entered as total product mass (kgUrea/ha) instead of elemental kgN/ha per form; distorts N response"
+      severity: silent
+    - id: "crop_biomass_DM_not_carbon"
+      kind: coefficient_runtime_silent_fallback
+      description: "Crop biomass coefficients entered in kgDM/ha instead of kgC/ha (DNDC tracks carbon, DM=0.45xC); yields ~2x off"
+      severity: silent
+    - id: "water_table_flag_reversed"
+      kind: control_semantic
+      description: "Water-table flag uses reversed logic (0=dynamic WT ON, 1=free drainage); hydrology runs opposite to intent"
+      severity: silent
+    - id: "winter_crop_harvest_mode"
+      kind: control_semantic
+      description: "Harvest mode not set to 2 (next year) for fall-planted winter crops; harvest before maturity -> zero yield"
+      severity: silent
+    - id: "legume_nfixation_index"
+      kind: coefficient_runtime_silent_fallback
+      description: "N-fixation index not set to 1 for legumes; severe N stress and depressed yield"
+      severity: silent
+    - id: "dnd_line_order_corruption"
+      kind: parser_semantic
+      description: ".dnd is strictly line-ordered; inserting/deleting lines or non-chronological time blocks misaligns parameters or corrupts the file"
+      severity: fatal_or_silent
+    - id: "denitrification_silently_zeroed"
+      kind: control_semantic
+      description: "Denitrification silently skipped when soil pH is out of range or WFPS too low to form anaerobic microsites; annual N2O collapses to near-zero with no error"
+      severity: silent
+    - id: "management_dates_outside_record"
+      kind: control_semantic
+      description: "Tillage/harvest/fertilizer event dates outside Jday 1-365 or outside the climate record are silently skipped, so the management schedule is ignored"
+      severity: silent
+    - id: "dynamic_layer_depth_too_small"
+      kind: numerical_instability
+      description: "Dynamic soil-solver layer depth < ~1 cm overflows array bounds -> segfault early in the run; inconsistent Ksat/layer/tolerance makes the water solver thrash (10-100x slower)"
+      severity: fatal
+  validation_limits:
+    - "Point / field-scale only; no native distributed or gridded simulation and no lateral routing between fields"
+    - "Daily internal time step cannot resolve sub-daily (intra-day) gas-flux dynamics"
+    - "Reproduces cumulative/annual N2O and yields better than daily N2O peaks (chamber daily peaks often poorly matched)"
+    - "Default crop physiological/phenology parameters may be uncalibrated for a given crop/region; crops should be verified against observed yield before trusting fluxes"
+    - "CH4 flux is meaningful only for water-table-driven anaerobic systems (paddy/wetland)"
+  warnings:
+    - "Inputs are silent on unit errors: wrong units produce no message, only physically meaningless results"
+    - "Spinup is required to equilibrate C/N pools (>=10 yr cropland, 50-100 yr natural); use spinup state files only from the same DNDC version"
+    - "Denitrification/N2O production is gated by soil pH and WFPS via the anaerobic-balloon scheme; out-of-range pH or low WFPS silently suppresses N2O"
+  assumptions:
+    - statement: "Simulation is a 1-D point/field-scale soil column run to a fixed 2 m (200 cm) depth in up to 10 layers."
+      scope: "geometry / spatial structure of DNDCv.CAN 9.6.0"
+      source: "DNDCv.CAN SKILL.md and docs/s2 soil-preparation documentation"
+      status: adopted
+    - statement: "Annual mass-balance closure is maintained for water, carbon, and nitrogen; ET (incl. the optional Penman-Monteith path) is a demand-side flux estimate, not a closed surface energy budget."
+      scope: "conservation / closure"
+      source: "DNDC95 User's Guide annual C/N/water budget sections; DNDCv.CAN ET documentation"
+      status: adopted
+    - statement: "Sub-models execute daily in fixed order: soil climate -> plant growth -> decomposition -> nitrification & denitrification -> fermentation; soil aeration is set by the anaerobic-balloon Eh partition."
+      scope: "process ordering / N2O and CH4 production mechanism"
+      source: "DNDC95 User's Guide section II.4 (run sequence) and I.2 (model description)"
+      status: adopted
+    - statement: "This dag describes DNDCv.CAN 9.6.0 (2 m profile, biochar/biosolid pools, tile drainage), not the parent DNDC95 v9.5 (0-50 cm profile) the UNH User's Guide documents."
+      scope: "version / implementation identity"
+      source: "DNDCv.CAN SKILL.md identity section vs UNH GuideDNDC95.pdf"
+      status: adopted

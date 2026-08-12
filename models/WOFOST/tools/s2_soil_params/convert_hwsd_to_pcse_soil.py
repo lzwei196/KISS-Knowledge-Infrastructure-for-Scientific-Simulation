@@ -38,7 +38,14 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 LAT = 52.0
 LON = 5.5
-HWSD_RASTER = "data/soil/HWSD_RASTER/hwsd.bil"
+# KDT 5.0 fix (2026-06-08): default HWSD_RASTER was the cwd-RELATIVE path
+# "data/soil/HWSD_RASTER/hwsd.bil", which only resolves when the tool happens to
+# be launched from the data root ($ROOT). Run from any other cwd (e.g. an
+# outputs/<case>/ dir, the normal driver pattern) validate_inputs() failed with
+# "Either HWSD raster or manual texture must be provided" and the soil step died.
+# Use the canonical absolute server path so the lookup is cwd-independent; a
+# caller may still override via argv[3].
+HWSD_RASTER = "/mnt/disk1/Hydrocraft_server/data/soil/HWSD_RASTER/hwsd.bil"
 HWSD_MDB = "data/forcing/huaihe_raw/soil/HWSD.mdb"
 
 # Manual override: provide texture directly if HWSD not available
@@ -73,8 +80,8 @@ def validate_inputs():
 
 def validate_outputs(soil_params):
     errors = []
-    required = ["SMW", "SMFCF", "SM0", "CRAIRC", "K0", "SOPE", "KSUB",
-                 "RDMSOL", "IFUNRN", "WAV", "SSI", "SSMAX", "SMLIM", "NOTINF"]
+    # PCSE 6.0: only soil-hydraulic properties belong in soildata (dt_v003).
+    required = ["SMW", "SMFCF", "SM0", "CRAIRC", "K0", "SOPE", "KSUB", "RDMSOL"]
     for key in required:
         if key not in soil_params:
             errors.append(f"Missing required key: {key}")
@@ -94,21 +101,34 @@ def validate_outputs(soil_params):
 
 
 def get_texture_from_hwsd(lat, lon):
-    """Extract soil texture from HWSD raster + MDB."""
+    """Extract soil texture from HWSD raster + properties CSV.
+
+    KDT 5.0 fix (2026-06-08): the previous implementation imported
+    ``skills.dssat_crop_run.hwsd_soil_adapter`` which does NOT exist anywhere on
+    the server (verified by tree search) — so the lookup ALWAYS raised
+    ImportError and silently fell back to a generic loam (sand=40, clay=25)
+    everywhere, regardless of location. That made every site identical and
+    defeated the purpose of an HWSD lookup. The canonical HWSD reader is
+    ``ki_tools_common.soil_utils.lookup_hwsd`` (rasterio MU_GLOBAL lookup ->
+    HWSD_DATA.csv topsoil texture); use it instead. HWSD_MDB is no longer
+    needed (the CSV export replaces the Access DB).
+    """
     try:
-        # Try using the shared HWSD adapter
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
-        from skills.dssat_crop_run.hwsd_soil_adapter import get_soil_properties
-        props = get_soil_properties(lat, lon, HWSD_RASTER, HWSD_MDB)
+        from ki_tools_common.soil_utils import lookup_hwsd
+        raster = HWSD_RASTER if Path(HWSD_RASTER).exists() else None
+        props = lookup_hwsd(lat, lon, hwsd_raster=raster)
+        # lookup_hwsd returns sand/silt/clay (%), oc (%), bulk_density (g/cm3)
+        # and falls back to its own defaults (40/40/20) only if BOTH the raster
+        # and CSV are unreadable.
         return {
-            'sand': props.get('T_SAND', 40),
-            'clay': props.get('T_CLAY', 25),
-            'silt': props.get('T_SILT', 35),
-            'oc': props.get('T_OC', 1.0),
-            'bd': props.get('T_REF_BULK_DENSITY', 1.4),
+            'sand': props.get('sand', 40),
+            'clay': props.get('clay', 25),
+            'silt': props.get('silt', 35),
+            'oc': props.get('oc', 1.0),
+            'bd': props.get('bulk_density', 1.4),
         }
     except Exception as e:
-        logger.warning(f"HWSD adapter failed: {e}. Using default texture.")
+        logger.warning(f"HWSD lookup failed: {e}. Using default texture.")
         return {'sand': 40, 'clay': 25, 'silt': 35, 'oc': 1.0, 'bd': 1.4}
 
 
@@ -173,21 +193,22 @@ def process():
     else:
         RDMSOL = 120.0
 
+    # PCSE 6.0: soildata must contain ONLY soil-hydraulic properties. The
+    # site-level params (IFUNRN, NOTINF, SSI, SSMAX, WAV, SMLIM) are supplied by
+    # WOFOST72SiteDataProvider; including them here raises
+    # "Duplicate parameter found" in ParameterProvider (dt_v003).
+    # CRAIRC is the critical SOIL AIR CONTENT for aeration stress (typ. ~0.06),
+    # NOT the air porosity (SM0-SMFCF, ~0.30). Using air porosity made the crop
+    # spuriously oxygen-stressed in wet climates. Use the standard WOFOST value.
     soil_params = {
         'SMW': round(SMW, 4),
         'SMFCF': round(SMFCF, 4),
         'SM0': round(SM0, 4),
-        'CRAIRC': round(max(0.02, SM0 - SMFCF - 0.02), 4),
+        'CRAIRC': 0.06,
         'K0': round(K0, 2),
         'SOPE': 1.0,
         'KSUB': 1.0,
         'RDMSOL': RDMSOL,
-        'IFUNRN': 0,
-        'SSMAX': 0.0,
-        'SSI': 0.0,
-        'WAV': 20.0,
-        'NOTINF': 0.0,
-        'SMLIM': round(SMFCF, 4),
     }
 
     logger.info(f"Computed: SMW={SMW:.4f}, SMFCF={SMFCF:.4f}, SM0={SM0:.4f}, K0={K0:.2f}")

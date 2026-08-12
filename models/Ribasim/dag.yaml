@@ -1,0 +1,372 @@
+template_version: "3.5"
+
+identity:
+  model_id: "Ribasim"
+  scientific_reference_version: "Ribasim 2026.1 (open-source Julia network water-resources model; SciML ODE core)"
+  implementation:
+    id: "ribasim-julia"
+    version: "2026.1.0-rc2"
+    provenance: "Julia; Deltares open-source Ribasim.jl, SciML/DifferentialEquations.jl ODE core with JuMP/HiGHS allocation LP."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "julia"
+  license: "MIT"
+  repo_url: "https://github.com/Deltares/Ribasim"
+
+boundary:
+  scope_in:
+    - "Water balance of interconnected basins (lumped reservoirs, lakes, canals, river reaches)"
+    - "Flow through controlled structures (pumps, outlets, weirs/rating curves, resistances)"
+    - "Rule-based, continuous, and PID control of hydraulic structure parameters"
+    - "Priority-based water allocation across demand nodes via linear programming"
+    - "Manning-Gauckler and linear-resistance flow between basins"
+    - "Tracer transport / concentration (experimental, off by default)"
+  scope_out:
+    - "Rainfall-runoff generation (not a land-surface hydrology model; external inflows/outflows supplied as boundary conditions)"
+    - "Fully distributed 2-D hydrodynamics (basins are lumped/aggregated storage per area)"
+    - "Native reprojection of coordinates (no automatic CRS transformation)"
+  spatial: "distributed-stream"
+  temporal: "daily"
+  closure: "mass-balance"
+  notes: >
+    Network-routing model on a directed graph (nodes = water-system components, links = flow
+    connections); it is NOT a rainfall-runoff model. Mass-balance closure applies to the basin
+    water balance dS/dt = P + drainage + Q_in - E - infiltration - Q_out, integrated as a
+    continuous-time ODE (QNDF default) with adaptive stepping; default output interval (saveat)
+    is daily (86400 s) but the integration timestep is sub-daily/adaptive. Allocation runs on a
+    separate, typically daily timestep over which flows are assumed constant and the LP
+    coefficients are linearized at timestep start. No surface energy budget is closed.
+
+inputs:
+  forcing:
+    - {category: "atmospheric", name: "precipitation", unit: "m/s", source_kind: "forcing", model_input_format: "Basin/time or Basin/static table in database.gpkg (or NetCDF basin/time.nc)", notes: "Per-area vertical flux in m/s; mm/day authoring is a silent ~86M-fold over-input."}
+    - {category: "atmospheric", name: "potential evaporation", unit: "m/s", source_kind: "forcing", model_input_format: "Basin/time or Basin/static table", notes: "Per-area flux in m/s; negative values are treated as condensation (adds water)."}
+    - {category: "lateral", name: "drainage", unit: "m³/s", source_kind: "forcing", model_input_format: "Basin/time or Basin/static table", notes: "Prescribed lateral inflow to the basin (e.g. from an external runoff source)."}
+    - {category: "lateral", name: "infiltration", unit: "m³/s", source_kind: "forcing", model_input_format: "Basin/time or Basin/static table", notes: "Prescribed loss flux out of the basin."}
+    - {category: "boundary_inflow", name: "FlowBoundary flow_rate", unit: "m³/s", source_kind: "forcing", model_input_format: "FlowBoundary/static or /time table", notes: "External prescribed inflow/outflow time series; block (step) interpolation by default. Gaps may interpolate to zero (dry-spell artifact)."}
+    - {category: "boundary_level", name: "LevelBoundary level", unit: "m", source_kind: "forcing", model_input_format: "LevelBoundary/static or /time table", notes: "External prescribed water level at a system edge."}
+    - {category: "demand", name: "UserDemand demand time series", unit: "m³/s", source_kind: "forcing", model_input_format: "UserDemand/time table", notes: "Time-varying demand per priority; consumes (1-return_factor) and returns the rest."}
+  parameters:
+    - {category: "basin_geometry", name: "Basin profile (area-level-storage curve)", unit: "level m / area m² / storage m³", source_kind: "dataset_lookup", model_input_format: "Basin/profile table", notes: "Most critical input; storage derived by trapezoidal integration of area over level. Levels must be strictly monotonically increasing."}
+    - {category: "structure", name: "Pump flow_rate / min_upstream_level", unit: "m³/s / m", source_kind: "calibrated", model_input_format: "Pump/static table"}
+    - {category: "structure", name: "Outlet flow_rate / min_upstream_level", unit: "m³/s / m", source_kind: "calibrated", model_input_format: "Outlet/static table"}
+    - {category: "structure", name: "TabulatedRatingCurve Q(h) table", unit: "level m / flow_rate m³/s", source_kind: "calibrated", model_input_format: "TabulatedRatingCurve/static table", notes: "Stage-discharge lookup; one-directional upstream-head flow."}
+    - {category: "structure", name: "LinearResistance resistance / max_flow_rate", unit: "s/m² / m³/s", source_kind: "calibrated", model_input_format: "LinearResistance/static table", notes: "Q = Δh/R; natural channels typically 1e2-1e6 s/m². Too high silently disconnects basins."}
+    - {category: "structure", name: "ManningResistance length / manning_n / profile_width / profile_slope", unit: "m / s·m^(-1/3) / m / -", source_kind: "calibrated", model_input_format: "ManningResistance/static table", notes: "manning_n typically 0.01-0.10."}
+    - {category: "control", name: "PidControl gains (proportional, integral, derivative) and target", unit: "s⁻¹ / s⁻² / - / m", source_kind: "calibrated", model_input_format: "PidControl/static table", notes: "Gains must be NEGATIVE for outlet/pump-based level regulation; positive gains cause runaway oscillation."}
+    - {category: "control", name: "DiscreteControl conditions and logic (thresholds, truth-state→control-state)", unit: "varies / -", source_kind: "user_provided", model_input_format: "DiscreteControl/condition and /logic tables", notes: "Hysteresis band (threshold_high/threshold_low); too-small gap causes per-timestep chatter."}
+    - {category: "allocation", name: "UserDemand return_factor / min_level / demand_priority", unit: "- / m / integer", source_kind: "user_provided", model_input_format: "UserDemand/time table", notes: "return_factor in [0,1]; >1 creates water from nothing. Lower priority number = higher priority."}
+  initial_conditions:
+    - {category: "basin_state", name: "Basin initial level", unit: "m", source_kind: "user_provided", model_input_format: "Basin/state table", notes: "Must fall within the Basin profile level range; missing Basin/state table is FATAL. Storage initialized from level via the profile. Final levels in basin_state.nc are reusable as restart."}
+    - {category: "control_state", name: "PidControl integral term initial value", unit: "integral of error", source_kind: "default", model_input_format: "internal ODE state (du.integral)", notes: "Accumulated integral-error state; not typically user-set."}
+  boundary_conditions:
+    - {category: "topology", name: "Node table (node_id, node_type, subnetwork_id, geometry)", unit: "-", source_kind: "user_provided", model_input_format: "Node table in database.gpkg", notes: "subnetwork_id=0 excludes a node from allocation. Geometry must match declared CRS (no auto-reproject)."}
+    - {category: "topology", name: "Link table (from_node_id, to_node_id, link_type)", unit: "-", source_kind: "user_provided", model_input_format: "Link table in database.gpkg", notes: "link_type ∈ flow/control/listen. Strict allowed from→to connectivity; Basin→Basin direct links are fatal. Control nodes must use 'control' links."}
+    - {category: "control_switch", name: "CRS (coordinate reference system)", unit: "EPSG code", source_kind: "user_provided", model_input_format: "crs field in ribasim.toml", notes: "All geometries must use this CRS; mismatch silently corrupts distances/areas/Manning flows."}
+    - {category: "control_switch", name: "Solver algorithm selection", unit: "-", source_kind: "user_provided", model_input_format: "solver.algorithm in ribasim.toml (QNDF default; FBDF/Rosenbrock23/Rodas4P)", notes: "FBDF preferred over QNDF for very stiff systems."}
+    - {category: "control_switch", name: "Output interval (saveat)", unit: "seconds", source_kind: "user_provided", model_input_format: "solver.saveat in ribasim.toml (default 86400 = daily)", notes: "In seconds; too large misses sub-daily peaks/control switching."}
+    - {category: "control_switch", name: "Allocation enable + allocation timestep", unit: "- / seconds", source_kind: "user_provided", model_input_format: "allocation block in ribasim.toml (experimental, off by default; timestep default 86400)", notes: "Timestep in seconds; days-vs-seconds confusion starves demands or crawls."}
+    - {category: "control_switch", name: "Simulation period (starttime / endtime)", unit: "ISO 8601 datetime", source_kind: "user_provided", model_input_format: "ribasim.toml; UTC", notes: "Must cover all time-series data; non-ISO formats cause fatal TOML parse errors."}
+
+processes:
+  modules:
+    - {name: "water_balance!", role: "driver", brief: "ODE RHS; orchestrates vertical fluxes, flow formulation, then continuous and PID control in a fixed order each call.", applicability: "always"}
+    - {name: "Basin", role: "integrator", brief: "Storage-state node; maps storage→level→area via profile interpolation and computes a smooth low-storage reduction factor. State variable.", applicability: "always"}
+    - {name: "update_vertical_flux", role: "process_solver", brief: "Applies precipitation, drainage, potential evaporation and infiltration to basins with low-storage smoothing.", applicability: "always"}
+    - {name: "ManningResistance", role: "process_solver", brief: "Gauckler-Manning open-channel friction flow between basins, with laminar/turbulent relaxed-root smoothing.", applicability: "always"}
+    - {name: "LinearResistance", role: "process_solver", brief: "Bidirectional head-difference/resistance flow Q=Δh/R with max_flow_rate clamping.", applicability: "always"}
+    - {name: "TabulatedRatingCurve", role: "process_solver", brief: "Stage-discharge Q(h) interpolated rating-curve flow with downstream-level and low-storage reduction.", applicability: "always"}
+    - {name: "Pump", role: "process_solver", brief: "Prescribed/controlled abstraction flow clamped to [min,max], gated by upstream/downstream level reduction factors.", applicability: "always"}
+    - {name: "Outlet", role: "process_solver", brief: "Gravity outlet like Pump but additionally reduces flow by the upstream-downstream level difference.", applicability: "always"}
+    - {name: "UserDemand", role: "allocator", brief: "Abstracts min(allocated, demand) per priority with low-storage/min-level smoothing, plus return_factor outflow.", applicability: "always"}
+    - {name: "PidControl", role: "process_solver", brief: "PID controller adjusting a Pump/Outlet flow_rate to track a target Basin level; solves an implicit derivative-term equation; carries an integral state.", applicability: "when PidControl nodes present"}
+    - {name: "ContinuousControl", role: "process_solver", brief: "Maps a compound observed variable through a lookup function to set a controlled node parameter each step.", applicability: "when ContinuousControl nodes present"}
+    - {name: "DiscreteControl", role: "optional_module", brief: "Callback that switches control_state on truth conditions of listened variables (state machine with hysteresis).", applicability: "when DiscreteControl nodes present"}
+    - {name: "Allocation", role: "allocator", brief: "JuMP/HiGHS linear program distributing water to demands by priority per subnetwork over the allocation timestep; lexicographic goal programming.", applicability: "when experimental.allocation enabled"}
+    - {name: "ODE_integrator", role: "integrator", brief: "SciML stepper (QNDF default) with sparse autodiff Jacobian and adaptive stepping; calls water_balance!.", applicability: "always"}
+    - {name: "SavingCallback", role: "integrator", brief: "Saves flow, basin state, subgrid level and solver stats at saveat; runs the water-balance-error check and discrete control.", applicability: "always"}
+    - {name: "limit_flow", role: "process_solver", brief: "Post-step callback clamping accepted cumulative-flow states within physical flow-rate bounds using previous-saveat storage/level.", applicability: "always"}
+    - {name: "Concentration", role: "optional_module", brief: "Experimental substance mass transport through basins and user demands.", applicability: "when experimental.concentration enabled"}
+  internal_edges:
+    - {from: "Inputs", to: "water_balance!", kind: "consumes_input", brief: "GeoPackage Node/Link/Basin tables loaded into in-memory parameters before integration."}
+    - {from: "ODE_integrator", to: "water_balance!", kind: "invokes", brief: "QNDF stepper calls the RHS; Jacobian via sparse autodiff."}
+    - {from: "water_balance!", to: "Basin", kind: "invokes", brief: "Refreshes current_storage/level/area/low_storage_factor before any flow formulation."}
+    - {from: "update_vertical_flux", to: "Basin wetted area", kind: "reads_state", brief: "Evaporation = area × factor × potential_evaporation; reads current_area."}
+    - {from: "update_vertical_flux", to: "Basin storage", kind: "writes_state", brief: "Writes vertical-flux contributions to the basin storage derivative."}
+    - {from: "ManningResistance", to: "Basin level", kind: "reads_state", brief: "Uses upstream/downstream basin levels h_a, h_b."}
+    - {from: "LinearResistance", to: "Basin level", kind: "reads_state", brief: "Uses head difference Δh between connected basins."}
+    - {from: "TabulatedRatingCurve", to: "Basin level", kind: "reads_state", brief: "Q = factor·qh(h_a) with downstream-level reduction."}
+    - {from: "Pump", to: "Basin low-storage reduction factor", kind: "reads_state", brief: "Multiplies flow by the source-basin low-storage factor."}
+    - {from: "Outlet", to: "Basin level", kind: "reads_state", brief: "Reduces flow by upstream-downstream level difference."}
+    - {from: "ManningResistance", to: "Basin storage", kind: "writes_state", brief: "Inter-basin link flow enters connected basins' Q_in/Q_out."}
+    - {from: "Pump", to: "Basin storage", kind: "writes_state", brief: "Pump flow enters source/target basin storage balance."}
+    - {from: "UserDemand", to: "Allocation", kind: "reads_state", brief: "Effective abstraction = min(allocated, demand) per priority."}
+    - {from: "Allocation", to: "UserDemand", kind: "writes_state", brief: "LP optimization assigns allocated volumes per demand priority."}
+    - {from: "Allocation", to: "Pump", kind: "invokes", brief: "Allocation result can set Pump/Outlet flow rates."}
+    - {from: "ContinuousControl", to: "Pump", kind: "writes_state", brief: "Sets controlled node flow_rate via the parameter reference."}
+    - {from: "PidControl", to: "Basin storage", kind: "reads_state", brief: "PID derivative term reads the listened basin's storage derivative."}
+    - {from: "PidControl", to: "Basin wetted area", kind: "reads_state", brief: "PID derivative term reads current_area to form D = 1 − K_d/area."}
+    - {from: "PidControl", to: "Pump", kind: "writes_state", brief: "Sets controlled Pump/Outlet flow_rate to track the target level."}
+    - {from: "PidControl", to: "PID integral", kind: "writes_state", brief: "Accumulates the integral-error term as an ODE state."}
+    - {from: "DiscreteControl", to: "Pump", kind: "writes_state", brief: "Switches control_state on truth conditions, modifying pump/outlet parameters."}
+    - {from: "Inputs", to: "Basin storage", kind: "writes_state", brief: "FlowBoundary adds cumulative boundary flow directly to the downstream basin storage."}
+    - {from: "limit_flow", to: "Basin storage", kind: "reads_state", brief: "Uses previous-saveat storage/level to estimate reduction-factor effects when clamping."}
+    - {from: "SavingCallback", to: "Outputs", kind: "produces_output", brief: "Saves flow_rate, level, storage, balance_error and solver stats at each saveat."}
+    - {from: "Concentration", to: "Outputs", kind: "produces_output", brief: "Experimental substance mass concentration per basin."}
+
+states:
+  variables:
+    - {name: "Basin storage", unit: "m³", role: "prognostic"}
+    - {name: "Basin level", unit: "m", role: "diagnostic"}
+    - {name: "Basin wetted area", unit: "m²", role: "diagnostic"}
+    - {name: "Basin low-storage reduction factor", unit: "-", role: "diagnostic"}
+    - {name: "PID integral", unit: "integral of error (m·s)", role: "prognostic"}
+    - {name: "PidControl error", unit: "m", role: "diagnostic"}
+    - {name: "DiscreteControl control_state / truth_state", unit: "discrete", role: "prognostic"}
+    - {name: "TabulatedRatingCurve cumulative flow", unit: "m³", role: "accumulator"}
+    - {name: "Pump cumulative flow", unit: "m³", role: "accumulator"}
+    - {name: "Outlet cumulative flow", unit: "m³", role: "accumulator"}
+    - {name: "LinearResistance cumulative flow", unit: "m³", role: "accumulator"}
+    - {name: "ManningResistance cumulative flow", unit: "m³", role: "accumulator"}
+    - {name: "UserDemand cumulative inflow/outflow", unit: "m³", role: "accumulator"}
+    - {name: "Basin cumulative evaporation/infiltration/precipitation/drainage", unit: "m³", role: "accumulator"}
+    - {name: "FlowBoundary cumulative flow", unit: "m³", role: "accumulator"}
+  provenance: "populated"
+
+outputs:
+  - var: "level"
+    validation_rank: 4
+    unit: "m"
+    description: "Basin water surface level, derived from storage via the area-level profile."
+    emitted_in: "basin.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Level is relative to the CRS vertical datum; observed gauge datum offsets must be reconciled before comparison."]
+      detrending_options: ["none", "first_difference"]
+  - var: "storage"
+    validation_rank: 5
+    unit: "m³"
+    description: "Basin water storage volume, the prognostic ODE state."
+    emitted_in: "basin.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Storage is profile-derived; comparability requires the same area-level curve assumptions as the observation source."]
+      detrending_options: ["none", "first_difference"]
+  - var: "flow_rate"
+    validation_rank: 1
+    unit: "m³/s"
+    description: "Flow rate on each network link (per from_node→to_node connection)."
+    emitted_in: "flow.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Link flow is comparable to a gauge only where a network link maps to the gauged cross-section.", "saveat-averaged output; timestamps mark the START of the averaging period."]
+      detrending_options: ["none"]
+  - var: "balance_error / relative_error"
+    validation_rank: 2
+    unit: "m³/s / dimensionless"
+    description: "Per-basin water-balance closure error (absolute and relative) computed each saveat."
+    emitted_in: "basin.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Internal diagnostic, not an observable; compared against the solver tolerance (rel < 1%), not field data."]
+      detrending_options: ["none"]
+  - var: "allocated / supplied / demand"
+    validation_rank: 3
+    unit: "m³/s"
+    description: "Per-demand-node allocation results (requested demand, allocated and supplied volumes) when allocation is enabled."
+    emitted_in: "allocation.nc"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "regional_aggregate_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "ranking_quality"]
+          determining_metric: "nse"
+          caveats: ["Experimental module (off by default); supply/deficit depends on the priority configuration.", "Reliability/deficit comparisons are scenario-defined, not a unique physical observable."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "upstream inflow / boundary forcing (FlowBoundary, drainage)"
+      to: "basin water balance / water demand reliability"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "boundary_forcing"
+      applicability: "always"
+      citations: ["ahmadzadeh2022_ribasim_demand_reliability"]
+    - from: "demand-management actions / implementation rate"
+      to: "water shortage (deficit volume)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "management"
+      applicability: "when allocation enabled"
+      citations: ["omar2013_ribasim_fayoum", "omar2024_ribasim_fayoum_pumps"]
+    - from: "supply-source / water-reuse inputs"
+      to: "water shortage (deficit volume)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "management"
+      applicability: "when allocation enabled"
+      citations: ["omar2013_ribasim_fayoum", "omar2024_ribasim_fayoum_pumps"]
+    - from: "allocation priority / demand-priority configuration"
+      to: "user-supply deficit"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "structural"
+      applicability: "when allocation enabled"
+      citations: ["sulis2013_genericmodels_comparison"]
+    - from: "reservoir operation rules / operational projects (storage & diversion)"
+      to: "downstream streamflow / environmental allocation"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "management"
+      applicability: "always"
+      citations: ["ahmadzadeh2022_ribasim_operational_projects"]
+    - from: "demand magnitude per node (irrigation/domestic/industrial)"
+      to: "water shortage (deficit volume)"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_qualitative"
+      lever_type: "management"
+      applicability: "when allocation enabled"
+      citations: ["omar2013_ribasim_fayoum", "sulis2013_genericmodels_comparison"]
+  citation_index:
+    ahmadzadeh2022_ribasim_demand_reliability:
+      short_citation: "Ahmadzadeh et al. 2022"
+      doi: "10.1016/j.agwat.2021.107377"
+      note: "SWAT+RIBASIM, Zarrineh Rood: ~8% inflow decrease lowers demand-supply reliability; scenario-based, no quantitative SA index."
+    ahmadzadeh2022_ribasim_operational_projects:
+      short_citation: "Ahmadzadeh et al. 2022"
+      doi: "10.1016/j.agwat.2021.107377"
+      note: "Same study; active upstream operational projects reduce streamflow to Lake Urmia by ~10%."
+    omar2013_ribasim_fayoum:
+      short_citation: "Omar 2013"
+      doi: "10.1016/j.wsj.2013.12.008"
+      note: "RIBASIM Fayoum, Egypt: shortage swings 0.59→1.0→1.85 BCM/yr across action-implementation scenarios."
+    omar2024_ribasim_fayoum_pumps:
+      short_citation: "Omar et al. 2024"
+      doi: "10.3389/frwa.2024.1386303"
+      note: "RIBASIM + AHP Fayoum pump-station prioritization; shortage responds to drainage-reuse/conveyance inputs."
+    sulis2013_genericmodels_comparison:
+      short_citation: "Sulis & Sechi 2013"
+      doi: "10.1016/j.envsoft.2012.09.012"
+      note: "Inter-model comparison (AQUATOOL/MODSIM/RIBASIM/WARGI/WEAP): allocation priority/penalty structure governs computed deficits."
+
+safety:
+  hazards:
+    - id: "precip_mm_day_silent_overinput"
+      kind: "weather_file_semantic"
+      description: "Precipitation authored in mm/day instead of m/s delivers ~86M× too much water; basin floods within a few timesteps. Validate precip < 1e-5 m/s (dt_001)."
+      severity: "silent"
+    - id: "evap_mm_day_silent_overdrain"
+      kind: "weather_file_semantic"
+      description: "Evaporation in mm/day instead of m/s over-drains by ~2.6e8×; basin dries out despite inflow. Validate evap < 1.2e-7 m/s (dt_002)."
+      severity: "silent"
+    - id: "basin_area_km2_silent"
+      kind: "soil_semantic"
+      description: "Basin profile area in km²/ha instead of m² makes the basin barely respond (too small) or never respond (too large) to inflows (dt_003)."
+      severity: "silent"
+    - id: "flowboundary_Ls_silent"
+      kind: "weather_file_semantic"
+      description: "FlowBoundary in L/s or ML/day instead of m³/s scales inflow 1000×/86.4× wrong; persistent water-balance deficit (dt_004)."
+      severity: "silent"
+    - id: "allocation_timestep_days_silent"
+      kind: "control_semantic"
+      description: "allocation.timestep authored in days instead of seconds (e.g. 1 vs 86400) silently runs the LP every second (sim crawls) or starves demands; set in seconds — 86400=daily, 3600=hourly (dt_005)."
+      severity: "silent"
+    - id: "basin_profile_not_monotonic"
+      kind: "soil_semantic"
+      description: "Basin profile levels not strictly monotonically increasing → fatal monotonicity crash at startup (dt_006)."
+      severity: "fatal"
+    - id: "missing_basin_state"
+      kind: "initial_condition_semantic"
+      description: "Missing Basin/state initial-level table → fatal startup crash; every basin needs an initial level within its profile range (dt_007)."
+      severity: "fatal"
+    - id: "connectivity_rule_violation"
+      kind: "control_semantic"
+      description: "Connectivity rules violated (direct Basin→Basin, FlowBoundary→non-Basin, control link mislabeled 'flow') → fatal validation crash (dt_008)."
+      severity: "fatal"
+    - id: "crs_mismatch_silent"
+      kind: "soil_semantic"
+      description: "Declared CRS does not match node coordinates (degrees vs meters); no auto-reproject, so distances/areas/Manning flows are silently wrong (dt_009)."
+      severity: "silent"
+    - id: "linear_resistance_too_high"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "LinearResistance R too high (Q=Δh/R) silently disconnects basins (near-zero inter-basin flow) (dt_010)."
+      severity: "silent"
+    - id: "depth_threshold_too_high"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "solver.depth_threshold set too high keeps basins below structure-activation level; structures never turn on (dt_011)."
+      severity: "silent"
+    - id: "pid_gain_wrong_sign"
+      kind: "control_semantic"
+      description: "PID proportional/integral gains with the wrong sign cause positive feedback; level oscillates and the solver stalls. Outlet/pump regulation needs NEGATIVE gains (dt_012)."
+      severity: "silent"
+    - id: "extreme_forcing_solver_divergence"
+      kind: "numerical_instability"
+      description: "Unit-wrong or extreme forcing, or very steep basin profiles, cause NaN/Inf solver divergence (dt_013)."
+      severity: "fatal"
+    - id: "water_balance_error_exceeds_tol"
+      kind: "numerical_instability"
+      description: "Abrupt step forcing or stiff multi-scale systems push water-balance error past tolerance; results degraded. Mitigate with tighter tolerances/FBDF/smoothed forcing (dt_014)."
+      severity: "degraded"
+    - id: "saveat_too_large_misses_dynamics"
+      kind: "parser_semantic"
+      description: "saveat too large (default daily) silently misses sub-daily peaks and control switching; output looks smooth (dt_015)."
+      severity: "silent"
+    - id: "boundary_timeseries_gaps"
+      kind: "weather_file_semantic"
+      description: "Boundary time series with gaps or short coverage drops inflow to zero mid-run (dry-spell artifact); ensure series cover [starttime, endtime] (dt_016)."
+      severity: "silent"
+    - id: "return_factor_creates_water"
+      kind: "control_semantic"
+      description: "UserDemand return_factor > 1 creates water from nothing; subnetwork_id=0 silently excludes a demand from allocation."
+      severity: "silent"
+  validation_limits:
+    - "Not a rainfall-runoff model: external inflows/outflows must be supplied; cannot generate land-surface runoff."
+    - "Lumped/aggregated basin storage, not distributed 2-D hydrodynamics; cannot resolve in-basin spatial level variation except via the optional subgrid output."
+    - "Daily default output and constant-flow allocation assumption cannot resolve sub-daily control dynamics unless saveat/allocation timestep are reduced."
+    - "Pump, Outlet and TabulatedRatingCurve are one-directional; bidirectional exchange requires resistance nodes."
+    - "Allocation linearization is valid only when the allocation timestep is short enough that flows are approximately constant; DiscreteControl/continuous/PID changes are not anticipated within an allocation timestep."
+    - "Secondary subnetworks connect to the primary network (subnetwork 1) only via Pump or Outlet, and cannot interconnect directly."
+  warnings:
+    - "basin.nc precipitation/evaporation are basin-integrated (m³/s), not the per-area (m/s) input forcing; do not compare output flux directly to input forcing."
+    - "Negative evaporation is treated as condensation and adds water to the basin."
+    - "Output timestamps mark the START of the saveat averaging period."
+    - "Hysteresis band too small causes DiscreteControl to chatter every timestep."
+    - "Orphan/unconnected nodes are silently ignored; missing Terminal nodes can cause basins to overflow or the solver to fail."
+  assumptions:
+    - statement: "Basins are point/lumped storage units (aggregated water bodies per area); inter-basin flow is a 1-D network-link quantity, not a 2-D field."
+      scope: "spatial geometry of the whole model"
+      source: "Ribasim model-concept docs (ribasim.org/concept/modelconcept.html)"
+      status: "adopted"
+    - statement: "Mass-balance closure holds for the basin water balance dS/dt = P + drainage + Q_in − E − infiltration − Q_out; no surface energy budget is closed."
+      scope: "conservation / closure"
+      source: "Ribasim modelconcept water-balance equation; solve.jl water_balance!"
+      status: "adopted"
+    - statement: "Allocation treats flows as constant over the allocation timestep with LP coefficients linearized at timestep start; control changes are not anticipated within a timestep."
+      scope: "allocation layer (experimental, off by default)"
+      source: "Ribasim allocation docs (ribasim.org/concept/allocation.html)"
+      status: "adopted"
+    - statement: "Default ODE integrator is QNDF with sparse autodiff Jacobian and adaptive stepping; daily saveat is an output convention, not the integration step."
+      scope: "numerical solver configuration"
+      source: "config.jl solver defaults; model.jl integrator setup"
+      status: "adopted"
+    - statement: "This dag describes the open-source Julia Ribasim (2026.1), distinct from the legacy Fortran RIBASIM 7.x (DSS-based)."
+      scope: "model identity"
+      source: "ribasim.org vs oss.deltares.nl; docs lineage note"
+      status: "adopted"

@@ -31,16 +31,16 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-SIM_PATH = ""             # Simulation workspace directory
+SIM_PATH = "/mnt/disk1/Hydrocraft_server/outputs/qinghai_lake_1951_2024/modflow6/workspace"             # Simulation workspace directory
 MODEL_NAME = "gwf"        # GWF model name
 SIM_NAME = "mf6sim"       # Simulation name
-NLAY = 3
-NROW = 50
-NCOL = 100
-DELR = 1000.0             # Row width (m) — scalar or array
-DELC = 1000.0             # Column width (m) — scalar or array
-TOP = 100.0               # Land surface elevation — scalar or 2D array
-BOTM = [90.0, 50.0, -100.0]  # Layer bottom elevations — per-layer scalar or 3D array
+NLAY = 2
+NROW = 9
+NCOL = 11
+DELR = 0.2834851             # Row width (m) — scalar or array
+DELC = 0.22522523             # Column width (m) — scalar or array
+TOP = 3194.0               # Land surface elevation — scalar or 2D array
+BOTM = [3144.0, 2994.0]  # Layer bottom elevations — per-layer scalar or 3D array
 IDOMAIN = None            # Active cell mask — None = all active
 LENGTH_UNITS = "meters"
 NEWTON = True             # Enable Newton-Raphson for unconfined problems
@@ -125,6 +125,12 @@ def process():
     # Validate layer ordering
     top_val = dis.top.array if hasattr(dis.top, 'array') else TOP
     botm_val = dis.botm.array if hasattr(dis.botm, 'array') else botm_array
+
+    # Placeholder TDIS (replaced by build_tdis_package)
+    flopy.mf6.ModflowTdis(sim, nper=1, perioddata=[(1.0, 1, 1.0)], time_units="DAYS")
+    # Placeholder IMS required by FloPy 3.10 to populate solution_group_dict (replaced by build_ims_package)
+    ims = flopy.mf6.ModflowIms(sim)
+    sim.register_ims_package(ims, [gwf.name])
 
     # Save simulation (temporary — other tools will add packages and re-save)
     sim.write_simulation()

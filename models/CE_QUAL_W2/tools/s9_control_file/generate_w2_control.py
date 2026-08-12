@@ -59,8 +59,8 @@ def validate_inputs(args):
 
     if args.start_jday < 1 or args.start_jday > 366:
         errors.append(f"start_jday must be 1-366, got {args.start_jday}")
-    if args.end_jday < 1 or args.end_jday > 366:
-        errors.append(f"end_jday must be 1-366, got {args.end_jday}")
+    if args.end_jday < 1 or args.end_jday > 36600:  # allow multi-year (up to 100 years)
+        errors.append(f"end_jday must be 1-36600, got {args.end_jday}")
 
     if errors:
         print(json.dumps({"status": "error", "errors": errors}))
@@ -303,7 +303,7 @@ def generate_w2_con(args):
     if args.enable_wq:
         # Basic WQ constituent list
         constituents = ["TDS", "ISS", "PO4", "NH4", "NO3", "DSI",
-                       "LDOM", "RDOM", "LPOM", "RPOM", "ALG1", "DO"]
+                       "LDOM", "RDOM", "LPOM", "RPOM", "ALG1", "ALG2", "DO"]
         add_card(
             "CONSTITU" + fmt_str("CCC"),
             "     " + "".join(fmt_str("ON") for _ in constituents)

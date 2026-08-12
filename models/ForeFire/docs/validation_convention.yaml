@@ -1,0 +1,201 @@
+schema_version: 1
+model_id: ForeFire
+domain: hazard
+generated_by: "self-improve session (Claude Opus 4.8) — validation-convention Step-B, general schema"
+generated_at: 2026-07-07
+
+# Grounded ONLY in locally-fetched full texts. Filippi et al. 2014 (NHESS, gold OA) is THE
+# ForeFire benchmark: 80 Corsica fires x 4 front-velocity models = 320 automated "first-guess"
+# simulations, scored with the field's spatial-overlap + timing metrics (Sorensen similarity,
+# Jaccard coefficient, Kappa, arrival-time agreement, shape agreement). CRITICAL: it reports full
+# score DISTRIBUTIONS but declares NO numeric pass threshold and explicitly states "a single value
+# cannot be representative of a model performance" -> every headline band here is NULL (no cited
+# threshold) with confidence <= 0.4. The threshold/interpretation is defined in Filippi, Mallet &
+# Nader 2013 (IJWF, WF12202) which is closed/paywalled and NOT fetched -> deferred_paywalled.
+# The JOSS ForeFire paper (Filippi 2025) supplies the model description only. The two GSA papers
+# (Rothermel HDMR; surrogate turbulence/fire-spotting) give sensitivity structure, not skill bands.
+# rate_of_spread and fire_line_intensity have has_obs_binding=false in the dag -> no gradeable
+# block (noted in fire_extent block). Bands are plain numbers read via `direction`.
+
+references:
+  filippi2014:
+    doi: 10.5194/nhess-14-3077-2014
+    title: "Evaluation of forest fire models on a large observation database"
+    venue: "Nat. Hazards Earth Syst. Sci."
+    year: 2014
+    oa: gold
+    resolves: https://nhess.copernicus.org/articles/14/3077/2014/nhess-14-3077-2014.pdf
+  joss2025:
+    doi: 10.21105/joss.08680
+    title: "ForeFire: A Modular, Scriptable C++ Simulation Engine and Library for Wildland-Fire Spread"
+    venue: "Journal of Open Source Software"
+    year: 2025
+    oa: gold
+    resolves: https://joss.theoj.org/papers/10.21105/joss.08680
+
+validation:
+
+  # ===================== BURNED AREA / burned footprint overlap (spatial) =====================
+  # dag determining_metric = csi. In fire evaluation csi == Jaccard/IoU = |A n B|/|A u B|; its
+  # sister Dice = Sorensen = 2|A n B|/(|A|+|B|). Filippi 2014 reports BOTH for ForeFire but sets
+  # no pass line -> null bands.
+  - canonical_quantity: fire_extent
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi                # == Jaccard similarity coefficient / IoU in fire evaluation
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No cited pass threshold. Filippi 2014 reports the Jaccard (=IoU/CSI) distribution for ForeFire on 80 fires (best-model Jaccard per-fire best-of-four ranges ~0.05-0.72, Table A1) but declares no gate; threshold is in the closed Filippi 2013 methods paper (deferred)."
+        cites: [filippi2014]
+      - metric: sorensen           # Dice coefficient; SC = 2|A n B|/(|A|+|B|)
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Sorensen SC = 2|A n B|/(|A|+|B|). Best model (non-stationary Balbi) tops the distribution near ~0.7-0.85 only in the best-decile, well-forced cases; median far lower. No numeric pass line stated."
+        cites: [filippi2014]
+    secondary_metrics:
+      - metric: kappa
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Kappa (chance-adjusted overlap) tracks Sorensen/Jaccard closely in Filippi 2014 ('Sorensen, Jaccard and kappa scores essentially identify the same best cases'); reported as a co-metric, no threshold."
+        cites: [filippi2014]
+    validated_when: "UNRESOLVED numerically — field grades burned-footprint overlap via Sorensen/Jaccard(=CSI/IoU)/Kappa (Filippi 2014), but no fetched paper gives a pass threshold; treat as convention-gap until Filippi 2013 (WF12202) or an ensemble-eval paper is fetched. Do NOT auto-validate; do NOT loosen."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      One solid ForeFire benchmark exists (Filippi 2014, 320 blind "first-guess" simulations) and it
+      fixes the metric SET for burned-area/perimeter overlap, but it intentionally reports score
+      distributions rather than a pass line: "a single value cannot be representative of a model
+      performance" and "we have decided not to drop these low scores to be representative of actual
+      model performance in an operational context." Note also rate_of_spread and fire_line_intensity
+      are ungradeable here (has_obs_binding=false in the dag); ROS is wind-dominated so wind-forcing
+      error propagates directly (Filippi 2014: erroneous wind direction "spoiled so many simulations").
+
+  # ===================== BURNED AREA / total (scalar magnitude) =====================
+  - canonical_quantity: fire_extent
+    obs_shape: point_snapshot
+    headline_metrics:
+      - metric: pbias              # dag determining_metric; over/under-estimation of total area
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No cited burned-area PBIAS threshold. Filippi 2014 caps each simulation at the observed final area (stopping criterion checked every 7 min) so total-area bias is bounded by design, not freely validated; it documents systematic over-prediction of small (<1 ha) fires."
+        cites: [filippi2014]
+    secondary_metrics: []
+    validated_when: "UNRESOLVED — no fetched paper quantifies a burned-area total PBIAS/over-under band; treat as data/convention gap."
+    evidence_strength: weak
+    confidence: 0.35
+    notes: >-
+      Filippi 2014: small fires "are systematically over-predicted by both Balbi models" because the
+      area stop-criterion is polled every 7 min. Magnitude convention (over/under ratio) is qualitative
+      only; no numeric threshold in the fetched set.
+
+  # ===================== FIRE-FRONT PERIMETER / final geometry overlap =====================
+  - canonical_quantity: fire_perimeter
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi                # == Jaccard/IoU of the final simulated vs observed perimeter fill
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Same overlap convention as fire_extent (Filippi 2014 scores the filled final perimeter); no pass threshold stated."
+        cites: [filippi2014]
+      - metric: sorensen
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Sorensen = 2|A n B|/(|A|+|B|) on the final perimeter fill; distribution reported, no gate."
+        cites: [filippi2014]
+    secondary_metrics:
+      - metric: hausdorff_distance
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Boundary Hausdorff distance is a dag-caveat diagnostic for perimeter mismatch; NOT reported numerically in the fetched benchmark (Filippi 2014 uses area-overlap scores), so no cited band."
+        cites: []
+    validated_when: "UNRESOLVED numerically — perimeter overlap graded by Sorensen/Jaccard (Filippi 2014) with no fetched pass line. Do NOT auto-validate."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      Final-perimeter geometry is validated with the same area-overlap scores as burned area
+      (Filippi 2014 fills the perimeter to a burned surface S(t) before scoring). Hausdorff / over-
+      under ratios appear in the dag caveats but are not numerically bounded by any fetched paper.
+
+  # ===================== FIRE-FRONT PERIMETER / time-evolving (shape agreement) =====================
+  - canonical_quantity: fire_perimeter
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: shape_agreement    # SA in Filippi 2014, eq. 25-26; 1 = perfect, penalises transient mismatch
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Filippi 2014 defines shape agreement (SA) integrating the symmetric-difference over the burn duration and reports its distribution (best-of-four per fire ~0.05-0.95, Table A1 BS column); no pass threshold given."
+        cites: [filippi2014]
+    secondary_metrics: []
+    validated_when: "UNRESOLVED — dynamic shape agreement defined and distributed by Filippi 2014 but no pass line; timing skill also depends on correct ignition time and time-varying wind (dag caveat)."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      SA takes fire dynamics into account and "can cast a different light on a model" (Filippi 2014);
+      requires time-stamped observed perimeters/isochrones, which are rarely available operationally
+      (the benchmark had only a final burned surface). No numeric gate.
+
+  # ===================== ARRIVAL TIME / burned-mask overlap (snapshot) =====================
+  - canonical_quantity: fire_arrival_time
+    obs_shape: spatial_snapshot
+    headline_metrics:
+      - metric: csi                # threshold arrival_time>0 -> burned mask, then overlap
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Arrival-time map thresholded at >0 gives a burned/unburned mask scored by the same Sorensen/Jaccard overlap; Filippi 2014 reports the distribution, no pass line."
+        cites: [filippi2014]
+    secondary_metrics: []
+    validated_when: "UNRESOLVED numerically — burned-mask overlap graded by Sorensen/Jaccard (Filippi 2014), no fetched threshold. CRS/UTM grid alignment must match obs or reprojection error masquerades as spatial bias (dag caveat)."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      Same overlap convention as fire_extent applied to the arrival-time-derived footprint. No numeric
+      gate in the fetched literature.
+
+  # ===================== ARRIVAL TIME / isochrone timing (time series) =====================
+  - canonical_quantity: fire_arrival_time
+    obs_shape: spatial_time_series
+    headline_metrics:
+      - metric: arrival_time_agreement   # ATA in Filippi 2014, eq. 24; 1 = perfect timing
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: null, good: null, satisfactory: null}
+        pass_band: satisfactory
+        band_note: "Filippi 2014 defines arrival-time agreement (ATA) comparing per-cell arrival times T(X) vs observed; reports distribution (best-of-four per fire ~0.53-0.95, Table A1 BA column) but no pass threshold, and cautions ATA 'strongly penalises over-prediction' and needs a precise fire duration (assumed 24 h here)."
+        cites: [filippi2014]
+    secondary_metrics: []
+    validated_when: "UNRESOLVED numerically — ATA defined and distributed by Filippi 2014 with no pass line; isochrone timing is highly sensitive to ignition time and wind timing (dag caveat)."
+    evidence_strength: moderate
+    confidence: 0.35
+    notes: >-
+      ATA is the timing-aware score but is "a less relevant scoring method than the other scores, as
+      it strongly penalises over-prediction" when fire duration is uncertain (Filippi 2014 assumed all
+      fires last 24 h). Meaningful ATA validation needs observed isochrones/multi-time perimeters,
+      rarely available. No numeric gate; confidence reduced accordingly.
+
+deferred_paywalled:
+  - ref: "Filippi, Mallet & Nader 2013 — Representation and evaluation of wildfire propagation simulations (Int. J. Wildland Fire) — the methods paper that PROPOSES/DEFINES the Sorensen/Jaccard/Kappa/ATA/SA scores and their interpretation; would supply any numeric pass thresholds"
+    doi: 10.1071/WF12202
+    needed_for: [fire_extent, fire_perimeter, fire_arrival_time]
+  - ref: "Salis / Duguy et al. — Improving wildfire spread simulations using MODIS active fires: the FIRE-MODSAT approach (Sorensen-based fire-spread evaluation); fetch_failed"
+    doi: 10.14195/978-989-26-0884-6_90
+    needed_for: [fire_extent, fire_perimeter]
+  - ref: "Cheney/Cruz et al. — Generation and evaluation of an ensemble of wildland fire simulations (closed); ensemble skill / overlap thresholds"
+    doi: 10.1071/wf19073
+    needed_for: [fire_extent, fire_perimeter, fire_arrival_time]
+  - ref: "Fujioka 2002 — A new method for the analysis of fire spread modeling errors (Int. J. Wildland Fire 11:193-203; no DOI); foundational fire-spread error scoring"
+    doi: null
+    needed_for: [fire_extent, fire_arrival_time]

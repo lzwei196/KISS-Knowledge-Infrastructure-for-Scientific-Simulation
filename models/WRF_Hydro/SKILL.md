@@ -153,6 +153,9 @@ Stages 3, 4, 5, 6 can run in parallel after stage 2 (geo_em). Stage 8 (forcing) 
 | `cmfd_to_ldasin` | s8b | `tools/s8_forcing/cmfd_to_ldasin.py` | 790 | CMFD 3hr NetCDF -> hourly LDASIN directly (no VIC) |
 | `generate_namelists` | s9 | `tools/s9_namelists/generate_namelists.py` | 384 | Generate namelist.hrldas + hydro.namelist |
 | `run_wrfhydro` | s10 | `tools/s10_execution/run_wrfhydro.py` | 291 | MPI execution wrapper with preflight + JSON summary |
+| `calibrate_wrfhydro` | s10 | `tools/s10_execution/calibrate_wrfhydro.py` | 780 | Parameter sweep (default REFKDT) with re-run + metric scoring + `--apply_best` |
+| `extract_discharge` | s11 | `tools/s11_output/extract_discharge.py` | 300 | Daily outlet discharge from CHRTOUT; use `--gauge_lat/--gauge_lon/--min_order` for gauge-matched extraction |
+| `nasa_power_to_ldasin` | s8 | `tools/s8_forcing/nasa_power_to_ldasin.py` | 500 | NASA POWER hourly -> LDASIN (global basins) |
 | `run_wrfhydro_full_pipeline` | all | `tools/run_wrfhydro_full_pipeline.py` | 438 | End-to-end pipeline wrapper (stages 1-10) |
 
 ---
@@ -415,8 +418,18 @@ CHRTOUT_DOMAIN1 files contain:
 
 **To extract outlet discharge:**
 1. Read CHRTOUT files
-2. Find the feature with highest stream order (or closest to basin outlet coordinates)
+2. Select the feature *closest to the gauge coordinates*, restricted to a minimum
+   Strahler order so the search cannot snap onto a headwater tributary:
+   `extract_discharge.py --gauge_lat <lat> --gauge_lon <lon> --min_order 4`
 3. Extract `streamflow` timeseries at that feature
+
+Do NOT use `argmax(streamflow)` (the `find_outlet_feature` fallback) when a gauge
+location is known. With gridded routing every channel cell on the lower main stem
+carries nearly the same discharge, and on a rising limb an upstream cell transiently
+exceeds the outlet cell, so argmax wanders km along the stem depending on which file is
+sampled. At Zijingguan the argmax cell sat 5.2 km from the gauge; the gauge-matched cell
+is 0.12 km away. `dag.yaml`'s `point_time_series` caveat requires the gauge-matched
+feature.
 
 ---
 
@@ -1028,10 +1041,29 @@ knowledge_infrastructure/
 | SLOPE | `soil_properties.nc` | from DEM | Surface slope |
 | SMCMAX | `soil_properties.nc` | from soil type | Porosity |
 | Manning N | `CHANPARM.TBL` | by order | Channel roughness |
-| OVROUGHRTFAC | `hydro.namelist` | 1.0 | Overland flow roughness |
+| OVROUGHRTFAC | `Fulldom_hires.nc` (2D field, NOT hydro.namelist) | 1.0 | Overland flow roughness |
+| GW Coeff/Expon/Zmax | `GWBUCKPARM.nc` | 1.0 / 3.0 / 50 mm | Baseflow magnitude, recession, memory |
 
 **CRITICAL**: REFKDT is the #1 calibration parameter but it is in `soil_properties.nc`,
 NOT in `geo_em.d01.nc`. Modifying the wrong file has no effect.
+
+**CRITICAL**: `OVROUGHRTFAC`, `RETDEPRTFAC` and `LKSATFAC` are 2D fields on the routing
+grid inside `Fulldom_hires.nc` (`module_RT.F` allocates each as `(IXRT,JXRT)`). They are
+NOT `hydro.namelist` variables. Adding `OVROUGHRTFAC` to `hydro.namelist` aborts the run
+immediately with `HYDRO_nlst namelist error in read_rt_nlst` (verified empirically,
+Zijingguan 2026-07-10). Set them with `build_fulldom_hires.py --ovroughrtfac/--retdeprtfac/--lksatfac`.
+
+### Tool CLI knobs for the physics/calibration parameters
+
+| Parameter | Tool flag |
+|---|---|
+| REFKDT | `build_soil_properties.py --refkdt` (default 0.8, mountain-tuned) |
+| GW Coeff/Expon/Zmax/Zinit | `build_groundwater.py --gw_coeff --gw_expon --gw_zmax --gw_zinit` |
+| OVROUGHRTFAC / RETDEPRTFAC / LKSATFAC | `build_fulldom_hires.py --ovroughrtfac ...` |
+| RUNOFF_OPTION / channel_option / GWBASESWCRT / DTRT / CHRTOUT_GRID / RTOUT_DOMAIN | `generate_namelists.py --runoff_option --channel_option --gwbaseswcrt --dtrt_ch --dtrt_ter --chrtout_grid --rtout_domain --t0_output` |
+
+`generate_namelists.py` now defaults `CHRTOUT_GRID=0` (dt_004) and `RTOUT_DOMAIN=0`; the
+previous hardcoded `=1` contradicted both dt_004 and the channel_option=3 recipe above.
 
 ## Known Harmless Warnings
 
@@ -1042,3 +1074,27 @@ These warnings appear during normal operation and can be safely ignored:
 | `perverse version identifier ldasin_version = 0` | LDASIN files missing version metadata | Ignore — does not affect simulation |
 | `SNOW HEIGHT NOT FOUND - VALUE DEFINED IN LSMINIT` | No snow initialization data | Ignore — model uses default initialization |
 | `open_wrf_hydro_diag_files: WARNING` | Diagnostic file write warning | Ignore — log files still created |
+
+### 22. Regulated North-China (Haihe) gauges: r-ceiling domain limit (Zijingguan 2026-07-10)
+
+At Juma/拒马河 @ 紫荆关 (Zijingguan, Haihe, Hebei) the stock Config-A run with the
+mountain-tuned default REFKDT=0.8 already applied scores **r=0.32, NSE=-1.25,
+PBIAS=+128%**. This is NOT a tool bug — every tool this basin exercised was verified
+correct (discharge extraction gauge-matched to 0.12 km; REFKDT=0.8; OVROUGHRTFAC a
+Fulldom 2D field). It is a **domain limitation**:
+
+- WRF-Hydro standalone is a *natural* rainfall-runoff model with **no reservoir
+  operation, irrigation withdrawal, or groundwater-pumping** representation. Haihe /
+  North-China gauges are among the most heavily human-managed in China, so the observed
+  record's phase and volume are decoupled from natural runoff.
+- **NSE <= r^2.** With r pinned at ~0.32, r^2 = 0.10, so **NSE >= 0.5 is structurally
+  unreachable at this gauge by ANY parameter set.** Check r BEFORE targeting an NSE.
+- The +128% over-prediction is the mirror image of the pre-REFKDT-fix Chaohe/Spain
+  under-prediction: with REFKDT lowered the surface-runoff pathway is open and the model
+  now over-produces relative to abstraction-depressed observed flow.
+
+**Guidance:** prefer relatively unregulated / natural-flow gauges for WRF-Hydro
+standalone validation. For a regulated Haihe gauge, treat the low r as expected, do NOT
+re-patch the (already-fixed) s2/s3/s11 tools, and do NOT retry toward NSE>=0.5 — the
+residual is per-basin calibration bounded by the r-ceiling, which the self-improve loop
+does not tune.

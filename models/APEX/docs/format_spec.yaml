@@ -1,0 +1,35 @@
+model:
+  name: APEX 1501 (Agricultural Policy / Environmental eXtender)
+  domain: crop
+  binary_path: ''
+  language: unknown
+inputs:
+  forcing:
+  - name: temp
+    unit: unknown
+    format: ''
+    source: skill_md
+outputs:
+  primary:
+  - name: CO2
+    unit: '**ppm** (volume)'
+    format: ''
+    source: skill_md
+  - name: Nutrient
+    unit: unknown
+    format: ''
+    source: skill_md
+  - name: yield
+    canonical_id: yield
+    unit: kg/ha
+  - name: biomass
+    canonical_id: biomass
+    unit: kg/ha
+  - name: leaf_area_index
+    canonical_id: leaf_area_index
+    unit: m2/m2
+  - name: evapotranspiration
+    canonical_id: evapotranspiration
+    unit: mm/day
+known_issues: []
+unit_conversions: []

@@ -37,9 +37,19 @@
 ### Forcing data
 
 **Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
+For a FLUXNET tower site, drive the model with the tower's own meteorology via
+`convert_forcing_to_clm.py --source fluxnet` (see §15).
 
-**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
-See `data_ki/FLUXNET/SKILL.md` for eddy covariance flux observations.
+**Data Validation Reference**: `data_ki/CMFD/SKILL.md` and `data_ki/FLUXNET/SKILL.md`
+**DO NOT EXIST** — KDT 5.0 removed tools and docs from `data_ki/`. The live
+sources are `ki_tools_common` (`/mnt/disk1/Hydrocraft_server/models/ki_tools_common/`)
+and this KI's own `tools/`. FLUXNET2015 layout: one directory per site under
+`/mnt/disk1/Hydrocraft_server/data/obs/fluxnet/sites/<SITE_ID>/`, holding
+`FULLSET_{HH|HR}.csv` (sub-daily), `FULLSET_DD.csv` (daily), `FULLSET_YY.csv`,
+`AUXMETEO.csv`, `AUXNEE.csv`. Site coordinates / IGBP class / canopy height are
+NOT in `site_catalog.csv` — they are in the BIF workbook
+`raw_zips/FLX_AA-Flx_BIF_ALL_20200501.zip` (`LOCATION_LAT`, `LOCATION_LONG`,
+`LOCATION_ELEV`, `IGBP`, `HEIGHTC` rows, per `SITE_ID`).
 
 
 ## 1. Overview
@@ -159,13 +169,22 @@ Stage 6 depends on 5. Stages 7-10 depend on 6.
 
 ## 4. Tools Reference
 
-| Tool | Stage | Script Path | Lines | Purpose |
-|---|---|---|---|---|
-| convert_forcing_to_clm.py | s2 | ki/tools/convert_forcing_to_clm.py | ~300 | Convert GSWP3/CRUJRA/ERA5 to DATM format |
-| convert_soil_params.py | s3 | ki/tools/convert_soil_params.py | ~250 | Map HWSD soil to CLM texture classes |
-| run_clm.py | s6 | ki/tools/run_clm.py | ~220 | Execute CLM binary with preflight checks |
-| parse_clm_output.py | s7 | ki/tools/parse_clm_output.py | ~280 | Extract CLM history to CSV |
-| **Total** | | | **~1050** | |
+| Tool | Stage | Script Path | Purpose |
+|---|---|---|---|
+| make_site_dataset.py | s1+s4 | ki/tools/make_site_dataset.py | Single-point surfdata + domain + site aerosol stream file (replaces mksurfdata_esmf / ESMF_RegridWeightGen, which need an ESMF-with-PIO build — see dt_022) |
+| convert_forcing_to_clm.py | s2 | ki/tools/convert_forcing_to_clm.py | Convert GSWP3/CRUJRA/ERA5/CSV/**FLUXNET** to DATM format; `--datm-layout clm1pt` writes the monthly `YYYY-MM.nc` layout DATM actually reads |
+| convert_soil_params.py | s3 | ki/tools/convert_soil_params.py | Map HWSD soil to CLM texture classes |
+| run_clm.py | s6 | ki/tools/run_clm.py | CIME driver: `create` / `configure` (xmlchange + user_nl append) / `setup` / `build` / `submit` / `status` |
+| parse_clm_output.py | s7 | ki/tools/parse_clm_output.py | Extract CLM history to CSV; dates records by the `time_bounds` midpoint (dt_021) |
+
+**`run_clm.py --action configure`** is the only KI route to `./xmlchange` and
+`user_nl_*`. Editing `env_*.xml` by hand bypasses CIME's LockedFiles check:
+
+```bash
+python tools/run_clm.py --action configure --case-dir $CASE \
+    --xmlchange STOP_N=1 --xmlchange CONTINUE_RUN=TRUE \
+    --append-user-nl "clm:/path/to/user_nl_clm_fragment.txt"
+```
 
 ---
 
@@ -424,6 +443,13 @@ See `diagnostics/triplets.yaml` for full details.
 | dt_013 | degraded | dependency_mismatch | Forcing temporal resolution mismatch |
 | dt_014 | silent | silent_error | Incorrect soil organic matter initialisation |
 | dt_015 | fatal | parameter_format | Namelist syntax error (Fortran formatting) |
+| dt_016 | degraded | runtime | History output volume / frequency |
+| dt_017 | silent | silent_error | CLM fill value 1e36 not masked before statistics |
+| dt_018 | fatal | parameter_format | CLM1PT stream needs RH (%) + ZBOT in monthly YYYY-MM.nc — NOT QBOT |
+| dt_019 | degraded | silent_error | 'GPP' does not exist in SP mode; use 'FPSN' (umol m-2 s-1) |
+| dt_020 | fatal | path_resolution | DATM_PRESAERO=none rejected for CLM; default aerosol file is 6.2 GB |
+| dt_021 | silent | silent_error | Averaged history stamped at END of interval — date by time_bounds midpoint |
+| dt_022 | fatal | dependency_mismatch | CTSM-5.4/NUOPC cesm.exe dead (ESMF built without PIO) — use CESM 2.2.2 MCT |
 
 **Silent errors:** 6 of 15 triplets (40%) are silent — the model runs but
 produces incorrect results. The most critical is dt_001 (precipitation
@@ -450,6 +476,113 @@ ki/
   diagnostics/
     triplets.yaml                       -- 15 diagnostic triplets
 ```
+
+---
+
+## 14b. WHICH CLM INSTALLATION TO USE  *(read before anything else)*
+
+`preflight_check.py` pins `/home/server/cesm/scratch/test_clm5/bld/cesm.exe`.
+That binary **cannot initialise**: it is a CTSM-5.4 / NUOPC build whose ESMF was
+compiled without PIO, so `ESMCI_mesh_create_from_file()` aborts in
+`atm_comp_nuopc.F90` a second after launch (dt_022). `mksurfdata_esmf` is dead
+for the same reason.
+
+**Use CESM 2.2.2 with the MCT driver instead** — it is fully installed and has a
+recorded `model execution success` (case `B1850_test`, 2026-05-02):
+
+| Item | Path |
+|---|---|
+| CESM root (`--ctsm-root`) | `/home/server/cesm/src/cesm-2.2.2` |
+| Machine | `hydrocraft_server` (config in `/home/server/.cime/`) |
+| `DIN_LOC_ROOT` | `/home/server/cesm/inputdata` |
+| `DIN_LOC_ROOT_CLMFORC` | `/home/server/cesm/inputdata/atm/datm7` |
+| Cases / scratch | `/home/server/cesm/cases`, `/home/server/cesm/scratch` |
+| Batch system | none — `./case.submit` runs the model synchronously |
+
+Missing inputdata files can be fetched from
+`https://svn-ccsm-inputdata.cgd.ucar.edu/trunk/inputdata/...` (verified
+working). Check `Content-Length` first: the default CESM aerosol-deposition
+file is **6.2 GB** (dt_020).
+
+---
+
+## 15. VALIDATED RECIPE — single-point FLUXNET tower run (CLM5-SP)
+
+Executed end to end 2026-08-09 at FLUXNET2015 **US-MMS** (Morgan Monroe State
+Forest, 39.3232 N, 86.4131 W, DBF, 1999-2014 hourly). Every step uses a KI tool.
+
+**s1 — site datasets** (surfdata + domain + aerosol, one command):
+
+```bash
+python tools/make_site_dataset.py --site-name US-MMS \
+  --lat 39.3232 --lon -86.4131 --igbp DBF \
+  --global-surfdata $DIN/lnd/clm2/surfdata_map/release-clm5.0.18/\
+surfdata_0.9x1.25_hist_78pfts_CMIP6_simyr1850_c190214.nc \
+  --outdir $DIN/lnd/clm2/surfdata_map --domain-outdir $DIN/share/domains \
+  --aerosol-source $DIN/atm/cam/chem/trop_mozart_aero/aero/\
+aerosoldep_monthly_2000_mean_1.9x2.5_c090421.nc \
+  --aerosol-outdir $DIN/atm/cam/chem/trop_mozart_aero/aero --aerosol-year 2000
+```
+
+`--igbp` maps the tower's documented vegetation class to a CLM PFT and makes the
+cell 100 % that PFT (CTSM `subset_data.py --dompft` behaviour) — this is how a
+~100 km parent cell is made to represent a ~1 km tower footprint. LAI/SAI/HTOP
+still come from the parent cell's MODIS climatology on the surface dataset. Forcing the cell to one PFT zeroes every non-vegetated landunit, but
+`PCT_GLC_MEC` must **still sum to 100 %** across its 10 elevation classes:
+`surfrd_special` (surfrdMod.F90:602-607) reads it unconditionally and
+`check_sums_equal_1` endruns at surfrdUtilsMod.F90:80 even when
+`PCT_GLACIER = 0` (dt_023). `make_site_dataset.py` now writes class 0 = 100
+and hard-fails if the sum is not 100.
+
+**s2 — tower meteorology → DATM CLM1PT monthly files**:
+
+```bash
+python tools/convert_forcing_to_clm.py --source fluxnet \
+  --input .../fluxnet/sites/US-MMS/FULLSET_HR.csv \
+  --output $DIN/atm/datm7/US-MMS/CLM1PT_data --datm-layout clm1pt \
+  --lat 39.3232 --lon -86.4131 --zbot 46.0 --elevation 275 \
+  --start-year 1999 --end-year 2014
+```
+
+Reads the gap-filled `*_F` columns, converts °C→K, kPa→Pa, mm/step→kg/m²/s,
+VPD→**RH in percent** (dt_018), drops Feb 29 for the noleap calendar (dt_007),
+stamps each record at the interval MIDPOINT, and resumes by skipping months
+already written. `--zbot` must exceed the canopy top on the surface dataset.
+
+**s3-s4 — case**: compset `I1PtClm50SpRsGs`, resolution `CLM_USRDAT`, then
+
+```
+CLM_USRDAT_NAME=<site>          ATM/LND_DOMAIN_PATH=$DIN/share/domains
+ATM/LND_DOMAIN_FILE=domain.lnd.<site>_navy.nc
+DATM_CLMNCEP_YR_START/END/ALIGN=1999/2014/1999
+DATM_PRESAERO=clim_2000         RUN_STARTDATE=1999-01-01
+STOP_OPTION=nyears  STOP_N=1    REST_OPTION=nyears  REST_N=1
+DOUT_S=FALSE        CCSM_CO2_PPMV=383.0   CLM_FORCE_COLDSTART=on
+```
+
+`user_nl_clm`: `fsurdat` = the site surface dataset, `hist_nhtfrq = -24`,
+`hist_mfilt = 365`, and `hist_fincl1` **must request `FPSN`, not `GPP`**
+(dt_019). Do **not** also set `finidat` — `finidat` plus
+`CLM_FORCE_COLDSTART=on` makes build-namelist exit rc=255.
+
+Then copy `Buildconf/datmconf/datm.streams.txt.presaero.clim_2000` to
+`user_datm.streams.txt.presaero.clim_2000` and point it at `aerosoldep_<site>.nc`
+(dt_020), re-run `./preview_namelists`, and confirm with `./check_input_data`.
+
+Three small files must be present in inputdata and are NOT shipped:
+`atm/datm7/topo_forcing/topodata_0.9x1.25_USGS_070110_stream_c151201.nc` (2 MB),
+`atm/cam/chem/trop_mozart/emis/megan21_emis_factors_78pft_c20161108.nc` (67 kB),
+and an aerosol-deposition file (use the 9 MB 1.9x2.5 climatology).
+
+**s5 — run**: submit ONE simulated year at a time (`STOP_N=1`, then
+`CONTINUE_RUN=TRUE`); the model date is recoverable from `rpointer.lnd`, which
+makes a long run resumable after any interruption.
+
+**s6 — score**: `parse_clm_output.py` → `FPSN`, then
+`GPP [gC m-2 d-1] = FPSN [umol m-2 s-1] × 12.011e-6 × 86400 = FPSN × 1.03775`,
+paired against `GPP_NT_VUT_REF` from `FULLSET_DD.csv` (already gC m-2 d-1).
+Discard the first 2 years as soil-moisture/temperature spin-up (SP mode needs no
+carbon spin-up, so dt_009 does not apply).
 
 ---
 

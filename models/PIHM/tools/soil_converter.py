@@ -177,7 +177,13 @@ def process(args):
         for row in reader:
             row = {k.strip().lower(): v.strip() for k, v in row.items()}
 
-            soil = {"index": int(row.get("index", len(soils) + 1))}
+            # src/read_soil.c reads row i and aborts on "i != index - 1", so the
+            # INDEX column has to be 1..NUMSOIL in file order. Soil databases
+            # hand out their own ids (HWSD MU_GLOBAL, SSURGO mukey), which would
+            # produce a deck that dies on the first data row, so keep the source
+            # id only for the caller-facing map and emit the positional index.
+            soil = {"index": len(soils) + 1,
+                    "source_index": row.get("index", "") or str(len(soils) + 1)}
 
             # Required texture fields
             soil["silt"] = float(row.get("silt", row.get("silt_pct", 0)))
@@ -243,6 +249,18 @@ def process(args):
     os.makedirs(os.path.dirname(os.path.abspath(args.soil_output)), exist_ok=True)
     with open(args.soil_output, "w") as f:
         f.write(f"NUMSOIL\t{len(soils)}\n")
+        # MM-PIHM's ReadSoil (src/read_soil.c) calls
+        #   CheckHeader(16, INDEX SILT CLAY OM BD KINF KSATV KSATH MAXSMC
+        #                   MINSMC ALPHA BETA MACHF MACVF DMAC QTZ)
+        # on the line right after NUMSOIL. Omitting it aborts PIHM with
+        # ERR_WRONG_FORMAT (the tool previously wrote data rows directly).
+        # The same loop also enforces "match != 16 || i != index - 1", i.e.
+        # every row must carry all 16 fields and INDEX must run 1..NUMSOIL in
+        # order — hence the renumbering above and the index_map in the result.
+        f.write("INDEX\tSILT\tCLAY\tOM\tBD\tKINF\tKSATV\tKSATH\tMAXSMC\t"
+                "MINSMC\tALPHA\tBETA\tMACHF\tMACVF\tDMAC\tQTZ\n")
+        f.write("#-\t%\t%\t%\tg/cm3\tm/s\tm/s\tm/s\tm3/m3\tm3/m3\t1/m\t-\t"
+                "m2/m2\tm2/m2\tm\t100%\n")
         for s in soils:
             f.write(
                 f"{s['index']}\t"
@@ -298,11 +316,22 @@ def main():
     validate_inputs(args)
     soils, warnings = process(args)
 
+    # Source-database id -> PIHM row index. The .att SOIL column must use the
+    # PIHM side of this map (src/read_soil.c indexes rows positionally).
+    index_map = {s["source_index"]: s["index"] for s in soils}
+    remapped = [k for k, v in index_map.items() if k != str(v)]
+    if remapped:
+        warnings.append(
+            f"{len(remapped)} soil id(s) renumbered to satisfy read_soil.c's "
+            f"1..NUMSOIL ordering; remap the .att SOIL column with index_map"
+        )
+
     result = {
         "status": "success",
         "soil_output": args.soil_output,
         "geol_output": args.geol_output,
         "n_soil_types": len(soils),
+        "index_map": index_map,
         "warnings": warnings,
     }
     print(json.dumps(result, indent=2))

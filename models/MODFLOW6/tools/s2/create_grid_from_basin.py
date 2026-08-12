@@ -35,12 +35,12 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-SHAPEFILE_PATH = ""       # Basin boundary shapefile
-CELL_SIZE = 1000          # Grid cell size in meters
-NLAY = 3                  # Number of layers
-LAYER_BOTTOMS = [-10, -50, -200]  # Bottom elevations relative to surface (m)
+SHAPEFILE_PATH = "/mnt/disk1/Hydrocraft_server/data/shp/qinghai_lake_shp2/qinghai_lake_boundary_shp/qinghai_lake_boundary.shp"       # Basin boundary shapefile
+CELL_SIZE = 25000          # Grid cell size in meters
+NLAY = 2                  # Number of layers
+LAYER_BOTTOMS = [-50, -200]  # Bottom elevations relative to surface (m)
 DEM_PATH = ""             # Optional DEM for surface elevation
-DEFAULT_TOP = 100.0       # Default land surface elevation if no DEM
+DEFAULT_TOP = 3194.0       # Default land surface elevation if no DEM
 
 # ---------------------------------------------------------------------------
 # Logging

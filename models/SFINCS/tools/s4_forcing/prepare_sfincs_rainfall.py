@@ -145,13 +145,55 @@ def process(args):
             (n_times, nmax, mmax)
         ).copy().astype(np.float32)
 
-    elif args.source in ("cmfd", "mswx"):
+    elif args.source == "mswx":
+        # MSWX ships ANNUAL files named P/P_YYYY.nc — the filename contains neither
+        # "prec" nor a YYYYMM stamp, so the CMFD monthly-glob path below matched ZERO
+        # files and this branch used to exit(2) "No precipitation files found".
+        # (Bug found 2026-08-02, Kangerlussuaq run.) SKILL.md's own Data Preparation
+        # section says to load MSWX through ki_tools_common, so do exactly that: it
+        # already knows the annual-file layout, the variable names and the raw units.
+        from ki_tools_common.load_forcing import load_hourly_forcing
+
+        c_lon = float(np.mean(lon_grid))
+        c_lat = float(np.mean(lat_grid))
+        logger.info(f"Reading MSWX 3-hourly precipitation at domain centre "
+                    f"({c_lat:.3f}N, {c_lon:.3f}E) via ki_tools_common.load_forcing")
+        logger.info("NOTE: MSWX annual files are one gzip slab per global timestep — "
+                    "a single-point read still decompresses the whole year (~5 min/variable).")
+
+        fc = load_hourly_forcing("mswx", c_lat, c_lon, start.year, end.year,
+                                 forcing_dir=str(forcing_dir))
+        fdates = np.asarray(fc["dates"]).astype("datetime64[s]").astype(object)
+        praw = np.asarray(fc["precip_mm"], dtype=np.float64)   # RAW MSWX units: mm/3hr
+
+        # Clip to the requested window (end date inclusive of its last 3-hr step)
+        end_incl = end + timedelta(days=1)
+        sel = np.array([(d >= start) and (d < end_incl) for d in fdates])
+        if not sel.any():
+            logger.error(f"MSWX has no timesteps between {start} and {end_incl}")
+            sys.exit(2)
+        times = [d for d, k in zip(fdates, sel) if k]
+        praw = praw[sel]
+
+        # CRITICAL UNIT CONVERSION (dt_001): MSWX precipitation is mm accumulated per
+        # 3-hour step. SFINCS wants a RATE in mm/hr -> divide by 3.
+        precip_avg_mmhr = praw / 3.0
+        logger.info("MSWX unit conversion: mm/3hr / 3 -> mm/hr "
+                    f"(max {precip_avg_mmhr.max():.3f} mm/hr, "
+                    f"total {praw.sum():.1f} mm over {len(praw)} steps)")
+
+        n_times = len(precip_avg_mmhr)
+        precip_3d = np.broadcast_to(
+            precip_avg_mmhr[:, np.newaxis, np.newaxis],
+            (n_times, nmax, mmax)
+        ).copy().astype(np.float32)
+
+    elif args.source == "cmfd":
         # Read from NetCDF forcing
         logger.info(f"Reading {args.source.upper()} NetCDF forcing...")
 
         # Find precipitation files — filter to requested date range
         # CMFD naming: prec_CMFD_V0200_B-01_03hr_010deg_YYYYMM.nc
-        # MSWX naming: similar with YYYYMM
         nc_files = sorted(forcing_dir.glob("*.nc")) + sorted(forcing_dir.glob("*.nc4"))
         prec_files_all = [f for f in nc_files if "prec" in f.name.lower() or "precip" in f.name.lower()]
 
@@ -189,7 +231,7 @@ def process(args):
         for pf in prec_files:
             # CRITICAL: open with chunks to avoid loading full file into memory.
             # CMFD 0.1° monthly files are 3-9 GB. Read only the bbox subset.
-            ds = xr.open_dataset(pf, chunks={'time': 8})
+            ds = xr.open_dataset(pf, engine="netcdf4")
 
             # Find precip variable
             prec_var = None

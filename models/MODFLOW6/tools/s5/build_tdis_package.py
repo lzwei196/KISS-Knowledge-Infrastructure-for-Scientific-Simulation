@@ -21,9 +21,9 @@ import os
 import json
 import logging
 
-SIM_PATH = ""
-NPER = 1
-PERIOD_DATA = [(365.25, 365, 1.0)]  # 1 year, daily timesteps
+SIM_PATH = "/mnt/disk1/Hydrocraft_server/outputs/qinghai_lake_1951_2024/modflow6/workspace"
+NPER = 74
+PERIOD_DATA = [(365.0, 1, 1.0)] * 74  # 1951-2024 annual  # 1 year, daily timesteps
 TIME_UNITS = "days"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

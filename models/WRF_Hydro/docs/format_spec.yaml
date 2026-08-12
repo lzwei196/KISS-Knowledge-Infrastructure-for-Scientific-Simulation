@@ -1,350 +1,352 @@
-# format_spec.yaml — Machine-readable model format specification
-# Used by debug_framework.py Level 1 (input validation) and Level 3 (output validation)
-# Part of KDT Knowledge Infrastructure Tier B documentation
-#
-# Aligns with UNIVERSAL_BOUNDS and DOMAIN_CHECKS in debug_framework.py:
-#   - Input ranges map to Level 1 check_value_range() calls
-#   - Output ranges map to Level 3 DOMAIN_CHECKS["hydrology"]
-#   - known_issues map to diagnostic triplets (triplets.yaml)
-
 model:
-  name: "WRF-Hydro v5.2.0 Standalone (NoahMP)"
-  domain: "hydrology"
-  binary: "wrf_hydro.exe"
-  binary_path: "/mnt/disk1/Hydrocraft_server/model/wrf_hydro/source/trunk/NDHMS/Run/wrf_hydro.exe"
-  language: "Fortran 90"
-  working_directory: "run directory containing DOMAIN/, FORCING/, namelists"
-  dependencies: "MPICH 4.2.3, NetCDF-Fortran"
-  invocation: "mpirun -np N wrf_hydro.exe"
-
-# =========================================================================
-# INPUTS
-# =========================================================================
+  name: WRF-Hydro v5.2.0 Standalone (NoahMP)
+  domain: hydrology
+  binary: wrf_hydro.exe
+  binary_path: /mnt/disk1/Hydrocraft_server/model/wrf_hydro/source/trunk/NDHMS/Run/wrf_hydro.exe
+  language: Fortran 90
+  working_directory: run directory containing DOMAIN/, FORCING/, namelists
+  dependencies: MPICH 4.2.3, NetCDF-Fortran
+  invocation: mpirun -np N wrf_hydro.exe
 inputs:
-
   forcing:
-    - name: "precipitation"
-      file: "FORCING/YYYYMMDDHH.LDASIN_DOMAIN1"
-      variable: "RAINRATE"
-      unit: "mm/s"
-      valid_range: [0.0, 0.1]
-      format: "NetCDF; hourly files on Lambert Conformal Conic grid"
-      conversion_from_cmfd: "kg/m2/s -> mm/s: same unit (CMFD native)"
-
-    - name: "temperature"
-      file: "FORCING/YYYYMMDDHH.LDASIN_DOMAIN1"
-      variable: "T2D"
-      unit: "K"
-      valid_range: [180.0, 340.0]
-      conversion_from_cmfd: "K -> K: no conversion needed"
-
-    - name: "specific_humidity"
-      file: "FORCING/YYYYMMDDHH.LDASIN_DOMAIN1"
-      variable: "Q2D"
-      unit: "kg/kg"
-      valid_range: [0.0, 0.04]
-      conversion_from_cmfd: "Compute from Psurf, Tair, RH via Tetens"
-
-    - name: "surface_pressure"
-      file: "FORCING/YYYYMMDDHH.LDASIN_DOMAIN1"
-      variable: "PSFC"
-      unit: "Pa"
-      valid_range: [50000, 110000]
-
-    - name: "shortwave_radiation"
-      file: "FORCING/YYYYMMDDHH.LDASIN_DOMAIN1"
-      variable: "SWDOWN"
-      unit: "W/m2"
-      valid_range: [0.0, 1400.0]
-      conversion_from_cmfd: "W/m2 -> W/m2: no conversion"
-      bug_history: "dt_v005: CMFD SWDOWN can contain negative values at night; must clamp to >= 0"
-
-    - name: "longwave_radiation"
-      file: "FORCING/YYYYMMDDHH.LDASIN_DOMAIN1"
-      variable: "LWDOWN"
-      unit: "W/m2"
-      valid_range: [0.0, 600.0]
-
-    - name: "wind_u"
-      file: "FORCING/YYYYMMDDHH.LDASIN_DOMAIN1"
-      variable: "U2D"
-      unit: "m/s"
-      valid_range: [-80.0, 80.0]
-
-    - name: "wind_v"
-      file: "FORCING/YYYYMMDDHH.LDASIN_DOMAIN1"
-      variable: "V2D"
-      unit: "m/s"
-      valid_range: [-80.0, 80.0]
-
+  - name: precipitation
+    file: FORCING/YYYYMMDDHH.LDASIN_DOMAIN1
+    variable: RAINRATE
+    unit: mm/s
+    valid_range:
+    - 0.0
+    - 0.1
+    format: NetCDF; hourly files on Lambert Conformal Conic grid
+    conversion_from_cmfd: 'kg/m2/s -> mm/s: same unit (CMFD native)'
+  - name: temperature
+    file: FORCING/YYYYMMDDHH.LDASIN_DOMAIN1
+    variable: T2D
+    unit: K
+    valid_range:
+    - 180.0
+    - 340.0
+    conversion_from_cmfd: 'K -> K: no conversion needed'
+  - name: specific_humidity
+    file: FORCING/YYYYMMDDHH.LDASIN_DOMAIN1
+    variable: Q2D
+    unit: kg/kg
+    valid_range:
+    - 0.0
+    - 0.04
+    conversion_from_cmfd: Compute from Psurf, Tair, RH via Tetens
+  - name: surface_pressure
+    file: FORCING/YYYYMMDDHH.LDASIN_DOMAIN1
+    variable: PSFC
+    unit: Pa
+    valid_range:
+    - 50000
+    - 110000
+  - name: shortwave_radiation
+    file: FORCING/YYYYMMDDHH.LDASIN_DOMAIN1
+    variable: SWDOWN
+    unit: W/m2
+    valid_range:
+    - 0.0
+    - 1400.0
+    conversion_from_cmfd: 'W/m2 -> W/m2: no conversion'
+    bug_history: 'dt_v005: CMFD SWDOWN can contain negative values at night; must
+      clamp to >= 0'
+  - name: longwave_radiation
+    file: FORCING/YYYYMMDDHH.LDASIN_DOMAIN1
+    variable: LWDOWN
+    unit: W/m2
+    valid_range:
+    - 0.0
+    - 600.0
+  - name: wind_u
+    file: FORCING/YYYYMMDDHH.LDASIN_DOMAIN1
+    variable: U2D
+    unit: m/s
+    valid_range:
+    - -80.0
+    - 80.0
+  - name: wind_v
+    file: FORCING/YYYYMMDDHH.LDASIN_DOMAIN1
+    variable: V2D
+    unit: m/s
+    valid_range:
+    - -80.0
+    - 80.0
   parameters:
     critical:
-      - name: "REFKDT"
-        file: "DOMAIN/soil_properties.nc"
-        description: "Schaake96 infiltration parameter — primary calibration lever"
-        valid_range: [0.1, 10.0]
-        default: 3.0
-        sensitivity: "very high"
-        bug_history: >
-          Default REFKDT=3.0 produces 24x less surface runoff than VIC in mountain
-          basins (dt_v018). For mountain/semi-arid basins, reduce to 0.3-0.5.
-          This is the ROOT CAUSE of WRF-Hydro failure in Chaohe basin.
+    - name: REFKDT
+      file: DOMAIN/soil_properties.nc
+      description: "Schaake96 infiltration parameter \u2014 primary calibration lever"
+      valid_range:
+      - 0.1
+      - 10.0
+      default: 3.0
+      sensitivity: very high
+      bug_history: 'Default REFKDT=3.0 produces 24x less surface runoff than VIC in
+        mountain basins (dt_v018). For mountain/semi-arid basins, reduce to 0.3-0.5.
+        This is the ROOT CAUSE of WRF-Hydro failure in Chaohe basin.
 
-      - name: "RUNOFF_OPTION"
-        file: "namelist.hrldas"
-        description: "Runoff generation scheme (1=TOPMODEL, 3=Schaake96 default, 5=MMF crashes)"
-        valid_range: [1, 4]
-        default: 3
-        bug_history: "Option 5 (MMF) crashes — needs MMF_RUNOFF_FILE not in pipeline (dt_v019)"
+        '
+    - name: RUNOFF_OPTION
+      file: namelist.hrldas
+      description: Runoff generation scheme (1=TOPMODEL, 3=Schaake96 default, 5=MMF
+        crashes)
+      valid_range:
+      - 1
+      - 4
+      default: 3
+      bug_history: "Option 5 (MMF) crashes \u2014 needs MMF_RUNOFF_FILE not in pipeline\
+        \ (dt_v019)"
+    - name: channel_option
+      file: hydro.namelist
+      description: Channel routing method (1=Muskingum, 2=Musk-Cunge, 3=Diffusive
+        Wave)
+      valid_range:
+      - 1
+      - 3
+      default: 3
+      notes: Option 3 (gridded) is simplest. Options 1-2 require Route_Link.nc + spatialweights.nc
+    - name: rst_typ
+      file: hydro.namelist
+      description: Overwrite LSM soil from routing states
+      valid_range:
+      - 0
+      - 1
+      default: 1
+      bug_history: 'MUST be 0 for arid basins. When rst_typ=1 and soil is very dry,
+        routing soil moisture overwrite causes SMCRT < 0, producing NaN (dt_v036).
+        Part of the arid basin trap cascade.
 
-      - name: "channel_option"
-        file: "hydro.namelist"
-        description: "Channel routing method (1=Muskingum, 2=Musk-Cunge, 3=Diffusive Wave)"
-        valid_range: [1, 3]
-        default: 3
-        notes: "Option 3 (gridded) is simplest. Options 1-2 require Route_Link.nc + spatialweights.nc"
-
-      - name: "rst_typ"
-        file: "hydro.namelist"
-        description: "Overwrite LSM soil from routing states"
-        valid_range: [0, 1]
-        default: 1
-        bug_history: >
-          MUST be 0 for arid basins. When rst_typ=1 and soil is very dry,
-          routing soil moisture overwrite causes SMCRT < 0, producing NaN
-          (dt_v036). Part of the arid basin trap cascade.
-
-      - name: "GWBASESWCRT"
-        file: "hydro.namelist"
-        description: "Groundwater bucket model switch"
-        valid_range: [0, 1, 2, 4]
-        default: 1
-        bug_history: >
-          GWBASESWCRT=0 creates a water sink — bottom drainage leaves the
-          system with no mass conservation (dt_v040). Always use >= 1.
-
-      - name: "GW_Coeff"
-        file: "DOMAIN/GWBUCKPARM.nc"
-        description: "GW bucket exponential recession coefficient"
-        valid_range: [0.001, 0.5]
-        default: 0.01
-        sensitivity: "moderate"
-        notes: "Controls baseflow recession rate"
-
-      - name: "GW_Zmax"
-        file: "DOMAIN/GWBUCKPARM.nc"
-        description: "Maximum GW bucket depth"
-        valid_range: [50, 500]
-        default: 100
-        unit: "mm"
-        notes: "Deeper bucket = more storage, slower response"
-
+        '
+    - name: GWBASESWCRT
+      file: hydro.namelist
+      description: Groundwater bucket model switch
+      valid_range:
+      - 0
+      - 1
+      - 2
+      - 4
+      default: 1
+      bug_history: "GWBASESWCRT=0 creates a water sink \u2014 bottom drainage leaves\
+        \ the system with no mass conservation (dt_v040). Always use >= 1.\n"
+    - name: GW_Coeff
+      file: DOMAIN/GWBUCKPARM.nc
+      description: GW bucket exponential recession coefficient
+      valid_range:
+      - 0.001
+      - 0.5
+      default: 0.01
+      sensitivity: moderate
+      notes: Controls baseflow recession rate
+    - name: GW_Zmax
+      file: DOMAIN/GWBUCKPARM.nc
+      description: Maximum GW bucket depth
+      valid_range:
+      - 50
+      - 500
+      default: 100
+      unit: mm
+      notes: Deeper bucket = more storage, slower response
     calibration:
-      - name: "REFKDT"
-        file: "soil_properties.nc"
-        description: "Infiltration scaling factor (Tier 1)"
-        valid_range: [0.1, 10.0]
-        sensitivity: "very high"
-        typical_adjustment: "0.3-0.5 for mountain; 3.0 for humid flat"
-
-      - name: "MannN"
-        file: "CHANPARM.TBL or Route_Link.nc"
-        description: "Channel Manning roughness (Tier 2)"
-        valid_range: [0.01, 0.15]
-        sensitivity: "high"
-
-      - name: "OVROUGHRTFAC"
-        file: "hydro.namelist"
-        description: "Overland roughness factor (Tier 2)"
-        valid_range: [0.1, 10.0]
-        default: 1.0
-        sensitivity: "moderate"
-
-      - name: "GW_Coeff"
-        file: "GWBUCKPARM.nc"
-        description: "GW recession (Tier 3)"
-        valid_range: [0.001, 0.5]
-        sensitivity: "moderate"
-
-      - name: "GW_Expon"
-        file: "GWBUCKPARM.nc"
-        description: "GW exponential shape (Tier 3)"
-        valid_range: [1, 8]
-        default: 3
-        sensitivity: "moderate"
-
+    - name: REFKDT
+      file: soil_properties.nc
+      description: Infiltration scaling factor (Tier 1)
+      valid_range:
+      - 0.1
+      - 10.0
+      sensitivity: very high
+      typical_adjustment: 0.3-0.5 for mountain; 3.0 for humid flat
+    - name: MannN
+      file: CHANPARM.TBL or Route_Link.nc
+      description: Channel Manning roughness (Tier 2)
+      valid_range:
+      - 0.01
+      - 0.15
+      sensitivity: high
+    - name: OVROUGHRTFAC
+      file: hydro.namelist
+      description: Overland roughness factor (Tier 2)
+      valid_range:
+      - 0.1
+      - 10.0
+      default: 1.0
+      sensitivity: moderate
+    - name: GW_Coeff
+      file: GWBUCKPARM.nc
+      description: GW recession (Tier 3)
+      valid_range:
+      - 0.001
+      - 0.5
+      sensitivity: moderate
+    - name: GW_Expon
+      file: GWBUCKPARM.nc
+      description: GW exponential shape (Tier 3)
+      valid_range:
+      - 1
+      - 8
+      default: 3
+      sensitivity: moderate
   files:
     required:
-      - name: "namelist.hrldas"
-        description: "Noah-MP land surface configuration"
-        format: "Fortran namelist"
-        notes: "RUNOFF_OPTION, physics switches, time settings"
-
-      - name: "hydro.namelist"
-        description: "Routing and hydrology configuration"
-        format: "Fortran namelist"
-        notes: "Channel routing, GW bucket, overland flow, file paths"
-
-      - name: "geo_em.d01.nc"
-        description: "Geogrid file with 39 WRF variables (terrain, soil, veg)"
-        format: "NetCDF on Lambert Conformal Conic grid"
-        notes: "Generated by build_geo_em.py from DEM + AVHRR + HWSD"
-
-      - name: "wrfinput_d01.nc"
-        description: "Initial conditions (soil moisture, temperature)"
-        format: "NetCDF"
-
-      - name: "Fulldom_hires.nc"
-        description: "High-resolution routing grid (D8, channels, CHAN_DEPTH)"
-        format: "NetCDF"
-        notes: "Must have x/y 'resolution' attribute (dt_002)"
-
-      - name: "soil_properties.nc"
-        description: "Soil hydraulic properties (REFKDT, DKSAT, BEXP)"
-        format: "NetCDF"
-
-      - name: "GWBASINS.nc"
-        description: "Groundwater basin mask"
-      - name: "GWBUCKPARM.nc"
-        description: "GW bucket parameters per basin"
-      - name: "GEOGRID_LDASOUT_Spatial_Metadata.nc"
-        description: "LSM grid metadata with x/y resolution attributes"
-      - name: "hydro2dtbl.nc"
-        description: "Ancillary 2D parameter table"
-
-      - name: "FORCING/YYYYMMDDHH.LDASIN_DOMAIN1"
-        description: "Hourly meteorological forcing files"
-        format: "NetCDF on same LCC grid as geo_em"
-
+    - name: namelist.hrldas
+      description: Noah-MP land surface configuration
+      format: Fortran namelist
+      notes: RUNOFF_OPTION, physics switches, time settings
+    - name: hydro.namelist
+      description: Routing and hydrology configuration
+      format: Fortran namelist
+      notes: Channel routing, GW bucket, overland flow, file paths
+    - name: geo_em.d01.nc
+      description: Geogrid file with 39 WRF variables (terrain, soil, veg)
+      format: NetCDF on Lambert Conformal Conic grid
+      notes: Generated by build_geo_em.py from DEM + AVHRR + HWSD
+    - name: wrfinput_d01.nc
+      description: Initial conditions (soil moisture, temperature)
+      format: NetCDF
+    - name: Fulldom_hires.nc
+      description: High-resolution routing grid (D8, channels, CHAN_DEPTH)
+      format: NetCDF
+      notes: Must have x/y 'resolution' attribute (dt_002)
+    - name: soil_properties.nc
+      description: Soil hydraulic properties (REFKDT, DKSAT, BEXP)
+      format: NetCDF
+    - name: GWBASINS.nc
+      description: Groundwater basin mask
+    - name: GWBUCKPARM.nc
+      description: GW bucket parameters per basin
+    - name: GEOGRID_LDASOUT_Spatial_Metadata.nc
+      description: LSM grid metadata with x/y resolution attributes
+    - name: hydro2dtbl.nc
+      description: Ancillary 2D parameter table
+    - name: FORCING/YYYYMMDDHH.LDASIN_DOMAIN1
+      description: Hourly meteorological forcing files
+      format: NetCDF on same LCC grid as geo_em
     required_for_reach_routing:
-      - name: "Route_Link.nc"
-        description: "Reach topology, Manning N, width, slope per reach"
-        notes: "Only needed for channel_option 1 or 2"
-      - name: "spatialweights.nc"
-        description: "LSM-to-reach mapping weights"
-        notes: "Only needed for UDMP_OPT=1"
-
-# =========================================================================
-# OUTPUTS
-# =========================================================================
+    - name: Route_Link.nc
+      description: Reach topology, Manning N, width, slope per reach
+      notes: Only needed for channel_option 1 or 2
+    - name: spatialweights.nc
+      description: LSM-to-reach mapping weights
+      notes: Only needed for UDMP_OPT=1
 outputs:
-
   primary:
-    - name: "channel_discharge"
-      file: "YYYYMMDDHH00.CHRTOUT_DOMAIN1"
-      variable: "streamflow"
-      unit: "m3/s"
-      valid_range: [0, null]
-      notes: "Discharge at channel points (gridded) or reaches (reach-based)"
-
-    - name: "land_surface_output"
-      file: "YYYYMMDDHH00.LDASOUT_DOMAIN1"
-      variables: ["SFCRNOFF", "UGDRNOFF", "CANWAT", "ACSNOM", "SOIL_M"]
-      unit: "various"
-      notes: "Hourly or daily land surface fluxes and states"
-
-    - name: "groundwater_output"
-      file: "YYYYMMDDHH00.GWOUT_DOMAIN1"
-      variables: ["sfcheadrt", "zwt"]
-      notes: "GW bucket states"
-
-    - name: "routing_output"
-      file: "YYYYMMDDHH00.RTOUT_DOMAIN1"
-      variables: ["sfcheadsubrt", "QSTRMVOLRT"]
-      notes: "2D routing grid states"
-
+  - name: channel_discharge
+    file: YYYYMMDDHH00.CHRTOUT_DOMAIN1
+    variable: streamflow
+    unit: m3/s
+    valid_range:
+    - 0
+    - null
+    notes: Discharge at channel points (gridded) or reaches (reach-based)
+    canonical_id: discharge
+  - name: land_surface_output
+    file: YYYYMMDDHH00.LDASOUT_DOMAIN1
+    variables:
+    - SFCRNOFF
+    - UGDRNOFF
+    - CANWAT
+    - ACSNOM
+    - SOIL_M
+    unit: various
+    notes: Hourly or daily land surface fluxes and states
+  - name: groundwater_output
+    file: YYYYMMDDHH00.GWOUT_DOMAIN1
+    variables:
+    - sfcheadrt
+    - zwt
+    notes: GW bucket states
+  - name: routing_output
+    file: YYYYMMDDHH00.RTOUT_DOMAIN1
+    variables:
+    - sfcheadsubrt
+    - QSTRMVOLRT
+    notes: 2D routing grid states
+  - name: soil_moisture
+    canonical_id: soil_moisture
+    unit: m3/m3
+  - name: snow_water_equivalent
+    canonical_id: snow_water_equivalent
+    unit: mm
+  - name: groundwater_storage
+    canonical_id: groundwater_storage
+    unit: mm
+  - name: infiltration
+    canonical_id: infiltration
+    unit: mm/h
   diagnostics:
-    - name: "water_balance"
-      check: "SFCRNOFF + UGDRNOFF should correlate with CHRTOUT streamflow"
-      notes: "SFCRNOFF = surface runoff, UGDRNOFF = subsurface drainage"
-
-# =========================================================================
-# KNOWN ISSUES (maps to diagnostics/triplets.yaml)
-# =========================================================================
+  - name: water_balance
+    check: SFCRNOFF + UGDRNOFF should correlate with CHRTOUT streamflow
+    notes: SFCRNOFF = surface runoff, UGDRNOFF = subsurface drainage
 known_issues:
-  - id: "refkdt_too_high"
-    triplet: "dt_v018"
-    description: "Default REFKDT=3.0 produces 24x less surface runoff in mountain basins"
-    affected_output: "Near-zero CHRTOUT, inverted seasonal cycle"
-    detection: "SFCRNOFF << 0.1mm from 20mm rain events"
-    fix: "Reduce REFKDT to 0.3-0.5 in soil_properties.nc"
+- id: refkdt_too_high
+  triplet: dt_v018
+  description: Default REFKDT=3.0 produces 24x less surface runoff in mountain basins
+  affected_output: Near-zero CHRTOUT, inverted seasonal cycle
+  detection: SFCRNOFF << 0.1mm from 20mm rain events
+  fix: Reduce REFKDT to 0.3-0.5 in soil_properties.nc
+- id: d8_boundary_cells
+  triplet: dt_001
+  description: WhiteboxTools D8 assigns flow directions to boundary cells pointing
+    outside grid
+  affected_output: 'Fatal: ''Apparent error in network topology'''
+  fix: Set FLOWDIRECTION=0 for all boundary cells in Fulldom_hires.nc
+- id: resolution_attribute_missing
+  triplet: dt_002
+  description: Missing 'resolution' attribute on x/y variables in metadata NC files
+  affected_output: 'Fatal: ''Unable to get x resolution'''
+  fix: Add x.resolution = float(dx) to both metadata and Fulldom NC files
+- id: swdown_negative
+  triplet: dt_v005
+  description: CMFD shortwave radiation contains negative values at night
+  affected_output: Noah-MP crashes or produces wrong energy balance
+  fix: Clamp SWDOWN to max(0, value) in forcing conversion
+- id: netcdf_lib_path
+  triplet: dt_006
+  description: NETCDF_LIB must point to /usr/lib/x86_64-linux-gnu/ not /usr/lib/
+  affected_output: Compilation fails with 'undefined reference to nf90_*'
+  fix: Set NETCDF_LIB=/usr/lib/x86_64-linux-gnu/
+- id: arid_basin_trap_cascade
+  triplet: dt_v036, dt_v037, dt_v038
+  description: 'Three sequential crashes in arid basins that each mask the next: (1)
+    SMCRT crash from rst_typ=1 with dry soil, (2) LDASOUT crash in empty soil cells,
+    (3) restart file crash in arid zones. All 3 fixes must be applied simultaneously.
 
-  - id: "d8_boundary_cells"
-    triplet: "dt_001"
-    description: "WhiteboxTools D8 assigns flow directions to boundary cells pointing outside grid"
-    affected_output: "Fatal: 'Apparent error in network topology'"
-    fix: "Set FLOWDIRECTION=0 for all boundary cells in Fulldom_hires.nc"
-
-  - id: "resolution_attribute_missing"
-    triplet: "dt_002"
-    description: "Missing 'resolution' attribute on x/y variables in metadata NC files"
-    affected_output: "Fatal: 'Unable to get x resolution'"
-    fix: "Add x.resolution = float(dx) to both metadata and Fulldom NC files"
-
-  - id: "swdown_negative"
-    triplet: "dt_v005"
-    description: "CMFD shortwave radiation contains negative values at night"
-    affected_output: "Noah-MP crashes or produces wrong energy balance"
-    fix: "Clamp SWDOWN to max(0, value) in forcing conversion"
-
-  - id: "netcdf_lib_path"
-    triplet: "dt_006"
-    description: "NETCDF_LIB must point to /usr/lib/x86_64-linux-gnu/ not /usr/lib/"
-    affected_output: "Compilation fails with 'undefined reference to nf90_*'"
-    fix: "Set NETCDF_LIB=/usr/lib/x86_64-linux-gnu/"
-
-  - id: "arid_basin_trap_cascade"
-    triplet: "dt_v036, dt_v037, dt_v038"
-    description: >
-      Three sequential crashes in arid basins that each mask the next:
-      (1) SMCRT crash from rst_typ=1 with dry soil,
-      (2) LDASOUT crash in empty soil cells,
-      (3) restart file crash in arid zones.
-      All 3 fixes must be applied simultaneously.
-    fix: "Set rst_typ=0, OUTPUT_TIMESTEP=0, RESTART_FREQUENCY_HOURS=0, and patch SMOIS >= 0.25"
-
-  - id: "runoff_option_5_crash"
-    triplet: "dt_v019"
-    description: "RUNOFF_OPTION=5 (MMF) crashes — needs MMF_RUNOFF_FILE not in pipeline"
-    fix: "Use RUNOFF_OPTION=1 (TOPMODEL) or 3 (Schaake96)"
-
-  - id: "gwbaseswcrt_zero_sink"
-    triplet: "dt_v040"
-    description: "GWBASESWCRT=0 creates water sink — drainage exits system without returning"
-    fix: "Always use GWBASESWCRT >= 1"
-
-# =========================================================================
-# EXPECTED RANGES
-# =========================================================================
+    '
+  fix: Set rst_typ=0, OUTPUT_TIMESTEP=0, RESTART_FREQUENCY_HOURS=0, and patch SMOIS
+    >= 0.25
+- id: runoff_option_5_crash
+  triplet: dt_v019
+  description: "RUNOFF_OPTION=5 (MMF) crashes \u2014 needs MMF_RUNOFF_FILE not in\
+    \ pipeline"
+  fix: Use RUNOFF_OPTION=1 (TOPMODEL) or 3 (Schaake96)
+- id: gwbaseswcrt_zero_sink
+  triplet: dt_v040
+  description: "GWBASESWCRT=0 creates water sink \u2014 drainage exits system without\
+    \ returning"
+  fix: Always use GWBASESWCRT >= 1
 expected_ranges:
   bengbu_huai_river_025deg:
-    period: "2000-2005"
-    grid: "22x18 LSM @ 0.25deg"
+    period: 2000-2005
+    grid: 22x18 LSM @ 0.25deg
     wrfhydro_mean_q_m3s: 1090
     vic_mean_q_m3s: 1535
     correlation_r: 0.84
     ratio: 0.71
-    notes: "WRF-Hydro 29% lower than VIC with default uncalibrated params"
-
+    notes: WRF-Hydro 29% lower than VIC with default uncalibrated params
   chaohe_mountain:
-    period: "2000"
+    period: '2000'
     wrfhydro_mean_q_m3s: 5.8
     vic_mean_q_m3s: 23.2
     correlation_r: 0.0
-    notes: "FAILS due to REFKDT=3.0 (dt_v018). Fix: REFKDT=0.3-0.5"
-
-# =========================================================================
-# CALIBRATION REFERENCE
-# =========================================================================
+    notes: 'FAILS due to REFKDT=3.0 (dt_v018). Fix: REFKDT=0.3-0.5'
 calibration_reference:
   recommended_sequence:
-    - "Tier 1: REFKDT (0.1-10.0, controls infiltration/runoff partition)"
-    - "Tier 2: MannN (0.01-0.15, channel routing timing)"
-    - "Tier 2: OVROUGHRTFAC (0.1-10.0, overland flow velocity)"
-    - "Tier 3: GW_Coeff (0.001-0.5, baseflow recession)"
-    - "Tier 3: GW_Expon (1-8, GW nonlinearity)"
-    - "Tier 3: GW_Zmax (50-500mm, GW storage capacity)"
-
+  - 'Tier 1: REFKDT (0.1-10.0, controls infiltration/runoff partition)'
+  - 'Tier 2: MannN (0.01-0.15, channel routing timing)'
+  - 'Tier 2: OVROUGHRTFAC (0.1-10.0, overland flow velocity)'
+  - 'Tier 3: GW_Coeff (0.001-0.5, baseflow recession)'
+  - 'Tier 3: GW_Expon (1-8, GW nonlinearity)'
+  - 'Tier 3: GW_Zmax (50-500mm, GW storage capacity)'
   scenario_presets:
     humid_flat:
       RUNOFF_OPTION: 3
@@ -360,8 +362,7 @@ calibration_reference:
       rst_typ: 0
       OUTPUT_TIMESTEP: 0
       RESTART_FREQUENCY_HOURS: 0
-
   target_metrics:
-    - "r > 0.7 (daily discharge)"
-    - "PBIAS < 30%"
-    - "NSE > 0.4 (uncalibrated acceptable)"
+  - r > 0.7 (daily discharge)
+  - PBIAS < 30%
+  - NSE > 0.4 (uncalibrated acceptable)

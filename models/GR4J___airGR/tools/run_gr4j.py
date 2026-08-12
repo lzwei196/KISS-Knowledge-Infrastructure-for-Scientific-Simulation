@@ -30,7 +30,8 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 
 def validate_inputs(forcing_csv: str, params: dict = None,
-                    mode: str = "simulation") -> list:
+                    mode: str = "simulation",
+                    model: str = "gr4j") -> list:
     """Validate inputs before model execution."""
     errors = []
 
@@ -46,9 +47,17 @@ def validate_inputs(forcing_csv: str, params: dict = None,
         if col not in df.columns:
             errors.append(f"Missing required column: {col}")
 
+    # CemaNeige snow module needs daily mean air temperature.
+    if model == "cemaneige_gr4j" and "TempMean_degC" not in df.columns:
+        errors.append(
+            "CemaNeige (model=cemaneige_gr4j) requires a 'TempMean_degC' column "
+            "in the forcing CSV. convert_forcing_to_gr4j writes this by default."
+        )
+
+    n_par = 6 if model == "cemaneige_gr4j" else 4
     if mode == "simulation" and params is not None:
-        if len(params) != 4:
-            errors.append(f"GR4J requires exactly 4 parameters, got {len(params)}")
+        if len(params) != n_par:
+            errors.append(f"{model} requires exactly {n_par} parameters, got {len(params)}")
         if params.get("X1", 0) < 0.01:
             errors.append(f"X1 must be >= 0.01, got {params.get('X1')}")
         if params.get("X3", 0) < 0.01:
@@ -102,17 +111,62 @@ def generate_r_script(forcing_csv: str, output_csv: str,
                        run_start: str = None,
                        run_end: str = None,
                        criterion: str = "NSE",
-                       output_json: str = None) -> str:
+                       output_json: str = None,
+                       model: str = "gr4j",
+                       hypso: list = None,
+                       nlayers: int = 5) -> str:
     """
     Generate R script for GR4J execution.
+
+    model : 'gr4j' (4-parameter, default) or 'cemaneige_gr4j' (6-parameter,
+            snow-accounting via CemaNeige — use for snowmelt-dominated /
+            cold-region catchments where winter precipitation falls as snow
+            and the hydrograph is driven by a spring/summer freshet). The
+            CemaNeige variant adds X5 (CTG, cold-content weighting [0,1]) and
+            X6 (Kf, degree-day melt factor) and requires TempMean_degC forcing.
+
+    hypso : optional 101-element hypsometric curve [m] (percentiles 0-100,
+            ascending) for CemaNeige elevation layers. Without it CemaNeige
+            runs as a single layer at the forcing elevation, which smears
+            snow across the full relief of high-relief catchments; with it,
+            airGR extrapolates T and P over `nlayers` elevation bands
+            (DataAltiExtrapolation_Valery). Ignored for model='gr4j'.
+    nlayers : number of CemaNeige elevation layers when hypso is given
+            (airGR default 5).
 
     Returns
     -------
     r_script : str, complete R script
     """
+    fun_mod = "RunModel_CemaNeigeGR4J" if model == "cemaneige_gr4j" else "RunModel_GR4J"
+
+    # Extra CreateInputsModel arguments for CemaNeige (TempMean, and the
+    # optional elevation-layer discretization from the hypsometric curve).
+    hypso_decl = ""
+    extra_inputs = ""
+    if model == "cemaneige_gr4j":
+        extra_inputs = ",\n  TempMean = data_raw$TempMean_degC"
+        if hypso is not None:
+            if len(hypso) != 101:
+                raise ValueError(
+                    f"HypsoData must have exactly 101 values (percentiles 0-100), got {len(hypso)}"
+                )
+            if any(hypso[i] > hypso[i + 1] for i in range(100)):
+                raise ValueError("HypsoData must be ascending (min to max elevation)")
+            vals = ", ".join(f"{float(h):.2f}" for h in hypso)
+            hypso_decl = f"HypsoData <- c({vals})\n"
+            extra_inputs += (
+                ",\n  HypsoData = HypsoData"
+                ",\n  ZInputs  = median(HypsoData)"
+                f",\n  NLayers  = {int(nlayers)}L"
+            )
     param_str = ""
     if params and mode == "simulation":
-        param_str = f"c({params['X1']}, {params['X2']}, {params['X3']}, {params['X4']})"
+        if model == "cemaneige_gr4j":
+            param_str = (f"c({params['X1']}, {params['X2']}, {params['X3']}, "
+                         f"{params['X4']}, {params['X5']}, {params['X6']})")
+        else:
+            param_str = f"c({params['X1']}, {params['X2']}, {params['X3']}, {params['X4']})"
 
     crit_func = {
         "NSE": "ErrorCrit_NSE",
@@ -122,6 +176,9 @@ def generate_r_script(forcing_csv: str, output_csv: str,
     }.get(criterion, "ErrorCrit_NSE")
 
     r_script = f'''
+# airGR is installed in the HydroCraft user library; --vanilla/--no-environ
+# may not pick up R_LIBS_USER, so register it explicitly (robust fix).
+.libPaths(c("/home/server/R/library", .libPaths()))
 library(airGR)
 
 # --- Read forcing data ---
@@ -129,11 +186,11 @@ data_raw <- read.csv("{forcing_csv}", stringsAsFactors = FALSE)
 data_raw$Date <- as.POSIXct(data_raw$Date, format = "%Y-%m-%d", tz = "UTC")
 
 # --- Prepare inputs ---
-InputsModel <- CreateInputsModel(
-  FUN_MOD = RunModel_GR4J,
+{hypso_decl}InputsModel <- CreateInputsModel(
+  FUN_MOD = {fun_mod},
   DatesR  = data_raw$Date,
   Precip  = data_raw$Precip_mm,
-  PotEvap = data_raw$PotEvap_mm
+  PotEvap = data_raw$PotEvap_mm{extra_inputs}
 )
 
 # --- Define run period ---
@@ -154,12 +211,38 @@ Ind_Run <- as.integer((n_warmup + 1):n)
 '''
 
     r_script += f'''
-# --- Create run options (warmup = {warmup_years} year) ---
+# --- Explicit warm-up period (warmup = {warmup_years} year) ---
+# Previously `warmup_years` was only echoed in this comment: it never set
+# IndPeriod_WarmUp, so airGR silently fell back to its default (the year
+# preceding Ind_Run IF present in the forcing, else NO warm-up with only a
+# quiet warning). That made `--warmup` a no-op and, when --start sat at the
+# first forcing record, scored the un-spun-up first-year transient into the
+# calibration criterion -- which depressed the reported NSE dramatically even
+# though the fitted parameters were fine (HYDAT 09AC007, 2026-06-23: reported
+# cal NSE 0.25 vs an actual post-warm-up 0.61). We now build IndPeriod_WarmUp
+# explicitly as the warmup_years*365 days immediately preceding the run period
+# (identical to airGR's auto-default when a buffer exists, so prior validated
+# runs are unchanged) and warn loudly when no buffer is available.
+warmup_len <- as.integer({warmup_years} * 365)
+ws <- max(1L, as.integer(Ind_Run[1] - warmup_len))
+if (ws < Ind_Run[1]) {{
+  IndPeriod_WarmUp <- as.integer(seq(ws, Ind_Run[1] - 1L))
+}} else {{
+  # airGR sentinel for "run with no warm-up" is the single value 0L
+  # (integer(0) trips an internal tail()/identical check and errors).
+  IndPeriod_WarmUp <- 0L
+  cat("WARMUP_WARNING: the run period starts at the first forcing record, so",
+      "no warm-up buffer is available. Provide forcing that extends >=",
+      {warmup_years}, "year(s) before --start; otherwise the first year is an",
+      "un-spun-up transient that depresses the calibration criterion.\\n")
+}}
+
 RunOptions <- CreateRunOptions(
-  FUN_MOD      = RunModel_GR4J,
-  InputsModel  = InputsModel,
-  IndPeriod_Run = Ind_Run,
-  verbose      = FALSE
+  FUN_MOD          = {fun_mod},
+  InputsModel      = InputsModel,
+  IndPeriod_WarmUp = IndPeriod_WarmUp,
+  IndPeriod_Run    = Ind_Run,
+  verbose          = FALSE
 )
 '''
 
@@ -178,7 +261,7 @@ InputsCrit <- CreateInputsCrit(
 )
 
 CalibOptions <- CreateCalibOptions(
-  FUN_MOD   = RunModel_GR4J,
+  FUN_MOD   = {fun_mod},
   FUN_CALIB = Calibration_Michel
 )
 
@@ -187,7 +270,7 @@ OutputsCalib <- Calibration_Michel(
   RunOptions  = RunOptions,
   InputsCrit  = InputsCrit,
   CalibOptions = CalibOptions,
-  FUN_MOD     = RunModel_GR4J,
+  FUN_MOD     = {fun_mod},
   verbose     = TRUE
 )
 
@@ -204,7 +287,7 @@ Param <- {param_str}
 
     r_script += f'''
 # --- Run model ---
-OutputsModel <- RunModel_GR4J(
+OutputsModel <- {fun_mod}(
   InputsModel = InputsModel,
   RunOptions  = RunOptions,
   Param       = Param
@@ -223,6 +306,7 @@ results <- data.frame(
   PR        = OutputsModel$PR,
   Rout      = OutputsModel$Rout,
   Exch      = OutputsModel$Exch,
+  AExch     = OutputsModel$AExch,
   QR        = OutputsModel$QR,
   QD        = OutputsModel$QD
 )
@@ -270,7 +354,10 @@ def run_gr4j(forcing_csv: str, output_csv: str,
              run_start: str = None,
              run_end: str = None,
              criterion: str = "NSE",
-             output_json: str = None) -> dict:
+             output_json: str = None,
+             model: str = "gr4j",
+             hypso: list = None,
+             nlayers: int = 5) -> dict:
     """
     Run GR4J model.
 
@@ -279,19 +366,24 @@ def run_gr4j(forcing_csv: str, output_csv: str,
     forcing_csv   : path to forcing CSV
     output_csv    : path for output CSV
     mode          : 'simulation' or 'calibration'
-    params        : dict with X1, X2, X3, X4 (simulation mode only)
+    params        : dict with X1, X2, X3, X4 (simulation mode only;
+                    plus X5, X6 when model='cemaneige_gr4j')
     warmup_years  : number of years for warmup
     run_start     : start date (YYYY-MM-DD) or None for auto
     run_end       : end date (YYYY-MM-DD) or None for auto
     criterion     : calibration criterion (NSE, KGE, KGE2, RMSE)
     output_json   : optional path for metadata JSON
+    model         : 'gr4j' (default) or 'cemaneige_gr4j' (snow-accounting)
+    hypso         : optional 101-point hypsometric curve [m] for CemaNeige
+                    elevation layers (see generate_r_script)
+    nlayers       : CemaNeige elevation layers when hypso is given (default 5)
 
     Returns
     -------
     result : dict with execution summary
     """
     # --- Validate inputs ---
-    errors = validate_inputs(forcing_csv, params, mode)
+    errors = validate_inputs(forcing_csv, params, mode, model)
     if errors:
         raise ValueError("Input validation failed:\n" + "\n".join(errors))
 
@@ -306,6 +398,9 @@ def run_gr4j(forcing_csv: str, output_csv: str,
         run_end=run_end,
         criterion=criterion,
         output_json=output_json,
+        model=model,
+        hypso=hypso,
+        nlayers=nlayers,
     )
 
     # --- Write and execute R script ---
@@ -337,6 +432,9 @@ def run_gr4j(forcing_csv: str, output_csv: str,
 
     # Parse stdout for key values
     for line in proc.stdout.split("\n"):
+        if line.startswith("WARMUP_WARNING:"):
+            print(f"[run_gr4j] WARNING: {line.split(':', 1)[1].strip()}")
+            result["warmup_warning"] = line.split(":", 1)[1].strip()
         if line.startswith("CALIBRATED_PARAMS:"):
             vals = line.split(":")[1].strip().split(",")
             result["calibrated_params"] = [float(v) for v in vals]
@@ -367,6 +465,15 @@ def run_gr4j(forcing_csv: str, output_csv: str,
 
     result["status"] = "completed"
     print(f"[run_gr4j] Completed in {mode} mode, {result.get('n_timesteps', '?')} timesteps")
+    # Surface calibration results so the CLI user/agent can see them without
+    # having to re-parse the R stdout (previously these were parsed into the
+    # result dict but never printed).
+    if "calibrated_params" in result:
+        print(f"[run_gr4j] Calibrated params: {result['calibrated_params']}")
+    if "calib_crit" in result:
+        print(f"[run_gr4j] Calibration {criterion}: {result['calib_crit']:.4f}")
+    if "NSE" in result:
+        print(f"[run_gr4j] NSE: {result['NSE']:.4f}  KGE: {result.get('KGE', float('nan')):.4f}")
     return result
 
 
@@ -384,6 +491,21 @@ def main():
     parser.add_argument("--x2", type=float, help="Parameter X2 [mm/d]")
     parser.add_argument("--x3", type=float, help="Parameter X3 [mm]")
     parser.add_argument("--x4", type=float, help="Parameter X4 [d]")
+    parser.add_argument("--x5", type=float,
+                        help="CemaNeige X5 (CTG, cold-content weight [0,1])")
+    parser.add_argument("--x6", type=float,
+                        help="CemaNeige X6 (Kf, degree-day melt factor)")
+    parser.add_argument("--model", choices=["gr4j", "cemaneige_gr4j"],
+                        default="gr4j",
+                        help="gr4j (4-param) or cemaneige_gr4j (6-param snow module)")
+    parser.add_argument("--snow", action="store_true",
+                        help="Shortcut for --model cemaneige_gr4j (snow accounting)")
+    parser.add_argument("--hypso-json",
+                        help="Catchment params JSON (from convert_catchment_params) "
+                             "with a 101-point 'hypsometry' array [m]; enables "
+                             "CemaNeige elevation layers for high-relief basins")
+    parser.add_argument("--nlayers", type=int, default=5,
+                        help="CemaNeige elevation layers with --hypso-json (default 5)")
     parser.add_argument("--warmup", type=int, default=1, help="Warmup years")
     parser.add_argument("--start", help="Run start date (YYYY-MM-DD)")
     parser.add_argument("--end", help="Run end date (YYYY-MM-DD)")
@@ -393,10 +515,30 @@ def main():
 
     args = parser.parse_args()
 
+    model = "cemaneige_gr4j" if (args.snow or args.model == "cemaneige_gr4j") else "gr4j"
+
+    hypso = None
+    if args.hypso_json:
+        if model != "cemaneige_gr4j":
+            print("[run_gr4j] WARNING: --hypso-json is only used with "
+                  "--snow/--model cemaneige_gr4j; ignoring.")
+        else:
+            with open(args.hypso_json) as f:
+                cp = json.load(f)
+            hypso = cp.get("hypsometry")
+            if hypso is None:
+                raise ValueError(
+                    f"No 'hypsometry' array in {args.hypso_json}. Run "
+                    "convert_catchment_params with DEM-derived hypsometry first."
+                )
+
     params = None
     if args.mode == "simulation" and all([args.x1, args.x3, args.x4]):
         params = {"X1": args.x1, "X2": args.x2 or 0.0,
                   "X3": args.x3, "X4": args.x4}
+        if model == "cemaneige_gr4j":
+            params["X5"] = args.x5 if args.x5 is not None else 0.5
+            params["X6"] = args.x6 if args.x6 is not None else 3.0
 
     run_gr4j(
         forcing_csv=args.forcing,
@@ -408,6 +550,9 @@ def main():
         run_end=args.end,
         criterion=args.criterion,
         output_json=args.meta_json,
+        model=model,
+        hypso=hypso,
+        nlayers=args.nlayers,
     )
 
 

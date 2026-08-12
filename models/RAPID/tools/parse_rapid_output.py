@@ -120,6 +120,10 @@ def compute_rmse(obs, sim):
 
 def compute_all_metrics(obs, sim):
     """Compute all standard hydrological metrics."""
+    # Coerce masked arrays / float32 to plain float64 with masked -> NaN so the
+    # NaN-aware reductions work and the returned dict is JSON-serializable.
+    obs = np.ma.filled(np.ma.asarray(obs).astype(np.float64), np.nan)
+    sim = np.ma.filled(np.ma.asarray(sim).astype(np.float64), np.nan)
     mask = ~np.isnan(obs) & ~np.isnan(sim)
     if mask.sum() < 10:
         return {"error": "Too few valid data points for metrics"}
@@ -128,14 +132,14 @@ def compute_all_metrics(obs, sim):
     sim_clean = sim[mask]
 
     return {
-        "nse": round(compute_nse(obs_clean, sim_clean), 4),
-        "kge": round(compute_kge(obs_clean, sim_clean), 4),
-        "pbias": round(compute_pbias(obs_clean, sim_clean), 2),
-        "rmse": round(compute_rmse(obs_clean, sim_clean), 4),
-        "r": round(float(np.corrcoef(obs_clean, sim_clean)[0, 1]), 4),
+        "nse": float(round(compute_nse(obs_clean, sim_clean), 4)),
+        "kge": float(round(compute_kge(obs_clean, sim_clean), 4)),
+        "pbias": float(round(compute_pbias(obs_clean, sim_clean), 2)),
+        "rmse": float(round(compute_rmse(obs_clean, sim_clean), 4)),
+        "r": float(round(float(np.corrcoef(obs_clean, sim_clean)[0, 1]), 4)),
         "n_valid": int(mask.sum()),
-        "obs_mean": round(float(np.mean(obs_clean)), 4),
-        "sim_mean": round(float(np.mean(sim_clean)), 4),
+        "obs_mean": float(round(float(np.mean(obs_clean)), 4)),
+        "sim_mean": float(round(float(np.mean(sim_clean)), 4)),
     }
 
 

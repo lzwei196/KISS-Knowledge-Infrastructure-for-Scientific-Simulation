@@ -430,3 +430,25 @@
     prevention: "preflight_check compares config dims to input dims"
   severity: fatal
   cross_references: []
+
+- id: dt_021
+  stage: s4_execution
+  failure_domain: dycore
+  symptom:
+    description: "CISM SIGSEGV at init when dycore=0 (Glide), in glide_write_diag during cism_init_dycore"
+    error_pattern: "SIGSEGV.*parallel_is_zero_real8_2d|glide_write_diag.*Segmentation|cism_init_dycore.*Segmentation"
+    detection_method: log_match
+  diagnosis:
+    root_cause: "model%velocity%velo_sfc_obs is allocated ONLY in the Glissade branch of glide_allocarr (glide_types.F90 ~L3089, inside 'else ! glissade dycore'); for DYCORE_GLIDE it stays a null pointer. glide_write_diag (glide_diagnostics.F90 ~L954) unconditionally calls parallel_is_zero(velo_sfc_obs) -> maxval(abs(a)) on a null pointer -> segfault."
+    explanation: "The shipped dome.config and every working test use dycore=2 (Glissade); the Glide (SIA serial) diag path is broken in this build. SKILL.md's claim that the Glide dycore is validated is incorrect for real runs that reach glide_write_diag."
+    affected_components: [generate_cism_config, run_cism]
+  remedy:
+    action: "Use the Glissade dycore (dycore=2) instead of Glide (dycore=0). For a cheap, robust velocity diagnostic on a continental grid use which_ho_approx=-1 (local SIA), which_ho_babc=4, which_ho_sparse=3 (PCG), which_ho_nonlinear=0 (Picard), evolution=3."
+    tool_to_run: generate_cism_config
+    manual_steps:
+      - "Set dycore=2 and evolution=3 in [options]"
+      - "Add [ho_options] with which_ho_approx=-1 for a fast local-SIA diagnostic (avoids the sparse solve)"
+      - "Glissade allocates velo_sfc_obs, so glide_write_diag no longer dereferences a null pointer"
+    prevention: "Default real-domain runs to dycore=2; treat dycore=0 as unsupported in this build."
+  severity: fatal
+  cross_references: [dt_005, dt_007]

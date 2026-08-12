@@ -1,0 +1,585 @@
+template_version: "calib-0.1"
+model_id: SWAT+
+identity:
+  domain: hydrology
+  binding: swatplus_rev59            # /mnt/disk1/Hydrocraft_server/models/SWAT+/bin/swatplus_rev59
+
+# ---------------------------------------------------------------------------
+# TARGET CASE — this contract calibrates ONE gauge. tools/calib_run.py PINS the
+# same case and self-declares it in __kdt__.case_id / __kdt__.scored_obs, so the
+# kit fails closed if any eval ever scores a different site.
+# NOTE: SKILL.md's worked example is Bengbu (Huai outlet); this contract is NOT
+# Bengbu. It is Xixian, the upper-Huai headwater gauge.
+# ---------------------------------------------------------------------------
+case:
+  case_id: "SITE:xixian"
+  gauge: "xixian_50225601 息县"
+  obs_source: "china_gaugeflux (stcd 50225601, upper Huai River)"
+  obs_file: "/mnt/datasets/china_water_level/淮河txt/息县.txt"
+  drainage_area_km2: 10190          # object.cnt tot_area 968133.65 ha ≈ 9681 km2 delineated
+  deck: "/mnt/disk1/Hydrocraft_server/outputs/swatplus_xixian_multista/TxtInOut"
+  provenance: "SWAT+_20260719T235310Z_630596"
+  prior_validated_metric: {metric: nse, value: 0.6417397628628487}
+  prior_validated_params:            # the vector calibration must reproduce + beat
+    note: >-
+      calibration.cal cn2=absval 25, esco=absval 0.15; aquifer.aqu rchg_dp=0.78;
+      hydrology.hyd perco=0.75, cn3_swf=0.0. Full-period NSE 0.6417, KGE 0.490,
+      PBIAS -28.6% (cal 1981-85 NSE 0.6466 / val 1986-90 NSE 0.6353).
+      The residual error mode is a VOLUME deficit (PBIAS -28.6%) on top of an
+      already-good pattern (r 0.843) — so the pool below is weighted toward the
+      water-balance / recharge-partition levers, not just the runoff-curve lever.
+
+targets:
+  - var: "streamflow at channel outlet (flo_out)"   # exists in dag.outputs (validation_rank 1)
+    weight: 1.0
+
+# ---------------------------------------------------------------------------
+# RUNNER MODE (required here). Three independent reasons:
+#   1. The parameters do NOT all live in one stable file. They span FOUR
+#      mechanisms with four different write paths:
+#        (a) calibration.cal rows — only names declared in the project's OWN
+#            cal_parms.cal are honoured; anything else is SILENTLY IGNORED by
+#            SWAT+ (dt_013). The KI tool s6/generate_calibration_file.py owns the
+#            name validation, the SWAT2012->rev59 aliasing (alpha_bf->alpha) and
+#            the count-line format that SWAT+ requires. Carries cn2, k, esco,
+#            alpha_bf, revap_co.
+#        (b) aquifer.aqu columns — rchg_dp / spec_yld are ABSENT from
+#            cal_parms.cal, so a calibration.cal row for them is a silent no-op.
+#            The same KI tool edits the aquifer.aqu columns directly.
+#        (c) free-format column tables that calibration.cal cannot reach at all:
+#            hydrology.hyd (perco, cn3_swf), hydrology.cha (channel Manning n),
+#            parameters.bsn (surq_lag).
+#        (d) soils.sol layer rows (awc), scaled uniformly.
+#      Membership of (a) vs (c)/(d) is not guesswork: commissioning ran every
+#      parameter at both ends of the model's own cal_parms box and MEASURED which
+#      artifact the binary actually reads. awc and surlag were moved out of (a)
+#      because their calibration.cal rows are accepted but inert; gw_delay was
+#      dropped from the pool entirely for the same reason with no live artifact
+#      to move it to (see excluded_parameters).
+#   2. calibration.cal is REGENERATED from scratch on every run by the KI tool,
+#      so a value written before the run would be overwritten.
+#   3. Each eval rebuilds a fresh deck from a pristine snapshot (aquifer.aqu edits
+#      are in-place and would otherwise accumulate across evals).
+# calib_run.py therefore injects, reads every value BACK out of the effective
+# artifact the binary consumes, and echoes __kdt__.applied_params.
+# ---------------------------------------------------------------------------
+injection:
+  mode: runner
+
+parameters:
+
+  # ======================= surface runoff generation =======================
+  - name: cn2
+    description: >-
+      SCS curve number for moisture condition II, as a PERCENT CHANGE applied to
+      every HRU's land-use/hydrologic-group value (absval would flatten the
+      spatial heterogeneity the 33-station CMFD forcing was built to exploit —
+      the KI tool warns on absval for exactly this reason). Top-ranked
+      streamflow parameter in every published SWAT/SWAT+ GSA.
+    type: continuous
+    units: "percent"
+    default: -50.0
+    range: [-50.0, 10.0]
+    hard_bounds: [-50.0, 10.0]
+    transform: identity
+    scope: global                    # one pctchg applied to all 78 HRUs (OBJ_TOT=0)
+    tie: null
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "dag.influence cn2 -> flo_out, sensitivity_grade HIGH"
+      - "li2022_swat_four_gsa_methods (10.3390/app12199862) — CN2 top-ranked by Morris/Sobol/FAST/EFAST"
+      - "bieger2017_swatplus_introduction (10.1111/1752-1688.12482)"
+      - "cal_parms.cal (this deck): cn2 obj_typ hru absmin 25 absmax 98 — SWAT+ clamps the RESULT to this box"
+    range_rationale: >-
+      Base CN2 in this deck comes from cntable.lum column cn_b (all 11 soils are
+      hydrologic group B): agrl_lum->rc_strow 81, rnge_lum->pastg_f 69,
+      rngb_lum->wood_f 60. -50% maps those to 40.5 / 34.5 / 30, all ABOVE the
+      cal_parms absmin of 25; +10% maps them to 89.1 / 75.9 / 66, all BELOW the
+      absmax of 98. So no HRU saturates the model's own clamp anywhere in the box.
+      Direction is asymmetric on purpose: the validated run already drove cn2 to
+      the floor (absval 25) and still under-predicts, so the useful search room is
+      upward from there.
+    address:                          # documentation only in runner mode
+      kind: table_cell
+      file: "TxtInOut/calibration.cal"
+      row: "row whose NAME field == cn2"
+      col: 2                          # VAL field
+      delimiter: whitespace
+
+  - name: cn3_swf
+    description: >-
+      Soil-water fraction that drives the wet-season CN3 amplification. Lives in
+      hydrology.hyd (NOT in cal_parms.cal, so calibration.cal cannot reach it).
+      Included because cn2 is already pinned near its floor: cn3_swf is the only
+      remaining lever on how much storm runoff the antecedent-wetness path
+      generates, and it is the second half of the same error mode.
+    type: continuous
+    units: "fraction"
+    default: 0.0
+    range: [0.0, 0.95]
+    hard_bounds: [0.0, 1.0]
+    transform: identity
+    scope: global                     # hydrology.hyd has a single row (hyd1)
+    activation: always
+    expected_sensitivity: medium
+    confidence: low_confidence        # no published site range located; bounded on the documented [0,1] domain
+    cite:
+      - "SWAT+ I/O docs hydrology.hyd cn3_swf, https://swatplus.gitbook.io/io-docs — documented domain [0,1]"
+      - "KI tools/s6/generate_calibration_file.py: cn3_swf must be set in hydrology.hyd, a calibration.cal row is a silent no-op"
+    range_rationale: >-
+      hydrology.hyd is written verbatim (no cal_parms clamp), so any value in the
+      documented [0,1] domain applies exactly. Upper bound held at 0.95 rather
+      than 1.0 to stay strictly inside the documented domain.
+    address:
+      kind: table_cell
+      file: "TxtInOut/hydrology.hyd"
+      row: 2                          # single data row hyd1
+      col: 8                          # cn3_swf column (by header position)
+      delimiter: whitespace
+
+  - name: surlag
+    description: >-
+      Surface-runoff lag coefficient (days). Controls what fraction of a day's
+      surface runoff reaches the channel the same day — the shape/timing lever
+      that trades against cn2's volume lever. Injected into parameters.bsn
+      (surq_lag), NOT calibration.cal: see range_rationale.
+    type: continuous
+    units: "day"
+    default: 4.0
+    range: [0.5, 12.0]
+    hard_bounds: [0.05, 24.0]
+    transform: identity
+    scope: global                     # bsn-level, single data row
+    activation: always
+    expected_sensitivity: high        # MEASURED here; see below. dag grades it MEDIUM in general.
+    confidence: high
+    cite:
+      - "dag.influence surlag -> flo_out, sensitivity_grade MEDIUM"
+      - "li2022_swat_four_gsa_methods (10.3390/app12199862); bieger2017_swatplus_introduction"
+      - "cal_parms.cal: surlag obj_typ bsn absmin 0.05 absmax 24 (days)"
+      - "commissioning 2026-08-01 (this deck/binary): calibration.cal surlag row is inert; parameters.bsn surq_lag is the live artifact"
+    range_rationale: >-
+      SWAT documented default is 4 (parameters.bsn surq_lag in this deck = 4.0);
+      published calibrations vary it over roughly 0.5-12 d, and [0.5, 12] sits
+      strictly inside the cal_parms box [0.05, 24].
+      COMMISSIONING FINDING: a calibration.cal `surlag` row is accepted but has
+      NO effect — bit-identical NSE/PBIAS at 0.05 and 24, i.e. at the exact ends
+      of the model's own box. Writing parameters.bsn surq_lag directly is the
+      live path, and it is one of the STRONGEST levers in the pool on the gated
+      metric: surq_lag 4 -> 0.5 moves daily NSE 0.685 -> 0.481 (dNSE -0.204)
+      while PBIAS barely shifts (-23.26 -> -23.10). That volume-neutral,
+      NSE-heavy signature is exactly what a timing parameter should look like,
+      and it is why sensitivity here must be judged on the gated daily metric
+      rather than on basin mean Q (a mean-Q probe moves only +0.2% and would
+      wrongly read as insensitive). parameters.bsn is written verbatim, so the
+      value applies exactly at both bounds.
+    address:
+      kind: table_cell
+      file: "TxtInOut/parameters.bsn"
+      row: 2                          # single data row
+      col: 2                          # surq_lag column (by header position)
+      delimiter: whitespace
+
+  # ============================ evapotranspiration ============================
+  - name: esco
+    description: >-
+      Soil-evaporation compensation factor. LOW esco lets SWAT+ pull evaporative
+      demand from deeper layers (more ET, less yield); HIGH esco restricts
+      evaporation to the upper layers (less ET, more yield). This is the primary
+      ET lever on the residual -28.6% volume deficit.
+    type: continuous
+    units: "dimensionless"
+    default: 0.15
+    range: [0.05, 0.95]
+    hard_bounds: [0.0, 1.0]
+    transform: identity
+    scope: global
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "dag.influence esco -> flo_out AND esco -> evapotranspiration, both sensitivity_grade HIGH"
+      - "abbas2024_swatplus_pest_framework (10.5194/hess-28-21-2024) — esco dominant in the Cache River case"
+      - "li2022_swat_four_gsa_methods (10.3390/app12199862)"
+      - "cal_parms.cal: esco obj_typ hru absmin 0 absmax 1"
+    range_rationale: >-
+      cal_parms box is [0, 1]; held to [0.05, 0.95] so the absval applies exactly
+      at both bounds with margin against the model's floor/ceiling.
+    address:
+      kind: table_cell
+      file: "TxtInOut/calibration.cal"
+      row: "row whose NAME field == esco"
+      col: 2
+      delimiter: whitespace
+
+  # ====================== soil storage / vertical transport ======================
+  - name: awc
+    description: >-
+      Available water capacity of every soil layer, as a percent change applied
+      uniformly (so the profile's spatial variability is preserved). Sets how
+      much water the profile can hold before it percolates or runs off — a first-
+      order control on both the ET sink and the runoff/baseflow split. Injected
+      into soils.sol, NOT calibration.cal: see range_rationale.
+    type: continuous
+    units: "percent"
+    default: 0.0
+    range: [-40.0, 40.0]
+    hard_bounds: [-50.0, 50.0]
+    transform: identity
+    scope: global                     # one uniform factor over all 22 layer rows / 11 soils
+    tie: null
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "dag.influence sol_awc -> flo_out, sensitivity_grade HIGH"
+      - "li2022_swat_four_gsa_methods; abbas2024_swatplus_pest_framework"
+      - "cal_parms.cal: awc obj_typ sol absmin 0.01 absmax 1 (mm_H2O/mm) — the physical band, enforced per layer by calib_run.py"
+      - "commissioning 2026-08-01 (this deck/binary): calibration.cal awc row is inert; soils.sol is the live artifact"
+    range_rationale: >-
+      soils.sol awc in this deck is 0.1314-0.1328 mm/mm over 22 layer rows.
+      +-40% maps that to 0.0788-0.1859, far inside the documented band
+      [0.01, 1] — no layer approaches a physical limit at either bound, and
+      calib_run.py aborts the eval if any layer ever would. +-25-50% is the
+      standard published SUFI-2/Morris range for r__SOL_AWC.
+      COMMISSIONING FINDING: a calibration.cal `awc` row is accepted but has NO
+      effect — bit-identical NSE/PBIAS at pctchg -90 and +49, i.e. across the
+      whole cal_parms box. (`k`, also obj_typ sol, DOES take effect through
+      calibration.cal, so this is specific to awc: SWAT+ derives the per-layer
+      storage terms from awc during soil initialisation and the calibration
+      update does not recompute them.) Scaling soils.sol directly is the live
+      path — awc x1.5 moves basin mean Q +15.6 m3/s, x0.5 moves it -5.8 m3/s.
+      Same dt_013 "silently ignored calibration.cal row" class the KI already
+      documents for perco / cn3_swf / rchg_dp.
+    address:
+      kind: table_cell
+      file: "TxtInOut/soils.sol"
+      row: "every layer row (14-field rows)"
+      col: 2                          # awc within a layer row
+      delimiter: whitespace
+
+  - name: k
+    description: >-
+      Saturated hydraulic conductivity of every soil layer, as a percent change.
+      Sets the infiltration/percolation rate and therefore the surface-runoff vs
+      subsurface partition.
+    type: continuous
+    units: "percent"
+    default: 0.0
+    range: [-50.0, 50.0]
+    hard_bounds: [-90.0, 200.0]
+    transform: identity
+    scope: global
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    cite:
+      - "dag.influence sol_k -> basin water balance components, sensitivity_grade MEDIUM"
+      - "li2022_swat_four_gsa_methods (10.3390/app12199862)"
+      - "cal_parms.cal: k obj_typ sol absmin 0.0001 absmax 2000 (mm/hr)"
+    range_rationale: >-
+      soils.sol soil_k here is 12.2-15.2 mm/hr. +-50% maps that to 6.1-22.8 mm/hr,
+      orders of magnitude inside the cal_parms box [0.0001, 2000] — no clamping.
+    address:
+      kind: table_cell
+      file: "TxtInOut/calibration.cal"
+      row: "row whose NAME field == k"
+      col: 2
+      delimiter: whitespace
+
+  - name: perco
+    description: >-
+      Percolation coefficient — the fraction of drainable soil water allowed to
+      leave the profile toward the aquifer. Lives in hydrology.hyd, NOT in
+      cal_parms.cal, so it is unreachable from calibration.cal. HIGH-grade edge
+      to flo_out and the upstream half of the recharge partition that rchg_dp
+      then splits.
+    type: continuous
+    units: "fraction"
+    default: 0.75
+    range: [0.05, 0.95]
+    hard_bounds: [0.0, 1.0]
+    transform: identity
+    scope: global                     # single hydrology.hyd row (hyd1)
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "dag.influence perco -> flo_out AND perco -> aquifer state, both sensitivity_grade HIGH"
+      - "abbas2024_swatplus_pest_framework (10.5194/hess-28-21-2024); bailey2020_swatplus_gwflow_module (10.3390/hydrology7040075)"
+      - "SWAT+ I/O docs hydrology.hyd perco — documented domain [0,1]"
+    range_rationale: >-
+      hydrology.hyd is written verbatim (no cal_parms clamp), so any value in
+      [0,1] applies exactly; held to [0.05, 0.95] to stay strictly interior.
+    address:
+      kind: table_cell
+      file: "TxtInOut/hydrology.hyd"
+      row: 2
+      col: 10                         # perco column (by header position)
+      delimiter: whitespace
+
+  # ============================ groundwater / aquifer ============================
+  - name: rchg_dp
+    description: >-
+      Deep-aquifer recharge fraction — the share of percolation diverted to the
+      deep aquifer and LOST from the local stream water balance. THE dominant
+      volume lever for this case: it is currently pinned at 0.78, i.e. 78% of
+      recharge is being removed, which is the direct cause of the residual
+      PBIAS -28.6%. Absent from cal_parms.cal; the KI s6 tool edits aquifer.aqu
+      column 13 in place instead.
+    type: continuous
+    units: "fraction"
+    default: 0.78
+    range: [0.01, 0.90]
+    hard_bounds: [0.0, 1.0]
+    transform: identity
+    scope: global                     # applied to all 33 aquifer objects (uniform, tied)
+    tie: null
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "KI tools/s6/generate_calibration_file.py STRUCTURAL_AQU: rchg_dp col 13, absmin 0.0 absmax 1.0, documented as the dominant volume lever for humid basins (Wangjiaba: 0.30->0.78 moved PBIAS +34% -> ~0 with zero timing lag)"
+      - "SWAT+ I/O docs aquifer.aqu rchg_dp — documented domain [0,1]"
+      - "bailey2020_swatplus_gwflow_module (10.3390/hydrology7040075) — percolation coefficient among primary aquifer controls"
+    range_rationale: >-
+      The KI tool clamps to [0.0, 1.0]; [0.01, 0.90] is strictly interior so the
+      absval applies exactly at both bounds. Lower bound kept off 0.0 because a
+      requested 0 is indistinguishable from a clamp-to-zero failure under the
+      kit's applied-vs-requested guard.
+    address:
+      kind: table_cell
+      file: "TxtInOut/aquifer.aqu"
+      row: "all data rows"
+      col: 13
+      delimiter: whitespace
+
+  - name: spec_yld
+    description: >-
+      Aquifer specific yield — storage released per unit head decline; sets the
+      baseflow recession volume and the aquifer's memory. Absent from
+      cal_parms.cal; edited in aquifer.aqu column 14 by the KI s6 tool.
+    type: continuous
+    units: "m3/m3"
+    default: 0.05
+    range: [0.01, 0.40]
+    hard_bounds: [0.001, 0.5]
+    transform: identity
+    scope: global
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "dag.influence 'aquifer specific yield' -> aquifer state AND -> flo_out, both sensitivity_grade HIGH"
+      - "bailey2023_swatplus_gwflow_improvements (10.3390/w15183249) — Morris screening ranks specific yield among the dominant aquifer parameters"
+      - "abbas2024_swatplus_pest_framework (10.5194/hess-28-21-2024)"
+      - "KI tools/s6/generate_calibration_file.py STRUCTURAL_AQU: spec_yld col 14, absmin 0.001 absmax 0.5"
+    range_rationale: >-
+      Tool clamp box is [0.001, 0.5]; [0.01, 0.40] is strictly interior and spans
+      the physical Sy range for the unconsolidated alluvium of the upper Huai
+      (silt/clay-loam ~0.02 to sand ~0.35).
+    address:
+      kind: table_cell
+      file: "TxtInOut/aquifer.aqu"
+      row: "all data rows"
+      col: 14
+      delimiter: whitespace
+
+  - name: alpha_bf
+    description: >-
+      Baseflow recession constant (written to calibration.cal as rev59's `alpha`;
+      the KI tool applies the SWAT2012->rev59 alias). Sets how fast the aquifer
+      drains to the channel — the recession-limb shape lever.
+    type: continuous
+    units: "1/day"
+    default: 0.05
+    range: [0.01, 0.99]
+    hard_bounds: [0.0, 1.0]
+    transform: identity
+    scope: global
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    cite:
+      - "dag.influence alpha_bf -> flo_out, sensitivity_grade HIGH"
+      - "li2022_swat_four_gsa_methods (10.3390/app12199862) — ALPHA_BF consistently top-ranked; bieger2017_swatplus_introduction"
+      - "cal_parms.cal: alpha obj_typ gw absmin 0 absmax 1"
+    range_rationale: >-
+      cal_parms box [0, 1]; [0.01, 0.99] is strictly interior. The published
+      calibration range for ALPHA_BF is the full 0-1 domain (slow to flashy
+      recession), so the box is the literature range minus the clamp margin.
+    address:
+      kind: table_cell
+      file: "TxtInOut/calibration.cal"
+      row: "row whose NAME field == alpha"
+      col: 2
+      delimiter: whitespace
+
+  - name: revap_co
+    description: >-
+      Groundwater "revap" coefficient — how strongly the shallow aquifer can be
+      drawn back up into the root zone / evaporated. A direct volume sink that
+      competes with rchg_dp for the same recharge water, so it belongs in the
+      pool whenever the error mode is a volume bias.
+    type: continuous
+    units: "dimensionless"
+    default: 0.02
+    range: [0.02, 0.20]
+    hard_bounds: [0.02, 0.2]
+    transform: identity
+    scope: global
+    activation: always
+    expected_sensitivity: medium
+    confidence: medium
+    cite:
+      - "cal_parms.cal: revap_co obj_typ gw absmin 0.02 absmax 0.2 — the model's OWN documented valid band"
+      - "abbas2024_swatplus_pest_framework (10.5194/hess-28-21-2024) — aquifer ET-return terms among the water-balance controls"
+    range_rationale: >-
+      The range IS the model's declared valid band. SWAT+ clamps only on strict
+      inequality (`> absmax` / `< absmin`), so the endpoints 0.02 and 0.20 apply
+      exactly; verified by read-back at both bounds.
+    address:
+      kind: table_cell
+      file: "TxtInOut/calibration.cal"
+      row: "row whose NAME field == revap_co"
+      col: 2
+      delimiter: whitespace
+
+  # ================================ channel routing ================================
+  - name: chn_mann
+    description: >-
+      Channel Manning's roughness n (hydrology.cha `mann` column, applied
+      uniformly to all 33 channel objects). Sets routing celerity and therefore
+      peak attenuation and time-to-peak. Not reachable through the KI's
+      calibration.cal path (cal_parms names it `n` under obj_typ rte, which the
+      KI tool does not accept), so calib_run.py edits hydrology.cha directly.
+    type: continuous
+    units: "s/m^(1/3)"
+    default: 0.05
+    range: [0.02, 0.15]
+    hard_bounds: [0.01, 0.30]
+    transform: identity
+    scope: global                     # all channels share hydrology.cha row hydcha1 (channel.cha cha_hyd)
+    tie: null
+    activation: always
+    expected_sensitivity: medium
+    confidence: medium
+    cite:
+      - "dag.influence 'channel Manning n' -> flo_out, sensitivity_grade MEDIUM"
+      - "abbas2024_swatplus_pest_framework (10.5194/hess-28-21-2024)"
+      - "cal_parms.cal: n obj_typ rte absmin -0.01 absmax 0.3 — SWAT+ upper limit on channel n"
+      - "Chow (1959) Open-Channel Hydraulics Table 5-6: natural stream n = 0.025 (clean straight) to 0.15 (very weedy/sluggish)"
+    range_rationale: >-
+      [0.02, 0.15] is the physical Manning band for natural channels and is
+      strictly inside SWAT+'s own [-0.01, 0.30] rte limit, so the value applies
+      exactly at both bounds and the routing solution stays in its stable band.
+      hydrology.cha is written verbatim (no cal_parms clamp on a direct edit).
+    address:
+      kind: table_cell
+      file: "TxtInOut/hydrology.cha"
+      row: "all data rows"
+      col: 5                          # mann column (by header position)
+      delimiter: whitespace
+
+# ---------------------------------------------------------------------------
+# Literature-identified levers deliberately NOT pooled, and why. These are
+# recorded (not silently dropped) so a later reviewer can re-open them.
+# ---------------------------------------------------------------------------
+excluded_parameters:
+  - names: [gw_delay]
+    reason: >-
+      NO WRITABLE FIELD IN THIS DECK — an evidence-based exclusion, not a guess.
+      cal_parms.cal declares `delay` (obj_typ gw, 0-500 d) and the KI tool
+      happily writes the row, but rev59's aquifer object as instantiated here has
+      no delay column at all: this deck's aquifer.aqu carries id/name/aqu_init/
+      gw_flo/gw_dp/gw_ht/no3_n/sol_p/ptl_n/ptl_p/bf_max/alpha_bf/revap_co/
+      rchg_dp/spec_yld/hl_no3n/flo_min/revap_min and nothing else. Commissioning
+      2026-08-01 confirmed the row is inert: bit-identical NSE 0.685166 and
+      PBIAS -23.2637 at delay = 0 AND delay = 500, the exact ends of the model's
+      own box. Keeping it in the pool would hand the optimizer a lever that reads
+      back correctly from calibration.cal while doing nothing — precisely the
+      dt_013 silent-no-op the KI documents. The recession phase is instead
+      carried by alpha_bf (live: NSE 0.635 at 0.01 -> 0.753 at 0.99) and
+      spec_yld (live).
+    cite:
+      - "dag.influence gw_delay -> flo_out, sensitivity_grade MEDIUM"
+      - "li2022_swat_four_gsa_methods (10.3390/app12199862) — GW_DELAY top-ranked in the Upper Heihe GSA"
+      - "cal_parms.cal: delay obj_typ gw absmin 0 absmax 500; aquifer.aqu header (this deck) has no delay column"
+      - "commissioning 2026-08-01 range-bound sweep, tools/calib_run.py"
+  - names: [smfmx, smtmp, sftmp]
+    reason: >-
+      dag.influence marks these HIGH/MEDIUM but with explicit
+      `applicability: snow-dominated basins`. Xixian is 31.6-32.6 N humid
+      subtropical at 40-800 m; basin_wb_yr reports snofall/snomlt ~0 over
+      1981-1990, so these levers have no signal to move here.
+    cite: ["dag.influence applicability field", "abbas2024_swatplus_pest_framework", "li2022_swat_four_gsa_methods"]
+  - names: ["aquifer hydraulic conductivity", "streambed thickness", "streambed hydraulic conductivity"]
+    reason: >-
+      dag.influence marks these HIGH but with `applicability: gwflow module
+      active (bsn_cc%gwflow=1)`. This deck's codes.bsn declares no gwflow field
+      and there is no gwflow input group, so the module is OFF and these
+      parameters do not exist in the run.
+    cite: ["dag.influence applicability field", "bailey2020_swatplus_gwflow_module", "bailey2023_swatplus_gwflow_improvements"]
+  - names: ["drain perimeter hydraulic conductivity"]
+    reason: >-
+      dag.influence `applicability: tile-drained basins`. codes.bsn tiledrain = 0
+      and no HRU carries a tile-drain object in this delineation.
+    cite: ["dag.influence applicability field", "abbas2024_swatplus_pest_framework"]
+  - names: [epco, canmx]
+    reason: >-
+      Real ET levers, but redundant with esco + perco + revap_co + rchg_dp, which
+      already span the ET / recharge / loss axis. Held out for schema C4
+      (identifiability / equifinality) rather than on evidence they are
+      insensitive; re-open them if the staged escalation exhausts the pool above.
+    cite: ["cal_parms.cal epco obj_typ hru [0,1]; canmx obj_typ hru [0,100]"]
+
+# ---------------------------------------------------------------------------
+# Hard feasibility, checked before a run (cheap rejection, no model execution).
+# ---------------------------------------------------------------------------
+constraints:
+  # perco pushes water down to the aquifer; rchg_dp then removes a share of it
+  # from the basin entirely. Their product is the fraction of drainable soil
+  # water permanently lost. Above ~0.85 the model cannot produce enough channel
+  # flow at any setting of the other levers, so the region is infeasible rather
+  # than merely bad — reject it without paying for a run.
+  - "perco * rchg_dp <= 0.85"
+
+runner:
+  kind: subprocess
+  command: ["/mnt/disk1/Hydrocraft_server/python_env/bin/python",
+            "tools/calib_run.py", "--workdir", "{workdir}", "--out", "{metrics_json}"]
+  metrics_file: "{metrics_json}"
+  timeout: 1800          # soft hint only; the kit ignores it unless KDT_CALIB_EVAL_TIMEOUT is set
+  cwd: "{ki_path}"
+
+strategy:
+  cost_class: cheap                  # measured 2026-08-01: ~7 s per eval wall-clock, single-threaded
+                                     # (deck rebuild ~0.5 s + binary ~3.5 s + extraction ~2 s + scoring)
+  default_algorithm: dds             # single-objective, cheap, 12-parameter pool
+  max_evaluations: 400
+  probe_objectives: true             # the runner emits nse/kge/pbias/rmse/r but NOT day_bias
+  staged: true                       # sensitivity screen -> calibrate few -> escalate
+  staged_start: 4
+  staged_step: 3
+  holdout:
+    kind: years
+    protocol: blocked_temporal
+    grouping_key: water_year
+    generalization_axis: time
+    fraction: 0.5
+    rationale: >-
+      obs_shape is point_time_series, so the default is a contiguous blocked
+      temporal split. The two halves are the SAME windows the validated run was
+      scored on — calibration 1981-01-01..1985-12-31, holdout
+      1986-01-01..1990-12-31 — with 1979-1980 consumed as warmup (time.sim
+      1979-1990, print.prt nyskip 2). Reusing the validated split means the
+      calibrated NSE is directly comparable to the recorded nse_cal 0.6466 /
+      nse_val 0.6353 rather than to a re-drawn split. Contiguous 5-year blocks
+      (not random days) because daily discharge is strongly autocorrelated and a
+      random split would leak calibration information into the holdout.
+    cite:
+      - "validated run real_case_result.json: period_calibration 1981-01-01..1985-12-31, period_validation 1986-01-01..1990-12-31"
+      - "KI docs/validation_convention.yaml; auto_dissect_multi_agent/validators/standard_calval.py"
+    confidence: high

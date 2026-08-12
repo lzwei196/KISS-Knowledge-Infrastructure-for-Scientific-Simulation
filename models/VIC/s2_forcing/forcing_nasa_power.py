@@ -49,6 +49,8 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
+# KDT dt_vic_023: netCDF4 MUST be imported before xarray. See diagnostics/triplets.md.
+import netCDF4  # noqa: F401  # isort:skip  -- must precede `import xarray`
 import xarray as xr
 sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect")
 from ki_tools_common.units import celsius_to_kelvin, kelvin_to_celsius
@@ -153,6 +155,13 @@ def fetch_power_hourly(
     import urllib.request
     import urllib.error
 
+    # NASA POWER must bypass the local egress proxy (127.0.0.1:7897): routing this PUBLIC
+    # API through the proxy stalls the request indefinitely — it pinned a VIC run at
+    # forcing 0/N for 80+ minutes. ProxyHandler({}) forces a DIRECT connection for THIS
+    # opener regardless of any http_proxy/https_proxy env — the urllib equivalent of
+    # requests' trust_env=False. (Bulk download APIs are the opposite; see the proxy notes.)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
     url = (
         f"{API_BASE}?"
         f"parameters={POWER_PARAMS}"
@@ -168,7 +177,7 @@ def fetch_power_hourly(
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "HydroCraft/1.0"})
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with opener.open(req, timeout=120) as resp:  # direct, proxy-bypassed
                 data = json.loads(resp.read().decode("utf-8"))
 
             params = data.get("properties", {}).get("parameter", {})
@@ -398,7 +407,9 @@ def read_grid_cells(
 
 def estimate_basin_area(grid_nc_path: Path) -> float:
     """Rough basin area estimate from grid cell count × cell area."""
-    ds = xr.open_dataset(grid_nc_path)
+    # dt_vic_023: pin the engine; a bare open_dataset() probes every backend
+    # entrypoint and SIGSEGVs at interpreter exit.
+    ds = xr.open_dataset(grid_nc_path, engine="netcdf4")
     mask = ds["mask"] if "mask" in ds else None
     if mask is not None:
         n_cells = int((mask > 0).sum())
@@ -553,6 +564,21 @@ def run(
             "[%d/%d] POWER point (%.4f, %.4f) → %d VIC cell(s)",
             i, total_power_points, power_lat, power_lon, len(vic_cells),
         )
+
+        # ─── Resume: skip this POWER point if every VIC cell it feeds is already
+        # written AND has the exact expected row count. A short/truncated file
+        # (killed mid-write on a previous launch) fails the check and is refetched.
+        already = 0
+        for cell_lat, cell_lon in vic_cells:
+            p = output_dir / f"{forcing_prefix}{cell_lat:.4f}_{cell_lon:.4f}"
+            if p.exists():
+                with open(p) as fh:
+                    if sum(1 for _ in fh) == expected_rows:
+                        already += 1
+        if already == len(vic_cells):
+            logger.info("  resume: %d cell file(s) already complete — skipping fetch", already)
+            success_count += len(vic_cells)
+            continue
 
         # Fetch multi-year hourly data
         df_hourly = fetch_power_multi_year(power_lat, power_lon, start_year, end_year)

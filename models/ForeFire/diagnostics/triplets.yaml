@@ -329,13 +329,14 @@
       is not installed, the binary cannot load at runtime.
     affected_components: [forefire binary, system libraries]
   remedy:
-    action: "Install NetCDF C++ development package"
-    tool_to_run: null
+    action: "Put the directory containing libnetcdf-cxx4.so.1 on LD_LIBRARY_PATH (usually already installed, just not on the default loader path)."
+    tool_to_run: run_forefire
     manual_steps:
-      - "Ubuntu/Debian: apt install libnetcdf-c++4-dev"
-      - "CentOS/RHEL: yum install netcdf-cxx4-devel"
-      - "Verify: ldd bin/forefire | grep netcdf"
-    prevention: "install-forefire.sh includes apt install"
+      - "Locate it: find / -name 'libnetcdf-cxx4.so.1' 2>/dev/null (on this platform: /home/server/.local/lib)"
+      - "Run with: LD_LIBRARY_PATH=/home/server/.local/lib forefire -i script.ff"
+      - "run_forefire.py now auto-prepends ~/.local/lib (or /usr/local/lib) when it holds the lib."
+      - "Only if genuinely missing: apt install libnetcdf-c++4-dev"
+    prevention: "run_forefire.py._runtime_env() sets LD_LIBRARY_PATH from the prefix that actually contains the lib."
   severity: fatal
   cross_references: []
 
@@ -463,3 +464,184 @@
     prevention: "Document wind limit behavior in simulation notes"
   severity: silent
   cross_references: [dt_002]
+
+- id: dt_019
+  stage: s1_landscape_data
+  failure_domain: data_format
+  symptom:
+    description: "loadData silently loads nothing; 'Domain variable not found' and/or 'Skipping variable X because type attribute is missing'; fire never ignites."
+    error_pattern: "Domain variable not found|Skipping variable"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "data.nc lacks the scalar `domain` variable and/or per-layer `type` attributes that DataBroker::loadFromNCFile requires."
+    explanation: >
+      ForeFire's NetCDF reader (src/DataBroker.cpp) FIRST fetches a scalar
+      variable named `domain` and reads SWx/SWy/Lx/Ly (+ optional BBoxWSEN) from
+      its attributes; if absent it prints "Domain variable not found" and aborts
+      the load. It then iterates the data variables and SKIPS any that lack a
+      non-empty `type` attribute ('data' for altitude/windU/windV, 'fuel' for the
+      fuel index). A landscape file with only altitude/fuel/windU/windV and no
+      domain var or type attrs loads as an empty domain -> no propagative layer,
+      no ignition.
+    affected_components: [convert_landscape_to_nc, data.nc, DataBroker.cpp]
+  remedy:
+    action: "Regenerate data.nc with the patched convert_landscape_to_nc.py (writes `domain` + type attrs)."
+    tool_to_run: convert_landscape_to_nc
+    manual_steps:
+      - "Verify: python -c \"import netCDF4; d=netCDF4.Dataset('data.nc'); print('domain' in d.variables, [d[v].getncattr('type') for v in ('altitude','fuel','windU','windV')])\""
+      - "domain must expose SWx,SWy,Lx,Ly; every layer must have a type attribute."
+    prevention: "convert_landscape_to_nc.validate_outputs() now checks domain + type attrs."
+  severity: fatal
+  cross_references: [dt_010, dt_020]
+
+- id: dt_020
+  stage: s1_landscape_data
+  failure_domain: data_format
+  symptom:
+    description: "loadData prints 'NetCDF: Numeric conversion not representable' (ncAtt.cpp); time origin garbage (valid_at ~1901), fire never ignites."
+    error_pattern: "Numeric conversion not representable"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "domain variable / attributes written with the wrong NetCDF types (NC_CHAR var or float64 attrs)."
+    explanation: >
+      ForeFire's canonical landscape file stores `domain` as an NC_STRING scalar
+      with float32 attributes (SWx, SWy, Lx, Ly, t0, Lt=inf, ...). Writing the
+      numeric attrs as float64 (or the variable as a single NC_CHAR) makes the
+      netcdf-cxx4 getValues call throw "Numeric conversion not representable",
+      which aborts attribute parsing and leaves the simulation time origin
+      uninitialised (front never propagates). A related trap: writing data layers
+      with nt=2 time slabs and no time coordinate makes the engine compute a
+      size_t-underflowed time index ("Array ... out of bounds", value ~1.8e19).
+    affected_components: [convert_landscape_to_nc, data.nc]
+  remedy:
+    action: "Write `domain` as NC_STRING with float32 attrs and use nt=1 (single time slab)."
+    tool_to_run: convert_landscape_to_nc
+    manual_steps:
+      - "domain dtype must be str (NC_STRING), not S1; attrs float32."
+      - "altitude/fuel/windU/windV: single time step (nt=1)."
+    prevention: "Patched convert_landscape_to_nc.py writes str-typed domain, float32 attrs, nt=1."
+  severity: fatal
+  cross_references: [dt_019]
+
+- id: dt_021
+  stage: s4_execution
+  failure_domain: model_physics
+  symptom:
+    description: "ForeFire segfaults during goTo as the fire grows large; gdb shows FDCell::addFireNode with a garbage `this` from FireDomain::updateFireNodeInCells."
+    error_pattern: "segfault|Segmentation fault"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "A FireNode propagated OUTSIDE the loaded domain; updateFireNodeInCells indexes cells[i][j] out of bounds (no boundary check)."
+    explanation: >
+      When the fire front reaches the edge of the landscape grid, a marker can be
+      advanced to a cell index beyond atmoNX/atmoNY. FireDomain::updateFireNodeInCells
+      (FireDomain.cpp ~L1474) dereferences the resulting invalid FDCell pointer in
+      addFireNode (FDCell.cpp ~L171) and crashes. This is an engine limitation, not
+      a data error: the simulated burned area simply outgrew the domain. NOTE the
+      "atmo (fluxes integration) cell has less than 1 BMap point" warning
+      (BMapsResolution = max(spatialIncrement/sqrt2, minimalPropagativeFrontDepth)
+      > the data-grid cell size) is a SEPARATE, benign red herring - it does not
+      cause this crash.
+    affected_components: [FireDomain.cpp, FDCell.cpp, domain extent]
+  remedy:
+    action: "Size the domain with a generous margin around the expected final fire extent, and stop the run before the front reaches any edge."
+    tool_to_run: null
+    manual_steps:
+      - "Make the landscape grid extend several km beyond the expected burn, especially downwind."
+      - "Pick the analysis time (e.g. area-matched isochrone) so the front stays well inside the grid."
+      - "A centred near-radial fire is safest; a one-sided downwind fan reaches the edge fastest."
+    prevention: "Keep the fire footprint inside the domain; do not over-run goTo."
+  severity: fatal
+  cross_references: []
+
+- id: dt_022
+  stage: s3_simulation_script
+  failure_domain: configuration
+  symptom:
+    description: "forefire exits 0, prints no error, and EVERY print[] isochrone is an empty GeoJSON FeatureCollection (~90 bytes). The fire never ignites."
+    error_pattern: ""
+    detection_method: output_inspection
+  diagnosis:
+    root_cause: "startFire[loc=(x,y,0)] was given projected CRS coordinates (e.g. UTM easting/northing); ForeFire's loc is in DOMAIN-LOCAL metres."
+    explanation: >
+      convert_landscape_to_nc writes the `domain` variable with SWx=SWy=0 and
+      Lx/Ly = the domain size in metres, because the engine maps that local
+      metric frame onto the BBoxWSEN lon/lat box (setting SWx/SWy to the real
+      easting/northing instead corrupts the mapping and dumps perimeters at
+      nonsense lon/lat). Consequently the valid loc range is 0..Lx by 0..Ly.
+      An absolute UTM pair such as (550877, 4582923) lies far outside that box,
+      so the ignition point falls in no cell, no FireNode is created, and the
+      run completes normally with empty output and return code 0. There is NO
+      warning: this is a silent failure, not a crash.
+    affected_components: [run.ff, startFire, convert_landscape_to_nc, data.nc]
+  remedy:
+    action: "Convert the ignition point to domain-local metres, or ignite with lon/lat."
+    tool_to_run: prepare_fire_case
+    manual_steps:
+      - "prepare_fire_case.py writes both `ignition_utm` and `ignition_local_m`; pass ignition_local_m to startFire[loc=]."
+      - "Local = projected - origin, where the origin is data.nc domain attrs originX/originY."
+      - "Or use startFire[lonlat=(lon,lat,0);t=0], which the engine maps through BBoxWSEN."
+      - "Verify after the first goTo: an isochrone GeoJSON larger than ~200 bytes means the fire ignited."
+    prevention: "convert_landscape_to_nc now prints the local-frame extent and the projected origin, and records originX/originY/projCRS as provenance attributes."
+  severity: silent
+  cross_references: [dt_010, dt_019, dt_021]
+
+- id: dt_023
+  stage: s6_validation
+  failure_domain: data_format
+  symptom:
+    description: "validate_spread reports a high Sorensen coefficient for fires that do not overlap at all (or ~0 for fires that clearly do)."
+    error_pattern: ""
+    detection_method: output_inspection
+  diagnosis:
+    root_cause: "The simulated and observed perimeters were rasterised on SEPARATE bounding boxes, then padded from index (0,0) — the two masks are not co-registered."
+    explanation: >
+      The original compute_burned_area_raster() built each raster on the extent
+      of its OWN polygon, so cell (0,0) meant a different ground location for
+      the simulation than for the observation. sorensen_coefficient() then
+      zero-padded both to a common SHAPE, which translates one fire on top of
+      the other. Demonstrated: two identical 1200 m squares placed 5 km apart
+      scored Sorensen = 1.0 (perfect agreement) instead of 0.0. Every
+      area-overlap score is only defined on a common grid.
+    affected_components: [validate_spread]
+  remedy:
+    action: "Rasterise both perimeters on ONE shared grid before scoring."
+    tool_to_run: validate_spread
+    manual_steps:
+      - "shared_grid([sim_coords, obs_coords], resolution) -> rasterize_on_grid(...) for each."
+      - "Score with overlap_scores(), which emits csi/sorensen/pod/far together."
+      - "Both inputs must already be in the SAME projected CRS (metres), not degrees."
+    prevention: "validate_spread now builds one shared grid and reports CSI (the determining event_detection metric) alongside Sorensen/POD/FAR."
+  severity: silent
+  cross_references: [dt_021]
+
+- id: dt_024
+  stage: s4_execution
+  failure_domain: configuration
+  symptom:
+    description: "forefire aborts immediately with 'File <some-other-directory>/./data.nc doesn't exist or no longer available', even though data.nc IS in the working directory passed to run_forefire."
+    error_pattern: "doesn't exist or no longer available"
+    detection_method: error_message
+  diagnosis:
+    root_cause: "ForeFire resolves ForeFireDataDirectory (and hence loadData / fuelsTableFile) against the PWD ENVIRONMENT VARIABLE, not against the process working directory."
+    explanation: >
+      `setParameter[ForeFireDataDirectory=.]` is expanded using $PWD. Python's
+      subprocess.run(cwd=...) changes the process working directory but does NOT
+      update PWD, which the child inherits from the parent shell. So a run
+      launched from any directory other than the case directory looks for
+      data.nc and fuels.csv beside the CALLER. The failure is loud but very
+      misleading: the printed path is the caller's directory, so it reads as a
+      missing input rather than a path-resolution bug. This bites every batch /
+      multi-case runner, and is invisible in single-case testing because there
+      the caller usually IS the case directory.
+    affected_components: [run_forefire, ForeFireDataDirectory, loadData]
+  remedy:
+    action: "Export PWD=<workdir> in the environment handed to the binary (or pass absolute paths in the .ff script)."
+    tool_to_run: run_forefire
+    manual_steps:
+      - "run_forefire.py now sets env['PWD'] = abspath(--workdir); nothing else is needed."
+      - "Running by hand: cd into the case directory first, or use `env PWD=$PWD forefire -i run.ff`."
+      - "Alternative: give loadData / fuelsTableFile absolute paths."
+    prevention: "run_forefire.py sets PWD to the resolved workdir on every invocation."
+  severity: fatal
+  cross_references: [dt_015]

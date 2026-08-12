@@ -34,7 +34,7 @@
 |--------|-------|
 | Tools | 4 |
 | Skill Documents | 5 |
-| Diagnostic Triplets | 18 |
+| Diagnostic Triplets | 20 |
 | Validation Status | HJ Andrews Watershed 8 |
 
 ---
@@ -351,6 +351,33 @@ See `dt_002`.
    per patch, water interception is over-counted and the water balance breaks.
    (`dt_017`)
 
+10. **Provide BOTH Kdown_direct AND Kdown_diffuse** — If only one is given,
+    RHESSys silently ignores both and uses constant clear-sky radiation. In
+    humid climates this causes vegetation collapse in 3-5 years via drought
+    mortality. Use `tools/split_kdown.py` (Erbs 1982) to partition total Kdown.
+    (`dt_019`)
+
+11. **Generate daytime_rain_duration for humid/monsoon basins** — Without
+    this file, RHESSys defaults rain_duration = 86400 s (all day) for ANY
+    precipitation. This zeros transpiration on every rainy day, suppressing
+    annual ET by 3-10x in monsoon climates. Run `tools/gen_rain_duration.py`
+    and add `daytime_rain_duration` to the station file's non-critical daily
+    sequences. (`dt_022`)
+
+12. **Patch canopy_stratum_daily_F.c line 1160 before compiling** — RHESSys 7.4
+    has a typo: `if (rnet_evap_day < ZERO) rnet_evap_night = 0.0;` should be
+    `rnet_evap_day = 0.0`. Without this fix, cloudy days zero transpiration
+    regardless of radiation. Change the line and recompile. (`dt_021`)
+
+13. **Chinese obs files are ISO-8859-1, not UTF-8** — All local obs/*.txt files
+    from national Chinese archives use Latin-1 encoding. Use `open(f, encoding='latin-1')`.
+    Default UTF-8 raises UnicodeDecodeError at the station name column. (`dt_023`)
+
+14. **Use strptime, not fromisoformat, for Chinese obs date strings** — Files use
+    non-zero-padded dates ('1982-7-4'). `fromisoformat()` silently drops ~85% of
+    rows (only months 10-12 and days 10-31 parse), giving obs_Q that is 5-10x too
+    low. Use `datetime.strptime(s, '%Y-%m-%d')`. (`dt_024`)
+
 ---
 
 ## 9. Calibration Parameters (Priority Order)
@@ -433,8 +460,23 @@ python ki/tools/parse_output.py \
 | dt_016 | s6 | build_error | fatal | NetCDF compile flag missing |
 | dt_017 | s5 | parameter_error | silent | Cover fraction > 1.0 |
 | dt_018 | s6 | runtime | fatal | Negative sat deficit crash |
+| dt_019 | s3 | climate_forcing | silent | Kdown_direct provided without Kdown_diffuse → always clear-sky |
+| dt_020 | s3 | climate_forcing | moderate | tmax−tmin constant → MTCLIM cloud correction broken |
+| dt_021 | s4 | source_code_bug | critical | canopy_stratum_daily_F.c line 1160 typo → trans=0 on cloudy days |
+| dt_022 | s4 | missing_input | critical | No daytime_rain_duration file → trans=0 on all rainy days |
+| dt_023 | s7 | obs_file_encoding | critical | Chinese obs files are ISO-8859-1 → UnicodeDecodeError with default UTF-8 open() |
+| dt_024 | s7 | obs_date_parsing | silent | Non-zero-padded dates ('1982-7-4') → fromisoformat() silently drops ~85% of obs days |
 
 See `diagnostics/triplets.yaml` for full symptom-diagnosis-remedy entries.
+
+### Scale mismatch caveat for specific discharge comparison (Bengbu)
+
+When comparing a small-domain RHESSys model (156 km²) to a large basin gauge (Bengbu 51080: 121,000 km²), the specific discharge comparison (mm/yr) assumes uniform runoff generation across the full gauge drainage area. Results for Cal15:
+- NSE = 0.390, r = 0.952, PBIAS = +22.3% (9 years, 1982-1990)
+- r = 0.952 confirms the physics are correct (interannual dynamics captured)
+- PBIAS = +22% systematic wet bias → soil storage parameters need calibration
+- Calibrating against the full-basin gauge corrects for basin-average response,
+  not necessarily the sub-basin physics. Use with awareness of this scale gap.
 
 ---
 

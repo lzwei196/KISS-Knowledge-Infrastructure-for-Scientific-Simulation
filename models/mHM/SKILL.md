@@ -82,6 +82,22 @@ mHM operates on three hierarchical grids:
 
 **CRITICAL CONSTRAINT**: L1 and L11 resolutions must be integer multiples of L0 resolution. If L0=500m, then L1 must be 1000, 1500, 2000, ... etc. Violation causes `ERROR: Resolution mismatch` at startup.
 
+**CRITICAL CONSTRAINT — L0 MUST BE SQUARE** (dt_r12). Make `ncols_L0 == nrows_L0`,
+with the side an exact multiple of the L1/L11 ratio. `setup_mhm_domain.py` now
+enforces this by padding with nodata cells.
+
+*Why:* mHM's `read_header_ascii()` declares `(header_ncols, header_nrows, …)` but
+every call site passes `(nrows, ncols, …)` positionally, e.g.
+`mo_meteo_handler.f90: call read_header_ascii(fName, unit, nrows2, ncols2, …)`.
+The ASCII `ncols` line therefore lands in mHM's `nrows`, and
+`calculate_grid_properties()` then derives `xllcornerOut` from `ncolsIn` — mixing
+the x-origin with the y-extent. For a **non-square** L0 no geographically correct
+header can satisfy the L2 check: at Wangjiaba (239 × 213 @ 0.01°) mHM demanded
+`xll=113.12, yll=31.35` while the true origin is `(113.24, 31.46)`, and aborted with
+`L2_variable_init: size mismatch in grid file for level2`. mHM's own test domains
+are square (240 × 240), so upstream never trips over it. With a square L0 of side
+`N` and ratio `R`, `xllOut = xll0 + N·cs0 − (N/R)·cs1 = xll0` under either reading.
+
 **Coordinate system flag** (`iFlag_cordinate_sys` in `mhm.nml`):
 - `0` = regular X-Y (projected/metric coordinates, cellsize in METERS)
 - `1` = regular lat-lon (geographic coordinates, cellsize in DEGREES)
@@ -92,9 +108,53 @@ mHM operates on three hierarchical grids:
 
 ---
 
+## Step 0 — Verify the basin BEFORE anything else (dt_s09)
+
+**Cross-check the shapefile's area against the gauge's published drainage area.**
+A truncated domain is unfixable downstream: if the grid contains half the
+contributing area, simulated discharge is ~half of observed and *no* parameter set
+can recover it. You will see good timing (`r > 0.8`) with a stubborn
+`PBIAS ≈ −50%`, and you will waste the whole calibration chasing it.
+
+Measured at Wangjiaba (2026-07-09):
+
+| Source | Area | vs documented 30,630 km² |
+|--------|------|--------------------------|
+| `data/shp/wangjiaba_shp` (3 nested polygons, largest) | 15,952 km² | **−48%** |
+| whitebox D8 on `china_dem_90m` at the gauge | 15,782 km² | −48% |
+| **MERIT-Hydro `upa` at the snapped outlet** | **30,844 km²** | **+0.7%** |
+| MERIT-Hydro reverse-traced catchment | 29,638 km² | −3.2% |
+
+Bare-earth D8 *reproduces the shapefile's error* rather than exposing it: on the
+flat, leveed Huai plain the China 90 m DEM routes the Hong River (洪河, ~12,000 km²)
+to a confluence just **downstream** of Wangjiaba. Two wrong methods agreeing is not
+corroboration. MERIT-Hydro's flow direction is hydrologically corrected against
+observed river networks and ships `upa` (upstream area, km²), so the outlet can be
+snapped to the *documented* area instead of guessed:
+
+```bash
+python tools/s1_domain/delineate_basin_merit.py \
+    --outlet_lon 115.617 --outlet_lat 32.433 --target_area_km2 30630 \
+    --bbox 112.5 31.0 116.2 34.4 --snap_deg 0.06 \
+    --out_shp runs/basin/wangjiaba_merit.shp
+```
+
+It refuses to emit a basin more than `--max_area_error_pct` (default 10%) from the
+target, and also writes the `*_dir.tif` / `*_upa.tif` clips that s2 consumes.
+
+MERIT-Hydro's D8 encoding is exactly mHM's ArcGIS convention
+(1=E, 2=SE, … 128=NE; 0 = mouth, −1 = inland depression, 255 = nodata), so
+`prepare_morpho_data.py --fdir_source merit --merit_dir_tif <…>_dir.tif` upscales
+it straight onto L0. **Use `merit` on any flat or engineered basin**; keep
+`--fdir_source dem` only where relief genuinely controls the drainage.
+
+---
+
 ## Pipeline Stages
 
 ```
+s1_domain       delineate_basin_merit  <-- FIRST: get the TRUE catchment
+    |
 s0_config       Configuration & directory setup
     |
 s1_domain       Domain grid setup (L0, L1, L11)
@@ -124,8 +184,9 @@ s10_regionalize Transfer to ungauged basins (THE KEY STAGE)
 
 | Stage | Tool | Script Path | Purpose |
 |-------|------|-------------|---------|
+| s1 | **delineate_basin_merit** | `tools/s1_domain/delineate_basin_merit.py` | **Run FIRST.** True catchment from MERIT-Hydro D8, snapped to the gauge's documented drainage area |
 | s0 | configure_mhm_basin | `tools/s0_config/configure_mhm_basin.py` | Create directory structure and initial config |
-| s1 | setup_mhm_domain | `tools/s1_domain/setup_mhm_domain.py` | Compute L0/L1/L11 grids from shapefile |
+| s1 | setup_mhm_domain | `tools/s1_domain/setup_mhm_domain.py` | Compute L0/L1/L11 grids from shapefile (pads L0 to a square) |
 | s1 | generate_latlon_files | `tools/s1_domain/generate_latlon_files.py` | Create lat/lon NetCDF for domain |
 | s2 | prepare_morpho_data | `tools/s2_morphology/prepare_morpho_data.py` | DEM, slope, aspect, flow dir, flow acc -> ASCII grids |
 | s2 | hwsd_to_mhm_soil | `tools/s2_morphology/hwsd_to_mhm_soil.py` | HWSD -> mHM soil classes + classdefinition.txt |
@@ -148,8 +209,28 @@ s10_regionalize Transfer to ungauged basins (THE KEY STAGE)
 ## MPR Calibration and Regionalization Workflow (THE KEY WORKFLOW)
 
 This is the workflow that makes mHM uniquely valuable. Without calibration, MPR
-parameters are German defaults (Mosel basin) that produce poor results elsewhere
-(e.g., NSE=-0.304 on Bengbu with defaults).
+parameters are German defaults (Mosel basin) that produce mediocre results
+elsewhere.
+
+**Reference (Wangjiaba 51030, Huai, 29,638 km², CMFD 0.25°, Oudin PET,
+L0 0.01° / L1 = L11 0.25°, spin-up 1980):**
+
+| Parameters | NSE | KGE | r | PBIAS |
+|-----------|-----|-----|---|-------|
+| German MPR defaults, full 1981–1990 | 0.442 | 0.456 | 0.861 | **+41.2%** |
+| defaults, cal 1981–1985 | 0.302 | 0.301 | 0.887 | +48.2% |
+
+The uncalibrated defaults *over*-predict runoff in a humid subtropical basin
+(they under-evaporate), the mirror image of the sign you get in dry basins. The
+`+41%` bias, not the correlation, is what calibration must fix — `r = 0.86`
+already shows the routing and forcing are right.
+
+> A prior Wangjiaba run reported `NSE = −0.344, PBIAS = −94.7%`. That was **not**
+> an mHM property: it was three stacked input defects — a 52%-truncated basin
+> (dt_s09), an ×10800 CMFD daily precipitation factor (dt_s10), and a Hargreaves
+> PET of 98 mm/day from a synthesised diurnal range (dt_s11). Fixing the inputs
+> moved the *uncalibrated* model from −0.344 to +0.442 before a single parameter
+> was touched.
 
 ### Step 1: Calibrate on a Gauged Basin
 
@@ -177,8 +258,58 @@ python tools/s9_calibration/setup_mhm_calibration.py \
 **Optimizer options**:
 - `opti_method=1` (DDS, recommended): Fast convergence, 1000 iterations usually sufficient
 - `opti_method=3` (SCE): More robust but slower, good for complex parameter spaces
-- `opti_function=10` (KGE, recommended): Kling-Gupta Efficiency, balanced flow metric
-- `opti_function=1` (1-NSE): Nash-Sutcliffe, biased toward peak flows
+
+**`opti_function` — verified against the v5.13.1 source. DO NOT GUESS.**
+`src/mRM/mo_mrm_objective_function_runoff.F90` (discharge-only) and
+`src/mHM/mo_objective_function.F90` (multi-variable):
+
+| Code | Objective (minimised) | Needs `&optional_data`? |
+|------|----------------------|--------------------------|
+| **1** | `1 - NSE(Q)` — use when NSE is the reported metric | no |
+| 2 | `1 - lnNSE(Q)` (low flows) | no |
+| 3 | `1 - 0.5*(NSE+lnNSE)(Q)` | no |
+| **9** | `1 - KGE(Q)` — the real KGE-of-discharge objective | no |
+| 14 | multi-gauge KGE, power-6 norm | no |
+| 10–13 | KGE / PD / SSE / corr of **soil moisture** | **YES** |
+| 15 | `KGE(Q) * RMSE(TWS)` | **YES** |
+| 17 | KGE of **neutrons** | **YES** |
+| 27, 29, 30 | objectives involving **ET** | **YES** |
+
+> **TRAP (dt_r15).** `opti_function=10` is **NOT** KGE of discharge — it is
+> `1 - KGE of catchment-average SOIL MOISTURE`. Earlier revisions of this file
+> recommended it; following that advice aborts the run with
+> `POSITION_NML: namelist /optional_data/ MISSING`. For discharge calibration use
+> **1** (1−NSE) or **9** (1−KGE).
+
+> **TRAP (dt_r14).** `nIterations` must be **≥ 6**. FORCES `mo_dds.F90:169` does
+> `stop 'Error DDS: max function evals must be minimum 6'`, and a Fortran
+> `stop '<msg>'` exits with **status 0** — so mHM looks like a clean success while
+> writing no `FinalParam.nml`. Never trust the exit code alone; assert that
+> `FinalParam.nml` exists.
+
+> **TRAP (dt_r16).** `setup_mhm_calibration.py` used to rewrite `mhm.nml` on
+> *every* invocation. Because the documented recipe calls it three times
+> (configure → `--execute` → `--parse_results`) and the last two carry no
+> optimizer flags, the `--execute` call silently stamped the argparse **defaults**
+> back into `mhm.nml`. Always `grep opti_function nIterations mhm.nml` immediately
+> before launching.
+
+**Calibration / validation split.** `eval_Per` is the window the optimizer sees.
+Set it to the CALIBRATION years only, and give the spin-up as `warming_Days`
+(mHM warms up on the days immediately *before* `eval_Per`, so the forcing must
+start earlier). Then re-run forward over cal+val with `--param_nml FinalParam.nml`
+and score the two periods separately:
+
+```bash
+# calibrate on 1981-1985 only, 1980 as spin-up
+python tools/s6_namelist/generate_mhm_namelists.py --config ... --domain_info ... \
+    --warmup_days 365 --eval_start_year 1981 --eval_end_year 1985 \
+    --optimize --opti_method 1 --opti_function 1 --n_iterations 2000
+# forward run over 1981-1990 with the calibrated parameters
+python tools/s6_namelist/generate_mhm_namelists.py --config ... --domain_info ... \
+    --warmup_days 365 --eval_start_year 1981 --eval_end_year 1990 \
+    --param_nml <cal_dir>/FinalParam.nml
+```
 
 **Basin type presets** adjust parameter bounds for the optimizer:
 - `humid_subtropical`: wider infiltration/interflow, narrower snow
@@ -279,20 +410,91 @@ First line: `NoLAIclasses  <N>`
 Header: `ID  LAND-USE  Jan.  Feb.  Mar.  ...  Dec.`
 Monthly LAI values per class
 
+> **TRAP (dt_s12).** The shipped land-cover raster is
+> `data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif` and it uses the **UMD**
+> 14-class legend, **not IGBP** (its `.vat.dbf` global counts confirm it:
+> value 11 = 11.8M cells = cropland; value 12 = 87M = bare). Under IGBP,
+> 11 = Permanent Wetlands — so an IGBP lookup relabels all Huai cropland as wetland
+> and replaces the seasonal crop LAI curve (0.0–5.2) with a flat 2–5 year-round.
+> Use `--legend umd`. A **uniform** land-cover grid is never a valid result: it
+> silently disables every land-cover-dependent MPR transfer function.
+
+### Observed Discharge (Gauge) Format
+Five header lines, then **six** columns — verified against
+`mhm_src/test_domain/input/gauge/00398.txt`:
+
+```
+00398:GAUGE 1 (Abfluss)     DAILY
+nodata  -9999
+n       1       measurements per day [1, 1440]
+start  1990  01  01  00  00   (YYYY MM DD HH MM)
+end    1993  12  31  00  00   (YYYY MM DD HH MM)
+1990  01  01  00  00    157.000
+```
+
+> **TRAP (dt_s13).** `mo_read_timeseries.f90` skips five header lines and parses
+> `YYYY MM DD HH MM Q`. A bare 4-column `YYYY MM DD Q` file makes mHM eat the first
+> data rows as the header and then read discharge out of the **DAY** column.
+
 ### Meteorological Forcing Format
-NetCDF with dimensions (time, lat, lon), daily or sub-daily:
-- Precipitation: mm/day (variable name must match mhm.nml setting)
-- Temperature: degrees Celsius
-- PET: mm/day (if pre-computed) OR tmin/tmax for Hargreaves
+
+Verified against `mhm_src/test_domain_2/input/meteo/`:
+
+```
+input/meteo/pre/pre.nc     + header.txt
+input/meteo/tavg/tavg.nc   + header.txt
+input/meteo/pet/pet.nc     + header.txt      # processCase(5) = 0
+```
+
+- **ONE concatenated file per variable** spanning the whole period — *not* one
+  file per year. mHM opens `<dir>/<varname>.nc`.
+- The NetCDF **variable name equals the directory name** (`pre`, `tavg`, `pet`).
+- Dimensions `(time, yc, xc)`; georeferencing comes from `header.txt`.
+- Write the **L2 (forcing) grid identical to the L1 grid** — same `xllcorner`,
+  `yllcorner`, `cellsize` and shape. This is what `test_domain_2` does and it
+  removes all L0→L2 `cellFactor` ambiguity.
+- `lat` DESCENDING (N→S); `_FillValue = -9999.0`, never NaN; `time` as **int32**.
 
 ### Unit Conversion Table (Silent Error Prevention)
 
-| Variable | CMFD Unit | MSWX Unit | mHM Unit | Conversion |
-|----------|-----------|-----------|----------|------------|
-| Precipitation | mm/3hr | mm/3hr | mm/day | multiply by 8 (sum 8 3-hourly steps) |
-| Temperature | K | degC | degC | CMFD: subtract 273.15; MSWX: none |
-| Wind speed | m/s | m/s | m/s | none (only for Penman-Monteith) |
-| Radiation (SW) | W/m2 | W/m2 | W/m2 | none (only for Penman-Monteith) |
+**Always load through `ki_tools_common.load_forcing.load_daily_forcing`** — it is
+the one validated place where source units are normalised (`precip_mm` → mm/day,
+`temp_mean_c` → °C). Do not hand-roll the arithmetic in the s4 tool.
+
+| Variable | CMFD **3-hourly** | CMFD **daily** | MSWX | mHM | Note |
+|----------|------------------|----------------|------|-----|------|
+| Precipitation | kg m⁻² s⁻¹ | **kg m⁻² s⁻¹** (daily mean rate) | mm/3hr | mm/day | ×10800 per 3-h step, but **×86400** for the daily product |
+| Temperature | K | K | degC | degC | CMFD: −273.15 |
+| Wind speed | m/s | m/s | m/s | m/s | Penman-Monteith only |
+| Radiation (SW) | W/m² | W/m² | W/m² | W/m² | Penman-Monteith only |
+
+> **TRAP (dt_s10).** The `Data_forcing_01dy_*` (daily) CMFD product stores a daily
+> **mean rate**, not a 3-hourly accumulation. Applying the 3-hourly factor 10800
+> delivers exactly **1/8** of the true rainfall — a silent dry bias that drives
+> PBIAS to ≈ −95% and that no calibration can undo. Gate on basin-mean
+> precipitation ∈ [200, 4000] mm/yr.
+
+### PET: which `processCase(5)` can this forcing support?
+
+| Method | `processCase(5)` | Requires |
+|--------|------------------|----------|
+| PET read from file | **0** | `input/meteo/pet/pet.nc` |
+| Hargreaves-Samani | 1 | `tmin/` **and** `tmax/` with a real diurnal range |
+| Priestley-Taylor | 2 | net radiation |
+| Penman-Monteith | 3 | wind, humidity, radiation, pressure |
+
+> **TRAP (dt_s11).** CMFD **daily** carries a single temperature field, so
+> `temp_max_c == temp_min_c == temp_mean_c`. Hargreaves scales with
+> `sqrt(Tmax − Tmin)` and is therefore **identically zero**. Synthesising a fake
+> diurnal range (`tavg ± 5 K`) does not recover the missing information — it
+> fabricates the quantity the method integrates, and produced a basin-mean PET of
+> **98 mm/day** (~20× physical) that evaporated the whole water balance.
+>
+> For temperature-only daily forcing use **`--pet_method 0`**: the s4 tool
+> pre-computes **Oudin (2005)** PET from `tavg` + latitude and mHM reads it
+> (`processCase(5)=0`). At Wangjiaba this gives 925 mm/yr, max 6.5 mm/day.
+> `convert_forcing_to_mhm.py` refuses `--pet_method 1` when the mean diurnal
+> range is < 0.1 K.
 
 ---
 
@@ -331,7 +533,26 @@ See `diagnostics/triplets.yaml` for the full set. Key categories:
 
 ## Error Handling
 
+**mHM hangs after `Initialize domains ...` at ~100% CPU with no error** (dt_r13):
+there is a **cycle** in the L0 flow-direction grid; mRM's L11 tracer follows `fdir`
+until it reaches an outlet and never terminates. This bites when upscaling a fine
+D8 network: a river meandering across a cell boundary yields `A→B` and `B→A`.
+Guard: accept a downstream neighbour only when its max upstream area is *strictly*
+greater (upa increases monotonically downstream, so the coarse network becomes a
+DAG), map fine→coarse with integer arithmetic (`(mr - r0)//ratio`, never a lon/lat
+round-trip — the grids are offset by a fraction of a fine cell), and assert
+acyclicity before writing `fdir.asc`. A cycle checker must treat `fdir == 0` as an
+**outlet, not a cycle**.
+
+**mHM exits 0 having done nothing.** Fortran `stop '<msg>'` returns status **0**.
+Two places do this: DDS with `nIterations < 6` (dt_r14), and any `stop` in the
+namelist readers. Never trust the return code alone — assert the expected output
+file exists (`FinalParam.nml`, `daily_discharge.out`).
+
 When mHM produces unexpected results:
+0. **Check the basin area first** (dt_s09) and the forcing totals (dt_s10/dt_s11):
+   basin-mean precipitation ∈ [200, 4000] mm/yr and PET ≲ 8 mm/day. A structural
+   area or unit error looks exactly like a "calibration problem" and is not one.
 1. Check `ConfigFile.log` — look for `Resolution [m]: 0.` or `Effective Area: 0.000` which indicate wrong `iFlag_cordinate_sys`
 2. Verify ALL ASCII grids have identical headers: use `validate_morph_grids.py`
 3. Check forcing NetCDF variable names match mhm.nml expectations

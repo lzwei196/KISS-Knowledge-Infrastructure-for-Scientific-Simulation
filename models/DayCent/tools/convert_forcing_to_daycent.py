@@ -60,7 +60,7 @@ except ImportError as e:
     sys.exit(2)
 
 
-CMFD_DEFAULT = "/mnt/disk1/Hydrocraft_server/data/forcing/Data_forcing_03hr_010deg"
+CMFD_DEFAULT = "/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg"
 MSWX_DEFAULT = "/mnt/disk3/msxw"
 
 

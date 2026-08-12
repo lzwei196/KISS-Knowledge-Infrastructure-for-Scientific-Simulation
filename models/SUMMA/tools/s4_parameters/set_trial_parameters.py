@@ -65,6 +65,90 @@ ZTOPV = {1:0, 2:0.5, 3:0.5, 4:0.5, 5:0.5, 6:0.5, 7:0.5, 8:0.5, 9:0.5, 10:5.0,
          11:20.0, 12:14.0, 13:35.0, 14:17.0, 15:18.0, 16:0, 17:0.5, 18:20.0, 19:0.02}
 ZBOTV = {k: min(v * 0.3, v - 0.01) if v > 0.01 else 0.01 for k, v in ZTOPV.items()}
 
+DEFAULT_MPTABLE = "/mnt/disk1/Hydrocraft_server/model/summa/case_study/base_settings/MPTABLE.TBL"
+
+
+def read_mptable_hvt_hvb(mptable_path, scheme):
+    """HVT/HVB vectors from MPTABLE.TBL for the chosen Noah-MP table.
+
+    HVT/HVB live in the &noah_mp_<scheme>_parameters namelist, NOT in
+    &noah_mp_<scheme>_veg_categories -- which carries only NVEG/ISWATER and which
+    the shipped file repeats TWICE for modis. A parser keyed on veg_categories
+    finds zero HVT rows and silently falls back. Asserts NVEG-many values.
+    """
+    import re
+    want = f"&noah_mp_{scheme}_parameters"
+    with open(mptable_path) as fh:
+        lines = fh.read().splitlines()
+    start = None
+    for i, ln in enumerate(lines):
+        if ln.strip().lower() == want:
+            start = i
+            break
+    if start is None:
+        raise RuntimeError(f"{mptable_path} has no {want} section")
+    body = []
+    for ln in lines[start + 1:]:
+        if ln.strip() == "/":
+            break
+        body.append(ln)
+
+    def row(key):
+        pat = re.compile(r"^\s*" + key + r"\s*=", re.I)
+        for ln in body:
+            if pat.match(ln):
+                rhs = ln.split("=", 1)[1].split("!")[0]
+                vals = [float(x) for x in rhs.replace(",", " ").split()]
+                if not vals:
+                    raise RuntimeError(f"{key} row in {want} parsed to zero values")
+                return vals
+        raise RuntimeError(f"{key} not found in {want} of {mptable_path}")
+
+    hvt, hvb = row("HVT"), row("HVB")
+    if len(hvt) != len(hvb):
+        raise RuntimeError(f"{want}: HVT has {len(hvt)} values but HVB has {len(hvb)}")
+    expect = {"usgs": 27, "modis": 20}[scheme]
+    if len(hvt) != expect:
+        raise RuntimeError(f"{want}: expected NVEG={expect} HVT values, read {len(hvt)}")
+    return hvt, hvb
+
+
+def canopy_heights(veg, scheme, mptable_path):
+    """Per-HRU (heightCanopyTop, heightCanopyBottom, provenance).
+
+    SUMMA reads these from trialParams.nc (popMetadat.f90:212) and NEVER consults
+    MPTABLE for them; the localParamInfo default is a 20 m forest on EVERY HRU.
+    paramCheck requires top > bot STRICTLY, while MPTABLE gives HVT=HVB=0.0 for
+    water/urban/barren/ice -- hence the floor and the clamp.
+    """
+    if scheme:
+        hvt, hvb = read_mptable_hvt_hvb(mptable_path, scheme)
+        nveg = len(hvt)
+        top, bot = [], []
+        for v in veg:
+            iv = int(v)
+            if not (1 <= iv <= nveg):
+                raise RuntimeError(
+                    f"vegTypeIndex {iv} outside 1..{nveg} for --veg_scheme {scheme}; the attributes "
+                    f"file and the table disagree (SKILL.md 2c: vegeParTbl MUST match --veg_scheme)")
+            tt, bb = hvt[iv - 1], hvb[iv - 1]
+            if tt <= 0.0:
+                tt, bb = 0.05, 0.01
+            bb = min(max(bb, 0.01), 0.5 * tt)
+            top.append(tt)
+            bot.append(bb)
+        top, bot = np.array(top), np.array(bot)
+        prov = f"MPTABLE.TBL &noah_mp_{scheme}_parameters HVT/HVB"
+    else:
+        top = np.array([ZTOPV.get(int(v), 0.5) for v in veg])
+        bot = np.array([max(ZBOTV.get(int(v), 0.01), 0.01) for v in veg])
+        prov = "hard-coded USGS-27 VEGPARM dict (ASSUMPTION; pass --veg_scheme)"
+        logger.warning("heightCanopyTop from a hard-coded USGS-27 dict. If vegTypeIndex is MODIS-numbered "
+                       "this mis-maps every class. Pass --veg_scheme to read MPTABLE HVT/HVB.")
+    if not (top > bot).all():
+        raise RuntimeError("heightCanopyTop <= heightCanopyBottom on some HRU; SUMMA paramCheck would abort")
+    return top, bot, prov
+
 
 def vgn_theta(psi, alpha, theta_res, theta_sat, n):
     """Van Genuchten water content at matric head psi (m, negative)."""
@@ -106,7 +190,7 @@ def rosetta_to_summa(texture):
     }
 
 
-def generate_from_hwsd(attributes_nc, output_nc):
+def generate_from_hwsd(attributes_nc, output_nc, veg_scheme=None, mptable_path=DEFAULT_MPTABLE):
     """Auto-generate all SUMMA trial parameters from HWSD + VEGPARM.TBL."""
     from netCDF4 import Dataset
 
@@ -117,6 +201,11 @@ def generate_from_hwsd(attributes_nc, output_nc):
     hru_ids = attr.variables['hruId'][:]
     lats = attr.variables['latitude'][:]
     lons = attr.variables['longitude'][:]
+    # SUMMA attributes commonly store longitude in 0-360 convention, but
+    # ki_tools_common.soil_utils.lookup_hwsd expects -180..180. Normalize so the
+    # HWSD raster lookup does not silently fail (index-out-of-bounds) and fall
+    # back to default loam. (KI fix 2026-06-29: from_hwsd lon-convention bug.)
+    lons = np.where(np.asarray(lons) > 180.0, np.asarray(lons) - 360.0, lons)
     veg = attr.variables['vegTypeIndex'][:]
     n_hru = len(hru_ids)
     attr.close()
@@ -138,9 +227,8 @@ def generate_from_hwsd(attributes_nc, output_nc):
         for k in soil_keys:
             soil_params[k][i] = sp[k]
 
-    # Canopy heights from VEGPARM.TBL
-    htop = np.array([ZTOPV.get(int(v), 0.5) for v in veg])
-    hbot = np.array([max(ZBOTV.get(int(v), 0.01), 0.01) for v in veg])
+    # Canopy heights: MPTABLE HVT/HVB when --veg_scheme is given, else the legacy dict.
+    htop, hbot, canopy_source = canopy_heights(veg, veg_scheme, mptable_path)
 
     # Write NetCDF
     os.makedirs(os.path.dirname(output_nc) or '.', exist_ok=True)
@@ -181,9 +269,68 @@ def generate_from_hwsd(attributes_nc, output_nc):
         "n_hru": n_hru,
         "n_parameters": len(all_params),
         "textures": dict(tex_counts.most_common(5)),
+        "veg_scheme": veg_scheme or "unspecified",
+        "canopy_source": canopy_source,
+        "heightCanopyTop_range": [float(htop.min()), float(htop.max())],
         "output": output_nc,
     }))
     return output_nc
+
+
+def append_basin_parameters(attributes_nc, output_nc, basin_parameters):
+    """Append GRU-dimension basin parameters to an existing trialParams NetCDF.
+
+    SUMMA reads basin (GRU-level) parameters -- routingGammaShape,
+    routingGammaScale, basin__aquiferHydCond, ... -- from the trialParams file
+    on the 'gru' dimension, NOT 'hru'. Writing them on 'hru' makes SUMMA fall
+    back to basinParamInfo.txt defaults SILENTLY, so the sub-grid gamma
+    time-delay routing is unreachable and the caller never learns why.
+
+    (KI fix, re-restored 2026-07-10: this function was present for the
+    real_case run and was subsequently reverted off disk.)
+    """
+    from netCDF4 import Dataset
+
+    attr = Dataset(attributes_nc, 'r')
+    if 'gruId' not in attr.variables:
+        attr.close()
+        logger.error("attributes.nc has no gruId variable; cannot write basin params")
+        sys.exit(1)
+    gru_ids = np.asarray(attr.variables['gruId'][:])
+    attr.close()
+    n_gru = len(gru_ids)
+
+    ds = Dataset(output_nc, 'a')
+    if 'gru' not in ds.dimensions:
+        ds.createDimension('gru', n_gru)
+    elif len(ds.dimensions['gru']) != n_gru:
+        ds.close()
+        logger.error("gru dimension mismatch")
+        sys.exit(2)
+    if 'gruId' not in ds.variables:
+        gv = ds.createVariable('gruId', 'i8', ('gru',))
+        gv[:] = gru_ids.astype('int64')
+
+    written = []
+    for pname, pval in basin_parameters.items():
+        if isinstance(pval, list):
+            vals = np.array(pval, dtype=np.float64)
+            if vals.size != n_gru:
+                ds.close()
+                logger.error(f"{pname}: {vals.size} values for {n_gru} GRUs")
+                sys.exit(1)
+        else:
+            vals = np.full(n_gru, float(pval), dtype=np.float64)
+        if pname in ds.variables:
+            ds.variables[pname][:] = vals
+        else:
+            v = ds.createVariable(pname, 'f8', ('gru',))
+            v[:] = vals
+        written.append(pname)
+
+    ds.close()
+    logger.info(f"Basin (GRU-dim) parameters written: {written} over {n_gru} GRUs")
+    return written
 
 
 def generate_manual(attributes_nc, output_nc, parameters):
@@ -233,14 +380,30 @@ if __name__ == "__main__":
                         help="(RECOMMENDED) Auto-derive soil params from HWSD+ROSETTA")
     parser.add_argument("--parameters", type=str, default="{}",
                         help="JSON string of parameter overrides (manual mode)")
+    parser.add_argument("--veg_scheme", choices=("usgs", "modis"), default=None,
+                        help="Read heightCanopyTop/Bottom from MPTABLE.TBL HVT/HVB for this table. MUST equal "
+                             "the vegeParTbl decision AND build_river_network.py --veg_scheme (SKILL.md 2c).")
+    parser.add_argument("--mptable", default=DEFAULT_MPTABLE, help="Path to MPTABLE.TBL")
+    parser.add_argument("--basin_parameters", type=str, default="{}",
+                        help="JSON string of GRU-dimension basin parameters, e.g. "
+                             "'{\"routingGammaShape\": 2.5, \"routingGammaScale\": 604800}'. "
+                             "Required to reach SUMMA's sub-grid gamma time-delay routing.")
     args = parser.parse_args()
+    if args.veg_scheme and not args.from_hwsd:
+        parser.error("--veg_scheme applies to --from_hwsd mode only (it drives heightCanopyTop/Bottom)")
 
     logger.info(f"Running tool: {os.path.basename(__file__)}")
 
+    basin_parameters = json.loads(args.basin_parameters)
+
     if args.from_hwsd:
-        output = generate_from_hwsd(args.attributes_nc, args.output_nc)
+        output = generate_from_hwsd(args.attributes_nc, args.output_nc,
+                                    veg_scheme=args.veg_scheme, mptable_path=args.mptable)
     elif args.parameters != "{}":
         output = generate_manual(args.attributes_nc, args.output_nc, json.loads(args.parameters))
+    elif basin_parameters:
+        logger.error("--basin_parameters needs --from_hwsd or --parameters to seed the HRU params")
+        sys.exit(1)
     else:
         logger.error("Specify --from_hwsd (recommended) or --parameters '{...}'")
         sys.exit(1)
@@ -248,4 +411,8 @@ if __name__ == "__main__":
     if not Path(output).exists():
         logger.error(f"Output not created: {output}")
         sys.exit(3)
+
+    if basin_parameters:
+        append_basin_parameters(args.attributes_nc, output, basin_parameters)
+
     sys.exit(0)

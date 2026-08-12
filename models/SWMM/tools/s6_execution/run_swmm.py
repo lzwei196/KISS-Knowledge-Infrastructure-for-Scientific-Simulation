@@ -58,8 +58,11 @@ def run_with_pyswmm(inp_path, rpt_path, out_path):
             print(f"\n  Completed in {elapsed:.1f} seconds ({step_count} steps)")
 
             # Report continuity errors
+            # pyswmm 2.x renamed routing_error -> flow_routing_error
             runoff_error = sim.runoff_error
-            routing_error = sim.routing_error
+            routing_error = getattr(sim, "flow_routing_error", None)
+            if routing_error is None:
+                routing_error = getattr(sim, "routing_error", 0.0)
             quality_error = sim.quality_error
 
             print(f"\n  Continuity Errors:")

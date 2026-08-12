@@ -1,0 +1,288 @@
+schema_version: 1
+model_id: VIC
+domain: hydrology
+generated_by: "self-improve step-B agent (Claude Opus 4.8) — validation-convention campaign, general schema"
+generated_at: 2026-07-09
+
+# Grounded in the cached OA full texts (26 papers). VIC is a land-surface hydrology model:
+# discharge/runoff, ET, soil moisture, SWE/snow, soil temperature, surface energy fluxes.
+# STRONGEST grounding = discharge/runoff: Moriasi et al. 2007 (Table 4 general performance
+# ratings) + Moriasi et al. 2015 (updated watershed-scale streamflow criteria) give explicit
+# NSE / PBIAS / R2 tiers, corroborated by a VIC-specific benchmark (Xie/China dataset,
+# calibrated median monthly NSE 0.56, streamflow bias reduced to 4.4%). ET has a solid multi-site
+# FLUXNET benchmark envelope (Ershadi et al. 2013: best models NSE ~0.6, RMSD ~65 W/m^2; "R2>0.5
+# considered acceptable"). Soil moisture and SWE have benchmark SKILL ENVELOPES (in-situ/product
+# correlation and RMSE) but NO explicit pass/fail tier -> null pass-band + low confidence.
+# Soil temperature and total water storage have obs bindings but no fetched numeric threshold ->
+# null + weak. NO number is fabricated. Bands are plain numbers read via `direction`
+# (see VALIDATION_CONVENTION_SCHEMA.md).
+#
+# ROUTING CAVEAT (applies to all discharge/runoff blocks): VIC has no internal channel routing;
+# OUT_DISCHARGE is emitted only by the optional lake module. Gauge streamflow requires post-hoc
+# routing of OUT_RUNOFF + OUT_BASEFLOW through an external routing model before comparison.
+
+references:
+  moriasi2007:
+    doi: 10.13031/2013.23153
+    title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"
+    venue: "Transactions of the ASABE"
+    year: 2007
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_2013.23153.txt
+  moriasi2015:
+    doi: 10.13031/trans.58.10715
+    title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
+    venue: "Transactions of the ASABE"
+    year: 2015
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_trans.58.10715.txt
+  ershadi2013:
+    doi: 10.1016/j.agrformet.2013.11.008
+    title: "Effects of spatial aggregation on the multi-scale estimation of evapotranspiration (multi-site evaluation of terrestrial evaporation models using FLUXNET data)"
+    venue: "Agricultural and Forest Meteorology"
+    year: 2013
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1016_j.agrformet.2013.11.008.txt
+  smproducts2021:
+    doi: 10.5194/hess-25-17-2021
+    title: "Evaluation of 18 satellite- and model-based soil moisture products using in situ measurements from 826 sensors"
+    venue: "Hydrology and Earth System Sciences"
+    year: 2021
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-25-17-2021.txt
+  swe2020:
+    doi: 10.5194/tc-14-1579-2020
+    title: "Evaluation of long-term Northern Hemisphere snow water equivalent products"
+    venue: "The Cryosphere"
+    year: 2020
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_tc-14-1579-2020.txt
+  vicchina2015:
+    doi: 10.1175/jhm-d-13-0170.1
+    title: "A Long-Term Land Surface Hydrologic Fluxes and States Dataset for China"
+    venue: "Journal of Hydrometeorology"
+    year: 2014
+    oa: manual
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1175_jhm-d-13-0170.1.txt
+  niu2018:
+    doi: 10.5194/tc-12-657-2018
+    title: "Change in frozen soils and its effect on regional hydrology, upper Heihe basin, northeastern Qinghai-Tibetan Plateau"
+    venue: "The Cryosphere"
+    year: 2018
+    oa: gold
+    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_tc-12-657-2018.txt
+
+validation:
+
+  # ===================== DISCHARGE / point_time_series (well grounded) =====================
+  - canonical_quantity: discharge
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        cites: [moriasi2007, moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 15}
+        pass_band: satisfactory
+        band_note: "Moriasi 2015 tightens streamflow satisfactory to |PBIAS|<=15% (supersedes Moriasi 2007 Table 4 satisfactory band of +/-25%)."
+        cites: [moriasi2015, moriasi2007]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Moriasi 2015 co-criterion: satisfactory watershed-scale flow requires daily/monthly/annual R2 > 0.60."
+        cites: [moriasi2015]
+    validated_when: "NSE > 0.50 (Moriasi 2007 Table 4 satisfactory; Moriasi 2015 confirms NSE>0.50 for watershed flow) AND |PBIAS| <= 15% (Moriasi 2015 streamflow satisfactory)"
+    evidence_strength: strong
+    confidence: 0.85
+    notes: >-
+      Moriasi 2007 Table 4 (monthly): "Very good 0.75<NSE<1.00 ... Satisfactory 0.50<NSE<0.65 ...
+      Unsatisfactory NSE<0.50"; streamflow PBIAS "Very good <+/-10 ... Good +/-10..+/-15 ...
+      Satisfactory +/-15..+/-25". Moriasi 2015: "satisfactory for flow simulations if ... daily,
+      monthly, or annual R2 > 0.60, NSE > 0.50, and PBIAS <= +/-15% for watershed-scale models."
+      VIC has NO internal routing -> route OUT_RUNOFF+OUT_BASEFLOW externally before gauge comparison
+      (dag caveat). VIC-specific corroboration (Xie/China dataset, vicchina2015): after calibration
+      "streamflow bias is reduced from 24.2% to 4.4%, and the median ... NSE ... monthly NSE
+      improvement from 0.18 to 0.56" -> a calibrated VIC lands at/above the satisfactory floor.
+
+  # ===================== RUNOFF / point_time_series (transferred streamflow convention) =====
+  - canonical_quantity: runoff
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {very_good: 0.75, good: 0.65, satisfactory: 0.50}
+        pass_band: satisfactory
+        cites: [moriasi2007, moriasi2015]
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {very_good: 10, good: 15, satisfactory: 15}
+        pass_band: satisfactory
+        band_note: "Same watershed-scale streamflow convention as discharge; runoff is only gauge-comparable after routing (OUT_RUNOFF+OUT_BASEFLOW)."
+        cites: [moriasi2015, moriasi2007]
+    secondary_metrics:
+      - metric: r2
+        direction: maximize
+        status: supportive
+        ceiling_reason: "Moriasi 2015 satisfactory watershed flow requires R2 > 0.60."
+        cites: [moriasi2015]
+    validated_when: "After routing to a gauge: NSE > 0.50 AND |PBIAS| <= 15% (Moriasi 2015 watershed-scale streamflow criteria)"
+    evidence_strength: moderate
+    confidence: 0.7
+    notes: >-
+      VIC OUT_RUNOFF (surface, variable-infiltration partition) is a per-cell flux, not a hydrograph;
+      the field judges it via the streamflow convention only after routing OUT_RUNOFF+OUT_BASEFLOW.
+      Band transferred verbatim from the Moriasi 2007/2015 streamflow tiers (hence moderate, not strong).
+      For a spatial_field / regional_aggregate runoff comparison the field would instead use PBIAS
+      (magnitude) or CSI (categorical), but the fetched papers supply no numeric CSI tier for runoff.
+
+  # ===================== EVAPOTRANSPIRATION / point_time_series (FLUXNET benchmark) ==========
+  - canonical_quantity: evapotranspiration
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {good: 0.60, satisfactory: 0.50}
+        pass_band: satisfactory
+        band_note: "Ershadi 2013 multi-site FLUXNET: best evaporation models reach NSE ~0.59-0.61 (mean-of-models 0.61); 'R2>0.5 is considered acceptable'. NSE~0.5 = the achievable multi-site skill floor, not a formal tier."
+        cites: [ershadi2013]
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "Ershadi 2013 latent-heat RMSD envelope: best models ~64-66 W/m^2 (mean-of-models 64, PT-JPL 66) across 20 towers; an RMSD<20 W/m^2 criterion is 'rather strict'. OUT_LATENT is W/m^2; OUT_EVAP mm must be converted before comparison."
+        cites: [ershadi2013]
+    validated_when: "NSE >= 0.50 against eddy-covariance ET (Ershadi 2013 multi-site FLUXNET skill floor; best models NSE ~0.6, RMSD ~65 W/m^2)"
+    evidence_strength: moderate
+    confidence: 0.5
+    notes: >-
+      One solid multi-site benchmark (four evaporation models over 20 FLUXNET towers). No stepped
+      excellent/good/poor tier table is published for ET, so bands are the achievable-skill envelope,
+      not an authoritative convention -> moderate / confidence 0.5. Eddy-covariance non-closure
+      requires Bowen-ratio adjustment of the observation (dag caveat).
+
+  # ===================== SOIL MOISTURE / point_time_series (envelope only, null tier) =========
+  - canonical_quantity: soil_moisture
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "No cited pass/fail correlation tier for soil moisture in the fetched set. Envelope (smproducts2021): state-of-art satellite/model products reach median Pearson R ~0.67-0.78 vs 826 in-situ sensors; best (MSWEP-forced) 0.78. Null so the gate cannot auto-validate on r."
+        cites: [smproducts2021]
+    secondary_metrics:
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "smproducts2021: '18 satellite- and model-based soil moisture products' vs 826 sensors at 5 cm give median R ~0.67-0.78; satellite senses only top ~5 cm while VIC reports layer-integrated mm (dag caveat) -> representative-depth mismatch caps achievable r."
+        cites: [smproducts2021]
+    validated_when: "UNRESOLVED numeric tier: r is expected in the ~0.67-0.78 product envelope (smproducts2021) but no fetched paper defines a pass threshold; treat as context, do not loosen the gate."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      Determining metric is r (per model_obs_map: soil_moisture -> in-situ / rootzone). One strong
+      826-sensor benchmark bounds achievable skill but publishes no acceptability tier, so the
+      headline band is null (confidence 0.4) per the no-fabrication rule. A dedicated in-situ SM
+      validation paper stating an R / ubRMSE target (e.g. SMAP mission R>=0.7, ubRMSE<=0.04 m3/m3)
+      would raise this to moderate/strong (not fetched).
+
+  # ===================== SWE / point_time_series (envelope only, null tier) ===================
+  - canonical_quantity: swe
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: pbias
+        direction: zero_centered
+        unit: percent
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "dag determining_metric is pbias, but the fetched snow-evaluation papers report RMSE and correlation vs snow courses, not a PBIAS tier -> null (no fabricated band)."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "swe2020 Northern-Hemisphere product evaluation: reanalysis-based SWE RMSE 'over Finland and Russia for all but the AMSR-E products is ~50 mm or less'; a multi-product combination reduced RMSE by 10 mm (20%). Passive-microwave SWE saturates above ~150-200 mm and degrades in forest (dag caveat)."
+        cites: [swe2020]
+      - metric: r
+        direction: maximize
+        status: supportive
+        ceiling_reason: "swe2020: combining microwave products 'increased the correlation from 0.67 to 0.78' vs any individual product -> ~0.67-0.78 is the achievable SWE temporal-correlation envelope."
+        cites: [swe2020]
+    validated_when: "UNRESOLVED PBIAS tier: field benchmark is RMSE ~50 mm and correlation ~0.67-0.78 vs snow courses (swe2020); no cited PBIAS threshold, so do not auto-validate on pbias."
+    evidence_strength: moderate
+    confidence: 0.4
+    notes: >-
+      One solid NH-scale SWE benchmark supplies an RMSE/correlation envelope but no PBIAS acceptability
+      tier; SNOTEL/pillow are point measurements not resolving VIC subgrid heterogeneity (dag caveat).
+      Headline pbias band null (confidence 0.4). OUT_SNOW_MELT shares this quantity (timing/magnitude)
+      with even scarcer direct observations.
+
+  # ===================== SOIL TEMPERATURE / point_time_series (obs bound, no numeric tier) ====
+  - canonical_quantity: temperature
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: nse
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "model_obs_map binds soil_temperature -> in-situ/LST, but no fetched paper reports a soil-temperature NSE/RMSE acceptability threshold. Null (no fabricated band)."
+        cites: []
+    secondary_metrics:
+      - metric: rmse
+        direction: minimize
+        status: supportive
+        ceiling_reason: "niu2018 (upper Heihe, QTP) compares simulated vs borehole soil-temperature profiles qualitatively (Fig. 3) and reports skill (NSE, relative error) for the coupled discharge, not a soil-temperature tier -> mechanism/context only."
+        cites: [niu2018]
+    validated_when: "UNRESOLVED: soil-temperature skill is judged case-by-case against borehole/observation depth-matched profiles; no fetched numeric threshold."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Obs binding exists (soil_temperature_C, land_surface_temperature_K) but the only fetched paper
+      touching VIC-family soil temperature (niu2018) validates it qualitatively. Match observation depth
+      to the VIC layer / thermal node before comparison (dag caveat). Null band + confidence 0.3.
+
+  # ===================== TOTAL WATER STORAGE / point_time_series (obs bound, no fetched benchmark)
+  - canonical_quantity: total_water_storage
+    obs_shape: point_time_series
+    headline_metrics:
+      - metric: r
+        direction: maximize
+        unit: dimensionless
+        bands: {satisfactory: null}
+        pass_band: satisfactory
+        band_note: "model_obs_map binds total_water_storage -> GRACE-type TWS anomaly (determining_metric r), but NO fetched paper reports a TWS-anomaly correlation threshold. Null (no fabricated band)."
+        cites: []
+    secondary_metrics: []
+    validated_when: "UNRESOLVED: TWS-anomaly agreement is conventionally judged by correlation/amplitude vs GRACE, but no fetched paper supplies a numeric target."
+    evidence_strength: weak
+    confidence: 0.3
+    notes: >-
+      Included because model_obs_map binds total_water_storage (tws_anomaly_cm,
+      terrestrial_water_storage_anomaly) with determining_metric r, but none of the 26 cached texts is a
+      GRACE / TWS benchmark. Null band + confidence 0.3; a GRACE-vs-VIC evaluation paper is needed to
+      ground it (not in cache).
+
+deferred_paywalled:
+  - ref: "Maurer et al. 2002 — A Long-Term Hydrologically Based Dataset of Land Surface Fluxes and States for the Conterminous United States (canonical VIC CONUS forcing/flux benchmark; paywalled, NOT fetched)"
+    doi: 10.1175/1520-0442(2002)015<3237:ALTHBD>2.0.CO;2
+    needed_for: [discharge, runoff, evapotranspiration, soil_moisture, swe]
+  - ref: "Zhou et al. 2019 — Sensitivity Analysis-Based Automatic Parameter Calibration of the VIC Model for Streamflow Simulations Over China (closed)"
+    doi: 10.1029/2019wr025968
+    needed_for: [discharge, runoff]
+  - ref: "Revisiting parameter sensitivities in the VIC model across a hydroclimatic gradient (HESS 2022; fetch_failed)"
+    doi: 10.5194/hess-26-3419-2022
+    needed_for: [discharge, runoff, soil_moisture, evapotranspiration]
+  - ref: "Demaria et al. 2007 — Monte Carlo sensitivity analysis of land surface parameters using the VIC model (fetch_failed)"
+    doi: 10.1029/2006jd007534
+    needed_for: [discharge, runoff, soil_moisture]

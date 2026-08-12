@@ -1,0 +1,407 @@
+template_version: "3.5"
+
+identity:
+  model_id: "WRF_Hydro"
+  scientific_reference_version: "WRF-Hydro v5.2.0 standalone/offline (Noah-MP LSM + gridded overland/subsurface/channel routing + conceptual groundwater bucket; NCAR NDHMS architecture)"
+  implementation:
+    id: "wrf-hydro-standalone-520"
+    version: "5.2.0"
+    provenance: "Fortran 90, MPI-parallel; NCAR WRF-Hydro/NDHMS standalone (offline) binary wrf_hydro.exe run via mpirun, no WRF atmospheric coupling."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: ""              # _reason: upstream Read-the-Docs and RAL/UCAR pages do not state a software distribution license; WRF-Hydro is a registered trademark of UCAR but no SPDX license was sourced.
+  repo_url: "https://github.com/NCAR/wrf_hydro_nwm_public"
+
+boundary:
+  scope_in:
+    - "Noah-MP 1-D column land-surface energy/water balance (ET, 4-layer soil moisture and temperature, snowpack)"
+    - "surface and subsurface runoff generation (RUNOFF_OPTION 1-5)"
+    - "overland flow routing (D8 diffusive-wave on high-resolution routing sub-grid)"
+    - "saturated subsurface lateral flow routing (Dupuit-Forchheimer, depth-decaying transmissivity)"
+    - "channel routing (gridded diffusive-wave channel_option=3; reach-based Muskingum / Muskingum-Cunge channel_option=1/2)"
+    - "conceptual groundwater bucket baseflow (recharge from soil drainage, exponential storage-discharge)"
+    - "lake/reservoir routing (level-pool / pass-through)"
+  scope_out:
+    - "atmospheric dynamics (offline mode — meteorological forcing is prescribed, not computed)"
+    - "floodplain inundation / river-floodplain exchange (no floodplain model)"
+    - "physical 3-D groundwater / real water-table aquifer (bucket is conceptual; 2-D gw_gw2d module is experimental)"
+    - "PCP_PARTITION_OPTION=4 precipitation phase partitioning (requires WRF microphysics, unavailable standalone)"
+    - "advanced reservoir data assimilation (lake_option=3 reservoir DA)"
+  spatial: "distributed-stream"
+  temporal: "hourly"
+  closure: "mass-balance"
+  notes: "Water mass-balance closes across the coupled cascade: Noah-MP infiltration-excess feeds overland routing; soil-bottom drainage (SOLDRAIN) recharges the conceptual GW bucket; overland, subsurface, and bucket baseflow feed channel routing. LSM column runs at the hourly timestep; overland/subsurface/channel routing run at short sub-grid timesteps (DTRT_TER, DTRT_CH, seconds) constrained by a Courant number near 1.0. Energy balance is closed inside the Noah-MP column only. GWBASESWCRT=0 opens the budget (soil-column sink with no return path), so an active bucket (=1) or pass-through (=2) is required for mass conservation."
+
+inputs:
+  forcing:
+    - {category: forcing, name: "RAINRATE (liquid precipitation rate)", unit: "mm/s (kg/m^2/s)", source_kind: forcing, model_input_format: "LDASIN NetCDF per-timestep on LSM grid (YYYYMMDDHH.LDASIN_DOMAIN1)", notes: "Hourly (FORCING_TIMESTEP=3600); dominant driver of streamflow/flood response."}
+    - {category: forcing, name: "T2D (2-m air temperature)", unit: "K", source_kind: forcing, model_input_format: "LDASIN NetCDF", notes: "Typical range 230-330 K."}
+    - {category: forcing, name: "PSFC (surface pressure)", unit: "Pa", source_kind: forcing, model_input_format: "LDASIN NetCDF", notes: "Typical range 50000-110000 Pa."}
+    - {category: forcing, name: "SWDOWN (incoming shortwave radiation)", unit: "W/m^2", source_kind: forcing, model_input_format: "LDASIN NetCDF", notes: "Physically capped at the ~1361 W/m^2 solar constant."}
+    - {category: forcing, name: "LWDOWN (incoming longwave radiation)", unit: "W/m^2", source_kind: forcing, model_input_format: "LDASIN NetCDF"}
+    - {category: forcing, name: "Q2D (specific humidity)", unit: "kg/kg", source_kind: forcing, model_input_format: "LDASIN NetCDF"}
+    - {category: forcing, name: "U2D (near-surface wind, u-component)", unit: "m/s", source_kind: forcing, model_input_format: "LDASIN NetCDF"}
+    - {category: forcing, name: "V2D (near-surface wind, v-component)", unit: "m/s", source_kind: forcing, model_input_format: "LDASIN NetCDF"}
+  parameters:
+    - {category: parameter, name: "REFKDT", unit: "-", source_kind: calibrated, model_input_format: "soil_properties.nc (per cell)", notes: "Infiltration vs surface-runoff partition; #1 calibration parameter. Default 3.0; reduce to 0.3-1.0 for thin-soil mountain/semi-arid basins."}
+    - {category: parameter, name: "Soil hydraulic properties (SMCMAX, SMCREF, SMCWLT, DKSAT/SATDK, BEXP, SLOPE)", unit: "various (m^3/m^3, m/s, -)", source_kind: dataset_lookup, model_input_format: "soil_properties.nc, SOILPARM.TBL", notes: "SMCMAX (max soil moisture) strongly influences flood generation."}
+    - {category: parameter, name: "NEXP (transmissivity depth-decay exponent)", unit: "-", source_kind: calibrated, model_input_format: "subsurface routing parameter", notes: "Power-law exponent (default 1.0) for Ksat decay with depth in subsurface transmissivity T=(Ksat*D/n)(1-z/D)^n."}
+    - {category: parameter, name: "LKSATFAC (saturated conductivity multiplier)", unit: "-", source_kind: calibrated, model_input_format: "hydro2dtbl.nc / routing params"}
+    - {category: parameter, name: "OV_ROUGH / OVROUGHRTFAC (overland Manning roughness and scale factor)", unit: "-", source_kind: calibrated, model_input_format: "HYDRO.TBL (by USGS land class); OVROUGHRTFAC in Fulldom_hires.nc / hydro.namelist", notes: "Default factor 1.0, range 0.1-10; controls overland flow speed and peak delay."}
+    - {category: parameter, name: "RETDEPRTFAC (surface retention depth factor)", unit: "-", source_kind: calibrated, model_input_format: "Fulldom_hires.nc / hydro.namelist"}
+    - {category: parameter, name: "Channel geometry/roughness by Strahler order (Bw, ChSSlp, MannN, HLINK)", unit: "m, -, s/m^(1/3)", source_kind: dataset_lookup, model_input_format: "CHANPARM.TBL (gridded channel_option=3); Route_Link.nc (reach-based channel_option=1/2)", notes: "MannN channel roughness controls hydrograph peak timing and attenuation; default ~0.02-0.09 by order."}
+    - {category: parameter, name: "GW bucket parameters (Coeff C, Expon E, Zmax, Zinit)", unit: "C: m^3/s, E: -, Zmax/Zinit: mm", source_kind: calibrated, model_input_format: "GWBUCKPARM.nc (per GW basin)", notes: "Exponential law Q=C(exp(E*z/Zmax)-1). Default Zmax 50 mm is too shallow for deep-aquifer basins (raise to 200-500); recommended Coeff ~0.04."}
+    - {category: parameter, name: "Lake level-pool parameters (WeirC/L/E, OrificeC/A/E, LkArea, LkMxE)", unit: "various", source_kind: dataset_lookup, model_input_format: "LAKEPARM.nc", notes: "Weir Qw=Cw*L*h^(3/2), orifice Qo=Co*Oa*sqrt(2gh); constant surface area assumed."}
+    - {category: parameter, name: "stream_threshold (flow-accumulation channel-definition threshold)", unit: "cells or cfs", source_kind: user_provided, model_input_format: "drives CHANNELGRID / STREAMORDER in Fulldom_hires.nc", notes: "Defines channel network density; must scale with basin size and routing resolution."}
+  initial_conditions:
+    - {category: initial_condition, name: "Soil moisture (SMOIS / SOIL_M), 4 Noah layers", unit: "m^3/m^3", source_kind: user_provided, model_input_format: "wrfinput_d01.nc / RESTART", notes: "Cold-start at field capacity over-generates ~237 mm/d day-1 runoff; discard 6-12 month spinup or reuse a RESTART."}
+    - {category: initial_condition, name: "Soil temperature (TSLB / SOILTEMP/TMN), 4 layers", unit: "K", source_kind: user_provided, model_input_format: "wrfinput_d01.nc", notes: "Must be non-zero (use 280-290 K); 0 K propagates NaN through the soil energy balance."}
+    - {category: initial_condition, name: "Snow water equivalent (SNEQV)", unit: "kg/m^2 (mm)", source_kind: user_provided, model_input_format: "wrfinput_d01.nc / RESTART", notes: "Cold start needs a full winter to accumulate."}
+    - {category: initial_condition, name: "GW bucket storage (z_gwsubbas, init = Zinit)", unit: "mm", source_kind: user_provided, model_input_format: "GWBUCKPARM.nc Zinit", notes: "Conceptual reservoir depth; needs months to equilibrate from cold start."}
+  boundary_conditions:
+    - {category: boundary_condition, name: "RUNOFF_OPTION (runoff-generation scheme selector)", unit: "enum 1-5", source_kind: user_provided, model_input_format: "namelist.hrldas", notes: "1=SIMGM TOPMODEL, 2=SIMTOP, 3=Schaake96 infiltration-excess (default/only globally crash-safe), 4=BATS, 5=Xinanjiang/VIC (needs MMF_RUNOFF_FILE)."}
+    - {category: boundary_condition, name: "channel_option (channel routing method selector)", unit: "enum 1/2/3", source_kind: user_provided, model_input_format: "hydro.namelist", notes: "3=gridded diffusive wave (default); 1=Muskingum, 2=Muskingum-Cunge (require UDMP_OPT=1 + Route_Link.nc + spatialweights.nc)."}
+    - {category: boundary_condition, name: "GWBASESWCRT (groundwater scheme selector)", unit: "enum 0/1/2/4", source_kind: user_provided, model_input_format: "hydro.namelist", notes: "1=exponential bucket (default), 2=pass-through, 4=area-dependent exponential (needs UDMP_OPT=1); 0 disables bucket and breaks water balance."}
+    - {category: boundary_condition, name: "Routing activation switches (OVRTSWCRT, SUBRTSWCRT, CHANRTSWCRT, rt_option)", unit: "enum", source_kind: user_provided, model_input_format: "hydro.namelist", notes: "rt_option=1 (D8 steepest descent) is the only active overland scheme; rt_option=2 (CASC2D) is inactive in v5.2.0."}
+    - {category: boundary_condition, name: "lake_option (lake/reservoir routing selector)", unit: "enum 0/1/2", source_kind: user_provided, model_input_format: "hydro.namelist", notes: "0=disabled, 1=level pool, 2=pass-through."}
+    - {category: boundary_condition, name: "UDMP_OPT (user-defined mapping toggle)", unit: "enum 0/1", source_kind: user_provided, model_input_format: "hydro.namelist", notes: "Required (=1) for reach-based routing, area-dependent bucket, and compound channel."}
+    - {category: boundary_condition, name: "Grid/timestep coupling (DXRT, DTRT_CH, DTRT_TER, AGGFACTRT)", unit: "m, s, s, ratio", source_kind: user_provided, model_input_format: "hydro.namelist", notes: "AGGFACTRT = Fulldom_x / wrfinput_x; DTRT must satisfy CFL DTRT_CH < DXRT/V_max."}
+    - {category: boundary_condition, name: "Run control (KHOUR, OUTPUT_TIMESTEP, RESTART_FREQUENCY_HOURS, CHRTOUT_DOMAIN, MMINLU)", unit: "various", source_kind: user_provided, model_input_format: "namelist.hrldas / hydro.namelist", notes: "MMINLU must be 'USGS'; CHRTOUT_DOMAIN=1 required to emit channel discharge."}
+
+processes:
+  modules:
+    - name: "HYDRO_driver"
+      role: "driver"
+      brief: "module_HYDRO_drv.F (HYDRO_exe): orchestrates one routing timestep — disaggregate → subsurface → overland → runoff-aggregate → GW bucket → channel → re-aggregate; hydro.namelist switches select which routing modules are active."
+    - name: "NoahMP_LSM"
+      role: "process_solver"
+      brief: "Noah-MP 1-D column land-surface model: vertical water/energy balance, ET, snowpack, 4-layer soil moisture/temperature; emits soil-bottom drainage (SOLDRAIN) and infiltration-excess surface runoff plus LDASOUT diagnostics."
+    - name: "RunoffGeneration"
+      role: "process_solver"
+      brief: "Selectable runoff-generation physics within Noah-MP (RUNOFF_OPTION): 1=SIMGM/TOPMODEL, 2=SIMTOP, 3=Schaake96 infiltration-excess (default), 4=BATS bucket, 5=Xinanjiang/VIC variable-infiltration-capacity."
+    - name: "DisaggregateDomain"
+      role: "allocator"
+      brief: "Maps coarse LSM fields onto the AGGFACTRT-refined routing grid before routing; aggregateDomain reverses it after channel routing (implicit two-way LSM/routing grid coupling each step)."
+    - name: "SubsurfaceRouting"
+      role: "process_solver"
+      brief: "Lateral saturated subsurface flow (Dupuit-Forchheimer); transmissivity decays with depth (NEXP, LKSATFAC); updates water-table depth (zwattablrt) on the routing grid (SUBRTSWCRT)."
+    - name: "OverlandRouting"
+      role: "process_solver"
+      brief: "D8 steepest-descent diffusive-wave overland flow of infiltration-excess on the high-res routing grid (OVRTSWCRT, rt_option=1); resistance from OV_ROUGH; q_x=alpha_x*h^(5/3)."
+    - name: "RunoffAggregate"
+      role: "allocator"
+      brief: "Transfers residual overland infiltration_excess back onto the coarse LSM grid each step, mutating the LSM runoff field (two-way coupling side effect)."
+    - name: "GroundwaterBucket"
+      role: "process_solver"
+      brief: "Per-basin lumped conceptual exponential bucket (module_GW_baseflow, GWBASESWCRT=1): recharged by SOLDRAIN, releases baseflow Q=C(exp(E*z/Zmax)-1) to channels; clamps z at Zmax and qout at volume/DT."
+    - name: "ChannelRouting"
+      role: "process_solver"
+      brief: "Gridded diffusive-wave channel routing (channel_option=3, Newton-Raphson with adaptive sub-timestep DTRT_CH, trapezoidal CHANPARM geometry by Strahler order) producing streamflow and velocity."
+    - name: "ReachRouting"
+      role: "process_solver"
+      applicability: "channel_option=1/2 (Muskingum / Muskingum-Cunge); requires UDMP_OPT=1, Route_Link.nc, spatialweights.nc"
+      brief: "Vectorized reach-based channel-network routing over NHDPlus-style reaches; storage S=K[XI+(1-X)Q] with celerity-based K; compound-channel extension at channel_option=2 with udmp=1."
+    - name: "LakeReservoirRouting"
+      role: "optional_module"
+      applicability: "lake_option=1/2"
+      brief: "Mass-balance level-pool lake/reservoir routing; weir Qw=Cw*L*h^(3/2) and orifice Qo=Co*Oa*sqrt(2gh) outflow, constant surface area (LAKEPARM.nc)."
+    - name: "Groundwater2D"
+      role: "optional_module"
+      applicability: "experimental; alternative to GroundwaterBucket"
+      brief: "Experimental 2-D physically-based groundwater module (module_gw_gw2d) coupled via gwSoilFlux; not the standard conceptual-bucket configuration."
+    - name: "StreamflowNudging"
+      role: "optional_module"
+      applicability: "reach-based routing only; WRF_HYDRO_NUDGING compile flag"
+      brief: "Optional streamflow nudging data assimilation toward gauge observations; adjusts link discharge for Muskingum-Cunge reach routing."
+    - name: "LSM_Forcing"
+      role: "driver"
+      brief: "Reads LDASIN meteorology each timestep and supplies it to the Noah-MP column (module_lsm_forcing)."
+  internal_edges:
+    - {from: "LSM_Forcing", to: "NoahMP_LSM", kind: consumes_input, brief: "LDASIN meteorology drives the Noah-MP column."}
+    - {from: "NoahMP_LSM", to: "RunoffGeneration", kind: invokes, brief: "LSM invokes the selected runoff-generation scheme."}
+    - {from: "RunoffGeneration", to: "soil_moisture", kind: writes_state, brief: "Updates 4-layer soil moisture and produces infiltration-excess and soil-bottom drainage."}
+    - {from: "RunoffGeneration", to: "OverlandRouting", kind: produces_output, brief: "Infiltration-excess surface runoff feeds overland routing."}
+    - {from: "RunoffGeneration", to: "GroundwaterBucket", kind: produces_output, brief: "Soil-bottom drainage (SOLDRAIN) recharges the GW bucket."}
+    - {from: "HYDRO_driver", to: "DisaggregateDomain", kind: invokes, brief: "Driver refines LSM state to the routing grid at the start of each routing timestep."}
+    - {from: "HYDRO_driver", to: "SubsurfaceRouting", kind: invokes, brief: "Driver invokes the subsurface routing step (SUBRTSWCRT)."}
+    - {from: "HYDRO_driver", to: "OverlandRouting", kind: invokes, brief: "Driver invokes the overland routing step (OVRTSWCRT)."}
+    - {from: "HYDRO_driver", to: "GroundwaterBucket", kind: invokes, brief: "Driver invokes driveGwBaseflow to update the GW bucket."}
+    - {from: "HYDRO_driver", to: "ChannelRouting", kind: invokes, brief: "Driver invokes driveChannelRouting to route the channel network."}
+    - {from: "DisaggregateDomain", to: "SubsurfaceRouting", kind: invokes, brief: "Refines LSM state to the routing grid before subsurface routing."}
+    - {from: "SubsurfaceRouting", to: "water_table_depth", kind: writes_state, brief: "Updates saturated water-table depth (zwattablrt) on the routing grid."}
+    - {from: "SubsurfaceRouting", to: "OverlandRouting", kind: reads_state, brief: "Exfiltration/return flow adds to surface head feeding overland routing."}
+    - {from: "OverlandRouting", to: "surface_head", kind: writes_state, brief: "Updates surface ponded head (sfcheadrt) and routes via D8."}
+    - {from: "OverlandRouting", to: "RunoffAggregate", kind: invokes, brief: "Aggregate residual overland water back to the LSM grid."}
+    - {from: "RunoffAggregate", to: "soil_moisture", kind: writes_state, brief: "Mutates the LSM runoff field (two-way coupling side effect)."}
+    - {from: "OverlandRouting", to: "ChannelRouting", kind: produces_output, brief: "Surface lateral runoff (qSfcLatRunoff) enters channel cells."}
+    - {from: "OverlandRouting", to: "ReachRouting", kind: produces_output, brief: "Surface lateral runoff (qSfcLatRunoff) enters reach links (channel_option=1/2)."}
+    - {from: "GroundwaterBucket", to: "gw_bucket_storage", kind: writes_state, brief: "Updates bucket depth z_gwsubbas, clamped at Zmax."}
+    - {from: "GroundwaterBucket", to: "ChannelRouting", kind: produces_output, brief: "Bucket baseflow (qout_gwsubbas) added as channel inflow."}
+    - {from: "GroundwaterBucket", to: "ReachRouting", kind: produces_output, brief: "Bucket baseflow (qout_gwsubbas) added as reach inflow (channel_option=1/2)."}
+    - {from: "ChannelRouting", to: "channel_storage", kind: writes_state, brief: "Updates link discharge (QLINK/streamflow) and channel volume (CVOL)."}
+    - {from: "ReachRouting", to: "channel_storage", kind: writes_state, brief: "Updates reach link discharge (QLINK) for Muskingum/Muskingum-Cunge routing."}
+    - {from: "ChannelRouting", to: "LakeReservoirRouting", kind: invokes, brief: "Lake/reservoir links call level-pool routing for regulated outflow."}
+    - {from: "ReachRouting", to: "LakeReservoirRouting", kind: invokes, brief: "Reach lake links call level-pool routing for regulated outflow."}
+    - {from: "ChannelRouting", to: "DisaggregateDomain", kind: invokes, brief: "Post-routing re-aggregation of routing-grid state to the LSM grid (aggregateDomain)."}
+    - {from: "StreamflowNudging", to: "ReachRouting", kind: writes_state, brief: "Optional streamflow assimilation adjusts reach link discharge (Muskingum-Cunge reach routing only)."}
+    - {from: "ChannelRouting", to: "Outputs", kind: produces_output, brief: "streamflow, velocity, q_lateral written to CHRTOUT_DOMAIN1."}
+    - {from: "ReachRouting", to: "Outputs", kind: produces_output, brief: "Reach streamflow written to CHRTOUT_DOMAIN1 (channel_option=1/2)."}
+    - {from: "GroundwaterBucket", to: "Outputs", kind: produces_output, brief: "Bucket depth, recharge, and baseflow written to GWOUT_DOMAIN1."}
+    - {from: "NoahMP_LSM", to: "Outputs", kind: produces_output, brief: "SOIL_M, TSLB, SNEQV, ACCET, UGDRNOFF, SFCRNOFF, LH/HFX written to LDASOUT_DOMAIN1."}
+    - {from: "OverlandRouting", to: "Outputs", kind: produces_output, brief: "Surface head and water-table depth written to RTOUT_DOMAIN1 (disabled by default)."}
+
+states:
+  variables:
+    - {name: "soil_moisture", unit: "m^3/m^3", role: prognostic}
+    - {name: "soil_temperature", unit: "K", role: prognostic}
+    - {name: "snow_water_equivalent", unit: "kg/m^2", role: prognostic}
+    - {name: "canopy_water", unit: "kg/m^2", role: prognostic}
+    - {name: "water_table_depth", unit: "m", role: prognostic}
+    - {name: "surface_head", unit: "mm", role: prognostic}
+    - {name: "channel_storage", unit: "m^3", role: prognostic}
+    - {name: "channel_discharge", unit: "m^3/s", role: prognostic}
+    - {name: "lake_water_surface_elevation", unit: "m", role: prognostic}
+    - {name: "gw_bucket_storage", unit: "mm", role: prognostic}
+    - {name: "infiltration_excess", unit: "mm", role: diagnostic}
+    - {name: "soil_drainage_SOLDRAIN", unit: "mm", role: diagnostic}
+    - {name: "accumulated_surface_runoff_SFCRNOFF", unit: "mm", role: accumulator}
+    - {name: "accumulated_subsurface_runoff_UGDRNOFF", unit: "mm", role: accumulator}
+    - {name: "accumulated_ET_ACCET", unit: "mm", role: accumulator}
+  provenance: "populated"
+
+outputs:
+  - var: "streamflow"
+    validation_rank: 1
+    unit: "m^3/s"
+    description: "Routed channel discharge at each channel cell/reach; the correct and only source for basin outlet discharge (outlet = highest cumulative streamflow / Strahler order)."
+    emitted_in: "CHRTOUT_DOMAIN1"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Compare at the gauge-matched channel feature, not basin-averaged LDASOUT runoff."
+            - "Discard cold-start spinup (6-12 months) before scoring; day-1 produces a ~237 mm/d artifact."
+            - "Sparse channel networks let the GW bucket dominate, which can invert the seasonal cycle (winter>summer)."
+        - obs_shape: "point_snapshot"
+          comparison_mode: "scalar_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Single-instant peak-discharge comparison is sensitive to routing-timestep and CFL settings."]
+      detrending_options: ["none"]
+  - var: "SOIL_M"
+    validation_rank: 3
+    unit: "m^3/m^3"
+    description: "Volumetric soil moisture, 4 Noah layers (0-10, 10-40, 40-100, 100-200 cm)."
+    emitted_in: "LDASOUT_DOMAIN1"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Layer depths must be matched to the observation depth; surface satellite retrievals correspond to the top layer only."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Compare on the LSM grid; retrieval footprint and grid resolution must be reconciled."]
+      detrending_options: ["none"]
+  - var: "SNEQV"
+    validation_rank: 4
+    unit: "kg/m^2"
+    description: "Snow water equivalent (Noah-MP snowpack state)."
+    emitted_in: "LDASOUT_DOMAIN1"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "timing_accuracy", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Cold start needs a full winter to accumulate; early-season SWE is unreliable."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Compare against snow-cover/SWE products on the LSM grid."]
+      detrending_options: ["none"]
+  - var: "ACCET"
+    validation_rank: 5
+    unit: "mm"
+    description: "Accumulated evapotranspiration (transpiration + soil evaporation + canopy evaporation); instantaneous latent-heat flux LH also available (ET = LH/2.5e6 in mm/s)."
+    emitted_in: "LDASOUT_DOMAIN1"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Accumulator must be differenced to a flux for comparison against flux-tower or remote-sensing ET."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Compare against gridded ET products (e.g. remote-sensing ET) on the LSM grid."]
+      detrending_options: ["none"]
+  - var: "z_gwsubbas"
+    validation_rank: 2
+    unit: "mm"
+    description: "Water depth in each conceptual groundwater bucket (not a physical water table); GWOUT also emits recharge (qin), baseflow (qout), and loss (qloss)."
+    emitted_in: "GWOUT_DOMAIN1"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match"]
+          determining_metric: "r"
+          caveats:
+            - "Conceptual storage, not a measurable water table; at best compared qualitatively against baseflow recession behaviour."
+            - "Default Zmax 50 mm fills within days on large basins, producing pass-through with no recession dynamics."
+      detrending_options: ["none"]
+
+influence:
+  _caveat: "WRF-Hydro SA studies use OAT/PEST local rankings, not variance-based global SA (no Sobol/Morris/EFAST indices); precipitation forcing is mechanistically the dominant streamflow driver but cannot be graded HIGH from this literature, which ranks internal parameters under fixed or assimilated forcing."
+  edges:
+    - from: "REFKDT"
+      to: "streamflow"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always (infiltration-excess runoff partition)"
+      citations: ["liu2020_wrfhydro_param_sensitivity", "yucel2015_wrfhydro_flood_calibration", "dixit2025_wrfhydro_himalaya_sensitivity"]
+    - from: "MannN (channel Manning roughness)"
+      to: "streamflow"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "always (hydrograph timing and peak attenuation)"
+      citations: ["liu2020_wrfhydro_param_sensitivity", "dixit2025_wrfhydro_himalaya_sensitivity"]
+    - from: "SMCMAX (maximum soil moisture content)"
+      to: "streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "flood-peak generation"
+      citations: ["hr2024_wrfhydro_flood_precip_sensitivity"]
+    - from: "precipitation forcing"
+      to: "streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always (dominant driver)"
+      citations: ["yucel2015_wrfhydro_flood_calibration", "dixit2025_wrfhydro_himalaya_sensitivity", "hr2024_wrfhydro_flood_precip_sensitivity"]
+    - from: "OVROUGHRTFAC (overland roughness factor)"
+      to: "streamflow"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "overland routing timing"
+      citations: ["liu2020_wrfhydro_param_sensitivity", "mascaro2023_wrfhydro_process_calibration"]
+    - from: "RETDEPRTFAC (surface retention depth factor)"
+      to: "streamflow"
+      sensitivity_grade: LOW
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "least sensitive of the four principal routing parameters"
+      citations: ["liu2020_wrfhydro_param_sensitivity"]
+  citation_index:
+    liu2020_wrfhydro_param_sensitivity:
+      short_citation: "Liu et al. 2020"
+      doi: "10.1007/s13143-020-00205-2"
+      note: "Parameter sensitivity of WRF-Hydro for streamflow in semi-humid/semi-arid northern China; REFKDT and MannN ranked the two most sensitive of REFKDT/RETDEPRTFAC/MannN/OVROUGHRTFAC."
+    yucel2015_wrfhydro_flood_calibration:
+      short_citation: "Yucel et al. 2015"
+      doi: "10.1016/j.jhydrol.2015.01.042"
+      note: "Flood-forecasting calibration over northern Turkey; REFKDT controls infiltration/runoff partition; precipitation assimilation sharply reduces RMSE."
+    dixit2025_wrfhydro_himalaya_sensitivity:
+      short_citation: "Dixit et al. 2025"
+      doi: "10.1175/JHM-D-24-0096.1"
+      note: "Himalayan-basin calibration; precipitation forcing dominant, REFKDT/MannN/routing parameters leading internal controls."
+    mascaro2023_wrfhydro_process_calibration:
+      short_citation: "Mascaro et al. 2023"
+      doi: "10.1111/1752-1688.13076"
+      note: "Process-based sequential calibration in a mountainous SW-US basin isolating infiltration, routing, and baseflow parameters."
+    hr2024_wrfhydro_flood_precip_sensitivity:
+      short_citation: "Hydrology Research 55(7), 2024"
+      doi: "10.2166/nh.2024.215"
+      note: "Flood streamflow sensitivity in a humid environment; SMCMAX strongly influences flood generation. DOI inferred from volume/issue, not Crossref-verified."
+
+safety:
+  hazards:
+    - id: "config_a_only_crash_safe"
+      kind: "control_semantic"
+      description: "Any RUNOFF_OPTION!=3, channel_option!=3, or GWBASESWCRT!=1 crashes within 0-7 days on broad basins (SMCRT<=0 dry-soil depletion in Noah_distr_routing.F or silent segfault); only Schaake96 keeps soil moisture high enough."
+      severity: "fatal"
+    - id: "gwbaseswcrt_zero_breaks_balance"
+      kind: "control_semantic"
+      description: "GWBASESWCRT=0 disables the GW bucket, creating a soil-column sink with no return path to channels; baseflow zero and water budget never closes."
+      severity: "silent"
+    - id: "cfl_routing_timestep"
+      kind: "numerical_instability"
+      description: "DTRT_CH/DTRT_TER too large relative to DXRT violates the Courant condition (DTRT_CH < DXRT/V_max), causing SIGSEGV / NaN streamflow during routing."
+      severity: "fatal"
+    - id: "aggfactrt_mismatch_zero_discharge"
+      kind: "control_semantic"
+      description: "AGGFACTRT not equal to the Fulldom/wrfinput dimension ratio processes only a sub-grid; model completes but channel discharge is zero everywhere."
+      severity: "silent"
+    - id: "restart_freq_zero_suppresses_output"
+      kind: "control_semantic"
+      description: "RESTART_FREQUENCY_HOURS=0 silently suppresses all LDASOUT/GWOUT/RESTART output despite a reported successful run."
+      severity: "silent"
+    - id: "winter_coldstart_smcrt_depletion"
+      kind: "initial_condition_semantic"
+      description: "January/continental-winter cold start freezes all soil moisture (SH2O=0); disaggregation needs non-zero liquid water and crashes with 'SMCRT fully depleted upon disaggregation'."
+      severity: "fatal"
+    - id: "coldstart_spinup_artifact"
+      kind: "initial_condition_semantic"
+      description: "Cold-start soil moisture initialized at field capacity over-generates ~237 mm/d surface runoff on day 1; requires 6-12 month spinup discard."
+      severity: "degraded"
+    - id: "shdfac_zero_runaway_heating"
+      kind: "numerical_instability"
+      description: "Cold-start water/barren cells with SHDFAC=0 and VAI=0 absorb unrestricted solar; Noah-MP ground temperature runs away to 600+ K ('emitted longwave <0')."
+      severity: "fatal"
+    - id: "gw_zmax_too_shallow"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "Default GW bucket Zmax 50 mm is too shallow for deep/alluvial basins; the bucket fills within days, degrading to pass-through with no baseflow recession."
+      severity: "degraded"
+    - id: "sfcrnoff_double_count"
+      kind: "parser_semantic"
+      description: "With overland/subsurface routing on, LDASOUT SFCRNOFF/UGDRNOFF accumulators include routed upstream flow; basin-averaging them double-counts discharge (~2-3x overestimate). Use CHRTOUT for outlet discharge."
+      severity: "silent"
+  validation_limits:
+    - "Conceptual bucket baseflow is not a physical aquifer; no real water-table dynamics (use the experimental 2-D gw_gw2d module for that, out of standard scope)."
+    - "No floodplain/inundation representation; flood depth/fraction requires coupling to a dedicated routing model such as CaMa-Flood."
+    - "Coarse resolution (>=0.25 deg) is structurally inadequate for basins <10,000 km^2 (too few LSM cells; orographic precip and terrain runoff smoothed out)."
+    - "rt_option=2 (CASC2D multi-directional overland routing) is inactive in v5.2.0; only D8 steepest descent (rt_option=1) is supported."
+    - "RUNOFF_OPTION=5 (Xinanjiang/VIC) requires a precomputed MMF_RUNOFF_FILE; RUNOFF_OPTION=7 is absent from v5.2 source."
+    - "Channel-loss and streamflow-nudging schemes apply only to Muskingum-Cunge reach-based routing."
+    - "Explicit routing schemes require routing timesteps satisfying a Courant number near 1.0."
+  warnings:
+    - "RUNOFF_OPTION=3 (Schaake) over-infiltrates thin-soil steep mountain basins (~24x too little surface runoff, r~0, inverted seasonal cycle); reduce REFKDT to 0.3-1.0 or, where crash-safe, switch runoff scheme."
+    - "Sparse channel networks let the GW bucket dominate streamflow and can invert the monsoon cycle (winter>summer); fix channel-network density before tuning GW parameters."
+    - "Basin-averaging LDASOUT runoff for discharge is wrong; always extract discharge from CHRTOUT (channel routing output)."
+    - "lake_option=0 where lake cells mask channel cells creates flow-blocking dead zones and disconnected networks; enable level-pool routing or rebuild without lake masking."
+  assumptions:
+    - statement: "Default physics is 'Config A' (RUNOFF_OPTION=3 Schaake96 + channel_option=3 gridded diffusive wave + GWBASESWCRT=1 exponential bucket + UDMP_OPT=0), the only globally crash-safe combination."
+      scope: "physics-option configuration"
+      source: "WRF-Hydro model-physics docs and Noah_distr_routing.F dry-soil SMCRT behaviour (open NCAR issue)"
+      status: adopted
+    - statement: "Overland routing is treated as D8 diffusive-wave (steepest descent); CASC2D is documented but inactive in this source version."
+      scope: "overland routing method"
+      source: "WRF-Hydro model-physics docs (Section 3.5) and module_overland source"
+      status: adopted
+    - statement: "Geometry is a distributed gridded land surface with a higher-resolution routing sub-grid (AGGFACTRT ratio); the LSM column is 1-D vertical."
+      scope: "spatial geometry"
+      source: "WRF-Hydro introduction/model-code-config docs and NDHMS routing source"
+      status: adopted
+    - statement: "Water mass-balance closes across the coupled cascade; surface energy balance closes only within the Noah-MP column."
+      scope: "conservation closure"
+      source: "WRF-Hydro model-physics docs (Sections 3.4-3.8) and module_HYDRO_drv coupling"
+      status: adopted
+    - statement: "Channel_option=1 is Muskingum and channel_option=2 is Muskingum-Cunge (per the KI master switch table), resolving the s4-doc labelling that calls both 'Muskingum-Cunge'."
+      scope: "channel routing method naming"
+      source: "WRF-Hydro model-physics docs (Section 3.6.2) and hydro.namelist channel_option semantics"
+      status: tentative

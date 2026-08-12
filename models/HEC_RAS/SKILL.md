@@ -7,332 +7,429 @@
 > 3. If still failing, report the error to the user with full details
 >
 > You MUST NOT substitute a simplified Python formula, regression equation,
-> or hand-coded approximation in place of the real model.
+> or hand-coded approximation in place of the real model. Doing so produces
+> scientifically invalid results and defeats the purpose of the KI.
 >
->
-> Before starting, run: `python preflight_check.py` (in this KI directory)
+> Before starting, run: `python3 preflight_check.py` (in this KI directory)
 > to verify that the model binary/package and required data are available.
+> Use `python3` (/usr/bin) for the validated steady tools — h5py + ki_tools_common
+> are on its path; NOT `python` (~/.local/bin lacks h5py). HOWEVER `ras_commander`
+> 0.93.0 lives ONLY in the python_env venv site-packages, which is NOT on
+> /usr/bin/python3's path. For ANY new-river / authoring step that imports
+> `ras_commander` (§10/§11), invoke it with the venv interpreter
+> `/mnt/disk1/Hydrocraft_server/python_env/bin/python3` (verified 2026-06-04: it
+> imports h5py 3.15.1 + ras_commander 0.93.0 + ki_tools_common together).
 >
-> **DEBUGGING PROTOCOL** — When something goes wrong, follow this order:
+> **DEBUGGING PROTOCOL** — When something goes wrong (model crashes, wrong output,
+> unexpected values), follow this order. Do NOT skip steps or write debug scripts:
 > 1. **Check triplets** — `diagnostics/triplets.yaml` may already cover this error
-> 2. **Read official docs** — The model's own documentation for expected formats/units
-> 3. **Find working examples** — Check `outputs/` or the model's shipped test data
-> 4. **Fix the tool** — With knowledge of what "correct" looks like
+> 2. **Read official docs** — Check the model's own documentation (PDF manual, README,
+>    official examples) for expected input formats, variable names, and units
+> 3. **Find working examples** — Look in `outputs/` for previous successful runs of
+>    this model, or check if the model ships with test/example data
+> 4. **Fix the tool** — Now that you know what "correct" looks like, make targeted fixes
 >
-> Do NOT write custom debug scripts. The answers are in the docs and examples.
+> Resist the urge to write diagnostic/debug Python scripts. The answers are almost
+> always in the official docs and working examples, not in reverse-engineering the binary.
 
-# HEC-RAS (Hydrologic Engineering Center -- River Analysis System) -- Knowledge Infrastructure
+# HEC-RAS (Hydrologic Engineering Center — River Analysis System) — Knowledge Infrastructure
 
-**Package**: `hydrocraft-hec-ras` v1.0.0
-**Model**: HEC-RAS 6.x (USACE Hydrologic Engineering Center)
-**Surrogate**: GR4J (Perrin et al., 2003) -- conceptual rainfall-runoff model
-**Created by**: Jianyun Zhang Research Group, Hohai University
-**Last updated**: 2026-03-30
-**Stats**: 4 tools | 1 SKILL document | ~2,200 lines of validated Python
-**Validation status**: `production_validated` (Bengbu, Huai River, 1981-1990)
+**Package**: `hydrocraft-hec-ras` v2.0.0
+**Model**: HEC-RAS 6.7 Beta 5 (USACE Hydrologic Engineering Center) — **real Intel-Fortran solvers under WINE**
+**Domain**: River / open-channel hydraulics (1-D & 2-D)
+**Binary**: `/home/server/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5/x64/RasSteady.exe`
+**Last updated**: 2026-06-03
+**Stats**: 10 tools | 6 docs | ≥15 diagnostic triplets
+**Validation status**: `real` — computed vs **observed** water-surface elevations
+on the *Mixed Flow Regime Channel* example: **NSE 0.9965, RMSE 0.096 ft,
+KGE 0.977, PBIAS −0.09 %** (19 cross sections).
 
----
-
-## Data Preparation
-
-### Forcing data
-
-**Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
-
-**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
-See `data_ki/HWSD/SKILL.md` for soil property documentation.
-See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
-
-
-## Overview
-
-This knowledge infrastructure enables autonomous rainfall-runoff simulation using
-HEC-RAS methodology on any gauged basin. Because HEC-RAS is a proprietary Windows
-binary that could not be acquired, the execution engine uses a GR4J conceptual
-surrogate that captures the core hydrological processes: soil moisture accounting
-(production store), runoff generation, unit hydrograph convolution, and flow routing
-(routing store).
-
-**What HEC-RAS does**: 1D/2D unsteady flow simulation for river hydraulics. Solves:
-- 1D Saint-Venant equations (conservation of mass + momentum) for open channel flow
-- 2D shallow water equations (diffusion wave or full dynamic wave) for floodplain flow
-- Steady-state energy equation (gradually varied flow) for water surface profiles
-- Bridge/culvert hydraulics (energy, momentum, Yarnell, WSPRO methods)
-- Dam break analysis (breach progression, downstream wave propagation)
-- Sediment transport (Ackers-White, Engelund-Hansen, Laursen, Yang, etc.)
-- Water quality (temperature, dissolved oxygen, nutrients)
-- Rain-on-grid (2D rainfall-runoff with infiltration, since HEC-RAS 6.x)
-
-**Core physics (Saint-Venant equations)**:
-
-Continuity:
-  dA/dt + dQ/dx = q_l   (A=cross-section area, Q=discharge, q_l=lateral inflow)
-
-Momentum:
-  dQ/dt + d(Q^2/A)/dx + g*A*(dz/dx) + g*A*S_f = 0
-  (z=water surface elevation, S_f=friction slope from Manning's equation)
-
-**Why GR4J surrogate**: HEC-RAS requires a proprietary Windows binary. The GR4J model
-captures the essential rainfall-runoff transformation that HEC-RAS performs when used
-for hydrological analysis:
-- Production store (x1) = soil moisture accounting = HEC-RAS infiltration/loss
-- Routing store (x3) = nonlinear reservoir routing = HEC-RAS channel routing
-- Unit hydrographs UH1/UH2 = flow distribution in time = HEC-RAS flow routing
-- Groundwater exchange (x2) = inter-basin transfer = HEC-RAS lateral inflows
+> ⚠️ **This KI was rebuilt 2026-06-03 to drive the ACTUAL HEC-RAS binary.** A
+> prior version shipped a **GR4J rainfall-runoff Python surrogate** — that was
+> both a KDT-philosophy violation (no real binary) **and** a domain error
+> (HEC-RAS is a *hydraulics* model, not a rainfall-runoff model). The surrogate
+> has been removed. Every tool here invokes `RasSteady.exe`.
 
 ---
 
-## Installation
+## 1. What HEC-RAS is (and is NOT)
 
-### Proprietary Binary (not available)
+HEC-RAS computes **water-surface profiles and velocities** along a river,
+given surveyed **cross-section geometry**, channel **roughness**, **discharge**,
+and **boundary conditions**. It solves:
+
+- **Steady flow** — standard-step solution of the 1-D energy (Bernoulli) equation
+  for gradually-varied flow → WS / energy grade / velocity per cross section per profile.
+- **Unsteady flow** — implicit finite-difference solution of the 1-D Saint-Venant
+  equations (and 2-D shallow-water equations) → stage/flow hydrographs in time.
+- **Add-ons** — bridge/culvert/gate hydraulics, sediment transport, water quality.
+
+**HEC-RAS is NOT a rainfall-runoff model.** Its forcing is **discharge (cfs or
+m³/s)** and **boundary stage** — *not* precipitation, temperature, or radiation.
+Do **not** wire `load_daily_forcing` (precip/temp) into HEC-RAS. The Layer-1
+tie-in is *discharge* via `ObservedQ` (see `convert_flow_to_hecras.py`).
+
+---
+
+## 2. Installation / environment
+
+HEC-RAS is **proprietary, closed-source USACE Windows software**. There is no
+buildable source. A pre-built install (6.7 Beta 5) is staged under **WINE 9.0**:
 
 ```
-HEC-RAS 6.x:     Not available (proprietary Windows GUI)
-Platform:         Windows only (x86-64)
-Source:           https://www.hec.usace.army.mil/software/hec-ras/
-License:          US Government Public Domain (binary distribution)
-CLI execution:    Ras.exe (COM automation or HECRASController)
+Install:  /home/server/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5
+Solvers:  x64/RasSteady.exe            (steady — VALIDATED here)
+          x64/RasUnsteady.exe          (unsteady — loads; needs orchestration)
+          x64/RasGeomPreprocess.exe    (geometry property tables)
+          x64/RasUnsteadySediment.exe  (sediment)
+          x64/RasWaterQuality.exe      (water quality)
+          x64/RasQuasiSediment.exe / RasQuasiRVSM.exe
 ```
 
-### Python Surrogate (HydroCraft)
-
-```
-Tools:           ki/tools/*.py
-Dependencies:    numpy, pandas, netCDF4, geopandas, shapely, scipy, matplotlib
-Python:          3.10+
-Engine:          GR4J (Perrin et al., 2003)
-```
-
-### Test example
+Invoke a solver under wine (the tools do this for you):
 
 ```bash
-# Step 1: Convert forcing
-python3 ki/tools/convert_forcing_to_hecras.py \
-  --forcing_dir /path/to/cmfd/ \
-  --basin_shp /path/to/basin.shp \
-  --start_year 1980 --end_year 1990 \
-  --output_csv ./forcing.csv
-
-# Step 2: Convert soil parameters
-python3 ki/tools/convert_soil_to_hecras.py \
-  --soil_file /path/to/HWSD.img \
-  --basin_shp /path/to/basin.shp \
-  --output_file ./soil_params.json
-
-# Step 3: Run model
-python3 ki/tools/run_hecras.py \
-  --forcing_csv ./forcing.csv \
-  --params_json ./soil_params.json \
-  --basin_area_km2 121330 \
-  --output_csv ./sim_output.csv
-
-# Step 4: Parse output
-python3 ki/tools/parse_output_hecras.py \
-  --input_csv ./sim_output.csv \
-  --output_csv ./discharge_daily.csv \
-  --start_date 1981-01-01 --end_date 1990-12-31
+env -u LD_PRELOAD WINEPREFIX=/home/server/.wine WINEDEBUG=-all \
+  wine ".../6.7 Beta 5/x64/RasSteady.exe" MIXED.r01
 ```
+
+> **Two environment gotchas** (both handled in `tools/_hecras_env.py`):
+> 1. A broken system-wide `LD_PRELOAD` (32-bit libstdc++) breaks wine — strip it (`env -u LD_PRELOAD`).
+> 2. `RasSteady` aborts with `HDF_ERROR trying to open HDF output file` unless the
+>    plan results skeleton `<prj>.pNN.tmp.hdf` exists — **seed it from `<prj>.gNN.hdf`**.
+
+Python helpers used: `h5py` (read results), `numpy`, `matplotlib`,
+`ki_tools_common` (metrics, units). `ras-commander` 0.93.0 is installed but its
+project auto-detection does not recognise the "6.7 Beta 5" layout, so this KI
+drives the solvers directly rather than through `RasCmdr.compute_plan`.
 
 ---
 
-## Pipeline
+## 3. Execution architecture (why this works headless)
 
-| # | Stage | Tool | Parallel | Notes |
-|---|-------|------|----------|-------|
-| 0 | Configuration | -- | -- | Set basin, period, paths |
-| 1 | Forcing Conversion | `convert_forcing_to_hecras.py` | Yes | CMFD NetCDF to daily precip (mm/day) + temp (C) |
-| 2 | Soil Parameters | `convert_soil_to_hecras.py` | Yes | HWSD to GR4J production store capacity |
-| 3 | Model Execution | `run_hecras.py` | No | GR4J surrogate: calibrate + simulate |
-| 4 | Output Parsing | `parse_output_hecras.py` | No | Extract discharge time series to CSV |
+The Fortran solvers do **not** read the human-readable `.prj/.g/.f/.p` files.
+The .NET orchestrator `Ras.exe` normally (a) flattens geometry+flow+plan into a
+**run file** `.rNN`, and (b) creates the **plan results HDF** `.pNN.tmp.hdf`.
+`Ras.exe` needs **Wine Mono**, which is **not installed** here.
+
+**Verified work-around for steady runs** (this is what makes the KI real):
+
+```
+1. Start from a project that already has a .rNN run file (every shipped example does).
+2. Seed results skeleton:   cp <prj>.gNN.hdf  <prj>.pNN.tmp.hdf
+3. Run:  wine RasSteady.exe <prj>.rNN     (cwd = project dir)
+4. Results land in <prj>.pNN.tmp.hdf -> /Results/Steady/Output/.../Cross Sections/
+```
+
+`run_hecras.py` does all four steps in a temp workspace and collects the output.
+The trailing `HDF5-DIAG` lines printed *after* `Finished Steady Flow Simulation`
+are **non-fatal** (the solver probes an optional group) — success is keyed on the
+"Finished" banner and a populated (>60 kB) results HDF.
+
+**Limitation (documented honestly):** brand-new geometry requires a `.rNN` run
+file, which only `Ras.exe`/the GUI/`ras-commander` can write from scratch.
+Unsteady/sediment/WQ solvers **load and execute** (proven) but their full run
+needs the plan-HDF skeleton `Ras.exe` builds with boundary conditions baked in —
+so they are documented but not end-to-end validated in this environment.
 
 ---
 
-## Tools Reference
+## 4. Capability inventory (Phase 1b) → tools
 
-| # | Tool | Stage | Lines | Purpose |
-|---|------|-------|-------|---------|
-| 1 | `convert_forcing_to_hecras.py` | s1 | ~350 | CMFD NetCDF to basin-averaged daily precip + temp |
-| 2 | `convert_soil_to_hecras.py` | s2 | ~300 | HWSD soil texture to GR4J parameters |
-| 3 | `run_hecras.py` | s3 | ~500 | GR4J model: PET, calibration, simulation |
-| 4 | `parse_output_hecras.py` | s4 | ~250 | Parse simulation output to standardized CSV |
-
----
-
-## Critical Domain Knowledge
-
-### dt_201: Precipitation units -- CMFD kg/m2/s vs model mm/day
-
-**CRITICAL**. CMFD precipitation is in kg/m2/s. To convert to mm/day, multiply by
-86400.0 (seconds per day). Since 1 kg/m2 = 1 mm of water, this is exact.
-
-**Trap**: Forgetting the 86400 factor gives precipitation ~86400x too small. The model
-produces near-zero runoff and appears to "work" but all flows are negligible.
-
-### dt_202: Temperature units -- CMFD Kelvin vs model Celsius
-
-**CRITICAL**. CMFD temperature is in Kelvin. Subtract 273.15 to convert to Celsius.
-
-**Trap**: Passing Kelvin (e.g. 288 K) to Oudin PET formula yields wildly wrong
-evapotranspiration because (T + 5) becomes ~293 instead of ~20.
-
-### dt_203: GR4J x1 (production store) range
-
-The production store capacity x1 has valid range [100, 1500] mm. Values outside this
-range indicate poor parameter estimation. x1 controls total water balance -- too small
-means nearly all precipitation becomes runoff, too large means excessive storage.
-
-### dt_204: GR4J x4 (unit hydrograph time base) minimum
-
-x4 must be >= 0.5 days. Values below 0.5 cause the unit hydrograph to degenerate to a
-single-step impulse, losing all routing behavior.
-
-### dt_205: Observation discharge conversion -- m3/s to mm/day
-
-When comparing model output (mm/day) to observed discharge (m3/s), the conversion is:
-  Q_mm = Q_m3s * 86400 / (area_km2 * 1e6) * 1e3
-
-**Trap**: Using area in m2 instead of km2, or forgetting the 1e3 (m to mm) factor.
-
-### dt_206: Basin mask -- point-in-polygon resolution
-
-When computing basin-averaged forcing, grid cells are selected if their center falls
-within the basin polygon. For small basins relative to grid resolution (0.25 deg),
-this can yield zero cells.
-
-**Trap**: An empty basin mask produces NaN for all forcing values, which propagates
-silently through the model producing NaN discharge.
-
-### dt_207: Negative precipitation sentinels
-
-CMFD files use -9999 or negative values as fill/missing data sentinels. These must be
-replaced with NaN before spatial averaging, otherwise they corrupt the basin mean.
-
-### dt_208: Spinup period required
-
-GR4J requires at least 365 days of spinup for the production and routing stores to
-equilibrate. Metrics computed over the spinup period are meaningless.
+| # | Capability | Status | Tool(s) |
+|---|------------|--------|---------|
+| 1 | **Steady water-surface profiles** (PRIMARY) | ✅ validated | `run_hecras.py` |
+| 2 | Prepare/parameterise a steady project | ✅ | `prepare_steady_run.py` |
+| 2b | **Author NEW-river steady geometry from a DEM** (no Wine Mono) | ✅ NEW 2026-06-04 | `author_steady_geometry.py` |
+| 3 | Set discharges/profiles (incl. from `ObservedQ`) | ✅ | `convert_flow_to_hecras.py` |
+| 4 | Edit Manning n / expansion-contraction / geometry | ✅ | `edit_geometry.py` |
+| 5 | Set up/downstream boundary conditions | ✅ | `edit_boundaries.py` |
+| 6 | Stage-discharge **rating curve** (flow sweep) | ✅ | `rating_curve.py` |
+| 7 | Geometry preprocessing (build geom HDF) | ⚠️ needs orchestration | `preprocess_geometry.py` |
+| 8 | Parse all hydraulic results (WS/EG/Q/V/Froude/…) | ✅ | `parse_output_hecras.py` |
+| 9 | **Validate** computed vs observed WS | ✅ | `validate_hecras.py` |
+| 10 | Unsteady / sediment / water quality | ⚠️ solver loads; needs Wine Mono `Ras.exe` | documented (§7) |
 
 ---
 
-## GR4J Model -- Core Algorithm
+## 5. Pipeline (typical steady workflow)
 
-GR4J (Perrin et al., 2003) is a 4-parameter daily lumped conceptual model:
+```bash
+cd knowledge_infrastructure
 
-### Parameters
+# 0. environment check
+python3 preflight_check.py
 
-| Parameter | Symbol | Range | Unit | Description |
-|-----------|--------|-------|------|-------------|
-| Production store capacity | x1 | 100-1500 | mm | Maximum soil moisture storage |
-| Groundwater exchange coeff | x2 | -5 to +5 | mm | Inter-basin transfer rate |
-| Routing store capacity | x3 | 10-500 | mm | Nonlinear routing reservoir capacity |
-| UH time base | x4 | 0.5-5.0 | days | Time base of unit hydrograph UH1 |
+# 1. prepare a parameterised project from the template
+python3 tools/prepare_steady_run.py --out-dir /tmp/myproj \
+        --flows 600,1200 --dn-slope 0.0008
 
-### Algorithm
+# 2. run the REAL steady solver
+python3 tools/run_hecras.py --project /tmp/myproj --prj MIXED --plan 01 \
+        --out /tmp/myproj_out
 
-```
-Step 1: Net precipitation/evaporation
-  if P >= E: Pn = P - E, En = 0
-  else:      Pn = 0, En = E - P
+# 3. parse results to CSV/JSON
+python3 tools/parse_output_hecras.py --hdf /tmp/myproj_out/MIXED.p01.tmp.hdf \
+        --csv /tmp/myproj_out/results.csv
 
-Step 2: Production store update
-  if Pn > 0: Ps = x1*(1-(S/x1)^2)*tanh(Pn/x1) / (1+(S/x1)*tanh(Pn/x1))
-  else:       Es = S*(2-S/x1)*tanh(En/x1) / (1+(1-S/x1)*tanh(En/x1))
+# 4. validate against observed WS (real-tier)
+python3 tools/validate_hecras.py --hdf /tmp/myproj_out/MIXED.p01.tmp.hdf \
+        --flow examples/MixedFlowSteady/MIXED.f01 --figure figures/s8_validation.png
 
-Step 3: Percolation
-  Perc = S * (1 - (1 + (4/9 * S/x1)^4)^(-0.25))
-
-Step 4: Split effective rainfall
-  Pr = Perc + (Pn - Ps)
-  90% to UH1 (routing store), 10% to UH2 (direct flow)
-
-Step 5: Unit hydrograph convolution
-  UH1: S-curve ordinates SH1(t) = (t/x4)^2.5 for t < x4
-  UH2: S-curve ordinates SH2(t) = 0.5*(t/x4)^2.5 for t < x4
-
-Step 6: Groundwater exchange
-  F = x2 * (R/x3)^3.5
-
-Step 7: Routing store
-  R = R + Q1 + F
-  Qr = R * (1 - (1 + (R/x3)^4)^(-0.25))
-  R = R - Qr
-
-Step 8: Total discharge
-  Q = Qr + max(0, Q9 + F)
+# (optional) stage-discharge rating curve at cross section #9
+python3 tools/rating_curve.py --xs-index 9 --flows 300,500,800,1200,2000 \
+        --out /tmp/rating.csv
 ```
 
-### PET Method: Oudin et al. (2005)
-
-Temperature-based PET recommended for rainfall-runoff models:
-```
-Ra = extraterrestrial radiation (from latitude + day of year)
-PET = Ra / (lambda * rho) * (T + 5) / 100   if T + 5 > 0
-PET = 0                                       otherwise
-```
+Every tool returns a JSON status with a `validation` block and exits non-zero on
+failure (validate→process→validate contract).
 
 ---
 
-## Validation
+## 6. Input / output reference
 
-### Bengbu Basin, Huai River (Station 51080)
+### Inputs (per project `<PRJ>`)
+
+| File | Role | Edited by |
+|------|------|-----------|
+| `.prj` | project: title, **unit system**, current plan | template |
+| `.gNN` | geometry: cross sections (Sta/Elev), Manning n, reach lengths, exp/contr | `edit_geometry.py` |
+| `.gNN.hdf` | geometry hydraulic-property tables (HDF5) | `preprocess_geometry.py` (or ships with example) |
+| `.fNN` | steady flow: profiles, **discharges**, boundary conditions, **Observed WS** | `convert_flow_to_hecras.py` |
+| `.pNN` | plan: geom+flow refs, tolerances, **flow regime** | template |
+| `.rNN` | **steady run file** the Fortran solver reads (flattened) | `convert_flow_to_hecras.py`, `edit_boundaries.py` |
+
+### Outputs
+
+| File | Role | Read by |
+|------|------|---------|
+| `.pNN.tmp.hdf` | results HDF: WS / EG / Q / V + 50+ hydraulic variables | `parse_output_hecras.py` |
+| `.ONN` | legacy binary detailed output | (not parsed; HDF preferred) |
+
+Key results HDF path:
+`/Results/Steady/Output/Output Blocks/Base Output/Steady Profiles/Cross Sections/`
+holds `Water Surface`, `Energy Grade`, `Flow` (shape `[n_profiles, n_xs]`) and an
+`Additional Variables/` group with velocity, depth, top width, area, Froude, shear, etc.
+
+### Unit trap table
+
+| Quantity | English (default) | SI | Trap |
+|----------|-------------------|-----|------|
+| Discharge | **cfs** (ft³/s) | m³/s | `1 m³/s = 35.3147 cfs`. Feeding m³/s into an English project under-states flow ~35×. Use `--in-units m3/s` to auto-convert. |
+| Elevation / WS | **ft** | m | `1 m = 3.28084 ft`. Geometry, observed WS, and computed WS must share units. |
+| Velocity | ft/s | m/s | g = 32.174 ft/s² (English) vs 9.81 m/s² (SI) in the Froude calc. |
+| Length / station | ft | m | reach lengths & cross-section stations follow the project unit system. |
+| Slope | ft/ft (= m/m) | m/m | dimensionless — same in both systems; do NOT scale. |
+| Manning n | dimensionless | dimensionless | same in both systems, but the conveyance formula carries a 1.486 (English) vs 1.0 (SI) factor *inside the solver* — never convert n between systems. |
+
+The unit system is declared in the `.prj` (`English Units` / `SI Units`); changing
+discharge units without changing the project unit system silently corrupts results.
+
+---
+
+## 7. Unsteady / sediment / water quality (documented, not validated here)
+
+The unsteady, sediment, and water-quality solvers are present and **execute under
+wine** (`RasUnsteady.exe` prints `Performing Unsteady Flow Simulation HEC-RAS 6.7
+Beta 5`). Their full headless run is blocked because the plan results skeleton —
+which `Ras.exe` writes with the boundary-condition time series baked in — cannot
+be produced without **Wine Mono** (`~/.wine/drive_c/windows/mono` absent;
+`dl.winehq.org` unreachable in this sandbox). To run them you must either install
+Wine Mono and use `Ras.exe -c project.prj plan.pNN`, or run on a native Windows /
+licensed HEC-RAS install. See `docs/06_capabilities.md` and triplets
+`unsteady_needs_mono`, `wine_mono_missing`.
+
+---
+
+## 8. Validation summary
 
 | Item | Value |
 |------|-------|
-| Basin | Bengbu, Huai River, China |
-| Station | 51080 (drainage area ~121,330 km2) |
-| Calibration | 1981-1985 (1980 spinup) |
-| Validation | 1986-1990 |
-| Forcing | CMFD 0.25 deg daily (precip, temp) |
-| PET method | Oudin et al. (2005) |
-| Optimization | Differential evolution, -(0.5*NSE + 0.5*KGE) |
+| Benchmark | HEC-RAS *Mixed Flow Regime Channel* example (ships with HEC-RAS) |
+| Reference | **Observed WS** lines in `MIXED.f01` (19 cross sections, PF1 @ Q=500 cfs) |
+| Tier | **real** (independent observed water-surface elevations) |
+| NSE | 0.9965 |
+| KGE | 0.977 |
+| RMSE | 0.096 ft |
+| PBIAS | −0.09 % |
+| r | 0.999 |
+| max abs err | 0.28 ft |
+| Figure | `figures/s8_validation.png` |
+
+The computed profile correctly reproduces the supercritical→subcritical
+transition (hydraulic jump) of the mixed-flow regime — Froude > 1 in the steep
+upstream reach, < 1 downstream.
 
 ---
 
-## Calibration Parameters
+## 9. Tool reference
 
-| Parameter | Range | Sensitivity | Notes |
-|-----------|-------|-------------|-------|
-| x1 (production store) | 100-1500 mm | **Highest** | Controls water balance partition |
-| x2 (exchange coeff) | -5 to +5 mm | Medium | Inter-basin groundwater exchange |
-| x3 (routing store) | 10-500 mm | High | Controls recession behavior |
-| x4 (UH time base) | 0.5-5.0 days | Medium | Controls peak timing |
-
-**Priority order**: x1 > x3 > x2 > x4
-
----
-
-## Coupling Points
-
-| # | Integration | Direction | Format | Notes |
-|---|-------------|-----------|--------|-------|
-| 1 | CMFD to HEC-RAS | Input | NetCDF to CSV | Precipitation + temperature |
-| 2 | MSWX to HEC-RAS | Input | NetCDF to CSV | Alternative global forcing |
-| 3 | HWSD to HEC-RAS | Input | Raster to JSON | Soil properties for x1 estimation |
-| 4 | HEC-RAS to CaMa-Flood | Output | CSV to NetCDF | Discharge for global routing |
-| 5 | HEC-RAS to HEC-HMS | Comparison | CSV | Cross-model validation |
+| Tool | Purpose | Key args |
+|------|---------|----------|
+| `prepare_steady_run.py` | copy template → set flows/boundaries/roughness | `--out-dir --flows --dn-slope --mann-scale` |
+| `author_steady_geometry.py` | **NEW-river**: DEM+centerline → cross sections injected into a runnable `.rNN` (no Wine Mono) | `--dem --out-dir [--centerline-wkt] --half-width --flows-m3s/--observedq --dn-slope` |
+| `convert_flow_to_hecras.py` | set discharges in the run file (Layer-1 / ObservedQ tie-in) | `--run --out --flows` or `--observedq --quantiles --in-units` |
+| `edit_geometry.py` | scale/set Manning n; set exp/contr | `--geom --out --mann-scale --mann-set --exp --contr` |
+| `edit_boundaries.py` | set normal-depth slopes (up/dn/all) in run file | `--run --out --dn-slope --up-slope --all-slope` |
+| `preprocess_geometry.py` | run RasGeomPreprocess to build geom HDF | `--project --prj --plan` |
+| `run_hecras.py` | **run the real RasSteady solver**; collect HDF | `--project --prj --plan --out` |
+| `parse_output_hecras.py` | results HDF → per-XS records (CSV/JSON) | `--hdf --csv --json` |
+| `rating_curve.py` | sweep discharges → stage-discharge curve | `--xs-index --flows --out` |
+| `validate_hecras.py` | computed vs observed WS metrics + figure | `--hdf --flow --profile-index --figure` |
+| `_hecras_env.py` | shared binary paths + wine/seed/run helpers | (imported) |
 
 ---
 
-## Data Requirements
+## 10. Data requirements & sources
 
-| Data | Source | Status | Path |
-|------|--------|--------|------|
-| Precipitation | CMFD 0.25 deg | Available | `/mnt/disk1/.../huai/Data_forcing_01dy_025deg/` |
-| Temperature | CMFD 0.25 deg | Available | Same as above |
-| Soil | HWSD China | Available | `/mnt/disk1/.../soil/HWSD_China_Geo.img` |
-| Basin Shape | Bengbu | Available | `/mnt/disk1/.../shp/bengbu_shp/bengbu_clip.shp` |
-| Observation | Bengbu 51080 | Available | `/mnt/disk1/.../obs/BB/51080_bengbu.txt` |
+> ✅ **NEW-RIVER STEADY NOW WORKS — no Wine Mono, no ras_commander (2026-06-04).**
+> The repeated "structurally impossible without Wine Mono" verdict was a
+> **FALSE NEGATIVE**. The steady Fortran solver reads cross-section
+> station/elevation **directly from the `.rNN` run file** — the `.gNN.hdf` is only
+> the results-skeleton seed. Proven by controlled experiment: bumping every bed
+> elevation in `MIXED.r01` by +5 ft and re-running `RasSteady.exe` under plain
+> wine raised the computed WS by exactly +5 ft (66.00..72.93 → 71.00..77.93).
+> New geometry therefore needs only an **edited `.rNN`**, which is now authored by
+> **`tools/author_steady_geometry.py`** (DEM + centerline →
+> `ki_tools_common.terrain_ops.cut_cross_sections` → trapezoidal cross sections
+> injected into the template `.rNN`, keeping 19 XS / 4 pts so the
+> "Section - Arrays Sizes" header stays valid). **Demonstrated end-to-end on
+> Bengbu** (`china_dem_90m`, 19 DEM cross sections, observed Q quantiles
+> 3810/6812 m³/s → WS 69.33..81.22 ft, `RasSteady.exe` rc=0, real hydraulics in
+> the results HDF). Limitation: this value-swap path inherits the template's
+> longitudinal layout (reach lengths / river stations); fully general XS
+> count/spacing additionally needs regenerating the array-size header (next
+> `tool_build`). And steady **produces stage, consumes discharge** — a
+> `discharge_m3s` validation target is the *forcing input*, not an output; for
+> discharge-vs-discharge routing fidelity use unsteady (§11, still needs the
+> plan-HDF skeleton — open question whether the unsteady solver is likewise
+> `.rNN`/`.uNN`-authoritative).
+>
+> **(superseded note — ras_commander path) CORRECTION (2026-06-04, diagnosis retry):** the prior \"ras_commander not
+> installed\" verdict was a FALSE NEGATIVE — it ran `import ras_commander` under
+> `/usr/bin/python3`. `ras_commander` **0.93.0 IS installed** in the python_env
+> venv and imports cleanly from
+> `/mnt/disk1/Hydrocraft_server/python_env/bin/python3`, exposing the full
+> authoring stack: `GeomCrossSection.set_station_elevation`, `GeomPreprocessor`,
+> `RasGeo`, `RasCmdr.compute_plan_linux`, `HdfResultsXsec`. The ONLY remaining gap
+> is that **no tool in `tools/` yet wraps these into a DEM→cross-section authoring +
+> run pipeline** — a `tool_build` TODO, NOT a missing library. Author new-river
+> steps with the venv interpreter (see §2). Verified-working scope today
+> is **steady water-surface profiles on geometry that already ships a
+> `.gNN.hdf` + `.rNN`** (the bundled MixedFlowSteady example, NSE 0.9965 §8).
+>
+> The intended (currently non-executable) workflow for a new basin would be:
+>
+> 1. **Start from a bundled template** (`RasExamples.extract_project('MixedFlowSteady')`
+>    or any project that ships a `.gNN.hdf` + a `.pNN`).
+> 2. **Replace cross-section geometry** using `RasGeo` / `GeomCrossSection` —
+>    overwrite station-elevation tables with DEM-extracted cross sections
+>    (MERIT-Hydro 3-arcsec tiles, river centerline from MERIT-Hydro `dir`).
+> 3. **Set flow / boundary conditions** via `RasUnsteady` for unsteady routing
+>    or `RasPlan` for steady. Upstream BC = observed discharge time series.
+> 4. **Run via `RasCmdr.compute_plan()`** — this calls the Fortran solvers
+>    (`HEC-RAS.exe`, `RasUnsteady.exe`) which work under **plain WINE without
+>    Wine Mono** (verified Tier 3 v1, 2026-06-02). Do NOT invoke `Ras.exe`
+>    (the .NET GUI) — that DOES need Wine Mono.
+> 5. **Read modelled output** via `HdfResultsMesh` (cross-section results) or
+>    `HdfPlot` — produces water-surface stage, modelled discharge at downstream
+>    nodes, velocity profiles.
+>
+> What still requires Wine Mono (and is still blocked here): `Ras.exe -c`
+> compute (the .NET command-line driver), RAS Mapper GIS exports, the GUI
+> itself. Anything that goes through `HECRASController` COM.
+>
+> What still requires human engineering: choosing channel/overbank Manning n
+> (use 0.035/0.06 default), picking cross-section spacing (Δx ≈ 50–500 m),
+> calibrating against observed water-surface or downstream Q.
+>
+> ⚠️ **ORCHESTRATION TARGET VARIABLE.** HEC-RAS **consumes** discharge and
+> **produces** water-surface stage. A verifier target of `Variable=discharge_m3s`
+> is wrong for this domain — discharge is the *forcing input*, not an output.
+> The comparison variable must be **water-surface stage** (the observed `z`
+> column / observed-WS lines), as validated in §8.
+
+- **Geometry** — surveyed cross sections (station, elevation) in the project unit
+  system. The bundled template (`examples/MixedFlowSteady/`) is a prismatic
+  trapezoidal reach; for a new river, geometry comes from survey or DEM-extracted
+  cross sections (authored in the HEC-RAS GUI / `ras-commander`).
+- **Discharge** — design floods or `ObservedQ` peaks. See
+  `data_ki/ObservedQ/SKILL.md` for the observed-discharge dataset format;
+  `convert_flow_to_hecras.py` can read it and convert m³/s → cfs.
+- **Roughness** — Manning n from land cover / channel material (channel 0.025–0.05,
+  overbank 0.04–0.15). Default 0.035 channel / 0.06 overbank if unknown.
+- **Why this data?** HEC-RAS is a hydraulics model: it consumes discharge and
+  geometry, *not* meteorology. The CMFD/MSWX/NASA-POWER met loaders in
+  `ki_tools_common` are therefore intentionally **not** used here.
+
+See `docs/` for stage-by-stage procedures and `diagnostics/triplets.yaml` for the
+error→remedy catalogue (HDF seeding, LD_PRELOAD, unit traps, Wine Mono, etc.).
 
 ---
 
-## File Structure
+## 11. Routing-test recipe (Wangjiaba → Bengbu, Huai River)
 
-```
-ki/
-+-- SKILL.md                           # This file
-+-- tools/
-    +-- convert_forcing_to_hecras.py   # CMFD NetCDF to basin-averaged forcing CSV
-    +-- convert_soil_to_hecras.py      # HWSD soil to GR4J parameter estimates
-    +-- run_hecras.py                  # GR4J model execution (PET + calibration + sim)
-    +-- parse_output_hecras.py         # Parse simulation output to standardized CSV
-```
+> ⚠️ **STEADY new-river now works (§10); this §11 UNSTEADY Q→Q routing recipe is
+> still blocked.** For a steady water-surface profile on a new reach use
+> `tools/author_steady_geometry.py` (no Wine Mono). The unsteady routing below
+> needs the plan-HDF skeleton with boundary time series baked in — open question
+> whether the unsteady solver is likewise flat-file (`.uNN`/`.rNN`) authoritative
+> the way the steady solver proved to be.
+>
+> ⚠️ **PARTIALLY EXECUTABLE — library present, wrapper missing (corrected
+> 2026-06-04).** This recipe depends on `ras_commander` (`RasExamples`, `RasGeo`,
+> `GeomCrossSection`, `RasUnsteady`, `RasCmdr.compute_plan_linux`) and a
+> DEM→cross-section authoring step. `ras_commander` 0.93.0 **IS installed** — import
+> it via `/mnt/disk1/Hydrocraft_server/python_env/bin/python3`; the only missing
+> piece is a `tools/` wrapper that authors geometry from a DEM. Every Bengbu run to date has therefore been
+> **structurally blocked at the authoring stage** — the Bengbu Q/stage metrics
+> are *uncomputable*, not poor. The recipe is kept as the design target for when
+> those dependencies are added. Until then HEC-RAS validates only on geometry
+> that already ships a `.gNN.hdf` + `.rNN` (dev example, §8).
+
+This is the orchestrator's primary real-case validation for HEC-RAS. It tests
+**hydrodynamic routing fidelity** (attenuation + lag) on a real river reach,
+which is the natural validation for HEC-RAS (the model consumes upstream Q and
+routes it downstream — it does not produce Q de novo).
+
+**Reach.** Huai River, China. Upstream gage **Wangjiaba** (id `wangjiaba_51030`,
+32.43 N, 115.60 E, `/mnt/disk1/Hydrocraft_server/data/obs/WJB/HUAIH-51030-wangjiaba.txt`)
+→ downstream gage **Bengbu** (id `bengbu_51080`, 32.93 N, 117.38 E,
+`/mnt/disk1/Hydrocraft_server/data/obs/BB/51080_bengbu.txt`). ~200 km reach.
+Both files share period 1952-05-30 to 1997-12-31, daily resolution, columns
+include `discharge_m3s` and `water_level_m`.
+
+**Pattern.**
+1. **Authoring (ras-commander HDF-direct, no Wine Mono).**
+   - Start from a bundled template via `RasExamples.extract_project('MixedFlowSteady')`
+     (or any project shipping `.gNN.hdf` + a plan file).
+   - Use `RasGeo` / `GeomCrossSection` to overwrite station-elevation tables
+     with cross sections sampled from MERIT-Hydro DEM (`/mnt/disk3/MERIT_Hydro/`,
+     3-arcsec tiles) along the Wangjiaba→Bengbu centerline. Δx ≈ 200-500 m.
+   - Use `RasUnsteady` to set:
+     * Upstream BC = Wangjiaba `discharge_m3s` time series (read with
+       `read_obs_q.py` or `data_ki/ObservedQ/SKILL.md` recipe).
+     * Downstream BC = normal-depth (friction slope) or stage-Q rating.
+     * Plan title, time window matching the obs overlap.
+2. **Run (plain WINE, no Mono).** `RasCmdr.compute_plan(prj, plan_id, num_cores=4)`
+   invokes the Fortran solvers (`HEC-RAS.exe`, `RasUnsteady.exe`) under WINE.
+3. **Extract modelled Q at Bengbu.** `HdfResultsMesh` (or `parse_output_hecras.py`
+   for 1D unsteady) — pull discharge time series at the cross-section nearest
+   Bengbu (32.93 N, 117.38 E).
+4. **Compare** modelled Bengbu Q vs observed Bengbu Q over a common 1–3 year
+   window (NSE, KGE, r, PBIAS, peak-lag). Use the standard validators.
+
+**Why this is the right test.** HEC-RAS is a 1D/2D hydrodynamic solver — its
+job is to take Q at an upstream boundary and route it downstream with proper
+wave attenuation and lag. Comparing modelled-discharge-at-a-different-station
+to observed-discharge-at-that-station directly measures routing fidelity. (A
+stage-vs-stage test is the other valid choice; see §10 ⚠️ note. We use Q-vs-Q
+here because both gages have long contiguous daily Q records.)
+
+**Pitfalls.** (a) Make sure the unsteady time step Δt is small enough for the
+Courant condition along the reach (`Δt ≤ Δx / c` with `c ≈ √(g h)`). (b) The
+~200 km reach has tributaries; for a first cut, ignore them — the model will
+under-predict peaks. To add lateral inflow, use `RasUnsteady` flow-distributions
+on internal cross sections. (c) Normal-depth downstream BC induces an error
+band near the downstream end; place the Bengbu extraction cross section ≥ 5 km
+upstream of the downstream BC to avoid it.

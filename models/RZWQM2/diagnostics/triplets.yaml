@@ -1426,33 +1426,6 @@ triplets:
       soil properties against HWSD — do not rely on the SOIL TYPE label.
       The label comes from the template and is not automatically updated.
 
-# ============================================================================
-# Summary
-# ============================================================================
-summary:
-  total_triplets: 25
-  by_severity:
-    fatal: 16     # dt_001, dt_002, dt_005, dt_006, dt_007, dt_011, dt_012, dt_013, dt_021, dt_022, dt_023, dt_024, dt_025, dt_026, dt_027, dt_030
-    degraded: 3   # dt_003, dt_028, dt_031
-    silent: 6     # dt_004, dt_008, dt_009, dt_010, dt_014, dt_029
-  by_failure_domain:
-    path_resolution: 4   # dt_001, dt_002, dt_013, dt_022
-    parameter_format: 9  # dt_003, dt_005, dt_021, dt_023, dt_024, dt_025, dt_026, dt_027, dt_028
-    unit_conversion: 3   # dt_004, dt_009, dt_010
-    runtime: 4           # dt_006, dt_007, dt_011, dt_030
-    silent_error: 4      # dt_008, dt_014, dt_029, dt_031
-    environment: 1       # dt_012
-  by_stage:
-    s1_site_config: 1         # dt_009
-    s2_met_prep: 2            # dt_003, dt_014
-    s3_brk_generation: 1     # dt_004
-    s4_soil_setup: 2          # dt_005, dt_008
-    s5_node_discretization: 1 # dt_011
-    s7_scenario_assembly: 8   # dt_001, dt_013, dt_021, dt_022, dt_023, dt_024, dt_025, dt_026
-    s8_execution: 4           # dt_002, dt_006, dt_007, dt_012
-    s9_result_parsing: 1      # dt_010
-    s10_calibration: 1        # dt_028
-
   - id: "dt_032"
     stage: "s7_scenario_assembly"
     symptom: "RZWQM2 crashes with 'File: SBGRO040.CUL not found' or 'MZCER040.CUL not found' after crop selection change"
@@ -1475,4 +1448,12 @@ summary:
     diagnosis: "The tool only had PROJECT_PATH (which defaults to the canonical template), so new scenarios were created as siblings of the template scenario. This pollutes the template directory and causes confusion."
     remedy: "Fixed (2026-04-10): Added OUTPUT_DIR parameter (6th CLI argument). When set, the tool creates a self-contained project at OUTPUT_DIR with proper structure (scenario/, Meteorology/, Analysis/), IPNAMES.DAT paths pointing to the new location, and relative RZX paths. Usage: initialize_scenario.py <template_root> <template_name> <new_name> <start> <end> <output_dir>"
     severity: "minor"
+    silent: false
+
+  - id: "dt_035"
+    stage: "s9_result_parsing"
+    symptom: "Validation requested against GRACE full-column terrestrial_water_storage_anomaly (regional_aggregate_time_series, ~300 km mascon); all metrics return null, no model run performed."
+    diagnosis: "WRONG-VARIABLE + WRONG-SCALE. RZWQM2 is a 1-D root-zone field model. dag.yaml emits no terrestrial_water_storage_anomaly. The closest output, soil_water_storage (dag.yaml:336), declares its only comparable_obs_shape as point_time_series (soil-moisture probe). water_table_depth is a prognostic state, not a comparable output. scope_out excludes regional groundwater flow and spatial='1-D column', so there is no deep/regional storage to sum into a full-column TWS. tools/ ships no point->mascon aggregation tool. Per the dag observability contract this is REJECT_WRONG_METRIC / invalid_for_obs_shape."
+    remedy: "Do not run or retry. Record a structurally-invalid SKIP with metrics=null. GRACE TWS belongs to a full-column / regional-mass model (PISM/ISSM for ice, or a land-surface/groundwater model), not a 1-D root-zone crop model. Same SKIP family as Daisy / AquaCrop_python / CLM_Crop GRACE-TWS."
+    severity: "info"
     silent: false

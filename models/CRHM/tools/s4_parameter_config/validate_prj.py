@@ -49,33 +49,40 @@ def parse_args():
     return parser.parse_args()
 
 
+KNOWN_SECTIONS = {
+    "Dimensions", "Macros", "Observations", "Dates", "Modules", "Parameters",
+    "Initial_State", "Final_State", "Summary_period", "Display_Variable",
+    "Display_Observation", "Log_All", "Summary_Screen", "TChart",
+}
+
+
 def parse_prj_sections(content):
-    """Split .prj file into named sections."""
+    """Split .prj file into named sections.
+
+    Handles BOTH CRHM layouts seen in the wild:
+      (a) ``######`` / ``Name:`` / ``######`` / content   (SKILL.md example), and
+      (b) ``Name:`` / ``######`` / content / ``######``    (the format the CRHM
+          binary actually writes & accepts, e.g. belly_river_fixed.prj —
+          section name precedes the first delimiter).
+    A section starts whenever a line equals a KNOWN section keyword (with optional
+    trailing ':'); ``######`` delimiter lines and the version/description header
+    are skipped. This is robust to delimiter placement.
+    """
     sections = {}
     current_section = "__header__"
     sections[current_section] = []
 
-    lines = content.split("\n")
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        if line == "######":
-            # Next non-empty line is the section name
-            i += 1
-            while i < len(lines) and not lines[i].strip():
-                i += 1
-            if i < len(lines):
-                section_name = lines[i].strip().rstrip(":")
-                current_section = section_name
-                sections[current_section] = []
-                # Skip the closing ######
-                i += 1
-                if i < len(lines) and lines[i].strip() == "######":
-                    i += 1
-                continue
-        else:
-            sections.setdefault(current_section, []).append(line)
-        i += 1
+    for raw in content.split("\n"):
+        line = raw.strip()
+        name = line.rstrip(":")
+        if name in KNOWN_SECTIONS:
+            current_section = name
+            sections.setdefault(current_section, [])
+            continue
+        if line.startswith("######"):
+            # delimiter / version-comment line — not content
+            continue
+        sections.setdefault(current_section, []).append(line)
 
     return sections
 
@@ -101,6 +108,8 @@ def process(prj_path):
             report["errors"].append(f"Missing required section: {sec}")
 
     if report["errors"]:
+        report["status"] = "FAIL"
+        report["summary"] = f"{len(report['errors'])} errors, 0 warnings"
         return report
 
     # Parse Dimensions
@@ -150,8 +159,13 @@ def process(prj_path):
     mod_lines = [l for l in sections.get("Modules", []) if l.strip()]
     modules = []
     for line in mod_lines:
-        if line.strip().startswith("+"):
-            mod_name = line.strip().lstrip("+").split()[0]
+        s = line.strip()
+        # Flat format: 'basin CRHM 02/24/12'. Macro format: '+basin CRHM 04/20/06'.
+        # Skip the 'Basin_Group Macro ...' container header.
+        if s.startswith("Basin_Group"):
+            continue
+        mod_name = s.lstrip("+").split()[0]
+        if mod_name:
             modules.append(mod_name)
     report["info"]["modules"] = modules
 

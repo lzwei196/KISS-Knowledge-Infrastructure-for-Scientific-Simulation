@@ -1,379 +1,176 @@
 #!/usr/bin/env python3
 """
-Parse HEC-RAS (GR4J surrogate) simulation output to standardized discharge CSV.
+parse_output_hecras.py -- Extract hydraulic results from a HEC-RAS steady
+results HDF5 (<prj>.pNN.tmp.hdf or <prj>.pNN.hdf produced by RasSteady.exe).
 
-Reads the raw simulation output CSV produced by run_hecras.py and extracts
-daily discharge time series in a clean format suitable for validation and
-comparison with observations or other models.
-
-Supports:
-  - Date filtering (--start_date, --end_date)
-  - Column auto-detection (sim_q_m3s, q_total_m3s, Q, discharge, etc.)
-  - Summary statistics and diagnostics
-  - Comparison with observation data (--obs_file)
+Reads the genuine solver output -- no recomputation. Emits per-(profile, cross
+section) records of the primary hydraulic variables plus a derived Froude number
+and flow-regime classification.
 
 Usage:
-  python3 parse_output_hecras.py \\
-    --input_csv ./sim_output.csv \\
-    --output_csv ./discharge_daily.csv \\
-    --start_date 1981-01-01 --end_date 1990-12-31
-
-  # With observation comparison:
-  python3 parse_output_hecras.py \\
-    --input_csv ./sim_output.csv \\
-    --output_csv ./discharge_daily.csv \\
-    --obs_file /path/to/obs.txt \\
-    --start_date 1986-01-01 --end_date 1990-12-31
-
-References:
-  - dt_205: Q conversion m3/s <-> mm/day
-  - dt_208: Spinup days should be excluded from evaluation
+  python3 parse_output_hecras.py --hdf <results.hdf> [--csv out.csv] [--json out.json]
 """
-
 import argparse
 import json
 import os
 import sys
-import warnings
 
+import h5py
 import numpy as np
-import pandas as pd
 
-warnings.filterwarnings("ignore")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _hecras_env import STEADY_XS
 
-# Candidate column names for discharge (checked in order)
-DISCHARGE_COLUMNS = [
-    "sim_q_m3s",
-    "q_total_m3s",
-    "Q_m3s",
-    "discharge_m3s",
-    "discharge",
-    "flow",
-    "Q",
-]
-
-
-# ===========================================================================
-# Validate inputs
-# ===========================================================================
-def validate_inputs(args):
-    """Check input file exists.
-
-    Args:
-        args: Parsed argparse namespace.
-
-    Raises:
-        SystemExit: If input file is missing.
-    """
-    errors = []
-
-    if not os.path.isfile(args.input_csv):
-        errors.append(f"Input file not found: {args.input_csv}")
-
-    if args.obs_file and not os.path.isfile(args.obs_file):
-        errors.append(f"Observation file not found: {args.obs_file}")
-
-    if args.start_date and args.end_date:
-        try:
-            s = pd.Timestamp(args.start_date)
-            e = pd.Timestamp(args.end_date)
-            if s >= e:
-                errors.append("start_date must be before end_date")
-        except Exception as ex:
-            errors.append(f"Invalid date format: {ex}")
-
-    if errors:
-        for e in errors:
-            print(f"ERROR: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"[validate_inputs] Input: {args.input_csv}")
+# variable name in HDF -> (output key, description, units[English])
+PRIMARY = {
+    "Water Surface": ("ws", "Water surface elevation", "ft"),
+    "Energy Grade":  ("eg", "Energy grade elevation", "ft"),
+    "Flow":          ("q",  "Total discharge", "cfs"),
+}
+ADDITIONAL = {
+    "Velocity Channel":      ("vel_chnl", "Main-channel velocity", "ft/s"),
+    "Velocity Total":        ("vel_total", "Average velocity", "ft/s"),
+    "Hydraulic Depth Total": ("hyd_depth", "Hydraulic depth", "ft"),
+    "Top Width Total":       ("top_width", "Top width", "ft"),
+    "Area Flow Total":       ("flow_area", "Flow area", "ft^2"),
+    "Froude # Channel":      ("froude_chnl", "Froude number (channel)", "-"),
+    "Shear":                 ("shear", "Channel shear stress", "lb/ft^2"),
+    "Friction Slope":        ("frict_slope", "Friction slope", "ft/ft"),
+    "Critical Water Surface":("crit_ws", "Critical water surface", "ft"),
+}
+G_ENGLISH = 32.174  # ft/s^2
 
 
-# ===========================================================================
-# Detect discharge column
-# ===========================================================================
-def detect_discharge_column(df):
-    """Auto-detect the discharge column from common naming conventions.
+def parse(hdf_path):
+    if not os.path.isfile(hdf_path):
+        raise FileNotFoundError(hdf_path)
+    with h5py.File(hdf_path, "r") as f:
+        if STEADY_XS not in f and (STEADY_XS + "Water Surface") not in f:
+            # try without trailing slash resolution issues
+            pass
+        base = f[STEADY_XS]
+        ws = base["Water Surface"][:]            # (n_prof, n_xs)
+        n_prof, n_xs = ws.shape
+        data = {}
+        for hkey, (okey, _d, _u) in PRIMARY.items():
+            if hkey in base:
+                data[okey] = base[hkey][:]
+        add = base["Additional Variables"] if "Additional Variables" in base else {}
+        for hkey, (okey, _d, _u) in ADDITIONAL.items():
+            if hkey in add:
+                data[okey] = add[hkey][:]
 
-    Args:
-        df: Input DataFrame.
+        # profile names
+        prof_names = None
+        for cand in ("Profile Names", "../Profile Names"):
+            try:
+                prof_names = [p.decode().strip() for p in base.get(cand)[:]]  # type: ignore
+            except Exception:  # noqa
+                prof_names = None
+        if not prof_names:
+            try:
+                pn = f["/Results/Steady/Output/Output Blocks/Base Output/"
+                       "Steady Profiles/Profile Names"][:]
+                prof_names = [p.decode().strip() for p in pn]
+            except Exception:  # noqa
+                prof_names = [f"PF {i+1}" for i in range(n_prof)]
 
-    Returns:
-        q_col: Name of the discharge column.
+        # river-station labels from geometry, if present
+        def _dec(v):
+            if isinstance(v, bytes):
+                return v.decode(errors="ignore").strip()
+            return str(v).strip()
 
-    Raises:
-        SystemExit: If no discharge column is found.
-    """
-    # Check exact matches first
-    for col in DISCHARGE_COLUMNS:
-        if col in df.columns:
-            return col
+        rs = None
+        for path in ("/Geometry/Cross Sections/River Stations",
+                     "/Geometry/Cross Sections/Attributes"):
+            try:
+                node = f[path]
+                if path.endswith("Attributes"):
+                    rs = [_dec(r["RS"]) if hasattr(r, "__getitem__") else _dec(r)
+                          for r in node[:]]
+                else:
+                    rs = [_dec(x) for x in node[:]]
+                break
+            except Exception:  # noqa
+                rs = None
 
-    # Fuzzy match: look for 'm3' or 'discharge' or 'flow' in column name
-    for col in df.columns:
-        col_lower = col.lower()
-        if "m3" in col_lower or "discharge" in col_lower or "flow" in col_lower:
-            return col
-
-    print("ERROR: Could not identify discharge column", file=sys.stderr)
-    print(f"  Available columns: {list(df.columns)}", file=sys.stderr)
-    sys.exit(1)
-
-
-# ===========================================================================
-# Performance metrics
-# ===========================================================================
-def calc_nse(obs, sim):
-    """Nash-Sutcliffe Efficiency."""
-    mask = ~np.isnan(obs) & ~np.isnan(sim)
-    o, s = obs[mask], sim[mask]
-    if len(o) < 10:
-        return np.nan
-    return 1.0 - np.sum((o - s) ** 2) / np.sum((o - np.mean(o)) ** 2)
-
-
-def calc_kge(obs, sim):
-    """Kling-Gupta Efficiency."""
-    mask = ~np.isnan(obs) & ~np.isnan(sim)
-    o, s = obs[mask], sim[mask]
-    if len(o) < 10:
-        return np.nan
-    r = np.corrcoef(o, s)[0, 1]
-    alpha = np.std(s) / np.std(o)
-    beta = np.mean(s) / np.mean(o)
-    return 1.0 - np.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2)
-
-
-def calc_pbias(obs, sim):
-    """Percent bias."""
-    mask = ~np.isnan(obs) & ~np.isnan(sim)
-    o, s = obs[mask], sim[mask]
-    if len(o) < 10 or np.sum(o) == 0:
-        return np.nan
-    return 100.0 * np.sum(s - o) / np.sum(o)
-
-
-def calc_rmse(obs, sim):
-    """Root mean square error."""
-    mask = ~np.isnan(obs) & ~np.isnan(sim)
-    o, s = obs[mask], sim[mask]
-    if len(o) < 10:
-        return np.nan
-    return np.sqrt(np.mean((o - s) ** 2))
-
-
-def calc_corr(obs, sim):
-    """Pearson correlation coefficient."""
-    mask = ~np.isnan(obs) & ~np.isnan(sim)
-    o, s = obs[mask], sim[mask]
-    if len(o) < 10:
-        return np.nan
-    return np.corrcoef(o, s)[0, 1]
-
-
-# ===========================================================================
-# Process
-# ===========================================================================
-def process(args):
-    """Main output parsing workflow.
-
-    Steps:
-      1. Read simulation CSV
-      2. Detect discharge column
-      3. Filter to requested date range
-      4. Build clean output DataFrame
-      5. Optionally compare with observations
-
-    Args:
-        args: Parsed argparse namespace.
-
-    Returns:
-        out_df: Clean DataFrame with sim_discharge_m3s column.
-        metrics: dict of comparison metrics (empty if no obs).
-    """
-    print("=" * 60)
-    print("HEC-RAS Output Parser (GR4J Surrogate)")
-    print("=" * 60)
-
-    # 1. Read simulation output
-    print("\n[read] Loading simulation output...")
-    df = pd.read_csv(args.input_csv, index_col=0, parse_dates=True)
-    print(f"  Loaded {len(df)} rows, columns: {list(df.columns)}")
-
-    # 2. Detect discharge column
-    q_col = detect_discharge_column(df)
-    print(f"  Discharge column: {q_col}")
-
-    # 3. Filter to date range
-    if args.start_date:
-        df = df[df.index >= args.start_date]
-    if args.end_date:
-        df = df[df.index <= args.end_date]
-
-    if len(df) == 0:
-        print("ERROR: No data in requested period", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"  Filtered: {df.index[0]} to {df.index[-1]}, {len(df)} days")
-
-    # 4. Extract and clean discharge
-    q = df[q_col].values.copy()
-    q = np.maximum(q, 0.0)  # No negative discharge
-
-    out_df = pd.DataFrame(
-        {"sim_discharge_m3s": q},
-        index=df.index,
-    )
-    out_df.index.name = "date"
-
-    # 5. Summary statistics
-    print(f"\n[stats] Discharge statistics:")
-    print(f"  Mean:   {out_df['sim_discharge_m3s'].mean():.1f} m3/s")
-    print(f"  Max:    {out_df['sim_discharge_m3s'].max():.1f} m3/s")
-    print(f"  Min:    {out_df['sim_discharge_m3s'].min():.1f} m3/s")
-    print(f"  Std:    {out_df['sim_discharge_m3s'].std():.1f} m3/s")
-
-    # 6. Compare with observations if provided
-    metrics = {}
-    if args.obs_file:
-        print(f"\n[compare] Comparing with observations...")
-        obs_df = pd.read_csv(args.obs_file, sep="\t", encoding="gbk")
-        obs_df["date"] = pd.to_datetime(obs_df["dates"], format="mixed")
-        obs_df = obs_df[["date", "Q"]].set_index("date").sort_index()
-        obs_df.loc[obs_df["Q"] < 0, "Q"] = np.nan
-
-        common_idx = out_df.index.intersection(obs_df.index)
-        if len(common_idx) > 0:
-            obs_vals = obs_df.loc[common_idx, "Q"].values
-            sim_vals = out_df.loc[common_idx, "sim_discharge_m3s"].values
-
-            metrics = {
-                "n_days": int(len(common_idx)),
-                "NSE": round(float(calc_nse(obs_vals, sim_vals)), 4),
-                "KGE": round(float(calc_kge(obs_vals, sim_vals)), 4),
-                "PBIAS_pct": round(float(calc_pbias(obs_vals, sim_vals)), 2),
-                "RMSE_m3s": round(float(calc_rmse(obs_vals, sim_vals)), 1),
-                "r": round(float(calc_corr(obs_vals, sim_vals)), 4),
-                "mean_obs_m3s": round(float(np.nanmean(obs_vals)), 1),
-                "mean_sim_m3s": round(float(np.nanmean(sim_vals)), 1),
-            }
-
-            print(f"  Common days: {metrics['n_days']}")
-            print(f"  NSE:   {metrics['NSE']}")
-            print(f"  KGE:   {metrics['KGE']}")
-            print(f"  PBIAS: {metrics['PBIAS_pct']}%")
-            print(f"  RMSE:  {metrics['RMSE_m3s']} m3/s")
-            print(f"  r:     {metrics['r']}")
-
-            # Add obs to output for convenience
-            out_df = out_df.join(
-                obs_df.rename(columns={"Q": "obs_discharge_m3s"}),
-                how="left",
-            )
-        else:
-            print("  WARNING: No overlapping dates between sim and obs")
-
-    # 7. Write output
-    out_dir = os.path.dirname(args.output_csv)
-    if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
-    out_df.to_csv(args.output_csv)
-    print(f"\n[write] Output: {args.output_csv}")
-    print(f"  Columns: {list(out_df.columns)}")
-
-    # Write metrics if available
-    if metrics:
-        metrics_path = args.output_csv.replace(".csv", "_metrics.json")
-        with open(metrics_path, "w") as f:
-            json.dump(metrics, f, indent=2)
-        print(f"  Metrics: {metrics_path}")
-
-    return out_df, metrics
+    # Froude: prefer solver value; else derive V/sqrt(g*D)
+    records = []
+    for ip in range(n_prof):
+        for ix in range(n_xs):
+            rec = {"profile": prof_names[ip], "xs_index": ix}
+            if rs and ix < len(rs):
+                rec["river_station"] = rs[ix]
+            for okey in list(PRIMARY.values()):
+                pass
+            for okey in [v[0] for v in PRIMARY.values()] + [v[0] for v in ADDITIONAL.values()]:
+                if okey in data:
+                    rec[okey] = float(data[okey][ip, ix])
+            # derived Froude / regime
+            fr = rec.get("froude_chnl")
+            if (fr is None or fr == 0) and "vel_chnl" in rec and rec.get("hyd_depth", 0) > 0:
+                fr = rec["vel_chnl"] / np.sqrt(G_ENGLISH * rec["hyd_depth"])
+            if fr is not None:
+                rec["froude"] = round(float(fr), 4)
+                rec["regime"] = ("supercritical" if fr > 1.0
+                                 else "subcritical" if fr < 1.0 else "critical")
+            records.append(rec)
+    summary = {
+        "n_profiles": int(n_prof),
+        "n_cross_sections": int(n_xs),
+        "profiles": prof_names,
+        "variables": [k for k in (list(PRIMARY.values()) + list(ADDITIONAL.values()))],
+    }
+    return {"summary": summary, "records": records}
 
 
-# ===========================================================================
-# Validate outputs
-# ===========================================================================
-def validate_outputs(out_df):
-    """Validate parsed output for physical consistency.
-
-    Args:
-        out_df: Output DataFrame with sim_discharge_m3s column.
-
-    Returns:
-        warnings_list: List of warning strings.
-    """
-    warnings_list = []
-    q = out_df["sim_discharge_m3s"]
-
-    # Missing values
-    n_missing = q.isna().sum()
-    if n_missing > 0:
-        warnings_list.append(f"{n_missing} missing values in discharge")
-
-    # Zero-flow days
-    n_zero = (q == 0).sum()
-    if n_zero > len(q) * 0.5:
-        warnings_list.append(
-            f"{n_zero}/{len(q)} days have zero discharge -- check model parameters"
-        )
-
-    # Extreme values
-    if q.max() > 100000:
-        warnings_list.append(
-            f"Max discharge = {q.max():.0f} m3/s is extremely high -- "
-            f"check unit conversion (dt_205)"
-        )
-
-    # Constant output (model may not be running)
-    if q.std() < 0.01 * q.mean() and q.mean() > 0:
-        warnings_list.append(
-            "Discharge has very low variability -- model may not be responding to forcing"
-        )
-
-    for w in warnings_list:
-        print(f"  WARNING: {w}")
-
-    if not warnings_list:
-        print("[validate_outputs] All output checks passed.")
-
-    return warnings_list
+def to_csv(parsed, path):
+    import csv
+    recs = parsed["records"]
+    if not recs:
+        return
+    keys = []
+    for r in recs:
+        for k in r:
+            if k not in keys:
+                keys.append(k)
+    with open(path, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=keys)
+        w.writeheader()
+        for r in recs:
+            w.writerow(r)
 
 
-# ===========================================================================
-# Main
-# ===========================================================================
+def validate_outputs(parsed):
+    recs = parsed["records"]
+    if not recs:
+        return False, "no records parsed"
+    ws = [r["ws"] for r in recs if "ws" in r]
+    if not ws:
+        return False, "no water-surface values"
+    if not all(np.isfinite(ws)):
+        return False, "non-finite WS"
+    return True, f"{len(recs)} records, WS {min(ws):.2f}..{max(ws):.2f}"
+
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Parse HEC-RAS (GR4J) output to standardized discharge CSV"
-    )
-    parser.add_argument(
-        "--input_csv", required=True,
-        help="Simulation output CSV from run_hecras.py",
-    )
-    parser.add_argument(
-        "--output_csv", required=True,
-        help="Parsed output CSV (standardized format)",
-    )
-    parser.add_argument(
-        "--start_date", default=None,
-        help="Start date filter (YYYY-MM-DD)",
-    )
-    parser.add_argument(
-        "--end_date", default=None,
-        help="End date filter (YYYY-MM-DD)",
-    )
-    parser.add_argument(
-        "--obs_file", default=None,
-        help="Observation file for comparison (optional)",
-    )
-    args = parser.parse_args()
-
-    # Validate-process-validate
-    validate_inputs(args)
-    out_df, metrics = process(args)
-    validate_outputs(out_df)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--hdf", required=True)
+    ap.add_argument("--csv", default=None)
+    ap.add_argument("--json", default=None)
+    a = ap.parse_args()
+    parsed = parse(a.hdf)
+    ok, msg = validate_outputs(parsed)
+    if a.csv:
+        to_csv(parsed, a.csv)
+    if a.json:
+        with open(a.json, "w") as fh:
+            json.dump(parsed, fh, indent=2)
+    print(json.dumps({"summary": parsed["summary"],
+                      "validation": {"ok": ok, "detail": msg},
+                      "first_records": parsed["records"][:3]}, indent=2))
+    sys.exit(0 if ok else 1)
 
 
 if __name__ == "__main__":

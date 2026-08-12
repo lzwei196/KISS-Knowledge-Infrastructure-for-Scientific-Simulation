@@ -67,25 +67,19 @@ def main():
         gdirs = workflow.init_glacier_directories(rgi_ids, reset=False)
         print(f"Simulating {len(gdirs)} glaciers...")
 
-        # Select run task based on spinup
-        if use_spinup:
-            run_task = tasks.run_dynamic_spinup
-            print("Using dynamic spinup...")
-        else:
-            run_task = tasks.run_from_climate_data
-            print("Starting from RGI geometry (no spinup)...")
-
         # Run simulation with hydro output
-        print("Running dynamics with hydrological output...")
+        # Use run_from_climate_data with ys/ye (v1.6.2 API)
+        # run_dynamic_spinup requires complex pre-initialization; skip for historical runs
+        print("Running from climate data with hydrological output...")
         print("(store_monthly_hydro=True for VIC coupling)")
 
         workflow.execute_entity_task(
             tasks.run_with_hydro, gdirs,
-            run_task=run_task,
-            min_ys=args.start_year,
-            max_ys=args.end_year,
+            run_task=tasks.run_from_climate_data,
             store_monthly_hydro=True,
-            output_filesuffix=suffix
+            output_filesuffix=suffix,
+            ys=args.start_year,
+            ye=args.end_year
         )
 
         # Check results

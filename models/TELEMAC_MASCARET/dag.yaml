@@ -1,0 +1,571 @@
+template_version: "3.5"
+
+identity:
+  model_id: "TELEMAC-MASCARET"
+  scientific_reference_version: "TELEMAC-2D depth-averaged shallow-water (Saint-Venant) hydrodynamics; openTELEMAC consortium release v9.1.0 (governing-equation theory per Hervouet 2007 / TELEMAC-2D User Manual)"
+  implementation:
+    id: "telemac-mascaret-v910"
+    version: "v9.1.0"
+    provenance: "Fortran 90 with BIEF/HERMES libraries; openTELEMAC consortium (EDF-R&D LNHE originated) finite-element / finite-volume solver, telemac2d as the 2D hydrodynamics host module."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: "GPL-3.0"
+  repo_url: "https://www.opentelemac.org"
+
+boundary:
+  scope_in:
+    - "Depth-averaged (2D) free-surface flow via the Saint-Venant / shallow-water equations"
+    - "Long-wave propagation including non-linear effects"
+    - "Bed (bottom) friction"
+    - "Coriolis force"
+    - "Meteorological forcing: atmospheric pressure, wind, rain, evaporation"
+    - "Turbulence (constant viscosity, Elder, k-epsilon, Smagorinski closures)"
+    - "Supercritical and subcritical (transcritical) flows"
+    - "Influence of horizontal temperature/salinity gradients on density"
+    - "Wetting and drying of tidal flats and flood plains"
+    - "Advection-diffusion of passive tracers with source/sink (creation/decay)"
+    - "Optional non-hydrostatic Boussinesq correction to the Saint-Venant equations"
+  scope_out:
+    - "Full 3D flow structure / vertical velocity profile (telemac3d, Navier-Stokes)"
+    - "1D river/channel-network hydraulics (mascaret module)"
+    - "Sediment transport and morphodynamics (gaia/SISYPHE coupling)"
+    - "Spectral wave propagation (tomawac) and harbour wave agitation (artemis)"
+    - "Reactive water-quality chemistry beyond the lightweight tracer module (waqtel/DELWAQ)"
+  spatial: "2-D grid"
+  temporal: "event"
+  closure: "mass-balance"
+  notes: "Unstructured triangular finite-element / finite-volume mesh defined on a SELAFIN geometry; domain must use a metric (projected) CRS, never WGS84 degrees. The four hydrodynamic unknowns (h, u, v, T) are solved simultaneously and volume conservation is reported via the MASS-BALANCE keyword. The closure is hydrostatic-shallow-water mass/momentum balance; it is not a closed surface energy budget. Time-marching is transient with a user-set TIME STEP (typical 0.01-100 s); steady (permanent) and transient regimes are both supported."
+
+inputs:
+  forcing:
+    - category: "forcing"
+      name: "Wind velocity (X, Y)"
+      unit: "m/s"
+      source_kind: "forcing"
+      model_input_format: "SELAFIN (.slf) field on mesh or ASCII time series; WIND VELOCITY ALONG X / ALONG Y"
+      notes: "Wind stress scales ~ speed^2; must be in m/s (knots over-strengthen stress)."
+    - category: "forcing"
+      name: "Atmospheric pressure"
+      unit: "Pa"
+      source_kind: "forcing"
+      model_input_format: "SELAFIN field or ASCII time series"
+      notes: "Drives pressure-gradient / inverse-barometer surge response; expected in Pa, not hPa/mbar."
+    - category: "forcing"
+      name: "Rain / evaporation"
+      unit: "mm/s"
+      source_kind: "forcing"
+      model_input_format: "Steering-file rain/evaporation keywords or forcing field"
+    - category: "forcing"
+      name: "River discharge at liquid boundaries"
+      unit: "m^3/s"
+      source_kind: "forcing"
+      model_input_format: "PRESCRIBED FLOWRATES keyword or liquid-boundaries ASCII time series"
+    - category: "forcing"
+      name: "Tidal elevation / constituents at open-sea boundaries"
+      unit: "m (amplitude), degrees (phase)"
+      source_kind: "forcing"
+      model_input_format: "PRESCRIBED ELEVATIONS, liquid-boundaries file, or interfaced tidal-harmonic database"
+  parameters:
+    - category: "parameters"
+      name: "Bottom friction coefficient"
+      unit: "Manning n (s/m^(1/3)) or Strickler K (m^(1/3)/s) depending on law"
+      source_kind: "calibrated"
+      model_input_format: "FRICTION COEFFICIENT keyword (constant), per-node value in geometry file, or friction-data file"
+      notes: "Coefficient meaning is tied to LAW OF BOTTOM FRICTION; K = 1/n between Strickler and Manning."
+    - category: "parameters"
+      name: "Velocity (turbulent) diffusivity"
+      unit: "m^2/s"
+      source_kind: "calibrated"
+      model_input_format: "VELOCITY DIFFUSIVITY keyword (default 1e-6 = molecular viscosity of water)"
+      notes: "Viscosity dissipating eddies smaller than ~two mesh elements has virtually no effect; choose relative to mesh size."
+    - category: "parameters"
+      name: "Coefficient of wind influence (drag)"
+      unit: "-"
+      source_kind: "calibrated"
+      model_input_format: "COEFFICIENT OF WIND INFLUENCE keyword (typ. 0.001-0.003)"
+    - category: "parameters"
+      name: "Coriolis coefficient"
+      unit: "s^-1"
+      source_kind: "calibrated"
+      model_input_format: "CORIOLIS COEFFICIENT keyword (latitude-dependent)"
+    - category: "parameters"
+      name: "Gravity acceleration"
+      unit: "m/s^2"
+      source_kind: "default"
+      model_input_format: "GRAVITY ACCELERATION keyword (default 9.81)"
+    - category: "parameters"
+      name: "Water density"
+      unit: "kg/m^3"
+      source_kind: "default"
+      model_input_format: "WATER DENSITY keyword (default 1000)"
+    - category: "parameters"
+      name: "Bottom (bathymetry) elevation field"
+      unit: "m (positive upward from datum)"
+      source_kind: "dataset_lookup"
+      model_input_format: "Per-node bottom elevation carried in the SELAFIN geometry (.slf) or a separate bottom-topography file"
+      notes: "Sign convention is elevation positive-upward, not depth positive-downward."
+  initial_conditions:
+    - category: "initial_conditions"
+      name: "Initial free-surface / depth state"
+      unit: "m"
+      source_kind: "user_provided"
+      model_input_format: "INITIAL CONDITIONS keyword (ZERO ELEVATION / CONSTANT ELEVATION / ZERO DEPTH / CONSTANT DEPTH / PARTICULAR via CONDIN)"
+    - category: "initial_conditions"
+      name: "Previous-computation restart state"
+      unit: "varies (h, u, v, T fields)"
+      source_kind: "user_provided"
+      model_input_format: "COMPUTATION CONTINUED = YES + PREVIOUS COMPUTATION FILE (mesh must be identical; double-precision SERAFIND recommended)"
+  boundary_conditions:
+    - category: "boundary_conditions"
+      name: "Boundary-condition type per edge node"
+      unit: "-"
+      source_kind: "user_provided"
+      model_input_format: "Boundary-conditions file (.cli): LIHBOR/LIUBOR/LIVBOR codes + HBOR/UBOR/VBOR values per boundary node"
+      notes: "Codes distinguish prescribed (Dirichlet), free/zero-flux (Neumann), velocity-imposed, elevation-imposed, open-sea, and wall conditions; turbulence k/epsilon BCs are set internally by the model."
+    - category: "boundary_conditions"
+      name: "Law of bottom friction (method switch)"
+      unit: "code"
+      source_kind: "user_provided"
+      model_input_format: "LAW OF BOTTOM FRICTION (0 none, 1 Haaland, 2 Chezy, 3 Strickler, 4 Manning, 5 Nikuradse, 6 log-law, 7 Colebrook-White)"
+    - category: "boundary_conditions"
+      name: "Turbulence model (method switch)"
+      unit: "code"
+      source_kind: "user_provided"
+      model_input_format: "TURBULENCE MODEL (1 constant viscosity, 2 Elder, 3 k-epsilon, 4 Smagorinski)"
+    - category: "boundary_conditions"
+      name: "Equation/solver scheme selector"
+      unit: "code"
+      source_kind: "user_provided"
+      model_input_format: "Equations option (SAINT-VENANT FE / SAINT-VENANT FV / BOUSSINESQ); SOLVER and SOLVER ACCURACY keywords"
+    - category: "boundary_conditions"
+      name: "Wetting/drying treatment"
+      unit: "switch"
+      source_kind: "user_provided"
+      model_input_format: "TIDAL FLATS = YES with TREATMENT OF NEGATIVE DEPTHS = 2"
+      notes: "Required for coastal/estuarine intertidal runs to avoid negative depths."
+    - category: "boundary_conditions"
+      name: "Time-stepping control"
+      unit: "s / switch"
+      source_kind: "user_provided"
+      model_input_format: "TIME STEP (seconds); VARIABLE TIME-STEP = YES with DESIRED COURANT NUMBER for adaptive stepping"
+    - category: "boundary_conditions"
+      name: "Implicitation coefficients"
+      unit: "-"
+      source_kind: "user_provided"
+      model_input_format: "IMPLICITATION FOR DEPTH / IMPLICITATION FOR VELOCITY (0.5-1.0)"
+
+processes:
+  modules:
+    - name: "ShallowWaterHydrodynamics"
+      role: "process_solver"
+      brief: "Core telemac2d solver of the depth-averaged Saint-Venant continuity and momentum equations for h, u, v on the unstructured mesh; supports FE and FV schemes."
+    - name: "TracerTransport"
+      role: "process_solver"
+      brief: "Advection-diffusion of passive tracers (temperature/salinity/concentration) with source/sink creation-decay terms."
+      applicability: "when tracers are activated"
+    - name: "TurbulenceClosure"
+      role: "optional_module"
+      brief: "Selectable closure providing turbulent viscosity / diffusivity: constant viscosity, Elder, k-epsilon (transports k and epsilon), or Smagorinski (TURBULENCE MODEL keyword)."
+    - name: "BottomFrictionLaw"
+      role: "process_solver"
+      brief: "Parameterizes bed shear via Chezy / Strickler / Manning / Nikuradse / log-law / Colebrook-White (LAW OF BOTTOM FRICTION)."
+    - name: "WettingDrying"
+      role: "optional_module"
+      brief: "Tidal-flats / flood-plain wetting-drying handling with negative-depth treatment to keep depths non-negative."
+      applicability: "when TIDAL FLATS = YES"
+    - name: "MeteorologicalForcing"
+      role: "driver"
+      brief: "Applies wind stress and atmospheric-pressure gradient (and rain/evaporation) as momentum/mass source terms."
+      applicability: "when meteorological forcing is supplied"
+    - name: "BoussinesqCorrection"
+      role: "optional_module"
+      brief: "Adds non-hydrostatic Boussinesq terms to the Saint-Venant equations for improved dispersive-wave behaviour."
+      applicability: "when BOUSSINESQ option selected"
+    - name: "TimeIntegrator"
+      role: "integrator"
+      brief: "Semi-implicit time marching controlled by IMPLICITATION FOR DEPTH/VELOCITY; conjugate-gradient solver advances the coupled system each step."
+  internal_edges:
+    - from: "Inputs"
+      to: "MeteorologicalForcing"
+      kind: "consumes_input"
+      brief: "Wind, pressure, rain/evaporation forcing read each timestep."
+    - from: "Inputs"
+      to: "ShallowWaterHydrodynamics"
+      kind: "consumes_input"
+      brief: "Boundary-condition values (elevation/discharge), bathymetry, and friction field supplied to the momentum/continuity solve."
+    - from: "BottomFrictionLaw"
+      to: "ShallowWaterHydrodynamics"
+      kind: "invokes"
+      brief: "Friction parameterization supplies the bed-shear source term in the momentum balance."
+    - from: "MeteorologicalForcing"
+      to: "ShallowWaterHydrodynamics"
+      kind: "invokes"
+      brief: "Wind stress and pressure gradient enter as momentum source terms."
+    - from: "TurbulenceClosure"
+      to: "ShallowWaterHydrodynamics"
+      kind: "invokes"
+      brief: "Closure supplies turbulent viscosity/diffusivity to the momentum and tracer diffusion terms."
+    - from: "ShallowWaterHydrodynamics"
+      to: "Water depth H"
+      kind: "writes_state"
+      brief: "Solver updates water depth each timestep."
+    - from: "ShallowWaterHydrodynamics"
+      to: "Velocity U"
+      kind: "writes_state"
+      brief: "Solver updates depth-averaged x-velocity."
+    - from: "ShallowWaterHydrodynamics"
+      to: "Velocity V"
+      kind: "writes_state"
+      brief: "Solver updates depth-averaged y-velocity."
+    - from: "ShallowWaterHydrodynamics"
+      to: "TracerTransport"
+      kind: "invokes"
+      brief: "Resolved velocity/depth field advects and diffuses tracers."
+    - from: "TracerTransport"
+      to: "Tracer concentration T"
+      kind: "writes_state"
+      brief: "Tracer module updates passive-tracer concentration."
+    - from: "TurbulenceClosure"
+      to: "Turbulent kinetic energy k"
+      kind: "writes_state"
+      brief: "k-epsilon closure transports and updates k."
+      applicability: "k-epsilon model only"
+    - from: "TurbulenceClosure"
+      to: "Turbulent dissipation epsilon"
+      kind: "writes_state"
+      brief: "k-epsilon closure transports and updates epsilon."
+      applicability: "k-epsilon model only"
+    - from: "WettingDrying"
+      to: "Water depth H"
+      kind: "writes_state"
+      brief: "Clamps/handles wet-dry cell transitions to keep depth non-negative."
+    - from: "TimeIntegrator"
+      to: "ShallowWaterHydrodynamics"
+      kind: "invokes"
+      brief: "Semi-implicit integrator advances the coupled momentum/continuity system per timestep."
+    - from: "Water depth H"
+      to: "Free surface elevation S"
+      kind: "reads_state"
+      brief: "Free-surface elevation computed as bottom elevation + water depth (diagnostic)."
+    - from: "ShallowWaterHydrodynamics"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "Hydrodynamic fields written to the SELAFIN results file each graphic-printout period."
+
+states:
+  variables:
+    - name: "Water depth H"
+      unit: "m"
+      role: "prognostic"
+    - name: "Velocity U"
+      unit: "m/s"
+      role: "prognostic"
+    - name: "Velocity V"
+      unit: "m/s"
+      role: "prognostic"
+    - name: "Tracer concentration T"
+      unit: "g/l or degC"
+      role: "prognostic"
+    - name: "Turbulent kinetic energy k"
+      unit: "J/kg"
+      role: "prognostic"
+    - name: "Turbulent dissipation epsilon"
+      unit: "W/kg"
+      role: "prognostic"
+    - name: "Free surface elevation S"
+      unit: "m"
+      role: "diagnostic"
+  provenance: "structural"
+
+outputs:
+  - var: "H"
+    validation_rank: 1
+    unit: "m"
+    description: "Water depth at each mesh node, the primary depth-averaged hydrodynamic result."
+    emitted_in: "Results file (.slf SELAFIN), VARIABLES FOR GRAPHIC PRINTOUTS"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Gauge depth/stage must share the model's vertical datum; node nearest the gauge is used."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Flood-extent / max-depth maps require interpolation from mesh nodes to the observation grid."]
+      detrending_options: ["none"]
+  - var: "S"
+    validation_rank: 3
+    unit: "m"
+    description: "Free surface (water level) elevation = bottom elevation + water depth."
+    emitted_in: "Results file (.slf SELAFIN)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Tide-gauge water level must reference the same datum; tidal timing/phase matters as much as amplitude."]
+      detrending_options: ["none", "first_difference"]
+  - var: "U"
+    validation_rank: 4
+    unit: "m/s"
+    description: "Depth-averaged velocity component along X."
+    emitted_in: "Results file (.slf SELAFIN)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["ADCP / current-meter velocities are depth-averaged for comparison; vector orientation must align with model axes."]
+      detrending_options: ["none"]
+  - var: "V"
+    validation_rank: 5
+    unit: "m/s"
+    description: "Depth-averaged velocity component along Y."
+    emitted_in: "Results file (.slf SELAFIN)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["ADCP / current-meter velocities are depth-averaged for comparison; vector orientation must align with model axes."]
+      detrending_options: ["none"]
+  - var: "M"
+    validation_rank: 2
+    unit: "m/s"
+    description: "Depth-averaged velocity magnitude (scalar current speed)."
+    emitted_in: "Results file (.slf SELAFIN)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Compare against observed current-speed magnitude to avoid direction-convention ambiguity."]
+      detrending_options: ["none"]
+  - var: "T"
+    validation_rank: 6
+    unit: "g/l or degC"
+    description: "Passive tracer concentration (e.g. salinity, temperature) advected/diffused by the flow."
+    emitted_in: "Results file (.slf SELAFIN)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Only meaningful when the matching tracer (salinity/temperature) is activated; tracer treated as passive (non-buoyant) unless density coupling enabled."]
+      detrending_options: ["none"]
+  - var: "section_discharge"
+    validation_rank: 7
+    unit: "m^3/s"
+    description: "Flowrate integrated across user-defined control sections."
+    emitted_in: "Sections output file"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Observation must be a discharge time series at the same cross-section."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "maritime/tidal boundary forcing (open-sea elevation/surge signal)"
+      to: "S"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      applicability: "estuarine / tidal domains"
+      citations: ["laborie2018_telemac2d_gironde_gsa", "goeury2021_telemac_interop_gironde"]
+    - from: "tidal amplitude multiplier (alpha)"
+      to: "H"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      applicability: "estuarine / tidal domains"
+      citations: ["goeury2021_telemac_interop_gironde"]
+    - from: "Strickler friction coefficient (Ks)"
+      to: "S"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "Strickler friction law; influence increases mouth-to-upstream"
+      citations: ["laborie2018_telemac2d_gironde_gsa", "goeury2021_telemac_interop_gironde"]
+    - from: "Manning friction coefficient"
+      to: "H"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "Manning friction law; urban/coastal flood inundation"
+      citations: ["water2019_telemac2d_building_flood", "fernandes2001_patos_lagoon_telemac2d"]
+    - from: "sea-level correction (gamma)"
+      to: "H"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      citations: ["goeury2021_telemac_interop_gironde"]
+    - from: "river discharge (upstream boundary)"
+      to: "S"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      applicability: "upstream reaches"
+      citations: ["laborie2018_telemac2d_gironde_gsa", "goeury2021_telemac_interop_gironde"]
+    - from: "eddy (turbulent) viscosity"
+      to: "S"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      citations: ["fernandes2001_patos_lagoon_telemac2d"]
+    - from: "mesh resolution / building representation"
+      to: "H"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "urban flood inundation"
+      citations: ["water2019_telemac2d_building_flood", "fernandes2001_patos_lagoon_telemac2d"]
+    - from: "wind influence coefficient"
+      to: "S"
+      sensitivity_grade: LOW
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["laborie2018_telemac2d_gironde_gsa"]
+  citation_index:
+    laborie2018_telemac2d_gironde_gsa:
+      short_citation: "Laborie et al. 2018"
+      note: "Variance-based (Sobol') GSA of operational Telemac2D Gironde high-water-level forecast; tidal/maritime BC and Strickler friction dominate, river discharge secondary, wind least sensitive (HIC 2018; hal-02535631)."
+    goeury2021_telemac_interop_gironde:
+      short_citation: "Goeury et al. 2021"
+      doi: "10.1016/j.envsoft.2020.104893"
+      note: "Multivariate SA + calibration of Telemac2D Gironde; upstream Strickler Ks1/Ks2/Ks3, tidal amplitude multiplier (alpha) and sea-level correction (gamma) most influential on water depth (Environ. Modell. Softw.; arXiv:2012.09112)."
+    zaoui2019_telemac_error_metamodel:
+      short_citation: "Zaoui et al. 2019"
+      note: "Metamodel of Telemac2D Gironde errors treating Strickler friction and boundary forcings as the uncertain inputs driving water-level error (arXiv:1910.10623)."
+    water2019_telemac2d_building_flood:
+      short_citation: "MDPI Water 2019, 11(9):1840"
+      doi: "10.3390/w11091840"
+      note: "Urban-flood TELEMAC-2D study; water depth / unit-width discharge sensitive to Manning coefficient and building/mesh representation (DOI inferred from journal metadata, re-check before canonical use)."
+    fernandes2001_patos_lagoon_telemac2d:
+      short_citation: "Fernandes et al. 2001"
+      note: "TELEMAC-2D Patos Lagoon calibration; water level/currents dominated by bottom-friction law (Manning/Chezy/Nikuradse), secondary sensitivity to eddy viscosity and space discretization (J. Coastal Research; bibliographic details partially unverified)."
+
+safety:
+  hazards:
+    - id: "gravity_cgs_units"
+      kind: "control_semantic"
+      description: "GRAVITY ACCELERATION set in CGS (981 cm/s^2) instead of SI (9.81 m/s^2) amplifies all gravity-driven flow 100x, causing immediate CFL violation."
+      severity: "fatal"
+      triplet: "dt_001"
+    - id: "friction_law_coefficient_mismatch"
+      kind: "control_semantic"
+      description: "FRICTION COEFFICIENT mismatched to LAW OF BOTTOM FRICTION (Manning n vs Strickler K = 1/n) yields near-zero or extreme friction and wrong water levels."
+      severity: "silent"
+      triplet: "dt_002"
+    - id: "wind_speed_knots"
+      kind: "weather_file_semantic"
+      description: "Wind speed supplied in knots rather than m/s; wind stress (~speed^2) overestimated ~3.8x."
+      severity: "silent"
+      triplet: "dt_003"
+    - id: "pressure_hpa_units"
+      kind: "weather_file_semantic"
+      description: "Atmospheric pressure in hPa/mbar instead of Pa underestimates the pressure-gradient / inverse-barometer surge response 100x."
+      severity: "silent"
+      triplet: "dt_004"
+    - id: "water_density_cgs"
+      kind: "control_semantic"
+      description: "WATER DENSITY in g/cm^3 (1.0) instead of kg/m^3 (1000) reduces buoyancy 1000x; baroclinic/density-driven flow vanishes."
+      severity: "silent"
+      triplet: "dt_005"
+    - id: "coordinates_wgs84_degrees"
+      kind: "soil_semantic"
+      description: "Mesh coordinates in WGS84 degrees instead of a metric projection collapse the domain to ~1 m extent, causing catastrophic CFL violation on the first timestep."
+      severity: "fatal"
+      triplet: "dt_006"
+    - id: "bathymetry_sign_inverted"
+      kind: "soil_semantic"
+      description: "Bathymetry sign inverted (depth positive-downward used as elevation positive-upward); topography flips so water flows uphill."
+      severity: "silent"
+      triplet: "dt_007"
+    - id: "discharge_litres_per_second"
+      kind: "weather_file_semantic"
+      description: "River discharge in L/s instead of m^3/s makes inflow 1000x too small and negligible."
+      severity: "silent"
+      triplet: "dt_008"
+    - id: "timestep_wrong_unit"
+      kind: "control_semantic"
+      description: "TIME STEP given in minutes/hours instead of seconds gives 60x/3600x wrong duration or timestep count."
+      severity: "degraded"
+      triplet: "dt_009"
+    - id: "tidal_constituent_units"
+      kind: "weather_file_semantic"
+      description: "Tidal amplitudes in cm instead of m (or phases in radians instead of degrees) give 100x-off tidal range or wrong timing."
+      severity: "silent"
+      triplet: "dt_010"
+    - id: "rain_intensity_per_hour"
+      kind: "weather_file_semantic"
+      description: "Rainfall in mm/hr fed directly as mm/s overestimates precipitation 3600x, causing spurious catastrophic flooding."
+      severity: "silent"
+      triplet: "dt_011"
+    - id: "velocity_diffusivity_cgs"
+      kind: "control_semantic"
+      description: "VELOCITY DIFFUSIVITY in cm^2/s instead of m^2/s mis-scales turbulent diffusion 100x-10000x, producing unrealistically sharp tracer gradients."
+      severity: "degraded"
+      triplet: "dt_012"
+    - id: "tidal_flats_disabled_negative_depth"
+      kind: "initial_condition_semantic"
+      description: "Wetting/drying run without TIDAL FLATS = YES (and TREATMENT OF NEGATIVE DEPTHS = 2) lets intertidal cells go to negative depth and the solver diverges."
+      severity: "degraded"
+      triplet: "dt_014"
+    - id: "cfl_timestep_violation"
+      kind: "numerical_instability"
+      description: "TIME STEP exceeding the CFL limit dx/(sqrt(g*h)+|U|) for the FE solver produces NaN blow-up / STOP; reduce dt or enable VARIABLE TIME-STEP."
+      severity: "fatal"
+      triplet: "dt_015"
+    - id: "selafin_endianness"
+      kind: "parser_semantic"
+      description: "SELAFIN result/geometry files are big-endian by default; reading them little-endian without byte-swap yields all-NaN/garbage fields."
+      severity: "fatal"
+      triplet: "dt_013"
+    - id: "selafin_variable_order_assumed"
+      kind: "parser_semantic"
+      description: "Assuming a fixed SELAFIN variable order (set by VARIABLES FOR GRAPHIC PRINTOUTS) instead of reading names from the header extracts the wrong variable in post-processing."
+      severity: "degraded"
+      triplet: "dt_018"
+  validation_limits:
+    - "Depth-averaged: cannot resolve vertical velocity structure or 3D stratified circulation (use telemac3d)."
+    - "Hydrostatic pressure assumed unless the optional Boussinesq non-hydrostatic terms are activated."
+    - "1D river-network hydraulics, sediment morphodynamics, and spectral waves are out of native scope (mascaret / gaia / tomawac)."
+    - "Friction-coefficient calibration/estimation is only available for the Strickler or Chezy laws (LAW OF BOTTOM FRICTION = 2 or 3)."
+    - "A VELOCITY DIFFUSIVITY that dissipates eddies smaller than ~two mesh elements has effectively no influence; viscosity must be chosen relative to mesh resolution and the recirculation scale to be resolved."
+    - "Continuation/restart runs require the continuation mesh to be exactly identical to the original."
+    - "KI validation status is analytic only (bump / subcritical-transcritical test cases); no real-basin validation is declared in the KI."
+  warnings:
+    - "Certain boundary-condition combinations are non-physical and must be avoided; turbulence k and epsilon boundary conditions are set internally and should not be user-imposed."
+    - "Passive-tracer assumption: tracers do not feed back on density unless temperature/salinity density coupling is explicitly enabled."
+    - "Mesh quality matters for stability: minimum angle > ~15 degrees, aspect ratio < ~5, smooth size transitions (max ~1:3 element growth)."
+    - "Run-success check: a completed run reports MASS-BALANCE error below tolerance and ends the listing with 'MY WORK IS DONE'; NaN/Infinity or a missing completion message indicates instability."
+  assumptions:
+    - statement: "This dag describes the telemac2d depth-averaged 2D hydrodynamics module as the runnable host; sibling consortium modules (telemac3d, mascaret, gaia, tomawac, artemis, khione, waqtel) are scoped out or treated as optional coupled add-ons."
+      scope: "Model identity and process scope"
+      source: "openTELEMAC consortium module set and run_telemac VALID_MODULES; TELEMAC-2D User Manual section 1.1"
+      status: "adopted"
+    - statement: "Closure is hydrostatic shallow-water mass/momentum balance (the four unknowns h, u, v, T solved simultaneously); it is not a closed surface-energy budget, and non-hydrostatic behaviour appears only with the Boussinesq option."
+      scope: "boundary.closure"
+      source: "TELEMAC-2D User Manual sections 2 (Theoretical aspects) and 1.1; Hervouet, Hydrodynamics of Free Surface Flows, Wiley 2007"
+      status: "adopted"
+    - statement: "Geometry is a 2-D unstructured triangular mesh on a metric (projected) CRS; bottom elevation is positive-upward from datum."
+      scope: "inputs / boundary geometry"
+      source: "TELEMAC-2D User Manual section 3.2.2 (geometry file); SELAFIN format conventions"
+      status: "adopted"
+    - statement: "Scientific structure is taken from the openTELEMAC TELEMAC-2D manual (docs) because the solver Fortran source is external and not present in the KI source path (only Python wrappers were available)."
+      scope: "inputs / processes / states stream weighting"
+      source: "TELEMAC-2D User Manual (opentelemac.org); KI source path contained only wrapper tooling"
+      status: "adopted"

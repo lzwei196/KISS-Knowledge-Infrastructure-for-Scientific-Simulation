@@ -618,3 +618,408 @@
     prevention: "Run checkMesh and set correctors based on non-orthogonality"
   severity: degraded
   cross_references: [dt_010]
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Storm Surge / Ocean Domain — added 2026-04-30 from Hurricane Laura 2020 run
+# ──────────────────────────────────────────────────────────────────────────────
+
+- id: dt_021
+  stage: s4_solver_setup
+  failure_domain: solver_selection
+  symptom:
+    description: >
+      incompressibleVoF (3D two-phase VoF) used for a basin-scale storm surge
+      domain (>100 km horizontal extent). Simulation shows severe mass loss
+      (phase fraction drops from 0.8 to <0.5 over 5-day run), p_rgh gauge probes
+      show large monotonic decrease masking all surge signal, and/or deltaT
+      collapses toward machine zero from standing gravity wave resonance.
+    error_pattern: "Phase-1 volume fraction.*0\\.[0-6]"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      incompressibleVoF resolves the air-water interface via Volume of Fluid
+      (MULES), which requires resolving the free surface at the cell level. For
+      a 977 km x 674 km x 50 m ocean domain with 10 m vertical cells:
+      (1) MULES numerical diffusion smears alpha into the air cell; inletOutlet
+          BC at atmosphere then lets diffused alpha escape, draining water.
+      (2) Uniform domain-averaged pressure forcing has zero horizontal gradient,
+          so IB and p_rgh changes cancel at every gauge — net surge is zero.
+      (3) Closed slip-wall lateral domain creates standing gravity waves
+          (period ~27 h) that cause periodic Co_max spikes and deltaT collapse.
+      The correct solver is shallowWaterFoam (2D depth-integrated SWE) or a
+      regional ocean model (ROMS, Delft3D).
+    affected_components: [incompressibleVoF, fvSolution, 0/alpha.water]
+  remedy:
+    action: >
+      Switch to shallowWaterFoam for basin-scale storm surge.
+      Source is at $WM_PROJECT_DIR/applications/legacy/incompressible/shallowWaterFoam/.
+      Compile with: cd $WM_PROJECT_DIR/applications/legacy/incompressible/shallowWaterFoam && wmake
+      Fields needed: h (water depth, init h=40m), hU (depth-integrated velocity, init 0), h0 (bed topography).
+      Barometric forcing: set h0(x,y,t) = -(p_atm - p_ref)/(rho*g) as an IB equivalent.
+      Typical deltaT for 40m depth domain: dt < 0.5 * dx / sqrt(g*h) ~ 120s for dx=4886m.
+    tool_to_run: null
+    manual_steps:
+      - "Compile shallowWaterFoam: cd $WM_PROJECT_DIR/applications/legacy/incompressible/shallowWaterFoam && wmake"
+      - "Create 2D mesh (one cell thick in z): blockMesh with nz=1"
+      - "Set h field: uniform initial depth (e.g. 40)"
+      - "Set hU field: uniform (0 0 0)"
+      - "Apply IB forcing via time-varying h0 or modified momentum source"
+      - "For full wind+pressure surge use a dedicated ocean model (ROMS, Delft3D)"
+
+- id: dt_022
+  stage: s4_solver_setup
+  failure_domain: numerical_stability
+  symptom:
+    description: >
+      incompressibleVoF run: deltaT collapses to machine zero (e.g. 6e-33) while
+      Courant Number max is reported as ~0.5 (exactly maxCo). Solver keeps
+      iterating but makes no time progress. Log shows:
+        "deltaT = 2.03e-100" then "deltaT = 1.93e-100" etc, exponentially decaying.
+      Velocity residuals converge in 1 GAMG iteration suggesting NaN in pressure field.
+    error_pattern: "deltaT = [0-9.e-]{1,6}e-[0-9]{2,}"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      A NaN/Inf velocity appeared in one cell. The Courant number computation
+      skips NaN comparisons, reporting the last valid Co_max (typically near maxCo).
+      The adaptive timestepper then computes dt_new = dt * (maxCo / Co_max) = dt * 1.0
+      and applies a tiny reduction factor repeatedly, creating exponential decay.
+      Root cause of the NaN: MULESCorr yes allows alpha > 1 in interface cells.
+      Cells with alpha=1.26 (density > rho_water) sitting above normal water (alpha=0.8)
+      create a Rayleigh-Taylor gravitational instability, driving velocity to infinity.
+    affected_components: [fvSolution, MULES]
+  remedy:
+    action: "Set MULESCorr no in fvSolution alpha.water solver block"
+    tool_to_run: null
+    manual_steps:
+      - "In system/fvSolution under 'alpha.water.*', set: MULESCorr no;"
+      - "Also reduce nSubCycles from 5 to 1-2 to reduce alpha overshoot"
+      - "Remove alphaApplyPrevCorr yes; and MULES { nIter N; } sub-dict"
+      - "After fix, confirm Max(alpha.water) stays ≤ 1.0 in first 10 timesteps"
+
+- id: dt_023
+  stage: s2_boundary_conditions
+  failure_domain: numerical_stability
+  symptom:
+    description: >
+      incompressibleVoF: solver starts normally but velocity diverges between
+      t=1000s and t=2000s. Log shows Co_max spike from 0.45 to 4.5+ in one step,
+      then deltaT halves repeatedly. No error message — just instability pattern.
+      Happens when both atmosphere U (uniformFixedValue) and atmosphere p_rgh
+      (uniformFixedValue/table) are simultaneously fixed.
+    error_pattern: "Courant Number mean.*max: [3-9]\\."
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      Fixing BOTH velocity and pressure at the same boundary (atmosphere) is
+      overdetermined for an incompressible solver. The velocity BC forces a flow
+      pattern; the pressure BC independently forces a different one. Their
+      incompatibility grows over time until one cell velocity diverges.
+      For ocean/atmospheric pressure forcing, the pressure BC alone is sufficient.
+      Wind stress should be applied as a body force (fvModels), not as a fixed
+      velocity at the top boundary. A fixed-velocity atmosphere BC in laminar VoF
+      also physically incorrect: the wind stress transmitted through 10 m of air
+      at molecular viscosity is ~6000x smaller than the real wind stress.
+    affected_components: [0/U, 0/p_rgh]
+  remedy:
+    action: "Remove fixed U at atmosphere; use pressureInletOutletVelocity instead"
+    tool_to_run: null
+    manual_steps:
+      - "In 0/U, change atmosphere BC from uniformFixedValue to:"
+      - "    atmosphere { type pressureInletOutletVelocity; value uniform (0 0 0); }"
+      - "Keep only the p_rgh time table at the atmosphere boundary"
+      - "To add wind forcing correctly, implement as fvModels momentum source in the top cell layer"
+
+- id: dt_024
+  stage: s4_solver_setup
+  failure_domain: library_dependency
+  symptom:
+    description: >
+      wmake of decomposePar fails with linker error:
+        "/usr/bin/ld.bfd: 找不到 -lparallel: 没有那个文件或目录"
+        "collect2: error: ld returned 1 exit status"
+      libparallel.so is missing from $FOAM_LIBBIN.
+    error_pattern: "找不到 -lparallel|cannot find -lparallel"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      decomposePar links against libparallel.so which is in
+      $WM_PROJECT_DIR/src/parallel/parallel/. This library is NOT built by the
+      standard Allwmake unless the parallel sub-tree is built first. When building
+      individual utilities, the dependency order is not enforced.
+    affected_components: [decomposePar, libparallel.so]
+  remedy:
+    action: "Build libparallel.so first, then retry decomposePar"
+    tool_to_run: null
+    manual_steps:
+      - "cd $WM_PROJECT_DIR/src/parallel/parallel && wmake libso"
+      - "Verify: ls $FOAM_LIBBIN/libparallel.so"
+      - "Then retry: cd $WM_PROJECT_DIR/applications/utilities/parallelProcessing/decomposePar && wmake"
+
+- id: dt_025
+  stage: s2_boundary_conditions
+  failure_domain: initialization
+  symptom:
+    description: >
+      incompressibleVoF with alpha.water inletOutlet at the atmosphere boundary:
+      Phase-1 volume fraction decreases monotonically throughout the run.
+      Typical rate: 0.8 → 0.5 over a 5-day simulation. p_rgh probes show large
+      monotonic decrease (~13,000 Pa/hour) that overwhelms any surge signal.
+    error_pattern: "Phase-1 volume fraction.*0\\.[3-6]"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      MULES (even with MULESCorr no and nSubCycles 2) causes numerical diffusion
+      that smears alpha upward from the interface (z=40m) into the air cell
+      (z=40-50m). The inletOutlet BC at the atmosphere treats any outward flow
+      as a legitimate outflow of whatever alpha is locally present. As alpha
+      diffuses into the top cell, outward flow (from any pressure gradient or
+      circulation) carries water out of the domain.
+      For outflow: inletOutlet and zeroGradient are equivalent (both use local alpha).
+      Only fixedValue 0 at atmosphere prevents alpha from exiting.
+    affected_components: [0/alpha.water, MULES]
+  remedy:
+    action: "Change atmosphere alpha.water BC from inletOutlet to zeroGradient OR fixedValue 0"
+    tool_to_run: null
+    manual_steps:
+      - "In 0/alpha.water, change atmosphere BC to:"
+      - "    atmosphere { type zeroGradient; }"
+      - "ALSO update ALL processor*/0/alpha.water files (decomposePar copies BCs at decompose time)"
+      - "For strict mass conservation, use fixedValue 0 (prevents any alpha from exiting)"
+      - "Note: runTimeModifiable only applies to system/ files, NOT 0/ field BCs"
+      - "To change BCs on running parallel case: kill, update processor*/0/, restart from latest checkpoint"
+
+- id: dt_026
+  stage: s4_solver_setup
+  failure_domain: configuration
+  symptom:
+    description: >
+      FOAM FATAL ERROR at startup:
+        "Deprecated and unused cAlpha entry specified in system/fvSolution/solvers/alpha.water.*"
+      Solver exits immediately listing available compression schemes (MPLICU, etc.)
+    error_pattern: "Deprecated and unused cAlpha"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      In OpenFOAM-dev (post-2022), the cAlpha parameter for interface compression
+      is deprecated. The compression scheme is now selected via fvSchemes divSchemes:
+        div(phi,alpha) Gauss interfaceCompression vanLeer 1;
+      The cAlpha entry in fvSolution is no longer valid and causes a fatal error.
+    affected_components: [system/fvSolution]
+  remedy:
+    action: "Remove cAlpha from fvSolution alpha solver block; set compression in fvSchemes"
+    tool_to_run: null
+    manual_steps:
+      - "In system/fvSolution, remove: cAlpha 0.5; from the alpha.water.* block"
+      - "In system/fvSchemes, under divSchemes, ensure:"
+      - "    div(phi,alpha) Gauss interfaceCompression vanLeer 1;"
+      - "To disable compression (more stable, diffuse interface): Gauss vanLeer;"
+      - "Available schemes: MPLICU, MULES, interfaceCompression, vanLeer"
+
+- id: dt_027
+  stage: s1_mesh_generation
+  failure_domain: initialization
+  symptom:
+    description: >
+      After setFields, alpha.water Max > 1 (e.g. Max=1.82) from the very first
+      timestep. Log: "Phase-1 volume fraction = 0.799  Min=-2e-22  Max=1.82"
+      The interface is at a non-integer fraction of the cell, causing alpha to
+      overshoot when MULES applies compression.
+    error_pattern: "Max\\(alpha\\.water\\) = 1\\.[1-9]"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      setFields initializes a box that doesn't align with cell boundaries.
+      When z_surface = 47.5m but cells are at z=[0,10,20,30,40,50m], the water
+      box (z<47.5m) fills cells 0-4 fully (z=[0,40m]) and 50% of cell 5 (z=[40,50m]).
+      MULES interface compression then overshoots this sub-cell initialization,
+      creating alpha > 1.
+      Fix: align the free surface with a cell face boundary.
+    affected_components: [system/blockMeshDict, system/setFieldsDict]
+  remedy:
+    action: "Align free surface with cell face boundary in blockMeshDict and setFieldsDict"
+    tool_to_run: null
+    manual_steps:
+      - "Choose nz such that z_surface falls exactly on a cell boundary"
+      - "Example: nz=5, lz=50m (10m cells), water at z<40m → 4 full cells exactly"
+      - "In setFieldsDict: box (0 0 0) (Lx Ly 40) for water zone"
+      - "NOT: box ... (Lx Ly 47.5) which puts surface inside cell 5"
+      - "Verify: first log line should show Max(alpha.water)=1.000000 exactly"
+
+- id: dt_028
+  stage: s4_solver_setup
+  failure_domain: initialization
+  symptom:
+    description: >
+      incompressibleVoF: deltaT stays at 1-2s for hours despite adjustTimeStep yes
+      and maxDeltaT 7200. Simulation makes very slow progress (8-32 sim-s/wall-s).
+      Log shows Co_max oscillating between 0.2 and 0.8 every few timesteps.
+      p_rgh probes show large oscillation amplitude even with no forcing.
+    error_pattern: "Courant Number mean.*max: 0\\.[3-8]"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      Incorrect hydrostatic p_rgh initialization. Using uniform p_rgh = 0 (or any
+      constant) when the water cells require ~400,000 Pa and air cells ~−1200 Pa
+      creates a ~401,200 Pa imbalance at the interface. This drives initial
+      velocities of ~32 m/s, creating standing gravity waves (period ~4s for 40m depth:
+      T = 2*h/sqrt(g*h) = 2*40/19.8 = 4s) that permanently limit deltaT to ~0.25s.
+      Also: any transient pressure oscillation in a closed slip-wall domain will
+      resonate indefinitely since there is no wave absorption.
+    affected_components: [0/p_rgh]
+  remedy:
+    action: "Initialize p_rgh with correct hydrostatic values per phase"
+    tool_to_run: null
+    manual_steps:
+      - "In water cells (layers 0 to nz_water-1):"
+      - "    p_rgh_water = p_atm_BC + (rho_water - rho_air) * g * z_surface"
+      - "    Example: -1215.84 + (1025-1.2)*9.81*40 = 400523.28 Pa"
+      - "In air cells (layers nz_water to nz-1):"
+      - "    p_rgh_air = p_atm_BC (matches atmosphere BC at t=0)"
+      - "Write as nonuniform List<scalar> — see write_prgh_init.py pattern in case dir"
+      - "Verify: first timestep should show Co_max < 0.1 within 10 steps if init is correct"
+
+- id: dt_029
+  stage: s2_boundary_conditions
+  failure_domain: numerical_stability
+  symptom:
+    description: >
+      Changing lateral wall BCs from slip/fixedFluxPressure to open BCs
+      (zeroGradient for p_rgh, pressureInletOutletVelocity for U, inletOutlet
+      for alpha) causes immediate catastrophic blowup at t=0:
+        "Courant Number mean: 0.xxx max: 4.33" at first timestep
+      followed by alpha.water > 1.5 and NaN velocities within seconds.
+    error_pattern: "Courant Number mean.*max: [4-9]\\."
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      The hydrostatic pressure in the water column (p_rgh ≈ 400,000 Pa) is
+      extrapolated to the open lateral boundary via zeroGradient, which sets the
+      boundary face p_rgh = interior cell value. This creates a ~400,000 Pa
+      pressure difference between the open boundary and the far-field (which
+      knows nothing of this). The resulting pressure gradient drives 28 m/s
+      outflow in the first timestep.
+      Open BCs require radiation/Orlanski conditions (outgoing wave BCs) to
+      handle the hydrostatic pressure correctly, not zeroGradient.
+    affected_components: [0/p_rgh, 0/U, 0/alpha.water]
+  remedy:
+    action: "Keep lateral walls as slip/fixedFluxPressure; do not use open BCs without radiation"
+    tool_to_run: null
+    manual_steps:
+      - "Keep lateral wall BCs as:"
+      - "  U: slip"
+      - "  p_rgh: fixedFluxPressure; value uniform 0;"
+      - "  alpha.water: zeroGradient"
+      - "Open/absorbing BCs require waveTransmissive or Orlanski radiation conditions"
+      - "waveTransmissive needs phi, K, psi, gamma — complex to set up for VoF"
+      - "For ocean-scale domains, use a dedicated storm surge model instead"
+
+- id: dt_030
+  stage: s5_execution
+  failure_domain: numerical_stability
+  symptom:
+    description: >
+      incompressibleVoF: deltaT grows to 10-30s then suddenly drops to 0.25-0.5s
+      in a single step. Pattern repeats every few minutes of wall time.
+      Log shows Co_max jumping from 0.2 to 4.5+ in one step.
+      'interfaceCompression vanLeer 1' is the div(phi,alpha) scheme.
+    error_pattern: "max: [3-9]\\.[0-9]"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      The interfaceCompression scheme applies an anti-diffusion flux at the
+      interface to keep it sharp. This compression flux is additive and can be
+      larger than the physical flow flux in cells where the interface is
+      near-vertical or curved. In a large closed domain, the compression scheme
+      intermittently creates localized velocity spikes at Co >> maxCo.
+      The surge-growth-crash cycle: deltaT grows as Co_mean falls → compression
+      spike at some cell → Co_max hits 4.5 → deltaT halves → repeats.
+    affected_components: [system/fvSchemes]
+  remedy:
+    action: "Change div(phi,alpha) from interfaceCompression to Gauss vanLeer (no compression)"
+    tool_to_run: null
+    manual_steps:
+      - "In system/fvSchemes, under divSchemes, change:"
+      - "    div(phi,alpha) Gauss interfaceCompression vanLeer 1;"
+      - "  to:"
+      - "    div(phi,alpha) Gauss vanLeer;"
+      - "This gives a diffuse interface (3-4 cells wide) but eliminates Co spikes"
+      - "Also set maxDeltaT to a physically safe value (e.g. 300s for ocean domain)"
+      - "Since runTimeModifiable true, this change takes effect without restart"
+      - "Trade-off: interface resolution reduced but stability greatly improved"
+
+- id: dt_031
+  stage: s6_postprocessing
+  failure_domain: output_interpretation
+  symptom:
+    description: >
+      incompressibleVoF storm surge: p_rgh gauge probe at z=2.5m shows large
+      monotonic decrease of ~13,000 Pa/hour from t=0, but the storm surge
+      signal (expected ~10,000 Pa peak) is completely masked. All 3 gauge
+      stations show identical decreasing trend with no spatial variation.
+    error_pattern: null
+    detection_method: manual_inspection
+  diagnosis:
+    root_cause: >
+      Two simultaneous failures mask the surge signal:
+      (1) Mass loss: p_rgh at z=2.5m is proportional to water column height.
+          As water escapes (via alpha diffusion through atmosphere BC), effective
+          water depth drops from 40m to ~30m, p_rgh falls by ~100,000 Pa.
+          This dominates over the storm surge signal (~10,000 Pa).
+      (2) Uniform forcing: If p_atm(t) is a single domain-averaged value applied
+          uniformly, the horizontal gradient ∇p_atm = 0. The IB response (surface
+          rise = -Δp/(ρg)) is exactly cancelled by the p_rgh decrease, leaving
+          net zero gauge signal. The correct water level formula requires
+          spatially-VARYING p_atm at each gauge location to get meaningful surge.
+      Formula for water level from p_rgh probe at z_probe:
+          eta(t) = (p_rgh(t) - p_rgh_init) / ((rho_water-rho_air)*g) + eta0
+      But this only works if mass is conserved AND the forcing is spatially varying.
+    affected_components: [postProcessing/gaugeProbes, 0/p_rgh]
+  remedy:
+    action: "Fix mass conservation (dt_025) and use spatially varying forcing; or switch to IB analytical"
+    tool_to_run: null
+    manual_steps:
+      - "For storm surge comparison without running a full CFD: compute IB analytically:"
+      - "    eta_IB(x,y,t) = -(p_atm(x,y,t) - p_ref) / (rho_water * g)"
+      - "Extract p_atm at each gauge location from the forcing NetCDF (ROMS Pair or WRF)"
+      - "Convert: 1 mbar = 100 Pa; eta_IB = -(Pair_mbar - 1013.25) * 100 / (1025 * 9.81)"
+      - "Script: outputs/openfoam_laura_2020/extract_ib_surge.py (reference implementation)"
+      - "Validation at Grand Isle: IB gives NSE=0.51, R=0.84 vs NOAA obs (Laura 2020)"
+
+- id: dt_032
+  stage: s3_physical_properties
+  failure_domain: configuration
+  symptom:
+    description: >
+      incompressibleVoF (OpenFOAM-dev) fails at startup with:
+        "cannot find file constant/phaseProperties"
+      or:
+        "keyword sigma is undefined in phaseProperties"
+      Despite having constant/transportProperties set up correctly.
+    error_pattern: "cannot find file.*phaseProperties|keyword sigma is undefined"
+    detection_method: log_match
+  diagnosis:
+    root_cause: >
+      OpenFOAM-dev incompressibleVoF requires a different constant/ file structure
+      than the legacy interFoam:
+      - Legacy interFoam: constant/transportProperties (single file with both phases)
+      - Dev incompressibleVoF: separate per-phase files + phaseProperties
+      Required files:
+        constant/phaseProperties          (phases list + sigma)
+        constant/physicalProperties.water (viscosityModel + nu + rho)
+        constant/physicalProperties.air   (viscosityModel + nu + rho)
+      The old constant/transportProperties and constant/phaseProperties with
+      sigmas ((air water) 0.07) syntax are both incorrect for dev version.
+    affected_components: [constant/phaseProperties, constant/physicalProperties.*]
+  remedy:
+    action: "Create correct dev-format constant/ files for incompressibleVoF"
+    tool_to_run: null
+    manual_steps:
+      - "Create constant/phaseProperties:"
+      - "    phases (water air);"
+      - "    sigma 0.07;"
+      - "Create constant/physicalProperties.water:"
+      - "    viscosityModel constant; nu 1e-06; rho 1025;"
+      - "Create constant/physicalProperties.air:"
+      - "    viscosityModel constant; nu 1.48e-05; rho 1.2;"
+      - "Delete constant/transportProperties if present (legacy, unused in dev)"

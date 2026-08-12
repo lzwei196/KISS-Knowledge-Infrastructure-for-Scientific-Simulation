@@ -54,8 +54,13 @@ def validate_inputs(args):
         if args.bulk_density < 500 or args.bulk_density > 2000:
             errors.append(f"Bulk density {args.bulk_density} kg/m3 out of typical range (500-2000)")
     elif args.source == "hwsd":
-        if not os.path.exists(args.input):
-            errors.append(f"HWSD input file not found: {args.input}")
+        # --input is OPTIONAL for hwsd since 2026-07-21: the lookup goes through
+        # ki_tools_common.soil_utils.lookup_hwsd, which resolves the server's
+        # hwsd.bil + attribute table itself. Only validate an explicit override.
+        if args.input and not os.path.exists(args.input):
+            errors.append(f"HWSD raster override not found: {args.input}")
+        if abs(args.lat) < 1e-9 and abs(args.lon) < 1e-9:
+            errors.append("--source hwsd requires --lat/--lon (point lookup)")
 
     layers = [float(x) for x in args.layers.split(",")]
     for i, dz in enumerate(layers):
@@ -199,36 +204,46 @@ def convert_to_geotop_units(params):
 
 
 def read_hwsd(input_path, lat, lon):
-    """Read HWSD data and extract soil texture for a given location.
+    """Look up HWSD topsoil/subsoil texture at a point.
 
-    Expects a CSV with columns: lat, lon, sand_top, silt_top, clay_top,
-    sand_sub, silt_sub, clay_sub, bulk_density, organic_carbon.
+    BUGFIX (2026-07-21, GEOtop NCP MODIS-LST real case): this used to
+    `pd.read_csv(input_path)` and nearest-neighbour a tidy table with columns
+    lat/lon/sand_top/... . No such table exists on the server. HWSD ships as a
+    30-arcsec raster of MU_GLOBAL mapping-unit ids (data/soil/HWSD_RASTER/
+    hwsd.bil) plus a separate attribute table keyed on MU_GLOBAL, so
+    `--source hwsd` failed on the real dataset and prior GEOtop runs fell back
+    to `--source manual` with guessed texture.
+
+    Fixed by routing through the canonical lookup,
+    ki_tools_common.soil_utils.lookup_hwsd(lat, lon), which does the
+    raster -> MU_GLOBAL -> attribute-table join and returns T_*/S_* texture.
+    `input_path` is now OPTIONAL and, when given, is an explicit hwsd.bil path.
     """
-    import pandas as pd
+    from ki_tools_common.soil_utils import lookup_hwsd
 
-    df = pd.read_csv(input_path)
+    raster = input_path if (input_path and os.path.exists(input_path)) else None
+    h = lookup_hwsd(lat, lon, hwsd_raster=raster)
 
-    # Find nearest point
-    distances = np.sqrt((df["lat"] - lat)**2 + (df["lon"] - lon)**2)
-    idx = distances.idxmin()
-    row = df.iloc[idx]
+    # HWSD T_REF_BULK_DENSITY is g/cm3; the pedotransfer wants kg/m3.
+    bd = float(h.get("bulk_density", 1.3))
+    bd_kgm3 = bd * 1000.0 if bd < 100 else bd
 
     topsoil = {
-        "sand": row.get("sand_top", 40),
-        "silt": row.get("silt_top", 35),
-        "clay": row.get("clay_top", 25),
-        "bulk_density": row.get("bulk_density", 1400),
-        "organic_carbon": row.get("organic_carbon", 1.0),
+        "sand": float(h["sand"]),
+        "silt": float(h["silt"]),
+        "clay": float(h["clay"]),
+        "bulk_density": bd_kgm3,
+        "organic_carbon": float(h.get("oc", 1.0)),
     }
-
     subsoil = {
-        "sand": row.get("sand_sub", topsoil["sand"]),
-        "silt": row.get("silt_sub", topsoil["silt"]),
-        "clay": row.get("clay_sub", topsoil["clay"]),
-        "bulk_density": row.get("bulk_density", 1400),
+        "sand": float(h.get("sub_sand", topsoil["sand"])),
+        "silt": float(h.get("sub_silt", topsoil["silt"])),
+        "clay": float(h.get("sub_clay", topsoil["clay"])),
+        "bulk_density": bd_kgm3,
         "organic_carbon": max(0.1, topsoil["organic_carbon"] * 0.5),
     }
-
+    print(json.dumps({"hwsd_mu_global": h.get("mu_id"), "texture": h.get("texture"),
+                      "topsoil": topsoil, "subsoil": subsoil}), file=sys.stderr)
     return topsoil, subsoil
 
 

@@ -584,3 +584,215 @@
 
   severity: silent
   cross_references: []
+
+# ---------------------------------------------------------------------------
+# Added 2026-08-09 from the FLUXNET2015 US-MMS single-point real-case test.
+# Every entry below was hit and fixed during that run.
+# ---------------------------------------------------------------------------
+
+- id: dt_018
+  stage: s2_met_forcing
+  failure_domain: parameter_format
+
+  symptom:
+    description: >
+      DATM aborts during initialisation of the single-point forcing stream,
+      or every forcing field reads as zero, after writing correct-looking
+      DATM files that contain TBOT/QBOT/WIND/PRECTmms/FSDS/FLDS/PSRF.
+    error_pattern: "shr_dmodel_readstrm|cannot find field|rh"
+    detection_method: log_inspection
+
+  diagnosis:
+    root_cause: >
+      The CLM1PT / CLM_USRDAT stream reads humidity as RH in PERCENT and
+      also requires ZBOT; it never reads QBOT. It also requires ONE FILE PER
+      MONTH named YYYY-MM.nc containing all fields, not one file per variable.
+    explanation: >
+      cime/src/components/data_comps_mct/datm/cime_config/
+      namelist_definition_datm.xml, entry strm_datvar, value
+      stream="CLM1PT.CLM_USRDAT":
+        ZBOT z / TBOT tbot / RH rh / WIND wind / PRECTmms precn /
+        FSDS swdn / PSRF pbot / FLDS lwdn
+      and strm_datfil = "%ym.nc" with
+      strm_datdir = $DIN_LOC_ROOT_CLMFORC/$CLM_USRDAT_NAME/CLM1PT_data.
+      dt_004 (specific humidity kg/kg) applies to the GLOBAL streams
+      (CLM_QIAN / CLMGSWP3 / CLMCRUNCEP); the single-point stream is the
+      exception, and following dt_004 alone produces unreadable forcing.
+    affected_components:
+      - DATM_streams
+      - shr_dmodel
+
+  remedy:
+    action: "Write the CLM1PT monthly layout with RH in percent"
+    tool_to_run: convert_forcing_to_clm.py
+    manual_steps:
+      - "convert_forcing_to_clm.py --datm-layout clm1pt (writes YYYY-MM.nc)"
+      - "RH = 100 * (es(T) - VPD) / es(T), clipped to [1, 100]"
+      - "ZBOT must exceed the canopy top on the surface dataset"
+    prevention: >
+      The converter emits RH and QBOT from one pass, so either stream family
+      can be fed from the same conversion.
+
+  severity: fatal
+  cross_references: [dt_004]
+
+- id: dt_019
+  stage: s7_output_analysis
+  failure_domain: silent_error
+
+  symptom:
+    description: >
+      Requesting 'GPP' on the history tape of a satellite-phenology (SP) run
+      aborts the namelist/history setup, or the parsed output silently has no
+      GPP column, even though SKILL.md section 7 lists GPP as a key output.
+    error_pattern: "GPP.*not found|variables_missing.*GPP"
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "GPP is registered only when the carbon-nitrogen model is active"
+    explanation: >
+      'GPP' (gC/m^2/s) is added by CNVegCarbonFluxType.F90, which is only
+      allocated when use_cn = .true. (Bgc / BgcCrop compsets). In SP mode
+      (CLM50%SP, use_cn = .false.) the same physical quantity — gross canopy
+      photosynthesis — is on the tape as 'FPSN' (umol m-2 s-1), registered by
+      PhotosynthesisMod.F90. FPSN * 12.011e-6 * 86400 = gC m-2 d-1.
+    affected_components:
+      - PhotosynthesisMod
+      - CNVegCarbonFluxType
+      - histFileMod
+
+  remedy:
+    action: "Use FPSN in SP mode; use GPP only in Bgc/BgcCrop mode"
+    tool_to_run: parse_clm_output.py
+    manual_steps:
+      - "SP run: hist_fincl1 = 'FPSN', then GPP[gC/m2/d] = FPSN * 1.03775"
+      - "Bgc run: 'GPP' is available but needs 200-600 yr spinup (dt_009)"
+    prevention: >
+      Choose SP when the target is the photosynthesis response to observed
+      meteorology with prescribed LAI; choose Bgc only with a real spinup.
+
+  severity: degraded
+  cross_references: [dt_009]
+
+- id: dt_020
+  stage: s0_configuration
+  failure_domain: path_resolution
+
+  symptom:
+    description: >
+      Namelist generation for an I-compset stops with
+      "ERROR: A DATM_MODE for CLM is incompatible with DATM_PRESAERO=none",
+      and the default aerosol stream then demands a 6.2 GB file that is not
+      in the local inputdata tree.
+    error_pattern: "DATM_PRESAERO=none|aerosoldep_WACCM.*ensmean"
+    detection_method: log_inspection
+
+  diagnosis:
+    root_cause: >
+      CLM always needs prescribed aerosol deposition, and for CESM the
+      clim_2000 stream resolves to
+      aerosoldep_WACCM.ensmean_monthly_hist_1849-2015_0.9x1.25_CMIP6_c180926.nc
+      (6.2 GB) regardless of the CLM_USRDAT grid.
+    explanation: >
+      The 1.9x2.5 year-2000 climatology
+      (aerosoldep_monthly_2000_mean_1.9x2.5_c090421.nc) is 9 MB and carries the
+      same 14 deposition fields. Two things must be fixed before it can be
+      used: it has no area/mask (which the presaero strm_domvar requires), and
+      its time axis is "days since 0001-01-01" while CIME writes the stream as
+      "... 1 2000 2000", i.e. it asks for stream YEAR 2000.
+    affected_components:
+      - DATM_streams
+      - shr_stream
+
+  remedy:
+    action: "Cut the site column out of the small climatology and override the stream"
+    tool_to_run: make_site_dataset.py
+    manual_steps:
+      - "make_site_dataset.py --aerosol-source <1.9x2.5 clim file> --aerosol-year 2000"
+      - "cp Buildconf/datmconf/datm.streams.txt.presaero.clim_2000 to the case as user_datm.streams.txt.presaero.clim_2000 and point it at aerosoldep_<site>.nc"
+      - "re-run ./preview_namelists, then ./check_input_data"
+    prevention: "Never set DATM_PRESAERO=none with an active CLM"
+
+  severity: fatal
+  cross_references: [dt_010]
+
+- id: dt_021
+  stage: s7_output_analysis
+  failure_domain: silent_error
+
+  symptom:
+    description: >
+      Simulated daily series looks correct but is uniformly one day late
+      against the observation; NSE/r are a few points lower than the visual
+      agreement suggests, and the cross-correlation peaks at lag -1.
+    error_pattern: null
+    detection_method: value_comparison
+
+  diagnosis:
+    root_cause: "Averaged history records are stamped at the END of the averaging interval"
+    explanation: >
+      With hist_nhtfrq < 0 (time-averaged tape) CLM writes the mean for
+      1999-01-01 with time = 1999-01-02 00:00:00. Taking the raw time
+      coordinate as the date shifts the whole simulated series forward one
+      day. The file also carries time_bounds; the midpoint of the bounds is
+      inside the day the average describes and is correct for instantaneous
+      tapes too.
+    affected_components:
+      - histFileMod
+      - analysis_scripts
+
+  remedy:
+    action: "Date each record by the midpoint of time_bounds"
+    tool_to_run: parse_clm_output.py
+    manual_steps:
+      - "mid = time_bounds[:,0] + (time_bounds[:,1] - time_bounds[:,0]) / 2"
+      - "parse_clm_output.py does this automatically when time_bounds exists"
+    prevention: "Never pair a CLM averaged tape on its raw time coordinate"
+
+  severity: silent
+  cross_references: [dt_007]
+
+- id: dt_022
+  stage: s6_execution
+  failure_domain: dependency_mismatch
+
+  symptom:
+    description: >
+      The CTSM-5.4 / NUOPC executable aborts a few seconds after launch, in
+      component initialisation, before writing any history file.
+    error_pattern: "ESMCI_mesh_create_from_file|requires ESMF to be built with the PIO library"
+    detection_method: log_inspection
+
+  diagnosis:
+    root_cause: "The linked ESMF was built without PIO, so NUOPC cannot read mesh files"
+    explanation: >
+      /home/server/cesm/scratch/test_clm5/bld/cesm.exe (the binary
+      preflight_check.py pins) is a CTSM-5.4 NUOPC build. Its ESMF is
+      statically linked and was built without ESMF_PIO, so
+      ESMCI_mesh_create_from_file() fails in dshr_mod.F90 ->
+      atm_comp_nuopc.F90 and the driver aborts. The ESMF build tree is gone,
+      so relinking would mean rebuilding ESMF from source.
+      A COMPLETE, WORKING alternative is installed: CESM 2.2.2 with the MCT
+      driver at /home/server/cesm/src/cesm-2.2.2 (machine hydrocraft_server,
+      inputdata /home/server/cesm/inputdata). It contains clm5.0, needs no
+      ESMF mesh files, and has a recorded successful run (case B1850_test,
+      "model execution success" 2026-05-02).
+    affected_components:
+      - ESMF
+      - NUOPC_driver
+      - mksurfdata_esmf
+
+  remedy:
+    action: "Run CLM5 through CESM 2.2.2 (MCT), not the CTSM-5.4 NUOPC build"
+    tool_to_run: run_clm.py
+    manual_steps:
+      - "run_clm.py --action create --ctsm-root /home/server/cesm/src/cesm-2.2.2"
+      - "Single point: --compset I1PtClm50SpRsGs --res CLM_USRDAT"
+      - "mksurfdata_esmf is unusable for the same reason; use make_site_dataset.py"
+    prevention: >
+      preflight_check.py only checks that a cesm.exe file exists; it does not
+      prove that binary can initialise. Check for a case with a recorded
+      'model execution success' before trusting a CESM binary.
+
+  severity: fatal
+  cross_references: [dt_010]

@@ -143,6 +143,15 @@ def convert_cmfd_to_hype(forcing_dir, subbasins, output_dir, start_year, end_yea
                         prec_3h = ds_p[prec_var][:, lat_idx, lon_idx].values
                         temp_3h = ds_t[temp_var][:, lat_idx, lon_idx].values
 
+                        # CMFD precip is kg/m^2/s (mm/s). Auto-detect by units
+                        # attribute or magnitude and convert to mm/3hr (x10800 s)
+                        # before the daily SUM. See diagnostics triplet dt_u03.
+                        prec_units = str(ds_p[prec_var].attrs.get('units', '')).lower()
+                        if ('s-1' in prec_units or 's^-1' in prec_units
+                                or 'kg m-2 s' in prec_units
+                                or np.nanmean(prec_3h) < 0.01):
+                            prec_3h = prec_3h * 10800.0
+
                         # CMFD temperature is in Kelvin -> convert to Celsius
                         temp_3h = kelvin_to_celsius(temp_3h)
 

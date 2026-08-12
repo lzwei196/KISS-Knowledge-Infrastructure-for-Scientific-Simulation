@@ -38,9 +38,13 @@
 
 **Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.
 
-**Data Validation Reference**: See `data_ki/CMFD/SKILL.md` for CMFD unit documentation and known traps.
-See `data_ki/HWSD/SKILL.md` for soil property documentation.
-See `data_ki/ObservedQ/SKILL.md` for observed discharge data.
+**Data Validation Reference**: KDT 5.0 removed the tools from `data_ki/`; the old
+`data_ki/CMFD/SKILL.md`, `data_ki/HWSD/SKILL.md` and `data_ki/ObservedQ/SKILL.md`
+references are STALE. Use instead:
+- forcing units and traps → `ki_tools_common.load_forcing`, plus `tools/convert_forcing_to_cwatm.py`
+- soil properties → `ki_tools_common.soil_utils`, plus `tools/convert_soil_to_cwatm.py`
+- observed discharge → `/mnt/disk1/Hydrocraft_server/data_ki/dataset_index.yaml`
+  (`observation.discharge`) and `kdt_dataset_layouts.yaml` for on-disk format quirks.
 
 
 ## Overview
@@ -294,10 +298,45 @@ Variable metadata is defined in `cwatm/metaNetcdf.xml` with CF-compliant attribu
 
 | Tool | Stage | Script Path | Purpose |
 |------|-------|-------------|---------|
-| `convert_forcing_to_cwatm` | s1 | `tools/convert_forcing_to_cwatm.py` | Convert CMFD/ERA5/MSWX to CWatM NetCDF format |
+| `build_cwatm_static` | s2 | `tools/build_cwatm_static.py` | **Bootstrap a NEW basin**: MaskMap, Ldd, dem, ElevationStD, CellArea, chan* and land-cover fractions from MERIT-Hydro + ESA-CCI-LC + HydroBASINS |
+| `build_cwatm_ancillary` | s2 | `tools/build_cwatm_ancillary.py` | Crop coefficients, interception capacities (10-day), relativeElevation |
+| `convert_forcing_to_cwatm` | s1 | `tools/convert_forcing_to_cwatm.py` | Convert CMFD/ERA5/MSWX to CWatM NetCDF format; `--target_res` resamples onto the static grid; `--tminmax_3hr_dir` derives real tmin/tmax |
 | `convert_soil_to_cwatm` | s2 | `tools/convert_soil_to_cwatm.py` | Convert HWSD/SoilGrids to CWatM soil parameters |
-| `run_cwatm` | s3 | `tools/run_cwatm_wrapper.py` | Execute CWatM with preflight validation |
+| `run_cwatm` | s3 | `tools/run_cwatm_wrapper.py` | Execute CWatM with preflight validation (`--flags=-q`, `--timeout`) |
 | `parse_cwatm_output` | s4 | `tools/parse_cwatm_output.py` | Extract discharge/state variables to CSV |
+
+### Bootstrapping a new basin (the order matters)
+
+```bash
+# 1. static stack — defines THE grid every other input must match
+python tools/build_cwatm_static.py --gauge_lon 115.98 --gauge_lat 29.73 \
+    --bbox 24.0 36.0 90.0 117.0 --res 0.5 \
+    --hydrobasins .../hybas_as_lev06_v1c.shp \
+    --expected_area_km2 1488210 --out_dir case/static
+
+# 2. forcing, resampled ONTO that grid (--target_res == --res above)
+python tools/convert_forcing_to_cwatm.py --forcing_type cmfd \
+    --forcing_dir .../Data_forcing_01dy_010deg --bbox 24.0 36.0 90.0 117.0 \
+    --start_date 2007-01-01 --end_date 2023-12-31 --target_res 0.5 --resume \
+    --tminmax_3hr_dir .../Data_forcing_03hr_010deg/Temp --output_dir case/forcing
+
+# 3. soil (--resolution == --res) and ancillary
+python tools/convert_soil_to_cwatm.py --source hwsd --input_dir .../HWSD_RASTER \
+    --bbox 24.0 36.0 90.0 117.0 --resolution 0.5 --output_dir case/soil
+python tools/build_cwatm_ancillary.py --static_dir case/static --output_dir case/ancillary
+
+# 4. run
+python tools/run_cwatm_wrapper.py --settings case/settings.ini \
+    --cwatm_dir <KI>/source/repo --flags=-q
+```
+
+`build_cwatm_static.py` verifies itself: it prints the MERIT upstream area at the
+snapped gauge pixel and the summed basin area, against `--expected_area_km2`.
+Agreement within a few percent means the LDD upscaling found the right river.
+
+**Spin-up.** A large basin starts with empty channels and an empty groundwater
+store. At Jiujiang (1.5 M km²) a 10-day spin-up produced 60 m³/s against an
+observed 10,000 m³/s. Allow 2–3 years between `StepStart` and `SpinUp`.
 
 ---
 
@@ -310,12 +349,42 @@ Variable metadata is defined in `cwatm/metaNetcdf.xml` with CF-compliant attribu
 | Soil depth factor | soildepth_factor | 0.5-2.0 | Soil storage capacity | HIGH |
 | Arno beta (runoff shape) | arnoBeta_add | 0.01-1.0 | Direct runoff fraction | HIGH |
 | Interflow factor | factor_interflow | 0.5-10.0 | Lateral subsurface flow | MEDIUM |
-| Recession coefficient | recessionCoeff_factor | 1.0-10.0 | Baseflow timing | MEDIUM |
+| Recession coefficient | recessionCoeff_factor | see below | Baseflow timing | **HIGH** |
 | Manning's n | manningsN | 0.5-5.0 | Routing velocity (multiplier) | MEDIUM |
-| Preferential flow | preferentialFlowConstant | 1.0-10.0 | Bypass flow to GW | LOW |
-| Normal storage limit | normalStorageLimit | 0.1-0.9 | Reservoir operations | LOW |
-| Lake A factor | lakeAFactor | 0.1-1.0 | Lake outflow | LOW |
-| Lake evaporation factor | lakeEvaFactor | 0.8-2.0 | Lake evaporation | LOW |
+| Preferential flow | preferentialFlowConstant | 1.0-10.0 | Bypass flow to GW | LOW (inert unless `preferentialFlow = True`) |
+| Normal storage limit | normalStorageLimit | 0.1-0.9 | Reservoir operations | LOW (inert unless `includeWaterBodies = True`) |
+| Lake A factor | lakeAFactor | 0.1-1.0 | Lake outflow | LOW (inert unless `includeWaterBodies = True`) |
+| Lake evaporation factor | lakeEvaFactor | 0.8-2.0 | Lake evaporation | LOW (inert unless `includeWaterBodies = True`) |
+
+### `recessionCoeff_factor` is a DIVISOR, and it is the single most important parameter
+
+`cwatm/hydrological_modules/groundwater.py:72-73` does
+
+```python
+self.var.recessionCoeff = 1 / self.var.recessionCoeff * loadmap('recessionCoeff_factor')
+self.var.recessionCoeff = 1 / self.var.recessionCoeff
+```
+
+i.e. **effective recessionCoeff = `recessionCoeff` ÷ `recessionCoeff_factor`**, and baseflow
+is `recessionCoeff × storGroundwater`. So *raising* `recessionCoeff_factor` makes baseflow
+**slower**, not faster. The "1.0–10.0" range quoted above can only ever slow the store down;
+if the basin needs a faster store, that range contains no solution.
+
+**Recipe**: pin `recessionCoeff = 1.0` in `[GROUNDWATER]`. Then `recessionCoeff_factor`
+*is* the groundwater linear-reservoir residence time τ in **days**, and a sane search range
+is τ ∈ [2, 40].
+
+**Symptom of getting this wrong** (measured at Jiujiang, Yangtze, 1.5 M km², 2010–2023):
+with the KI's old default (`recessionCoeff = 0.02`, factor `1.0` → τ = 50 d) baseflow was
+**414 of 553 mm/yr (BFI 0.75)** and its climatology **peaked in October** while CMFD
+precipitation peaks in June. That quarter-cycle phase lag capped the correlation at
+r = 0.729, hence `NSE ≤ r² = 0.531` — unreachable no matter how bias and variance are
+corrected. Dropping to τ = 4 d lifted r to 0.852 and NSE from 0.44 → 0.65 on 2010–2013.
+
+**Always check the baseflow fraction and its phase before calibrating anything else.** Write
+`OUT_Map_MonthAvg = runoff, baseflow`, take the basin-area-weighted mean of each, and compare
+the month of peak baseflow with the month of peak precipitation. If BFI > 0.6 or the peaks are
+more than ~1 month apart, τ is wrong and no amount of `crop_correct` / `arnoBeta_add` will fix it.
 
 ---
 

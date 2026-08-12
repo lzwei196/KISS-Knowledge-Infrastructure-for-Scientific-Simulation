@@ -1,105 +1,121 @@
 #!/usr/bin/env python3
-"""
-EPIC0810 pre-flight check.
-
-Verifies binary, template files, Python dependencies, and shared utilities
-BEFORE attempting a real run. Exits 0 on success, 1 on any failure.
-
-Each failure prints a specific fix instruction. Errors that are documented in
-diagnostics/triplets.yaml include the triplet ID.
-"""
-
+"""Preflight check for the EPIC 1102 KI."""
 import os
 import sys
+import shutil
 
-EPIC_BINARY = "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/EPIC/source/repo/epic0810.x"
-EXAMPLE_DIR = "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/EPIC/source/repo/epic1102_example_files_20221002"
-
-REQUIRED_TEMPLATE_FILES = [
-    "EPICCONT.DAT", "EPICFILE.DAT", "EPICRUN.DAT",
-    "PARM1102.DAT", "PRNT1102.DAT",
-    "CROPCOM.DAT", "TILLCOM.DAT", "PESTCOM.DAT", "FERT2012.DAT",
-    "SOIL35K.DAT",
-    "SITECOM.DAT", "SOILCOM.DAT", "OPSCCOM.DAT", "WDLSTCOM.DAT",
-    "umstead.SIT", "umstead.SOL", "umstead.OPC",
-    "NCRDU.DLY",
-]
-
-REQUIRED_PY_PACKAGES = ["numpy", "pandas", "yaml"]
+PASS = 0
+FAIL = 0
+MODEL_NAME = "EPIC 1102 (v2025-05-25)"
 
 
-def check(label, ok, fix_instruction):
-    mark = "✓" if ok else "✗"
-    print(f"  {mark} {label}")
-    if not ok:
-        print(f"      FIX: {fix_instruction}")
-    return ok
+def check_file(path, label, executable=False):
+    global PASS, FAIL
+    if os.path.isfile(path):
+        if executable and not os.access(path, os.X_OK):
+            print(f"  WARN  {label}: exists but not executable: {path}")
+            FAIL += 1
+        else:
+            print(f"  OK    {label}: {path}")
+            PASS += 1
+    else:
+        print(f"  FAIL  {label}: NOT FOUND at {path}")
+        FAIL += 1
 
 
-def main() -> int:
-    print("EPIC0810 preflight check")
-    print("=" * 50)
-    failures = 0
+def check_dir(path, label):
+    global PASS, FAIL
+    if os.path.isdir(path):
+        n = len(os.listdir(path))
+        print(f"  OK    {label}: {path} ({n} items)")
+        PASS += 1
+    else:
+        print(f"  FAIL  {label}: directory NOT FOUND at {path}")
+        FAIL += 1
 
-    print("\n[1/4] Binary")
-    ok = os.path.exists(EPIC_BINARY)
-    if not check(f"binary at {EPIC_BINARY}", ok,
-                 f"Re-extract the EPIC tarball into {os.path.dirname(EPIC_BINARY)}"):
-        failures += 1
-    if ok and not os.access(EPIC_BINARY, os.X_OK):
-        if not check("binary is executable", False,
-                     f"chmod +x {EPIC_BINARY}"):
-            failures += 1
 
-    print("\n[2/4] Template files")
-    for f in REQUIRED_TEMPLATE_FILES:
-        path = os.path.join(EXAMPLE_DIR, f)
-        if not check(f, os.path.exists(path),
-                     f"Restore {path} from the EPIC1102 example bundle"):
-            failures += 1
+def check_binary_in_path(name, label):
+    global PASS, FAIL
+    found = shutil.which(name)
+    if found:
+        print(f"  OK    {label}: {found}")
+        PASS += 1
+    else:
+        print(f"  FAIL  {label}: '{name}' not on PATH")
+        print(f"         Fix: install via 'sudo apt install wine'")
+        FAIL += 1
 
-    print("\n[3/4] Python dependencies")
-    for pkg in REQUIRED_PY_PACKAGES:
-        try:
-            __import__(pkg)
-            check(pkg, True, "")
-        except ImportError:
-            check(pkg, False, f"pip install {pkg}")
-            failures += 1
 
-    print("\n[4/4] Shared utilities (ki_tools_common)")
+def check_import(module, label, fix=None):
+    global PASS, FAIL
     try:
-        from ki_tools_common.load_forcing import load_daily_forcing  # noqa
-        check("ki_tools_common.load_forcing", True, "")
-    except ImportError:
-        check("ki_tools_common.load_forcing", False,
-              "Add /home/server/knowledge-dissection-toolkit to PYTHONPATH "
-              "or install kdt-release")
-        failures += 1
-    try:
-        from ki_tools_common.soil_utils import lookup_hwsd  # noqa
-        check("ki_tools_common.soil_utils", True, "")
-    except ImportError:
-        check("ki_tools_common.soil_utils", False,
-              "Add /home/server/knowledge-dissection-toolkit to PYTHONPATH")
-        failures += 1
-    try:
-        from ki_tools_common.metrics import all_metrics  # noqa
-        check("ki_tools_common.metrics", True, "")
-    except ImportError:
-        check("ki_tools_common.metrics", False,
-              "Add /home/server/knowledge-dissection-toolkit to PYTHONPATH")
-        failures += 1
+        __import__(module)
+        print(f"  OK    {label}: import {module} succeeded")
+        PASS += 1
+    except ImportError as e:
+        print(f"  WARN  {label}: import {module} failed: {e}")
+        if fix:
+            print(f"         Fix: {fix}")
+        FAIL += 1
 
-    print("\n" + "=" * 50)
-    if failures:
-        print(f"FAIL: {failures} preflight checks failed")
-        print("See diagnostics/triplets.yaml for documented error patterns.")
-        return 1
-    print("OK: all preflight checks passed")
-    print("Next: python tools/run_epic_workspace.py --workspace /tmp/epic_run1")
-    return 0
+
+def main():
+    global PASS, FAIL
+    print("=" * 60)
+    print(f"  PREFLIGHT CHECK: {MODEL_NAME}")
+    print("=" * 60)
+
+    ki_dir = os.path.dirname(os.path.abspath(__file__))
+    templates_dir = os.path.join(ki_dir, "templates")
+
+    # Resolve through the same helper the tools use, so preflight and
+    # run_epic.py can never disagree about where the binary lives.
+    sys.path.insert(0, os.path.join(ki_dir, "tools"))
+    try:
+        from _common import resolve_binary
+        binary = resolve_binary()
+    except Exception:
+        binary = os.environ.get(
+            "EPIC_BINARY",
+            os.path.join(os.path.dirname(ki_dir), "bin",
+                         "epic1102-official_release.exe"),
+        )
+    check_file(binary, "EPIC 1102 binary")
+    check_binary_in_path("wine", "Wine runtime")
+    check_dir(templates_dir, "templates/")
+    for fn in ("EPICRUN.DAT", "EPICCONT.DAT", "EPICFILE.DAT",
+               "CROPCOM.DAT", "FERT2012.DAT", "PARM1102.DAT",
+               "umstead.SIT", "umstead.SOL", "umstead.OPC",
+               "NCRDU.DLY", "NCCLAYTO.WP1", "NCCLAYTO.WND"):
+        check_file(os.path.join(templates_dir, fn), f"template {fn}")
+
+    check_dir(os.path.join(ki_dir, "tools"), "tools/")
+
+    print()
+    print("  Optional dependencies:")
+    for cand in (
+        "/home/server/knowledge-dissection-toolkit/ki_tools_common",
+        "/home/server/knowledge-dissection-toolkit/kdt-release/ki_tools_common",
+    ):
+        if os.path.isdir(cand):
+            sys.path.insert(0, os.path.dirname(cand))
+            break
+    check_import("ki_tools_common", "ki_tools_common")
+    check_import("ki_tools_common.load_forcing", "load_forcing helper")
+
+    print()
+    triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")
+    if os.path.isfile(triplets):
+        print(f"  INFO  Diagnostic triplets: {triplets}")
+
+    print()
+    print(f"  Results: {PASS} passed, {FAIL} failed")
+    if FAIL > 0:
+        print("  STATUS: PREFLIGHT FAILED")
+        sys.exit(1)
+    print("  STATUS: PREFLIGHT PASSED")
+    sys.exit(0)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

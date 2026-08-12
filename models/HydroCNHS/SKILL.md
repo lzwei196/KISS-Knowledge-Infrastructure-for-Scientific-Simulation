@@ -316,6 +316,12 @@ hydrocnhs.Visual().plot.timeseries(
 
 ---
 
+## Output Description
+
+HydroCNHS stores simulation results in the `model.dc` (data collector) object after `model.run()`. The primary output is `model.dc.Q_routed`, a dictionary keyed by gauge/subbasin name containing daily routed streamflow arrays in m^3/s (cms). Additional outputs include `model.dc.Q_local` (local runoff per subbasin), actual evapotranspiration, and soil moisture states. Use `parse_output.py` to export `Q_routed` to CSV with columns `date, Q_sim (cms)` and compute performance indicators (NSE, KGE, RMSE, r) against observed streamflow. ABM agent records (reservoir storage, diversion volumes) are accessible via the agent objects after the run.
+
+---
+
 ## 14. Diagnostic Triplets Summary
 
 See `diagnostics/triplets.yaml` for 18 symptom → diagnosis → remedy entries.

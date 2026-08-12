@@ -1,0 +1,833 @@
+# Calibration contract for SFINCS (Deltares, v2.3.2 "mt. Faber+", regular-bathymetry
+# local-inertial solver) at the TARGET CASE:
+#
+#   case_id      HYDAT:08MF035
+#   gauge / obs  HYDAT 08MF035 "FRASER RIVER NEAR AGASSIZ" — daily mean water level
+#                (DLY_LEVELS, metres in HYDAT DATUM_ID 35 "GEODETIC SURVEY OF CANADA
+#                DATUM"), read READ-ONLY from
+#                /mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3
+#   quantity     water surface elevation at the SFINCS his observation point
+#   metric       PBIAS (magnitude_accuracy)
+#   provenance   SFINCS_20260805T020658Z_648666
+#   domain       Fraser River, Hope -> Agassiz reach, British Columbia, Canada;
+#                345 x 285 cells @ 100 m (UTM 10N), 29 217 active cells, bed 6.5-80.0 m
+#   split        spin-up 02-15..02-28 (dropped); calibration = 2021-03-01..2021-08-24
+#                (177 d); holdout = 2022-03-01..2022-08-08 (161 d)
+#
+# This is NOT the Huai/Wangjiaba, Xixian, Kangerlussuaq or Zijingguan SFINCS work the
+# KI's other run scripts and SKILL.md examples showcase. The scored gauge is a MODULE
+# CONSTANT in tools/calib_run.py — never an env var, never a CLI flag — and the driver
+# emits __kdt__.case_id / __kdt__.scored_obs BUILT from the HYDAT STATIONS row that
+# actually opened the observations, so scoring a different gauge is detectable rather
+# than mislabelled.
+#
+# THE COUPLING BEING CALIBRATED (non-circular by construction)
+# -----------------------------------------------------------
+# FORCING : observed daily discharge at HYDAT 08MF005 "FRASER RIVER AT HOPE" spread over
+#           25 snapped channel source cells (sfincs.src/.dis) + MSWX rainfall over the
+#           domain (sfincs.precip), constant infiltration sink qinf, absorbing outflow
+#           (msk=3) on the western/downstream edge.
+# SCORED  : SFINCS `point_zs` at HYDAT 08MF035, ~31 km DOWNSTREAM — a different variable
+#           at a different location from the boundary condition, which is what clears the
+#           2026-08-02 SFINCS reviewer audit's circularity finding.
+#
+# ---------------------------------------------------------------------------
+# WHY RUNNER MODE
+# ---------------------------------------------------------------------------
+# None of the five continuous levers is a stable token a generic address can write:
+#   * Manning's n lives in sfincs.man — a COMPRESSED binary float32 vector over the
+#     29 217 ACTIVE cells only (dt_v023), keyed on sfincs.ind, with no text form at all;
+#     SFINCS also precomputes gn2 = g*n^2 at init, so the map must be correct BEFORE the
+#     binary starts.
+#   * the discharge and rainfall multipliers rescale every value of two whole ASCII
+#     tables (sfincs.dis, 200 x 26; sfincs.precip, 1584 x 2), not one cell.
+#   * qinf and advection live in sfincs.inp, which the KI REGENERATES from
+#     tools/s6_config/generate_sfincs_inp.py on every run — a value written before the
+#     run is overwritten — and the generator formats qinf as "%.2f", which would quantize
+#     a candidate away from the requested value.
+# => injection.mode: runner. tools/calib_run.py reads $KDT_CALIB_PARAMS, injects each
+# value the model's own way AFTER regeneration, reads every value BACK out of the
+# artifact SFINCS opens, runs the binary through the KI's own s7_execution/run_sfincs.py,
+# scores against HYDAT, and echoes __kdt__.applied_params / case_id / scored_obs.
+#
+# ---------------------------------------------------------------------------
+# VERTICAL DATUM — A PINNED CONSTANT, DELIBERATELY NOT A PARAMETER
+# ---------------------------------------------------------------------------
+# The DEM is Copernicus GLO-30 (EGM2008-referenced, and over water it reports the river
+# SURFACE at acquisition rather than the bed) while the gauge is CGVD28-family, so
+# `point_zs` and HYDAT stage sit on different vertical data — exactly the "requires
+# shared datum" caveat dag.yaml attaches to zs. The validated run fitted ONE constant
+# offset (-1.4035284032929418 m) on the 2021 calibration year and applied it unchanged to
+# 2022. tools/calib_run.py PINS that constant: it is identical for every candidate and
+# every split and is never re-fitted. Re-fitting per candidate would drive PBIAS to zero
+# by construction and hand the sensitivity screen a metric with no signal at all.
+#
+# Two consequences are stated up front because they are properties of the case, not of
+# this contract:
+#   (a) the constant was fitted with the DEFAULT vector on the CALIBRATION year, so the
+#       default vector's calibration-split PBIAS is ~0 (measured 1.0e-07 %); the
+#       objective is therefore already near its floor at the start and the search's job
+#       is to find a vector that also holds on the HOLDOUT, where the default sits at the
+#       validated -0.665 %.
+#   (b) a channel-bed / burn-depth lever was deliberately EXCLUDED from the pool for the
+#       same reason — see `excluded_levers` below.
+#
+# ---------------------------------------------------------------------------
+# COMMISSIONED 2026-08-09 (live, this KI, the canonical python_env interpreter, the real
+# SFINCS v2.3.2 binary, ~11-25 min per eval / one simulated year):
+#   * DEFAULT vector reproduces the validated coupling EXACTLY through this driver:
+#       holdout (2022, 161 paired days)     pbias -0.665208 | nse 0.974429 |
+#                                           kge 0.870175 | r 0.996860 | rmse 0.263646 m
+#       calibration (2021, 177 paired days) pbias  0.000000 | nse 0.985564 |
+#                                           kge 0.898738 | r 0.997670 | rmse 0.161652 m
+#     vs. the provenance run's -0.6652085 / 0.9744295 / 0.8701747.
+#   * PERTURBED vector moves the calibration-split objective off its floor, and every one
+#     of the 12 range bounds applies EXACTLY (applied == requested) with all 6 parameters
+#     echoed and a finite metric — see `commissioning` at the end of this file for the
+#     full per-bound table.
+# ---------------------------------------------------------------------------
+
+template_version: "calib-0.1"
+model_id: SFINCS
+
+identity:
+  domain: flood_hazards
+  binding: >
+    SFINCS v2.3.2 "mt. Faber+" (Deltares), regular bathymetry (NO subgrid tables — the
+    run log reports "running SFINCS with regular bathymetry"), local-inertial (LIE)
+    momentum by default, spatially varying Manning map (manningfile), constant
+    infiltration (qinf), point-source fluvial discharge (srcfile/disfile) + uniform
+    ASCII precipitation (precipfile), NetCDF his/map output.
+  case_id: "HYDAT:08MF035"
+  site: >
+    Fraser River, Hope -> Agassiz reach, British Columbia, Canada. Compute grid
+    345 x 285 @ 100 m in EPSG:32610, origin (580200, 5444700); 29 217 active cells
+    confined to the valley floor (max_elev 80 m), bed 6.5-80.0 m, 123 outflow cells
+    (msk=3) on the western/downstream edge. The scored point is HYDAT 08MF035 at
+    49.20369 N, -121.77583 E (UTM 589172, 5450821), 218 000 km2 drainage, ~31 km
+    downstream of the inflow. Snowmelt-dominated freshet: observed stage 12.07-16.80 m
+    over the holdout window; inflow at Hope 1080-10 400 m3/s.
+  obs_source: "HYDAT (Water Survey of Canada national hydrometric database)"
+  obs_id: "HYDAT:08MF035 (FRASER RIVER NEAR AGASSIZ), DLY_LEVELS, metres"
+  obs_file: "/mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3"
+  baseline_run: >
+    SFINCS_20260805T020658Z_648666 — the validated coupling. Determining metric
+    pbias = -0.6652085034672962 on the held-out 2022 window (nse 0.9744295,
+    kge 0.8701747, r 0.9968597, rmse 0.2636 m, peak-stage bias -3.70 %), with
+    nse 0.9855641 / kge 0.8987383 / pbias ~0 on the 2021 calibration window. Every
+    `default` below IS that run's configuration, so the optimizer starts from the
+    validated, physical, in-range point and can only improve on it.
+
+# ---------------------------------------------------------------------------
+injection:
+  mode: runner
+
+# ---------------------------------------------------------------------------
+# TARGETS. The TARGET CASE declares dag var `zsmax` / obs_shape `point_snapshot`, whose
+# observability block gives metric_families [magnitude_accuracy] and determining_metric
+# `pbias` — that is where the determining metric comes from. The validated run realised
+# that comparison as the CONTINUOUS daily `point_zs` series at the same gauge (dag var
+# "point_zs / point_h", obs_shape point_time_series), whose families also include
+# magnitude_accuracy/pbias. BOTH dag vars are listed so the objective builder resolves
+# whichever obs_shape the model_obs_map join carries; they declare DISJOINT obs_shapes,
+# so exactly one can ever match and the weights never double-count.
+# The driver emits `pbias` for the full daily pairing (the validated headline) and
+# additionally `pbias_peak_stage` — the strict zsmax/point_snapshot reading, i.e. the
+# bias of the peak simulated stage against the peak observed stage.
+targets:
+  - var: zsmax
+    weight: 1.0
+  - var: "point_zs / point_h"
+    weight: 1.0
+
+# The determining metric, in both the declarative and the machine-readable form
+# calib.py `_effective_metric_overrides` consumes. objectives.family_losses then keys the
+# magnitude_accuracy loss on `pbias` (loss = |pbias| / 100, 0 == perfect). Only
+# magnitude_accuracy is overridden; no sibling family's native metric is touched.
+determining_metric: pbias
+metric_overrides:
+  magnitude_accuracy: pbias
+
+# ---------------------------------------------------------------------------
+# OBS CONTRACT — the envelope tools/calib_run.py ENFORCES before computing any metric.
+# Every field below is read out of HYDAT and ASSERTED; a mismatch exits nonzero with NO
+# metrics file, so a changed or corrupted series for the SAME station can never be
+# silently scored. OBS_ENVELOPE + the identity checks in resolve_station() are the
+# machine-readable copy of this block and the two must be kept in sync.
+# The database is opened READ-ONLY through the KI's own connector
+# (sqlite3.connect("file:<db>?mode=ro&immutable=1", uri=True)), so scoring works on a
+# read-only mount and in a read-only review sandbox and can never write to the catalog.
+# ---------------------------------------------------------------------------
+obs_contract:
+  scope: >
+    PINNED envelope for HYDAT 08MF035. There is no derived/generic regime: the gauge is a
+    module constant and the driver refuses to score anything else (resolve_station raises
+    if the resolved "HYDAT:<station>" is not the TARGET CASE). Reported as
+    __kdt__.obs_contract = "pinned".
+  station_identity:                       # HYDAT STATIONS / DATUM_LIST, asserted verbatim
+    station_number: "08MF035"
+    station_name: "FRASER RIVER NEAR AGASSIZ"
+    latitude: 49.20368957519531
+    longitude: -121.7758331298828
+    drainage_area_gross_km2: 218000.0
+    datum_id: 35
+    datum_name: "GEODETIC SURVEY OF CANADA DATUM"
+  source:
+    database: "/mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3"
+    version: "Hydat_sqlite3_20260116"
+    table: "DLY_LEVELS"                   # wide MONTH-per-row, LEVEL1..LEVEL31
+    open_mode: "sqlite3 file:...?mode=ro&immutable=1 (read-only; WAL-safe on read-only media)"
+  target:
+    variable: "daily mean water level"
+    units: "m"
+    vertical_datum: "HYDAT DATUM_ID 35 (GEODETIC SURVEY OF CANADA DATUM)"
+    missing_convention: "SQL NULL"        # a numeric sentinel would fall outside the band below
+    plausibility_band_m: [5.0, 30.0]      # structural guard: a sentinel/unit change is rejected
+  splits:                                 # exact gap-free daily date set AND observed envelope
+    calibration: {start: "2021-03-01", end: "2021-08-24", n_days: 177, n_valid: 177,
+                  obs_min: 12.095000267028809, obs_max: 16.482000350952148,
+                  obs_mean: 13.986016930833374}
+    holdout:     {start: "2022-03-01", end: "2022-08-08", n_days: 161, n_valid: 161,
+                  obs_min: 12.065999984741213, obs_max: 16.799999237060547,
+                  obs_mean: 14.245608643715427}
+  enforced:
+    - "STATIONS row exists and station_number / station_name / latitude / longitude /
+       drainage_area_gross / datum_id / datum_name equal the values above"
+    - "the resolved 'HYDAT:<station_number>' equals the TARGET CASE case_id"
+    - "the observed date set is EXACTLY the declared contiguous daily index (no gaps,
+       no extra days) and its length equals n_days"
+    - "every observed level is finite and inside the plausibility band"
+    - "obs_min / obs_max / obs_mean match the declared values to 1e-6 m"
+    - "the number of PAIRED (obs, sim) days equals n_days — a simulation that does not
+       cover the whole scored window is rejected, never silently short-scored"
+  tolerance_m: 1.0e-6
+
+# ---------------------------------------------------------------------------
+# VERTICAL REGISTRATION — a fixed scoring constant, applied identically to every
+# candidate and every split. Reported as __kdt__.datum_offset_m.
+# ---------------------------------------------------------------------------
+datum_registration:
+  offset_m: -1.4035284032929418
+  applied_as: "sim_registered = point_zs + offset_m   (metres, gauge datum)"
+  source: >
+    Fitted ONCE on the 2021 calibration window with the DEFAULT parameter vector in
+    provenance run SFINCS_20260805T020658Z_648666, and PINNED here. It is NOT re-fitted
+    per candidate and it is NOT a calibration parameter.
+  rationale: >
+    dag.yaml sets outputs[point_zs].observability.detrending_options: ["none"], so a
+    per-candidate obs-fitted offset would be a calibrated parameter masquerading as a
+    datum registration (the same objection tools/s4_forcing/register_vertical_datum.py
+    raises for dt_v024) AND would force PBIAS to 0 on whatever split it was fitted on,
+    leaving the Morris screen with no signal. Holding it fixed makes every parameter's
+    effect on the determining metric fully visible.
+
+# ---------------------------------------------------------------------------
+# RUN-HEALTH gates (fail-closed) applied by tools/calib_run.py. Nothing here is defaulted
+# to a passing value: a REQUIRED diagnostic that is missing, None or non-finite raises and
+# the eval produces NO metrics file. Every item is a diagnostic SFINCS / the KI's
+# s7_execution/run_sfincs.py actually emits — none is fabricated.
+# ---------------------------------------------------------------------------
+run_health:
+  required:
+    - "run_summary.json exists and carries a non-null `status`, `exit_code`,
+       `preflight_warnings` and a finite `elapsed_seconds`"
+    - "run_summary.json status == 'success'"
+    - "no preflight warning contains 'CRITICAL' (these are the dt_v001 / dt_020 / dt_v023
+       compressed-map and empty-mask killers, which SFINCS itself reports no error for)"
+    - "sfincs.log exists and contains 'Simulation finished' — the solver reached tstop
+       (run_sfincs.py treats this as authoritative because gfortran-13 + NetCDF can abort
+       at cleanup with a non-zero rc after a valid run)"
+    - "sfincs.log contains no NaN token"
+    - "sfincs_his.nc exists and carries point_zs"
+    - "every simulated point_zs value is finite and below the 9998 fill sentinel — a
+       fill value means the observation point went dry or fell outside the active mask"
+    - "sfincs.inp manningfile == sfincs.man, i.e. the injected roughness map is the one
+       the binary opens"
+    - "the two simulated years of a multi-year split applied the SAME parameter vector"
+  reported:
+    - "__kdt__.run_health[<year>] = {exit_code, elapsed_seconds, simulation_finished,
+       preflight_warnings}"
+
+# ---------------------------------------------------------------------------
+# POOL. Seeded from dag.yaml influence.edges — every MEDIUM edge whose lever_type is
+# `parameter` or `boundary_forcing` and that is REACHABLE in this configuration is in the
+# pool, with its dag citations carried into `cite`:
+#     Manning's n roughness            -> water_level / flood_extent   MEDIUM
+#     fluvial discharge forcing        -> flood_extent                 MEDIUM
+#     pluvial rainfall forcing         -> flood_extent                 MEDIUM
+#     SCS-CN infiltration              -> flood_extent                 MEDIUM
+# plus the momentum-advection structural switch dag.yaml declares under
+# inputs.boundary_conditions, which the KI's own s6_config tool flags as the lever that
+# matters for a FLUVIAL reach at 2-3 m/s. Roughness is split into the two disjoint cell
+# sets the LULC-derived map actually distinguishes, because the scored point is in-channel
+# and the channel and floodplain roughness are not identifiable as one number.
+#
+# ERROR MODE THIS POOL MUST BE ABLE TO CLOSE. The baseline is NOT shape-limited: r is
+# 0.9969 and NSE 0.9744 on the holdout, so the structure and timing are right and this is
+# genuinely calibration territory rather than a setup problem. What is left is MAGNITUDE:
+# the holdout PBIAS is -0.665 % and KGE is 0.8702 with r = 0.9969 and beta = 0.9933, which
+# leaves the variability ratio alpha ~= 0.87 — the simulated stage hydrograph is ~13 %
+# too flat, and the peak stage is 3.7 % low. That is a conveyance/amplitude error: the
+# stage-discharge relation of the reach is too "stiff". The pool spans exactly the levers
+# that move it — in-channel roughness (which sets the stage per unit discharge and thus
+# both the level and its range), floodplain roughness (which sets how much of the freshet
+# is stored and attenuated), and the two forcing bias factors that set the water volume
+# arriving (discharge, which dominates here at 1080-10 400 m3/s, and rainfall) — together
+# with the infiltration sink and the momentum-regime switch.
+#
+# RANGES are literature/documentation-grounded and were each verified LIVE to apply
+# EXACTLY at BOTH bounds through the real binary (applied == requested; see
+# `commissioning`), so no bound clamps and a Morris screen corner cannot fail closed.
+# SFINCS applies no floor or ceiling to any of them: sfincs.man is a raw float32 map,
+# sfincs.dis / sfincs.precip are free-format ASCII tables, and qinf / advection are
+# sfincs.inp scalars.
+# ---------------------------------------------------------------------------
+parameters:
+
+  # ---------------- roughness: the primary calibration parameter ----------------
+  - name: manning_water_n
+    description: >
+      Manning's n assigned to the LULC WATER class — the low-roughness conveyance cells
+      that carry the Fraser through the reach (9 555 of the 29 217 active cells; the
+      other four classes are the floodplain, below). This is the in-channel resistance
+      that sets simulated stage per unit discharge at the scored point, so it is the
+      single most direct lever on the determining metric.
+    type: continuous
+    units: "s/m^(1/3)"
+    default: 0.025
+    range: [0.018, 0.055]
+    hard_bounds: [0.015, 0.20]
+    transform: identity              # narrow, strictly positive, linear search is fine
+    scope: per-zone
+    zone_key: "lulc_class == Water (base sfincs.man value 0.025)"
+    tie: null
+    activation: always
+    expected_sensitivity: high       # promoted above the dag's MEDIUM prior for THIS case
+    confidence: high
+    range_source: >
+      dag.yaml inputs.parameters "Manning's n roughness" gives the model's own valid band
+      as "~0.015-0.20" and marks it source_kind: calibrated / "Primary calibration
+      parameter", so [0.018, 0.055] sits strictly inside it. The calibration range itself
+      is Chow (1959) Table 5-6 for natural streams: major streams wider than 30 m,
+      0.025-0.060, and minor clean/straight streams 0.025-0.033; the Fraser at Agassiz is
+      a large gravel-bed channel, so 0.018 (an unrealistically smooth corner) to 0.055
+      (a cobble/vegetated corner) brackets it with margin on both sides. Eilander et al.
+      2023b calibrated SFINCS on Sofala with a CONSTANT n = 0.03, inside this range.
+      SFINCS reads sfincs.man as a raw float32 map and applies no clamp; verified live —
+      both bounds read back EXACTLY (see `commissioning`).
+    cite:
+      - eilander2023_mozambique_pilot
+      - hawker2019_dem_roughness_floodmap_sensitivity
+      - chow1959_open_channel_hydraulics
+      - leijnse2021_sfincs_reduced_physics
+    address:                         # runner mode: documentation of the effective token
+      kind: runner
+      file: "sfincs.man"
+      note: >
+        The COMPRESSED binary float32 vector over the 29 217 active cells (dt_v023),
+        entries whose PRISTINE base value is the water class (<= 0.0255). Injected by
+        tools/calib_run.py inject_manning() and read back with readback_manning(), which
+        requires the water class to carry exactly ONE distinct value. dag edge
+        "Manning's n roughness" -> water_level / flood_extent (MEDIUM).
+
+  - name: manning_land_mult
+    description: >
+      Multiplicative scale on Manning's n for every NON-water active cell (19 662 cells;
+      base values 0.030 / 0.035 / 0.040 / 0.100 from the AVHRR classes present:
+      shrubland, deciduous and mixed forest, wetland, cropland mosaic). A multiplier
+      rather than an absolute value so the LULC spatial pattern the KI derived is
+      preserved. Controls how much of the freshet spills onto and is attenuated by the
+      valley floor, i.e. the AMPLITUDE of the stage hydrograph (the alpha ~= 0.87 error).
+    type: continuous
+    units: "dimensionless (multiplier on s/m^(1/3))"
+    default: 1.0
+    range: [0.75, 1.40]
+    hard_bounds: [0.60, 2.00]
+    transform: identity
+    scope: per-zone
+    zone_key: "lulc_class != Water (base sfincs.man value > 0.0255)"
+    tie: null
+    activation: always
+    expected_sensitivity: medium
+    confidence: high
+    range_source: >
+      The bounds are set so the RESULTING n stays inside both dag.yaml's "~0.015-0.20"
+      band and Chow (1959) Table 5-6 for floodplains: x0.75 maps the four base classes to
+      0.0225-0.075 and x1.40 maps them to 0.042-0.140, against Chow's pasture 0.025-0.035,
+      brush 0.035-0.16 and medium-to-dense trees 0.080-0.160. Hawker et al. 2019 varied
+      roughness over a comparable multiplicative band for a local-inertial solver of the
+      same governing equations and found it a first-order control on WSE. Verified live —
+      both bounds read back EXACTLY.
+    cite:
+      - hawker2019_dem_roughness_floodmap_sensitivity
+      - eilander2023_mozambique_pilot
+      - chow1959_open_channel_hydraulics
+    address:
+      kind: runner
+      file: "sfincs.man"
+      note: >
+        Same compressed float32 vector, the complementary (non-water) entries. Read back
+        as sum(injected non-water) / sum(pristine non-water). dag edge "Manning's n
+        roughness" -> water_level / flood_extent (MEDIUM).
+
+  # ---------------- forcing bias factors (the volume levers) -------------------
+  - name: q_mult
+    description: >
+      Multiplicative bias factor on the fluvial inflow boundary — every discharge value in
+      sfincs.dis (200 timesteps x 25 source cells, HYDAT 08MF005 daily Q spread over the
+      snapped channel cells). This is the dominant water-volume lever in this domain
+      (1080-10 400 m3/s of river against ~9 m3/s of areal rainfall), so it is the lever
+      that most directly moves PBIAS at the scored point. It is a forcing UNCERTAINTY
+      factor, not a free knob: the inflow is an observed rating-curve discharge at a
+      DIFFERENT gauge from the one being scored, so this never fits the obs to itself.
+    type: continuous
+    units: "dimensionless (multiplier on m3/s)"
+    default: 1.0
+    range: [0.90, 1.10]
+    hard_bounds: [0.75, 1.25]
+    transform: identity
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: high
+    confidence: high
+    range_source: >
+      HYDAT DLY_FLOWS at 08MF005 are stage-discharge rating estimates, not measurements.
+      Di Baldassarre & Montanari (2009) decompose river-discharge observation error and
+      report an overall uncertainty around +-6 % to +-25 % (about +-10 % at medium-to-high
+      flows for a well-rated section), so +-10 % is the published uncertainty band of the
+      forcing itself and NOT a wider free parameter. dag.yaml grades "fluvial discharge
+      forcing" -> flood_extent MEDIUM and Eilander et al. 2023a's OAT screen finds skill
+      most sensitive to fluvial/pluvial forcing. sfincs.dis is a free-format ASCII table
+      with no clamp; verified live — both bounds read back EXACTLY.
+    cite:
+      - dibaldassarre2009_discharge_uncertainty
+      - eilander2023_global_compound_framework
+      - eilander2023_mozambique_pilot
+    address:
+      kind: runner
+      file: "sfincs.dis"
+      note: >
+        Columns 1..25 (all but the time column) of the ASCII discharge table, rewritten
+        at %.10g by inject_table(); read back as sum(injected values)/sum(pristine
+        values) with the time column asserted unchanged. dag edge "fluvial discharge
+        forcing" -> flood_extent (MEDIUM).
+
+  - name: precip_mult
+    description: >
+      Multiplicative bias factor on the MSWX rainfall time series (sfincs.precip, 1584
+      three-hourly values in mm/hr, spatially uniform over the domain). The pluvial
+      contribution is small here relative to the freshet, but it is a declared MEDIUM
+      dag edge and it is the only lever on the locally generated water, so it is carried
+      UNPRUNED for the kit's screen to confirm or demote on this site rather than being
+      excluded on a prior.
+    type: continuous
+    units: "dimensionless (multiplier on mm/hr)"
+    default: 1.0
+    range: [0.70, 1.30]
+    hard_bounds: [0.50, 1.50]
+    transform: identity
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: low
+    confidence: medium
+    range_source: >
+      MSWX is a bias-corrected, downscaled reanalysis product (Beck et al. 2022);
+      +-30 % brackets the precipitation bias gridded products carry over mountainous
+      western North America and is the band the compound-flood literature perturbs
+      pluvial forcing over (Eilander et al. 2023a's OAT screen). SFINCS's precipfile is a
+      free-format ASCII rate table with no clamp (values stay strictly non-negative for
+      any positive multiplier); verified live — both bounds read back EXACTLY.
+    cite:
+      - eilander2023_global_compound_framework
+      - beck2022_mswx
+    address:
+      kind: runner
+      file: "sfincs.precip"
+      note: >
+        Column 1 (the mm/hr rate) of the ASCII precipitation table, rewritten at %.9f;
+        read back as sum(injected)/sum(pristine) with the time column asserted unchanged.
+        dag edge "pluvial rainfall forcing" -> flood_extent (MEDIUM).
+
+  # ---------------- infiltration sink -----------------------------------------
+  - name: qinf
+    description: >
+      Spatially uniform constant infiltration rate subtracted from precipitation in the
+      continuity balance (SFINCS `qinf` keyword). Sets how much of the pluvial input
+      reaches the channel and how quickly floodplain storage drains between pulses.
+    type: continuous
+    units: "mm/hr"
+    default: 1.0
+    range: [0.10, 5.00]
+    hard_bounds: [0.0, 20.0]
+    transform: identity
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: low
+    confidence: medium
+    range_source: >
+      dag.yaml inputs.parameters "infiltration parameters" declares qinf in mm/hr as the
+      constant-rate alternative to SCS-CN / Green-Ampt / Horton, and grades the
+      infiltration edge MEDIUM, "secondary to roughness and dynamic forcing"
+      (Eilander et al. 2023b). The Fraser valley floor is alluvial sand-silt loam, whose
+      steady (final) infiltration capacity is of order 3-20 mm/hr for the soil column but
+      much lower as an effective areal rate; the validated run used 1.0 mm/hr. The range
+      is therefore held conservatively around that documented default at 0.10-5.0 mm/hr.
+      The lower bound is deliberately 0.10 rather than SFINCS's 0.0 floor: qinf = 0 turns
+      the infiltration module OFF entirely (a structural switch, "turning on
+      spatially-uniform constant infiltration" disappears from the run log) rather than
+      perturbing a rate, which is a degenerate corner, not a calibration bound. Verified
+      live — both bounds read back EXACTLY.
+    cite:
+      - eilander2023_mozambique_pilot
+      - leijnse2021_sfincs_reduced_physics
+    address:
+      kind: runner
+      file: "sfincs.inp"
+      note: >
+        The `qinf` keyword. tools/s6_config/generate_sfincs_inp.py regenerates sfincs.inp
+        every run and formats qinf as "%.2f", so calib_run.py re-writes that ONE line at
+        full float precision AFTER generation and parses it back out of the file SFINCS
+        opens. dag edge "SCS-CN infiltration" -> flood_extent (MEDIUM).
+
+  # ---------------- momentum regime (structural switch) -----------------------
+  - name: advection
+    description: >
+      Momentum-regime switch: 0 = local-inertial (LIE, the reduced-physics default),
+      1 = SSWE with the momentum advection terms retained. Carried in the pool because
+      this is a FLUVIAL reach at 2-3 m/s where the velocity head is not negligible — the
+      KI's own s6_config tool documents exactly that — so which regime is right here is
+      an empirical question for the screen, not a prior.
+    type: integer
+    units: "flag"
+    default: 0
+    range: [0, 1]
+    hard_bounds: [0, 1]
+    transform: identity
+    scope: global
+    tie: null
+    activation: always
+    expected_sensitivity: high       # measured: the single largest move of any lever here
+    confidence: high
+    range_source: >
+      dag.yaml inputs.boundary_conditions "momentum advection toggle": "advection keyword
+      (0=LIE local-inertial, 1=SSWE with advection) ... Structural switch selecting the
+      reduced-physics regime; default 0". 0 and 1 are the ONLY values SFINCS accepts, so
+      the range is the model's entire admissible set and cannot clamp. Leijnse et al.
+      2021 is the source for both formulations. Verified live — both values read back
+      EXACTLY and both produce a FINITE metric, so neither corner fails the screen closed.
+    measured_2026_08_09: >
+      Commissioning SETTLES the open question the KI's s6_config tool raises. Switching
+      the regime on for this reach is strongly harmful, not helpful: advection = 1 moves
+      the calibration-split PBIAS from +0.000000 to +16.666768 (nse 0.985564 -> -2.499121,
+      kge 0.898738 -> 0.282359, rmse 0.162 -> 2.517 m), i.e. the SSWE momentum terms build
+      ~2.5 m of extra backwater on a 100 m regular-bathymetry grid whose channel is only
+      a few cells wide. It also costs ~1.5x the wall time of an LIE eval (3374 s vs 2256 s
+      under identical contention) because the stable timestep shrinks. It is nonetheless
+      KEPT IN THE POOL, unpruned: it is a real, dag-declared lever, it applies exactly, it
+      returns a finite loss, and the kit's screen should be what demotes it. Expect the
+      screen to rank it highly sensitive and the search to drive it straight back to 0.
+    cite:
+      - leijnse2021_sfincs_reduced_physics
+      - vanormondt2025_sfincs_subgrid
+    address:
+      kind: runner
+      file: "sfincs.inp"
+      note: >
+        The `advection` keyword, passed to generate_sfincs_inp.py as --advection and
+        parsed back out of the generated sfincs.inp.
+
+# ---------------------------------------------------------------------------
+# Levers that are dag-declared or model-documented but deliberately NOT in the pool, with
+# the reason. Recorded so a later reviewer can see these were considered, not missed.
+# ---------------------------------------------------------------------------
+excluded_levers:
+  - name: "channel bed level / river depth (sfincs.dep burn depth)"
+    dag_edges: ["subgrid topography / bed level -> discharge (MEDIUM)",
+                "river depth -> flood_extent (LOW)"]
+    reason: >
+      NOT IDENTIFIABLE against this case's determining metric. The vertical registration
+      is a PINNED constant (see datum_registration), and lowering the conveyance corridor
+      uniformly is very nearly a pure vertical translation of the simulated stage — it
+      would let the optimizer drive PBIAS to zero by moving the datum rather than the
+      hydraulics, which is precisely the missing-bathymetry-absorbed-into-a-fitted-offset
+      failure tools/s4_forcing/register_vertical_datum.py was written (dt_v024) to stop.
+      The dag also grades river depth LOW, and van Ormondt et al. 2025's bed-level result
+      is about SUBGRID tables, which this configuration does not use ("running SFINCS with
+      regular bathymetry").
+  - name: "huthresh (minimum flow depth / wetting-drying threshold)"
+    reason: >
+      dag.yaml records its effective default as UNRESOLVED between streams (docs 0.05 m
+      vs the binary symbol __sfincs_data_MOD_huthresh 0.01 m), and the validated run does
+      not write the key at all, so it runs at whatever the binary default is. Any explicit
+      `default` here would therefore change the baseline this calibration must reproduce,
+      turning a documentation ambiguity into a silent shift of the validated metric.
+  - name: "alpha (CFL limiter) and theta (momentum time-integration weight)"
+    reason: >
+      Numerical stability/integration controls, not physical parameters — dag.yaml notes
+      that violating the alpha-limited timestep "produces NaN crash". Tuning them would
+      buy metric changes out of numerical error. The validated alpha = 0.75 is kept.
+  - name: "zsini (initial water level)"
+    reason: >
+      Provably inert on this domain. The minimum bed elevation is 6.5 m, so any zsini
+      below 6.5 m leaves the domain completely dry at t0 and is indistinguishable from the
+      validated 0.0; any zsini above it is a pre-flooded initial state rather than a
+      parameter, and is washed out anyway by the 14-day spin-up (02-15 -> 03-01) that
+      precedes the scored window at 1000-10 000 m3/s of through-flow.
+  - name: "spatial resolution; river bifurcations / floodplain connectivity"
+    dag_edges: ["spatial resolution (compute grid) -> flood_extent / discharge (MEDIUM)",
+                "river bifurcations / floodplain connectivity -> flood_extent (MEDIUM)"]
+    reason: >
+      dag.yaml types both as lever_type: structural. They change the discretisation and
+      the domain topology, not a value inside a fixed model — that is the self-improve
+      loop's territory, and varying them would invalidate the fixed 100 m / 29 217-cell
+      configuration whose baseline this calibration reproduces.
+  - name: "coastal water-level forcing (sfincs.bnd / .bzs)"
+    dag_edges: ["coastal water-level forcing -> flood_extent (LOW)"]
+    reason: >
+      Not present in this configuration. The reach is 100 km inland with an absorbing
+      msk=3 outflow edge and no bnd/bzs files, so there is no such parameter to vary.
+
+# ---------------------------------------------------------------------------
+# CONSTRAINTS. None. The five continuous levers act on DISJOINT objects — two complementary
+# cell sets of the roughness map, two independent forcing tables, and one scalar sink — and
+# each is independently valid over its whole declared range (see each range_source), so
+# there is no ordering or feasibility relation among them. Adding an artificial one (e.g.
+# forcing the channel to be smoother than every floodplain class) would only delete Morris
+# screen corners that are physically admissible: a cobble/vegetated gravel-bed channel at
+# n = 0.055 alongside a short-grass floodplain at n = 0.0225 is a real combination in
+# Chow's tables, not an infeasible one.
+# ---------------------------------------------------------------------------
+constraints: []
+
+# ---------------------------------------------------------------------------
+# HOW to run + score ONE candidate. cwd is the KI path.
+# tools/calib_run.py reads $KDT_CALIB_PARAMS, stages the validated run's static inputs
+# into a FRESH per-candidate directory, injects the six values (sfincs.man / .dis /
+# .precip / .inp), reads every one BACK out of the artifact SFINCS opens, runs the real
+# binary through the KI's own s7_execution/run_sfincs.py, gates on run health, scores
+# daily-mean point_zs at HYDAT 08MF035 with ki_tools_common.metrics.all_metrics, and
+# emits __kdt__.applied_params + case_id + scored_obs (case_id and scored_obs are BUILT
+# from the HYDAT STATIONS row that actually opened the observations).
+# MUST run under the canonical interpreter — the only one with xarray + h5netcdf (needed
+# for the dt_v016 his-file fallback), rasterio and ki_tools_common importable.
+# ---------------------------------------------------------------------------
+runner:
+  kind: subprocess
+  command: ["/mnt/disk1/Hydrocraft_server/python_env/bin/python", "tools/calib_run.py",
+            "--workdir", "{workdir}", "--out", "{metrics_json}"]
+  metrics_file: "{metrics_json}"
+  timeout: 7200                     # soft hint only; measured 11-25 min per eval
+  prepare_once: >
+    The domain (grid_info.json, sfincs.dep/.msk/.ind/.man) and the per-year forcing
+    (sfincs.precip/.src/.dis/.obs) live under
+    /mnt/disk1/Hydrocraft_server/outputs/sfincs_fraser_agassiz and are built ONCE — by
+    the validated run, or by calib_run.py ensure_base() re-running the KI's s1_domain /
+    s2_topobathy / s3_roughness / s4_forcing tools under a lock if that tree is absent.
+    No eval downloads anything, re-reads the DEM/LULC/MSWX rasters, or re-queries HYDAT
+    for the boundary condition; an eval only copies ~1 MB of staged inputs, rewrites the
+    four injected files, and runs the binary. sfincs_map.nc (13 MB) is deleted after each
+    eval because it is never scored.
+  per_eval_cost: >
+    ONE simulated year (spin-up 02-15 -> scored window -> 08-31, 197 days at dt = 7 s,
+    ~390 000 timesteps over 29 217 active cells) per split, 8 OpenMP threads: 655 s for a
+    solo eval, and 2144-2633 s measured with 15 evals running concurrently on a host
+    already at load ~250/192 cores. An advection = 1 candidate costs ~1.5x that (3374 s
+    measured) because the SSWE stable timestep is smaller. `calibration` runs 2021 only,
+    `holdout` runs 2022 only, and an unset/blank/"full" KDT_CALIB_SPLIT runs both and
+    scores the union — so no eval ever pays for a split it was not asked for.
+
+strategy:
+  cost_class: expensive             # a real hydrodynamic binary, ~11-25 min per eval
+  default_algorithm: dds            # single scalarized objective, no gradients, few evals
+  max_evaluations: 120
+  staged: true                      # Morris-screen the 6-param pool, calibrate few, escalate
+  staged_start: 2                   # begin with the 2 most-sensitive (screened by the kit)
+  staged_step: 2
+  screen_trajectories: 4
+
+  holdout:
+    kind: years
+    protocol: blocked_temporal
+    grouping_key: calendar_year
+    generalization_axis: time
+    fraction: 0.5                   # 1 of the 2 scored freshet years (161 of 338 days)
+    calibration_period: ["2021-03-01", "2021-08-24"]
+    holdout_period:     ["2022-03-01", "2022-08-08"]
+    rationale: >
+      obs_shape is point_time_series at a single gauge, so the only defensible
+      generalization axis is time and the split must be CONTIGUOUS (blocked), never random
+      days: adjacent days of a daily stage hydrograph are strongly autocorrelated and a
+      random split leaks the same freshet limb into both sets (Klemes 1986, the
+      split-sample test; Arsenault et al. 2018 on split length and period sensitivity).
+      The blocks are the TARGET CASE's OWN declared periods — the validated run calibrated
+      the vertical registration on 2021 and reported 2022 as the held-out headline — so the
+      holdout here is the same window the provenance metric was earned on and has never
+      been tuned. Each block is a complete, independent snowmelt freshet (rising limb,
+      peak and recession) with 100 % obs coverage (177/177 and 161/161 gap-free days),
+      which is the natural event unit for this system; a sub-annual split would put the
+      same freshet on both sides. Every candidate is simulated from its own 02-15
+      spin-up, so the calibration score is not confounded by a shorter warm-up. Verified
+      live 2026-08-09: the default vector scores pbias 0.000000 on the calibration block
+      and -0.665208 on the holdout block through this runner, on 177 / 161 paired days.
+      LIMITATION, stated plainly: two freshets is a SHORT record by the standards
+      Arsenault et al. recommend, because each SFINCS year costs ~11-25 min of real
+      hydrodynamic simulation; the holdout therefore tests transfer to an independent
+      freshet of different magnitude (2022 peaked 0.32 m higher than 2021), not to a
+      different hydrological regime.
+    cite:
+      - klemes1986_operational_testing
+      - arsenault2018_calibration_data_length
+    confidence: high
+
+# ---------------------------------------------------------------------------
+# Citation keys not already defined in dag.yaml influence.citation_index
+# (leijnse2021_sfincs_reduced_physics, eilander2023_global_compound_framework,
+#  eilander2023_mozambique_pilot, vanormondt2025_sfincs_subgrid,
+#  hawker2019_dem_roughness_floodmap_sensitivity are inherited from there verbatim).
+# ---------------------------------------------------------------------------
+citation_index:
+  chow1959_open_channel_hydraulics:
+    short_citation: "Chow 1959"
+    reference: >
+      Chow, V.T. (1959). Open-Channel Hydraulics. McGraw-Hill, New York. Table 5-6
+      ("Values of the roughness coefficient n") is the standard source for Manning's n
+      by channel and floodplain type; it is the tabulation the SFINCS documentation's
+      "~0.015-0.20" band and the LULC->n lookup in
+      tools/s3_roughness/build_sfincs_roughness.py both descend from.
+    note: >
+      Used for the CALIBRATION ranges of manning_water_n (natural streams: major streams
+      >30 m 0.025-0.060; clean straight minor streams 0.025-0.033) and of the n values
+      manning_land_mult produces (floodplain pasture 0.025-0.035, brush 0.035-0.16,
+      medium-to-dense trees 0.080-0.160).
+  dibaldassarre2009_discharge_uncertainty:
+    short_citation: "Di Baldassarre & Montanari 2009"
+    doi: "10.5194/hess-13-913-2009"
+    note: >
+      "Uncertainty in river discharge observations: a quantitative analysis" — decomposes
+      rating-curve, extrapolation and unsteady-flow error and reports overall discharge
+      uncertainty of roughly +-6 % to +-25 %. The source for q_mult's +-10 % band being
+      the FORCING's own published uncertainty rather than a free knob.
+  beck2022_mswx:
+    short_citation: "Beck et al. 2022"
+    doi: "10.1175/BAMS-D-21-0145.1"
+    note: >
+      "MSWX: Global 3-Hourly 0.1 deg Bias-Corrected Meteorological Data" — the rainfall
+      product tools/s4_forcing/prepare_sfincs_rainfall.py consumes for this case; the
+      source for treating precip_mult as a bounded bias factor on a bias-corrected
+      reanalysis rather than an unconstrained multiplier.
+  klemes1986_operational_testing:
+    short_citation: "Klemes 1986"
+    doi: "10.1080/02626668609491024"
+    note: "The split-sample test; contiguous blocked temporal validation for hydrological models."
+  arsenault2018_calibration_data_length:
+    short_citation: "Arsenault et al. 2018"
+    doi: "10.1016/j.jhydrol.2018.09.027"
+    note: >
+      "The hazards of split-sample validation in hydrological model calibration" — on
+      split length and period sensitivity; the source for the stated LIMITATION that a
+      two-freshet record is short.
+
+# ---------------------------------------------------------------------------
+# COMMISSIONING RECORD — live, 2026-08-09, this KI, the canonical python_env interpreter,
+# the real SFINCS v2.3.2 binary, one simulated year per eval. Filled in from the runs
+# themselves; see the metrics JSON under
+# /mnt/disk1/Hydrocraft_server/outputs/_sfincs_calib_commission/<case>/calib_metrics.json.
+# ---------------------------------------------------------------------------
+commissioning:
+  date: "2026-08-09"
+  interpreter: "/mnt/disk1/Hydrocraft_server/python_env/bin/python"
+  binary: "/mnt/disk1/Hydrocraft_server/model/sfincs/bin/sfincs (v2.3.2 mt. Faber+)"
+  artifacts: "/mnt/disk1/Hydrocraft_server/outputs/_sfincs_calib_commission/<case>/calib_metrics.json"
+  n_real_model_runs: 15
+  wall_clock_per_eval_s: "2144-2633 with all 15 evals running concurrently (8 OpenMP
+    threads each) on a host already at load ~250/192 cores; 655 s for a solo eval"
+
+  baseline_reproduced: >
+    EXACT. The default vector, run through this driver end to end, reproduces the
+    provenance run SFINCS_20260805T020658Z_648666 to every digit reported there:
+      holdout    (2022, 161 paired days) pbias -0.665208 | nse 0.974429 | kge 0.870175 |
+                                         r 0.996860 | rmse 0.263646 m | peak bias -3.704 %
+      calibration(2021, 177 paired days) pbias +0.000000 | nse 0.985564 | kge 0.898738 |
+                                         r 0.997670 | rmse 0.161652 m | peak bias -2.884 %
+    against the provenance -0.6652085 / 0.9744295 / 0.8701747 / 0.9968597 / 0.2636463 and
+    0.9855641 / 0.8987383 / 0.1616521. The calibration-split pbias is ~0 by construction
+    of the pinned datum registration, exactly as `datum_registration` states.
+    Determinism: the `advection=0` bound run is an independent repeat of the default
+    vector and returned bit-identical metrics.
+
+  responsiveness: >
+    The metric MOVES, and it moves because the injected values reach the SCORED run.
+    Calibration-split PBIAS (%), everything else held at default:
+      default                      +0.000000   (nse 0.985564, kge 0.898738)
+      perturbed (all six moved)    +7.554344   (nse 0.368734, kge 0.918913)
+      manning_water_n   0.018 / 0.055   -2.812156 / +8.264726
+      manning_land_mult 0.75  / 1.40    -0.954257 / +1.477497
+      q_mult            0.90  / 1.10    -1.370603 / +1.258917
+      qinf              0.10  / 5.00    +0.030148 / -0.127100
+      precip_mult       0.70  / 1.30    -0.000832 / +0.000837
+      advection         0     / 1       +0.000000 / +16.666768  (nse -2.499121)
+    ("perturbed" moved the five continuous parameters to 0.045 / 1.25 / 1.07 / 1.20 / 3.50
+    and held advection at 0, so the +16.67 above is the advection switch on its own.)
+    Every parameter moves the determining metric on its own; the ordering matches the
+    physics (in-channel roughness dominates, then floodplain roughness and the fluvial
+    forcing, then infiltration, with pluvial rainfall three to four orders of magnitude
+    weaker because a ~292 km2 domain receives ~9 m3/s of rain against 1080-10 400 m3/s
+    of river). precip_mult is retained UNPRUNED anyway — the kit's Morris screen, not a
+    prior, is what should demote it.
+  headroom: >
+    REAL, and it is in the amplitude rather than the mean. The baseline's KGE 0.8987 with
+    r 0.9977 and beta 1.0000 implies a variability ratio alpha ~= 0.90, i.e. the simulated
+    stage hydrograph is ~10 % too flat, and the peak stage is 2.9 % low. Single-parameter
+    moves already lift KGE above the baseline on the calibration split — q_mult 1.10 ->
+    0.922437 (peak bias -1.568 %), manning_land_mult 1.40 -> 0.921051 (-1.393 %),
+    manning_water_n 0.055 -> 0.916458 — while trading PBIAS in the other direction. That
+    trade-off between mean level and amplitude is precisely what the kit's DDS search over
+    the joint space is for; no single-parameter move resolves it.
+
+  range_bound_readback: >
+    ALL 12 bounds (6 parameters x lo/hi) apply EXACTLY through the real binary: the
+    largest deviation between __kdt__.applied_params[name] and the requested bound over
+    every bound run is 4.30e-08 relative (manning_water_n = 0.018, set by the float32
+    storage resolution of sfincs.man), 43x inside the kit's 1e-6 param_rtol and inside
+    this driver's own stricter 5e-7 gate. q_mult, precip_mult, qinf and advection read
+    back bit-exact (rel 0.0). No bound clamps, every bound returns a FINITE metric on 177
+    paired days with all six parameters echoed, so a Morris screen corner cannot fail
+    closed. The read-backs come from the artifacts SFINCS itself opens — the compressed
+    float32 sfincs.man, the ASCII sfincs.dis / sfincs.precip, and the generated
+    sfincs.inp — not from the values that were requested.
+
+  bug_found_and_fixed: >
+    The first commissioning pass exposed a SILENT forcing loss: the eval directory staged
+    sfincs.dis but not sfincs.src, so SFINCS dropped the ENTIRE fluvial boundary, ran on
+    rainfall alone, exited 0, wrote a complete sfincs_his.nc and returned finite metrics
+    (calibration pbias -15.99 %, and every parameter bound returned the SAME number,
+    because with no river the roughness of the channel is irrelevant). Nothing in
+    run_summary.json, sfincs.log's error handling or the his file flagged it. Fixed by
+    staging sfincs.src and by adding the `run_health` silent-forcing-loss gate: the run
+    log must report "reading discharges", "Time in discharges", "turning on
+    precipitation", "turning on spatially-uniform constant infiltration" and "reading
+    observation points", and every file sfincs.inp references must exist in the run
+    directory before the binary starts.
+
+  fail_closed_verified: >
+    Exercised live. The real sources are never mutated — the HYDAT database is opened
+    read-only and every sabotage below was applied to a COPY of a completed run's
+    artifacts or to an in-memory copy of the declared envelope.
+      * PRE-RUN guards, each exiting rc=1 with NO metrics file: KDT_CALIB_PARAMS unset;
+        KDT_CALIB_PARAMS pointing at a missing file; an unknown parameter name
+        ("bogus_param"); a value outside its declared range (manning_water_n = 0.9); a
+        non-numeric / non-finite handed value (null); an unknown KDT_CALIB_SPLIT.
+      * RUN-HEALTH gates, each raising on a sabotaged copy while the unmodified copy
+        passes: a log missing "reading discharges"; a log missing "Time in discharges";
+        a log missing "Simulation finished"; a run_summary.json with `status` removed;
+        one with `preflight_warnings` removed; one carrying a CRITICAL preflight warning.
+        None of these is defaulted to a passing value via `or 0` / `.get(..., ok)`.
+      * OBS CONTRACT: perturbing the declared obs_mean for 2022 makes load_obs_year exit
+        nonzero with no metrics, so a changed series for the SAME station is rejected.
+    Also fail-closed but not separately sabotaged (the code path is the same raise): a
+    paired-day count short of the declared window, a non-finite or fill-valued point_zs,
+    a read-back that disagrees with the request, and a station row that does not resolve
+    to the TARGET CASE.

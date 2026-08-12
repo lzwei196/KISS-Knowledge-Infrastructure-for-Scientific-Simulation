@@ -14,7 +14,7 @@ UNIT CONVERSIONS (CRITICAL):
 
 Usage:
     python convert_cmfd_to_wth.py \
-        --forcing_dir /mnt/disk1/Hydrocraft_server/data/forcing/Data_forcing_03hr_010deg \
+        --forcing_dir /media/server/hc_ssd/forcing/Data_forcing_03hr_010deg \
         --lat 32.43 --lon 115.60 \
         --start_year 1980 --end_year 1990 \
         --output WJBA8001.WTH \
@@ -53,7 +53,21 @@ def read_cmfd_point(forcing_dir, lat, lon, start_year, end_year):
                 if not nc_files:
                     nc_files = sorted(forcing_dir.glob(f"*{pattern}*{year}{month:02d}*"))
                 if nc_files:
-                    ds = xr.open_dataset(nc_files[0])
+                    # Engine portability: prefer h5netcdf, fall back to netcdf4
+                    # then scipy so the tool works across conda envs that ship
+                    # only one NetCDF backend.
+                    ds = None
+                    _last = None
+                    for _eng in ('h5netcdf', 'netcdf4', 'scipy', None):
+                        try:
+                            ds = (xr.open_dataset(nc_files[0], engine=_eng)
+                                  if _eng else xr.open_dataset(nc_files[0]))
+                            break
+                        except (ValueError, ImportError, OSError) as _e:
+                            _last = _e
+                            continue
+                    if ds is None:
+                        raise RuntimeError(f"No NetCDF engine could open {nc_files[0]}: {_last}")
                     dvar = [v for v in ds.data_vars if pattern in v.lower()] or list(ds.data_vars)
                     glats = ds['lat'].values if 'lat' in ds else ds['latitude'].values
                     glons = ds['lon'].values if 'lon' in ds else ds['longitude'].values
@@ -134,9 +148,33 @@ def compute_tav_amp(daily):
     return float(tav), float(amp)
 
 
+def _auto_elevation(lat, lon):
+    """Look up elevation from ki_tools_common.terrain if available."""
+    try:
+        import sys
+        for p in ['/mnt/disk1/Hydrocraft_server/models/ki_tools_common',
+                  '/home/server/knowledge-dissection-toolkit/kdt-release']:
+            if p not in sys.path:
+                sys.path.insert(0, p)
+        from ki_tools_common.terrain import get_terrain
+        return get_terrain(lat, lon)['elevation']
+    except Exception:
+        return -99.0
+
+
 def write_wth(daily, output_path, station_name, lat, lon, elev=-99.0):
-    """Write DSSAT .WTH weather file."""
+    """Write DSSAT .WTH weather file.
+    If elev=-99 (missing), auto-looks up from DEM via ki_tools_common.terrain.
+    """
+    if elev <= -99.0:
+        elev = _auto_elevation(lat, lon)
     tav, amp = compute_tav_amp(daily)
+
+    # The CMFD extraction above costs ~1.3 min per simulated year. A missing
+    # parent directory used to raise here, AFTER all of that work, discarding
+    # it — fatal once a driver writes many member files into per-member
+    # subdirectories. Create the parent instead of failing on it.
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)) or '.', exist_ok=True)
 
     with open(output_path, 'w') as f:
         f.write(f"*WEATHER DATA : {station_name} - CMFD converted\n")

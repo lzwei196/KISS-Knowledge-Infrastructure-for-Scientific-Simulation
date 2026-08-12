@@ -47,11 +47,32 @@ except ImportError:
     pd = None
 
 # Default variables to extract
+# NOTE: Noah-MP v5.2 HRLDAS LDASOUT names surface/underground runoff
+# SFCRNOFF / UGDRNOFF (units: mm, accumulated). Older/other drivers used
+# SFCRUNOFF / UDRUNOFF (units: m). Both spellings are resolved below.
 DEFAULT_VARS = [
-    "TSK", "SMOIS", "TSLB", "SH2O", "SNOW", "SNOWH",
-    "HFX", "LH", "GRDFLX", "SFCRUNOFF", "UDRUNOFF",
+    "TSK", "SMOIS", "TSLB", "SH2O", "SNOW", "SNOWH", "SNEQV",
+    "HFX", "LH", "GRDFLX", "SFCRNOFF", "UGDRNOFF",
     "ALBEDO", "EMISS", "LAI"
 ]
+
+# Runoff variable name aliases (v5.2 first, then legacy) and their unit -> mm scale.
+SFC_RUNOFF_ALIASES = ["SFCRNOFF", "SFCRUNOFF"]
+SUB_RUNOFF_ALIASES = ["UGDRNOFF", "UDRUNOFF"]
+
+
+def resolve_runoff(ds, aliases):
+    """Return (varname, scale_to_mm) for the first matching runoff alias.
+
+    v5.2 emits these already in mm; legacy drivers emit meters. Decide the
+    scale from the variable's ``units`` attribute rather than assuming.
+    """
+    for name in aliases:
+        if name in ds.variables:
+            units = getattr(ds.variables[name], "units", "").strip().lower()
+            scale = 1000.0 if units in ("m", "meter", "meters") else 1.0
+            return name, scale
+    return None, 1.0
 
 # Variable metadata for unit labeling
 VAR_META = {
@@ -66,6 +87,9 @@ VAR_META = {
     "GRDFLX":    {"unit": "W/m2",  "desc": "Ground heat flux"},
     "SFCRUNOFF": {"unit": "m",     "desc": "Accumulated surface runoff"},
     "UDRUNOFF":  {"unit": "m",     "desc": "Accumulated subsurface runoff"},
+    "SFCRNOFF":  {"unit": "mm",    "desc": "Accumulated surface runoff (v5.2)"},
+    "UGDRNOFF":  {"unit": "mm",    "desc": "Accumulated underground runoff (v5.2)"},
+    "SNEQV":     {"unit": "mm",    "desc": "Snow water equivalent (v5.2)"},
     "ALBEDO":    {"unit": "-",     "desc": "Surface albedo"},
     "EMISS":     {"unit": "-",     "desc": "Surface emissivity"},
     "LAI":       {"unit": "m2/m2", "desc": "Leaf area index"},
@@ -113,32 +137,77 @@ def parse_timestamp_from_filename(fname):
     return None
 
 
+# HRLDAS fill value written before the first physics step has run, and for
+# skipped (water / sea-ice) cells.  It is NOT flagged with a _FillValue
+# attribute, so a naive read folds -9999 straight into means/increments.
+LDASOUT_FILL = -9990.0
+
+# Layer/level dimension names in LDASOUT.
+_LAYER_DIMS = ("soil_layers_stag", "snow_layers", "rad_num")
+
+
+def _is_fill(v):
+    return (v is None) or (not np.isfinite(v)) or (v <= LDASOUT_FILL)
+
+
 def extract_point(ds, varname, ix=0, iy=0):
-    """Extract a variable value at grid point (ix, iy)."""
+    """Extract a variable value at grid point (ix, iy).
+
+    Dimension order is read from the variable's OWN dimension names, not from
+    positional assumptions.  HRLDAS writes layered LDASOUT fields as
+    ``(Time, south_north, soil_layers_stag, west_east)`` -- the layer axis sits
+    BETWEEN the two horizontal axes, not before them.  The previous positional
+    code did ``var[0, k, iy, ix]`` with ``k`` over ``shape[1]``, i.e. it walked
+    the south_north axis and read the layer axis with ``iy``: on a 1x1 column it
+    silently returned layer 1 only (layers 2..N vanished), and on a real 2-D
+    domain it returned scrambled layer/row values.  SOIL_M / SOIL_T / SOIL_W are
+    dag validation outputs, so this was a silent wrong-answer path.
+
+    Fill values (-9999, e.g. the t=0 record) return None so the caller records a
+    gap instead of a number.
+    """
     if varname not in ds.variables:
         return None
 
     var = ds.variables[varname]
-    ndim = var.ndim
+    dims = list(var.dimensions) if hasattr(var, "dimensions") else []
 
     try:
+        if len(dims) == var.ndim and dims:
+            idx = []
+            layer_axis = None
+            for a, dname in enumerate(dims):
+                dl = dname.lower()
+                if dl == "time":
+                    idx.append(0)
+                elif dl in ("south_north", "south_north_stag", "y", "lat"):
+                    idx.append(iy)
+                elif dl in ("west_east", "west_east_stag", "x", "lon"):
+                    idx.append(ix)
+                elif dl in _LAYER_DIMS or "layer" in dl or "level" in dl:
+                    layer_axis = a
+                    idx.append(slice(None))
+                else:
+                    idx.append(0)
+            arr = np.asarray(var[tuple(idx)], dtype=float).ravel()
+            if layer_axis is None:
+                v = float(arr[0])
+                return None if _is_fill(v) else v
+            out = [None if _is_fill(float(v)) else float(v) for v in arr]
+            return None if all(o is None for o in out) else out
+
+        # Fallback: no usable dimension names.
+        ndim = var.ndim
         if ndim == 2:
-            # (y, x)
-            return float(var[iy, ix])
+            v = float(var[iy, ix])
+        elif ndim == 3 and var.shape[0] == 1:
+            v = float(var[0, iy, ix])
         elif ndim == 3:
-            # Could be (time, y, x) or (layer, y, x)
-            dims = var.dimensions if hasattr(var, 'dimensions') else []
-            if var.shape[0] == 1:
-                # (time=1, y, x)
-                return float(var[0, iy, ix])
-            else:
-                # (layer, y, x) — return all layers as list
-                return [float(var[k, iy, ix]) for k in range(var.shape[0])]
-        elif ndim == 4:
-            # (time, layer, y, x)
-            return [float(var[0, k, iy, ix]) for k in range(var.shape[1])]
+            out = [float(var[k, iy, ix]) for k in range(var.shape[0])]
+            return [None if _is_fill(o) else o for o in out]
         else:
-            return float(var[:].flat[0])
+            v = float(np.asarray(var[:]).ravel()[0])
+        return None if _is_fill(v) else v
     except Exception:
         return None
 
@@ -178,16 +247,20 @@ def process(ldasout_files, variables, ix=0, iy=0):
                     else:
                         record[varname] = val
 
-                # Compute incremental runoff
-                sfcrunoff = extract_point(ds, "SFCRUNOFF", ix, iy)
-                udrunoff = extract_point(ds, "UDRUNOFF", ix, iy)
+                # Compute incremental runoff. Resolve the actual variable
+                # names (v5.2 SFCRNOFF/UGDRNOFF vs legacy SFCRUNOFF/UDRUNOFF)
+                # and scale to mm using each variable's declared units.
+                sfc_name, sfc_scale = resolve_runoff(ds, SFC_RUNOFF_ALIASES)
+                sub_name, sub_scale = resolve_runoff(ds, SUB_RUNOFF_ALIASES)
+                sfcrunoff = extract_point(ds, sfc_name, ix, iy) if sfc_name else None
+                udrunoff = extract_point(ds, sub_name, ix, iy) if sub_name else None
 
                 if sfcrunoff is not None and prev_sfcrunoff is not None:
                     record["SFCRUNOFF_INC_mm"] = compute_runoff_increment(
-                        sfcrunoff, prev_sfcrunoff) * 1000.0  # m -> mm
+                        sfcrunoff, prev_sfcrunoff) * sfc_scale
                 if udrunoff is not None and prev_udrunoff is not None:
                     record["UDRUNOFF_INC_mm"] = compute_runoff_increment(
-                        udrunoff, prev_udrunoff) * 1000.0
+                        udrunoff, prev_udrunoff) * sub_scale
 
                 prev_sfcrunoff = sfcrunoff
                 prev_udrunoff = udrunoff

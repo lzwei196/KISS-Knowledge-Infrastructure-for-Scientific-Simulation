@@ -1,0 +1,424 @@
+template_version: "3.5"
+
+identity:
+  model_id: "openAMUNDSEN"
+  scientific_reference_version: "openAMUNDSEN v1.0 (Strasser, Warscher, Rottler & Hanzer, GMD 17:6775, 2024)"
+  implementation:
+    id: "openamundsen-py"
+    version: "openamundsen Python package (1.x; HydroCraft KI package hydrocraft-openamundsen-snow)"
+    provenance: "Python (Numba-JIT-accelerated); openAMUNDSEN distributed snow-hydrological framework from github.com/openamundsen/openamundsen."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "python"
+  license: "MIT"
+  repo_url: "https://github.com/openamundsen/openamundsen"
+
+boundary:
+  scope_in:
+    - "Fully distributed snow and ice mass and energy balance in mountain regions"
+    - "Spatial interpolation of meteorological station forcing to the model grid (IDW + elevation regression / lapse rates)"
+    - "Terrain-aware shortwave and longwave radiation (slope, aspect, shadows, sky-view factor, reflections)"
+    - "Precipitation phase partitioning (rain/snow) and wind-undercatch correction"
+    - "Lateral terrain-based (static topographic-openness) snow redistribution"
+    - "Snowmelt, sublimation/resublimation, refreezing, and snow compaction"
+    - "Multilayer or cryolayer snowpack energy/mass balance"
+    - "Forest canopy snow processes (interception, sublimation, melt unloading, sub-canopy meteorology) — optional"
+    - "Evapotranspiration from snow-free surfaces (FAO Penman-Monteith) — optional"
+    - "Multi-layer soil heat conduction"
+    - "Experimental glacier mass balance (delta-h) — optional"
+  scope_out:
+    - "Explicit/dynamic wind-field snow transport modeling (lateral redistribution uses a static terrain parameterization instead)"
+    - "Gravitational snow sliding / avalanching (SnowSlide not used)"
+    - "Channel/streamflow routing of generated runoff"
+  spatial: "2-D grid"
+  temporal: "hourly"
+  closure: "both"
+  notes: "Fully distributed on a projected regular grid (typical 10-100 m, 1-3 h). Solves both a snowpack mass balance (SWE, ice/liquid layer content) and a surface energy balance (radiation + turbulent + advective fluxes) for surface temperature and melt. Energy-balance closure applies to the multilayer/cryolayer snow and surface schemes; the temperature-index and enhanced-temperature-index melt options are demand-side flux parameterizations, not a closed surface energy budget. The grid/DEM must use a projected CRS; CSV station coordinates use a separate input_data.meteo.crs (typically WGS84)."
+
+inputs:
+  forcing:
+    - {category: "atmospheric", name: "temp (air temperature)", unit: "K", source_kind: "forcing", model_input_format: "station CSV column or NetCDF variable tas; valid 200-330 K", notes: "Internal T0=273.15 K. Values <200 K (e.g. Celsius input) are silently set to NaN by the input filter."}
+    - {category: "atmospheric", name: "precip (precipitation)", unit: "kg m-2 per timestep (CSV) / kg m-2 s-1 (NetCDF rate)", source_kind: "forcing", model_input_format: "station CSV column (accumulation) or NetCDF variable pr (flux)", notes: "CSV is per-timestep accumulation; NetCDF is a rate auto-converted to accumulation ONLY when the units attribute is set to kg m-2 s-1. Phase split mutates this field in place (precip rewritten as snowfall+rainfall)."}
+    - {category: "atmospheric", name: "rel_hum (relative humidity)", unit: "%", source_kind: "forcing", model_input_format: "station CSV column or NetCDF variable hurs; valid 1-100%", notes: "Fraction (0-1) input is silently set to NaN by the min=1 filter."}
+    - {category: "atmospheric", name: "sw_in (incoming shortwave radiation)", unit: "W m-2", source_kind: "forcing", model_input_format: "station CSV column or NetCDF variable rsds; valid 0-1500 W m-2", notes: "Power units, not energy. Energy units (J/MJ) are 1000-86400x too high."}
+    - {category: "atmospheric", name: "wind_speed", unit: "m s-1", source_kind: "forcing", model_input_format: "station CSV column or NetCDF variable wss; valid 0-50 m s-1, runtime floor 0.1 m s-1", notes: "Drives undercatch correction; km/h input overscales correction ~3.6x."}
+    - {category: "atmospheric", name: "wind_direction", unit: "degrees", source_kind: "forcing", model_input_format: "station CSV column / NetCDF (optional)"}
+    - {category: "atmospheric", name: "cloud_fraction", unit: "% (0-100)", source_kind: "forcing", model_input_format: "station CSV column / NetCDF (optional)", notes: "Auto-conversion from 0-1 is fragile (only when max<=1 and len>10); used to cloud-adjust shortwave/longwave when interpolation is off."}
+    - {category: "atmospheric", name: "lw_in (incoming longwave radiation)", unit: "W m-2", source_kind: "forcing", model_input_format: "station CSV / NetCDF (optional)", notes: "If absent, longwave is parameterized from temperature/humidity/cloudiness."}
+  parameters:
+    - {category: "snow_albedo", name: "snow.albedo.max (fresh-snow albedo)", unit: "-", source_kind: "calibrated", model_input_format: "YAML config", notes: "Range 0.75-0.95, default 0.85."}
+    - {category: "snow_albedo", name: "snow.albedo.min (old-snow albedo)", unit: "-", source_kind: "calibrated", model_input_format: "YAML config", notes: "Range 0.40-0.65, default 0.55."}
+    - {category: "snow_albedo", name: "snow.albedo.cold_snow_decay_timescale", unit: "h", source_kind: "calibrated", model_input_format: "YAML config", notes: "Range 100-1000 h, default 480."}
+    - {category: "snow_albedo", name: "snow.albedo.melting_snow_decay_timescale", unit: "h", source_kind: "calibrated", model_input_format: "YAML config", notes: "Range 50-500 h, default 200."}
+    - {category: "snow_albedo", name: "snow.albedo.refresh_snowfall", unit: "kg m-2 h-1", source_kind: "calibrated", model_input_format: "YAML config", notes: "Snowfall rate that resets albedo; default 0.5."}
+    - {category: "snow_thermal", name: "snow.thermal_conductivity", unit: "W m-1 K-1", source_kind: "calibrated", model_input_format: "YAML config", notes: "Range 0.1-0.5, default 0.24."}
+    - {category: "melt", name: "snow.melt.degree_day_factor", unit: "mm degC-1 d-1", source_kind: "calibrated", model_input_format: "YAML config", notes: "Range 0.5-6.0. Applies ONLY to temperature-index / enhanced-temperature-index melt, not the energy_balance default."}
+    - {category: "interpolation", name: "meteo.interpolation.temperature.lapse_rate", unit: "K m-1", source_kind: "calibrated", model_input_format: "YAML config (monthly)", notes: "Order 0.0026-0.0065 K/m; entering K/km values (e.g. 6.5) corrupts elevation gradients."}
+    - {category: "interpolation", name: "meteo.interpolation.precipitation.lapse_rate", unit: "fraction m-1 (monthly)", source_kind: "calibrated", model_input_format: "YAML config (monthly)", notes: "Precipitation elevation gradient."}
+    - {category: "terrain", name: "DEM (digital elevation model)", unit: "m", source_kind: "dataset_lookup", model_input_format: "Arc/Info ASCII Grid dem_{domain}_{resolution}.asc in projected CRS", notes: "Required. Filename must exactly match domain+resolution. Source: SRTM/ASTER/LiDAR."}
+    - {category: "terrain", name: "land cover grid", unit: "class", source_kind: "dataset_lookup", model_input_format: "Arc/Info ASCII Grid lc_{domain}_{resolution}.asc", notes: "Required when canopy or ET modules enabled. Source: CORINE/ESA CCI."}
+    - {category: "soil", name: "soil texture / parameters grid", unit: "class", source_kind: "dataset_lookup", model_input_format: "Arc/Info ASCII Grid soil_{domain}_{resolution}.asc or YAML", notes: "Required for ET module. Source: HWSD."}
+    - {category: "soil", name: "soil layer thicknesses", unit: "m", source_kind: "default", model_input_format: "YAML config", notes: "Typical [0.1,0.2,0.4,0.8] m; cm input makes soil heat flux 100x off."}
+    - {category: "station", name: "station metadata (id, name, x, y, alt)", unit: "x/y in meteo.crs; alt in m", source_kind: "dataset_lookup", model_input_format: "stations.csv (CSV meteo mode) or per-file NetCDF attributes", notes: "At least one station must fall inside the grid extent."}
+  initial_conditions:
+    - {category: "snow", name: "snow.swe (initial snow water equivalent)", unit: "kg m-2", source_kind: "user_provided", model_input_format: "config/state initialization", notes: "Default zero (snow-free start)."}
+    - {category: "snow", name: "initial snow density / layer structure", unit: "kg m-3 / m", source_kind: "user_provided", model_input_format: "config/state initialization", notes: "g/cm3 input yields effectively massless layers (1000x error)."}
+    - {category: "soil", name: "soil temperature profile", unit: "K", source_kind: "user_provided", model_input_format: "config/state initialization", notes: "surface.temp is seeded from the top soil layer temperature at init."}
+  boundary_conditions:
+    - {category: "domain", name: "domain", unit: "-", source_kind: "user_provided", model_input_format: "YAML config", notes: "Identifies the catchment and matches input filenames."}
+    - {category: "time", name: "start_date / end_date", unit: "date", source_kind: "user_provided", model_input_format: "YAML config", notes: "Simulation window, typically a water year."}
+    - {category: "grid", name: "resolution", unit: "m (integer)", source_kind: "user_provided", model_input_format: "YAML config", notes: "Must be meters matching DEM cellsize; km input collapses grid to 1-2 cells."}
+    - {category: "time", name: "timestep", unit: "pandas frequency string", source_kind: "user_provided", model_input_format: "YAML config (h, 3h, D)", notes: "Seconds/minutes/integers are invalid and fatal at config parse."}
+    - {category: "crs", name: "crs (model grid) / input_data.meteo.crs (stations)", unit: "EPSG", source_kind: "user_provided", model_input_format: "YAML config", notes: "Grid/DEM must be projected; station CSV coords are in meteo.crs (often WGS84). Conflating the two yields 'no stations in grid extent'."}
+    - {category: "method_switch", name: "snow model scheme (multilayer | cryolayers)", unit: "-", source_kind: "user_provided", model_input_format: "YAML config", notes: "Switching schemes invalidates calibrated snow parameters."}
+    - {category: "method_switch", name: "melt method (energy_balance | temperature_index | enhanced_temperature_index)", unit: "-", source_kind: "user_provided", model_input_format: "YAML config"}
+    - {category: "method_switch", name: "snow compaction method (Anderson 1976 | empirical)", unit: "-", source_kind: "user_provided", model_input_format: "YAML config"}
+    - {category: "method_switch", name: "meteo interpolation method (regression+IDW | fixed/fractional lapse | MicroMet)", unit: "-", source_kind: "user_provided", model_input_format: "YAML config"}
+    - {category: "module_toggle", name: "canopy.enabled / evapotranspiration.enabled / glaciers.enabled", unit: "-", source_kind: "user_provided", model_input_format: "YAML config", notes: "Enable optional modules; canopy/ET require land cover, ET requires soil texture."}
+    - {category: "precip_phase", name: "meteo.precipitation_phase.threshold_temp", unit: "K", source_kind: "user_provided", model_input_format: "YAML config", notes: "Rain/snow 50%-snow threshold (default 273.65 K); temp or wet-bulb basis."}
+
+processes:
+  modules:
+    - {name: "MeteoInterpolation", role: "driver", brief: "Reads station/NetCDF forcing and interpolates to the grid (elevation regression + IDW residuals, monthly lapse rates or MicroMet; Liston wind); derives pressure, vapor pressure, specific/relative humidity, wet-bulb & dew-point temperature, precipitable water, dry-air density."}
+    - {name: "Terrain", role: "allocator", brief: "Computes slope, aspect, surface normal vectors, Liston curvature, and sky-view factor once at init from the DEM (svf cached to raster)."}
+    - {name: "PrecipitationCorrection", role: "process_solver", brief: "WMO/Kochendorfer wind-undercatch correction and static topographic-openness snow redistribution (SRF) applied to precipitation."}
+    - {name: "PrecipitationPhase", role: "process_solver", brief: "Partitions precipitation into snowfall/rainfall via threshold_temp +/- temp_range (air or wet-bulb basis); optional enforce_no_snow_below_rain inversion correction using DEM elevation."}
+    - {name: "Radiation", role: "process_solver", brief: "Solar geometry, clear-sky shortwave with terrain shadows and sky-view factor, cloud-factor adjustment, and longwave irradiance (Stefan-Boltzmann with atmospheric/cloud emissivity)."}
+    - {name: "SurfaceProperties", role: "process_solver", brief: "Blends surface albedo and roughness length from snow cover fraction with soil values; computes turbulent exchange coefficient."}
+    - {name: "SnowAlbedo", role: "process_solver", brief: "Exponential albedo decay (separate cold/melting timescales) with fresh-snowfall refresh; fresh-snow density from Anderson 1976."}
+    - {name: "SnowCompaction", role: "process_solver", brief: "Anderson-1976 (njit kernel) or empirical densification of snow layers."}
+    - {name: "SurfaceEnergyBalance", role: "process_solver", brief: "Radiation balance, saturation specific humidity, moisture availability, turbulent (sensible/latent) and advective fluxes, surface conductance, linearized FSM solve for surface temperature change and melt energy.", applicability: "energy_balance melt method"}
+    - {name: "TurbulentExchange", role: "process_solver", brief: "Bulk transfer coefficient C_H (von Karman log-law) with optional Richardson-number stability correction and snow-depth measurement-height adjustment."}
+    - {name: "MultilayerSnowModel", role: "process_solver", brief: "FSM-1.0-based multilayer snowpack: compaction, accumulation, albedo aging, heat conduction, melt, sublimation, runoff, and layer management with explicit thickness layers.", applicability: "snow model = multilayer"}
+    - {name: "CryoLayerSnowModel", role: "process_solver", brief: "ESCIMO/Berchtesgaden 4-layer (new/old snow, firn, ice) cryolayer scheme with cold-content refreezing and secant surface-temperature iteration; supports temperature-index melt.", applicability: "snow model = cryolayers"}
+    - {name: "HeatConduction", role: "integrator", brief: "Tridiagonal solver for vertical heat conduction through snow and soil layers."}
+    - {name: "Soil", role: "process_solver", brief: "Soil thermal properties (Clapp-Hornberger), soil heat flux, and multi-layer soil temperature."}
+    - {name: "Canopy", role: "optional_module", brief: "Above-canopy meteorology, snow interception/sublimation/melt-unloading, sub-canopy meteorology from land-cover LAI.", applicability: "canopy.enabled"}
+    - {name: "Evapotranspiration", role: "optional_module", brief: "FAO Penman-Monteith evapotranspiration from snow-free surfaces; requires land cover + soil texture.", applicability: "evapotranspiration.enabled"}
+    - {name: "Glacier", role: "optional_module", brief: "Experimental delta-h glacier mass balance update.", applicability: "glaciers.enabled"}
+  internal_edges:
+    - {from: "Inputs", to: "MeteoInterpolation", kind: "consumes_input", brief: "Station CSV / NetCDF forcing read and constrained by grid/global bounds."}
+    - {from: "Inputs", to: "Terrain", kind: "consumes_input", brief: "DEM (and ROI/SVF rasters) loaded at init."}
+    - {from: "MeteoInterpolation", to: "PrecipitationCorrection", kind: "invokes", brief: "Interpolated precip + wind passed to undercatch/redistribution correction."}
+    - {from: "PrecipitationCorrection", to: "PrecipitationPhase", kind: "invokes", brief: "Corrected precipitation partitioned into phases."}
+    - {from: "Terrain", to: "Radiation", kind: "reads_state", brief: "Slope, aspect, normal vectors and sky-view factor drive shortwave irradiance."}
+    - {from: "PrecipitationPhase", to: "MultilayerSnowModel", kind: "invokes", brief: "Snowfall feeds snowpack accumulation (multilayer scheme)."}
+    - {from: "PrecipitationPhase", to: "CryoLayerSnowModel", kind: "invokes", brief: "Snowfall feeds snowpack accumulation (cryolayer scheme)."}
+    - {from: "Radiation", to: "SurfaceEnergyBalance", kind: "invokes", brief: "Shortwave/longwave irradiance feeds the surface radiation balance."}
+    - {from: "SnowAlbedo", to: "SurfaceProperties", kind: "invokes", brief: "Snow albedo blended into surface albedo by snow cover fraction."}
+    - {from: "SnowCompaction", to: "MultilayerSnowModel", kind: "invokes", brief: "Layer densification updates density and thickness."}
+    - {from: "SurfaceProperties", to: "SurfaceEnergyBalance", kind: "invokes", brief: "Albedo, roughness, and exchange coefficient feed the energy balance."}
+    - {from: "TurbulentExchange", to: "SurfaceEnergyBalance", kind: "invokes", brief: "Bulk transfer coefficient and stability correction feed turbulent fluxes."}
+    - {from: "SurfaceEnergyBalance", to: "snow_melt", kind: "writes_state", brief: "Melt energy = surface flux residual / latent heat of fusion when surface temp exceeds T0."}
+    - {from: "SurfaceEnergyBalance", to: "surface_temp", kind: "writes_state", brief: "Linearized FSM solve updates surface temperature and fluxes."}
+    - {from: "MultilayerSnowModel", to: "snow_swe", kind: "writes_state", brief: "Layer ice/liquid content summed to SWE, depth, and tanh cover fraction."}
+    - {from: "CryoLayerSnowModel", to: "snow_swe", kind: "writes_state", brief: "Cryolayer mass balance updates SWE, depth, and cover fraction."}
+    - {from: "HeatConduction", to: "snow_temp", kind: "invokes", brief: "Tridiagonal solver invoked by snow heat conduction."}
+    - {from: "HeatConduction", to: "soil_temp", kind: "invokes", brief: "Tridiagonal solver invoked by soil temperature integration."}
+    - {from: "SurfaceEnergyBalance", to: "Soil", kind: "invokes", brief: "Surface heat flux drives soil heat flux and temperature integration."}
+    - {from: "Soil", to: "soil_temp", kind: "writes_state", brief: "Soil properties and temperature update soil thermal state."}
+    - {from: "soil_temp", to: "surface_temp", kind: "reads_state", brief: "surface.temp initialized from the top soil layer at init."}
+    - {from: "MeteoInterpolation", to: "Canopy", kind: "invokes", brief: "Above-canopy meteorology feeds canopy snow processes when enabled."}
+    - {from: "Canopy", to: "snow_swe", kind: "writes_state", brief: "Interception/unloading modifies snow reaching the surface under forest."}
+    - {from: "MeteoInterpolation", to: "Evapotranspiration", kind: "invokes", brief: "Meteo and surface state feed FAO Penman-Monteith ET when enabled."}
+    - {from: "MultilayerSnowModel", to: "Outputs", kind: "produces_output", brief: "Selected snow/surface state variables written to point CSV / gridded NetCDF per timestep."}
+
+states:
+  variables:
+    - {name: "snow_swe", unit: "kg m-2", role: "prognostic"}
+    - {name: "snow_depth", unit: "m", role: "diagnostic"}
+    - {name: "snow_thickness (per layer)", unit: "m", role: "prognostic"}
+    - {name: "snow_density (per layer)", unit: "kg m-3", role: "prognostic"}
+    - {name: "snow_ice_content (per layer)", unit: "kg m-2", role: "prognostic"}
+    - {name: "snow_liquid_water_content (per layer)", unit: "kg m-2", role: "prognostic"}
+    - {name: "snow_temp (per layer)", unit: "K", role: "prognostic"}
+    - {name: "snow_cold_content (cryolayers)", unit: "J m-2", role: "prognostic"}
+    - {name: "snow_num_layers", unit: "count", role: "prognostic"}
+    - {name: "snow_area_fraction", unit: "-", role: "diagnostic"}
+    - {name: "snow_albedo", unit: "-", role: "prognostic"}
+    - {name: "snow_melt", unit: "kg m-2", role: "diagnostic"}
+    - {name: "snow_refreezing", unit: "kg m-2", role: "diagnostic"}
+    - {name: "snow_sublimation", unit: "kg m-2", role: "diagnostic"}
+    - {name: "snow_runoff", unit: "kg m-2", role: "diagnostic"}
+    - {name: "surface_temp", unit: "K", role: "prognostic"}
+    - {name: "surface_albedo", unit: "-", role: "prognostic"}
+    - {name: "surface_roughness_length", unit: "m", role: "diagnostic"}
+    - {name: "surface_heat_flux", unit: "W m-2", role: "diagnostic"}
+    - {name: "surface_sens_heat_flux", unit: "W m-2", role: "diagnostic"}
+    - {name: "surface_lat_heat_flux", unit: "W m-2", role: "diagnostic"}
+    - {name: "soil_temp (per layer)", unit: "K", role: "prognostic"}
+    - {name: "soil_vol_moisture_content (per layer)", unit: "m3 m-3", role: "prognostic"}
+    - {name: "meteo_cloud_factor", unit: "-", role: "prognostic"}
+    - {name: "glacier_mass", unit: "kg m-2", role: "prognostic"}
+  provenance: "populated"
+
+outputs:
+  - var: "swe"
+    validation_rank: 1
+    unit: "kg m-2"
+    description: "Snow water equivalent — mass of snow per unit area (CF surface_snow_amount)."
+    emitted_in: "point CSV / gridded NetCDF (user-selected output variables)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Point gauge/snow-pillow SWE must be co-located with a grid cell of matching elevation/aspect; sub-grid terrain heterogeneity limits achievable skill."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Airborne-laser-scan or remote SWE retrievals must share the model grid CRS and resolution."]
+      detrending_options: ["none"]
+  - var: "snow_depth"
+    validation_rank: 2
+    unit: "m"
+    description: "Snow depth (CF surface_snow_thickness)."
+    emitted_in: "point CSV / gridded NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Depth depends on modeled density; co-location and elevation matching required."]
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "snow_cover (area fraction / extent)"
+    validation_rank: 3
+    unit: "-"
+    description: "Snow-covered area fraction; derivable snow-cover duration and snow-disappearance day."
+    emitted_in: "gridded NetCDF / GeoTIFF (derived from snow_area_fraction)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "event_detection"]
+          determining_metric: "csi"
+          caveats: ["Compare against Landsat/MODIS binary snow extent; cloud gaps and the model fractional-vs-binary mismatch require a threshold."]
+        - obs_shape: "categorical_event"
+          comparison_mode: "categorical_event_comparison"
+          metric_families: ["event_detection", "timing_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Snow-disappearance-day comparison is sensitive to spatial resolution in complex terrain."]
+      detrending_options: ["none"]
+  - var: "snow_melt"
+    validation_rank: 4
+    unit: "kg m-2"
+    description: "Snowmelt flux (CF surface_snow_melt_amount)."
+    emitted_in: "point CSV / gridded NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Melt is rarely observed directly; usually inferred from lysimeter or runoff."]
+      detrending_options: ["none"]
+  - var: "snow_runoff"
+    validation_rank: 5
+    unit: "kg m-2"
+    description: "Snow runoff (rain + meltwater released from the snowpack)."
+    emitted_in: "point CSV / gridded NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Catchment runoff comparison requires external routing; the model does not route streamflow."]
+      detrending_options: ["none"]
+  - var: "snow_density"
+    validation_rank: 6
+    unit: "kg m-3"
+    description: "Bulk/layer snow density."
+    emitted_in: "point CSV / gridded NetCDF"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy"]
+          determining_metric: "pbias"
+          caveats: ["Density observations are sparse (snow-pit measurements)."]
+      detrending_options: ["none"]
+  - var: "evapotranspiration"
+    validation_rank: 7
+    unit: "kg m-2"
+    description: "Evapotranspiration from snow-free surfaces (FAO Penman-Monteith; optional module)."
+    emitted_in: "point CSV / gridded NetCDF (when evapotranspiration.enabled)"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Comparable only to eddy-covariance/lysimeter ET over snow-free periods."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "precipitation"
+      to: "swe"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["hanzer2016_multilevel_validation", "strasser2024_openamundsen_v1", "terzago2020_forcing_sensitivity"]
+    - from: "precipitation undercatch correction"
+      to: "swe"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["strasser2024_openamundsen_v1"]
+    - from: "incoming shortwave radiation"
+      to: "snow_melt"
+      sensitivity_grade: MEDIUM
+      basis: cross_family_model_literature
+      lever_type: boundary_forcing
+      applicability: "energy_balance melt"
+      citations: ["terzago2020_forcing_sensitivity", "strasser2024_openamundsen_v1"]
+    - from: "air temperature"
+      to: "snow_melt"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["strasser2024_openamundsen_v1", "terzago2020_forcing_sensitivity"]
+    - from: "air temperature"
+      to: "precipitation phase (snowfall fraction)"
+      sensitivity_grade: MEDIUM
+      basis: cross_family_model_literature
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["strasser2024_openamundsen_v1", "terzago2020_forcing_sensitivity"]
+    - from: "precipitation-phase temperature threshold"
+      to: "swe"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["strasser2024_openamundsen_v1"]
+    - from: "snow albedo"
+      to: "snow_melt"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "energy_balance melt"
+      citations: ["strasser2024_openamundsen_v1", "rottler2026_openamundsen_uncertainty"]
+    - from: "albedo decay timescale"
+      to: "snow_melt"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "always"
+      citations: ["strasser2024_openamundsen_v1", "rottler2026_openamundsen_uncertainty"]
+    - from: "snowmelt method choice"
+      to: "snow_cover (duration)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["rottler2026_openamundsen_uncertainty", "strasser2024_openamundsen_v1"]
+    - from: "lateral snow redistribution"
+      to: "swe"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "complex terrain"
+      citations: ["hanzer2016_multilevel_validation", "strasser2024_openamundsen_v1"]
+    - from: "forest canopy / land cover"
+      to: "swe"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: boundary_forcing
+      applicability: "canopy.enabled"
+      citations: ["rottler2026_openamundsen_uncertainty", "warscher2024_berchtesgaden"]
+    - from: "spatial resolution"
+      to: "snow_cover (duration)"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: structural
+      applicability: "complex terrain"
+      citations: ["rottler2026_openamundsen_uncertainty"]
+    - from: "longwave radiation"
+      to: "snow_melt"
+      sensitivity_grade: MEDIUM
+      basis: cross_family_model_literature
+      lever_type: boundary_forcing
+      applicability: "energy_balance melt"
+      citations: ["strasser2024_openamundsen_v1", "terzago2020_forcing_sensitivity"]
+  citation_index:
+    strasser2024_openamundsen_v1:
+      short_citation: "Strasser et al. 2024"
+      doi: "10.5194/gmd-17-6775-2024"
+      note: "openAMUNDSEN v1.0 model description + evaluation; identifies radiation, redistribution, albedo decay, undercatch, and wet-bulb phase threshold as skill-controlling choices (NSE-based, not variance SA)."
+    hanzer2016_multilevel_validation:
+      short_citation: "Hanzer et al. 2016"
+      doi: "10.5194/tc-10-1859-2016"
+      note: "Distributed AMUNDSEN multilevel validation, Oetztal Alps; precipitation, redistribution, and radiation/albedo control SWE and snow-cover patterns."
+    rottler2026_openamundsen_uncertainty:
+      short_citation: "Rottler et al. 2026"
+      doi: "10.5194/tc-20-2351-2026"
+      note: "openAMUNDSEN structural/parameter uncertainty vs 1 C warming; melt-method, land-cover, resolution, and albedo parameterization each comparable to a 1 C signal."
+    warscher2024_berchtesgaden:
+      short_citation: "Warscher et al. 2024"
+      doi: "10.1002/hyp.70197"
+      note: "openAMUNDSEN open vs forested snow dynamics, Berchtesgaden NP (metadata from search results; publisher page returned 403)."
+    terzago2020_forcing_sensitivity:
+      short_citation: "Terzago et al. 2020"
+      doi: "10.5194/hess-24-4061-2020"
+      note: "Multi-model Alpine forcing-sensitivity study (does NOT include AMUNDSEN); ranks shortwave > air temperature > precipitation. Cross-family proxy evidence only."
+
+safety:
+  hazards:
+    - {id: "temp_celsius_filtered_to_nan", kind: "weather_file_semantic", description: "Air temperature in Celsius is outside the 200-330 K filter and is silently replaced with NaN; snow never forms and SWE is zero everywhere.", severity: "silent"}
+    - {id: "precip_unit_timescale_mismatch", kind: "weather_file_semantic", description: "Precipitation as rate vs accumulation or wrong timescale (mm/day, kg m-2 s-1 in CSV) inflates or deflates SWE by 24x-3600x.", severity: "silent"}
+    - {id: "rel_hum_fraction_filtered_to_nan", kind: "weather_file_semantic", description: "Relative humidity supplied as fraction (0-1) is rejected by the min=1 filter, zeroing vapor pressure and corrupting latent-heat/sublimation fluxes.", severity: "silent"}
+    - {id: "sw_in_energy_units", kind: "weather_file_semantic", description: "Shortwave supplied in energy units (J/MJ) instead of W m-2 is 1000-86400x too high, distorting the radiation budget and melt timing.", severity: "silent"}
+    - {id: "wind_kmh_overscales_undercatch", kind: "weather_file_semantic", description: "Wind speed in km/h (3.6x) overscales WMO/Kochendorfer undercatch correction, inflating accumulation at exposed sites; 50 km/h still passes the 50 m/s filter.", severity: "degraded"}
+    - {id: "netcdf_precip_missing_units_attr", kind: "weather_file_semantic", description: "NetCDF precipitation flux without a units='kg m-2 s-1' attribute is treated as accumulation, making precip ~3600x too low.", severity: "silent"}
+    - {id: "lapse_rate_per_km", kind: "weather_file_semantic", description: "Temperature lapse rate entered in K/km instead of K/m (e.g. 6.5 -> 6500 K/km) produces wildly wrong elevation-interpolated temperatures.", severity: "silent"}
+    - {id: "station_altitude_wrong_unit", kind: "weather_file_semantic", description: "Station altitude in feet/km instead of meters corrupts elevation-difference lapse-rate interpolation.", severity: "silent"}
+    - {id: "soil_thickness_cm", kind: "soil_semantic", description: "Soil layer thickness in cm instead of meters makes soil heat flux ~100x off.", severity: "silent"}
+    - {id: "snow_density_g_cm3", kind: "initial_condition_semantic", description: "Initial snow density in g/cm3 instead of kg m-3 creates effectively massless layers and snow depth 1000x too large.", severity: "silent"}
+    - {id: "dem_filename_mismatch", kind: "weather_file_semantic", description: "DEM filename not matching dem_{domain}_{resolution}.asc causes a fatal FileNotFoundError at init.", severity: "fatal"}
+    - {id: "resolution_in_km", kind: "control_semantic", description: "Resolution given in km instead of meters collapses the grid to 1-2 cells or produces an OOM-sized grid.", severity: "fatal"}
+    - {id: "station_crs_mismatch", kind: "control_semantic", description: "Station coordinate CRS mismatch (UTM coords declared as epsg:4326) places stations outside the grid; fatal 'no stations within grid extent'.", severity: "fatal"}
+    - {id: "timestep_not_pandas_freq", kind: "control_semantic", description: "Timestep given as seconds/minutes/integer instead of a pandas frequency string is a fatal parse error.", severity: "fatal"}
+    - {id: "no_stations_in_grid", kind: "control_semantic", description: "All stations outside the grid extent (wrong CRS, too-small grid, or bounds='grid' excluding all) yields a fatal empty station dataset at init.", severity: "fatal"}
+    - {id: "snowmodel_switch_invalidates_calibration", kind: "control_semantic", description: "Switching snow scheme (multilayer <-> cryolayers) makes albedo/thermal-conductivity/compaction parameters non-transferable; accuracy degrades without recalibration.", severity: "degraded"}
+    - {id: "canopy_without_landcover", kind: "control_semantic", description: "Canopy module enabled without a land-cover grid silently treats all pixels as open terrain, zeroing forest interception.", severity: "degraded"}
+    - {id: "cloud_fraction_autoconversion_fragile", kind: "weather_file_semantic", description: "Cloud-fraction 0-1 -> 0-100 auto-conversion only triggers when max<=1 and len>10, otherwise misclassifies clear vs cloudy sky and lowers longwave.", severity: "silent"}
+  validation_limits:
+    - "Designed for mountain regions; applicability is point-to-regional scale (up to hundreds-thousands of km2) at 10-100 m and 1-3 h resolution."
+    - "No native channel/streamflow routing; catchment runoff comparison requires an external routing model."
+    - "Glacier mass balance is experimental (delta-h); not a substitute for a dynamic ice-flow model."
+    - "Lateral redistribution is a static terrain parameterization, not dynamic wind-transport; sub-1 km resolution is needed to resolve snow-cover duration in complex terrain."
+  warnings:
+    - "The input filter silently replaces out-of-range forcing with NaN and raises no error; most unit mistakes run to completion but produce physically wrong results (often zero SWE)."
+    - "degree_day_factor only affects temperature-index / enhanced-temperature-index melt, not the energy_balance default; tuning it under energy_balance has no effect."
+    - "Precipitation unit semantics are format-dependent: CSV = kg m-2 per timestep (accumulation), NetCDF = kg m-2 s-1 (rate); treat 'precip unit' as format-conditional."
+    - "The grid/DEM CRS (projected) and station CRS (input_data.meteo.crs, often WGS84) are distinct; conflating them is the dominant 'no stations in grid' failure."
+  assumptions:
+    - statement: "openAMUNDSEN is fully distributed on a 2-D projected grid; each cell is a 1-D vertical snow/soil column with no inter-cell lateral mass exchange except the static terrain-based snow redistribution applied to precipitation."
+      scope: "spatial geometry"
+      source: "openAMUNDSEN model structure and lateral-redistribution documentation (doc.openamundsen.org/des/structure, /des/lateral)"
+      status: "adopted"
+    - statement: "Mass balance closes on snow water (SWE, ice/liquid content) and energy balance closes on the surface/snow energy budget under the energy_balance melt scheme; temperature-index and enhanced-temperature-index melt are demand-side flux parameterizations without a closed surface energy budget."
+      scope: "conservation / closure"
+      source: "openAMUNDSEN snow and energy balance description (doc.openamundsen.org/des/energy) and surface.py / snow module energy-balance solve"
+      status: "adopted"
+    - statement: "The cryolayers scheme assumes melting whenever air temperature exceeds 0 degC and otherwise iterates surface temperature; this differs in internal representation from the multilayer scheme, so calibrated parameters are scheme-specific."
+      scope: "melt-method interpretation"
+      source: "openAMUNDSEN energy-balance method documentation and cryolayermodel.py / surface.py iteration behavior"
+      status: "adopted"
+    - statement: "Default snowfall longwave emissivity (0.99), heat/moisture roughness ratio (0.1), and the Anderson-1976 compaction/fresh-snow-density coefficients are hardcoded model internals, not config-exposed parameters."
+      scope: "fixed internal parameterization"
+      source: "openamundsen/surface.py and openamundsen/modules/snow/snow.py source"
+      status: "adopted"

@@ -1,0 +1,143 @@
+# format_spec.yaml — machine-readable I/O specification for HEC-RAS
+# Used by coupling frameworks (ATA) to discover what the model consumes/produces.
+# HAND-CURATED (do NOT regenerate from SKILL.md text — the auto-scraper mislabels
+# HEC-RAS as a rainfall-runoff model). HEC-RAS is a 1D/2D HYDRAULICS model: it
+# CONSUMES discharge + surveyed cross-section geometry + Manning's n and PRODUCES
+# water-surface STAGE. It does NOT consume temperature/precipitation and does NOT
+# produce runoff.
+model:
+  name: HEC-RAS
+  version: "6.7 Beta 5"
+  domain: hydraulics
+  process: 1D steady/unsteady gradually-varied open-channel flow (water-surface profiles)
+  binary_path: "RasSteady.exe (Intel-Fortran PE64, run under WINE 9.0)"
+  language: fortran-pe-wine
+
+inputs:
+  forcing:
+  - name: discharge
+    unit: cfs (English) or m3/s (SI)
+    format: ".fNN / .rNN  Section 'Flow' lines, one value per profile"
+    range: [0.1, 1.0e7]
+    required: true
+    role: forcing
+    note: HEC-RAS CONSUMES discharge as the upstream boundary forcing.
+  geometry:
+  - name: cross_section_geometry
+    unit: ft or m (station-elevation pairs)
+    format: ".gNN  '#Sta/Elev' blocks per river station"
+    required: true
+    note: >
+      Surveyed cross sections are the irreducible input; they cannot be derived
+      from a basin shapefile alone — no DEM->XS authoring tool ships with this KI.
+  - name: reach_length
+    unit: ft or m
+    format: ".gNN  'Type RM Length L Ch R' (LOB/Channel/ROB)"
+    required: true
+  parameters:
+  - name: manning_n
+    unit: dimensionless
+    format: ".gNN  '#Mann' blocks"
+    range: [0.011, 0.20]
+    required: true
+    note: Identical in English & SI — NEVER convert.
+  - name: boundary_condition
+    unit: "slope ft/ft (normal depth), or WS ft (known WS), or rating curve"
+    format: ".fNN / .rNN  'Reach Boundaries'"
+    required: true
+  - name: flow_regime
+    unit: "enum {subcritical, supercritical, mixed}"
+    format: ".rNN run-control flag"
+    required: true
+
+outputs:
+  primary:
+  - name: water_surface_elevation
+    unit: ft or m
+    format: "HDF5 /Results/Steady/.../Cross Sections/Water Surface"
+    role: stage
+    note: PRIMARY validated output (stage), NOT discharge.
+  - name: energy_grade
+    unit: ft or m
+    format: "HDF5 .../Cross Sections/Energy Grade"
+  secondary:
+  - name: velocity
+    unit: ft/s or m/s
+    format: "HDF5 .../Additional Variables/Velocity Channel"
+  - name: discharge_out
+    unit: cfs or m3/s
+    format: "HDF5 .../Cross Sections/Flow"
+    note: Conserved along reach (pass-through of the input forcing, not a model product).
+  - name: froude_number
+    unit: dimensionless
+    format: "derived V / sqrt(g*D); identifies sub/super/critical regime"
+
+unit_conversions:
+  discharge_m3s_to_cfs: 35.3146667
+  length_m_to_ft: 3.2808399
+  gravity_english_fts2: 32.174
+  gravity_si_ms2: 9.81
+  manning_n: "dimensionless — identical in English & SI; never convert"
+  slope: "dimensionless ft/ft = m/m — never scale"
+
+coupling:
+  consumes_from:
+  - description: A rainfall-runoff / routing model supplying discharge hydrographs
+    variable: discharge
+    example_upstream_models: [VIC+Lohmann, WRF-Hydro, Raven, HEC-HMS]
+  produces_for:
+  - description: Flood-inundation / stage-dependent downstream consumers
+    variable: water_surface_elevation
+  note: >
+    Correct coupling direction: discharge (m3/s) flows INTO HEC-RAS as forcing;
+    water-surface STAGE (m) flows OUT. Do not couple HEC-RAS as a discharge
+    producer — discharge_out is merely the conserved input.
+
+validation:
+  tier: real
+  benchmark: HEC-RAS Mixed Flow Regime Channel example (computed vs observed WS)
+  variable: water_surface_elevation
+  metrics:
+    NSE: 0.9965
+    KGE: 0.977
+    RMSE_ft: 0.096
+    n: 19
+  note: Observed WS from .fNN 'Observed WS=' lines, 19 cross sections, profile PF1.
+
+known_issues:
+- id: validating_wrong_variable
+  symptom: Reported NSE is against discharge, not stage
+  cause: Treating HEC-RAS as a rainfall-runoff model
+  fix: HEC-RAS consumes discharge and produces water-surface stage; validate stage.
+- id: new_river_blocked
+  symptom: Cannot run HEC-RAS on a brand-new river
+  cause: No DEM->cross-section authoring tool; .rNN run file needs Ras.exe/Wine-Mono
+  fix: KI is validatable only on bundled examples shipping both .gNN.hdf and .rNN.
+- id: missing_plan_hdf_skeleton
+  symptom: "RasSteady aborts: HDF_ERROR opening <prj>.pNN.tmp.hdf"
+  cause: Plan results skeleton (normally written by Ras.exe/Wine-Mono) is absent
+  fix: "Seed it: cp <prj>.gNN.hdf <prj>.pNN.tmp.hdf (run_hecras.py does this)."
+- id: wine_ld_preload
+  symptom: "wine: libstdc++.so.6 from LD_PRELOAD cannot be preloaded (wrong ELF class)"
+  cause: System-wide 64-bit LD_PRELOAD rejected by wine's loader
+  fix: "Strip it: env -u LD_PRELOAD wine ... (tools use _hecras_env.wine_env())."
+- id: discharge_unit_cfs_cms
+  symptom: WS far too low / flow ~35x smaller than expected in an English project
+  cause: Discharge supplied in m3/s but project is English (cfs)
+  fix: "Q_cfs = Q_cms * 35.3147 (convert_flow_to_hecras.py --in-units m3/s)."
+- id: elevation_unit_ft_m
+  symptom: Validation NSE strongly negative; WS differs by ~3.28 factor
+  cause: Geometry/observed WS in metres while project is English (ft), or vice versa
+  fix: "Ensure geometry, observed WS, and .prj unit system all agree (1 m = 3.28084 ft)."
+- id: manning_n_converted
+  symptom: Nonsensical depths after switching unit systems
+  cause: Manning's n was 'converted' between English and SI
+  fix: "Never convert n — it is dimensionless. The 1.486 vs 1.0 factor is internal."
+- id: slope_scaled_wrongly
+  symptom: Normal-depth boundary gives wrong stage after a unit change
+  cause: Energy/friction slope (ft/ft = m/m) was scaled during conversion
+  fix: Slope is dimensionless — leave it unchanged across unit systems.
+- id: unsteady_needs_mono
+  symptom: RasUnsteady/sediment/WQ fail headless on a missing plan HDF
+  cause: These solvers need a plan-HDF skeleton with boundary series, written by Ras.exe
+  fix: Only steady flow is end-to-end runnable headless here; others need Wine Mono.

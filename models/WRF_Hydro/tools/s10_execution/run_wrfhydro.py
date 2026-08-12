@@ -108,6 +108,30 @@ def setup_symlinks(run_dir, exe_path, tbl_dir):
     return [exe_link.name] + [t.name for t in tbl_files]
 
 
+SUCCESS_BANNER = 'The model finished successfully'
+
+
+def scan_diag_for_banner(run_dir):
+    """
+    Under mpirun, WRF-Hydro writes its completion banner to diag_hydro.0000N
+    (one per MPI rank), never to stdout.  Returns (found, last_lines).
+    """
+    run_dir = Path(run_dir)
+    found = False
+    last_lines = {}
+    for diag in sorted(run_dir.glob('diag_hydro.0*')):
+        try:
+            text = diag.read_text(errors='replace')
+        except OSError:
+            continue
+        if SUCCESS_BANNER in text:
+            found = True
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        if lines:
+            last_lines[diag.name] = lines[-1]
+    return found, last_lines
+
+
 def run_model(run_dir, mpirun_path, nproc, timeout):
     """
     Execute WRF-Hydro via mpirun.
@@ -151,8 +175,13 @@ def run_model(run_dir, mpirun_path, nproc, timeout):
         stdout = proc.stdout
         stderr = proc.stderr
 
-        # Check for success string
-        success = 'The model finished successfully' in stdout
+        # Check for success banner: stdout first, then diag_hydro.0000N.
+        # Under mpirun the banner goes to the per-rank diag files, not stdout,
+        # so an stdout-only check is a false negative on every good run.
+        success = SUCCESS_BANNER in stdout
+        diag_banner, diag_last_lines = scan_diag_for_banner(run_dir)
+        if not success:
+            success = diag_banner
 
         return {
             'returncode': proc.returncode,
@@ -160,15 +189,22 @@ def run_model(run_dir, mpirun_path, nproc, timeout):
             'stderr_tail': stderr[-2000:] if len(stderr) > 2000 else stderr,
             'elapsed_s': round(elapsed, 1),
             'success': success,
+            'banner_in_stdout': SUCCESS_BANNER in stdout,
+            'banner_in_diag': diag_banner,
+            'diag_last_lines': diag_last_lines,
         }
     except subprocess.TimeoutExpired:
         elapsed = time.time() - t0
+        diag_banner, diag_last_lines = scan_diag_for_banner(run_dir)
         return {
             'returncode': -1,
             'stdout_tail': '(timeout)',
             'stderr_tail': '(timeout)',
             'elapsed_s': round(elapsed, 1),
             'success': False,
+            'banner_in_stdout': False,
+            'banner_in_diag': diag_banner,
+            'diag_last_lines': diag_last_lines,
         }
 
 
@@ -177,12 +213,15 @@ def collect_outputs(run_dir):
     List output files produced by WRF-Hydro.
     """
     run_dir = Path(run_dir)
+    # Globs MUST anchor on the '.' timestamp separator: the filename
+    # CHRTOUT_DOMAIN1 ends with the literal substring RTOUT_DOMAIN1, so an
+    # unanchored '*RTOUT_DOMAIN1' silently matches every channel-output file.
     output_patterns = {
-        'LDASOUT':  '*LDASOUT_DOMAIN1',
-        'CHRTOUT':  '*CHRTOUT_DOMAIN1',
-        'RTOUT':    '*RTOUT_DOMAIN1',
-        'GWOUT':    '*GW_DOMAIN1',
-        'CHANOBS':  '*CHANOBS*',
+        'LDASOUT':  '*.LDASOUT_DOMAIN1',
+        'CHRTOUT':  '*.CHRTOUT_DOMAIN1',
+        'RTOUT':    '*.RTOUT_DOMAIN1',
+        'GWOUT':    '*.GWOUT_DOMAIN1',
+        'CHANOBS':  '*.CHANOBS*',
         'RESTART':  'RESTART*',
         'HYDRO_RST': 'HYDRO_RST*',
     }
@@ -259,6 +298,9 @@ def main():
         print(result['stderr_tail'][:1000])
         print("\n  --- STDOUT (tail) ---")
         print(result['stdout_tail'][:1000])
+        print("\n  --- diag_hydro last lines (real abort reason lives here) ---")
+        for name, line in (result.get('diag_last_lines') or {}).items():
+            print(f"  {name}: {line}")
 
     # Collect outputs
     print("\n[4/4] Collecting output files...")
@@ -274,6 +316,9 @@ def main():
     summary = {
         'status': 'success' if result['success'] else 'failure',
         'returncode': result['returncode'],
+        'banner_in_stdout': result.get('banner_in_stdout'),
+        'banner_in_diag': result.get('banner_in_diag'),
+        'diag_last_lines': result.get('diag_last_lines', {}),
         'elapsed_s': result['elapsed_s'],
         'outputs': outputs,
         'run_dir': str(run_dir),

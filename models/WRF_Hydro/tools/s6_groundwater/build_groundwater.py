@@ -181,7 +181,8 @@ def write_spatial_global_attrs(ds, dom, proj4, esri_pe):
 
 
 def build_groundwater(geo_em_path, domain_json_path, basin_shp_path, output_dir,
-                      hydro_tbl_path=None):
+                      hydro_tbl_path=None, gw_coeff=None, gw_expon=None,
+                      gw_zmax=None, gw_zinit=None, coeff_per_100km2=None):
     """Build GWBASINS.nc, GWBUCKPARM.nc, hydro2dtbl.nc, GEOGRID_LDASOUT_Spatial_Metadata.nc."""
 
     if hydro_tbl_path is None:
@@ -331,10 +332,28 @@ def build_groundwater(geo_em_path, domain_json_path, basin_shp_path, output_dir,
             v[:] = data
 
         write_1d("Basin", unique_basins, "i4")
-        write_1d("Coeff", np.ones(n_basins, dtype=np.float32), "f4")
-        write_1d("Expon", np.full(n_basins, 3.0, dtype=np.float32), "f4")
-        write_1d("Zmax", np.full(n_basins, 50.0, dtype=np.float32), "f4")
-        write_1d("Zinit", np.full(n_basins, 10.0, dtype=np.float32), "f4")
+        # Gridded-mode bucket parameters. Legacy defaults (Coeff=1.0, Expon=3.0,
+        # Zmax=50, Zinit=10) pin the bucket at Zmax on large humid basins
+        # (dt_v013 / dag safety.hazards.gw_zmax_too_shallow: pure pass-through,
+        # no recession). Override via CLI; --coeff_per_100km2 area-scales the
+        # NWM reach-scale Coeff (~0.04 per ~100 km2) to the lumped basin.
+        coeff_arr = np.ones(n_basins, dtype=np.float32)
+        if coeff_per_100km2 is not None:
+            coeff_arr = (basin_areas / 100.0 * float(coeff_per_100km2)).astype(np.float32)
+        if gw_coeff is not None:
+            coeff_arr = np.full(n_basins, float(gw_coeff), dtype=np.float32)
+        expon_val = 3.0 if gw_expon is None else float(gw_expon)
+        zmax_val = 50.0 if gw_zmax is None else float(gw_zmax)
+        zinit_val = 10.0 if gw_zinit is None else float(gw_zinit)
+        if zmax_val <= 50.0 and float(basin_areas.max()) > 10000.0:
+            print("    WARNING: Zmax<=50 mm on a >10,000 km2 basin pins the bucket at"
+                  " Zmax (dt_v013); pass --zmax 200-500 and size Coeff to the basin")
+        print(f"    GWBUCKPARM gridded params: Coeff={coeff_arr.tolist()} Expon={expon_val}"
+              f" Zmax={zmax_val} Zinit={zinit_val}")
+        write_1d("Coeff", coeff_arr, "f4")
+        write_1d("Expon", np.full(n_basins, expon_val, dtype=np.float32), "f4")
+        write_1d("Zmax", np.full(n_basins, zmax_val, dtype=np.float32), "f4")
+        write_1d("Zinit", np.full(n_basins, zinit_val, dtype=np.float32), "f4")
         write_1d("Area_sqkm", basin_areas, "f4")
         write_1d("ComID", unique_basins, "i4")
 
@@ -440,6 +459,16 @@ def main():
     parser.add_argument("--output_dir", required=True, help="Output directory")
     parser.add_argument("--hydro_tbl", default=str(DEFAULT_HYDRO_TBL),
                         help="Path to HYDRO.TBL")
+    parser.add_argument("--coeff", type=float, default=None,
+                        help="Absolute GW bucket Coeff override (gridded mode)")
+    parser.add_argument("--expon", type=float, default=None,
+                        help="GW bucket Expon override (gridded mode)")
+    parser.add_argument("--zmax", type=float, default=None,
+                        help="GW bucket Zmax mm override (dag: 200-500 for deep-aquifer basins)")
+    parser.add_argument("--zinit", type=float, default=None,
+                        help="GW bucket Zinit mm override")
+    parser.add_argument("--coeff_per_100km2", type=float, default=None,
+                        help="Area-scale Coeff: Coeff_i = value * Area_sqkm_i/100 (dag Coeff~0.04 at ~100 km2 reach scale)")
     args = parser.parse_args()
 
     build_groundwater(
@@ -448,6 +477,11 @@ def main():
         basin_shp_path=args.basin_shp,
         output_dir=args.output_dir,
         hydro_tbl_path=args.hydro_tbl,
+        gw_coeff=args.coeff,
+        gw_expon=args.expon,
+        gw_zmax=args.zmax,
+        gw_zinit=args.zinit,
+        coeff_per_100km2=args.coeff_per_100km2,
     )
 
 

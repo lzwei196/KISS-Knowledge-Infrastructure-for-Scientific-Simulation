@@ -1,0 +1,650 @@
+template_version: "3.5"
+
+identity:
+  model_id: "FSM2"
+  scientific_reference_version: "FSM2 (Flexible Snow Model) 2.1.x lineage; Essery et al. 2025 (GMD 18, 3583-3605) forest-canopy extension of FSM 1.0 (Essery 2015)"
+  implementation:
+    id: "fsm2"
+    version: "2.1.2"
+    provenance: "Fortran 90 with C-preprocessor compile-time physics switches; R. Essery, University of Edinburgh."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: ""  # _reason: No LICENSE file in repo (raw LICENSE URL HTTP 404); README and FSMuser/FSMsci do not declare a license — license is unknown, not omitted.
+  repo_url: "https://github.com/RichardEssery/FSM2"
+
+boundary:
+  scope_in:
+    - "Multi-layer snowpack energy and mass balance (accumulation and melt) on the ground"
+    - "Snow in forest canopies: interception, unloading, melt drip, sub-canopy radiation/wind"
+    - "Multi-layer soil heat conduction with freeze/thaw under the snow"
+    - "Surface and canopy energy fluxes (sensible, latent, radiative, melt)"
+    - "Snow microstructure and bulk evolution (albedo, density/compaction, grain growth, liquid water)"
+  scope_out:
+    - "Lateral snow redistribution / blowing-snow transport between points (wind transport rate hardwired to 0)"
+    - "Glacier / firn dynamics"
+    - "Generation of driving meteorology (forcing must be supplied externally)"
+    - "Inter-point lateral exchange (multi-point runs are independent columns)"
+  spatial: "0-D point"
+  temporal: "hourly"
+  closure: "both"
+  notes: "Point / multi-point 1-D vertical column (Nsmax=3 snow layers over Nsoil=4 soil layers, 1-2 canopy layers via CANMOD); multi-point runs are independent columns with no lateral exchange. Surface energy balance is solved iteratively to |error| < 0.01 W m-2 (~4-10 iterations); layer mass and energy are conserved on merge/split and snow liquid water via implicit upwind + Newton-Raphson. Mass-balance closure applies to snow water (Sf - Melt - subl - Roff ~= dSWE) and energy-balance closure to the surface/soil column. ASCII output supports Npnts>1; NetCDF output (PROFNC=1) is restricted to Npnts=1."
+
+inputs:
+  forcing:
+    - {category: forcing, name: "SW", unit: "W m-2", source_kind: forcing, model_input_format: "DRIV1D=1 space-delimited ASCII met file, no header, one row per timestep (col 5)", notes: "Incoming shortwave; must be >=0. Treated as all-diffuse unless SWPART=1, which splits diffuse/direct via solar position."}
+    - {category: forcing, name: "LW", unit: "W m-2", source_kind: forcing, model_input_format: "met file col 6", notes: "Incoming longwave; physical range ~50-600 W m-2."}
+    - {category: forcing, name: "Sf", unit: "kg m-2 s-1", source_kind: forcing, model_input_format: "met file col 7 (DRIV1D=1); cols 7-8 are Rf,Sf order-swapped in DRIV1D=2 ESM-SnowMIP", notes: "Snowfall rate; reduced by canopy interception (INTERCEPT modifies Sf inout) before reaching the snowpack when VAI>0."}
+    - {category: forcing, name: "Rf", unit: "kg m-2 s-1", source_kind: forcing, model_input_format: "met file col 8 (DRIV1D=1)", notes: "Rainfall rate. ENSMBL perturbed-driving path re-derives rain/snow split from a Tc rule, overriding the forcing Rf/Sf phase."}
+    - {category: forcing, name: "Ta", unit: "K", source_kind: forcing, model_input_format: "met file col 9", notes: "Air temperature in Kelvin; physical range 200-330 K."}
+    - {category: forcing, name: "RH", unit: "% (0-100)", source_kind: forcing, model_input_format: "met file col 10 (DRIV1D=1)", notes: "Relative humidity. Converted internally to specific humidity Qa via Magnus formula using Ps; the raw RH is consumed in FSM2_DRIVE and does not reach the physics. DRIV1D=2 reads Qa directly."}
+    - {category: forcing, name: "Ua", unit: "m s-1", source_kind: forcing, model_input_format: "met file col 11", notes: "Wind speed; floored to a minimum 0.1 m s-1 inside FSM2_DRIVE."}
+    - {category: forcing, name: "Ps", unit: "Pa", source_kind: forcing, model_input_format: "met file col 12", notes: "Surface air pressure; physical range ~40000-110000 Pa; used in the RH->Qa conversion."}
+  parameters:
+    - {category: snow_albedo, name: "asmn", unit: "-", source_kind: default, model_input_format: "&params namelist", notes: "Minimum (melting) snow albedo, default 0.5."}
+    - {category: snow_albedo, name: "asmx", unit: "-", source_kind: default, model_input_format: "&params namelist", notes: "Maximum (fresh) snow albedo, default 0.85."}
+    - {category: snow_density, name: "rhof", unit: "kg m-3", source_kind: default, model_input_format: "&params namelist", notes: "Fresh snow density, default 100 (DENSTY=1/2)."}
+    - {category: snow_density, name: "rfix", unit: "kg m-3", source_kind: default, model_input_format: "&params namelist", notes: "Fixed snow density, default 300 (DENSTY=0)."}
+    - {category: snow_density, name: "rhow", unit: "kg m-3", source_kind: default, model_input_format: "&params namelist", notes: "Wind-packed snow density, default 300 (DENSTY=1,2)."}
+    - {category: snow_cover, name: "hfsn", unit: "m", source_kind: default, model_input_format: "&params namelist", notes: "Snow-cover-fraction depth scale, default 0.1."}
+    - {category: snow_thermal, name: "kfix", unit: "W m-1 K-1", source_kind: default, model_input_format: "&params namelist", notes: "Fixed snow thermal conductivity, default 0.24 (CONDCT=0)."}
+    - {category: snow_microstructure, name: "rgr0", unit: "m", source_kind: default, model_input_format: "&params namelist", notes: "Fresh snow grain radius, default 5e-5."}
+    - {category: snow_hydrology, name: "Wirr", unit: "-", source_kind: default, model_input_format: "&params namelist", notes: "Irreducible liquid water content of snow, default 0.03 (HYDROL=1,2)."}
+    - {category: roughness, name: "z0sn", unit: "m", source_kind: default, model_input_format: "&params namelist", notes: "Snow surface roughness length, default 0.001."}
+    - {category: roughness, name: "z0sf", unit: "m", source_kind: default, model_input_format: "&params namelist", notes: "Snow-free surface roughness length, default 0.1."}
+    - {category: soil_surface, name: "gsat", unit: "m s-1", source_kind: default, model_input_format: "&params namelist", notes: "Surface conductance for saturated soil, default 0.01."}
+    - {category: ground, name: "alb0", unit: "-", source_kind: user_provided, model_input_format: "&veg namelist (per point)", notes: "Snow-free ground albedo, default 0.2."}
+    - {category: canopy, name: "vegh", unit: "m", source_kind: user_provided, model_input_format: "&veg namelist (per point)", notes: "Canopy height; 0 for open site. Requires VAI>0 to have radiative effect."}
+    - {category: canopy, name: "VAI", unit: "-", source_kind: user_provided, model_input_format: "&veg namelist (per point)", notes: "Vegetation area index; 0 = open, conifer 3-6. Drives canopy presence, interception capacity, transmission, longwave."}
+    - {category: soil, name: "fcly", unit: "fraction 0-1", source_kind: dataset_lookup, model_input_format: "&params namelist", notes: "Soil clay fraction, default 0.3. Feeds Cosby-style pedotransfer (b, Vsat, sathh) computed once in the main program, not per timestep."}
+    - {category: soil, name: "fsnd", unit: "fraction 0-1", source_kind: dataset_lookup, model_input_format: "&params namelist", notes: "Soil sand fraction, default 0.6; fcly+fsnd<=1. Note hcon_soil derivation uses (1-fcly) as the sand exponent (apparent internal inconsistency)."}
+    - {category: site, name: "lat", unit: "degrees", source_kind: user_provided, model_input_format: "&drive namelist", notes: "Latitude in degrees, converted to radians internally (lat_rad = pi/180 * lat_deg). Used only when SWPART=1."}
+    - {category: site, name: "zT", unit: "m", source_kind: user_provided, model_input_format: "&drive namelist", notes: "Temperature/humidity measurement height."}
+    - {category: site, name: "zU", unit: "m", source_kind: user_provided, model_input_format: "&drive namelist", notes: "Wind speed measurement height."}
+    - {category: layering, name: "Dzsnow", unit: "m", source_kind: default, model_input_format: "&gridlevs namelist", notes: "Minimum snow layer thicknesses, default 0.1,0.2,0.4 (assigned only when Nsmax=3)."}
+    - {category: layering, name: "Dzsoil", unit: "m", source_kind: default, model_input_format: "&gridlevs namelist", notes: "Soil layer thicknesses, default 0.1,0.2,0.4,0.8 (assigned only when Nsoil=4)."}
+  initial_conditions:
+    - {category: snow_state, name: "Nsnow", unit: "-", source_kind: user_provided, model_input_format: "&initial namelist / start_file dump", notes: "Number of active snow layers; cold-start = 0 (no snow) when no dump file."}
+    - {category: snow_state, name: "albs", unit: "-", source_kind: user_provided, model_input_format: "&initial / dump", notes: "Initial snow albedo; cold-start init 0.8."}
+    - {category: snow_state, name: "Dsnw", unit: "m", source_kind: user_provided, model_input_format: "&initial / dump", notes: "Initial snow layer thicknesses."}
+    - {category: snow_state, name: "Sice", unit: "kg m-2", source_kind: user_provided, model_input_format: "&initial / dump", notes: "Initial ice content of snow layers."}
+    - {category: snow_state, name: "Sliq", unit: "kg m-2", source_kind: user_provided, model_input_format: "&initial / dump", notes: "Initial liquid content of snow layers."}
+    - {category: snow_state, name: "Rgrn", unit: "m", source_kind: user_provided, model_input_format: "&initial / dump", notes: "Initial snow grain radii; cold-start init rgr0=5e-5."}
+    - {category: snow_state, name: "Tsnow", unit: "K", source_kind: user_provided, model_input_format: "&initial / dump", notes: "Initial snow layer temperatures; cold-start init 273."}
+    - {category: soil_state, name: "Tsoil", unit: "K", source_kind: user_provided, model_input_format: "&initial / dump (Tprf)", notes: "Initial soil layer temperatures; default 285."}
+    - {category: soil_state, name: "Vsmc", unit: "m3 m-3", source_kind: user_provided, model_input_format: "&initial / dump", notes: "Initial volumetric soil moisture; cold-start init fsat*Vsat (fsat default 0.5)."}
+    - {category: surface_state, name: "Tsrf", unit: "K", source_kind: user_provided, model_input_format: "&initial / dump", notes: "Initial surface temperature."}
+    - {category: canopy_state, name: "Sveg", unit: "kg m-2", source_kind: user_provided, model_input_format: "&initial / dump", notes: "Initial canopy snow mass; -999 sentinel where VAI=0."}
+    - {category: canopy_state, name: "Tveg", unit: "K", source_kind: user_provided, model_input_format: "&initial / dump", notes: "Initial vegetation layer temperatures; init 285, -999 where VAI=0."}
+    - {category: canopy_state, name: "Tcan", unit: "K", source_kind: user_provided, model_input_format: "&initial / dump", notes: "Initial canopy air space temperatures; init 285."}
+    - {category: canopy_state, name: "Qcan", unit: "kg kg-1", source_kind: user_provided, model_input_format: "&initial / dump", notes: "Initial canopy air space specific humidities; init 0."}
+  boundary_conditions:
+    - {category: structural_option, name: "ALBEDO", unit: "-", source_kind: user_provided, model_input_format: "compile-time C-preprocessor switch (OPTS.h / compil.sh)", notes: "1=diagnostic (temperature) / 2=prognostic (age decay + snowfall refresh) snow albedo."}
+    - {category: structural_option, name: "DENSTY", unit: "-", source_kind: user_provided, model_input_format: "compile-time switch", notes: "0=fixed / 1=age-compaction / 2=overburden snow density evolution."}
+    - {category: structural_option, name: "CONDCT", unit: "-", source_kind: user_provided, model_input_format: "compile-time switch", notes: "0=fixed kfix / 1=density-dependent (Yen 1981) snow thermal conductivity."}
+    - {category: structural_option, name: "HYDROL", unit: "-", source_kind: user_provided, model_input_format: "compile-time switch", notes: "0=free-draining / 1=bucket / 2=gravitational drainage snow hydrology."}
+    - {category: structural_option, name: "SGRAIN", unit: "-", source_kind: user_provided, model_input_format: "compile-time switch", notes: "1=temperature / 2=temperature-gradient grain metamorphism."}
+    - {category: structural_option, name: "SNFRAC", unit: "-", source_kind: user_provided, model_input_format: "compile-time switch", notes: "1=linear / 2=tanh / 3=asymptotic snow-cover-fraction parameterization."}
+    - {category: structural_option, name: "EXCHNG", unit: "-", source_kind: user_provided, model_input_format: "compile-time switch", notes: "0=neutral fixed exchange / 1=Monin-Obukhov stability correction of turbulent exchange."}
+    - {category: structural_option, name: "CANMOD", unit: "-", source_kind: user_provided, model_input_format: "compile-time switch", notes: "1=single canopy layer / 2=two canopy layers."}
+    - {category: structural_option, name: "CANRAD", unit: "-", source_kind: user_provided, model_input_format: "compile-time switch", notes: "1=Beer-Lambert / 2=two-stream canopy radiative transfer."}
+    - {category: structural_option, name: "CANINT", unit: "-", source_kind: user_provided, model_input_format: "compile-time switch", notes: "1=linear / 2=nonlinear (exponential saturation) canopy snow interception."}
+    - {category: structural_option, name: "CANUNL", unit: "-", source_kind: user_provided, model_input_format: "compile-time switch", notes: "1=time/melt-dependent / 2=temperature/wind-driven canopy snow unloading."}
+    - {category: structural_option, name: "SWPART", unit: "-", source_kind: user_provided, model_input_format: "compile-time switch", notes: "0=all SW diffuse (solar elevation forced 0) / 1=solar-position diffuse/direct split. Default 0 is a silent partitioning pitfall."}
+    - {category: structural_option, name: "ZOFFST", unit: "-", source_kind: user_provided, model_input_format: "compile-time switch", notes: "0=height above ground / 1=height above canopy top for measurement heights."}
+    - {category: structural_option, name: "DRIV1D", unit: "-", source_kind: user_provided, model_input_format: "compile-time switch", notes: "1=FSM native met format / 2=ESM-SnowMIP format (column order and humidity handling differ)."}
+    - {category: structural_option, name: "PROFNC", unit: "-", source_kind: user_provided, model_input_format: "compile-time switch", notes: "0=ASCII output / 1=NetCDF profile output (valid only for Npnts=1)."}
+    - {category: grid, name: "Npnts", unit: "-", source_kind: user_provided, model_input_format: "&gridpnts namelist", notes: "Number of independent simulation points; must match length of each &veg array. Default 1."}
+    - {category: time, name: "dt", unit: "s", source_kind: user_provided, model_input_format: "&drive namelist", notes: "Timestep, default 3600 s; must match the forcing interval."}
+    - {category: restart, name: "start_file", unit: "-", source_kind: user_provided, model_input_format: "&initial namelist", notes: "Optional restart dump file; if absent the model cold-starts with no snow."}
+
+processes:
+  modules:
+    - {name: "FSM2_DRIVE", role: "driver", brief: "Reads one met record per step (DRIV1D format), converts RH->specific humidity Qa via Magnus formula using Ps, floors Ua at 0.1 m/s, and optionally splits SW into diffuse/direct."}
+    - {name: "SOLARPOS", role: "process_solver", brief: "Computes solar azimuth/elevation from date/time/latitude.", applicability: "SWPART=1"}
+    - {name: "FSM2_TIMESTEP", role: "integrator", brief: "Orchestrates one timestep at one point by invoking CANOPY -> SWRAD -> THERMAL -> SRFEBAL -> INTERCEPT -> SNOW -> SOIL in fixed order."}
+    - {name: "CANOPY", role: "process_solver", brief: "Computes canopy layer heat capacities, snow-cover fractions, area indices and snow capacities from VAI and intercepted snow.", applicability: "VAI>0"}
+    - {name: "SWRAD", role: "process_solver", brief: "Shortwave radiative transfer: evolves prognostic snow albedo (ALBEDO), canopy Beer/two-stream transmission, partitions absorbed SW between surface and vegetation."}
+    - {name: "TWOSTREAM", role: "process_solver", brief: "Two-stream canopy shortwave radiative-transfer solver.", applicability: "CANRAD=2"}
+    - {name: "THERMAL", role: "process_solver", brief: "Computes thermal conductivities and heat capacities of snow and soil layers incl. soil freezing; defines the composite surface layer (Ds1,ks1,Ts1) and surface conductance gs1."}
+    - {name: "SRFEBAL", role: "process_solver", brief: "Surface + canopy energy balance: iterates surface/canopy/veg temperatures with turbulent exchange to produce H, LE, LWout, Melt, subl, Gsrf and subcanopy diagnostics."}
+    - {name: "PSIMH", role: "process_solver", brief: "Monin-Obukhov stability functions for turbulent exchange.", applicability: "EXCHNG=1"}
+    - {name: "QSAT", role: "process_solver", brief: "Saturation specific humidity calculation used by the energy balance."}
+    - {name: "INTERCEPT", role: "process_solver", brief: "Canopy snow mass balance: interception (reduces ground snowfall), sublimation, melt drip and unloading.", applicability: "VAI>0"}
+    - {name: "SNOW", role: "process_solver", brief: "Snowpack thermodynamics and hydrology: layer temperatures, compaction/density, grain growth, melt/refreeze, water routing, relayering; outputs Gsoil, Roff, snd, snw and modifies Tsoil(1)."}
+    - {name: "SOIL", role: "process_solver", brief: "Updates soil-layer temperatures via an implicit (tridiagonal) heat-diffusion solve driven by Gsoil from SNOW."}
+    - {name: "FSM2_PARAMS", role: "allocator", brief: "Sets default vegetation/snow/soil/ensemble parameters then applies &params namelist overrides; populates the global PARAMETERS module."}
+    - {name: "TRIDIAG", role: "process_solver", brief: "Thomas tridiagonal solver used by SOIL and SNOW for implicit heat-conduction systems."}
+    - {name: "LUDCMP", role: "process_solver", brief: "LU decomposition solver used by the two-stream canopy radiation scheme."}
+  internal_edges:
+    - {from: "Inputs", to: "FSM2_DRIVE", kind: consumes_input, brief: "Reads year/month/day/hour SW LW Sf Rf Ta RH Ua Ps from the met file (DRIV1D=1)."}
+    - {from: "Inputs", to: "FSM2_PARAMS", kind: consumes_input, brief: "&params namelist overrides default vegetation/snow/soil parameters."}
+    - {from: "FSM2_DRIVE", to: "SOLARPOS", kind: invokes, brief: "Solar position requested for diffuse/direct SW partition when SWPART=1."}
+    - {from: "FSM2_DRIVE", to: "FSM2_TIMESTEP", kind: produces_output, brief: "Per-step met (LW,Ps,Qa,Rf,Sdif,Sdir,Sf,Ta,Ua,elev) passed into the physics integrator."}
+    - {from: "FSM2_TIMESTEP", to: "CANOPY", kind: invokes, brief: "First physics call each step; computes canopy properties from Sveg,Tveg,VAI."}
+    - {from: "CANOPY", to: "SWRAD", kind: produces_output, brief: "Canopy fractions and leaf area (fcans,lveg) passed to shortwave radiation."}
+    - {from: "FSM2_TIMESTEP", to: "SWRAD", kind: invokes, brief: "Computes absorbed SW and updates snow albedo state."}
+    - {from: "SWRAD", to: "TWOSTREAM", kind: invokes, brief: "Canopy two-stream radiative transfer when CANRAD=2."}
+    - {from: "SWRAD", to: "albs", kind: writes_state, brief: "Snow albedo state evolved inside the radiation module."}
+    - {from: "FSM2_TIMESTEP", to: "THERMAL", kind: invokes, brief: "Computes ksnow, ksoil, csoil and the surface composite Ds1,ks1,Ts1,gs1."}
+    - {from: "THERMAL", to: "SRFEBAL", kind: produces_output, brief: "Surface layer Ds1,ks1,Ts1 and conductance gs1 feed the energy balance (gs1 may be uninitialized if Vsmc(1)~0)."}
+    - {from: "FSM2_TIMESTEP", to: "SRFEBAL", kind: invokes, brief: "Iterates surface/canopy energy balance; produces H,LE,LWout,Melt,subl,Gsrf,Eveg."}
+    - {from: "SRFEBAL", to: "PSIMH", kind: invokes, brief: "Stability correction of turbulent exchange when EXCHNG=1."}
+    - {from: "SRFEBAL", to: "QSAT", kind: invokes, brief: "Saturation humidity for latent-heat / sublimation terms."}
+    - {from: "SRFEBAL", to: "Tsrf", kind: writes_state, brief: "Surface temperature updated."}
+    - {from: "SRFEBAL", to: "Tveg", kind: writes_state, brief: "Vegetation/canopy layer temperatures updated."}
+    - {from: "FSM2_TIMESTEP", to: "INTERCEPT", kind: invokes, brief: "Canopy snow mass balance; returns drip, svg, unload."}
+    - {from: "SRFEBAL", to: "INTERCEPT", kind: produces_output, brief: "Veg moisture flux (Eveg) and Melt drive canopy snow sublimation/melt."}
+    - {from: "INTERCEPT", to: "Inputs", kind: writes_state, brief: "Reduces the ground snowfall forcing Sf (intent(inout)) by the canopy-intercepted amount before SNOW receives it (VAI>0)."}
+    - {from: "INTERCEPT", to: "Sveg", kind: writes_state, brief: "Canopy snow mass state updated."}
+    - {from: "INTERCEPT", to: "SNOW", kind: produces_output, brief: "Drip (canopy meltwater) and unloaded snow added to the ground snowpack inputs."}
+    - {from: "FSM2_TIMESTEP", to: "SNOW", kind: invokes, brief: "Snow thermodynamics + hydrology; updates Dsnw,Sice,Sliq,Tsnow,Rgrn,Nsnow."}
+    - {from: "SRFEBAL", to: "SNOW", kind: produces_output, brief: "Gsrf (surface heat flux), Esrf and Melt drive snowpack energy/mass."}
+    - {from: "SNOW", to: "Tsoil", kind: writes_state, brief: "SNOW reads and modifies Tsoil(1) (inout) for snow-base heat exchange — cross-module state write."}
+    - {from: "SNOW", to: "SOIL", kind: produces_output, brief: "Gsoil = U*(Tsnow(n)-Tsoil(1)) computed in SNOW and passed to the soil solver within the same step."}
+    - {from: "SNOW", to: "TRIDIAG", kind: invokes, brief: "Tridiagonal solve for snow-layer temperature increments."}
+    - {from: "FSM2_TIMESTEP", to: "SOIL", kind: invokes, brief: "Implicit soil heat diffusion; last physics call of the timestep."}
+    - {from: "SOIL", to: "Tsoil", kind: writes_state, brief: "Updates all soil-layer temperatures via the tridiagonal solve."}
+    - {from: "SOIL", to: "TRIDIAG", kind: invokes, brief: "Thomas algorithm for the soil temperature linear system."}
+    - {from: "TWOSTREAM", to: "LUDCMP", kind: invokes, brief: "LU decomposition for the two-stream radiative system."}
+    - {from: "THERMAL", to: "Soil", kind: reads_state, brief: "Reads global derived soil props (b,Vsat,sathh,Vcrit,hcap_soil,hcon_soil) for soil thermal/freezing calc."}
+    - {from: "SNOW", to: "Outputs", kind: produces_output, brief: "snd, snw, Melt, Roff, subl written to flux/stat files."}
+    - {from: "SOIL", to: "Outputs", kind: produces_output, brief: "Tsoil written to stat file."}
+
+states:
+  variables:
+    - {name: "snw", unit: "kg m-2", role: prognostic}
+    - {name: "snd", unit: "m", role: diagnostic}
+    - {name: "Nsnow", unit: "-", role: prognostic}
+    - {name: "Dsnw", unit: "m", role: prognostic}
+    - {name: "Sice", unit: "kg m-2", role: prognostic}
+    - {name: "Sliq", unit: "kg m-2", role: prognostic}
+    - {name: "Tsnow", unit: "K", role: prognostic}
+    - {name: "Rgrn", unit: "m", role: prognostic}
+    - {name: "albs", unit: "-", role: prognostic}
+    - {name: "Tsoil", unit: "K", role: prognostic}
+    - {name: "Vsmc", unit: "m3 m-3", role: prognostic}
+    - {name: "Tsrf", unit: "K", role: prognostic}
+    - {name: "Sveg", unit: "kg m-2", role: prognostic}
+    - {name: "Tveg", unit: "K", role: prognostic}
+    - {name: "Tcan", unit: "K", role: prognostic}
+    - {name: "Qcan", unit: "kg kg-1", role: prognostic}
+    - {name: "b", unit: "-", role: diagnostic}
+    - {name: "Vsat", unit: "m3 m-3", role: diagnostic}
+    - {name: "sathh", unit: "m", role: diagnostic}
+    - {name: "Vcrit", unit: "m3 m-3", role: diagnostic}
+    - {name: "hcap_soil", unit: "J K-1 m-3", role: diagnostic}
+    - {name: "hcon_soil", unit: "W m-1 K-1", role: diagnostic}
+  provenance: "populated"
+
+outputs:
+  - var: "snw"
+    validation_rank: 1
+    unit: "kg m-2"
+    description: "Snow water equivalent (SWE)"
+    emitted_in: "{runid}stat.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Point-scale column; obs must be a co-located SWE record (pillow/course). Snow-cover-duration / melt-out timing is a key skill target."]
+      detrending_options: ["none"]
+  - var: "snd"
+    validation_rank: 2
+    unit: "m"
+    description: "Snow depth"
+    emitted_in: "{runid}stat.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Depth depends on the DENSTY parameterization; depth-SWE consistency requires a prognostic density scheme."]
+      detrending_options: ["none"]
+  - var: "svg"
+    validation_rank: 4
+    unit: "kg m-2"
+    description: "Snow mass on vegetation/canopy"
+    emitted_in: "{runid}stat.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Only meaningful for forested points (VAI>0); canopy snow load observations are rare."]
+      detrending_options: ["none"]
+  - var: "Tsrf"
+    validation_rank: 5
+    unit: "K"
+    description: "Ground/snow surface temperature (<=273.15 K when snow present)"
+    emitted_in: "{runid}stat.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Comparable to skin/IR surface temperature; capped at melting point when snow is present."]
+      detrending_options: ["none"]
+  - var: "Tsoil"
+    validation_rank: 3
+    unit: "K"
+    description: "Soil layer temperatures (Nsoil columns)"
+    emitted_in: "{runid}stat.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Per-layer; obs must match the layer depth (Dzsoil) being compared."]
+      detrending_options: ["none"]
+  - var: "Tveg"
+    validation_rank: 6
+    unit: "K"
+    description: "Vegetation/canopy layer temperatures (Ncnpy columns)"
+    emitted_in: "{runid}stat.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Per-canopy-layer (Ncnpy columns); only meaningful for forested points (VAI>0). Comparable to IR/thermocouple canopy temperature."]
+      detrending_options: ["none"]
+  - var: "Melt"
+    validation_rank: 7
+    unit: "kg m-2 s-1"
+    description: "Surface melt rate"
+    emitted_in: "{runid}flux.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Lysimeter/melt observations are scarce; usually evaluated indirectly via SWE depletion."]
+      detrending_options: ["none"]
+  - var: "Roff"
+    validation_rank: 8
+    unit: "kg m-2 s-1"
+    description: "Runoff at base of snow"
+    emitted_in: "{runid}flux.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Snowpack outflow; comparable to snow lysimeter outflow, not catchment streamflow."]
+      detrending_options: ["none"]
+  - var: "subl"
+    validation_rank: 9
+    unit: "kg m-2 s-1"
+    description: "Sublimation rate"
+    emitted_in: "{runid}flux.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Direct sublimation obs are rare; flux-tower latent heat is the usual proxy."]
+      detrending_options: ["none"]
+  - var: "H"
+    validation_rank: 10
+    unit: "W m-2"
+    description: "Sensible heat flux (positive upward)"
+    emitted_in: "{runid}flux.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Comparable to eddy-covariance sensible heat at a flux tower; sign convention positive upward."]
+      detrending_options: ["none"]
+  - var: "LE"
+    validation_rank: 11
+    unit: "W m-2"
+    description: "Latent heat flux (positive upward)"
+    emitted_in: "{runid}flux.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Comparable to eddy-covariance latent heat; tied to sublimation/evaporation."]
+      detrending_options: ["none"]
+  - var: "LWout"
+    validation_rank: 12
+    unit: "W m-2"
+    description: "Outgoing longwave radiation"
+    emitted_in: "{runid}flux.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Comparable to upwelling longwave from a radiometer; diagnostic of surface temperature/emissivity."]
+      detrending_options: ["none"]
+  - var: "SWout"
+    validation_rank: 13
+    unit: "W m-2"
+    description: "Outgoing shortwave radiation"
+    emitted_in: "{runid}flux.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Reflected SW; primarily a diagnostic of modeled snow albedo evolution."]
+      detrending_options: ["none"]
+  - var: "LWsub"
+    validation_rank: 14
+    unit: "W m-2"
+    description: "Subcanopy downward longwave radiation"
+    emitted_in: "{runid}subc.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Sub-canopy diagnostic valid only for forested points (VAI>0); comparable to below-canopy radiometer downward longwave."]
+      detrending_options: ["none"]
+  - var: "SWsub"
+    validation_rank: 15
+    unit: "W m-2"
+    description: "Subcanopy downward shortwave radiation"
+    emitted_in: "{runid}subc.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Sub-canopy diagnostic valid only for forested points (VAI>0); comparable to below-canopy radiometer downward shortwave."]
+      detrending_options: ["none"]
+  - var: "Tsub"
+    validation_rank: 16
+    unit: "K"
+    description: "Subcanopy air temperature"
+    emitted_in: "{runid}subc.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Sub-canopy diagnostic valid only for forested points (VAI>0); comparable to below-canopy air-temperature sensor."]
+      detrending_options: ["none"]
+  - var: "Usub"
+    validation_rank: 17
+    unit: "m s-1"
+    description: "Subcanopy wind speed"
+    emitted_in: "{runid}subc.txt"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Sub-canopy diagnostic valid only for forested points (VAI>0); comparable to below-canopy anemometer wind speed."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "precipitation (snowfall forcing)"
+      to: "snw"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["gunther2019_fsm_uncertainty_sensitivity", "bonsoms2024_fsm2_ros_sensitivity"]
+    - from: "air temperature (forcing)"
+      to: "snw"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["bonsoms2024_fsm2_ros_sensitivity", "gunther2019_fsm_uncertainty_sensitivity"]
+    - from: "air temperature (forcing)"
+      to: "Melt"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["bonsoms2024_fsm2_ros_sensitivity"]
+    - from: "radiation / meteorological forcing error"
+      to: "snw"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: boundary_forcing
+      applicability: "always"
+      citations: ["gunther2019_fsm_uncertainty_sensitivity"]
+    - from: "model structure (multi-physics configuration)"
+      to: "snw"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["gunther2019_fsm_uncertainty_sensitivity", "essery2015_fsm10_factorial"]
+    - from: "prognostic snow albedo (ALBEDO=2)"
+      to: "snw"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["essery2013_1701_snowmodels", "essery2015_fsm10_factorial"]
+    - from: "prognostic snow density (DENSTY=1/2)"
+      to: "snd"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["essery2013_1701_snowmodels", "essery2015_fsm10_factorial"]
+    - from: "prognostic liquid water content (storage/refreezing, HYDROL=1/2)"
+      to: "snw"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["essery2013_1701_snowmodels", "essery2015_fsm10_factorial"]
+    - from: "variable thermal conductivity (CONDCT=1)"
+      to: "Tsnow"
+      sensitivity_grade: LOW
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["essery2015_fsm10_factorial"]
+    - from: "atmospheric stability adjustment of turbulent exchange (EXCHNG=1)"
+      to: "Melt"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: structural
+      applicability: "always"
+      citations: ["essery2015_fsm10_factorial", "gunther2019_fsm_uncertainty_sensitivity"]
+    - from: "canopy snow interception/unloading capacity"
+      to: "snw"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "forested (VAI>0)"
+      citations: ["smyth2022_fsm2_canopy_sobol", "essery2025_fsm211_canopy"]
+    - from: "vegetation area index (VAI)"
+      to: "snw"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "forested (VAI>0)"
+      citations: ["smyth2022_fsm2_canopy_sobol"]
+    - from: "ratio of snow roughness to canopy height (rchz)"
+      to: "snw"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "forested (VAI>0)"
+      citations: ["smyth2022_fsm2_canopy_sobol"]
+    - from: "snow-free vegetation albedo"
+      to: "snw"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: parameter
+      applicability: "forested (VAI>0)"
+      citations: ["smyth2022_fsm2_canopy_sobol"]
+    - from: "canopy density / sky view (radiative transfer)"
+      to: "Melt"
+      sensitivity_grade: MEDIUM
+      basis: literature_qualitative
+      lever_type: parameter
+      applicability: "forested (VAI>0)"
+      citations: ["essery2025_fsm211_canopy"]
+  citation_index:
+    gunther2019_fsm_uncertainty_sensitivity:
+      short_citation: "Günther et al. 2019"
+      doi: "10.1029/2018WR023403"
+      note: "Sobol variance-based SA of ~230,000 FSM realizations at Kühtai; forcing error > structure > parameters for SWE."
+    essery2013_1701_snowmodels:
+      short_citation: "Essery et al. 2013"
+      doi: "10.1016/j.advwatres.2012.07.013"
+      note: "1701-configuration ensemble at Col de Porte; prognostic albedo + density + liquid-water storage give best/most consistent performance."
+    essery2015_fsm10_factorial:
+      short_citation: "Essery 2015"
+      doi: "10.5194/gmd-8-3867-2015"
+      note: "Defines FSM 1.0 factorial design: 5 switchable processes x 2 levels = 32 structural configurations."
+    smyth2022_fsm2_canopy_sobol:
+      short_citation: "Smyth et al. 2022"
+      doi: "10.1029/2021WR030563"
+      note: "FSM2 Sobol SA of canopy parameters on sub-canopy SWE; interception capacity leading control, VAI/rchz/veg-albedo second tier (~1-5% variance)."
+    bonsoms2024_fsm2_ros_sensitivity:
+      short_citation: "Bonsoms et al. 2024"
+      doi: "10.5194/nhess-24-245-2024"
+      note: "FSM2 Pyrenees rain-on-snow SA; air temperature dominant driver of snow height (~28-39% per °C), precipitation moderate-to-low."
+    essery2025_fsm211_canopy:
+      short_citation: "Essery et al. 2025"
+      doi: "10.5194/gmd-18-3583-2025"
+      note: "FSM 2.1.1 forest-canopy paper; unloading option has the largest influence on snow on the ground, radiative-scheme complexity minimal for dense canopy."
+
+safety:
+  hazards:
+    - id: "weather_Ta_celsius_not_kelvin"
+      kind: weather_file_semantic
+      description: "Air temperature supplied in °C instead of K -> massively negative energy balance and no snow accumulation/melt."
+      severity: fatal_or_silent
+      triplet: "T01"
+    - id: "weather_Ps_not_pascals"
+      kind: weather_file_semantic
+      description: "Surface pressure in hPa/kPa instead of Pa breaks the RH->specific-humidity (Qa) conversion, giving ~zero latent heat."
+      severity: silent
+      triplet: "T02"
+    - id: "weather_RH_fraction_not_percent"
+      kind: weather_file_semantic
+      description: "RH given as fraction 0-1 instead of percent 0-100 -> excessively dry atmosphere, wrong evaporation."
+      severity: silent
+      triplet: "T03"
+    - id: "weather_precip_rate_units"
+      kind: weather_file_semantic
+      description: "Snow/rain rate in mm/h or mm/day instead of kg m-2 s-1 inflates accumulation by 3600x or 86400x."
+      severity: silent
+      triplet: "T04"
+    - id: "weather_Ua_units"
+      kind: weather_file_semantic
+      description: "Wind in km/h instead of m/s drives excessive sublimation and can yield negative SWE (Ua floored to 0.1 internally)."
+      severity: silent
+      triplet: "T18"
+    - id: "weather_header_row_present"
+      kind: weather_file_semantic
+      description: "Met file has a header row; FSM2 reads the first line as year/month/day/hour integers -> EOF/parse error on first timestep."
+      severity: fatal
+      triplet: "T05"
+    - id: "weather_empty_or_header_only"
+      kind: weather_file_semantic
+      description: "Empty or header-only met file -> immediate EOF and 0-byte output files."
+      severity: fatal
+      triplet: "T15"
+    - id: "control_namelist_order_or_missing"
+      kind: control_semantic
+      description: "Six namelist blocks missing or out of fixed order (empty blocks still required) -> 'invalid input for namelist'."
+      severity: fatal
+      triplet: "T06"
+    - id: "control_Npnts_veg_array_mismatch"
+      kind: control_semantic
+      description: "Npnts in &gridpnts not matching the number of values in each &veg array (alb0,vegh,VAI) -> array bounds error/segfault."
+      severity: fatal
+      triplet: "T07"
+    - id: "control_lat_radians_not_degrees"
+      kind: control_semantic
+      description: "Latitude entered in radians instead of degrees -> wrong solar zenith and SW partitioning (SWPART=1)."
+      severity: silent
+      triplet: "T16"
+    - id: "control_dt_forcing_interval_mismatch"
+      kind: control_semantic
+      description: "Model dt not matching the forcing time interval produces wrong accumulation/flux rates."
+      severity: silent
+    - id: "soil_clay_sand_fraction_sum"
+      kind: soil_semantic
+      description: "fcly+fsnd > 1 yields unphysical pedotransfer-derived soil properties."
+      severity: degraded
+    - id: "ic_Tsrf_above_melting_with_snow"
+      kind: initial_condition_semantic
+      description: "Sustained Tsrf > 273.15 K with snow present indicates excess incoming energy or an energy-balance solver problem."
+      severity: warning
+      triplet: "T13"
+    - id: "numerical_negative_swe"
+      kind: numerical_instability
+      description: "Sublimation/transport removing more mass than available drives negative SWE under extreme wind/sublimation."
+      severity: degraded
+      triplet: "T18"
+    - id: "coeff_gs1_uninitialized_dry_topsoil"
+      kind: coefficient_runtime_silent_fallback
+      description: "THERMAL sets surface conductance gs1 only when Vsmc(1)>epsilon; near-zero top-soil moisture leaves gs1 uninitialized for SRFEBAL."
+      severity: silent
+    - id: "parser_stat_column_count_varies"
+      kind: parser_semantic
+      description: "stat.txt Tsoil/Tveg occupy Nsoil and Ncnpy columns; the column count depends on compile-time CANMOD/Nsoil, so parsers must know them."
+      severity: warning
+    - id: "parser_hour_written_as_float"
+      kind: parser_semantic
+      description: "Output hour is written as f8.3 (float), not an integer; integer-cast parsers truncate sub-hourly time when dt<3600."
+      severity: warning
+  validation_limits:
+    - "Point / 1-D column model: no lateral snow redistribution or blowing-snow transport (wind transport rate hardwired to 0)."
+    - "Multi-point runs are independent columns with no inter-point exchange."
+    - "Daily/hourly timestep on a discrete column; default dt=3600 s, must match forcing interval."
+    - "NetCDF output (PROFNC=1) is restricted to single-point (Npnts=1) runs."
+    - "Physics options are fixed at compile time; switching parameterizations requires recompilation."
+  warnings:
+    - "SWPART=0 (default) treats all incoming SW as diffuse and forces solar elevation to 0 — a silent partitioning pitfall under clear-sky/sloped sites."
+    - "DENSTY=0 holds snow density fixed (no compaction), distorting the depth-SWE relationship."
+    - "ENSMBL perturbed-driving re-derives rain/snow phase from an air-temperature rule, silently overriding the forcing Rf/Sf split."
+    - "Canopy snow interception requires VAI>0; vegh>0 alone produces no canopy effect."
+    - "Soil hydraulic properties are computed once from fcly/fsnd at startup and are not updated per timestep; a representative texture must be chosen up front."
+  assumptions:
+    - statement: "FSM2 is a point-scale, 1-D vertical column (snow over soil with optional 1-2 layer canopy); multi-point runs are independent columns."
+      scope: "spatial geometry of the whole model"
+      source: "FSM2 user guide (FSMuser.tex) grid/timing namelist section and Essery 2015 (doi:10.5194/gmd-8-3867-2015)"
+      status: adopted
+    - statement: "Mass-balance closure holds for snow water (cumulative Sf - Melt - subl - Roff ~= dSWE) and energy-balance closure for the surface/soil column (solved to |error| < 0.01 W m-2)."
+      scope: "conservation properties"
+      source: "FSM2 scientific guide (FSMsci.tex) energy-balance and conservation sections"
+      status: adopted
+    - statement: "Forcing RH is consumed only to derive specific humidity Qa in FSM2_DRIVE (DRIV1D=1) and does not otherwise reach the physics; range-checking RH guards that conversion."
+      scope: "forcing humidity handling"
+      source: "FSM2_DRIVE.F90 RH->Qa Magnus-formula conversion"
+      status: adopted
+    - statement: "Snow-base heat exchange couples within a single timestep: SNOW computes Gsoil from Tsnow(n)-Tsoil(1) and modifies Tsoil(1) before SOIL is solved."
+      scope: "intra-timestep module ordering"
+      source: "SNOW.F90 / SOIL.F90 call order in FSM2_TIMESTEP"
+      status: adopted
+    - statement: "The implementation is FSM2 v2.1.2 (user guide); the underlying canopy science follows the FSM 2.1.1 lineage (Essery et al. 2025)."
+      scope: "version labeling"
+      source: "FSM2 user guide header vs README / Essery et al. 2025 (doi:10.5194/gmd-18-3583-2025)"
+      status: tentative

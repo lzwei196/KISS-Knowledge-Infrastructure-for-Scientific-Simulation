@@ -1,0 +1,553 @@
+template_version: "3.5"
+
+identity:
+  model_id: "WRF"
+  scientific_reference_version: "Advanced Research WRF (ARW) dynamical core, v4.x lineage; governing equations per the ARW Technical Note (NCAR TN series): fully compressible nonhydrostatic Euler equations in flux form on a terrain-following hybrid hydrostatic-pressure (eta) mass coordinate, Arakawa C-grid"
+  implementation:
+    id: "wrf-arw-471"
+    version: "4.7.1"
+    provenance: "Fortran 90/2003 with C utilities; NCAR/UCAR community WRF-ARW release 4.7.1 (github.com/wrf-model/WRF); MPI + OpenMP parallel; NetCDF I/O."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: "Public-Domain"
+  repo_url: "https://github.com/wrf-model/WRF"
+
+boundary:
+  scope_in:
+    - "Limited-area mesoscale-to-microscale atmospheric dynamics (compressible nonhydrostatic, with run-time hydrostatic option)"
+    - "Real-data numerical weather prediction over a map-projected limited-area domain"
+    - "Idealized simulations (LES, convection, baroclinic wave)"
+    - "Coupled atmosphere-land-surface evolution via physics parameterizations (microphysics, radiation, surface layer, PBL, cumulus, LSM)"
+    - "One-way and two-way nested domains"
+  scope_out:
+    - "Generation of static terrestrial and meteorological input fields (handled by the WPS preprocessing system: geogrid/ungrib/metgrid)"
+    - "Variational/observation data assimilation (separate optional WRF-DA 3D/4D-Var component)"
+    - "Chemistry (WRF-Chem) and fire (WRF-Fire) coupled components, unless those optional modules are enabled"
+    - "Global simulation (this is a limited-area model requiring external lateral boundary data for real cases)"
+    - "Post-processing and visualization (external tools: RIP4, NCL, VAPOR, MET)"
+  spatial: "3-D"
+  temporal: "sub-hourly"
+  closure: "mass-balance"
+  notes: "Prognostic equations are integrated in flux (conservative) form on a hydrostatic-pressure mass coordinate, conserving dry-air mass and the coupled (mu-weighted) scalar variables; positive-definite/monotonic advection options enforce scalar conservation. This is a dynamical-core mass conservation, not a closed column energy budget: surface energy partitioning depends on the chosen land-surface and radiation schemes. Time integration is time-split: a Runge-Kutta 2nd/3rd-order outer step with smaller acoustic/gravity-wave sub-steps; the model timestep is CFL-constrained (rule of thumb dt <= 6*dx_km) unless adaptive time-stepping is enabled. Horizontal grid spacing typically 1-36 km with ~45 terrain-following eta levels; map projection is Lambert conformal (mid-latitudes), Mercator (tropics), polar stereographic (poles), or lat-lon."
+
+inputs:
+  forcing:
+    - category: "meteorological_lateral_forcing"
+      name: "Global reanalysis/forecast lateral boundary fields (3-D temperature, u/v wind, geopotential height, relative humidity, surface and mean-sea-level pressure)"
+      unit: "K, m s-1, m, %, Pa"
+      source_kind: "forcing"
+      model_input_format: "Lateral boundary fields in wrfbdy_d01 (NetCDF), updated at interval_seconds; derived from interpolated met_em fields"
+      notes: "Drives the domain-1 lateral boundary tendencies throughout the run. interval_seconds must match the driving-data frequency (hourly=3600, 6-hourly=21600). 12-24 h spin-up recommended before the analysis period."
+    - category: "meteorological_surface_forcing"
+      name: "Skin/sea-surface temperature, soil moisture and temperature, land-sea mask, 2-m fields"
+      unit: "K, m3 m-3, 0/1"
+      source_kind: "forcing"
+      model_input_format: "met_em.d0N fields (SKINTEMP, SST, SM000010, ST000010, LANDSEA) consumed by real.exe; optional time-varying SST via wrflowinp with sst_update=1"
+      notes: "Soil moisture/temperature and SST must be present in the met_em files or real.exe falls back / produces zero-soil fields. SST over water defaults to SKINTEMP when absent."
+  parameters:
+    - category: "static_terrestrial"
+      name: "Terrain elevation, dominant land-use category, dominant soil category (top/bottom), slope category"
+      unit: "m, category index"
+      source_kind: "dataset_lookup"
+      model_input_format: "geo_em.d0N.nc static fields (HGT_M, LU_INDEX, SCT_DOM, SCB_DOM) produced by geogrid from WPS_GEOG (USGS GMTED2010 topo, MODIS 21-cat or USGS 24-cat land use, STATSGO/FAO 16-cat soil)"
+      notes: "num_land_cat must match the land-use dataset (MODIS=21, USGS=24)."
+    - category: "static_terrestrial_seasonal"
+      name: "Monthly green-vegetation fraction, monthly surface albedo, maximum snow albedo, leaf area index, deep soil temperature"
+      unit: "fraction, K"
+      source_kind: "dataset_lookup"
+      model_input_format: "geo_em.d0N.nc (GREENFRAC, ALBEDO12M, SNOALB) and met_em annual-mean deep soil temperature"
+    - category: "physics_lookup_tables"
+      name: "Land-surface, vegetation, soil, and radiation lookup tables"
+      unit: "scheme-specific"
+      source_kind: "default"
+      model_input_format: "LANDUSE.TBL, VEGPARM.TBL, SOILPARM.TBL, GENPARM.TBL, RRTM_DATA / RRTMG_LW_DATA / RRTMG_SW_DATA / CAM_ABS_DATA"
+      notes: "Radiation lookup tables must be present in the run directory at runtime or radiation crashes or uses wrong physics."
+    - category: "tunable_physics_coefficients"
+      name: "Scheme tuning coefficients (e.g. Kain-Fritsch entrainment/downdraft multipliers, CAPE consumption time, Noah saturated-soil-water multiplier, PBL momentum-diffusivity profile exponent, radiation scattering tuning)"
+      unit: "dimensionless / scheme-specific"
+      source_kind: "calibrated"
+      model_input_format: "Scheme-internal coefficients (subset namelist-exposed; many hardwired in module_model_constants.F)"
+      notes: "These are the levers identified by published WRF sensitivity analyses (see influence). Most are not surfaced in standard namelist tables."
+  initial_conditions:
+    - category: "atmospheric_initial_state"
+      name: "Initial 3-D wind, perturbation potential temperature, geopotential, pressure, dry-air column mass, water-vapor mixing ratio"
+      unit: "m s-1, K, m2 s-2, Pa, kg kg-1"
+      source_kind: "derived"
+      model_input_format: "wrfinput_d0N (NetCDF) variables U, V, W, T, PH/PHB, P/PB, MU/MUB, QVAPOR produced by real.exe vertical interpolation of met_em onto the eta grid plus base-state computation"
+    - category: "land_initial_state"
+      name: "Initial soil temperature and volumetric soil moisture by layer"
+      unit: "K, m3 m-3"
+      source_kind: "derived"
+      model_input_format: "wrfinput_d0N TSLB, SMOIS (num_soil_layers consistent with the land-surface scheme)"
+  boundary_conditions:
+    - category: "domain_grid_control"
+      name: "Domain dimensions, nesting, projection, and vertical levels"
+      unit: "grid units, m"
+      source_kind: "user_provided"
+      model_input_format: "namelist.input &domains (max_dom, e_we, e_sn, e_vert, dx, dy, parent_grid_ratio, parent_time_step_ratio, i/j_parent_start, feedback) and namelist.wps projection settings"
+      notes: "parent_grid_ratio must be odd (3,5,7) for real-data nesting; e_vert must be identical across nested domains; dx/dy in meters for real-data cases."
+    - category: "time_control"
+      name: "Run length, start/end times, integration timestep, boundary-update and history intervals"
+      unit: "s, min"
+      source_kind: "user_provided"
+      model_input_format: "namelist.input &time_control (run_days/hours, start/end y/m/d/h, interval_seconds, history_interval, io_form_history) and &domains time_step"
+      notes: "time_step is CFL-bound (dt <= 6*dx_km) unless use_adaptive_time_step=.true., which overrides it at runtime via observed CFL."
+    - category: "physics_scheme_selection"
+      name: "Physics parameterization choices (microphysics, LW/SW radiation, surface layer, land-surface model, PBL, cumulus)"
+      unit: "scheme index"
+      source_kind: "user_provided"
+      model_input_format: "namelist.input &physics (mp_physics, ra_lw_physics, ra_sw_physics, sf_sfclay_physics, sf_surface_physics, bl_pbl_physics, cu_physics, radt, num_soil_layers, num_land_cat)"
+      notes: "num_soil_layers must match the LSM (Noah=4, RUC=6, Noah-MP=4, CLM4=10); cu_physics must be 0 for domains with dx<5 km; scheme suites (surface layer / PBL / LSM) must be mutually compatible."
+    - category: "dynamics_numerics_control"
+      name: "Dynamical-core and numerics switches (RK order, diffusion, advection order, hybrid coordinate, damping)"
+      unit: "option index"
+      source_kind: "user_provided"
+      model_input_format: "namelist.input &dynamics (rk_ord, diff_opt, km_opt, non_hydrostatic, hybrid_opt, h/v_mom_adv_order, h/v_sca_adv_order, moist_adv_opt, w_damping, damp_opt, zdamp, dampcoef, epssm)"
+      notes: "Damping/epssm options stabilize strong updrafts over steep terrain (mitigate 'WOULD GO OFF TOP' and NaN growth)."
+
+processes:
+  modules:
+    - name: "Dynamical core (ARW solver)"
+      role: "process_solver"
+      brief: "Solves the flux-form compressible nonhydrostatic continuity, momentum, thermodynamic, geopotential, and moisture equations using a Runge-Kutta 2nd/3rd-order outer integration with time-split acoustic/gravity-wave sub-stepping on the eta mass coordinate (solve_em)."
+    - name: "Acoustic small-step solver"
+      role: "integrator"
+      brief: "Advances the coupled momenta (u_2/v_2/w_2), column mass (mu_2), and geopotential on the small acoustic time-step, mutating the shared RK state in place (advance_uv/advance_mu_t/advance_w)."
+    - name: "Advection"
+      role: "process_solver"
+      brief: "2nd-to-6th-order horizontal/vertical advection of momentum and scalars, with positive-definite/monotonic and WENO scalar options (advect_u/v/w/scalar)."
+    - name: "Diffusion / eddy mixing"
+      role: "process_solver"
+      brief: "Horizontal/vertical diffusion and Smagorinsky-type eddy mixing (diff_opt/km_opt=4); receives sub-grid-scale eddy coefficients from the SFS/turbulence driver (horizontal_diffusion/vertical_diffusion)."
+    - name: "Sub-grid-scale turbulence (SFS)"
+      role: "process_solver"
+      brief: "Computes sub-grid-scale / NBA turbulence diffusion coefficients consumed by the diffusion module (sfs_driver, invoked from first_rk_step_part1)."
+    - name: "Microphysics"
+      role: "process_solver"
+      brief: "Grid-scale cloud/precipitation hydrometeor processes as a split-explicit moist step after the dynamics; re-derives p/rho/phi. Schemes include Thompson(8), WSM6(6), Morrison(10), Lin, WDM6 (mp_physics)."
+    - name: "Longwave radiation"
+      role: "process_solver"
+      brief: "Longwave radiative-transfer tendencies; schemes RRTMG(4)/RRTM/CAM/Goddard (ra_lw_physics)."
+    - name: "Shortwave radiation"
+      role: "process_solver"
+      brief: "Shortwave radiative-transfer tendencies; schemes RRTMG(4)/Goddard/CAM (ra_sw_physics). Uses microphysics effective radii, falling back to hardcoded background/clamp radii when a scheme does not supply them."
+    - name: "Surface layer"
+      role: "process_solver"
+      brief: "Similarity-theory surface-layer exchange coefficients linking the atmosphere to the land/ocean surface (sf_sfclay_physics; e.g. revised MM5=1)."
+    - name: "Land surface model"
+      role: "process_solver"
+      brief: "Soil thermodynamics/hydrology and surface heat/moisture fluxes; produces TSLB, SMOIS, HFX, LH. Schemes Noah(2), Noah-MP(4), RUC (sf_surface_physics)."
+    - name: "Planetary boundary layer"
+      role: "process_solver"
+      brief: "Vertical turbulent mixing tendencies in the PBL; schemes YSU(1), MYNN2.5(5), MYJ, ACM2, QNSE (bl_pbl_physics)."
+    - name: "Cumulus parameterization"
+      role: "optional_module"
+      applicability: "active only for dx >= 5 km (cu_physics=0 at convection-permitting resolution)"
+      brief: "Sub-grid convective precipitation tendencies; schemes Kain-Fritsch(1), New Tiedtke(16), BMJ, Grell-Freitas (cu_physics)."
+    - name: "Physics tendency coupler"
+      role: "allocator"
+      brief: "Assembles physics-driver tendencies (radiation/surface/PBL/cumulus) and adds them to the dry RK tendencies (calculate_phy_tend, rk_addtend_dry)."
+    - name: "Nesting driver"
+      role: "driver"
+      applicability: "max_dom > 1"
+      brief: "Forces nest lateral boundaries from the parent and feeds the nest solution back (med_nest_force / med_nest_feedback / med_nest_move)."
+    - name: "Adaptive time step"
+      role: "integrator"
+      applicability: "use_adaptive_time_step=.true."
+      brief: "Adjusts the integration timestep at runtime from the observed CFL (target_cfl, max_step_increase_pct), overriding the namelist time_step (adapt_timestep_em)."
+  internal_edges:
+    - {from: "Inputs", to: "Dynamical core", kind: "consumes_input", brief: "wrfinput initial state + wrfbdy lateral boundaries + namelist control initialize the solver"}
+    - {from: "Dynamical core", to: "Advection", kind: "invokes", brief: "RK tendency stage advects momentum and scalars"}
+    - {from: "Dynamical core", to: "Acoustic small-step solver", kind: "invokes", brief: "time-split acoustic sub-steps advance coupled momenta and mass"}
+    - {from: "Acoustic small-step solver", to: "U", kind: "writes_state", brief: "updates coupled x-wind on the small step"}
+    - {from: "Acoustic small-step solver", to: "MU", kind: "writes_state", brief: "updates perturbation dry-air column mass"}
+    - {from: "Sub-grid-scale turbulence (SFS)", to: "Diffusion / eddy mixing", kind: "invokes", brief: "supplies eddy diffusion coefficients consumed by the diffusion module"}
+    - {from: "Diffusion / eddy mixing", to: "Dynamical core", kind: "invokes", brief: "adds diffusion tendencies within the RK loop"}
+    - {from: "Longwave radiation", to: "Physics tendency coupler", kind: "invokes", brief: "longwave heating-rate tendency"}
+    - {from: "Shortwave radiation", to: "Physics tendency coupler", kind: "invokes", brief: "shortwave heating-rate tendency"}
+    - {from: "Surface layer", to: "Land surface model", kind: "invokes", brief: "exchange coefficients drive the LSM surface flux solution"}
+    - {from: "Land surface model", to: "Planetary boundary layer", kind: "invokes", brief: "surface sensible/latent heat fluxes (HFX, LH) feed PBL mixing"}
+    - {from: "Land surface model", to: "TSLB", kind: "writes_state", brief: "updates soil temperature by layer"}
+    - {from: "Land surface model", to: "SMOIS", kind: "writes_state", brief: "updates volumetric soil moisture by layer"}
+    - {from: "Planetary boundary layer", to: "Physics tendency coupler", kind: "invokes", brief: "vertical mixing tendencies of momentum/heat/moisture"}
+    - {from: "Cumulus parameterization", to: "Physics tendency coupler", kind: "invokes", brief: "sub-grid convective tendencies (when active)"}
+    - {from: "Physics tendency coupler", to: "Dynamical core", kind: "invokes", brief: "assembled physics tendencies added to dry RK tendencies"}
+    - {from: "Dynamical core", to: "Microphysics", kind: "invokes", brief: "split-explicit moist physics step after dynamics complete"}
+    - {from: "Microphysics", to: "QVAPOR", kind: "writes_state", brief: "updates water-vapor and hydrometeor mixing ratios"}
+    - {from: "Microphysics", to: "Shortwave radiation", kind: "invokes", brief: "supplies cloud effective radii (falls back to hardcoded clamps if absent)"}
+    - {from: "Dynamical core", to: "T", kind: "writes_state", brief: "updates perturbation potential temperature"}
+    - {from: "Dynamical core", to: "Outputs", kind: "produces_output", brief: "writes wrfout history and wrfrst restart NetCDF"}
+    - {from: "Nesting driver", to: "Dynamical core", kind: "invokes", brief: "forces nest lateral boundaries and feeds the nest solution back (max_dom>1)"}
+    - {from: "Adaptive time step", to: "Dynamical core", kind: "invokes", brief: "overrides the integration timestep from observed CFL when enabled"}
+
+states:
+  variables:
+    - {name: "U", unit: "m s-1", role: "prognostic"}
+    - {name: "V", unit: "m s-1", role: "prognostic"}
+    - {name: "W", unit: "m s-1", role: "prognostic"}
+    - {name: "T", unit: "K", role: "prognostic"}
+    - {name: "MU", unit: "Pa", role: "prognostic"}
+    - {name: "MUB", unit: "Pa", role: "diagnostic"}
+    - {name: "PH", unit: "m2 s-2", role: "prognostic"}
+    - {name: "PHB", unit: "m2 s-2", role: "diagnostic"}
+    - {name: "P", unit: "Pa", role: "prognostic"}
+    - {name: "PB", unit: "Pa", role: "diagnostic"}
+    - {name: "AL", unit: "m3 kg-1", role: "diagnostic"}
+    - {name: "QVAPOR", unit: "kg kg-1", role: "prognostic"}
+    - {name: "QCLOUD/QRAIN/QICE/QSNOW/QGRAUP", unit: "kg kg-1", role: "prognostic"}
+    - {name: "TKE_PBL", unit: "m2 s-2", role: "prognostic"}
+    - {name: "TSLB", unit: "K", role: "prognostic"}
+    - {name: "SMOIS", unit: "m3 m-3", role: "prognostic"}
+    - {name: "SH2O", unit: "m3 m-3", role: "prognostic"}
+    - {name: "TSK", unit: "K", role: "prognostic"}
+    - {name: "SNOW/SNOWH", unit: "kg m-2 / m", role: "prognostic"}
+    - {name: "RAINC", unit: "mm", role: "accumulator"}
+    - {name: "RAINNC", unit: "mm", role: "accumulator"}
+    - {name: "HFX/LH/QFX", unit: "W m-2", role: "diagnostic"}
+    - {name: "PBLH", unit: "m", role: "diagnostic"}
+    - {name: "T2/Q2", unit: "K / kg kg-1", role: "diagnostic"}
+    - {name: "U10/V10", unit: "m s-1", role: "diagnostic"}
+  provenance: "populated"
+
+outputs:
+  - var: "T2"
+    validation_rank: 1
+    unit: "K"
+    description: "2-metre air temperature (diagnosed at the surface; already in Kelvin, no base-state offset needed)"
+    emitted_in: "wrfout_d0N"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Compare to station 2-m temperature at the grid cell containing the station; representativeness error over heterogeneous terrain."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Gridded reanalysis/satellite LST is a proxy for 2-m air temperature, not identical."]
+      detrending_options: ["none"]
+  - var: "RAINC+RAINNC"
+    validation_rank: 3
+    unit: "mm"
+    description: "Total accumulated precipitation (convective RAINC plus grid-scale RAINNC), accumulated from simulation start"
+    emitted_in: "wrfout_d0N"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Difference consecutive output times for interval precip; gauge point vs grid-cell-average mismatch; convective timing/displacement errors dominate at sub-daily scale."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats: ["Compare against gridded radar/satellite QPE; displacement of convective cells penalizes point-to-point metrics."]
+        - obs_shape: "categorical_event"
+          comparison_mode: "categorical_event_comparison"
+          metric_families: ["event_detection"]
+          determining_metric: "csi"
+          caveats: ["Threshold-exceedance (heavy-rain) verification via hit rate / false-alarm / CSI is more robust to displacement than magnitude metrics."]
+      detrending_options: ["none", "first_difference"]
+  - var: "U10/V10"
+    validation_rank: 2
+    unit: "m s-1"
+    description: "10-metre wind components (grid-relative on the C-grid; require COSALPHA/SINALPHA rotation to earth-relative for direction comparison)"
+    emitted_in: "wrfout_d0N"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Rotate to earth-relative before direction comparison; wind direction bias of 10-30 deg arises if grid-relative winds are compared directly on projected grids."]
+      detrending_options: ["none"]
+  - var: "PSFC"
+    validation_rank: 4
+    unit: "Pa"
+    description: "Surface pressure (total, in Pa)"
+    emitted_in: "wrfout_d0N"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Reduce to common reference (station vs MSL); elevation mismatch between station and grid-cell terrain height biases magnitude."]
+      detrending_options: ["none"]
+  - var: "T"
+    validation_rank: 5
+    unit: "K"
+    description: "3-D perturbation potential temperature (theta - 300 K); actual temperature = (T+300)*((P+PB)/100000)^(Rd/cp)"
+    emitted_in: "wrfout_d0N"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Must add 300 K base state and apply Exner function before comparison to radiosonde/aircraft temperature; compare on pressure or height levels after interpolation."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Reanalysis upper-air fields require destaggering and base-state reconstruction first."]
+      detrending_options: ["none"]
+  - var: "SWDOWN"
+    validation_rank: 6
+    unit: "W m-2"
+    description: "Downward shortwave radiation at the surface"
+    emitted_in: "wrfout_d0N"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match", "timing_accuracy"]
+          determining_metric: "nse"
+          caveats: ["Diurnal cycle resolution depends on radt; cloud-radiation interaction errors dominate; compare instantaneous flux, not accumulated."]
+      detrending_options: ["none"]
+  - var: "TSLB"
+    validation_rank: 7
+    unit: "K"
+    description: "Soil temperature by layer (land-surface state)"
+    emitted_in: "wrfout_d0N"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Match the model soil-layer midpoint depth to the observation depth; strongly conditioned on the initial soil state from the forcing."]
+      detrending_options: ["none"]
+  - var: "SMOIS"
+    validation_rank: 8
+    unit: "m3 m-3"
+    description: "Volumetric soil moisture by layer (land-surface state)"
+    emitted_in: "wrfout_d0N"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["magnitude_accuracy", "temporal_pattern_match"]
+          determining_metric: "nse"
+          caveats: ["Volumetric fraction (not mm or % saturation); satellite products sense only a shallow surface layer; LSM-scheme-dependent."]
+        - obs_shape: "spatial_time_series"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match"]
+          determining_metric: "csi"
+          caveats: ["Compare top-layer SMOIS against satellite surface soil moisture; depth-support mismatch."]
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "Kain-Fritsch cumulus: entrainment mass-flux-rate multiplier"
+      to: "RAINC+RAINNC"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      applicability: "cumulus-parameterized domains (dx >= 5 km), Kain-Fritsch cu_physics"
+      lever_type: "parameter"
+      citations: ["di2015_wrf_param_sensitivity_beijing", "quan2016_wrf_parametric_sensitivity_variables", "chinta2021_wrf_param_sensitivity_monsoon", "baki2022_wrf_tc_sensitivity_gsa_ml"]
+    - from: "Kain-Fritsch cumulus: downdraft mass-flux-rate multiplier"
+      to: "RAINC+RAINNC"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      applicability: "cumulus-parameterized domains, Kain-Fritsch cu_physics"
+      lever_type: "parameter"
+      citations: ["di2015_wrf_param_sensitivity_beijing", "chinta2021_wrf_param_sensitivity_monsoon"]
+    - from: "Kain-Fritsch cumulus: mean CAPE-consumption time"
+      to: "RAINC+RAINNC"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      applicability: "cumulus-parameterized domains, Kain-Fritsch cu_physics"
+      lever_type: "parameter"
+      citations: ["di2015_wrf_param_sensitivity_beijing", "quan2016_wrf_parametric_sensitivity_variables"]
+    - from: "Kain-Fritsch cumulus: downdraft starting height above updraft source layer"
+      to: "RAINC+RAINNC"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      applicability: "cumulus-parameterized domains, Kain-Fritsch cu_physics"
+      lever_type: "parameter"
+      citations: ["di2015_wrf_param_sensitivity_beijing", "chinta2021_wrf_param_sensitivity_monsoon"]
+    - from: "Microphysics: hydrometeor fall-speed / size-distribution intercept parameters"
+      to: "RAINC+RAINNC"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      applicability: "high-intensity precipitation events"
+      lever_type: "parameter"
+      citations: ["chinta2021_wrf_param_sensitivity_monsoon", "quan2016_wrf_parametric_sensitivity_variables"]
+    - from: "PBL: momentum-diffusivity profile-shape exponent"
+      to: "U10/V10"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      applicability: "near-surface wind, heat-extreme and TC regimes"
+      lever_type: "parameter"
+      citations: ["bopape2023_wrf_heat_extremes_ml_sensitivity", "baki2022_wrf_tc_sensitivity_gsa_ml"]
+    - from: "PBL: momentum-diffusivity profile-shape exponent"
+      to: "T2"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      applicability: "heat-extreme regime"
+      lever_type: "parameter"
+      citations: ["bopape2023_wrf_heat_extremes_ml_sensitivity"]
+    - from: "Radiation: shortwave scattering tuning parameter"
+      to: "T2"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      applicability: "heat-extreme regime"
+      lever_type: "parameter"
+      citations: ["bopape2023_wrf_heat_extremes_ml_sensitivity"]
+    - from: "Noah LSM: saturated-soil-water-content multiplier"
+      to: "T2"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      applicability: "Noah LSM, heat-extreme regime"
+      lever_type: "parameter"
+      citations: ["bopape2023_wrf_heat_extremes_ml_sensitivity"]
+    - from: "Land-surface / surface-layer scheme parameters"
+      to: "T2"
+      sensitivity_grade: "MEDIUM"
+      basis: "literature_quantitative"
+      applicability: "summer-monsoon regime"
+      lever_type: "parameter"
+      citations: ["di2015_wrf_param_sensitivity_beijing", "quan2016_wrf_parametric_sensitivity_variables"]
+    - from: "Calibrated tunable-physics parameter set (8 of 24, across 7 schemes)"
+      to: "RAINC+RAINNC"
+      sensitivity_grade: "HIGH"
+      basis: "literature_quantitative"
+      applicability: "tropical-cyclone regime, Bay of Bengal"
+      lever_type: "parameter"
+      citations: ["baki2022_wrf_tc_sensitivity_gsa_ml"]
+  citation_index:
+    di2015_wrf_param_sensitivity_beijing:
+      short_citation: "Di et al. 2015"
+      doi: "10.1002/2014GL061623"
+      note: "Morris (MOAT) screening of 23 tunable WRF parameters for 5-day summer precipitation over Greater Beijing; 8 of 23 dominate, Kain-Fritsch cumulus parameters most influential for precipitation."
+    quan2016_wrf_parametric_sensitivity_variables:
+      short_citation: "Quan et al. 2016"
+      doi: "10.1002/qj.2885"
+      note: "Morris (MOAT) sensitivity of 23 WRF parameters to 11 atmospheric variables over 9 heavy-precipitation events; 6 of 23 sensitive to most variables; cumulus and PBL/surface parameters govern precipitation, temperature, wind."
+    chinta2021_wrf_param_sensitivity_monsoon:
+      short_citation: "Chinta et al. 2021"
+      doi: "10.1029/2020EA001471"
+      note: "Morris + surrogate-Sobol GSA of WRF parameters for high-intensity Indian-summer-monsoon precipitation; cumulus (Kain-Fritsch) and microphysics parameters control rainfall intensity/distribution."
+    baki2022_wrf_tc_sensitivity_gsa_ml:
+      short_citation: "Baki et al. 2022"
+      doi: "10.5194/gmd-15-2133-2022"
+      note: "Morris/MARS/surrogate-Sobol GSA of 24 WRF parameters across 7 schemes for Bay-of-Bengal tropical cyclones; 8 of 24 give 80-90% of total sensitivity; calibration improved surface wind 19.65%, precipitation 13.2%, temperature 6.5%."
+    bopape2023_wrf_heat_extremes_ml_sensitivity:
+      short_citation: "Bopape, Baki et al. 2023"
+      doi: ""
+      note: "arXiv:2307.14654 preprint; ML-surrogate GSA of WRF parameters for SE-Australia heat extremes; three important parameters: radiation scattering tuning, Noah saturated-soil-water multiplier, PBL momentum-diffusivity profile exponent."
+
+safety:
+  hazards:
+    - id: "temperature_perturbation_theta_base_state"
+      kind: "parser_semantic"
+      description: "wrfout 3-D T is perturbation potential temperature (theta-300); reading it directly without adding 300 K and applying the Exner function gives temperatures ~300 K too cold."
+      severity: "critical"
+    - id: "pressure_total_vs_perturbation"
+      kind: "parser_semantic"
+      description: "Total pressure = P + PB (Pa); using perturbation P alone or treating hPa as Pa yields values ~100x too small."
+      severity: "critical"
+    - id: "mixing_ratio_units"
+      kind: "weather_file_semantic"
+      description: "Input specific humidity/mixing ratio must be kg/kg; g/kg input is 1000x too large, causing unreal precipitation or crash."
+      severity: "critical"
+    - id: "geopotential_units"
+      kind: "weather_file_semantic"
+      description: "ERA5 geopotential is m2/s2 but the GHT input field expects metres; missing the /9.81 factor makes heights ~9.81x too large."
+      severity: "critical"
+    - id: "precip_accumulation_semantics"
+      kind: "parser_semantic"
+      description: "RAINC and RAINNC accumulate from start; interval precip requires differencing consecutive times, and total precip = RAINC+RAINNC (omitting either gives wrong/zero rates)."
+      severity: "warning"
+    - id: "radiation_flux_units"
+      kind: "weather_file_semantic"
+      description: "Radiation forcing must be W/m2; MJ/m2/day input is off by ~86400 (multiply by 11.574)."
+      severity: "warning"
+    - id: "cfl_timestep_violation"
+      kind: "numerical_instability"
+      description: "time_step exceeding the CFL bound (~6*dx_km) causes immediate blow-up with 'cfl' errors in rsl.error within the first steps."
+      severity: "fatal"
+    - id: "num_soil_layers_lsm_mismatch"
+      kind: "control_semantic"
+      description: "num_soil_layers not matching sf_surface_physics (Noah=4, RUC=6, Noah-MP=4, CLM4=10) causes a segfault in the land-surface module."
+      severity: "fatal"
+    - id: "cumulus_on_convection_permitting"
+      kind: "control_semantic"
+      description: "Enabling cu_physics on a domain with dx<5 km double-counts convection, producing precipitation 2-3x too high."
+      severity: "degraded"
+    - id: "even_parent_grid_ratio"
+      kind: "control_semantic"
+      description: "Even parent_grid_ratio (must be odd 3/5/7 for real-data) produces checkerboard interpolation artifacts at nest boundaries."
+      severity: "degraded"
+    - id: "interval_seconds_forcing_mismatch"
+      kind: "control_semantic"
+      description: "interval_seconds not matching met_em forcing frequency causes boundary discontinuities or crash at each update."
+      severity: "fatal_or_silent"
+    - id: "nan_propagation"
+      kind: "numerical_instability"
+      description: "A NaN from division-by-zero, corrupt ICs, or too-large dt over steep terrain infects the whole domain within ~10-20 timesteps; mitigate with w_damping, epssm, reduced dt."
+      severity: "fatal"
+    - id: "missing_soil_fields_in_metem"
+      kind: "initial_condition_semantic"
+      description: "met_em lacking soil moisture/temperature (Vtable or source GRIB missing soil) makes real.exe crash or emit all-zero / 0 K soil fields."
+      severity: "fatal_or_silent"
+    - id: "sst_not_extracted"
+      kind: "initial_condition_semantic"
+      description: "SST not extracted/mismapped in the Vtable makes real.exe fall back to SKINTEMP over water, giving constant SST and wrong ocean fluxes."
+      severity: "silent"
+    - id: "wrong_vtable_field_mapping"
+      kind: "weather_file_semantic"
+      description: "Using the wrong Vtable for the GRIB source (e.g. GFS Vtable for ERA5) silently maps the wrong fields."
+      severity: "silent"
+    - id: "metem_temporal_gap"
+      kind: "initial_condition_semantic"
+      description: "A gap in met_em temporal coverage makes WRF extrapolate or hold stale boundaries, producing periodic boundary-forcing pulse artifacts."
+      severity: "degraded"
+    - id: "grid_relative_wind_rotation"
+      kind: "parser_semantic"
+      description: "U10/V10 are grid-relative; comparing direction without COSALPHA/SINALPHA rotation gives a 10-30 deg directional bias on Lambert/polar-stereographic projections."
+      severity: "warning"
+    - id: "staggered_grid_destagger"
+      kind: "parser_semantic"
+      description: "3-D U/V/W live on staggered C-grid faces; plotting/comparing against mass points without destaggering gives a half-cell spatial offset."
+      severity: "warning"
+    - id: "model_top_off_top"
+      kind: "numerical_instability"
+      description: "Strong updrafts pushing parcels above a too-low model top ('WOULD GO OFF TOP') crash the run unless ztop/p_top is raised and Rayleigh damping enabled."
+      severity: "fatal"
+    - id: "restart_precision_mismatch"
+      kind: "initial_condition_semantic"
+      description: "Restart files created with different precision or physics than the continuing run silently corrupt the state."
+      severity: "silent"
+  validation_limits:
+    - "Limited-area model: real-data cases require external global driving data and lateral boundary file (wrfbdy_d01); not a global model."
+    - "Physics scheme suites are validated for particular scale regimes (cumulus parameterization for coarse grids vs explicit convection/LES at dx<5 km); applying a suite outside its regime is unsupported."
+    - "Surface-layer, PBL, and LSM schemes must be chosen from mutually compatible combinations."
+    - "Sub-grid convection at coarse resolution and grid-resolved convection at fine resolution are mutually exclusive; neither resolves the transitional 'grey zone' (~3-9 km) cleanly."
+  warnings:
+    - "history_interval larger than total simulation duration, frames_per_outfile=0, or invalid io_form_history produces no wrfout files despite normal timestep progress."
+    - "radt (radiation call interval) should be <= ~30 min to capture the diurnal cycle; larger values degrade the surface radiation/temperature diurnal signal."
+    - "When use_adaptive_time_step=.true., the runtime CFL-based timestep supersedes the namelist time_step and the dt<=6*dx_km guidance."
+    - "Spectral-bin microphysics (mp_physics=30/32) and per-timestep radiation are ~100x / large slowdowns; not a correctness issue but a tractability limit."
+  assumptions:
+    - statement: "The dynamical core conserves dry-air mass and the coupled (mu-weighted) scalar variables in flux form; this is mass conservation of the solver, not a closed surface energy budget."
+      scope: "Whole-model conservation properties"
+      source: "ARW Technical Note governing-equations / mass-coordinate description (NCAR TN series) and WRF User's Guide v4 Chapter 5"
+      status: "adopted"
+    - statement: "The Earth is treated as a 6370 km-radius sphere (reradius from 6370.0e3 m in module_model_constants.F), not WGS84; a fixed geometric assumption."
+      scope: "Grid geometry / map factors"
+      source: "share/module_model_constants.F (WRF source)"
+      status: "adopted"
+    - statement: "Default integration is fully compressible nonhydrostatic; the hydrostatic formulation is a run-time switch (non_hydrostatic)."
+      scope: "Dynamical-core formulation"
+      source: "WRF User's Guide v4 Chapter 5 and namelist &dynamics"
+      status: "adopted"
+    - statement: "Radiation receives microphysics-supplied cloud effective radii when available, otherwise hardcoded background/clamp radii (RE_QC_BG and RE_*_MAX in module_model_constants.F) are used silently."
+      scope: "Radiation-microphysics coupling"
+      source: "share/module_model_constants.F and radiation_driver behavior in WRF source"
+      status: "adopted"

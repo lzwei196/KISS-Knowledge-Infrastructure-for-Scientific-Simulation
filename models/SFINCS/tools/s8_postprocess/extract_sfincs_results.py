@@ -53,6 +53,26 @@ def validate_inputs(args):
     logger.info("Input validation passed.")
 
 
+def open_sfincs_nc(path):
+    """Open a SFINCS NetCDF-4 output file, tolerating a broken netCDF4/HDF5 stack.
+
+    dt_v016 (found 2026-08-02, Kangerlussuaq run): the HydroCraft venv ships
+    netCDF4 1.7.4 bundling HDF5 1.14.6, which raises
+        OSError: [Errno -101] NetCDF: HDF error
+    on every file SFINCS writes with its own libnetcdff (HDF5 1.10). ncdump, GDAL,
+    h5py and the h5netcdf engine in the SAME venv all read the file fine, so this is
+    a library defect, NOT a corrupt output — do not re-run the model. Try the default
+    engine first (fast path when the stack is healthy), then fall back to h5netcdf.
+    """
+    import xarray as xr
+    try:
+        return xr.open_dataset(path)
+    except OSError as e:
+        logger.warning("Default NetCDF engine failed on %s (%s). "
+                       "Falling back to engine='h5netcdf' (dt_v016).", path, e)
+        return xr.open_dataset(path, engine="h5netcdf")
+
+
 def process(args):
     import xarray as xr
 
@@ -67,23 +87,57 @@ def process(args):
 
     # --- Read sfincs_map.nc ---
     logger.info(f"Reading: {args.map_nc}")
-    ds = xr.open_dataset(args.map_nc)
+    ds = open_sfincs_nc(args.map_nc)
     logger.info(f"Variables: {list(ds.data_vars)}")
     logger.info(f"Dimensions: {dict(ds.dims)}")
+
+    zb = None  # initialise; may be set below if zsmax fallback is needed
 
     # Find water depth variable
     # CRITICAL: 'hmax' = max water DEPTH (what we want for flood mapping)
     #           'zsmax' = max water SURFACE elevation (NOT depth — includes bed level)
     #           'h' = instantaneous water depth at each timestep
     # Priority: hmax > h > zsmax (zsmax needs bed level subtraction)
+    #
+    # dt_v007 / dt_v015: NEVER use zsmax/zs directly as flood depth.
+    # For terrain at 40m elevation, zsmax=40m even with 0.05m of water.
+    # This produces the "40-80m flood depths in flat agricultural areas" bug.
     depth_var = None
-    for candidate in ["hmax", "h", "point_zs", "zs_max", "zsmax", "zs"]:
+    for candidate in ["hmax", "h", "point_zs", "zs_max"]:
         if candidate in ds.data_vars:
             depth_var = candidate
             break
 
     if depth_var is None:
-        # Use first available variable
+        # zsmax / zs are water surface ELEVATION, not depth.
+        # If we must fall back to them, we need to subtract bed level (zb).
+        for candidate in ["zsmax", "zs"]:
+            if candidate in ds.data_vars:
+                depth_var = candidate
+                break
+        if depth_var is not None:
+            logger.error(
+                "CRITICAL: Only '%s' (water surface ELEVATION) found in output — "
+                "this is NOT flood depth. It equals bed_level + water_depth. "
+                "For a 40m-elevation cell with 5cm of water, %s=40.05m but depth=0.05m. "
+                "Subtracting 'zb' (bed level) to recover actual depth. "
+                "To fix permanently: ensure SFINCS writes 'hmax' by confirming "
+                "the binary version supports it (v2.1+), or add storemax=1 to sfincs.inp.",
+                depth_var, depth_var
+            )
+            if "zb" in ds.data_vars:
+                zb = ds["zb"].values
+                logger.info("Subtracting bed level (zb) from %s to get flood depth", depth_var)
+            else:
+                logger.error(
+                    "Cannot subtract bed level — 'zb' not in output. "
+                    "Results will be water surface elevation, not flood depth. "
+                    "This is the root cause of the 50-100x depth bug (dt_v015)."
+                )
+                zb = None
+
+    if depth_var is None:
+        # Last resort: use first available variable
         depth_var = list(ds.data_vars)[0]
         logger.warning(f"No standard depth variable found, using '{depth_var}'")
 
@@ -95,6 +149,15 @@ def process(args):
         max_depth = data.max(dim=[d for d in data.dims if "time" in d.lower()]).values
     else:
         max_depth = data.values
+
+    # If we had to fall back to zsmax/zs, subtract bed level now
+    # (dt_v015: zsmax = zb + h, so h = zsmax - zb)
+    if depth_var in ("zsmax", "zs") and "zb" in locals() and zb is not None:
+        zb_2d = zb.squeeze() if zb.ndim > 2 else zb
+        max_depth = max_depth.squeeze() if max_depth.ndim > 2 else max_depth
+        if max_depth.shape == zb_2d.shape:
+            max_depth = max_depth - zb_2d
+            logger.info("Applied zb subtraction: depth = zsmax - zb (dt_v015 workaround)")
 
     # Ensure 2D
     if max_depth.ndim == 1:
@@ -113,7 +176,29 @@ def process(args):
 
     logger.info(f"Max depth shape: {max_depth.shape}")
 
-    # Replace nodata/negative with 0
+    # --- Drop SFINCS fill values and inactive cells BEFORE any statistic ---
+    # dt_v017 (found 2026-08-02, Kangerlussuaq run): SFINCS writes +9999 into hmax
+    # (and -9999 into zb) for every cell outside the active mask. The old code only
+    # clipped NEGATIVE values, so those +9999 sentinels survived and the tool reported
+    # "max flood depth 9999 m" with a flood volume ~10^6 times too large — a silent,
+    # confidently-wrong result. Mask them out, and mask msk==0 cells where available.
+    max_depth = np.asarray(max_depth, dtype=np.float64)
+    fill_hit = int(np.sum(np.abs(max_depth) >= 9998.0))
+    if fill_hit:
+        logger.warning("Masked %d cells carrying the +/-9999 SFINCS fill value (dt_v017)", fill_hit)
+    max_depth = np.where(np.abs(max_depth) >= 9998.0, np.nan, max_depth)
+
+    active_mask = None
+    if "msk" in ds.data_vars:
+        msk_arr = np.asarray(ds["msk"].values).squeeze()
+        if msk_arr.shape == max_depth.shape:
+            active_mask = msk_arr > 0
+            n_inactive = int(np.sum(~active_mask))
+            max_depth = np.where(active_mask, max_depth, np.nan)
+            logger.info("Applied sfincs msk: %d inactive cells excluded from flood statistics",
+                        n_inactive)
+
+    # Remaining NaN/negative -> 0 (dry)
     max_depth = np.where(np.isnan(max_depth), 0, max_depth)
     max_depth = np.where(max_depth < 0, 0, max_depth)
 
@@ -210,7 +295,7 @@ def process(args):
     # --- Extract time series from sfincs_his.nc ---
     if args.his_nc and Path(args.his_nc).exists():
         logger.info(f"Reading observation time series: {args.his_nc}")
-        ds_his = xr.open_dataset(args.his_nc)
+        ds_his = open_sfincs_nc(args.his_nc)
         logger.info(f"His variables: {list(ds_his.data_vars)}")
 
         # Export to CSV

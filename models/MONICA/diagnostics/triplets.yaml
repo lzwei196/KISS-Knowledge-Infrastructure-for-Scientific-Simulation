@@ -266,3 +266,268 @@
     Ensure soil column extends to 2 m (20 layers × 0.1 m).
     Compare simulated vs measured soil moisture profiles.
   severity: degraded
+
+# ── Multi-site / CMFD workflow traps (added 2026-04-30) ─────────────────────
+
+- id: dt_18
+  stage: soil_setup
+  failure_domain: tool_bug
+  symptom: >
+    MONICA crashes immediately with:
+    "terminate called after throwing an instance of 'std::out_of_range'
+     what():  vector::_M_range_check: __n (which is 0) >= this->size() (which is 0)"
+    Binary exits with returncode -6 (SIGABRT). No output file created.
+  diagnosis: >
+    convert_soil_to_monica.py places SoilProfileParameters at the JSON root level,
+    but MONICA requires it nested inside SiteParameters. The soil layers vector is
+    empty from MONICA's perspective, causing an out-of-bounds access on the first
+    simulation step. This is a bug in the KI tool's JSON output structure.
+  remedy: >
+    After running convert_soil_to_monica.py, move SoilProfileParameters inside
+    SiteParameters using:
+      python3 -c "
+      import json
+      with open('site.json') as f: d = json.load(f)
+      template = <load original working site.json>
+      template['SiteParameters']['SoilProfileParameters'] = d['SoilProfileParameters']
+      with open('site.json','w') as f: json.dump(template, f, indent=2)
+      "
+    Alternatively, the bug is at line ~288 of convert_soil_to_monica.py where
+    'SoilProfileParameters' is written at root; it should be nested under
+    SiteParameters in the output dict. Fix the tool directly:
+    Change output structure so SoilProfileParameters is inside SiteParameters.
+  severity: fatal
+
+- id: dt_19
+  stage: climate_forcing
+  failure_domain: configuration
+  symptom: >
+    MONICA crashes with std::out_of_range (same as dt_18 symptom) OR produces
+    zero yield for all years, despite climate.csv containing valid data.
+    Log shows no obvious error. Elapsed time is near 0s.
+  diagnosis: >
+    csv-separator in sim.json does not match the actual delimiter in climate.csv.
+    convert_climate_to_monica.py outputs semicolon-delimited (;) files, but
+    sim.json defaults to csv-separator: "," (comma). MONICA reads zero rows
+    and the climate data vector is empty.
+  remedy: >
+    After generating climate.csv with convert_climate_to_monica.py, check its
+    delimiter with: head -1 climate.csv
+    If semicolons are used, update sim.json:
+      "climate.csv-options": { "no-of-climate-file-header-lines": 2, "csv-separator": ";" }
+    Note: convert_climate_to_monica.py always outputs ";" as the separator.
+  severity: fatal
+
+- id: dt_20
+  stage: soil_setup
+  failure_domain: input_format
+  symptom: >
+    convert_soil_to_monica.py --format hwsd raises:
+    "UnicodeDecodeError: 'utf-8' codec can't decode byte 0x97"
+    when passed the HWSD raster file (hwsd.bil).
+  diagnosis: >
+    The --format hwsd mode expects a pre-extracted CSV lookup table
+    (with columns T_SAND, T_CLAY, T_OC, T_BULK_DENSITY, T_PH_H2O),
+    NOT the binary .bil raster file. Passing the raster triggers a
+    UTF-8 decode failure when the tool tries to read it as CSV.
+  remedy: >
+    Step 1 — look up the MU_GLOBAL code at the target lat/lon from the raster:
+      python3 -c "
+      import rasterio; from rasterio.transform import rowcol; import numpy as np
+      with rasterio.open('data/soil/HWSD_RASTER/hwsd.bil') as src:
+          row,col = rowcol(src.transform, lon, lat)
+          print('MU_GLOBAL:', src.read(1)[row,col])
+      "
+    Step 2 — look up soil properties from data/soil/HWSD_DATA.csv
+      (use encoding='latin-1'; key columns: T_SAND, T_SILT, T_CLAY, T_OC,
+      T_REF_BULK_DENSITY, T_PH_H2O, and S_* variants for subsoil)
+    Step 3 — write a 1-row CSV with ONLY T_* columns (topsoil):
+      T_SAND,T_SILT,T_CLAY,T_OC,T_BULK_DENSITY,T_PH_H2O
+      36,43,21,0.65,1.39,8.0
+    Step 4 — pass that CSV to convert_soil_to_monica.py --format hwsd
+    Note: passing only topsoil row generates all 20 layers from topsoil
+    properties (no subsoil gradient). Adequate for uncalibrated runs;
+    for calibrated runs, add a second row with S_* column names.
+  severity: fatal
+
+- id: dt_21
+  stage: validation
+  failure_domain: systematic_bias
+  symptom: >
+    MONICA severely underestimates yield (PBIAS < -40%) for Chinese wheat
+    despite reasonable soil and climate inputs. NSE strongly negative.
+  diagnosis: >
+    UseAutomaticIrrigation is set to false (default). Chinese winter wheat
+    (Huang-Huai-Hai Plain) receives 3-4 irrigations per season (~150-200 mm
+    total). Running rainfed against irrigated national/provincial statistics
+    produces a systematic -40 to -60% bias.
+  remedy: >
+    Enable irrigation in sim.json for Chinese wheat simulations:
+      "UseAutomaticIrrigation": true,
+      "AutoIrrigationParams": {
+          "irrigationParameters": { "nitrateConcentration": [0, "mg dm-3"] },
+          "amount": [50, "mm"],
+          "trigger_if_nFC_below_%": [55, "%"],
+          "calc_nFC_until_depth_m": [0.6, "m"]
+      }
+    Also relax the AutomaticHarvest precipitation conditions (originally
+    max-3d-precip-sum: 5, max-curr-day-precip: 1 — too strict for China's
+    rainy early-summer climate). Recommended: max-3d-precip-sum: 25,
+    max-curr-day-precip: 5.
+  severity: silent
+
+- id: dt_22
+  stage: climate_forcing
+  failure_domain: forcing_choice
+  symptom: >
+    MONICA yields with CMFD forcing are 20-30% higher than with NASA POWER
+    forcing for the same site and settings. Unclear which is more accurate.
+  diagnosis: >
+    CMFD (China Meteorological Forcing Dataset) is a station-based reanalysis
+    with higher solar radiation values than NASA POWER's satellite-derived
+    estimates. Higher radiation drives more photosynthesis → higher simulated
+    yields. For Chinese basins, CMFD is the preferred forcing (observation-based,
+    0.1° resolution) but causes a systematic ~26% yield inflation relative to
+    NASA POWER at Shandong (36.5°N). Neither is "wrong" — they differ in
+    radiation estimation methodology.
+  remedy: >
+    For China basins: use CMFD forcing and compare against provincial yield
+    statistics rather than national FAOSTAT averages. Provincial statistics
+    are typically 5-20% higher than national averages and closer to the
+    single-site CMFD simulation.
+    For global/non-China sites: use MSWX or NASA POWER.
+    Note: after DM→FW conversion (yield_DM ÷ 0.88), CMFD-based MONICA yields
+    at Chinese sites are ~15-30% above FAOSTAT national averages, which is
+    physically plausible (high-productivity single sites > national mean).
+  severity: degraded
+
+- id: dt_23
+  stage: soil_setup
+  failure_domain: data_quality
+  symptom: >
+    Henan province wheat yield is underestimated by -10 to -20% even with
+    irrigation enabled. Other NCP (North China Plain) provinces simulate
+    closer to reference values.
+  diagnosis: >
+    HWSD MU_GLOBAL codes for the Henan sampling point (e.g., 11078) report
+    ~80% sand in both topsoil and subsoil — a Fluvisol/Entisol mapping unit
+    that does not represent actual cultivated soil. Millennia of cultivation
+    and sediment management have changed the effective soil texture. The
+    sandy HWSD profile has very low plant-available water capacity (PAW),
+    limiting yield even under automatic irrigation.
+  remedy: >
+    For Henan wheat validation, override the HWSD texture with a loam
+    approximation (T_SAND=45, T_CLAY=25) representative of cultivated
+    Fluvisols in the Huang-Huai-Hai Plain. This is consistent with
+    China's second soil survey data for the region.
+    Alternatively, use SoilGrids v2 (250m) instead of HWSD for Chinese
+    agricultural plains — it better captures cultivation-modified soils.
+  severity: degraded
+
+- id: dt_24
+  stage: output_comparison
+  failure_domain: scale_mismatch
+  symptom: >
+    A single irrigated high-yield-province point simulation (e.g. Shandong
+    winter wheat, ~4500 kg DM ha-1 → ~5100 kg FW ha-1) overshoots the
+    FAOSTAT *national* China wheat yield (~3300-4100 kg ha-1) by +40-45%
+    PBIAS, and the detrended interannual correlation is ~0 or negative
+    (r_detr ≈ -0.3). NSE/KGE are strongly negative.
+  diagnosis: >
+    obs_shape mismatch, NOT a model or unit error. FAOSTAT national yield is
+    a `regional_aggregate_time_series`: a fresh-weight area-weighted mean over
+    ALL provinces (high- and low-yielding) that also carries a multi-decade
+    technology/management uptrend. A single point sim at one productive,
+    irrigated province is unrepresentative of that aggregate in BOTH level
+    (a top province overshoots the national mean; a rainfed point undershoots
+    it — cf dt_21) and trend (a weather-driven point has no technology trend).
+    The dag (outputs.Yield.observability) declares only
+    [magnitude_accuracy, trend_match] valid for this obs_shape; raw NSE/KGE/r
+    (temporal_pattern_match) are structurally invalid and must not gate.
+  remedy: >
+    1. Score ONLY magnitude_accuracy (PBIAS on DM→FW converted levels) and
+       trend_match (detrended/first-difference r) — never raw NSE/KGE/r.
+    2. For a defensible *magnitude* test, compare the point sim against the
+       matching PROVINCIAL reference (Shandong ≈ 5-6 t/ha FW), not the
+       national mean — as the validated China multi-site workflow does.
+    3. To compare against the national aggregate honestly, representative-
+       aggregate several province point runs (area-weighted) before scoring,
+       and detrend both series to remove the technology trend the point model
+       cannot reproduce.
+    Expect the single-province-vs-national comparison to remain a structural
+    overshoot; this is the irrigated mirror of dt_21's rainfed undershoot.
+  severity: structural
+
+- id: dt_25
+  stage: output_comparison
+  failure_domain: scale_mismatch
+  symptom: >
+    You want to honestly compare MONICA point runs against the FAOSTAT
+    *national* China wheat series (dt_24's regional_aggregate_time_series),
+    and need a concrete representative-aggregation recipe + which moisture
+    convention to use. Also: the validated multi-site PBIAS table in SKILL.md
+    (+5.8% Hebei … +10.3% Shandong) appears to compare model kg DM ha-1
+    DIRECTLY against fresh-weight provincial refs, while the SKILL "Unit notes"
+    document a DM->FW /0.88 conversion — applying that conversion shifts every
+    PBIAS up by ~+14%, so the two parts of the SKILL are internally inconsistent.
+  diagnosis: >
+    Empirically resolved on 2026-06-24. Area-weighting the 5 validated NCP
+    winter-wheat province point runs (Hebei/Shandong/Henan/Jiangsu/Anhui,
+    1992-2000) by wheat sown area (approx Mha: Henan 5.0, Shandong 3.8,
+    Hebei 2.5, Jiangsu 2.2, Anhui 2.2) into ONE national-representative series,
+    then comparing against FAOSTAT "China, mainland" Wheat Yield kg/ha
+    (mean ~3670 kg ha-1 over 1992-2000), gives:
+      - DM-direct  (no /0.88, matches the validated multi-site table): PBIAS +7.0%
+                   -> STRONG magnitude PASS.
+      - FW (/0.88, matches the SKILL Unit-notes convention):          PBIAS +21.6%.
+    This is a dramatic improvement over the single-Shandong-/0.88-vs-national
+    +43% (dt_24 / prior real-case run): representative aggregation, not a
+    parameter/cultivar change, is what fixes the magnitude. The detrended trend
+    stays weak in BOTH conventions (obs slope +66.5 vs sim slope +18-21
+    kg ha-1 yr-1, slope ratio ~0.27, r_detr ~0.22) — confirming dt_24's point:
+    a fixed-management weather-driven point cannot reproduce the national
+    multi-decade technology uptrend. raw NSE/KGE/r (temporal_pattern_match)
+    remain negative/near-zero and stay gate-invalid for this obs_shape.
+  remedy: >
+    1. For the national magnitude test, area-weight several NCP province runs
+       (weights above) BEFORE computing PBIAS; expect PBIAS within roughly
+       +-10% (DM-direct) — far better than any single province.
+    2. Pick ONE moisture convention and state it. The validated multi-site
+       table is DM-direct; to use the documented /0.88 you must re-baseline
+       the whole table (+~14% to each PBIAS). Do not mix (e.g. /0.88 on the sim
+       while citing the DM-direct table's "good" PBIAS) — that double-counts
+       and was a contributor to the prior single-province +43% overshoot.
+    3. trend_match: report detrended (linear-residual) r and the sim/obs slope
+       ratio; do NOT expect a point model to match the national tech trend —
+       a weak/failed trend_match here is structural, not a tunable defect.
+  severity: structural
+
+- id: dt_26
+  stage: output_comparison
+  failure_domain: tooling
+  symptom: >
+    parse_monica_output.py aborts with
+    "ValueError: dict contains fields not in fieldnames: 'daily'"
+    (or another column name) inside write_clean_csv / csv.DictWriter.writerows
+    when parsing a normal MONICA out.csv that contains more than one output
+    section (e.g. a daily section plus a crop/harvest-event section).
+  diagnosis: >
+    write_clean_csv derived the CSV fieldnames from timeseries[0].keys() only.
+    extract_timeseries adds a key to a row's dict ONLY when that row's cell is
+    non-empty, so rows from different MONICA sections legitimately carry
+    different key sets. Any later row whose keys are not a subset of the first
+    row's keys triggers csv.DictWriter's default extrasaction='raise'. This is
+    a pure writer bug — the model run itself (run_monica.py rc=0, 3667 rows)
+    is fine; only the post-run clean-CSV writer crashes.
+  remedy: >
+    Build the fieldname list as the UNION of all rows' keys (preserving
+    first-seen order) and construct the DictWriter with restval="" and
+    extrasaction="ignore" so heterogeneous-section rows are written with
+    blanks for absent columns instead of raising. Fixed in
+    tools/parse_monica_output.py write_clean_csv. NOTE: this fix only unblocks
+    the writer; parse_monica_output()'s len(vals)==len(header_names) row filter
+    still keeps just the rows whose column count matches the first header line,
+    so multi-section files report a low "Parsed N data rows" — that section
+    filtering is a separate, pre-existing limitation, not part of this fix.
+    For validated province yields use the multisite yield_for_plot.csv tables.
+  severity: degraded

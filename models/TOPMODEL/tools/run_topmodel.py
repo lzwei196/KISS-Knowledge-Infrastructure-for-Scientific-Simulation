@@ -79,7 +79,16 @@ def write_topmod_run(output_dir, stand_alone=1, title="TOPMODEL Simulation",
                      inputs_path="data/inputs.dat", subcat_path="data/subcat.dat",
                      params_path="data/params.dat", topmod_out="topmod.out",
                      hyd_out="hyd.out"):
-    """Write the topmod.run configuration file."""
+    """Write the topmod.run configuration file.
+
+    IMPORTANT — config location is HARDCODED in the binary. main.c opens
+    ``./data/topmod.run`` relative to the process CWD (the run dir). So you MUST
+    pass ``output_dir=<run_dir>/data`` (NOT the run-dir root) or the binary
+    SEGFAULTS before producing any output. The internal file paths
+    (inputs_path/subcat_path/params_path) stay relative to the run-dir CWD,
+    i.e. "data/inputs.dat" — matching the shipped Taegu demo and the working
+    Wangjiaba run. (Confirmed Bengbu 51080, 2026-06-03.)
+    """
     config_path = os.path.join(output_dir, 'topmod.run')
 
     with open(config_path, 'w') as f:

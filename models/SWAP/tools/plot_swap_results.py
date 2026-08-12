@@ -160,7 +160,8 @@ def plot_timeseries(records, output_path, title=""):
     eact_vals = []
 
     for r in records:
-        day = r.get("daycum", r.get("DAYCUM", None))
+        # The cumulative-day column in result.inc is `Dcum` — not `daycum`.
+        day = r.get("Dcum", r.get("dcum", r.get("DCUM", None)))
         if day is not None:
             days.append(float(day))
             rain_vals.append(float(r.get("rain", r.get("Rain", 0))))

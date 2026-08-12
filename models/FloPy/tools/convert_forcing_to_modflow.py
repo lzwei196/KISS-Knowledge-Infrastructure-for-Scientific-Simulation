@@ -86,19 +86,46 @@ def validate_inputs(args):
 
 
 def convert_precip_to_recharge(precip_path, grid_meta, recharge_fraction,
-                                precip_unit='mm/day', length_unit='meters'):
+                                precip_unit='mm/day', length_unit='meters',
+                                pet_path=None, recharge_mode='proportional',
+                                pet_fraction=0.85):
     """
     Convert precipitation to recharge arrays.
 
     CRITICAL: Recharge in MODFLOW must be in model length/time units.
     If length_unit=meters and time=days, recharge must be m/day.
     Precipitation in mm/day must be divided by 1000!
+
+    recharge_mode:
+      'proportional' (default) — R = recharge_fraction * P. Simple, but in
+        ET-limited / semi-arid climates it WRONGLY tracks the summer precip
+        peak: most warm-season rain evapotranspires and does not reach the
+        water table, so groundwater recharge timing is mis-phased.
+      'excess' — R = recharge_fraction * max(0, P - pet_fraction*PET), a soil-
+        moisture-balance excess that concentrates recharge in low-ET months
+        (cool season / spring). Requires --pet (same length/cadence as precip).
+        This is the physically appropriate timing for water-table recharge and
+        for matching GRACE-type total-water-storage signals.
     """
     df = pd.read_csv(precip_path, parse_dates=[0])
     date_col = df.columns[0]
     value_col = df.columns[1] if len(df.columns) > 1 else df.columns[0]
 
     precip_values = df[value_col].values.astype(float)
+
+    if recharge_mode == 'excess':
+        if not pet_path:
+            print("ERROR: recharge_mode='excess' requires --pet", file=sys.stderr)
+            sys.exit(1)
+        pdf = pd.read_csv(pet_path, parse_dates=[0])
+        pet_col = pdf.columns[1] if len(pdf.columns) > 1 else pdf.columns[0]
+        pet_values = pdf[pet_col].values.astype(float)
+        if len(pet_values) != len(precip_values):
+            print(f"ERROR: PET length ({len(pet_values)}) != precip length "
+                  f"({len(precip_values)})", file=sys.stderr)
+            sys.exit(1)
+        # soil-moisture excess (same unit as precip); negative -> no recharge
+        precip_values = np.maximum(0.0, precip_values - pet_fraction * pet_values)
 
     # Unit conversion
     if 'mm' in precip_unit.lower():
@@ -335,7 +362,9 @@ def process(args, warnings_list):
         rch_data, rch_meta = convert_precip_to_recharge(
             args.precip, grid_meta, rch_fraction,
             precip_unit=args.precip_unit or 'mm/day',
-            length_unit=args.length_unit or 'meters')
+            length_unit=args.length_unit or 'meters',
+            pet_path=args.pet, recharge_mode=args.recharge_mode,
+            pet_fraction=args.pet_fraction)
 
         # Save recharge arrays
         for kper, arr in rch_data.items():
@@ -430,7 +459,15 @@ def main():
     parser.add_argument('--wells', default=None,
                         help='Well pumping data CSV')
     parser.add_argument('--recharge_fraction', type=float, default=0.15,
-                        help='Fraction of precipitation becoming recharge')
+                        help='Fraction of (precip or P-PET excess) -> recharge')
+    parser.add_argument('--pet', default=None,
+                        help='PET CSV (date,value) for recharge_mode=excess')
+    parser.add_argument('--recharge_mode', default='proportional',
+                        choices=['proportional', 'excess'],
+                        help="'excess' = fraction*max(0,P-pet_fraction*PET); "
+                             "physically-timed recharge for ET-limited climates")
+    parser.add_argument('--pet_fraction', type=float, default=0.85,
+                        help='PET multiplier in excess recharge mode')
     parser.add_argument('--precip_unit', default='mm/day',
                         help='Precipitation input unit')
     parser.add_argument('--et_unit', default='mm/day',

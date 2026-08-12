@@ -42,7 +42,7 @@ Then convert to GLM met format using this KI's tool: `tools/s2_met_forcing/conve
 **Model**: GLM v3.3.3 + AED2 water quality library
 **Created by**: Jianyun Zhang Research Group, Hohai University
 **Last updated**: 2026-03-21
-**Stats**: 15 tools | 12 skill documents | 30 diagnostic triplets | 7 error log entries | ~4,630 lines of validated Python
+**Stats**: 16 tools | 12 skill documents | 30 diagnostic triplets | 7 error log entries | ~4,630 lines of validated Python
 **Validation status**: `production_validated` (Miyun Reservoir, 2001-2010)
 
 ---
@@ -142,7 +142,8 @@ Stages 9 and 10 depend on 8.
 | `generate_aed_config` | s7 | `tools/s7_aed_config/generate_aed_config.py` | 470 | Generate aed2.nml (incl. phytoplankton) |
 | `configure_inflow_wq` | s7 | `tools/s7_aed_config/configure_inflow_wq.py` | 310 | Add nutrient concentrations to inflow CSV |
 | `run_glm` | s8 | `tools/s8_execution/run_glm.py` | 170 | Execute GLM with preflight checks |
-| `parse_glm_output` | s9 | `tools/s9_output_analysis/parse_glm_output.py` | 270 | Parse output.nc + lake.csv (thermal) |
+| `parse_glm_output` | s9 | `tools/s9_output_analysis/parse_glm_output.py` | 380 | Parse output.nc + lake.csv (thermal); `--depths a,b,c --depth_timeseries out.csv` interpolates the Lagrangian profile onto FIXED depths below the surface (dt_036) |
+| `load_ismn_obs` | s9 | `tools/s9_output_analysis/load_ismn_obs.py` | 190 | Load ISMN in-situ temperature/moisture obs (`/mnt/datasets/ismn_clean.db`); station discovery + QC-filtered daily series at true metre depths (dt_037) |
 | `parse_aed_output` | s9 | `tools/s9_output_analysis/parse_aed_output.py` | 400 | Parse AED2 WQ output (Chl-a, DO, nutrients) |
 | `plot_glm_results` | s9 | `tools/s9_output_analysis/plot_glm_results.py` | 230 | Temperature heatmap + timeseries plots |
 | `calibrate_glm` | s9 | `tools/s9_output_analysis/calibrate_glm.py` | 260 | GLUE-style parameter calibration |
@@ -152,7 +153,9 @@ Stages 9 and 10 depend on 8.
 
 ### Skill Knowledge
 
-**Note**: Per-stage skill documents (`docs/` directory) have not yet been created. All critical domain knowledge is documented inline in this SKILL.md file (see "Critical Domain Knowledge" section below and diagnostic triplets). The following topics are covered inline:
+**Note**: `docs/` currently holds only the reference material (`format_spec.yaml`,
+`reference/Hipsey2019_GLM_GMD.pdf`, `REFERENCES.md`) — there are no per-stage skill
+documents. All critical domain knowledge is documented inline in this SKILL.md file (see "Critical Domain Knowledge" section below and diagnostic triplets). The following topics are covered inline:
 
 | Stage | Topic | Where in this document |
 |-------|-------|----------------------|
@@ -280,6 +283,57 @@ wq_init_vals = 300,300,300,    ! OXY_oxy at 3 depths (mmol O2/m3)
 ```
 
 Each WQ variable needs one value per `num_depths` depth level. The total number of values = `num_wq_vars * num_depths`.
+
+> **CRITICAL (dt_032, 2026-06-22): enabling phytoplankton/silica/noncohesive
+> SILENTLY NaNs the entire AED2 state on the v3.3.3 binary.** With this binary +
+> the shipped `aed2_phyto_pars.nml` diatom group, adding `aed2_phytoplankton`
+> (and/or `aed2_silica`, `aed2_noncohesive`) poisons the coupled ODE: ALL
+> water-column WQ vars become NaN/fill (output.nc all-fill; csv_point columns
+> print `-nan` from row 1; TOT_tn/TOT_tp read 0.0) while GLM still exits 0 with
+> "Model Run Complete". `repair_state` does NOT recover it. The shipped
+> `glm_aed2_phyto_test` reference is itself broken this way (its wq_summary.json
+> reports TN/TP mean 0.0) — do not trust it as a working template.
+> **For nutrient (TN/TP/NH3-N/DO) validation use the simplified core-nutrient set:**
+> `models = 'aed2_oxygen','aed2_nitrogen','aed2_phosphorus','aed2_organic_matter','aed2_totals'`
+> (10 WQ vars). Set `num_wq_vars=10` and match `wq_names` to the registered
+> S(1..10) order; drop SIL_rsi/PHY_diatom/NCS_ss1 from `inflow_vars`. **Always
+> verify the first csv_point WQ row is finite (not `-nan`) before trusting a run.**
+>
+> **WQ timeseries extraction (dt_033): use the csv_point output, not output.nc
+> layer extraction.** In `&output` set `csv_point_nlevs`, `csv_point_at` (depth
+> from surface with `csv_point_frombot=.false.`), and `csv_point_vars` listing the
+> AED2 var names (e.g. `'temp','salt','OXY_oxy','NIT_amm','NIT_nit','PHS_frp','TOT_tn','TOT_tp'`).
+> GLM writes a clean daily `WQ<depth>.csv`. Note `generate_glm_nml.py` does NOT
+> wire AED2 — you must manually add `&wq_setup`, the `&init_profiles` WQ block,
+> and `inflow_varnum`/`inflow_vars` after running it.
+>
+> **DEPTH-RESOLVED / COLUMN WQ validation (dt_034, 2026-06-28): csv_point is
+> single-point only — do NOT use it for column statistics.** A fixed depth-below-surface
+> csv_point level intermittently writes spurious `0.0` when the lake level/Lagrangian
+> layers move it onto a boundary (e.g. DeGray AR showed exact-0.0 DO at 5 m & 20 m
+> sandwiched between oxic 1 m/10 m/40 m). For a full DO/WQ profile read `output.nc`
+> **one timestep at a time** at only the dates you need — `np.squeeze(ds['OXY_oxy'][i])[:NS[i]]`
+> with `NS` (active layers) and `H` (layer heights); a bulk `[:]` read of the padded
+> z=500 variable **segfaults libnetcdf** (no traceback). Thickness-weight (diff(H))
+> for a column mean; top/bottom active layer = surface/bottom DO; OXY_oxy ×32/1000 → mg/L.
+> **SOD lever:** shipped `Fsed_oxy=-40` over-depletes meso-/oligotrophic hypolimnia
+> (DeGray DO col-mean PBIAS −48%); `Fsed_oxy≈-12`, `Ksed_oxy≈50` → PBIAS −6%, surface
+> DO r 0.89/NSE 0.53. For depthless WQP grab profiles the unambiguous pairing is
+> per-date obs-max ↔ sim top-layer (surface DO).
+
+> 
+> **PRIMARY metric for OXY_oxy vs DEPTHLESS obs = SURFACE DO only (dt_035,
+> 2026-06-28).** The dag exposes `OXY_oxy` solely as `point_time_series`; for a
+> 1-D column model a "point" is one DEPTH. A thickness-weighted COLUMN-MEAN is an
+> INVENTED aggregate (not a dag-prescribed support) and MUST NOT be the headline
+> metric -- it masks the epilimnion/hypolimnion split the model resolves (DeGray
+> col-mean NSE 0.06 hid a surface PASS r 0.89 and a bottom FAIL PBIAS -95%). When
+> obs carry NO sample depth (e.g. WQP DeGray station ARDEQH2O_WQX-LOUA019A/B -- ALL
+> ActivityDepth/ActivityTop/Bottom/ResultDepth fields empty AT THE PROVIDER,
+> verified by fresh WQP pull), score ONLY surface DO: sim top active layer vs
+> per-date near-surface (epilimnetic = max) obs. Validating BOTTOM / hypolimnetic
+> DO requires a DEPTH-RESOLVED obs source; none exists for DeGray in WQP, so
+> hypolimnetic-DO validation is data-limited (requires_data), NOT a model verdict.
 
 ### How to Enable Phytoplankton (Step by Step)
 
@@ -483,12 +537,30 @@ python tools/s1_lake_identification/build_morphometry.py \
   --elevation 320 --lat 46.0 --lon -89.7 --name "Sparkling" \
   --output morphometry.json
 
-# 2. Convert VIC forcing to GLM met format
+# 2. Convert forcing to GLM met format.
+#    NASA POWER is the default for lakes OUTSIDE CMFD (China) / MSWX coverage —
+#    daily, point, ~5 s/year, no local files needed. USE THIS unless a VIC/CMFD
+#    forcing set for the lake already exists.
+python tools/s2_met_forcing/convert_met_to_glm.py \
+  --forcing_source nasa_power \
+  --lat 34.1932 --lon -86.8052 \
+  --start_date 2014-01-01 --end_date 2020-12-31 \
+  --output bcs/met.csv
+#    (VIC-coupled alternative)
 python tools/s2_met_forcing/convert_met_to_glm.py \
   --vic_forcing_dir outputs/run/vic_temp/forcing/forcing_final \
   --lat 46.0 --lon -89.7 \
   --start_date 2000-01-01 --end_date 2010-12-31 \
   --output bcs/met_hourly.csv
+
+# 2b. Inflow + outflow (do NOT skip: with no inflow the lake is a closed bucket)
+python tools/s3_inflow/convert_inflow_to_glm.py \
+  --constant_flow <HydroLAKES dis_avg_m3s> --met_csv bcs/met.csv --salinity 0.0 \
+  --start_date 2014-01-01 --end_date 2020-12-31 --output bcs/inflow.csv
+python tools/s4_outflow/configure_outflow.py --mode balance \
+  --inflow_csv bcs/inflow.csv --crest_elev <crest> \
+  --start_date 2014-01-01 --end_date 2020-12-31 \
+  --output bcs/outflow.csv --output_json outflow_config.json
 
 # 3. Generate initial profiles
 python tools/s5_init_profiles/build_init_profiles.py \
@@ -554,6 +626,8 @@ python tools/s9_output_analysis/plot_glm_results.py \
 | dt_028 | fatal | aed2_config | Phytoplankton enabled without dependency modules (O2, N, P, OM) |
 | dt_029 | **silent** | aed2_config | Zero nutrient inflow loading — AED2 runs but phyto crashes to zero |
 | dt_030 | fatal | aed2_config | WQ init values count mismatch (num_wq_vars * num_depths) |
+| dt_036 | **silent** | output_extraction | Fixed-depth temperature read off the ADAPTIVE Lagrangian grid — must interpolate (`parse_glm_output --depths`); GLM stamps END-of-day and duplicates the final timestep |
+| dt_037 | fatal/silent | observation_ingestion | ISMN db needs `immutable=1`; pair on `depth_from_m` (metres) not `depth_cm/100`; soil obs is a PROXY — score r, not PBIAS |
 
 **Silent error count**: 16/30 (53%) — higher than cross-model average due to lake-specific physics.
 
@@ -592,11 +666,12 @@ models/GLM/knowledge_infrastructure/
     s9_output_analysis/
       parse_glm_output.py         # Thermal output parser
       parse_aed_output.py         # AED2 WQ output parser (Chl-a, DO, nutrients)
+      load_ismn_obs.py            # ISMN in-situ temperature/moisture obs loader
       plot_glm_results.py         # Visualization
       calibrate_glm.py            # GLUE calibration
     s10_coupling/
       glm_to_cama_outflow.py      # GLM -> CaMa-Flood coupling
-  # docs/ directory not yet created — all skill knowledge is inline in SKILL.md
+  docs/                           # reference only (format_spec.yaml, Hipsey2019 PDF)
   diagnostics/
     triplets.yaml                 # 30 diagnostic triplets (incl. 3 AED2-specific)
     error_log.yaml                # Errors from real runs
@@ -606,3 +681,72 @@ model/glm/
   bin/VERSION                     # Version file
   examples/Sparkling/             # Validated reference example
 ```
+
+---
+
+## Validation: Lake Catoma, Alabama vs ISMN soil temperature (2026-08-11)
+
+**Lake**: Lake Catoma reservoir (HydroLAKES Hylak_id 113187), Cullman Co., Alabama, USA
+(34.1932N, -86.8052E, 1.37 km2, HydroLAKES depth_avg 19.3 m, Dis_avg 1.631 m3/s)
+**Obs**: ISMN / SCAN station `Cullman-NAHRC` (34.19492N, -86.79897E, 0.61 km from the lake),
+`soil_temperature` daily means at 0.0508 / 0.1016 / 0.2032 / 0.508 / 1.016 m
+**Forcing**: NASA POWER daily (`convert_met_to_glm.py --forcing_source nasa_power`)
+**Period**: 2014 spin-up (discarded) + 2015-01-01..2020-12-30 scored (2191 paired days)
+**Runtime**: GLM 7 years in ~2 s; whole pipeline (incl. HydroLAKES read + POWER fetch) ~3 min
+
+| Matched depth | NSE | r | KGE | PBIAS |
+|---|---|---|---|---|
+| 0.0508 m (headline) | 0.723 | 0.937 | 0.835 | +14.9 % |
+| 0.1016 m | 0.711 | 0.933 | 0.837 | +14.1 % |
+| 0.2032 m | 0.712 | 0.942 | 0.820 | +14.3 % |
+| 0.508 m | 0.681 | 0.936 | 0.801 | +14.2 % |
+| 1.016 m | 0.400 | 0.910 | 0.600 | +13.7 % |
+
+**How to reproduce the depth-matched comparison** (this is the pattern for ANY fixed-depth
+temperature obs — thermistor chain, profile logger, soil sensor):
+
+```bash
+python tools/s9_output_analysis/load_ismn_obs.py --lat <lake_lat> --lon <lake_lon> \
+    --radius_km 25 --variable soil_temperature --list          # discover stations
+python tools/s9_output_analysis/load_ismn_obs.py --station <ID> --network <NET> \
+    --variable soil_temperature --start 2015-01-01 --end 2020-12-31 --output obs_ismn.csv
+python tools/s9_output_analysis/parse_glm_output.py --output_nc output/output.nc \
+    --lake_csv output/lake.csv --summary glm_summary.json \
+    --depths 0.0508,0.1016,0.2032,0.508,1.016 --depth_timeseries sim_depths.csv
+# pair on DATE after shifting sim back one day (GLM stamps the END of the day) and
+# after dropping the duplicated final timestep  -> ki_tools_common.metrics.all_metrics
+```
+
+### Findings
+
+1. **The uncalibrated seasonal cycle is right; the offset is physical, not a bug.**
+   r = 0.94 at every depth. The +14 % PBIAS is dominated by WINTER: simulated water
+   ~11.5 C vs observed soil ~7.5 C. Water has far more thermal inertia than soil, so a
+   soil-temperature station is a PROXY — score the pattern (r/NSE), and do NOT tune Kw /
+   wind_factor to chase the magnitude offset against a non-water sensor (dt_037).
+   The documented ~3-5 C summer warm bias (LW handling) shows up here too: simulated
+   surface max 34.06 C vs a realistic 30-31 C for an Alabama reservoir.
+2. **NSE degrades with depth (0.72 -> 0.40 at 1 m) while r stays 0.91** — the model's
+   1 m water temperature is nearly as fast as its surface, whereas 1 m SOIL damps and
+   lags; that divergence is the proxy limit, again not a model error.
+3. **`build_morphometry --from_hydrolakes` inherits a modelled depth.** HydroLAKES gives
+   Lake Catoma depth_avg 19.3 m and `lookup_hydrolakes` estimates depth_max = 2.5 x
+   depth_avg = 48.2 m for a 1.37 km2 reservoir — implausibly deep. Surface/epilimnion
+   temperature is insensitive to it, but ANY hypolimnetic or Schmidt-stability claim on a
+   HydroLAKES-only morphometry is unsupported: get a real bathymetry or state the caveat.
+4. **`configure_outflow --mode balance` keeps the water balance closed** — lake level
+   range 0.24 m over 7 years with constant Dis_avg inflow, no crest pinning.
+
+---
+
+## Applicability Guard — REJECT non-lake / non-reservoir targets (added 2026-06-19)
+
+GLM is a 1D **vertical lake/reservoir thermodynamic** model. It has **no rainfall-runoff process** and its `dag.yaml` `outputs[]` declare **no discharge/streamflow variable** (only temperature & salinity profiles, lake level/volume, ice thickness, evaporation, thermocline depth, Schmidt stability, AED2 WQ). The `Tot Outflow Vol` column in `lake.csv` is a *prescribed* withdrawal/spillway boundary rule, **not** a simulated discharge — never validate it against a stream gauge.
+
+**Before s2 forcing prep, run the lake-existence gate** using `tools/s1_lake_identification/lookup_hydrolakes.py`. REJECT the case as out-of-domain (do NOT proceed, do NOT fabricate a discharge metric) if ANY of:
+  - no lake/reservoir polygon is returned within the search radius;
+  - the nearest feature has `dis_avg == 0.0` (closed/endorheic slough, no throughflow);
+  - nearest feature `lake_area` is below a usable minimum, or its centroid is > ~5 km from the requested point;
+  - the requested comparison variable is `discharge`/`streamflow`/`discharge_m3s` (not a GLM output).
+
+Report `REJECT_WRONG_MODEL` with the lookup_hydrolakes evidence. Injecting the gauge's own discharge as inflow and reading it back as outflow is a circular pass-through and is forbidden (papering over). Valid GLM validation targets are in-lake observations: water temperature profiles, surface/bottom temperature, lake level, ice thickness.

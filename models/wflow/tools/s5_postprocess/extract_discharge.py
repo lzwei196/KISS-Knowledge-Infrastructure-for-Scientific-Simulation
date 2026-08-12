@@ -32,7 +32,11 @@ import numpy as np
 
 
 def validate_inputs(args):
-    """Check input files."""
+    """Check input files.
+
+    Raises ValueError so that EVERY failure (validation included) flows
+    through the single failure path in main(): failed-status JSON on
+    stdout, stream flush, os._exit(2)."""
     errors = []
 
     if not args.output_nc and not args.scalar_nc:
@@ -43,9 +47,7 @@ def validate_inputs(args):
         errors.append(f"Output file not found: {nc_path}")
 
     if errors:
-        for e in errors:
-            print(f"ERROR: {e}", file=sys.stderr)
-        sys.exit(1)
+        raise ValueError("; ".join(errors))
 
 
 def extract_from_gridded(output_nc, lat=None, lon=None, warmup_days=0):
@@ -59,9 +61,11 @@ def extract_from_gridded(output_nc, lat=None, lon=None, warmup_days=0):
 
     ds = xr.open_dataset(output_nc)
 
-    # Find discharge variable
+    # Find discharge variable. Search order per format_spec.yaml outputs.primary:
+    # q_river (this KI's primary routed-discharge name), q_av (wflow.jl native
+    # averaged discharge), then generic fallbacks discharge, Q.
     q_var = None
-    for name in ["q_river", "Q", "discharge", "q_land", "run"]:
+    for name in ["q_river", "q_av", "discharge", "Q"]:
         if name in ds:
             q_var = name
             break
@@ -146,13 +150,17 @@ def extract_from_scalar(scalar_nc, warmup_days=0):
     ds = xr.open_dataset(scalar_nc)
 
     q_var = None
-    for name in ["Q", "q_river", "discharge"]:
+    for name in ["Q", "q_river", "discharge", "q_land", "run"]:
         if name in ds:
             q_var = name
             break
 
     if q_var is None:
-        raise ValueError(f"No discharge variable in {scalar_nc}")
+        available = list(ds.data_vars)
+        raise ValueError(
+            f"No discharge variable in {scalar_nc}. "
+            f"Available variables: {available}"
+        )
 
     q_data = ds[q_var]
     if warmup_days > 0:
@@ -170,10 +178,15 @@ def extract_from_scalar(scalar_nc, warmup_days=0):
         "Q_m3s": values.flatten(),
     })
 
+    # Clean up — same CSV contract as the gridded path
+    df = df.dropna(subset=["Q_m3s"])
+    df = df[df["Q_m3s"] >= 0]
+
     stats = {
         "mean_Q_m3s": round(float(df["Q_m3s"].mean()), 2),
         "max_Q_m3s": round(float(df["Q_m3s"].max()), 2),
         "min_Q_m3s": round(float(df["Q_m3s"].min()), 2),
+        "std_Q_m3s": round(float(df["Q_m3s"].std()), 2),
         "n_days": len(df),
         "variable": q_var,
     }
@@ -198,40 +211,94 @@ def main():
                         help="Also output in HydroCraft obs format (tab-separated)")
     args = parser.parse_args()
 
-    validate_inputs(args)
-
+    # xarray import (inside the extract_* helpers) registers a broken 'gmt'
+    # backend entrypoint in this environment (libgmt.so missing); normal
+    # interpreter teardown then SIGSEGVs (rc=-11) AFTER correct output. Both
+    # exit paths therefore end in os._exit() with explicit stream flushes.
+    # Contract (applies after argparse succeeds; argparse errors keep the
+    # argparse default: usage text on stderr, exit 2):
+    #   filesystem side effects — the parent directory of --output (which is
+    #     also the obs-format file's directory) may be created via
+    #     os.makedirs(..., exist_ok=True); otherwise only the *.tmp files,
+    #     the --output CSV, and (with --obs_format) the obs-format file are
+    #     touched.
+    #   ordering — the success JSON is fully serialized first; then ALL
+    #     fallible content writes go to *.tmp paths; the final paths are
+    #     touched only by the consecutive os.replace calls at the end
+    #     (obs-format first when requested, then --output), each recorded in
+    #     `materialized` immediately after it succeeds.
+    #   exit 0 — reached only after every final file (the --output CSV, plus
+    #            the obs-format file when requested) has been materialized by
+    #            an atomic os.replace of a fully written *.tmp and the
+    #            pre-serialized success JSON has been printed
+    #   exit 2 — failed-status JSON printed (validation errors included);
+    #            *.tmp leftovers AND every final path this invocation had
+    #            already materialized (`materialized`) are removed
+    #            best-effort, so no file produced by THIS invocation persists
+    #            on the failure path. A file from an earlier successful run
+    #            persists only if this invocation had not yet replaced it;
+    #            if it had, the cleanup removes that path rather than
+    #            restoring the earlier file.
+    csv_tmp = args.output + ".tmp"
+    # Obs-format path is '<output stem>_obs_format.txt'. os.path.splitext
+    # strips only the final extension of the LAST path component, so
+    # directory names containing '.csv' are never rewritten, and a filename
+    # without an extension still yields a distinct path. Because splitext's
+    # extension is either '' or starts with '.', stem + '_obs_format.txt'
+    # can never equal --output itself.
+    obs_path = (os.path.splitext(args.output)[0] + "_obs_format.txt") if args.obs_format else None
+    obs_tmp = obs_path + ".tmp" if obs_path else None
+    materialized = []
     try:
+        validate_inputs(args)
+
         if args.output_nc:
             df, stats = extract_from_gridded(
                 args.output_nc, args.lat, args.lon, args.warmup
             )
         else:
             df, stats = extract_from_scalar(args.scalar_nc, args.warmup)
+
+        if args.obs_format:
+            stats["obs_format_path"] = obs_path
+
+        # Serialize the success JSON BEFORE any file write so nothing
+        # fallible remains between materializing the finals and printing.
+        result_json = json.dumps(
+            {"status": "success", "output_csv": args.output, **stats}, indent=2
+        )
+
+        os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+
+        # ALL fallible content writes target *.tmp paths ...
+        df.to_csv(csv_tmp, index=False, float_format="%.3f")
+        if args.obs_format:
+            with open(obs_tmp, "w") as f:
+                f.write("stcd\tdates\tz\tQ\tname\n")
+                for _, row in df.iterrows():
+                    f.write(f"wflow\t{row['date'].strftime('%Y-%m-%d')}\t0\t{row['Q_m3s']:.3f}\twflow_output\n")
+
+        # ... then the finals are materialized by consecutive os.replace
+        # calls, each recorded so the failure path can undo it.
+        if args.obs_format:
+            os.replace(obs_tmp, obs_path)
+            materialized.append(obs_path)
+        os.replace(csv_tmp, args.output)
+        materialized.append(args.output)
+
+        print(result_json)
+        sys.stdout.flush(); sys.stderr.flush()
+        os._exit(0)
     except Exception as e:
+        for leftover in (csv_tmp, obs_tmp, *materialized):
+            if leftover and os.path.exists(leftover):
+                try:
+                    os.remove(leftover)
+                except OSError:
+                    pass
         print(json.dumps({"status": "failed", "error": str(e)}, indent=2))
-        sys.exit(2)
-
-    # Write CSV
-    os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
-    df.to_csv(args.output, index=False, float_format="%.3f")
-
-    # Write HydroCraft obs format if requested
-    if args.obs_format:
-        obs_path = args.output.replace(".csv", "_obs_format.txt")
-        with open(obs_path, "w") as f:
-            f.write("stcd\tdates\tz\tQ\tname\n")
-            for _, row in df.iterrows():
-                f.write(f"wflow\t{row['date'].strftime('%Y-%m-%d')}\t0\t{row['Q_m3s']:.3f}\twflow_output\n")
-        stats["obs_format_path"] = obs_path
-
-    result = {
-        "status": "success",
-        "output_csv": args.output,
-        **stats,
-    }
-
-    print(json.dumps(result, indent=2))
-    sys.exit(0)
+        sys.stdout.flush(); sys.stderr.flush()
+        os._exit(2)
 
 
 if __name__ == "__main__":

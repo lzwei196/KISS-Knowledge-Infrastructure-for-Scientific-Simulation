@@ -1,0 +1,586 @@
+template_version: "3.5"
+
+identity:
+  model_id: "SWAN"
+  scientific_reference_version: "SWAN Cycle III version 41.51 (Delft University of Technology User Manual; wave action balance with sources/sinks)"
+  implementation:
+    id: "swan-pyswan-io"
+    version: "SWAN binary ~41.01AB; PySWaN I/O toolbox pyswan-ocean v1.0.0"
+    provenance: "Fortran 90 SWAN wave-action-balance kernel (Delft University of Technology, swanmodel.sourceforge.io) driven through a Python (PySWaN, openearth/swan, Gerben de Boer) spectral file-I/O and JONSWAP-generation binding."
+  ki_class: "forward_model"
+  is_family_dag: false
+  language: "fortran"
+  license: "GPL-3.0"
+  repo_url: "https://github.com/openearth/swan"
+
+boundary:
+  scope_in:
+    - "Wind-generated surface gravity waves in coastal areas, lakes and estuaries"
+    - "Wave generation by wind (GEN1/GEN2/GEN3)"
+    - "Whitecapping dissipation"
+    - "Bottom-friction dissipation"
+    - "Depth-induced wave breaking"
+    - "Nonlinear quadruplet wave-wave interactions (DIA approximation)"
+    - "Nonlinear triad wave-wave interactions (LTA approximation)"
+    - "Dissipation by vegetation, fluid mud, sea ice, and turbulence"
+    - "Obstacle transmission and reflection"
+    - "Refraction, shoaling, and phase-decoupled approximation of diffraction"
+    - "Wave-induced set-up (optional, open coast only)"
+    - "Bragg scattering by small-scale bottom features (v41.41 onward)"
+  scope_out:
+    - "Wave-induced currents are not calculated (must be supplied externally from a circulation model)"
+    - "Effects of wave-induced currents are always ignored in the set-up computation"
+    - "Ocean-scale application not recommended (WAM / WAVEWATCH III ~1 order of magnitude more efficient)"
+    - "Diffraction in harbours or in front of reflecting obstacles not handled properly by the phase-decoupled approach"
+    - "Wave propagation on super-critical current flow (current locally reduced to sub-critical)"
+    - "Water balance, hydrograph routing, or m3/s / mm/day quantities"
+  spatial: "2-D grid"
+  temporal: "event"
+  closure: "none"
+  notes: "SWAN propagates and conserves the wave action density spectrum N(sigma,theta) over geographic (x,y), frequency (sigma) and direction (theta) space via the action balance equation with source and sink terms (wind generation, dissipation, nonlinear redistribution); it is a spectral action-budget model, not a mass- or energy-balance hydrologic closure. Supports stationary and non-stationary (time-stepping) modes; structured (rectilinear/curvilinear) or unstructured triangular grids; Cartesian or spherical coordinates. A 1-D flume configuration is supported as a degenerate case."
+
+inputs:
+  forcing:
+    - category: "atmospheric"
+      name: "Wind velocity field (WX, WY / U10)"
+      unit: "m/s at 10 m"
+      source_kind: "forcing"
+      model_input_format: "uniform WIND vel/dir or gridded INPGRID WIND + READINP WIND; if absent, no wind assumed"
+      notes: "Direction FROM which wind blows under nautical convention. Wave energy scales ~U^4, so wind unit/convention errors strongly bias wave heights."
+    - category: "hydrodynamic"
+      name: "Ambient current field (VX, VY)"
+      unit: "m/s"
+      source_kind: "forcing"
+      model_input_format: "INPGRID CURRENT + READINP CURRENT"
+    - category: "hydrodynamic"
+      name: "Water level"
+      unit: "m"
+      source_kind: "forcing"
+      model_input_format: "INPGRID WLEV + READINP WLEV"
+  parameters:
+    - category: "bathymetry"
+      name: "Bathymetry / bottom level"
+      unit: "m (depth positive down)"
+      source_kind: "dataset_lookup"
+      model_input_format: ".bot ASCII grid via INPGRID BOTTOM + READINP BOTTOM (stationary input field only)"
+      notes: "Bottom grid may differ from the computational grid; SWAN interpolates internally. Bathymetry INPGRID extent must cover the CGRID extent."
+    - category: "calibration"
+      name: "Bottom-friction coefficient"
+      unit: "scheme-dependent (cfw or kn)"
+      source_kind: "calibrated"
+      model_input_format: "FRICTION command (JONSWAP / Collins / Madsen) or INPGRID FRICTION"
+    - category: "calibration"
+      name: "Vegetation density"
+      unit: "stems/m2"
+      source_kind: "dataset_lookup"
+      model_input_format: "INPGRID NPLANTS + VEGETATION"
+    - category: "calibration"
+      name: "Turbulent viscosity"
+      unit: "m2/s"
+      source_kind: "calibrated"
+      model_input_format: "INPGRID TURBVISC + TURBULENCE"
+    - category: "calibration"
+      name: "Mud-layer thickness"
+      unit: "m"
+      source_kind: "dataset_lookup"
+      model_input_format: "INPGRID MUDLAYER + MUD"
+    - category: "ice"
+      name: "Sea-ice fraction"
+      unit: "fraction 0-1"
+      source_kind: "dataset_lookup"
+      model_input_format: "INPGRID AICE + SICE"
+    - category: "ice"
+      name: "Sea-ice thickness"
+      unit: "m"
+      source_kind: "dataset_lookup"
+      model_input_format: "INPGRID HICE + SICE"
+  initial_conditions:
+    - category: "spectral_state"
+      name: "Initial wave spectra"
+      unit: "m2/Hz/deg"
+      source_kind: "default"
+      model_input_format: "INITIAL command: DEFAULT (Kahma & Calkoen 1992 growth curve capped by Pierson-Moskowitz 1964, JONSWAP shape, cos^2 directional distribution) | ZERO | PAR | HOTSTART (previous-run hotfile)"
+  boundary_conditions:
+    - category: "open_boundary"
+      name: "Wave boundary spectra"
+      unit: "m2/Hz/deg (or parametric Hs/Tp/pdir/ms)"
+      source_kind: "user_provided"
+      model_input_format: "BOUNDSPEC / BOUN SHAPE + BOUN SIDE ... FILE; parametric TPAR (time, Hs, Tp, pdir, ms), 1D (.spc) or 2D (.spc) spectra"
+      notes: "Imposed incoming wave spectra at open boundaries; computed outgoing waves replace imposed waves at the boundary. JONSWAP peak-enhancement gamma default 3.3."
+    - category: "nesting"
+      name: "Nested boundary input"
+      unit: "spectral"
+      source_kind: "user_provided"
+      model_input_format: "BOUNDNEST1/2/3 from a coarser SWAN run or from WAM / WAVEWATCH III"
+    - category: "grid_definition"
+      name: "Computational grid (CGRID) and spectral discretization"
+      unit: "m or degrees; Hz; degrees"
+      source_kind: "user_provided"
+      model_input_format: "CGRID command: geographic extent + mxc/myc, logarithmic frequency grid (df=0.1f required by DIA, typical 0.04-1.0 Hz, min 4 freqs), directional grid (full 360 deg or sector, min 3 bins/quadrant)"
+    - category: "structural_switch"
+      name: "Physics activation / mode switches"
+      unit: "categorical"
+      source_kind: "user_provided"
+      model_input_format: "MODE STAT/NONSTAT; SET NAUTICAL/CARTESIAN; GEN1/GEN2/GEN3; TRIAD; FRICTION; OBSTACLE; SETUP; OFF WINDG / OFF QUAD; NUM ACCUR tolerances"
+      notes: "OFF WINDG disables wind-wave growth (boundary-forced runs only); OFF QUAD disables the expensive quadruplet term for simple propagation tests."
+  _reason: "ki_facts spectral_grid (frequency/direction linspace) folded into the CGRID boundary_conditions entry; HydroCraft wrapper grid defaults (linspace(0.025,1.0,40)) are tooling and excluded."
+
+processes:
+  modules:
+    - name: "WaveActionBalance"
+      role: "integrator"
+      brief: "External SWAN Fortran kernel: integrates the wave action balance equation for N(sigma,theta) across the computational grid in geographic, directional and frequency space, with propagation (refraction, shoaling, phase-decoupled diffraction) plus source/sink terms."
+    - name: "WindInput"
+      role: "process_solver"
+      brief: "Wind-driven wave growth source term (GEN1/GEN2/GEN3 generations; Komen/Janssen/Westhuysen/ST6 growth schemes under GEN3)."
+    - name: "Whitecapping"
+      role: "process_solver"
+      brief: "Deep-water whitecapping dissipation sink term controlled by the Cds dissipation coefficient."
+    - name: "BottomFriction"
+      role: "process_solver"
+      brief: "Bottom-friction dissipation (JONSWAP / Collins / Madsen formulations)."
+    - name: "DepthInducedBreaking"
+      role: "process_solver"
+      brief: "Surf-zone depth-induced wave breaking sink term governed by the breaker index gamma."
+    - name: "QuadrupletInteractions"
+      role: "process_solver"
+      brief: "Nonlinear four-wave (quadruplet) energy redistribution via the DIA approximation (active under GEN3)."
+    - name: "TriadInteractions"
+      role: "process_solver"
+      brief: "Nonlinear three-wave (triad) energy redistribution via the LTA approximation."
+      applicability: "when TRIAD enabled"
+    - name: "OptionalSinks"
+      role: "optional_module"
+      brief: "Dissipation by vegetation, fluid mud, sea ice, turbulence; obstacle transmission/reflection; Bragg scattering (v41.41+)."
+      applicability: "when VEGETATION / MUD / SICE / TURBULENCE / OBSTACLE / BRAGG activated"
+    - name: "WaveSetup"
+      role: "optional_module"
+      brief: "Wave-induced set-up solved from radiation-stress gradients."
+      applicability: "open coast only, when SETUP enabled"
+    - name: "SpectralDiagnostics"
+      role: "allocator"
+      brief: "Computes bulk wave parameters (Hsig, RTP, TM01, TM02, PDIR, DSPR, QP) from the prognostic spectrum with a diagnostic high-frequency tail added."
+    - name: "JONSWAPGenerator"
+      role: "process_solver"
+      brief: "PySWaN jonswap(): builds a 1-D JONSWAP variance-density spectrum E(f) from Hm0, Tp, gamma using Yamaguchi(1984) (SWAN-consistent) or Goda alpha; normalizes so the integral equals Hm0."
+    - name: "DirectionalSpreading"
+      role: "process_solver"
+      brief: "PySWaN directional_spreading(): cos^ms directional distribution about peak direction with gamma-function normalization."
+    - name: "Spec2"
+      role: "integrator"
+      brief: "PySWaN 2-D spectrum class [t,xy,f,dir]; from_jonswap builds 2-D energy from JONSWAPGenerator x DirectionalSpreading; Hm0/Tm01/Tm02/Tp/pdir by trapezoidal integration."
+    - name: "Spec1"
+      role: "integrator"
+      brief: "PySWaN 1-D spectrum class [t,xy,f]; from_jonswap fills energy; Hm0/Tm01/Tm02/Tp by frequency integration."
+    - name: "Spec0"
+      role: "allocator"
+      brief: "PySWaN parametric (0-D) holder (Hs,Tp,Tm01,Tm02,pdir,ms time series); from_Spec derives parameters from a full Spec1/Spec2."
+    - name: "SpectralFileIO"
+      role: "driver"
+      brief: "PySWaN swan reader/writer (from_swan_header, from_file0D/1D/2D, to_file0D/1D/2D): parses and emits SWAN TPAR/.s1d/.spc spectral files with FACTOR scaling and NaN exception masking."
+  internal_edges:
+    - from: "Inputs"
+      to: "WindInput"
+      kind: "consumes_input"
+      brief: "wind velocity field forces the wind-growth source term"
+    - from: "Inputs"
+      to: "BottomFriction"
+      kind: "consumes_input"
+      brief: "bathymetry and friction coefficient parameterize bottom-friction dissipation"
+    - from: "Inputs"
+      to: "DepthInducedBreaking"
+      kind: "consumes_input"
+      brief: "local water depth governs depth-induced breaking"
+    - from: "WindInput"
+      to: "WaveActionBalance"
+      kind: "writes_state"
+      brief: "wind source term adds energy to the action density spectrum"
+    - from: "Whitecapping"
+      to: "WaveActionBalance"
+      kind: "writes_state"
+      brief: "whitecapping sink removes energy from the spectrum"
+    - from: "BottomFriction"
+      to: "WaveActionBalance"
+      kind: "writes_state"
+      brief: "bottom-friction sink removes energy in shallow water"
+    - from: "DepthInducedBreaking"
+      to: "WaveActionBalance"
+      kind: "writes_state"
+      brief: "surf breaking sink dissipates energy in the surf zone"
+    - from: "QuadrupletInteractions"
+      to: "WaveActionBalance"
+      kind: "writes_state"
+      brief: "quadruplets redistribute energy across the frequency-direction spectrum"
+    - from: "TriadInteractions"
+      to: "WaveActionBalance"
+      kind: "writes_state"
+      brief: "triads redistribute energy to harmonics in shallow water"
+    - from: "OptionalSinks"
+      to: "WaveActionBalance"
+      kind: "writes_state"
+      brief: "vegetation/mud/ice/turbulence/obstacle sinks remove or transmit energy when activated"
+    - from: "WaveActionBalance"
+      to: "WaveSetup"
+      kind: "invokes"
+      brief: "radiation-stress gradients from the spectrum drive the set-up equation"
+    - from: "WaveActionBalance"
+      to: "SpectralDiagnostics"
+      kind: "reads_state"
+      brief: "diagnostics integrate the prognostic spectrum (plus diagnostic tail) into bulk parameters"
+    - from: "SpectralDiagnostics"
+      to: "Outputs"
+      kind: "produces_output"
+      brief: "emits Hsig, RTP, TM01, TM02, PDIR, DSPR and energy-balance terms to TABLE/BLOCK/spectral files"
+    - from: "JONSWAPGenerator"
+      to: "Spec1"
+      kind: "invokes"
+      brief: "Spec1.from_jonswap calls jonswap(f,Hm0,Tp) to build the 1-D energy array"
+    - from: "JONSWAPGenerator"
+      to: "Spec2"
+      kind: "invokes"
+      brief: "Spec2.from_jonswap builds per-frequency 1-D energy via jonswap before spreading"
+    - from: "DirectionalSpreading"
+      to: "Spec2"
+      kind: "invokes"
+      brief: "Spec2 multiplies jonswap energy by the cos^ms directional distribution per frequency"
+    - from: "Spec2"
+      to: "E (variance/energy density spectrum)"
+      kind: "writes_state"
+      brief: "from_jonswap fills 4-D energy[t,xy,f,dir] and sets energy_units='m2/Hz/deg'"
+    - from: "Spec1"
+      to: "E (variance/energy density spectrum)"
+      kind: "writes_state"
+      brief: "from_jonswap fills 3-D energy[t,xy,f] and sets energy_units='m2/Hz'"
+    - from: "E (variance/energy density spectrum)"
+      to: "Spec2"
+      kind: "reads_state"
+      brief: "Hm0/Tm01/Tm02 trapezoidally integrate energy; branch on energy_units prefix and return None on mismatch (silent failure path)"
+    - from: "Spec1"
+      to: "Spec0"
+      kind: "invokes"
+      brief: "Spec0.from_Spec calls the source spectrum's Hm0/Tp/Tm01/Tm02/pdir to derive parametric values"
+    - from: "Spec0"
+      to: "SpectralFileIO"
+      kind: "consumes_input"
+      brief: "to_file0D reads Spec0 Hs/Tp/pdir/ms to write a TPAR boundary file"
+    - from: "Spec2"
+      to: "SpectralFileIO"
+      kind: "consumes_input"
+      brief: "to_file2D reads Spec2 energy/coords/units to write a .spc boundary file"
+    - from: "SpectralFileIO"
+      to: "WaveActionBalance"
+      kind: "produces_output"
+      brief: "spectral boundary files (.spc/.tpar) generated by PySWaN become the open-boundary inputs to the SWAN kernel run"
+  _reason: "WaveActionBalance and its source/sink sub-modules come from docs (SWAN User Manual); the kernel source itself was not accessible. PySWaN Spec0/1/2, jonswap, directional_spreading and SpectralFileIO come from source and describe the I/O binding that produces SWAN boundary files and ingests SWAN output."
+
+states:
+  variables:
+    - name: "N (action density spectrum)"
+      unit: "m2/Hz/deg / (rad/s) (action = energy/sigma)"
+      role: "prognostic"
+    - name: "E (variance/energy density spectrum)"
+      unit: "m2/Hz/deg (2D) or m2/Hz (1D)"
+      role: "prognostic"
+    - name: "m0 (zeroth spectral moment)"
+      unit: "m2"
+      role: "diagnostic"
+    - name: "m1 (first spectral moment)"
+      unit: "m2/s"
+      role: "diagnostic"
+    - name: "m2 (second spectral moment)"
+      unit: "m2/s2"
+      role: "diagnostic"
+    - name: "fp (peak frequency)"
+      unit: "Hz"
+      role: "diagnostic"
+  provenance: "populated"
+
+outputs:
+  - var: "HSIGN"
+    validation_rank: 1
+    unit: "m"
+    description: "Significant wave height, Hm0 = 4*sqrt(m0)"
+    emitted_in: "TABLE (.crv) / BLOCK; PySWaN reads as Spec0.Hs"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Buoy Hs is the canonical observation; verify nautical-vs-Cartesian direction and m-vs-cm Hs units before comparison."
+            - "Output point must lie inside the CGRID extent or the model emits zeros/empty rows."
+        - obs_shape: "spatial_snapshot"
+          comparison_mode: "spatial_field_comparison"
+          metric_families: ["spatial_pattern_match", "magnitude_accuracy"]
+          determining_metric: "csi"
+          caveats:
+            - "Compared against altimeter or model-grid Hs fields for a single overpass/instant."
+      detrending_options: ["none"]
+  - var: "RTP"
+    validation_rank: 2
+    unit: "s"
+    description: "Peak period of the variance density spectrum (relative frequency), Tp = 1/fp"
+    emitted_in: "TABLE (.crv) / BLOCK; PySWaN Spec0.Tp"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Distinguish Tp from peak frequency fp (Hz); Tp=1/fp. Tp > Tm01 > Tm02 by construction."
+      detrending_options: ["none"]
+  - var: "TM01"
+    validation_rank: 3
+    unit: "s"
+    description: "Mean absolute wave period, Tm01 = m0/m1"
+    emitted_in: "TABLE (.crv) / BLOCK; PySWaN Spec0.Tm01"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Whitecapping Cds tuning jointly controls Hs and mean period; period bias often tracks Hs bias."
+      detrending_options: ["none"]
+  - var: "TM02"
+    validation_rank: 4
+    unit: "s"
+    description: "Mean absolute zero-crossing period, Tm02 = sqrt(m0/m2)"
+    emitted_in: "TABLE (.crv) / BLOCK; PySWaN Spec0.Tm02"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats: []
+      detrending_options: ["none"]
+  - var: "PDIR"
+    validation_rank: 5
+    unit: "deg"
+    description: "Peak wave direction (nautical by default)"
+    emitted_in: "TABLE (.crv) / BLOCK; PySWaN Spec0.pdir"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Directional metric must be circular (angular difference mod 360); Cartesian/nautical mismatch rotates by 180 deg."
+      detrending_options: ["none"]
+  - var: "DSPR"
+    validation_rank: 6
+    unit: "deg"
+    description: "Directional spreading of the waves"
+    emitted_in: "TABLE (.crv) / BLOCK"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "DSPR (degrees) is not the cos^ms power ms; do not confuse the two."
+      detrending_options: ["none"]
+  - var: "E(f,theta)"
+    validation_rank: 7
+    unit: "m2/Hz/deg"
+    description: "2-D variance/energy density spectrum (frequency-direction)"
+    emitted_in: "SPEC2D output (.s2d/.spc); PySWaN Spec2"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "Spectral-shape comparison against buoy directional spectra; ensure both are in m2/Hz/deg (not m2/Hz/rad, factor 180/pi ~57.3)."
+      detrending_options: ["none"]
+  - var: "E(f)"
+    validation_rank: 8
+    unit: "m2/Hz"
+    description: "1-D variance/energy density spectrum (frequency)"
+    emitted_in: "SPEC1D output (.s1d); PySWaN Spec1"
+    observability:
+      comparable_obs_shapes:
+        - obs_shape: "point_time_series"
+          comparison_mode: "time_series_comparison"
+          metric_families: ["temporal_pattern_match", "magnitude_accuracy"]
+          determining_metric: "nse"
+          caveats:
+            - "1-D spectra carry no directional dimension; do not divide by degrees when comparing energy."
+      detrending_options: ["none"]
+
+influence:
+  edges:
+    - from: "gamma (depth-induced breaking index)"
+      to: "HSIGN"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      applicability: "shallow water below threshold depth"
+      lever_type: parameter
+      citations: ["xu2020_swan_sensitivity_chanhom"]
+    - from: "water depth"
+      to: "HSIGN"
+      sensitivity_grade: MEDIUM
+      basis: mechanistic_inference
+      applicability: "depth selects which process dominates SWH (gamma in shallow water vs wind/whitecapping in deep water); a regime-control variable, not an independently-ranked SA parameter in Xu 2020"
+      lever_type: boundary_forcing
+      citations: ["xu2020_swan_sensitivity_chanhom"]
+    - from: "Cds (whitecapping dissipation coefficient)"
+      to: "HSIGN"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      applicability: "deep/open water"
+      lever_type: parameter
+      citations: ["lei2023_swan_optimal_cds", "wu2021_swan_whitecapping_calibration", "wu2026_swan_staged_whitecapping_calibration"]
+    - from: "Cds (whitecapping dissipation coefficient)"
+      to: "TM01"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["wu2026_swan_staged_whitecapping_calibration", "wu2021_swan_whitecapping_calibration"]
+    - from: "wind input field"
+      to: "HSIGN"
+      sensitivity_grade: HIGH
+      basis: literature_quantitative
+      applicability: "deep/open water"
+      lever_type: boundary_forcing
+      citations: ["xu2020_swan_sensitivity_chanhom", "lei2023_swan_optimal_cds", "samiksha2021_swan_growth_friction_india"]
+    - from: "wind growth scheme (Komen/Janssen/Westhuysen/ST6)"
+      to: "HSIGN"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      lever_type: structural
+      citations: ["samiksha2021_swan_growth_friction_india"]
+    - from: "bottom-friction coefficient/scheme (JONSWAP/Collins/Madsen)"
+      to: "HSIGN"
+      sensitivity_grade: MEDIUM
+      basis: literature_quantitative
+      applicability: "coastal/shallow water"
+      lever_type: parameter
+      citations: ["samiksha2021_swan_growth_friction_india", "xu2020_swan_sensitivity_chanhom"]
+    - from: "quadruplet interaction parameterization"
+      to: "HSIGN"
+      sensitivity_grade: LOW
+      basis: literature_quantitative
+      lever_type: parameter
+      citations: ["xu2020_swan_sensitivity_chanhom"]
+  citation_index:
+    xu2020_swan_sensitivity_chanhom:
+      short_citation: "Xu et al. 2020"
+      doi: "10.1016/j.ecss.2019.106489"
+      note: "Spatial/temporal sensitivity of SWH to ten SWAN parameters during Typhoon Chan-hom; gamma rank-1 in shallow water, wind/whitecapping dominate in deep water."
+    lei2023_swan_optimal_cds:
+      short_citation: "Lei et al. 2023"
+      doi: "10.3389/fmars.2023.1298727"
+      note: "Optimal whitecapping Cds ranges; Cds compensates wind-field error and strongly controls simulated SWH (Gulf of Mexico, Mediterranean)."
+    wu2021_swan_whitecapping_calibration:
+      short_citation: "Wu et al. 2021"
+      doi: "10.1016/j.apor.2021.102752"
+      note: "Quantitative Cds calibration correcting systematic SWAN SWH underestimation. DOI inferred from publisher pattern."
+    wu2026_swan_staged_whitecapping_calibration:
+      short_citation: "Wu et al. 2026"
+      doi: "10.1016/j.oceaneng.2026.00260X"
+      note: "Staged Cds calibration jointly reduced Hs bias (to 0.01 m) and mean-period bias (-0.74 to -0.36 s). DOI inferred from publisher pattern."
+    samiksha2021_swan_growth_friction_india:
+      short_citation: "Samiksha et al. 2021"
+      doi: "10.1016/j.oceaneng.2021.109507"
+      note: "Comparison of wind-growth (Komen/Janssen/Westhuysen/ST6) and bottom-friction (JONSWAP/Collins/Madsen) schemes for SWH on the central west coast of India. DOI inferred from publisher pattern."
+
+safety:
+  hazards:
+    - id: "boundary_Hs_cm_not_m"
+      kind: "weather_file_semantic"
+      description: "Boundary Hs supplied in centimeters instead of meters yields 100x-too-large wave heights (some JP/CN buoy networks report cm)."
+      severity: "silent"
+    - id: "peak_freq_Hz_as_Tp_s"
+      kind: "weather_file_semantic"
+      description: "Peak frequency fp (Hz) written into the TPAR Tp (s) field gives unrealistically short periods; Tp=1/fp."
+      severity: "silent"
+    - id: "cartesian_vs_nautical_direction"
+      kind: "control_semantic"
+      description: "Cartesian/nautical direction convention mismatch rotates the wave field by 180 deg (nautical = (270 - Cartesian) mod 360)."
+      severity: "silent"
+    - id: "energy_units_rad_not_deg"
+      kind: "weather_file_semantic"
+      description: "2-D energy density in m2/Hz/rad instead of m2/Hz/deg makes Hm0 wrong by factor 180/pi ~57.3."
+      severity: "silent"
+    - id: "spread_sigma_as_ms_power"
+      kind: "weather_file_semantic"
+      description: "Angular spread sigma (deg) used directly as the cos^ms power gives an over-narrow spectral shape (ms ~ 2/sigma_rad^2 - 1)."
+      severity: "silent"
+    - id: "bathymetry_elevation_not_depth"
+      kind: "soil_semantic"
+      description: "Bathymetry in elevation convention (positive up, e.g. GEBCO) used as depth (positive down) makes SWAN treat the ocean as land; negate elevation."
+      severity: "silent"
+    - id: "wind_knots_as_ms"
+      kind: "weather_file_semantic"
+      description: "Wind in knots used as m/s overestimates wave height ~2x (energy ~U^4; 1 kt = 0.5144 m/s)."
+      severity: "silent"
+    - id: "frequency_rads_not_Hz"
+      kind: "weather_file_semantic"
+      description: "Frequencies in rad/s instead of Hz widen the spectral range ~6x and corrupt integration; f(Hz)=omega/(2*pi)."
+      severity: "silent"
+    - id: "energy_units_string_mismatch_returns_None"
+      kind: "coefficient_runtime_silent_fallback"
+      description: "PySWaN Hm0()/Tm01()/Tm02() branch on the energy_units string prefix ('m2/Hz' vs 'm2/Hz/deg') and return None (not raise) on mismatch, so a mis-tagged spectrum silently propagates None downstream."
+      severity: "silent"
+    - id: "energy_shape_mismatch_all_nan"
+      kind: "numerical_instability"
+      description: "Energy array not matching [t,xy,f,dir] makes Spec1/Spec2 initialize energy with NaN, yielding all-NaN spectral parameters."
+      severity: "fatal_or_silent"
+    - id: "malformed_spectral_header"
+      kind: "parser_semantic"
+      description: "Spectral file header not in exact SWAN format (SWAN 1 / TIME / LONLAT / AFREQ-RFREQ / QUANT) causes 'Error in reading input' in the PRINT file."
+      severity: "fatal"
+    - id: "stationary_nonstationary_mismatch"
+      kind: "control_semantic"
+      description: "TIME-header presence/absence mismatched with MODE STAT/NONSTAT causes only the first timestep to be used."
+      severity: "silent"
+    - id: "bottom_grid_smaller_than_cgrid"
+      kind: "soil_semantic"
+      description: "INPGRID BOTTOM extent smaller than CGRID triggers a 'bottom grid does not cover computational grid' error."
+      severity: "fatal"
+    - id: "output_points_outside_cgrid"
+      kind: "control_semantic"
+      description: "CURVE/TABLE output locations outside the CGRID extent yield empty or all-zero output."
+      severity: "silent"
+    - id: "off_windg_suppresses_growth"
+      kind: "control_semantic"
+      description: "'OFF WINDG' left in the .swn suppresses all wind-wave growth; Hs stays at the boundary value everywhere."
+      severity: "degraded"
+  validation_limits:
+    - "Phase-averaged spectral model: individual wave phases unresolved; invalid where diffraction-dominated phase effects matter (harbours, in front of reflecting obstacles)."
+    - "Coastal-only by design; not recommended for ocean scales (WAM / WAVEWATCH III preferred there)."
+    - "2-D wave-induced set-up valid only for open coasts with unlimited water supply; must not be used for closed basins/lakes."
+    - "DIA quadruplet approximation poor for long-crested (narrow-directional) waves and for frequency resolutions far from df=0.1f."
+    - "LTA triad approximation tuned from narrow-flume (long-crested) observations."
+    - "Wave-induced currents are always ignored."
+    - "Cannot handle wave propagation on super-critical current flow (current locally reduced to sub-critical)."
+  warnings:
+    - "Three iteration processes (spatial propagation; current-induced spectral refraction/frequency shift; set-up equation) may fail to converge; convergence info reported in the PRINT file. Relax NUM ACCUR or reduce the non-stationary timestep if so."
+    - "Output bulk parameters are computed over the prognostic spectrum with an added diagnostic high-frequency tail, so they can deviate slightly from values recomputed from the written output spectrum (which lacks the tail)."
+    - "Curvilinear-grid convergence problems can occur where sweep-quadrant separators coincide with spectral directions."
+    - "Over-fine grid or too-long COMPUTE period makes runtime scale as mx*my*mdc*msc*nsteps; start coarse and disable OFF QUAD only for production physics."
+  assumptions:
+    - statement: "Water depth below a user limit (default 0.05 m, command SET) is clamped to that limit."
+      scope: "shallow / drying cells"
+      source: "SWAN User Manual v41.51, section 2.3 (Internal scenarios, limiters, shortcomings), p.6"
+      status: "adopted"
+    - statement: "Default initial spectra are computed from local wind via the Kahma & Calkoen (1992) growth curve capped by Pierson-Moskowitz (1964), with JONSWAP shape and cos^2 directional distribution."
+      scope: "cold-start initialization without HOTSTART/PAR/ZERO"
+      source: "SWAN User Manual v41.51, section 4.5.3 (INITIAL), p.57"
+      status: "adopted"
+    - statement: "The dag describes the SWAN Fortran wave-action-balance kernel as the scientific entity; PySWaN provides the JONSWAP-generation and spectral file-I/O binding and does not itself integrate wave physics."
+      scope: "implementation / module attribution"
+      source: "SWAN User Manual v41.51 (kernel physics) and openearth/swan PySWaN source (oceanwaves.py, swan.py)"
+      status: "adopted"
+    - statement: "JONSWAP normalization rescales energy so the spectral integral equals Hm0^2/16 regardless of the chosen alpha method, so the Yamaguchi-vs-Goda choice affects only spectral shape, not total energy."
+      scope: "PySWaN JONSWAP spectrum generation"
+      source: "openearth/swan PySWaN oceanwaves.py jonswap() normalize behavior"
+      status: "tentative"

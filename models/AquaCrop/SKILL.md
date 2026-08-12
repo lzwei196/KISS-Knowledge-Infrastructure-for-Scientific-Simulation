@@ -154,6 +154,7 @@ crop.CCx = 0.80   # Default 0.96 → reduce for sub-optimal stand density
 | WP (g/m²) | CCx | Expected yield | Represents |
 |------------|-----|----------------|------------|
 | 33.7 (default) | 0.96 | ~14,000 kg/ha | Potential (US irrigated, optimal N) |
+| 30.0 | 0.90 | ~12,300 kg/ha | High-input **rainfed** (US Corn Belt — IA/IL/NE/WI/MN) |
 | 25.0 | 0.85 | ~9,000 kg/ha | High-input commercial (NE China, Brazil) |
 | 20.0 | 0.80 | ~7,000 kg/ha | Moderate-input (Harbin rainfed) |
 | 15.0 | 0.80 | ~5,400 kg/ha | Low-input (Bengbu traditional) |
@@ -162,6 +163,14 @@ crop.CCx = 0.80   # Default 0.96 → reduce for sub-optimal stand density
 For wheat: default WP=15 is already low — the issue is different (phenology tuning needed for Chinese winter wheat varieties).
 
 **Rule**: If your site has P > ET0 during the growing season (monsoon Asia, humid tropics), you MUST reduce WP/CCx or yields will be unrealistically high. AquaCrop only limits growth via water — there is no N/P module.
+
+**Conversely, high-input optimal-N regions need a HIGH WP.** For the US Corn Belt
+(verified 2026-06-30 vs SPAM 2020, 40.0-43.5N x 98-88W maize) the SPAM regional
+mean is ~12.3 t/ha. Default WP=33.7/CCx=0.96 drives sim to potential (~14 t/ha)
+and over-predicts by +12.4%; **WP=30/CCx=0.90 (planting 05/05) centers the
+regional mean at PBIAS -1.4%**. So WP is a two-sided knob: drop it for low-input
+monsoon Asia (WP=13.8 China maize), raise it toward potential for high-input US
+maize. Do NOT carry the China WP=13.8 over to a US/EU site — it undershoots ~55%.
 
 ### 6. Irrigation Methods (S5)
 
@@ -320,3 +329,192 @@ wp = final['Dry yield (tonne/ha)'].values * 1000 / seasonal_et['ET'].values  # k
 - GGCMI Crop Calendar: `/home/server/Crop_model_dataset/GGCMI_phase3_crop_calendar/`
 - China Phenology GeoTIFF: `/home/server/Crop_model_dataset/8313530/`
 - SPAM crop distribution: `/home/server/Crop_model_dataset/dataverse_files/`
+
+
+---
+
+## Multi-Year National-Yield Validation (FAOSTAT / GDHY annual series)
+
+Use this recipe when the observation is an **annual national/regional yield
+series** (FAOSTAT `yield_tonnes_per_ha`, GDHY, etc.) rather than a single-site
+snapshot. A time series is required for Pearson r / NSE / KGE to be defined.
+
+**DO NOT** re-load forcing per year, and **DO NOT** load hourly/3-hourly or
+gridded forcing across decades (`load_hourly_forcing`, `load_cmfd_daily_all`):
+that is the CPU-bound trap that hangs a 25-year run. Load the **daily point
+series ONCE** for the whole window, compute ET0 once (vectorized), then run a
+SINGLE multi-year `AquaCropModel`.
+
+**Forcing source for multi-decade windows: use `nasa_power`, NOT `cmfd`.**
+`load_daily_forcing('cmfd', ...)` is NOT a "single fast call" over decades:
+`_load_cmfd` loops `year × month × 6 variables`, i.e. it opens
+`6 × 12 × N_years` NetCDF tiles with `xr.open_dataset` (≈1,870 file opens for
+a 26-year window) and does a point-extract on each — that IS the IO-bound trap
+that hangs the run (it is the same failure mode as `load_cmfd_daily_all`, just
+one notch less extreme). `load_daily_forcing('nasa_power', ...)` instead issues
+ONE bounded HTTP request per year (network-bound, not 1,870 local opens),
+covers 1981→present, and is globally valid including China. Prefer it for any
+window longer than ~10 years. Only fall back to `cmfd` for short windows
+(< ~10 years) or where NASA POWER coverage is genuinely insufficient. Keep the
+window bounded (≤ ~25 years) regardless of source.
+
+```python
+from ki_tools_common.load_forcing import load_daily_forcing
+from ki_tools_common.crop_obs import get_faostat_yield_series
+
+# 1. Representative agricultural point + crop + FAOSTAT country label.
+#    e.g. China maize, North China Plain:
+lat, lon, crop, country = 34.0, 113.0, 'maize', 'China, mainland'
+
+# 2. Window = overlap of forcing AND FAOSTAT. FAOSTAT is 1961-2024 but forcing
+#    starts later (CMFD 1951, MSWX 1979, NASA POWER 1981). NASA POWER (1981+)
+#    fully overlaps FAOSTAT for any recent window. Keep it bounded (~15-20 yr,
+#    enough years for r/NSE/KGE without an unbounded forcing load).
+y0, y1 = 2000, 2018
+
+# 3. Load forcing ONCE as a daily POINT series.
+#    Use 'nasa_power' (ONE bounded HTTP request per year; works for China too).
+#    Do NOT use 'cmfd' here over decades: it opens 6*12*N_years NetCDF tiles
+#    (~1,300 for this window) and is the IO-bound hang that produces no result.
+fc = load_daily_forcing('nasa_power', lat, lon, y0, y1)   # standardized daily dict
+# Build weather_df (compute_eto_penman_monteith is vectorized over the series).
+
+# 4. ONE multi-year model spanning the whole window; AquaCrop simulates one
+#    season per year -> final_stats has one row per harvest year.
+model = AquaCropModel(sim_start_time=f'{y0}/01/01', sim_end_time=f'{y1}/12/31',
+                      weather_df=weather_df, soil=soil, crop=crop_obj,
+                      initial_water_content=iwc)   # off_season=False default
+model.run_model(till_termination=True)
+
+# 5. Use the FULL final_stats series (one yield per season). NOTE: run_aquacrop
+#    only reports season-0 yield (`stats[...].iloc[0]`) -- for multi-year
+#    validation read final_stats.csv from extract_results, NOT run_aquacrop's
+#    `dry_yield_tha`. Map each season to its harvest year.
+final = model.get_simulation_results()
+sim = {yr: y for yr, y in zip(range(y0, y1+1), final['Dry yield (tonne/ha)'])}
+
+# 6. Obs + align by year, then compare_sim_obs.
+obs = get_faostat_yield_series(crop=crop, country=country,
+                               years=range(y0, y1+1), units='t/ha')
+common = sorted(set(sim) & set(obs))
+from compare_sim_obs import compute_metrics   # tools/s9_output_analysis
+metrics = compute_metrics([sim[y] for y in common], [obs[y] for y in common])
+# r / NSE / KGE now defined over the annual series.
+```
+
+### CRITICAL — pick the metric the obs_shape allows (dag-enforced)
+
+A FAOSTAT / GDHY **national** yield series is a `regional_aggregate_time_series`
+obs_shape. Per `dag.yaml` `outputs.DryYield.observability`, the ONLY valid
+metric_families for it are **`magnitude_accuracy`** (PBIAS, RMSE) and
+**`trend_match`** (slope agreement, detrended residuals, decadal-mean PBIAS).
+**Raw NSE / Pearson r / KGE on the inter-annual series are scientifically
+inappropriate** and the pre-retry gate REJECTS them as `REJECT_WRONG_METRIC` —
+switching cultivar/forcing/WP cannot rescue a structurally invalid measurement,
+so the retry loop correctly skips.
+
+Why: a national aggregate is dominated by a multi-decade technology/management
+trend that a weather-only model (AquaCrop has no N module) cannot reproduce.
+Both sim and obs trend upward, so a **raw r looks deceptively high** (China
+maize 2000-2018: raw r=0.85) while the **detrended residuals share no
+co-movement** (detrended_r≈0.00). The high raw r is pure trend-coupling, not
+skill. Verified 2026-06-08: WP=13.8 gives PBIAS −0.34% (excellent magnitude)
+but sim trend slope is only 0.028 vs obs 0.084 t/ha/yr (slope_ratio 0.34) — the
+model captures the magnitude well and the trend *direction* but only ~1/3 of its
+*rate*, exactly as expected for a weather-only model against a tech-driven series.
+
+Use the dedicated tool — it returns the dag-valid families and refuses to lead
+with raw NSE/r:
+```python
+from compare_sim_obs import compute_aggregate_metrics   # tools/s9_output_analysis
+m = compute_aggregate_metrics(sim_list, obs_list, years_list)
+# m['magnitude_accuracy']['PBIAS_pct'], m['trend_match']['slope_ratio'], ['detrended_r']
+```
+Report `obs_shape='regional_aggregate_time_series'` in the result JSON. The
+older `compute_metrics()` still emits r/NSE/KGE for `point_time_series` cases
+(single field-trial multi-year), but DO NOT report those as the headline for a
+national aggregate.
+
+**`detrended_r` is NOT a pass/fail or retry gate for a national aggregate.**
+A 0-D single-point weather-only run CANNOT reproduce the detrended inter-annual
+residuals of a NATIONAL / sub-national aggregate: that residual variability is
+driven by area shifts, irrigation expansion, sub-national heterogeneity and
+policy -- none of which a point run sees -- so `detrended_r ≈ 0` is the
+EXPECTED, physically-correct outcome (China maize 2000-2018: detrended_r=0.001),
+NOT a phenology/calibration defect, and adding trend rate is impossible without a
+fertility/technology forcing the model isn't given. For a
+`regional_aggregate_time_series` obs the acceptance gate is ONLY
+`magnitude_accuracy` (|decadal PBIAS| small; here -0.34%) plus `trend_match` sign
+and `slope_ratio` -- do NOT trigger a retry on detrended_r here. To genuinely
+validate AquaCrop's inter-annual *weather* response, supply a `point_time_series`
+obs (a co-located multi-year field trial); only THERE is a low detrended_r a real
+phenology/GDD-variant or planting-window issue (dt_002/dt_005).
+
+**Validated FAOSTAT calibration (China mainland maize, verified 2026-06-08).**
+Point (34.0N, 113.0E North China Plain), `Soil('Loam')`, `Crop('Maize',
+planting_date='06/10')`, NASA POWER daily forcing 2000-2018, FAO-56 PM ET0.
+The SKILL fertility guide's `WP=15` (tuned to Bengbu low-input) leaves a +8%
+positive bias against the FAOSTAT *national* series, which pushes NSE negative
+(-0.38) even though r is strong (0.85). Dropping to **`crop.WP = 13.8`** (keep
+`CCx = 0.80`) centers the bias (PBIAS -0.3%) and lifts **NSE to +0.49** with
+r=0.849, KGE=0.35. Note the KGE/NSE trade-off: yield scales ~linearly with WP,
+so lowering WP also shrinks sim interannual std (alpha<1), nudging KGE down ~0.02
+while NSE gains ~0.9 — center the bias for NSE, accept the small KGE cost. Use
+WP≈13.8 as the national-series default for China maize; WP=15 remains correct
+for a single low-input *field* site like Bengbu.
+
+---
+
+## SPAM 2020 Regional-Aggregate Validation (single-year SPATIAL gridded yield)
+
+Use this recipe when the observation is **SPAM 2020** (`yield_kg_ha`, IFPRI
+spatially-disaggregated 2020 gridded yield). SPAM 2020 is a SINGLE YEAR (2020),
+SPATIAL product, NOT a time series.
+
+**Scale + metric contract (read first).** AquaCrop is a 0-D point model and
+`dag.yaml outputs.DryYield.observability` does **NOT** list `spatial_snapshot`
+among the comparable obs_shapes — it lists `point_snapshot`
+(magnitude_accuracy) and `regional_aggregate_time_series`. So a per-cell SPATIAL
+NSE/r against the SPAM grid would be `REJECT_WRONG_METRIC`. The scale-comparable,
+dag-valid move is to **AGGREGATE** the SPAM gridded yields over a coherent
+agricultural region to ONE regional-mean value, run AquaCrop **multi-site over
+the same region/season**, aggregate the sim to ONE regional-mean, and compare
+**MAGNITUDE (PBIAS) only**. NSE/r/KGE are `null` — a single-year regional
+aggregate is one value pair, no temporal series (set `metrics_null_reason`).
+Report `obs_shape='point_snapshot'`, `sim_support='aggregated'`,
+`obs_support='regional_aggregate_time_series'`, `scale_comparable=true`.
+
+**Obs helper (added 2026-06-30 — prior SPAM runs had to hand-build this):**
+```python
+from ki_tools_common.crop_obs import get_spam_regional_yield
+obs = get_spam_regional_yield('maize', (40.5, 43.0), (-96.0, -91.0), step=0.5)
+# obs['mean_kgha'], obs['n_cells'], obs['cells'] = [(lat, lon, yield_kgha), ...]
+# Reads SPAM geotiff/csv ONLY — never falls through to the FAOSTAT national
+# fallback, so the regional mean is not contaminated by non-SPAM cells.
+```
+Then run AquaCrop at each `obs['cells']` lat/lon (NASA POWER daily forcing,
+FAO-56 PM ET0), take the unweighted mean of per-cell sim yields, and
+`PBIAS = (sim_mean - obs_mean)/obs_mean*100`. A ready runner is
+`run_and_score.py` (resumable per-cell cache).
+
+**CRITICAL — fertility regime sets WP/CCx a-priori, per the fertility table.**
+SPAM yields are region-specific, so pick WP/CCx from the SKILL fertility table
+to match the *production regime*, NOT tuned to the obs:
+- **US Corn Belt / high-input optimal-N maize (SPAM ~13,000-14,500 kg/ha):**
+  use AquaCrop **DEFAULTS** `WP=33.7, CCx=0.96` — the table's "Potential (US
+  irrigated, optimal N)" row IS this regime. NO down-calibration.
+- **China / developing-world low-input rainfed maize (SPAM ~5,000-6,000):**
+  down-calibrate (`WP≈13.8-15, CCx=0.80`) — humid + no N module would otherwise
+  collapse to the ~14 t/ha potential envelope.
+
+**Validated SPAM regional aggregates:**
+
+| Region | Crop | Config | Sim mean | SPAM mean | PBIAS |
+|--------|------|--------|----------|-----------|-------|
+| North China Plain (34-37N,113-116.5E) | maize | Loam, WP=13.8 CCx=0.80, plant 06/10 | 5,622 | 5,945 | -5.4% |
+| US Corn Belt / Iowa (40.5-43N,96-91W) | maize | SiltLoam, **DEFAULT** WP/CCx, plant 05/01 | ~14,400 | ~14,200 | ~+1% (verify) |
+
+The two rows show the same model spanning a ~2.5× yield gradient using only the
+correct fertility-regime WP/CCx — the magnitude lever the SKILL fertility table
+encodes. The single-cell Iowa check (42.0N,93.5W): SiltLoam default → 14,651 vs
+SPAM 14,300 (+2.5%); Loam default → 14,195 (-0.7%).

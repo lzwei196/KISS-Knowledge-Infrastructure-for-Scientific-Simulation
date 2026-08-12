@@ -156,6 +156,79 @@ plt.savefig('validation.png', dpi=150, bbox_inches='tight')
 5. No NaN in output arrays
 6. Observation records match expected time range
 
+## 1D Column SWC Extraction (FLUXNET Validation)
+
+For NXYZ 1 1 N columns, Liquid_Saturation has shape **(1, 1, N)** — NOT (N,).
+Cell ordering: index 0 = bottom (z_min), index N-1 = top (z_max, sensor location).
+
+```python
+import h5py, numpy as np
+
+def extract_daily_swc_1d(h5_file, phi):
+    """Extract top-cell SWC time series from a 1D NXYZ 1 1 N column."""
+    daily_swc = {}
+    with h5py.File(h5_file, "r") as f:
+        for key in sorted(f.keys()):
+            if not key.startswith("Time:"):
+                continue
+            try:
+                day = float(key.replace("Time:", "").replace("d", "").strip())
+            except ValueError:
+                continue
+            grp = f[key]
+            if "Liquid_Saturation" not in grp:
+                continue
+            # CRITICAL: flatten() handles shape (1,1,N) AND (N,) safely
+            sat = np.array(grp["Liquid_Saturation"], dtype=float).flatten()
+            top_sat = float(sat[-1])   # top cell = highest z = last index
+            daily_swc[int(round(day))] = top_sat * phi   # m³/m³
+    return daily_swc
+```
+
+**Import order**: Always import `netCDF4` BEFORE `h5py` if both are used
+in the same script (see dt_025). HDF5 global state conflict causes silent hangs.
+
+```python
+import netCDF4   # MUST come first
+import h5py
+import numpy as np
+```
+
+**PFLOTRAN HDF5 time key format** for daily output:
+`"Time:  1.00000E+00 d"` — note the double-space, leading spaces, and `d` unit.
+Parse with: `float(key.replace("Time:","").replace("d","").strip())`
+
+## FLUXNET SWC Validation Metrics and Targets
+
+For 1D vadose-zone column validation against FLUXNET SWC_F_MDS_1:
+
+| Metric | Formula | Target (acceptable) | Good |
+|--------|---------|---------------------|------|
+| R | Pearson correlation | > 0.50 | > 0.70 |
+| NSE | Nash-Sutcliffe efficiency | > 0.0 | > 0.40 |
+| PBIAS | % bias | \|PBIAS\| < 25% | < 10% |
+| RMSE | vol. water content | < 0.08 m³/m³ | < 0.05 m³/m³ |
+
+**NSE decomposition** (when R is good but NSE is negative):
+```
+NSE = 2αR − α² − β²
+where α = σ_sim/σ_obs  (variability ratio)
+      β = (μ_sim - μ_obs)/σ_obs  (normalized bias)
+```
+Negative NSE despite R>0.7 almost always means |β| > 0.5 (large systematic bias).
+Fix: check PBIAS and address the bias source before reporting NSE.
+
+**Validated FLUXNET sites and results** (from HydroCraft PFLOTRAN KI runs):
+
+| Site | Ecosystem | Period | Config | R | NSE | PBIAS |
+|------|-----------|--------|--------|---|-----|-------|
+| CN-Din | Subtropical forest, Guangdong, 23.2°N | 2003–2005 | RZ=2.0m, φ=0.43 | 0.761 | -0.174 | +22.2% |
+| CN-HaM | Alpine meadow, Qinghai, 37.6°N ✓ | 2002–2004 | RZ=1.0m, φ=0.60 | 0.773 | **+0.471** | **+0.1%** |
+| CN-Qia | Plantation forest, Jiangxi, 26.7°N | 2003–2005 | RZ=1.0m, φ=0.43 | 0.575 | -2.06 | +54.2% |
+
+CN-Qia is flagged as structurally biased (subtropical monsoon regime — see dt_026).
+CN-HaM with φ=0.60 override (organic alpine meadow) is the recommended reference case.
+
 ## Traps
 
 | Symptom | Cause | Fix |
@@ -165,6 +238,11 @@ plt.savefig('validation.png', dpi=150, bbox_inches='tight')
 | Observation file empty | No OBSERVATION block in input | Add OBSERVATION_FILE and REGION |
 | Water balance > 5% | Numerical error | Refine grid, reduce dt |
 | NaN in late timesteps | Solver diverged silently | Check convergence in .out file |
+| TypeError on sat[-1] | Shape (1,1,N) not (N,) | Use .flatten() before indexing |
+| SWC constant across time | Wrong HDF5 key parsed | Check key starts with "Time:" and strip "d" |
+| h5py hangs | Import after netCDF4 | Import netCDF4 first, then h5py |
+| PBIAS=-30% at alpine site | HWSD phi underestimate | Compute phi_est from obs p95/0.95; use φ≈0.60 |
+| PBIAS=+50% at monsoon site | No surface runoff in 1D column | Flag site as unsuitable; see dt_026 |
 
 ## Example
 

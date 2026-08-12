@@ -72,29 +72,42 @@ def process():
         sub_id = sub_idx + 1
         sub_geom = [sub_row.geometry]
 
-        # Extract raster values within this subbasin
-        with rasterio.open(LANDUSE_RASTER) as src:
-            lu_data, lu_transform = rio_mask(src, sub_geom, crop=True, nodata=-9999)
-            lu_flat = lu_data[0].flatten()
+        # Extract raster values within this subbasin — all resampled to DEM grid
+        from rasterio.warp import reproject, Resampling as WarpResampling
+        with rasterio.open(DEM_PATH) as dem_src:
+            dem_data, dem_transform = rio_mask(dem_src, sub_geom, crop=True, nodata=-9999)
+            dem_profile = dem_src.profile.copy()
+            dem_profile.update(transform=dem_transform, height=dem_data.shape[1], width=dem_data.shape[2])
+            dy, dx = np.gradient(dem_data[0].astype(float),
+                                 abs(dem_src.transform[4]), abs(dem_src.transform[0]))
+            slope_flat = (np.sqrt(dx**2 + dy**2) * 100).flatten()
 
-        with rasterio.open(SOIL_RASTER) as src:
-            soil_data, _ = rio_mask(src, sub_geom, crop=True, nodata=-9999)
-            soil_flat = soil_data[0].flatten()
+        ref_h, ref_w = dem_data.shape[1], dem_data.shape[2]
 
-        with rasterio.open(DEM_PATH) as src:
-            dem_data, _ = rio_mask(src, sub_geom, crop=True, nodata=-9999)
-            # Compute slope in percent (simplified)
-            slope_pct = np.zeros_like(dem_data[0], dtype=float)
-            # Simple gradient approximation
-            dy, dx = np.gradient(dem_data[0], abs(src.transform[4]), abs(src.transform[0]))
-            slope_pct = np.sqrt(dx**2 + dy**2) * 100
-            slope_flat = slope_pct.flatten()
+        def resample_to_dem(raster_path, nodata_val):
+            with rasterio.open(raster_path) as src:
+                dst_arr = np.full((ref_h, ref_w), nodata_val, dtype=np.float32)
+                reproject(
+                    source=rasterio.band(src, 1),
+                    destination=dst_arr,
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    dst_transform=dem_transform,
+                    dst_crs=dem_profile['crs'],
+                    resampling=WarpResampling.nearest,
+                    src_nodata=nodata_val if src.nodata is None else src.nodata,
+                    dst_nodata=nodata_val,
+                )
+            return dst_arr.flatten()
+
+        lu_flat = resample_to_dem(LANDUSE_RASTER, 0)
+        soil_flat = resample_to_dem(SOIL_RASTER, 0)
 
         # Classify slopes
         slope_class = np.digitize(slope_flat, SLOPE_CLASSES[1:])
 
         # Find unique combinations
-        valid = (lu_flat != -9999) & (soil_flat != -9999)
+        valid = (lu_flat > 0) & (soil_flat > 0)
         for lu_val in np.unique(lu_flat[valid]):
             for soil_val in np.unique(soil_flat[valid]):
                 for sc in range(len(SLOPE_CLASSES) - 1):

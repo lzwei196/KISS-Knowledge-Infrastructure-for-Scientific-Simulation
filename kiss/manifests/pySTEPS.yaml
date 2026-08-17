@@ -1,0 +1,21 @@
+kiss_manifest_version: 1
+model: pySTEPS
+binary_type: Python
+verified: observed
+install_dir: pySTEPS
+
+acquire:
+  strategy: pip
+  package: pysteps
+  produces: pysteps
+
+python_deps: [pysteps]
+
+reference_case: >-
+  python -c "import pysteps; print(pysteps.__name__, 'importable')"
+
+notes: >-
+  OBSERVED 2026-08-18: `kiss init pySTEPS` installed pysteps 1.21.5 into a clean venv
+  and the KI's own preflight_check.py passed with no hand-written recipe. The
+  package name was resolved from the KI directory name and confirmed by import,
+  not assumed from a PyPI name match.

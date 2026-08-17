@@ -47,7 +47,7 @@ def main():
     global PASS, FAIL
     print(f"{' PREFLIGHT: Alpine3D ':=^60}")
     print()
-    check_file("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Alpine3D/source/repo/Source/alpine3d/bin/alpine3d", "Alpine3D binary", executable=True)
+    check_file("KISSPATH_BINARIES/Alpine3D/source/repo/Source/alpine3d/bin/alpine3d", "Alpine3D binary", executable=True)
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

@@ -48,7 +48,7 @@ def main():
     print(f"{' PREFLIGHT: HexWatershed ':=^60}")
     print()
     # HexWatershed is an ELF binary
-    check_file("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/HexWatershed/source/repo/build/hexwatershed", "HexWatershed binary", executable=True)
+    check_file("KISSPATH_BINARIES/HexWatershed/source/repo/build/hexwatershed", "HexWatershed binary", executable=True)
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

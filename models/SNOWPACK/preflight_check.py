@@ -49,7 +49,7 @@ def main():
     print()
     check_dir("KISSPATH_KI_ROOT/SNOWPACK/knowledge_infrastructure/tools", "KI tools directory")
     # Model-specific binary/package check
-    check_file("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SNOWPACK/source/repo/Source/snowpack/bin/snowpack", "SNOWPACK binary", executable=True)
+    check_file("KISSPATH_BINARIES/SNOWPACK/source/repo/Source/snowpack/bin/snowpack", "SNOWPACK binary", executable=True)
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

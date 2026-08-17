@@ -1,0 +1,21 @@
+kiss_manifest_version: 1
+model: GemPy
+binary_type: Python
+verified: observed
+install_dir: GemPy
+
+acquire:
+  strategy: pip
+  package: gempy
+  produces: gempy
+
+python_deps: [gempy]
+
+reference_case: >-
+  python -c "import gempy; print(gempy.__name__, 'importable')"
+
+notes: >-
+  OBSERVED 2026-08-18: `kiss init GemPy` installed gempy 2026.0.3 into a clean venv
+  and the KI's own preflight_check.py passed with no hand-written recipe. The
+  package name was resolved from the KI directory name and confirmed by import,
+  not assumed from a PyPI name match.

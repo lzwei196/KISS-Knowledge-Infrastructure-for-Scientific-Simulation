@@ -1,0 +1,22 @@
+kiss_manifest_version: 1
+model: PyDeltaRCM
+binary_type: Python
+verified: observed
+install_dir: PyDeltaRCM
+
+acquire:
+  strategy: pip
+  package: pydeltarcm
+  # The distribution is "pydeltarcm" but the importable module is "pyDeltaRCM".
+  # Deriving the import name by lower-casing the package name fails here, which
+  # is why the guessed recipe reported acquire=FAILED while preflight passed.
+  produces: pyDeltaRCM
+
+python_deps: [pydeltarcm]
+
+reference_case: >-
+  python -c "import pyDeltaRCM; print(pyDeltaRCM.__name__, 'importable')"
+
+notes: >-
+  OBSERVED 2026-08-18: preflight passes. Recorded because the package/module
+  name mismatch cannot be guessed.

@@ -49,7 +49,7 @@ def main():
     print()
     check_dir("KISSPATH_KI_ROOT/PCR_GLOBWB_2/knowledge_infrastructure/tools", "KI tools directory")
     # Model-specific binary/package check
-    check_file("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/bin/python", "PCR_GLOBWB_2 binary", executable=True)
+    check_file(sys.executable, "PCR_GLOBWB_2 binary", executable=True)
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

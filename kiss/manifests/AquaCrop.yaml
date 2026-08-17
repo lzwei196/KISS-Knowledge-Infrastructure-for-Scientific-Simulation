@@ -1,0 +1,21 @@
+kiss_manifest_version: 1
+model: AquaCrop
+binary_type: Python
+verified: observed
+install_dir: AquaCrop
+
+acquire:
+  strategy: pip
+  package: aquacrop
+  produces: aquacrop
+
+python_deps: [aquacrop]
+
+reference_case: >-
+  python -c "import aquacrop; print(aquacrop.__name__, 'importable')"
+
+notes: >-
+  OBSERVED 2026-08-18: `kiss init AquaCrop` installed aquacrop 3.1.0 into a clean venv
+  and the KI's own preflight_check.py passed with no hand-written recipe. The
+  package name was resolved from the KI directory name and confirmed by import,
+  not assumed from a PyPI name match.

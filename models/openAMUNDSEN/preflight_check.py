@@ -49,11 +49,10 @@ def main():
     print()
     # openAMUNDSEN in dissection venv
     import sys
-    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/openAMUNDSEN/venv/lib/python3.12/site-packages")
     # openAMUNDSEN: use venv python (has deps system python lacks)
     import subprocess
     try:
-        proc = subprocess.run(["KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/openAMUNDSEN/venv/bin/python3", "-c", "import openamundsen"], 
+        proc = subprocess.run([sys.executable, "-c", "import openamundsen"], 
             capture_output=True, timeout=10)
         if proc.returncode == 0:
             print(f"  OK    openAMUNDSEN (openamundsen): verified via venv python")

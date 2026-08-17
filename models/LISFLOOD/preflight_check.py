@@ -49,7 +49,6 @@ def main():
     print()
     # LISFLOOD editable install — source at _work/, conda env at miniconda3
     import sys
-    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/LISFLOOD/source/repo/src")
     sys.path.insert(0, "KISSPATH_HOME/miniconda3/envs/lisflood/lib/python3.11/site-packages")
     check_import("lisflood", "LISFLOOD")
     check_import("netCDF4", "netCDF4")

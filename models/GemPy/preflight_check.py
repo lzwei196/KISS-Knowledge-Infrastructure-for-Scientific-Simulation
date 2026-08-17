@@ -49,7 +49,6 @@ def main():
     print()
     # GemPy installed in dissection venv
     import sys
-    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GemPy/venv/lib/python3.12/site-packages")
     check_import("gempy_engine", "GemPy (gempy_engine)")
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))

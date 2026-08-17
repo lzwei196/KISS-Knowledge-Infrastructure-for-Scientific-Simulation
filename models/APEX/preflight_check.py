@@ -16,7 +16,7 @@ KI_ROOT = Path(__file__).resolve().parent
 EXAMPLE = KI_ROOT / "examples"
 TOOLS = KI_ROOT / "tools"
 BINARY = Path(
-    "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/APEX/source/repo/Apex 1501 - Linux/apex1501"
+    "KISSPATH_BINARIES/APEX/source/repo/Apex 1501 - Linux/apex1501"
 )
 
 REQUIRED_CONTROL = [

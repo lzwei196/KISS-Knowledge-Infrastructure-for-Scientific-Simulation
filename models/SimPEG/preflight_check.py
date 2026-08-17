@@ -50,7 +50,7 @@ def main():
     # SimPEG: use venv python (has deps system python lacks)
     import subprocess
     try:
-        proc = subprocess.run(["KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimPEG/venv/bin/python3", "-c", "import SimPEG"],
+        proc = subprocess.run([sys.executable, "-c", "import SimPEG"],
             capture_output=True, timeout=10)
         if proc.returncode == 0:
             print(f"  OK    SimPEG: verified via venv python")

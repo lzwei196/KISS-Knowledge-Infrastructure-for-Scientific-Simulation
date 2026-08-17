@@ -49,11 +49,10 @@ def main():
     print()
     # PyAEZ in dissection venv
     import sys
-    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PyAEZ/venv/lib/python3.12/site-packages")
     # PyAEZ: use venv python (has deps system python lacks)
     import subprocess
     try:
-        proc = subprocess.run(["KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PyAEZ/venv/bin/python3", "-c", "import pyaez"], 
+        proc = subprocess.run([sys.executable, "-c", "import pyaez"], 
             capture_output=True, timeout=10)
         if proc.returncode == 0:
             print(f"  OK    PyAEZ (pyaez): verified via venv python")

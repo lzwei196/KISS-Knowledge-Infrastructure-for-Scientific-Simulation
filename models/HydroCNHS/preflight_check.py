@@ -49,7 +49,6 @@ def main():
     print()
     # HydroCNHS editable install in dissection venv
     import sys
-    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/HydroCNHS/source/repo/src")
     check_import("hydrocnhs", "HydroCNHS")
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))

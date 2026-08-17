@@ -49,7 +49,7 @@ def main():
     print()
     check_dir("KISSPATH_KI_ROOT/PFLOTRAN/knowledge_infrastructure/tools", "KI tools directory")
     # Model-specific binary/package check
-    check_file("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PFLOTRAN/source/pflotran_full/src/pflotran/pflotran", "PFLOTRAN binary", executable=True)
+    check_file("KISSPATH_BINARIES/PFLOTRAN/source/pflotran_full/src/pflotran/pflotran", "PFLOTRAN binary", executable=True)
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

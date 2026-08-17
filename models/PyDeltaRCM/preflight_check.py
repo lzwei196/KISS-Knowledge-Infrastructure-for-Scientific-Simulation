@@ -49,10 +49,9 @@ def main():
     print()
     # PyDeltaRCM in dissection venv
     import sys
-    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PyDeltaRCM/venv/lib/python3.12/site-packages")
     import subprocess
     try:
-        proc = subprocess.run(["KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PyDeltaRCM/venv/bin/python3", "-c", "import pyDeltaRCM"], 
+        proc = subprocess.run([sys.executable, "-c", "import pyDeltaRCM"], 
             capture_output=True, timeout=10)
         if proc.returncode == 0:
             print(f"  OK    PyDeltaRCM: verified via venv python")

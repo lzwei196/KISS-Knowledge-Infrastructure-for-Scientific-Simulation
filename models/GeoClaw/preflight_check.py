@@ -49,9 +49,8 @@ def main():
     print()
     # GeoClaw: clawpack in venv + xgeoclaw ELF binary
     import sys
-    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GeoClaw/venv/lib/python3.12/site-packages")
     check_import("clawpack", "Clawpack (GeoClaw)")
-    check_file("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GeoClaw/bowl-slosh-test/xgeoclaw", "GeoClaw binary", executable=True)
+    check_file("KISSPATH_BINARIES/GeoClaw/bowl-slosh-test/xgeoclaw", "GeoClaw binary", executable=True)
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

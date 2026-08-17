@@ -48,7 +48,7 @@ def main():
     print(f"{' PREFLIGHT: ISSM ':=^60}")
     print()
     # ISSM is an ELF binary compiled during dissection
-    check_file("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ISSM/source/repo/bin/issm.exe", "ISSM binary", executable=True)
+    check_file("KISSPATH_BINARIES/ISSM/source/repo/bin/issm.exe", "ISSM binary", executable=True)
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

@@ -49,8 +49,6 @@ def main():
     print()
     # mosartwmpy editable install in dissection venv (needs venv deps too)
     import sys
-    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/MOSART/venv/lib/python3.12/site-packages")
-    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/MOSART/source/repo")
     check_import("mosartwmpy", "MOSART (mosartwmpy)")
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))

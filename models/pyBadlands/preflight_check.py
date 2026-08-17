@@ -49,11 +49,10 @@ def main():
     print()
     # pyBadlands editable install in venv
     import sys
-    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyBadlands/venv/lib/python3.12/site-packages")
     sys.path.insert(0, "import _badlands_editable_loader")
     import subprocess
     try:
-        proc = subprocess.run(["KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyBadlands/venv/bin/python3", "-c", "import badlands"], 
+        proc = subprocess.run([sys.executable, "-c", "import badlands"], 
             capture_output=True, timeout=10)
         if proc.returncode == 0:
             print(f"  OK    pyBadlands (badlands): verified via venv python")

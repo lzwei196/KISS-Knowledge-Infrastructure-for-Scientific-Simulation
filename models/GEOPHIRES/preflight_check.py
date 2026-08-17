@@ -49,7 +49,6 @@ def main():
     print()
     # GEOPHIRES installed as editable package in dissection venv
     import sys
-    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GEOPHIRES/source/repo/src")
     check_import("geophires_x", "GEOPHIRES (geophires_x)")
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))

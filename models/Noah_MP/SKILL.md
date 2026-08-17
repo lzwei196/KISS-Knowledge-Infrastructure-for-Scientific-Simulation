@@ -1,3 +1,14 @@
+---
+name: noah-mp
+description: >-
+  Noah-MP multi-physics community LSM. Covers Column (1-D) land-surface biogeophysics:
+  surface energy balance; Surface and subsurface water balance; soil moisture (liquid +
+  ice); Soil and snow-layer temperature; skin temperature; Physical snowpack (up to 3
+  layers): accumulation, compaction, melt, albedo aging; Canopy water interception and
+  canopy energy/water exchange. Use when the task involves running, configuring,
+  calibrating or interpreting Noah_MP.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

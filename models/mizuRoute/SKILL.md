@@ -1,3 +1,14 @@
+---
+name: mizuroute
+description: >-
+  mizuRoute river-network routing framework. Covers Reach-based (vector) river-network
+  routing of external runoff to streamflow; Hillslope/basin lateral delay (runoff depth to
+  volume to reach inflow via gamma unit hydrograph); River-channel routing reach-by-reach
+  in upstream-to-downstream topological order; Discharge at every river segment, not only
+  at gauge points. Use when the task involves running, configuring, calibrating or
+  interpreting mizuRoute.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

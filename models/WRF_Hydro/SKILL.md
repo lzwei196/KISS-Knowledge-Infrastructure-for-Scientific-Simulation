@@ -1,3 +1,14 @@
+---
+name: wrf-hydro
+description: >-
+  WRF-Hydro v5.2.0 standalone/offline (Noah-MP LSM + gridded overland/subsurface/channel
+  routing + conceptual groundwater bucket; NCAR NDHMS…. Covers Noah-MP 1-D column
+  land-surface energy/water balance (ET, 4-layer soil moisture and temperature…; surface
+  and subsurface runoff generation (RUNOFF_OPTION 1-5); overland flow routing (D8
+  diffusive-wave on high-resolution routing sub-grid). Use when the task involves running,
+  configuring, calibrating or interpreting WRF_Hydro.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

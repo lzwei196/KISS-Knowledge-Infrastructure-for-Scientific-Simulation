@@ -1,3 +1,14 @@
+---
+name: geotop
+description: >-
+  GEOtop 2.0. Covers Coupled surface energy balance (net radiation partitioned into H, LE,
+  ground heat flux); Variably-saturated subsurface water flow via 3D Richards equation (1D
+  column in point mode); Soil temperature including freeze/thaw and permafrost;
+  Multi-layer snowpack mass and energy balance (accumulation, melt, compaction, albedo
+  aging); Glacier accumulation/ablation mass balance. Use when the task involves running,
+  configuring, calibrating or interpreting GEOtop.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

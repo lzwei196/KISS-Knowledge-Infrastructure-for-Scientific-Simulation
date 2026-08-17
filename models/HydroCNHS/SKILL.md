@@ -1,3 +1,13 @@
+---
+name: hydrocnhs
+description: >-
+  HydroCNHS (Lin, Yang & Wi 2022) — semi-distributed daily CNHS hydrology: GWLF/ABCD
+  rainfall-runoff + Lohmann routing + four ABM coupling APIs. Covers Semi-distributed
+  daily rainfall-runoff at the subbasin level (GWLF, ABCD, or user-supplied 'Other');
+  Routing of subbasin runoff to routing outlets (within-subbasin gamma unit hydrograph +….
+  Use when the task involves running, configuring, calibrating or interpreting HydroCNHS.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

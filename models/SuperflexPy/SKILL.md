@@ -1,3 +1,13 @@
+---
+name: superflexpy
+description: >-
+  SUPERFLEX conceptual framework (Fenicia/Kavetski/Savenije 2011) as realized by
+  SuperflexPy 1.3.x. Covers Conceptual (bucket-style) rainfall-runoff transformation;
+  Lumped single-catchment models assembled from reservoir/lag/connector elements;
+  Semi-distributed models (parallel HRU Units within a catchment Node). Use when the task
+  involves running, configuring, calibrating or interpreting SuperflexPy.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

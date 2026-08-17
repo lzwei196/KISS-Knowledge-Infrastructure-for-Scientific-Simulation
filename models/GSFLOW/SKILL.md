@@ -1,3 +1,14 @@
+---
+name: gsflow
+description: >-
+  GSFLOW (USGS TM 6-D1, 2008; PRMS + MODFLOW-2005/MODFLOW-NWT integration), 2.2.x lineage.
+  Covers Coupled surface-water / groundwater flow in one or more watersheds (a few to
+  several thousand km²)…; PRMS land-surface processes: interception, snowpack
+  accumulation/melt, evapotranspiration, surface…; 3-D saturated groundwater flow and
+  storage (MODFLOW), 1-D unsaturated flow (UZF), groundwater…. Use when the task involves
+  running, configuring, calibrating or interpreting GSFLOW.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

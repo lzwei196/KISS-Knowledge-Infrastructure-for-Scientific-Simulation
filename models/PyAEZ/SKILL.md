@@ -1,3 +1,14 @@
+---
+name: pyaez
+description: >-
+  FAO/IIASA Agro-Ecological Zoning (AEZ/GAEZ) framework as implemented in PyAEZ 2.2
+  (six-module land-evaluation pipeline). Covers Thermal climate and thermal zone
+  classification; Length of Growing Period (LGP) via reference-crop soil water balance;
+  Penman-Monteith reference evapotranspiration (ETo); Temperature sums/profiles, air frost
+  index and permafrost evaluation. Use when the task involves running, configuring,
+  calibrating or interpreting PyAEZ.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 

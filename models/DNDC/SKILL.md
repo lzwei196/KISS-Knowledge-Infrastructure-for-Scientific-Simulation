@@ -1,3 +1,14 @@
+---
+name: dndc
+description: >-
+  DNDCv.CAN 9.6.0. Covers Crop growth and development (phenology, biomass accumulation,
+  C/N partitioning to…; Soil organic carbon decomposition and turnover (multi-pool: litter
+  sub-pools, humads, humus…; Nitrogen cycling (mineralization, nitrification,
+  denitrification, leaching, NH3 volatilization); Trace-gas emissions (N2O, NO, N2, CO2,
+  CH4) from soil biogeochemical processes. Use when the task involves running,
+  configuring, calibrating or interpreting DNDC.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

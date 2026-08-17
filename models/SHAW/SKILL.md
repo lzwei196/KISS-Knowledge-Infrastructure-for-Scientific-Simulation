@@ -1,3 +1,14 @@
+---
+name: shaw
+description: >-
+  SHAW v3.03. Covers 1-D vertical coupled heat, water, and solute transfer through a
+  single plant canopy - snow -…; Soil freezing/thawing: ice content, frost/thaw depth,
+  freeze-thaw cycles with latent-heat coupling; Multi-layer snowpack: density/grain
+  metamorphism, albedo decay, liquid retention and snowmelt; Explicit crop-residue
+  heat/water/vapor transfer. Use when the task involves running, configuring, calibrating
+  or interpreting SHAW.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

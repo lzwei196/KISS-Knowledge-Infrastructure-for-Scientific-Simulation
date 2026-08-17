@@ -1,3 +1,14 @@
+---
+name: rapid
+description: >-
+  Matrix-based Muskingum river routing (David et al. 2011, JHM); RAPID main-branch F90
+  source. Covers River channel routing of lateral inflow to reach-level discharge; Channel
+  storage volume computation per reach; Muskingum k/x parameter calibration via TAO
+  optimizer; Kalman-filter data assimilation of runoff; Optional non-data-driven
+  reservoir/dam routing. Use when the task involves running, configuring, calibrating or
+  interpreting RAPID.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

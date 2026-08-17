@@ -1,3 +1,13 @@
+---
+name: dssat
+description: >-
+  DSSAT 4.8.5 cropping-system shell. Covers Daily simulation of crop growth, development,
+  and yield for 45+ crops as a function of…; Daily soil water balance across a multi-layer
+  1-D soil column (Ritchie cascading tipping-bucket); Daily soil nitrogen, phosphorus,
+  potassium, and carbon balances with selectable SOM engine…. Use when the task involves
+  running, configuring, calibrating or interpreting DSSAT.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

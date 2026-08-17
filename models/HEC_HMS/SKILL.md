@@ -1,3 +1,14 @@
+---
+name: hec-hms
+description: >-
+  HEC-HMS public-domain rainfall-runoff method set (USACE HEC; SCS Curve Number loss, SCS
+  dimensionless Unit Hydrograph transform, Muskingum channel…. Covers Precipitation-loss /
+  runoff-volume computation (SCS Curve Number); Direct-runoff transform of excess rainfall
+  to a hydrograph (SCS dimensionless Unit Hydrograph); Conceptual baseflow generation
+  (Linear Reservoir recession store). Use when the task involves running, configuring,
+  calibrating or interpreting HEC_HMS.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

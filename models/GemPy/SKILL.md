@@ -1,3 +1,13 @@
+---
+name: gempy
+description: >-
+  GemPy v3 implicit potential-field geomodeling (Lajaunie 1997 / Calcagno 2008 universal
+  cokriging), de la Varga et al. 2019 stochastic formulation. Covers Construction of
+  complex 3D structural geological models from interface points + orientation data; Folds,
+  fault networks, unconformities, multiple conformal stratigraphic layers, intrusions….
+  Use when the task involves running, configuring, calibrating or interpreting GemPy.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

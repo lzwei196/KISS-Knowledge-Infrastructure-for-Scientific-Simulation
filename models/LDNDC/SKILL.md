@@ -1,3 +1,13 @@
+---
+name: ldndc
+description: >-
+  LandscapeDNDC 1.37.0 (MoBiLE framework; Models Description Apr 2026), MeTrx
+  soil-biogeochemistry lineage from Arable-DNDC / Forest-DNDC. Covers Coupled
+  soil-plant-atmosphere C, N and water cycling at site scale (1-D layered soil + canopy…;
+  Soil biogeochemistry: SOM turnover, microbial dynamics, nitrification, denitrification….
+  Use when the task involves running, configuring, calibrating or interpreting LDNDC.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

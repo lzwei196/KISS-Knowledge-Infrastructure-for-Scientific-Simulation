@@ -1,3 +1,14 @@
+---
+name: alpine3d
+description: >-
+  Alpine3D 3.2.0 (SLF release; SNOWPACK 1D snow/soil physics + MeteoIO interpolation +
+  EnergyBalance terrain radiation + optional SnowDrift + Runoff). Covers Distributed
+  per-pixel 1-D snow/soil/canopy energy and mass balance over a DEM (SNOWPACK physics
+  per…; Spatial and temporal interpolation/downscaling of point-station meteo to the grid
+  (MeteoIO). Use when the task involves running, configuring, calibrating or interpreting
+  Alpine3D.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

@@ -1,3 +1,14 @@
+---
+name: wflow
+description: >-
+  Wflow.jl v1.x (CSDMS standard-name TOML era); wflow_sbm SBM concept per van Verseveld et
+  al. 2024 GMD. Covers Distributed grid-based catchment hydrology (wflow_sbm SBM vertical
+  concept); Interception, snow accumulation/melt, glacier melt (degree-day), multi-layer
+  soil water…; Lateral routing of river, overland and subsurface flow (kinematic wave or
+  local inertial). Use when the task involves running, configuring, calibrating or
+  interpreting wflow.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

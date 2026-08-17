@@ -1,3 +1,13 @@
+---
+name: pywr
+description: >-
+  Pywr 1.30.0. Covers Generalised directed-network resource allocation, primarily
+  water-resource systems; Supply-demand balance solved each timestep as a linear program
+  over node costs and flow constraints; Reservoir/storage operation: storage continuity,
+  control curves, min/max volume, regulated release…. Use when the task involves running,
+  configuring, calibrating or interpreting Pywr.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

@@ -1,3 +1,14 @@
+---
+name: glm
+description: >-
+  GLM 3.0 science (Hipsey et al. 2019, GMD 12:473-523); AED2 water-quality coupling.
+  Covers 1D vertical thermal stratification and mixing of a single lake/reservoir; lake
+  water balance (inflows, outflows, rainfall, evaporation, seepage); surface energy budget
+  (shortwave, longwave, sensible, latent fluxes); vertical density structure from
+  temperature and salinity (UNESCO 1981 EOS). Use when the task involves running,
+  configuring, calibrating or interpreting GLM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

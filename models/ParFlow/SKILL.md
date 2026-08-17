@@ -1,3 +1,13 @@
+---
+name: parflow
+description: >-
+  ParFlow integrated surface-subsurface hydrology. Covers 3D variably-saturated subsurface
+  flow (vadose + saturated zones in one Richards equation); 2D overland (surface) flow via
+  free-surface boundary condition (kinematic or diffusive wave); Lateral subsurface flow:
+  hillslope interflow, perched water tables, groundwater-fed springs. Use when the task
+  involves running, configuring, calibrating or interpreting ParFlow.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

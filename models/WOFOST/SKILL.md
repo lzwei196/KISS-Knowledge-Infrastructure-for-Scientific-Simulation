@@ -1,3 +1,14 @@
+---
+name: wofost
+description: >-
+  WOFOST 7.2 (Wageningen / WUR, PCSE 6.0 lineage). Covers Daily crop growth and
+  development from sowing/emergence to maturity at field/point scale; Phenological
+  development on a DVS scale 0 (emergence) - 1 (anthesis) - 2 (maturity), including…;
+  Daily gross CO2 assimilation (Spitters 3-point Gauss integration over daytime and canopy
+  depth); Maintenance and growth respiration. Use when the task involves running,
+  configuring, calibrating or interpreting WOFOST.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

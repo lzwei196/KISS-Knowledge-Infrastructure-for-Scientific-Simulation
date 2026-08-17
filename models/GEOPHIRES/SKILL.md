@@ -1,3 +1,14 @@
+---
+name: geophires
+description: >-
+  GEOPHIRES-X (object-oriented v3 lineage). Covers Reservoir thermal drawdown / transient
+  production-temperature simulation; Wellbore heat-loss and pressure-drop / pumping-power
+  modeling; Surface-plant energy conversion (electricity ORC/flash, direct-use heat,
+  cogeneration); Techno-economic estimation: capital cost, O&M cost, LCOE/LCOH, NPV, IRR
+  over plant lifetime. Use when the task involves running, configuring, calibrating or
+  interpreting GEOPHIRES.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

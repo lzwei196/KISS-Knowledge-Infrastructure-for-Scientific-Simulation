@@ -1,3 +1,14 @@
+---
+name: ce-qual-w2
+description: >-
+  CE-QUAL-W2 4.5.5. Covers 2D laterally-averaged hydrodynamics (longitudinal + vertical
+  velocities, free-surface); water temperature and density-driven thermal stratification;
+  density-driven inflow placement (plunging / interflow / overflow); selective withdrawal
+  from outlets at specified elevations; multi-branch / multi-waterbody topology with
+  branch junctions and head boundaries. Use when the task involves running, configuring,
+  calibrating or interpreting CE_QUAL_W2.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

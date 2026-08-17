@@ -1,3 +1,13 @@
+---
+name: openhydroqual
+description: >-
+  OpenHydroQual 2.0.4. Covers Water flow, storage, and head in interconnected control
+  volumes (ponds, aquifer cells…; Solute / water-quality constituent transport (advection
+  + diffusion) across a block-link network; Biogeochemical reactions (Monod /
+  Arrhenius-corrected kinetics; nutrient cycling; ASM-style…. Use when the task involves
+  running, configuring, calibrating or interpreting OpenHydroQual.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

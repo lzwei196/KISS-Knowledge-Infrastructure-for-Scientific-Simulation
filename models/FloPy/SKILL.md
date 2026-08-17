@@ -1,3 +1,14 @@
+---
+name: flopy
+description: >-
+  MODFLOW-family finite-difference groundwater flow/transport (MODFLOW 6,
+  MODFLOW-2005/NWT/USG, MT3D/SEAWAT) as built and post-processed by FloPy. Covers
+  Programmatic construction of MODFLOW simulations: spatial discretization
+  (DIS/DISV/DISU), temporal…; Writing MODFLOW-standard input files and invoking the
+  external MODFLOW-based solver executable. Use when the task involves running,
+  configuring, calibrating or interpreting FloPy.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

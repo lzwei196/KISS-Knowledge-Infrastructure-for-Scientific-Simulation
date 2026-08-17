@@ -1,3 +1,13 @@
+---
+name: geoclaw
+description: >-
+  GeoClaw 2D depth-averaged shallow-water solver. Covers 2D depth-averaged (shallow-water)
+  flow over variable topography; Tsunami generation, propagation, and coastal inundation;
+  Storm surge driven by parametric/data wind and pressure fields; Dam-break and other
+  geophysical free-surface flows; Wetting/drying at shorelines. Use when the task involves
+  running, configuring, calibrating or interpreting GeoClaw.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

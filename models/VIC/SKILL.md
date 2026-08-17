@@ -1,3 +1,14 @@
+---
+name: vic
+description: >-
+  VIC-5. Covers Land-surface water balance at large grid cells; Land-surface energy
+  balance (in full-energy mode); Snowpack accumulation and melt (quasi 2-layer ground pack
+  + canopy interception + partial cover); Multi-layer soil moisture dynamics;
+  Evapotranspiration (canopy interception, transpiration, bare-soil, with Jarvis stomatal
+  control). Use when the task involves running, configuring, calibrating or interpreting
+  VIC.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

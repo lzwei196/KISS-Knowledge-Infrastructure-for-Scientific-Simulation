@@ -1,6 +1,13 @@
 ---
 name: mhm-hydrocraft
-version: "1.0.0"
+description: >-
+  mHM (mesoscale Hydrologic Model) v5.13 lineage with Multiscale Parameter Regionalization
+  (MPR); Samaniego, Kumar & Attinger 2010 WRR methodology. Covers Distributed mesoscale
+  catchment water balance across a basin; Canopy interception; Snow accumulation and melt
+  (degree-day); Multi-horizon soil moisture dynamics; Infiltration and direct
+  (sealed/saturation-excess) runoff. Use when the task involves running, configuring,
+  calibrating or interpreting mHM.
+version: 1.0.0
 model: mHM v5.13.1
 domain: distributed hydrology with parameter regionalization
 validation_status: binary_only

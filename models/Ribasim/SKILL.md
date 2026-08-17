@@ -1,3 +1,13 @@
+---
+name: ribasim
+description: >-
+  Ribasim 2026.1 (open-source Julia network water-resources model; SciML ODE core). Covers
+  Water balance of interconnected basins (lumped reservoirs, lakes, canals, river
+  reaches); Flow through controlled structures (pumps, outlets, weirs/rating curves,
+  resistances); Rule-based, continuous, and PID control of hydraulic structure parameters.
+  Use when the task involves running, configuring, calibrating or interpreting Ribasim.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

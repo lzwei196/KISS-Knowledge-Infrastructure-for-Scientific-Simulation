@@ -1,3 +1,14 @@
+---
+name: snowpack
+description: >-
+  SNOWPACK 3.7.1. Covers 1D vertical snowpack evolution from meteorological forcing
+  through a winter season; Mass and energy exchange between atmosphere, snow, optional
+  vegetation canopy, and underlying soil; Instationary heat conduction and viscous
+  settlement (finite-element column); Snow microstructure and stratigraphy (grain size,
+  bond radius, dendricity, sphericity). Use when the task involves running, configuring,
+  calibrating or interpreting SNOWPACK.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

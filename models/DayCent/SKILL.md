@@ -1,3 +1,13 @@
+---
+name: daycent
+description: >-
+  DayCent (Daily Century) ecosystem/biogeochemistry model, DDcentEVI lineage with
+  methanogenesis; CSU/NREL User Manual & Scientific Basis. Covers Long-term C, N, P, S
+  dynamics for point-scale plant-soil systems; Plant production / NPP and above- and
+  below-ground allocation (grassland/crop, forest, savanna…. Use when the task involves
+  running, configuring, calibrating or interpreting DayCent.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

@@ -1,3 +1,13 @@
+---
+name: mosart
+description: >-
+  MOSART-WM. Covers Grid-based river routing of land-surface runoff: hillslope overland
+  flow, subnetwork (tributary)…; Reservoir storage and regulated release (including ISTARF
+  statistical target release); Irrigation water-supply allocation from reservoirs/channels
+  to dependent grid cells; Flood routing (excess channel storage shed to ocean). Use when
+  the task involves running, configuring, calibrating or interpreting MOSART.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

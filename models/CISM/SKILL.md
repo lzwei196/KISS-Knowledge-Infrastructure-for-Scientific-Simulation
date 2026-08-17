@@ -1,3 +1,14 @@
+---
+name: cism
+description: >-
+  CISM 2.1. Covers Ice thickness evolution via mass continuity (incremental remapping /
+  upwind transport /…; Ice velocity via shallow-ice (Glide) or higher-order (Glissade:
+  Blatter-Pattyn, SSA, L1L2, DIVA)…; Prognostic internal ice temperature / enthalpy
+  evolution; Basal sliding/traction and basal hydrology (till water, effective pressure);
+  Marine-margin calving and grounding-line dynamics. Use when the task involves running,
+  configuring, calibrating or interpreting CISM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

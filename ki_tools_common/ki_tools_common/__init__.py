@@ -35,25 +35,59 @@ climate_sources_io.py's docstring for why (a verified HDF5 library ABI
 clash between netCDF4 and h5py, not a flaky-filesystem issue).
 """
 
-from ki_tools_common import (
-    units,
-    humidity,
-    netcdf_utils,
-    validation,
-    metrics,
-    io_helpers,
-    forcing_sources,
-    load_forcing,
-    soil_utils,
-    landcover,
-    debug_framework,
-    cross_platform,
-    crop_calendar,
-    fertilizer,
-    crop_obs,
-    terrain,
-    climate_scenarios,
+# Submodules are imported on first use (PEP 562), not at package import.
+#
+# Importing them eagerly made the package unimportable in any environment
+# without the OPTIONAL dependencies: pyproject declares xarray under the
+# [netcdf] extra, yet climate_scenarios imports xarray at module level, so a
+# plain `pip install ki_tools_common` produced a package that raised
+# ModuleNotFoundError on `import ki_tools_common`. Every one of the 127 KI
+# packages that does `from ki_tools_common.X import Y` therefore failed, and
+# failed late — after preflight had already reported success, because preflight
+# checks the model binary rather than these helpers.
+#
+# Lazy loading also sidesteps the netCDF4/h5py HDF5 ABI clash described above:
+# nothing pulls netCDF4 in until a caller actually asks for it.
+#
+# The public API is unchanged. `from ki_tools_common import units`,
+# `import ki_tools_common.units` and `ki_tools_common.units` all still work; a
+# missing optional dependency now surfaces when the module that needs it is
+# used, naming that module.
+
+import importlib as _importlib
+
+_SUBMODULES = (
+    "units",
+    "humidity",
+    "netcdf_utils",
+    "validation",
+    "metrics",
+    "io_helpers",
+    "forcing_sources",
+    "load_forcing",
+    "soil_utils",
+    "landcover",
+    "debug_framework",
+    "cross_platform",
+    "crop_calendar",
+    "fertilizer",
+    "crop_obs",
+    "terrain",
+    "climate_scenarios",
 )
+
+
+def __getattr__(name):
+    """Import and cache a submodule on first attribute access."""
+    if name in _SUBMODULES:
+        module = _importlib.import_module(f"{__name__}.{name}")
+        globals()[name] = module          # cache; __getattr__ not called again
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted([*_SUBMODULES, "__version__"])
 
 __version__ = "5.2.0"
 

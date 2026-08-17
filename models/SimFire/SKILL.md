@@ -1,3 +1,13 @@
+---
+name: simfire
+description: >-
+  Rothermel surface fire spread model (USDA Forest Service RMRS-GTR-371; Anderson FBFM-13
+  fuel models). Covers Surface wildfire spread over a 2-D gridded landscape via the
+  Rothermel rate-of-spread equation; Per-pixel fuel (FBFM-13), elevation/slope, prescribed
+  wind, and fuel-moisture forcing of spread. Use when the task involves running,
+  configuring, calibrating or interpreting SimFire.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

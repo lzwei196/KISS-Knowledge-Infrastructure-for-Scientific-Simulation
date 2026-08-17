@@ -1,3 +1,14 @@
+---
+name: clm5-ctsm
+description: >-
+  CLM5/CTSM (CTSM 5.4 framework; CLM4.5/CLM5.0/CLM6.0 selectable physics). Covers
+  Terrestrial biogeophysics: surface radiation, surface energy balance, canopy and ground
+  turbulent…; Soil and snow thermal dynamics (25 soil layers to ~8.5 m; up to 12 snow
+  layers); Soil and snow hydrology: infiltration, soil moisture, surface/subsurface
+  runoff, drainage. Use when the task involves running, configuring, calibrating or
+  interpreting CLM5___CTSM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

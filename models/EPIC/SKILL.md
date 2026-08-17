@@ -1,3 +1,14 @@
+---
+name: epic
+description: >-
+  EPIC 1102. Covers Crop/plant growth and yield (~80-150 crop types, one growth model with
+  per-crop parameters); Field hydrology (NRCS curve-number runoff, percolation, lateral
+  flow, ET); Water erosion (MUSLE/USLE/MUSS/MUST/RUSLE family) and wind erosion; Nutrient
+  cycling (N, P, K) with leaching, volatilization, denitrification; Soil organic carbon
+  dynamics (CENTURY sub-model). Use when the task involves running, configuring,
+  calibrating or interpreting EPIC.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual EPIC1102 binary** (`epic1102-official_release.exe`)

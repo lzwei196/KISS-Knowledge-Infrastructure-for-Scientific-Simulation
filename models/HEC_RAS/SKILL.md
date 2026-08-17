@@ -1,3 +1,13 @@
+---
+name: hec-ras
+description: >-
+  HEC-RAS Hydraulic Reference Manual v6.1/6.5 (1-D Saint-Venant + standard-step energy
+  equation; 2-D shallow-water equations). Covers 1-D steady-flow water-surface profile
+  computations in gradually varied open-channel flow…; 1-D unsteady-flow hydrodynamics via
+  Saint-Venant equations (continuity + momentum, implicit…. Use when the task involves
+  running, configuring, calibrating or interpreting HEC_RAS.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

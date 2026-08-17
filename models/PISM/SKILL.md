@@ -1,3 +1,14 @@
+---
+name: pism
+description: >-
+  PISM 2.3.x (Parallel Ice Sheet Model; User's Manual v2.3.1). Covers Ice sheet, glacier,
+  and ice-shelf dynamics (grounded and floating ice); Stress balance via a hierarchy of
+  approximations (SIA, SSA, SIA+SSA hybrid, Blatter first-order); Mass continuity / ice
+  geometry (thickness) evolution; Polythermal enthalpy-based conservation of energy in
+  ice, subglacial layer, and thermal bedrock. Use when the task involves running,
+  configuring, calibrating or interpreting PISM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

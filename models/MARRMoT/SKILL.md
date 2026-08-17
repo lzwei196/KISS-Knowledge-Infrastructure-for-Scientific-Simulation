@@ -1,3 +1,14 @@
+---
+name: marrmot
+description: >-
+  MARRMoT v2.1.x. Covers Lumped conceptual rainfall-runoff simulation at catchment scale;
+  47 selectable conceptual model structures (GR4J, HYMOD, Sacramento, HBV, VIC, TOPMODEL,
+  etc.); Continuous state-space (ODE) integration of catchment storages; Generation of
+  streamflow, actual evapotranspiration, internal stores and fluxes; Unit-hydrograph
+  routing of generated runoff to catchment outlet. Use when the task involves running,
+  configuring, calibrating or interpreting MARRMoT.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

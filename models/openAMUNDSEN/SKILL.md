@@ -1,3 +1,14 @@
+---
+name: openamundsen
+description: >-
+  openAMUNDSEN v1.0. Covers Fully distributed snow and ice mass and energy balance in
+  mountain regions; Spatial interpolation of meteorological station forcing to the model
+  grid (IDW + elevation…; Terrain-aware shortwave and longwave radiation (slope, aspect,
+  shadows, sky-view factor…; Precipitation phase partitioning (rain/snow) and
+  wind-undercatch correction. Use when the task involves running, configuring, calibrating
+  or interpreting openAMUNDSEN.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

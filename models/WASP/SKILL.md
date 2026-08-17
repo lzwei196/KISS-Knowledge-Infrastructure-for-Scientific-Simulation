@@ -1,3 +1,14 @@
+---
+name: wasp
+description: >-
+  WASP (US EPA Water Analysis Simulation Program) core water-quality physics; analytic
+  lake/reservoir reimplementation (temperature, DO, BOD, TSI). Covers Seasonal surface
+  water temperature (sinusoidal annual cycle); Seasonal dissolved-oxygen time series
+  (steady-state Streeter-Phelps); 1-D vertical temperature profile (logistic thermocline
+  structure). Use when the task involves running, configuring, calibrating or interpreting
+  WASP.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

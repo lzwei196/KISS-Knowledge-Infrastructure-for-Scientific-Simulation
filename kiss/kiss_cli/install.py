@@ -297,20 +297,29 @@ def install_ki_tools_common(cfg, repo_root: Path) -> Step:
     if rc == 0:
         return Step("ki-tools-common", True, "already importable")
 
-    # Install with the [all] extra. xarray is declared *optional* in this
-    # library's pyproject, but its __init__ imports climate_scenarios, which
-    # imports xarray at module level — so a plain install produces a package
-    # that cannot be imported at all. Measured, not guessed.
-    cmd = [cfg.python, "-m", "pip", "install", "--quiet", "-e", f"{src}[all]"]
-    rc, out = _run(cmd)
-    if rc != 0:
-        return Step("ki-tools-common", False, out.strip()[-400:], commands=[" ".join(cmd)])
+    # Prefer the [all] extra: these are Earth-science models, so xarray,
+    # netCDF4 and geopandas get used sooner or later, and installing them now
+    # avoids a confusing mid-run failure. Fall back to the bare install if the
+    # extras cannot be built — since the submodules load lazily, the package is
+    # still importable and usable without them, and a module that needs a
+    # missing dependency says so when it is used.
+    cmds: list[str] = []
+    for spec in (f"{src}[all]", str(src)):
+        cmd = [cfg.python, "-m", "pip", "install", "--quiet", "-e", spec]
+        cmds.append(" ".join(cmd))
+        rc, out = _run(cmd)
+        if rc == 0:
+            break
+    else:
+        return Step("ki-tools-common", False, out.strip()[-400:], commands=cmds)
+    cmd = cmds  # for reporting below
 
     rc2, out2 = _run([cfg.python, "-c",
                       "import ki_tools_common, ki_tools_common.units; print('ok')"])
     if rc2 != 0:
         return Step("ki-tools-common", False,
                     f"pip install succeeded but import fails: {out2.strip()[-200:]}",
-                    commands=[" ".join(cmd)])
-    return Step("ki-tools-common", True, f"installed editable from {src}",
-                commands=[" ".join(cmd)])
+                    commands=cmds)
+    extras = "with extras" if len(cmds) == 1 else "bare (extras unavailable)"
+    return Step("ki-tools-common", True, f"installed editable from {src}, {extras}",
+                commands=cmds)

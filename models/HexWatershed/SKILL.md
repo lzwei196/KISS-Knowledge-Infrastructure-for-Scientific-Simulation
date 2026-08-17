@@ -1,3 +1,13 @@
+---
+name: hexwatershed
+description: >-
+  HexWatershed 1.0 (Liao et al. 2020, Environmental Modelling & Software 128:104702) —
+  hexagon/unstructured-mesh watershed delineation. Covers Depression-filled DEM on an
+  unstructured polygonal mesh (Priority-Flood + epsilon); Single (steepest-descent) flow
+  direction per mesh cell; Topological flow accumulation (upstream cell count). Use when
+  the task involves running, configuring, calibrating or interpreting HexWatershed.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

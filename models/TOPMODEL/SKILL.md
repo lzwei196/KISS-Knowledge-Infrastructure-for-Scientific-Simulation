@@ -1,3 +1,13 @@
+---
+name: topmodel
+description: >-
+  TOPMODEL. Covers rainfall-runoff transformation at hillslope / small catchment scale;
+  variable saturated contributing area dynamics driven by topography (TWI similarity);
+  saturation-excess overland flow; exponential subsurface (baseflow) drainage on shallow
+  soils over an impeding layer; root-zone-deficit-limited actual evapotranspiration. Use
+  when the task involves running, configuring, calibrating or interpreting TOPMODEL.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

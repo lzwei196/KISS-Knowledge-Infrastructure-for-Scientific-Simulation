@@ -1,3 +1,13 @@
+---
+name: swat-plus
+description: >-
+  SWAT+ Rev 59.3. Covers Watershed-scale rainfall-runoff partitioning at HRU resolution;
+  Multilayer soil water dynamics with percolation, lateral flow, tile drainage, saturation
+  excess; Snow accumulation and temperature-index snowmelt; Potential and actual
+  evapotranspiration with vegetation/soil compensation. Use when the task involves
+  running, configuring, calibrating or interpreting SWAT_Plus.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

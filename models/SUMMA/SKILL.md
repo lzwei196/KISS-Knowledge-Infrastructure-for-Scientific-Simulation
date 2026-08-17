@@ -1,3 +1,14 @@
+---
+name: summa
+description: >-
+  SUMMA. Covers Per-HRU vertical land-surface mass and energy conservation: vegetation
+  canopy, snowpack, soil…; Radiation transmission and wind attenuation through canopy;
+  Snow interception, accumulation, phase change, compaction, and melt; Evapotranspiration
+  (canopy/ground evaporation, transpiration, sublimation); Soil water flow (Richards
+  equation, van Genuchten-Mualem retention). Use when the task involves running,
+  configuring, calibrating or interpreting SUMMA.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

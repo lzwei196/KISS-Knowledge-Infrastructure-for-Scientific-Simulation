@@ -1,3 +1,14 @@
+---
+name: sfincs
+description: >-
+  SFINCS reduced-physics solver (Leijnse et al. 2021; local-inertial / SSWE), subgrid per
+  van Ormondt et al. 2025. Covers 2D shallow-water flood inundation (depth and extent)
+  within a local domain; Pluvial flooding from local precipitation; Fluvial flooding from
+  river discharge / source-point inflow; Coastal/compound flooding from tidal/surge
+  water-level boundary (datum-dependent). Use when the task involves running, configuring,
+  calibrating or interpreting SFINCS.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

@@ -1,3 +1,14 @@
+---
+name: swmm
+description: >-
+  EPA SWMM 5. Covers Rainfall-runoff generation from urban subcatchments
+  (nonlinear-reservoir overland flow over…; Infiltration losses (Horton, Modified Horton,
+  Green-Ampt, Curve Number); Snow accumulation and melt; evaporation of standing surface
+  water; Groundwater (two-zone aquifer) percolation and lateral interflow to the drainage
+  network. Use when the task involves running, configuring, calibrating or interpreting
+  SWMM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

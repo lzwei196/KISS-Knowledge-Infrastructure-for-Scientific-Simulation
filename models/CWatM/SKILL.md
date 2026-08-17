@@ -1,3 +1,14 @@
+---
+name: cwatm
+description: >-
+  CWatM v1.04. Covers Terrestrial water cycle simulated daily: precipitation/snow
+  partitioning, evapotranspiration, soil…; Water availability, demand and water stress
+  across river basins; Human water use and abstraction (irrigation, industry, domestic,
+  livestock) including return flows; Water-infrastructure effects: reservoirs, lakes,
+  groundwater pumping, irrigation. Use when the task involves running, configuring,
+  calibrating or interpreting CWatM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

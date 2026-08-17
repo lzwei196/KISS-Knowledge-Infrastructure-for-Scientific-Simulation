@@ -1,3 +1,14 @@
+---
+name: dlbreach
+description: >-
+  DLBreach 2016.4. Covers Earthen embankment (dam/levee) breach by overtopping; Earthen
+  embankment breach by internal erosion (piping); Breach outflow hydrograph from a 0-D
+  reservoir draining through the breach; Breach geometry evolution (bottom
+  width/elevation, top width, side slope, flow area); Homogeneous, cohesive, cohesionless,
+  and composite/zoned (clay-core) embankments. Use when the task involves running,
+  configuring, calibrating or interpreting DLBreach.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

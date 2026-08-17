@@ -1,3 +1,13 @@
+---
+name: dfnworks
+description: >-
+  dfnWorks discrete fracture network framework (Hyman et al. 2015, Computers & Geosciences
+  84:10-19), graph-mode flow/transport branch (dfnGraph, v2.2+). Covers Stochastic and
+  deterministic generation of 3D discrete fracture networks in fractured rock; Conforming
+  Delaunay meshing of the fracture network via FRAM + LaGriT (full-physics path). Use when
+  the task involves running, configuring, calibrating or interpreting dfnWorks.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

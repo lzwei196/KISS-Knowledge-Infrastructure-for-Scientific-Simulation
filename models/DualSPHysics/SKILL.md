@@ -1,3 +1,14 @@
+---
+name: dualsphysics
+description: >-
+  Weakly-compressible SPH (WCSPH) per Crespo et al. 2015 / Dominguez et al. 2022;
+  DualSPHysics v5.4 formulation. Covers Free-surface flows (dam breaks, wave impact,
+  flooding); Wave generation, propagation, and active/passive absorption; Wave-structure
+  interaction and forces on coastal/offshore structures; Floating-body 6-DOF dynamics and
+  fluid-structure interaction. Use when the task involves running, configuring,
+  calibrating or interpreting DualSPHysics.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

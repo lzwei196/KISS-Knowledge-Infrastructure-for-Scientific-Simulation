@@ -1,3 +1,13 @@
+---
+name: biome-bgc
+description: >-
+  Biome-BGC 4.2. Covers Daily carbon fluxes (C3/C4 photosynthesis, maintenance + growth
+  respiration, allocation); Nitrogen cycling (deposition, fixation, mineralization,
+  immobilization, leaching, denitrification); Water cycling (canopy interception, snow
+  accumulation/melt, bare-soil evaporation, transpiration…. Use when the task involves
+  running, configuring, calibrating or interpreting BIOME_BGC.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

@@ -1,3 +1,14 @@
+---
+name: pygimli
+description: >-
+  pyGIMLi generalized Gauss-Newton inversion + FEM/FVM forward framework. Covers
+  Geophysical forward modelling (FEM/FVM PDE solve) of synthetic data from a subsurface
+  property model; Regularized Gauss-Newton inversion to recover spatially-distributed
+  physical properties from field…; Electrical Resistivity Tomography (ERT); Seismic
+  Refraction / first-arrival Traveltime Tomography (SRT). Use when the task involves
+  running, configuring, calibrating or interpreting pyGIMLi.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

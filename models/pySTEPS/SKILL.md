@@ -1,8 +1,15 @@
 ---
-model: pySTEPS
+name: pysteps
+description: >-
+  STEPS cascade-based stochastic nowcasting scheme (Bowler et al. 2006 / Seed 2003 S-PROG
+  lineage) as realized in pysteps 1.20.0. Covers Short-term probabilistic / deterministic
+  nowcasting of 2-D radar precipitation intensity fields; Motion (advection) field
+  estimation from a past radar frame sequence via optical flow. Use when the task involves
+  running, configuring, calibrating or interpreting pySTEPS.
 version: 1.20.0
+model: pySTEPS
 domain: precipitation_nowcasting
-not_a_hydrological_model: true
+not_a_hydrological_model: True
 ---
 
 # pySTEPS — Knowledge Infrastructure

@@ -1,3 +1,14 @@
+---
+name: openfoam
+description: >-
+  OpenFOAM-dev (OpenFOAM Foundation / CFD Direct), foamRun finite-volume incompressible
+  turbulent flow (incompressibleFluid module, RANS k-epsilon…. Covers Incompressible
+  isothermal turbulent fluid flow (steady or transient) by the finite-volume method;
+  Pressure-velocity coupling (SIMPLE / PISO / PIMPLE) on arbitrary polyhedral
+  finite-volume meshes. Use when the task involves running, configuring, calibrating or
+  interpreting OpenFOAM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

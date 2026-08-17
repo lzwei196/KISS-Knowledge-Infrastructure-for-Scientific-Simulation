@@ -1,6 +1,12 @@
 ---
 name: hype-hydrocraft
-version: "1.0.0"
+description: >-
+  HYPE 5.35.0 (SMHI HYdrological Predictions for the Environment; conceptual
+  semi-distributed water + N/P/OC/sediment model). SMHI versions the line…. Covers
+  Subbasin water balance: snow accumulation/melt, soil water (up to 3 layers),
+  evapotranspiration…; Soil temperature, ground frost, frozen-soil water fraction. Use
+  when the task involves running, configuring, calibrating or interpreting HYPE.
+version: 1.0.0
 model: HYPE v5.35.0
 domain: semi-distributed hydrology with integrated nutrient transport
 validation_status: production_validated

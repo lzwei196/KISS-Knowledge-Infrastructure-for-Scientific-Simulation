@@ -1,3 +1,14 @@
+---
+name: cell2fire
+description: >-
+  Cell2Fire W (C2F-W) — unified Scott&Burgan / Canadian FBP / Kitral cellular fire-spread
+  simulator; FBP lineage per Pais et al. 2021 (Front. For…. Covers Grid-based wildfire
+  spread (propagation) across a gridded landscape from one or more ignition points;
+  Per-cell rate of spread and elliptical fire propagation via a selectable fire-behavior
+  model…. Use when the task involves running, configuring, calibrating or interpreting
+  Cell2Fire.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

@@ -1,3 +1,14 @@
+---
+name: prms
+description: >-
+  PRMS-IV (Markstrom et al. 2015, USGS TM 6-B7), as implemented in USGS Fortran PRMS
+  5.1.0. Covers Precipitation distribution and rain/snow partitioning by HRU; Temperature
+  distribution across HRUs (station-based or pre-gridded); Solar radiation estimation
+  (degree-day or cloud-cover); Potential evapotranspiration (Jensen-Haise default; Hamon,
+  Hargreaves-Samani, Penman-Monteith…. Use when the task involves running, configuring,
+  calibrating or interpreting PRMS.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

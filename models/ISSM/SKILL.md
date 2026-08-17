@@ -1,3 +1,14 @@
+---
+name: issm
+description: >-
+  ISSM (Ice-sheet and Sea-level System Model) v2026.x finite-element ice-sheet/sea-level
+  formulation. Covers Ice flow / stress balance (Full-Stokes, Higher-Order/Blatter-Pattyn,
+  SSA/MacAyeal, SIA, L1L2, MOLHO); Thermal state of ice (temperature or enthalpy
+  formulation; basal melting); Mass transport (depth-integrated thickness evolution,
+  free-surface evolution). Use when the task involves running, configuring, calibrating or
+  interpreting ISSM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

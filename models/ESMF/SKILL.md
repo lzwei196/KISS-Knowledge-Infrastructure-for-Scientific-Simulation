@@ -1,3 +1,8 @@
+---
+name: esmf
+description: ESMF. Use when the task involves running, configuring, calibrating or interpreting ESMF.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

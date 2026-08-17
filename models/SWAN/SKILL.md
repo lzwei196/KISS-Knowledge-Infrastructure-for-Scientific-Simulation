@@ -1,3 +1,14 @@
+---
+name: swan
+description: >-
+  SWAN Cycle III version 41.51 (Delft University of Technology User Manual; wave action
+  balance with sources/sinks). Covers Wind-generated surface gravity waves in coastal
+  areas, lakes and estuaries; Wave generation by wind (GEN1/GEN2/GEN3); Whitecapping
+  dissipation; Bottom-friction dissipation; Depth-induced wave breaking; Nonlinear
+  quadruplet wave-wave interactions (DIA approximation). Use when the task involves
+  running, configuring, calibrating or interpreting SWAN.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

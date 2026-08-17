@@ -1,3 +1,13 @@
+---
+name: landlab
+description: >-
+  Landlab 2.x component-based Earth-surface-dynamics framework. Covers Landscape evolution
+  at catchment-to-landscape scale (slope-area, concavity, steepness, relief…; Flow routing
+  and drainage accumulation (D8, D-infinity, MFD, priority-flood); Detachment-limited
+  fluvial erosion (stream power E = K A^m S^n). Use when the task involves running,
+  configuring, calibrating or interpreting Landlab.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

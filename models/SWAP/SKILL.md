@@ -1,3 +1,14 @@
+---
+name: swap
+description: >-
+  SWAP version 4 (WENR Report 2780, 2017; doi:10.18174/416321) — vadose-zone Richards/MvG
+  ecohydrology spec. Covers 1-D vertical transport of water in the variably saturated
+  vadose zone (Richards equation…; Root water uptake and water/oxygen/salt stress (Feddes
+  or de Jong van Lier reduction); Potential and actual evapotranspiration and rainfall
+  interception (Penman-Monteith; reference ET +…. Use when the task involves running,
+  configuring, calibrating or interpreting SWAP.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

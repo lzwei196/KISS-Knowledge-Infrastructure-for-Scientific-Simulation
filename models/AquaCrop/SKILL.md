@@ -1,3 +1,14 @@
+---
+name: aquacrop
+description: >-
+  FAO AquaCrop 7.1 (Reference Manual lineage; Chapter 3 algorithmic spec). Covers Yield
+  response of herbaceous crops to water; Daily soil water balance of the root zone
+  (drainage, runoff, infiltration, capillary rise); Soil evaporation (FAO two-stage:
+  energy-limited then falling-rate); Crop transpiration with stress modulation (water,
+  aeration, temperature, CO2). Use when the task involves running, configuring,
+  calibrating or interpreting AquaCrop.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

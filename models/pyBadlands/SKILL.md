@@ -1,3 +1,14 @@
+---
+name: pybadlands
+description: >-
+  Badlands landscape evolution model. Covers Fluvial incision via detachment-limited
+  Stream Power Law (E = Kd*A^m*S^n); Fluvial sediment transport/deposition
+  (transport-capacity variants); Linear and non-linear hillslope diffusion (subaerial and
+  marine creep); Slope-failure / mass-wasting diffusion; Wave-driven shallow-marine
+  sediment transport; Carbonate reef and pelagic growth. Use when the task involves
+  running, configuring, calibrating or interpreting pyBadlands.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

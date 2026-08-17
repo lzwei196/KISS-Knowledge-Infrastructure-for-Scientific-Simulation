@@ -1,3 +1,13 @@
+---
+name: apex
+description: >-
+  APEX (Agricultural Policy/Environmental eXtender); Theoretical Documentation v0604 (BREC
+  #2008-17, 2008) science lineage, run as the v0806 user-guide…. Covers Whole-farm /
+  small-watershed agronomy, hydrology, water quality at daily step; Hydrology: rainfall
+  interception, surface runoff (SCS Curve Number or Green-Ampt), peak rate…. Use when the
+  task involves running, configuring, calibrating or interpreting APEX.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

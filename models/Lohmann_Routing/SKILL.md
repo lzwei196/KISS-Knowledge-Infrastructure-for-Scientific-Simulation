@@ -1,3 +1,14 @@
+---
+name: lohmann-routing
+description: >-
+  Lohmann diffusive-wave routing. Covers Within-cell routing of daily grid-cell total
+  runoff (surface runoff + baseflow) to the cell outlet…; Channel/river-network routing of
+  cell-outlet flow to gauge/outlet points using the linearized…; Source-to-sink
+  convolution and fraction-weighted accumulation of upstream cell contributions into…. Use
+  when the task involves running, configuring, calibrating or interpreting
+  Lohmann_Routing.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

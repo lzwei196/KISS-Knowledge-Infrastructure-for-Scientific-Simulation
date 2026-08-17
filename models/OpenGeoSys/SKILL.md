@@ -1,3 +1,13 @@
+---
+name: opengeosys
+description: >-
+  OpenGeoSys 6 (OGS-6) THMC finite-element multiphysics; doxygen-stable 6.5.7 lineage.
+  Covers Coupled thermo-hydro-mechanical-chemical (THMC) processes in porous and fractured
+  media; Single-phase saturated (Darcy) liquid flow and steady-state diffusion;
+  Variably-saturated (Richards) and two-phase non-isothermal flow. Use when the task
+  involves running, configuring, calibrating or interpreting OpenGeoSys.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

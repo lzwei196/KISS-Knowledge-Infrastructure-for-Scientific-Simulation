@@ -1,3 +1,14 @@
+---
+name: raven
+description: >-
+  Raven Hydrological Modelling Framework v4.1. Covers Rainfall-runoff transformation from
+  meteorological forcing to discharge (hydrograph); Infiltration and surface runoff
+  partitioning; Evapotranspiration / potential ET (multiple selectable methods); Snow
+  accumulation, melt, and snowpack energy/mass state; Soil water balance, percolation
+  between layers, and baseflow. Use when the task involves running, configuring,
+  calibrating or interpreting Raven.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

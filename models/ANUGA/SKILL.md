@@ -1,3 +1,14 @@
+---
+name: anuga
+description: >-
+  ANUGA 2D nonlinear shallow-water (Saint-Venant) finite-volume solver, DE0
+  discontinuous-elevation flow algorithm. Covers 2D depth-averaged hydrodynamic inundation
+  (riverine flooding, dam-break, storm surge, tsunami runup); Water surface elevation
+  (stage) and depth-integrated horizontal momentum over time; Wetting and drying of cells
+  as water advances onto dry land / recedes. Use when the task involves running,
+  configuring, calibrating or interpreting ANUGA.
+---
+
 # ANUGA Skill
 
 **Type:** 2D depth-averaged shallow-water hydrodynamics (finite-volume, unstructured triangular mesh)

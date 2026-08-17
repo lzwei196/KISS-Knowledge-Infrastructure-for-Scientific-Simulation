@@ -1,3 +1,14 @@
+---
+name: adcirc
+description: >-
+  ADCIRC v56.2.1 (Luettich/Westerink GWCE finite-element formulation). Covers
+  Time-dependent free-surface circulation and transport in 2DDI and 3D modes; Tidal
+  circulation, storm surge, wind-driven circulation, coastal inundation (wetting/drying);
+  Elevation via the Generalized Wave Continuity Equation (GWCE); velocity via 2DDI/3D
+  momentum…. Use when the task involves running, configuring, calibrating or interpreting
+  ADCIRC.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

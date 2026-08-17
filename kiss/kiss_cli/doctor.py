@@ -134,6 +134,24 @@ def check_ki(ki) -> list[Finding]:
     for role, n in port.leaks.items():
         add(WARN, "internal-leak", f"{n} refs to private tooling ({role}) leaked into a public package", n)
 
+    # Porting turns those refs into a placeholder, which stops scan_text seeing
+    # them — so count the token too, or the leak becomes invisible rather than
+    # fixed. These point at the private dissection toolkit; a user has no such
+    # directory, so any instruction referencing it is a dead end for them.
+    leaked = 0
+    for f in ki.root.rglob("*"):
+        if not f.is_file() or f.suffix.lower() not in TEXT_SUFFIXES:
+            continue
+        try:
+            leaked += f.read_text(encoding="utf-8", errors="replace").count(
+                "KISSPATH_INTERNAL_NOT_SHIPPED")
+        except OSError:
+            pass
+    if leaked:
+        add(WARN, "internal-leak-token",
+            f"{leaked} placeholder refs to the private dissection toolkit — "
+            f"these instructions cannot be followed by anyone else", leaked)
+
     # 4. Shipped noise ------------------------------------------------------
     baks = [p for p in ki.root.rglob("*") if p.is_file() and
             (p.suffix in (".bak", ".bak2") or ".bak" in p.name)]
@@ -201,8 +219,77 @@ def run(catalog) -> Report:
     for ki in catalog:
         rep.checked += 1
         rep.findings.extend(check_ki(ki))
+    # Cross-package checks need the whole catalogue, not one KI at a time.
+    rep.findings.extend(check_cross_model(catalog))
     return rep
 
 
 def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", str(s).lower().replace("+", "plus"))
+
+
+def _process_names(doc) -> set[str]:
+    """Process/node identifiers declared by a dag."""
+    pr = doc.get("processes")
+    if isinstance(pr, list):
+        items = pr
+    elif isinstance(pr, dict):
+        items = pr.get("nodes") or (list(pr.values())[0] if pr else [])
+    else:
+        items = []
+    out = set()
+    for p in items or []:
+        if isinstance(p, dict):
+            name = p.get("id") or p.get("name")
+            if name:
+                out.add(str(name))
+    return out
+
+
+def check_cross_model(catalog) -> list[Finding]:
+    """Detect a dag that describes a *different* model than its package.
+
+    A dag's process list is specific to the model it belongs to, so two packages
+    declaring the same processes means one of them carries the other's
+    descriptor. This is not a hypothetical: EF5 shipped HYPE's dag, and the
+    consequence was silent rather than loud — the obs-shape gate read HYPE
+    metadata for EF5 runs and prior streamflow comparisons passed only because
+    `cout` happens to name channel discharge in HYPE too.
+
+    Text similarity does NOT work as a signal here. All 124 dags share the same
+    9-key schema and much of the same vocabulary, so a character-level ratio
+    scores ~95% for every pair, including obviously unrelated ones like VIC and
+    WOFOST. Process identity is the discriminating signal.
+    """
+    if yaml is None:
+        return []
+    sets: dict[str, set[str]] = {}
+    for ki in catalog:
+        if not ki.dag:
+            continue
+        try:
+            doc = yaml.safe_load(ki.dag.read_text(encoding="utf-8", errors="replace")) or {}
+        except Exception:
+            continue
+        names = _process_names(doc)
+        if names:
+            sets[ki.name] = names
+
+    out: list[Finding] = []
+    seen: set[tuple[str, str]] = set()
+    keys = list(sets)
+    for i, a in enumerate(keys):
+        for b in keys[i + 1:]:
+            A, B = sets[a], sets[b]
+            overlap = len(A & B) / len(A | B)
+            if overlap < 0.9 or (a, b) in seen:
+                continue
+            seen.add((a, b))
+            for who, other in ((a, b), (b, a)):
+                out.append(Finding(
+                    who, BLOCK, "dag-cross-model",
+                    f"processes are {overlap:.0%} identical to {other}'s — one of these "
+                    f"dags describes the wrong model, so anything reading it as an "
+                    f"output contract is unreliable",
+                ))
+    return out

@@ -1,3 +1,13 @@
+---
+name: gr4j-airgr
+description: >-
+  GR4J. Covers Daily lumped catchment rainfall-runoff transform (P, PE -> Qsim);
+  Production (soil-moisture) store with interception, evaporation, percolation; Two unit
+  hydrographs (UH1 slow 90%, UH2 fast direct 10%); Nonlinear routing store;
+  Inter-catchment groundwater exchange (X2). Use when the task involves running,
+  configuring, calibrating or interpreting GR4J___airGR.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

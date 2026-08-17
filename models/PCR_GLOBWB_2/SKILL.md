@@ -1,3 +1,14 @@
+---
+name: pcr-globwb-2
+description: >-
+  PCR-GLOBWB 2 (Sutanudjaja et al. 2018, GMD 11:2429-2453) — 5 arcmin global hydrology &
+  water resources spec. Covers grid-based terrestrial hydrology (snow, interception,
+  two-layer soil moisture, groundwater, runoff); river/channel routing along an LDD
+  network including lakes and reservoirs; integrated human water use (irrigation,
+  domestic, industry, livestock demand, withdrawal…. Use when the task involves running,
+  configuring, calibrating or interpreting PCR_GLOBWB_2.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

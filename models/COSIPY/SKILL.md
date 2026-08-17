@@ -1,3 +1,14 @@
+---
+name: cosipy
+description: >-
+  COSIPY v1.3 (Sauter, Arndt & Schneider 2020, GMD) science spec, as realized by the
+  v2.0.2 codebase. Covers Surface energy balance over snow/ice (net shortwave with
+  subsurface penetration, net longwave…; Iterative surface skin temperature solution
+  constrained to the melting point; Surface mass fluxes: melt, sublimation, evaporation,
+  deposition, condensation. Use when the task involves running, configuring, calibrating
+  or interpreting COSIPY.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

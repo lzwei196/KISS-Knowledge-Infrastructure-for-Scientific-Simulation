@@ -1,3 +1,14 @@
+---
+name: pyswmm
+description: >-
+  EPA SWMM5 (Storm Water Management Model 5.1.14–5.2.4) via the OpenWaterAnalytics
+  swmm-toolkit. Covers Rainfall-runoff generation and infiltration on urban subcatchments;
+  Overland (subcatchment) flow routing; Hydraulic flow routing through a drainage network
+  of nodes and links; Flow control structures (pumps, weirs, orifices, outlets); Low
+  Impact Development (LID) practices. Use when the task involves running, configuring,
+  calibrating or interpreting PySWMM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

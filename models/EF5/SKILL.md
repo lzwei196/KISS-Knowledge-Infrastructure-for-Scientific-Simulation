@@ -1,3 +1,14 @@
+---
+name: ef5
+description: >-
+  HYPE 5.35.0. Covers Subbasin water balance: snow accumulation/melt, soil water (up to 3
+  layers), evapotranspiration…; Infiltration, surface runoff, percolation, macropore flow,
+  tile drainage, groundwater runoff…; Soil temperature and ground frost; Glacier mass
+  balance (glacier classes); Internal river routing (local + main river) with delay and
+  attenuation via MAINDOWN topology. Use when the task involves running, configuring,
+  calibrating or interpreting EF5.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

@@ -1,3 +1,14 @@
+---
+name: apsim
+description: >-
+  APSIM Next Generation (Plant Modelling Framework lineage; daily soil-plant-atmosphere
+  continuum). Covers crop growth and development (phenology, canopy/LAI, biomass, grain
+  yield); soil water balance (infiltration, SCS-CN runoff, Ritchie evaporation, drainage,
+  layered…; soil nitrogen and carbon cycling (mineralisation, nitrate/ammonium/urea pools,
+  residue…. Use when the task involves running, configuring, calibrating or interpreting
+  APSIM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 

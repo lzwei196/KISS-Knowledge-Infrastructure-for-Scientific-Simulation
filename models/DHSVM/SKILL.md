@@ -1,3 +1,14 @@
+---
+name: dhsvm
+description: >-
+  DHSVM 3.2. Covers Spatially distributed water and energy balance per grid cell in
+  mountainous watersheds; Energy-balance snow accumulation, melt, canopy snow
+  interception, and snow sliding/avalanche…; Two-layer (overstory/understory) vegetation
+  interception, evaporation, and transpiration; Multi-layer unsaturated soil-moisture
+  column and percolation. Use when the task involves running, configuring, calibrating or
+  interpreting DHSVM.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

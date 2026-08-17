@@ -1,3 +1,14 @@
+---
+name: quincy
+description: >-
+  QUINCY v1.0 (Thum et al. 2019, GMD; revision 1996 lineage) — analytic single-site C-N
+  reimplementation of the coupled C-N(-P)…. Covers Single-site terrestrial ecosystem
+  carbon exchange (GPP, NEE, Reco, autotrophic and heterotrophic…; Temperature-driven LAI
+  phenology; Coupled carbon-nitrogen control of photosynthesis (leaf N modulates effective
+  Vcmax). Use when the task involves running, configuring, calibrating or interpreting
+  QUINCY.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

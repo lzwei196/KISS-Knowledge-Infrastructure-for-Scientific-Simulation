@@ -1,3 +1,14 @@
+---
+name: wsimod
+description: >-
+  WSIMOD (Water Systems Integrated Modelling framework), node-arc message-passing
+  integrated water-cycle model per Dobson et al. 2024 GMD (CityWat…. Covers Integrated
+  water quantity AND quality across the terrestrial/urban water cycle; Urban and rural
+  hydrological catchments (Land node with multiple surfaces); Agricultural / growing
+  surfaces with crop nutrient cycling, ET, and soil erosion. Use when the task involves
+  running, configuring, calibrating or interpreting WSIMOD.
+---
+
 > **MANDATORY EXECUTION POLICY** — READ BEFORE PROCEEDING
 >
 > You MUST run the **actual model binary or package** described in this document.

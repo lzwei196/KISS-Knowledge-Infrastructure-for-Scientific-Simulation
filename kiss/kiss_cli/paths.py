@@ -121,6 +121,10 @@ class KissConfig:
                 "server_root": root,
                 "home": root,
                 "data_ki": root / "data_ki",
+                # The shared helper library 126 of the 127 KIs import. It has to
+                # have a home even before it is installed, or every KI that
+                # references it fails to materialise.
+                "ki_tools_common": root / "ki_tools_common",
                 "forcing_rechunked": root / "data" / "forcing_rechunked",
                 "outputs_disk1": root / "outputs",
             },

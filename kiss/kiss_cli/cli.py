@@ -15,7 +15,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import doctor, gui, handoff, install, paths
+from . import doctor, gui, handoff, install, paths, port
 from .catalog import Catalog
 from .manifest import Manifest
 
@@ -151,22 +151,40 @@ def cmd_init(args) -> int:
 
     result = install.InstallResult(model=ki.name)
 
+    # Materialise the KI: a working copy with this machine's real paths written
+    # in place of the KISSPATH_* placeholders. Everything downstream — preflight,
+    # the model's own tools, its config files — then sees true paths.
+    live = root / "ki"
+    mrep = port.materialise(ki.root, live, cfg)
+    ok = not mrep.unresolved
+    result.add(install.Step(
+        "materialise", ok,
+        f"{mrep.tokens_replaced} placeholders resolved into {live}" if ok else
+        f"unresolved placeholders: {', '.join(sorted(mrep.unresolved))} "
+        f"— add these roles to {paths.CONFIG_NAME}"))
+    print(f"  [1/7] materialise KI .. {_c('ok' if ok else 'BLOCK', 'ok' if ok else 'FAILED')}"
+          + _c("dim", f"  ({mrep.tokens_replaced} paths written)"))
+    if not ok:
+        print(_c("dim", "        " + ", ".join(sorted(mrep.unresolved))))
+    # From here on the KI in use is the materialised copy, not the package.
+    ki = type(ki)(name=ki.name, root=live)
+
     s = result.add(install.ensure_python_env(cfg))
     if s.ok and not args.python:
         cfg_file.write_text(cfg.dumps(), encoding="utf-8")
-    print(f"  [0/6] python env ...... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
+    print(f"  [2/7] python env ...... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
 
     s = result.add(install.check_system_deps(man.system_deps))
-    print(f"  [1/6] system deps ..... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
+    print(f"  [3/7] system deps ..... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
 
     s = result.add(install.install_python_deps(man.python_deps, cfg.python))
-    print(f"  [2/6] python deps ..... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
+    print(f"  [4/7] python deps ..... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
 
     prefix = cfg.roles["binaries"] / (man.install_dir or ki.name)
     s, binary = install.acquire(man, prefix, cfg.python)
     result.add(s)
     result.binary = binary
-    print(f"  [3/6] acquire ......... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
+    print(f"  [5/7] acquire ......... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
     if not s.ok:
         print(_c("dim", "        " + s.detail.strip().splitlines()[0][:100]))
 
@@ -174,13 +192,13 @@ def cmd_init(args) -> int:
         print(_c("dim", f"        couples with: {', '.join(man.depends_on)}"))
 
     s = result.add(install.check_data(man, cfg))
-    print(f"  [4/6] data ............ {_c('ok' if s.ok else 'WARN', s.mark)}")
+    print(f"  [6/7] data ............ {_c('ok' if s.ok else 'WARN', s.mark)}")
 
     s = result.add(install.run_preflight(ki, cfg.python, cfg))
-    print(f"  [5/6] preflight ....... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
+    print(f"  [7/7] preflight ....... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
 
     written = handoff.write(ki, result, man, cfg, root)
-    print(f"  [6/6] agent handoff ... {_c('ok', 'ok')} ({len(written)} files)")
+    print(f"    agent handoff ... {_c('ok', 'ok')} ({len(written)} files)")
 
     print()
     if result.ok:

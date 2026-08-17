@@ -200,3 +200,89 @@ def render_config_template(roles: list[str] | None = None) -> str:
         lines.append(f'# {TOKENS[role]}')
         lines.append(f'{role} = ""')
     return "\n".join(lines) + "\n"
+
+
+# --- the other direction: placeholders -> this machine ----------------------
+
+def unsubstitute(text: str, cfg) -> tuple[str, int, set[str]]:
+    """Replace ``KISSPATH_*`` tokens with real paths from ``cfg``.
+
+    Returns the new text, how many tokens were replaced, and the set of tokens
+    that had no configured role. An unresolved token is left in place on
+    purpose: it then fails loudly at the point of use, naming the role, instead
+    of collapsing to a plausible-looking wrong path.
+    """
+    by_token = {tok: role for role, tok in TOKENS.items()}
+    unresolved: set[str] = set()
+    n = 0
+
+    # Longest token first so KISSPATH_DATA_KI is not eaten by KISSPATH_DATA.
+    for tok in sorted(by_token, key=len, reverse=True):
+        if tok not in text:
+            continue
+        role = by_token[tok]
+        target = cfg.roles.get(role)
+        if target is None:
+            unresolved.add(tok)
+            continue
+        n += text.count(tok)
+        text = text.replace(tok, str(target))
+
+    for m in TOKEN_RE.finditer(text):
+        if m.group(0) in by_token:
+            unresolved.add(m.group(0))
+    return text, n, unresolved
+
+
+@dataclass
+class MaterialiseReport:
+    dest: Path
+    files_written: int = 0
+    tokens_replaced: int = 0
+    unresolved: set[str] = field(default_factory=set)
+    skipped: int = 0
+
+
+def materialise(ki_root: Path, dest: Path, cfg) -> MaterialiseReport:
+    """Copy a placeholder KI to ``dest`` with real paths written in.
+
+    This is what makes a ported KI runnable. The installed copy contains
+    concrete paths, so the model's own tools, configs and preflight work
+    without a namespace faking anything — the sandbox becomes a safety choice
+    rather than a requirement for correctness.
+
+    The original package is never modified; ``dest`` is a working copy.
+    """
+    import shutil
+
+    ki_root, dest = Path(ki_root), Path(dest)
+    rep = MaterialiseReport(dest=dest)
+    dest.mkdir(parents=True, exist_ok=True)
+
+    for src in sorted(ki_root.rglob("*")):
+        rel = src.relative_to(ki_root)
+        out = dest / rel
+        if src.is_dir():
+            out.mkdir(parents=True, exist_ok=True)
+            continue
+        out.parent.mkdir(parents=True, exist_ok=True)
+
+        if src.suffix.lower() not in TEXT_SUFFIXES:
+            shutil.copy2(src, out)          # binaries, PDFs, netCDF — verbatim
+            rep.skipped += 1
+            continue
+        try:
+            text = src.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            shutil.copy2(src, out)
+            rep.skipped += 1
+            continue
+
+        new_text, n, unresolved = unsubstitute(text, cfg)
+        out.write_text(new_text, encoding="utf-8")
+        shutil.copystat(src, out)
+        rep.files_written += 1
+        rep.tokens_replaced += n
+        rep.unresolved |= unresolved
+
+    return rep

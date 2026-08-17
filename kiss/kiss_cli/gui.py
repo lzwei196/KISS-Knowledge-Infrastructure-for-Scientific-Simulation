@@ -268,11 +268,15 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
     # about what "installed" meant.
     live = root / "ki"
     mrep = port.materialise(ki.root, live, cfg)
-    ok = not mrep.unresolved
+    ok = not mrep.unresolved and not mrep.corrupted
     result.add(install.Step(
         "materialise", ok,
         f"{mrep.tokens_replaced} placeholders resolved into {live}" if ok else
-        f"unresolved placeholders: {', '.join(sorted(mrep.unresolved))}"))
+        "; ".join(filter(None, [
+            f"unresolved: {', '.join(sorted(mrep.unresolved))}" if mrep.unresolved else "",
+            f"corrupted by your path values: {'; '.join(mrep.corrupted[:3])}"
+            if mrep.corrupted else "",
+        ]))))
     emit(f"  {'[1/8] materialise KI':<22} {'ok' if ok else 'FAILED'}"
          f"  ({mrep.tokens_replaced} paths written)\n")
     if mrep.undeliverable_files:

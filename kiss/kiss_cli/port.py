@@ -72,6 +72,8 @@ _ORDERED = sorted(LEGACY_PREFIXES, key=lambda pr: len(pr[0]), reverse=True)
 #: Elided paths written by hand in prose and comments — "/mnt/disk1/.../soil/x".
 #: A literal prefix match never sees these because the middle is an ellipsis, so
 #: they survived the first pass and still leaked the disk layout.
+#: Each pattern carries its own boundary; the main prefix pass is bounded but
+#: these were not, so an elided path inside a longer word was still rewritten.
 ELIDED = [
     (r"/mnt/disk1/\.\.\.", "KISSPATH_ROOT/..."),
     (r"/mnt/disk1(?![\w/])", "KISSPATH_ROOT"),
@@ -258,6 +260,13 @@ def unsubstitute(text: str, cfg) -> tuple[str, int, set[str]]:
         if target is None:
             unresolved.add(tok)
             return tok
+        # A role whose configured path itself contains a placeholder would emit
+        # the token straight back out, and the single-pass design means nothing
+        # would catch it on a rescan. Reject it as unresolved rather than
+        # reporting a substitution that changed nothing.
+        if TOKEN_RE.search(str(target)):
+            unresolved.add(tok)
+            return tok
         n += 1
         return str(target)
 
@@ -273,6 +282,9 @@ class MaterialiseReport:
     unresolved: set[str] = field(default_factory=set)
     #: files still carrying a reference that cannot ever resolve on this machine
     undeliverable_files: int = 0
+    undeliverable: list[str] = field(default_factory=list)
+    #: files that stopped parsing once the real path was written in
+    corrupted: list[str] = field(default_factory=list)
     skipped: int = 0
 
 
@@ -314,6 +326,18 @@ def materialise(ki_root: Path, dest: Path, cfg) -> MaterialiseReport:
         new_text, n, unresolved = unsubstitute(text, cfg)
         if any(TOKENS[r] in new_text for r in LEAK_ROLES if r in TOKENS):
             rep.undeliverable_files += 1
+            rep.undeliverable.append(str(rel))
+
+        # Writing a real path in can break a structured file even when the
+        # placeholder version parsed. A Windows path is the clear case:
+        # {"p": "KISSPATH_DATA/f.nc"} becomes {"p": "C:\\Users\\foo/f.nc"},
+        # and \U is not a legal JSON escape. Validate the result, mirroring the
+        # guard on the porting side, so a broken file is reported rather than
+        # written out silently.
+        ok, why = _still_valid(out, new_text)
+        if not ok and _still_valid(src, text)[0]:
+            rep.corrupted.append(f"{rel}: {why}")
+
         out.write_text(new_text, encoding="utf-8")
         shutil.copystat(src, out)
         rep.files_written += 1

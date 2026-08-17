@@ -156,7 +156,10 @@ def cmd_init(args) -> int:
     # the model's own tools, its config files — then sees true paths.
     live = root / "ki"
     mrep = port.materialise(ki.root, live, cfg)
-    ok = not mrep.unresolved
+    # A file that stopped parsing once the real path was written in is a failure,
+    # not a footnote — writing broken JSON/YAML silently is the whole class of
+    # bug this installer exists to avoid.
+    ok = not mrep.unresolved and not mrep.corrupted
     result.add(install.Step(
         "materialise", ok,
         f"{mrep.tokens_replaced} placeholders resolved into {live}" if ok else
@@ -164,8 +167,10 @@ def cmd_init(args) -> int:
         f"— add these roles to {paths.CONFIG_NAME}"))
     print(f"  [1/8] materialise KI .. {_c('ok' if ok else 'BLOCK', 'ok' if ok else 'FAILED')}"
           + _c("dim", f"  ({mrep.tokens_replaced} paths written)"))
-    if not ok:
-        print(_c("dim", "        " + ", ".join(sorted(mrep.unresolved))))
+    if mrep.unresolved:
+        print(_c("dim", "        unresolved: " + ", ".join(sorted(mrep.unresolved))))
+    for c in mrep.corrupted[:5]:
+        print(_c("dim", f"        corrupted by your path values: {c}"))
     if mrep.undeliverable_files:
         print(_c("dim", f"        note: {mrep.undeliverable_files} files reference the "
                         "author's private tooling; those instructions cannot be followed"))

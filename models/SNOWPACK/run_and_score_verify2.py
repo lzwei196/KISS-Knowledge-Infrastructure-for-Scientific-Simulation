@@ -30,9 +30,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-BASE = Path("/mnt/disk1/Hydrocraft_server")
+BASE = Path("KISSPATH_ROOT")
 KI_TOOLS = BASE / "models/SNOWPACK/knowledge_infrastructure/tools"
-SNOWPACK_BIN = Path("/home/server/knowledge-dissection-toolkit/auto_dissect/_work"
+SNOWPACK_BIN = Path("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work"
                     "/Alpine3D/local_install/bin/snowpack")
 SNOTEL_DIR = BASE / "data/obs/snotel"
 OUT = BASE / "models/SNOWPACK/outputs_run/mcclure_618"

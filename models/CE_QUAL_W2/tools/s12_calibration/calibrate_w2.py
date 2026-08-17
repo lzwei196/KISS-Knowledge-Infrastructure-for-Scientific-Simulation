@@ -169,7 +169,7 @@ def process(args):
     best_rmse = 999.0
     best_params = None
 
-    w2_binary = os.environ.get("W2_BINARY", "/mnt/disk1/Hydrocraft_server/model/ce_qual_w2/bin/w2_v5")
+    w2_binary = os.environ.get("W2_BINARY", "KISSPATH_BINARIES/ce_qual_w2/bin/w2_v5")
     w2_con_path = os.path.join(args.run_dir, "w2_con.npt")
 
     if not os.path.isfile(w2_con_path):

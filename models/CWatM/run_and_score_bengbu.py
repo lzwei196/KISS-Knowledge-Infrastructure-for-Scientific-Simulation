@@ -31,20 +31,20 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-ROOT = "/mnt/disk1/Hydrocraft_server/models/CWatM"
+ROOT = "KISSPATH_KI_ROOT/CWatM"
 KI = f"{ROOT}/knowledge_infrastructure"
 TOOLS = f"{KI}/tools"
 CASE = f"{ROOT}/cwatm_bengbu"
 CWATM_DIR = f"{ROOT}/source/repo"
-PY = "/mnt/disk1/Hydrocraft_server/python_env/bin/python"
+PY = "KISSPATH_PYTHON_ENV/bin/python"
 STATE = f"{ROOT}/detached/verify_1"
 
-OBS = "/mnt/disk1/Hydrocraft_server/data/obs/BB/51080_bengbu.txt"
-MERIT = "/mnt/disk1/Hydrocraft_server/data/merit_hydro"
-ESA_LC = "/mnt/datasets/vegetation/ESA_CCI_LC_global/ESA_CCI_LC_global_2015_01deg.tif"
-HWSD = "/mnt/disk1/Hydrocraft_server/data/soil/HWSD_RASTER"
-CMFD_DAILY = "/media/server/hc_ssd/forcing/Data_forcing_01dy_010deg"
-CMFD_3HR_TEMP = "/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg/Temp"
+OBS = "KISSPATH_OBS/BB/51080_bengbu.txt"
+MERIT = "KISSPATH_DATA/merit_hydro"
+ESA_LC = "KISSPATH_DATA/vegetation/ESA_CCI_LC_global/ESA_CCI_LC_global_2015_01deg.tif"
+HWSD = "KISSPATH_STATIC/HWSD_RASTER"
+CMFD_DAILY = "KISSPATH_FORCING/Data_forcing_01dy_010deg"
+CMFD_3HR_TEMP = "KISSPATH_FORCING/Data_forcing_03hr_010deg/Temp"
 
 GAUGE_LON, GAUGE_LAT = 117.3758, 32.9633
 EXPECTED_AREA_KM2 = 121330.0

@@ -25,63 +25,63 @@ references:
     venue: "Transactions of the ASABE"
     year: 2007
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_2013.23153.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
   cheng2023:
     doi: 10.1038/s41597-023-02049-7
     title: "Characterizing uncertainty in Community Land Model version 5 hydrological applications"
     venue: "Scientific Data"
     year: 2023
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1038_s41597-023-02049-7.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41597-023-02049-7.txt
   denager2023:
     doi: 10.5194/hess-27-2827-2023
     title: "Point-scale multi-objective calibration of the Community Land Model (version 5.0) using in situ observations"
     venue: "Hydrol. Earth Syst. Sci."
     year: 2023
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-27-2827-2023.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-27-2827-2023.txt
   costarica2020:
     doi: 10.5194/gmd-13-5147-2020
     title: "Modeling land surface processes over a mountainous rainforest in Costa Rica using CLM5"
     venue: "Geosci. Model Dev."
     year: 2020
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_gmd-13-5147-2020.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-13-5147-2020.txt
   clm5desc2019:
     doi: 10.1029/2018ms001583
     title: "The Community Land Model Version 5 (CLM5): Description of New Features, Benchmarking, and Impact of Forcing Uncertainty"
     venue: "J. Adv. Model. Earth Syst."
     year: 2019
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1029_2018ms001583.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2018ms001583.txt
   ilamb2018:
     doi: 10.1029/2018ms001354
     title: "The International Land Model Benchmarking (ILAMB) System: Design, Theory, and Implementation"
     venue: "J. Adv. Model. Earth Syst."
     year: 2018
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1029_2018ms001354.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2018ms001354.txt
   collier2012:
     doi: 10.5194/bg-9-3857-2012
     title: "A framework for benchmarking land models"
     venue: "Biogeosciences"
     year: 2012
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_bg-9-3857-2012.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-9-3857-2012.txt
   bonan2020:
     doi: 10.5194/bg-17-3017-2020
     title: "Benchmarking and parameter sensitivity of physiological and vegetation dynamics using the Community Land Model"
     venue: "Biogeosciences"
     year: 2020
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_bg-17-3017-2020.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_bg-17-3017-2020.txt
   scanlon2018:
     doi: 10.1073/pnas.1704665115
     title: "Global models underestimate large decadal declining and rising water storage trends relative to GRACE satellite data"
     venue: "PNAS"
     year: 2018
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1073_pnas.1704665115.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1073_pnas.1704665115.txt
 
 validation:
 

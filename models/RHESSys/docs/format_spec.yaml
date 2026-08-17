@@ -3,7 +3,7 @@ model:
   version: "7.4 / 5.14.3"
   domain: "Hydrology, Ecohydrology, Biogeochemistry"
   language: "C"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/RHESSys/source/repo/rhessys/rhessys7.4"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/RHESSys/source/repo/rhessys/rhessys7.4"
   spatial_structure: "World > Basin > Hillslope > Zone > Patch > Canopy Stratum"
   timestep: "daily or hourly"
 

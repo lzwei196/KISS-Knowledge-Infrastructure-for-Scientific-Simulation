@@ -4,7 +4,7 @@
   "domain": "groundwater",
   "basin": "Wangjiaba (51030)",
   "basin_area_km2": 30630,
-  "ki_path": "/mnt/disk1/Hydrocraft_server/models/ParFlow/knowledge_infrastructure",
+  "ki_path": "KISSPATH_KI_ROOT/ParFlow/knowledge_infrastructure",
   "test_status": "PASS",
   "ki_generalized": true,
   "binary_found": true,

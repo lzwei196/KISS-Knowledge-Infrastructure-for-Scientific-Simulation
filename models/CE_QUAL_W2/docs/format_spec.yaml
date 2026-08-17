@@ -12,7 +12,7 @@ model:
   domain: "lake"
   secondary_domains: ["water_quality", "river"]
   binary: "w2.exe"
-  binary_path: "/mnt/disk1/Hydrocraft_server/model/ce_qual_w2/bin/w2.exe"
+  binary_path: "KISSPATH_BINARIES/ce_qual_w2/bin/w2.exe"
   language: "Fortran"
   working_directory: "directory containing w2_con.npt and all referenced files"
   notes: "2D laterally-averaged hydrodynamic and water quality model for elongated reservoirs and rivers."

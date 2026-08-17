@@ -65,7 +65,7 @@ ZTOPV = {1:0, 2:0.5, 3:0.5, 4:0.5, 5:0.5, 6:0.5, 7:0.5, 8:0.5, 9:0.5, 10:5.0,
          11:20.0, 12:14.0, 13:35.0, 14:17.0, 15:18.0, 16:0, 17:0.5, 18:20.0, 19:0.02}
 ZBOTV = {k: min(v * 0.3, v - 0.01) if v > 0.01 else 0.01 for k, v in ZTOPV.items()}
 
-DEFAULT_MPTABLE = "/mnt/disk1/Hydrocraft_server/model/summa/case_study/base_settings/MPTABLE.TBL"
+DEFAULT_MPTABLE = "KISSPATH_BINARIES/summa/case_study/base_settings/MPTABLE.TBL"
 
 
 def read_mptable_hvt_hvb(mptable_path, scheme):
@@ -194,7 +194,7 @@ def generate_from_hwsd(attributes_nc, output_nc, veg_scheme=None, mptable_path=D
     """Auto-generate all SUMMA trial parameters from HWSD + VEGPARM.TBL."""
     from netCDF4 import Dataset
 
-    sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+    sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
     from ki_tools_common.soil_utils import lookup_hwsd
 
     attr = Dataset(attributes_nc, 'r')

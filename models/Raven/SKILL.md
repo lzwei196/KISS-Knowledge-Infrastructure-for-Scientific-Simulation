@@ -73,16 +73,16 @@ This knowledge infrastructure enables fully autonomous construction and executio
 ### Binary
 
 ```
-Raven v4.1 executable: /mnt/disk1/Hydrocraft_server/model/raven/Raven.exe
-Source code:            /mnt/disk1/Hydrocraft_server/model/raven/*.cpp (118 files)
-Makefile:               /mnt/disk1/Hydrocraft_server/model/raven/Makefile
-User manual (PDF):      /mnt/disk1/Hydrocraft_server/model/raven/RavenUsersManual.pdf
+Raven v4.1 executable: KISSPATH_BINARIES/raven/Raven.exe
+Source code:            KISSPATH_BINARIES/raven/*.cpp (118 files)
+Makefile:               KISSPATH_BINARIES/raven/Makefile
+User manual (PDF):      KISSPATH_BINARIES/raven/RavenUsersManual.pdf
 ```
 
 ### Compilation
 
 ```bash
-cd /mnt/disk1/Hydrocraft_server/model/raven
+cd KISSPATH_BINARIES/raven
 g++ -std=c++11 -Wno-deprecated -fPIC -O2 -o Raven.exe *.cpp
 chmod +x Raven.exe
 ```
@@ -322,9 +322,9 @@ All files share a common prefix (basin name). Raven is invoked as:
 
 ```bash
 # Activate HydroCraft venv
-source /mnt/disk1/Hydrocraft_server/python_env/bin/activate
+source KISSPATH_PYTHON_ENV/bin/activate
 
-KI=/mnt/disk1/Hydrocraft_server/models/Raven/knowledge_infrastructure
+KI=KISSPATH_KI_ROOT/Raven/knowledge_infrastructure
 
 # 1. Select template
 python $KI/tools/s0_config/select_model_template.py \

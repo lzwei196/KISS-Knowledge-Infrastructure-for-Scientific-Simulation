@@ -106,7 +106,7 @@ mHM natively supports simultaneous multi-basin simulation:
 sudo apt-get install -y git gfortran netcdf-bin libnetcdf-dev libnetcdff-dev cmake make
 
 # 2. Clone repository
-cd /mnt/disk1/Hydrocraft_server/model/
+cd KISSPATH_BINARIES/
 git clone https://git.ufz.de/mhm/mhm.git mhm_v5.13
 cd mhm_v5.13
 
@@ -122,13 +122,13 @@ cmake --build build --parallel $(nproc)
 ./build/mhm --version
 
 # 6. Optional: install to known location
-cmake --install build --prefix /mnt/disk1/Hydrocraft_server/model/mhm_v5.13/install
+cmake --install build --prefix KISSPATH_BINARIES/mhm_v5.13/install
 ```
 
 ### 2.3 Expected Binary Path
 
 ```
-/mnt/disk1/Hydrocraft_server/model/mhm_v5.13/build/mhm
+KISSPATH_BINARIES/mhm_v5.13/build/mhm
 ```
 
 ### 2.4 Potential Build Issues

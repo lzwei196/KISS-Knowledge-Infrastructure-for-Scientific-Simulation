@@ -39,7 +39,7 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
 try:
     from ki_tools_common.soil_utils import lookup_hwsd, rosetta_vgn
 except ImportError as e:

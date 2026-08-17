@@ -16,8 +16,8 @@ Falls back to hardcoded latitude-band defaults when either dataset is not provid
   Codes 92/93 are APEX1501 only — they cause Fortran PAUSE in APEX0806.
 
 Data paths (server):
-  GGCMI:     /home/server/Crop_model_dataset/GGCMI_phase3_crop_calendar/
-  NPKGRIDS:  /home/server/Crop_model_dataset/24616050/
+  GGCMI:     KISSPATH_HOME/Crop_model_dataset/GGCMI_phase3_crop_calendar/
+  NPKGRIDS:  KISSPATH_HOME/Crop_model_dataset/24616050/
 
 GGCMI crop code mapping:
   corn/maize → mai_rf  |  winter_wheat → wwh_rf  |  spring_wheat → swh_rf
@@ -25,11 +25,11 @@ GGCMI crop code mapping:
 
 Usage:
     python s9_generate_crop_opc.py --crop corn --lat 32.9 --lon 117.4 \\
-        --ggcmi-dir /home/server/Crop_model_dataset/GGCMI_phase3_crop_calendar/ \\
-        --npkgrids-dir /home/server/Crop_model_dataset/24616050/ \\
+        --ggcmi-dir KISSPATH_HOME/Crop_model_dataset/GGCMI_phase3_crop_calendar/ \\
+        --npkgrids-dir KISSPATH_HOME/Crop_model_dataset/24616050/ \\
         --workspace /tmp/apex_run
     python s9_generate_crop_opc.py --crop wheat --lat 45.0 --lon 126.6 \\
-        --ggcmi-dir /home/server/Crop_model_dataset/GGCMI_phase3_crop_calendar/ \\
+        --ggcmi-dir KISSPATH_HOME/Crop_model_dataset/GGCMI_phase3_crop_calendar/ \\
         --workspace /tmp/apex_run
     python s9_generate_crop_opc.py --list-crops --workspace /tmp/apex_run
 """
@@ -549,11 +549,11 @@ def main():
     parser.add_argument("--n-rate", type=float, help="Override N fertilizer rate (kg/ha)")
     parser.add_argument("--ggcmi-dir", default=None,
                         help="Path to GGCMI Phase 3 crop calendar directory "
-                             "(e.g. /home/server/Crop_model_dataset/GGCMI_phase3_crop_calendar/). "
+                             "(e.g. KISSPATH_HOME/Crop_model_dataset/GGCMI_phase3_crop_calendar/). "
                              "When provided, overrides hardcoded planting/harvest dates.")
     parser.add_argument("--npkgrids-dir", default=None,
                         help="Path to NPKGRIDSv1.08 directory "
-                             "(e.g. /home/server/Crop_model_dataset/24616050/). "
+                             "(e.g. KISSPATH_HOME/Crop_model_dataset/24616050/). "
                              "When provided, overrides hardcoded N/P application rates.")
     args = parser.parse_args()
 

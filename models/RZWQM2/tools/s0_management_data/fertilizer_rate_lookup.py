@@ -16,7 +16,7 @@ Inputs:
     lon               - longitude in decimal degrees (required)
     crop_name         - crop name string (required)
     npkgrids_zip_path - path to NPKGRIDSv1.08_NC.zip
-                        (default: /home/server/Crop_model_dataset/24616050/NPKGRIDSv1.08_NC.zip)
+                        (default: KISSPATH_HOME/Crop_model_dataset/24616050/NPKGRIDSv1.08_NC.zip)
     split_strategy    - "single", "two_split", "three_split" (default: "two_split")
 
 Exit codes:
@@ -46,7 +46,7 @@ from crop_name_harmonizer import harmonize
 LAT = ""
 LON = ""
 CROP_NAME = ""
-NPKGRIDS_ZIP_PATH = "/home/server/Crop_model_dataset/24616050/NPKGRIDSv1.08_NC.zip"
+NPKGRIDS_ZIP_PATH = "KISSPATH_HOME/Crop_model_dataset/24616050/NPKGRIDSv1.08_NC.zip"
 SPLIT_STRATEGY = "two_split"
 
 # ---------------------------------------------------------------------------

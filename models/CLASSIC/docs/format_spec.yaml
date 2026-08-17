@@ -3,7 +3,7 @@ model:
   full_name: "Canadian Land Surface Scheme Including Biogeochemical Cycles"
   version: "CLASS v3.6.2 + CTEM v2.0"
   domain: "land_surface_biogeochemistry"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/CLASSIC/source/repo/bin/CLASSIC_serial"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/CLASSIC/source/repo/bin/CLASSIC_serial"
   execution_pattern: "bin/CLASSIC_serial <job_options_file> <longitude>/<latitude>"
 
 inputs:

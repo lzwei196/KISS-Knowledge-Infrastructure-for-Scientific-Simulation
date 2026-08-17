@@ -29,7 +29,7 @@ import os
 import json
 import logging
 
-SIM_PATH = "/mnt/disk1/Hydrocraft_server/outputs/qinghai_lake_1951_2024/modflow6/workspace"
+SIM_PATH = "KISSPATH_OUTPUTS/qinghai_lake_1951_2024/modflow6/workspace"
 COMPLEXITY = "MODERATE"
 DVCLOSE = 0.001           # Head change criterion (m)
 RCLOSE = 0.1              # Residual criterion (m3/day)

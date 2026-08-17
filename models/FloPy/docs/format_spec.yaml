@@ -3,8 +3,8 @@ model:
   version: "3.11.0"
   domain: "groundwater flow and transport modeling"
   description: "Python interface to MODFLOW 6, MODFLOW-2005, MODFLOW-NWT, MODFLOW-USG, MT3DMS, SEAWAT, MODPATH"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/FloPy/venv/bin/python"
-  solver_binary: "/home/server/.local/share/flopy/bin/mf6"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/FloPy/venv/bin/python"
+  solver_binary: "KISSPATH_HOME/.local/share/flopy/bin/mf6"
   unit_system: "user-defined (unit-agnostic — all inputs must be self-consistent)"
   common_units:
     length: "meters (LENUNI=2)"

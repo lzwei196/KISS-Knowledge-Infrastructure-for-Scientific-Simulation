@@ -13,7 +13,7 @@ pySTEPS is a Python library (not a standalone binary) for **probabilistic precip
 nowcasting** from radar QPE sequences. It is NOT a hydrological model and cannot be
 validated directly against hydrocraft.db station discharge or water-quality observations.
 
-- Install path: `/home/server/.local/lib/python3.12/site-packages/pysteps/`
+- Install path: `KISSPATH_HOME/.local/lib/python3.12/site-packages/pysteps/`
 - Config file: `pystepsrc` (same dir)
 - Version: 1.20.0 (via `importlib.metadata`; module itself has no `__version__` attr)
 
@@ -52,7 +52,7 @@ mean FSS > 0.99.
 ## Execution
 
 ```bash
-cd /mnt/disk1/Hydrocraft_server/models/pySTEPS/knowledge_infrastructure
+cd KISSPATH_KI_ROOT/pySTEPS/knowledge_infrastructure
 python3 preflight_check.py           # verify environment
 python3 diagnostics/run_synthetic_advection.py   # run test, writes diagnostics/last_run.json
 ```

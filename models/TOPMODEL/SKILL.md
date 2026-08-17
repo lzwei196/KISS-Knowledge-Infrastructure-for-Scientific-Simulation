@@ -50,7 +50,7 @@
   Bengbu record uses a `-99.9` missing-data sentinel (~215 days); these become 0
   after sentinel filtering, so **mask obs > 0 before scoring** or NSE is corrupted.
   - **Alternate Huai obs source — "China Gauge Flux — 淮河"**
-    (`/mnt/datasets/china_water_level/淮河txt/`): a TAB-separated multi-gauge set,
+    (`KISSPATH_DATA/china_water_level/淮河txt/`): a TAB-separated multi-gauge set,
     header `stcd  dates  z  Q  name`, `dates` = `%Y-%-m-%-d` (no zero-pad, e.g.
     `1980-6-1`), `Q` = discharge in **m³/s**, missing sentinel is **`-99`** (mask
     `Q > 0`). 8 gauges: `蚌埠`=Bengbu, `王家坝`=Wangjiaba, `息县`=Xixian,

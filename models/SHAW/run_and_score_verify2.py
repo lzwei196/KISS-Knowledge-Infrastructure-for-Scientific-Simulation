@@ -22,7 +22,7 @@ import os, sys, shutil, subprocess, csv, math, json
 from pathlib import Path
 from datetime import datetime, timedelta
 
-HC = Path("/mnt/disk1/Hydrocraft_server")
+HC = Path("KISSPATH_ROOT")
 KI = HC / "models/SHAW/knowledge_infrastructure"
 sys.path.insert(0, str(KI))
 sys.path.insert(0, str(KI / "tools/s1_site_setup"))
@@ -32,7 +32,7 @@ from ki_tools_common.soil_utils import lookup_hwsd
 import setup_shaw_from_template as setup
 
 SHAW_EXE = HC / "model/shaw/shaw303"
-MAWP = Path("/mnt/disk4/observedST-SM/soil_temperatureand_soil_moisture_canada/manitoba")
+MAWP = Path("KISSPATH_DATA/observedST-SM/soil_temperatureand_soil_moisture_canada/manitoba")
 WORK = HC / "outputs/shaw_manitoba_544_verify2"
 RESULT_DIR = HC / "models/SHAW/detached/verify_2"
 CASE = "manitoba544"

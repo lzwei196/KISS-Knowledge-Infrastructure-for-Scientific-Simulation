@@ -52,7 +52,7 @@ from the verdict.
 
 ```bash
 python tools/convert_forcing_to_noahmp.py \
-  --input_dir /mnt/disk1/Hydrocraft_server/data/obs/fluxnet/sites/US-MMS \
+  --input_dir KISSPATH_OBS/fluxnet/sites/US-MMS \
   --output_dir ./forcing/ --lat 39.3232 --lon -86.4131 \
   --start_date 2007-01-01 --end_date 2013-01-02 \
   --timestep 3600 --source fluxnet --utc_offset -5      # <- REQUIRED
@@ -655,7 +655,7 @@ router (WRF-Hydro/CaMa-Flood), the HEADLINE verdict is basin WATER-BALANCE CLOSU
 defensible"). A linear-reservoir "reference routing" may be reported ONLY as clearly
 labelled reference and MUST NOT populate metrics.nse/kge/pbias. For real runoff skill
 without routing, compare basin-aggregated runoff to a gridded RUNOFF product
-(GRUN: /mnt/datasets/obs/grun-v1-runoff) aggregated over the basin — matches the dag's
+(GRUN: KISSPATH_DATA/obs/grun-v1-runoff) aggregated over the basin — matches the dag's
 regional_aggregate_time_series runoff obs shape (runoff-to-runoff).
 
 **Closure computation.** Closure MUST (a) use PROGNOSTIC ET = accumulated

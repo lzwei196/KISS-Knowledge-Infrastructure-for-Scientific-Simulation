@@ -95,7 +95,7 @@ def _load_via_ki_tools_common(source, lat, lon, start_year, end_year, forcing_di
     if ki_common.is_dir():
         sys.path.insert(0, str(ki_common.parent))
     # Also try the models location
-    models_common = Path("/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+    models_common = Path("KISSPATH_KI_TOOLS_COMMON")
     if models_common.is_dir():
         sys.path.insert(0, str(models_common))
 

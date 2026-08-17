@@ -14,7 +14,7 @@ UNIT CONVERSIONS (CRITICAL):
 
 Usage:
     python convert_cmfd_to_wth.py \
-        --forcing_dir /media/server/hc_ssd/forcing/Data_forcing_03hr_010deg \
+        --forcing_dir KISSPATH_FORCING/Data_forcing_03hr_010deg \
         --lat 32.43 --lon 115.60 \
         --start_year 1980 --end_year 1990 \
         --output WJBA8001.WTH \
@@ -152,8 +152,8 @@ def _auto_elevation(lat, lon):
     """Look up elevation from ki_tools_common.terrain if available."""
     try:
         import sys
-        for p in ['/mnt/disk1/Hydrocraft_server/models/ki_tools_common',
-                  '/home/server/knowledge-dissection-toolkit/kdt-release']:
+        for p in ['KISSPATH_KI_TOOLS_COMMON',
+                  'KISSPATH_INTERNAL_NOT_SHIPPED/kdt-release']:
             if p not in sys.path:
                 sys.path.insert(0, p)
         from ki_tools_common.terrain import get_terrain

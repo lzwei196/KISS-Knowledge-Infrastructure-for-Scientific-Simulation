@@ -11,7 +11,7 @@ TARGET CASE (pinned — this file scores THIS region/obs and no other)
     obs          ESA Snow_cci MERGED SWE v2.0 (GENUINE SWE, mm), clipped and
                  area-averaged over the Hulunbuir open-steppe region polygon
                  120.0-120.8 E / 49.1-49.7 N (48 cells at 0.1 deg)
-                 source granules  /mnt/datasets/benchmarks/snowcci_swe
+                 source granules  KISSPATH_DATA/benchmarks/snowcci_swe
                  region-mean cache outputs/hulunbuir_steppe/obs_snowcci_region_mean.csv
     quantity     SWE (dag var SWE, obs_shape regional_aggregate_time_series,
                  determining metric NSE, gate-valid families
@@ -140,11 +140,11 @@ os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
 # copy shipped under a kdt-release tree has shadowed it before, and a different
 # all_metrics is a different number.
 # ---------------------------------------------------------------------------
-KI = Path("/mnt/disk1/Hydrocraft_server/models/CRHM/knowledge_infrastructure")
+KI = Path("KISSPATH_KI_ROOT/CRHM/knowledge_infrastructure")
 TOOLS = KI / "tools"
 WORK = KI / "outputs" / "hulunbuir_steppe"
-CRHM_EXE = Path("/mnt/disk1/Hydrocraft_server/models/CRHM/bin/crhm")
-KI_TOOLS_COMMON_ROOT = "/mnt/disk1/Hydrocraft_server/models/ki_tools_common"
+CRHM_EXE = Path("KISSPATH_KI_ROOT/CRHM/bin/crhm")
+KI_TOOLS_COMMON_ROOT = "KISSPATH_KI_TOOLS_COMMON"
 
 sys.path.insert(0, KI_TOOLS_COMMON_ROOT)
 
@@ -154,7 +154,7 @@ sys.path.insert(0, KI_TOOLS_COMMON_ROOT)
 TARGET_CASE_ID = "GEO:49.4,120.4"
 TARGET_LAT, TARGET_LON = 49.4, 120.4
 BBOX = (120.0, 49.1, 120.8, 49.7)          # lon_min, lat_min, lon_max, lat_max
-SNOWCCI_DIR = Path("/mnt/datasets/benchmarks/snowcci_swe")
+SNOWCCI_DIR = Path("KISSPATH_DATA/benchmarks/snowcci_swe")
 OBS_CSV = WORK / "obs_snowcci_region_mean.csv"
 SCREEN_JSON = WORK / "swe_obs_screen.json"
 OBS_ID = "snowcci_swe"

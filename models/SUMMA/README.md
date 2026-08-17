@@ -144,7 +144,7 @@ SUMMA can share forcing data with VIC through the `convert_vic_forcing_to_summa.
 ### Build (Makefile method)
 ```bash
 cd model/summa/build
-export F_MASTER=/mnt/disk1/Hydrocraft_server/model/summa
+export F_MASTER=KISSPATH_BINARIES/summa
 export FC=gfortran
 export FC_EXE=gfortran
 export INCLUDES='-I/usr/include'

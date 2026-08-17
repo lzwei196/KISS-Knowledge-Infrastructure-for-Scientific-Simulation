@@ -517,7 +517,7 @@
   remedy:
     action: "Prepend the conda env bin directory to PATH before running the model"
     manual_steps:
-      - "CONDA_BIN=/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/bin"
+      - "CONDA_BIN=KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/bin"
       - "Run: env PATH=$CONDA_BIN:$PATH $CONDA_BIN/python deterministic_runner.py setup.ini"
       - "Verify first: env PATH=$CONDA_BIN:$PATH mapattr --version"
     prevention: "Always use 'env PATH=...' prefix; never rely on ambient shell PATH for subprocess calls"
@@ -575,7 +575,7 @@
       - "Download: wget -q $FS/$rel -O /tmp/full_global.nc"
       - "Subset: ncks -O -d lat,45.75,52.75 -d lon,3.25,12.25 /tmp/full_global.nc $LOCAL/$rel"
       - "Delete temp file after subset"
-      - "For forcing, use MSWX local files at /mnt/disk3/msxw/ — do NOT download 12GB CRU-ERA files"
+      - "For forcing, use MSWX local files at KISSPATH_FORCING/ — do NOT download 12GB CRU-ERA files"
     prevention: "Set inputDir to local directory; use download_static_inputs.sh for bulk download"
   severity: crash
   cross_references: [dt_014, dt_025]
@@ -620,7 +620,7 @@
   diagnosis:
     root_cause: "MSWX files have HDF5 chunk layout [1, 1800, 3600] — full global per timestep"
     explanation: >
-      MSWX 3-hourly files at /mnt/disk3/msxw/ are structured with one HDF5 chunk per timestep,
+      MSWX 3-hourly files at KISSPATH_FORCING/ are structured with one HDF5 chunk per timestep,
       each covering the full 1800×3600 global grid. P_YYYY.nc is 3.0GB, Tair_YYYY.nc is 9.0GB.
       Reading a spatial subset in Python (e.g., arr[:, 375:440, 1835:1920]) forces decompression
       of ALL 2928 chunks (one full-globe chunk per timestep) because the spatial extents do not
@@ -632,7 +632,7 @@
     action: "Pre-extract Rhine region with ncks in parallel (all 6 years × 2 vars = 12 jobs)"
     manual_steps:
       - "Run all 12 ncks extractions in parallel — CPU-bound, 192-core machine handles it"
-      - "ncks -O -d lat,46.05,52.45 -d lon,3.55,11.95 /mnt/disk3/msxw/P/P_YYYY.nc /tmp/P_YYYY_rhine.nc"
+      - "ncks -O -d lat,46.05,52.45 -d lon,3.55,11.95 KISSPATH_FORCING/P/P_YYYY.nc /tmp/P_YYYY_rhine.nc"
       - "Total parallel wall time: ~7 min (bottleneck is Tair at 9GB × 6 years)"
       - "Then run prepare_mswx_forcing_v2.py on the small extracted files (<20MB each)"
     prevention: "Always pre-extract spatial subset before Python processing of MSWX files"

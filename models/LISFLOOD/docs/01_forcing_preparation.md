@@ -72,7 +72,7 @@ Convert global meteorological datasets (ERA5, CMFD, MSWX) to LISFLOOD-compatible
 ```bash
 # Convert CMFD forcing for a Chinese basin
 python tools/convert_forcing.py \
-    --source_dir /mnt/disk3/cmfd/daily/ \
+    --source_dir KISSPATH_DATA/cmfd/daily/ \
     --source_type cmfd \
     --output_dir /path/to/lisflood/forcings/ \
     --start_date 2000-01-01 \

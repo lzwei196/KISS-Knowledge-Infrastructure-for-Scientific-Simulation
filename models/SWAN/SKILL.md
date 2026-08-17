@@ -154,7 +154,7 @@ bathymetry - and hands `convert_wind_forcing.convert_gridded_wind_forcing`
 u/v at the SWAN input-grid nodes:
 
 ```bash
-/mnt/disk1/Hydrocraft_server/python_env/bin/python tools/fetch_gridded_wind.py \
+KISSPATH_PYTHON_ENV/bin/python tools/fetch_gridded_wind.py \
     --lon0 -128 --lon1 -122 --lat0 43 --lat1 47 \
     --start 2020-01-01T00 --end 2021-01-01T00 --cache-dir ./wind_cache
 ```

@@ -17,9 +17,9 @@ import os, sys, json, subprocess
 import numpy as np
 import pandas as pd
 
-KI = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
-STATE = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/detached/verify_1"
-NC = ("/mnt/datasets/observed_data/dischargeandwatershed/"
+KI = "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
+STATE = "KISSPATH_KI_ROOT/MARRMoT/detached/verify_1"
+NC = ("KISSPATH_DATA/observed_data/dischargeandwatershed/"
       "GRDC-Caravan-extension-nc/timeseries/netcdf/grdc/GRDC_3653620.nc")
 PY = "/usr/bin/python3"
 MODEL = "m_07_gr4j_4p_2s"
@@ -33,7 +33,7 @@ CAL_START_D, CAL_END_D = "2000-01-01", "2009-12-31"
 VAL_START_D, VAL_END_D = "2010-01-01", "2019-12-31"
 
 os.makedirs(STATE, exist_ok=True)
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
 from ki_tools_common.metrics import all_metrics
 
 inter = os.path.join(STATE, "intermediate.csv")

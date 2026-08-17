@@ -38,7 +38,7 @@ def open_nc(path) -> xr.Dataset:
 # hard-coded to `_xixian.nc` / `huai_01dy_025deg_`, so a new basin silently
 # found zero input files (or wrote files VIC could not locate via FORCING1).
 _BASIN = os.environ.get("VIC_BASIN_NAME", "xixian")
-_OUT_ROOT = Path(os.environ.get("VIC_OUT_ROOT", "/mnt/disk1/Hydrocraft_server/outputs"))
+_OUT_ROOT = Path(os.environ.get("VIC_OUT_ROOT", "KISSPATH_OUTPUTS"))
 # FORCING1 prefix in the global param file MUST equal this string.
 FORCING_PREFIX = os.environ.get("VIC_FORCING_PREFIX", "huai_01dy_025deg_")
 

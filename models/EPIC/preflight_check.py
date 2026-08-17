@@ -94,8 +94,8 @@ def main():
     print()
     print("  Optional dependencies:")
     for cand in (
-        "/home/server/knowledge-dissection-toolkit/ki_tools_common",
-        "/home/server/knowledge-dissection-toolkit/kdt-release/ki_tools_common",
+        "KISSPATH_INTERNAL_NOT_SHIPPED/ki_tools_common",
+        "KISSPATH_INTERNAL_NOT_SHIPPED/kdt-release/ki_tools_common",
     ):
         if os.path.isdir(cand):
             sys.path.insert(0, os.path.dirname(cand))

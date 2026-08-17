@@ -4,7 +4,7 @@ model:
   version: "4.1"
   domain: "ocean_hydrodynamics"
   subdomain: "coastal and estuarine modeling"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ROMS/source/repo/build/romsS"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ROMS/source/repo/build/romsS"
   binary_type: "serial (romsS), MPI (romsM)"
   developers: "Rutgers University (H. Arango, A. Shchepetkin, J. Warner)"
   license: "MIT/X style"

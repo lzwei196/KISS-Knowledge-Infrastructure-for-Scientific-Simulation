@@ -52,7 +52,7 @@ from crop_name_harmonizer import harmonize  # noqa: E402
 LAT = ""
 LON = ""
 CROP_NAME = ""
-SPAM_CSV_DIR = "/home/server/Crop_model_dataset/dataverse_files/Global_CSV"
+SPAM_CSV_DIR = "KISSPATH_HOME/Crop_model_dataset/dataverse_files/Global_CSV"
 IRRIGATED_THRESHOLD = "0.5"
 INCLUDE_YIELD = "True"
 

@@ -10,15 +10,15 @@ import os, sys, json, subprocess
 import numpy as np
 import pandas as pd
 
-KI = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
-STATE = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/detached/verify_1"
-SITE = "/mnt/disk1/Hydrocraft_server/data/obs/fluxnet/sites/US-MMS/FULLSET_DD.csv"
+KI = "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
+STATE = "KISSPATH_KI_ROOT/MARRMoT/detached/verify_1"
+SITE = "KISSPATH_OBS/fluxnet/sites/US-MMS/FULLSET_DD.csv"
 PY = "/usr/bin/python3"
 MODEL = "m_07_gr4j_4p_2s"
 THETA = [350, 0, 50, 1.5]          # x1 prod store, x2 exch, x3 rout store, x4 UH
 LE_TO_MM = 0.03526                  # W/m2 -> mm/d  (86400 / 2.45e6)
 os.makedirs(STATE, exist_ok=True)
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
 from ki_tools_common.metrics import all_metrics
 
 inter = os.path.join(STATE, "intermediate.csv")

@@ -39,12 +39,12 @@ import sys
 import numpy as np
 
 # Ensure ki_tools_common is importable
-_ki_common = "/mnt/disk1/Hydrocraft_server/models/ki_tools_common"
+_ki_common = "KISSPATH_KI_TOOLS_COMMON"
 if _ki_common not in sys.path:
     sys.path.insert(0, _ki_common)
 
 # HydroCraft python env
-_penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+_penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
 if _penv not in sys.path:
     sys.path.insert(0, _penv)
 

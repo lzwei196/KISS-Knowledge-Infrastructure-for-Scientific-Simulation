@@ -428,7 +428,7 @@ triplets:
       as the non-routed verdict, computed with prognostic ET (ECAN+EDIR+ETRAN) and
       dS=dSMOIS*dz+dSNEQV+dWA; spin up SIMGM (SPINUP_LOOPS>=3 or multi-decade). For
       real runoff skill without a router, validate runoff-to-runoff against a gridded
-      runoff product (GRUN, /mnt/datasets/obs/grun-v1-runoff).
+      runoff product (GRUN, KISSPATH_DATA/obs/grun-v1-runoff).
   format_spec_violated: docs/validation_convention.yaml runoff/regional_aggregate_time_series
     validated_when caveat (routing required for discharge; WB closure only defensible
     non-routed path)

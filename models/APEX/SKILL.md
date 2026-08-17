@@ -97,7 +97,7 @@ encoded by `WSA / CHL / RCHL`). EPIC is single-field; APEX is watershed.
 ### Binary (already installed)
 
 ```
-APEX 1501 binary:  /home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/APEX/source/repo/Apex 1501 - Linux/apex1501
+APEX 1501 binary:  KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/APEX/source/repo/Apex 1501 - Linux/apex1501
 Version:           APEX1501 v20231214
 Platform:          Linux x86-64, statically linked ELF (no shared lib deps)
 File size:         ~7.3 MB
@@ -241,7 +241,7 @@ Every tool follows **validate → process → validate**:
 ## Quickstart — run APEX on the bundled example
 
 ```bash
-cd /mnt/disk1/Hydrocraft_server/models/APEX/knowledge_infrastructure
+cd KISSPATH_KI_ROOT/APEX/knowledge_infrastructure
 python preflight_check.py
 python tools/s6_run_apex.py --workspace /tmp/apex_run --use-example
 python tools/s7_parse_output.py --workspace /tmp/apex_run --out /tmp/apex_run/results.csv

@@ -42,7 +42,7 @@ case:
   lat: 49.4221
   lon: -115.9413
   drainage_area_gross_km2: 239.0        # HYDAT STATIONS.DRAINAGE_AREA_GROSS
-  obs_source: "/mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3"
+  obs_source: "KISSPATH_DATA/Hydat_sqlite3_20260116/Hydat.sqlite3"
   obs_table: "DLY_FLOWS (FLOW1..FLOW31 per YEAR/MONTH row)"
   obs_variable: "daily mean discharge"
   obs_unit: "m3 s-1"
@@ -54,7 +54,7 @@ case:
   # Reproduced by tools/calib_run.py at the default vector (2026-08-04):
   #   calibration split nse 0.5444707 (validated nse_cal 0.5445)
   #   holdout     split nse 0.6466874 (validated nse_val 0.6467)
-  staged_inputs: "/mnt/disk1/Hydrocraft_server/outputs/moyie_08nh120_summa"
+  staged_inputs: "KISSPATH_OUTPUTS/moyie_08nh120_summa"
   simulation_window: "2005-01-01 01:00 .. 2015-12-31 23:00 (hourly NASA POWER forcing)"
   spinup: "2005 (cold start, never scored)"
   scored_series: "averageRoutedRunoff(gru) x 239.0e6 m2, aggregated to daily mean (m3 s-1)"
@@ -135,7 +135,7 @@ injection:
 # RANGE GROUNDING.  Every range is taken from SUMMA's own shipped parameter-limit
 # tables — localParamInfo.txt (HRU) and basinParamInfo.txt (GRU) of the SUMMA
 # test-cases v3 distribution at
-# /mnt/disk1/Hydrocraft_server/model/summa/case_study/base_settings/ — kept STRICTLY
+# KISSPATH_BINARIES/summa/case_study/base_settings/ — kept STRICTLY
 # INSIDE the documented [lower, upper], and further narrowed to the physically
 # realizable envelope of the ROSETTA texture table (Schaap et al. 2001, shipped in
 # tools/s4_parameters/set_trial_parameters.py) for the van-Genuchten soil params.

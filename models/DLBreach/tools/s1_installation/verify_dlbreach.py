@@ -34,7 +34,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-PROJECT_ROOT = Path("/mnt/disk1/Hydrocraft_server")
+PROJECT_ROOT = Path("KISSPATH_ROOT")
 DEFAULT_SEARCH_PATHS = [
     PROJECT_ROOT / "model" / "dlbreach" / "bin" / "DLBreach.exe",
     PROJECT_ROOT / "model" / "dlbreach" / "bin" / "dlbreach",

@@ -2,7 +2,7 @@ model:
   name: "ForeFire"
   version: "2.2.1"
   domain: "wildfire_propagation"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ForeFire/source/repo/bin/forefire"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ForeFire/source/repo/bin/forefire"
   developer: "CNRS / Universite de Corse Pascal Paoli"
   language: "C++"
   propagation_models:
@@ -136,7 +136,7 @@ coordinate_system: "UTM (meters)"
 time_unit: "seconds from domain start"
 
 known_issues:
-  - "Binary requires LD_LIBRARY_PATH=/home/server/.local/lib for libnetcdf-cxx4.so.1"
+  - "Binary requires LD_LIBRARY_PATH=KISSPATH_HOME/.local/lib for libnetcdf-cxx4.so.1"
   - "Wind speed must be in m/s; km/h or mph input causes silent ROS errors (2-3x off)"
   - "Coordinates must be UTM meters; lon/lat degrees cause domain mismatch"
   - "Rothermel model internally converts SI to Imperial and back; fuels.csv must be SI"

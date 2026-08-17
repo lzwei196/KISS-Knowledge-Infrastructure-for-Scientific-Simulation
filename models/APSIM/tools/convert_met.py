@@ -36,7 +36,7 @@ import math
 from datetime import datetime, timedelta
 
 import numpy as np
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
 from ki_tools_common.humidity import saturation_vapor_pressure
 from ki_tools_common.units import celsius_to_kelvin, kelvin_to_celsius
 

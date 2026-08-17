@@ -18,9 +18,9 @@
 ## Installation
 - **Source**: SourceForge `release_hype_5_35_0/hype_3_35_0_src.tgz` (812 KB)
 - **Compile**: `make comp=gfortran` (38 Fortran 90 files, 93,622 lines, ~60s)
-- **Binary**: `/mnt/disk1/Hydrocraft_server/model/hype/hype` (3.1 MB)
+- **Binary**: `KISSPATH_BINARIES/hype/hype` (3.1 MB)
 - **Dependencies**: None (pure Fortran 90, no NetCDF, no MPI)
-- **Demo**: 3-subbasin test case at `/mnt/disk1/Hydrocraft_server/model/hype/demo/`
+- **Demo**: 3-subbasin test case at `KISSPATH_BINARIES/hype/demo/`
 
 ## Validation Steps Completed
 1. [x] Downloaded source from SourceForge (v5.35.0, latest as of 2026-02)

@@ -81,7 +81,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 KI = os.path.dirname(HERE)
 TOOLS = os.path.join(KI, "tools")
 
-for _cand in ("/mnt/disk1/Hydrocraft_server/models/ki_tools_common",):
+for _cand in ("KISSPATH_KI_TOOLS_COMMON",):
     if os.path.isdir(os.path.join(_cand, "ki_tools_common")) and _cand not in sys.path:
         sys.path.insert(0, _cand)
 

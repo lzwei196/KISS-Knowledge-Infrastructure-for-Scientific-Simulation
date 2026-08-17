@@ -34,7 +34,7 @@ references:
     venue: "Hydrol. Earth Syst. Sci."
     year: 2016
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-20-921-2016.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-20-921-2016.txt
   moriasi2007:
     doi: 10.13031/2013.23153
     title: "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations"

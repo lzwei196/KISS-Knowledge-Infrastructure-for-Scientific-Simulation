@@ -146,9 +146,9 @@ rewriting that line to `FROZEN_SOIL   /path/SOIL_PARAM_COMPLETE.txt`. It was nev
 
 **Symptom**: forcing_1d.py fails with FileNotFoundError — MSWX data path has moved.
 
-**Diagnosis**: MSWX forcing data was originally at `/media/server/新加卷/msxw/` (auto-mounted external drive) and has been moved to `/mnt/disk3/msxw/`. Scripts referencing the old path will fail.
+**Diagnosis**: MSWX forcing data was originally at `KISSPATH_DATA/新加卷/msxw/` (auto-mounted external drive) and has been moved to `KISSPATH_FORCING/`. Scripts referencing the old path will fail.
 
-**Remedy**: Update INPUT_DATA_DIR in forcing_1d.py to `/mnt/disk3/msxw/`. Verify the path exists with `ls /mnt/disk3/msxw/`.
+**Remedy**: Update INPUT_DATA_DIR in forcing_1d.py to `KISSPATH_FORCING/`. Verify the path exists with `ls KISSPATH_FORCING/`.
 
 ---
 
@@ -156,9 +156,9 @@ rewriting that line to `FROZEN_SOIL   /path/SOIL_PARAM_COMPLETE.txt`. It was nev
 
 **Symptom**: VIC runs successfully but simulated discharge is physically unreasonable — forcing_1d.py used CMFD (China-only) for a basin outside China.
 
-**Diagnosis**: CMFD only covers mainland China (17.5-55N, 72.5-140E). For basins outside this domain, forcing_1d.py must use MSWX (`/mnt/disk3/msxw/`). The script does NOT auto-detect this. When CMFD is used out-of-domain, xarray clips to nearest China border cells, producing completely wrong forcing. Dangerous silent failure.
+**Diagnosis**: CMFD only covers mainland China (17.5-55N, 72.5-140E). For basins outside this domain, forcing_1d.py must use MSWX (`KISSPATH_FORCING/`). The script does NOT auto-detect this. When CMFD is used out-of-domain, xarray clips to nearest China border cells, producing completely wrong forcing. Dangerous silent failure.
 
-**Remedy**: Check basin coordinates: if lat/lon is outside China (17.5-55N, 72.5-140E), MUST use MSWX. Change INPUT_DATA_DIR in forcing_1d.py to `/mnt/disk3/msxw/`. Also cap max_workers to 4 for MSWX.
+**Remedy**: Check basin coordinates: if lat/lon is outside China (17.5-55N, 72.5-140E), MUST use MSWX. Change INPUT_DATA_DIR in forcing_1d.py to `KISSPATH_FORCING/`. Also cap max_workers to 4 for MSWX.
 
 ---
 
@@ -314,14 +314,14 @@ outlet vs ~391,000 km² published, connectivity 866/866):
 
 ```bash
 export VIC_BASIN_NAME=harbin_songhua_1980_1987
-export VIC_BASIN_SHP=/mnt/disk1/Hydrocraft_server/data/shp/harbin_songhua_shp/harbin_songhua_boundary_shp/harbin_songhua_boundary.shp
-export VIC_CMFD_DIR=/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg
+export VIC_BASIN_SHP=KISSPATH_DATA/shp/harbin_songhua_shp/harbin_songhua_boundary_shp/harbin_songhua_boundary.shp
+export VIC_CMFD_DIR=KISSPATH_FORCING/Data_forcing_03hr_010deg
 export VIC_YEAR_START=1980 VIC_YEAR_END=1987
 export VIC_START_DATE=1980-01-01 VIC_END_DATE=1987-12-31
 export VIC_FORCING_PREFIX=harbin_025deg_
 export VIC_STATION_NAME=HRB
 export VIC_OUTLET_LON=126.6 VIC_OUTLET_LAT=45.75
-export VIC_DEM=/mnt/disk1/Hydrocraft_server/data/dem/china_dem_90m/china_dem_90m.tif
+export VIC_DEM=KISSPATH_STATIC/china_dem_90m/china_dem_90m.tif
 export VIC_STREAM_THRESHOLD=200000 VIC_SNAP_DIST_M=5000   # scale threshold with basin size
 ```
 
@@ -341,7 +341,7 @@ crop was 10.4° × 10.9° and the whole delineation took ~2 minutes.
 **Symptom**: the KDT standard split (spinup 1980 / cal 1981-85 / val 1986-90) appears to work,
 but `nse_val` is computed on ~730 days instead of ~1826.
 
-**Diagnosis**: `/mnt/datasets/china_water_level/松辽txt/哈尔滨.txt` is complete daily
+**Diagnosis**: `KISSPATH_DATA/china_water_level/松辽txt/哈尔滨.txt` is complete daily
 1980-1987, then `-99` for **1988-2000** inclusive, then 2001-2003, 2005-2019, 2021-2023.
 This is the exact trap dt_vic_021 warns about, at a second basin.
 

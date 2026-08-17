@@ -45,7 +45,7 @@ import os, sys, glob, json, shutil, subprocess, traceback
 # Python-2-era pathlib.py backport (`from collections import Sequence`) that shadows the
 # stdlib pathlib and breaks `import rasterio` in s5_routing/build_routing_param.py.
 # Every package needed here is already in ~/.local for the system python3.
-KDT = "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent"
+KDT = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent"
 sys.path.insert(0, KDT)
 
 import numpy as np
@@ -54,7 +54,7 @@ from ki_tools_common.metrics import all_metrics
 from ki_tools_common.validation import validate_water_balance
 from validators.standard_calval import compute_calval_metrics
 
-BASE = "/mnt/disk1/Hydrocraft_server"
+BASE = "KISSPATH_ROOT"
 CASE = f"{BASE}/models/VIC/detached/verify_1"
 WORK = f"{CASE}/uncal"
 

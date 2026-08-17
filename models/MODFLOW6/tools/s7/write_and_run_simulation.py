@@ -27,7 +27,7 @@ import time
 import re
 from pathlib import Path
 
-SIM_PATH = "/mnt/disk1/Hydrocraft_server/outputs/qinghai_lake_1951_2024/modflow6/workspace"
+SIM_PATH = "KISSPATH_OUTPUTS/qinghai_lake_1951_2024/modflow6/workspace"
 MF6_PATH = ""         # Optional: path to mf6 binary
 SILENT = False
 

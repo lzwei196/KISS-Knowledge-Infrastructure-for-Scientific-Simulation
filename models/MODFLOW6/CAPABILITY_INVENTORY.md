@@ -3,7 +3,7 @@
 **Generated**: 2026-04-01
 **Source**: MODFLOW 6.6.1 (February 7, 2025), USGS
 **Documentation**: `mf6io.pdf` (369+ pages), `release.pdf`, `mf6suptechinfo.pdf`
-**Binary**: `/mnt/disk1/Hydrocraft_server/model/modflow6/mf6.6.1_linux/bin/mf6`
+**Binary**: `KISSPATH_BINARIES/modflow6/mf6.6.1_linux/bin/mf6`
 **Python interface**: FloPy 3.10.0 (`flopy.mf6`)
 **Current KI version**: 1.2.0 (SFR streamflow routing added 2026-04-03)
 

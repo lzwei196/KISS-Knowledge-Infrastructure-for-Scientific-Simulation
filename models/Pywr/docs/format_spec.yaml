@@ -12,7 +12,7 @@ model:
   domain: "water_resources"
   secondary_domains: ["reservoir_operations", "flood_control"]
   binary: "Python package (pywr)"
-  binary_path: "/home/server/桌面/test/hydro-claude/python_env/bin/python3"
+  binary_path: "KISSPATH_HOME/桌面/test/hydro-claude/python_env/bin/python3"
   language: "Python (Cython core)"
   solver: "GLPK (GNU Linear Programming Kit)"
   working_directory: "directory containing model JSON"
@@ -36,7 +36,7 @@ inputs:
       file: "GRanD_allocated.csv"
       unit: "various"
       format: "CSV with dam properties"
-      path: "/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/map/data/GRanD_allocated.csv"
+      path: "KISSPATH_BINARIES/cmf_v420_pkg/map/data/GRanD_allocated.csv"
       notes: "7,320 dams globally, 1,571 in China. CAP_MCM in million cubic meters."
 
   parameters:

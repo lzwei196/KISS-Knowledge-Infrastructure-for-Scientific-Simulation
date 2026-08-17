@@ -55,7 +55,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 # Canonical object-row order, verified against the shipped rev59 developer example
-# /mnt/disk1/Hydrocraft_server/models/SWAT_Plus/run_lrew/swatplus_rev59_demo/print.prt
+# KISSPATH_KI_ROOT/SWAT_Plus/run_lrew/swatplus_rev59_demo/print.prt
 # (lines 11-47). Order is load-bearing: SWAT+ identifies rows POSITIONALLY.
 CANONICAL_OBJECTS = [
     "basin_wb", "basin_nb", "basin_ls", "basin_pw", "basin_aqu",

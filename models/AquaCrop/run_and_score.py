@@ -13,9 +13,9 @@ import os, sys, json, csv, zipfile, io
 import numpy as np
 import pandas as pd
 
-KI = "/mnt/disk1/Hydrocraft_server/models/AquaCrop/knowledge_infrastructure"
+KI = "KISSPATH_KI_ROOT/AquaCrop/knowledge_infrastructure"
 sys.path.insert(0, KI)
-OUT = "/mnt/disk1/Hydrocraft_server/models/AquaCrop/detached/verify_2"
+OUT = "KISSPATH_KI_ROOT/AquaCrop/detached/verify_2"
 os.makedirs(OUT, exist_ok=True)
 CACHE = os.path.join(OUT, "cells_cache.json")
 
@@ -30,7 +30,7 @@ YEAR = 2020          # SPAM 2020 snapshot year
 WP, CCX, PLANT, SOIL = 20.0, 0.85, "04/20", "Loam"
 ELEV = 200.0
 
-SPAM_ZIP = "/mnt/datasets/Crop_model_dataset/dataverse_files/Global_CSV/spam2020V2r0_global_yield.csv.zip"
+SPAM_ZIP = "KISSPATH_DATA/Crop_model_dataset/dataverse_files/Global_CSV/spam2020V2r0_global_yield.csv.zip"
 
 
 def load_spam_region():

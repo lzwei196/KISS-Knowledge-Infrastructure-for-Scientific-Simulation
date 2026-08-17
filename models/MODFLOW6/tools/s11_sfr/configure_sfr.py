@@ -202,7 +202,7 @@ def build_sfr_package(
     preset = STREAM_PRESETS[stream_preset]
 
     if mf6_exe is None:
-        mf6_exe = "/mnt/disk1/Hydrocraft_server/model/modflow6/mf6.6.1_linux/bin/mf6"
+        mf6_exe = "KISSPATH_BINARIES/modflow6/mf6.6.1_linux/bin/mf6"
 
     # --- Load existing GWF simulation ---
     if not os.path.exists(os.path.join(gwf_sim_ws, "mfsim.nam")):
@@ -536,7 +536,7 @@ def build_simple_sfr(
 
     # Load simulation to get cell sizes for reach length calculation
     if mf6_exe is None:
-        mf6_exe = "/mnt/disk1/Hydrocraft_server/model/modflow6/mf6.6.1_linux/bin/mf6"
+        mf6_exe = "KISSPATH_BINARIES/modflow6/mf6.6.1_linux/bin/mf6"
 
     sim = flopy.mf6.MFSimulation.load(
         sim_ws=gwf_sim_ws,
@@ -693,7 +693,7 @@ def build_sfr_test_model(
         Result with sim_ws, success, and diagnostic information.
     """
     if mf6_exe is None:
-        mf6_exe = "/mnt/disk1/Hydrocraft_server/model/modflow6/mf6.6.1_linux/bin/mf6"
+        mf6_exe = "KISSPATH_BINARIES/modflow6/mf6.6.1_linux/bin/mf6"
 
     os.makedirs(workspace, exist_ok=True)
 

@@ -45,10 +45,10 @@ Usage
 -----
     python make_site_dataset.py --site-name US-MMS \
         --lat 39.3232 --lon -86.4131 \
-        --global-surfdata /home/server/cesm/inputdata/lnd/clm2/surfdata_map/\
+        --global-surfdata KISSPATH_HOME/cesm/inputdata/lnd/clm2/surfdata_map/\
 release-clm5.0.18/surfdata_0.9x1.25_hist_78pfts_CMIP6_simyr1850_c190214.nc \
-        --outdir /home/server/cesm/inputdata/lnd/clm2/surfdata_map \
-        --domain-outdir /home/server/cesm/inputdata/share/domains \
+        --outdir KISSPATH_HOME/cesm/inputdata/lnd/clm2/surfdata_map \
+        --domain-outdir KISSPATH_HOME/cesm/inputdata/share/domains \
         --dominant-pft 7
 """
 

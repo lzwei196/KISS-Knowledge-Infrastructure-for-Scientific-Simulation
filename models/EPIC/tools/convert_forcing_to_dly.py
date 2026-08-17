@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 
 import numpy as np
 
-CMFD_PATH = "/mnt/disk1/Hydrocraft_server/data/forcing/Data_forcing_03hr_010deg"
+CMFD_PATH = "KISSPATH_DATA/forcing/Data_forcing_03hr_010deg"
 
 
 def _try_load_forcing(source: str, lat: float, lon: float,
@@ -30,7 +30,7 @@ def _try_load_forcing(source: str, lat: float, lon: float,
     except ImportError as e:
         raise ImportError(
             "ki_tools_common.load_forcing is required. "
-            "Add /home/server/knowledge-dissection-toolkit to PYTHONPATH "
+            "Add KISSPATH_INTERNAL_NOT_SHIPPED to PYTHONPATH "
             "or install the kdt-release package."
         ) from e
 

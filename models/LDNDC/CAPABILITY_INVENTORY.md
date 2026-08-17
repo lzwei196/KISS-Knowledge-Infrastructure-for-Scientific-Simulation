@@ -2,7 +2,7 @@
 
 **Generated**: 2026-04-03
 **Source**: Pre-built C++ binary, 19 KI tools, 10 skill documents, 22 diagnostic triplets
-**Binary**: `/mnt/disk1/Hydrocraft_server/model/ldndc/ldndc-1.37.linux64/bin/ldndc`
+**Binary**: `KISSPATH_BINARIES/ldndc/ldndc-1.37.linux64/bin/ldndc`
 **Current KI version**: 1.0.0
 **Unique role in HydroCraft**: Only model providing GHG emission simulation (N2O, CO2, CH4, NO)
 

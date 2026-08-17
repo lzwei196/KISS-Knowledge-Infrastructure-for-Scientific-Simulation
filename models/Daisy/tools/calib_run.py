@@ -49,8 +49,8 @@ ASSETS = KI_DIR / "calibration_assets"
 TOOLS = KI_DIR / "tools"
 
 # Real Daisy binary + library search path (matches the validated real case).
-DAISY_BIN = "/mnt/disk1/Hydrocraft_server/models/Daisy/bin/daisy"
-DAISY_REPO = "/mnt/disk1/Hydrocraft_server/models/Daisy/source/repo"
+DAISY_BIN = "KISSPATH_KI_ROOT/Daisy/bin/daisy"
+DAISY_REPO = "KISSPATH_KI_ROOT/Daisy/source/repo"
 
 # W/m^2 (daily mean latent heat flux) -> mm/d ET, lambda = 2.45 MJ/kg.
 LE_TO_MM = 0.035265

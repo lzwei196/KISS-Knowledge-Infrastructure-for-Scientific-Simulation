@@ -51,7 +51,7 @@ def check_dir(path, label):
 def check_import(module, label):
     # Also search HydroCraft python_env for packages
     import sys
-    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
     if _penv not in sys.path:
         sys.path.insert(0, _penv)
     global PASS, FAIL
@@ -74,8 +74,8 @@ def check_binary_search(name, label):
         return
     # Search common locations
     search_dirs = [
-        "/mnt/disk1/Hydrocraft_server/model",
-        "/home/server",
+        "KISSPATH_BINARIES",
+        "KISSPATH_HOME",
         "/usr/local/bin",
     ]
     for d in search_dirs:
@@ -98,10 +98,10 @@ def check_common_data():
     """Check common HydroCraft data paths."""
     global PASS, FAIL
     common = [
-        ("/mnt/disk1/Hydrocraft_server/data/obs", "Observation data"),
-        ("/media/server/hc_ssd/forcing", "Forcing data"),
-        ("/mnt/disk1/Hydrocraft_server/data/dem", "DEM data"),
-        ("/mnt/disk1/Hydrocraft_server/data/soil", "Soil data"),
+        ("KISSPATH_OBS", "Observation data"),
+        ("KISSPATH_FORCING", "Forcing data"),
+        ("KISSPATH_STATIC", "DEM data"),
+        ("KISSPATH_STATIC", "Soil data"),
     ]
     for path, label in common:
         if os.path.isdir(path):
@@ -119,13 +119,13 @@ def main():
 
     # Model-specific checks
     # Binary: VIC 5.1.0 classic driver
-    check_file("/mnt/disk1/Hydrocraft_server/model/VIC-5.1.0/vic/drivers/classic/vic_classic.exe", "VIC 5.1.0 classic driver", executable=True)
+    check_file("KISSPATH_BINARIES/VIC-5.1.0/vic/drivers/classic/vic_classic.exe", "VIC 5.1.0 classic driver", executable=True)
     # Binary: CaMa-Flood 4.20
-    check_file("/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/src/MAIN_cmf", "CaMa-Flood 4.20", executable=True)
+    check_file("KISSPATH_BINARIES/cmf_v420_pkg/src/MAIN_cmf", "CaMa-Flood 4.20", executable=True)
     # Directory: CMFD daily forcing
-    check_dir("/media/server/hc_ssd/forcing/huai/Data_forcing_01dy_025deg", "CMFD daily forcing")
+    check_dir("KISSPATH_FORCING/huai/Data_forcing_01dy_025deg", "CMFD daily forcing")
     # Directory: DEM 90m
-    check_dir("/mnt/disk1/Hydrocraft_server/data/dem/china_dem_90m", "DEM 90m")
+    check_dir("KISSPATH_STATIC/china_dem_90m", "DEM 90m")
 
     print()
 

@@ -30,8 +30,8 @@ def check_dir(path, label):
 def check_import(module, label):
     # Also search HydroCraft python_env for packages
     import sys
-    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
-    _venv = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/COSIPY/venv/lib/python3.12/site-packages"
+    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
+    _venv = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/COSIPY/venv/lib/python3.12/site-packages"
     if _venv not in sys.path:
         sys.path.insert(0, _venv)
     if _penv not in sys.path:
@@ -52,7 +52,7 @@ def main():
     print()
     # COSIPY installed as editable package in dissection venv
     import sys
-    sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/COSIPY/source/repo")
+    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/COSIPY/source/repo")
     check_import("cosipy", "COSIPY model package")
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))

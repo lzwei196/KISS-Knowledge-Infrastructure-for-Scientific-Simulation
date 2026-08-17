@@ -88,7 +88,7 @@ gauge is quasi-natural) → parse+score. Spin-up 2005-06; cal 2007-11 / val 2012
 ### BENGBU / HUAI follow-up (verified 2026-06-22, MOSART @ gauge 51080) — runoff EXISTS but topology still blocks
 
 Unlike Bow@Banff, gridded VIC 5.1.0 runoff DOES exist for the Huai basin
-(`/mnt/disk1/Hydrocraft_server/outputs/bengbu_1980_1990_cama/cama_input/bengbu_runoff_1d_{Y}.nc`,
+(`KISSPATH_OUTPUTS/bengbu_1980_1990_cama/cama_input/bengbu_runoff_1d_{Y}.nc`,
 0.25°, 16×24, combined `Runoff` mm/day, 1980-1990). The full real-binary chain runs:
 `convert_runoff_forcing` (combined-runoff split + lat-orient fix, see below) →
 `convert_grid_parameters` (validate) → `run_mosartwmpy` (1980-1990, ~30 min, 132 monthly
@@ -173,8 +173,8 @@ emitted coarse domain to cover a known extent (expand-only; applied before
 nrows/ncols). MERIT tiles are pixel-CENTRE-aligned to integer degrees (half-pixel
 offset) — honour each tile's own transform rather than assuming corner alignment.
 
-NOTE: the HYDAT obs at `/mnt/disk4/Hydat_sqlite3_20260116/Hydat.sqlite3` was ABSENT on
-2026-06-21 (disk4 empty). Source of record was `/mnt/datasets/数据/National Water Data
+NOTE: the HYDAT obs at `KISSPATH_DATA/Hydat_sqlite3_20260116/Hydat.sqlite3` was ABSENT on
+2026-06-21 (disk4 empty). Source of record was `KISSPATH_DATA/数据/National Water Data
 Archive HYDAT.zip` → extract `Hydat.mdb`, read via `mdb-export <mdb> DLY_FLOWS` (no sqlite3
 CLI installed; use `mdb-tools`).
 
@@ -218,7 +218,7 @@ missing sibling package. Always `pip install setuptools` alongside. Pin
 entirely and will break mosartwmpy 0.6.2 outright).
 
 Working canonical environment on this server:
-`/mnt/disk1/Hydrocraft_server/models/MOSART/venv/bin/python`
+`KISSPATH_KI_ROOT/MOSART/venv/bin/python`
 (Python 3.12, mosartwmpy 0.6.2 + setuptools<81). NOTE `_work/MOSART/venv` — cited by
 older run notes — is WIPE-PRONE and was already destroyed once; do not depend on it.
 `/usr/bin/python3` has numpy/pandas/xarray/rasterio/geopandas/ki_tools_common and is

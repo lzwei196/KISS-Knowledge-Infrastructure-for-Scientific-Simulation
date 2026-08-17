@@ -169,8 +169,8 @@ def _merit_tiles_for_bbox_local(merit_dir, bbox, kind):
     return sorted(set(want))
 
 
-CHINA_DEM = "/mnt/disk1/Hydrocraft_server/data/dem/china_dem_90m/china_dem_90m.tif"
-MERIT_DEM_DIR = "/mnt/datasets/MERIT_DEM"
+CHINA_DEM = "KISSPATH_STATIC/china_dem_90m/china_dem_90m.tif"
+MERIT_DEM_DIR = "KISSPATH_DATA/MERIT_DEM"
 # Generous land bbox of the China 90 m DEM (minlon, minlat, maxlon, maxlat).
 CHINA_BBOX = (73.0, 17.0, 136.0, 54.0)
 
@@ -1226,13 +1226,13 @@ def main():
                         choices=["glcfcs30"],
                         help="Land-cover source for the sub-grid class fractions")
     parser.add_argument("--lc_dir", type=str,
-                        default="/mnt/datasets/vegetation/GLCFCS30",
+                        default="KISSPATH_DATA/vegetation/GLCFCS30",
                         help="GLC_FCS30 30 m tile directory")
     parser.add_argument("--lai_dir", type=str,
-                        default="/mnt/datasets/vegetation/GLASS_LAI_global",
+                        default="KISSPATH_DATA/vegetation/GLASS_LAI_global",
                         help="GLASS LAI seasonal-composite directory")
     parser.add_argument("--hwsd_csv", type=str,
-                        default="/mnt/disk1/Hydrocraft_server/data/soil/HWSD_DATA.csv",
+                        default="KISSPATH_STATIC/HWSD_DATA.csv",
                         help="HWSD attribute table (REF_DEPTH -> SoilThickness)")
     args = parser.parse_args()
 

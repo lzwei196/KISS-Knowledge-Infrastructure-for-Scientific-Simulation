@@ -46,7 +46,7 @@ import numpy as np
 from datetime import datetime, timedelta
 
 KI = os.path.dirname(os.path.abspath(__file__))
-VAL = "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/validators"
+VAL = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/validators"
 sys.path.insert(0, KI)
 sys.path.insert(0, VAL)
 from run_topmodel import write_params_dat, write_topmod_run

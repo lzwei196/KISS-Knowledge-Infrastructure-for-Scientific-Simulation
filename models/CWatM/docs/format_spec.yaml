@@ -4,7 +4,7 @@ model:
   full_name: "Community Water Model"
   developer: "IIASA Water Security Research Group"
   domain: "Global/regional hydrology — daily water cycle simulation"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/CWatM/venv/bin/python"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/CWatM/venv/bin/python"
   entry_point: "run_cwatm.py"
   source_repo: "https://github.com/iiasa/CWatM"
   license: "GNU GPLv3"

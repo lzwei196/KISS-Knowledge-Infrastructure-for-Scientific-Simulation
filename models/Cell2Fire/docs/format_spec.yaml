@@ -2,7 +2,7 @@ model:
   name: "Cell2Fire W (C2F-W)"
   domain: "wildfire spread simulation"
   version: "v0.0.0 (fire2a/C2F-W)"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Cell2Fire/source/repo/Cell2Fire/Cell2Fire"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Cell2Fire/source/repo/Cell2Fire/Cell2Fire"
   fire_models:
     - "S: Scott & Burgan (40 US NFDRS fuel models)"
     - "C: Canadian FBP (16 fuel types)"

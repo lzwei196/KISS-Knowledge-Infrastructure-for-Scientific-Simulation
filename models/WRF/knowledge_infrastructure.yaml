@@ -23,7 +23,7 @@ package:
     - ungrib.exe     # WPS: GRIB → intermediate format
     - metgrid.exe    # WPS: intermediate → met_em files (model grid)
     - real.exe       # WRF: met_em → wrfinput + wrfbdy
-  source: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/WRF/source/repo
+  source: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/WRF/source/repo
   institution: NCAR/UCAR
 
 pipeline:

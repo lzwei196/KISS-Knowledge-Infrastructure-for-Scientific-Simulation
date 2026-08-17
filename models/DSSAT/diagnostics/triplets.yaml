@@ -2147,7 +2147,7 @@ triplets:
       forbids r/NSE/KGE (valid families magnitude_accuracy, trend_match only).'
   remedy:
     action: 'Re-run validate_yield_timeseries.py with --obs gdhy (the tool default):
-      GDHY 0.5deg gridded maize (1981-2016, on disk at /mnt/datasets/Crop_model_dataset/GDHY_v1.2_v1.3/)
+      GDHY 0.5deg gridded maize (1981-2016, on disk at KISSPATH_DATA/Crop_model_dataset/GDHY_v1.2_v1.3/)
       is co-located and scale-matched to the simulated pixel, making r/NSE/KGE defined
       and meaningful. Use FAOSTAT national as a %bias-only secondary check; provincial
       FAOSTAT is unavailable.'

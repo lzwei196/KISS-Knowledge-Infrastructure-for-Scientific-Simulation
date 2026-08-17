@@ -30,7 +30,7 @@ def check_dir(path, label):
 def check_import(module, label):
     # Also search HydroCraft python_env for packages
     import sys
-    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
     if _penv not in sys.path:
         sys.path.insert(0, _penv)
     global PASS, FAIL
@@ -49,9 +49,9 @@ def main():
     print()
     # GeoClaw: clawpack in venv + xgeoclaw ELF binary
     import sys
-    sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GeoClaw/venv/lib/python3.12/site-packages")
+    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GeoClaw/venv/lib/python3.12/site-packages")
     check_import("clawpack", "Clawpack (GeoClaw)")
-    check_file("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/GeoClaw/bowl-slosh-test/xgeoclaw", "GeoClaw binary", executable=True)
+    check_file("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GeoClaw/bowl-slosh-test/xgeoclaw", "GeoClaw binary", executable=True)
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

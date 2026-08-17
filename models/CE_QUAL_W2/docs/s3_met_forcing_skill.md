@@ -27,7 +27,7 @@ Convert HydroCraft forcing data (CMFD/MSWX/VIC) to CE-QUAL-W2 met file format. T
 | Condition | Dataset | Path |
 |-----------|---------|------|
 | China, 1979-2018 | CMFD | `data/forcing/Data_forcing_03hr_010deg/` |
-| Global, 1979-2026 | MSWX | `/mnt/disk3/msxw/` |
+| Global, 1979-2026 | MSWX | `KISSPATH_FORCING/` |
 | VIC pre-processed | VIC forcing | `outputs/<run>/vic_temp/forcing/forcing_final/` |
 
 ### Step 2: Run convert_met_to_w2

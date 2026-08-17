@@ -2,7 +2,7 @@ model:
   name: SimFire
   version: 2.0.1
   domain: wildfire
-  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/SimFire/venv/bin/python
+  binary_path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimFire/venv/bin/python
   binary_type: python_venv
   source_repo: https://github.com/mitrefireline/simfire
   python_version: '>=3.9'

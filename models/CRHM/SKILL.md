@@ -61,12 +61,12 @@ Modules form a **chain**: output of one feeds input to the next via `declvar()`/
 CRHM is built from C++ source with CMake and GCC:
 
 ```bash
-bash /mnt/disk1/Hydrocraft_server/models/CRHM/knowledge_infrastructure/install_crhm.sh
+bash KISSPATH_KI_ROOT/CRHM/knowledge_infrastructure/install_crhm.sh
 ```
 
 **Requirements**: cmake, g++ (C++14), git, Boost 1.75.0 (auto-downloaded by install script).
 
-**Executable**: `/mnt/disk1/Hydrocraft_server/model/crhmcode/crhmcode/build/crhm`
+**Executable**: `KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm`
 
 **CLI**:
 ```bash

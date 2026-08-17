@@ -86,13 +86,13 @@ Key capabilities:
 
 ## Installation
 
-See `docs/s1_installation_skill.md` for compilation from source and dependency setup. For HydroCraft, the pre-built binary is at `/home/server/LDNDC/bin/ldndc`. The LDNDC Docker image is available at `codebase.helmholtz.cloud/landscapedndc/ldndc-docker` for containerized deployment.
+See `docs/s1_installation_skill.md` for compilation from source and dependency setup. For HydroCraft, the pre-built binary is at `KISSPATH_HOME/LDNDC/bin/ldndc`. The LDNDC Docker image is available at `codebase.helmholtz.cloud/landscapedndc/ldndc-docker` for containerized deployment.
 
 ## Environment Setup
 
 ```bash
 # LDNDC binary location
-LDNDC_BIN="/home/server/LDNDC/bin/ldndc"
+LDNDC_BIN="KISSPATH_HOME/LDNDC/bin/ldndc"
 
 # Run LDNDC
 $LDNDC_BIN project.xml
@@ -100,7 +100,7 @@ $LDNDC_BIN project.xml
 $LDNDC_BIN -c ldndc.conf project.xml
 
 # Python tools require the HydroCraft venv
-source /mnt/disk1/Hydrocraft_server/python_env/bin/activate
+source KISSPATH_PYTHON_ENV/bin/activate
 ```
 
 ## Pipeline

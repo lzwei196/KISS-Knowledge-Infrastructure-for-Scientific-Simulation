@@ -244,7 +244,7 @@ YYYY-MM-DD HH:MM:SS,W/m2,W/m2,degC,%,m/s,m/day,m/day
 
 **Source data options**:
 - CMFD (China, 0.1deg, 3-hourly) — already on server at `data/forcing/Data_forcing_03hr_010deg/`
-- MSWX (global, 0.1deg, 3-hourly) — already on server at `/mnt/disk3/msxw/`
+- MSWX (global, 0.1deg, 3-hourly) — already on server at `KISSPATH_FORCING/`
 - NASA POWER (global, 0.5deg, hourly) — API, no local data needed
 
 **Output**: `bcs/met_hourly.csv` in GLM format.

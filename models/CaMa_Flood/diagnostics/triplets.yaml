@@ -43,7 +43,7 @@ triplets:
       tool_to_run: ""
       manual_steps:
         - "Open the run script: gosh/run_{basin}_1d_nc.sh"
-        - "Replace every '../../map/' with '/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/map/'"
+        - "Replace every '../../map/' with 'KISSPATH_BINARIES/cmf_v420_pkg/map/'"
         - "Replace every relative CROFCDF path with the full absolute path to the runoff NC file"
         - "Ensure CDIMINFO also uses an absolute path"
         - "Re-run the script"
@@ -142,8 +142,8 @@ triplets:
       action: "Run calc_outclm from glb_15min/, then copy outclm.bin to the regional directory"
       tool_to_run: ""
       manual_steps:
-        - "cd /mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/map/glb_15min"
-        - "Run: ./src_param/calc_outclm bin inpmat ./diminfo_test-1deg.txt /mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/map/data/ELSE_GPCC_coastmod_dayclm-1981-2010.one"
+        - "cd KISSPATH_BINARIES/cmf_v420_pkg/map/glb_15min"
+        - "Run: ./src_param/calc_outclm bin inpmat ./diminfo_test-1deg.txt KISSPATH_BINARIES/cmf_v420_pkg/map/data/ELSE_GPCC_coastmod_dayclm-1981-2010.one"
         - "cp outclm.bin ../{basin}_15min/"
         - "Then run calc_rivwth from the REGIONAL dir with REGIONAL diminfo"
       prevention: "configure_simulation.py runs calc_outclm from glb_15min automatically."

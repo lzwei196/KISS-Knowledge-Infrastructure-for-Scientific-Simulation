@@ -87,10 +87,10 @@ import numpy as np
 KI = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOLS = os.path.join(KI, "tools")
 ROOT = os.path.dirname(KI)
-BIN = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
-SRCDIR = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Noah_MP/source/repo"
-TBL_SRC = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Noah_MP/source/hrldas/hrldas/run/NoahmpTable.TBL"
-KDT = "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent"
+BIN = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
+SRCDIR = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/repo"
+TBL_SRC = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/hrldas/hrldas/run/NoahmpTable.TBL"
+KDT = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent"
 PREFLIGHT = os.path.join(KDT, "validators", "preflight_forcing.py")
 
 sys.path.insert(0, KDT)
@@ -104,7 +104,7 @@ DEFAULT_PREP_DIR = "/mnt/extreme_ssd1/hc_detached/Noah_MP/calib_prep_usne1"
 TARGET_CASE_ID = "SITE:US-Ne1"
 TARGET_SITE_ID = "US-Ne1"
 TARGET_NETWORK = "FLUXNET2015"
-SITE_DIR = "/mnt/disk1/Hydrocraft_server/data/obs/fluxnet/sites/US-Ne1"
+SITE_DIR = "KISSPATH_OBS/fluxnet/sites/US-Ne1"
 SITE_NAME = "Mead, Nebraska - irrigated continuous maize (UNL ARDC)"
 SITE_LAT, SITE_LON = 41.16506, -96.47664       # BADM LOCATION_LAT / LOCATION_LONG
 SITE_ELEV = 361.0                              # BADM LOCATION_ELEV [m]

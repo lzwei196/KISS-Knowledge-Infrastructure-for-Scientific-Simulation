@@ -47,7 +47,7 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
 
 # ---------------------------------------------------------------------------
 # USLE K computation (Wischmeier & Smith 1978)
@@ -326,7 +326,7 @@ def _derive_k_from_soilgrids(lats, lons, mask, sand_array, silt_array,
               "Install with: pip install rasterio", file=sys.stderr)
         sys.exit(1)
 
-    soilgrids_dir = "/home/server/Crop_model_dataset/SoilGrids_Bengbu"
+    soilgrids_dir = "KISSPATH_HOME/Crop_model_dataset/SoilGrids_Bengbu"
     depth = "0-5cm"  # topsoil for USLE
 
     files = {

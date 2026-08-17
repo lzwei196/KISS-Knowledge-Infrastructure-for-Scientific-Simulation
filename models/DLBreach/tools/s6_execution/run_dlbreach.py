@@ -44,7 +44,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path("/mnt/disk1/Hydrocraft_server")
+PROJECT_ROOT = Path("KISSPATH_ROOT")
 DEFAULT_BINARY_PATHS = [
     # Fortran binary (via wine on Linux) — validated against Wu 2016 (50 test cases)
     # Banqiao: peak Q = 71,783 m³/s (literature: ~78,000), breach width 302m

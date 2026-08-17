@@ -80,12 +80,12 @@ couplings:
     data_exchanged:
       - name: "cmip6_temperature"
         format: "NetCDF"
-        source_path: "/mnt/disk3/CMIP_China/ or OGGM shop download"
+        source_path: "KISSPATH_DATA/CMIP_China/ or OGGM shop download"
         target_use: "Monthly temperature anomaly for delta method"
         units: "Celsius (CRITICAL: convert from Kelvin if needed)"
       - name: "cmip6_precipitation"
         format: "NetCDF"
-        source_path: "/mnt/disk3/CMIP_China/ or OGGM shop download"
+        source_path: "KISSPATH_DATA/CMIP_China/ or OGGM shop download"
         target_use: "Monthly precipitation ratio for delta method"
         units: "kg/m2/month"
     critical_issues:

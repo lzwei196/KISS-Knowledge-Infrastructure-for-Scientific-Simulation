@@ -3,7 +3,7 @@ model:
   full_name: "Functionally Assembled Terrestrial Ecosystem Simulator"
   domain: "biogeochemistry / dynamic global vegetation model (DGVM)"
   language: "Fortran 2003+"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/FATES/source/repo/functional_unit_testing/parteh/bld/PRTParametersMod.o"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/FATES/source/repo/functional_unit_testing/parteh/bld/PRTParametersMod.o"
   binary_type: "compiled_object (ELF shared object, not standalone executable)"
   standalone: false
   host_models: ["CTSM/CLM", "E3SM/ELM", "CESM"]

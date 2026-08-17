@@ -46,7 +46,7 @@ Usage:
         --lat 33.75 --lon 114.25 --cell_size 0.5 \
         --crop maize --cultivar CN0001 \
         --start_year 2000 --end_year 2016 \
-        --forcing_dir /mnt/disk1/Hydrocraft_server/data/forcing/Data_forcing_03hr_010deg \
+        --forcing_dir KISSPATH_DATA/forcing/Data_forcing_03hr_010deg \
         --out_dir /tmp/dssat_gdhy_zhoukou_grid --resume
 
 Exit codes: 0 = every member completed; 1 = input/setup error;
@@ -63,9 +63,9 @@ from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parents[1]          # .../knowledge_infrastructure/tools
 sys.path.insert(0, str(TOOLS))
-sys.path.insert(0, '/mnt/disk1/Hydrocraft_server/models/ki_tools_common')
+sys.path.insert(0, 'KISSPATH_KI_TOOLS_COMMON')
 
-SPAM_PHYS_DIR = "/mnt/datasets/Crop_model_dataset/SPAM2020/physical_area"
+SPAM_PHYS_DIR = "KISSPATH_DATA/Crop_model_dataset/SPAM2020/physical_area"
 
 # SPAM 4-letter crop code <-> DSSAT 2-letter crop code.
 CROP_MAP = {
@@ -82,7 +82,7 @@ CMFD_GRID = 0.1          # deg — CMFD V2.0 cell size (centres at X.X5)
 
 # Width of the DSSBatch.v48 @FILEX path field, in columns.
 #
-# PRIMARY SOURCE — dssat-csm-os v4.8 (/home/server/DSSAT), not KI folklore:
+# PRIMARY SOURCE — dssat-csm-os v4.8 (KISSPATH_HOME/DSSAT), not KI folklore:
 #   CSM_Main/CSM.for:268  END_POS = LEN(TRIM(CHARTEST(1:92)))+1   -> field = cols 1-92
 #   CSM_Main/CSM.for:269  FILEX  = CHARTEST((END_POS-12):(END_POS-1))
 #   CSM_Main/CSM.for:270  PATHEX = CHARTEST(1:END_POS-13)

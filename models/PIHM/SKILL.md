@@ -144,7 +144,7 @@ the river centreline are CONSTRAINED segments — so every river reach lands on
 element edges, which is what `InitRiver` requires.
 
 ```bash
-python tools/mesh_builder.py --dem /mnt/datasets/MERIT_DEM/n40e005_dem.tif \
+python tools/mesh_builder.py --dem KISSPATH_DATA/MERIT_DEM/n40e005_dem.tif \
     --outlet-lon 8.6124 --outlet-lat 42.1771 \
     --out-dir input/ChiuniFR --project ChiuniFR \
     --target-elem-area-km2 0.12 --aquifer-thickness-m 15

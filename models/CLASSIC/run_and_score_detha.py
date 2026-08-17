@@ -19,19 +19,19 @@ gpp_daily.nc exists.
 import json, os, shutil, subprocess, sys
 import numpy as np
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models")
+sys.path.insert(0, "KISSPATH_KI_ROOT")
 import netCDF4 as nc
 import pandas as pd
 from ki_tools_common.metrics import all_metrics
 
-KI   = "/mnt/disk1/Hydrocraft_server/models/CLASSIC/knowledge_infrastructure"
-SRC  = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/CLASSIC/source/repo"
+KI   = "KISSPATH_KI_ROOT/CLASSIC/knowledge_infrastructure"
+SRC  = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/CLASSIC/source/repo"
 BIN  = f"{SRC}/bin/CLASSIC_serial"
-RUN  = "/mnt/disk1/Hydrocraft_server/models/CLASSIC/run/detha"
+RUN  = "KISSPATH_KI_ROOT/CLASSIC/run/detha"
 MET  = f"{RUN}/met"
-STATE= "/mnt/disk1/Hydrocraft_server/models/CLASSIC/detached/verify_1"
-FLUX = "/mnt/disk1/Hydrocraft_server/data/obs/fluxnet/sites/DE-Tha/FULLSET_HH.csv"
-FDD  = "/mnt/disk1/Hydrocraft_server/data/obs/fluxnet/sites/DE-Tha/FULLSET_DD.csv"
+STATE= "KISSPATH_KI_ROOT/CLASSIC/detached/verify_1"
+FLUX = "KISSPATH_OBS/fluxnet/sites/DE-Tha/FULLSET_HH.csv"
+FDD  = "KISSPATH_OBS/fluxnet/sites/DE-Tha/FULLSET_DD.csv"
 
 SITE, LAT, LON = "DE-Tha", 50.9636, 13.5669
 Y0, Y1 = 1996, 2014

@@ -107,13 +107,13 @@ Key capabilities:
 
 ## Installation
 
-See `docs/s1_installation_skill.md` for compilation from source and dependency setup. For HydroCraft, the pre-built binary is at `/home/server/LDNDC/bin/ldndc`. The LDNDC Docker image is available at `codebase.helmholtz.cloud/landscapedndc/ldndc-docker` for containerized deployment.
+See `docs/s1_installation_skill.md` for compilation from source and dependency setup. For HydroCraft, the pre-built binary is at `KISSPATH_HOME/LDNDC/bin/ldndc`. The LDNDC Docker image is available at `codebase.helmholtz.cloud/landscapedndc/ldndc-docker` for containerized deployment.
 
 ## Environment Setup
 
 ```bash
 # LDNDC binary location
-LDNDC_BIN="/home/server/LDNDC/bin/ldndc"
+LDNDC_BIN="KISSPATH_HOME/LDNDC/bin/ldndc"
 
 # Run LDNDC
 $LDNDC_BIN project.xml
@@ -121,7 +121,7 @@ $LDNDC_BIN project.xml
 $LDNDC_BIN -c ldndc.conf project.xml
 
 # Python tools require the HydroCraft venv
-source /mnt/disk1/Hydrocraft_server/python_env/bin/activate
+source KISSPATH_PYTHON_ENV/bin/activate
 ```
 
 ## Pipeline
@@ -353,6 +353,6 @@ Without `--conf`, LDNDC crashes with "premature termination" — no log file, no
 | South | <28°N | — | — | Mar-Jul, Jul-Nov |
 
 **Data sources on server:**
-- GGCMI Crop Calendar: `/home/server/Crop_model_dataset/GGCMI_phase3_crop_calendar/`
-- China Phenology GeoTIFF: `/home/server/Crop_model_dataset/8313530/`
-- SPAM crop distribution: `/home/server/Crop_model_dataset/dataverse_files/`
+- GGCMI Crop Calendar: `KISSPATH_HOME/Crop_model_dataset/GGCMI_phase3_crop_calendar/`
+- China Phenology GeoTIFF: `KISSPATH_HOME/Crop_model_dataset/8313530/`
+- SPAM crop distribution: `KISSPATH_HOME/Crop_model_dataset/dataverse_files/`

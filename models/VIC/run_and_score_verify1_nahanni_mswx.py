@@ -25,7 +25,7 @@ Virginia Falls is:
 WHY MSWX (not NASA POWER)
 -------------------------
 The verifier forcing policy is: CHINA -> CMFD; otherwise the LOCAL global
-product MSWX 0.1deg 3-hourly (/mnt/disk3/msxw). NASA POWER is a network fetch of
+product MSWX 0.1deg 3-hourly (KISSPATH_FORCING). NASA POWER is a network fetch of
 last resort and is only used when no local product covers the basin. MSWX is
 global and covers Canada, so it is the correct choice here; it is also LOCAL, so
 there is no per-point network fetch that can hang the run (the failure the task
@@ -86,13 +86,13 @@ import urllib.request
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 from ki_tools_common.metrics import all_metrics
 from ki_tools_common.validation import validate_water_balance
 from validators.standard_calval import compute_calval_metrics
 
 # ---------------------------------------------------------------------------
-BASE = "/mnt/disk1/Hydrocraft_server"
+BASE = "KISSPATH_ROOT"
 KI = f"{BASE}/models/VIC/knowledge_infrastructure"
 CASE = f"{BASE}/models/VIC/detached/verify_1"
 
@@ -100,7 +100,7 @@ BASIN = "nahanni_virginiafalls"
 STA = "NAH"
 GAUGE_ID = "GRDC_4208221"
 
-CARAVAN = "/mnt/datasets/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc"
+CARAVAN = "KISSPATH_DATA/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc"
 OBS_NC = f"{CARAVAN}/timeseries/netcdf/grdc/{GAUGE_ID}.nc"
 BASIN_SHAPES = f"{CARAVAN}/shapefiles/grdc/grdc_basin_shapes.shp"
 
@@ -129,7 +129,7 @@ EVAL_START, EVAL_END = CAL[0], VAL[1]
 
 FORCING_PREFIX = f"{BASIN}_025deg_"
 
-MSWX_ROOT = "/mnt/disk3/msxw"
+MSWX_ROOT = "KISSPATH_FORCING"
 
 ELEV_NC = f"{BDIR}/vic_temp/grid/elev_{BASIN}_025deg.nc"
 PREC_NC = f"{BDIR}/vic_temp/grid/prec_annual_{BASIN}_025deg.nc"

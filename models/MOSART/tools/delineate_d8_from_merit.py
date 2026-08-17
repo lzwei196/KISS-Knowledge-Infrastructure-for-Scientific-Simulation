@@ -40,10 +40,10 @@ mouth, 247/255=nodata/inland). Output direc encoding (VIC/Lohmann `rout`):
 
 Usage:
     python delineate_d8_from_merit.py \
-        --merit-dir /mnt/disk1/Hydrocraft_server/data/merit_hydro \
+        --merit-dir KISSPATH_DATA/merit_hydro \
         --gauge-lat 32.43 --gauge-lon 115.60 --published-area-km2 30600 \
         --resolution 0.25 \
-        --out-prefix /mnt/disk1/Hydrocraft_server/outputs/vic_wangjiaba_full_domain/WJB_full
+        --out-prefix KISSPATH_OUTPUTS/vic_wangjiaba_full_domain/WJB_full
 """
 
 import argparse

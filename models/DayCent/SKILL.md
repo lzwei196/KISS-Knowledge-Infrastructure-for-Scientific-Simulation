@@ -158,7 +158,7 @@ history. The minimum-edit path is:
    every FLUXNET2015 site CSV carries `TA_F`, `P_F`, `SW_IN_F` — the exact
    variables the `.wth` needs — and it works offline.
    ```bash
-   python tools/convert_forcing_to_daycent.py      --source fluxnet      --fluxnet-csv /mnt/disk1/.../sites/DE-Tha/FULLSET_DD.csv      --year-start 1996 --year-end 2014      --out workdir/de_tha/de_tha.wth
+   python tools/convert_forcing_to_daycent.py      --source fluxnet      --fluxnet-csv KISSPATH_ROOT/.../sites/DE-Tha/FULLSET_DD.csv      --year-start 1996 --year-end 2014      --out workdir/de_tha/de_tha.wth
    ```
 
 3. **Edit `<site>.100`** (rename `wooster_site.100` → `de_tha_site.100`):

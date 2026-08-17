@@ -35,7 +35,7 @@ from pathlib import Path
 # =============================================================================
 # Template registry — add new validated cases here
 # =============================================================================
-PROJECT_ROOT = Path("/mnt/disk1/Hydrocraft_server")
+PROJECT_ROOT = Path("KISSPATH_ROOT")
 
 TEMPLATES = {
     "jackpine": {

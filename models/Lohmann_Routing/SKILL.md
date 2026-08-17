@@ -33,7 +33,7 @@
 See `data_ki/ObservedQ/SKILL.md` for observed discharge validation data.
 
 
-<!-- NOTE: Mac development paths below are stale on the server. Use /mnt/disk1/Hydrocraft_server/ paths instead. -->
+<!-- NOTE: Mac development paths below are stale on the server. Use KISSPATH_ROOT/ paths instead. -->
 
 # VIC Routing汇流模型运行指南
 

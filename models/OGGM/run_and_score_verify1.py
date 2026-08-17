@@ -4,7 +4,7 @@ OGGM verifier (verify_1) runner+scorer — Yajiang Glacier Outputs (Tibetan Plat
 
 Runs the SAME KI tools (init -> run -> compile) at THIS location and scores the
 derived glacier-wide specific mass balance (mm w.e./yr) against the reference
-outputs at /home/server/OGGM/yajiang_test/run_output_hist.nc.
+outputs at KISSPATH_HOME/OGGM/yajiang_test/run_output_hist.nc.
 
 RESUMABLE: skips init/run/compile when their outputs already exist.
 Writes the verifier JSON object to detached/verify_1/result.json as its final act.
@@ -18,21 +18,21 @@ from pathlib import Path
 import numpy as np
 import netCDF4
 
-PY = "/mnt/disk1/Hydrocraft_server/python_env/bin/python"
-KI = Path("/mnt/disk1/Hydrocraft_server/models/OGGM/knowledge_infrastructure")
+PY = "KISSPATH_PYTHON_ENV/bin/python"
+KI = Path("KISSPATH_KI_ROOT/OGGM/knowledge_infrastructure")
 TOOLS = KI / "tools"
-BASE = Path("/mnt/disk1/Hydrocraft_server/models/OGGM")
+BASE = Path("KISSPATH_KI_ROOT/OGGM")
 WORK = BASE / "yajiang_run" / "working_dir"
 COMPILED = BASE / "yajiang_run" / "compiled"
 RGI_CSV = BASE / "yajiang_glaciers.csv"
-OBS = "/home/server/OGGM/yajiang_test/run_output_hist.nc"
+OBS = "KISSPATH_HOME/OGGM/yajiang_test/run_output_hist.nc"
 RESULT_DIR = BASE / "detached" / "verify_1"
 RESULT = RESULT_DIR / "result.json"
 
 RHO_ICE = 900.0
 SUFFIX = "_historical"
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages")
+sys.path.insert(0, "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages")
 from ki_tools_common.metrics import all_metrics  # noqa: E402
 
 

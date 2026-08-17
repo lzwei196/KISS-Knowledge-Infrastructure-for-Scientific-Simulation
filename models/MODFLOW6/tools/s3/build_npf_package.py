@@ -31,7 +31,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-SIM_PATH = "/mnt/disk1/Hydrocraft_server/outputs/qinghai_lake_1951_2024/modflow6/workspace"
+SIM_PATH = "KISSPATH_OUTPUTS/qinghai_lake_1951_2024/modflow6/workspace"
 MODEL_NAME = "gwf"
 K_VALUES = [1.0, 0.116]       # Horizontal K per layer (m/day)
 K33_VALUES = None                   # Vertical K (defaults to K if None)

@@ -43,7 +43,7 @@
 references are STALE. Use instead:
 - forcing units and traps → `ki_tools_common.load_forcing`, plus `tools/convert_forcing_to_cwatm.py`
 - soil properties → `ki_tools_common.soil_utils`, plus `tools/convert_soil_to_cwatm.py`
-- observed discharge → `/mnt/disk1/Hydrocraft_server/data_ki/dataset_index.yaml`
+- observed discharge → `KISSPATH_DATA_KI/dataset_index.yaml`
   (`observation.discharge`) and `kdt_dataset_layouts.yaml` for on-disk format quirks.
 
 

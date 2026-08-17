@@ -4,7 +4,7 @@
   "domain": "urban",
   "basin": "Wangjiaba (51030)",
   "basin_area_km2": 30630,
-  "ki_path": "/mnt/disk1/Hydrocraft_server/models/SWMM/knowledge_infrastructure",
+  "ki_path": "KISSPATH_KI_ROOT/SWMM/knowledge_infrastructure",
   "test_status": "PASS",
   "ki_generalized": true,
   "binary_found": true,

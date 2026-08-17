@@ -21,7 +21,7 @@ import sys
 import time
 from pathlib import Path
 
-_PENV = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+_PENV = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
 if _PENV not in sys.path:
     sys.path.insert(0, _PENV)
 

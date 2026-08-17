@@ -12,7 +12,7 @@ model:
   domain: "flood"
   secondary_domains: ["dam_safety"]
   binary: "DLBreach.exe"
-  binary_path: "/mnt/disk1/Hydrocraft_server/model/dlbreach/bin/DLBreach.exe"
+  binary_path: "KISSPATH_BINARIES/dlbreach/bin/DLBreach.exe"
   language: "Fortran"
   working_directory: "directory containing casename.txt"
   notes: "Dam/levee breach model. Single input file, single output file, SI units."

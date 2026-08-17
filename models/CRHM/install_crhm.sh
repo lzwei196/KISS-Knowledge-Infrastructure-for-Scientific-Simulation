@@ -13,12 +13,12 @@
 #   ./install_crhm.sh
 #
 # Output:
-#   /mnt/disk1/Hydrocraft_server/model/crhmcode/crhmcode/build/crhm
+#   KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm
 # ============================================================================
 
 set -euo pipefail
 
-MODEL_DIR="/mnt/disk1/Hydrocraft_server/model"
+MODEL_DIR="KISSPATH_BINARIES"
 CRHM_DIR="${MODEL_DIR}/crhmcode"
 SRC_DIR="${CRHM_DIR}/crhmcode/src"
 BUILD_DIR="${CRHM_DIR}/crhmcode/build"

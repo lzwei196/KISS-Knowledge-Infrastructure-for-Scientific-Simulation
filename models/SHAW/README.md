@@ -53,7 +53,7 @@ The standalone version has **more physics options** and is required for detailed
 
 ### Compilation
 ```bash
-cd /mnt/disk1/Hydrocraft_server/model/shaw/Code
+cd KISSPATH_BINARIES/shaw/Code
 gfortran -O2 -o shaw303 shaw303.f
 # Or if multiple source files:
 # gfortran -O2 -o shaw303 *.f
@@ -62,12 +62,12 @@ gfortran -O2 -o shaw303 shaw303.f
 ### Running
 ```bash
 cd /path/to/input/files
-/mnt/disk1/Hydrocraft_server/model/shaw/Code/shaw303
+KISSPATH_BINARIES/shaw/Code/shaw303
 # When prompted, enter: Trial.30.inp
 ```
 SHAW reads from stdin — it prompts for the .inp file path. For automation, pipe it:
 ```bash
-echo "Trial.30.inp" | /mnt/disk1/Hydrocraft_server/model/shaw/Code/shaw303
+echo "Trial.30.inp" | KISSPATH_BINARIES/shaw/Code/shaw303
 ```
 
 ## Input Files (5 required + 3 optional)
@@ -218,7 +218,7 @@ The coupling approach:
 - Operated by Environment and Climate Change Canada (ECCC)
 - Site: Old Jack Pine (OJP), ~53.916°N, 104.692°W, 580m elevation
 - Part of FLUXNET / AmeriFlux network
-- Local path: `/mnt/disk4/observedST-SM/soil_temperatureand_soil_moisture_canada/sas_forest/`
+- Local path: `KISSPATH_DATA/observedST-SM/soil_temperatureand_soil_moisture_canada/sas_forest/`
 - Reference: Barr et al. (2012) JGR-Biogeosciences; Zha et al. (2010) Global Change Biology
 
 **Data used**:
@@ -259,7 +259,7 @@ All at `outputs/shaw_jackpine/`: 6 validation plots + SHAW input/output files
 **Data source**: Manitoba Agriculture Weather Program (MAWP)
 - Station 544, Alexander, Manitoba (49.81°N, 100.37°W, 460m elevation)
 - Prairie grassland (no canopy, MCANFLG=0)
-- Local path: `/mnt/disk4/observedST-SM/soil_temperatureand_soil_moisture_canada/manitoba/`
+- Local path: `KISSPATH_DATA/observedST-SM/soil_temperatureand_soil_moisture_canada/manitoba/`
 - Soil temperature at 4 depths: 5, 20, 50, 100 cm
 
 **Simulation**: Nov 2019 – Oct 2020, **daily weather input (MTSTEP=1)**, 364 days

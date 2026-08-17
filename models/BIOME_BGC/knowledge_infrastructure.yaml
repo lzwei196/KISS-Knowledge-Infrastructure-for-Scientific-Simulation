@@ -7,8 +7,8 @@ package:
     Coupled with VIC/LDNDC in HydroCraft for full-basin carbon budgets and FLUXNET validation.
   target_model: "BIOME-BGC 4.2"
   domain: "terrestrial biogeochemistry, forest carbon cycling, natural ecosystem C/N/water fluxes"
-  binary: "/mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-src/bgc"
-  example_data: "/mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-src/"
+  binary: "KISSPATH_BINARIES/biome-bgc/bgc-src/bgc"
+  example_data: "KISSPATH_BINARIES/biome-bgc/bgc-src/"
   authors:
     - "HydroCraft Team (Jianyun Zhang Research Group)"
     - "Claude (Knowledge Dissection)"

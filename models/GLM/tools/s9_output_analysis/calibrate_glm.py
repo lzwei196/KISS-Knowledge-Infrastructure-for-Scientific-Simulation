@@ -33,7 +33,7 @@ import numpy as np
 import pandas as pd
 
 
-GLM_BINARY = "/mnt/disk1/Hydrocraft_server/model/glm/bin/glm"
+GLM_BINARY = "KISSPATH_BINARIES/glm/bin/glm"
 
 # Parameter ranges
 PARAM_RANGES = {

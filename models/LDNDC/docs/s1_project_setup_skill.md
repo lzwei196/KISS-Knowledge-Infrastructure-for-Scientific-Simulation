@@ -15,7 +15,7 @@ Before starting this stage, verify:
 - [ ] LDNDC binary is installed and accessible at the expected path
 - [ ] Target output directory parent exists and is writable
 - [ ] Basin coordinates (lat/lon) and simulation period (start/end dates) are known
-- [ ] Python environment activated: `source /mnt/disk1/Hydrocraft_server/python_env/bin/activate`
+- [ ] Python environment activated: `source KISSPATH_PYTHON_ENV/bin/activate`
 
 ## Inputs
 

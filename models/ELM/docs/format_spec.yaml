@@ -4,7 +4,7 @@ model:
   version: "E3SM v3"
   domain: "land_surface"
   description: "Land surface component of E3SM — simulates energy, water, carbon, nitrogen, and phosphorus exchange between land and atmosphere"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ELM/source/repo/cime_config/config_grids.xml"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ELM/source/repo/cime_config/config_grids.xml"
   execution_mode: "HPC batch (MPI+OpenMP via CIME framework)"
   build_system: "CIME/CMake"
   requires_hpc: true

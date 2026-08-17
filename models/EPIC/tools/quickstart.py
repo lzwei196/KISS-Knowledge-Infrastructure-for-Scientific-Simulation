@@ -38,15 +38,15 @@ sys.path.insert(0, TOOLS_DIR)
 
 # Add ki_tools_common to path
 for _cand in [
-    "/mnt/disk1/Hydrocraft_server/models/ki_tools_common",
-    "/home/server/knowledge-dissection-toolkit/kdt-release",
+    "KISSPATH_KI_TOOLS_COMMON",
+    "KISSPATH_INTERNAL_NOT_SHIPPED/kdt-release",
 ]:
     if os.path.isdir(os.path.join(_cand, "ki_tools_common")):
         sys.path.insert(0, _cand)
         break
 
-CHINA_DEM_PATH = "/mnt/disk1/Hydrocraft_server/data/dem/china_dem_90m/china_dem_90m.tif"
-CMFD_ELEV_PATH = "/mnt/disk1/Hydrocraft_server/data/elev/elev_CMFD_V0200_B-00_fx_010deg.nc"
+CHINA_DEM_PATH = "KISSPATH_STATIC/china_dem_90m/china_dem_90m.tif"
+CMFD_ELEV_PATH = "KISSPATH_DATA/elev/elev_CMFD_V0200_B-00_fx_010deg.nc"
 
 
 def _lookup_terrain(lat, lon):

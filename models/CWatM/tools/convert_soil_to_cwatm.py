@@ -133,7 +133,7 @@ def _read_hwsd_bil(input_dir, bbox, resolution=0.25):
     mdb_candidates = (
         glob.glob(os.path.join(input_dir, "*.mdb")) +
         glob.glob(os.path.join(os.path.dirname(input_dir), "**", "*.mdb"), recursive=True) +
-        ["/media/server/hc_ssd/forcing/huaihe_raw/soil/HWSD.mdb"]
+        ["KISSPATH_FORCING/huaihe_raw/soil/HWSD.mdb"]
     )
     mdb_path = next((f for f in mdb_candidates if os.path.exists(f)), None)
 

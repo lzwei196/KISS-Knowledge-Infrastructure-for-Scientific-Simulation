@@ -36,7 +36,7 @@ WORKSPACE_CANDIDATES = [
     os.path.join(KI_DIR, "runs", "umstead_quick_validate"),
     os.path.join(MODEL_DIR, "outputs"),
     os.path.join(MODEL_DIR, "source", "repo"),
-    "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent"
+    "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent"
     "/_work_v2/EPIC/epic_workspace",
 ]
 

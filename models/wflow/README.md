@@ -90,7 +90,7 @@ Runner script:   models/wflow/knowledge_infrastructure/julia/wflow_runner.jl
 
 Install Julia:
 ```bash
-cd /mnt/disk1/Hydrocraft_server/model
+cd KISSPATH_BINARIES
 wget https://julialang-s3.julialang.org/bin/linux/x64/1.10/julia-1.10.7-linux-x86_64.tar.gz
 tar xzf julia-1.10.7-linux-x86_64.tar.gz
 ```

@@ -16,15 +16,15 @@ observation. Pre-2000 WGMS years fall outside the geodetic window and provide a
 genuine out-of-calibration holdout.
 
 Usage:
-    python validate_wgms_reference_mb.py --working_dir /home/server/OGGM/wgms_ref_val_rgi13 \\
+    python validate_wgms_reference_mb.py --working_dir KISSPATH_HOME/OGGM/wgms_ref_val_rgi13 \\
         --rgi_region 13 --min_mb_yrs 15 --out result.json
 """
 import argparse, glob, json, os, sys
 from pathlib import Path
 
-SP = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
-KI = "/mnt/disk1/Hydrocraft_server/models/ki_tools_common"
-for p in (SP, KI, "/mnt/disk1/Hydrocraft_server"):
+SP = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
+KI = "KISSPATH_KI_TOOLS_COMMON"
+for p in (SP, KI, "KISSPATH_ROOT"):
     if p not in sys.path:
         sys.path.insert(0, p)
 
@@ -47,7 +47,7 @@ def find_links():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--working_dir", default="/home/server/OGGM/wgms_ref_val_rgi13")
+    ap.add_argument("--working_dir", default="KISSPATH_HOME/OGGM/wgms_ref_val_rgi13")
     ap.add_argument("--rgi_region", default="13")
     ap.add_argument("--min_mb_yrs", type=int, default=15)
     ap.add_argument("--out", default=None)

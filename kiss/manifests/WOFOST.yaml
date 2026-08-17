@@ -1,0 +1,39 @@
+kiss_manifest_version: 1
+model: WOFOST
+binary_type: Python
+verified: observed
+
+# WOFOST is distributed as PCSE (Python Crop Simulation Environment), so this is
+# the one acquisition path in the estate that is genuinely one command.
+acquire:
+  strategy: pip
+  package: pcse
+  produces: pcse
+
+python_deps: [pcse, pyyaml, numpy, pandas, xlrd, sqlalchemy]
+
+data:
+  - role: forcing
+    name: Daily meteorology (WOFOST/CABO or NASA POWER)
+    why: >-
+      WOFOST needs daily TMIN, TMAX, radiation, vapour pressure, wind and rain.
+      PCSE ships NASAPowerWeatherDataProvider, which fetches these over the
+      network for any lat/lon, so no local dataset is strictly required.
+    variables: [TMIN, TMAX, IRRAD, VAP, WIND, RAIN]
+    optional: true
+  - role: static
+    name: Crop and soil parameter files
+    why: PCSE bundles a standard crop/soil set; site-specific runs need your own.
+    optional: true
+
+reference_case: >-
+  python -c "from pcse.models import Wofost72_WLP_FD; print('WOFOST importable')"
+
+notes: >-
+  Verified against the live install on the authoring machine: the KI's own
+  scripts are stdlib-only wrappers and the model itself is PCSE.
+
+agent_hint: >-
+  WOFOST runs entirely in Python via PCSE. If preflight fails it is almost
+  always a missing crop/soil/agromanagement YAML rather than a broken install.
+  Read SKILL.md for the parameter conventions before touching anything.

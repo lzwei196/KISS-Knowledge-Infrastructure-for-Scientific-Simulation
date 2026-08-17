@@ -47,7 +47,7 @@ DOMAIN_INFO_PATH = ""
 DEM_PATH = ""  # If empty, use HydroCraft default
 
 # HydroCraft DEM paths
-CHINA_DEM = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "data/dem/china_dem_90m/china_dem_90m.tif")
+CHINA_DEM = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "data/dem/china_dem_90m/china_dem_90m.tif")
 
 FDIR_SOURCE = "dem"     # "dem" (bare-earth D8) or "merit" (MERIT-Hydro D8)
 MERIT_DIR_TIF = ""

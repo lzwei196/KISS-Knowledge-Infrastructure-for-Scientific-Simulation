@@ -17,7 +17,7 @@ from pathlib import Path
 import re
 
 # 工作空间根目录
-WORKSPACE_ROOT = Path("/mnt/disk1/Hydrocraft_server")
+WORKSPACE_ROOT = Path("KISSPATH_ROOT")
 
 # 流域名称配置（用于输出目录）
 BASIN_NAME = os.environ.get("VIC_BASIN_NAME", "mekong_travinh_slr")
@@ -29,7 +29,7 @@ PATH_CONFIG = {
     "shp_file": Path(os.environ.get(
         "VIC_BASIN_SHP",
         str(WORKSPACE_ROOT / "data" / "shp" / "mekong_lower_shp" / "mekong_lower_boundary_shp" / "mekong_lower_boundary.shp"))),
-    "forcing_nc_dir": Path("/mnt/disk3/msxw"),
+    "forcing_nc_dir": Path("KISSPATH_FORCING"),
     "soil_raster": WORKSPACE_ROOT / "data" / "soil" / "HWSD_RASTER" / "hwsd.bil",
     "landcover_raster": WORKSPACE_ROOT / "data" / "landcover" / "AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif",
     "global_soil_param": WORKSPACE_ROOT / "data" / "插值" / "global_soil_param_new.txt",

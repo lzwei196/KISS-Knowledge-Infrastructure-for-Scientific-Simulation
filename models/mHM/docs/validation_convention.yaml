@@ -25,77 +25,77 @@ references:
     venue: "Transactions of the ASABE"
     year: 2007
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_2013.23153.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
   moriasi2015:
     doi: 10.13031/trans.58.10715
     title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
     venue: "Transactions of the ASABE"
     year: 2015
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_trans.58.10715.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
   arnold2012:
     doi: 10.13031/2013.42256
     title: "SWAT: Model Use, Calibration, and Validation"
     venue: "Transactions of the ASABE"
     year: 2012
     oa: green
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_2013.42256.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.42256.txt
   koch2018:
     doi: 10.5194/gmd-11-1873-2018
     title: "The SPAtial EFficiency metric (SPAEF): multiple-component evaluation of spatial patterns for optimization of hydrological models"
     venue: "Geosci. Model Dev."
     year: 2018
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_gmd-11-1873-2018.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-11-1873-2018.txt
   demirel2018:
     doi: 10.5194/hess-22-1299-2018
     title: "Combining satellite data and appropriate objective functions for improved spatial pattern performance of a distributed hydrologic model"
     venue: "Hydrol. Earth Syst. Sci."
     year: 2018
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-22-1299-2018.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-22-1299-2018.txt
   dembele2022:
     doi: 10.3390/rs14020315
     title: "Climate Normalized Spatial Patterns of Evapotranspiration Enhance the Calibration of a Hydrological Model"
     venue: "Remote Sensing"
     year: 2022
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.3390_rs14020315.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_rs14020315.txt
   samaniego2017:
     doi: 10.5194/hess-21-4323-2017
     title: "Toward seamless hydrologic predictions across spatial scales"
     venue: "Hydrol. Earth Syst. Sci."
     year: 2017
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-21-4323-2017.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-21-4323-2017.txt
   zink2017:
     doi: 10.5194/hess-21-1769-2017
     title: "A high-resolution dataset of water fluxes and states for Germany accounting for parametric uncertainty"
     venue: "Hydrol. Earth Syst. Sci."
     year: 2017
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-21-1769-2017.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-21-1769-2017.txt
   thober2019:
     doi: 10.5194/gmd-12-2501-2019
     title: "The multiscale routing model mRM v1.0: simple river routing at resolutions from 1 to 50 km"
     venue: "Geosci. Model Dev."
     year: 2019
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_gmd-12-2501-2019.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_gmd-12-2501-2019.txt
   pomeon2018:
     doi: 10.3390/w10101418
     title: "Computationally Efficient Multivariate Calibration and Validation of a Grid-Based Hydrologic Model in Sparsely Gauged West African River Basins"
     venue: "Water"
     year: 2018
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.3390_w10101418.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w10101418.txt
   kunnath2018:
     doi: 10.3390/w11102083
     title: "Additional Value of Using Satellite-Based Soil Moisture and Two Sources of Groundwater Data for Hydrological Model Calibration"
     venue: "Water"
     year: 2019
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.3390_w11102083.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_w11102083.txt
 
 validation:
 

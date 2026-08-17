@@ -3,7 +3,7 @@ model:
   version: "3.8"
   full_name: "Coupled-Ocean-Atmosphere-Wave-Sediment Transport"
   domain: "coastal_ocean"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/COAWST/source/repo/coawstM"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/COAWST/source/repo/coawstM"
   build_system: "GNU Make / CMake with MPI"
   language: "Fortran 90+"
   coupling_framework: "MCT or ESMF/NUOPC"

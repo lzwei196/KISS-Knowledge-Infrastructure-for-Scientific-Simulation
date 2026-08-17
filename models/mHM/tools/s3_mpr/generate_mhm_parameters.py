@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 CONFIG_PATH = ""
 CLIMATE_ZONE = "default"  # "humid", "semi-arid", "cold", "tropical"
-MHM_PARAM_TEMPLATE = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "model/mhm_src/mhm_parameter.nml")
+MHM_PARAM_TEMPLATE = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "model/mhm_src/mhm_parameter.nml")
 
 if len(sys.argv) > 1:
     import argparse

@@ -75,7 +75,7 @@ variability (sub-km spatial correlation). R is stable at 0.15–0.35 regardless 
 training density (confirmed by sensitivity test). Alice (external reviewer) confirmed
 results are reasonable and comparable to other model outputs against this reference.
 
-**Outputs**: `/mnt/disk1/Hydrocraft_server/outputs/gempy_dtb_multisite/`
+**Outputs**: `KISSPATH_OUTPUTS/gempy_dtb_multisite/`
 
 
 ## 1. Overview

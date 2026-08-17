@@ -4,7 +4,7 @@
 
 - VIC simulation completed (Steps 1-7 of HydroCraft workflow)
 - Basin shapefile available
-- Python environment with Pywr: `/home/server/桌面/test/hydro-claude/python_env/bin/python3`
+- Python environment with Pywr: `KISSPATH_HOME/桌面/test/hydro-claude/python_env/bin/python3`
 
 ## Stage Sequence
 

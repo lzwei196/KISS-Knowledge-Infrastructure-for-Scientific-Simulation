@@ -32,7 +32,7 @@ import math
 import numpy as np
 from datetime import datetime, date, timedelta
 
-CACHE_DIR_DEFAULT = "/mnt/disk1/Hydrocraft_server/data/nasa_power_cache/hourly"
+CACHE_DIR_DEFAULT = "KISSPATH_DATA/nasa_power_cache/hourly"
 PAR_FRACTION  = 0.48
 EPAN_ET0_RATIO = 0.7
 

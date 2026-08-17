@@ -51,10 +51,10 @@ import sys
 import numpy as np
 import pandas as pd
 
-KI = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/knowledge_infrastructure"
-KTC = "/mnt/disk1/Hydrocraft_server/models/ki_tools_common"
-MARRMOT_SRC = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/source/repo/MARRMoT"
-STATE = "/mnt/disk1/Hydrocraft_server/models/MARRMoT/detached/verify_1"
+KI = "KISSPATH_KI_ROOT/MARRMoT/knowledge_infrastructure"
+KTC = "KISSPATH_KI_TOOLS_COMMON"
+MARRMOT_SRC = "KISSPATH_KI_ROOT/MARRMoT/source/repo/MARRMoT"
+STATE = "KISSPATH_KI_ROOT/MARRMoT/detached/verify_1"
 
 sys.path.insert(0, KTC)
 from ki_tools_common.metrics import all_metrics  # noqa: E402
@@ -67,7 +67,7 @@ GAUGE = "GRDC_3275140"
 GAUGE_NAME = "Rio de los Patos at La Plateada, San Juan, Argentina (Andes)"
 GAUGE_LAT, GAUGE_LON = -31.8813, -69.6896
 AREA_KM2 = 8460.835471
-NC = ("/mnt/datasets/observed_data/dischargeandwatershed/"
+NC = ("KISSPATH_DATA/observed_data/dischargeandwatershed/"
       f"GRDC-Caravan-extension-nc/timeseries/netcdf/grdc/{GAUGE}.nc")
 
 # Same two candidate structures + selection rule as the Tangnaihai Real-case.

@@ -46,24 +46,24 @@ from datetime import datetime
 import numpy as np
 
 # --------------------------------------------------------------------------
-KI = "/mnt/disk1/Hydrocraft_server/models/PCR_GLOBWB_2/knowledge_infrastructure"
+KI = "KISSPATH_KI_ROOT/PCR_GLOBWB_2/knowledge_infrastructure"
 TOOLS = os.path.join(KI, "tools")
-PCR_PY = ("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/"
+PCR_PY = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/"
           "PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/bin/python")
 PCR_BIN = os.path.dirname(PCR_PY)
-MODEL_DIR = ("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/"
+MODEL_DIR = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/"
              "PCR_GLOBWB_2/source/repo/model")
 
-OUT = "/mnt/disk1/Hydrocraft_server/outputs/pcrglobwb2_elbe_neudarchau"
+OUT = "KISSPATH_OUTPUTS/pcrglobwb2_elbe_neudarchau"
 INPUT_DIR = os.path.join(OUT, "input")
 CLONE_DIR = os.path.join(OUT, "clone")
 FORCING_DIR = os.path.join(INPUT_DIR, "global_30min/meteo/forcing")
 RESULT_DIR = os.environ.get(
     "KDT_RESULT_DIR",
-    "/mnt/disk1/Hydrocraft_server/models/PCR_GLOBWB_2/detached/verify_1")
+    "KISSPATH_KI_ROOT/PCR_GLOBWB_2/detached/verify_1")
 
-MSWX_DIR = "/mnt/disk3/msxw"
-OBS_FILE = ("/mnt/datasets/observed_data/dischargeandwatershed/"
+MSWX_DIR = "KISSPATH_FORCING"
+OBS_FILE = ("KISSPATH_DATA/observed_data/dischargeandwatershed/"
             "GRDC-Caravan-extension-nc/timeseries/netcdf/grdc/GRDC_6340110.nc")
 
 GAUGE_ID = "GRDC_6340110"

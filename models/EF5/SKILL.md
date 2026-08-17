@@ -492,7 +492,7 @@ metric families are `spatial_pattern_match` / `event_detection` (CSI/POD/FAR), w
 KI cannot deliver. Skip such obs; do not score them with temporal NSE/KGE/PBIAS.
 
 **KI-INTEGRITY CAVEAT — dag.yaml is HYPE's, not EF5's.** The installed `dag.yaml`
-(and its source `/mnt/datasets/EF5_dag_v3_5_auto.yaml`) both carry
+(and its source `KISSPATH_DATA/EF5_dag_v3_5_auto.yaml`) both carry
 `identity.model_id: "HYPE"` with HYPE outputs (`cout`/`snow`/`evap`/`soim`/`gwat`).
 The dag-driven obs-shape gate therefore reads HYPE metadata for EF5 runs and CANNOT be
 trusted as an EF5 output contract. Prior EF5 streamflow PASSes matched on `var=cout`,

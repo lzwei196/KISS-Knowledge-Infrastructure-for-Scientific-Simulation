@@ -1,8 +1,8 @@
 # HYPE v5.35.0 -- Capability Inventory (KDT v5.0 Stage s2)
 
 **Generated**: 2026-04-01
-**Source**: 38 Fortran 90 files, 93,622 lines (`/mnt/disk1/Hydrocraft_server/model/hype/hype_5_35_0_src/`)
-**Binary**: `/mnt/disk1/Hydrocraft_server/model/hype/hype`
+**Source**: 38 Fortran 90 files, 93,622 lines (`KISSPATH_BINARIES/hype/hype_5_35_0_src/`)
+**Binary**: `KISSPATH_BINARIES/hype/hype`
 **Current KI version**: 1.0.0
 
 ---

@@ -36,12 +36,12 @@ validation_status: production_validated
 ### Lake/reservoir data
 ```bash
 # Generate LakeData.txt from HydroLAKES + GRanD:
-python /mnt/disk1/Hydrocraft_server/models/HYPE/knowledge_infrastructure/tools/s6_lake_reservoir_config/generate_lakedata.py \
+python KISSPATH_KI_ROOT/HYPE/knowledge_infrastructure/tools/s6_lake_reservoir_config/generate_lakedata.py \
     --geodata [GEODATA] --geoclass [GEOCLASS] --output [OUTPUT] \
     --lat [LAT] --lon [LON] --search_radius_km 100 --update_geodata
 
 # Generate DamData.txt from GRanD:
-python /mnt/disk1/Hydrocraft_server/models/HYPE/knowledge_infrastructure/tools/s6_lake_reservoir_config/generate_damdata.py \
+python KISSPATH_KI_ROOT/HYPE/knowledge_infrastructure/tools/s6_lake_reservoir_config/generate_damdata.py \
     --geodata [GEODATA] --output [OUTPUT] \
     --lat [LAT] --lon [LON] --search_radius_km 200
 ```
@@ -61,9 +61,9 @@ Then convert to HYPE forcing format using this KI's tool: `tools/s3_forcing_prep
 
 **HYPE (HYdrological Predictions for the Environment)** is a semi-distributed, process-based hydrological and nutrient transport model developed at SMHI (Swedish Meteorological and Hydrological Institute). It operates on a subbasin-SLC (Soil-Land use Class) structure where the landscape is divided into subbasins, each containing fractional areas of soil-landcover combinations.
 
-**Binary**: `/mnt/disk1/Hydrocraft_server/model/hype/hype` (v5.35.0, compiled from source)
-**Source**: `/mnt/disk1/Hydrocraft_server/model/hype/hype_5_35_0_src/` (38 Fortran 90 files, 93,622 lines)
-**Demo**: `/mnt/disk1/Hydrocraft_server/model/hype/demo/` (3-subbasin test case, validated)
+**Binary**: `KISSPATH_BINARIES/hype/hype` (v5.35.0, compiled from source)
+**Source**: `KISSPATH_BINARIES/hype/hype_5_35_0_src/` (38 Fortran 90 files, 93,622 lines)
+**Demo**: `KISSPATH_BINARIES/hype/demo/` (3-subbasin test case, validated)
 
 ### What Makes HYPE Unique in HydroCraft
 
@@ -457,10 +457,10 @@ where `wmin = -regvol * 1e6 / lake_area_m2` (negative = below threshold).
 
 ```bash
 # From the directory containing info.txt:
-/mnt/disk1/Hydrocraft_server/model/hype/hype ./
+KISSPATH_BINARIES/hype/hype ./
 
 # Or specify a different info directory:
-/mnt/disk1/Hydrocraft_server/model/hype/hype /path/to/run/directory/
+KISSPATH_BINARIES/hype/hype /path/to/run/directory/
 
 # CRITICAL: The argument MUST end with a slash (/)
 # Without slash: looks for info.txt at wrong path
@@ -714,7 +714,7 @@ python tools/s10_calibration/setup_calibration.py \
     --outlet_subid 3
 
 # Step 2: Run HYPE (calibration is automatic when calibration=Y in info.txt)
-/mnt/disk1/Hydrocraft_server/model/hype/hype ./
+KISSPATH_BINARIES/hype/hype ./
 
 # Step 3: Parse calibration results
 python tools/s10_calibration/parse_calibration_results.py \
@@ -739,7 +739,7 @@ python tools/s10_calibration/setup_calibration.py \
     --crit_variable cout \
     --obs_variable rout
 
-/mnt/disk1/Hydrocraft_server/model/hype/hype ./
+KISSPATH_BINARIES/hype/hype ./
 ```
 
 ### Calibrating with NPC Parameters

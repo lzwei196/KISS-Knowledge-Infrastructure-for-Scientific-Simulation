@@ -296,7 +296,7 @@ validation:
   tier: "real"
   basin: "Bengbu (station 51080)"
   period: "1981-1990"
-  observation_path: "/mnt/disk1/Hydrocraft_server/data/obs/BB/51080_bengbu.txt"
+  observation_path: "KISSPATH_OBS/BB/51080_bengbu.txt"
   metrics:
     NSE: 0.208
     KGE: 0.496

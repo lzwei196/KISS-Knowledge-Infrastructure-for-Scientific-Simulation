@@ -55,9 +55,9 @@ N_ITERATIONS = 400
 PARAM_NML = ""          # e.g. <cal_dir>/FinalParam.nml -> copied to mhm_parameter.nml
 
 # Template parameter file from mHM source
-MHM_PARAM_TEMPLATE = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "model/mhm_src/mhm_parameter.nml")
-MHM_OUTPUTS_TEMPLATE = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "model/mhm_src/mhm_outputs.nml")
-MRM_OUTPUTS_TEMPLATE = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "model/mhm_src/mrm_outputs.nml")
+MHM_PARAM_TEMPLATE = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "model/mhm_src/mhm_parameter.nml")
+MHM_OUTPUTS_TEMPLATE = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "model/mhm_src/mhm_outputs.nml")
+MRM_OUTPUTS_TEMPLATE = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "model/mhm_src/mrm_outputs.nml")
 
 if len(sys.argv) > 1:
     import argparse

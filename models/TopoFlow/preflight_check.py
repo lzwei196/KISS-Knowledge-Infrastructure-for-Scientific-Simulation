@@ -30,7 +30,7 @@ def check_dir(path, label):
 def check_import(module, label):
     # Also search HydroCraft python_env for packages
     import sys
-    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
     if _penv not in sys.path:
         sys.path.insert(0, _penv)
     global PASS, FAIL
@@ -49,11 +49,11 @@ def main():
     print()
     # TopoFlow in dissection venv
     import sys
-    sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/TopoFlow/venv/lib/python3.12/site-packages")
+    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/TopoFlow/venv/lib/python3.12/site-packages")
     # TopoFlow: use venv python (has deps system python lacks)
     import subprocess
     try:
-        proc = subprocess.run(["/home/server/knowledge-dissection-toolkit/auto_dissect/_work/TopoFlow/venv/bin/python3", "-c", "import topoflow"], 
+        proc = subprocess.run(["KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/TopoFlow/venv/bin/python3", "-c", "import topoflow"], 
             capture_output=True, timeout=10)
         if proc.returncode == 0:
             print(f"  OK    TopoFlow (topoflow): verified via venv python")

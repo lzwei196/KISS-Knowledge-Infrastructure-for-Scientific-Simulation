@@ -56,9 +56,9 @@ logger = logging.getLogger(__name__)
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _TOOLS = os.path.dirname(_HERE)                      # tools/
 _KI = os.path.dirname(_TOOLS)                        # knowledge_infrastructure/
-_KI_COMMON = "/mnt/disk1/Hydrocraft_server/models/ki_tools_common"
+_KI_COMMON = "KISSPATH_KI_TOOLS_COMMON"
 for _p in (
-    "/home/server/knowledge-dissection-toolkit/kdt-release",  # lowest priority
+    "KISSPATH_INTERNAL_NOT_SHIPPED/kdt-release",  # lowest priority
     _KI_COMMON,                                               # canonical ki_tools_common
     os.path.join(_TOOLS, "s3_weather_prep"),
     _HERE,                                                    # highest priority

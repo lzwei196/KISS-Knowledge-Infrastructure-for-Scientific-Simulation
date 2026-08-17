@@ -15,7 +15,7 @@ Usage:
         --template hbv_ec \
         --n_iterations 100 \
         --objective NSE \
-        --raven_exe /mnt/disk1/Hydrocraft_server/model/raven/Raven.exe
+        --raven_exe KISSPATH_BINARIES/raven/Raven.exe
 """
 
 import argparse
@@ -43,7 +43,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "s7_output"))
 from parse_raven_output import load_discharge_series, parse_diagnostics  # noqa: E402
 
-RAVEN_EXE_DEFAULT = "/mnt/disk1/Hydrocraft_server/model/raven/Raven.exe"
+RAVEN_EXE_DEFAULT = "KISSPATH_BINARIES/raven/Raven.exe"
 
 # Calibration parameter definitions per template
 # name: (min, max, default, description)

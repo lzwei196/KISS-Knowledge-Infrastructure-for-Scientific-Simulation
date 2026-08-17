@@ -45,7 +45,7 @@ LON = 5.5
 # "Either HWSD raster or manual texture must be provided" and the soil step died.
 # Use the canonical absolute server path so the lookup is cwd-independent; a
 # caller may still override via argv[3].
-HWSD_RASTER = "/mnt/disk1/Hydrocraft_server/data/soil/HWSD_RASTER/hwsd.bil"
+HWSD_RASTER = "KISSPATH_STATIC/HWSD_RASTER/hwsd.bil"
 HWSD_MDB = "data/forcing/huaihe_raw/soil/HWSD.mdb"
 
 # Manual override: provide texture directly if HWSD not available

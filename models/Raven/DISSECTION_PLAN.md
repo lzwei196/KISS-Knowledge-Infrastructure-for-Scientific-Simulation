@@ -218,17 +218,17 @@ Minimum forcing: PRECIP + TEMP_MIN + TEMP_MAX (Raven generates all others via it
 ```bash
 # Download source
 wget https://raven.uwaterloo.ca/files/v4.1/RavenSource_v4.1.zip
-unzip RavenSource_v4.1.zip -d /mnt/disk1/Hydrocraft_server/model/raven_v4.1/
+unzip RavenSource_v4.1.zip -d KISSPATH_BINARIES/raven_v4.1/
 
 # Option A: CMake build
-cd /mnt/disk1/Hydrocraft_server/model/raven_v4.1/
+cd KISSPATH_BINARIES/raven_v4.1/
 mkdir build && cd build
 cmake -DCOMPILE_EXE=ON -DCOMPILE_LIB=OFF ../
 make -j$(nproc)
 # Binary at: build/Raven.exe (or similar)
 
 # Option B: Makefile build (alternative)
-cd /mnt/disk1/Hydrocraft_server/model/raven_v4.1/
+cd KISSPATH_BINARIES/raven_v4.1/
 make -f Makefile
 ```
 

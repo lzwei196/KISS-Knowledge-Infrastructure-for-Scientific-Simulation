@@ -28,49 +28,49 @@ references:
     venue: "Transactions of the ASABE"
     year: 2007
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_2013.23153.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
   moriasi2015:
     doi: 10.13031/trans.58.10715
     title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
     venue: "Transactions of the ASABE"
     year: 2015
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_trans.58.10715.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
   ershadi2013:
     doi: 10.1016/j.agrformet.2013.11.008
     title: "Effects of spatial aggregation on the multi-scale estimation of evapotranspiration (multi-site evaluation of terrestrial evaporation models using FLUXNET data)"
     venue: "Agricultural and Forest Meteorology"
     year: 2013
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1016_j.agrformet.2013.11.008.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.agrformet.2013.11.008.txt
   smproducts2021:
     doi: 10.5194/hess-25-17-2021
     title: "Evaluation of 18 satellite- and model-based soil moisture products using in situ measurements from 826 sensors"
     venue: "Hydrology and Earth System Sciences"
     year: 2021
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-25-17-2021.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-25-17-2021.txt
   swe2020:
     doi: 10.5194/tc-14-1579-2020
     title: "Evaluation of long-term Northern Hemisphere snow water equivalent products"
     venue: "The Cryosphere"
     year: 2020
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_tc-14-1579-2020.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-14-1579-2020.txt
   vicchina2015:
     doi: 10.1175/jhm-d-13-0170.1
     title: "A Long-Term Land Surface Hydrologic Fluxes and States Dataset for China"
     venue: "Journal of Hydrometeorology"
     year: 2014
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1175_jhm-d-13-0170.1.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_jhm-d-13-0170.1.txt
   niu2018:
     doi: 10.5194/tc-12-657-2018
     title: "Change in frozen soils and its effect on regional hydrology, upper Heihe basin, northeastern Qinghai-Tibetan Plateau"
     venue: "The Cryosphere"
     year: 2018
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_tc-12-657-2018.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_tc-12-657-2018.txt
 
 validation:
 

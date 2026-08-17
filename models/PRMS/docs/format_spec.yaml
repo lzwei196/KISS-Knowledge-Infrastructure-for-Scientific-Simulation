@@ -4,7 +4,7 @@ model:
   full_name: "Precipitation-Runoff Modeling System"
   domain: "hydrology"
   developer: "USGS"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PRMS/source/repo/prms/prms_hpc"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PRMS/source/repo/prms/prms_hpc"
   unit_system: "US customary (Fahrenheit, inches, acres, feet, cfs)"
 
 inputs:

@@ -334,7 +334,7 @@
 ### I2. HWSD Soil Data Integration -- DONE
 - **Model Feature**: HWSD v1.2 global soil database provides texture/OC for any location
 - **KI Coverage**: `ki_tools_common.soil_utils.lookup_hwsd()` + `add_layer_from_texture()` in Soil class
-- **Data Path**: `/home/server/Crop_model_dataset/HWSD/`
+- **Data Path**: `KISSPATH_HOME/Crop_model_dataset/HWSD/`
 
 ### I3. Multi-Data Source Weather Adapter -- PARTIAL (CMFD done, MSWX/NASA POWER partial)
 - **Model Feature**: Weather adapter supports CMFD, MSWX, and NASA POWER data sources
@@ -383,14 +383,14 @@ Evidence from reference .OUT files (e.g., `tunis_test_1_windows.OUT`) confirms t
 
 | Data Source           | Path on Server                                     | Used By        | Status   |
 |-----------------------|---------------------------------------------------|----------------|----------|
-| CMFD (China, 1979-2018) | `/mnt/disk1/Hydrocraft_server/data_ki/CMFD/`   | S3 weather     | Active   |
-| MSWX (Global, 1979-2026) | `/home/server/Crop_model_dataset/MSWX/`       | S3 weather     | Active   |
+| CMFD (China, 1979-2018) | `KISSPATH_DATA_KI/CMFD/`   | S3 weather     | Active   |
+| MSWX (Global, 1979-2026) | `KISSPATH_HOME/Crop_model_dataset/MSWX/`       | S3 weather     | Active   |
 | NASA POWER            | API (online)                                      | S3 weather     | Active   |
-| HWSD v1.2             | `/home/server/Crop_model_dataset/HWSD/`           | S2 soil        | Active   |
-| GGCMI Crop Calendar   | `/home/server/Crop_model_dataset/GGCMI_phase3_crop_calendar/` | S1 crop | Available |
-| China Phenology       | `/home/server/Crop_model_dataset/8313530/`        | S1 crop        | Available |
-| SPAM Crop Distribution| `/home/server/Crop_model_dataset/dataverse_files/`| Regional setup | Available |
-| CaMa-Flood Output     | `/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/out/` | S6 flood  | Active   |
+| HWSD v1.2             | `KISSPATH_HOME/Crop_model_dataset/HWSD/`           | S2 soil        | Active   |
+| GGCMI Crop Calendar   | `KISSPATH_HOME/Crop_model_dataset/GGCMI_phase3_crop_calendar/` | S1 crop | Available |
+| China Phenology       | `KISSPATH_HOME/Crop_model_dataset/8313530/`        | S1 crop        | Available |
+| SPAM Crop Distribution| `KISSPATH_HOME/Crop_model_dataset/dataverse_files/`| Regional setup | Available |
+| CaMa-Flood Output     | `KISSPATH_BINARIES/cmf_v420_pkg/out/` | S6 flood  | Active   |
 | Mauna Loa CO2         | Built into aquacrop package                       | CO2 adjustment | Active   |
 
 ---

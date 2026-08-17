@@ -4,8 +4,8 @@ model:
   domain: flood
   developer: European Commission Joint Research Centre (EC-JRC)
   language: Python (with Numba JIT-compiled soil loop)
-  binary_path: /home/server/miniconda3/envs/lisflood/bin/lisflood
-  source_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/LISFLOOD/source/repo/src/lisf1.py
+  binary_path: KISSPATH_HOME/miniconda3/envs/lisflood/bin/lisflood
+  source_path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/LISFLOOD/source/repo/src/lisf1.py
   settings_format: XML (lisfloodSettings.xml)
   spatial_discretization: Gridded (PCRaster/NetCDF maps with LDD drainage network)
   timestep: 'Sub-daily to daily (typical: DtSec=21600 s = 6-hourly)'

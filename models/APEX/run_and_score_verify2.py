@@ -30,21 +30,21 @@ import shutil
 import glob
 from pathlib import Path
 
-KI = Path("/mnt/disk1/Hydrocraft_server/models/APEX/knowledge_infrastructure")
+KI = Path("KISSPATH_KI_ROOT/APEX/knowledge_infrastructure")
 TOOLS = KI / "tools"
-VALIDATED = Path("/mnt/disk1/Hydrocraft_server/outputs/apex_bengbu_corn_ki_test")
-STATE = Path("/mnt/disk1/Hydrocraft_server/models/APEX/detached/verify_2")
+VALIDATED = Path("KISSPATH_OUTPUTS/apex_bengbu_corn_ki_test")
+STATE = Path("KISSPATH_KI_ROOT/APEX/detached/verify_2")
 WS = STATE / "ws"
 OUT = STATE
-GDHY = Path("/mnt/datasets/Crop_model_dataset/GDHY_v1.2_v1.3/maize")
+GDHY = Path("KISSPATH_DATA/Crop_model_dataset/GDHY_v1.2_v1.3/maize")
 
 LAT, LON, ELEV = 38.25, 115.75, 25.0    # Hebei / Hai-River plain maize belt
 SPIN_START, SCORE_START, SCORE_END = 1961, 1981, 2016
 LOCATION = ("GDHY v1.2/v1.3 Global Dataset of Historical Yields (1981-2016); "
             "sim @ Hai-River-plain Hebei cell 38.25N,115.75E")
 
-for c in ["/mnt/disk1/Hydrocraft_server/models/ki_tools_common",
-          "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent"]:
+for c in ["KISSPATH_KI_TOOLS_COMMON",
+          "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent"]:
     if os.path.isdir(os.path.join(c, "ki_tools_common")):
         sys.path.insert(0, c)
         break

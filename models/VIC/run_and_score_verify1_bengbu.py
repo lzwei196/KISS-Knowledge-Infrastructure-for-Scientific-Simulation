@@ -55,8 +55,8 @@ import os, sys, glob, json, shutil, subprocess, traceback, hashlib
 # pathlib.py backport (`from collections import Sequence`) that shadows stdlib pathlib and
 # breaks `import rasterio` inside s5_routing/build_routing_param.py. System python3 +
 # ~/.local already has every package needed here.
-KDT = "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent"
-BASE = "/mnt/disk1/Hydrocraft_server"
+KDT = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent"
+BASE = "KISSPATH_ROOT"
 KI = f"{BASE}/models/VIC/knowledge_infrastructure"
 sys.path.insert(0, KDT)
 sys.path.insert(0, KI)

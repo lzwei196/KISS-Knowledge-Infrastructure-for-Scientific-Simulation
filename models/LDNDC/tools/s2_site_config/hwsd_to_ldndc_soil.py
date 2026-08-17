@@ -31,8 +31,8 @@ from pathlib import Path
 
 LAT = 0.0
 LON = 0.0
-HWSD_RASTER = "/mnt/disk1/Hydrocraft_server/data/soil/HWSD_RASTER/hwsd.bil"
-HWSD_MDB = "/media/server/hc_ssd/forcing/huaihe_raw/soil/HWSD.mdb"
+HWSD_RASTER = "KISSPATH_STATIC/HWSD_RASTER/hwsd.bil"
+HWSD_MDB = "KISSPATH_FORCING/huaihe_raw/soil/HWSD.mdb"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)

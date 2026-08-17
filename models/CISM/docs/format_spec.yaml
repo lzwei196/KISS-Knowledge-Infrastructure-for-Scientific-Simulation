@@ -3,7 +3,7 @@ model:
   full_name: "Community Ice Sheet Model"
   version: "2.1"
   domain: "cryosphere -- land ice dynamics (ice sheets, ice shelves, glaciers)"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/CISM/source/repo/builds/mpi/cism_driver/cism_driver"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/CISM/source/repo/builds/mpi/cism_driver/cism_driver"
   language: "Fortran 90"
   build_system: "CMake"
   dynamical_cores:

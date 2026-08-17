@@ -24,9 +24,9 @@ import logging
 import numpy as np
 from pathlib import Path
 
-HDS_PATH = "/mnt/disk1/Hydrocraft_server/outputs/qinghai_lake_1951_2024/modflow6/workspace/gwf.hds"
+HDS_PATH = "KISSPATH_OUTPUTS/qinghai_lake_1951_2024/modflow6/workspace/gwf.hds"
 MODEL_PATH = ""
-OUTPUT_PNG = "/mnt/disk1/Hydrocraft_server/outputs/qinghai_lake_1951_2024/modflow6_head_map.png"
+OUTPUT_PNG = "KISSPATH_OUTPUTS/qinghai_lake_1951_2024/modflow6_head_map.png"
 KSTPKPER = None  # None = last timestep
 SHAPEFILE_PATH = ""
 TITLE = "Water Table Elevation"

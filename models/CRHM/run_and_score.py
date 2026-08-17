@@ -5,15 +5,15 @@ m3/s, scores vs the obs txt. Resumable: reuses model output if present."""
 import os, sys, subprocess, json
 import numpy as np, pandas as pd
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models")
+sys.path.insert(0, "KISSPATH_KI_ROOT")
 from ki_tools_common.metrics import all_metrics
 
-BASE = "/mnt/disk1/Hydrocraft_server/models/CRHM/knowledge_infrastructure/outputs/belly_verify/crhm"
+BASE = "KISSPATH_KI_ROOT/CRHM/knowledge_infrastructure/outputs/belly_verify/crhm"
 PRJ  = os.path.join(BASE, "belly_tuned.prj")
-CRHM = "/mnt/disk1/Hydrocraft_server/models/CRHM/bin/crhm"
+CRHM = "KISSPATH_KI_ROOT/CRHM/bin/crhm"
 OUT  = os.path.join(BASE, "output_verify2.txt")
-OBS  = "/mnt/disk1/Hydrocraft_server/data/obs/belly_river/observed_05AD005.txt"
-STATE = "/mnt/disk1/Hydrocraft_server/models/CRHM/detached/verify_2"
+OBS  = "KISSPATH_OBS/belly_river/observed_05AD005.txt"
+STATE = "KISSPATH_KI_ROOT/CRHM/detached/verify_2"
 os.makedirs(STATE, exist_ok=True)
 
 # 1. run model (resumable)

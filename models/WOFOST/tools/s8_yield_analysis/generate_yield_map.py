@@ -39,8 +39,8 @@ VALUE_COL = "twso_kgha"
 LABEL = "Yield (kg/ha)"
 
 # Path to HydroCraft plotting tool
-PLOT_SCRIPT = "/mnt/disk1/Hydrocraft_server/skills/plot/plot_crop_yield_map.py"
-PYTHON = "/mnt/disk1/Hydrocraft_server/python_env/bin/python"
+PLOT_SCRIPT = "KISSPATH_ROOT/skills/plot/plot_crop_yield_map.py"
+PYTHON = "KISSPATH_PYTHON_ENV/bin/python"
 
 
 def validate_inputs():

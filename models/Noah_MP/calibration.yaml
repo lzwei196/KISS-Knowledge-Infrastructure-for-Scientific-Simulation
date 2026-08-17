@@ -32,7 +32,7 @@ case:
   lon: -96.47664
   elevation_m: 361.0
   utc_offset_h: -6.0
-  obs_file: "/mnt/disk1/Hydrocraft_server/data/obs/fluxnet/sites/US-Ne1/FULLSET_DD.csv"
+  obs_file: "KISSPATH_OBS/fluxnet/sites/US-Ne1/FULLSET_DD.csv"
   obs_variable: "LE_F_MDS"
   obs_qc_variable: "LE_F_MDS_QC"
   obs_qc_min: 0.8

@@ -90,19 +90,19 @@ Both produce **identical output format** — downstream tools (S2-S4) work uncha
 
 ### Option A: China (local files)
 ```bash
-source /mnt/disk1/Hydrocraft_server/python_env/bin/activate
+source KISSPATH_PYTHON_ENV/bin/activate
 BASIN="bengbu"
 MODEL="ACCESS-CM2"
 SSP="245"
 
 # S1: Extract CMIP6 data (historical + future)
 python skills/climate-projection/tools/s1_extract_cmip/extract_cmip6_basin.py \
-  /mnt/disk3/CMIP_China/Cmip6BaisCorrect_for_China \
+  KISSPATH_DATA/CMIP_China/Cmip6BaisCorrect_for_China \
   outputs/${BASIN}/vic_temp/grid/basin_grid.nc \
   ${MODEL} r1 outputs/${BASIN}/climate_projection/cmip6_extracted ${BASIN}
 
 python skills/climate-projection/tools/s1_extract_cmip/extract_cmip6_basin.py \
-  /mnt/disk3/CMIP_China/Cmip6BaisCorrect_for_China \
+  KISSPATH_DATA/CMIP_China/Cmip6BaisCorrect_for_China \
   outputs/${BASIN}/vic_temp/grid/basin_grid.nc \
   ${MODEL} ${SSP} outputs/${BASIN}/climate_projection/cmip6_extracted ${BASIN}
 
@@ -126,7 +126,7 @@ python skills/climate-projection/tools/s3_apply_deltas/apply_deltas_forcing.py \
 
 ### Option B: Global (NASA NEX-GDDP-CMIP6 API, any basin worldwide)
 ```bash
-source /mnt/disk1/Hydrocraft_server/python_env/bin/activate
+source KISSPATH_PYTHON_ENV/bin/activate
 BASIN="koksilah"
 MODEL="ACCESS-CM2"
 
@@ -158,7 +158,7 @@ python skills/climate-projection/tools/s1_extract_cmip/fetch_nex_gddp_global.py 
 ## CMIP6 Data Reference
 
 ### Location
-`/mnt/disk3/CMIP_China/Cmip6BaisCorrect_for_China/`
+`KISSPATH_DATA/CMIP_China/Cmip6BaisCorrect_for_China/`
 
 ### Structure
 ```

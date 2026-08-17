@@ -81,12 +81,12 @@ curl -s "https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/stations?stationTr
 ```
 
 The station triplet is `<id>:<STATE>:SNTL`; the id is the filename stem of
-`/mnt/disk1/Hydrocraft_server/data/obs/snotel/<id>_daily.csv` and the state is
+`KISSPATH_OBS/snotel/<id>_daily.csv` and the state is
 in that file's `# SNOTEL <id>: <Name>, <ST>` comment line.
 
 ## Validated Test Cases (Tier-3, real DEM + real obs)
 
-Located at `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Alpine3D/t3_runs/`:
+Located at `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Alpine3D/t3_runs/`:
 
 ⚠️ Every row in the table below was produced with the differenced (i.e. ~44%
 too dry) precipitation described above. Treat their NSE/PBIAS as a **floor**,
@@ -229,7 +229,7 @@ make -j$(nproc) && sudo make install
 ### Binary Location
 
 After build: `alpine3d/build/bin/alpine3d`
-After install: `/usr/local/bin/alpine3d` or current location: `/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Alpine3D/source/repo/Source/alpine3d/bin/alpine3d`
+After install: `/usr/local/bin/alpine3d` or current location: `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Alpine3D/source/repo/Source/alpine3d/bin/alpine3d`
 
 ### Test
 
@@ -282,7 +282,7 @@ alone; `t3_runs/build_site.py` is no longer required):
 | generate_sno_files | `--epsg` | write `easting`/`northing`/`epsg` for a projected DEM instead of bogus lat/lon |
 
 Reference end-to-end driver using only these tools:
-`/mnt/disk1/Hydrocraft_server/models/Alpine3D/run_and_score.py`
+`KISSPATH_KI_ROOT/Alpine3D/run_and_score.py`
 (SNOTEL 590 Lone Mountain, MT; resumable at every stage).
 
 ---

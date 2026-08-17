@@ -11,9 +11,9 @@ Resumable: if gwf.hds already exists in the workspace, skip the mf6 run.
 """
 import os, json, subprocess, numpy as np
 
-DUMUX = "/mnt/disk1/Hydrocraft_server/outputs/dumux_highplains_validation"
-MF6   = "/mnt/disk1/Hydrocraft_server/model/modflow6/mf6.6.1_linux/bin/mf6"
-STATE = "/mnt/disk1/Hydrocraft_server/models/MODFLOW6/detached/verify_1"
+DUMUX = "KISSPATH_OUTPUTS/dumux_highplains_validation"
+MF6   = "KISSPATH_BINARIES/modflow6/mf6.6.1_linux/bin/mf6"
+STATE = "KISSPATH_KI_ROOT/MODFLOW6/detached/verify_1"
 WS    = os.path.join(STATE, "ws")
 os.makedirs(WS, exist_ok=True)
 

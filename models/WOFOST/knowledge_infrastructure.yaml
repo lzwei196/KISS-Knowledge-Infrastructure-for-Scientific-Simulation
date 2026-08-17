@@ -27,7 +27,7 @@ package:
   related_packages:
     - id: "dssat-csm-knowledge"
       name: "DSSAT Crop Simulation Knowledge Infrastructure"
-      path: "/home/server/DSSAT/knowledge_infrastructure/"
+      path: "KISSPATH_HOME/DSSAT/knowledge_infrastructure/"
       relationship: >
         Peer crop model. WOFOST and DSSAT are complementary: WOFOST is the EU
         standard (Wageningen), DSSAT is the US standard (IFDC/IBSNAT). Together
@@ -38,7 +38,7 @@ package:
         DSSAT uses MJ/m2/day for SRAD.
     - id: "hydrocraft-vic-routing"
       name: "HydroCraft VIC-Routing Knowledge Infrastructure"
-      path: "/mnt/disk1/Hydrocraft_server/"
+      path: "KISSPATH_ROOT/"
       relationship: >
         Upstream hydrology model. VIC produces daily weather variables (temperature,
         precipitation, radiation) and soil moisture that can feed WOFOST weather

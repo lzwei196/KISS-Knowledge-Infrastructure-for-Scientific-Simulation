@@ -37,15 +37,15 @@ CaMa-Flood (Catchment-based Macro-scale Floodplain model) is a global-scale rive
 
 | Component | Path |
 |-----------|------|
-| Binary | `/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/src/MAIN_cmf` |
-| Source code | `/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/src/` |
-| Global river map (15min) | `/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/map/glb_15min/` |
-| Regional maps | `/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/map/{basin}_15min/` |
-| Run scripts | `/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/gosh/` |
-| Output directory | `/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/out/` |
-| Runoff climatology data | `/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/map/data/ELSE_GPCC_coastmod_dayclm-1981-2010.one` |
-| KI tools | `/mnt/disk1/Hydrocraft_server/models/CaMa_Flood/knowledge_infrastructure/tools/` |
-| Diagnostics | `/mnt/disk1/Hydrocraft_server/models/CaMa_Flood/knowledge_infrastructure/diagnostics/triplets.yaml` |
+| Binary | `KISSPATH_BINARIES/cmf_v420_pkg/src/MAIN_cmf` |
+| Source code | `KISSPATH_BINARIES/cmf_v420_pkg/src/` |
+| Global river map (15min) | `KISSPATH_BINARIES/cmf_v420_pkg/map/glb_15min/` |
+| Regional maps | `KISSPATH_BINARIES/cmf_v420_pkg/map/{basin}_15min/` |
+| Run scripts | `KISSPATH_BINARIES/cmf_v420_pkg/gosh/` |
+| Output directory | `KISSPATH_BINARIES/cmf_v420_pkg/out/` |
+| Runoff climatology data | `KISSPATH_BINARIES/cmf_v420_pkg/map/data/ELSE_GPCC_coastmod_dayclm-1981-2010.one` |
+| KI tools | `KISSPATH_KI_ROOT/CaMa_Flood/knowledge_infrastructure/tools/` |
+| Diagnostics | `KISSPATH_KI_ROOT/CaMa_Flood/knowledge_infrastructure/diagnostics/triplets.yaml` |
 
 ---
 
@@ -307,7 +307,7 @@ Consult `diagnostics/triplets.yaml` for structured symptom-diagnosis-remedy look
 - **Manning's n**: PMANRIV=0.30, PMANFLD=0.10
 - **NSE**: 0.598 (daily discharge at Bengbu station)
 - **Peak discharge**: ~6900 m3/s (2003 flood)
-- **Output location**: `/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/out/bengbu_2000_2005_cama/`
+- **Output location**: `KISSPATH_BINARIES/cmf_v420_pkg/out/bengbu_2000_2005_cama/`
 
 ---
 
@@ -317,14 +317,14 @@ Consult `diagnostics/triplets.yaml` for structured symptom-diagnosis-remedy look
 
 ```bash
 # 0. Preflight
-cd /mnt/disk1/Hydrocraft_server/models/CaMa_Flood/knowledge_infrastructure
+cd KISSPATH_KI_ROOT/CaMa_Flood/knowledge_infrastructure
 python preflight_check.py
 
 # 1. Prepare runoff from VIC output
 python tools/prepare_runoff_input.py \
     --source vic \
-    --input_dir /mnt/disk1/Hydrocraft_server/outputs/bengbu_2000_2005/vic_result \
-    --output_dir /mnt/disk1/Hydrocraft_server/outputs/bengbu_2000_2005_cama/cama_input \
+    --input_dir KISSPATH_OUTPUTS/bengbu_2000_2005/vic_result \
+    --output_dir KISSPATH_OUTPUTS/bengbu_2000_2005_cama/cama_input \
     --basin_name bengbu \
     --start_year 2000 --end_year 2005 \
     --file_prefix "huaihe_fluxes_"
@@ -335,16 +335,16 @@ python tools/configure_simulation.py \
     --west 111.75 --east 117.75 --south 31.0 --north 35.0 \
     --grid_resolution 0.25 \
     --start_year 2000 --end_year 2005 \
-    --runoff_dir /mnt/disk1/Hydrocraft_server/outputs/bengbu_2000_2005_cama/cama_input \
+    --runoff_dir KISSPATH_OUTPUTS/bengbu_2000_2005_cama/cama_input \
     --runoff_prefix "bengbu_runoff_1d_"
 
 # 3. Execute
 python tools/run_cama.py \
-    --script /mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/gosh/run_bengbu_1d_nc.sh
+    --script KISSPATH_BINARIES/cmf_v420_pkg/gosh/run_bengbu_1d_nc.sh
 
 # 4. Parse output
 python tools/parse_cama_output.py \
-    --output_dir /mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/out/bengbu_2000_2005_cama \
+    --output_dir KISSPATH_BINARIES/cmf_v420_pkg/out/bengbu_2000_2005_cama \
     --variable outflw \
     --lat 32.95 --lon 117.35 \
     --start_year 2000 --end_year 2005
@@ -354,10 +354,10 @@ python tools/parse_cama_output.py \
 
 Edit the run script and change PMANRIV:
 ```bash
-cd /mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/gosh
+cd KISSPATH_BINARIES/cmf_v420_pkg/gosh
 # Change PMANRIV in run_bengbu_1d_nc.sh from 0.30D0 to 0.05D0
 # Then re-run
-python /mnt/disk1/Hydrocraft_server/models/CaMa_Flood/knowledge_infrastructure/tools/run_cama.py \
+python KISSPATH_KI_ROOT/CaMa_Flood/knowledge_infrastructure/tools/run_cama.py \
     --script run_bengbu_1d_nc.sh
 ```
 

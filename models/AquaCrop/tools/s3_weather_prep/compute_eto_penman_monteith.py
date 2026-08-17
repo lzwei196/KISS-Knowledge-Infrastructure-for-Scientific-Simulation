@@ -46,8 +46,8 @@ def lookup_elevation(lat, lon):
         et0 = compute_et0_fao56(tmin, tmax, srad, wind, lat, elev, doy)
     """
     try:
-        for p in ['/mnt/disk1/Hydrocraft_server/models/ki_tools_common',
-                  '/home/server/knowledge-dissection-toolkit/kdt-release']:
+        for p in ['KISSPATH_KI_TOOLS_COMMON',
+                  'KISSPATH_INTERNAL_NOT_SHIPPED/kdt-release']:
             if p not in sys.path:
                 sys.path.insert(0, p)
         from ki_tools_common.terrain import get_terrain

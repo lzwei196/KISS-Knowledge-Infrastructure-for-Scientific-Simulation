@@ -19,13 +19,13 @@ Scoring  : sim TOP active layer DO (surface point) vs daily-mean station DO,
 import os, sys, json, glob, re, subprocess
 import numpy as np, pandas as pd
 
-KI   = "/mnt/disk1/Hydrocraft_server/models/GLM/knowledge_infrastructure"
+KI   = "KISSPATH_KI_ROOT/GLM/knowledge_infrastructure"
 TOOLS= os.path.join(KI, "tools")
-GLM  = "/mnt/disk1/Hydrocraft_server/model/glm/bin/glm"
-RUN  = "/mnt/disk1/Hydrocraft_server/outputs/glm_qiandao_do_china"
-CHINA= "/mnt/disk1/Hydrocraft_server/data/china_data/2021-2025 国控站水质数据(excel)"
-DEGRAY_AED = "/mnt/disk1/Hydrocraft_server/outputs/glm_degray_do_wqp/aed2.nml"
-OUT_RESULT_DIR = "/mnt/disk1/Hydrocraft_server/models/GLM/detached/verify_1"
+GLM  = "KISSPATH_BINARIES/glm/bin/glm"
+RUN  = "KISSPATH_OUTPUTS/glm_qiandao_do_china"
+CHINA= "KISSPATH_DATA/china_data/2021-2025 国控站水质数据(excel)"
+DEGRAY_AED = "KISSPATH_OUTPUTS/glm_degray_do_wqp/aed2.nml"
+OUT_RESULT_DIR = "KISSPATH_KI_ROOT/GLM/detached/verify_1"
 
 STATION = "三潭岛"
 LAT, LON = 29.546429, 118.968529
@@ -34,7 +34,7 @@ AREA_KM2, DMAX, DAVG, ELEV = 580.0, 100.0, 30.0, 108.0
 START, STOP = "2021-01-01", "2024-12-31"
 TIMEZONE = 8
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
 from ki_tools_common.metrics import all_metrics
 
 

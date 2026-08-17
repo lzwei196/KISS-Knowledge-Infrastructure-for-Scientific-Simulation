@@ -17,21 +17,21 @@ from datetime import datetime, timedelta
 import numpy as np
 import netCDF4 as nc
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 from ki_tools_common.load_forcing import load_hourly_forcing
 from ki_tools_common.metrics import all_metrics
 from ki_tools_common.validation import validate_water_balance
 
-KI   = "/mnt/disk1/Hydrocraft_server/models/SUMMA/knowledge_infrastructure"
+KI   = "KISSPATH_KI_ROOT/SUMMA/knowledge_infrastructure"
 TOOLS= KI + "/tools"
-WD   = "/mnt/disk1/Hydrocraft_server/outputs/belly_05ad005_summa"
+WD   = "KISSPATH_OUTPUTS/belly_05ad005_summa"
 SET  = WD + "/site_settings"
 FOR  = WD + "/forcing"
 OUT  = WD + "/output"
-EXE  = "/mnt/disk1/Hydrocraft_server/model/summa/bin/summa.exe"
-STATE= "/mnt/disk1/Hydrocraft_server/models/SUMMA/detached/verify_1"
-OBS_TXT = "/mnt/disk1/Hydrocraft_server/data/obs/belly_river/observed_05AD005.txt"
+EXE  = "KISSPATH_BINARIES/summa/bin/summa.exe"
+STATE= "KISSPATH_KI_ROOT/SUMMA/detached/verify_1"
+OBS_TXT = "KISSPATH_OBS/belly_river/observed_05AD005.txt"
 
 STN   = "05AD005"
 LAT, LON = 49.0996, -113.6977       # gauge / centroid
@@ -175,7 +175,7 @@ def build_settings():
 # ---------------------------------------------------------------- preflight
 def preflight():
     try:
-        r=subprocess.run(["python3","/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/validators/preflight_forcing.py",
+        r=subprocess.run(["python3","KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/validators/preflight_forcing.py",
                           FOR, "--source","auto"], capture_output=True, text=True, timeout=600)
         uni=(r.stdout+r.stderr).strip().splitlines()[-1:]
     except Exception as e:

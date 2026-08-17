@@ -140,7 +140,7 @@ def process(domain_json, mask_npy, output_dir, method="hydrostatic",
 
     elif method == "reinecke":
         # Use Reinecke global water table depth
-        wtd_file = os.path.join("/mnt/disk1/Hydrocraft_server",
+        wtd_file = os.path.join("KISSPATH_ROOT",
                                 "data/soil/water_table_depth/reinecke_wtd.tif")
         if os.path.exists(wtd_file):
             import rasterio

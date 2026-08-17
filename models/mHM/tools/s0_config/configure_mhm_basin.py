@@ -48,10 +48,10 @@ RESOLUTION_L1_M = 24000     # ~0.25 degree
 RESOLUTION_L11_M = 0        # 0 = same as L1
 FORCING_DATASET = "CMFD"    # "CMFD" or "MSWX"
 PET_METHOD = 0              # 0=input PET, 1=Hargreaves, 2=Priestley-Taylor, 3=Penman-Monteith
-MHM_BINARY = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "model/mhm/mhm")
+MHM_BINARY = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "model/mhm/mhm")
 
 # HydroCraft standard paths
-HYDROCRAFT_ROOT = "/mnt/disk1/Hydrocraft_server"
+HYDROCRAFT_ROOT = "KISSPATH_ROOT"
 
 # CLI override
 if len(sys.argv) > 1:

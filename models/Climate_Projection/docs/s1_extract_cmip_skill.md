@@ -13,15 +13,15 @@ Extract bias-corrected CMIP6 daily climate data (precipitation, tasmax, tasmin) 
 Before starting this stage, verify:
 
 - [ ] VIC basin grid file exists at `outputs/{basin}/vic_temp/grid/basin_grid.nc`
-- [ ] CMIP6 data is accessible at `/mnt/disk3/CMIP_China/Cmip6BaisCorrect_for_China/`
-- [ ] Python environment activated: `source /mnt/disk1/Hydrocraft_server/python_env/bin/activate`
+- [ ] CMIP6 data is accessible at `KISSPATH_DATA/CMIP_China/Cmip6BaisCorrect_for_China/`
+- [ ] Python environment activated: `source KISSPATH_PYTHON_ENV/bin/activate`
 - [ ] Basin is within China (73.75-135.25E, 15.25-53.75N) — CMIP6 data covers China only
 
 ## Inputs
 
 | Input | Type | Source | Description |
 |-------|------|--------|-------------|
-| CMIP6_ROOT | directory | External drive | `/mnt/disk3/CMIP_China/Cmip6BaisCorrect_for_China/` |
+| CMIP6_ROOT | directory | External drive | `KISSPATH_DATA/CMIP_China/Cmip6BaisCorrect_for_China/` |
 | GRID_NC | file | VIC grid step | `outputs/{basin}/vic_temp/grid/basin_grid.nc` |
 | MODEL_NAME | string | User choice | One of 26 CMIP6 models (see model list below) |
 | SCENARIO | string | User choice | `r1` (historical) or `126`/`245`/`585` (SSP future) |
@@ -57,11 +57,11 @@ mkdir -p outputs/{basin}/climate_projection/cmip6_extracted
 ### Step 3: Run extraction for historical + each scenario
 
 ```bash
-source /mnt/disk1/Hydrocraft_server/python_env/bin/activate
+source KISSPATH_PYTHON_ENV/bin/activate
 
 # Extract historical (required for delta computation)
 python skills/climate-projection/tools/s1_extract_cmip/extract_cmip6_basin.py \
-  /mnt/disk3/CMIP_China/Cmip6BaisCorrect_for_China \
+  KISSPATH_DATA/CMIP_China/Cmip6BaisCorrect_for_China \
   outputs/{basin}/vic_temp/grid/basin_grid.nc \
   {MODEL_NAME} r1 \
   outputs/{basin}/climate_projection/cmip6_extracted \
@@ -69,7 +69,7 @@ python skills/climate-projection/tools/s1_extract_cmip/extract_cmip6_basin.py \
 
 # Extract future scenario
 python skills/climate-projection/tools/s1_extract_cmip/extract_cmip6_basin.py \
-  /mnt/disk3/CMIP_China/Cmip6BaisCorrect_for_China \
+  KISSPATH_DATA/CMIP_China/Cmip6BaisCorrect_for_China \
   outputs/{basin}/vic_temp/grid/basin_grid.nc \
   {MODEL_NAME} {SCENARIO} \
   outputs/{basin}/climate_projection/cmip6_extracted \

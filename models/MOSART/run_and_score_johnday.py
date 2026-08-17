@@ -27,14 +27,14 @@ it is the identical tool that produced the Tangnaihai NSE 0.8367.
 import os, sys, glob, re, json, subprocess
 from pathlib import Path
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/MOSART/source/repo")
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/MOSART/source/repo")
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-BASE   = "/mnt/disk1/Hydrocraft_server"
+BASE   = "KISSPATH_ROOT"
 KI     = f"{BASE}/models/MOSART/knowledge_infrastructure"
 D      = f"{BASE}/models/MOSART/detached/verify_1"
 JD     = f"{BASE}/outputs/johnday_mcdonaldferry"
@@ -45,7 +45,7 @@ SOIL   = f"{JD}/vic_temp/soil/SOIL_PARAM_COMPLETE.txt"
 SRC_DIREC = f"{RP}/JDY_direc.txt"
 SRC_XMASK = f"{RP}/JDY_xmask.txt"
 SRC_FRAC  = f"{RP}/JDY_frac.txt"
-OBS_NC = "/mnt/datasets/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc/timeseries/netcdf/grdc/GRDC_4115221.nc"
+OBS_NC = "KISSPATH_DATA/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc/timeseries/netcdf/grdc/GRDC_4115221.nc"
 AREA_KM2 = 19771.2306292227     # GRDC attribute for this gauge
 PY     = sys.executable
 

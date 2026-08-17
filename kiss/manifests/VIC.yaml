@@ -1,0 +1,55 @@
+kiss_manifest_version: 1
+model: VIC
+binary_type: ELF
+verified: observed
+install_dir: VIC-5.1.0
+depends_on: [CaMa_Flood]
+
+# The classic driver builds with a plain Makefile — no cmake, no autotools.
+acquire:
+  strategy: build
+  repo: https://github.com/UW-Hydro/VIC
+  ref: "5.1.0"
+  commands:
+    # VIC 5.1.0 predates GCC 10, which flipped the default to -fno-common.
+    # Without -fcommon every tentative definition in the headers collides at
+    # link time (LOG_DEST, vic_run_ref_str, funcd...) and ld exits 1.
+    - make -C vic/drivers/classic CC="gcc -fcommon"
+  produces: vic/drivers/classic/vic_classic.exe
+  system_deps: [gcc, make]
+
+system_deps: [gcc, make]
+python_deps: [numpy, xarray, netCDF4, pandas, scipy]
+
+data:
+  - role: forcing
+    name: Sub-daily meteorological forcing
+    why: >-
+      The classic driver reads per-cell ASCII forcing at FORCE_STEPS_PER_DAY.
+      The authoring machine used CMFD (China) and MSWX (global); neither is
+      redistributable here.
+    variables: [AIR_TEMP, PREC, PRESSURE, SHORTWAVE, LONGWAVE, VP, WIND]
+  - role: static
+    name: Soil and vegetation parameter files
+    why: VIC needs a soil parameter file and a vegetation library per grid cell.
+  - role: obs
+    name: Gauge discharge for evaluation
+    why: Required only to score a run, not to execute one.
+    optional: true
+
+reference_case: vic_classic.exe -v
+
+notes: >-
+  OBSERVED on 2026-08-17: cloned tag 5.1.0 and compiled on a clean machine,
+  producing vic_classic.exe (1.6 MB). Two corrections were needed against the
+  first-guess recipe: the upstream tag is "5.1.0" not "VIC.5.1.0", and the
+  build needs -fcommon on any modern GCC. Data is a separate matter — VIC
+  cannot run without forcing, and none is redistributable here.
+
+agent_hint: >-
+  VIC has no routing. Gauge discharge ALWAYS requires a routing step afterwards
+  (VIC-Lohmann or CaMa-Flood) — never compare raw VIC runoff to a gauge.
+  If make fails it is nearly always a missing netCDF or libm flag in
+  vic/drivers/classic/Makefile; check diagnostics/triplets.md first.
+  Note: s2_forcing/rechunk_mswx.py has an unclosed parenthesis and will not
+  import — it is broken upstream, not by the installer.

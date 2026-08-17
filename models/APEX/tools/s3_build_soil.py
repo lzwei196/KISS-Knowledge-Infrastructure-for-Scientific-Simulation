@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 # Make ki_tools_common importable
-_KDT = Path("/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
+_KDT = Path("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 if str(_KDT) not in sys.path:
     sys.path.insert(0, str(_KDT))
 

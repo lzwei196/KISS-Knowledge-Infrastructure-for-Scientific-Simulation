@@ -20,7 +20,7 @@ import sys
 import json
 import logging
 import numpy as np
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
 from ki_tools_common.metrics import nse as calc_nse, kge as calc_kge, pbias as calc_pbias, rmse as calc_rmse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

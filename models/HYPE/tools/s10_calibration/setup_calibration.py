@@ -544,7 +544,7 @@ Examples:
             total_params += n_soil
     logger.info(f"Total calibrated dimensions: {total_params}")
     logger.info(f"Setup complete. Run HYPE to start calibration:")
-    logger.info(f"  /mnt/disk1/Hydrocraft_server/model/hype/hype ./")
+    logger.info(f"  KISSPATH_BINARIES/hype/hype ./")
     logger.info(f"Output files (in resultdir):")
     logger.info(f"  allsim.txt     -- all simulation results (criterion + parameters)")
     logger.info(f"  bestsims.txt   -- best parameter sets")

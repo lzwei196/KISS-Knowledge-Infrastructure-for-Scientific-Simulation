@@ -63,7 +63,7 @@ stages unmodified — no in-place editing, no `config_paths.py` regex rewriting:
 |---|---|
 | `VIC_BASIN_NAME` | basin tag; drives `outputs/<name>/…` and all filenames |
 | `VIC_BASIN_SHP` | basin boundary shapefile |
-| `VIC_OUT_ROOT` | default `/mnt/disk1/Hydrocraft_server/outputs` |
+| `VIC_OUT_ROOT` | default `KISSPATH_OUTPUTS` |
 | `VIC_CMFD_DIR` | forcing root, e.g. `data/forcing/Data_forcing_03hr_010deg` |
 | `VIC_YEAR_START`, `VIC_YEAR_END` | forcing + simulation years (one place, not three) |
 | `VIC_START_DATE`, `VIC_END_DATE` | `process_forcing.py` slice |
@@ -232,7 +232,7 @@ not timing-limited**: remove the volume bias post hoc and NSE_val ≈ 0.80 = r²
 
 ---
 
-<!-- NOTE: Mac development paths below are stale on the server. Use /mnt/disk1/Hydrocraft_server/ paths instead. -->
+<!-- NOTE: Mac development paths below are stale on the server. Use KISSPATH_ROOT/ paths instead. -->
 
 # VIC模型自动化运行 Skill
 

@@ -30,7 +30,7 @@ def check_dir(path, label):
 def check_import(module, label):
     # Also search HydroCraft python_env for packages
     import sys
-    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
     if _penv not in sys.path:
         sys.path.insert(0, _penv)
     global PASS, FAIL
@@ -49,8 +49,8 @@ def main():
     print()
     # LISFLOOD editable install — source at _work/, conda env at miniconda3
     import sys
-    sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/LISFLOOD/source/repo/src")
-    sys.path.insert(0, "/home/server/miniconda3/envs/lisflood/lib/python3.11/site-packages")
+    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/LISFLOOD/source/repo/src")
+    sys.path.insert(0, "KISSPATH_HOME/miniconda3/envs/lisflood/lib/python3.11/site-packages")
     check_import("lisflood", "LISFLOOD")
     check_import("netCDF4", "netCDF4")
     # Check diagnostics

@@ -71,4 +71,4 @@ Consult this file FIRST when apex1501 misbehaves.
 
 **Diagnosis**: Either the HWSD raster path is wrong, the lat/lon falls outside the raster bounds, or rasterio is not installed in the active environment.
 
-**Remedy**: Verify HWSD raster path with `ls /mnt/disk1/Hydrocraft_server/data`, ensure -180<=lon<=180 and -60<=lat<=85, and `pip install rasterio` if missing. `lookup_hwsd` falls back to texture defaults so soil build will still proceed but with imprecise numbers.
+**Remedy**: Verify HWSD raster path with `ls KISSPATH_DATA`, ensure -180<=lon<=180 and -60<=lat<=85, and `pip install rasterio` if missing. `lookup_hwsd` falls back to texture defaults so soil build will still proceed but with imprecise numbers.

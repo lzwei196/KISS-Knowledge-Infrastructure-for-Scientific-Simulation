@@ -53,9 +53,9 @@ from threading import Lock
 import numpy as np
 
 # ─── Configuration ───────────────────────────────────────────────
-CACHE_DIR = Path("/mnt/disk3/nasa_power_cache/hourly")
-GRDC_SHP = Path("/mnt/disk3/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc/shapefiles/grdc/grdc_basin_shapes.shp")
-HYDAT_DIR = Path("/mnt/disk3/observed_data/dischargeandwatershed/National Water Data Archive HYDAT/HydrometricNetworkBasinPolygons/gpkg")
+CACHE_DIR = Path("KISSPATH_DATA/nasa_power_cache/hourly")
+GRDC_SHP = Path("KISSPATH_DATA/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc/shapefiles/grdc/grdc_basin_shapes.shp")
+HYDAT_DIR = Path("KISSPATH_DATA/observed_data/dischargeandwatershed/National Water Data Archive HYDAT/HydrometricNetworkBasinPolygons/gpkg")
 
 API_BASE = "https://power.larc.nasa.gov/api/temporal/hourly/point"
 POWER_PARAMS = "T2M,PRECTOTCORR,PS,ALLSKY_SFC_SW_DWN,ALLSKY_SFC_LW_DWN,QV2M,WS2M"

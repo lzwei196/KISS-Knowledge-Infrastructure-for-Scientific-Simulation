@@ -26,15 +26,15 @@ Configure the complete soil profile for RZWQM2, including horizon depths, physic
 | 3 (API) | SoilGrids REST API | Manual query | For very specific sites with known coordinates |
 
 **HWSD data paths** (shared with HydroCraft VIC):
-- Global raster: `/mnt/disk1/Hydrocraft_server/data/soil/HWSD_RASTER/hwsd.bil` (1.8 GB, 30 arc-sec)
-- MDB database: `/media/server/hc_ssd/forcing/huaihe_raw/soil/HWSD.mdb` (32 MB, 16,108 mapping units)
+- Global raster: `KISSPATH_STATIC/HWSD_RASTER/hwsd.bil` (1.8 GB, 30 arc-sec)
+- MDB database: `KISSPATH_FORCING/huaihe_raw/soil/HWSD.mdb` (32 MB, 16,108 mapping units)
 
 ```bash
 # Get soil for a grid cell (returns topsoil + subsoil → 6 RZWQM2 horizons)
 python knowledge_infrastructure/tools/s0_global_data/hwsd_soil_adapter.py \
   <lat> <lon> \
-  /mnt/disk1/Hydrocraft_server/data/soil/HWSD_RASTER/hwsd.bil \
-  /media/server/hc_ssd/forcing/huaihe_raw/soil/HWSD.mdb
+  KISSPATH_STATIC/HWSD_RASTER/hwsd.bil \
+  KISSPATH_FORCING/huaihe_raw/soil/HWSD.mdb
 ```
 
 ## Prerequisites

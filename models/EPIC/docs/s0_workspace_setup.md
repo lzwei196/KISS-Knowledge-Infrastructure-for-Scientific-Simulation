@@ -5,8 +5,8 @@ Build a clean directory containing every file the EPIC0810 binary expects, with 
 two compatibility fixes the binary needs (SOIL38K alias, SOL alpha-code sanitization).
 
 ## Inputs
-- Template directory: `/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/EPIC/source/repo/epic1102_example_files_20221002/`
-- Binary: `/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/EPIC/source/repo/epic0810.x`
+- Template directory: `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/EPIC/source/repo/epic1102_example_files_20221002/`
+- Binary: `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/EPIC/source/repo/epic0810.x`
 - Target workspace path (e.g. `/tmp/epic_run_<uuid>/`)
 
 ## Outputs

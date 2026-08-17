@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 
 # Make ki_tools_common importable
-_KDT = Path("/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
+_KDT = Path("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 if str(_KDT) not in sys.path:
     sys.path.insert(0, str(_KDT))
 
@@ -56,7 +56,7 @@ def _load_cmfd_direct(lat: float, lon: float, year1: int, year2: int,
     spec = importlib.util.spec_from_file_location("_nc_utils_direct", str(_netcdf_path))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    _CMFD_3HR = "/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg"
+    _CMFD_3HR = "KISSPATH_FORCING/Data_forcing_03hr_010deg"
     fdir = forcing_dir or _CMFD_3HR
     return mod.load_cmfd_daily_all(fdir, lat, lon, year1, year2)
 

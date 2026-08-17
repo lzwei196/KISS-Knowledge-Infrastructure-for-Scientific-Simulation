@@ -30,7 +30,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-SIM_PATH = "/mnt/disk1/Hydrocraft_server/outputs/qinghai_lake_1951_2024/modflow6/workspace"
+SIM_PATH = "KISSPATH_OUTPUTS/qinghai_lake_1951_2024/modflow6/workspace"
 MODEL_NAME = "gwf"
 SS_VALUES = [1e-5, 1e-5]     # Specific storage per layer (1/m)
 SY_VALUES = [0.15, 0.10]     # Specific yield per layer

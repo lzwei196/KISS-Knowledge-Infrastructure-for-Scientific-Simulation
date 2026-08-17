@@ -11,13 +11,13 @@ to detached/verify_2/result.json.
 import os, sys, json, subprocess
 import numpy as np, pandas as pd
 
-RUN = "/mnt/disk1/Hydrocraft_server/outputs/glm_degray_do_wqp"
-OBS = "/mnt/disk1/Hydrocraft_server/data/obs/water_quality/wqp/DeGray_Lake/DeGray_Lake_Dissolved_oxygen_DO.csv"
-RUNTOOL = "/mnt/disk1/Hydrocraft_server/models/GLM/knowledge_infrastructure/tools/s8_execution/run_glm.py"
-OUT_RESULT_DIR = "/mnt/disk1/Hydrocraft_server/models/GLM/detached/verify_2"
+RUN = "KISSPATH_OUTPUTS/glm_degray_do_wqp"
+OBS = "KISSPATH_OBS/water_quality/wqp/DeGray_Lake/DeGray_Lake_Dissolved_oxygen_DO.csv"
+RUNTOOL = "KISSPATH_KI_ROOT/GLM/knowledge_infrastructure/tools/s8_execution/run_glm.py"
+OUT_RESULT_DIR = "KISSPATH_KI_ROOT/GLM/detached/verify_2"
 OVERLAP = ("2011-01-01", "2015-12-31")   # met forcing ends 2015-12-31
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
 from ki_tools_common.metrics import all_metrics
 
 

@@ -21,13 +21,13 @@ Resumable: grid/runoff/mosart outputs are skipped if already present.
 import os, sys, glob, re, json, subprocess
 from pathlib import Path
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-BASE = "/mnt/disk1/Hydrocraft_server"
+BASE = "KISSPATH_ROOT"
 KI   = f"{BASE}/models/MOSART/knowledge_infrastructure"
 D    = f"{BASE}/models/MOSART/detached/verify_2"
 RD   = f"{BASE}/outputs/vic_wangjiaba_routed_1981_1985"          # D8 network

@@ -6,8 +6,8 @@ model:
   language: "Python + Fortran + C"
   build_system: "meson + mesonpy"
   binary_type: "python_package"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyBadlands/venv/bin/python"
-  venv_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/pyBadlands/venv"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyBadlands/venv/bin/python"
+  venv_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyBadlands/venv"
   invocation: "from badlands.model import Model; m = Model(); m.load_xml('input.xml'); m.run_to_time(T)"
   validated_sites: 2
   validation_stats:

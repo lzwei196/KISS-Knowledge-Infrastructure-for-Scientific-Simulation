@@ -59,7 +59,7 @@ TOOLS_DIR = Path(__file__).parent / "knowledge_infrastructure" / "tools"
 if not TOOLS_DIR.exists():
     TOOLS_DIR = Path(__file__).parent
 
-PROJECT_ROOT = Path("/mnt/disk1/Hydrocraft_server")
+PROJECT_ROOT = Path("KISSPATH_ROOT")
 PYTHON = str(PROJECT_ROOT / "python_env" / "bin" / "python")
 
 # Default data paths
@@ -121,7 +121,7 @@ def run_step(step_num, step_name, cmd, timeout=600):
     return result
 
 
-def auto_merge_srtm_dem(domain_json_path, output_dir, srtm_dir="/mnt/disk4/SRTMGL1"):
+def auto_merge_srtm_dem(domain_json_path, output_dir, srtm_dir="KISSPATH_DATA/SRTMGL1"):
     """Auto-merge SRTM tiles based on domain_def.json tile list.
 
     Parameters
@@ -247,8 +247,8 @@ def main():
                         help="HWSD raster (.bil)")
     parser.add_argument("--hwsd_mdb", default=DEFAULT_HWSD_MDB,
                         help="HWSD MDB database")
-    parser.add_argument("--srtm_dir", default="/mnt/disk4/SRTMGL1",
-                        help="SRTM tile directory for auto-merge (default /mnt/disk4/SRTMGL1)")
+    parser.add_argument("--srtm_dir", default="KISSPATH_DATA/SRTMGL1",
+                        help="SRTM tile directory for auto-merge (default KISSPATH_DATA/SRTMGL1)")
 
     # Domain/projection
     parser.add_argument("--truelat1", type=float, default=30.0)

@@ -246,9 +246,9 @@ If the network has multiple reaches with `tosegment=0`, water exits through all 
 
 ```bash
 # Activate HydroCraft venv
-source /mnt/disk1/Hydrocraft_server/python_env/bin/activate
+source KISSPATH_PYTHON_ENV/bin/activate
 
-TOOLS=/mnt/disk1/Hydrocraft_server/models/mizuRoute/knowledge_infrastructure/tools
+TOOLS=KISSPATH_KI_ROOT/mizuRoute/knowledge_infrastructure/tools
 RUN=outputs/chaohe_2000_2010_025deg
 
 # 1. Build river network from DEM

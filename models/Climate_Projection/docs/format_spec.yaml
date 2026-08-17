@@ -12,7 +12,7 @@ model:
   domain: "climate"
   secondary_domains: ["hydrology_projection"]
   binary: "Python scripts (no external binary)"
-  binary_path: "/mnt/disk1/Hydrocraft_server/python_env/bin/python"
+  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
   language: "Python"
   framework: "CMIP6"
   working_directory: "outputs/{basin}/climate_projection/"
@@ -95,7 +95,7 @@ inputs:
 
       - name: "CMIP6 data (historical)"
         description: "Historical period data for baseline comparison"
-        path_china: "/mnt/disk3/CMIP_China/Cmip6BaisCorrect_for_China/"
+        path_china: "KISSPATH_DATA/CMIP_China/Cmip6BaisCorrect_for_China/"
         path_global: "NASA NEX-GDDP-CMIP6 THREDDS"
 
       - name: "CMIP6 data (future)"

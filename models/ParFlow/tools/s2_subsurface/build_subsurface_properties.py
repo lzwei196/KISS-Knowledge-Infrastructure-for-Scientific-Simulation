@@ -34,7 +34,7 @@ except ImportError as e:
     sys.exit(1)
 
 # ========================== CONFIGURATION ==========================
-HYDROCRAFT_ROOT = "/mnt/disk1/Hydrocraft_server"
+HYDROCRAFT_ROOT = "KISSPATH_ROOT"
 HWSD_RASTER = os.path.join(HYDROCRAFT_ROOT, "data/soil/HWSD_RASTER/hwsd.bil")
 
 # Rosetta v3 pedotransfer: soil texture class -> van Genuchten parameters

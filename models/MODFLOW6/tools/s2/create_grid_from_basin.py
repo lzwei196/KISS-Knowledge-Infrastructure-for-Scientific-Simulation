@@ -35,7 +35,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-SHAPEFILE_PATH = "/mnt/disk1/Hydrocraft_server/data/shp/qinghai_lake_shp2/qinghai_lake_boundary_shp/qinghai_lake_boundary.shp"       # Basin boundary shapefile
+SHAPEFILE_PATH = "KISSPATH_DATA/shp/qinghai_lake_shp2/qinghai_lake_boundary_shp/qinghai_lake_boundary.shp"       # Basin boundary shapefile
 CELL_SIZE = 25000          # Grid cell size in meters
 NLAY = 2                  # Number of layers
 LAYER_BOTTOMS = [-50, -200]  # Bottom elevations relative to surface (m)

@@ -124,7 +124,7 @@ lie within ~1 h of `(12 − longitude/15) mod 24` UTC.
 
 ```bash
 python ki/tools/convert_forcing_to_noahmp.py \
-  --input_dir /media/server/hc_ssd/forcing/cmfd/ \
+  --input_dir KISSPATH_FORCING/cmfd/ \
   --output_dir ./forcing/ \
   --lat 33.0 --lon 117.0 \
   --start_date 2010-01-01 --end_date 2010-12-31 \

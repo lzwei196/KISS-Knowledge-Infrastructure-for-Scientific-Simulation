@@ -42,7 +42,7 @@ import os, sys, json
 # Python-2-era pathlib.py backport (`from collections import Sequence`) that shadows the
 # stdlib pathlib and breaks `import rasterio`. Every package needed here (rasterio,
 # geopandas, fiona, shapely, whitebox) is already in ~/.local for the system python3.
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 
 import numpy as np
 import rasterio
@@ -52,7 +52,7 @@ import fiona
 from shapely.geometry import shape as shp_shape, mapping
 from shapely.ops import unary_union
 
-ROOT = "/mnt/disk1/Hydrocraft_server"
+ROOT = "KISSPATH_ROOT"
 DEM_FULL = f"{ROOT}/data/dem/china_dem_90m/china_dem_90m.tif"
 OUT = f"{ROOT}/outputs/bengbu_real_1980_1990/delineation"
 DEM_CROP = f"{OUT}/dem_huai_90m.tif"

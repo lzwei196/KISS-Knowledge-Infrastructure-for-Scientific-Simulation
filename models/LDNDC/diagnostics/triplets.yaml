@@ -479,7 +479,7 @@ triplets:
       action: "Run install.sh from the LDNDC distribution directory before first use"
       tool_to_run: ""
       manual_steps:
-        - "cd /mnt/disk1/Hydrocraft_server/model/ldndc/ldndc-1.37.linux64"
+        - "cd KISSPATH_BINARIES/ldndc/ldndc-1.37.linux64"
         - "bash install.sh"
         - "Verify: ls ~/.ldndc/udunits2/udunits2.xml"
       prevention: "verify_ldndc_installation tool checks for ~/.ldndc/udunits2/ existence"

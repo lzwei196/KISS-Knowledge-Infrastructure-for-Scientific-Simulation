@@ -16,7 +16,7 @@ Before starting this stage, verify:
 - [ ] Source forcing data covers the simulation period plus warmup years
 - [ ] Source data contains all 5 variables: precipitation, temperature (max+min), solar radiation, relative humidity, wind speed
 - [ ] For CMFD: data directory at `data/forcing/Data_forcing_03hr_010deg/`
-- [ ] For MSWX: data directory at `/mnt/disk3/msxw/`
+- [ ] For MSWX: data directory at `KISSPATH_FORCING/`
 - [ ] Python environment with xarray, netCDF4, pandas
 
 ## Inputs

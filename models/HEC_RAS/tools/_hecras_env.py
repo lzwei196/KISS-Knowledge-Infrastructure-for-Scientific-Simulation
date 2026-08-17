@@ -14,7 +14,7 @@ import subprocess
 # ---------------------------------------------------------------------------
 # Binary locations (WINE-staged HEC-RAS 6.7 Beta 5)
 # ---------------------------------------------------------------------------
-RAS_INSTALL = "/home/server/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5"
+RAS_INSTALL = "KISSPATH_HOME/.wine/drive_c/Program Files (x86)/HEC/HEC-RAS/6.7 Beta 5"
 RAS_BIN_DIR = os.path.join(RAS_INSTALL, "x64")
 
 BINARIES = {
@@ -26,7 +26,7 @@ BINARIES = {
     "water_quality":    os.path.join(RAS_BIN_DIR, "RasWaterQuality.exe"),
 }
 
-WINEPREFIX = os.environ.get("WINEPREFIX", "/home/server/.wine")
+WINEPREFIX = os.environ.get("WINEPREFIX", "KISSPATH_HOME/.wine")
 
 # Path to the bundled, validated template project (steady, Mixed Flow Regime).
 TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),

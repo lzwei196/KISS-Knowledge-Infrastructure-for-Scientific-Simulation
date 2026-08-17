@@ -5,7 +5,7 @@ Retrieve crop management parameters from five global geospatial datasets and wri
 
 ## Prerequisites
 - Python packages: `xarray`, `h5py`, `netCDF4`, `numpy`, `pandas`, `rasterio`, `pyproj`
-- Datasets extracted at `/home/server/Crop_model_dataset/`:
+- Datasets extracted at `KISSPATH_HOME/Crop_model_dataset/`:
   - `22491997/CROPGRIDSv1.08_NC_maps.zip` (crop area, 0.05 deg)
   - `24616050/NPKGRIDSv1.08_NC.zip` (fertilizer rates, 0.05 deg)
   - `ALL_CROPS_netCDF_0.5deg_filled/` (crop calendar, 0.5 deg)

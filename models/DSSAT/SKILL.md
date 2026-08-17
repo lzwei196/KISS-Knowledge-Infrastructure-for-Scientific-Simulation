@@ -45,7 +45,7 @@ See `data_ki/HWSD/SKILL.md` for soil property documentation.
 **Version**: 4.8.5, Build 41
 **Domain**: Crop simulation — multi-crop growth, development, and yield
 **Language**: Fortran 90
-**Binary**: `/home/server/DSSAT/build/bin/dscsm048`
+**Binary**: `KISSPATH_HOME/DSSAT/build/bin/dscsm048`
 **License**: Research/non-commercial
 **Repository**: https://github.com/DSSAT/dssat-csm-os
 
@@ -69,7 +69,7 @@ stages, Chinese cultivar library with 42 calibrated varieties.
 
 ```python
 import sys
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/DSSAT/knowledge_infrastructure/tools")
+sys.path.insert(0, "KISSPATH_KI_ROOT/DSSAT/knowledge_infrastructure/tools")
 from dssat_workdir_setup import create_workdir, run_dssat, parse_summary
 
 # Step 1: Create workdir (handles all 6 Fortran pitfalls automatically)
@@ -108,7 +108,7 @@ for rec in summary:
 **Raw binary** (only if you know what you're doing):
 ```bash
 cd /path/to/working_directory
-/home/server/DSSAT/build/bin/dscsm048 B DSSBatch.v48
+KISSPATH_HOME/DSSAT/build/bin/dscsm048 B DSSBatch.v48
 ```
 
 ---
@@ -136,7 +136,7 @@ cd /path/to/working_directory
 | Any region, best accuracy | `convert_soilgrids_to_sol.py` ← preferred |
 | NE China (Mollisol zone) | `convert_soilgrids_to_sol.py` — includes BD correction |
 
-`convert_soilgrids_to_sol.py` advantages: 6 depth layers (vs 2), Saxton-Rawls 2006 PTF (vs 1986), direct bdod from SoilGrids, depth-varying SOC/pH, Mollisol BD correction for NE China black soils. Uses `/mnt/disk3/soilgrids_global/` (global) with China-optimised fallback to `/mnt/disk3/soilgrids/`.
+`convert_soilgrids_to_sol.py` advantages: 6 depth layers (vs 2), Saxton-Rawls 2006 PTF (vs 1986), direct bdod from SoilGrids, depth-varying SOC/pH, Mollisol BD correction for NE China black soils. Uses `KISSPATH_DATA/soilgrids_global/` (global) with China-optimised fallback to `KISSPATH_DATA/soilgrids/`.
 
 **Stages 1-7 can run in parallel** — they each write a section of the FileX or prepare external files.
 Stage 8 depends on all of 1-7. Stage 9 depends on 8.
@@ -208,7 +208,7 @@ hybrid (e.g. CN0001 Zhengdan958) + present-day NPKGRIDS N rates should be scored
 
 ## Chinese Cultivar Library
 
-Location: `/home/server/DSSAT/Data/Genotype/China/`
+Location: `KISSPATH_HOME/DSSAT/Data/Genotype/China/`
 
 | Crop | File | Cultivars | Key varieties | Setup Tool |
 |------|------|-----------|---------------|------------|
@@ -336,12 +336,12 @@ validated S2 tool (the canonical weather recipe — there is **no**
 `tools/fetch_weather.py`):
 ```bash
 python tools/s2_weather_prep/convert_cmfd_to_wth.py \
-  --forcing_dir /media/server/hc_ssd/forcing/Data_forcing_03hr_010deg/ \
+  --forcing_dir KISSPATH_FORCING/Data_forcing_03hr_010deg/ \
   --lat 32.9 --lon 117.4 --start_year 2005 --end_year 2020 \
   --output /tmp/run/weather/SITE.WTH --station_name SITE
 ```
 Notes: (1) run this in a conda env with a working NetCDF backend (e.g.
-`/home/server/miniconda3/envs/ohq/bin/python`) — the tool now falls back
+`KISSPATH_HOME/miniconda3/envs/ohq/bin/python`) — the tool now falls back
 h5netcdf→netcdf4→scipy automatically, but the default `lisflood` env has a
 broken numpy/netCDF4 binary. (2) Point extraction over the 3-hourly store is
 I/O-bound (~8–10 min for 16 years). For global sites, load via
@@ -352,7 +352,7 @@ columns (DATE/SRAD/TMAX/TMIN/RAIN/WIND).
 
 ```python
 import sys
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/DSSAT/knowledge_infrastructure/tools")
+sys.path.insert(0, "KISSPATH_KI_ROOT/DSSAT/knowledge_infrastructure/tools")
 from dssat_workdir_setup import create_workdir, run_dssat, parse_summary
 
 workdir = create_workdir(
@@ -406,7 +406,7 @@ python skills/plot/plot_crop_yield_map.py \
 
 ```python
 import sys
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/DSSAT/knowledge_infrastructure/tools")
+sys.path.insert(0, "KISSPATH_KI_ROOT/DSSAT/knowledge_infrastructure/tools")
 from setup_rice_experiment import setup_rice
 
 # Auto-selects cultivar and planting date by latitude
@@ -468,7 +468,7 @@ result = setup_rice(
 
 ```python
 import sys
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/DSSAT/knowledge_infrastructure/tools")
+sys.path.insert(0, "KISSPATH_KI_ROOT/DSSAT/knowledge_infrastructure/tools")
 from setup_soybean_experiment import setup_soybean
 
 # Auto-selects cultivar by latitude and maturity group
@@ -525,7 +525,7 @@ result = setup_soybean(
 
 ```python
 import sys
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/DSSAT/knowledge_infrastructure/tools")
+sys.path.insert(0, "KISSPATH_KI_ROOT/DSSAT/knowledge_infrastructure/tools")
 from parse_plantgro import parse_plantgro, extract_growth_summary, get_timeseries
 
 # Parse all daily records
@@ -597,6 +597,6 @@ Returns per run:
 | South | <28°N | — | — | Mar-Jul, Jul-Nov (double) | Jun-Nov (MG V-VI) |
 
 **Data sources on server:**
-- GGCMI Crop Calendar: `/home/server/Crop_model_dataset/GGCMI_phase3_crop_calendar/`
-- China Phenology GeoTIFF: `/home/server/Crop_model_dataset/8313530/`
-- SPAM crop distribution: `/home/server/Crop_model_dataset/dataverse_files/`
+- GGCMI Crop Calendar: `KISSPATH_HOME/Crop_model_dataset/GGCMI_phase3_crop_calendar/`
+- China Phenology GeoTIFF: `KISSPATH_HOME/Crop_model_dataset/8313530/`
+- SPAM crop distribution: `KISSPATH_HOME/Crop_model_dataset/dataverse_files/`

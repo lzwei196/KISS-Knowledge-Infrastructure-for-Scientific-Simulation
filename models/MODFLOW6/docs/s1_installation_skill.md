@@ -20,14 +20,14 @@ Before starting this stage, verify:
 
 | Input | Type | Source | Description |
 |-------|------|--------|-------------|
-| python_env | directory | HydroCraft config | Python environment path (`/mnt/disk1/Hydrocraft_server/python_env/`) |
+| python_env | directory | HydroCraft config | Python environment path (`KISSPATH_PYTHON_ENV/`) |
 
 ## Procedure
 
 ### Step 1: Install FloPy
 
 ```bash
-source /mnt/disk1/Hydrocraft_server/python_env/bin/activate
+source KISSPATH_PYTHON_ENV/bin/activate
 pip install flopy
 ```
 
@@ -48,7 +48,7 @@ Download from USGS GitHub releases:
 ```bash
 python -c "
 import flopy.utils
-flopy.utils.get_modflow(bindir='/mnt/disk1/Hydrocraft_server/models/MODFLOW6/bin/')
+flopy.utils.get_modflow(bindir='KISSPATH_KI_ROOT/MODFLOW6/bin/')
 "
 ```
 
@@ -70,7 +70,7 @@ The binary will be at `install/bin/mf6`.
 ### Step 3: Verify mf6 Binary
 
 ```bash
-/mnt/disk1/Hydrocraft_server/models/MODFLOW6/bin/mf6 --version
+KISSPATH_KI_ROOT/MODFLOW6/bin/mf6 --version
 ```
 
 **Expected result**: Version string like `mf6: 6.5.0 Release 12/01/2023`

@@ -28,22 +28,22 @@ import netCDF4 as nc
 from datetime import datetime, timedelta
 
 # ----------------------------------------------------------------------------- paths
-ROOT   = "/mnt/disk1/Hydrocraft_server/models/Noah_MP"
+ROOT   = "KISSPATH_KI_ROOT/Noah_MP"
 KI     = f"{ROOT}/knowledge_infrastructure"
 TOOLS  = f"{KI}/tools"
-BIN    = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
-SRCDIR = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/Noah_MP/source/repo"
-MSWX   = "/mnt/disk3/msxw"
-GRDC   = "/mnt/datasets/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc"
+BIN    = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
+SRCDIR = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/repo"
+MSWX   = "KISSPATH_FORCING"
+GRDC   = "KISSPATH_DATA/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc"
 SHP    = f"{GRDC}/shapefiles/grdc/grdc_basin_shapes.shp"
 OBSNC  = f"{GRDC}/timeseries/netcdf/grdc/GRDC_5868100.nc"
-ESA    = "/mnt/datasets/vegetation/ESA_CCI_LC_global/ESA_CCI_LC_global_1992_01deg.tif"
-MERIT  = "/mnt/datasets/MERIT_DEM"
+ESA    = "KISSPATH_DATA/vegetation/ESA_CCI_LC_global/ESA_CCI_LC_global_1992_01deg.tif"
+MERIT  = "KISSPATH_DATA/MERIT_DEM"
 WORK   = f"{ROOT}/detached/verify_1"
 CELLS  = f"{WORK}/cells"
 BOX    = f"{WORK}/mswx_cmfd"            # CMFD-style box forcing derived from MSWX
 RESULT = f"{WORK}/result.json"
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 
 # ----------------------------------------------------------------------------- config
 GAUGE = "GRDC_5868100"

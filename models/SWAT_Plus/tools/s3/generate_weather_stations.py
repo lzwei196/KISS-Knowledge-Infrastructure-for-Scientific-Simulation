@@ -7,7 +7,7 @@ Description:  Create weather-sta.cli (+ weather-wgn.cli fallback) for SWAT+.
 
 weather-sta.cli is read POSITIONALLY by SWAT+ rev59. The verified column order,
 from the shipped developer example
-/mnt/disk1/Hydrocraft_server/models/SWAT_Plus/run_lrew/swatplus_rev59_demo/weather-sta.cli, is:
+KISSPATH_KI_ROOT/SWAT_Plus/run_lrew/swatplus_rev59_demo/weather-sta.cli, is:
 
     name   wgn   pcp   tmp   slr   hmd   wnd   wnd_dir   atmo_dep
 

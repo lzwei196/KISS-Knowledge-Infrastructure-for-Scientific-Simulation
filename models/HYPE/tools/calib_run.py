@@ -52,14 +52,14 @@ import numpy as np
 import pandas as pd
 
 # ---------------------------------------------------------------- fixed paths
-ROOT = "/mnt/disk1/Hydrocraft_server"
+ROOT = "KISSPATH_ROOT"
 KI = f"{ROOT}/models/HYPE/knowledge_infrastructure"
 TOOLS = f"{KI}/tools"
 HYPE_BIN = f"{ROOT}/model/hype/hype"
 
 # canonical ki_tools_common FIRST (a kdt-release copy elsewhere on sys.path would shadow it)
 for _p in (f"{ROOT}/models/ki_tools_common",
-           "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent"):
+           "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent"):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 from ki_tools_common.metrics import all_metrics          # noqa: E402
@@ -109,7 +109,7 @@ N_SIM_ROWS = 3653                 # 1980-12-31 .. 1990-12-31 inclusive
 # --- staged deck produced by the validated real_case run (one-time prepare, never per eval)
 TEMPLATE_CANDIDATES = [
     os.environ.get("KDT_HYPE_TEMPLATE") or "",
-    "/home/server/hype_changtaiguan_run",
+    "KISSPATH_HOME/hype_changtaiguan_run",
 ]
 
 READBACK_RTOL = 1e-9

@@ -19,12 +19,12 @@ PASS = 0
 FAIL = 0
 MODEL_NAME = "DayCent (DDcentEVI rev 491)"
 
-BIN_DIR = ("/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/"
+BIN_DIR = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/"
            "_work_v2/DayCent/source/repo/Linux_Version_491")
 DDCENT = os.path.join(BIN_DIR, "DDcentEVI_rev491")
 DDLIST = os.path.join(BIN_DIR, "DDlist100_rev491")
 
-EXAMPLE_DIR = ("/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/"
+EXAMPLE_DIR = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/"
                "_work_v2/DayCent/source/repo/WoosterExampleLinux")
 
 KI_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -118,12 +118,12 @@ def main():
     check_file(os.path.join(KI_DIR, "tools/parse_daycent_output.py"), "parse_daycent_output.py")
 
     print("\n[4] Python imports (optional but used by tools)")
-    sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect")
+    sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
     check_import("numpy", "pip install numpy")
     check_import("ki_tools_common.load_forcing",
-                 "pip install -e /home/server/knowledge-dissection-toolkit/auto_dissect/ki_tools_common")
+                 "pip install -e KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/ki_tools_common")
     check_import("ki_tools_common.soil_utils",
-                 "pip install -e /home/server/knowledge-dissection-toolkit/auto_dissect/ki_tools_common")
+                 "pip install -e KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/ki_tools_common")
 
     print("\n[5] Binary smoke test")
     check_binary_runs()

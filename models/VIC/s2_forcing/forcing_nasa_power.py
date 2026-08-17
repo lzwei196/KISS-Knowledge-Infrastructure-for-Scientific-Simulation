@@ -52,13 +52,13 @@ import pandas as pd
 # KDT dt_vic_023: netCDF4 MUST be imported before xarray. See diagnostics/triplets.md.
 import netCDF4  # noqa: F401  # isort:skip  -- must precede `import xarray`
 import xarray as xr
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
 from ki_tools_common.units import celsius_to_kelvin, kelvin_to_celsius
 
 # ─── Defaults (overridden by CLI args) ───────────────────────────
-GRID_NC_PATH = Path("/mnt/disk1/Hydrocraft_server/outputs/blue_nile_ethiopia_2005_2015/vic_temp/grid/basin_grid.nc")
-SOIL_PARAM_FILE = Path("/mnt/disk1/Hydrocraft_server/outputs/blue_nile_ethiopia_2005_2015/vic_temp/soil/SOIL_PARAM_COMPLETE.txt")
-OUTPUT_DIR = Path("/mnt/disk1/Hydrocraft_server/outputs/blue_nile_ethiopia_2005_2015/vic_temp/forcing/forcing_final")
+GRID_NC_PATH = Path("KISSPATH_OUTPUTS/blue_nile_ethiopia_2005_2015/vic_temp/grid/basin_grid.nc")
+SOIL_PARAM_FILE = Path("KISSPATH_OUTPUTS/blue_nile_ethiopia_2005_2015/vic_temp/soil/SOIL_PARAM_COMPLETE.txt")
+OUTPUT_DIR = Path("KISSPATH_OUTPUTS/blue_nile_ethiopia_2005_2015/vic_temp/forcing/forcing_final")
 FORCING_PREFIX = "blue_nile_0.10deg_"
 START_YEAR = 2005
 END_YEAR = 2015
@@ -73,7 +73,7 @@ REQUEST_DELAY = 1.0        # seconds between API calls (be polite)
 # ─── Local cache (pre-downloaded by nasa_power_batch_cache.py) ───
 # Set HYDROCRAFT_POWER_REALTIME=1 to skip cache and always fetch from API
 PREFER_REALTIME = os.environ.get("HYDROCRAFT_POWER_REALTIME", "1") == "1"
-CACHE_DIR = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "data/nasa_power_cache/hourly"))
+CACHE_DIR = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "data/nasa_power_cache/hourly"))
 MAX_RETRIES = 3
 RETRY_DELAY = 10           # seconds between retries on failure
 MAX_DAYS_PER_REQUEST = 365 # split multi-year into yearly requests

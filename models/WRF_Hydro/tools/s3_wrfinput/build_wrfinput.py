@@ -45,7 +45,7 @@ ZS  = np.array([0.05, 0.25, 0.70, 1.50], dtype=np.float32)  # layer midpoint dep
 TSK_DEFAULT = 290.0  # skin temperature (K)
 NSOIL = 4
 
-DEFAULT_SOILPARM = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "model/wrf_hydro/source/trunk/NDHMS/Run/SOILPARM.TBL"))
+DEFAULT_SOILPARM = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "model/wrf_hydro/source/trunk/NDHMS/Run/SOILPARM.TBL"))
 
 
 def parse_soilparm_tbl(tbl_path):

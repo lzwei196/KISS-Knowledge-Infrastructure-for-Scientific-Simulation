@@ -162,8 +162,8 @@ CLM5_VARIABLES = {
 # versions whose get_backend() has the built-in fast path
 # (`if engine in BACKEND_ENTRYPOINTS:` -> use the built-in class, never call
 # list_engines()).  That is the version installed for this KI's interpreter
-# (/home/server/.local/.../xarray 2026.4.0, plugins.py:41-48).  On older
-# xarray (e.g. 2025.11.0 in /mnt/disk1/Hydrocraft_server/python_env)
+# (KISSPATH_HOME/.local/.../xarray 2026.4.0, plugins.py:41-48).  On older
+# xarray (e.g. 2025.11.0 in KISSPATH_PYTHON_ENV)
 # get_backend() calls list_engines() unconditionally, so naming the engine
 # skips only the guess_can_open() probe loop, not the entry-point import --
 # that interpreter does not segfault here, but the mechanism differs and a

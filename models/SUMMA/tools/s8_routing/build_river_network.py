@@ -183,7 +183,7 @@ def sample_landcover(shp_path, subset, tif_path, scheme, spacing):
     from shapely.geometry import Point
     from collections import Counter
 
-    sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+    sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
     from ki_tools_common.landcover import igbp_to_usgs, igbp_to_modis
     xwalk = igbp_to_usgs if scheme == "usgs" else igbp_to_modis
     nveg = NVEG_BY_SCHEME[scheme]

@@ -3,7 +3,7 @@ model:
   version: "56.2.1"
   domain: "coastal_ocean"
   description: "2D/3D finite element hydrodynamic model for time-dependent free surface circulation and transport"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ADCIRC/source/repo/build/adcirc"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ADCIRC/source/repo/build/adcirc"
   coordinate_system: "unstructured triangular finite element mesh"
 
 inputs:

@@ -51,7 +51,7 @@ def check_dir(path, label):
 def check_import(module, label):
     # Also search HydroCraft python_env for packages
     import sys
-    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
     if _penv not in sys.path:
         sys.path.insert(0, _penv)
     global PASS, FAIL
@@ -74,8 +74,8 @@ def check_binary_search(name, label):
         return
     # Search common locations
     search_dirs = [
-        "/mnt/disk1/Hydrocraft_server/model",
-        "/home/server",
+        "KISSPATH_BINARIES",
+        "KISSPATH_HOME",
         "/usr/local/bin",
     ]
     for d in search_dirs:
@@ -98,10 +98,10 @@ def check_common_data():
     """Check common HydroCraft data paths."""
     global PASS, FAIL
     common = [
-        ("/mnt/disk1/Hydrocraft_server/data/obs", "Observation data"),
-        ("/media/server/hc_ssd/forcing", "Forcing data"),
-        ("/mnt/disk1/Hydrocraft_server/data/dem", "DEM data"),
-        ("/mnt/disk1/Hydrocraft_server/data/soil", "Soil data"),
+        ("KISSPATH_OBS", "Observation data"),
+        ("KISSPATH_FORCING", "Forcing data"),
+        ("KISSPATH_STATIC", "DEM data"),
+        ("KISSPATH_STATIC", "Soil data"),
     ]
     for path, label in common:
         if os.path.isdir(path):
@@ -119,15 +119,15 @@ def main():
 
     # Model-specific checks
     # Binary — known path (patched ELF interpreter for Linux)
-    check_file("/home/server/RZWQM2/RZWQM2/linux/main_ryzen_patched",
+    check_file("KISSPATH_HOME/RZWQM2/RZWQM2/linux/main_ryzen_patched",
                "RZWQM2 binary (Linux, patched)", executable=True)
 
     # Canonical template — ALL new projects must copy from this
-    check_dir("/home/server/RZWQM2/RZWQM2/template_bengbu/bengbu_wheat",
+    check_dir("KISSPATH_HOME/RZWQM2/RZWQM2/template_bengbu/bengbu_wheat",
               "Canonical template (bengbu_wheat)")
-    check_file("/home/server/RZWQM2/RZWQM2/template_bengbu/bengbu_wheat/IPNAMES.DAT",
+    check_file("KISSPATH_HOME/RZWQM2/RZWQM2/template_bengbu/bengbu_wheat/IPNAMES.DAT",
                "Template IPNAMES.DAT")
-    check_file("/home/server/RZWQM2/RZWQM2/template_bengbu/bengbu_wheat/rzwqm.dat",
+    check_file("KISSPATH_HOME/RZWQM2/RZWQM2/template_bengbu/bengbu_wheat/rzwqm.dat",
                "Template rzwqm.dat")
 
     print()

@@ -15,8 +15,8 @@ Advantages over convert_hwsd_to_sol.py:
   - SLPF = 1.00 baseline (SOC-derived SLPF available as sensitivity option)
 
 Data sources (automatically selected by region):
-  China subset:    /mnt/disk3/soilgrids/soilgrids_cold_china_01deg.csv
-  Global fallback: /mnt/disk3/soilgrids_global/soilgrids_global_01deg.csv
+  China subset:    KISSPATH_DATA/soilgrids/soilgrids_cold_china_01deg.csv
+  Global fallback: KISSPATH_DATA/soilgrids_global/soilgrids_global_01deg.csv
 
 Both CSVs are in conventional units:
   bdod  = g/cm³    sand/silt/clay = %    soc = g/kg    phh2o = pH
@@ -51,8 +51,8 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 
 # ── Data paths ────────────────────────────────────────────────────────────────
-SG_CHINA_CSV  = "/mnt/disk3/soilgrids/soilgrids_cold_china_01deg.csv"
-SG_GLOBAL_CSV = "/mnt/disk3/soilgrids_global/soilgrids_global_01deg.csv"
+SG_CHINA_CSV  = "KISSPATH_DATA/soilgrids/soilgrids_cold_china_01deg.csv"
+SG_GLOBAL_CSV = "KISSPATH_DATA/soilgrids_global/soilgrids_global_01deg.csv"
 
 DEPTH_LAYERS = ['0-5cm', '5-15cm', '15-30cm', '30-60cm', '60-100cm', '100-200cm']
 DEPTH_BOTTOM = [5, 15, 30, 60, 100, 200]    # DSSAT SLB (cm)

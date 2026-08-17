@@ -51,7 +51,7 @@ dly.to_monthly('weather/site1.WP1')
 ```bash
 python tools/convert_weather_to_dly.py \
   --source nasa_power \
-  --input /mnt/disk1/.../nasa_power_cache/hourly/ \
+  --input KISSPATH_ROOT/.../nasa_power_cache/hourly/ \
   --output weather/site1.DLY \
   --lat 41.5 --lon -93.5 \
   --start-year 2015 --end-year 2020

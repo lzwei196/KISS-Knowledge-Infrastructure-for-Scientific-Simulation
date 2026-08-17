@@ -547,7 +547,7 @@ triplets:
   diagnosis: 'When a Python venv is created at one path and later accessed via a symlink
     or mount to a different path, the venv''s internal paths can become inconsistent.
     For example, a venv at /home/user/project/python_env/ that is also accessible
-    via /mnt/disk1/project/python_env/ may have pip installing to the original path''s
+    via KISSPATH_ROOT/python_env/ may have pip installing to the original path''s
     site-packages while sys.path references the symlinked path. This is because the
     venv''s pyvenv.cfg and pip''s internal path resolution may resolve the symlink
     differently from the Python interpreter.

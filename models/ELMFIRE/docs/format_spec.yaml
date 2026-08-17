@@ -4,7 +4,7 @@ model:
   version: "2025.1002"
   domain: "wildfire"
   subdomain: "fire spread simulation"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ELMFIRE/source/repo/build/linux/bin/elmfire_block"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ELMFIRE/source/repo/build/linux/bin/elmfire_block"
   binary_type: "ELF 64-bit, MPI-parallel Fortran"
   source_repo: "github.com/lautenberger/elmfire"
 

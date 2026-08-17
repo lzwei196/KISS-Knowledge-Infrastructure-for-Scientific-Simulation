@@ -30,7 +30,7 @@ def check_dir(path, label):
 def check_import(module, label):
     # Also search HydroCraft python_env for packages
     import sys
-    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
     if _penv not in sys.path:
         sys.path.insert(0, _penv)
     global PASS, FAIL
@@ -47,9 +47,9 @@ def main():
     global PASS, FAIL
     print(f"{' PREFLIGHT: ELM ':=^60}")
     print()
-    check_dir("/mnt/disk1/Hydrocraft_server/models/ELM/knowledge_infrastructure/tools", "KI tools directory")
+    check_dir("KISSPATH_KI_ROOT/ELM/knowledge_infrastructure/tools", "KI tools directory")
     # Model-specific binary/package check
-    check_file("/home/server/e3sm_scratch/elm_test_case/bld/e3sm.exe", "ELM binary", executable=True)
+    check_file("KISSPATH_HOME/e3sm_scratch/elm_test_case/bld/e3sm.exe", "ELM binary", executable=True)
     # Check diagnostics
     ki_dir = os.path.dirname(os.path.abspath(__file__))
     triplets = os.path.join(ki_dir, "diagnostics", "triplets.yaml")

@@ -130,7 +130,7 @@ pip install pftools
 ### 2.4 Proposed Installation Path
 
 ```
-/mnt/disk1/Hydrocraft_server/model/parflow/
+KISSPATH_BINARIES/parflow/
   deps/
     hypre-install/
   parflow-v3.13/          # source

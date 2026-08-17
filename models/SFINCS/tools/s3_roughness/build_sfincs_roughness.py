@@ -59,20 +59,20 @@ MANNING_LOOKUP = {
 }
 
 # Default AVHRR land cover (same source as the VIC vegetation parameters).
-# dt_v022: "/media/server/hc_ssd/..." is a REMOVABLE drive that is not mounted on this
+# dt_v022: "KISSPATH_DATA/..." is a REMOVABLE drive that is not mounted on this
 # server, so the auto-discovery glob returned [] and every domain silently fell back to
 # uniform n=0.04 — stage s3 was a no-op without ever erroring. The correct on-disk copy is
 # the one registered in dataset_index.yaml as
 # parameter_sourcing.land_cover.avhrr_landcover, so that registry is resolved FIRST
 # (registry_lookup below actually reads it — the paths in AVHRR_SEARCH_PATHS are only a
 # last-resort fallback for when the registry is missing or unparseable).
-DATASET_INDEX = "/mnt/disk1/Hydrocraft_server/data_ki/dataset_index.yaml"
+DATASET_INDEX = "KISSPATH_DATA_KI/dataset_index.yaml"
 AVHRR_REGISTRY_ID = "avhrr_landcover"
 AVHRR_REGISTRY_CATEGORY = "parameter_sourcing.land_cover"
 AVHRR_SEARCH_PATHS = [
-    "/mnt/disk1/Hydrocraft_server/data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif",
-    "/mnt/disk1/Hydrocraft_server/data/landcover/",
-    "/media/server/hc_ssd/forcing/AVHRR/",
+    "KISSPATH_DATA/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif",
+    "KISSPATH_DATA/landcover/",
+    "KISSPATH_FORCING/AVHRR/",
 ]
 AVHRR_DEFAULT = AVHRR_SEARCH_PATHS[0]
 

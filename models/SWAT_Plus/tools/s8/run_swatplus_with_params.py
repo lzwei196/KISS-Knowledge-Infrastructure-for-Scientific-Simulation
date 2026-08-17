@@ -206,7 +206,7 @@ def ensure_executable_in_dir(txtinout_dir, swat_binary_arg):
     if swat_binary_arg is None:
         # Try default location
         default_binary = Path(
-            "/mnt/disk1/Hydrocraft_server/models/SWAT_Plus/"
+            "KISSPATH_KI_ROOT/SWAT_Plus/"
             "test_rev59/swatplus_rev59"
         )
         if default_binary.exists():

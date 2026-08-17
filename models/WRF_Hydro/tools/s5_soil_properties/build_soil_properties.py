@@ -31,8 +31,8 @@ import netCDF4 as nc
 import numpy as np
 
 
-DEFAULT_SOILPARM = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "model/wrf_hydro/source/trunk/NDHMS/Run/SOILPARM.TBL"))
-DEFAULT_MPTABLE  = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "model/wrf_hydro/source/trunk/NDHMS/Run/MPTABLE.TBL"))
+DEFAULT_SOILPARM = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "model/wrf_hydro/source/trunk/NDHMS/Run/SOILPARM.TBL"))
+DEFAULT_MPTABLE  = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "model/wrf_hydro/source/trunk/NDHMS/Run/MPTABLE.TBL"))
 
 NSOIL = 4
 

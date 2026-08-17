@@ -4,7 +4,7 @@
   "domain": "hydrology",
   "basin": "Wangjiaba (51030)",
   "basin_area_km2": 30630,
-  "ki_path": "/mnt/disk1/Hydrocraft_server/models/SUMMA/knowledge_infrastructure",
+  "ki_path": "KISSPATH_KI_ROOT/SUMMA/knowledge_infrastructure",
   "test_status": "PASS",
   "ki_generalized": true,
   "binary_found": true,
@@ -50,7 +50,7 @@
     "veg_type": "USGS type 14 (Evergreen Needleleaf - misclassified, should be Cropland)",
     "spinup": "1980 (1 year)",
     "runtime_seconds": 225,
-    "output_path": "/mnt/disk1/Hydrocraft_server/outputs/wangjiaba_summa_ki_v2/"
+    "output_path": "KISSPATH_OUTPUTS/wangjiaba_summa_ki_v2/"
   },
   "timestamp": "2026-04-02T15:54:50.279079"
 }

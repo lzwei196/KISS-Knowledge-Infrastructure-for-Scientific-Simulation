@@ -15,10 +15,10 @@ print("=" * 80)
 # ============================================================================
 import os as _os
 _BASIN = _os.environ.get("VIC_BASIN_NAME", "xixian_rerun_71379b42")
-_SOIL_DIR = Path(_os.environ.get("VIC_OUT_ROOT", "/mnt/disk1/Hydrocraft_server/outputs")) / _BASIN / "vic_temp" / "soil"
+_SOIL_DIR = Path(_os.environ.get("VIC_OUT_ROOT", "KISSPATH_OUTPUTS")) / _BASIN / "vic_temp" / "soil"
 
 SOIL_PARAM_IN = _SOIL_DIR / "SOIL_PARAM_FINAL.txt"
-GLOBAL_SOIL_FILE = Path(r"/mnt/disk1/Hydrocraft_server/data/插值/global_soil_param_new.txt")
+GLOBAL_SOIL_FILE = Path(r"KISSPATH_DATA/插值/global_soil_param_new.txt")
 SOIL_PARAM_OUT = _SOIL_DIR / "SOIL_PARAM_COMPLETE.txt"
 
 # ============================================================================

@@ -51,7 +51,7 @@ def check_dir(path, label):
 def check_import(module, label):
     # Also search HydroCraft python_env for packages
     import sys
-    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
     if _penv not in sys.path:
         sys.path.insert(0, _penv)
     global PASS, FAIL
@@ -74,8 +74,8 @@ def check_binary_search(name, label):
         return
     # Search common locations
     search_dirs = [
-        "/mnt/disk1/Hydrocraft_server/model",
-        "/home/server",
+        "KISSPATH_BINARIES",
+        "KISSPATH_HOME",
         "/usr/local/bin",
     ]
     for d in search_dirs:
@@ -98,10 +98,10 @@ def check_common_data():
     """Check common HydroCraft data paths."""
     global PASS, FAIL
     common = [
-        ("/mnt/disk1/Hydrocraft_server/data/obs", "Observation data"),
-        ("/media/server/hc_ssd/forcing", "Forcing data"),
-        ("/mnt/disk1/Hydrocraft_server/data/dem", "DEM data"),
-        ("/mnt/disk1/Hydrocraft_server/data/soil", "Soil data"),
+        ("KISSPATH_OBS", "Observation data"),
+        ("KISSPATH_FORCING", "Forcing data"),
+        ("KISSPATH_STATIC", "DEM data"),
+        ("KISSPATH_STATIC", "Soil data"),
     ]
     for path, label in common:
         if os.path.isdir(path):
@@ -119,7 +119,7 @@ def main():
 
     # Model-specific checks
     # Binary: ParFlow 3.13
-    check_file("/mnt/disk1/Hydrocraft_server/model/parflow/install/bin/parflow", "ParFlow 3.13", executable=True)
+    check_file("KISSPATH_BINARIES/parflow/install/bin/parflow", "ParFlow 3.13", executable=True)
 
     print()
 

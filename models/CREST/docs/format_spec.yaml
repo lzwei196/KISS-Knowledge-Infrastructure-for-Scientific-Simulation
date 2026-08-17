@@ -3,7 +3,7 @@ model:
   full_name: Coupled Routing and Excess STorage
   framework: EF5 (Ensemble Framework For Flash Flood Forecasting) v1.2.3
   domain: flood
-  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/CREST/source/repo/build/ef5
+  binary_path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/CREST/source/repo/build/ef5
   language: C++ (C++11, OpenMP)
   config_format: INI-style control file (control.txt)
   ki_version: 1.1.0

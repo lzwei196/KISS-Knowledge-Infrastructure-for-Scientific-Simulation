@@ -68,7 +68,7 @@ This knowledge infrastructure enables simulation of subsurface processes using O
 ### Building from source
 
 ```bash
-cd /home/server/knowledge-dissection-toolkit/auto_dissect/_work/OpenGeoSys/source/repo
+cd KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenGeoSys/source/repo
 mkdir -p build && cd build
 cmake .. -DOGS_BUILD_CLI=ON -DOGS_BUILD_TESTING=OFF -DOGS_BUILD_UTILS=OFF
 make -j$(nproc)

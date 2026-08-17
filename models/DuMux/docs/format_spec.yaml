@@ -3,7 +3,7 @@ model:
   version: "3.11-dev"
   domain: "Groundwater flow and transport in porous media"
   framework: "DUNE (Distributed and Unified Numerics Environment)"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/DuMux/dumux_real_run/example_1ptracer"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/DuMux/dumux_real_run/example_1ptracer"
   binary_type: "ELF 64-bit, C++20, dynamically linked"
   models_supported:
     - "1p (single-phase Darcy flow)"

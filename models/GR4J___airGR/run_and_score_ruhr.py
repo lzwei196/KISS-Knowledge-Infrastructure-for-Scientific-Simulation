@@ -11,20 +11,20 @@ external forcing fetch is required. RESUMABLE: each stage skips if output exists
 import os, sys, json, subprocess
 import numpy as np, pandas as pd
 
-KI = '/mnt/disk1/Hydrocraft_server/models/GR4J___airGR/knowledge_infrastructure'
+KI = 'KISSPATH_KI_ROOT/GR4J___airGR/knowledge_infrastructure'
 TOOLS = KI + '/tools'
 sys.path.insert(0, TOOLS)
-sys.path.insert(0, '/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent')
+sys.path.insert(0, 'KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent')
 from ki_tools_common.metrics import all_metrics
 from ki_tools_common.validation import validate_water_balance
 
-WD = '/mnt/disk1/Hydrocraft_server/outputs/gr4j_grdc6335030'
-OUT = '/mnt/disk1/Hydrocraft_server/models/GR4J___airGR/detached/verify_1'
+WD = 'KISSPATH_OUTPUTS/gr4j_grdc6335030'
+OUT = 'KISSPATH_KI_ROOT/GR4J___airGR/detached/verify_1'
 os.makedirs(WD, exist_ok=True); os.makedirs(OUT, exist_ok=True)
 
 GAUGE = 'GRDC_6335030'
 LAT, LON, AREA = 51.3979, 7.1646, 4097.883
-NC = ('/mnt/datasets/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc/'
+NC = ('KISSPATH_DATA/observed_data/dischargeandwatershed/GRDC-Caravan-extension-nc/'
       'timeseries/netcdf/grdc/' + GAUGE + '.nc')
 # streamflow fully valid 1981-2020; use 1980 as warmup year for forcing.
 FORC_START, FORC_END = '1980-01-01', '2020-12-31'

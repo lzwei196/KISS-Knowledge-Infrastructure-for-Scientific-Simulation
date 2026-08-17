@@ -2,7 +2,7 @@ model:
   name: SimPEG
   full_name: Simulation and Parameter Estimation in Geophysics
   domain: geophysics
-  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/SimPEG/venv/bin/python
+  binary_path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SimPEG/venv/bin/python
   version: 0.1.dev1
   language: Python
   license: MIT

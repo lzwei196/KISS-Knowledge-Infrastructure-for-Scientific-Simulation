@@ -26,16 +26,16 @@ is skipped if it already exists; a relaunch continues instead of restarting.
 import json, os, subprocess, sys, glob, math
 import numpy as np
 
-KI    = "/mnt/disk1/Hydrocraft_server/models/ForeFire/knowledge_infrastructure"
+KI    = "KISSPATH_KI_ROOT/ForeFire/knowledge_infrastructure"
 TOOLS = KI + "/tools"
-FF_BIN = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/ForeFire/source/repo/bin/forefire"
-LDLIB = "/home/server/.local/lib"
+FF_BIN = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ForeFire/source/repo/bin/forefire"
+LDLIB = "KISSPATH_HOME/.local/lib"
 PY = "/usr/bin/python3"
-GDALWARP = "/home/server/.local/bin/gdalwarp"
-MERIT_DIR = "/mnt/datasets/MERIT_DEM"
-OBS_DIR = "/mnt/disk1/Hydrocraft_server/data/obs/fire_perimeters/nifc"
+GDALWARP = "KISSPATH_HOME/.local/bin/gdalwarp"
+MERIT_DIR = "KISSPATH_DATA/MERIT_DEM"
+OBS_DIR = "KISSPATH_OBS/fire_perimeters/nifc"
 
-WORK = "/mnt/disk1/Hydrocraft_server/models/ForeFire/detached/verify_2"
+WORK = "KISSPATH_KI_ROOT/ForeFire/detached/verify_2"
 RESULT = WORK + "/result.json"
 os.makedirs(WORK, exist_ok=True)
 

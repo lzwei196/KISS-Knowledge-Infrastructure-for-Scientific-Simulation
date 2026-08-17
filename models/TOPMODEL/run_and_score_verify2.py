@@ -20,9 +20,9 @@ import os, sys, json, subprocess, re
 from datetime import datetime, timedelta
 import numpy as np
 
-RUN_DIR = "/mnt/disk1/Hydrocraft_server/models/TOPMODEL/_collingwood_5803089"
-KI = "/mnt/disk1/Hydrocraft_server/models/TOPMODEL/knowledge_infrastructure"
-OUT_DIR = "/mnt/disk1/Hydrocraft_server/models/TOPMODEL/detached/verify_2"
+RUN_DIR = "KISSPATH_KI_ROOT/TOPMODEL/_collingwood_5803089"
+KI = "KISSPATH_KI_ROOT/TOPMODEL/knowledge_infrastructure"
+OUT_DIR = "KISSPATH_KI_ROOT/TOPMODEL/detached/verify_2"
 BASIN = "Collingwood_5803089"
 AREA_KM2 = 277.92
 LAT, LON = -42.11, 145.92          # basin centroid (gauge -42.1729,145.9271)
@@ -30,10 +30,10 @@ START = "1980-01-01"
 CAL = "1981-01-01:1985-12-31"
 VAL = "1986-01-01:1990-12-31"
 N_TRIALS = 1200
-MSWX_DIR = "/mnt/disk3/msxw/"
+MSWX_DIR = "KISSPATH_FORCING/"
 
 sys.path.insert(0, os.path.join(KI, "tools"))
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/validators")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/validators")
 from ki_tools_common.metrics import all_metrics
 from standard_calval import compute_calval_metrics
 import calibrate_topmodel as CT

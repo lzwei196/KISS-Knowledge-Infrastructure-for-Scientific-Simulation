@@ -336,7 +336,7 @@ def read_observed_csv(csv_path):
     """Read observed discharge from a delimited text file.
 
     Handles both plain `date,value` CSV and the china_gaugeflux archive layout
-    (`/mnt/datasets/china_water_level/<basin>txt/<gauge>.txt`), which is
+    (`KISSPATH_DATA/china_water_level/<basin>txt/<gauge>.txt`), which is
     TAB-separated with columns `stcd dates z Q name`, non-zero-padded dates
     (`1950-1-1`) and -99 as the missing-value sentinel.  The original
     comma-only, column-0/1 reader silently produced ZERO usable rows on those

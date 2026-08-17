@@ -174,7 +174,7 @@
   stage: s2_weather
   failure_domain: parameter_format
   severity: fatal
-  symptom: "convert_forcing_to_daycent.py --source mswx fails with FileNotFoundError inside /mnt/disk1/.../Data_forcing_03hr_010deg/P/P_YYYY.nc."
+  symptom: "convert_forcing_to_daycent.py --source mswx fails with FileNotFoundError inside KISSPATH_ROOT/.../Data_forcing_03hr_010deg/P/P_YYYY.nc."
   diagnosis: "MSWX default path was mis-set to the CMFD root, and MSWX is not actually deployed on this host. --source mswx pointed at CMFD files and inherited the CMFD layout expectations."
   remedy: "If MSWX is truly needed, set --forcing-dir /path/to/mswx explicitly. For most tasks, use --source fluxnet (FLUXNET CSV) or --source cmfd (if the site is inside China)."
 

@@ -41,7 +41,7 @@ import logging
 import numpy as np
 from pathlib import Path
 from datetime import datetime, timedelta
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
 from ki_tools_common.units import CMFD_PRECIP_KGM2S_TO_MMDAY
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

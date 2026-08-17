@@ -13,7 +13,7 @@ This is Stage 4 of the CaMa-Flood pipeline.
 Usage:
     # Extract discharge at Bengbu station
     python parse_cama_output.py \\
-        --output_dir /mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/out/bengbu_2000_2005_cama \\
+        --output_dir KISSPATH_BINARIES/cmf_v420_pkg/out/bengbu_2000_2005_cama \\
         --variable outflw \\
         --lat 32.95 --lon 117.35 \\
         --start_year 2000 --end_year 2005 \\

@@ -105,7 +105,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 from ki_tools_common.metrics import all_metrics          # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -121,7 +121,7 @@ from ki_tools_common.metrics import all_metrics          # noqa: E402
 # verify_1 runner and is NOT this case).  Everything below reads the artifacts that
 # driver's stages already produced under outputs/tangnaihai/.
 # ---------------------------------------------------------------------------
-BASE = "/mnt/disk1/Hydrocraft_server"
+BASE = "KISSPATH_ROOT"
 BASIN, STA = "tangnaihai", "TNH"
 BDIR = f"{BASE}/outputs/{BASIN}"
 
@@ -147,7 +147,7 @@ ROUT_EXE = f"{BASE}/model/route_1.0/src/rout"
 # every field below is a module constant, and load_obs() re-derives the station
 # identity FROM THE FILE and refuses to score anything else.
 # ---------------------------------------------------------------------------
-OBS_FILE = "/mnt/datasets/china_water_level/黄河txt/唐乃亥.txt"
+OBS_FILE = "KISSPATH_DATA/china_water_level/黄河txt/唐乃亥.txt"
 
 TARGET_CASE = {
     "case_id": "SITE:tangnaihai",

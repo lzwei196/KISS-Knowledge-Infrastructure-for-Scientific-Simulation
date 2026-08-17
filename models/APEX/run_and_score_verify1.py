@@ -28,20 +28,20 @@ import shutil
 import csv
 from pathlib import Path
 
-KI = Path("/mnt/disk1/Hydrocraft_server/models/APEX/knowledge_infrastructure")
+KI = Path("KISSPATH_KI_ROOT/APEX/knowledge_infrastructure")
 TOOLS = KI / "tools"
-VALIDATED = Path("/mnt/disk1/Hydrocraft_server/outputs/apex_bengbu_corn_ki_test")
-STATE = Path("/mnt/disk1/Hydrocraft_server/models/APEX/detached/verify_1")
+VALIDATED = Path("KISSPATH_OUTPUTS/apex_bengbu_corn_ki_test")
+STATE = Path("KISSPATH_KI_ROOT/APEX/detached/verify_1")
 WS = STATE / "ws"
 OUT = STATE
-FAOSTAT = Path("/mnt/disk1/Hydrocraft_server/data/obs/faostat/china_crop_yields.csv")
+FAOSTAT = Path("KISSPATH_OBS/faostat/china_crop_yields.csv")
 
 LAT, LON, ELEV = 35.0, 114.5, 70.0     # NCP Henan maize belt (Huang-Huai-Hai)
 SPIN_START, SCORE_START, SCORE_END = 1961, 1981, 2016
 LOCATION = "FAOSTAT China Crop Yields (national maize); sim @ NCP Henan 35.0N,114.5E"
 
-for c in ["/mnt/disk1/Hydrocraft_server/models/ki_tools_common",
-          "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent"]:
+for c in ["KISSPATH_KI_TOOLS_COMMON",
+          "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent"]:
     if os.path.isdir(os.path.join(c, "ki_tools_common")):
         sys.path.insert(0, c)
         break

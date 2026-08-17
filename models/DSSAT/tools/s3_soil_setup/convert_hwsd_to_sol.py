@@ -26,7 +26,7 @@ import math
 import numpy as np
 import pandas as pd
 
-HYDROCRAFT   = "/mnt/disk1/Hydrocraft_server"
+HYDROCRAFT   = "KISSPATH_ROOT"
 HWSD_RASTER  = os.path.join(HYDROCRAFT, "data/soil/HWSD_RASTER/hwsd.bil")
 HWSD_CSV     = os.path.join(HYDROCRAFT, "data/soil/HWSD_DATA.csv")
 

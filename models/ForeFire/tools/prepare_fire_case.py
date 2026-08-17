@@ -45,8 +45,8 @@ import urllib.request
 import numpy as np
 
 # --- default data sources (curated server index) ------------------------------
-MERIT_DIR = "/mnt/datasets/MERIT_DEM"
-GLCFCS30_DIR = "/mnt/datasets/vegetation/GLCFCS30"
+MERIT_DIR = "KISSPATH_DATA/MERIT_DEM"
+GLCFCS30_DIR = "KISSPATH_DATA/vegetation/GLCFCS30"
 NASA_POWER_HOURLY = "https://power.larc.nasa.gov/api/temporal/hourly/point"
 
 # GLC_FCS30 land-cover class -> Anderson (1982) fuel-model index.
@@ -246,7 +246,7 @@ def build_fuel(bbox_utm, epsg, res, out, w, s, e, n):
 
 
 def _gdalwarp():
-    for c in ("/home/server/.local/bin/gdalwarp", "gdalwarp"):
+    for c in ("KISSPATH_HOME/.local/bin/gdalwarp", "gdalwarp"):
         if os.path.isfile(c):
             return c
     import shutil

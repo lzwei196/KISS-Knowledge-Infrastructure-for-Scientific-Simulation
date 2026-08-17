@@ -68,7 +68,7 @@ python tools/generate_site_ini.py \
 
 ```bash
 python tools/run_bgc_spinup.py \
-  --bgc_binary /mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-src/bgc \
+  --bgc_binary KISSPATH_BINARIES/biome-bgc/bgc-src/bgc \
   --ini_file spinup.ini \
   --timeout 600
 ```

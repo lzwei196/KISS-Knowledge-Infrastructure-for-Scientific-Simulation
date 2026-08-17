@@ -3,8 +3,8 @@ model:
   full_name: Parallel Ice Sheet Model
   version: '2.3'
   domain: cryosphere
-  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/PISM/build/pism_ssa_test_j
-  main_binary: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/PISM/build/pism
+  binary_path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PISM/build/pism_ssa_test_j
+  main_binary: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PISM/build/pism
   language: C++
   parallelism: MPI via PETSc
   io_format: NetCDF (CF-compliant)

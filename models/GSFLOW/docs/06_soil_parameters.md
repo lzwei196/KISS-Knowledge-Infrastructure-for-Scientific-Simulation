@@ -5,8 +5,8 @@ Derive GSFLOW/PRMS soil hydraulic parameters from the Harmonized World Soil
 Database (HWSD) or SoilGrids data for each HRU in the model domain.
 
 ## Inputs
-- HWSD raster: `/mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img`
-  (or SoilGrids: `/home/server/Crop_model_dataset/SoilGrids_Bengbu/`)
+- HWSD raster: `KISSPATH_STATIC/HWSD_China_Geo.img`
+  (or SoilGrids: `KISSPATH_HOME/Crop_model_dataset/SoilGrids_Bengbu/`)
 - Basin/HRU shapefile
 - Number of HRUs
 
@@ -66,8 +66,8 @@ Database (HWSD) or SoilGrids data for each HRU in the model domain.
 ## Example
 ```bash
 python convert_soil_params.py \
-    --hwsd /mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img \
-    --shapefile /mnt/disk1/Hydrocraft_server/data/shp/bengbu_shp/bengbu_clip.shp \
+    --hwsd KISSPATH_STATIC/HWSD_China_Geo.img \
+    --shapefile KISSPATH_DATA/shp/bengbu_shp/bengbu_clip.shp \
     --output ./input/prms/soil.params \
     --n-hru 1
 ```

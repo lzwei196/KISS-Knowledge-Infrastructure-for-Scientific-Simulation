@@ -10,11 +10,11 @@
 
 | Data | Path | What it provides |
 |------|------|-----------------|
-| **GGCMI Crop Calendar** | `/home/server/Crop_model_dataset/GGCMI_phase3_crop_calendar/` | Global planting/harvest dates by crop (0.5°) |
-| **China Crop Phenology** | `/home/server/Crop_model_dataset/8313530/` | Chinese heading/maturity dates (GeoTIFF, 2000-2019) |
-| **NPKGRIDS v1.08** | `/home/server/Crop_model_dataset/24616050/` | Global N/P/K application rates per crop |
-| **SPAM 2020** | `/home/server/Crop_model_dataset/dataverse_files/` | Gridded crop yields, areas, production |
-| **SoilGrids 250m** | `/home/server/Crop_model_dataset/SoilGrids_Bengbu/` | High-res soil properties (clay/sand/silt/SOC/BD) |
+| **GGCMI Crop Calendar** | `KISSPATH_HOME/Crop_model_dataset/GGCMI_phase3_crop_calendar/` | Global planting/harvest dates by crop (0.5°) |
+| **China Crop Phenology** | `KISSPATH_HOME/Crop_model_dataset/8313530/` | Chinese heading/maturity dates (GeoTIFF, 2000-2019) |
+| **NPKGRIDS v1.08** | `KISSPATH_HOME/Crop_model_dataset/24616050/` | Global N/P/K application rates per crop |
+| **SPAM 2020** | `KISSPATH_HOME/Crop_model_dataset/dataverse_files/` | Gridded crop yields, areas, production |
+| **SoilGrids 250m** | `KISSPATH_HOME/Crop_model_dataset/SoilGrids_Bengbu/` | High-res soil properties (clay/sand/silt/SOC/BD) |
 | **HWSD** | `data/soil/HWSD_RASTER/hwsd.bil` | Global soil texture + hydraulics |
 
 ## How DSSAT and RZWQM2 Handle Agronomic Data

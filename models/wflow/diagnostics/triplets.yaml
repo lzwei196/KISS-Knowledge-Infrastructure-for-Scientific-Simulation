@@ -1076,7 +1076,7 @@ triplets:
       DEM
     tool_to_run: run_hydromt_build.py --merit_hydro_dir <dir>
     manual_steps:
-    - Extract the 5x5 deg tile from /mnt/datasets/MERIT_Hydro/v1.0.1/{dir,upa}_<block>.tar
+    - Extract the 5x5 deg tile from KISSPATH_DATA/MERIT_Hydro/v1.0.1/{dir,upa}_<block>.tar
     - Pass --merit_hydro_dir and --expected_area_km2 (published gauge area)
     - Verify area_error_pct is within a few percent
     prevention: Use MERIT-Hydro for ANY basin without strong relief.
@@ -1167,7 +1167,7 @@ triplets:
     tool_to_run: run_hydromt_build.py --dem_path <GeoTIFF or MERIT DEM tile dir>
     manual_steps:
     - Leave --dem_path unset to auto-select (China 90 m DEM inside China, the global
-      MERIT DEM tile directory /mnt/datasets/MERIT_DEM elsewhere)
+      MERIT DEM tile directory KISSPATH_DATA/MERIT_DEM elsewhere)
     - A directory of MERIT 5x5-deg <tile>_dem.tif files is merged over the window
     - Check the s1 line "DEM sampled from <path>: N/M cells valid, lo - hi m"
     prevention: s1 now FAILS when the DEM covers none of the window instead of

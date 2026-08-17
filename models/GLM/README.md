@@ -281,7 +281,7 @@ min_ice_thickness = 0.001  # CRITICAL: minimum ice thickness (m)
 |------|--------|--------|------|
 | GLM binary | GitHub glm-aed | Installed | `model/glm/bin/glm` |
 | HydroLAKES v10 | hydrosheds.org | **TO DOWNLOAD** (~2.5 GB) | `data/lakes/HydroLAKES_polys_v10.shp` |
-| Met forcing | CMFD/MSWX | Available | `data/forcing/` or `/mnt/disk3/msxw/` |
+| Met forcing | CMFD/MSWX | Available | `data/forcing/` or `KISSPATH_FORCING/` |
 | River inflow | CaMa-Flood/VIC | From pipeline | Simulation output |
 | Example data | glm-aed repo | Installed | `model/glm/examples/Sparkling/` |
 

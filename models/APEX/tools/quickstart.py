@@ -19,9 +19,9 @@ KI_ROOT = TOOLS_DIR.parent
 
 # Add ki_tools_common to path
 for _cand in [
-    "/mnt/disk1/Hydrocraft_server/models/ki_tools_common",
-    "/home/server/knowledge-dissection-toolkit/kdt-release",
-    "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent",
+    "KISSPATH_KI_TOOLS_COMMON",
+    "KISSPATH_INTERNAL_NOT_SHIPPED/kdt-release",
+    "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent",
 ]:
     if os.path.isdir(os.path.join(_cand, "ki_tools_common")):
         sys.path.insert(0, _cand)

@@ -33,7 +33,7 @@ generate correctly without a validated starting point.
 ### Template location
 
 ```
-/home/server/RZWQM2/RZWQM2/template_bengbu/
+KISSPATH_HOME/RZWQM2/RZWQM2/template_bengbu/
 ```
 
 This is a clean, validated Bengbu wheat project with:
@@ -69,7 +69,7 @@ automates this entire copy-then-update pipeline for a CSV of sites.
 ### Binary path
 
 ```
-/home/server/RZWQM2/RZWQM2/linux/main_ryzen_patched
+KISSPATH_HOME/RZWQM2/RZWQM2/linux/main_ryzen_patched
 ```
 
 The binary is also copied into each scenario directory by the template. Either path works.
@@ -357,6 +357,6 @@ This knowledge infrastructure implements the knowledge dissection methodology de
 | South | <28°N | — | — | Mar-Jul, Jul-Nov |
 
 **Data sources on server:**
-- GGCMI Crop Calendar: `/home/server/Crop_model_dataset/GGCMI_phase3_crop_calendar/`
-- China Phenology GeoTIFF: `/home/server/Crop_model_dataset/8313530/`
-- SPAM crop distribution: `/home/server/Crop_model_dataset/dataverse_files/`
+- GGCMI Crop Calendar: `KISSPATH_HOME/Crop_model_dataset/GGCMI_phase3_crop_calendar/`
+- China Phenology GeoTIFF: `KISSPATH_HOME/Crop_model_dataset/8313530/`
+- SPAM crop distribution: `KISSPATH_HOME/Crop_model_dataset/dataverse_files/`

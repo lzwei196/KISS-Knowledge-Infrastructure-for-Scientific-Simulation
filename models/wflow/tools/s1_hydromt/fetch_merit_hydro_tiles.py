@@ -42,7 +42,7 @@ USAGE (exactly the CLI SKILL.md and run_and_score_pelotas.py already use)
 ------------------------------------------------------------------------
     python tools/s1_hydromt/fetch_merit_hydro_tiles.py \
       --shapefile data/shp/<basin>.shp --pad_deg 0.4 \
-      --out_dir /mnt/disk1/Hydrocraft_server/data/merit_hydro_cache
+      --out_dir KISSPATH_DATA/merit_hydro_cache
 
     python tools/s1_hydromt/fetch_merit_hydro_tiles.py \
       --bbox -51.3 -29.2 -49.0 -27.5 --out_dir <cache> --kinds dir,upa,elv
@@ -59,7 +59,7 @@ import os
 import sys
 import tarfile
 
-DEFAULT_ARCHIVE_DIR = "/mnt/datasets/MERIT_Hydro/v1.0.1"
+DEFAULT_ARCHIVE_DIR = "KISSPATH_DATA/MERIT_Hydro/v1.0.1"
 DEFAULT_KINDS = "dir,upa"
 
 

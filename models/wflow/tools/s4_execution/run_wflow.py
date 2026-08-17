@@ -26,7 +26,7 @@ import time
 from pathlib import Path
 
 
-HYDROCRAFT_ROOT = Path("/mnt/disk1/Hydrocraft_server")
+HYDROCRAFT_ROOT = Path("KISSPATH_ROOT")
 JULIA_BINARY_DEFAULT = str(HYDROCRAFT_ROOT / "model" / "julia-1.10.7" / "bin" / "julia")
 JULIA_ENV_DEFAULT = str(
     HYDROCRAFT_ROOT / "models" / "wflow" / "knowledge_infrastructure" / "julia"

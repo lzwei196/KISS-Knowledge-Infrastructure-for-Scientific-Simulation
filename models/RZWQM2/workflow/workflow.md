@@ -12,7 +12,7 @@ Use `tools/s10_mass_generation/mass_project_generator.py` — the single entry p
 
 ```bash
 python mass_project_generator.py sites.csv /path/to/project /path/to/template \
-    hwsd cmfd /mnt/disk1/.../Data_forcing_03hr_010deg
+    hwsd cmfd KISSPATH_ROOT/.../Data_forcing_03hr_010deg
 ```
 
 **Do NOT write custom setup scripts.** The mass generator handles all 12 pipeline steps per site, incorporating all validated bug fixes. It calls every tool in the correct order with correct parameters.
@@ -72,7 +72,7 @@ Every RZWQM2 simulation requires this layout. The binary runs from the scenario 
 
 **Action**: Copy the **canonical template** directory, then modify only what changes.
 
-**Canonical template**: `/home/server/RZWQM2/RZWQM2/template_bengbu/`
+**Canonical template**: `KISSPATH_HOME/RZWQM2/RZWQM2/template_bengbu/`
 
 This is a clean, validated Bengbu wheat project stripped of output files. It contains all 8 required input files, DSSAT crop databases (maize/wheat/soybean), and the pre-patched Linux binary.
 
@@ -92,7 +92,7 @@ python tools/s7_scenario_assembly/initialize_scenario.py \
 
 # Or direct copy + manual path update:
 shutil.copytree(
-    "/home/server/RZWQM2/RZWQM2/template_bengbu/bengbu_wheat",
+    "KISSPATH_HOME/RZWQM2/RZWQM2/template_bengbu/bengbu_wheat",
     "/path/to/new_project/<new_site>"
 )
 ```
@@ -115,8 +115,8 @@ shutil.copytree(
 | `vic_global` | Global 0.25deg | Needs `global_soil_param_new.txt` — NOT recommended (model-derived, not atlas) |
 
 **HWSD data paths (this server)**:
-- Raster: `/mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img`
-- Database: `/media/server/hc_ssd/forcing/huaihe_raw/soil/HWSD.mdb`
+- Raster: `KISSPATH_STATIC/HWSD_China_Geo.img`
+- Database: `KISSPATH_FORCING/huaihe_raw/soil/HWSD.mdb`
 - Requires: `mdbtools` system package
 
 **SoilGrids standard depths**: 0-5cm, 5-15cm, 15-30cm, 30-60cm, 60-100cm, 100-200cm (6 layers)
@@ -132,7 +132,7 @@ shutil.copytree(
 **Output**: Daily CSV with columns: date, tmin, tmax, wind, radiation, epan, rh, par, rain
 
 **MSWX data**:
-- **Path**: `/mnt/disk3/msxw/` (7 subdirs: Tair, P, Pres, SWd, LWd, wind, spechum)
+- **Path**: `KISSPATH_FORCING/` (7 subdirs: Tair, P, Pres, SWd, LWd, wind, spechum)
 - **Layout**: `{var}/{prefix}_{YYYY}.nc` — yearly files, ~9GB each, global 0.1deg 3-hourly
 - **Coverage**: 1979-2026
 - **Performance**: Uses multiprocessing (6 parallel reads). ~4 min/year.
@@ -144,7 +144,7 @@ shutil.copytree(
 ```bash
 for each site (lat, lon):
     python forcing_source_adapter.py <lat> <lon> <start> <end> cmfd \
-        /media/server/hc_ssd/forcing/Data_forcing_03hr_010deg \
+        KISSPATH_FORCING/Data_forcing_03hr_010deg \
         weather_csv/<site_id>_weather.csv
 ```
 The tool handles all unit conversions (K→C, kg/m²/s→mm, W/m²→MJ/m²/day) and sets E-pan=0, PAR=0.
@@ -311,7 +311,7 @@ The `crop_ref` in planting events maps to entry position (1→first entry, 2→s
 **Input**: scenario_dir, crop, lat (for auto-select) OR cultivar_id (explicit)
 **Modifies**: `{station_id}/DSSAT/MZCER040.CUL` — overwrites the active VAR# line with Chinese cultivar params
 
-The tool reads from DSSAT's China cultivar library (`/home/server/DSSAT/Data/Genotype/China/`) and auto-selects by latitude:
+The tool reads from DSSAT's China cultivar library (`KISSPATH_HOME/DSSAT/Data/Genotype/China/`) and auto-selects by latitude:
 - \> 40°N: NEC Spring cultivars (CN0017-19)
 - 33-40°N: HHH Summer cultivars (CN0001-04, Zhengdan 958)
 - < 33°N: SC Summer cultivar (CN0021)
@@ -420,9 +420,9 @@ These cause silent failures if violated — no error message, just wrong results
 
 | Data | Path | Notes |
 |------|------|-------|
-| MSWX forcing | `/mnt/disk3/msxw/` | 1979-2026, global 0.1deg, ~9GB/year/var |
-| VIC global soil | `/home/server/桌面/yc/doc/soil/data/global_soil_param_new.txt` | NOT recommended for RZWQM2 |
-| HydroCraft tools | `/mnt/disk1/Hydrocraft_server/` | Reference for MSWX reading patterns |
+| MSWX forcing | `KISSPATH_FORCING/` | 1979-2026, global 0.1deg, ~9GB/year/var |
+| VIC global soil | `KISSPATH_HOME/桌面/yc/doc/soil/data/global_soil_param_new.txt` | NOT recommended for RZWQM2 |
+| HydroCraft tools | `KISSPATH_ROOT/` | Reference for MSWX reading patterns |
 | RZWQM2 template | `linux/` directory in this repo | Working Ohio scenario |
 | DSSAT database | `data/databases/DSSAT/` or `linux/DSSAT/` | 41 crop models |
 

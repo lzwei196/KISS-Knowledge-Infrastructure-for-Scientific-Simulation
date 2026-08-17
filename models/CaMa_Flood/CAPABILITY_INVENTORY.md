@@ -4,7 +4,7 @@
 **KDT Stage**: s3 (Tools + Diagnostics + Validated Pipeline)
 **Date**: 2026-04-03
 **Assessed by**: KDT v5.0
-**Binary location**: `/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg/src/MAIN_cmf`
+**Binary location**: `KISSPATH_BINARIES/cmf_v420_pkg/src/MAIN_cmf`
 
 ---
 

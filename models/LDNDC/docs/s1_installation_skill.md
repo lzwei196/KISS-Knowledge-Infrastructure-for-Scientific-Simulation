@@ -22,7 +22,7 @@ Install and compile the LandscapeDNDC (LDNDC) model binary on a Linux system. LD
 | Input | Type | Source | Description |
 |-------|------|--------|-------------|
 | ldndc_source | file/directory | KIT download or GitLab | LDNDC source tarball or repository |
-| install_prefix | directory | User | Target installation directory (e.g., `/home/server/LDNDC/`) |
+| install_prefix | directory | User | Target installation directory (e.g., `KISSPATH_HOME/LDNDC/`) |
 
 ## Procedure
 
@@ -40,32 +40,32 @@ sudo apt-get install libopenmpi-dev
 
 If using the pre-built distribution (recommended for HydroCraft):
 ```bash
-tar -xzf ldndc-v1.30.4-linux-x86_64.tar.gz -C /home/server/LDNDC/
-chmod +x /home/server/LDNDC/bin/ldndc
+tar -xzf ldndc-v1.30.4-linux-x86_64.tar.gz -C KISSPATH_HOME/LDNDC/
+chmod +x KISSPATH_HOME/LDNDC/bin/ldndc
 ```
 
 If building from source:
 ```bash
 cd ldndc-source/
 mkdir build && cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=/home/server/LDNDC -DCMAKE_BUILD_TYPE=Release
+cmake .. -DCMAKE_INSTALL_PREFIX=KISSPATH_HOME/LDNDC -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 make install
 ```
 
-**Expected result**: `ldndc` binary at `/home/server/LDNDC/bin/ldndc`.
+**Expected result**: `ldndc` binary at `KISSPATH_HOME/LDNDC/bin/ldndc`.
 
 ### Step 3: Verify installation
 
 ```bash
-/home/server/LDNDC/bin/ldndc --version
+KISSPATH_HOME/LDNDC/bin/ldndc --version
 ```
 
 **Expected output**: Version string (e.g., `ldndc version 1.30.4`).
 
 If the binary fails with "shared library not found":
 ```bash
-ldd /home/server/LDNDC/bin/ldndc | grep "not found"
+ldd KISSPATH_HOME/LDNDC/bin/ldndc | grep "not found"
 ```
 Install any missing libraries.
 
@@ -73,7 +73,7 @@ Install any missing libraries.
 
 LDNDC ships with species parameter files that must be accessible:
 ```bash
-ls /home/server/LDNDC/resources/parameters/
+ls KISSPATH_HOME/LDNDC/resources/parameters/
 # Expected: parameters_species.xml, parameters_site.xml, etc.
 ```
 
@@ -81,15 +81,15 @@ ls /home/server/LDNDC/resources/parameters/
 
 The optional `ldndc.conf` file in the user's home directory or project directory can set default paths:
 ```
-resourcepath = /home/server/LDNDC/resources
+resourcepath = KISSPATH_HOME/LDNDC/resources
 ```
 
 ### Step 6: Verify with example project
 
 Run the bundled example to confirm the full pipeline works:
 ```bash
-cd /home/server/LDNDC/projects/example
-/home/server/LDNDC/bin/ldndc project.xml
+cd KISSPATH_HOME/LDNDC/projects/example
+KISSPATH_HOME/LDNDC/bin/ldndc project.xml
 ls output/
 ```
 
@@ -99,13 +99,13 @@ ls output/
 
 | Output | Path | Verification |
 |--------|------|--------------|
-| ldndc binary | `/home/server/LDNDC/bin/ldndc` | `ldndc --version` returns version string |
-| Parameter files | `/home/server/LDNDC/resources/parameters/` | `parameters_species.xml` exists |
+| ldndc binary | `KISSPATH_HOME/LDNDC/bin/ldndc` | `ldndc --version` returns version string |
+| Parameter files | `KISSPATH_HOME/LDNDC/resources/parameters/` | `parameters_species.xml` exists |
 | Shared libraries | system libs | `ldd ldndc` shows no "not found" |
 
 ## Validation Checks
 
-1. **Binary exists and is executable**: `test -x /home/server/LDNDC/bin/ldndc`
+1. **Binary exists and is executable**: `test -x KISSPATH_HOME/LDNDC/bin/ldndc`
 2. **Version check**: `ldndc --version` outputs without error
 3. **No missing shared libraries**: `ldd ldndc | grep "not found"` returns empty
 4. **Example project runs**: Exit code 0 from example simulation

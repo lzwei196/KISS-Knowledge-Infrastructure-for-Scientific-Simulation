@@ -3,7 +3,7 @@
 **Type:** 2D depth-averaged shallow-water hydrodynamics (finite-volume, unstructured triangular mesh)
 **Primary use:** tsunami inundation, dam-break, flood modeling
 **Authoritative source:** https://github.com/anuga-community/anuga_core
-**Installed at:** /home/server/.local/lib/python3.12/site-packages/anuga
+**Installed at:** KISSPATH_HOME/.local/lib/python3.12/site-packages/anuga
 
 ## KI Tools
 
@@ -48,7 +48,7 @@ frame/extrapolation bug instead of silently fabricating ±1000 m terrain.
 
 `run_anuga.py` resolves terrain in this order: `--dem_path` → the China 90 m
 DEM (only when the whole domain bbox fits inside it) → the overlapping
-**MERIT DEM 90 m** global tiles (`/mnt/datasets/MERIT_DEM/nNNwWWW_dem.tif`,
+**MERIT DEM 90 m** global tiles (`KISSPATH_DATA/MERIT_DEM/nNNwWWW_dem.tif`,
 mosaicked automatically across a seam). MERIT is EGM96 orthometric; the China
 DEM is SRTM. There is **no synthetic-terrain fallback** unless you pass
 `--allow_synthetic_dem` (smoke tests only).

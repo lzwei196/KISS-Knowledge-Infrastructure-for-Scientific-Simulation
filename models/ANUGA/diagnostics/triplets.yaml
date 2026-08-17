@@ -382,7 +382,7 @@ triplets:
         anuga. Verify with: python -c "import anuga; print(anuga.__file__)".
         The preflight_check.py script tests this automatically. If using the
         HydroCraft python_env, ensure the path
-        /mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages
+        KISSPATH_PYTHON_ENV/lib/python3.12/site-packages
         is on sys.path and matches the running Python version (3.12).
 
   - id: dt_anuga_017
@@ -536,7 +536,7 @@ triplets:
       description: >
         run_anuga.py aborts on any non-China site with
         "RuntimeError: DEM load failed for declared DEM
-        /mnt/disk1/Hydrocraft_server/data/dem/china_dem_90m/china_dem_90m.tif:
+        KISSPATH_STATIC/china_dem_90m/china_dem_90m.tif:
         DEM not found" -- or, worse on an older build, silently loads a DEM
         window whose bbox lies entirely OUTSIDE the China raster and returns
         edge-clamped nonsense terrain. Seen 2026-08-09 on a HYDAT (Canada)
@@ -552,7 +552,7 @@ triplets:
         Use run_anuga.py --dem_path <geotiff>, or rely on the automatic
         resolution added 2026-08-09: --dem_path -> China 90 m DEM (only when
         the whole domain bbox fits inside its footprint) -> the overlapping
-        MERIT DEM v1.0.2 tiles under /mnt/datasets/MERIT_DEM, mosaicked across
+        MERIT DEM v1.0.2 tiles under KISSPATH_DATA/MERIT_DEM, mosaicked across
         a seam when the domain straddles tiles. Tile names follow the SOUTH-
         WEST corner floored to 5 degrees, so lon -121.7 lives in w125, NOT
         w120. Check run_summary.json "dem_sources" / "dem_range_m" to confirm

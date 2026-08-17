@@ -172,7 +172,7 @@ When DLBreach fails or produces unexpected results, consult `diagnostics/triplet
 
 Before running, check if upstream CaMa-Flood has written findings:
 ```bash
-python /home/server/knowledge-dissection-toolkit/tools/write_findings.py \
+python KISSPATH_INTERNAL_NOT_SHIPPED/tools/write_findings.py \
   --read --context_file outputs/{run_name}/basin_context.yaml
 ```
 
@@ -180,7 +180,7 @@ python /home/server/knowledge-dissection-toolkit/tools/write_findings.py \
 
 After DLBreach completes, write findings:
 ```bash
-python /home/server/knowledge-dissection-toolkit/tools/write_findings.py \
+python KISSPATH_INTERNAL_NOT_SHIPPED/tools/write_findings.py \
   --context_file outputs/{run_name}/basin_context.yaml \
   --model "DLBreach" --stage s_dlbreach --status completed \
   --artifact "breach_hydrograph:outputs/{run}/dlbreach/breach_results.csv:Breach outflow hydrograph" \

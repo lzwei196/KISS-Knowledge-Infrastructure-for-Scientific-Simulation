@@ -12,7 +12,7 @@ model:
   domain: "flood"
   secondary_domains: ["coastal"]
   binary: "sfincs"
-  binary_path: "/mnt/disk1/Hydrocraft_server/model/sfincs/bin/sfincs"
+  binary_path: "KISSPATH_BINARIES/sfincs/bin/sfincs"
   language: "Fortran 90"
   working_directory: "directory containing sfincs.inp (binary reads from CWD only)"
   notes: "Reduced-complexity 2D shallow water solver for rapid flood inundation. No command-line arguments."

@@ -21,8 +21,8 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-EPIC_BINARY = "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/EPIC/source/repo/epic0810.x"
-EXAMPLE_DIR = "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/EPIC/source/repo/epic1102_example_files_20221002"
+EPIC_BINARY = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/EPIC/source/repo/epic0810.x"
+EXAMPLE_DIR = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/EPIC/source/repo/epic1102_example_files_20221002"
 
 REQUIRED_TEMPLATE_FILES = [
     "EPICCONT.DAT", "EPICFILE.DAT", "EPICRUN.DAT", "EPICERR.DAT", "AYEAR.DAT",

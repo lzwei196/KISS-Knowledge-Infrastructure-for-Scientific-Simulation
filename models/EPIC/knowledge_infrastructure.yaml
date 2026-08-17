@@ -48,7 +48,7 @@ inputs:
         name: "CMFD"
         resolution: "0.1 deg"
         temporal: "3-hourly aggregated to daily"
-        path: "/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg"
+        path: "KISSPATH_FORCING/Data_forcing_03hr_010deg"
       alternatives:
         - name: "NASA POWER"
           resolution: "0.5 deg"
@@ -137,7 +137,7 @@ build:
     - "wine (to run Windows PE32 executable on Linux)"
     - "python 3.x for KI tools"
     - "ki_tools_common (optional)"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/EPIC/epic_workspace/epic1102-official_release.exe"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/EPIC/epic_workspace/epic1102-official_release.exe"
   known_issues:
     - "PE32 binary — requires Wine on Linux"
     - "All input filenames are read from CWD — must run inside workspace"

@@ -30,7 +30,7 @@ the SAME resolved obs path + matched model cell that were actually scored (it ca
 from the run):
   case_id    : SITE:jinghong
   gauge/obs  : cn_lancang_yunjinghong_允景洪 (station 90243100), Lancang (upper Mekong)
-               /mnt/datasets/china_water_level/澜沧江txt/允景洪.txt (Q m3/s)
+               KISSPATH_DATA/china_water_level/澜沧江txt/允景洪.txt (Q m3/s)
   quantity   : discharge (dag var outflw -> point_time_series), metric nse.
 
 WHY runner mode / WHY these levers (verified against the v4.20 source, not memory):
@@ -59,11 +59,11 @@ from datetime import date, timedelta
 import numpy as np
 
 # ki_tools_common (canonical metrics) -- same families the dag gates on.
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
 from ki_tools_common.metrics import all_metrics  # noqa: E402
 
 KI_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CAMA_ROOT = "/mnt/disk1/Hydrocraft_server/model/cmf_v420_pkg"
+CAMA_ROOT = "KISSPATH_BINARIES/cmf_v420_pkg"
 BINARY = os.path.join(CAMA_ROOT, "src", "MAIN_cmf")
 RUN_TOOL = os.path.join(KI_DIR, "tools", "run_cama.py")
 
@@ -78,7 +78,7 @@ RUN_TOOL = os.path.join(KI_DIR, "tools", "run_cama.py")
 TARGET_CASE_ID   = "SITE:jinghong"
 TARGET_GAUGE_ID  = "cn_lancang_yunjinghong_允景洪"
 TARGET_STATION   = "90243100"
-TARGET_OBS_TXT   = "/mnt/datasets/china_water_level/澜沧江txt/允景洪.txt"   # Q m3/s, 1970-1985
+TARGET_OBS_TXT   = "KISSPATH_DATA/china_water_level/澜沧江txt/允景洪.txt"   # Q m3/s, 1970-1985
 TARGET_GAUGE_LAT = 22.001      # published gauge location (Jinghong 允景洪)
 TARGET_GAUGE_LON = 100.842
 TARGET_GAUGE_AREA_KM2 = 142695.0   # drainage area -> uparea-matched cell (NOT naive nearest)
@@ -87,7 +87,7 @@ TARGET_GAUGE_AREA_KM2 = 142695.0   # drainage area -> uparea-matched cell (NOT n
 # basin). Also pinned: a different map/forcing would silently be a different basin. Only the
 # candidate parameter vector (KDT_CALIB_PARAMS) and the temporal split (KDT_CALIB_SPLIT) vary.
 REF_MAP_DIR    = os.path.join(CAMA_ROOT, "map", "jinghong_15min")
-FORCING_DIR    = "/mnt/disk1/Hydrocraft_server/outputs/jinghong_lancang/cama_input"
+FORCING_DIR    = "KISSPATH_OUTPUTS/jinghong_lancang/cama_input"
 FORCING_PREFIX = "jinghong_runoff_1d_"
 SIM_START_YEAR = 1968      # first simulated year
 SIM_END_YEAR   = 1985      # last simulated year (inclusive)

@@ -20,21 +20,21 @@ from datetime import datetime, timedelta
 import numpy as np
 
 # ---------------------------------------------------------------- paths
-WORK      = "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/WRF"
-KI        = "/mnt/disk1/Hydrocraft_server/models/WRF/knowledge_infrastructure"
+WORK      = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/WRF"
+KI        = "KISSPATH_KI_ROOT/WRF/knowledge_infrastructure"
 TOOLS     = os.path.join(KI, "tools")
-DETACHED  = "/mnt/disk1/Hydrocraft_server/models/WRF/detached/verify_1"
+DETACHED  = "KISSPATH_KI_ROOT/WRF/detached/verify_1"
 RUN       = os.path.join(DETACHED, "run")
 TEMPLATE  = os.path.join(WORK, "run_chaohe")           # proven link-farm to clone
 GFS_DIR   = os.path.join(WORK, "gfs_data")
 GEOG_REAL = os.path.join(WORK, "WPS_GEOG_LOW_RES")
 GEOG      = "/tmp/GEOG"                                 # short symlink (WPS 128-char buffer)
-ERA5_ZIP  = "/mnt/disk1/Hydrocraft_server/data/obs/era5_land/era5land_monthly_china_2015_2022.nc"
+ERA5_ZIP  = "KISSPATH_OBS/era5_land/era5land_monthly_china_2015_2022.nc"
 ERA5_NC   = "/tmp/era5land/data_stream-moda.nc"
 RESULT    = os.path.join(DETACHED, "result.json")
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages")
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
+sys.path.insert(0, "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages")
 
 # ---------------------------------------------------------------- domain / time (NEW location)
 REF_LAT, REF_LON = 31.0, 119.0            # Yangtze delta (distinct from 37.0N/115.0E NCP)

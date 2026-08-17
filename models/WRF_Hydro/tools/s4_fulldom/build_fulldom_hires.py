@@ -50,7 +50,7 @@ from rasterio.transform import from_origin
 from rasterio.warp import reproject
 from pyproj import Transformer
 import whitebox
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
 from ki_tools_common.units import CMFD_PRECIP_KGM2S_TO_MMDAY
 
 # ===================================================================

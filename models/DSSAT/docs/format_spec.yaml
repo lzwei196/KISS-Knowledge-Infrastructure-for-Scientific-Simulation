@@ -12,7 +12,7 @@ model:
   domain: "crop"
   secondary_domains: ["soil_nitrogen", "soil_water"]
   binary: "dscsm048"
-  binary_path: "/home/server/DSSAT/build/bin/dscsm048"
+  binary_path: "KISSPATH_HOME/DSSAT/build/bin/dscsm048"
   language: "Fortran 90"
   working_directory: "created by dssat_workdir_setup.py (short paths required, <72 chars)"
   execution: "cd <workdir> && dscsm048 B DSSBatch.v48"
@@ -75,7 +75,7 @@ inputs:
         description: "Cultivar code and genotype coefficients"
         notes: >
           Must match an entry in the corresponding .CUL file. Chinese cultivar library
-          at /home/server/DSSAT/Data/Genotype/China/ has 42 calibrated varieties
+          at KISSPATH_HOME/DSSAT/Data/Genotype/China/ has 42 calibrated varieties
           (17 wheat, 12 maize, 11 rice, 7 soybean). Wrong cultivar silently produces
           wrong phenology and yield.
 
@@ -213,7 +213,7 @@ known_issues:
     description: "Missing .CDE code definition files cause MODEL.ERR crash"
     affected_output: "Binary fails to start"
     detection: "MODEL.ERR file created or immediate crash"
-    fix: "Symlink all CDE+SDA files from /home/server/DSSAT/Data/"
+    fix: "Symlink all CDE+SDA files from KISSPATH_HOME/DSSAT/Data/"
     triplet: "dt_001"
 
   - id: "filex_too_many_treatments"
@@ -262,7 +262,7 @@ expected_ranges:
 calibration_reference:
   approach: "Cultivar coefficient calibration (P1, P2, P5, G2, G3 for CERES models)"
   chinese_cultivar_library:
-    location: "/home/server/DSSAT/Data/Genotype/China/"
+    location: "KISSPATH_HOME/DSSAT/Data/Genotype/China/"
     crops: ["wheat (17)", "maize (12)", "rice (11)", "soybean (7)"]
     notes: >
       Pre-calibrated cultivar coefficients for major Chinese production regions.

@@ -66,7 +66,7 @@ KI defects worked around (same family as the other WRF-Hydro locations):
 Resumable: DEM none needed; basin shp cached; domain skipped when all 8 files exist;
 forcing cached per month; model skipped when CHRTOUT count already matches sim days;
 scoring always recomputed. Final action: writes the complete verifier result object
-to  /mnt/disk1/Hydrocraft_server/models/WRF_Hydro/detached/verify_2/result.json
+to  KISSPATH_KI_ROOT/WRF_Hydro/detached/verify_2/result.json
 """
 import os
 import sys
@@ -83,10 +83,10 @@ import numpy as np
 import pandas as pd
 import netCDF4 as nc
 
-ROOT = Path("/mnt/disk1/Hydrocraft_server")
+ROOT = Path("KISSPATH_ROOT")
 KI = ROOT / "models/WRF_Hydro/knowledge_infrastructure"
 TOOLS = KI / "tools"
-VALID = Path("/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
+VALID = Path("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 PY = "/usr/bin/python3"
 
 sys.path.insert(0, str(TOOLS))
@@ -100,7 +100,7 @@ DOMAIN = RUN / "DOMAIN"
 FORCING = RUN / "FORCING"
 
 # ---- obs / gauge / basin --------------------------------------------------
-OBS_TXT = ("/mnt/disk1/Hydrocraft_server/data/china_data/"
+OBS_TXT = ("KISSPATH_DATA/china_data/"
            "GRDC_asia_discharge_daily_20260511/2182250_Q_Day.Cmd.txt")
 GAUGE_LAT, GAUGE_LON = 33.289167, 111.474444
 PUBLISHED_AREA_KM2 = 3418.0

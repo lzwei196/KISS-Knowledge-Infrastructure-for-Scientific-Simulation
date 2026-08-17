@@ -21,13 +21,13 @@ import os, sys, glob, shutil, subprocess, json
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages")
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
+sys.path.insert(0, "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 from ki_tools_common.metrics import all_metrics
 from ki_tools_common.validation import validate_water_balance
 from validators.standard_calval import compute_calval_metrics
 
-BASE = "/mnt/disk1/Hydrocraft_server"
+BASE = "KISSPATH_ROOT"
 CASE = f"{BASE}/models/VIC/detached/verify_1"
 VIC_EXE = f"{BASE}/model/VIC-5.1.0/vic/drivers/classic/vic_classic.exe"
 ROUT_EXE = f"{BASE}/model/route_1.0/src/rout"

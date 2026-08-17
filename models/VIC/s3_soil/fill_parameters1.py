@@ -20,7 +20,7 @@ warnings.filterwarnings("ignore", message="The 'band' dimension is ignored by ra
 
 # --- 1. 配置核心输入路径 ---
 _BASIN = os.environ.get("VIC_BASIN_NAME", "xixian_rerun_71379b42")
-_OUT_ROOT = Path(os.environ.get("VIC_OUT_ROOT", "/mnt/disk1/Hydrocraft_server/outputs"))
+_OUT_ROOT = Path(os.environ.get("VIC_OUT_ROOT", "KISSPATH_OUTPUTS"))
 
 MASTER_GRID_NC = _OUT_ROOT / _BASIN / "vic_temp" / "grid" / f"grid_{_BASIN}_025deg.nc"
 # KDT 2026-07-09 — these three were hard-coded to CHINA-ONLY rasters. Outside the
@@ -29,13 +29,13 @@ MASTER_GRID_NC = _OUT_ROOT / _BASIN / "vic_temp" / "grid" / f"grid_{_BASIN}_025d
 # than an error. They are now env-configurable; defaults reproduce the China runs.
 ELEV_NC_IN = Path(os.environ.get(
     "VIC_ELEV_NC",
-    r"/mnt/disk1/Hydrocraft_server/data/elev/elev_CMFD_V0200_B-00_fx_010deg.nc"))
+    r"KISSPATH_DATA/elev/elev_CMFD_V0200_B-00_fx_010deg.nc"))
 PREC_ANNUAL_NC = Path(os.environ.get(
     "VIC_PREC_ANNUAL_NC",
-    r"/mnt/disk1/Hydrocraft_server/data/his_average_prec/prec_CMFD_010deg_meanAnnual_1951-2020_mm.nc"))
+    r"KISSPATH_DATA/his_average_prec/prec_CMFD_010deg_meanAnnual_1951-2020_mm.nc"))
 SOIL_RASTER_IN = Path(os.environ.get(
     "VIC_SOIL_RASTER",
-    r"/mnt/disk1/Hydrocraft_server/data/soil/HWSD_China_Geo.img"))
+    r"KISSPATH_STATIC/HWSD_China_Geo.img"))
 
 # --- 2. 配置输出路径 ---
 OUTPUT_DIR = _OUT_ROOT / _BASIN / "vic_temp" / "soil"

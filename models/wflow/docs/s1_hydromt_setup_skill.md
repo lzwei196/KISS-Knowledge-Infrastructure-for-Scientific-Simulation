@@ -183,7 +183,7 @@ ModuleNotFoundError), so manual mode is in practice the ONLY path.
      `>= 0` — zero organic carbon is a real HWSD record, a zero sand or clay
      percentage is not. All three columns are averaged over the same surviving
      rows.
-   - land-cover legend: the tiles under `/mnt/datasets/vegetation/GLCFCS30` are
+   - land-cover legend: the tiles under `KISSPATH_DATA/vegetation/GLCFCS30` are
      **GLC_FCS30-2015**, whose forest codes are 50/60/70/80/90 with open–closed
      splits only at 61/62, 71/72, 81/82. Codes 51/52/91/92 belong to the
      GLC_FCS30D / 2020-era legend and must never be mapped through the 2015

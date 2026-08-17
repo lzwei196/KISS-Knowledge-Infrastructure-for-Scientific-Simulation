@@ -59,8 +59,8 @@ except ImportError as e:
 # ---------------------------------------------------------------------------
 CONFIG_PATH = ""
 DOMAIN_INFO_PATH = ""
-HWSD_RASTER = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "data/soil/HWSD_RASTER/hwsd.bil")
-HWSD_MDB = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "data/forcing/huaihe_raw/soil/HWSD.mdb")
+HWSD_RASTER = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "data/soil/HWSD_RASTER/hwsd.bil")
+HWSD_MDB = os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "data/forcing/huaihe_raw/soil/HWSD.mdb")
 N_HORIZONS = 2
 HORIZON_DEPTHS = [0, 300, 300, 1000]  # UD1, LD1, UD2, LD2 in mm
 

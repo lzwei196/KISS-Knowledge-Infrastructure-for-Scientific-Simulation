@@ -38,7 +38,7 @@ from datetime import datetime
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-CMIP6_ROOT = ""        # e.g., "/mnt/disk3/CMIP_China/Cmip6BaisCorrect_for_China"
+CMIP6_ROOT = ""        # e.g., "KISSPATH_DATA/CMIP_China/Cmip6BaisCorrect_for_China"
 GRID_NC = ""           # e.g., "outputs/{basin}/vic_temp/grid/basin_grid.nc"
 MODEL_NAME = ""        # e.g., "ACCESS-CM2"
 SCENARIO = ""          # "r1", "126", "245", "585"

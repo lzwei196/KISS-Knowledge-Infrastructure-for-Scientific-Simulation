@@ -58,7 +58,7 @@ Resumable at stage level:
   * model    -- skipped when the CHRTOUT count already matches the simulation days
   * scoring  -- always recomputed (cheap)
 Final action: writes the complete verifier result object to
-  /mnt/disk1/Hydrocraft_server/models/WRF_Hydro/detached/verify_1/result.json
+  KISSPATH_KI_ROOT/WRF_Hydro/detached/verify_1/result.json
 """
 import os
 import sys
@@ -73,10 +73,10 @@ import numpy as np
 import pandas as pd
 import netCDF4 as nc
 
-ROOT = Path("/mnt/disk1/Hydrocraft_server")
+ROOT = Path("KISSPATH_ROOT")
 KI = ROOT / "models/WRF_Hydro/knowledge_infrastructure"
 TOOLS = KI / "tools"
-VALID = Path("/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
+VALID = Path("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 PY = "/usr/bin/python3"
 
 sys.path.insert(0, str(TOOLS))            # for run_wrfhydro_full_pipeline.auto_merge_srtm_dem
@@ -89,12 +89,12 @@ DOMAIN = RUN / "DOMAIN"
 FORCING = RUN / "FORCING"
 
 # ---- obs / gauge / basin --------------------------------------------------
-OBS_NC = Path("/mnt/datasets/observed_data/dischargeandwatershed/"
+OBS_NC = Path("KISSPATH_DATA/observed_data/dischargeandwatershed/"
               "GRDC-Caravan-extension-nc/timeseries/netcdf/grdc/GRDC_6140250.nc")
 GAUGE_LAT, GAUGE_LON = 49.9604, 14.0854
 CARAVAN_AREA_KM2 = 8295.554               # inverts Caravan mm/day -> m3/s
 BASIN_SHP = RUN / "berounka_basin.shp"
-GRDC_ALLSHP = Path("/mnt/datasets/observed_data/dischargeandwatershed/"
+GRDC_ALLSHP = Path("KISSPATH_DATA/observed_data/dischargeandwatershed/"
                    "GRDC-Caravan-extension-nc/shapefiles/grdc/grdc_basin_shapes.shp")
 
 # ---- global static inputs -------------------------------------------------
@@ -105,7 +105,7 @@ TBL_DIR = ROOT / "model/wrf_hydro/source/trunk/NDHMS/Run"
 SOILPARM = TBL_DIR / "SOILPARM.TBL"
 MPTABLE = TBL_DIR / "MPTABLE.TBL"
 HYDROTBL = TBL_DIR / "HYDRO.TBL"
-SRTM_DIR = "/mnt/disk4/SRTMGL1"
+SRTM_DIR = "KISSPATH_DATA/SRTMGL1"
 DEM = RUN / "dem_srtm_merged.tif"
 
 # ---- domain params --------------------------------------------------------

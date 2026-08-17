@@ -5,8 +5,8 @@ import math
 from datetime import datetime
 from pathlib import Path
 
-REPO = Path("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/PIHM/source/repo")
-OBS_DIR = Path("/mnt/disk1/Hydrocraft_server/data/obs")
+REPO = Path("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PIHM/source/repo")
+OBS_DIR = Path("KISSPATH_OBS")
 
 
 def read_sim(path, col_idx=1):

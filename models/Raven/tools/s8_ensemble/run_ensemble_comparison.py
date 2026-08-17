@@ -13,7 +13,7 @@ Usage:
         --basin_name chaohe \
         --templates gr4j,hbv_ec,hmets,hymod,sac_sma \
         --start_date 2000-01-01 --end_date 2010-12-31 \
-        --raven_exe /mnt/disk1/Hydrocraft_server/model/raven/Raven.exe
+        --raven_exe KISSPATH_BINARIES/raven/Raven.exe
 """
 
 import argparse
@@ -39,7 +39,7 @@ except ImportError as e:
 
 
 DEFAULT_TEMPLATES = ["gr4j", "hbv_ec", "hmets", "hymod", "sac_sma"]
-RAVEN_EXE_DEFAULT = "/mnt/disk1/Hydrocraft_server/model/raven/Raven.exe"
+RAVEN_EXE_DEFAULT = "KISSPATH_BINARIES/raven/Raven.exe"
 
 
 def _load_parse_diagnostics():

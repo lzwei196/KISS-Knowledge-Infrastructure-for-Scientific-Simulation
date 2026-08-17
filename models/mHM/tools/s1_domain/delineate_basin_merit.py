@@ -65,7 +65,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 MERIT_ROOT = os.path.join(
-    os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "data/merit_hydro"
+    os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "data/merit_hydro"
 )
 MERIT_RES = 1.0 / 1200.0  # 3 arc-seconds
 EARTH_R = 6371007.181     # m, authalic radius

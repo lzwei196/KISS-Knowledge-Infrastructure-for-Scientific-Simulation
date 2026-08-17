@@ -65,10 +65,10 @@ warnings.filterwarnings("ignore")
 
 # ── paths ─────────────────────────────────────────────────────────────────────
 OBS_DIR  = pathlib.Path(
-    "/mnt/disk1/Hydrocraft_server/data/obs/sediment/usgs_suspended_sediment"
+    "KISSPATH_OBS/sediment/usgs_suspended_sediment"
 )
 OUT_DIR  = pathlib.Path(
-    "/mnt/disk1/Hydrocraft_server/outputs/landlab_atchafalaya_ssc_q"
+    "KISSPATH_OUTPUTS/landlab_atchafalaya_ssc_q"
 )
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -442,7 +442,7 @@ def main():
 
     # Copy to dissect dashboard
     dissect_fig = pathlib.Path(
-        "/home/server/knowledge-dissection-toolkit/"
+        "KISSPATH_INTERNAL_NOT_SHIPPED/"
         "auto_dissect/_work/Landlab/figures/s8_validation.png"
     )
     dissect_fig.parent.mkdir(parents=True, exist_ok=True)

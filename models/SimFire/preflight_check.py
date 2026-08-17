@@ -35,7 +35,7 @@ def check_import(module, label):
     # i.e. the preflight reported the whole stack broken while the venv was
     # fine. Append instead, so the venv always wins.
     import sys
-    _penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    _penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
     if _penv not in sys.path:
         sys.path.append(_penv)
     global PASS, FAIL
@@ -58,7 +58,7 @@ def main():
     # `python preflight_check.py` (which SKILL.md tells you to run FIRST) always
     # died before printing anything. Rebuilt as a real check.
     import sys
-    venv_sp = ("/home/server/knowledge-dissection-toolkit/auto_dissect/_work/"
+    venv_sp = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/"
                "SimFire/venv/lib/python3.12/site-packages")
     if venv_sp not in sys.path:
         sys.path.insert(0, venv_sp)
@@ -86,7 +86,7 @@ def main():
         FAIL += 1
 
     check_file(
-        "/mnt/disk1/Hydrocraft_server/data/obs/fire_perimeters/mtbs/"
+        "KISSPATH_OBS/fire_perimeters/mtbs/"
         "mtbs_perims/mtbs_perims_DD.shp",
         "MTBS fire perimeters (validation obs)",
     )

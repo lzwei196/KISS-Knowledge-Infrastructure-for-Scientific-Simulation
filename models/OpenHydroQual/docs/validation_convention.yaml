@@ -26,21 +26,21 @@ references:
     venue: "Transactions of the ASABE"
     year: 2007
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_2013.23153.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
   moriasi2015:
     doi: 10.13031/trans.58.10715
     title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
     venue: "Transactions of the ASABE"
     year: 2015
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_trans.58.10715.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
   hess2019swatet:
     doi: 10.5194/hess-23-1113-2019
     title: "Multi-site calibration and validation of SWAT with satellite-based evapotranspiration"
     venue: "Hydrology and Earth System Sciences"
     year: 2019
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-23-1113-2019.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-23-1113-2019.txt
 
 validation:
 

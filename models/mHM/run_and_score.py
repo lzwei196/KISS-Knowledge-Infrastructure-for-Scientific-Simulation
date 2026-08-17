@@ -8,7 +8,7 @@ sits ~180 km downstream on the same river, so it exercises the routing network
 (MRM) far harder while sharing the climate and the forcing product.
 
 Everything is driven through the KI tools in
-    /mnt/disk1/Hydrocraft_server/models/mHM/knowledge_infrastructure/tools/
+    KISSPATH_KI_ROOT/mHM/knowledge_infrastructure/tools/
 This script only sequences them, waits, and scores. It writes NO model input
 itself.
 
@@ -38,13 +38,13 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 
 from ki_tools_common.metrics import all_metrics
 from ki_tools_common.validation import validate_water_balance
 from validators.standard_calval import compute_calval_metrics
 
-ROOT = Path("/mnt/disk1/Hydrocraft_server")
+ROOT = Path("KISSPATH_ROOT")
 KI = ROOT / "models/mHM/knowledge_infrastructure"
 TOOLS = KI / "tools"
 RUNS = ROOT / "models/mHM/runs"

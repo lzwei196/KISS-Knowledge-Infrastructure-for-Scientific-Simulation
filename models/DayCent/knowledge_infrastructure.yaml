@@ -12,7 +12,7 @@ package:
   license: "model: CSU NREL DayCent; KI scripts: GPL-3.0"
 
 binary:
-  path: "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/_work_v2/DayCent/source/repo/Linux_Version_491/DDcentEVI_rev491"
+  path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/DayCent/source/repo/Linux_Version_491/DDcentEVI_rev491"
   type: "ELF 64-bit, statically linked, x86-64"
   companion: "DDlist100_rev491"
   build_required: false

@@ -58,7 +58,7 @@ from scipy.interpolate import RegularGridInterpolator
 NASA_POWER_URL = "https://power.larc.nasa.gov/api/temporal/hourly/point"
 NASA_POWER_PARAMS = "T2M,PRECTOTCORR,PS,ALLSKY_SFC_SW_DWN,ALLSKY_SFC_LW_DWN,QV2M,WS2M"
 POWER_RESOLUTION = 0.5  # degrees
-DEFAULT_CACHE_DIR = Path("/mnt/disk1/Hydrocraft_server/data/nasa_power_cache/hourly")
+DEFAULT_CACHE_DIR = Path("KISSPATH_DATA/nasa_power_cache/hourly")
 REQUEST_DELAY = 1.2  # seconds between API calls
 
 FILL_VALUE = -999.0

@@ -399,7 +399,7 @@ validation_cases:
     output: outputs/landlab_loess_slope_area/
     figure: outputs/landlab_loess_slope_area/validation_figure.png
     metrics_json: outputs/landlab_loess_slope_area/metrics.json
-    dem_source: "/mnt/disk4/SRTMGL1/N36E109.SRTMGL1.hgt.zip"
+    dem_source: "KISSPATH_DATA/SRTMGL1/N36E109.SRTMGL1.hgt.zip"
 
   - id: vc_loess_plateau_sediment_yield
     name: Loess Plateau Sediment Yield + Particulate-P Export (Stream Power Law)
@@ -434,7 +434,7 @@ validation_cases:
     output: outputs/landlab_loess_sediment/
     figure: outputs/landlab_loess_sediment/validation_figure.png
     metrics_json: outputs/landlab_loess_sediment/metrics.json
-    dem_source: "/mnt/disk4/SRTMGL1/N36E109.SRTMGL1.hgt.zip"
+    dem_source: "KISSPATH_DATA/SRTMGL1/N36E109.SRTMGL1.hgt.zip"
 
 diagnostics:
   path: diagnostics/triplets.yaml

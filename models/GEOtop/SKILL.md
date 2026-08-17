@@ -46,9 +46,9 @@ references were removed in KDT 5.0 — do NOT look for them.
 
 | Region | Dataset | Path | Native step |
 |--------|---------|------|-------------|
-| **China** | CMFD V2.0 0.1° | `/media/server/hc_ssd/forcing/Data_forcing_03hr_010deg/` | 3-hourly |
-| China (daily models) | CMFD V2.0 0.1° | `/media/server/hc_ssd/forcing/Data_forcing_01dy_010deg/` | daily |
-| Global | MSWX 0.1° | `/mnt/disk3/msxw/` | 3-hourly |
+| **China** | CMFD V2.0 0.1° | `KISSPATH_FORCING/Data_forcing_03hr_010deg/` | 3-hourly |
+| China (daily models) | CMFD V2.0 0.1° | `KISSPATH_FORCING/Data_forcing_01dy_010deg/` | daily |
+| Global | MSWX 0.1° | `KISSPATH_FORCING/` | 3-hourly |
 | Point fallback | NASA POWER | online API | hourly |
 
 **A China basin must use local CMFD.** NASA POWER is daily-only, routes through the
@@ -56,7 +56,7 @@ local proxy and stalls at 0/N. Working invocation (verified 2026-07-21, NCP pixe
 
 ```bash
 python tools/convert_forcing.py --source cmfd \
-    --input /media/server/hc_ssd/forcing/Data_forcing_03hr_010deg \
+    --input KISSPATH_FORCING/Data_forcing_03hr_010deg \
     --lat 36.0 --lon 116.0 --start "01/11/2017 00:00" --end "01/02/2018 00:00" \
     --dt 10800 --output <sim>/meteo/meteo0001.txt
 ```
@@ -86,7 +86,7 @@ path. Use `--source manual` only when the site is genuinely outside HWSD.
 ### Observations
 
 `tools/read_modis_lst.py` extracts MOD11A2 land surface temperature at a point from
-`/mnt/datasets/obs/nasa/modis_lst/` (sinusoidal reprojection, scale factors, QC
+`KISSPATH_DATA/obs/nasa/modis_lst/` (sinusoidal reprojection, scale factors, QC
 bits, local-solar view times, clear-sky counts). See §13.
 
 

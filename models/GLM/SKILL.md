@@ -143,7 +143,7 @@ Stages 9 and 10 depend on 8.
 | `configure_inflow_wq` | s7 | `tools/s7_aed_config/configure_inflow_wq.py` | 310 | Add nutrient concentrations to inflow CSV |
 | `run_glm` | s8 | `tools/s8_execution/run_glm.py` | 170 | Execute GLM with preflight checks |
 | `parse_glm_output` | s9 | `tools/s9_output_analysis/parse_glm_output.py` | 380 | Parse output.nc + lake.csv (thermal); `--depths a,b,c --depth_timeseries out.csv` interpolates the Lagrangian profile onto FIXED depths below the surface (dt_036) |
-| `load_ismn_obs` | s9 | `tools/s9_output_analysis/load_ismn_obs.py` | 190 | Load ISMN in-situ temperature/moisture obs (`/mnt/datasets/ismn_clean.db`); station discovery + QC-filtered daily series at true metre depths (dt_037) |
+| `load_ismn_obs` | s9 | `tools/s9_output_analysis/load_ismn_obs.py` | 190 | Load ISMN in-situ temperature/moisture obs (`KISSPATH_DATA/ismn_clean.db`); station discovery + QC-filtered daily series at true metre depths (dt_037) |
 | `parse_aed_output` | s9 | `tools/s9_output_analysis/parse_aed_output.py` | 400 | Parse AED2 WQ output (Chl-a, DO, nutrients) |
 | `plot_glm_results` | s9 | `tools/s9_output_analysis/plot_glm_results.py` | 230 | Temperature heatmap + timeseries plots |
 | `calibrate_glm` | s9 | `tools/s9_output_analysis/calibrate_glm.py` | 260 | GLUE-style parameter calibration |
@@ -522,7 +522,7 @@ min_ice_thickness = 0.001  # CRITICAL: minimum ice thickness (m)
 |------|--------|--------|------|
 | GLM binary | GitHub glm-aed | Installed | `model/glm/bin/glm` |
 | HydroLAKES v10 | hydrosheds.org | **TO DOWNLOAD** (~2.5 GB) | `data/lakes/HydroLAKES_polys_v10.shp` |
-| Met forcing | CMFD/MSWX | Available | `data/forcing/` or `/mnt/disk3/msxw/` |
+| Met forcing | CMFD/MSWX | Available | `data/forcing/` or `KISSPATH_FORCING/` |
 | River inflow | CaMa-Flood/VIC | From pipeline | Simulation output |
 | Example data | glm-aed repo | Installed | `model/glm/examples/Sparkling/` |
 

@@ -53,7 +53,7 @@ import netCDF4
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-MSWX_ROOT = Path("/mnt/disk3/msxw")
+MSWX_ROOT = Path("KISSPATH_FORCING")
 
 # Target chunking: [365, 18, 36] = ~365 days × 1.8° lat × 3.6° lon per chunk
 # Each chunk is ~365 × 18 × 36 × 4 bytes = ~1.9 MB (good for spatial queries)
@@ -67,7 +67,7 @@ TARGET_CHUNKS = {"time": 365, "lat": 18, "lon": 36}
 # This is a ONE-TIME cost. After rechunking, spatial queries are 175x faster.
 COMPRESSION = {"zlib": True, "complevel": 1}
 
-LOG_FILE = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "outputs/rechunk_mswx.log")
+LOG_FILE = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "outputs/rechunk_mswx.log"))
 
 # ---------------------------------------------------------------------------
 # Setup logging
@@ -92,7 +92,7 @@ def rechunk_file(src_path: Path, dry_run: bool = False) -> bool:
     Returns True if successful, False if failed or skipped.
     """
     # Write rechunked files to a writable staging directory (MSWX dir may be root-owned)
-    staging_dir = Path("/mnt/disk3/msxw_rechunked") / src_path.parent.name
+    staging_dir = Path("KISSPATH_FORCING_RECHUNKED") / src_path.parent.name
     staging_dir.mkdir(parents=True, exist_ok=True)
     tmp_path = staging_dir / src_path.name
     bak_path = src_path.with_suffix(".nc.bak_chunking")

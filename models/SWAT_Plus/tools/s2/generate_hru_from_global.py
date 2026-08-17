@@ -56,7 +56,7 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-PROJECT_ROOT = Path("/mnt/disk1/Hydrocraft_server")
+PROJECT_ROOT = Path("KISSPATH_ROOT")
 DEFAULT_LANDCOVER = PROJECT_ROOT / "data/landcover/AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif"
 DEFAULT_HWSD_RASTER = PROJECT_ROOT / "data/soil/HWSD_RASTER/hwsd.bil"
 DEFAULT_HWSD_MDB = PROJECT_ROOT / "data/forcing/huaihe_raw/soil/HWSD.mdb"
@@ -950,7 +950,7 @@ def resolve_dem_path(dem_path, basin_shp):
             return str(DEFAULT_DEM_CHINA)
 
     # Try to find SRTM tiles
-    srtm_dir = Path("/mnt/disk4/SRTMGL1")
+    srtm_dir = Path("KISSPATH_DATA/SRTMGL1")
     if srtm_dir.exists():
         logger.info(f"  Auto-selected SRTM DEM (basin centroid at {lat:.1f}N, {lon:.1f}E)")
         return str(srtm_dir)
@@ -1743,7 +1743,7 @@ def write_print_prt(output_dir, warmup=2):
     See diagnostic triplet dt_v007.
     """
     # Try to copy from LREW template (known working format)
-    template = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "/mnt/disk1/Hydrocraft_server"), "models/SWAT_Plus/run_lrew/swatplus_rev59_demo/print.prt"))
+    template = Path(os.path.join(os.environ.get("HYDROCRAFT_ROOT", "KISSPATH_ROOT"), "models/SWAT_Plus/run_lrew/swatplus_rev59_demo/print.prt"))
     if template.exists():
         import shutil
         dst = Path(output_dir) / "print.prt"

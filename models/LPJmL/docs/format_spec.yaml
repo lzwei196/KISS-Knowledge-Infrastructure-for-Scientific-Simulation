@@ -2,7 +2,7 @@ model:
   name: "LPJmL"
   version: "6.0.0"
   domain: "crop / dynamic global vegetation model (DGVM)"
-  binary_path: "/home/server/knowledge-dissection-toolkit/auto_dissect/_work/LPJmL/source/repo/bin/lpjml"
+  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/LPJmL/source/repo/bin/lpjml"
   language: "C (with optional MPI parallelization)"
   developer: "PIK (Potsdam Institute for Climate Impact Research)"
   resolution: "0.5 degree global grid (~55 km)"

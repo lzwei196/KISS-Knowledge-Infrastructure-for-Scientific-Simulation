@@ -129,14 +129,14 @@ except Exception:  # noqa
     # FALSE-NEGATIVE GUARD (2026-06-04): ras_commander 0.93.0 ships in the
     # python_env venv, whose site-packages is NOT on /usr/bin/python3's path.
     import sys as _sys
-    _sp = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+    _sp = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
     if _sp not in _sys.path:
         _sys.path.insert(0, _sp)
     try:
         import ras_commander  # noqa
         ok(f"ras_commander available (v{getattr(ras_commander, '__version__', '?')}) "
            "via python_env; invoke authoring tools with "
-           "/mnt/disk1/Hydrocraft_server/python_env/bin/python3")
+           "KISSPATH_PYTHON_ENV/bin/python3")
     except Exception:  # noqa
         warn("ras_commander NOT importable from /usr/bin/python3 OR python_env",
              "new-river authoring would be non-executable; steady runs on EXISTING "

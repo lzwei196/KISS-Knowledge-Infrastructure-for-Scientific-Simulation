@@ -53,12 +53,12 @@ from pathlib import Path
 # system python3 + ~/.local ONLY. Do NOT prepend python_env/site-packages: it ships
 # a Py2-era pathlib.py backport (`from collections import Sequence`) that shadows the
 # stdlib and breaks rasterio/geopandas (dt in Bengbu verifier).
-sys.path.insert(0, "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent")
+sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 
 import numpy as np
 import pandas as pd
 
-BASE = "/mnt/disk1/Hydrocraft_server"
+BASE = "KISSPATH_ROOT"
 KI = f"{BASE}/models/VIC/knowledge_infrastructure"
 sys.path.insert(0, KI)
 
@@ -193,7 +193,7 @@ def preflight():
     try:
         p = subprocess.run(
             [sys.executable,
-             "/home/server/knowledge-dissection-toolkit/auto_dissect_multi_agent/"
+             "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/"
              "validators/preflight_forcing.py", FORCING_1D, "--source", "auto"],
             capture_output=True, text=True, timeout=3600)
         out = p.stdout + p.stderr

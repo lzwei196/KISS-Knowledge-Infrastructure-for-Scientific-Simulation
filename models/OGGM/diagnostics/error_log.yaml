@@ -16,16 +16,16 @@ errors:
       oggm_version: "1.6.x"
       python_version: "3.12"
       os: "Linux"
-      venv_path: "/mnt/disk1/Hydrocraft_server/python_env/"
+      venv_path: "KISSPATH_PYTHON_ENV/"
     error_message: "ModuleNotFoundError: No module named 'oggm'"
     context: >
       After installing OGGM via pip in the HydroCraft venv, import failed because
-      the venv at /mnt/disk1/Hydrocraft_server/python_env/ is a symlink to
-      /home/server/桌面/test/hydro-claude/python_env/. Pip installed packages to the
+      the venv at KISSPATH_PYTHON_ENV/ is a symlink to
+      KISSPATH_HOME/桌面/test/hydro-claude/python_env/. Pip installed packages to the
       original path's site-packages, but sys.path referenced the symlinked path.
     resolution: >
       Set PYTHONPATH to include the actual install location:
-      export PYTHONPATH="/home/server/桌面/test/hydro-claude/python_env/lib/python3.12/site-packages"
+      export PYTHONPATH="KISSPATH_HOME/桌面/test/hydro-claude/python_env/lib/python3.12/site-packages"
       Alternatively, created a .pth file in the venv's site-packages.
     status: "resolved"
 

@@ -15,11 +15,11 @@ requires this stage. See `dag.yaml` hazards:
 | `tools/s8_routing/summa_to_mizuroute.py` | SUMMA output -> mizuRoute `<fname_qsim>` runoff NetCDF. Units pass through as `m/s`, unconverted. |
 | `tools/s8_routing/run_mizuroute.py` | Writes control + `param.nml`, executes `mizuroute.exe`, extracts outlet discharge to `routed_discharge.csv`. |
 
-Run all three with `/mnt/disk1/Hydrocraft_server/python_env/bin/python`.
+Run all three with `KISSPATH_PYTHON_ENV/bin/python`.
 
 ## Pipeline
 
-    PY=/mnt/disk1/Hydrocraft_server/python_env/bin/python
+    PY=KISSPATH_PYTHON_ENV/bin/python
 
     $PY tools/s8_routing/build_river_network.py \
         --hybas_shp <hybas_as_lev07_v1c.shp> --outlet_hybas_id <HYBAS_ID> \

@@ -23,11 +23,11 @@ package:
   related_packages:
     - id: "dssat-csm-knowledge"
       name: "DSSAT Crop Simulation Knowledge Infrastructure"
-      path: "/home/server/DSSAT/knowledge_infrastructure/"
+      path: "KISSPATH_HOME/DSSAT/knowledge_infrastructure/"
       relationship: "Peer crop model for ensemble comparison. AquaCrop excels at water productivity, DSSAT at nitrogen dynamics. Cross-model coupling for yield ensemble via model_couplings.yaml."
     - id: "hydrocraft-vic-routing"
       name: "HydroCraft VIC-Routing Knowledge Infrastructure"
-      path: "/mnt/disk1/Hydrocraft_server/skills/"
+      path: "KISSPATH_ROOT/skills/"
       relationship: "Upstream hydrology model providing weather forcing, soil moisture initial conditions, and flood inundation data for waterlogging stress."
 
 # --- Pipeline definition ---

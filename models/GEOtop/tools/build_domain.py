@@ -25,7 +25,7 @@ The resulting input_maps/ directory drops straight into a distributed
 
 Usage:
     python build_domain.py \
-        --dem /mnt/datasets/MERIT_DEM/n50w115_dem.tif \
+        --dem KISSPATH_DATA/MERIT_DEM/n50w115_dem.tif \
         --lat 53.0368 --lon -113.3231 \
         --epsg 32612 --cellsize 1000 \
         --bbox -114.2,52.5,-112.6,53.5 \

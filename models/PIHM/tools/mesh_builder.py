@@ -38,7 +38,7 @@ Pipeline
 
 Usage
 -----
-    python mesh_builder.py --dem /mnt/datasets/MERIT_DEM/n40e005_dem.tif \\
+    python mesh_builder.py --dem KISSPATH_DATA/MERIT_DEM/n40e005_dem.tif \\
         --outlet-lon 8.6124 --outlet-lat 42.1771 \\
         --out-dir input/Chiuni --project Chiuni \\
         --target-elem-area-km2 0.12 --aquifer-thickness-m 15

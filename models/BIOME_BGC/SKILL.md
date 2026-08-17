@@ -45,7 +45,7 @@ Then convert to BGC met format using this KI's tool: `tools/convert_forcing_to_b
 > **Model**: BIOME-BGC 4.2 (University of Montana NTSG)
 > **Domain**: Terrestrial biogeochemistry -- daily C/N/water cycling for forests, grasslands, shrublands
 > **Pipeline stages**: 8 | **Tools**: 6 | **Skill documents**: 3 | **Diagnostic triplets**: 25
-> **Binary**: `/mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-src/bgc`
+> **Binary**: `KISSPATH_BINARIES/biome-bgc/bgc-src/bgc`
 > **Status**: binary_only (bundled example data validated 2026-03-24)
 
 ## Validated Results -- Missoula ENF (Bundled Example)
@@ -172,8 +172,8 @@ BIOME-BGC is for AVHRR classes 1-10 (natural vegetation) only. Cropland (class 1
 ### Quick workflow (point mode):
 
 ```bash
-BGC=/mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-src/bgc
-TOOLS=/mnt/disk1/Hydrocraft_server/models/BIOME_BGC/knowledge_infrastructure/tools
+BGC=KISSPATH_BINARIES/biome-bgc/bgc-src/bgc
+TOOLS=KISSPATH_KI_ROOT/BIOME_BGC/knowledge_infrastructure/tools
 
 # 1. Select PFT and generate .epc
 python $TOOLS/select_ecophysiology.py --pft ENF --output epc/site.epc
@@ -216,7 +216,7 @@ python $TOOLS/parse_bgc_output.py \
 ### Bundled example test:
 
 ```bash
-cd /mnt/disk1/Hydrocraft_server/model/biome-bgc/bgc-src
+cd KISSPATH_BINARIES/biome-bgc/bgc-src
 # Spinup (writes restart/enf_test1.endpoint)
 ./bgc -u -s ini/enf_test1_spinup.ini
 # Normal run (reads restart, writes outputs)

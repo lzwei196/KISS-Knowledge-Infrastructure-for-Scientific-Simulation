@@ -58,7 +58,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-PROJECT_ROOT = Path("/mnt/disk1/Hydrocraft_server")
+PROJECT_ROOT = Path("KISSPATH_ROOT")
 DEFAULT_HWSD_RASTER = PROJECT_ROOT / "data/soil/HWSD_RASTER/hwsd.bil"
 DEFAULT_HWSD_MDB = PROJECT_ROOT / "data/forcing/huaihe_raw/soil/HWSD.mdb"
 

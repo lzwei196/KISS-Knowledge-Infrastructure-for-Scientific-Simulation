@@ -8,15 +8,15 @@ RESUMABLE: skips the CRHM run if its output already exists (>1MB)."""
 import os, sys, json, subprocess
 import numpy as np, pandas as pd
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models")
+sys.path.insert(0, "KISSPATH_KI_ROOT")
 from ki_tools_common.metrics import all_metrics
 
-KI    = "/mnt/disk1/Hydrocraft_server/models/CRHM/knowledge_infrastructure"
-EXE   = "/mnt/disk1/Hydrocraft_server/model/crhmcode/crhmcode/build/crhm"
+KI    = "KISSPATH_KI_ROOT/CRHM/knowledge_infrastructure"
+EXE   = "KISSPATH_BINARIES/crhmcode/crhmcode/build/crhm"
 PRJ   = os.path.join(KI, "outputs/belly_verify/crhm/belly_tuned.prj")
-OBSF  = "/mnt/disk1/Hydrocraft_server/data/obs/belly_river/observed_05AD005.txt"
+OBSF  = "KISSPATH_OBS/belly_river/observed_05AD005.txt"
 OBSP  = os.path.join(KI, "outputs/belly_verify/crhm/belly.obs")
-STATE = "/mnt/disk1/Hydrocraft_server/models/CRHM/detached/verify_2"
+STATE = "KISSPATH_KI_ROOT/CRHM/detached/verify_2"
 OUT   = os.path.join(STATE, "crhm_output.txt")
 RESULT= os.path.join(STATE, "result.json")
 AREA  = 319.0

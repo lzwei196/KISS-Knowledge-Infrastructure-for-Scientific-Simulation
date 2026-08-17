@@ -27,7 +27,7 @@ variable contributing area concept.
    - Clip DEM to basin boundary with buffer
    - Fill sinks/depressions (hydrological conditioning)
    - Resolution: 50m or better recommended (Beven, 1995)
-   - For China: use `/mnt/disk1/Hydrocraft_server/data/dem/china_dem_90m/china_dem_90m.tif`
+   - For China: use `KISSPATH_STATIC/china_dem_90m/china_dem_90m.tif`
 
 2. **Compute flow routing**:
    - Flow direction: D8 algorithm (or D-infinity for better accuracy)
@@ -95,8 +95,8 @@ variable contributing area concept.
 
 ```bash
 python tools/generate_twi_subcat.py \
-  --dem /mnt/disk1/Hydrocraft_server/data/dem/china_dem_90m/china_dem_90m.tif \
-  --shapefile /mnt/disk1/Hydrocraft_server/data/shp/bengbu_shp/bengbu_clip.shp \
+  --dem KISSPATH_STATIC/china_dem_90m/china_dem_90m.tif \
+  --shapefile KISSPATH_DATA/shp/bengbu_shp/bengbu_clip.shp \
   --basin-name "Bengbu Basin" --basin-area-km2 121330 \
   --n-classes 30 --n-channels 3 --output data/subcat.dat
 ```

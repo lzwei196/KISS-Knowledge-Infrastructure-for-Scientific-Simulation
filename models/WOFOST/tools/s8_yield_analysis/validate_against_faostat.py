@@ -53,7 +53,7 @@ import csv
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-sys.path.insert(0, "/mnt/disk1/Hydrocraft_server/models/ki_tools_common")
+sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
 
 # This obs_shape contract MUST match dag.yaml outputs.TWSO.observability.
 OBS_SHAPE = "regional_aggregate_time_series"

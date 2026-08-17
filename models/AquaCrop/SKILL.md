@@ -326,9 +326,9 @@ wp = final['Dry yield (tonne/ha)'].values * 1000 / seasonal_et['ET'].values  # k
 | South | <28°N | — | — | Mar-Jul, Jul-Nov |
 
 **Data sources on server:**
-- GGCMI Crop Calendar: `/home/server/Crop_model_dataset/GGCMI_phase3_crop_calendar/`
-- China Phenology GeoTIFF: `/home/server/Crop_model_dataset/8313530/`
-- SPAM crop distribution: `/home/server/Crop_model_dataset/dataverse_files/`
+- GGCMI Crop Calendar: `KISSPATH_HOME/Crop_model_dataset/GGCMI_phase3_crop_calendar/`
+- China Phenology GeoTIFF: `KISSPATH_HOME/Crop_model_dataset/8313530/`
+- SPAM crop distribution: `KISSPATH_HOME/Crop_model_dataset/dataverse_files/`
 
 
 ---

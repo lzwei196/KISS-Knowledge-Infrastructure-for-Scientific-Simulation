@@ -26,7 +26,7 @@ import logging
 import numpy as np
 from pathlib import Path
 
-HDS_PATH = "/mnt/disk1/Hydrocraft_server/outputs/qinghai_lake_1951_2024/modflow6/workspace/gwf.hds"
+HDS_PATH = "KISSPATH_OUTPUTS/qinghai_lake_1951_2024/modflow6/workspace/gwf.hds"
 MODEL_PATH = ""
 KSTPKPER = "last"  # "last", "all", or tuple like (0, 0)
 HDRY_THRESHOLD = 0.9e30  # Values above this are dry cells

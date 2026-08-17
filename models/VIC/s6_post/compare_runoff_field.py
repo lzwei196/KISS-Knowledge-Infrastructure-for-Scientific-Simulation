@@ -33,7 +33,7 @@ quantity in the same units.  No unit conversion is applied to either side.
 Usage:
     python s6_post/compare_runoff_field.py \
         --vic-nc  outputs/<basin>/cama_input/<basin>_runoff_1d.nc \
-        --obs-nc  /mnt/datasets/obs/grun-runoff/GRUN_v1_GSWP3_WGS84_05_1902_2014.nc \
+        --obs-nc  KISSPATH_DATA/obs/grun-runoff/GRUN_v1_GSWP3_WGS84_05_1902_2014.nc \
         --obs-var Runoff --start 1981-01-01 --end 1990-12-31 \
         --json-out compare.json
 """

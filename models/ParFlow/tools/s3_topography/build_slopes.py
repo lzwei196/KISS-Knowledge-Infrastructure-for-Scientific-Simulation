@@ -37,7 +37,7 @@ except ImportError as e:
     sys.exit(1)
 
 
-HYDROCRAFT_ROOT = "/mnt/disk1/Hydrocraft_server"
+HYDROCRAFT_ROOT = "KISSPATH_ROOT"
 CHINA_DEM = os.path.join(HYDROCRAFT_ROOT, "data/dem/china_dem_90m/china_dem_90m.tif")
 
 

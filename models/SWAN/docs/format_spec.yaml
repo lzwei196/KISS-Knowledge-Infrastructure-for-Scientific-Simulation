@@ -5,7 +5,7 @@ model:
   domain: ocean
   description: Third-generation spectral wave model for coastal regions; PySWaN provides
     Python I/O and spectral analysis
-  binary_path: /home/server/knowledge-dissection-toolkit/auto_dissect/_work/SWAN/venv/bin/python
+  binary_path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/SWAN/venv/bin/python
   binary_note: PySWaN is a pure-Python I/O toolbox; the SWAN Fortran binary is external
 inputs:
   forcing:

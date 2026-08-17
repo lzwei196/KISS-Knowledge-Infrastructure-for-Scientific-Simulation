@@ -41,7 +41,7 @@ SOURCE PRECEDENCE
 
 PROHIBITED SOURCE — DO NOT USE
 ------------------------------
-Do NOT read /mnt/disk1/Hydrocraft_server/data/landcover/
+Do NOT read KISSPATH_DATA/landcover/
 AVHRR_1km_LANDCOVER_1981_1994.GLOBAL.tif for these parameters. Its legend is
 undocumented: the `.tif.vat.dbf` carries only Value+Count and the `.tif.aux.xml`
 only <PyramidResamplingType>. A control-point fingerprint contradicts the
@@ -57,7 +57,7 @@ VINTAGE — WHICH GLC_FCS30 LEGEND THIS IS
 ----------------------------------------
 There are two incompatible GLC_FCS30 legends in circulation and only one of them
 is on this server:
-  * GLC_FCS30-2015 (the product in /mnt/datasets/vegetation/GLCFCS30, and the
+  * GLC_FCS30-2015 (the product in KISSPATH_DATA/vegetation/GLCFCS30, and the
     one this table binds to) splits only the DECIDUOUS BROADLEAVED (61/62),
     EVERGREEN NEEDLE-LEAVED (71/72) and DECIDUOUS NEEDLE-LEAVED (81/82) forests
     into open/closed, and keeps the UNSPLIT codes 50 "Evergreen broadleaved
@@ -323,15 +323,15 @@ import sys
 import numpy as np
 
 # ── Default data locations ──────────────────────────────────────────────
-GLCFCS30_DIR = "/mnt/datasets/vegetation/GLCFCS30"
-GLASS_LAI_DIR = "/mnt/datasets/vegetation/GLASS_LAI_global"
-HWSD_CSV = "/mnt/disk1/Hydrocraft_server/data/soil/HWSD_DATA.csv"
-HWSD_RASTER = "/mnt/disk1/Hydrocraft_server/data/soil/HWSD_RASTER/hwsd.bil"
+GLCFCS30_DIR = "KISSPATH_DATA/vegetation/GLCFCS30"
+GLASS_LAI_DIR = "KISSPATH_DATA/vegetation/GLASS_LAI_global"
+HWSD_CSV = "KISSPATH_STATIC/HWSD_DATA.csv"
+HWSD_RASTER = "KISSPATH_STATIC/HWSD_RASTER/hwsd.bil"
 
 LAI_SEASONS = ("spring", "early-sum", "peak", "senescence")
 
 # ── The documented legend, transcribed verbatim ─────────────────────────
-# Source: /mnt/datasets/vegetation/GLCFCS30/GLCFCS30_2015Readme.docx, section
+# Source: KISSPATH_DATA/vegetation/GLCFCS30/GLCFCS30_2015Readme.docx, section
 # "Classification system", columns (LC id, Classification System). Reproduced
 # here so the parameter table below can be machine-checked against it instead of
 # trusted. Do NOT edit this dict to make a mapping fit — it IS the legend.

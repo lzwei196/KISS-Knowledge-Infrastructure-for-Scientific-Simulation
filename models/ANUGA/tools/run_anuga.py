@@ -48,12 +48,12 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 # Ensure ki_tools_common is importable
-_ki_common = "/mnt/disk1/Hydrocraft_server/models/ki_tools_common"
+_ki_common = "KISSPATH_KI_TOOLS_COMMON"
 if _ki_common not in sys.path:
     sys.path.insert(0, _ki_common)
 
 # HydroCraft python env for anuga and other packages
-_penv = "/mnt/disk1/Hydrocraft_server/python_env/lib/python3.12/site-packages"
+_penv = "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages"
 if _penv not in sys.path:
     sys.path.insert(0, _penv)
 
@@ -103,9 +103,9 @@ def build_bounding_polygon(lat, lon, extent_m):
     ]
 
 
-CHINA_DEM = "/mnt/disk1/Hydrocraft_server/data/dem/china_dem_90m/china_dem_90m.tif"
-MERIT_DEM_DIR = "/mnt/datasets/MERIT_DEM"
-COP30_DEM_DIR = "/mnt/disk1/Hydrocraft_server/data/dem/dem_tiles_cache"
+CHINA_DEM = "KISSPATH_STATIC/china_dem_90m/china_dem_90m.tif"
+MERIT_DEM_DIR = "KISSPATH_DATA/MERIT_DEM"
+COP30_DEM_DIR = "KISSPATH_STATIC/dem_tiles_cache"
 
 
 def cop30_tile_name(lat, lon):

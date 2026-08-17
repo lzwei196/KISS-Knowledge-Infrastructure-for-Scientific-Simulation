@@ -24,56 +24,56 @@ references:
     venue: "Transactions of the ASABE"
     year: 2007
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_2013.23153.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
   moriasi2015:
     doi: 10.13031/trans.58.10715
     title: "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria"
     venue: "Transactions of the ASABE"
     year: 2015
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_trans.58.10715.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_trans.58.10715.txt
   knoben2019:
     doi: 10.5194/hess-23-4323-2019
     title: "Technical note: Inherent benchmark or not? Comparing Nash-Sutcliffe and Kling-Gupta efficiency scores"
     venue: "Hydrol. Earth Syst. Sci."
     year: 2019
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-23-4323-2019.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-23-4323-2019.txt
   gr4jsouth2025:
     doi: 10.1038/s41598-025-16429-z
     title: "Applicability of the daily hydrological models (GR4J, GR5J, and GR6J) in the South (Korea)"
     venue: "Scientific Reports"
     year: 2025
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1038_s41598-025-16429-z.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1038_s41598-025-16429-z.txt
   perrin2003:
     doi: 10.1016/s0022-1694(03)00225-7
     title: "Improvement of a parsimonious model for streamflow simulation"
     venue: "Journal of Hydrology"
     year: 2003
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1016_s0022-1694(03)00225-7.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_s0022-1694(03)00225-7.txt
   coron2017:
     doi: 10.1016/j.envsoft.2017.05.002
     title: "The suite of lumped GR hydrological models in an R package (airGR)"
     venue: "Environmental Modelling & Software"
     year: 2017
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1016_j.envsoft.2017.05.002.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1016_j.envsoft.2017.05.002.txt
   fowler2017et:
     doi: 10.1002/2016wr019627
     title: "Impact of evapotranspiration process representation on runoff projections from conceptual rainfall-runoff models"
     venue: "Water Resources Research"
     year: 2017
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1002_2016wr019627.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1002_2016wr019627.txt
   pelletier2022:
     doi: 10.5194/hess-26-2733-2022
     title: "On constraining a lumped hydrological model with both piezometry and streamflow"
     venue: "Hydrol. Earth Syst. Sci."
     year: 2022
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.5194_hess-26-2733-2022.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.5194_hess-26-2733-2022.txt
 
 validation:
 

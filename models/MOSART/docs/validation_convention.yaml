@@ -22,35 +22,35 @@ references:
     venue: "Transactions of the ASABE"
     year: 2007
     oa: manual   # user-downloaded full text in paper_cache
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.13031_2013.23153.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.13031_2013.23153.txt
   swat_gomti2019:
     doi: 10.1007/s13201-019-1013-x
     title: "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India"
     venue: "Applied Water Science"
     year: 2019
     oa: gold
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1007_s13201-019-1013-x.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1007_s13201-019-1013-x.txt
   mosart_li2015:
     doi: 10.1175/jhm-d-14-0079.1
     title: "Evaluating Global Streamflow Simulations by a Physically Based Routing Model Coupled to a Land Surface Model"
     venue: "Journal of Hydrometeorology"
     year: 2015
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1175_jhm-d-14-0079.1.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1175_jhm-d-14-0079.1.txt
   mosart_e3sm2022:
     doi: 10.1029/2021ms002772
     title: "Development of Land-River Two-Way Hydrologic Coupling for Floodplain Inundation in E3SM"
     venue: "Journal of Advances in Modeling Earth Systems (JAMES)"
     year: 2022
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.1029_2021ms002772.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.1029_2021ms002772.txt
   hydrology_3models2014:
     doi: 10.3390/hydrology1010020
     title: "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT"
     venue: "Hydrology"
     year: 2014
     oa: manual
-    resolves: /home/server/knowledge-dissection-toolkit/paper_cache/10.3390_hydrology1010020.txt
+    resolves: KISSPATH_INTERNAL_NOT_SHIPPED/paper_cache/10.3390_hydrology1010020.txt
 
 validation:
 

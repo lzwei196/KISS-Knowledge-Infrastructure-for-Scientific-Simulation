@@ -309,7 +309,7 @@ dimension and no ocean. Before accepting a validation target, check the support:
 | **Gridded / regional field (any variable)** | **no** | there is no gridded or batch-of-columns runner in this KI |
 | **Ocean salinity (EN4, WOA23, `sea_water_salinity` in psu)** | **NO — structural** | EN4.2.2 is a 1°×1° monthly ocean analysis on 42 sub-sea depth levels (5 m … 5350 m) with land masked. SWAP has no ocean compartment and its solute state is soil pore-water concentration in mg/cm³ on a land column. There is no unit, no support and no domain in common — do NOT construct a metric from it. |
 
-Verified 2026-08-11: `/mnt/datasets/obs/en4-2-2/EN.4.2.2.analyses.g10.*.zip`,
+Verified 2026-08-11: `KISSPATH_DATA/obs/en4-2-2/EN.4.2.2.analyses.g10.*.zip`,
 variable `salinity`, `standard_name = sea_water_salinity`, dims (time, depth, lat, lon),
 72.6% of surface cells wet, land = NaN.
 

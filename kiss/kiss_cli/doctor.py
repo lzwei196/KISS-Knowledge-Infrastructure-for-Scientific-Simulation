@@ -246,6 +246,16 @@ def _process_names(doc) -> set[str]:
     return out
 
 
+def _identity_matches(catalog, model: str) -> bool:
+    """Does this dag's identity.model_id agree with the package it sits in?"""
+    try:
+        ki = catalog.get(model)
+    except KeyError:
+        return True
+    mid = (ki.meta or {}).get("model_id")
+    return not mid or _norm(mid) == _norm(model)
+
+
 def check_cross_model(catalog) -> list[Finding]:
     """Detect a dag that describes a *different* model than its package.
 
@@ -285,11 +295,22 @@ def check_cross_model(catalog) -> list[Finding]:
             if overlap < 0.9 or (a, b) in seen:
                 continue
             seen.add((a, b))
-            for who, other in ((a, b), (b, a)):
+            # Only blame the side that is actually wrong. A dag whose
+            # identity.model_id disagrees with its own directory is the copy;
+            # the one that agrees is legitimately itself. EF5 ships HYPE's dag
+            # and says model_id "HYPE", so EF5 is at fault and HYPE is not.
+            culprits = [m for m in (a, b) if not _identity_matches(catalog, m)]
+            if not culprits:
+                culprits = [a, b]          # both consistent — genuinely ambiguous
+            for who in culprits:
+                other = b if who == a else a
                 out.append(Finding(
                     who, BLOCK, "dag-cross-model",
+                    f"processes are {overlap:.0%} identical to {other}'s and this dag's "
+                    f"identity does not match its own package — it describes the wrong "
+                    f"model, so anything reading it as an output contract is unreliable"
+                    if who in culprits and len(culprits) == 1 else
                     f"processes are {overlap:.0%} identical to {other}'s — one of these "
-                    f"dags describes the wrong model, so anything reading it as an "
-                    f"output contract is unreliable",
+                    f"dags describes the wrong model",
                 ))
     return out

@@ -25,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from . import doctor, handoff, install, paths, policy, prompt, providers
+from . import doctor, handoff, install, paths, policy, port, prompt, providers
 from .catalog import Catalog
 from .manifest import Manifest
 
@@ -182,7 +182,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": str(e)}, 404)
         self._open_stream()
         try:
-            run_install(ki, self._manifest(ki), self._workdir(ki), self._chunk)
+            run_install(ki, self._manifest(ki), self._workdir(ki), self._chunk, self.repo_root)
         except Exception as e:
             self._chunk(f"\nkiss: {type(e).__name__}: {e}\n")
         self._end_stream()
@@ -237,7 +237,7 @@ class Handler(BaseHTTPRequestHandler):
         self._end_stream()
 
 
-def run_install(ki, man: Manifest, root: Path, emit) -> None:
+def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
     """The same six steps as ``kiss init``, streamed line by line."""
     root.mkdir(parents=True, exist_ok=True)
     cfg_file = root / paths.CONFIG_NAME
@@ -262,20 +262,40 @@ def run_install(ki, man: Manifest, root: Path, emit) -> None:
                 emit(f"      {ln}\n")
         return s
 
-    step("[0/6] python env", install.ensure_python_env(cfg))
+    # Materialise, then operate on the working copy — identical to `kiss init`.
+    # Skipping this ran preflight against the repository package with its
+    # KISSPATH_* placeholders still in place, so the GUI and the CLI disagreed
+    # about what "installed" meant.
+    live = root / "ki"
+    mrep = port.materialise(ki.root, live, cfg)
+    ok = not mrep.unresolved
+    result.add(install.Step(
+        "materialise", ok,
+        f"{mrep.tokens_replaced} placeholders resolved into {live}" if ok else
+        f"unresolved placeholders: {', '.join(sorted(mrep.unresolved))}"))
+    emit(f"  {'[1/8] materialise KI':<22} {'ok' if ok else 'FAILED'}"
+         f"  ({mrep.tokens_replaced} paths written)\n")
+    if mrep.undeliverable_files:
+        emit(f"      note: {mrep.undeliverable_files} files reference the author's "
+             "private tooling; those instructions cannot be followed\n")
+    ki = type(ki)(name=ki.name, root=live)
+
+    step("[2/8] python env", install.ensure_python_env(cfg))
     cfg_file.write_text(cfg.dumps(), encoding="utf-8")
-    step("[1/6] system deps", install.check_system_deps(man.system_deps))
-    step("[2/6] python deps", install.install_python_deps(man.python_deps, cfg.python))
+
+    step("[3/8] ki_tools_common", install.install_ki_tools_common(cfg, repo_root))
+    step("[4/8] system deps", install.check_system_deps(man.system_deps))
+    step("[5/8] python deps", install.install_python_deps(man.python_deps, cfg.python))
     prefix = cfg.roles["binaries"] / (man.install_dir or ki.name)
     s, binary = install.acquire(man, prefix, cfg.python)
     result.binary = binary
-    step("[3/6] acquire", s)
+    step("[6/8] acquire", s)
     if man.depends_on:
         emit(f"      couples with: {', '.join(man.depends_on)}\n")
-    step("[4/6] data", install.check_data(man, cfg))
-    step("[5/6] preflight", install.run_preflight(ki, cfg.python, cfg))
+    step("[7/8] data", install.check_data(man, cfg))
+    step("[8/8] preflight", install.run_preflight(ki, cfg.python, cfg))
     written = handoff.write(ki, result, man, cfg, root)
-    emit(f"  {'[6/6] agent handoff':<22} ok ({len(written)} files)\n\n")
+    emit(f"  {'      agent handoff':<22} ok ({len(written)} files)\n\n")
 
     if result.ok:
         emit(f"{ki.name} is ready.  {root}\n")

@@ -166,6 +166,9 @@ def cmd_init(args) -> int:
           + _c("dim", f"  ({mrep.tokens_replaced} paths written)"))
     if not ok:
         print(_c("dim", "        " + ", ".join(sorted(mrep.unresolved))))
+    if mrep.undeliverable_files:
+        print(_c("dim", f"        note: {mrep.undeliverable_files} files reference the "
+                        "author's private tooling; those instructions cannot be followed"))
     # From here on the KI in use is the materialised copy, not the package.
     ki = type(ki)(name=ki.name, root=live)
 

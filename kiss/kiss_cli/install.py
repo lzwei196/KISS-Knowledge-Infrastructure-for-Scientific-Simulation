@@ -293,9 +293,20 @@ def install_ki_tools_common(cfg, repo_root: Path) -> Step:
         return Step("ki-tools-common", False,
                     f"not shipped in this checkout (expected {src})")
 
-    rc, out = _run([cfg.python, "-c", "import ki_tools_common"])
-    if rc == 0:
-        return Step("ki-tools-common", True, "already importable")
+    # Materialise the library the same way a KI is materialised. It was ported
+    # to placeholders like everything else, so installing straight from the repo
+    # source leaves defaults such as load_forcing's CMFD_DIR set to
+    # "KISSPATH_FORCING/..." — a path that cannot exist. The repo copy stays
+    # pristine; each workdir gets its own correctly-pathed install.
+    from . import port as _port
+
+    live = Path(cfg.roles.get("ki_tools_common") or (cfg.root / "ki_tools_common"))
+    mrep = _port.materialise(src, live, cfg)
+    if mrep.unresolved:
+        return Step("ki-tools-common", False,
+                    f"unresolved roles in ki_tools_common: "
+                    f"{', '.join(sorted(mrep.unresolved))}")
+    src = live
 
     # Prefer the [all] extra: these are Earth-science models, so xarray,
     # netCDF4 and geopandas get used sooner or later, and installing them now
@@ -314,8 +325,16 @@ def install_ki_tools_common(cfg, repo_root: Path) -> Step:
         return Step("ki-tools-common", False, out.strip()[-400:], commands=cmds)
     cmd = cmds  # for reporting below
 
+    # Confirm the import resolves to the copy we just installed. A stale global
+    # ki_tools_common on the interpreter's path would otherwise satisfy the
+    # import and fail later with the wrong defaults.
     rc2, out2 = _run([cfg.python, "-c",
-                      "import ki_tools_common, ki_tools_common.units; print('ok')"])
+                      "import ki_tools_common as k, ki_tools_common.units; "
+                      "print(k.__file__)"])
+    if rc2 == 0 and str(live.resolve()) not in out2:
+        return Step("ki-tools-common", False,
+                    f"import resolves to {out2.strip()}, not the copy installed at "
+                    f"{live} — remove the other ki_tools_common from this interpreter")
     if rc2 != 0:
         return Step("ki-tools-common", False,
                     f"pip install succeeded but import fails: {out2.strip()[-200:]}",

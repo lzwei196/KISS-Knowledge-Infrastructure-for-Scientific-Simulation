@@ -108,18 +108,40 @@ class PortReport:
         return sum(f.replaced for f in self.changed)
 
 
+#: A prefix only matches when what follows it is a path boundary. Without this,
+#: "/mnt/disk3_backup/x" became "KISSPATH_DATA_backup/x" — a prefix eating part
+#: of a longer directory name. Measured: this is how "/mnt/disk3/msxw_rechunked"
+#: first turned into "KISSPATH_FORCING_rechunked".
+_BOUNDARY = r"(?![\w-])"
+
+_SUB_RE = re.compile(
+    "|".join(f"(?P<r{i}>{re.escape(pref)}{_BOUNDARY})"
+             for i, (pref, _) in enumerate(_ORDERED))
+)
+_SUB_ROLE = {f"r{i}": role for i, (_, role) in enumerate(_ORDERED)}
+
+
 def substitute(text: str) -> tuple[str, int]:
-    """Replace every authoring prefix with its role token."""
+    """Replace every authoring prefix with its role token.
+
+    One regex pass, longest prefix first. A sequence of str.replace calls would
+    rescan text it had already written, so a token could be matched again by a
+    later, shorter prefix.
+    """
     n = 0
-    for prefix, role in _ORDERED:
+
+    def repl(m: "re.Match") -> str:
+        nonlocal n
+        role = _SUB_ROLE[m.lastgroup]
         token = TOKENS.get(role)
         if not token:
-            continue
-        if prefix in text:
-            n += text.count(prefix)
-            text = text.replace(prefix, token)
-    for pat, repl in ELIDED:
-        text, k = re.subn(pat, repl, text)
+            return m.group(0)
+        n += 1
+        return token
+
+    text = _SUB_RE.sub(repl, text)
+    for pat, replacement in ELIDED:
+        text, k = re.subn(pat, replacement, text)
         n += k
     return text, n
 
@@ -207,30 +229,39 @@ def render_config_template(roles: list[str] | None = None) -> str:
 def unsubstitute(text: str, cfg) -> tuple[str, int, set[str]]:
     """Replace ``KISSPATH_*`` tokens with real paths from ``cfg``.
 
+    Single regex pass, longest token first. Replacing sequentially would rescan
+    text already written, so a real directory whose name happens to contain a
+    token — ``/tmp/KISSPATH_DATA/ki`` is a legal path — would be corrupted by a
+    later substitution.
+
     Returns the new text, how many tokens were replaced, and the set of tokens
-    that had no configured role. An unresolved token is left in place on
-    purpose: it then fails loudly at the point of use, naming the role, instead
-    of collapsing to a plausible-looking wrong path.
+    with no configured role. Those are left in place on purpose: they then fail
+    at the point of use naming the role, rather than collapsing to a plausible
+    wrong path. Tokens for LEAK_ROLES are skipped entirely — they mark
+    references to tooling that cannot exist here, and are reported by the caller
+    rather than counted as failures.
     """
     by_token = {tok: role for role, tok in TOKENS.items()}
+    undeliverable = {tok for tok, role in by_token.items() if role in LEAK_ROLES}
     unresolved: set[str] = set()
     n = 0
 
-    # Longest token first so KISSPATH_DATA_KI is not eaten by KISSPATH_DATA.
-    for tok in sorted(by_token, key=len, reverse=True):
-        if tok not in text:
-            continue
-        role = by_token[tok]
-        target = cfg.roles.get(role)
+    ordered = sorted(by_token, key=len, reverse=True)
+    pattern = re.compile("|".join(re.escape(tok) for tok in ordered))
+
+    def repl(m: "re.Match") -> str:
+        nonlocal n
+        tok = m.group(0)
+        if tok in undeliverable:
+            return tok
+        target = cfg.roles.get(by_token[tok])
         if target is None:
             unresolved.add(tok)
-            continue
-        n += text.count(tok)
-        text = text.replace(tok, str(target))
+            return tok
+        n += 1
+        return str(target)
 
-    for m in TOKEN_RE.finditer(text):
-        if m.group(0) in by_token:
-            unresolved.add(m.group(0))
+    text = pattern.sub(repl, text)
     return text, n, unresolved
 
 
@@ -240,6 +271,8 @@ class MaterialiseReport:
     files_written: int = 0
     tokens_replaced: int = 0
     unresolved: set[str] = field(default_factory=set)
+    #: files still carrying a reference that cannot ever resolve on this machine
+    undeliverable_files: int = 0
     skipped: int = 0
 
 
@@ -279,6 +312,8 @@ def materialise(ki_root: Path, dest: Path, cfg) -> MaterialiseReport:
             continue
 
         new_text, n, unresolved = unsubstitute(text, cfg)
+        if any(TOKENS[r] in new_text for r in LEAK_ROLES if r in TOKENS):
+            rep.undeliverable_files += 1
         out.write_text(new_text, encoding="utf-8")
         shutil.copystat(src, out)
         rep.files_written += 1

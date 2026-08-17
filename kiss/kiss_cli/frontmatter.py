@@ -114,25 +114,26 @@ def existing_block(text: str) -> tuple[dict, str] | None:
 
 
 def render(data: dict) -> str:
-    """Emit a frontmatter block with the keys in a stable order."""
+    """Emit a frontmatter block with the keys in a stable order.
+
+    Values are serialised by PyYAML rather than interpolated. Hand-writing
+    ``key: value`` is wrong for a surprising number of ordinary descriptions:
+    ``Use when a: b`` is invalid YAML, a leading ``-`` reads as a sequence,
+    an unquoted ``#`` truncates the value at the comment, and a bare ``yes``
+    loads as the boolean True. The generated text happens to avoid all of these
+    today, which is exactly the kind of thing that breaks silently later.
+    """
+    if yaml is None:
+        raise RuntimeError("pyyaml is required to render frontmatter")
+
     order = ["name", "description", "allowed-tools", "version", "model", "domain"]
     keys = [k for k in order if k in data] + [k for k in data if k not in order]
+
     lines = ["---"]
     for k in keys:
-        v = data[k]
-        if isinstance(v, str) and ("\n" in v or len(v) > 100):
-            lines.append(f"{k}: >-")
-            words, line = v.split(), ""
-            for w in words:
-                if len(line) + len(w) + 1 > 88:
-                    lines.append("  " + line)
-                    line = w
-                else:
-                    line = f"{line} {w}".strip()
-            if line:
-                lines.append("  " + line)
-        else:
-            lines.append(f"{k}: {v}")
+        chunk = yaml.safe_dump({k: data[k]}, default_flow_style=False,
+                               allow_unicode=True, width=88, sort_keys=False)
+        lines.append(chunk.rstrip("\n"))
     lines.append("---")
     return "\n".join(lines) + "\n"
 

@@ -276,3 +276,41 @@ def ensure_python_env(cfg, base_python: str | None = None) -> Step:
         return Step("python-env", False, f"venv created but no interpreter at {interpreter}")
     cfg.python = str(interpreter)
     return Step("python-env", True, f"created {interpreter}")
+
+
+def install_ki_tools_common(cfg, repo_root: Path) -> Step:
+    """Install the shared helper library the KIs import.
+
+    126 of the 127 packages do ``from ki_tools_common.<mod> import ...``. Without
+    it every one of their tools raises ImportError the moment it is called — and
+    crucially *after* preflight has already reported success, because preflight
+    checks the model binary rather than the KI's own Python helpers. A green
+    preflight followed by an ImportError is exactly the kind of late, confusing
+    failure this installer exists to prevent, so it is installed up front.
+    """
+    src = Path(repo_root) / "ki_tools_common"
+    if not src.is_dir():
+        return Step("ki-tools-common", False,
+                    f"not shipped in this checkout (expected {src})")
+
+    rc, out = _run([cfg.python, "-c", "import ki_tools_common"])
+    if rc == 0:
+        return Step("ki-tools-common", True, "already importable")
+
+    # Install with the [all] extra. xarray is declared *optional* in this
+    # library's pyproject, but its __init__ imports climate_scenarios, which
+    # imports xarray at module level — so a plain install produces a package
+    # that cannot be imported at all. Measured, not guessed.
+    cmd = [cfg.python, "-m", "pip", "install", "--quiet", "-e", f"{src}[all]"]
+    rc, out = _run(cmd)
+    if rc != 0:
+        return Step("ki-tools-common", False, out.strip()[-400:], commands=[" ".join(cmd)])
+
+    rc2, out2 = _run([cfg.python, "-c",
+                      "import ki_tools_common, ki_tools_common.units; print('ok')"])
+    if rc2 != 0:
+        return Step("ki-tools-common", False,
+                    f"pip install succeeded but import fails: {out2.strip()[-200:]}",
+                    commands=[" ".join(cmd)])
+    return Step("ki-tools-common", True, f"installed editable from {src}",
+                commands=[" ".join(cmd)])

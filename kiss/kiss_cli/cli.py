@@ -15,7 +15,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import doctor, gui, handoff, install, paths, port
+from . import doctor, gui, handoff, install, paths, port, recipe
 from .catalog import Catalog
 from .manifest import Manifest
 
@@ -231,6 +231,29 @@ def cmd_gui(args) -> int:
                      workroot=args.workroot)
 
 
+def cmd_recipe(args) -> int:
+    import json as _json
+
+    cat = _catalog(args)
+    ki = cat.get(args.model)
+    repo_root = ki.root.parent.parent
+    harvested = {}
+    hp = repo_root / "kiss" / "manifests" / "_harvested_produces.json"
+    if hp.exists():
+        harvested = _json.loads(hp.read_text())
+    res = recipe.gather(ki, harvested)
+    if args.json:
+        print(_json.dumps({
+            "model": res.model, "repo": res.repo, "ref": res.ref,
+            "produces": res.produces, "strength": res.strength(),
+            "evidence": [{"kind": e.kind, "path": e.path} for e in res.evidence],
+            "notes": res.notes,
+        }, indent=2))
+        return 0
+    print(recipe.brief(res, ki))
+    return 0
+
+
 def cmd_run(args) -> int:
     cat = _catalog(args)
     ki = cat.get(args.model)
@@ -282,6 +305,11 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--no-browser", action="store_true")
     q.add_argument("-w", "--workroot", type=Path, help="where installs live (default ~/kiss)")
     q.set_defaults(fn=cmd_gui)
+
+    q = sub.add_parser("recipe", help="gather build evidence for a model and print the agent brief")
+    q.add_argument("model")
+    q.add_argument("--json", action="store_true", help="emit the raw research as json")
+    q.set_defaults(fn=cmd_recipe)
 
     q = sub.add_parser("run", help="run a command with the KI's paths resolved")
     q.add_argument("model")

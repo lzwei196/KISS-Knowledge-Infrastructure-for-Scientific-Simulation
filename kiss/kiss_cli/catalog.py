@@ -166,14 +166,38 @@ class Catalog:
 
     @classmethod
     def discover(cls, start: Path | None = None) -> "Catalog":
-        """Walk upward looking for the repository's ``models/`` directory."""
+        """Find the ``models/`` directory of KI packages.
+
+        Tried in order: upward from ``start``/cwd (a repo checkout), then next
+        to the executable itself — a frozen desktop binary is usually launched
+        from wherever the browser saved it, with ``kiss-ki-packages.tar.gz``
+        extracted alongside, and cwd is some unrelated home directory — then
+        ``~/kiss``. The error message carries the fix, because the person who
+        sees it has just downloaded a binary and has no README in front of them.
+        """
+        import sys
+
+        roots: list[Path] = []
         here = Path(start or Path.cwd()).resolve()
-        for cand in (here, *here.parents):
+        roots += [here, *here.parents]
+        if getattr(sys, "frozen", False):
+            exe = Path(sys.executable).resolve().parent
+            roots += [exe, *exe.parents]
+        roots.append(Path.home() / "kiss")
+
+        seen = set()
+        for cand in roots:
+            if cand in seen:
+                continue
+            seen.add(cand)
             m = cand / "models"
             if m.is_dir() and any(m.glob("*/SKILL.md")):
                 return cls(m)
         raise FileNotFoundError(
-            f"could not locate a KISS models/ directory from {here}"
+            "could not find the KI packages (a models/ directory with SKILL.md "
+            "files). Download kiss-ki-packages.tar.gz from the release, extract "
+            "it next to this app (tar xzf kiss-ki-packages.tar.gz), and launch "
+            "again — or pass --models /path/to/models explicitly."
         )
 
     @cached_property

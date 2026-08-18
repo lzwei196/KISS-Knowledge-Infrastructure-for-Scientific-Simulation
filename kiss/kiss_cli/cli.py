@@ -342,6 +342,15 @@ def _rescue_run_options(args) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    import sys as _sys
+
+    if argv is None:
+        argv = _sys.argv[1:]
+    # A bare launch means "open the app". The first real macOS test was someone
+    # double-clicking the binary and getting `error: the following arguments
+    # are required: cmd` — correct for a CLI, wrong for a desktop app.
+    if not argv:
+        argv = ["gui"]
     args = build_parser().parse_args(argv)
     if args.cmd == "run":
         _rescue_run_options(args)

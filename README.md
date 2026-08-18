@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.svg" alt="KISS" width="120">
+</p>
+
 # KISS — Knowledge Infrastructure for Scientific Simulation
 
 **Structured operational knowledge that lets AI agents run Earth science models autonomously.**

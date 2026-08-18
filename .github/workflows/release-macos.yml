@@ -44,6 +44,7 @@ jobs:
           # that path valid inside the frozen bundle.
           pyinstaller --onefile --name kiss \
             --add-data "kiss/kiss_cli/web/app.html:kiss_cli/web" \
+            --add-data "kiss/kiss_cli/web/logo.svg:kiss_cli/web" \
             --paths kiss \
             kiss/kiss_entry.py
           ./dist/kiss --help

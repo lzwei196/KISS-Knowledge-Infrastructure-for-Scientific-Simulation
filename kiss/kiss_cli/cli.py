@@ -228,7 +228,7 @@ def cmd_init(args) -> int:
 
 def cmd_gui(args) -> int:
     return gui.serve(args.models, port=args.port, open_browser=not args.no_browser,
-                     workroot=args.workroot)
+                     workroot=args.workroot, host=args.host)
 
 
 def cmd_recipe(args) -> int:
@@ -302,6 +302,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     q = sub.add_parser("gui", help="browse and install through a local web UI")
     q.add_argument("-p", "--port", type=int, default=8765)
+    q.add_argument("--host", default="127.0.0.1",
+                   help="bind address; 0.0.0.0 to reach the GUI from another "
+                        "machine (no auth — only on a network you trust)")
     q.add_argument("--no-browser", action="store_true")
     q.add_argument("-w", "--workroot", type=Path, help="where installs live (default ~/kiss)")
     q.set_defaults(fn=cmd_gui)

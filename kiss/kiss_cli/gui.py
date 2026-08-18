@@ -72,6 +72,12 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/":
             return self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
 
+        if route == "/logo.svg":
+            logo = PAGE.parent / "logo.svg"
+            if logo.exists():
+                return self._send(200, logo.read_bytes(), "image/svg+xml")
+            return self._json({"error": "no logo"}, 404)
+
         if route == "/api/providers":
             # Report what is NOT installed too, with how to get it — otherwise a
             # user with no agent CLI sees an empty dropdown and no way forward.
@@ -350,15 +356,22 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
 
 
 def serve(models_dir: Path | None, port: int = 8765, open_browser: bool = True,
-          workroot: Path | None = None) -> int:
+          workroot: Path | None = None, host: str = "127.0.0.1") -> int:
     cat = Catalog(models_dir) if models_dir else Catalog.discover()
     Handler.catalog = cat
     Handler.repo_root = cat.models_dir.parent
     Handler.workroot = Path(workroot or Path.home() / "kiss").expanduser()
     Handler.workroot.mkdir(parents=True, exist_ok=True)
 
-    srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    srv = ThreadingHTTPServer((host, port), Handler)
     url = f"http://127.0.0.1:{port}/"
+    if host not in ("127.0.0.1", "localhost"):
+        # The GUI has no authentication: whoever reaches this port can install
+        # models and drive an agent with the server user's rights. Say so at
+        # the moment of the decision, not in a doc nobody has open.
+        print(f"WARNING: listening on {host}:{port} with NO authentication — "
+              f"anyone who can reach this address controls the agent. "
+              f"Prefer an SSH tunnel: ssh -L {port}:127.0.0.1:{port} <this-host>")
     agents = ", ".join(p.label for p in providers.available()) or "none found"
     print(f"KISS — {len(cat)} KI packages · agents: {agents}")
     print(f"  {url}\n  workdir root: {Handler.workroot}\nCtrl-C to stop.")

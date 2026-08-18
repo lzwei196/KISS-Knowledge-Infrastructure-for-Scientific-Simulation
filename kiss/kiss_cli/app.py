@@ -42,9 +42,84 @@ def _wait_up(url: str, timeout: float = 15.0) -> bool:
     return False
 
 
+def _ensure_models(models_dir: Path | None):
+    """Resolve the KI packages, downloading them on first run if needed.
+
+    Returns (models_dir, error_text). Never raises: a windowed app has no
+    stderr anyone can see, so every failure has to end up in the window.
+    """
+    from . import firstrun
+    from .catalog import Catalog
+
+    if models_dir is not None:
+        return models_dir, None
+    try:
+        Catalog.discover()
+        return None, None            # discover() will find it again in serve()
+    except FileNotFoundError:
+        pass
+    if firstrun.models_present():
+        return firstrun.models_present(), None
+    try:
+        return firstrun.download_ki(), None
+    except Exception as e:
+        return None, (f"KISS could not set itself up: {e}\n\n"
+                      f"Manual fix: download kiss-ki-packages.tar.gz from the "
+                      f"GitHub release and extract it into {firstrun.data_dir()}")
+
+
 def run_app(models_dir: Path | None, workroot: Path | None = None) -> int:
     """Serve on an ephemeral loopback port and open a native window on it."""
-    from . import gui
+    from . import firstrun, gui
+
+    try:
+        import webview
+    except ImportError:
+        webview = None
+
+    # First-run bootstrap. With a window available the download happens behind
+    # the setup screen; without one it happens in the terminal, with prints.
+    if webview is not None and models_dir is None:
+        need = False
+        try:
+            from .catalog import Catalog
+            Catalog.discover()
+        except FileNotFoundError:
+            need = firstrun.models_present() is None
+        if need:
+            win = webview.create_window("KISS", html=firstrun.SETUP_HTML,
+                                        width=520, height=340)
+
+            def _bootstrap():
+                def note(stage, frac):
+                    pct = f"{frac:.0%}" if frac >= 0 else "…"
+                    win.evaluate_js(
+                        f"document.getElementById('pct').textContent={pct!r}")
+                try:
+                    firstrun.download_ki(note)
+                except Exception as e:
+                    win.evaluate_js(
+                        "document.querySelector('.ring').style.display='none';"
+                        f"document.getElementById('msg').textContent={str(e)!r}")
+                    return
+                win.destroy()
+
+            import threading as _th
+            _th.Thread(target=_bootstrap, daemon=True).start()
+            webview.start()          # returns when the setup window closes
+
+    resolved, err = _ensure_models(models_dir)
+    if err:
+        if webview is not None:
+            w = webview.create_window("KISS", html=firstrun.SETUP_HTML.replace(
+                "Setting up KISS — downloading the 127 model packages "
+                '<span id="pct"></span>', err).replace('class="ring"', 'style="display:none"'))
+            webview.start()
+        else:
+            print(err)
+        return 1
+    if resolved is not None:
+        models_dir = resolved
 
     port = _free_port()
     url = f"http://127.0.0.1:{port}/"
@@ -60,9 +135,7 @@ def run_app(models_dir: Path | None, workroot: Path | None = None) -> int:
         print("kiss: the local server did not come up; run `kiss gui` for details")
         return 1
 
-    try:
-        import webview  # pywebview
-    except ImportError:
+    if webview is None:
         import webbrowser
         print("kiss: pywebview not bundled — opening in your browser instead")
         webbrowser.open(url)

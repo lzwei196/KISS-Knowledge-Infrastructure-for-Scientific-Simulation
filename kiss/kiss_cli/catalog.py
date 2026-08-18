@@ -184,6 +184,11 @@ class Catalog:
             exe = Path(sys.executable).resolve().parent
             roots += [exe, *exe.parents]
         roots.append(Path.home() / "kiss")
+        try:
+            from .firstrun import data_dir
+            roots.append(data_dir())
+        except Exception:
+            pass
 
         seen = set()
         for cand in roots:

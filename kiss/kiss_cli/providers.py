@@ -39,6 +39,11 @@ class Provider:
     env: dict[str, str] = field(default_factory=dict)
     #: name of the policy mapper in kiss_cli.policy for this CLI
     policy_map: str = "coarse_args"
+    #: how a user installs this CLI, shown when none is present. Naming the
+    #: providers without saying how to get them leaves a dead end on the one
+    #: screen where the user cannot do anything else.
+    install: str = ""
+    auth: str = ""
 
     def available(self) -> bool:
         return shutil.which(self.binary) is not None
@@ -59,32 +64,32 @@ class Provider:
 #: in production against these same KI packages.
 PROVIDERS: dict[str, Provider] = {
     "claude": Provider(
-        name="claude", policy_map="claude_args", binary="claude", label="Claude Code",
+        name="claude", policy_map="claude_args", install="npm install -g @anthropic-ai/claude-code", auth="run `claude` once and sign in", binary="claude", label="Claude Code",
         argv=["claude", "-p", "{prompt}", "--output-format", "stream-json", "--verbose"],
         output="stream-json",
         notes="Reads CLAUDE.md from the working directory automatically.",
     ),
     "codex": Provider(
-        name="codex", policy_map="codex_args", binary="codex", label="OpenAI Codex",
+        name="codex", policy_map="codex_args", install="npm install -g @openai/codex", auth="run `codex` once and sign in", binary="codex", label="OpenAI Codex",
         argv=["codex", "exec", "{prompt}"],
         output="text", stdout_only=True,
         notes=("Reads AGENTS.md. Since 0.144 the reply is on STDOUT and chrome on "
                "STDERR — parse stdout only. Never wrap in `timeout`."),
     ),
     "gemini": Provider(
-        name="gemini", binary="gemini", label="Gemini CLI",
+        name="gemini", install="npm install -g @google/gemini-cli", auth="run `gemini` once and sign in", binary="gemini", label="Gemini CLI",
         argv=["gemini", "-p", "{prompt}", "--output-format", "stream-json", "--yolo"],
         output="stream-json",
         notes="Reads ~/.gemini/GEMINI.md (global), not a project file.",
     ),
     "kimi": Provider(
-        name="kimi", binary="kimi", label="Kimi Code",
+        name="kimi", install="see moonshot's Kimi Code install guide", auth="run `kimi` once and sign in", binary="kimi", label="Kimi Code",
         argv=["kimi", "-p", "{prompt}", "--output-format", "stream-json", "--yolo"],
         output="stream-json",
         notes="`--print` was removed upstream; prompt mode is just -p.",
     ),
     "qwen": Provider(
-        name="qwen", binary="qwen", label="Qwen Code",
+        name="qwen", install="npm install -g @qwen-code/qwen-code", auth="run `qwen` once and sign in", binary="qwen", label="Qwen Code",
         argv=["qwen", "{prompt}", "--output-format", "stream-json",
               "--approval-mode", "yolo"],
         output="stream-json",

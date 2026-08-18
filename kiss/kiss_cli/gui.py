@@ -25,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from . import doctor, handoff, install, paths, policy, port, prompt, providers
+from . import api, doctor, handoff, install, paths, policy, port, prompt, providers
 from .catalog import Catalog
 from .manifest import Manifest
 
@@ -73,10 +73,26 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
 
         if route == "/api/providers":
-            return self._json([
-                {"name": p.name, "label": p.label, "notes": p.notes}
-                for p in providers.available()
-            ])
+            # Report what is NOT installed too, with how to get it — otherwise a
+            # user with no agent CLI sees an empty dropdown and no way forward.
+            cli = [{"name": f"cli:{p.name}", "label": p.label, "notes": p.notes}
+                   for p in providers.available()]
+            apis = [{"name": f"api:{p.name}", "label": p.label,
+                     "notes": f"via {p.env_key}"} for p in api.available()]
+            if cli or apis:
+                return self._json(cli + apis)
+            # Nothing usable — say how to get either kind rather than showing an
+            # empty dropdown.
+            return self._json({
+                "available": [],
+                "apis": [{"name": p.name, "label": p.label, "env": p.env_key,
+                          "signup": p.signup} for p in api.PROVIDERS.values()],
+                "installable": [
+                        {"name": p.name, "label": p.label,
+                         "install": p.install, "auth": p.auth}
+                        for p in providers.PROVIDERS.values()
+                    ],
+            })
 
         if route == "/api/models":
             out = []
@@ -194,6 +210,30 @@ class Handler(BaseHTTPRequestHandler):
         except KeyError as e:
             return self._json({"error": str(e)}, 404)
 
+        # "cli:<name>" or "api:<name>"; bare names stay valid for the CLI so an
+        # older client keeps working.
+        want = req.get("provider") or ""
+        kind, _, pname = want.partition(":")
+        if not pname:
+            kind, pname = "cli", kind
+
+        if kind == "api":
+            try:
+                prov = api.PROVIDERS[pname]
+            except KeyError:
+                return self._json({"error": f"unknown api provider {pname!r}"}, 400)
+            cfg = self._config(ki)
+            wd = self._workdir(ki)
+            wd.mkdir(parents=True, exist_ok=True)
+            live = wd / "ki"
+            run_ki = type(ki)(name=ki.name, root=live) if live.exists() else ki
+            system = prompt.compose(run_ki, cfg, headless=False)
+            self._open_stream()
+            for piece in api.run(prov, run_ki, cfg, system, req.get("message", "")):
+                if not self._chunk(piece):
+                    break
+            return self._end_stream()
+
         avail = providers.available()
         if not avail:
             self._open_stream()
@@ -202,7 +242,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._end_stream()
 
         try:
-            prov = providers.get(req.get("provider") or avail[0].name)
+            prov = providers.get(pname or avail[0].name)
         except KeyError as e:
             return self._json({"error": str(e)}, 400)
 

@@ -243,7 +243,17 @@ if(localStorage.getItem("kiss-dark")==="1"||
 (async()=>{
   MODELS=await (await fetch("/api/models")).json();
   drawList();
-  const ps=await (await fetch("/api/providers")).json();
+  let ps=await (await fetch("/api/providers")).json();
+  if(!Array.isArray(ps)){            // none installed — show how to get one
+    const opts=ps.installable||[];
+    $("#chat").innerHTML=`<div class="empty">
+      <h2>No agent installed</h2>
+      <div>KISS drives an agent CLI you already have. Install any one of these, sign in, and reload.</div>
+      <div class="cards">${opts.map(o=>`<div class="card"><b>${esc(o.label)}</b>
+        <span><code>${esc(o.install)}</code><br>${esc(o.auth)}</span></div>`).join("")}</div>
+      </div>`;
+    ps=[];
+  }
   $("#prov").innerHTML=ps.map(p=>`<option value="${p.name}">${esc(p.label)}</option>`).join("")
     ||'<option value="">no agent CLI found</option>';
   $("#nprov").textContent=ps.length?`${ps.length} agent${ps.length>1?"s":""}`:"no agent CLI";

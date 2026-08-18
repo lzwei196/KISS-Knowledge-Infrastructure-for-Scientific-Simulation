@@ -25,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from . import api, doctor, handoff, install, paths, policy, port, prompt, providers
+from . import api, doctor, handoff, install, paths, policy, port, prompt, providers, settings
 from .catalog import Catalog
 from .manifest import Manifest
 
@@ -79,26 +79,23 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "no logo"}, 404)
 
         if route == "/api/providers":
-            # Report what is NOT installed too, with how to get it — otherwise a
-            # user with no agent CLI sees an empty dropdown and no way forward.
-            cli = [{"name": f"cli:{p.name}", "label": p.label, "notes": p.notes}
-                   for p in providers.available()]
-            apis = [{"name": f"api:{p.name}", "label": p.label,
-                     "notes": f"via {p.env_key}"} for p in api.available()]
-            if cli or apis:
-                return self._json(cli + apis)
-            # Nothing usable — say how to get either kind rather than showing an
-            # empty dropdown.
-            return self._json({
-                "available": [],
-                "apis": [{"name": p.name, "label": p.label, "env": p.env_key,
-                          "signup": p.signup} for p in api.PROVIDERS.values()],
-                "installable": [
-                        {"name": p.name, "label": p.label,
-                         "install": p.install, "auth": p.auth}
-                        for p in providers.PROVIDERS.values()
-                    ],
-            })
+            # Every provider, always — usable or not. Hiding the API providers
+            # when no key was set meant a fresh user could not even discover
+            # they existed, let alone add a key.
+            out = []
+            for p in providers.PROVIDERS.values():
+                ok = p.available()
+                out.append({"name": f"cli:{p.name}", "label": p.label, "kind": "cli",
+                            "usable": ok, "notes": p.notes,
+                            "fix": None if ok else f"install: {p.install} — then {p.auth}"})
+            for p in api.PROVIDERS.values():
+                ok = p.available()
+                out.append({"name": f"api:{p.name}", "label": p.label, "kind": "api",
+                            "usable": ok, "notes": f"key: {p.env_key}",
+                            "fix": None if ok else f"add {p.env_key} in Settings (get one: {p.signup})"})
+            return self._json({"providers": out,
+                               "default": settings.load().get("default_provider", ""),
+                               "any_usable": any(x["usable"] for x in out)})
 
         if route.startswith("/api/selfcheck"):
             # Step-by-step environment check, streaming one verdict at a time.
@@ -143,7 +140,41 @@ class Handler(BaseHTTPRequestHandler):
             kind, _, pname = want.partition(":")
             if kind == "api" and pname in api.PROVIDERS:
                 p = api.PROVIDERS[pname]
-                emit(f"   {'OK  key present for ' + p.label if p.available() else 'FAIL  ' + p.env_key + ' not set — get one: ' + p.signup}")
+                if not p.available():
+                    emit(f"   FAIL  {p.env_key} not set — get one: {p.signup}")
+                else:
+                    # A key being present is not a key being valid: a made-up
+                    # value passed this check until the probe became a real
+                    # one-message call to the vendor.
+                    emit(f"   probing {p.label} with a real 1-message call…")
+                    import json as _json
+                    import urllib.request as _rq
+                    import urllib.error as _er
+                    try:
+                        if p.wire == "anthropic":
+                            req = _rq.Request(p.base_url, method="POST",
+                                data=_json.dumps({"model": p.models.get(p.default_model, p.default_model),
+                                                  "max_tokens": 8,
+                                                  "messages": [{"role": "user", "content": "Say OK"}]}).encode(),
+                                headers={"Content-Type": "application/json",
+                                         "x-api-key": p.key(), "anthropic-version": "2023-06-01"})
+                        else:
+                            req = _rq.Request(p.base_url, method="POST",
+                                data=_json.dumps({"model": p.models.get(p.default_model, p.default_model),
+                                                  "max_tokens": 8,
+                                                  "messages": [{"role": "user", "content": "Say OK"}]}).encode(),
+                                headers={"Content-Type": "application/json",
+                                         "Authorization": f"Bearer {p.key()}"})
+                        with _rq.urlopen(req, timeout=45) as r:
+                            emit(f"   OK  {p.label} answered (HTTP {r.status}) — key is valid")
+                    except _er.HTTPError as e:
+                        body = e.read().decode("utf-8", "replace")[:200]
+                        emit(f"   FAIL  {p.label}: HTTP {e.code} — "
+                             f"{'key rejected' if e.code in (401, 403) else 'error'}")
+                        emit(f"         {body}")
+                        emit(f"         Fix: check the key in Settings (get one: {p.signup})")
+                    except Exception as e:
+                        emit(f"   FAIL  cannot reach {p.label}: {e}")
             else:
                 target = None
                 if pname:
@@ -176,6 +207,9 @@ class Handler(BaseHTTPRequestHandler):
             emit("")
             emit("done.")
             return self._end_stream()
+
+        if route == "/api/settings":
+            return self._json(settings.masked())
 
         if route == "/api/status":
             # User-facing state, never manifest jargon. "unverified" is a fact
@@ -258,6 +292,13 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length", 0))
         req = json.loads(self.rfile.read(n) or b"{}")
 
+        if route == "/api/settings":
+            try:
+                settings.update(req)
+            except Exception as e:
+                return self._json({"error": str(e)}, 400)
+            return self._json(settings.masked())
+
         if route == "/api/init":
             return self._stream_init(req)
         if route == "/api/chat":
@@ -325,7 +366,7 @@ class Handler(BaseHTTPRequestHandler):
 
         # "cli:<name>" or "api:<name>"; bare names stay valid for the CLI so an
         # older client keeps working.
-        want = req.get("provider") or ""
+        want = req.get("provider") or settings.load().get("default_provider") or ""
         kind, _, pname = want.partition(":")
         if not pname:
             kind, pname = "cli", kind
@@ -477,6 +518,7 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
 
 def serve(models_dir: Path | None, port: int = 8765, open_browser: bool = True,
           workroot: Path | None = None, host: str = "127.0.0.1") -> int:
+    settings.apply_to_env()      # saved API keys; real env vars win
     cat = Catalog(models_dir) if models_dir else Catalog.discover()
     Handler.catalog = cat
     Handler.repo_root = cat.models_dir.parent

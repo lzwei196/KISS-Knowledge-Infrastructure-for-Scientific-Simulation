@@ -306,3 +306,56 @@ def ensure_python_env(cfg, base_python: str | None = None) -> Step:
                     f"could not create a venv with {base}: {out.strip()[-300:]}")
     cfg.python = str(interpreter)
     return Step("python-env", True, f"created {interpreter} (from {base})")
+
+
+def install_ki_tools_common(cfg, repo_root: Path) -> Step:
+    """Install the shared helper library the KIs import.
+
+    (Restored: an earlier edit that rewrote ensure_python_env sliced off the
+    tail of this module and deleted this function, so every install crashed at
+    step 3 with AttributeError — found by walking the app as a user, not by
+    reading the diff. 126 of the 127 packages import this library.)
+
+    The library is materialised into the workdir first: the repo copy carries
+    KISSPATH_* placeholders, and installing it verbatim leaves defaults like
+    load_forcing's CMFD_DIR pointing at a token. The install then verifies the
+    import resolves to the copy we just installed, not a stale global one.
+    """
+    src = Path(repo_root) / "ki_tools_common"
+    if not src.is_dir():
+        return Step("ki-tools-common", False,
+                    f"not shipped in this checkout (expected {src})")
+
+    from . import port as _port
+
+    live = Path(cfg.roles.get("ki_tools_common") or (cfg.root / "ki_tools_common"))
+    mrep = _port.materialise(src, live, cfg)
+    if mrep.unresolved:
+        return Step("ki-tools-common", False,
+                    f"unresolved roles in ki_tools_common: "
+                    f"{', '.join(sorted(mrep.unresolved))}")
+    src = live
+
+    cmds: list[str] = []
+    for spec in (f"{src}[all]", str(src)):
+        cmd = [cfg.python, "-m", "pip", "install", "--quiet", "-e", spec]
+        cmds.append(" ".join(cmd))
+        rc, out = _run(cmd, timeout=900)
+        if rc == 0:
+            break
+    else:
+        return Step("ki-tools-common", False, out.strip()[-400:], commands=cmds)
+
+    rc2, out2 = _run([cfg.python, "-c",
+                      "import ki_tools_common as k, ki_tools_common.units; print(k.__file__)"])
+    if rc2 != 0:
+        return Step("ki-tools-common", False,
+                    f"pip install succeeded but import fails: {out2.strip()[-200:]}",
+                    commands=cmds)
+    if str(live.resolve()) not in out2:
+        return Step("ki-tools-common", False,
+                    f"import resolves to {out2.strip()}, not the copy installed at "
+                    f"{live} — remove the other ki_tools_common from this interpreter")
+    extras = "with extras" if len(cmds) == 1 else "bare (extras unavailable)"
+    return Step("ki-tools-common", True, f"installed editable from {src}, {extras}",
+                commands=cmds)

@@ -75,7 +75,7 @@ def build_map(ki: Path) -> str:
     n_tools = len([p for p in (ki / "tools").rglob("*.py")
                    if "__pycache__" not in p.parts]) if (ki / "tools").is_dir() else 0
     if n_tools:
-        row("to run each stage", f"`tools/` ({n_tools} tools)",
+        row("to run the pipeline stages", f"`tools/` ({n_tools} tools)",
             "the executable pipeline. Read each tool's argparse (`--help`) before composing a "
             "command; SKILL.md's stage table says which tool serves which stage.")
     stage_docs = sorted((ki / "docs").glob("s[0-9]*_*.md")) if (ki / "docs").is_dir() else []
@@ -108,10 +108,17 @@ def build_map(ki: Path) -> str:
             "the literature this KI is judged by; each entry's `text_path` is fetched full text "
             "in the central paper cache. `role: benchmark` marks the model's own skill paper.")
     if (ki / "knowledge_infrastructure.yaml").is_file():
-        row("for a machine-readable summary", "`knowledge_infrastructure.yaml`",
-            "the manifest (package, pipeline, validation tier, counts) — projected by "
-            "`ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, "
-            "never hand-edit.")
+        # kind-aware wording (codex): the dag-derived projector contract is a PROCESS-MODEL fact.
+        # For libs/data KIs/couplers there is no per-kind projector yet — do not imply one.
+        if (ki / "dag.yaml").is_file():
+            row("for a machine-readable summary", "`knowledge_infrastructure.yaml`",
+                "the manifest (package, pipeline, validation tier, counts) — projected by "
+                "`ki_tools_common/generate_ki_manifest.py`; regenerate after structural changes, "
+                "never hand-edit.")
+        else:
+            row("for a machine-readable summary", "`knowledge_infrastructure.yaml`",
+                "the manifest (package, pipeline, counts). No per-kind projector exists yet for "
+                "this KI kind — keep it consistent with the KI's contents when editing.")
     if (ki / ".kdt_evolution.jsonl").is_file():
         row("what past runs learned", "`.kdt_evolution.jsonl`",
             "append-only memory of previous runs and fixes on this KI.")
@@ -131,17 +138,54 @@ def build_map(ki: Path) -> str:
     return "\n".join(lines)
 
 
+def _marker_state(text: str):
+    """(#BEGIN, #END, ordered_ok). Refuse anything but the two clean states (codex #2):
+    a one-sided, duplicated or reversed marker pair means a previous splice went wrong, and
+    writing into that file would duplicate sections or eat body text."""
+    nb, ne = text.count(BEGIN), text.count(END)
+    ordered = nb == ne == 1 and text.index(BEGIN) < text.index(END)
+    return nb, ne, ordered
+
+
+def _strip_date(t: str) -> str:
+    import re
+    return re.sub(r"\*Projected \d{4}-\d{2}-\d{2}", "*Projected", t)
+
+
 def _splice(skill_text: str, section: str) -> str:
-    if BEGIN in skill_text and END in skill_text:
+    nb, ne, ordered = _marker_state(skill_text)
+    if nb == 1 and ne == 1 and ordered:
         pre = skill_text[:skill_text.index(BEGIN)]
         post = skill_text[skill_text.index(END) + len(END):]
+        # codex #1: if the section differs ONLY by its date stamp, keep the file as it is —
+        # otherwise every daily run rewrites 450 files to change a date.
+        have = skill_text[skill_text.index(BEGIN):skill_text.index(END) + len(END)]
+        if _strip_date(have) == _strip_date(section):
+            return skill_text
         return pre + section + post
-    # insert after the guardrail block: first line after the initial blockquote run
+    # insert after the guardrail: the first non-blank blockquote run that CONTAINS the mandatory
+    # header (codex #4 — a leading BOM/blank lines must not push the map above the guardrail).
     lines = skill_text.split("\n")
     i = 0
-    if lines and lines[0].lstrip().startswith(">"):
-        while i < len(lines) and (lines[i].lstrip().startswith(">") or not lines[i].strip()):
-            i += 1
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    # kimi: a YAML frontmatter block (---\n ... \n---) may precede the guardrail. Skip it, or
+    # the map would be prepended ABOVE it — breaking the frontmatter and burying the guardrail.
+    if i < len(lines) and lines[i].strip() == "---":
+        for k in range(i + 1, len(lines)):
+            if lines[k].strip() == "---":
+                i = k + 1
+                while i < len(lines) and not lines[i].strip():
+                    i += 1
+                break
+    j = i
+    if j < len(lines) and lines[j].lstrip("\ufeff").lstrip().startswith(">"):
+        while j < len(lines) and (lines[j].lstrip().startswith(">") or not lines[j].strip()):
+            j += 1
+        block = "\n".join(lines[i:j])
+        if "MANDATORY EXECUTION POLICY" in block:
+            return "\n".join(lines[:j]) + "\n" + section + "\n\n" + "\n".join(lines[j:])
+    # no guardrail block found — insert after any frontmatter (position i), else at the top
     return "\n".join(lines[:i]) + ("\n" if i else "") + section + "\n\n" + "\n".join(lines[i:])
 
 
@@ -158,30 +202,47 @@ def main():
               f"it does not create one")
         sys.exit(2)
 
+    # codex #3: preserve the file's own newline convention — read bytes, splice on LF, write back
+    # in the original style, or a mechanical backfill turns into whole-file CRLF churn.
+    raw = skill.read_bytes()
+    crlf = raw.count(b"\r\n") > 0 and raw.count(b"\r\n") >= raw.count(b"\n") // 2
+    try:
+        # kimi: errors="replace" would silently turn legacy-encoding bytes into U+FFFD and then
+        # WRITE THEM BACK — corrupting the file. A SKILL.md we cannot decode is a SKILL.md we
+        # refuse to edit.
+        current = raw.decode("utf-8").replace("\r\n", "\n")
+    except UnicodeDecodeError as _ue:
+        print(f"REFUSED: {skill} is not valid UTF-8 ({_ue}) — fix the encoding by hand; "
+              f"splicing would corrupt it")
+        sys.exit(2)
+
+    nb, ne, ordered = _marker_state(current)
+    if (nb or ne) and not (nb == 1 and ne == 1 and ordered):
+        print(f"REFUSED: malformed KI-MAP markers (BEGIN x{nb}, END x{ne}"
+              f"{', reversed' if nb == 1 and ne == 1 else ''}) — repair the file by hand; "
+              f"writing into it would duplicate sections or eat body text")
+        sys.exit(2)
+
     section = build_map(ki)
-    current = skill.read_text(errors="ignore")
 
     if a.check:
         if BEGIN not in current:
             print("STALE: no KI map section"); sys.exit(1)
         have = current[current.index(BEGIN):current.index(END) + len(END)]
-        # compare structure, not the date stamp
-        import re
-        strip = lambda t: re.sub(r"\*Projected \d{4}-\d{2}-\d{2}.*?\*", "", t, flags=re.S)
-        if strip(have) != strip(section):
+        if _strip_date(have) != _strip_date(section):
             print("STALE: map does not match the KI's current contents"); sys.exit(1)
         print("OK"); sys.exit(0)
 
     new = _splice(current, section)
     if new != current:
-        # collision-free backup, same discipline as the other projectors
         while True:
             b = skill.with_suffix(f".md.bak.{dt.datetime.now():%Y%m%dT%H%M%S_%f}")
             try:
-                b.touch(exist_ok=False); b.write_bytes(skill.read_bytes()); break
+                b.touch(exist_ok=False); b.write_bytes(raw); break
             except FileExistsError:
                 continue
-        skill.write_text(new)
+        out = new.replace("\n", "\r\n") if crlf else new
+        skill.write_bytes(out.encode("utf-8"))
         print(f"KI map written into {skill} ({section.count('| ')} rows)")
     else:
         print("KI map already current")

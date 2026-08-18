@@ -26,33 +26,17 @@ Modules:
     hybrid_hicpc_isimip     -- Framework §5.2 Route 2 hybrid forcing builder
 """
 
-# Submodules load on first use, matching the parent package. Importing one of
-# these should not require the dependencies of its siblings.
-
-import importlib as _importlib
-
-_SUBMODULES = (
-    "harmonize",
-    "delta_perturbation",
-    "warming_levels",
-    "direct_transient",
-    "qc",
-    "provenance",
-    "uncertainty",
-    "hybrid_hicpc_isimip",
+from ki_tools_common.climate_scenarios import (
+    harmonize,
+    delta_perturbation,
+    warming_levels,
+    direct_transient,
+    qc,
+    provenance,
+    uncertainty,
+    hybrid_hicpc_isimip,
 )
 
-
-def __getattr__(name):
-    if name in _SUBMODULES:
-        module = _importlib.import_module(f"{__name__}.{name}")
-        globals()[name] = module
-        return module
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-def __dir__():
-    return sorted(_SUBMODULES)
 __all__ = [
     "harmonize",
     "delta_perturbation",

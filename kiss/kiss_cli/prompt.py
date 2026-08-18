@@ -1,26 +1,27 @@
 """Composing the opening prompt that makes an agent use a KI *properly*.
 
-A KI is useless if the agent never reads it. The failure is silent: the agent
-writes its own script, gets units wrong, and reports success over garbage. This
-module encodes the prompt discipline that prevents that.
+The KI-usage contract itself is **not written here**. It comes from
+``ki_tools_common.harness.contract()`` — the neutral, spec-backed harness
+(KI_HARNESS_SPEC §2-§4) that every driver shares: the self-improve loop,
+GeoForge chat, ata-kdt, and this app. One contract, one place to fix it.
 
-The rules here are generalised from the HydroCraft deployment, which drives the
-same KI packages through Claude / Codex / Gemini / Kimi / Qwen CLIs. Four of
-them are load-bearing and none is obvious:
+That matters more than it sounds. An earlier version of this module
+*paraphrased* the mandatory execution policy from memory. The harness instead
+extracts the real block out of the KI's own SKILL.md, so the agent reads the
+words the KI actually ships rather than someone's summary of them — and when a
+KI tightens its policy, every driver picks it up without being edited.
 
-1. **Point at the KI, do not paste it.** SKILL.md files run to hundreds of
-   lines; injecting 127 of them is impossible and injecting one wastes the
-   budget the agent needs for work. Mandate reading it instead.
-2. **Inline only the silent-failure traps.** A wrong unit does not raise — it
-   produces plausible numbers that are wrong. Those specific traps go in the
-   prompt because by the time the agent would look them up, it has already
-   written the conversion.
-3. **Triplets before improvisation.** Every KI ships an error/cause/remedy
-   catalogue. An agent that debugs from first principles rewrites tools that
-   already work.
-4. **Headless turns end the process.** A one-shot `claude -p` exits when the
-   turn ends, so an agent that backgrounds a long job and stops kills its own
-   run — the completion notification arrives to a dead process.
+What this module still owns is the part that is specific to *this* app and
+absent from the shared contract:
+
+* where things live on this machine after ``kiss init`` relocated them
+* the silent-failure traps — wrong units that do not raise, they just return
+  plausible wrong numbers
+* the headless long-job rule, because our CLI driver is one-shot
+* output formatting, because the reply is rendered in a chat panel
+
+If the harness cannot be imported the prompt is still built, minus the shared
+contract, and says so rather than pretending it had it.
 """
 
 from __future__ import annotations
@@ -76,18 +77,37 @@ you. Ending your turn while a job you launched is still running KILLS the run.
   3. If that call times out you GET CONTROL BACK — repeat the loop, do not stop.
 """
 
-EXECUTION_POLICY = """[MANDATORY EXECUTION POLICY]
-You MUST run the actual model binary or package. If it fails to build, import
-or execute:
-  1. Search the KI's diagnostics for the error before doing anything else.
-  2. Read the model's own docs/ for expected formats and units.
-  3. Report the failure with full output.
+def _harness_contract(ki, *, execute: bool, python: str | None) -> tuple[str, str | None]:
+    """The shared KI-usage contract, or ('', reason) if it is unavailable."""
+    import os
 
-You MUST NOT substitute a simplified formula, a regression fit, or a hand-coded
-approximation for the real model. That produces scientifically invalid results
-and defeats the purpose of this package. If you cannot run the model, say so —
-a reported failure is worth more than a fabricated number.
-"""
+    try:
+        from ki_tools_common.harness import contract as _contract
+    except Exception as e:
+        return "", f"ki_tools_common.harness unavailable ({type(e).__name__}: {e})"
+
+    # The harness renders every tool command with a project interpreter, and it
+    # resolves that ONCE at import time:
+    #
+    #     PROJECT_PY = os.environ.get("HC_PROJECT_PYTHON", "<authoring machine>")
+    #
+    # so setting the environment variable here is a no-op — the module is
+    # already imported. Left unset it emits the authoring machine's python, and
+    # an agent dutifully copies a path that does not exist on this one. Rebind
+    # the module attribute for the duration of the call instead.
+    from ki_tools_common.harness import ki_harness as _kh
+
+    prev = getattr(_kh, "PROJECT_PY", None)
+    if python:
+        _kh.PROJECT_PY = str(python)
+    try:
+        return _contract(ki.root, execute=execute), None
+    except Exception as e:
+        # A KI with no SKILL.md raises on an execute contract by design.
+        return "", f"{type(e).__name__}: {e}"
+    finally:
+        if python and prev is not None:
+            _kh.PROJECT_PY = prev
 
 
 def _rel(p: Path | None, root: Path) -> str:
@@ -99,7 +119,8 @@ def _rel(p: Path | None, root: Path) -> str:
         return str(p)
 
 
-def compose(ki, cfg=None, *, task: str = "", headless: bool = True) -> str:
+def compose(ki, cfg=None, *, task: str = "", headless: bool = True,
+            execute: bool = True) -> str:
     """Build the opening prompt for an agent about to operate ``ki``."""
     meta = ki.meta or {}
     root = ki.root
@@ -129,22 +150,18 @@ def compose(ki, cfg=None, *, task: str = "", headless: bool = True) -> str:
     ]
     parts.append("[KNOWLEDGE INFRASTRUCTURE]\n" + "\n".join(kifiles) + "\n")
 
-    parts.append(
-        "[HOW TO USE IT — NOT OPTIONAL]\n"
-        f"1. READ {_rel(ki.skill, root)} BEFORE running anything. It carries the unit\n"
-        "   conventions, input formats and known traps for this model. The model\n"
-        "   will NOT warn you when units are wrong — the run completes and the\n"
-        "   results are silently incorrect.\n"
-        "2. USE THE KI'S OWN TOOLS. Validated operators live under this package\n"
-        "   (tools/, s1_*/, s2_*/ ...). NEVER write a custom script when one\n"
-        "   already exists — it has been checked against real cases and yours\n"
-        "   has not.\n"
-        f"3. WHEN SOMETHING BREAKS, search {_rel(ki.triplets, root)} FIRST:\n"
-        "     grep -i '<error keyword>' " + _rel(ki.triplets, root) + "\n"
-        "   Only debug from first principles if the catalogue has no match.\n"
-        "4. VERIFY with preflight before trusting any output:\n"
-        f"     python {_rel(ki.preflight, root)}\n"
-    )
+    # --- the shared KI-usage contract (not ours; see module docstring) -----
+    harness_text, why = _harness_contract(
+        ki, execute=execute, python=(cfg.python if cfg is not None else None))
+    if harness_text:
+        parts.append(harness_text.rstrip() + "\n")
+    else:
+        parts.append(
+            "[KI USAGE CONTRACT UNAVAILABLE]\n"
+            f"  {why}\n"
+            "  Falling back to the pointers above. READ SKILL.md before running\n"
+            "  anything, use the KI's own tools rather than writing your own, and\n"
+            "  search diagnostics/ before debugging from first principles.\n")
 
     # --- 3. silent-failure traps ------------------------------------------
     traps = SILENT_TRAPS.get(ki.name, [])
@@ -176,7 +193,6 @@ def compose(ki, cfg=None, *, task: str = "", headless: bool = True) -> str:
             f"  outputs    {cfg.roles.get('outputs')}\n"
         )
 
-    parts.append(EXECUTION_POLICY)
     if headless:
         parts.append(HEADLESS_LONG_JOB_RULE)
 

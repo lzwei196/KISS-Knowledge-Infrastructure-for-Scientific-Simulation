@@ -35,6 +35,11 @@ ki_tools_common/climate_scenarios/provenance.py
 ki_tools_common/climate_scenarios/qc.py
 ki_tools_common/climate_scenarios/uncertainty.py
 ki_tools_common/climate_scenarios/warming_levels.py
+ki_tools_common/harness/__init__.py
+ki_tools_common/harness/agent_spawn.py
+ki_tools_common/harness/ki_attention.py
+ki_tools_common/harness/ki_harness.py
+ki_tools_common/harness/ki_path.py
 ki_tools_common/terrain_ops/__init__.py
 ki_tools_common/terrain_ops/centerline.py
 ki_tools_common/terrain_ops/cross_sections.py

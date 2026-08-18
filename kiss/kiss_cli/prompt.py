@@ -208,3 +208,42 @@ def compose(ki, cfg=None, *, task: str = "", headless: bool = True,
         parts.append(f"[TASK]\n{task.strip()}\n")
 
     return "\n".join(parts)
+
+
+def compose_multi(kis, cfg=None, *, task: str = "", headless: bool = True) -> str:
+    """One task, several models: each toggled KI contributes its own contract.
+
+    The single-model prompt stays the default; this exists for the compare/
+    ensemble workflow, where the agent must treat every selected model as a
+    first-class participant rather than picking a favourite and narrating the
+    rest. Contracts are the same per-KI harness text as the single case, so a
+    model behaves identically whether toggled alone or with others.
+    """
+    if len(kis) == 1:
+        return compose(kis[0], cfg, task=task, headless=headless)
+
+    names = ", ".join(k.name for k in kis)
+    parts = [
+        f"You are operating {len(kis)} models through their Knowledge "
+        f"Infrastructure packages: {names}.",
+        "",
+        "[MULTI-MODEL RULES]",
+        "- Run EVERY selected model on the task; do not silently drop one.",
+        "- Keep each model inside its own KI contract below; never mix tools "
+        "across packages.",
+        "- Finish with a comparison table of the results, and say plainly if a "
+        "model could not run and why.",
+        "",
+    ]
+    for ki in kis:
+        parts.append(f"===== {ki.name} " + "=" * max(4, 60 - len(ki.name)))
+        contract, why = _harness_contract(
+            ki, execute=True, python=(cfg.python if cfg is not None else None))
+        parts.append(contract if contract else
+                     f"[contract unavailable: {why}] Read {ki.root}/SKILL.md first.")
+        parts.append("")
+    if headless:
+        parts.append(HEADLESS_LONG_JOB_RULE)
+    if task:
+        parts.append(f"[TASK]\n{task.strip()}")
+    return "\n".join(parts)

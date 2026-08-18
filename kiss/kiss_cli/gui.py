@@ -100,6 +100,31 @@ class Handler(BaseHTTPRequestHandler):
                     ],
             })
 
+        if route == "/api/status":
+            # User-facing state, never manifest jargon. "unverified" is a fact
+            # about my bookkeeping, not something a user can act on.
+            import json as _json
+            out = {}
+            for ki in self.catalog:
+                wd = self._workdir(ki)
+                sj = wd / "status.json"
+                man = self._manifest(ki)
+                if sj.exists():
+                    try:
+                        st = _json.loads(sj.read_text())
+                        out[ki.name] = {"state": "ready" if st.get("ok") else "attention",
+                                        "steps": st.get("steps", [])}
+                        continue
+                    except Exception:
+                        pass
+                if man.verified == "observed":
+                    out[ki.name] = {"state": "oneclick"}
+                elif man.verified == "manual" or (man.acquire and man.acquire.strategy == "manual"):
+                    out[ki.name] = {"state": "manual"}
+                else:
+                    out[ki.name] = {"state": "agent"}
+            return self._json(out)
+
         if route == "/api/models":
             out = []
             for ki in self.catalog:
@@ -211,10 +236,15 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- chat --------------------------------------------------------------
     def _stream_chat(self, req) -> None:
+        # "models": [..] is the task-first shape; "model": "X" stays accepted.
+        names = req.get("models") or ([req["model"]] if req.get("model") else [])
+        if not names:
+            return self._json({"error": "no model selected"}, 400)
         try:
-            ki = self._ki(req["model"])
+            kis = [self._ki(n) for n in names]
         except KeyError as e:
             return self._json({"error": str(e)}, 404)
+        ki = kis[0]
 
         # "cli:<name>" or "api:<name>"; bare names stay valid for the CLI so an
         # older client keeps working.
@@ -258,15 +288,20 @@ class Handler(BaseHTTPRequestHandler):
         if not (wd / paths.CONFIG_NAME).exists():
             (wd / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
 
-        # The agent must be able to read the KI itself, not just the workdir.
-        full = prompt.compose(ki, cfg, task=req.get("message", ""))
+        # The agent must be able to read the KIs themselves, not just the workdir.
+        # Prefer each model's materialised copy when it has been installed.
+        resolved = []
+        for k in kis:
+            live = (self.workroot / k.name.lower() / "ki")
+            resolved.append(type(k)(name=k.name, root=live) if live.exists() else k)
+        full = prompt.compose_multi(resolved, cfg, task=req.get("message", ""))
 
         self._open_stream()
         # cfg puts the agent inside the same relocated view the installer and
         # every simulation it launches will see. The prefixes must ALSO be
         # granted to the agent explicitly: the namespace makes them exist, the
         # CLI's own allowlist decides whether it may read them.
-        grants = [str(ki.root)] + paths.bound_prefixes(cfg)
+        grants = [str(k.root) for k in resolved] + paths.bound_prefixes(cfg)
 
         # Least privilege derived from what this KI declares, plus anything the
         # user has previously approved for this workdir.
@@ -346,6 +381,14 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
     step("[8/8] preflight", install.run_preflight(ki, cfg.python, cfg))
     written = handoff.write(ki, result, man, cfg, root)
     emit(f"  {'      agent handoff':<22} ok ({len(written)} files)\n\n")
+
+    # The UI's status chips read this back: the verifier's verdict, per step,
+    # persisted where the install happened.
+    import json as _json
+    (root / "status.json").write_text(_json.dumps({
+        "model": ki.name, "ok": result.ok,
+        "steps": [{"name": s.name, "ok": s.ok} for s in result.steps],
+    }), encoding="utf-8")
 
     if result.ok:
         emit(f"{ki.name} is ready.  {root}\n")

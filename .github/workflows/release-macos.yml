@@ -51,15 +51,23 @@ jobs:
           # The double-clickable application: same engine, its own window and
           # Dock icon. --windowed on macOS produces KISS.app; pywebview gives
           # it a native WKWebView instead of shipping a browser.
+          # Self-contained: the 127 KI packages, the shared library and the
+          # verified manifests travel INSIDE the app. One download, no sidecar
+          # tarball, no first-run network. The bundle is read-only, which is
+          # fine — installing a model materialises a copy into the workdir.
           pyinstaller --windowed --name KISS \
             --icon assets/logo.icns \
             --osx-bundle-identifier com.geoforge.kiss \
             --add-data "kiss/kiss_cli/web/app.html:kiss_cli/web" \
             --add-data "kiss/kiss_cli/web/logo.svg:kiss_cli/web" \
+            --add-data "models:models" \
+            --add-data "ki_tools_common:ki_tools_common" \
+            --add-data "kiss/manifests:kiss/manifests" \
             --paths kiss \
             kiss/kiss_entry.py
           # Windowed apps swallow stdout; smoke-test through the inner binary.
-          ./dist/KISS.app/Contents/MacOS/KISS --models models list | tail -2
+          # No --models flag: the point of the bundle is that it finds its own.
+          ./dist/KISS.app/Contents/MacOS/KISS list | tail -2
 
       - name: Smoke test against the real KI tree
         run: |

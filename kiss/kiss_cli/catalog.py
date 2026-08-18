@@ -181,6 +181,11 @@ class Catalog:
         here = Path(start or Path.cwd()).resolve()
         roots += [here, *here.parents]
         if getattr(sys, "frozen", False):
+            # Data bundled into the app (--add-data "models:models") lands at
+            # sys._MEIPASS — the first place a self-contained build should look.
+            mp = getattr(sys, "_MEIPASS", None)
+            if mp:
+                roots.append(Path(mp))
             exe = Path(sys.executable).resolve().parent
             roots += [exe, *exe.parents]
         roots.append(Path.home() / "kiss")

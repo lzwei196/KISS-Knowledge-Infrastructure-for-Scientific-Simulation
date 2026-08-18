@@ -143,5 +143,42 @@ def run_app(models_dir: Path | None, workroot: Path | None = None) -> int:
         return 0
 
     webview.create_window("KISS", url, width=1200, height=800, min_size=(800, 560))
-    webview.start()            # blocks until the window is closed
+    webview.start(_install_edit_menu)   # blocks until the window is closed
     return 0
+
+
+def _install_edit_menu(*_):
+    """Give the macOS app an Edit menu so Cmd+C/V/X/A work.
+
+    macOS dispatches key equivalents through the menu bar: no Edit menu with
+    the standard selectors means no copy or paste anywhere in the window —
+    which is exactly what the first real Mac session hit when trying to paste
+    a task into the composer. Wired to the responder-chain selectors (copy:,
+    paste:, ...) so the native WKWebView handles them; no-op off macOS.
+    """
+    import platform
+    if platform.system() != "Darwin":
+        return
+    try:
+        import AppKit
+    except ImportError:
+        return
+
+    app = AppKit.NSApplication.sharedApplication()
+    main = app.mainMenu()
+    if main is None:
+        main = AppKit.NSMenu.alloc().init()
+        app.setMainMenu_(main)
+    for i in range(main.numberOfItems()):
+        if str(main.itemAtIndex_(i).title()) == "Edit":
+            return                        # pywebview already provided one
+
+    edit = AppKit.NSMenu.alloc().initWithTitle_("Edit")
+    for title, sel, key in (("Undo", "undo:", "z"), ("Redo", "redo:", "Z"),
+                            ("Cut", "cut:", "x"), ("Copy", "copy:", "c"),
+                            ("Paste", "paste:", "v"), ("Select All", "selectAll:", "a")):
+        item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, sel, key)
+        edit.addItem_(item)
+    holder = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Edit", None, "")
+    holder.setSubmenu_(edit)
+    main.addItem_(holder)

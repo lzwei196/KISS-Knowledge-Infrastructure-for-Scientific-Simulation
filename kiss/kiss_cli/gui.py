@@ -100,6 +100,83 @@ class Handler(BaseHTTPRequestHandler):
                     ],
             })
 
+        if route.startswith("/api/selfcheck"):
+            # Step-by-step environment check, streaming one verdict at a time.
+            # Every claim is the output of actually running the thing — the
+            # login probe exists because "works in Terminal, not in the app"
+            # is invisible without the app itself running the CLI and showing
+            # the raw error.
+            from urllib.parse import parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            want = (q.get("provider") or [""])[0]
+            self._open_stream()
+            emit = lambda s: self._chunk(s + "\n")
+
+            emit("[1/4] Python 3 for model environments")
+            base = install.find_base_python()
+            if base:
+                emit(f"   OK  {base}")
+            else:
+                emit("   FAIL  none found. One-time fix:")
+                emit("         macOS: brew install python   |   or: xcode-select --install")
+
+            emit("[2/4] Agent CLIs on this machine")
+            avail = providers.available()
+            if avail:
+                for p in avail:
+                    emit(f"   OK  {p.label}  ({p.path()})")
+            else:
+                emit("   FAIL  none found — install one:")
+                for p in providers.PROVIDERS.values():
+                    if p.install:
+                        emit(f"         {p.label}: {p.install}")
+
+            emit("[3/4] API keys in the environment")
+            akeys = api.available()
+            if akeys:
+                for p in akeys:
+                    emit(f"   OK  {p.label} ({p.env_key} is set)")
+            else:
+                emit("   none set (fine if you use an agent CLI)")
+
+            emit("[4/4] Agent sign-in — running the agent for real")
+            kind, _, pname = want.partition(":")
+            if kind == "api" and pname in api.PROVIDERS:
+                p = api.PROVIDERS[pname]
+                emit(f"   {'OK  key present for ' + p.label if p.available() else 'FAIL  ' + p.env_key + ' not set — get one: ' + p.signup}")
+            else:
+                target = None
+                if pname:
+                    try:
+                        target = providers.get(pname)
+                    except KeyError:
+                        pass
+                target = target if (target and target.available()) else (avail[0] if avail else None)
+                if target is None:
+                    emit("   SKIP  no agent CLI to test")
+                else:
+                    emit(f"   probing {target.label} (a real one-line run; ~15s)…")
+                    import subprocess as _sp
+                    argv = target.build("Reply with exactly: OK")
+                    try:
+                        r = _sp.run(argv, capture_output=True, text=True, timeout=90,
+                                    errors="replace")
+                        tail = (r.stdout + r.stderr).strip()
+                        if r.returncode == 0 and ("OK" in r.stdout or '"text"' in r.stdout):
+                            emit(f"   OK  {target.label} answered — signed in and working")
+                        else:
+                            emit(f"   FAIL  {target.label} exited {r.returncode}. Raw output:")
+                            for ln in tail.splitlines()[-8:]:
+                                emit(f"         {ln[:160]}")
+                            emit("   Fix: open Terminal, run the CLI once interactively, sign in,")
+                            emit("        then relaunch KISS. If Terminal works but this fails,")
+                            emit("        copy the raw output above to the developer — that is the bug.")
+                    except _sp.TimeoutExpired:
+                        emit(f"   FAIL  {target.label} did not answer in 90s (auth prompt hanging?)")
+            emit("")
+            emit("done.")
+            return self._end_stream()
+
         if route == "/api/status":
             # User-facing state, never manifest jargon. "unverified" is a fact
             # about my bookkeeping, not something a user can act on.

@@ -244,101 +244,65 @@ def check_data(man: Manifest, cfg) -> Step:
     return Step("data", True, f"{len(man.data)} dataset(s) present")
 
 
+def find_base_python() -> str | None:
+    """A real Python interpreter to build venvs from.
+
+    Inside a PyInstaller app sys.executable is the app binary itself — asking
+    the venv module to build an environment from that symlinks venv/bin/python
+    at the KISS executable, and every later `pip install` detonates into a wall
+    of errors. That is exactly what the first Mac install attempt produced.
+    A frozen app must therefore find a real interpreter on the system.
+    """
+    import shutil
+    import sys
+
+    if os.environ.get("KISS_PYTHON"):
+        return os.environ["KISS_PYTHON"]
+    if not getattr(sys, "frozen", False):
+        return sys.executable
+    for name in ("python3.12", "python3.11", "python3.13", "python3.10", "python3"):
+        found = shutil.which(name)
+        if found:
+            rc, out = _run([found, "-c", "import venv, pip; print('ok')"])
+            if rc == 0 and "ok" in out:
+                return found
+    return None
+
+
 def ensure_python_env(cfg, base_python: str | None = None) -> Step:
     """Guarantee an interpreter that survives relocation.
 
-    The ``python_env`` role is itself a relocated path: the KIs expect an
-    interpreter at ``<server_root>/python_env`` and ``kiss`` binds the user's
-    ``python_env`` directory there. So the interpreter kiss *runs with* must
-    live inside that role, not outside it — otherwise the role bind replaces
-    the directory the interpreter came from and the sandbox reports an opaque
-    ``execvp ...: No such file or directory``.
-
-    Creating the venv at ``cfg.roles['python_env']`` makes the two agree: the
-    KI's hardcoded ``.../python_env/bin/python`` resolves to exactly the
-    interpreter that was used to install its dependencies.
+    The venv is created at cfg.roles['python_env'] so the KI's hardcoded
+    interpreter path resolves to the same environment its dependencies were
+    installed into. See find_base_python for why the frozen app must not use
+    sys.executable as the base.
     """
-    import venv as _venv
+    import subprocess as _sp
 
     target = Path(cfg.roles["python_env"])
     interpreter = target / "bin" / "python"
     if interpreter.exists():
-        cfg.python = str(interpreter)
-        return Step("python-env", True, f"using {interpreter}")
-
-    try:
-        target.mkdir(parents=True, exist_ok=True)
-        _venv.EnvBuilder(with_pip=True, symlinks=True).create(target)
-    except Exception as e:
-        return Step("python-env", False, f"could not create venv at {target}: {e}")
-
-    if not interpreter.exists():
-        return Step("python-env", False, f"venv created but no interpreter at {interpreter}")
-    cfg.python = str(interpreter)
-    return Step("python-env", True, f"created {interpreter}")
-
-
-def install_ki_tools_common(cfg, repo_root: Path) -> Step:
-    """Install the shared helper library the KIs import.
-
-    126 of the 127 packages do ``from ki_tools_common.<mod> import ...``. Without
-    it every one of their tools raises ImportError the moment it is called — and
-    crucially *after* preflight has already reported success, because preflight
-    checks the model binary rather than the KI's own Python helpers. A green
-    preflight followed by an ImportError is exactly the kind of late, confusing
-    failure this installer exists to prevent, so it is installed up front.
-    """
-    src = Path(repo_root) / "ki_tools_common"
-    if not src.is_dir():
-        return Step("ki-tools-common", False,
-                    f"not shipped in this checkout (expected {src})")
-
-    # Materialise the library the same way a KI is materialised. It was ported
-    # to placeholders like everything else, so installing straight from the repo
-    # source leaves defaults such as load_forcing's CMFD_DIR set to
-    # "KISSPATH_FORCING/..." — a path that cannot exist. The repo copy stays
-    # pristine; each workdir gets its own correctly-pathed install.
-    from . import port as _port
-
-    live = Path(cfg.roles.get("ki_tools_common") or (cfg.root / "ki_tools_common"))
-    mrep = _port.materialise(src, live, cfg)
-    if mrep.unresolved:
-        return Step("ki-tools-common", False,
-                    f"unresolved roles in ki_tools_common: "
-                    f"{', '.join(sorted(mrep.unresolved))}")
-    src = live
-
-    # Prefer the [all] extra: these are Earth-science models, so xarray,
-    # netCDF4 and geopandas get used sooner or later, and installing them now
-    # avoids a confusing mid-run failure. Fall back to the bare install if the
-    # extras cannot be built — since the submodules load lazily, the package is
-    # still importable and usable without them, and a module that needs a
-    # missing dependency says so when it is used.
-    cmds: list[str] = []
-    for spec in (f"{src}[all]", str(src)):
-        cmd = [cfg.python, "-m", "pip", "install", "--quiet", "-e", spec]
-        cmds.append(" ".join(cmd))
-        rc, out = _run(cmd)
+        rc, _ = _run([str(interpreter), "-c", "import sys; print(sys.version)"])
         if rc == 0:
-            break
-    else:
-        return Step("ki-tools-common", False, out.strip()[-400:], commands=cmds)
-    cmd = cmds  # for reporting below
+            cfg.python = str(interpreter)
+            return Step("python-env", True, f"using {interpreter}")
+        # A venv built from a frozen binary in an earlier version: unusable.
+        import shutil as _sh
+        _sh.rmtree(target, ignore_errors=True)
 
-    # Confirm the import resolves to the copy we just installed. A stale global
-    # ki_tools_common on the interpreter's path would otherwise satisfy the
-    # import and fail later with the wrong defaults.
-    rc2, out2 = _run([cfg.python, "-c",
-                      "import ki_tools_common as k, ki_tools_common.units; "
-                      "print(k.__file__)"])
-    if rc2 == 0 and str(live.resolve()) not in out2:
-        return Step("ki-tools-common", False,
-                    f"import resolves to {out2.strip()}, not the copy installed at "
-                    f"{live} — remove the other ki_tools_common from this interpreter")
-    if rc2 != 0:
-        return Step("ki-tools-common", False,
-                    f"pip install succeeded but import fails: {out2.strip()[-200:]}",
-                    commands=cmds)
-    extras = "with extras" if len(cmds) == 1 else "bare (extras unavailable)"
-    return Step("ki-tools-common", True, f"installed editable from {src}, {extras}",
-                commands=cmds)
+    base = base_python or find_base_python()
+    if base is None:
+        return Step(
+            "python-env", False,
+            "No Python 3 found on this machine, and the app cannot conjure one "
+            "from inside itself. One-time fix, then press Install again:\n"
+            "    macOS:  brew install python  (or: xcode-select --install)\n"
+            "    Linux:  sudo apt install python3-venv python3-pip")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    rc, out = _run([base, "-m", "venv", str(target)], timeout=300)
+    if rc != 0 or not interpreter.exists():
+        return Step("python-env", False,
+                    f"could not create a venv with {base}: {out.strip()[-300:]}")
+    cfg.python = str(interpreter)
+    return Step("python-env", True, f"created {interpreter} (from {base})")

@@ -191,10 +191,9 @@ def run(provider: Provider, prompt: str, cwd: Path,
             if ki_root is not None:
                 extra.append(Path(ki_root))
             argv = sandbox_command(cfg, argv, cwd=cwd, extra_binds=extra)
-        else:
-            yield ("[bubblewrap is not installed — the agent is running against "
-                   "raw host paths, so this KI\'s authoring paths will not "
-                   "resolve. Install bwrap, or set relocation in kiss.toml.]\n\n")
+        # No bwrap: nothing to say. The KI in use is a materialised copy with
+        # real paths, so there is nothing for a namespace to fix; warning about
+        # a missing Linux tool on a Mac was pure noise.
 
     try:
         proc = subprocess.Popen(

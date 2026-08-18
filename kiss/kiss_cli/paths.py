@@ -107,7 +107,14 @@ class KissConfig:
     @classmethod
     def default(cls, root: Path) -> "KissConfig":
         root = Path(root).expanduser().resolve()
+        # Relocation via mount namespace only exists on Linux with bubblewrap
+        # present. Defaulting to "sandbox" elsewhere made every macOS chat open
+        # with a warning about software that cannot be installed there — noise
+        # about an internal mechanism the user never chose. Materialised
+        # installs write real paths, so "none" is not a degradation.
+        reloc = "sandbox" if have_sandbox() else "none"
         return cls(
+            relocation=reloc,
             root=root,
             roles={
                 "binaries": root / "binaries",

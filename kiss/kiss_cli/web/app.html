@@ -154,6 +154,10 @@ textarea:focus{outline:none;border-color:var(--brand)}
   <div id="chat"></div>
   <div id="drawer"><header><h1>Setup — the code-based check</h1><span class="spacer"></span>
     <button onclick="document.getElementById('drawer').classList.remove('open')">✕</button></header>
+    <div style="padding:10px 16px;border-bottom:1px solid var(--line)">
+      <button id="envcheck" class="ghost" style="width:100%">Check my setup (step by step)</button>
+      <pre id="envout" style="display:none;max-height:260px;overflow-y:auto;font-size:11px;margin:8px 0 0"></pre>
+    </div>
     <div class="body"></div></div>
   <footer>
     <div class="chips" id="chips"></div>
@@ -296,6 +300,13 @@ $("#msg").addEventListener("keydown",e=>{
 });
 $("#msg").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";});
 $("#q").addEventListener("input",drawList);
+$("#envcheck").onclick=async()=>{
+  const box=$("#envout"); box.style.display="block"; box.textContent="running…\n";
+  const r=await fetch("/api/selfcheck?provider="+encodeURIComponent($("#prov").value||""));
+  const rd=r.body.getReader(), dec=new TextDecoder(); box.textContent="";
+  for(;;){const{done,value}=await rd.read(); if(done)break;
+    box.textContent+=dec.decode(value); box.scrollTop=box.scrollHeight;}
+};
 $("#theme").onclick=()=>{
   const d=document.body.hasAttribute("data-dark");
   d?document.body.removeAttribute("data-dark"):document.body.setAttribute("data-dark","");

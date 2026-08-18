@@ -120,6 +120,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <span id="mchips"></span>
     <button id="pickmodels">Models: <b id="mlabel">Auto</b></button>
     <select id="prov" title="Provider"></select>
+    <select id="llm" title="LLM model"></select>
   </header>
   <div id="chat"></div>
   <footer>
@@ -194,6 +195,15 @@ function drawSessions(){
     if(CUR&&CUR.id===b.dataset.id) CUR=null;
     await loadAll();});
 }
+function drawLLM(){
+  const p=PROV.providers.find(x=>x.name===$("#prov").value)||{};
+  const ms=p.models||[];
+  const cur=(CUR&&CUR.llm_model)||"";
+  $("#llm").innerHTML=ms.map(m=>
+    `<option value="${esc(m)}" ${m===(cur||p.default_model)?"selected":""}>${esc(m)}</option>`).join("")
+    ||'<option value="">(default)</option>';
+  $("#llm").style.display=ms.length?"":"none";
+}
 function drawProviders(){
   const sel=$("#prov");
   sel.innerHTML=PROV.providers.map(p=>
@@ -208,6 +218,7 @@ function drawProviders(){
     $("#chat").insertAdjacentHTML("beforebegin",
       `<div class="banner" id="gatebanner"><b>Nothing can run yet.</b> Add an API key in ⚙ Settings or install an agent CLI, then reload.</div>`);}
   $("#send").disabled=!PROV.any_usable;
+  drawLLM();
 }
 function drawEmpty(){
   $("#title").textContent="KISS";
@@ -251,7 +262,7 @@ async function send(){
   busy=true; $("#send").disabled=true; $("#msg").value="";
   await ensureSession();
   await fetch(`/api/session/${CUR.id}/update`,{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({provider:$("#prov").value})});
+    body:JSON.stringify({provider:$("#prov").value,llm_model:$("#llm").value})});
   addTurn("You","user").innerHTML=md(text);
   const out=addTurn("Agent","agent"); out.innerHTML='<span class="spin"></span>working…';
   let raw="";
@@ -274,6 +285,7 @@ async function send(){
 $("#send").onclick=send;
 $("#msg").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}});
 $("#msg").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";});
+$("#prov").addEventListener("change",drawLLM);
 $("#newsess").onclick=async()=>{CUR=null; drawEmpty(); await ensureSession(); openSession(CUR.id);};
 
 /* model picker */

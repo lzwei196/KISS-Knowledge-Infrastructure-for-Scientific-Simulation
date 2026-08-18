@@ -91,11 +91,13 @@ class Handler(BaseHTTPRequestHandler):
                 ok = p.available()
                 out.append({"name": f"cli:{p.name}", "label": p.label, "kind": "cli",
                             "usable": ok, "notes": p.notes,
+                            "models": p.models, "default_model": p.default_model,
                             "fix": None if ok else f"install: {p.install} — then {p.auth}"})
             for p in api.PROVIDERS.values():
                 ok = p.available()
                 out.append({"name": f"api:{p.name}", "label": p.label, "kind": "api",
                             "usable": ok, "notes": f"key: {p.env_key}",
+                            "models": list(p.models), "default_model": p.default_model,
                             "fix": None if ok else f"add {p.env_key} in Settings (get one: {p.signup})"})
             return self._json({"providers": out,
                                "default": settings.load().get("default_provider", ""),
@@ -323,7 +325,7 @@ class Handler(BaseHTTPRequestHandler):
             s = sessions.load(self.workroot, sid)
             if not s:
                 return self._json({"error": "no such session"}, 404)
-            for k in ("models", "provider", "title"):
+            for k in ("models", "provider", "title", "llm_model"):
                 if k in req:
                     s[k] = req[k]
             sessions.save(self.workroot, s)
@@ -401,6 +403,7 @@ class Handler(BaseHTTPRequestHandler):
 
         history = sessions.transcript(s)
         want = s.get("provider") or settings.load().get("default_provider") or ""
+        llm = s.get("llm_model") or None
         names = s.get("models") or []
 
         # Collect the streamed reply so the transcript survives the turn.
@@ -413,9 +416,9 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             if names:
-                self._chat_with_models(names, want, history + "\nUSER: " + text, out)
+                self._chat_with_models(names, want, history + "\nUSER: " + text, out, llm)
             else:
-                self._chat_auto(want, history + "\nUSER: " + text, out)
+                self._chat_auto(want, history + "\nUSER: " + text, out, llm)
         finally:
             reply = "".join(buf).strip()
             if reply:
@@ -424,7 +427,7 @@ class Handler(BaseHTTPRequestHandler):
                 sessions.save(self.workroot, s)
             self._end_stream()
 
-    def _chat_auto(self, want: str, task: str, out) -> None:
+    def _chat_auto(self, want: str, task: str, out, llm=None) -> None:
         """No models pinned: hand the agent the catalogue and let it route."""
         system = sessions.catalogue_block(self.catalog) + "\n\n" + sessions.AUTO_RULES
         full = (system
@@ -442,7 +445,7 @@ class Handler(BaseHTTPRequestHandler):
             cfg = paths.KissConfig.default(wd)
             # api tools need a KI root; in auto mode grant the whole library
             ki = type(next(iter(self.catalog)))(name="library", root=self.catalog.models_dir)
-            for piece in api.run(prov, ki, cfg, system, task):
+            for piece in api.run(prov, ki, cfg, system, task, model=llm):
                 if not out(piece):
                     break
             return
@@ -461,11 +464,11 @@ class Handler(BaseHTTPRequestHandler):
             (wd / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
         for piece in providers.run(prov, full, wd,
                                    extra_dirs=[str(self.catalog.models_dir)],
-                                   cfg=None):
+                                   cfg=None, model=llm):
             if not out(piece):
                 break
 
-    def _chat_with_models(self, names, want, task, out) -> None:
+    def _chat_with_models(self, names, want, task, out, llm=None) -> None:
         """Pinned models: same path the toggle flow used."""
         try:
             kis = [self._ki(n) for n in names]
@@ -487,7 +490,7 @@ class Handler(BaseHTTPRequestHandler):
             live = wd / "ki"
             run_ki = type(ki)(name=ki.name, root=live) if live.exists() else ki
             system = prompt.compose(run_ki, cfg, headless=False)
-            for piece in api.run(prov, run_ki, cfg, system, task):
+            for piece in api.run(prov, run_ki, cfg, system, task, model=llm):
                 if not out(piece):
                     break
             return
@@ -509,7 +512,7 @@ class Handler(BaseHTTPRequestHandler):
         grants = [str(k.root) for k in resolved] + paths.bound_prefixes(cfg)
         pol = policy.Policy.derive(ki, self._manifest(ki), cfg)
         for piece in providers.run(prov, full, wd, extra_dirs=grants,
-                                   cfg=cfg, ki_root=ki.root, pol=pol):
+                                   cfg=cfg, ki_root=ki.root, pol=pol, model=llm):
             if not out(piece):
                 break
 

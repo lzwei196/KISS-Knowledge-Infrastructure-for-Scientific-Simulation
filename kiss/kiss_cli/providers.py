@@ -39,6 +39,12 @@ class Provider:
     env: dict[str, str] = field(default_factory=dict)
     #: name of the policy mapper in kiss_cli.policy for this CLI
     policy_map: str = "coarse_args"
+    #: model names this CLI accepts (canonical list mirrored from the
+    #: HydroCraft backend, which probes the real CLIs), and the argv flag that
+    #: selects one. Empty flag = CLI has no model selection.
+    models: list[str] = field(default_factory=list)
+    model_flag: str = "--model"
+    default_model: str = ""
     #: how a user installs this CLI, shown when none is present. Naming the
     #: providers without saying how to get them leaves a dead end on the one
     #: screen where the user cannot do anything else.
@@ -51,10 +57,13 @@ class Provider:
     def path(self) -> str | None:
         return shutil.which(self.binary)
 
-    def build(self, prompt: str, *, extra_dirs: list[str] | None = None) -> list[str]:
+    def build(self, prompt: str, *, extra_dirs: list[str] | None = None,
+              model: str | None = None) -> list[str]:
         out: list[str] = []
         for tok in self.argv:
             out.append(prompt if tok == "{prompt}" else tok)
+        if model and self.model_flag:
+            out += [self.model_flag, model]
         for d in extra_dirs or []:
             out += ["--add-dir", d]
         return [self.path() or self.binary] + out[1:] if out and out[0] == self.binary else out
@@ -64,32 +73,32 @@ class Provider:
 #: in production against these same KI packages.
 PROVIDERS: dict[str, Provider] = {
     "claude": Provider(
-        name="claude", policy_map="claude_args", install="npm install -g @anthropic-ai/claude-code", auth="run `claude` once and sign in", binary="claude", label="Claude Code",
+        name="claude", models=["sonnet", "opus", "haiku", "claude-opus-5", "claude-sonnet-5"], default_model="sonnet",  policy_map="claude_args", install="npm install -g @anthropic-ai/claude-code", auth="run `claude` once and sign in", binary="claude", label="Claude Code",
         argv=["claude", "-p", "{prompt}", "--output-format", "stream-json", "--verbose"],
         output="stream-json",
         notes="Reads CLAUDE.md from the working directory automatically.",
     ),
     "codex": Provider(
-        name="codex", policy_map="codex_args", install="npm install -g @openai/codex", auth="run `codex` once and sign in", binary="codex", label="OpenAI Codex",
+        name="codex", models=["gpt-5.5", "gpt-5.6-sol"], model_flag="-m", default_model="gpt-5.5",  policy_map="codex_args", install="npm install -g @openai/codex", auth="run `codex` once and sign in", binary="codex", label="OpenAI Codex",
         argv=["codex", "exec", "{prompt}"],
         output="text", stdout_only=True,
         notes=("Reads AGENTS.md. Since 0.144 the reply is on STDOUT and chrome on "
                "STDERR — parse stdout only. Never wrap in `timeout`."),
     ),
     "gemini": Provider(
-        name="gemini", install="npm install -g @google/gemini-cli", auth="run `gemini` once and sign in", binary="gemini", label="Gemini CLI",
+        name="gemini", models=["gemini-3-pro", "gemini-3-flash", "gemini-2.5-pro", "gemini-2.5-flash"], default_model="gemini-3-flash",  install="npm install -g @google/gemini-cli", auth="run `gemini` once and sign in", binary="gemini", label="Gemini CLI",
         argv=["gemini", "-p", "{prompt}", "--output-format", "stream-json", "--yolo"],
         output="stream-json",
         notes="Reads ~/.gemini/GEMINI.md (global), not a project file.",
     ),
     "kimi": Provider(
-        name="kimi", install="see moonshot's Kimi Code install guide", auth="run `kimi` once and sign in", binary="kimi", label="Kimi Code",
+        name="kimi", models=["kimi-for-coding", "kimi-for-coding-highspeed", "k3", "k3-256k"], default_model="kimi-for-coding",  install="see moonshot's Kimi Code install guide", auth="run `kimi` once and sign in", binary="kimi", label="Kimi Code",
         argv=["kimi", "-p", "{prompt}", "--output-format", "stream-json", "--yolo"],
         output="stream-json",
         notes="`--print` was removed upstream; prompt mode is just -p.",
     ),
     "qwen": Provider(
-        name="qwen", install="npm install -g @qwen-code/qwen-code", auth="run `qwen` once and sign in", binary="qwen", label="Qwen Code",
+        name="qwen", models=["qwen3-coder", "qwen3-coder-plus", "qwen-coder-plus"], default_model="qwen3-coder",  install="npm install -g @qwen-code/qwen-code", auth="run `qwen` once and sign in", binary="qwen", label="Qwen Code",
         argv=["qwen", "{prompt}", "--output-format", "stream-json",
               "--approval-mode", "yolo"],
         output="stream-json",
@@ -153,6 +162,7 @@ def _text_from_stream_json(line: str) -> str | None:
 def run(provider: Provider, prompt: str, cwd: Path,
         *, extra_dirs: list[str] | None = None,
         cfg=None, ki_root: Path | None = None, pol=None,
+        model: str | None = None,
         timeout: int | None = None) -> Iterator[str]:
     """Spawn the CLI and yield displayable text as it arrives.
 
@@ -170,7 +180,7 @@ def run(provider: Provider, prompt: str, cwd: Path,
         yield f"[{provider.label} is not installed — `{provider.binary}` not on PATH]"
         return
 
-    argv = provider.build(prompt, extra_dirs=extra_dirs)
+    argv = provider.build(prompt, extra_dirs=extra_dirs, model=model)
     env = {**os.environ, **provider.env}
 
     # Least privilege, mapped onto whatever this CLI can actually enforce.

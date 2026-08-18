@@ -1,18 +1,27 @@
-kiss — install and drive the 127 KISS model KIs from a local app.
+kiss — install and drive the 127 KISS model KIs from a desktop app.
 
-**macOS**: download the tarball for your chip, then:
+## The app (recommended)
 
-    tar xzf kiss-macos-arm64.tar.gz         # Apple Silicon (M1/M2/M3/M4)
-    tar xzf kiss-macos-x86_64.tar.gz        # Intel
-    xattr -d com.apple.quarantine kiss-macos-*   # unsigned binary; macOS quarantines downloads
-    tar xzf kiss-ki-packages.tar.gz         # the 127 KI packages
-    ./kiss-macos-arm64 --models models gui
+Download **KISS-macos-arm64.app.zip** (Apple Silicon) or
+**KISS-macos-x86_64.app.zip** (Intel), plus **kiss-ki-packages.tar.gz**:
 
-Then pick a model, install it, and chat — using an agent CLI you already have
-(claude / codex / gemini / kimi / qwen) or an API key (ANTHROPIC_API_KEY /
-DEEPSEEK_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY).
+    unzip KISS-macos-arm64.app.zip
+    tar xzf kiss-ki-packages.tar.gz          # models/ next to KISS.app
+    xattr -dr com.apple.quarantine KISS.app  # unsigned; macOS quarantines downloads
+    open KISS.app
 
-Linux users: clone the repo and `pip install -e kiss/`.
+KISS opens in its own window with a Dock icon — no terminal, no browser.
 
-Path-relocation sandboxing (bubblewrap) is Linux-only; on macOS the app runs
-without it — installs write real paths, so nothing depends on it.
+## The CLI
+
+`kiss-macos-<arch>.tar.gz` is the same engine as a terminal command:
+`./kiss-macos-arm64 gui` (browser UI), plus `list / info / doctor / init /
+recipe` for scripting.
+
+## Talking to models
+
+Chat uses an agent CLI you already have (claude / codex / gemini / kimi /
+qwen) or an API key (ANTHROPIC_API_KEY / DEEPSEEK_API_KEY / OPENAI_API_KEY /
+OPENROUTER_API_KEY). The app lists your options if it finds neither.
+
+Linux: clone the repo and `pip install -e kiss/`.

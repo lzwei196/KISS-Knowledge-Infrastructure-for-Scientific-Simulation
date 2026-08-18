@@ -226,6 +226,11 @@ def cmd_init(args) -> int:
     return 0 if result.ok else 2
 
 
+def cmd_app(args) -> int:
+    from . import app as _app
+    return _app.run_app(args.models, workroot=args.workroot)
+
+
 def cmd_gui(args) -> int:
     return gui.serve(args.models, port=args.port, open_browser=not args.no_browser,
                      workroot=args.workroot, host=args.host)
@@ -300,6 +305,10 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--relocation", default="sandbox", choices=("sandbox", "port", "symlink"))
     q.set_defaults(fn=cmd_init)
 
+    q = sub.add_parser("app", help="open KISS in its own native window (default when launched bare)")
+    q.add_argument("-w", "--workroot", type=Path)
+    q.set_defaults(fn=cmd_app)
+
     q = sub.add_parser("gui", help="browse and install through a local web UI")
     q.add_argument("-p", "--port", type=int, default=8765)
     q.add_argument("--host", default="127.0.0.1",
@@ -353,7 +362,7 @@ def main(argv: list[str] | None = None) -> int:
     # double-clicking the binary and getting `error: the following arguments
     # are required: cmd` — correct for a CLI, wrong for a desktop app.
     if not argv:
-        argv = ["gui"]
+        argv = ["app"]
     args = build_parser().parse_args(argv)
     if args.cmd == "run":
         _rescue_run_options(args)

@@ -2,19 +2,13 @@
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KISS</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxODgiIGhlaWdodD0iMTgwIiB2aWV3Qm94PSIwIDAgMTg4IDE4MCI+CiAgPHRpdGxlPkNvbmNlbnRyaWMgdGFyZ2V0IGljb248L3RpdGxlPgogIDxkZXNjPlZlY3RvciByZWNvbnN0cnVjdGlvbiBvZiBhIGRhcmsgY2lyY3VsYXIgdGFyZ2V0IHdpdGggdGhyZWUgbGlnaHQgY29uY2VudHJpYyByaW5ncyBhbmQgYSBibHVlIGNlbnRlci48L2Rlc2M+CiAgPGNpcmNsZSBjeD0iOTAuOCIgY3k9Ijg3LjIiIHI9IjgzLjIiIGZpbGw9IiMxMTEyMTUiLz4KICA8ZyBmaWxsPSJub25lIiBzdHJva2U9IiNFRUYwRjIiIHN0cm9rZS13aWR0aD0iMy42IiBzdHJva2UtbGluZWNhcD0icm91bmQiPgogICAgPGNpcmNsZSBjeD0iOTAuOCIgY3k9Ijg3LjIiIHI9IjE3LjIiLz4KICAgIDxjaXJjbGUgY3g9IjkwLjgiIGN5PSI4Ny4yIiByPSIyOS44Ii8+CiAgICA8Y2lyY2xlIGN4PSI5MC44IiBjeT0iODcuMiIgcj0iNDIuMCIvPgogIDwvZz4KICA8Y2lyY2xlIGN4PSI5MC44IiBjeT0iODcuMiIgcj0iOC4yIiBmaWxsPSIjNDE2RkQ4IiBvcGFjaXR5PSIwLjE2Ii8+CiAgPGNpcmNsZSBjeD0iOTAuOCIgY3k9Ijg3LjIiIHI9IjYuMCIgZmlsbD0iIzQxNkZEOCIvPgo8L3N2Zz4K">
 <style>
-/* Palette follows the DeepSeek Harness design platform: a neutral-bluish
-   ramp 00->1000 plus one brand blue, hairline borders at 10% black, 16px
-   radii on surfaces and 14px/22px body type. Values are the published token
-   values, re-declared here because this page ships no build step. */
+/* Sessions-first shell. Palette follows the DeepSeek Harness design platform:
+   neutral-bluish ramp, one brand blue, hairline borders, 14/22 body type. */
 :root{
-  --n00:#fff; --n50:#f9fafb; --n60:#f5f6f7; --n75:#f1f3f5; --n100:#ebeef2;
-  --n150:#e9ecf2; --n200:#e1e5ee; --n300:#cfd3d6; --n400:#adb2b8; --n500:#979da6;
-  --n600:#81858c; --n700:#61666b; --n750:#43454a; --n800:#353638; --n850:#2c2c2e;
-  --n875:#232324; --n900:#1b1b1c; --n1000:#0f1115;
+  --n00:#fff; --n60:#f5f6f7; --n100:#ebeef2; --n400:#adb2b8; --n600:#81858c;
+  --n700:#61666b; --n850:#2c2c2e; --n875:#232324; --n900:#1b1b1c; --n1000:#0f1115;
   --brand:#4176e6; --brand-400:#679efe; --brand-50:#edf3fe;
-
   --bg:var(--n00); --surface:var(--n60); --raised:var(--n00);
   --fg:var(--n1000); --fg-2:var(--n700); --fg-3:var(--n400);
   --line:rgba(0,0,0,.1); --line-1:rgba(0,0,0,.04);
@@ -33,335 +27,279 @@ body[data-dark]{
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--fg);
   font:14px/22px ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  display:grid;grid-template-columns:300px minmax(0,1fr)}
-@media(max-width:820px){body{grid-template-columns:1fr;grid-template-rows:auto 1fr}}
-
-/* ---- sidebar ---- */
+  display:grid;grid-template-columns:270px minmax(0,1fr)}
+@media(max-width:760px){body{grid-template-columns:1fr}aside{display:none}}
 aside{background:var(--surface);border-right:1px solid var(--line);
   display:flex;flex-direction:column;min-height:0}
-.brand{display:flex;align-items:center;gap:8px;padding:16px;font-weight:600}
-.brand b{font-size:15px}
-.brand span{color:var(--fg-3);font-weight:400;font-size:12px}
-.search{padding:0 12px 10px}
-.search input{width:100%;padding:8px 12px;border:1px solid var(--line);
-  border-radius:10px;background:var(--raised);color:var(--fg);font:inherit}
-.search input:focus{outline:none;border-color:var(--brand)}
-.list{flex:1;overflow-y:auto;padding:0 8px 12px;min-height:0}
-.item{padding:9px 10px;border-radius:10px;cursor:pointer;display:flex;
-  flex-direction:column;gap:2px}
-.item:hover{background:var(--hover)}
-.item.sel{background:var(--active)}
-.item .nm{font-weight:600;display:flex;align-items:center;gap:6px}
-.item .sub{color:var(--fg-3);font-size:12px;line-height:16px;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.count{padding:8px 16px;color:var(--fg-3);font-size:12px;border-top:1px solid var(--line-1)}
-.dot{width:6px;height:6px;border-radius:99px;flex:0 0 auto}
-.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.block{background:var(--block)}
-
-/* ---- main ---- */
+.brand{display:flex;align-items:center;gap:8px;padding:14px 14px 10px;font-weight:600}
+.newbtn{margin:0 12px 10px;padding:8px 12px;border-radius:10px;border:1px solid var(--brand);
+  background:var(--brand);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+.slist{flex:1;overflow-y:auto;padding:0 8px;min-height:0}
+.sess{padding:8px 10px;border-radius:10px;cursor:pointer;display:flex;flex-direction:column;gap:1px}
+.sess:hover{background:var(--hover)}
+.sess.sel{background:var(--active)}
+.sess .t{font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sess .m{color:var(--fg-3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sess .del{display:none;color:var(--fg-3);border:0;background:none;cursor:pointer;float:right}
+.sess:hover .del{display:inline}
+.sidefoot{border-top:1px solid var(--line-1);padding:10px 12px;display:flex;gap:8px}
+.sidefoot button,.sidefoot a{flex:1;text-align:center;padding:7px 8px;border-radius:9px;
+  border:1px solid var(--line);background:var(--raised);color:var(--fg);font:inherit;
+  font-size:12.5px;cursor:pointer;text-decoration:none}
 main{display:flex;flex-direction:column;min-height:0;min-width:0}
-header{display:flex;align-items:center;gap:10px;padding:12px 20px;
-  border-bottom:1px solid var(--line);flex-wrap:wrap}
-header h1{font-size:15px;margin:0;font-weight:600}
-header .meta{color:var(--fg-3);font-size:12px}
-.spacer{flex:1}
-select,button{font:inherit;border-radius:10px;border:1px solid var(--line);
-  background:var(--raised);color:var(--fg);padding:6px 11px;cursor:pointer}
-select:focus,button:focus{outline:none;border-color:var(--brand)}
+header{display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:14.5px;margin:0;font-weight:600;flex:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+select,button{font:inherit;border-radius:9px;border:1px solid var(--line);
+  background:var(--raised);color:var(--fg);padding:6px 10px;cursor:pointer}
 button.primary{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
 button:disabled{opacity:.45;cursor:not-allowed}
-.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px;
-  line-height:18px;font-weight:600;border:1px solid}
-.pill.ok{color:var(--ok);border-color:var(--ok)}
-.pill.warn{color:var(--warn);border-color:var(--warn)}
-.pill.block{color:var(--block);border-color:var(--block)}
-
-#chat{flex:1;overflow-y:auto;padding:22px 20px;min-height:0}
-.turn{max-width:820px;margin:0 auto 18px}
-.who{font-size:12px;color:var(--fg-3);margin-bottom:5px}
-.bubble{border-radius:16px;padding:12px 15px;border:1px solid var(--line-1)}
+.mchip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:99px;
+  border:1px solid var(--line);background:var(--surface);font-size:12px}
+.mchip.auto{border-style:dashed;color:var(--fg-2)}
+#chat{flex:1;overflow-y:auto;padding:20px 18px;min-height:0}
+.turn{max-width:800px;margin:0 auto 16px}
+.who{font-size:11.5px;color:var(--fg-3);margin-bottom:4px}
+.bubble{border-radius:14px;padding:11px 14px;border:1px solid var(--line-1)}
 .user .bubble{background:var(--brand-50);border-color:transparent}
 .agent .bubble{background:var(--surface)}
-.bubble pre{background:var(--bg);border:1px solid var(--line);border-radius:10px;
-  padding:10px;overflow-x:auto;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
-  white-space:pre-wrap;word-break:break-word;margin:8px 0}
-.bubble code{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
-  background:var(--bg);border:1px solid var(--line-1);border-radius:5px;padding:1px 5px}
+.bubble pre{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;
+  overflow-x:auto;font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word;margin:7px 0}
+.bubble code{font:12px/1.4 ui-monospace,Menlo,monospace;background:var(--bg);
+  border:1px solid var(--line-1);border-radius:5px;padding:1px 5px}
 .bubble pre code{border:0;background:none;padding:0}
-.bubble h2,.bubble h3{font-size:14px;margin:12px 0 4px}
-.bubble hr{border:0;border-top:1px solid var(--line);margin:12px 0}
-.bubble p{margin:6px 0}
-.empty{max-width:820px;margin:8vh auto;text-align:center;color:var(--fg-3)}
-.empty h2{font-size:18px;color:var(--fg);margin:0 0 6px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
-  gap:10px;margin-top:22px;text-align:left}
-.card{border:1px solid var(--line);border-radius:16px;padding:13px 15px;cursor:pointer;background:var(--raised)}
-.card:hover{background:var(--hover)}
-.card b{display:block;margin-bottom:3px;font-size:13px}
-.card span{color:var(--fg-3);font-size:12px}
-
-footer{border-top:1px solid var(--line);padding:12px 20px}
-.composer{max-width:820px;margin:0 auto;display:flex;gap:9px;align-items:flex-end}
-textarea{flex:1;resize:none;min-height:44px;max-height:190px;padding:11px 14px;
-  border:1px solid var(--line);border-radius:14px;background:var(--raised);
-  color:var(--fg);font:inherit}
+.bubble h3{font-size:14px;margin:10px 0 4px}
+.bubble hr{border:0;border-top:1px solid var(--line);margin:10px 0}
+.bubble p{margin:5px 0}
+.empty{max-width:640px;margin:9vh auto;text-align:center;color:var(--fg-3)}
+.empty h2{font-size:17px;color:var(--fg);margin:0 0 6px}
+footer{border-top:1px solid var(--line);padding:11px 18px}
+.composer{max-width:800px;margin:0 auto;display:flex;gap:8px;align-items:flex-end}
+textarea{flex:1;resize:none;min-height:42px;max-height:180px;padding:10px 13px;
+  border:1px solid var(--line);border-radius:13px;background:var(--raised);color:var(--fg);font:inherit}
 textarea:focus{outline:none;border-color:var(--brand)}
-.hint{max-width:820px;margin:7px auto 0;color:var(--fg-3);font-size:11px}
+.hint{max-width:800px;margin:6px auto 0;color:var(--fg-3);font-size:11px}
+.banner{max-width:800px;margin:10px auto;border:1px solid var(--warn);color:var(--warn);
+  border-radius:10px;padding:8px 12px;font-size:13px}
+#modal,#mpick{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;
+  align-items:center;justify-content:center;z-index:20}
+#modal.open,#mpick.open{display:flex}
+.card2{background:var(--bg);border:1px solid var(--line);border-radius:16px;
+  width:min(500px,92vw);max-height:86vh;overflow-y:auto;padding:18px 20px}
+.card2 h2{font-size:15px;margin:0 0 12px}
+.card2 label{display:block;font-size:12px;color:var(--fg-2);margin:10px 0 4px}
+.card2 input,.card2 select{width:100%;padding:7px 10px;border:1px solid var(--line);
+  border-radius:8px;background:var(--raised);color:var(--fg);font:inherit}
+.pickrow{display:flex;align-items:center;gap:9px;padding:6px 4px;border-radius:8px;cursor:pointer}
+.pickrow:hover{background:var(--hover)}
+.pickrow .tick{width:15px;height:15px;border:1.5px solid var(--fg-3);border-radius:5px;
+  display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;flex:0 0 auto}
+.pickrow.on .tick{background:var(--brand);border-color:var(--brand)}
+.pickrow.on .tick::after{content:"✓"}
+.dot{width:7px;height:7px;border-radius:99px;flex:0 0 auto}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.block{background:var(--block)}
 .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);
   border-top-color:var(--brand);border-radius:99px;animation:s .7s linear infinite;
   vertical-align:-1px;margin-right:6px}
 @keyframes s{to{transform:rotate(360deg)}}
-#modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;
-  align-items:center;justify-content:center;z-index:20}
-#modal.open{display:flex}
-#modal .card2{background:var(--bg);border:1px solid var(--line);border-radius:16px;
-  width:min(480px,92vw);max-height:86vh;overflow-y:auto;padding:18px 20px}
-#modal h2{font-size:15px;margin:0 0 12px}
-#modal label{display:block;font-size:12px;color:var(--fg-2);margin:10px 0 4px}
-#modal input,#modal select{width:100%;padding:7px 10px;border:1px solid var(--line);
-  border-radius:8px;background:var(--raised);color:var(--fg);font:inherit}
-.banner{max-width:820px;margin:10px auto;border:1px solid var(--warn);color:var(--warn);
-  border-radius:10px;padding:9px 13px;font-size:13px}
-select option:disabled{color:var(--fg-3)}
-/* task-first additions */
-.item{flex-direction:row;align-items:center;gap:9px}
-.item .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.tick{width:16px;height:16px;border:1.5px solid var(--fg-3);border-radius:5px;flex:0 0 auto;
-  display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff}
-.item.on .tick{background:var(--brand);border-color:var(--brand)}
-.item.on .tick::after{content:"✓"}
-.chips{max-width:820px;margin:0 auto 8px;display:flex;gap:6px;flex-wrap:wrap}
-.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;
-  border:1px solid var(--line);background:var(--surface);font-size:12px}
-.chip .dot{width:7px;height:7px}
-.chip button{border:0;background:none;color:var(--fg-3);padding:0;font-size:14px;cursor:pointer}
-#drawer{position:fixed;top:0;right:-420px;width:400px;height:100vh;background:var(--surface);
-  border-left:1px solid var(--line);transition:right .2s;z-index:10;display:flex;flex-direction:column}
-#drawer.open{right:0}
-#drawer header{border-bottom:1px solid var(--line)}
-#drawer .body{flex:1;overflow-y:auto;padding:14px 16px}
-.setup-model{border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:10px;background:var(--raised)}
-.setup-model .row{display:flex;align-items:center;gap:8px}
-.setup-model .nm{font-weight:600;flex:1}
-.setup-model pre{max-height:220px;overflow-y:auto;margin:8px 0 0;font-size:11px}
-.stepline{display:flex;gap:7px;align-items:center;font-size:12px;padding:1px 0}
-.stepline.bad{color:var(--block)}
-.stepline.good{color:var(--ok)}
 </style></head>
 <body>
 <aside>
-  <div class="brand"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="19" viewBox="0 0 188 180"> <title>Concentric target icon</title> <desc>Vector reconstruction of a dark circular target with three light concentric rings and a blue center.</desc> <circle cx="90.8" cy="87.2" r="83.2" fill="#111215"/> <g fill="none" stroke="#EEF0F2" stroke-width="3.6" stroke-linecap="round"> <circle cx="90.8" cy="87.2" r="17.2"/> <circle cx="90.8" cy="87.2" r="29.8"/> <circle cx="90.8" cy="87.2" r="42.0"/> </g> <circle cx="90.8" cy="87.2" r="8.2" fill="#416FD8" opacity="0.16"/> <circle cx="90.8" cy="87.2" r="6.0" fill="#416FD8"/> </svg><b>KISS</b><span id="nprov"></span></div>
-  <div class="search"><input id="q" type="search" placeholder="Search models…" autocomplete="off"></div>
-  <div class="list" id="list"></div>
-  <div class="count" id="count"></div>
+  <div class="brand"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="19" viewBox="0 0 188 180"><circle cx="90.8" cy="87.2" r="83.2" fill="#111215"/><g fill="none" stroke="#EEF0F2" stroke-width="3.6"><circle cx="90.8" cy="87.2" r="17.2"/><circle cx="90.8" cy="87.2" r="29.8"/><circle cx="90.8" cy="87.2" r="42.0"/></g><circle cx="90.8" cy="87.2" r="6.0" fill="#416FD8"/></svg><b>KISS</b><span id="nprov" style="color:var(--fg-3);font-weight:400;font-size:11.5px"></span></div>
+  <button class="newbtn" id="newsess">+ New session</button>
+  <div class="slist" id="slist"></div>
+  <div class="sidefoot">
+    <a href="/library">⛁ KI Library</a>
+    <button id="settings">⚙ Settings</button>
+    <button id="theme" title="theme" style="flex:0 0 auto">◐</button>
+  </div>
 </aside>
 <main>
   <header>
-    <h1 id="title">Select a model</h1>
-    <span class="meta" id="sub"></span>
-    <span class="spacer"></span>
-    <select id="prov" title="Agent CLI"></select>
-    <button id="settings" title="Settings">⚙</button>
-    <button id="theme" title="Toggle theme">◐</button>
+    <h1 id="title">KISS</h1>
+    <span id="mchips"></span>
+    <button id="pickmodels">Models: <b id="mlabel">Auto</b></button>
+    <select id="prov" title="Provider"></select>
   </header>
   <div id="chat"></div>
-  <div id="drawer"><header><h1>Setup — the code-based check</h1><span class="spacer"></span>
-    <button onclick="document.getElementById('drawer').classList.remove('open')">✕</button></header>
-    <div style="padding:10px 16px;border-bottom:1px solid var(--line)">
-      <button id="envcheck" class="ghost" style="width:100%">Check my setup (step by step)</button>
-      <pre id="envout" style="display:none;max-height:260px;overflow-y:auto;font-size:11px;margin:8px 0 0"></pre>
-    </div>
-    <div class="body"></div></div>
-  <div id="modal"><div class="card2">
-    <h2>Settings</h2>
-    <label>Default provider</label><select id="s-def"></select>
-    <label>Anthropic API key (ANTHROPIC_API_KEY)</label><input id="s-anthropic" placeholder="sk-ant-…" autocomplete="off">
-    <label>DeepSeek API key (DEEPSEEK_API_KEY)</label><input id="s-deepseek" placeholder="sk-…" autocomplete="off">
-    <label>OpenAI API key (OPENAI_API_KEY)</label><input id="s-openai" placeholder="sk-…" autocomplete="off">
-    <label>OpenRouter API key (OPENROUTER_API_KEY)</label><input id="s-openrouter" placeholder="sk-or-…" autocomplete="off">
-    <div style="display:flex;gap:8px;margin-top:16px">
-      <button class="primary" id="s-save">Save</button>
-      <button class="ghost" id="s-close">Close</button>
-      <span class="hint" id="s-msg" style="align-self:center"></span>
-    </div>
-  </div></div>
   <footer>
-    <div class="chips" id="chips"></div>
     <div class="composer">
-      <textarea id="msg" rows="1" placeholder="Ask this model to do something…"></textarea>
+      <textarea id="msg" rows="1" placeholder="Describe the task — with Models on Auto, the agent picks the right KI"></textarea>
       <button class="primary" id="send">Send</button>
     </div>
     <div class="hint" id="hint"></div>
   </footer>
+  <div id="modal"><div class="card2">
+    <h2>Settings</h2>
+    <label>Default provider</label><select id="s-def"></select>
+    <label>Anthropic API key</label><input id="s-anthropic" autocomplete="off">
+    <label>DeepSeek API key</label><input id="s-deepseek" autocomplete="off">
+    <label>OpenAI API key</label><input id="s-openai" autocomplete="off">
+    <label>OpenRouter API key</label><input id="s-openrouter" autocomplete="off">
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="primary" id="s-save">Save</button>
+      <button id="s-close">Close</button>
+      <span class="hint" id="s-msg" style="align-self:center"></span>
+    </div>
+  </div></div>
+  <div id="mpick"><div class="card2">
+    <h2>Models for this session</h2>
+    <div class="hint" style="margin:0 0 8px">Leave empty for <b>Auto</b> — the agent reads the catalogue and picks. Install state: <span class="dot ok" style="display:inline-block"></span> ready · <span class="dot warn" style="display:inline-block"></span> needs setup — manage in the <a href="/library">KI Library</a>.</div>
+    <input id="mq" placeholder="search…" autocomplete="off" style="margin-bottom:8px">
+    <div id="mrows" style="max-height:46vh;overflow-y:auto"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="primary" id="m-apply">Apply</button>
+      <button id="m-clear">Auto (clear)</button>
+      <button id="m-close">Close</button>
+    </div>
+  </div></div>
 </main>
-
 <script>
 const $=s=>document.querySelector(s);
-let MODELS=[], SEL=new Set(), busy=false;
-
-/* Minimal markdown: fenced code, inline code, bold, headings, rules, paragraphs.
-   Everything is escaped first, so model output can never inject markup. */
-function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
-function md(t){
-  let h=esc(t);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function md(t){let h=esc(t);
   h=h.replace(/```(\w*)\n([\s\S]*?)```/g,(m,l,c)=>`<pre><code>${c}</code></pre>`);
   h=h.replace(/`([^`\n]+)`/g,"<code>$1</code>");
   h=h.replace(/^\s*---\s*$/gm,"<hr>");
   h=h.replace(/^###?\s+(.+)$/gm,"<h3>$1</h3>");
   h=h.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>");
-  return h.split(/\n{2,}/).map(p=>/^<(pre|h3|hr)/.test(p.trim())?p:`<p>${p.replace(/\n/g,"<br>")}</p>`).join("");
-}
+  return h.split(/\n{2,}/).map(p=>/^<(pre|h3|hr)/.test(p.trim())?p:`<p>${p.replace(/\n/g,"<br>")}</p>`).join("");}
 
-function statusClass(m){
-  if(m.verified==="observed") return "ok";
-  if(m.has_manifest||m.verified==="manual") return "warn";
-  return "block";
-}
+let SESSIONS=[], CUR=null, MODELS=[], STATUS={}, PROV={providers:[],any_usable:false}, PICK=new Set(), busy=false;
 
-function drawList(){
-  const q=$("#q").value.toLowerCase();
-  const rows=MODELS.filter(m=>!q||(m.name+" "+(m.reference||"")+" "+(m.language||"")).toLowerCase().includes(q));
-  $("#count").textContent=`${rows.length} of ${MODELS.length} · ${SEL.size} selected`;
-  $("#list").innerHTML=rows.map(m=>`
-    <div class="item ${SEL.has(m.name)?'on':''}" data-n="${esc(m.name)}">
-      <span class="tick"></span>
-      <div class="tx">
-        <div class="nm"><span class="dot ${stateClass(m.name)}" title="${stateTitle(m.name)}"></span>${esc(m.name)}</div>
-        <div class="sub">${esc(m.reference||m.language||"")}</div>
-      </div>
+function stateClass(n){const s=(STATUS[n]||{}).state;
+  return s==="ready"?"ok":s==="attention"?"block":s==="oneclick"?"ok":"warn";}
+
+async function loadAll(){
+  [SESSIONS,MODELS,STATUS,PROV]=await Promise.all([
+    fetch("/api/sessions").then(r=>r.json()),
+    fetch("/api/models").then(r=>r.json()),
+    fetch("/api/status").then(r=>r.json()),
+    fetch("/api/providers").then(r=>r.json())]);
+  drawSessions(); drawProviders();
+  if(!CUR && SESSIONS.length) openSession(SESSIONS[0].id);
+  else if(!CUR) drawEmpty();
+}
+function drawSessions(){
+  $("#slist").innerHTML=SESSIONS.map(s=>`
+    <div class="sess ${CUR&&CUR.id===s.id?'sel':''}" data-id="${s.id}">
+      <div class="t">${esc(s.title)}<button class="del" data-id="${s.id}" title="delete">✕</button></div>
+      <div class="m">${s.models.length?esc(s.models.join(", ")):"Auto"} · ${s.n} msg</div>
     </div>`).join("");
-  document.querySelectorAll(".item").forEach(e=>e.onclick=()=>toggle(e.dataset.n));
+  document.querySelectorAll(".sess").forEach(e=>e.onclick=ev=>{
+    if(ev.target.classList.contains("del")) return; openSession(e.dataset.id);});
+  document.querySelectorAll(".sess .del").forEach(b=>b.onclick=async ev=>{
+    ev.stopPropagation();
+    await fetch(`/api/session/${b.dataset.id}/delete`,{method:"POST",body:"{}"});
+    if(CUR&&CUR.id===b.dataset.id) CUR=null;
+    await loadAll();});
 }
-
-let STATUS={};
-function stateClass(n){
-  const s=(STATUS[n]||{}).state;
-  return s==="ready"?"ok":s==="attention"?"block":s==="oneclick"?"ok":s==="manual"?"warn":"warn";
-}
-function stateTitle(n){
-  const s=(STATUS[n]||{}).state;
-  return {ready:"Ready — check passed",attention:"Needs attention — check failed",
-          oneclick:"1-click install",manual:"Manual install (licence)",
-          agent:"Agent setup — the agent works out the install"}[s]||"";
-}
-function stateLabel(n){
-  const s=(STATUS[n]||{}).state;
-  return {ready:"Ready",attention:"Needs attention",oneclick:"Install",
-          manual:"Manual",agent:"Agent setup"}[s]||"…";
-}
-function toggle(name){
-  SEL.has(name)?SEL.delete(name):SEL.add(name);
-  drawList(); drawChips(); drawSetup();
-}
-function drawChips(){
-  $("#chips").innerHTML=[...SEL].map(n=>`
-    <span class="chip"><span class="dot ${stateClass(n)}"></span>${esc(n)}
-      <button data-n="${esc(n)}" title="remove">×</button></span>`).join("")
-    + (SEL.size?`<span class="chip" style="cursor:pointer" id="setupbtn">⚙ setup</span>`:"");
-  document.querySelectorAll(".chip button").forEach(b=>b.onclick=()=>toggle(b.dataset.n));
-  const sb=$("#setupbtn"); if(sb) sb.onclick=()=>$("#drawer").classList.toggle("open");
-  $("#title").textContent = SEL.size? [...SEL].join(" + ") : "Pick models, then describe the task";
-  $("#sub").textContent = SEL.size>1 ? "multi-model run — results will be compared" : "";
-}
-function drawSetup(){
-  $("#drawer .body").innerHTML=[...SEL].map(n=>{
-    const st=STATUS[n]||{};
-    const steps=(st.steps||[]).map(s=>`<div class="stepline ${s.ok?'good':'bad'}">${s.ok?'✓':'✗'} ${esc(s.name)}</div>`).join("");
-    return `<div class="setup-model" id="su-${esc(n)}">
-      <div class="row"><span class="dot ${stateClass(n)}"></span><span class="nm">${esc(n)}</span>
-        <button data-n="${esc(n)}" class="inst">${stateLabel(n)==="Ready"?"Re-check":"Install"}</button></div>
-      ${steps}<pre style="display:none"></pre></div>`;
-  }).join("") || '<div class="empty">Toggle a model to see its setup.</div>';
-  document.querySelectorAll("#drawer .inst").forEach(b=>b.onclick=()=>install(b.dataset.n));
-}
-async function install(name){
-  const box=$(`#su-${CSS.escape(name)} pre`); box.style.display="block"; box.textContent="";
-  const r=await fetch("/api/init",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({model:name})});
-  const rd=r.body.getReader(), dec=new TextDecoder();
-  for(;;){const{done,value}=await rd.read(); if(done)break;
-    box.textContent+=dec.decode(value); box.scrollTop=box.scrollHeight;}
-  STATUS=await (await fetch("/api/status")).json();
-  drawList(); drawChips(); drawSetup();
-}
-
-function addTurn(who,cls){
-  const d=document.createElement("div");
-  d.className="turn "+cls;
-  d.innerHTML=`<div class="who">${who}</div><div class="bubble"></div>`;
-  if($("#chat").querySelector(".empty")) $("#chat").innerHTML="";
-  $("#chat").appendChild(d);
-  $("#chat").scrollTop=$("#chat").scrollHeight;
-  return d.querySelector(".bubble");
-}
-
-async function send(){
-  const text=$("#msg").value.trim();
-  if(!text||busy) return;
-  if(!SEL.size){$("#hint").textContent="Toggle at least one model on the left first.";return;}
-  busy=true; $("#send").disabled=true; $("#msg").value="";
-  addTurn("You","user").innerHTML=md(text);
-  const out=addTurn($("#prov").selectedOptions[0].textContent,"agent");
-  out.innerHTML='<span class="spin"></span>working…';
-
-  let raw="";
-  try{
-    const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({models:[...SEL],provider:$("#prov").value,message:text})});
-    const rd=r.body.getReader(), dec=new TextDecoder();
-    for(;;){
-      const{done,value}=await rd.read(); if(done) break;
-      raw+=dec.decode(value,{stream:true});
-      out.innerHTML=md(raw);
-      $("#chat").scrollTop=$("#chat").scrollHeight;
-    }
-    if(!raw.trim()) out.innerHTML='<p style="color:var(--fg-3)">(no output)</p>';
-  }catch(e){ out.innerHTML=md("**Request failed:** "+e); }
-  busy=false; $("#send").disabled=false; $("#msg").focus();
-}
-
-$("#send").onclick=send;
-$("#msg").addEventListener("keydown",e=>{
-  if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}
-});
-$("#msg").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";});
-$("#q").addEventListener("input",drawList);
-$("#envcheck").onclick=async()=>{
-  const box=$("#envout"); box.style.display="block"; box.textContent="running…\n";
-  const r=await fetch("/api/selfcheck?provider="+encodeURIComponent($("#prov").value||""));
-  const rd=r.body.getReader(), dec=new TextDecoder(); box.textContent="";
-  for(;;){const{done,value}=await rd.read(); if(done)break;
-    box.textContent+=dec.decode(value); box.scrollTop=box.scrollHeight;}
-};
-$("#theme").onclick=()=>{
-  const d=document.body.hasAttribute("data-dark");
-  d?document.body.removeAttribute("data-dark"):document.body.setAttribute("data-dark","");
-  localStorage.setItem("kiss-dark",d?"0":"1");
-};
-if(localStorage.getItem("kiss-dark")==="1"||
-   (localStorage.getItem("kiss-dark")===null&&matchMedia("(prefers-color-scheme:dark)").matches))
-  document.body.setAttribute("data-dark","");
-
-let PROV={providers:[],any_usable:false,default:""};
-async function loadProviders(){
-  PROV=await (await fetch("/api/providers")).json();
+function drawProviders(){
   const sel=$("#prov");
   sel.innerHTML=PROV.providers.map(p=>
-    `<option value="${esc(p.name)}" ${p.usable?"":"disabled"} ${p.name===PROV.default?"selected":""}>`+
-    `${esc(p.label)}${p.usable?"":" — needs setup"}</option>`).join("");
-  const usable=PROV.providers.filter(p=>p.usable);
-  if(usable.length && !PROV.providers.find(p=>p.name===sel.value && p.usable))
-    sel.value=usable[0].name;
-  $("#nprov").textContent=`${usable.length}/${PROV.providers.length} providers ready`;
+    `<option value="${esc(p.name)}" ${p.usable?"":"disabled"}>${esc(p.label)}${p.usable?"":" — needs setup"}</option>`).join("");
+  const cur=CUR&&CUR.provider; const usable=PROV.providers.filter(p=>p.usable);
+  sel.value = (cur&&PROV.providers.find(p=>p.name===cur&&p.usable))?cur:
+              (PROV.default&&PROV.providers.find(p=>p.name===PROV.default&&p.usable))?PROV.default:
+              (usable[0]||{}).name||"";
+  $("#nprov").textContent=`${usable.length}/${PROV.providers.length} ready`;
   const old=$("#gatebanner"); if(old) old.remove();
   if(!PROV.any_usable){
     $("#chat").insertAdjacentHTML("beforebegin",
-      `<div class="banner" id="gatebanner"><b>Nothing can run yet.</b> No signed-in agent CLI and
-       no API key. Open ⚙ Settings to add an API key, or install an agent CLI —
-       then use “Check my setup” in the model drawer to verify. Chat is disabled until one works.</div>`);
-  }
+      `<div class="banner" id="gatebanner"><b>Nothing can run yet.</b> Add an API key in ⚙ Settings or install an agent CLI, then reload.</div>`);}
   $("#send").disabled=!PROV.any_usable;
 }
+function drawEmpty(){
+  $("#title").textContent="KISS";
+  $("#mlabel").textContent="Auto"; $("#mchips").innerHTML="";
+  $("#chat").innerHTML=`<div class="empty"><h2>Where should we start?</h2>
+    <div>Start a session and describe the task. On <b>Auto</b>, the agent reads the
+    127-model catalogue and picks the right KI — or pin models yourself.</div></div>`;
+}
+async function openSession(id){
+  CUR=await (await fetch("/api/session/"+id)).json();
+  drawSessions();
+  $("#title").textContent=CUR.title;
+  drawModelLabel();
+  const c=$("#chat"); c.innerHTML="";
+  for(const m of CUR.messages) addTurn(m.role==="user"?"You":"Agent", m.role==="user"?"user":"agent").innerHTML=md(m.text);
+  c.scrollTop=c.scrollHeight;
+  drawProviders();
+}
+function drawModelLabel(){
+  const ms=CUR?CUR.models:[];
+  $("#mlabel").textContent=ms.length?`${ms.length} pinned`:"Auto";
+  $("#mchips").innerHTML=ms.map(n=>`<span class="mchip"><span class="dot ${stateClass(n)}"></span>${esc(n)}</span>`).join("")
+    ||'<span class="mchip auto">Auto — agent decides</span>';
+}
+function addTurn(who,cls){
+  const d=document.createElement("div"); d.className="turn "+cls;
+  d.innerHTML=`<div class="who">${who}</div><div class="bubble"></div>`;
+  const c=$("#chat"); if(c.querySelector(".empty")) c.innerHTML="";
+  c.appendChild(d); c.scrollTop=c.scrollHeight;
+  return d.querySelector(".bubble");
+}
+async function ensureSession(){
+  if(CUR) return CUR;
+  CUR=await (await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({provider:$("#prov").value})})).json();
+  SESSIONS.unshift({id:CUR.id,title:CUR.title,models:[],n:0,created:CUR.created});
+  drawSessions(); return CUR;
+}
+async function send(){
+  const text=$("#msg").value.trim(); if(!text||busy) return;
+  busy=true; $("#send").disabled=true; $("#msg").value="";
+  await ensureSession();
+  await fetch(`/api/session/${CUR.id}/update`,{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({provider:$("#prov").value})});
+  addTurn("You","user").innerHTML=md(text);
+  const out=addTurn("Agent","agent"); out.innerHTML='<span class="spin"></span>working…';
+  let raw="";
+  try{
+    const r=await fetch(`/api/session/${CUR.id}/chat`,{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text})});
+    const rd=r.body.getReader(), dec=new TextDecoder();
+    for(;;){const{done,value}=await rd.read(); if(done)break;
+      raw+=dec.decode(value,{stream:true}); out.innerHTML=md(raw);
+      $("#chat").scrollTop=$("#chat").scrollHeight;}
+    if(!raw.trim()) out.innerHTML='<p style="color:var(--fg-3)">(no output)</p>';
+  }catch(e){ out.innerHTML=md("**Request failed:** "+e); }
+  busy=false; $("#send").disabled=!PROV.any_usable;
+  const s=await (await fetch("/api/session/"+CUR.id)).json();
+  CUR=s; $("#title").textContent=s.title;
+  const i=SESSIONS.findIndex(x=>x.id===s.id);
+  if(i>=0){SESSIONS[i].title=s.title;SESSIONS[i].n=s.messages.length;SESSIONS[i].models=s.models;}
+  drawSessions();
+}
+$("#send").onclick=send;
+$("#msg").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}});
+$("#msg").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";});
+$("#newsess").onclick=async()=>{CUR=null; drawEmpty(); await ensureSession(); openSession(CUR.id);};
+
+/* model picker */
+function drawPick(){
+  const q=($("#mq").value||"").toLowerCase();
+  $("#mrows").innerHTML=MODELS
+    .filter(m=>!q||(m.name+" "+(m.reference||"")).toLowerCase().includes(q))
+    .map(m=>`<div class="pickrow ${PICK.has(m.name)?'on':''}" data-n="${esc(m.name)}">
+      <span class="tick"></span><span class="dot ${stateClass(m.name)}"></span>
+      <span style="flex:1;min-width:0"><b>${esc(m.name)}</b>
+      <span style="color:var(--fg-3);font-size:12px"> ${esc((m.reference||"").slice(0,60))}</span></span></div>`).join("");
+  document.querySelectorAll(".pickrow").forEach(e=>e.onclick=()=>{
+    const n=e.dataset.n; PICK.has(n)?PICK.delete(n):PICK.add(n); drawPick();});
+}
+$("#pickmodels").onclick=()=>{PICK=new Set(CUR?CUR.models:[]); drawPick(); $("#mpick").classList.add("open");};
+$("#mq").addEventListener("input",drawPick);
+$("#m-close").onclick=()=>$("#mpick").classList.remove("open");
+$("#m-clear").onclick=()=>{PICK.clear(); drawPick();};
+$("#m-apply").onclick=async()=>{
+  await ensureSession();
+  CUR=await (await fetch(`/api/session/${CUR.id}/update`,{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[...PICK]})})).json();
+  drawModelLabel(); drawSessions(); $("#mpick").classList.remove("open");
+};
+
+/* settings */
 async function openSettings(){
   const s=await (await fetch("/api/settings")).json();
   $("#s-def").innerHTML='<option value="">(first usable)</option>'+PROV.providers.map(p=>
@@ -380,14 +318,15 @@ $("#s-save").onclick=async()=>{
   const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify(body)});
   $("#s-msg").textContent=r.ok?"saved":"error";
-  await loadProviders();
+  PROV=await (await fetch("/api/providers")).json(); drawProviders();
   setTimeout(()=>{$("#s-msg").textContent="";},1500);
 };
-
-(async()=>{
-  MODELS=await (await fetch("/api/models")).json();
-  STATUS=await (await fetch("/api/status")).json();
-  drawList(); drawChips(); drawSetup();
-  await loadProviders();
-})();
+$("#theme").onclick=()=>{
+  const d=document.body.hasAttribute("data-dark");
+  d?document.body.removeAttribute("data-dark"):document.body.setAttribute("data-dark","");
+  localStorage.setItem("kiss-dark",d?"0":"1");};
+if(localStorage.getItem("kiss-dark")==="1"||
+   (localStorage.getItem("kiss-dark")===null&&matchMedia("(prefers-color-scheme:dark)").matches))
+  document.body.setAttribute("data-dark","");
+loadAll();
 </script></body></html>

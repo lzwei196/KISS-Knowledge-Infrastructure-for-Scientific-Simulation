@@ -25,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from . import api, doctor, handoff, install, paths, policy, port, prompt, providers, settings
+from . import api, doctor, handoff, install, paths, policy, port, prompt, providers, sessions, settings
 from .catalog import Catalog
 from .manifest import Manifest
 
@@ -71,6 +71,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/":
             return self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+
+        if route == "/library":
+            lib = PAGE.parent / "library.html"
+            return self._send(200, lib.read_bytes(), "text/html; charset=utf-8")
 
         if route == "/logo.svg":
             logo = PAGE.parent / "logo.svg"
@@ -211,6 +215,13 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/settings":
             return self._json(settings.masked())
 
+        if route == "/api/sessions":
+            return self._json(sessions.list_all(self.workroot))
+
+        if route.startswith("/api/session/"):
+            s = sessions.load(self.workroot, route.rsplit("/", 1)[-1])
+            return self._json(s) if s else self._json({"error": "no such session"}, 404)
+
         if route == "/api/status":
             # User-facing state, never manifest jargon. "unverified" is a fact
             # about my bookkeeping, not something a user can act on.
@@ -299,6 +310,28 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": str(e)}, 400)
             return self._json(settings.masked())
 
+        if route == "/api/sessions":
+            s = sessions.create(self.workroot, req.get("models"), req.get("provider", ""))
+            return self._json(s)
+
+        if route.startswith("/api/session/") and route.endswith("/delete"):
+            sid = route.split("/")[3]
+            return self._json({"ok": sessions.delete(self.workroot, sid)})
+
+        if route.startswith("/api/session/") and route.endswith("/update"):
+            sid = route.split("/")[3]
+            s = sessions.load(self.workroot, sid)
+            if not s:
+                return self._json({"error": "no such session"}, 404)
+            for k in ("models", "provider", "title"):
+                if k in req:
+                    s[k] = req[k]
+            sessions.save(self.workroot, s)
+            return self._json(s)
+
+        if route.startswith("/api/session/") and route.endswith("/chat"):
+            return self._stream_session_chat(route.split("/")[3], req)
+
         if route == "/api/init":
             return self._stream_init(req)
         if route == "/api/chat":
@@ -351,6 +384,134 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self._chunk(f"\nkiss: {type(e).__name__}: {e}\n")
         self._end_stream()
+
+    # --- session chat ------------------------------------------------------
+    def _stream_session_chat(self, sid: str, req) -> None:
+        s = sessions.load(self.workroot, sid)
+        if not s:
+            return self._json({"error": "no such session"}, 404)
+        text = (req.get("message") or "").strip()
+        if not text:
+            return self._json({"error": "empty message"}, 400)
+
+        s["messages"].append({"role": "user", "text": text, "ts": __import__("time").time()})
+        if s.get("title") in ("New session", "", None):
+            s["title"] = text[:48]
+        sessions.save(self.workroot, s)
+
+        history = sessions.transcript(s)
+        want = s.get("provider") or settings.load().get("default_provider") or ""
+        names = s.get("models") or []
+
+        # Collect the streamed reply so the transcript survives the turn.
+        buf: list[str] = []
+        self._open_stream()
+
+        def out(piece: str) -> bool:
+            buf.append(piece)
+            return self._chunk(piece)
+
+        try:
+            if names:
+                self._chat_with_models(names, want, history + "\nUSER: " + text, out)
+            else:
+                self._chat_auto(want, history + "\nUSER: " + text, out)
+        finally:
+            reply = "".join(buf).strip()
+            if reply:
+                s["messages"].append({"role": "assistant", "text": reply,
+                                      "ts": __import__("time").time()})
+                sessions.save(self.workroot, s)
+            self._end_stream()
+
+    def _chat_auto(self, want: str, task: str, out) -> None:
+        """No models pinned: hand the agent the catalogue and let it route."""
+        system = sessions.catalogue_block(self.catalog) + "\n\n" + sessions.AUTO_RULES
+        full = (system
+                + f"\nmodels_root: {self.catalog.models_dir}\n\n[TASK]\n" + task)
+        kind, _, pname = want.partition(":")
+        if not pname:
+            kind, pname = "cli", kind
+        if kind == "api":
+            prov = api.PROVIDERS.get(pname)
+            if prov is None:
+                out(f"[unknown api provider {pname!r}]")
+                return
+            wd = self.workroot / "_auto"
+            wd.mkdir(parents=True, exist_ok=True)
+            cfg = paths.KissConfig.default(wd)
+            # api tools need a KI root; in auto mode grant the whole library
+            ki = type(next(iter(self.catalog)))(name="library", root=self.catalog.models_dir)
+            for piece in api.run(prov, ki, cfg, system, task):
+                if not out(piece):
+                    break
+            return
+        avail = providers.available()
+        if not avail:
+            out("No agent CLI found. Open Settings for API keys, or install a CLI.")
+            return
+        try:
+            prov = providers.get(pname) if pname else avail[0]
+        except KeyError:
+            prov = avail[0]
+        wd = self.workroot / "_auto"
+        wd.mkdir(parents=True, exist_ok=True)
+        cfg = paths.KissConfig.default(wd)
+        if not (wd / paths.CONFIG_NAME).exists():
+            (wd / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+        for piece in providers.run(prov, full, wd,
+                                   extra_dirs=[str(self.catalog.models_dir)],
+                                   cfg=None):
+            if not out(piece):
+                break
+
+    def _chat_with_models(self, names, want, task, out) -> None:
+        """Pinned models: same path the toggle flow used."""
+        try:
+            kis = [self._ki(n) for n in names]
+        except KeyError as e:
+            out(f"[{e}]")
+            return
+        ki = kis[0]
+        kind, _, pname = want.partition(":")
+        if not pname:
+            kind, pname = "cli", kind
+        cfg = self._config(ki)
+        wd = self._workdir(ki)
+        wd.mkdir(parents=True, exist_ok=True)
+        if kind == "api":
+            prov = api.PROVIDERS.get(pname)
+            if prov is None:
+                out(f"[unknown api provider {pname!r}]")
+                return
+            live = wd / "ki"
+            run_ki = type(ki)(name=ki.name, root=live) if live.exists() else ki
+            system = prompt.compose(run_ki, cfg, headless=False)
+            for piece in api.run(prov, run_ki, cfg, system, task):
+                if not out(piece):
+                    break
+            return
+        avail = providers.available()
+        if not avail:
+            out("No agent CLI found. Open Settings for API keys, or install a CLI.")
+            return
+        try:
+            prov = providers.get(pname) if pname else avail[0]
+        except KeyError:
+            prov = avail[0]
+        if not (wd / paths.CONFIG_NAME).exists():
+            (wd / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+        resolved = []
+        for k in kis:
+            live = (self.workroot / k.name.lower() / "ki")
+            resolved.append(type(k)(name=k.name, root=live) if live.exists() else k)
+        full = prompt.compose_multi(resolved, cfg, task=task)
+        grants = [str(k.root) for k in resolved] + paths.bound_prefixes(cfg)
+        pol = policy.Policy.derive(ki, self._manifest(ki), cfg)
+        for piece in providers.run(prov, full, wd, extra_dirs=grants,
+                                   cfg=cfg, ki_root=ki.root, pol=pol):
+            if not out(piece):
+                break
 
     # --- chat --------------------------------------------------------------
     def _stream_chat(self, req) -> None:

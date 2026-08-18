@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KISS — KI Library</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxODgiIGhlaWdodD0iMTgwIiB2aWV3Qm94PSIwIDAgMTg4IDE4MCI+CiAgPHRpdGxlPkNvbmNlbnRyaWMgdGFyZ2V0IGljb248L3RpdGxlPgogIDxkZXNjPlZlY3RvciByZWNvbnN0cnVjdGlvbiBvZiBhIGRhcmsgY2lyY3VsYXIgdGFyZ2V0IHdpdGggdGhyZWUgbGlnaHQgY29uY2VudHJpYyByaW5ncyBhbmQgYSBibHVlIGNlbnRlci48L2Rlc2M+CiAgPGNpcmNsZSBjeD0iOTAuOCIgY3k9Ijg3LjIiIHI9IjgzLjIiIGZpbGw9IiMxMTEyMTUiLz4KICA8ZyBmaWxsPSJub25lIiBzdHJva2U9IiNFRUYwRjIiIHN0cm9rZS13aWR0aD0iMy42IiBzdHJva2UtbGluZWNhcD0icm91bmQiPgogICAgPGNpcmNsZSBjeD0iOTAuOCIgY3k9Ijg3LjIiIHI9IjE3LjIiLz4KICAgIDxjaXJjbGUgY3g9IjkwLjgiIGN5PSI4Ny4yIiByPSIyOS44Ii8+CiAgICA8Y2lyY2xlIGN4PSI5MC44IiBjeT0iODcuMiIgcj0iNDIuMCIvPgogIDwvZz4KICA8Y2lyY2xlIGN4PSI5MC44IiBjeT0iODcuMiIgcj0iOC4yIiBmaWxsPSIjNDE2RkQ4IiBvcGFjaXR5PSIwLjE2Ii8+CiAgPGNpcmNsZSBjeD0iOTAuOCIgY3k9Ijg3LjIiIHI9IjYuMCIgZmlsbD0iIzQxNkZEOCIvPgo8L3N2Zz4K">
+<style>
+/* Palette follows the DeepSeek Harness design platform: a neutral-bluish
+   ramp 00->1000 plus one brand blue, hairline borders at 10% black, 16px
+   radii on surfaces and 14px/22px body type. Values are the published token
+   values, re-declared here because this page ships no build step. */
+:root{
+  --n00:#fff; --n50:#f9fafb; --n60:#f5f6f7; --n75:#f1f3f5; --n100:#ebeef2;
+  --n150:#e9ecf2; --n200:#e1e5ee; --n300:#cfd3d6; --n400:#adb2b8; --n500:#979da6;
+  --n600:#81858c; --n700:#61666b; --n750:#43454a; --n800:#353638; --n850:#2c2c2e;
+  --n875:#232324; --n900:#1b1b1c; --n1000:#0f1115;
+  --brand:#4176e6; --brand-400:#679efe; --brand-50:#edf3fe;
+
+  --bg:var(--n00); --surface:var(--n60); --raised:var(--n00);
+  --fg:var(--n1000); --fg-2:var(--n700); --fg-3:var(--n400);
+  --line:rgba(0,0,0,.1); --line-1:rgba(0,0,0,.04);
+  --hover:rgba(38,49,72,.06); --active:rgba(38,49,72,.1);
+  --ok:#1a7f4b; --warn:#a8620a; --block:#b3261e;
+}
+body[data-dark]{
+  --bg:var(--n900); --surface:var(--n875); --raised:var(--n850);
+  --fg:#eceae8; --fg-2:var(--n400); --fg-3:var(--n600);
+  --line:rgba(255,255,255,.12); --line-1:rgba(255,255,255,.06);
+  --hover:rgba(255,255,255,.06); --active:rgba(255,255,255,.1);
+  --brand:var(--brand-400); --brand-50:rgba(103,158,254,.12);
+  --ok:#4ec98a; --warn:#e0a34d; --block:#f2836f;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:14px/22px ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  display:grid;grid-template-columns:300px minmax(0,1fr)}
+@media(max-width:820px){body{grid-template-columns:1fr;grid-template-rows:auto 1fr}}
+
+/* ---- sidebar ---- */
+aside{background:var(--surface);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0}
+.brand{display:flex;align-items:center;gap:8px;padding:16px;font-weight:600}
+.brand b{font-size:15px}
+.brand span{color:var(--fg-3);font-weight:400;font-size:12px}
+.search{padding:0 12px 10px}
+.search input{width:100%;padding:8px 12px;border:1px solid var(--line);
+  border-radius:10px;background:var(--raised);color:var(--fg);font:inherit}
+.search input:focus{outline:none;border-color:var(--brand)}
+.list{flex:1;overflow-y:auto;padding:0 8px 12px;min-height:0}
+.item{padding:9px 10px;border-radius:10px;cursor:pointer;display:flex;
+  flex-direction:column;gap:2px}
+.item:hover{background:var(--hover)}
+.item.sel{background:var(--active)}
+.item .nm{font-weight:600;display:flex;align-items:center;gap:6px}
+.item .sub{color:var(--fg-3);font-size:12px;line-height:16px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.count{padding:8px 16px;color:var(--fg-3);font-size:12px;border-top:1px solid var(--line-1)}
+.dot{width:6px;height:6px;border-radius:99px;flex:0 0 auto}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.block{background:var(--block)}
+
+/* ---- main ---- */
+main{display:flex;flex-direction:column;min-height:0;min-width:0}
+header{display:flex;align-items:center;gap:10px;padding:12px 20px;
+  border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:15px;margin:0;font-weight:600}
+header .meta{color:var(--fg-3);font-size:12px}
+.spacer{flex:1}
+select,button{font:inherit;border-radius:10px;border:1px solid var(--line);
+  background:var(--raised);color:var(--fg);padding:6px 11px;cursor:pointer}
+select:focus,button:focus{outline:none;border-color:var(--brand)}
+button.primary{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+button:disabled{opacity:.45;cursor:not-allowed}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px;
+  line-height:18px;font-weight:600;border:1px solid}
+.pill.ok{color:var(--ok);border-color:var(--ok)}
+.pill.warn{color:var(--warn);border-color:var(--warn)}
+.pill.block{color:var(--block);border-color:var(--block)}
+
+#chat{flex:1;overflow-y:auto;padding:22px 20px;min-height:0}
+.turn{max-width:820px;margin:0 auto 18px}
+.who{font-size:12px;color:var(--fg-3);margin-bottom:5px}
+.bubble{border-radius:16px;padding:12px 15px;border:1px solid var(--line-1)}
+.user .bubble{background:var(--brand-50);border-color:transparent}
+.agent .bubble{background:var(--surface)}
+.bubble pre{background:var(--bg);border:1px solid var(--line);border-radius:10px;
+  padding:10px;overflow-x:auto;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+  white-space:pre-wrap;word-break:break-word;margin:8px 0}
+.bubble code{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
+  background:var(--bg);border:1px solid var(--line-1);border-radius:5px;padding:1px 5px}
+.bubble pre code{border:0;background:none;padding:0}
+.bubble h2,.bubble h3{font-size:14px;margin:12px 0 4px}
+.bubble hr{border:0;border-top:1px solid var(--line);margin:12px 0}
+.bubble p{margin:6px 0}
+.empty{max-width:820px;margin:8vh auto;text-align:center;color:var(--fg-3)}
+.empty h2{font-size:18px;color:var(--fg);margin:0 0 6px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:10px;margin-top:22px;text-align:left}
+.card{border:1px solid var(--line);border-radius:16px;padding:13px 15px;cursor:pointer;background:var(--raised)}
+.card:hover{background:var(--hover)}
+.card b{display:block;margin-bottom:3px;font-size:13px}
+.card span{color:var(--fg-3);font-size:12px}
+
+footer{border-top:1px solid var(--line);padding:12px 20px}
+.composer{max-width:820px;margin:0 auto;display:flex;gap:9px;align-items:flex-end}
+textarea{flex:1;resize:none;min-height:44px;max-height:190px;padding:11px 14px;
+  border:1px solid var(--line);border-radius:14px;background:var(--raised);
+  color:var(--fg);font:inherit}
+textarea:focus{outline:none;border-color:var(--brand)}
+.hint{max-width:820px;margin:7px auto 0;color:var(--fg-3);font-size:11px}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);
+  border-top-color:var(--brand);border-radius:99px;animation:s .7s linear infinite;
+  vertical-align:-1px;margin-right:6px}
+@keyframes s{to{transform:rotate(360deg)}}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;
+  align-items:center;justify-content:center;z-index:20}
+#modal.open{display:flex}
+#modal .card2{background:var(--bg);border:1px solid var(--line);border-radius:16px;
+  width:min(480px,92vw);max-height:86vh;overflow-y:auto;padding:18px 20px}
+#modal h2{font-size:15px;margin:0 0 12px}
+#modal label{display:block;font-size:12px;color:var(--fg-2);margin:10px 0 4px}
+#modal input,#modal select{width:100%;padding:7px 10px;border:1px solid var(--line);
+  border-radius:8px;background:var(--raised);color:var(--fg);font:inherit}
+.banner{max-width:820px;margin:10px auto;border:1px solid var(--warn);color:var(--warn);
+  border-radius:10px;padding:9px 13px;font-size:13px}
+select option:disabled{color:var(--fg-3)}
+/* task-first additions */
+.item{flex-direction:row;align-items:center;gap:9px}
+.item .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.tick{width:16px;height:16px;border:1.5px solid var(--fg-3);border-radius:5px;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff}
+.item.on .tick{background:var(--brand);border-color:var(--brand)}
+.item.on .tick::after{content:"✓"}
+.chips{max-width:820px;margin:0 auto 8px;display:flex;gap:6px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;
+  border:1px solid var(--line);background:var(--surface);font-size:12px}
+.chip .dot{width:7px;height:7px}
+.chip button{border:0;background:none;color:var(--fg-3);padding:0;font-size:14px;cursor:pointer}
+#drawer{position:fixed;top:0;right:-420px;width:400px;height:100vh;background:var(--surface);
+  border-left:1px solid var(--line);transition:right .2s;z-index:10;display:flex;flex-direction:column}
+#drawer.open{right:0}
+#drawer header{border-bottom:1px solid var(--line)}
+#drawer .body{flex:1;overflow-y:auto;padding:14px 16px}
+.setup-model{border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:10px;background:var(--raised)}
+.setup-model .row{display:flex;align-items:center;gap:8px}
+.setup-model .nm{font-weight:600;flex:1}
+.setup-model pre{max-height:220px;overflow-y:auto;margin:8px 0 0;font-size:11px}
+.stepline{display:flex;gap:7px;align-items:center;font-size:12px;padding:1px 0}
+.stepline.bad{color:var(--block)}
+.stepline.good{color:var(--ok)}
+</style></head>
+<body>
+<aside>
+  <div class="brand"><a href="/" style="text-decoration:none;color:var(--fg-2);margin-right:4px" title="Back to sessions">←</a><svg xmlns="http://www.w3.org/2000/svg" width="20" height="19" viewBox="0 0 188 180"> <title>Concentric target icon</title> <desc>Vector reconstruction of a dark circular target with three light concentric rings and a blue center.</desc> <circle cx="90.8" cy="87.2" r="83.2" fill="#111215"/> <g fill="none" stroke="#EEF0F2" stroke-width="3.6" stroke-linecap="round"> <circle cx="90.8" cy="87.2" r="17.2"/> <circle cx="90.8" cy="87.2" r="29.8"/> <circle cx="90.8" cy="87.2" r="42.0"/> </g> <circle cx="90.8" cy="87.2" r="8.2" fill="#416FD8" opacity="0.16"/> <circle cx="90.8" cy="87.2" r="6.0" fill="#416FD8"/> </svg><b>KISS</b><span id="nprov"></span></div>
+  <div class="search"><input id="q" type="search" placeholder="Search models…" autocomplete="off"></div>
+  <div class="list" id="list"></div>
+  <div class="count" id="count"></div>
+</aside>
+<main>
+  <header>
+    <h1 id="title">Select a model</h1>
+    <span class="meta" id="sub"></span>
+    <span class="spacer"></span>
+    <select id="prov" title="Agent CLI"></select>
+    <button id="settings" title="Settings">⚙</button>
+    <button id="theme" title="Toggle theme">◐</button>
+  </header>
+  <div id="chat"></div>
+  <div id="drawer"><header><h1>Setup — the code-based check</h1><span class="spacer"></span>
+    <button onclick="document.getElementById('drawer').classList.remove('open')">✕</button></header>
+    <div style="padding:10px 16px;border-bottom:1px solid var(--line)">
+      <button id="envcheck" class="ghost" style="width:100%">Check my setup (step by step)</button>
+      <pre id="envout" style="display:none;max-height:260px;overflow-y:auto;font-size:11px;margin:8px 0 0"></pre>
+    </div>
+    <div class="body"></div></div>
+  <div id="modal"><div class="card2">
+    <h2>Settings</h2>
+    <label>Default provider</label><select id="s-def"></select>
+    <label>Anthropic API key (ANTHROPIC_API_KEY)</label><input id="s-anthropic" placeholder="sk-ant-…" autocomplete="off">
+    <label>DeepSeek API key (DEEPSEEK_API_KEY)</label><input id="s-deepseek" placeholder="sk-…" autocomplete="off">
+    <label>OpenAI API key (OPENAI_API_KEY)</label><input id="s-openai" placeholder="sk-…" autocomplete="off">
+    <label>OpenRouter API key (OPENROUTER_API_KEY)</label><input id="s-openrouter" placeholder="sk-or-…" autocomplete="off">
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="primary" id="s-save">Save</button>
+      <button class="ghost" id="s-close">Close</button>
+      <span class="hint" id="s-msg" style="align-self:center"></span>
+    </div>
+  </div></div>
+  <footer>
+    <div class="chips" id="chips"></div>
+    <div class="composer">
+      <textarea id="msg" rows="1" placeholder="(chat lives in sessions — this page is for setup)" disabled></textarea>
+      <button class="primary" id="send">Send</button>
+    </div>
+    <div class="hint" id="hint"></div>
+  </footer>
+</main>
+
+<script>
+const $=s=>document.querySelector(s);
+let MODELS=[], SEL=new Set(), busy=false;
+
+/* Minimal markdown: fenced code, inline code, bold, headings, rules, paragraphs.
+   Everything is escaped first, so model output can never inject markup. */
+function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function md(t){
+  let h=esc(t);
+  h=h.replace(/```(\w*)\n([\s\S]*?)```/g,(m,l,c)=>`<pre><code>${c}</code></pre>`);
+  h=h.replace(/`([^`\n]+)`/g,"<code>$1</code>");
+  h=h.replace(/^\s*---\s*$/gm,"<hr>");
+  h=h.replace(/^###?\s+(.+)$/gm,"<h3>$1</h3>");
+  h=h.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>");
+  return h.split(/\n{2,}/).map(p=>/^<(pre|h3|hr)/.test(p.trim())?p:`<p>${p.replace(/\n/g,"<br>")}</p>`).join("");
+}
+
+function statusClass(m){
+  if(m.verified==="observed") return "ok";
+  if(m.has_manifest||m.verified==="manual") return "warn";
+  return "block";
+}
+
+function drawList(){
+  const q=$("#q").value.toLowerCase();
+  const rows=MODELS.filter(m=>!q||(m.name+" "+(m.reference||"")+" "+(m.language||"")).toLowerCase().includes(q));
+  $("#count").textContent=`${rows.length} of ${MODELS.length} · ${SEL.size} selected`;
+  $("#list").innerHTML=rows.map(m=>`
+    <div class="item ${SEL.has(m.name)?'on':''}" data-n="${esc(m.name)}">
+      <span class="tick"></span>
+      <div class="tx">
+        <div class="nm"><span class="dot ${stateClass(m.name)}" title="${stateTitle(m.name)}"></span>${esc(m.name)}</div>
+        <div class="sub">${esc(m.reference||m.language||"")}</div>
+      </div>
+    </div>`).join("");
+  document.querySelectorAll(".item").forEach(e=>e.onclick=()=>toggle(e.dataset.n));
+}
+
+let STATUS={};
+function stateClass(n){
+  const s=(STATUS[n]||{}).state;
+  return s==="ready"?"ok":s==="attention"?"block":s==="oneclick"?"ok":s==="manual"?"warn":"warn";
+}
+function stateTitle(n){
+  const s=(STATUS[n]||{}).state;
+  return {ready:"Ready — check passed",attention:"Needs attention — check failed",
+          oneclick:"1-click install",manual:"Manual install (licence)",
+          agent:"Agent setup — the agent works out the install"}[s]||"";
+}
+function stateLabel(n){
+  const s=(STATUS[n]||{}).state;
+  return {ready:"Ready",attention:"Needs attention",oneclick:"Install",
+          manual:"Manual",agent:"Agent setup"}[s]||"…";
+}
+function toggle(name){
+  SEL.has(name)?SEL.delete(name):SEL.add(name);
+  drawList(); drawChips(); drawSetup();
+}
+function drawChips(){
+  $("#chips").innerHTML=[...SEL].map(n=>`
+    <span class="chip"><span class="dot ${stateClass(n)}"></span>${esc(n)}
+      <button data-n="${esc(n)}" title="remove">×</button></span>`).join("")
+    + (SEL.size?`<span class="chip" style="cursor:pointer" id="setupbtn">⚙ setup</span>`:"");
+  document.querySelectorAll(".chip button").forEach(b=>b.onclick=()=>toggle(b.dataset.n));
+  const sb=$("#setupbtn"); if(sb) sb.onclick=()=>$("#drawer").classList.toggle("open");
+  $("#title").textContent = SEL.size? [...SEL].join(" + ") : "Pick models, then describe the task";
+  $("#sub").textContent = SEL.size>1 ? "multi-model run — results will be compared" : "";
+}
+function drawSetup(){
+  $("#drawer .body").innerHTML=[...SEL].map(n=>{
+    const st=STATUS[n]||{};
+    const steps=(st.steps||[]).map(s=>`<div class="stepline ${s.ok?'good':'bad'}">${s.ok?'✓':'✗'} ${esc(s.name)}</div>`).join("");
+    return `<div class="setup-model" id="su-${esc(n)}">
+      <div class="row"><span class="dot ${stateClass(n)}"></span><span class="nm">${esc(n)}</span>
+        <button data-n="${esc(n)}" class="inst">${stateLabel(n)==="Ready"?"Re-check":"Install"}</button></div>
+      ${steps}<pre style="display:none"></pre></div>`;
+  }).join("") || '<div class="empty">Toggle a model to see its setup.</div>';
+  document.querySelectorAll("#drawer .inst").forEach(b=>b.onclick=()=>install(b.dataset.n));
+}
+async function install(name){
+  const box=$(`#su-${CSS.escape(name)} pre`); box.style.display="block"; box.textContent="";
+  const r=await fetch("/api/init",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({model:name})});
+  const rd=r.body.getReader(), dec=new TextDecoder();
+  for(;;){const{done,value}=await rd.read(); if(done)break;
+    box.textContent+=dec.decode(value); box.scrollTop=box.scrollHeight;}
+  STATUS=await (await fetch("/api/status")).json();
+  drawList(); drawChips(); drawSetup();
+}
+
+function addTurn(who,cls){
+  const d=document.createElement("div");
+  d.className="turn "+cls;
+  d.innerHTML=`<div class="who">${who}</div><div class="bubble"></div>`;
+  if($("#chat").querySelector(".empty")) $("#chat").innerHTML="";
+  $("#chat").appendChild(d);
+  $("#chat").scrollTop=$("#chat").scrollHeight;
+  return d.querySelector(".bubble");
+}
+
+async function send(){
+  const text=$("#msg").value.trim();
+  if(!text||busy) return;
+  if(!SEL.size){$("#hint").textContent="Toggle at least one model on the left first.";return;}
+  busy=true; $("#send").disabled=true; $("#msg").value="";
+  addTurn("You","user").innerHTML=md(text);
+  const out=addTurn($("#prov").selectedOptions[0].textContent,"agent");
+  out.innerHTML='<span class="spin"></span>working…';
+
+  let raw="";
+  try{
+    const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({models:[...SEL],provider:$("#prov").value,message:text})});
+    const rd=r.body.getReader(), dec=new TextDecoder();
+    for(;;){
+      const{done,value}=await rd.read(); if(done) break;
+      raw+=dec.decode(value,{stream:true});
+      out.innerHTML=md(raw);
+      $("#chat").scrollTop=$("#chat").scrollHeight;
+    }
+    if(!raw.trim()) out.innerHTML='<p style="color:var(--fg-3)">(no output)</p>';
+  }catch(e){ out.innerHTML=md("**Request failed:** "+e); }
+  busy=false; $("#send").disabled=false; $("#msg").focus();
+}
+
+$("#send").onclick=send;
+$("#msg").addEventListener("keydown",e=>{
+  if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}
+});
+$("#msg").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";});
+$("#q").addEventListener("input",drawList);
+$("#envcheck").onclick=async()=>{
+  const box=$("#envout"); box.style.display="block"; box.textContent="running…\n";
+  const r=await fetch("/api/selfcheck?provider="+encodeURIComponent($("#prov").value||""));
+  const rd=r.body.getReader(), dec=new TextDecoder(); box.textContent="";
+  for(;;){const{done,value}=await rd.read(); if(done)break;
+    box.textContent+=dec.decode(value); box.scrollTop=box.scrollHeight;}
+};
+$("#theme").onclick=()=>{
+  const d=document.body.hasAttribute("data-dark");
+  d?document.body.removeAttribute("data-dark"):document.body.setAttribute("data-dark","");
+  localStorage.setItem("kiss-dark",d?"0":"1");
+};
+if(localStorage.getItem("kiss-dark")==="1"||
+   (localStorage.getItem("kiss-dark")===null&&matchMedia("(prefers-color-scheme:dark)").matches))
+  document.body.setAttribute("data-dark","");
+
+let PROV={providers:[],any_usable:false,default:""};
+async function loadProviders(){
+  PROV=await (await fetch("/api/providers")).json();
+  const sel=$("#prov");
+  sel.innerHTML=PROV.providers.map(p=>
+    `<option value="${esc(p.name)}" ${p.usable?"":"disabled"} ${p.name===PROV.default?"selected":""}>`+
+    `${esc(p.label)}${p.usable?"":" — needs setup"}</option>`).join("");
+  const usable=PROV.providers.filter(p=>p.usable);
+  if(usable.length && !PROV.providers.find(p=>p.name===sel.value && p.usable))
+    sel.value=usable[0].name;
+  $("#nprov").textContent=`${usable.length}/${PROV.providers.length} providers ready`;
+  const old=$("#gatebanner"); if(old) old.remove();
+  if(!PROV.any_usable){
+    $("#chat").insertAdjacentHTML("beforebegin",
+      `<div class="banner" id="gatebanner"><b>Nothing can run yet.</b> No signed-in agent CLI and
+       no API key. Open ⚙ Settings to add an API key, or install an agent CLI —
+       then use “Check my setup” in the model drawer to verify. Chat is disabled until one works.</div>`);
+  }
+  $("#send").disabled=!PROV.any_usable;
+}
+async function openSettings(){
+  const s=await (await fetch("/api/settings")).json();
+  $("#s-def").innerHTML='<option value="">(first usable)</option>'+PROV.providers.map(p=>
+    `<option value="${esc(p.name)}" ${p.name===s.default_provider?"selected":""}>${esc(p.label)}</option>`).join("");
+  for(const [id,k] of [["s-anthropic","ANTHROPIC_API_KEY"],["s-deepseek","DEEPSEEK_API_KEY"],
+                       ["s-openai","OPENAI_API_KEY"],["s-openrouter","OPENROUTER_API_KEY"]])
+    $("#"+id).value=s.api_keys[k]||"";
+  $("#modal").classList.add("open");
+}
+$("#settings").onclick=openSettings;
+$("#s-close").onclick=()=>$("#modal").classList.remove("open");
+$("#s-save").onclick=async()=>{
+  const body={default_provider:$("#s-def").value,api_keys:{
+    ANTHROPIC_API_KEY:$("#s-anthropic").value,DEEPSEEK_API_KEY:$("#s-deepseek").value,
+    OPENAI_API_KEY:$("#s-openai").value,OPENROUTER_API_KEY:$("#s-openrouter").value}};
+  const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body)});
+  $("#s-msg").textContent=r.ok?"saved":"error";
+  await loadProviders();
+  setTimeout(()=>{$("#s-msg").textContent="";},1500);
+};
+
+(async()=>{
+  MODELS=await (await fetch("/api/models")).json();
+  STATUS=await (await fetch("/api/status")).json();
+  drawList(); drawChips(); drawSetup();
+  await loadProviders();
+})();
+</script></body></html>

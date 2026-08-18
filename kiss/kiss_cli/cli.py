@@ -356,6 +356,11 @@ def _rescue_run_options(args) -> None:
 def main(argv: list[str] | None = None) -> int:
     import sys as _sys
 
+    # Before anything looks for agent CLIs or API keys: a double-clicked app
+    # gets launchd's bare PATH, not the user's shell PATH.
+    from . import shellenv
+    shellenv.adopt()
+
     if argv is None:
         argv = _sys.argv[1:]
     # A bare launch means "open the app". The first real macOS test was someone

@@ -89,6 +89,12 @@ jobs:
 
   release:
     needs: build
+    # Publish whatever actually built. GitHub's Intel runners (macos-13) are
+    # scarce enough that the x86_64 job sat queued for six hours while arm64
+    # finished in one minute, and a strict `needs` held every release hostage
+    # to a machine that never arrived. Apple Silicon users should not wait on
+    # an Intel runner; the missing architecture is reported, not pretended away.
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -112,13 +118,22 @@ jobs:
                 git tag "$TAG" || true
                 git push origin "$TAG" || true ;;
           esac
+          shopt -s nullglob
+          ASSETS=(GeoForge-Desktop-macos-*.app.zip kiss-macos-*.tar.gz kiss-ki-packages.tar.gz)
+          APPS=(GeoForge-Desktop-macos-*.app.zip)
+          if [ ${#APPS[@]} -eq 0 ]; then
+            echo "::error::no .app was built — refusing to publish a release with no application"
+            exit 1
+          fi
+          echo "publishing: ${ASSETS[*]}"
+          for a in arm64 x86_64; do
+            [ -f "GeoForge-Desktop-macos-$a.app.zip" ] \
+              || echo "::warning::$a did not build — this release ships without it"
+          done
           gh release create "$TAG" \
-            --title "KISS desktop $TAG (macOS)" \
+            --title "GeoForge Desktop $TAG (macOS)" \
             --notes-file .github/RELEASE_NOTES_MACOS.md \
             --repo "$GITHUB_REPOSITORY" \
-            kiss-macos-arm64.tar.gz kiss-macos-x86_64.tar.gz kiss-ki-packages.tar.gz \
-            GeoForge-Desktop-macos-arm64.app.zip GeoForge-Desktop-macos-x86_64.app.zip \
-          || gh release upload "$TAG" \
-            kiss-macos-arm64.tar.gz kiss-macos-x86_64.tar.gz kiss-ki-packages.tar.gz \
-            GeoForge-Desktop-macos-arm64.app.zip GeoForge-Desktop-macos-x86_64.app.zip \
+            "${ASSETS[@]}" \
+          || gh release upload "$TAG" "${ASSETS[@]}" \
             --clobber --repo "$GITHUB_REPOSITORY"

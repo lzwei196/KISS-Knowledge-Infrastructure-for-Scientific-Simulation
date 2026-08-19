@@ -235,19 +235,16 @@ function drawList(){
 
 let STATUS={};
 function stateClass(n){
-  const s=(STATUS[n]||{}).state;
-  return s==="ready"?"ok":s==="attention"?"block":s==="oneclick"?"ok":s==="manual"?"warn":"warn";
+  // Binary by design: green = installed and its check passed, red = not.
+  return (STATUS[n]||{}).state==="ready"?"ok":"block";
 }
 function stateTitle(n){
-  const s=(STATUS[n]||{}).state;
-  return {ready:"Ready — check passed",attention:"Needs attention — check failed",
-          oneclick:"1-click install",manual:"Manual install (licence)",
-          agent:"Agent setup — the agent works out the install"}[s]||"";
+  return (STATUS[n]||{}).state==="ready"
+    ? "Installed — check passed, usable"
+    : "Not installed — press Install";
 }
 function stateLabel(n){
-  const s=(STATUS[n]||{}).state;
-  return {ready:"Ready",attention:"Needs attention",oneclick:"Install",
-          manual:"Manual",agent:"Agent setup"}[s]||"…";
+  return (STATUS[n]||{}).state==="ready"?"Ready":"Install";
 }
 function toggle(name){
   SEL.has(name)?SEL.delete(name):SEL.add(name);

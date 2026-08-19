@@ -145,7 +145,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
   </div></div>
   <div id="mpick"><div class="card2">
     <h2>Models for this session</h2>
-    <div class="hint" style="margin:0 0 8px">Leave empty for <b>Auto</b> — the agent reads the catalogue and picks. Install state: <span class="dot ok" style="display:inline-block"></span> ready · <span class="dot warn" style="display:inline-block"></span> needs setup — manage in the <a href="/library">KI Library</a>.</div>
+    <div class="hint" style="margin:0 0 8px">Leave empty for <b>Auto</b> — the agent reads the catalogue and picks. Install state: <span class="dot ok" style="display:inline-block"></span> installed &amp; usable · <span class="dot block" style="display:inline-block"></span> not installed — manage in the <a href="/library">KI Library</a>.</div>
     <input id="mq" placeholder="search…" autocomplete="off" style="margin-bottom:8px">
     <div id="mrows" style="max-height:46vh;overflow-y:auto"></div>
     <div style="display:flex;gap:8px;margin-top:14px">
@@ -168,8 +168,9 @@ function md(t){let h=esc(t);
 
 let SESSIONS=[], CUR=null, MODELS=[], STATUS={}, PROV={providers:[],any_usable:false}, PICK=new Set(), busy=false;
 
-function stateClass(n){const s=(STATUS[n]||{}).state;
-  return s==="ready"?"ok":s==="attention"?"block":s==="oneclick"?"ok":"warn";}
+function stateClass(n){
+  // Binary by design: green = installed and its check passed, red = not.
+  return (STATUS[n]||{}).state==="ready"?"ok":"block";}
 
 async function loadAll(){
   [SESSIONS,MODELS,STATUS,PROV]=await Promise.all([

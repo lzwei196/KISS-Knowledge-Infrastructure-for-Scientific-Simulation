@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -140,6 +141,28 @@ def tool_schemas(ki) -> list[dict]:
             "input_schema": {"type": "object", "properties": {}},
         },
         {
+            "name": "list_skills",
+            "description": (
+                "List the agent skills installed on this machine (name + one-line "
+                "description). Skills are reusable instruction packages — use one "
+                "when a task matches its description (plotting, statistics, "
+                "literature review, document formats, ...)."
+            ),
+            "input_schema": {"type": "object",
+                             "properties": {"query": {"type": "string",
+                                            "description": "optional substring filter"}}},
+        },
+        {
+            "name": "read_skill",
+            "description": (
+                "Read one installed skill's SKILL.md instructions by name. Read it "
+                "before applying the skill; follow it like a procedure."
+            ),
+            "input_schema": {"type": "object",
+                             "properties": {"name": {"type": "string"}},
+                             "required": ["name"]},
+        },
+        {
             "name": "search_diagnostics",
             "description": (
                 "Search this KI's diagnostics/triplets for an error keyword. Use "
@@ -201,6 +224,32 @@ def execute_tool(name: str, args: dict, ki, cfg) -> str:
                 if kw in line.lower():
                     hits.append(f"{f.relative_to(root)}:{i}: {line.strip()[:200]}")
         return "\n".join(hits[:40]) or f"no diagnostics mention {kw!r}"
+
+    if name in ("list_skills", "read_skill"):
+        # The CLI drivers inherit the unified skill library natively; the API
+        # loop is ours, so the same library is exposed through tools — one
+        # library, every provider. Canonical home: ~/.agents/skills (the
+        # cross-agent convention the CLIs and DeepSeek Harness all read).
+        lib = Path.home() / ".agents" / "skills"
+        if name == "list_skills":
+            q = (args.get("query") or "").lower()
+            out = []
+            for d in sorted(lib.iterdir()) if lib.is_dir() else []:
+                sk = d / "SKILL.md"
+                if not sk.is_file():
+                    continue
+                desc = ""
+                for line in sk.read_text(encoding="utf-8", errors="replace")[:2000].splitlines():
+                    if line.startswith("description:"):
+                        desc = line.split(":", 1)[1].strip()[:140]
+                        break
+                if not q or q in d.name.lower() or q in desc.lower():
+                    out.append(f"{d.name} — {desc}")
+            return "\n".join(out[:200]) or "no skills installed"
+        sk = lib / re.sub(r"[^A-Za-z0-9_-]", "", args.get("name", "")) / "SKILL.md"
+        if not sk.is_file():
+            raise ToolError(f"no skill named {args.get('name')!r}")
+        return sk.read_text(encoding="utf-8", errors="replace")[:60000]
 
     raise ToolError(f"unknown tool {name}")
 

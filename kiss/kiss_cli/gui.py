@@ -125,9 +125,28 @@ class Handler(BaseHTTPRequestHandler):
 
             emit("[2/4] Agent CLIs on this machine")
             avail = providers.available()
+
+            def _skill_count(cli: str) -> int:
+                # Each CLI auto-discovers its user-level skills; the spawned
+                # agent inherits them because it runs as this user. Counted
+                # here so "my skills are integrated" is visible, not assumed.
+                home = Path.home()
+                dirs = {"claude": [home / ".claude" / "skills"],
+                        "codex": [home / ".codex" / "skills", home / ".agents" / "skills"],
+                        "kimi": [home / ".kimi" / "skills", home / ".agents" / "skills"],
+                        "gemini": [home / ".agents" / "skills"],
+                        "qwen": [home / ".agents" / "skills"]}.get(cli, [])
+                seen = set()
+                for d in dirs:
+                    if d.is_dir():
+                        seen |= {p.name for p in d.iterdir() if p.is_dir()}
+                return len(seen)
+
             if avail:
                 for p in avail:
-                    emit(f"   OK  {p.label}  ({p.path()})")
+                    n = _skill_count(p.name)
+                    emit(f"   OK  {p.label}  ({p.path()})"
+                         + (f" — {n} skills inherited" if n else ""))
             else:
                 emit("   FAIL  none found — install one:")
                 for p in providers.PROVIDERS.values():

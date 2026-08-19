@@ -132,7 +132,11 @@ def cmd_init(args) -> int:
     ki = cat.get(args.model)
     repo_root = ki.root.parent.parent
 
-    root = Path(args.workdir or Path.cwd() / f"kiss-{ki.name.lower()}").expanduser().resolve()
+    # Default to ~/kiss/<model>, the same layout the app and `kiss verify` use.
+    # Installing to ./kiss-<model> while verify looked in ~/kiss meant the two
+    # commands could not see each other's work: `kiss init MODFLOW6` followed
+    # by `kiss verify MODFLOW6` reported the model missing.
+    root = Path(args.workdir or Path.home() / "kiss" / ki.name.lower()).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     cfg_file = root / paths.CONFIG_NAME
     if cfg_file.exists():
@@ -302,7 +306,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     q = sub.add_parser("init", help="set a KI up on this machine")
     q.add_argument("model")
-    q.add_argument("-w", "--workdir", help="where to install (default ./kiss-<model>)")
+    q.add_argument("-w", "--workdir", help="where to install (default ~/kiss/<model>)")
     q.add_argument("--python", help="interpreter to install into")
     q.add_argument("--relocation", default="sandbox", choices=("sandbox", "port", "symlink"))
     q.set_defaults(fn=cmd_init)

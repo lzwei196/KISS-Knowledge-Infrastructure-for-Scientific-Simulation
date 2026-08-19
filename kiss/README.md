@@ -43,13 +43,13 @@ relocates using one of three tiers:
 
 The sandbox tier overlays a tmpfs on `/mnt`, `/media` and `/home` before
 binding underneath. That is not cosmetic: in an unprivileged user namespace you
-cannot mount over a path inside a mount you do not own, and `/mnt/disk1` is its
+cannot mount over a path inside a mount you do not own, and `/srv` is its
 own filesystem on the authoring machine.
 
 Result — a KI's hardcoded path resolves to your install, untouched:
 
 ```
-$ kiss run MODFLOW6 -w ~/mf6 -- /mnt/disk1/Hydrocraft_server/model/modflow6/mf6.6.1_linux/bin/mf6 --version
+$ kiss run MODFLOW6 -w ~/mf6 -- /srv/models/modflow6/mf6.6.1_linux/bin/mf6 --version
 mf6: 6.6.1 02/10/2025
 ```
 

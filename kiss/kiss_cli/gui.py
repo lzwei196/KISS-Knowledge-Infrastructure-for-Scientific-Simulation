@@ -73,7 +73,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
 
         if route == "/library":
+            # read_bytes() on a missing file raised straight out of the
+            # handler, so the frozen Mac app — which shipped app.html but not
+            # library.html — answered the Library button with a dead
+            # connection and a blank window. Say what is wrong instead.
             lib = PAGE.parent / "library.html"
+            if not lib.is_file():
+                return self._send(500, (
+                    "<h1>KISS Library is missing from this build</h1>"
+                    f"<p>Expected <code>{lib}</code>.</p>"
+                    "<p>This is a packaging fault, not something you did. "
+                    "Please report it with your version number.</p>"
+                ).encode(), "text/html; charset=utf-8")
             return self._send(200, lib.read_bytes(), "text/html; charset=utf-8")
 
         if route == "/logo.svg":

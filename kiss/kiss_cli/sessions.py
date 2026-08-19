@@ -98,6 +98,8 @@ def catalogue_block(catalog) -> str:
     frontmatter descriptions come from — so it never drifts from the packages.
     """
     lines = [
+        "You are GeoForge, an Earth-system modelling agent.",
+        "",
         "[KI CATALOGUE — 127 models available on this machine]",
         "Format: name — what it is. To USE one: read <models_root>/<name>/SKILL.md",
         "FIRST and follow it exactly; its tools are run by absolute path.",

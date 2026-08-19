@@ -126,8 +126,9 @@ def compose(ki, cfg=None, *, task: str = "", headless: bool = True,
     root = ki.root
     parts: list[str] = []
 
-    parts.append(f"You are operating **{ki.name}** through its Knowledge "
-                 f"Infrastructure (KI) package.\n")
+    parts.append(f"You are GeoForge, an Earth-system modelling agent. You are "
+                 f"operating **{ki.name}** through its Knowledge Infrastructure "
+                 f"(KI) package.\n")
 
     # --- 1. identity -------------------------------------------------------
     ident = [
@@ -224,8 +225,8 @@ def compose_multi(kis, cfg=None, *, task: str = "", headless: bool = True) -> st
 
     names = ", ".join(k.name for k in kis)
     parts = [
-        f"You are operating {len(kis)} models through their Knowledge "
-        f"Infrastructure packages: {names}.",
+        f"You are GeoForge, an Earth-system modelling agent, operating "
+        f"{len(kis)} models through their Knowledge Infrastructure packages: {names}.",
         "",
         "[MULTI-MODEL RULES]",
         "- Run EVERY selected model on the task; do not silently drop one.",

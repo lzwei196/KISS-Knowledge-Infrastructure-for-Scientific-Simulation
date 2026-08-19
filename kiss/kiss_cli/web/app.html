@@ -233,7 +233,7 @@ async function openSession(id){
   $("#title").textContent=CUR.title;
   drawModelLabel();
   const c=$("#chat"); c.innerHTML="";
-  for(const m of CUR.messages) addTurn(m.role==="user"?"You":"Agent", m.role==="user"?"user":"agent").innerHTML=md(m.text);
+  for(const m of CUR.messages) addTurn(m.role==="user"?"You":"GeoForge", m.role==="user"?"user":"agent").innerHTML=md(m.text);
   c.scrollTop=c.scrollHeight;
   drawProviders();
 }
@@ -264,7 +264,7 @@ async function send(){
   await fetch(`/api/session/${CUR.id}/update`,{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({provider:$("#prov").value,llm_model:$("#llm").value})});
   addTurn("You","user").innerHTML=md(text);
-  const out=addTurn("Agent","agent"); out.innerHTML='<span class="spin"></span>working…';
+  const out=addTurn("GeoForge","agent"); out.innerHTML='<span class="spin"></span>working…';
   let raw="";
   try{
     const r=await fetch(`/api/session/${CUR.id}/chat`,{method:"POST",

@@ -884,6 +884,8 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
     prefix = cfg.roles["binaries"] / (man.install_dir or ki.name)
     s, binary = install.acquire(man, prefix, cfg.python)
     result.binary = binary
+    for note in install.place_where_the_ki_expects(ki, binary, cfg):
+        emit(f"      {note}\n")
     step("[6/8] acquire", s)
     if man.depends_on:
         emit(f"      couples with: {', '.join(man.depends_on)}\n")

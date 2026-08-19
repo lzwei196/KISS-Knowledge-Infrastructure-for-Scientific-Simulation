@@ -224,6 +224,7 @@ def _acq_build(man, prefix, python):
             binary = hits[0]
             cmds.append(f"# produces corrected: {a.produces} -> "
                         f"{binary.relative_to(src)}")
+
         else:
             found = f"; {len(hits)} candidates named {want}" if hits else ""
             return Step("acquire[build]", False,
@@ -258,6 +259,75 @@ def _acq_bundled(man, prefix, python):
 def _acq_manual(man, prefix, python):
     return Step("acquire[manual]", False,
                 man.agent_hint or "this model must be obtained by hand — see SKILL.md"), None
+
+
+def place_where_the_ki_expects(ki, binary: Path, cfg) -> list[str]:
+    """Make the KI's declared binary path true.
+
+    preflight_check.py hardcodes where the binary lives, and that declaration
+    is the contract every consumer reads — including our own verifier. It was
+    written against the dissection toolkit's layout, so TOPMODEL's preflight
+    looks for source/repo/run_bmi while our build produces run_bmi at the
+    checkout root. Both are legitimate; they just disagree.
+
+    Rather than rewrite 127 KIs or fail a working build, link the binary into
+    the place the KI names. One real file, every declared path true.
+    """
+    from . import runnable
+
+    notes: list[str] = []
+
+    def resolve(decl: str) -> Path | None:
+        if decl.startswith("KISSPATH_"):
+            if cfg is None:
+                return None
+            try:
+                from .port import unsubstitute
+                decl = unsubstitute(decl, cfg)[0]
+            except Exception:
+                return None
+        p = Path(decl)
+        return p if p.is_absolute() else None
+
+    # The KI ships tools/ and declares it at KISSPATH_KI_ROOT/<name>/
+    # knowledge_infrastructure/tools, while materialisation puts the package at
+    # ki/. Ten of the KIs disagree about that middle segment among themselves,
+    # so rather than encode a layout, link what the package actually contains
+    # to wherever it says the directory lives.
+    ki_root = Path(getattr(ki, "root", "")) if getattr(ki, "root", None) else None
+    for decl in runnable.declared_dirs(ki):
+        want = resolve(decl)
+        if want is None or want.exists() or ki_root is None:
+            continue
+        have = ki_root / want.name
+        if not have.is_dir():
+            continue
+        try:
+            want.parent.mkdir(parents=True, exist_ok=True)
+            want.symlink_to(have, target_is_directory=True)
+            notes.append(f"linked {want} -> {have}")
+        except OSError as e:
+            notes.append(f"could not place {want.name}/ at {want}: {e}")
+
+    if not binary or not binary.is_file():
+        return notes
+    for decl in runnable.declared(ki):
+        want = resolve(decl)
+        if want is None or want.exists():
+            continue
+        if want.name != binary.name:
+            continue                    # a different artefact, not this binary
+        try:
+            want.parent.mkdir(parents=True, exist_ok=True)
+            want.symlink_to(binary)
+            notes.append(f"linked {want} -> {binary}")
+        except OSError:
+            try:
+                shutil.copy2(binary, want)
+                notes.append(f"copied {binary} -> {want}")
+            except OSError as e:
+                notes.append(f"could not place binary at {want}: {e}")
+    return notes
 
 
 def run_preflight(ki, python: str, cfg=None) -> Step:

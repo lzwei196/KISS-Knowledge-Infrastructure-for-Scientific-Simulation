@@ -1,0 +1,17 @@
+kiss_manifest_version: 1
+model: TOPMODEL
+verified: observed
+install_dir: TOPMODEL
+acquire:
+  strategy: build
+  repo: https://github.com/NOAA-OWP/topmodel
+  ref: 7e193d3fb3d94ffec448b04bcbe0b5d01c53bb36
+  commands:
+  - make -C src clean
+  - make -C src
+  produces: run_bmi
+  system_deps:
+  - gcc
+  - make
+notes: 'OBSERVED: proposed by agent from strong upstream evidence (ci, cmake, readme),
+  then executed by kiss init to a passing preflight.'

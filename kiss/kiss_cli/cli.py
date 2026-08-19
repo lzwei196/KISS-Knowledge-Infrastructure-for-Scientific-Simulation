@@ -197,6 +197,8 @@ def cmd_init(args) -> int:
     s, binary = install.acquire(man, prefix, cfg.python)
     result.add(s)
     result.binary = binary
+    for note in install.place_where_the_ki_expects(ki, binary, cfg):
+        print(_c("dim", f"        {note}"))
     print(f"  [6/8] acquire ......... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
     if not s.ok:
         print(_c("dim", "        " + s.detail.strip().splitlines()[0][:100]))

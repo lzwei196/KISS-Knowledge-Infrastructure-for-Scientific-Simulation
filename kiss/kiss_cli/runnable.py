@@ -163,6 +163,16 @@ def declared(ki) -> list[str]:
             re.finditer(r"""check_file\(\s*['"]([^'"]+)['"]""", text)]
 
 
+def declared_dirs(ki) -> list[str]:
+    """Directories the KI's preflight requires, from its own ``check_dir`` calls."""
+    pre = getattr(ki, "preflight", None)
+    if not pre or not Path(pre).is_file():
+        return []
+    text = Path(pre).read_text(encoding="utf-8", errors="replace")
+    return [m.group(1) for m in
+            re.finditer(r"""check_dir\(\s*['"]([^'"]+)['"]""", text)]
+
+
 def declared_imports(ki) -> list[str]:
     """Modules the KI's preflight requires, from its own ``check_import`` calls.
 

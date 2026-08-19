@@ -102,6 +102,26 @@ def _fetch(url: str, timeout: int = 25) -> str | None:
         return None
 
 
+def checkout_relative(produces: str | None) -> str | None:
+    """Re-express a harvested build output relative to *our* checkout.
+
+    The harvested paths were recovered from the dissection toolkit, which
+    clones each model into ``_work/<model>/source/repo``. We clone into the
+    install prefix itself, so ``source/repo/build/adcirc`` there is
+    ``build/adcirc`` here. Handing the toolkit's spelling to an agent taught it
+    a layout that does not exist: it proposed produces=source/repo/run_bmi for
+    a file that landed at run_bmi, and then `make -C source/repo/src clean`
+    against a directory that was never created. 42 of the 50 harvested paths
+    carry this prefix.
+    """
+    if not produces:
+        return produces
+    parts = produces.split("/")
+    if len(parts) > 2 and parts[0] == "source":
+        return "/".join(parts[2:])      # source/<clonedir>/rest -> rest
+    return produces
+
+
 def gather(ki, harvested: dict | None = None, *, max_files: int = 6) -> Research:
     """Collect everything known about how to build this model."""
     meta = ki.meta or {}
@@ -110,7 +130,7 @@ def gather(ki, harvested: dict | None = None, *, max_files: int = 6) -> Research
         ref=meta.get("version"),
         language=meta.get("language"),
         official=meta.get("repo_url"),
-        produces=(harvested or {}).get(ki.name),
+        produces=checkout_relative((harvested or {}).get(ki.name)),
     )
     res.repo = _github_repo(meta.get("repo_url"))
 
@@ -162,6 +182,9 @@ def brief(res: Research, ki) -> str:
         out.append(f"  build output  {res.produces}")
         out.append("     ^ recovered from this KI's own preflight: where the binary")
         out.append("       landed when somebody last built this model. Trust it over a guess.")
+        out.append("       It is relative to the checkout root, which is the install")
+        out.append("       prefix itself — the repository is cloned there directly, so")
+        out.append("       write every path and build command relative to that root.")
     out += ["", f"[UPSTREAM BUILD EVIDENCE — {res.strength()}]"]
 
     if not res.evidence:

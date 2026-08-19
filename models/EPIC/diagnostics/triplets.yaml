@@ -592,7 +592,7 @@ triplets:
       "Quick validation (fastest path -- use this for KI testing)" -- dies
       immediately with:
         ERROR: [Errno 2] No such file or directory:
-        'KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/EPIC/epic_workspace/epic1102-official_release.exe'
+        'KISSPATH_BINARIES/EPIC/epic_workspace/epic1102-official_release.exe'
       and emits {"ki_usable": false}. Without --rerun it instead reports
       "Missing umstead_0.ANN" / "Missing umstead_0.ACY", because the default
       workspace points at the same vanished directory.

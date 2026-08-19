@@ -5,7 +5,7 @@ model:
   subdomain: "environmental_simulation"
   engine: "Aquifolium"
   binary_name: "OHQLibTest"
-  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenHydroQual/source/repo/OHQLibTest/OHQLibTest"
+  binary_path: "KISSPATH_BINARIES/OpenHydroQual/source/repo/OHQLibTest/OHQLibTest"
   language: "C++14"
   dependencies:
     - "Qt6 Core"
@@ -13,7 +13,7 @@ model:
     - "LAPACK/BLAS"
     - "GSL"
     - "OpenMP"
-  ld_library_path: "/snap/gnome-46-2404/153/usr/lib:KISSPATH_HOME/miniconda3/envs/ohq/lib:KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenHydroQual/source/repo/OHQLib/build"
+  ld_library_path: "/snap/gnome-46-2404/153/usr/lib:KISSPATH_HOME/miniconda3/envs/ohq/lib:KISSPATH_BINARIES/OpenHydroQual/source/repo/OHQLib/build"
 
 inputs:
   primary:
@@ -22,7 +22,7 @@ inputs:
       extension: ".ohq"
       description: "Semicolon-separated command script defining blocks, links, sources, constituents, reactions"
   templates:
-    path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/OpenHydroQual/source/repo/resources/"
+    path: "KISSPATH_BINARIES/OpenHydroQual/source/repo/resources/"
     key_files:
       - "main_components.json"
       - "river_processes.json"

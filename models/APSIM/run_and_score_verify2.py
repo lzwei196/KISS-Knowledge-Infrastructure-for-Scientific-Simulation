@@ -24,7 +24,7 @@ import pandas as pd
 ROOT = "KISSPATH_KI_ROOT/APSIM"
 KI   = os.path.join(ROOT, "knowledge_infrastructure")
 TOOLS= os.path.join(KI, "tools")
-BIN  = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/APSIM/source/repo/bin/Release/net8.0/apsim"
+BIN  = "KISSPATH_BINARIES/APSIM/source/repo/bin/Release/net8.0/apsim"
 STATE= os.path.join(ROOT, "detached", "verify_2")
 WORK = os.path.join(STATE, "work")
 RESULT = os.path.join(STATE, "result.json")

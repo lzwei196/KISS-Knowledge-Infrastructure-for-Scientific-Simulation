@@ -87,9 +87,9 @@ import numpy as np
 KI = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOLS = os.path.join(KI, "tools")
 ROOT = os.path.dirname(KI)
-BIN = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
-SRCDIR = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/repo"
-TBL_SRC = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Noah_MP/source/hrldas/hrldas/run/NoahmpTable.TBL"
+BIN = "KISSPATH_BINARIES/Noah_MP/source/hrldas/hrldas/run/hrldas.exe"
+SRCDIR = "KISSPATH_BINARIES/Noah_MP/source/repo"
+TBL_SRC = "KISSPATH_BINARIES/Noah_MP/source/hrldas/hrldas/run/NoahmpTable.TBL"
 KDT = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent"
 PREFLIGHT = os.path.join(KDT, "validators", "preflight_forcing.py")
 

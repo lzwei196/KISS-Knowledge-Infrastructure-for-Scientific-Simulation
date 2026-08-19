@@ -3,7 +3,7 @@ model:
   domain: hydrology
   description: 4-parameter daily lumped rainfall-runoff model via airGR R package
   version: airGR v1.7.8
-  binary_path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GR4J___airGR/source/repo/src/airGR.so
+  binary_path: KISSPATH_BINARIES/GR4J___airGR/source/repo/src/airGR.so
   binary_type: ELF 64-bit shared object (Fortran core compiled via R)
   spatial_type: lumped
   temporal_resolution: daily

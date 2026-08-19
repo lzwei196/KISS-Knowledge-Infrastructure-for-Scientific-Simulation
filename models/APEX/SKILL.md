@@ -107,7 +107,7 @@ encoded by `WSA / CHL / RCHL`). EPIC is single-field; APEX is watershed.
 ### Binary (already installed)
 
 ```
-APEX 1501 binary:  KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/APEX/source/repo/Apex 1501 - Linux/apex1501
+APEX 1501 binary:  KISSPATH_BINARIES/APEX/source/repo/Apex 1501 - Linux/apex1501
 Version:           APEX1501 v20231214
 Platform:          Linux x86-64, statically linked ELF (no shared lib deps)
 File size:         ~7.3 MB

@@ -517,7 +517,7 @@
   remedy:
     action: "Prepend the conda env bin directory to PATH before running the model"
     manual_steps:
-      - "CONDA_BIN=KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/bin"
+      - "CONDA_BIN=KISSPATH_BINARIES/PCR_GLOBWB_2/miniconda/envs/pcrglobwb_python3/bin"
       - "Run: env PATH=$CONDA_BIN:$PATH $CONDA_BIN/python deterministic_runner.py setup.ini"
       - "Verify first: env PATH=$CONDA_BIN:$PATH mapattr --version"
     prevention: "Always use 'env PATH=...' prefix; never rely on ambient shell PATH for subprocess calls"

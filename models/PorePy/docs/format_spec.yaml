@@ -2,7 +2,7 @@ model:
   name: "PorePy"
   version: "1.12.0"
   domain: "Fractured porous media simulation (subsurface flow, poromechanics)"
-  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PorePy/venv/bin/python"
+  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
   language: "Python 3.10+"
   license: "GPL v3"
   developers: "Porous Media Group, University of Bergen, Norway"

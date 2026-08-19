@@ -1,7 +1,7 @@
 model:
   name: "openAMUNDSEN"
   domain: "cryosphere — snow accumulation, ablation, energy balance in mountain regions"
-  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/openAMUNDSEN/venv/bin/python"
+  binary_path: "KISSPATH_PYTHON_ENV/bin/python"
   binary_type: "python_package"
   cli_command: "openamundsen config.yml"
   version: "0.0.post1+gb501171df"

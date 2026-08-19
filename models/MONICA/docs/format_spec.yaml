@@ -7,7 +7,7 @@ model:
   spatial_domain: "1-D column, 1 m² surface, 2 m depth"
   language: "C++17 (core), Python (orchestration)"
   license: "MPL-2.0"
-  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/MONICA/source/repo/_cmake_release/monica-run"
+  binary_path: "KISSPATH_BINARIES/MONICA/source/repo/_cmake_release/monica-run"
   binary_type: "ELF 64-bit, x86-64, dynamically linked"
 
 inputs:

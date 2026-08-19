@@ -3,7 +3,7 @@ model:
   version: 2.0.2
   domain: cryosphere
   subdomain: glacier and snowpack energy/mass balance
-  binary_path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/COSIPY/venv/bin/python
+  binary_path: KISSPATH_PYTHON_ENV/bin/python
   entry_point: COSIPY.py
   source_repo: https://github.com/cryotools/cosipy
   config_format: TOML

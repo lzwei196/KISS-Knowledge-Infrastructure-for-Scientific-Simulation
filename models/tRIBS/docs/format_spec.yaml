@@ -3,7 +3,7 @@ model:
   version: "5.3.1"
   full_name: "TIN-based Real-time Integrated Basin Simulator"
   domain: "distributed watershed hydrology"
-  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/tRIBS/source/repo/build/tRIBS"
+  binary_path: "KISSPATH_BINARIES/tRIBS/source/repo/build/tRIBS"
   binary_parallel: "tRIBSpar (MPI)"
   language: "C++17"
   build_system: "CMake >= 3.20"

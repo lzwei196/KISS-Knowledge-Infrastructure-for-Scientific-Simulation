@@ -3,7 +3,7 @@ model:
   full_name: "Routing Application for Parallel computatIon of Discharge"
   domain: "river_network_routing"
   language: "Fortran 90 + PETSc"
-  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/RAPID/source/repo/src/rapid"
+  binary_path: "KISSPATH_BINARIES/RAPID/source/repo/src/rapid"
   execution: "mpiexec -n <nproc> ./rapid -nl <namelist_file>"
 
 inputs:

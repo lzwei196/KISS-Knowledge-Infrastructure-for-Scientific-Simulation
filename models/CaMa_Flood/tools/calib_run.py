@@ -59,7 +59,6 @@ from datetime import date, timedelta
 import numpy as np
 
 # ki_tools_common (canonical metrics) -- same families the dag gates on.
-sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect")
 from ki_tools_common.metrics import all_metrics  # noqa: E402
 
 KI_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

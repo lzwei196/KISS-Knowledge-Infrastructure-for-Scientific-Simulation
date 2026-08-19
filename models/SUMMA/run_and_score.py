@@ -18,7 +18,6 @@ import numpy as np
 import netCDF4 as nc
 
 sys.path.insert(0, "KISSPATH_KI_TOOLS_COMMON")
-sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 from ki_tools_common.load_forcing import load_hourly_forcing
 from ki_tools_common.metrics import all_metrics
 from ki_tools_common.validation import validate_water_balance

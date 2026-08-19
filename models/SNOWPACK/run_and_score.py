@@ -49,8 +49,7 @@ BASE = Path("KISSPATH_ROOT")
 KI = BASE / "models/SNOWPACK/knowledge_infrastructure"
 KI_TOOLS = KI / "tools"
 sys.path.insert(0, str(BASE / "models/ki_tools_common"))
-SNOWPACK_BIN = Path("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work"
-                    "/Alpine3D/local_install/bin/snowpack")
+SNOWPACK_BIN = Path("KISSPATH_BINARIES/Alpine3D/local_install/bin/snowpack")
 OBS_TXT = Path("KISSPATH_HOME/桌面/数据/Canadian historical snow survey data"
                "/Cdn_Snow_Survey_Dataset_Lat_long_Minus_HQ-MELCC.txt")
 OUT = BASE / "models/SNOWPACK/outputs_run/yanks_1c41p"

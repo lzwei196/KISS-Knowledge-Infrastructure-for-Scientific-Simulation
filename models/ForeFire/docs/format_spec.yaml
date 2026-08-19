@@ -2,7 +2,7 @@ model:
   name: "ForeFire"
   version: "2.2.1"
   domain: "wildfire_propagation"
-  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ForeFire/source/repo/bin/forefire"
+  binary_path: "KISSPATH_BINARIES/ForeFire/source/repo/bin/forefire"
   developer: "CNRS / Universite de Corse Pascal Paoli"
   language: "C++"
   propagation_models:

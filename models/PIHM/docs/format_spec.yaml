@@ -3,7 +3,7 @@ model:
   full_name: "Multi-Modular Penn State Integrated Hydrologic Model"
   version: "1.0.0.post"
   domain: "distributed_hydrology"
-  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/PIHM/source/repo/pihm"
+  binary_path: "KISSPATH_BINARIES/PIHM/source/repo/pihm"
   language: "C (gcc)"
   solver: "SUNDIALS CVODE v7.3.0"
   license: "MIT"

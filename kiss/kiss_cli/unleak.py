@@ -144,6 +144,39 @@ def _drop_syspath_inserts(text: str) -> tuple[str, int]:
     return new, n
 
 
+def _parses(path: Path, text: str) -> tuple[bool, str]:
+    """Validate by file type. Markdown and plain text always pass."""
+    suffix = path.suffix.lower()
+    if suffix == ".py":
+        try:
+            ast.parse(text)
+        except SyntaxError as e:
+            return False, f"python line {e.lineno}"
+    elif suffix in (".yaml", ".yml"):
+        try:
+            import yaml
+            yaml.safe_load(text)
+        except Exception as e:
+            return False, f"yaml: {str(e)[:60]}"
+    elif suffix == ".json":
+        import json
+        try:
+            json.loads(text)
+        except Exception as e:
+            return False, f"json: {str(e)[:60]}"
+    return True, ""
+
+
+#: In a non-Python file an interpreter reference cannot become an expression:
+#: writing `binary_path: sys.executable` into a YAML contract and prepending
+#: `import sys` to it is how 12 format_spec.yaml files got mangled. The same
+#: reference becomes the relocatable python_env placeholder instead.
+_EXPR_AS_PATH = {
+    "EXPR:sys.executable": "LIT:KISSPATH_PYTHON_ENV/bin/python",
+    'EXPR:sysconfig.get_paths()["purelib"]': "LIT:KISSPATH_PYTHON_ENV/lib/site-packages",
+}
+
+
 def unleak_file(path: Path, model: str, *, dry_run: bool = False) -> UnleakResult:
     res = UnleakResult(model=model)
     try:
@@ -179,12 +212,16 @@ def unleak_file(path: Path, model: str, *, dry_run: bool = False) -> UnleakResul
             break
         original_joined = nxt
 
+    is_python = path.suffix.lower() == ".py"
+
     def _whole(m: "re.Match") -> str:
         """Replace a literal that is entirely the leaked path."""
         tail = m.group("tail")
         kind, replacement = _classify(tail)
         if replacement is None or not replacement.startswith("EXPR:"):
             return m.group(0)          # left for the substring pass
+        if not is_python:
+            return m.group(0)          # handled as a path by the substring pass
         expr = replacement[5:]
         needed.add(expr.split(".")[0])
         res.fixes.append(Fix(model, kind, LEAK + tail, expr))
@@ -200,9 +237,12 @@ def unleak_file(path: Path, model: str, *, dry_run: bool = False) -> UnleakResul
             res.fixes.append(Fix(model, kind, ref, "(left alone)"))
             return ref
         if replacement.startswith("EXPR:"):
-            # Cannot splice an expression into the middle of a string; describe
-            # the target instead of emitting a path that cannot exist.
-            return ref
+            # An expression cannot be spliced into a string or a data file;
+            # use the path form of the same target where one exists.
+            as_path = _EXPR_AS_PATH.get(replacement)
+            if as_path is None:
+                return ref
+            replacement = as_path
         out = replacement[4:]
         if kind == "binary" and not res.produces:
             mm = _WORK.match(tail)
@@ -212,21 +252,21 @@ def unleak_file(path: Path, model: str, *, dry_run: bool = False) -> UnleakResul
         return out
 
     text = _SUBSTRING.sub(_sub, text)
-    if needed:
+    if needed and is_python:
         text = _ensure_imports(text, needed)
 
     res.remaining = text.count(LEAK)
 
     # Same discipline as the porting pass: never keep an edit that breaks the
-    # file. These are the scripts a new user runs first.
-    try:
-        ast.parse(text)
-    except SyntaxError as e:
-        try:
-            ast.parse(original)
-            res.reverted, res.why = True, f"would not parse at line {e.lineno}"
-        except SyntaxError:
-            res.reverted, res.why = True, f"already broken before this change (line {e.lineno})"
+    # file — but validate it as what it actually is. Parsing a YAML contract or
+    # a Markdown skill with ast.parse marked 97 healthy files "already broken
+    # at line 1" and reverted every one of them.
+    ok, why = _parses(path, text)
+    if not ok:
+        was_ok, _ = _parses(path, original)
+        res.reverted = True
+        res.why = (f"would not parse: {why}" if was_ok
+                   else f"already broken before this change ({why})")
         return res
 
     if not dry_run and text != original:
@@ -234,10 +274,36 @@ def unleak_file(path: Path, model: str, *, dry_run: bool = False) -> UnleakResul
     return res
 
 
-def unleak_all(models_dir: Path, *, dry_run: bool = False) -> list[UnleakResult]:
+#: Beyond preflight_check.py, the same leaked scratch paths sit in the format
+#: contract, the validation convention, the scoring scripts and prose. They are
+#: the same class of reference — a build directory on the authoring machine —
+#: and take the same repair.
+OTHER_TARGETS = (
+    "docs/format_spec.yaml",
+    "docs/validation_convention.yaml",
+    "knowledge_infrastructure.yaml",
+    "SKILL.md",
+)
+
+
+def unleak_all(models_dir: Path, *, dry_run: bool = False,
+               everything: bool = False) -> list[UnleakResult]:
     out: list[UnleakResult] = []
-    for pf in sorted(Path(models_dir).glob("*/preflight_check.py")):
-        r = unleak_file(pf, pf.parts[-2], dry_run=dry_run)
+    root = Path(models_dir)
+    targets: list[Path] = sorted(root.glob("*/preflight_check.py"))
+    if everything:
+        for rel in OTHER_TARGETS:
+            targets += sorted(root.glob(f"*/{rel}"))
+        for pat in ("*/run_and_score*.py", "*/tools/calib_run.py", "*/calib_run.py",
+                    "*/diagnostics/*.yaml", "*/workflow/*.md", "*/docs/*.md"):
+            targets += sorted(root.glob(pat))
+    seen: set[Path] = set()
+    for pf in targets:
+        if pf in seen:
+            continue
+        seen.add(pf)
+        model = pf.relative_to(root).parts[0]
+        r = unleak_file(pf, model, dry_run=dry_run)
         if r.fixes or r.reverted:
             out.append(r)
     return out

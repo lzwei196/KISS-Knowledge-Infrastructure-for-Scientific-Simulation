@@ -2,7 +2,7 @@ model:
   name: "HydroTrend"
   version: "3.0.5"
   domain: "Geomorphology / Fluvial Sediment Transport"
-  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/HydroTrend/source/repo/_build/hydrotrend"
+  binary_path: "KISSPATH_BINARIES/HydroTrend/source/repo/_build/hydrotrend"
   language: "C"
   time_step: "daily"
   spatial_scale: "lumped basin"

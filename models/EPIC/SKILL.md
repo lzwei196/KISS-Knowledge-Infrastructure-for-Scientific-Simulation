@@ -73,7 +73,7 @@ adapter, and output parsers for the model's annual/daily text files.
 | Binary                 | `epic1102-official_release.exe`                   |
 
 Working workspace used for this KI:
-`KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/EPIC/epic_workspace`
+`KISSPATH_BINARIES/EPIC/epic_workspace`
 
 ## Installation / environment
 
@@ -82,7 +82,7 @@ HydroCraft server it is launched under Wine.
 
 ```bash
 which wine                                                      # must resolve
-ls KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/EPIC/epic_workspace/epic1102-official_release.exe
+ls KISSPATH_BINARIES/EPIC/epic_workspace/epic1102-official_release.exe
 wine /path/to/epic1102-official_release.exe                     # runs in CWD
 ```
 

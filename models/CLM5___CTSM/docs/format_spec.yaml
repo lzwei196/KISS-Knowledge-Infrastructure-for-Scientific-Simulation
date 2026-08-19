@@ -4,7 +4,7 @@ model:
   version: "CTSM 5.4"
   domain: "Biogeochemistry, Land Surface, Hydrology, Carbon-Nitrogen Cycling"
   binary_path: "KISSPATH_HOME/cesm/scratch/test_clm5/bld/cesm.exe"
-  source_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/CLM5___CTSM/source/repo"
+  source_path: "KISSPATH_BINARIES/CLM5___CTSM/source/repo"
   language: "Fortran 2003+"
   build_system: "CIME (CMake 3.10+)"
   parallelism: "MPI + OpenMP"

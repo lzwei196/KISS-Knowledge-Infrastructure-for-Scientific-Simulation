@@ -28,7 +28,7 @@ import numpy as np
 
 KI    = "KISSPATH_KI_ROOT/ForeFire/knowledge_infrastructure"
 TOOLS = KI + "/tools"
-FF_BIN = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/ForeFire/source/repo/bin/forefire"
+FF_BIN = "KISSPATH_BINARIES/ForeFire/source/repo/bin/forefire"
 LDLIB = "KISSPATH_HOME/.local/lib"
 PY = "/usr/bin/python3"
 GDALWARP = "KISSPATH_HOME/.local/bin/gdalwarp"

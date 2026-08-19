@@ -22,7 +22,6 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, "KISSPATH_PYTHON_ENV/lib/python3.12/site-packages")
-sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
 from ki_tools_common.metrics import all_metrics
 from ki_tools_common.validation import validate_water_balance
 from validators.standard_calval import compute_calval_metrics

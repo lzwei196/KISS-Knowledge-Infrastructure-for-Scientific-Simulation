@@ -4,7 +4,7 @@ model:
   domain: geophysics
   developer: NREL (National Renewable Energy Laboratory)
   license: MIT
-  binary_path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/GEOPHIRES/venv/bin/python
+  binary_path: KISSPATH_PYTHON_ENV/bin/python
   entry_point: geophires_x.GEOPHIRESv3
   description: 'Geothermal techno-economic simulator combining reservoir models, wellbore
     models, surface plant models, and economic models to estimate LCOE/LCOH for geothermal

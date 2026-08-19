@@ -4,7 +4,7 @@ model:
   domain: "hydrology"
   subdomain: "watershed delineation"
   description: "Mesh-independent flow direction model for watershed delineation on unstructured meshes (hexagonal, square, latlon, MPAS, DGGRID, TIN)"
-  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/HexWatershed/source/repo/build/hexwatershed"
+  binary_path: "KISSPATH_BINARIES/HexWatershed/source/repo/build/hexwatershed"
   invocation: "hexwatershed <configuration_file.json>"
 
 inputs:

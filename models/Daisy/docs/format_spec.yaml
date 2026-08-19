@@ -5,7 +5,7 @@ model:
   description: 1D mechanistic simulation of agricultural field processes (water, nitrogen,
     carbon, crop growth)
   origin: Agrohydrology Group, University of Copenhagen
-  binary_path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/Daisy/source/repo/build/linux-gcc-portable/daisy
+  binary_path: KISSPATH_BINARIES/Daisy/source/repo/build/linux-gcc-portable/daisy
   config_language: Lisp-like (.dai files)
 inputs:
   forcing:

@@ -3,7 +3,7 @@ model:
   version: 1.2.1
   domain: hydrology
   language: Python
-  binary_path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/HydroCNHS/venv/bin/python
+  binary_path: KISSPATH_PYTHON_ENV/bin/python
   package: hydrocnhs
   time_step: daily
   rainfall_runoff_schemes:

@@ -30,7 +30,7 @@ import pandas as pd
 from ki_tools_common.metrics import all_metrics
 
 KI   = "KISSPATH_KI_ROOT/CLASSIC/knowledge_infrastructure"
-SRC  = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/CLASSIC/source/repo"
+SRC  = "KISSPATH_BINARIES/CLASSIC/source/repo"
 BIN  = f"{SRC}/bin/CLASSIC_serial"
 RUN  = "KISSPATH_KI_ROOT/CLASSIC/run/dksor"
 MET  = f"{RUN}/met"

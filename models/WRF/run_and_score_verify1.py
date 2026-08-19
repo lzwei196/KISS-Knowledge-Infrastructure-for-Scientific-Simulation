@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 import numpy as np
 
 # ---------------------------------------------------------------- paths
-WORK      = "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/WRF"
+WORK      = "KISSPATH_BINARIES/WRF"
 KI        = "KISSPATH_KI_ROOT/WRF/knowledge_infrastructure"
 TOOLS     = os.path.join(KI, "tools")
 DETACHED  = "KISSPATH_KI_ROOT/WRF/detached/verify_1"

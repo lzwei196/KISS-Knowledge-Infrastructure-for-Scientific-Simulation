@@ -137,7 +137,7 @@ build:
     - "wine (to run Windows PE32 executable on Linux)"
     - "python 3.x for KI tools"
     - "ki_tools_common (optional)"
-  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/EPIC/epic_workspace/epic1102-official_release.exe"
+  binary_path: "KISSPATH_BINARIES/EPIC/epic_workspace/epic1102-official_release.exe"
   known_issues:
     - "PE32 binary — requires Wine on Linux"
     - "All input filenames are read from CWD — must run inside workspace"

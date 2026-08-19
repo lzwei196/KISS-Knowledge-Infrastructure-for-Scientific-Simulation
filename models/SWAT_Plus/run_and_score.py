@@ -66,8 +66,6 @@ STREAM_THRESHOLD_KM2 = 500.0           # scaled to a 121,330 km2 basin
 SNAP_DIST_DEG = 0.01
 
 sys.path.insert(0, str(TOOLS / "s9"))
-sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent")
-sys.path.insert(0, "KISSPATH_INTERNAL_NOT_SHIPPED")
 
 from extract_discharge import find_channel_file, parse_channel_day, load_obs   # noqa: E402
 from ki_tools_common.metrics import all_metrics                                # noqa: E402
@@ -276,8 +274,7 @@ def preflight():
     ~800 monthly files per variable, so pointing preflight at the store root only
     ever samples the alphabetically-first variable (LRad).
     """
-    script = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/"
-              "validators/preflight_forcing.py")
+    script = ("KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/validators/preflight_forcing.py")
     failures, warnings, tails = [], [], []
     for var in CMFD_PREFLIGHT_VARS:
         vdir = CMFD / var

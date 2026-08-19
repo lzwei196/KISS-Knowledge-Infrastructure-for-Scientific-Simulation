@@ -3,7 +3,7 @@ model:
   version: 1.1.0
   domain: cryosphere
   subdomain: glacier and ice sheet flow modeling
-  binary_path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/icepack/venv/bin/python
+  binary_path: KISSPATH_PYTHON_ENV/bin/python
   interface: python_library
   description: 'Python library for modeling the flow of ice sheets and glaciers using
     the finite element method (FEM), built on Firedrake/PETSc.

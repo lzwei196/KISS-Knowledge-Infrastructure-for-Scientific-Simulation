@@ -3,7 +3,7 @@ model:
   domain: geophysics
   subdomain: Electrical Resistivity Tomography, Seismic Refraction, Induced Polarization,
     Electromagnetics
-  binary_path: KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/pyGIMLi/venv/bin/python
+  binary_path: KISSPATH_PYTHON_ENV/bin/python
   version: 1.5.5
   language: python
   license: Apache 2.0

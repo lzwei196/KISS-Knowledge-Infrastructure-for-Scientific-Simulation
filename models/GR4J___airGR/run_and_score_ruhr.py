@@ -14,7 +14,6 @@ import numpy as np, pandas as pd
 KI = 'KISSPATH_KI_ROOT/GR4J___airGR/knowledge_infrastructure'
 TOOLS = KI + '/tools'
 sys.path.insert(0, TOOLS)
-sys.path.insert(0, 'KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent')
 from ki_tools_common.metrics import all_metrics
 from ki_tools_common.validation import validate_water_balance
 

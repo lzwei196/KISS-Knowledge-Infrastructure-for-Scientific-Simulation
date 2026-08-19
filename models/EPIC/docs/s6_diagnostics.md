@@ -10,7 +10,7 @@ When EPIC0810 crashes, hangs, or produces empty/wrong output, follow this protoc
 2. **Read the manual** — EPIC1102 user manual covers most file format questions
    (the format hasn't changed since 0810). Texas A&M AgriLife BREC site has the PDF.
 3. **Inspect the bundled example** at
-   `KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect_multi_agent/_work_v2/EPIC/source/repo/epic1102_example_files_20221002/`
+   `KISSPATH_BINARIES/EPIC/source/repo/epic1102_example_files_20221002/`
    — the `umstead.SOL`, `umstead.OPC`, `NCRDU.DLY` files are *known to work*
    (after sanitization). Diff your generated files against these.
 4. **Fix the tool**, not the workspace by hand. The error you found should

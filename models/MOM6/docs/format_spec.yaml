@@ -4,7 +4,7 @@ model:
   domain: "ocean"
   developer: "NOAA-GFDL"
   language: "Fortran 90/95 + C (FMS infrastructure)"
-  binary_path: "KISSPATH_INTERNAL_NOT_SHIPPED/auto_dissect/_work/MOM6/validation_run/MOM6"
+  binary_path: "KISSPATH_BINARIES/MOM6/validation_run/MOM6"
   build_system: "Autoconf + Make (with FMS dependency)"
   parallelism: "MPI domain decomposition + optional OpenMP"
   io_format: "NetCDF4 (via FMS I/O layer)"

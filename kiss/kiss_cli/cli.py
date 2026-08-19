@@ -323,12 +323,74 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--json", action="store_true", help="emit the raw research as json")
     q.set_defaults(fn=cmd_recipe)
 
+    q = sub.add_parser("verify", help="prove a model actually runs on this machine")
+    q.add_argument("model", nargs="?", help="one model, or all of them if omitted")
+    q.add_argument("-w", "--workdir", help="where the install lives")
+    q.add_argument("--python", help="interpreter to probe scripts with")
+    q.add_argument("--timeout", type=int, default=25)
+    q.add_argument("--json", action="store_true")
+    q.set_defaults(fn=cmd_verify)
+
     q = sub.add_parser("run", help="run a command with the KI's paths resolved")
     q.add_argument("model")
     q.add_argument("-w", "--workdir")
     q.add_argument("argv", nargs=argparse.REMAINDER)
     q.set_defaults(fn=cmd_run)
     return p
+
+
+def cmd_verify(args) -> int:
+    """Execute the model and report whether it runs. Not bookkeeping — evidence.
+
+    ``preflight_check.py`` stops at "the file is there". This goes on to ask
+    whether the machine can actually execute it: right architecture, libraries
+    and imports resolvable, language runtime present. A model whose binary is
+    in place but whose .NET or libnetcdf is missing reports the specific gap,
+    which is the thing a user or an agent can act on.
+    """
+    import json as _json
+
+    from . import runnable
+
+    cat = _catalog(args)
+    kis = [cat.get(args.model)] if args.model else list(cat)
+    repo_root = kis[0].root.parent.parent
+    harvested = {}
+    hp = repo_root / "kiss" / "manifests" / "_harvested_produces.json"
+    if hp.exists():
+        try:
+            harvested = _json.loads(hp.read_text())
+        except ValueError:
+            pass
+
+    workroot = Path(args.workdir).expanduser().resolve() if args.workdir else Path.home() / "kiss"
+    results = []
+    for ki in kis:
+        root = workroot / ki.name.lower()
+        cfg = None
+        if (root / paths.CONFIG_NAME).exists():
+            try:
+                cfg = paths.KissConfig.load(root)
+            except Exception:
+                cfg = None
+        py = args.python or (cfg.python if cfg else None)
+        v = runnable.check(ki, _manifest_for(ki, repo_root), cfg, harvested,
+                           timeout=args.timeout, python=py)
+        runnable.save(workroot, v)
+        results.append(v)
+        if not args.json:
+            tick = _c("ok", "  runs  ") if v.usable else _c("BLOCK", "  BLOCKED")
+            print(f"{tick} {ki.name:<22}{v.summary()[:90]}")
+
+    if args.json:
+        print(_json.dumps([v.as_dict() for v in results], indent=2))
+    else:
+        ok = sum(v.usable for v in results)
+        print(f"\n{ok}/{len(results)} run on this machine")
+        for v in results:
+            if not v.usable and v.missing:
+                print(_c("dim", f"  {v.model}: {', '.join(v.missing[:4])}"))
+    return 0 if all(v.usable for v in results) else 1
 
 
 def _rescue_run_options(args) -> None:

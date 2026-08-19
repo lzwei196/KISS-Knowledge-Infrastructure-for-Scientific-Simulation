@@ -53,13 +53,15 @@ class InstallResult:
         return [s for s in self.steps if not s.ok]
 
 
-def _run(cmd: list[str] | str, cwd: Path | None = None, timeout: int = 1800) -> tuple[int, str]:
+def _run(cmd: list[str] | str, cwd: Path | None = None, timeout: int = 1800,
+         env: dict | None = None) -> tuple[int, str]:
     """Run a command, returning (rc, combined output). Never raises on failure."""
     shell = isinstance(cmd, str)
     try:
         p = subprocess.run(
             cmd, cwd=cwd, shell=shell, timeout=timeout,
             capture_output=True, text=True, errors="replace",
+            env={**os.environ, **env} if env else None,
         )
         return p.returncode, (p.stdout + p.stderr)[-8000:]
     except subprocess.TimeoutExpired:
@@ -346,16 +348,34 @@ def install_ki_tools_common(cfg, repo_root: Path) -> Step:
     else:
         return Step("ki-tools-common", False, out.strip()[-400:], commands=cmds)
 
+    # Identify the copy by __path__, not __file__. An editable install is
+    # reached through a finder that yields a package whose __file__ is None
+    # while the package works perfectly; reading __file__ reported "resolves to
+    # None" on a healthy install and told the user MODFLOW6 was unfinished when
+    # it was already running.
+    # Ask from a neutral directory. Python puts the working directory first on
+    # sys.path for -c, and this repo has a bare ki_tools_common/ at its root, so
+    # probing from the checkout found that directory instead of the installed
+    # copy and failed a correct install. PYTHONSAFEPATH is the 3.11+ belt to
+    # that braces, and is ignored harmlessly by older interpreters.
+    import tempfile
     rc2, out2 = _run([cfg.python, "-c",
-                      "import ki_tools_common as k, ki_tools_common.units; print(k.__file__)"])
+                      "import ki_tools_common as k, ki_tools_common.units\n"
+                      "print('|'.join(list(getattr(k, '__path__', None) or [])"
+                      " or [k.__file__ or '']))"],
+                     cwd=Path(tempfile.gettempdir()),
+                     env={"PYTHONSAFEPATH": "1"})
     if rc2 != 0:
         return Step("ki-tools-common", False,
                     f"pip install succeeded but import fails: {out2.strip()[-200:]}",
                     commands=cmds)
-    if str(live.resolve()) not in out2:
+    where = [w for w in out2.strip().splitlines()[-1].split("|") if w]
+    target = str(live.resolve())
+    if not any(target in str(Path(w).resolve()) for w in where):
         return Step("ki-tools-common", False,
-                    f"import resolves to {out2.strip()}, not the copy installed at "
-                    f"{live} — remove the other ki_tools_common from this interpreter")
+                    f"import resolves to {', '.join(where) or 'nowhere'}, not the copy "
+                    f"installed at {live} — remove the other ki_tools_common "
+                    f"from this interpreter")
     extras = "with extras" if len(cmds) == 1 else "bare (extras unavailable)"
     return Step("ki-tools-common", True, f"installed editable from {src}, {extras}",
                 commands=cmds)

@@ -53,6 +53,11 @@ header h1{font-size:14.5px;margin:0;font-weight:600;flex:1;min-width:0;
 select,button{font:inherit;border-radius:9px;border:1px solid var(--line);
   background:var(--raised);color:var(--fg);padding:6px 10px;cursor:pointer}
 button.primary{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;flex:0 0 auto}
+.seg button{border:0;border-radius:0;padding:6px 12px;background:transparent;color:var(--fg-2);font-size:12.5px}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--brand);color:#fff;font-weight:600}
+.seg button.none{opacity:.5}
 button:disabled{opacity:.45;cursor:not-allowed}
 .mchip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:99px;
   border:1px solid var(--line);background:var(--surface);font-size:12px}
@@ -119,6 +124,9 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <h1 id="title">GeoForge Desktop</h1>
     <span id="mchips"></span>
     <button id="pickmodels">Models: <b id="mlabel">Auto</b></button>
+    <div class="seg" id="kindtog" title="Run through an installed agent CLI, or an API key">
+      <button data-k="cli">CLI</button><button data-k="api">API</button>
+    </div>
     <select id="prov" title="Provider"></select>
     <select id="llm" title="LLM model"></select>
   </header>
@@ -167,6 +175,9 @@ function md(t){let h=esc(t);
   return h.split(/\n{2,}/).map(p=>/^<(pre|h3|hr)/.test(p.trim())?p:`<p>${p.replace(/\n/g,"<br>")}</p>`).join("");}
 
 let SESSIONS=[], CUR=null, MODELS=[], STATUS={}, PROV={providers:[],any_usable:false}, PICK=new Set(), busy=false;
+// CLI or API. Remembered, because it is a fact about this machine's setup
+// rather than a per-question choice.
+let KIND=localStorage.getItem("kiss.kind")||"cli";
 
 function stateClass(n){
   // Binary by design: green = installed and its check passed, red = not.
@@ -205,14 +216,28 @@ function drawLLM(){
     ||'<option value="">(default)</option>';
   $("#llm").style.display=ms.length?"":"none";
 }
+function kindOf(n){const p=PROV.providers.find(x=>x.name===n);return p?p.kind:"";}
 function drawProviders(){
   const sel=$("#prov");
-  sel.innerHTML=PROV.providers.map(p=>
-    `<option value="${esc(p.name)}" ${p.usable?"":"disabled"}>${esc(p.label)}${p.usable?"":" — needs setup"}</option>`).join("");
-  const cur=CUR&&CUR.provider; const usable=PROV.providers.filter(p=>p.usable);
-  sel.value = (cur&&PROV.providers.find(p=>p.name===cur&&p.usable))?cur:
-              (PROV.default&&PROV.providers.find(p=>p.name===PROV.default&&p.usable))?PROV.default:
-              (usable[0]||{}).name||"";
+  // The session's own provider decides the switch, so reopening a session
+  // shows the way it actually runs rather than the last thing clicked.
+  const cur=CUR&&CUR.provider;
+  if(cur&&kindOf(cur)) KIND=kindOf(cur);
+  const mine=PROV.providers.filter(p=>p.kind===KIND);
+  const usableHere=mine.filter(p=>p.usable);
+  document.querySelectorAll("#kindtog button").forEach(b=>{
+    const n=PROV.providers.filter(p=>p.kind===b.dataset.k&&p.usable).length;
+    b.classList.toggle("on",b.dataset.k===KIND);
+    b.classList.toggle("none",n===0);
+    b.title=n?`${n} ready`:(b.dataset.k==="api"?"No API key yet — add one in Settings"
+                                               :"No agent CLI found on this machine");});
+  sel.innerHTML=mine.map(p=>
+    `<option value="${esc(p.name)}" ${p.usable?"":"disabled"}>${esc(p.label)}${p.usable?"":" — needs setup"}</option>`).join("")
+    ||'<option value="">(none)</option>';
+  const usable=PROV.providers.filter(p=>p.usable);
+  sel.value = (cur&&mine.find(p=>p.name===cur&&p.usable))?cur:
+              (PROV.default&&mine.find(p=>p.name===PROV.default&&p.usable))?PROV.default:
+              (usableHere[0]||{}).name||"";
   $("#nprov").textContent=`${usable.length}/${PROV.providers.length} ready`;
   const old=$("#gatebanner"); if(old) old.remove();
   if(!PROV.any_usable){
@@ -297,12 +322,15 @@ function setControls(on){
   // halfway through the previous one.
   $("#send").disabled=!on||!PROV.any_usable;
   $("#prov").disabled=!on; $("#llm").disabled=!on;
+  document.querySelectorAll("#kindtog button").forEach(b=>b.disabled=!on);
   $("#pickmodels").disabled=!on; $("#newsess").disabled=!on;
 }
 $("#send").onclick=send;
 $("#msg").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}});
 $("#msg").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";});
 $("#prov").addEventListener("change",drawLLM);
+document.querySelectorAll("#kindtog button").forEach(b=>b.onclick=()=>{
+  KIND=b.dataset.k; localStorage.setItem("kiss.kind",KIND); drawProviders();});
 $("#newsess").onclick=async()=>{CUR=null; drawEmpty(); await ensureSession(); openSession(CUR.id);};
 
 /* model picker */

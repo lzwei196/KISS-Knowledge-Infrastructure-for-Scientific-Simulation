@@ -10,6 +10,7 @@ mandatory execution policy, and it is the whole point of the project.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -162,12 +163,41 @@ def _acq_build(man, prefix, python):
     src = prefix
     cmds: list[str] = []
     if not (src / ".git").exists():
-        clone = ["git", "clone", "--depth", "1"]
-        if a.ref:
-            clone += ["--branch", a.ref]
-        clone += [a.repo, str(src)]
-        rc, out = _run(clone)
-        cmds.append(" ".join(clone))
+        # `--branch` takes a branch or tag, never a commit. We ask agents to pin
+        # the ref because an unpinned build is not reproducible, and a pinned
+        # ref is usually a SHA — so the one answer we asked for was the one
+        # answer clone could not take. TOPMODEL failed here on a real commit.
+        is_sha = bool(a.ref) and re.fullmatch(r"[0-9a-f]{7,40}", a.ref.strip()) is not None
+        if is_sha:
+            sha = a.ref.strip()
+            src.mkdir(parents=True, exist_ok=True)
+            steps = [["git", "init", "-q", str(src)],
+                     ["git", "-C", str(src), "remote", "add", "origin", a.repo],
+                     ["git", "-C", str(src), "fetch", "--depth", "1", "origin", sha]]
+            rc, out = 0, ""
+            for c in steps:
+                rc, out = _run(c)
+                cmds.append(" ".join(c))
+                if rc != 0:
+                    break
+            if rc == 0:
+                rc, out = _run(["git", "-C", str(src), "checkout", "-q", "FETCH_HEAD"])
+                cmds.append(f"git -C {src} checkout FETCH_HEAD")
+            if rc != 0:
+                # Some servers refuse to serve an arbitrary SHA to a shallow
+                # fetch. Falling back to a full clone costs time, not accuracy.
+                rc, out = _run(["git", "-C", str(src), "fetch", "origin"], timeout=1800)
+                cmds.append(f"git -C {src} fetch origin")
+                if rc == 0:
+                    rc, out = _run(["git", "-C", str(src), "checkout", "-q", sha])
+                    cmds.append(f"git -C {src} checkout {sha}")
+        else:
+            clone = ["git", "clone", "--depth", "1"]
+            if a.ref:
+                clone += ["--branch", a.ref]
+            clone += [a.repo, str(src)]
+            rc, out = _run(clone)
+            cmds.append(" ".join(clone))
         if rc != 0:
             return Step("acquire[build]", False, f"clone failed: {out.strip()[-400:]}",
                         commands=cmds), None
@@ -181,8 +211,24 @@ def _acq_build(man, prefix, python):
 
     binary = src / a.produces if a.produces else None
     if binary and not binary.exists():
-        return Step("acquire[build]", False,
-                    f"build reported success but {a.produces} is absent", commands=cmds), None
+        # The build succeeded and the binary exists — just not at the path the
+        # manifest predicted. Build evidence describes upstream's own layout
+        # (KDT checks out into source/repo/), while we clone into the prefix
+        # itself, so a correct manifest can still name source/repo/run_bmi for
+        # a file that landed at run_bmi. We know where we cloned, so find what
+        # was actually built instead of failing a working build over a prefix.
+        want = Path(a.produces).name
+        hits = [f for f in src.rglob(want)
+                if f.is_file() and os.access(f, os.X_OK) and ".git" not in f.parts]
+        if len(hits) == 1:
+            binary = hits[0]
+            cmds.append(f"# produces corrected: {a.produces} -> "
+                        f"{binary.relative_to(src)}")
+        else:
+            found = f"; {len(hits)} candidates named {want}" if hits else ""
+            return Step("acquire[build]", False,
+                        f"build reported success but {a.produces} is absent{found}",
+                        commands=cmds), None
     if binary:
         binary.chmod(binary.stat().st_mode | 0o111)
     return Step("acquire[build]", True, f"built from {a.repo}@{a.ref or 'HEAD'}",

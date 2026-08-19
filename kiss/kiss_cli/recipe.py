@@ -214,10 +214,27 @@ def brief(res: Research, ki) -> str:
 def verify(model: str, manifest_path: Path, models_dir: Path, workdir: Path,
            python: str | None = None) -> tuple[bool, str]:
     """Run the proposed recipe for real. This is what `observed` means."""
-    cmd = [python or "python3", "-m", "kiss_cli", "--models", str(models_dir),
-           "init", model, "-w", str(workdir)]
+    # Launch the installer the same way this process was launched. Running
+    # "python -m kiss_cli" with no path only worked when the caller happened to
+    # sit in the checkout: from anywhere else it died with "No module named
+    # kiss_cli", and the loop read that as the recipe being wrong and discarded
+    # a manifest the agent had got right. A frozen app has no importable
+    # package at all, so there it re-invokes its own binary.
+    import os
+    import sys as _sys
+
+    pkg_parent = Path(__file__).resolve().parent.parent
+    env = {**os.environ}
+    if getattr(_sys, "frozen", False):
+        cmd = [_sys.executable]
+    else:
+        cmd = [python or _sys.executable or "python3", "-m", "kiss_cli"]
+        env["PYTHONPATH"] = os.pathsep.join(
+            [str(pkg_parent)] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
+    cmd += ["--models", str(models_dir), "init", model, "-w", str(workdir)]
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=3600,
+                           cwd=str(pkg_parent), env=env)
     except subprocess.TimeoutExpired:
         return False, "install exceeded one hour"
     out = p.stdout + p.stderr

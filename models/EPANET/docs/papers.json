@@ -1,0 +1,166 @@
+{
+  "model": "EPANET",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 16,
+  "open_access": 8,
+  "papers": [
+    {
+      "doi": "10.1007/s11269-014-0592-4",
+      "title": "A New Method for Simultaneous Calibration of Demand Pattern and Hazen-Williams Coefficients in Water Distribution Systems",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "water_table",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1007/s11269-021-02847-x",
+      "title": "Calibration of Design Models for Leakage Management of Water Distribution Networks",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1007/s11269-017-1760-0",
+      "title": "Integration of Hydraulic and Water Quality Modelling in Distribution Networks: EPANET-PMX",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "water_table",
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.1186/s42834-021-00084-w",
+      "title": "Modeling of residual chlorine in a drinking water network in times of pandemic of the SARS-CoV-2 (COVID-19)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.4236/jwarp.2019.111003",
+      "title": "Variable Chlorine Decay Rate Modeling of the Matsapha Town Water Network Using EPANET",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.5194/dwes-1-27-2008",
+      "title": "Importance of demand modelling in network water quality models: a review",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.1371/journal.pone.0096354",
+      "title": "Biological Instability in a Chlorinated Drinking Water Distribution Network",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.1007/s11269-015-1209-2",
+      "title": "A Branch-and-Bound Algorithm for Optimal Pump Scheduling in Water Distribution Networks",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "power"
+      ]
+    },
+    {
+      "doi": "10.1061/(asce)wr.1943-5452.0000086",
+      "title": "Demand and Roughness Estimation in Water Distribution Systems",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "water_table",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.3390/w12051421",
+      "title": "Calibration Procedure for Water Distribution Systems: Comparison among Hydraulic Models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level",
+        "water_table",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1016/j.mex.2019.03.008",
+      "title": "Calibration of water quality model for distribution networks using genetic algorithm, particle swarm optimization, and hybrid methods",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.1061/(asce)wr.1943-5452.0000986",
+      "title": "Efficient Numerical Approach for Simultaneous Calibration of Pipe Roughness Coefficients and Nodal Demands",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1061/(asce)wr.1943-5452.0001390",
+      "title": "Sampling Design of Hydraulic and Quality Model Calibration Based on a Global Sensitivity Analysis Method",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.2166/ws.2016.166",
+      "title": "Water distribution network quality model calibration: a case study - Ahar",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.1007/s11269-023-03672-0",
+      "title": "Enhancing the EPANET Hydraulic Model through Genetic Algorithm Optimization of Pipe Roughness Coefficients",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "water_table",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1061/(asce)wr.1943-5452.0000378",
+      "title": "Battle of the Water Networks II",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "power"
+      ]
+    }
+  ]
+}

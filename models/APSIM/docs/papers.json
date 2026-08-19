@@ -1,0 +1,199 @@
+{
+  "model": "APSIM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 18,
+  "open_access": 8,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-10-1403-2017",
+      "title": "Global gridded crop model evaluation: benchmarking, skills, deficiencies and implications (incl. APSIM)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-020-74740-3",
+      "title": "The fingerprints of climate warming on cereal crops phenology and adaptation options (APSIM)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "lai",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.21475/ajcs.18.12.01.pne570",
+      "title": "Improving the prediction of potato productivity: APSIM-Potato model parameterization and evaluation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "lai",
+        "water_level",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-021-96386-5",
+      "title": "20 Years nitrogen dynamics study using APSIM nitrogen model simulation (soil water, drainage, N)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1038/srep25755",
+      "title": "An integrated soil-crop system model for water and nitrogen management in North China (APSIM comparison)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "yield",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.5027/jnrd.v4i0.01",
+      "title": "A new novel index for evaluating model performance (reproduces Willmott index of agreement, Nash-Sutcliffe model efficiency, tiered Excellent/Very-good/Good rating table)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "lai",
+        "water_level",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1007/s11119-022-09885-4",
+      "title": "A review of methods to evaluate crop model performance at multiple and changing spatial scales (RMSE/nRMSE, Willmott D-index, NSE)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "lai",
+        "water_level",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1007/s13593-022-00854-9",
+      "title": "How to build a crop model. A review (reproduces Jamieson nRMSE framing + Moriasi-style NSE/RSR tier tables for crop-model evaluation)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "lai",
+        "water_level",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "lai",
+        "soil_moisture",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1016/j.fcr.2021.108088",
+      "title": "Calibrating and testing APSIM for wheat-faba bean pure cultures and intercrops",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1017/s0021859615001124",
+      "title": "Comparing the performance of 11 crop simulation models in predicting yield response to nitrogen fertilization",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.4141/cjps2011-266",
+      "title": "Evaluation of the APSIM-Wheat model in terms of different cultivars, management regimes and environmental conditions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "lai",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1016/j.compag.2016.03.015",
+      "title": "Calibration and validation of APSIM-Wheat and CERES-Wheat for spring wheat under irrigated conditions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "lai",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1002/csc2.20857",
+      "title": "Calibration of a crop growth model in APSIM for 15 publicly available corn hybrids in North America",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.pce.2011.07.069",
+      "title": "Simulating the impact of no-till systems on field water fluxes and maize production using APSIM",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.geoderma.2007.04.014",
+      "title": "Evaluating and predicting agricultural management effects under tile drainage using modified APSIM",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.eja.2019.125940",
+      "title": "Combine observational data and modelling to quantify cultivar differences of soybean",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "lai",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ecolmodel.2014.02.003",
+      "title": "Sensitivity and uncertainty analysis of the APSIM-wheat model: Interactions between cultivar, environmental, and management parameters",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    }
+  ]
+}

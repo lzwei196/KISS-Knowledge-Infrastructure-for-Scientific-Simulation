@@ -1,0 +1,178 @@
+{
+  "model": "GeoClaw",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 18,
+  "open_access": 12,
+  "papers": [
+    {
+      "doi": "10.1007/s00024-017-1583-1",
+      "title": "Performance Benchmarking of Tsunami-HySEA Model for NTHMP's Inundation Mapping Activities",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1007/s00024-014-0980-y",
+      "title": "Validating Velocities in the GeoClaw Tsunami Model Using Observations near Hawaii",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-18-2489-2018",
+      "title": "A comparison of a two-dimensional depth-averaged flow model and a three-dimensional RANS model for predicting tsunami inundation and fluid forces",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.3389/feart.2021.628061",
+      "title": "Testing Tsunami Inundation Maps for Evacuation Planning in Italy",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-11-2521-2011",
+      "title": "The influence of land cover roughness on the results of high resolution tsunami inundation modeling",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "depth",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1186/1880-5981-66-105",
+      "title": "Sensitivity of tsunami wave profiles and inundation simulations to earthquake slip and fault geometry for the 2011 Tohoku earthquake",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-19-1723-2019",
+      "title": "Evaluating the impact of model complexity on flood wave propagation and inundation extent with a hydrologic-hydrodynamic model",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.1007/s10236-017-1105-9",
+      "title": "Quantifying uncertainties in fault slip distribution during the Tohoku tsunami using polynomial chaos",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2011.02.016",
+      "title": "The GeoClaw software for depth-averaged flows with adaptive refinement",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ocemod.2014.01.002",
+      "title": "Adaptive mesh refinement for storm surge",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "evapotranspiration",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.3389/feart.2021.757618",
+      "title": "The Sensitivity of Tsunami Impact to Earthquake Source Parameters and Manning Friction in High-Resolution Inundation Simulations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1088/1748-9326/aae014",
+      "title": "A first collective validation of global fluvial flood models for major floods in Nigeria and Mozambique",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.1155/2019/9816098",
+      "title": "Are Feature Agreement Statistics Alone Sufficient to Validate Modelled Flood Extent Quality?",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.1007/s00024-014-0891-y",
+      "title": "Performance Benchmarking Tsunami Models for NTHMP's Inundation Mapping Activities",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1130/ges00899.1",
+      "title": "Simulated tsunami inundation for a range of Cascadia megathrust earthquake scenarios at Bandon, Oregon",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ocemod.2014.09.001",
+      "title": "Uncertainty quantification and inference of Manning's friction coefficients using DART buoy data during the Tohoku tsunami",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-017-9646-z",
+      "title": "Bayesian inference of earthquake parameters from buoy data using a polynomial chaos-based surrogate",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1038/s43247-024-01707-x",
+      "title": "Modeling surge dynamics improves coastal flood estimates in a global set of tropical cyclones",
+      "access": "open",
+      "role": "calibration"
+    }
+  ]
+}

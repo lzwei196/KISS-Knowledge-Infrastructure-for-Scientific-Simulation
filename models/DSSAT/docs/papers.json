@@ -1,0 +1,280 @@
+{
+  "model": "DSSAT",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 27,
+  "open_access": 13,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-10-1403-2017",
+      "title": "Global gridded crop model evaluation: benchmarking, skills, deficiencies and implications (GGCMI Phase 1)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-8-261-2015",
+      "title": "The Global Gridded Crop Model Intercomparison: data and modeling protocols for Phase 1",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.3389/fpls.2016.01630",
+      "title": "Modeling Long-Term Corn Yield Response to Nitrogen Rate and Crop Rotation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-020-74740-3",
+      "title": "The fingerprints of climate warming on cereal crops phenology and adaptation options",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "phenology",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1515/johh-2017-0055",
+      "title": "Coupling DSSAT and HYDRUS-1D for simulations of soil water dynamics in the soil-plant-atmosphere system",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1038/srep25755",
+      "title": "An integrated soil-crop system model for water and nitrogen management in North China",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "nutrient",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1371/journal.pone.0165977",
+      "title": "Phenology and Seed Yield Performance of Determinate Soybean Cultivars Grown at Elevated Temperatures",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "phenology",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-024-61976-6",
+      "title": "Modeling maize growth and nitrogen dynamics using CERES-Maize (DSSAT) under diverse nitrogen management",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "lai",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.3389/fpls.2017.01118",
+      "title": "CERES-Maize Model for Determining the Optimum Planting Dates of Early Maturing Maize",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "phenology",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.3389/fpls.2017.01667",
+      "title": "Evaluation of the CropSyst Model during Wheat-Maize Rotations on the North China Plain (soil water and ET)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1186/2190-4715-26-1",
+      "title": "Simulating the yields of bioenergy and food crops with the crop modeling software BioSTAR (cross-model incl. DSSAT-CERES)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-020-79988-3",
+      "title": "Modelling adaptation strategies to reduce adverse impacts of climate change on maize (DSSAT)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-025-95260-y",
+      "title": "Sensitivity and uncertainty analysis of wheat cultivar parameters of the DSSAT model under different water and N treatments",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/0378-4290(91)90040-3",
+      "title": "A test of the computer simulation model ARCWHEAT1 on wheat crops grown in New Zealand (Jamieson et al., nRMSE performance tiers)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "lai",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agrformet.2020.108289",
+      "title": "Multi-model evaluation of phenology prediction for wheat in Australia",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "phenology"
+      ]
+    },
+    {
+      "doi": "10.1080/02723646.1981.10642213",
+      "title": "On the validation of models (index of agreement / d-index)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "lai",
+        "evapotranspiration",
+        "soil_moisture",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.3390/nitrogen2040027",
+      "title": "Evaluating APSIM and DSSAT-CERES-Maize Models under Rainfed Conditions Using Zambian Data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "phenology",
+        "yield",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1016/0198-0254(86)91285-9",
+      "title": "Statistics for the evaluation and comparison of models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agrformet.2019.02.037",
+      "title": "Simulation of maize evapotranspiration: An inter-comparison among 29 maize models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agrformet.2023.109396",
+      "title": "Simulation of evapotranspiration and yield of maize: An inter-comparison among 41 maize models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agrformet.2020.108241",
+      "title": "Energy balance in the DSSAT-CSM-CROPGRO model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1111/j.1936-704x.2017.03260.x",
+      "title": "Calibration and Validation of CSM-CROPGRO-Cotton Model Using Lysimeter Data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.3390/agronomy13061540",
+      "title": "Integration of Remote Sensing and Field Observations in Evaluating DSSAT Model for Estimating Biomass and LAI",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "lai",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.3390/rs70912400",
+      "title": "Assimilation of Two Variables Derived from Hyperspectral Data into the DSSAT-CERES Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agsy.2017.04.006",
+      "title": "Maintaining rice production while mitigating methane and nitrous oxide emissions (DSSAT-based)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1002/2016ef000525",
+      "title": "Understanding the weather signal in national crop-yield variability",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,190 @@
+{
+  "model": "HEC_RAS",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 19,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.1007/s42452-019-1141-9",
+      "title": "Calibration of channel roughness in intermittent rivers using HEC-RAS model: case of Sebou River, Morocco",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.4236/jwarp.2011.311090",
+      "title": "Calibration of HEC-RAS Model on Prediction of Flood for Lower Tapi River, India",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/adgeo-44-23-2017",
+      "title": "Probabilistic flood inundation mapping at ungauged streams due to roughness coefficient uncertainty in hydraulic modelling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "flood_extent",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-9-412-2005",
+      "title": "Utility of different data types for calibrating flood inundation models within a GLUE framework",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "flood_extent",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2011.10.040",
+      "title": "The impact of uncertainty in satellite data on the assessment of flood inundation models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-25-2979-2021",
+      "title": "Performance of automated methods for flash flood inundation mapping: a comparison of a digital terrain model (DTM) filling and two hydrodynamic methods",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1146/annurev-fluid-030121-113138",
+      "title": "Flood Inundation Prediction",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "flood_extent",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1002/2017wr020917",
+      "title": "Validation of a 30 m resolution flood hazard model of the conterminous United States",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "flood_extent",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1002/rra.3238",
+      "title": "Kayak drifter surface velocity observation for 2D hydraulic model validation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1080/02626667.2019.1671982",
+      "title": "Comparing 2D capabilities of HEC-RAS and LISFLOOD-FP on complex topography",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-11-739-2007",
+      "title": "Fuzzy set approach to calibrating distributed flood inundation models using remote sensing observations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2004.06.036",
+      "title": "Uncertainty in the calibration of effective roughness parameters in HEC-RAS using inundation and downstream level observations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.1007/s40808-023-01821-3",
+      "title": "Assessment of the combined effects of Manning roughness and DEM resolution for the water surface elevation prediction using the HEC-RAS model: Moudjar River, Algeria",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2022.128217",
+      "title": "Unpiloted Aerial Vehicle (UAV) image velocimetry for validation of two-dimensional hydraulic model simulations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.3390/w11091832",
+      "title": "Using High-Density LiDAR Data and 2D Streamflow Hydraulic Modeling to Improve Urban Flood Hazard Maps",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "velocity",
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.3390/w14192984",
+      "title": "Flood Inundation Modeling by Integrating HEC-RAS and Satellite Imagery: A Case Study",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-21-559-2021",
+      "title": "Simulating historical flood events at the continental scale: observational validation of a large-scale hydrodynamic model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2016.01.020",
+      "title": "Comparative evaluation of 1D and quasi-2D hydraulic models based on benchmark and real-world applications",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "flood_extent"
+      ]
+    }
+  ]
+}

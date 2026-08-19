@@ -1,0 +1,147 @@
+{
+  "model": "PyAEZ",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 15,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.36253/ijam-2782",
+      "title": "Future climate impacts on crop production in Bhutan",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1007/s11119-022-09885-4",
+      "title": "A review of methods to evaluate crop model performance at multiple and changing spatial scales",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.3389/fpls.2015.00495",
+      "title": "A decision support system (GesCoN) for managing fertigation in vegetable crops (reports nRMSE excellent/good/fair/poor calibration tiers)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-1331-2013",
+      "title": "Estimating actual, potential, reference crop and pan evaporation using standard meteorological data: a pragmatic synthesis",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1371/journal.pone.0183737",
+      "title": "An operational approach to high resolution agro-ecological zoning in West-Africa",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-18-1067-2025",
+      "title": "CropSuite v1.0 - a comprehensive open-source crop suitability model considering climate variability for climate impact assessment",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1007/s10653-019-00437-w",
+      "title": "Agro-ecological suitability assessment of Chinese Medicinal Yam under future climate change",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.eja.2011.05.001",
+      "title": "Simulation of winter wheat yield and its variability in different climates of Europe",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envdev.2023.100882",
+      "title": "An FAO model comparison: Python Agroecological Zoning (PyAEZ) and AquaCrop to assess climate change impacts on crop yields in Nepal",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.4060/cb4744en",
+      "title": "Global Agro-Ecological Zones (GAEZ v4) - Model documentation",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.3390/agronomy15040878",
+      "title": "Maize Yield Suitability Mapping in Two Major Asian Mega-Deltas Using AgERA and CMIP6 Climate Projections in Crop Modeling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.3390/rs5020982",
+      "title": "Length of Growing Period over Africa: Variability and Trends from 30 Years of NDVI Time Series",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.3390/agronomy11081659",
+      "title": "Simultaneous Calibration of Grapevine Phenology and Yield with a Soil-Plant-Atmosphere model",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1659/mrd-journal-d-14-0024.1",
+      "title": "Evaluation of the Penman-Monteith (FAO 56 PM) Method for Calculating Reference Evapotranspiration",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.3390/agronomy10040573",
+      "title": "Land Suitability Assessment and Agricultural Production Sustainability Using Machine Learning Models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    }
+  ]
+}

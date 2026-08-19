@@ -1,0 +1,216 @@
+{
+  "model": "HEC_HMS",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 22,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.34915",
+      "title": "Soil and Water Assessment Tool (SWAT) Model: Current Developments and Applications",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-2735-2013",
+      "title": "The effect of watershed scale on HEC-HMS calibrated parameters: a case study in the Kelantan River basin, Malaysia",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.4236/ojmh.2020.104007",
+      "title": "Evaluating the Performance of HEC-HMS and SWAT Hydrological Models in Simulating the Rainfall-Runoff Process",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1007/s13201-022-01764-7",
+      "title": "Comparison of HEC-HMS hydrologic model for estimation of runoff computation techniques",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.28991/cej-2023-09-01-017",
+      "title": "Extreme Event-based Rainfall-runoff Simulation Utilizing GIS Techniques",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.15406/ijh.2019.03.00209",
+      "title": "The influence of spatial discretization on HEC-HMS modelling: a case study",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.51400/2709-6998.1003",
+      "title": "Application of Physically Based Semi-Distributed HEC-HMS Model for Flow Simulation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1007/s40808-020-00792-z",
+      "title": "Evaluation of satellite precipitation products using HEC-HMS model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology1010020",
+      "title": "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology6010021",
+      "title": "Application of HEC-HMS Model for Flow Simulation in the Lake Tana Basin",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology4010009",
+      "title": "Application of HEC-HMS in a Cold Region Watershed and Use of RADARSAT-2 Soil Moisture",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology8020058",
+      "title": "Rainfall-Runoff Modeling Using the HEC-HMS Model for the Al-Adhaim River Catchment",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology9070117",
+      "title": "Application of Machine Learning and Process-Based Models for Rainfall-Runoff Simulation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/w14020191",
+      "title": "Comparison of Rainfall-Runoff Simulation between Support Vector Regression and HEC-HMS",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.3390/w12010273",
+      "title": "Application of NEXRAD Radar-Based Quantitative Precipitation Estimations for HEC-HMS",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.24425/jwld.2021.138185",
+      "title": "Performance evaluation of HEC-HMS model for continuous runoff simulation of Gilgel Abay watershed",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1080/02626667.2022.2137417",
+      "title": "Evaluating the performance of HBV, HEC-HMS and ANN models in simulating streamflow",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1007/s10333-009-0192-8",
+      "title": "Evaluation of HEC-HMS and WEPP for simulating watershed runoff using remote sensing",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.2166/nh.2019.163",
+      "title": "Flood inundation mapping in small and ungauged basins: sensitivity analysis using HEC-HMS and HEC-RAS",
+      "access": "subscription",
+      "role": "sensitivity"
+    }
+  ]
+}

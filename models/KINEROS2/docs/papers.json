@@ -1,0 +1,152 @@
+{
+  "model": "KINEROS2",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 14,
+  "open_access": 4,
+  "papers": [
+    {
+      "doi": "10.22161/ijeab.61.34",
+      "title": "Comparative analysis between KINEROS2 and SWAT for hydrological modeling: A case study",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.21168/rbrh.v16n3.p141-150",
+      "title": "Estimativa de Valores Regionais dos Parametros do Solo do Modelo KINEROS2 (Regional estimation of KINEROS2 soil parameters for runoff simulation)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1007/s10661-023-11337-z",
+      "title": "Sediment yield estimation and evaluating the best management practices in Nashe watershed, Ethiopia",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff",
+        "sediment_yield"
+      ]
+    },
+    {
+      "doi": "10.1007/s42452-019-0347-1",
+      "title": "Modeling runoff and sediment yield of Kesem dam watershed, Awash basin, Ethiopia",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff",
+        "discharge",
+        "sediment_yield"
+      ]
+    },
+    {
+      "doi": "10.3390/w9100782",
+      "title": "Streamflow and Sediment Yield Prediction for Watershed Prioritization in the Upper Blue Nile",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "sediment_yield"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42264",
+      "title": "KINEROS2/AGWA: Model Use, Calibration, and Validation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff",
+        "sediment_yield"
+      ]
+    },
+    {
+      "doi": "10.1029/2007wr005940",
+      "title": "Understanding uncertainty in distributed flash flood forecasting for semiarid regions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology2040242",
+      "title": "Flash Flood Prediction by Coupling KINEROS2 and HEC-RAS Models for Tropical Regions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.19044/esj.2020.v16n36p193",
+      "title": "Estimation of Runoff and Erosion Rates Using AGWA-KINEROS2 Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "sediment_yield"
+      ]
+    },
+    {
+      "doi": "10.1590/2318-0331.252020190106",
+      "title": "Development and application of a rainfall-runoff model for semi-arid regions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1061/(asce)he.1943-5584.0000655",
+      "title": "Using the KINEROS2 Modeling Framework to Evaluate the Increase in Storm Runoff from Residential Development in a Semiarid Environment",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1623/hysj.2005.50.6.1151",
+      "title": "Uncertainty and sensitivity analysis of runoff and sediment yield in a small agricultural watershed with KINEROS2",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "sediment_yield",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2020.104814",
+      "title": "Global sensitivity analysis of KINEROS2 hydrologic model parameters representing green infrastructure using the STAR-VARS framework",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ejrh.2024.101662",
+      "title": "Rainfall distributional properties control hydrologic model parameter importance (KINEROS2)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    }
+  ]
+}

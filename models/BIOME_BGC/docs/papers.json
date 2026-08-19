@@ -1,0 +1,189 @@
+{
+  "model": "BIOME_BGC",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 19,
+  "open_access": 10,
+  "papers": [
+    {
+      "doi": "10.1186/s40663-019-0171-5",
+      "title": "Improved simulation of carbon and water fluxes by assimilating multi-layer soil moisture into a process-based model (Biome-BGC)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "soil_moisture",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-9-479-2016",
+      "title": "Validation of 3D-CMCC Forest Ecosystem Model (v.5.1) against eddy covariance data for 10 European forest sites",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-9-3857-2012",
+      "title": "A framework for benchmarking land models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "soil_carbon",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-6-1341-2009",
+      "title": "Improving land surface models with FLUXNET data",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "lai",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-6-2001-2009",
+      "title": "Towards global empirical upscaling of FLUXNET eddy covariance observations: validation of a model tree ensemble approach",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-17-1343-2020",
+      "title": "Scaling carbon fluxes from eddy covariance sites to globe: synthesis and evaluation of the FLUXCOM approach",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-1545-2020",
+      "title": "P-model v1.0: an optimality-based light use efficiency model for simulating ecosystem gross primary production",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-11-83-2018",
+      "title": "Bayesian integration of flux tower data into a process-based simulator for quantifying uncertainty in ecosystem model parameters",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "soil_moisture",
+        "soil_carbon",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.1002/2014gb005021",
+      "title": "Global patterns and controls of soil organic carbon dynamics as simulated by multiple terrestrial biosphere models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.1016/j.rse.2006.02.017",
+      "title": "Evaluation of MODIS NPP and GPP products across multiple biomes",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.1111/j.1365-2486.2011.02562.x",
+      "title": "Terrestrial biosphere models need better representation of vegetation phenology: leaf area index and seasonality",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agrformet.2023.109778",
+      "title": "Sensitivity of simulated soil water content, evapotranspiration, gross primary production and nitrogen leaching in Biome-BGCMuSo",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jenvman.2015.12.013",
+      "title": "Development of the BIOME-BGC model for the simulation of managed Moso bamboo forest and its application in the Yangtze River Delta, China",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agrformet.2020.108027",
+      "title": "Analysis of the 21-years long carbon dioxide flux dataset from a Central European temperate deciduous forest and Biome-BGCMuSo simulation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.1002/2015rg000483",
+      "title": "Spatiotemporal patterns of terrestrial gross primary production: A review",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-7-959-2010",
+      "title": "Simulating carbon and water cycles of larch forests in East Asia by the BIOME-BGC model with AsiaFlux",
+      "access": "open",
+      "role": "calibration"
+    },
+    {
+      "doi": "10.5194/gmd-9-4405-2016",
+      "title": "Terrestrial ecosystem process model Biome-BGCMuSo v4.0: summary of improvements and new modeling possibilities",
+      "access": "open",
+      "role": "calibration"
+    },
+    {
+      "doi": "10.1016/j.agrformet.2022.109001",
+      "title": "Calibration and validation of phenological models for Biome-BGCMuSo in the grasslands",
+      "access": "subscription",
+      "role": "calibration"
+    }
+  ]
+}

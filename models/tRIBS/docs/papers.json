@@ -1,0 +1,249 @@
+{
+  "model": "tRIBS",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 23,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.5194/hess-17-4143-2013",
+      "title": "Distributed hydrologic modeling of a sparsely monitored basin in Sardinia, Italy, through hydrometeorological downscaling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "soil_moisture",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-735-2017",
+      "title": "Large-watershed flood forecasting with high-resolution distributed hydrological model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-1857-2015",
+      "title": "Gravitational and capillary soil moisture dynamics for distributed hydrologic models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "water_table",
+        "evapotranspiration",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-21-893-2024",
+      "title": "Understanding the effects of revegetated shrubs on fluxes of energy, water, and gross primary productivity in a semiarid ecosystem",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-1241-2016",
+      "title": "Modeling the distributed effects of forest thinning on the long-term water balance and streamflow in a semiarid basin (tRIBS, Valles Caldera)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "evapotranspiration",
+        "soil_moisture",
+        "discharge",
+        "runoff",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation (Arnold et al. 2012 - reproduces Moriasi 2007 NSE/PBIAS/RSR performance tiers)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "water_level",
+        "runoff",
+        "water_table",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-4127-2015",
+      "title": "Effects of hydrologic conditions on SWAT model performance and parameter sensitivity (applies Moriasi NSE/PBIAS/RSR discharge tiers)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-7-725-2014",
+      "title": "Snow water equivalent modeling components in NewAge-JGrass",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-635-2017",
+      "title": "Evaluation of snow data assimilation using the ensemble Kalman filter for seasonal streamflow prediction",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "water_level",
+        "runoff",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture",
+        "water_table",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1175/2010jhm1223.1",
+      "title": "Performance Metrics for Soil Moisture Retrievals and Application Requirements",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2023.129176",
+      "title": "Evaluation of distributed process-based hydrologic model performance using only a priori information",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1029/2004wr003218",
+      "title": "Catchment hydrologic response with a fully distributed triangulated irregular network model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff",
+        "soil_moisture",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2004.03.041",
+      "title": "Preserving high-resolution surface and rainfall data in operational-scale basin hydrology: a fully-distributed physically-based approach",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2011.08.053",
+      "title": "Real-world hydrologic assessment of a fully-distributed hydrological model in a parallel computing environment",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm-d-11-0112.1",
+      "title": "Distributed Hydrologic Modeling in Northwest Mexico Reveals the Links between Runoff Mechanisms and Evapotranspiration",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2006wr005595",
+      "title": "Vegetation-hydrology dynamics in complex terrain of semiarid areas: 2. Energy-water controls of vegetation spatiotemporal dynamics and topographic niches of favorability",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1002/wrcr.20245",
+      "title": "Dynamic root distributions in ecohydrological modeling: A case study at Walnut Gulch Experimental Watershed",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1175/2008jhm1069.1",
+      "title": "Effects of Initial Soil Moisture on Rainfall Generation and Subsequent Hydrologic Response during the North American Monsoon",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-11-1683-2007",
+      "title": "Controls on runoff generation and scale-dependence in a distributed hydrologic model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/eco.26",
+      "title": "Effects of vegetation, albedo, and solar radiation sheltering on the distribution of snow in the Valles Caldera, New Mexico",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1002/2016wr020021",
+      "title": "Implementation of a physiographic complexity-based multiresolution snow modeling scheme",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    }
+  ]
+}

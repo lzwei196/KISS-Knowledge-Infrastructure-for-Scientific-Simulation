@@ -1,0 +1,166 @@
+{
+  "model": "SuperflexPy",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 17,
+  "open_access": 12,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-14-7047-2021",
+      "title": "SuperflexPy 1.3.0: an open-source Python framework for building, testing, and improving conceptual hydrological models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-4227-2013",
+      "title": "The influence of conceptual model structure on model performance: a comparative study for 237 French catchments",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-1893-2013",
+      "title": "A framework to assess the realism of model structures using hydrological signatures",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-28-2705-2024",
+      "title": "To bucket or not to bucket? Analyzing the performance and interpretability of hybrid hydrological models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-12-2463-2019",
+      "title": "Modular Assessment of Rainfall-Runoff Models Toolbox (MARRMoT) v1.2: an open-source, extendable framework providing implementations of 46 conceptual hydrological models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-023-34316-3",
+      "title": "Short-term forecasts of streamflow in the UK based on a novel hybrid artificial intelligence algorithm",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-4391-2016",
+      "title": "A pre-calibration approach to select optimum inputs for hydrological models in data-scarce regions",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-4323-2019",
+      "title": "Technical note: Inherent benchmark or not? Comparing Nash-Sutcliffe and Kling-Gupta efficiency scores",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-15-2205-2011",
+      "title": "Calibration of hydrological models using flow-duration curves",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-1635-2013",
+      "title": "Multi-variable evaluation of hydrological model predictions for a headwater basin in the Canadian Rocky Mountains",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "discharge",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-22-1299-2018",
+      "title": "Combining satellite data and appropriate objective functions for improved spatial pattern performance of a distributed hydrologic model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-25-1389-2021",
+      "title": "The value of ASCAT soil moisture and MODIS snow cover data for calibrating a conceptual hydrologic model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2010wr010174",
+      "title": "Elements of a flexible approach for conceptual hydrological modeling: 1. Motivation and theoretical development",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.1029/2011wr010748",
+      "title": "Elements of a flexible approach for conceptual hydrological modeling: 2. Application and experimental insights",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2021.127286",
+      "title": "Modeling streamflow variability at the regional scale: (2) Development of a bespoke distributed conceptual model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/hyp.9726",
+      "title": "Catchment properties, function, and conceptual model representation: is there a correspondence?",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    }
+  ]
+}

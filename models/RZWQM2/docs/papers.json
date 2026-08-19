@@ -1,0 +1,212 @@
+{
+  "model": "RZWQM2",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 18,
+  "open_access": 6,
+  "papers": [
+    {
+      "doi": "10.13031/2013.42265",
+      "title": "Hydrologic and Water Quality Models: Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture",
+        "no3_leaching",
+        "soil_nitrate",
+        "tile_drainage",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1038/srep25755",
+      "title": "An integrated soil-crop system model for water and nitrogen management in North China",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "soil_moisture",
+        "no3_leaching",
+        "soil_nitrate",
+        "crop_yield"
+      ]
+    },
+    {
+      "doi": "10.25081/jaa.2023.v9.8544",
+      "title": "Impact of irrigation management on crop water footprint reduction using RZWQM2",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "crop_yield"
+      ]
+    },
+    {
+      "doi": "10.25165/j.ijabe.20191202.3388",
+      "title": "Quantifying extreme climatic conditions for maize production using RZWQM in Siping (Northeast China)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "crop_yield",
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1007/s13593-023-00889-6",
+      "title": "Dissecting the contribution of weather and management on water table dynamics using RZWQM2",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "tile_drainage",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.3389/fpls.2017.01667",
+      "title": "Evaluation of the CropSyst Model during Wheat-Maize Rotations on the North China Plain for Identifying Soil Evaporation Losses",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "crop_yield"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology1010020",
+      "title": "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture",
+        "tile_drainage",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42252",
+      "title": "Root Zone Water Quality Model (RZWQM2): Model Use, Calibration, and Validation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "no3_leaching",
+        "soil_nitrate",
+        "tile_drainage",
+        "evapotranspiration",
+        "crop_yield"
+      ]
+    },
+    {
+      "doi": "10.2134/advagricsystmodel2.c12",
+      "title": "Inverse Modeling with RZWQM2 to Predict Water Quality",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "no3_leaching",
+        "soil_nitrate",
+        "tile_drainage"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2014.01.051",
+      "title": "Quantitative global sensitivity analysis of the RZWQM to warrant a robust and effective calibration",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "no3_leaching",
+        "tile_drainage",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.12300",
+      "title": "Effects of Subsurface Drainage Systems on Water and Nitrogen Footprints Simulated with RZWQM2",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "tile_drainage",
+        "no3_leaching",
+        "crop_yield"
+      ]
+    },
+    {
+      "doi": "10.1007/s10584-015-1342-1",
+      "title": "Modeling the impacts of climate change on nitrogen losses and crop yield in a subsurface-drained field",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "no3_leaching",
+        "tile_drainage",
+        "crop_yield"
+      ]
+    },
+    {
+      "doi": "10.4141/cjss2013-096",
+      "title": "Simulating maize growth and yield, soil nitrogen concentration, and soil water content using RZWQM2",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "crop_yield",
+        "soil_nitrate",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology8010001",
+      "title": "Assessment of Impacts of Climate Change on Tile Discharge and Nitrogen Yield Using RZWQM2",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "tile_drainage",
+        "no3_leaching"
+      ]
+    },
+    {
+      "doi": "10.3390/agronomy10050625",
+      "title": "The Effect of Climate Change on Controlled Drainage Effectiveness (RZWQM2)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "tile_drainage",
+        "no3_leaching"
+      ]
+    },
+    {
+      "doi": "10.3390/agriculture12050672",
+      "title": "RZWQM2 Simulated Drip Fertigation Management to Improve Water and Nitrogen Use Efficiency",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "no3_leaching",
+        "crop_yield"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.39836",
+      "title": "Simulating Long-Term Impacts of Winter Rye Cover Crop on Hydrologic Cycling and Nitrogen Dynamics (RZWQM2)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "tile_drainage",
+        "no3_leaching",
+        "soil_moisture",
+        "crop_yield"
+      ]
+    },
+    {
+      "doi": "10.13031/ja.15283",
+      "title": "Calibration and Validation of RZWQM2-P Model to Simulate Phosphorus Loss in a Clay-Loam Tile-Drained Field",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "tile_drainage",
+        "soil_moisture"
+      ]
+    }
+  ]
+}

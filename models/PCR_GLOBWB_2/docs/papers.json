@@ -1,0 +1,223 @@
+{
+  "model": "PCR_GLOBWB_2",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 22,
+  "open_access": 14,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-11-2429-2018",
+      "title": "PCR-GLOBWB 2: a 5 arcmin global hydrological and water resources model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "tws",
+        "storage",
+        "runoff",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-3125-2017",
+      "title": "Calibration of a large-scale hydrological model using satellite-based soil moisture and evapotranspiration products",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-823-2015",
+      "title": "A high-resolution global-scale groundwater model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.5194/esd-5-15-2014",
+      "title": "Global modeling of withdrawal, allocation and consumptive use of surface water and groundwater resources",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "storage",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-2881-2017",
+      "title": "Global evaluation of runoff from 10 state-of-the-art hydrological models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-27-1383-2023",
+      "title": "Hyper-resolution PCR-GLOBWB: opportunities and challenges from refining model spatial resolution to 1 km",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-28-3099-2024",
+      "title": "Global-scale evaluation of precipitation datasets for hydrological modelling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-15-807-2011",
+      "title": "Sediment management modelling in the Blue Nile Basin using SWAT model",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1007/s10584-020-02840-0",
+      "title": "How evaluation of global hydrological models can help to improve credibility of river discharge projections under climate change",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-18-3511-2014",
+      "title": "Sensitivity of simulated global-scale freshwater fluxes and storages to input data, hydrological model structure, human water use and calibration",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "storage",
+        "tws",
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-14-1037-2021",
+      "title": "The global water resources and use model WaterGAP v2.2d: model description and evaluation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "tws",
+        "discharge",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-11-1153-2019",
+      "title": "GRACE-REC: a reconstruction of climate-driven water storage changes over the last century",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "tws"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-11-1655-2019",
+      "title": "GRUN: an observation-based global gridded runoff dataset from 1902 to 2014",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-10-1903-2017",
+      "title": "GLEAM v3: satellite-based land evaporation and root-zone soil moisture",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2019wr026280",
+      "title": "Using the Budyko Framework for Calibrating a Global Hydrological Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1088/1748-9326/aa7250",
+      "title": "The critical role of the routing scheme in simulating peak river discharge in global hydrological models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/2013wr013807",
+      "title": "Calibrating a large-extent high-resolution coupled groundwater-land surface model using soil moisture and discharge data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.1029/2022ef003068",
+      "title": "Projected Climate-Driven Changes of Water Table Depth in the World's Major Groundwater Basins",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2015.08.061",
+      "title": "Significant uncertainty in global scale hydrological modeling from precipitation data errors",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2018gl081836",
+      "title": "Tracking Seasonal Fluctuations in Land Water Storage Using Global Models and GRACE Satellites",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "tws"
+      ]
+    },
+    {
+      "doi": "10.1088/1748-9326/aac547",
+      "title": "Worldwide evaluation of mean and extreme runoff from six global-scale hydrological models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    }
+  ]
+}

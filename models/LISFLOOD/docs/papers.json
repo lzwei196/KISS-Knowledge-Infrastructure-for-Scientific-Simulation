@@ -1,0 +1,143 @@
+{
+  "model": "LISFLOOD",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 14,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.5194/hess-23-3057-2019",
+      "title": "Assessing the performance of global hydrological models for capturing peak river flows in the Amazon basin",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-28-3099-2024",
+      "title": "Global-scale evaluation of precipitation datasets for hydrological modelling",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-3125-2017",
+      "title": "Calibration of a large-scale hydrological model using satellite-based soil moisture and evapotranspiration products",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-12-1339-2008",
+      "title": "On the comparison between the LISFLOOD modelled and the ERS/SCAT derived soil moisture over Europe",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-25-1389-2021",
+      "title": "The value of ASCAT soil moisture and MODIS snow cover data for calibrating a conceptual hydrologic model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-10-1859-2016",
+      "title": "Multilevel spatiotemporal validation of snow/ice mass balance and runoff modeling in glacierized catchments",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-4517-2015",
+      "title": "A conceptual, distributed snow redistribution model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "soil_moisture",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "soil_moisture",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2018.09.052",
+      "title": "Calibration of the Global Flood Awareness System (GloFAS) using daily streamflow data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1080/13658810802549154",
+      "title": "LISFLOOD: a GIS-based distributed model for river basin scale water balance and flood simulation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "soil_moisture",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1002/wat2.1137",
+      "title": "Continental and global scale flood forecasting systems",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/rs12091490",
+      "title": "The Impact of SMOS Soil Moisture Data Assimilation within the Operational Global Flood Awareness System (GloFAS)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/rs5115825",
+      "title": "Assimilation of MODIS Snow Cover Area Data in a Distributed Hydrological Model Using the Ensemble Kalman Filter",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    }
+  ]
+}

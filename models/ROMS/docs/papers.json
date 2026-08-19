@@ -1,0 +1,196 @@
+{
+  "model": "ROMS",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 19,
+  "open_access": 10,
+  "papers": [
+    {
+      "doi": "10.1029/2004jc002691",
+      "title": "Numerical modeling of an estuary: A comprehensive skill assessment",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "temperature",
+        "salinity",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-9-3779-2016",
+      "title": "Development and evaluation of a high-resolution reanalysis of the East Australian Current region using the Regional Ocean Modelling System (ROMS)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity",
+        "water_level",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-6-1961-2009",
+      "title": "Statistical validation of a 3-D bio-physical model of the western North Atlantic",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-17-17-2017",
+      "title": "Data assimilation of Argo profiles in a northwestern Pacific model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-6-591-2013",
+      "title": "Evaluation of a near-global eddy-resolving ocean model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/npg-21-659-2014",
+      "title": "Assimilation of HF radar surface currents to optimize forcing in the northwestern Mediterranean Sea",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1038/srep19401",
+      "title": "Revisiting the concept of a symmetric index of agreement for continuous datasets",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level",
+        "temperature",
+        "salinity",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1186/s40562-017-0090-7",
+      "title": "Surface wind mixing in the Regional Ocean Modeling System (ROMS)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1186/s40562-019-0146-y",
+      "title": "An evaluation of the performance of vertical mixing parameterizations for tidal mixing in the Regional Ocean Modeling System (ROMS)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "temperature",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level",
+        "temperature",
+        "salinity",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1175/jpo-d-14-0151.1",
+      "title": "Midshelf to Surfzone Coupled ROMS-SWAN Model Data Comparison of Waves, Currents, and Temperature",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jcp.2007.06.016",
+      "title": "Ocean forecasting in terrain-following coordinates: Formulation and skill assessment of the Regional Ocean Modeling System",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "temperature",
+        "salinity",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.3390/jmse8090673",
+      "title": "A Regional Operational Model for the North East Atlantic: Model Configuration and Validation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity",
+        "water_level",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.3390/rs14194901",
+      "title": "Improving the Modeling of Sea Surface Currents in the Persian Gulf and the Oman Sea",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-3643-2020",
+      "title": "Evaluation of global ocean-sea-ice model simulations based on the experimental protocols of the Ocean Model Intercomparison Project phase 2 (OMIP-2)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "temperature",
+        "salinity",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.3390/rs16030504",
+      "title": "Baseline Climatology of the Canary Current Upwelling System and Evolution of Sea Surface Temperature",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.3389/fmars.2023.1177337",
+      "title": "Forecast uncertainty and ensemble spread in surface currents from a regional ocean model",
+      "access": "open",
+      "role": "sensitivity"
+    },
+    {
+      "doi": "10.1002/jgrc.20376",
+      "title": "U.S. IOOS coastal and ocean modeling testbed: Inter-model evaluation of tides, waves, and hurricane surge",
+      "access": "subscription",
+      "role": "calibration"
+    },
+    {
+      "doi": "10.1002/2014jc009858",
+      "title": "High-resolution modeling of the Eastern Tropical Pacific oxygen minimum zone: Sensitivity to model parameters",
+      "access": "subscription",
+      "role": "sensitivity"
+    }
+  ]
+}

@@ -1,0 +1,219 @@
+{
+  "model": "WOFOST",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 22,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-10-1403-2017",
+      "title": "Global gridded crop model evaluation: benchmarking, skills, deficiencies and implications",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-8-261-2015",
+      "title": "The Global Gridded Crop Model Intercomparison: data and modeling protocols for Phase 1",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.eja.2018.10.008",
+      "title": "Evaluation of regional estimates of winter wheat yield by assimilating three remotely sensed reflectance datasets into the coupled WOFOST-PROSAIL model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agwat.2021.106884",
+      "title": "Assimilation of soil moisture and canopy cover data improves maize simulation using an under-canopy soil-crop model (WOFOST)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "lai",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5027/jnrd.v4i0.01",
+      "title": "A new novel index for evaluating model performance",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "lai",
+        "soil_moisture",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1186/s42269-021-00580-4",
+      "title": "Effect of different soil moisture regimes on plant growth and water use efficiency of Sunflower: experimental study and modeling",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.scitotenv.2017.09.057",
+      "title": "Forecasting wheat and barley crop production in arid and semi-arid regions using remotely sensed primary productivity and crop phenology: a case study in Iraq",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "lai",
+        "soil_moisture",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agwat.2014.12.007",
+      "title": "Performance assessment of the FAO AquaCrop model for soil water, soil evaporation, biomass and yield of soybeans",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.eja.2011.05.001",
+      "title": "Simulation of winter wheat yield and its variability in different climates of Europe",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1017/s0021859615001124",
+      "title": "Comparing the performance of 11 crop simulation models in predicting yield response to nitrogen fertilization",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.3390/agronomy11122480",
+      "title": "Performance Evaluation of the WOFOST Model for Estimating Evapotranspiration, Soil Water Content, Grain Yield",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.3390/rs11131618",
+      "title": "Assimilating Soil Moisture Retrieved from Sentinel-1 and Sentinel-2 Data into WOFOST to Improve Winter Wheat Yield Estimation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.3390/s19143161",
+      "title": "Joint Assimilation of Leaf Area Index and Soil Moisture from Sentinel-1 and Sentinel-2 Data into the WOFOST Model for Winter Wheat Yield Estimation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "lai",
+        "soil_moisture",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.3390/rs11030268",
+      "title": "Assimilating Remote Sensing Phenological Information into the WOFOST Model for Rice Growth Simulation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agsy.2018.05.002",
+      "title": "Improving WOFOST model to simulate winter wheat phenology in Europe: Evaluation and effects on yield",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agsy.2023.103688",
+      "title": "Modelling growth of chili pepper (Capsicum annuum L.) with the WOFOST model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.3390/w10070836",
+      "title": "Evaluation of AquaCrop Model for Foxtail Millet Growth and Water Use (nRMSE, d-index, EF tiers)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "lai",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agsy.2018.06.018",
+      "title": "25 years of the WOFOST cropping systems model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "lai",
+        "water_level",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2013.06.007",
+      "title": "Parameter sensitivity analysis of crop growth models based on the extended Fourier Amplitude Sensitivity Test",
+      "access": "subscription",
+      "role": "sensitivity"
+    },
+    {
+      "doi": "10.3390/agronomy13092294",
+      "title": "Sensitivity Analysis of the WOFOST Crop Model Parameters Using the EFAST Method",
+      "access": "subscription",
+      "role": "sensitivity"
+    },
+    {
+      "doi": "10.3390/w13050610",
+      "title": "Global Sensitivity Analysis and Calibration by Differential Evolution Algorithm of a crop model",
+      "access": "subscription",
+      "role": "calibration"
+    }
+  ]
+}

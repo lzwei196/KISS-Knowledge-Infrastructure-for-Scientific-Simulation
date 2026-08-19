@@ -1,0 +1,112 @@
+{
+  "model": "HydroCNHS",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 10,
+  "open_access": 2,
+  "papers": [
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-2261-2019",
+      "title": "Using a coupled agent-based modeling approach to analyze the role of risk perception in an integrated hydrologic-agronomic model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "ABM_agent_records"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology1010020",
+      "title": "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.3390/w10010006",
+      "title": "A Guideline for Successful Calibration and Uncertainty Analysis for Soil and Water Assessment: A Review of Papers from the 2016 International SWAT Conference",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2022.105451",
+      "title": "An investigation of coupled natural human systems using a two-way coupled agent-based modeling framework",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "ABM_agent_records"
+      ]
+    },
+    {
+      "doi": "10.2166/nh.2017.189",
+      "title": "Evaluation of the SWAT model performance for simulating river discharge in the Himalayan and lower plain basins",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1061/(asce)wr.1943-5452.0001630",
+      "title": "HydroCNHS: A Python Package of Hydrological Model for Coupled Natural-Human Systems",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff",
+        "sediment",
+        "ABM_agent_records"
+      ]
+    },
+    {
+      "doi": "10.1007/s10333-014-0438-y",
+      "title": "Modification of generalized watershed loading functions (GWLF) for daily flow simulation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1029/2021ef002403",
+      "title": "The Effects of Model Complexity on Model Output Uncertainty in Co-Evolved Coupled Natural-Human Systems",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "ABM_agent_records"
+      ]
+    },
+    {
+      "doi": "10.1029/2009wr008294",
+      "title": "Toward improved identification of hydrological models: A diagnostic evaluation of the abcd monthly water balance model for the conterminous United States",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff",
+        "evapotranspiration"
+      ]
+    }
+  ]
+}

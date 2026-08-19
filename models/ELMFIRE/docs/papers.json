@@ -1,0 +1,196 @@
+{
+  "model": "ELMFIRE",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 19,
+  "open_access": 8,
+  "papers": [
+    {
+      "doi": "10.1038/s41467-025-63386-2",
+      "title": "Fire risk to structures in California's Wildland-Urban Interface",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "burn_probability",
+        "fire_size"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-14-2951-2014",
+      "title": "Towards predictive data-driven simulations of wildfire spread - Part I: Reduced-cost Ensemble Kalman Filter based on a Polynomial Chaos surrogate model for parameter estimation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "time_of_arrival",
+        "spread_rate",
+        "fire_size"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-15-1721-2015",
+      "title": "Towards predictive data-driven simulations of wildfire spread - Part II: Ensemble Kalman Filter for the state estimation of a front-tracking simulator of wildfire spread",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "time_of_arrival",
+        "fire_size"
+      ]
+    },
+    {
+      "doi": "10.3389/fmech.2019.00008",
+      "title": "A Data-Driven Fire Spread Simulator: Validation in Vall-llobrega's Fire",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "time_of_arrival",
+        "fire_size"
+      ]
+    },
+    {
+      "doi": "10.1186/s42408-022-00147-2",
+      "title": "Modeling of fire spread in sagebrush steppe using FARSITE: an approach to improving input data and simulation accuracy",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "fire_size",
+        "time_of_arrival",
+        "burn_probability"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-15-3791-2023",
+      "title": "The Portuguese Large Wildfire Spread database (PT-FireSprd)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "spread_rate",
+        "fireline_intensity"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-025-07968-6",
+      "title": "Benchmarking performance of annual burn probability modeling against subsequent fire occurrence",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "burn_probability"
+      ]
+    },
+    {
+      "doi": "10.1139/cjfr-2015-0148",
+      "title": "Global sensitivity analysis for the Rothermel model based on high-dimensional model representation",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "spread_rate"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2025.106436",
+      "title": "Evaluating Australian forest fire rate of spread models using VIIRS satellite observations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "spread_rate"
+      ]
+    },
+    {
+      "doi": "10.1071/wf23196",
+      "title": "Evaluating a simulation-based wildfire burn probability map for the conterminous United States",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "burn_probability"
+      ]
+    },
+    {
+      "doi": "10.1175/jamc-d-12-023.1",
+      "title": "WRF-Fire: Coupled Weather-Wildland Fire Modeling with the Weather Research and Forecasting Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "time_of_arrival",
+        "fire_size",
+        "spread_rate"
+      ]
+    },
+    {
+      "doi": "10.2737/int-gtr-143",
+      "title": "How to Predict the Spread and Intensity of Forest and Range Fires",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "fireline_intensity",
+        "flame_length",
+        "spread_rate"
+      ]
+    },
+    {
+      "doi": "10.3390/atmos11111264",
+      "title": "Performance Evaluation of an Operational Rapid Response Fire Spread Forecasting System",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "fire_size",
+        "time_of_arrival"
+      ]
+    },
+    {
+      "doi": "10.3390/fire3030026",
+      "title": "PROPAGATOR: An Operational Cellular-Automata Based Wildfire Simulator",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "fire_size",
+        "burn_probability"
+      ]
+    },
+    {
+      "doi": "10.3390/fire7040141",
+      "title": "Comparing Accuracy of Wildfire Spread Prediction Models under Different Data Deficiency Conditions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "fire_size",
+        "time_of_arrival"
+      ]
+    },
+    {
+      "doi": "10.2737/rmrs-rp-29",
+      "title": "Assessing Crown Fire Potential by Linking Models of Surface and Crown Fire Behavior",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "crown_fire",
+        "fireline_intensity"
+      ]
+    },
+    {
+      "doi": "10.3390/fire6080289",
+      "title": "Attention-Based Wildland Fire Spread Modeling Using Fire-Tracking Satellite Observations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "time_of_arrival",
+        "fire_size"
+      ]
+    },
+    {
+      "doi": "10.1071/wf21068",
+      "title": "An empirical-based model for predicting the forward spread rate of wildfires in eucalypt forests",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "spread_rate"
+      ]
+    },
+    {
+      "doi": "10.1071/wf19069",
+      "title": "Applications of simulation-based burn probability modelling: a review",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "burn_probability"
+      ]
+    }
+  ]
+}

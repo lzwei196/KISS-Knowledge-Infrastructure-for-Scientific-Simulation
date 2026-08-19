@@ -1,0 +1,111 @@
+{
+  "model": "CREST",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 11,
+  "open_access": 4,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-13-4943-2020",
+      "title": "The Ensemble Framework For Flash Flood Forecasting (EF5) v1.2: description and case study",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "soil_moisture",
+        "swe",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-3057-2019",
+      "title": "Assessing the performance of global hydrological models for capturing peak river flows in the Amazon basin",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-16-3371-2012",
+      "title": "Critical review of SWAT applications in the upper Nile basin countries",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.4236/jgis.2011.34024",
+      "title": "Hydrologic Modeling of the Bouregreg Watershed (Morocco) Using GIS and SWAT Model",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "soil_moisture",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm-d-11-087.1",
+      "title": "Evaluation of Global Flood Detection Using Satellite-Based Rainfall and a Hydrologic Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/2013wr014710",
+      "title": "Real-time global flood estimation using satellite-based precipitation and a coupled land surface and routing model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm-d-14-0156.1",
+      "title": "Predicting the June 2013 European Flooding Based on Precipitation, Soil Moisture, and Snow",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2021.126522",
+      "title": "Mapping dynamic non-perennial stream networks using high-resolution distributed hydrologic simulation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2018.07.055",
+      "title": "A systematic assessment and reduction of parametric uncertainties for a distributed hydrological model",
+      "access": "subscription",
+      "role": "sensitivity"
+    }
+  ]
+}

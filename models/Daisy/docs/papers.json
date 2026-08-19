@@ -1,0 +1,183 @@
+{
+  "model": "Daisy",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 17,
+  "open_access": 6,
+  "papers": [
+    {
+      "doi": "10.5194/bg-23-2079-2026",
+      "title": "Interpreting carbon-water trade-offs in Daisy crop model using Pareto-based calibration",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-11-2541-2011",
+      "title": "A probabilistic assessment of climate change impacts on yield and nitrogen leaching from winter wheat (Daisy)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1038/srep25755",
+      "title": "An integrated soil-crop system model for water and nitrogen management in North China (WHCNS)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield",
+        "nutrient",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5027/jnrd.v4i0.01",
+      "title": "A new novel index for evaluating model performance (RMSE, model efficiency, Willmott index of agreement)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "nutrient",
+        "soil_moisture",
+        "evapotranspiration",
+        "temperature",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-27-2397-2023",
+      "title": "When best is the enemy of good - critical evaluation of performance criteria in hydrology (NSE/KGE tiers, Moriasi)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "nutrient",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1515/johh-2017-0055",
+      "title": "Coupling DSSAT and HYDRUS-1D for simulations of soil water dynamics in the soil-plant-atmosphere system",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agrformet.2020.108289",
+      "title": "Multi-model evaluation of phenology prediction for wheat in Australia",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1016/j.eja.2011.05.001",
+      "title": "Simulation of winter wheat yield and its variability in different climates of Europe",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.1017/s0021859615001124",
+      "title": "Comparing the performance of 11 crop simulation models in predicting yield response to nitrogen fertilization",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.3390/agronomy11122480",
+      "title": "Performance Evaluation of the WOFOST Model for Estimating Evapotranspiration, Soil Water Content, Grain Yield",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.mex.2016.04.008",
+      "title": "Integrated modelling of crop production and nitrate leaching with the Daisy model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agwat.2016.12.005",
+      "title": "Evaluation of the DAISY model for predicting nitrogen leaching in coarse-textured soil",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "nutrient",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/s1364-8152(00)00003-7",
+      "title": "Daisy: an open soil-crop-atmosphere system model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "nutrient",
+        "soil_moisture",
+        "evapotranspiration",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1016/s0304-3800(03)00114-5",
+      "title": "Decomposition of plant residues of different quality in soil - DAISY model calibration and simulation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1016/j.scitotenv.2021.151518",
+      "title": "Scenario analysis using the Daisy model to assess and mitigate nitrate leaching",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agsy.2025.104442",
+      "title": "Modelling the impacts of cover crops on soil C stocks and N dynamics using Daisy",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1016/j.eja.2021.126429",
+      "title": "Bayesian calibration and uncertainty analysis of an agroecosystem model under different N management practices",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "nutrient"
+      ]
+    }
+  ]
+}

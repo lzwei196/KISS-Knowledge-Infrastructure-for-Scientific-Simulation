@@ -1,0 +1,292 @@
+{
+  "model": "COAWST",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 29,
+  "open_access": 14,
+  "papers": [
+    {
+      "doi": "10.1029/2011jc007387",
+      "title": "Wave-current interaction in Willapa Bay",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "wave_height",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-10-4511-2017",
+      "title": "Sensitivity analysis of a coupled hydrodynamic-vegetation model using the effectively subsampled quadratures method (ESQM v5.2)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/os-13-289-2017",
+      "title": "An atmosphere-wave regional coupled model: improving predictions of wave heights and surface winds in the southern North Sea",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "wave_height"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-18-2675-2018",
+      "title": "Implementation and validation of a new operational wave forecasting system of the Mediterranean Monitoring and Forecasting Centre",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "wave_height"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-16-2373-2016",
+      "title": "Coastal flooding: impact of waves on storm surge during extremes - a case study for the German Bight",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/os-14-139-2018",
+      "title": "Effect of winds and waves on salt intrusion in the Pearl River estuary",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "salinity"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-11-1849-2018",
+      "title": "Cohesive and mixed sediment in the Regional Ocean Modeling System (ROMS v3.6) implemented in the Coupled Ocean-Atmosphere-Wave-Sediment Transport Modeling System (COAWST r1234)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-5211-2020",
+      "title": "Development of a submerged aquatic vegetation growth model in the Coupled Ocean-Atmosphere-Wave-Sediment Transport (COAWST) model",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1186/2197-4284-1-11",
+      "title": "Typhoon-induced sea surface cooling during the 2011 and 2012 typhoon seasons: observations and coupled modeling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/os-11-909-2015",
+      "title": "High-resolution satellite turbidity and sea surface temperature observations of river plume interactions",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/os-15-669-2019",
+      "title": "Can wave coupling improve operational regional ocean forecasts for the north-west European Shelf?",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "wave_height"
+      ]
+    },
+    {
+      "doi": "10.5194/os-14-259-2018",
+      "title": "Estimation of oceanic subsurface mixing under a severe cyclonic storm using a coupled atmosphere-ocean-wave model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/npg-23-143-2016",
+      "title": "Ocean-atmosphere-wave characterisation of a wind jet (Ebro shelf, NW Mediterranean Sea)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "wave_height",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.3389/fmars.2021.604741",
+      "title": "CMEMS-Based Coastal Analyses: Conditioning, Coupling and Limits for Applications",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "wave_height",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1016/j.coastaleng.2020.103656",
+      "title": "Large-scale hurricane storm surge modeling using domain decomposition parallelization and implicit solvers",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1029/2021ms002493",
+      "title": "Global Wave Hindcasts Using the Observation-Based Source Terms: Description and Validation",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "wave_height"
+      ]
+    },
+    {
+      "doi": "10.1175/jpo-d-14-0151.1",
+      "title": "Midshelf to Surfzone Coupled ROMS-SWAN Model Data Comparison of Waves, Currents, and Temperature",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "wave_height",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1175/jtech-d-15-0219.1",
+      "title": "Calibration and Validation of HY-2 Altimeter Wave Height",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "wave_height"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ocemod.2010.07.010",
+      "title": "Development of a Coupled Ocean-Atmosphere-Wave-Sediment Transport (COAWST) Modeling System",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "wave_height",
+        "water_level",
+        "temperature",
+        "salinity",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1007/s10236-014-0777-7",
+      "title": "Investigation of hurricane Ivan using the coupled ocean-atmosphere-wave-sediment transport (COAWST) model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "wave_height",
+        "water_level",
+        "temperature",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1016/j.cageo.2008.02.012",
+      "title": "Development of a three-dimensional, regional, coupled wave, current, and sediment-transport model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "wave_height",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ocemod.2004.08.002",
+      "title": "The regional oceanic modeling system (ROMS): a split-explicit, free-surface, topography-following-coordinate oceanic model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "salinity",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1029/2012jc007952",
+      "title": "A fully coupled 3D wave-current interaction model on unstructured grids",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "wave_height",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1175/waf-d-20-0171.1",
+      "title": "Impact of SST and Surface Waves on Hurricane Florence (2018): A Coupled Modeling Investigation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "wave_height"
+      ]
+    },
+    {
+      "doi": "10.1002/2016jc012344",
+      "title": "Physical response of a back-barrier estuary to a post-tropical cyclone",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "salinity"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ocemod.2018.04.002",
+      "title": "Numerical study of sediment dynamics during hurricane Gustav",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1002/2014jc010474",
+      "title": "Glider observations and modeling of sediment transport in Hurricane Sandy",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "sediment",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-12-2357-2019",
+      "title": "The UKC3 regional coupled environmental prediction system",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "wave_height",
+        "temperature",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1002/2017ms001177",
+      "title": "A New Coupled Ocean-Waves-Atmosphere Model Designed for Tropical Storm Studies",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "wave_height"
+      ]
+    }
+  ]
+}

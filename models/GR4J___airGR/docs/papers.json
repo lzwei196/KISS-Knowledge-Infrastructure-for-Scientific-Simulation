@@ -1,0 +1,163 @@
+{
+  "model": "GR4J___airGR",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 17,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.5194/hess-23-4323-2019",
+      "title": "Technical note: Inherent benchmark or not? Comparing Nash-Sutcliffe and Kling-Gupta efficiency scores",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-22-4583-2018",
+      "title": "Technical note: Pitfalls in using log-transformed flows within the KGE criterion",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-15-807-2011",
+      "title": "Sediment management modelling in the Blue Nile Basin using SWAT model",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-025-16429-z",
+      "title": "Applicability of the daily hydrological models (GR4J, GR5J, and GR6J) in the South...",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-25-3937-2021",
+      "title": "Technical note: Hydrology modelling R packages - a unified analysis of models and practices",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-12-2463-2019",
+      "title": "Modular Assessment of Rainfall-Runoff Models Toolbox (MARRMoT) v1.2: an open-source, extendable framework",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-26-2733-2022",
+      "title": "On constraining a lumped hydrological model with both piezometry and streamflow",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-4775-2016",
+      "title": "The evolution of root-zone moisture capacities after deforestation: a step towards predictions under change",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/2016wr019627",
+      "title": "Impact of evapotranspiration process representation on runoff projections from conceptual rainfall-runoff models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1016/s0022-1694(03)00225-7",
+      "title": "Improvement of a parsimonious model for streamflow simulation (Perrin, Michel, Andreassian 2003)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2019wr026752",
+      "title": "On the Robustness of Conceptual Rainfall-Runoff Models to Calibration and Evaluation Data Set Splits",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2017.05.002",
+      "title": "The suite of lumped GR hydrological models in an R package (airGR; Coron et al. 2017)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-24-5835-2020",
+      "title": "Simultaneously determining global sensitivities of model parameters and model structure",
+      "access": "open",
+      "role": "sensitivity"
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2022.127546",
+      "title": "Using a global sensitivity analysis to estimate the appropriate length of calibration period (GR4J)",
+      "access": "subscription",
+      "role": "sensitivity"
+    }
+  ]
+}

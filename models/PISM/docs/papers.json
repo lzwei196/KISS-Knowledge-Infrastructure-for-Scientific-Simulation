@@ -1,0 +1,290 @@
+{
+  "model": "PISM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 28,
+  "open_access": 19,
+  "papers": [
+    {
+      "doi": "10.5194/tc-6-1561-2012",
+      "title": "Greenland ice sheet contribution to sea-level rise from a new-generation ice-sheet model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "glacier_change",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-5-727-2011",
+      "title": "The Potsdam Parallel Ice Sheet Model (PISM-PIK) - Part 2: Dynamic equilibrium simulation of the Antarctic ice sheet",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "sea_ice",
+        "velocity",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-2-95-2008",
+      "title": "Benchmark experiments for higher-order and full-Stokes ice sheet models (ISMIP-HOM)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.3189/2013jog12j129",
+      "title": "Grounding-line migration in plan-view marine ice-sheet models: results of the ice2sea MISMIP3d intercomparison",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "sea_ice"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-12-1433-2018",
+      "title": "Design and results of the ice sheet model initialisation experiments initMIP-Greenland",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "sea_ice",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-13-1441-2019",
+      "title": "initMIP-Antarctica: an ice sheet model initialization experiment of ISMIP6",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "sea_ice",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-9-4521-2016",
+      "title": "Ice Sheet Model Intercomparison Project (ISMIP6) contribution to CMIP6",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "sea_ice",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-3033-2020",
+      "title": "ISMIP6 Antarctica: a multi-model ensemble of the Antarctic ice sheet evolution over the 21st century",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "sea_ice",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-3071-2020",
+      "title": "The future sea-level contribution of the Greenland ice sheet: a multi-model ensemble study of ISMIP6",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-2283-2020",
+      "title": "Results of the third Marine Ice Sheet Model Intercomparison Project (MISMIP+)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "sea_ice"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-7-375-2013",
+      "title": "Bedmap2: improved ice bed, surface and thickness datasets for Antarctica",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "glacier_change",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-15-1597-2023",
+      "title": "Mass balance of the Greenland and Antarctic ice sheets from 1992 to 2020 (IMBIE)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "glacier_change",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-12-1479-2018",
+      "title": "Modelling the climate and surface mass balance of polar ice sheets using RACMO2 - Part 1: Greenland (1958-2016)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.3189/172756500781832891",
+      "title": "Results from the EISMINT model intercomparison: the effects of thermomechanical coupling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.3189/2012jog11j088",
+      "title": "An enthalpy formulation for glaciers and ice sheets",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-14-5107-2021",
+      "title": "An iterative process for efficient optimisation of parameters in geoscientific models: a demonstration using PISM version 0.7.3",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-8-1613-2015",
+      "title": "Mass-conserving subglacial hydrology in the Parallel Ice Sheet Model version 0.6",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-633-2020",
+      "title": "Glacial-cycle simulations of the Antarctic Ice Sheet with PISM - Part 2: Parameter ensemble analysis",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "water_level",
+        "sea_ice",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-5-715-2011",
+      "title": "The Potsdam Parallel Ice Sheet Model (PISM-PIK) - Part 1: Model description",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "velocity",
+        "sea_ice"
+      ]
+    },
+    {
+      "doi": "10.1029/2011jf002140",
+      "title": "Continental scale, high order, high spatial resolution, ice sheet modeling using the Ice Sheet System Model (ISSM)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "glacier_change",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1038/s41586-019-1855-2",
+      "title": "Mass balance of the Greenland Ice Sheet from 1992 to 2018 (IMBIE)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "glacier_change",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-14-5111-2022",
+      "title": "Processing methodology for the ITS_LIVE Sentinel-1 ice velocity products",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-599-2020",
+      "title": "Glacial-cycle simulations of the Antarctic Ice Sheet with PISM - Part 1: Boundary conditions and climatic forcing",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "sea_ice",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.3189/002214310792447734",
+      "title": "Greenland flow variability from ice-sheet-wide velocity mapping (MEaSUREs / InSAR)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1038/s41586-018-0179-y",
+      "title": "Mass balance of the Antarctic Ice Sheet from 1992 to 2017 (IMBIE)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "glacier_change",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2008jf001179",
+      "title": "Shallow shelf approximation as a sliding law in a thermomechanically coupled ice sheet model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "sea_ice"
+      ]
+    },
+    {
+      "doi": "10.1029/2022gl099058",
+      "title": "Calibrated Mass Loss Predictions for the Greenland Ice Sheet",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1126/sciadv.aav9396",
+      "title": "Contribution of the Greenland Ice Sheet to sea level over the next millennium",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "water_level"
+      ]
+    }
+  ]
+}

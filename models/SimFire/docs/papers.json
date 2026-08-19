@@ -1,0 +1,114 @@
+{
+  "model": "SimFire",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 11,
+  "open_access": 4,
+  "papers": [
+    {
+      "doi": "10.5194/nhess-15-443-2015",
+      "title": "Calibration of FARSITE simulator in northern Iranian forests",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "fire_map",
+        "fire_extent"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-6-1109-2013",
+      "title": "Evaluation of WRF-SFIRE performance with field observations from the FireFlux experiment",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "rate_of_spread"
+      ]
+    },
+    {
+      "doi": "10.48550/arxiv.2311.15925",
+      "title": "Reinforcement Learning for Wildfire Mitigation in Simulated Disaster Environments (SimFire/SimHarness)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "fire_map",
+        "fire_extent",
+        "rate_of_spread"
+      ]
+    },
+    {
+      "doi": "10.1139/cjfr-2015-0148",
+      "title": "Global sensitivity analysis for the Rothermel model based on high-dimensional model representation",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "rate_of_spread"
+      ]
+    },
+    {
+      "doi": "10.1002/met.1392",
+      "title": "Progress and challenges in forecast verification",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "fire_map"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2025.106436",
+      "title": "Evaluating Australian forest fire rate of spread models using VIIRS satellite observations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "rate_of_spread"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jocs.2025.102640",
+      "title": "Realistic wildfire growth simulations applying a differentiable parametric representation of the fire perimeter",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "fire_map",
+        "fire_extent"
+      ]
+    },
+    {
+      "doi": "10.2737/int-gtr-143",
+      "title": "How to Predict the Spread and Intensity of Forest and Range Fires",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "rate_of_spread",
+        "fire_extent"
+      ]
+    },
+    {
+      "doi": "10.2737/psw-rp-259",
+      "title": "Using HFire for spatial modeling of fire in shrublands",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "fire_map",
+        "fire_extent"
+      ]
+    },
+    {
+      "doi": "10.3390/atmos11111264",
+      "title": "Performance Evaluation of an Operational Rapid Response Fire Spread Forecasting System",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "fire_map",
+        "fire_extent"
+      ]
+    },
+    {
+      "doi": "10.3390/fire7040141",
+      "title": "Comparing Accuracy of Wildfire Spread Prediction Models under Different Data Deficiency Conditions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "fire_map"
+      ]
+    }
+  ]
+}

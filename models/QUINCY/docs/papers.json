@@ -1,0 +1,158 @@
+{
+  "model": "QUINCY",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 15,
+  "open_access": 11,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-12-4781-2019",
+      "title": "A new model of the coupled carbon, nitrogen, and phosphorus cycles in the terrestrial biosphere (QUINCY v1.0; revision 1996)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "temperature",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-22-1781-2025",
+      "title": "Modelling decadal trends and the impact of extreme events on carbon fluxes in a temperate deciduous forest using a terrestrial biosphere model (QUINCY)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-22-6937-2025",
+      "title": "Evaluating the carbon and nitrogen cycles of the QUINCY terrestrial biosphere model using space-born optical remotely-sensed data",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-20-3093-2023",
+      "title": "Potassium limitation of forest productivity - Part 1: A mechanistic model simulating the effects of potassium availability (QUINCY-family)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-6-1341-2009",
+      "title": "Improving land surface models with FLUXNET data",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-13-4291-2016",
+      "title": "Predicting carbon dioxide and energy fluxes across global FLUXNET sites with regression algorithms",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-6-2001-2009",
+      "title": "Towards global empirical upscaling of FLUXNET eddy covariance observations: validation of a model tree ensemble approach (GPP/NEE/LE)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-14-1987-2021",
+      "title": "Global evaluation of the nutrient-enabled version of the land surface model ORCHIDEE-CNP (v1.2)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "lai",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-20-2813-2023",
+      "title": "Global evaluation of terrestrial biogeochemistry in the Energy Exascale Earth System Model (E3SM) and the role of the phosphorus cycle",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "lai",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-12-4121-2015",
+      "title": "Global spatiotemporal distribution of soil respiration modeled using a global database",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-12-1037-2020",
+      "title": "Spatial and temporal patterns of global soil heterotrophic respiration in terrestrial ecosystems",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1029/2018ms001583",
+      "title": "The Community Land Model Version 5 (CLM5): Description of New Features, Benchmarking, and Impact of Forcing Uncertainty",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.1175/2009jhm1183.1",
+      "title": "Evaluating the JULES Land Surface Model Energy Fluxes Using FLUXNET Data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2022ms003204",
+      "title": "Modeling Global Carbon Costs of Plant Nitrogen and Phosphorus Acquisition",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.1029/2018rg000608",
+      "title": "An Overview of Global Leaf Area Index (LAI): Methods, Products, Validation, and Applications",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "lai"
+      ]
+    }
+  ]
+}

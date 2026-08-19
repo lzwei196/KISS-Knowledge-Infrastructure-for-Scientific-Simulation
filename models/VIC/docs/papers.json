@@ -1,0 +1,292 @@
+{
+  "model": "VIC",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 27,
+  "open_access": 15,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-11-3481-2018",
+      "title": "The Variable Infiltration Capacity model version 5 (VIC-5): infrastructure improvements for new applications and reproducibility",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff",
+        "evapotranspiration",
+        "soil_moisture",
+        "swe",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-1635-2013",
+      "title": "Multi-variable evaluation of hydrological model predictions for a headwater basin",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff",
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-2611-2016",
+      "title": "Machine learning methods for empirical streamflow simulation: a comparison of model accuracy, interpretability, and uncertainty in daily and monthly predictions",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-169-2017",
+      "title": "Evaluating the streamflow simulation capability of PERSIANN-CDR daily rainfall products",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-857-2015",
+      "title": "Calibration approaches for distributed hydrologic models in poorly gaged basins",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-25-17-2021",
+      "title": "Evaluation of 18 satellite- and model-based soil moisture products using in situ measurements from 826 sensors",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-3125-2017",
+      "title": "Calibration of a large-scale hydrological model using satellite-based soil moisture and evapotranspiration products",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-22-3515-2018",
+      "title": "ERA-5 and ERA-Interim driven ISBA land surface model simulations: which one performs better?",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-13-4291-2016",
+      "title": "Predicting carbon dioxide and energy fluxes across global FLUXNET sites with regression algorithms",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-6-2001-2009",
+      "title": "Towards global empirical upscaling of FLUXNET eddy covariance observations: validation of a model tree ensemble approach",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-9-3857-2012",
+      "title": "A framework for benchmarking land models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-1579-2020",
+      "title": "Evaluation of long-term Northern Hemisphere snow water equivalent products",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-13-2221-2019",
+      "title": "Evaluation of snow depth and snow cover over the Tibetan Plateau in global reanalyses",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-12-657-2018",
+      "title": "Change in frozen soils and its effect on regional hydrology, upper Heihe basin, northeastern Qinghai-Tibetan Plateau",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "discharge",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.3389/feart.2020.576838",
+      "title": "Permafrost Hydrology of the Qinghai-Tibet Plateau: A Review of Processes and Modeling",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "temperature",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agrformet.2013.11.008",
+      "title": "Multi-site evaluation of terrestrial evaporation models using FLUXNET data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/94jd00483",
+      "title": "A simple hydrologically based model of land surface water and energy fluxes for general circulation models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff",
+        "evapotranspiration",
+        "soil_moisture",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1175/1520-0442(2002)015_3237_althbd_2.0.co",
+      "title": "",
+      "access": "subscription",
+      "role": "threshold_convention"
+    },
+    {
+      "doi": "10.1175/jhm568.1",
+      "title": "Regional Parameter Estimation of the VIC Land Surface Model: Methodology and Application to River Basins",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1002/jgrd.50665",
+      "title": "Discharge regime and simulation for the upstream of major rivers over Tibetan Plateau",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm-d-13-0170.1",
+      "title": "A Long-Term Land Surface Hydrologic Fluxes and States Dataset for China",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff",
+        "evapotranspiration",
+        "soil_moisture",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1002/2015wr018247",
+      "title": "Global-scale regionalization of hydrologic model parameters",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm-d-16-0056.1",
+      "title": "Why Do Global Reanalyses and Land Data Assimilation Products Underestimate Snow Water Equivalent?",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1175/1520-0442(2002)015<3237:althbd>2.0.co;2",
+      "title": "A Long-Term Hydrologically Based Dataset of Land Surface Fluxes and States for the Conterminous United States",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff",
+        "evapotranspiration",
+        "soil_moisture",
+        "swe"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,200 @@
+{
+  "model": "MONICA",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 18,
+  "open_access": 8,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-17-1349-2024",
+      "title": "Evaluation and optimisation of the soil carbon turnover routine in the MONICA model (version 3.3.1)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.1371/journal.pone.0151782",
+      "title": "Impact of Spatial Soil and Climate Input Data Aggregation on Regional Yield Simulations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1007/s13593-023-00900-0",
+      "title": "Proposal and extensive test of a calibration protocol for crop phenology models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1007/s11119-022-09885-4",
+      "title": "A review of methods to evaluate crop model performance at multiple and changing spatial scales",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "lai",
+        "evapotranspiration",
+        "soil_moisture",
+        "nutrient",
+        "soil_carbon",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5027/jnrd.v4i0.01",
+      "title": "A new novel index for evaluating model performance (RMSE, index of agreement, Nash-Sutcliffe efficiency with good/satisfactory tiers)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "lai",
+        "evapotranspiration",
+        "soil_moisture",
+        "nutrient",
+        "soil_carbon",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.1186/s40066-020-00283-5",
+      "title": "Challenges and opportunities in crop simulation modelling under seasonal and prolonged dry conditions",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield",
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1038/srep25755",
+      "title": "An integrated soil-crop system model for water and nitrogen management in North China",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "nutrient",
+        "soil_moisture",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1007/978-3-030-50436-6_54",
+      "title": "Sensitivity Analysis of Soil Parameters in Crop Model Supported with High-Throughput Computing (MONICA)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield",
+        "soil_moisture",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1016/j.eja.2011.05.001",
+      "title": "Simulation of winter wheat yield and its variability in different climates of Europe",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1017/s0021859615001124",
+      "title": "Comparing the performance of 11 crop simulation models in predicting yield response to nitrogen fertilization",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1111/gcb.15441",
+      "title": "Ensemble modelling, uncertainty and robust predictions of organic carbon in long-term bare-fallow soils",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ecolmodel.2011.02.018",
+      "title": "The MONICA model: Testing predictability for crop growth, soil moisture and nitrogen dynamics",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "soil_moisture",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1016/j.scitotenv.2024.174995",
+      "title": "Evaluating MONICA's capability to simulate water, carbon and nitrogen fluxes",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_carbon",
+        "nutrient",
+        "soil_moisture",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agrformet.2023.109619",
+      "title": "Sources of uncertainty in simulating crop N2O emissions under contrasting environmental conditions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "N2O"
+      ]
+    },
+    {
+      "doi": "10.1002/vzj2.20058",
+      "title": "Crop growth and soil water fluxes at erosion-affected arable sites: Using weighing lysimeter data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1002/vzj2.20202",
+      "title": "Same soil, different climate: Crop model intercomparison on translocated lysimeters",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.eja.2015.08.004",
+      "title": "Analysing the parameter sensitivity of the agro-ecosystem model MONICA for different crops",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "soil_moisture",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.3390/agriculture9020037",
+      "title": "Temporal Sensitivity Analysis of the MONICA Model: Two Global Approaches to Analyze Dynamics of Parameter Sensitivity",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "soil_moisture",
+        "nutrient"
+      ]
+    }
+  ]
+}

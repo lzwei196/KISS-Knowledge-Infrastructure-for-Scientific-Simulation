@@ -1,0 +1,164 @@
+{
+  "model": "PySWMM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 15,
+  "open_access": 6,
+  "papers": [
+    {
+      "doi": "10.21105/joss.02292",
+      "title": "PySWMM: The Python Interface to Stormwater Management Model (SWMM)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "runoff",
+        "depth",
+        "discharge",
+        "continuity"
+      ]
+    },
+    {
+      "doi": "10.14796/jwmm.c463",
+      "title": "Field Evaluation of Discretized Model Setups for the Storm Water Management Model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge",
+        "depth",
+        "continuity"
+      ]
+    },
+    {
+      "doi": "10.14796/jwmm.r220-18",
+      "title": "Automated Calibration using Optimization Techniques with SWMM RUNOFF",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1007/s13762-012-0092-0",
+      "title": "Modelling runoff quantity and quality in tropical urban catchments using Storm Water Management Model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-4215-2015",
+      "title": "High-quality observation of surface imperviousness for urban runoff modelling using UAV imagery",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-921-2016",
+      "title": "Comparing CFSR and conventional weather data for discharge and soil loss modelling",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff",
+        "discharge",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff",
+        "discharge",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff",
+        "discharge",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.2166/wst.2023.277",
+      "title": "Urban flood numerical modeling and hydraulic performance of a drainage network",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology12060129",
+      "title": "Automated Calibration of SWMM for Improved Stormwater Model Development and Application",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology9050087",
+      "title": "Quality Assessment of Small Urban Catchments Stormwater Models: A New Approach",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff",
+        "discharge",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.1016/j.watres.2020.115669",
+      "title": "The potential of proxy water level measurements for calibrating urban pluvial flood models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.4314/wsa.v32i1.5240",
+      "title": "Stormwater quality calibration by SWMM: A case study in Northern Spain",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2023.129757",
+      "title": "A simplified approach for the hydrological simulation of urban drainage systems",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1061/(asce)he.1943-5584.0000705",
+      "title": "Bayesian Approach for Uncertainty Analysis of an Urban Storm Water Model and Its Application",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "depth"
+      ]
+    }
+  ]
+}

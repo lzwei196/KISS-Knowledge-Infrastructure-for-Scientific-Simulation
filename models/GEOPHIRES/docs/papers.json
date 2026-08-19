@@ -1,0 +1,25 @@
+{
+  "model": "GEOPHIRES",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 2,
+  "open_access": 1,
+  "papers": [
+    {
+      "doi": "10.61435/ijred.2025.61071",
+      "title": "A scoping review of numerical modelling studies of geothermal reservoirs: Trends",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "power",
+        "temperature",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1039/d1ee02309h",
+      "title": "The evolving role of geothermal energy for decarbonizing the United States",
+      "access": "subscription",
+      "role": "benchmark"
+    }
+  ]
+}

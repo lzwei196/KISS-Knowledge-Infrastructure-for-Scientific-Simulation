@@ -1,0 +1,180 @@
+{
+  "model": "APEX",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 16,
+  "open_access": 8,
+  "papers": [
+    {
+      "doi": "10.1007/s11269-022-03075-7",
+      "title": "Evaluation of the Impact of Best Management Practices on Streamflow, Sediment and Nutrient Yield at Field and Watershed Scales",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.22004/ag.econ.49156",
+      "title": "The Agricultural Policy Environmental EXtender (APEX) Model: An Emerging Tool for Landscape and Watershed Environmental Analyses",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "lai",
+        "runoff",
+        "evapotranspiration",
+        "sediment",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-10-1403-2017",
+      "title": "Global gridded crop model evaluation: benchmarking, skills, deficiencies and implications",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-020-79988-3",
+      "title": "Modelling adaptation strategies to reduce adverse impacts of climate change on maize cropping system in Northeast China",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-921-2016",
+      "title": "Comparing CFSR and conventional weather data for discharge and soil loss modelling with SWAT in small catchments in the Ethiopian Highlands",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff",
+        "sediment",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42265",
+      "title": "Hydrologic and Water Quality Models: Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff",
+        "sediment",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-11-91-2014",
+      "title": "Assessing biogeochemical effects and best management practice for a wheat-maize cropping system using the DNDC model",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.11903",
+      "title": "Evaluating the APEX Model for Simulating Streamflow and Water Quality on Ten Agricultural Watersheds in the U.S.",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.2134/jeq2012.0241",
+      "title": "Agricultural Policy Environmental eXtender Simulation of Three Adjacent Row-Crop Watersheds in the Claypan Region",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "runoff",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agwat.2019.01.018",
+      "title": "Modeling the impacts of agricultural management strategies on crop yields and sediment yields using APEX in Guizhou Plateau, southwest China",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agee.2017.02.004",
+      "title": "Evaluating the ranch and watershed scale impacts of using traditional and adaptive multi-paddock grazing on runoff, sediment and nutrient losses in North Texas, USA",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jglr.2015.05.001",
+      "title": "Modeling conservation practices in APEX: from the field to the watershed",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "sediment",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.2134/jeq2014.12.0527",
+      "title": "Sensitivity Analysis of the Agricultural Policy/Environmental eXtender (APEX) for Phosphorus Loads in Tile-Drained Landscapes",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.57.10332",
+      "title": "Monitoring and APEX Modeling of No-Till and Reduced-Till in Tile-Drained Agricultural Landscapes for Water Quality",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.57.10601",
+      "title": "An Auto-Calibration Tool for the Agricultural Policy Environmental eXtender (APEX) Model",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff",
+        "sediment",
+        "yield"
+      ]
+    }
+  ]
+}

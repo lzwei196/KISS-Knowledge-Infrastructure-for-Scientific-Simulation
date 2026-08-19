@@ -1,0 +1,172 @@
+{
+  "model": "HexWatershed",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 15,
+  "open_access": 6,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-18-4601-2025",
+      "title": "Representing lateral groundwater flow from land to river in Earth system models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "river_network",
+        "drainage_area",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-28-1287-2024",
+      "title": "Effects of high-quality elevation data and explanatory variables on the accuracy of flood inundation / river network mapping",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "river_network",
+        "stream_network",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-12-2501-2019",
+      "title": "The multiscale routing model mRM v1.0: simple river routing at resolutions from 1.5 to 720 arc seconds",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "river_network",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-13-2241-2009",
+      "title": "Deriving a global river network map and its sub-grid topographic characteristics from a fine-resolution flow direction map",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "river_network",
+        "drainage_area",
+        "flow_direction",
+        "drainage_density"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-15-667-2011",
+      "title": "Efficient extraction of drainage networks from massive, radar-based elevation models with least cost path search",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "river_network",
+        "stream_network",
+        "flow_accumulation",
+        "drainage_area"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology1010020",
+      "title": "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2021.104099",
+      "title": "Advances in hexagon mesh-based flow direction modeling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flow_direction",
+        "river_network",
+        "flow_accumulation"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2020.104702",
+      "title": "Watershed delineation on a hexagonal mesh grid",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "watershed_boundary",
+        "drainage_area",
+        "stream_network"
+      ]
+    },
+    {
+      "doi": "10.1029/2022ms003089",
+      "title": "Topological Relationship-Based Flow Direction Modeling: Mesh-Independent River Networks Representation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flow_direction",
+        "river_network",
+        "stream_network"
+      ]
+    },
+    {
+      "doi": "10.1029/2022ms003487",
+      "title": "Topological Relationship-Based Flow Direction Modeling: Stream Burning and Depression Filling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "flow_direction",
+        "stream_network"
+      ]
+    },
+    {
+      "doi": "10.1029/2024ms004737",
+      "title": "Evaluation of Flow Routing on the Unstructured Voronoi Meshes in Earth System Modeling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "river_network",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1029/2000wr000150",
+      "title": "Effects of digital elevation model resolution on derived stream network positions",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "stream_network",
+        "river_network",
+        "flow_accumulation"
+      ]
+    },
+    {
+      "doi": "10.2166/nh.2022.126",
+      "title": "The limits of watershed delineation: implications of different DEMs, DEM resolution and area threshold",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "watershed_boundary",
+        "drainage_area",
+        "drainage_density"
+      ]
+    },
+    {
+      "doi": "10.1002/essoar.10512600.1",
+      "title": "Topological relationships-based flow direction modeling: mesh-independent river networks representation (preprint)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flow_direction",
+        "river_network"
+      ]
+    }
+  ]
+}

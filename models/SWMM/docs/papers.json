@@ -1,0 +1,247 @@
+{
+  "model": "SWMM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 24,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.14796/jwmm.r220-18",
+      "title": "Automated Calibration using Optimization Techniques with SWMM RUNOFF",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.14796/jwmm.c406",
+      "title": "Assessing SWMM 5 Hydrologic Parameter Benefits for Model Calibration",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.4236/ojop.2013.24013",
+      "title": "Multi-Objective Optimization of Low Impact Development Designs in an Urbanizing Watershed",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.4236/jep.2015.68076",
+      "title": "Sensitivity Analysis and Calibration of Hydrological Modeling of the Watershed",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.32614/cran.package.hydrogof",
+      "title": "hydroGOF: Goodness-of-Fit Functions for Comparison of Simulated and Observed Hydrological Time Series",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff",
+        "depth",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-22-3903-2018",
+      "title": "Contributions of catchment and in-stream processes to suspended sediment transport in a dominantly groundwater-fed catchment",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "pollutant_concentration_load"
+      ]
+    },
+    {
+      "doi": "10.1007/s10040-020-02241-8",
+      "title": "An evaluation of semidistributed-pipe-network and distributed-finite-difference models for karst-spring discharge simulation",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_table",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff",
+        "pollutant_concentration_load"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology12060129",
+      "title": "Automated Calibration of SWMM for Improved Stormwater Model Development and Application",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/su14031086",
+      "title": "Efficient Urban Runoff Quantity and Quality Modelling Using SWMM Model and Field Data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "pollutant_concentration_load"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology9050087",
+      "title": "Quality Assessment of Small Urban Catchments Stormwater Models: A New Approach",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/w17091331",
+      "title": "Comparing SWMM and HEC-RAS Hydrological Modeling Performance in Semi-Urbanized Watersheds",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.15244/pjoes/60721",
+      "title": "Modeling the Quality and Quantity of Runoff in a Highly Urbanized Catchment Using SWMM",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "pollutant_concentration_load"
+      ]
+    },
+    {
+      "doi": "10.1155/2011/318765",
+      "title": "A New Model for Simulating TSS Washoff in Urban Areas",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "pollutant_concentration_load"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jenvman.2018.12.061",
+      "title": "Assessment of stormwater pollutant loads and source area contributions with stormwater management model (SWMM)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "pollutant_concentration_load"
+      ]
+    },
+    {
+      "doi": "10.1029/2002wr001788",
+      "title": "Comparative evaluation of urban storm water quality models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "pollutant_concentration_load"
+      ]
+    },
+    {
+      "doi": "10.3390/w12092647",
+      "title": "Modelling Pluvial Flooding in Urban Areas Coupling the Models Iber and SWMM",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "node_depth_head",
+        "node_flooding"
+      ]
+    },
+    {
+      "doi": "10.1155/2017/2819308",
+      "title": "A Coupled 1D-2D Hydrodynamic Model for Urban Flood Inundation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "node_depth_head",
+        "node_flooding"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2017.06.024",
+      "title": "Experimental calibration and validation of sewer/surface flow exchange equations in steady and unsteady flow conditions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "node_depth_head",
+        "link_flow"
+      ]
+    },
+    {
+      "doi": "10.2166/nh.2016.260",
+      "title": "GIS-based SWMM model for simulating the catchment response to flood events",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "node_flooding"
+      ]
+    },
+    {
+      "doi": "10.7282/t3j1039p",
+      "title": "Development and application of a coupled SWMM-MODFLOW model for an urban wetland",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "groundwater_outflow",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1007/s10661-019-7445-9",
+      "title": "Runoff simulation of two typical urban green land types with SWMM: sensitivity analysis and calibration of runoff parameters",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1061/jswbay.0000817",
+      "title": "Storm Water Management Model: Performance Review and Gap Analysis",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge",
+        "pollutant_concentration_load"
+      ]
+    }
+  ]
+}

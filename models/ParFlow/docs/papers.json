@@ -1,0 +1,170 @@
+{
+  "model": "ParFlow",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 16,
+  "open_access": 10,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-13-1373-2020",
+      "title": "Simulating coupled surface–subsurface flows with ParFlow v3.5.0: capabilities, applications, and ongoing development of an open-source, massively parallel, integrated hydrologic model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "soil_moisture",
+        "discharge",
+        "runoff",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-8-923-2015",
+      "title": "A high-resolution simulation of groundwater and surface water over most of the continental US with the integrated hydrologic model ParFlow v3",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-16-1617-2023",
+      "title": "Continental-scale evaluation of a fully distributed coupled land surface and groundwater model, ParFlow-CLM (v3.6.0)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "soil_moisture",
+        "evapotranspiration",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3389/frwa.2023.1183642",
+      "title": "Hydrological forecasting at impact scale: the integrated ParFlow hydrological model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "soil_moisture",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1038/s41467-020-14688-0",
+      "title": "Evapotranspiration depletes groundwater under warming over the contiguous United States",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-4561-2019",
+      "title": "Spatially distributed sensitivity of simulated global groundwater heads and flows to hydraulic conductivity, groundwater recharge, and surface water body parameterization",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-921-2016",
+      "title": "Comparing CFSR and conventional weather data for discharge and soil loss modelling with SWAT (reproduces Moriasi NSE/PBIAS/RSR performance tiers)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-4127-2015",
+      "title": "Effects of hydrologic conditions on SWAT model performance and parameter sensitivity (reproduces Moriasi satisfactory/good/very-good NSE and PBIAS streamflow tiers)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1002/2013wr013725",
+      "title": "Surface-subsurface model intercomparison: A first set of benchmark results to diagnose integrated hydrology and feedbacks",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "soil_moisture",
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1002/2016wr019191",
+      "title": "The integrated hydrologic model intercomparison project, IH-MIP2: A second set of benchmark results to diagnose integrated hydrology and feedbacks",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "soil_moisture",
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm422.1",
+      "title": "Development of a Coupled Land Surface and Groundwater Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1002/hyp.13448",
+      "title": "Improvement of surface run-off in the hydrological model ParFlow by a scale-consistent river parameterization",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2022.127991",
+      "title": "Improvement of soil moisture and groundwater level estimations using a scale-consistent river parameterization in ParFlow-CLM",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1002/2013wr014258",
+      "title": "Assessing the impact of model spin-up on surface water-groundwater interactions using an integrated hydrologic model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "subsurface_storage"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2019.05.008",
+      "title": "Combining a land surface model with groundwater model calibration to assess the impacts",
+      "access": "open",
+      "role": "calibration"
+    },
+    {
+      "doi": "10.5194/gmd-9-1341-2016",
+      "title": "TerrSysMP-PDAF (version 1.0): a modular high-performance data assimilation framework",
+      "access": "open",
+      "role": "calibration"
+    }
+  ]
+}

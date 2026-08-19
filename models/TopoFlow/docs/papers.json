@@ -1,0 +1,141 @@
+{
+  "model": "TopoFlow",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 14,
+  "open_access": 6,
+  "papers": [
+    {
+      "doi": "10.5194/hess-22-4815-2018",
+      "title": "Toward continental hydrologic-hydrodynamic modeling in South America",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-2601-2019",
+      "title": "On the choice of calibration metrics for high-flow estimation using hydrologic models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-13-367-2009",
+      "title": "Calibration and sequential updating of a coupled hydrologic-hydraulic model using flood inundation observations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-22-5967-2018",
+      "title": "Inundation mapping based on reach-scale effective geometry",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-21-559-2021",
+      "title": "Simulating historical flood events at the continental scale: observational validation of a large-scale hydrodynamic model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-23-2663-2023",
+      "title": "An integrated modeling approach to evaluate the impacts of nature-based solutions on flood mitigation",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "depth",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology1010020",
+      "title": "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.2166/nh.2017.189",
+      "title": "Evaluation of the SWAT model performance for simulating river discharge in the Himalayan and lower plain basins",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2023wr034545",
+      "title": "Satellite Video Remote Sensing for Flood Model Validation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2017.05.042",
+      "title": "Diagnosis of the hydrology of a small Arctic basin at the tundra-taiga transition using a physically based hydrological model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2006jg000326",
+      "title": "Application of TopoFlow, a spatially distributed hydrological model, to the Imnavait Creek watershed, Alaska",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/2016ea000237",
+      "title": "Reproducible, component-based modeling with TopoFlow, a spatial hydrologic modeling toolkit",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "depth",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.3390/w9060418",
+      "title": "Using Modeling Tools to Better Understand Permafrost Hydrology",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    }
+  ]
+}

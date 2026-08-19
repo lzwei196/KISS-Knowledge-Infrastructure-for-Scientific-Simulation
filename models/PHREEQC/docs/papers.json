@@ -1,0 +1,237 @@
+{
+  "model": "PHREEQC",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.1007/s10596-014-9443-x",
+      "title": "Reactive transport codes for subsurface environmental simulation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "pH",
+        "element_totals",
+        "species_distribution",
+        "saturation_index",
+        "phase_amounts",
+        "transport_profiles"
+      ]
+    },
+    {
+      "doi": "10.5194/adgeo-56-33-2021",
+      "title": "Geochemical and reactive transport modelling in R with the RedModRphree package",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "pH",
+        "element_totals",
+        "species_distribution",
+        "transport_profiles"
+      ]
+    },
+    {
+      "doi": "10.1515/johh-2017-0049",
+      "title": "The HPx software for multicomponent reactive transport during variably-saturated flow",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "transport_profiles",
+        "element_totals",
+        "pH"
+      ]
+    },
+    {
+      "doi": "10.1186/1467-4866-13-5",
+      "title": "On the potential for CO2 mineral storage in continental flood basalts - PHREEQC batch- and 1D diffusion-reaction simulations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "saturation_index",
+        "phase_amounts",
+        "element_totals",
+        "pH"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-024-10268-z",
+      "title": "A benchmark study on reactive two-phase flow in porous media: Part I - model description",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "transport_profiles",
+        "element_totals"
+      ]
+    },
+    {
+      "doi": "10.4236/jwarp.2017.95028",
+      "title": "Linking a Simulated Annealing Based Optimization Model with PHT3D Simulation Model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "element_totals",
+        "transport_profiles"
+      ]
+    },
+    {
+      "doi": "10.4236/jwarp.2021.133012",
+      "title": "Effect of Rock Fragments on Tracer Transport in Broadleaved and Coniferous Forest Soils",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "transport_profiles"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-022-18411-5",
+      "title": "Uncertainty propagation in pore water chemical composition calculation using surrogate models",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "element_totals",
+        "species_distribution",
+        "pH"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-12-167-2019",
+      "title": "Particle swarm optimization for the estimation of surface complexation constants with the geochemical model PHREEQC-3.1.2",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "element_totals",
+        "species_distribution"
+      ]
+    },
+    {
+      "doi": "10.3133/wri994259",
+      "title": "User's guide to PHREEQC (Version 2): A computer program for speciation, batch-reaction, one-dimensional transport, and inverse geochemical calculations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "pH",
+        "pe",
+        "element_totals",
+        "species_distribution",
+        "saturation_index",
+        "ionic_strength",
+        "specific_conductance",
+        "phase_amounts",
+        "transport_profiles"
+      ]
+    },
+    {
+      "doi": "10.3133/wri954227",
+      "title": "User's guide to PHREEQC, a computer program for speciation, reaction-path, advective-transport, and inverse geochemical calculations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "pH",
+        "element_totals",
+        "species_distribution",
+        "saturation_index",
+        "transport_profiles"
+      ]
+    },
+    {
+      "doi": "10.3133/wri884153",
+      "title": "A computer program incorporating Pitzer's equations for calculation of geochemical reactions in brines (PHRQPITZ)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "ionic_strength",
+        "species_distribution",
+        "saturation_index"
+      ]
+    },
+    {
+      "doi": "10.3133/wri884227",
+      "title": "SOLMINEQ.88; a computer program for geochemical modeling of water-rock interactions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "species_distribution",
+        "saturation_index",
+        "element_totals"
+      ]
+    },
+    {
+      "doi": "10.1016/j.earscirev.2021.103888",
+      "title": "Comparison of thermodynamic data files for PHREEQC",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "saturation_index",
+        "species_distribution",
+        "element_totals"
+      ]
+    },
+    {
+      "doi": "10.1002/aic.17391",
+      "title": "Algorithms for activity correction models for geochemical speciation and reactive transport modeling",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "species_distribution",
+        "ionic_strength",
+        "element_totals"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-014-9463-6",
+      "title": "Benchmarks for multicomponent reactive transport across a cement/clay interface",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "transport_profiles",
+        "element_totals",
+        "phase_amounts"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-015-9481-z",
+      "title": "Benchmarks for multicomponent diffusion and electrochemical migration",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "transport_profiles",
+        "element_totals",
+        "species_distribution"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-015-9476-9",
+      "title": "Benchmark problems for reactive transport modeling of the generation and attenuation of acid mine drainage",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "pH",
+        "element_totals",
+        "phase_amounts",
+        "transport_profiles"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2009.10.001",
+      "title": "Implementation of variably saturated flow into PHREEQC for the simulation of biogeochemical reactions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "transport_profiles",
+        "element_totals",
+        "pH"
+      ]
+    },
+    {
+      "doi": "10.1016/s0169-7722(00)00106-6",
+      "title": "Database uncertainty as a limiting factor in reactive transport prognosis",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "saturation_index",
+        "species_distribution",
+        "element_totals"
+      ]
+    }
+  ]
+}

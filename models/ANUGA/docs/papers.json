@@ -1,0 +1,143 @@
+{
+  "model": "ANUGA",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 13,
+  "open_access": 8,
+  "papers": [
+    {
+      "doi": "10.21914/anziamj.v48i0.153",
+      "title": "Parallelisation of a finite volume method for hydrodynamic inundation modelling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "depth",
+        "flood_extent",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.36334/modsim.2015.l5.davies",
+      "title": "Open source flood simulation with a 2D discontinuous-elevation hydrodynamic model (ANUGA)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "flood_extent",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3389/feart.2015.00032",
+      "title": "An evaluation of onshore digital elevation models for modeling tsunami inundation (ANUGA)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "flood_extent",
+        "water_level",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.2478/johh-2023-0005",
+      "title": "Comparative analysis of numerical solutions of 2D unsteady dam-break waves using shallow-water schemes",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-19-1723-2019",
+      "title": "Evaluating the impact of model complexity on flood wave propagation and inundation extent",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "flood_extent",
+        "water_level",
+        "discharge",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-4983-2016",
+      "title": "Calibration of channel depth and friction parameters in the LISFLOOD-FP hydraulic model using medium-resolution SAR data",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "flood_extent",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-921-2016",
+      "title": "Comparing CFSR and conventional weather data for discharge and soil loss modelling (reproduces Moriasi 2007 NSE/PBIAS/RSR tiers)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-16-3371-2012",
+      "title": "Critical review of SWAT applications in the upper Nile basin countries (reproduces Moriasi 2007 NSE/PBIAS performance ratings)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "water_level",
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.1088/1742-6596/423/1/012029",
+      "title": "Validation of ANUGA hydraulic model using exact solutions to shallow water wave problems",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.3390/w12010229",
+      "title": "Uncertainty Analysis of Spatiotemporal Models with Point Estimate Methods (PEMs)-The Case of the ANUGA Hydrodynamic Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1002/hyp.10019",
+      "title": "ROC-based calibration of flood inundation models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "flood_extent"
+      ]
+    }
+  ]
+}

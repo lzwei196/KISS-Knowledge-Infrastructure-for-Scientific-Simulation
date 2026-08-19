@@ -1,0 +1,213 @@
+{
+  "model": "HYPE",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.5194/hess-19-4559-2015",
+      "title": "Large-scale hydrological modelling by using modified PUB recommendations: the India-HYPE case",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-24-535-2020",
+      "title": "Global catchment modelling using World-Wide HYPE (WWH), open data, and stepwise parameter estimation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1007/s13280-012-0323-0",
+      "title": "Climate Change Impact on Riverine Nutrient Load and Land-Based Remedial Measures of the Baltic Sea (HYPE nutrient application)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "nutrient",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-22-989-2018",
+      "title": "Near-real-time adjusted reanalysis forcing data for hydrology (HYPE cold-region discharge/snow evaluation)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-4323-2019",
+      "title": "Technical note: Inherent benchmark or not? Comparing Nash-Sutcliffe and Kling-Gupta efficiency scores",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "swe",
+        "evapotranspiration",
+        "soil_moisture",
+        "water_table",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.28991/cej-2020-03091496",
+      "title": "Watershed Modelling of the Mindanao River Basin in the Philippines Using SWAT (reproduces Moriasi NSE/RSR/PBIAS performance-rating tiers)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "swe",
+        "evapotranspiration",
+        "soil_moisture",
+        "water_table",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.4236/jgis.2011.34024",
+      "title": "Hydrologic Modeling of the Bouregreg Watershed (Morocco) Using GIS and SWAT Model (reproduces Moriasi discharge NSE/PBIAS/RSR tiers)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3808/jei.201900407",
+      "title": "Water Quality Management of a Cold Climate Region Watershed in Changing Climate (reproduces Moriasi nutrient PBIAS +-25/+-40/+-70 tiers)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.4236/jep.2015.68076",
+      "title": "Sensitivity Analysis and Calibration of Hydrological Modeling of the Watershed Nitrogen (watershed N/streamflow calibration with Moriasi ratings)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "nutrient",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology1010020",
+      "title": "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.watres.2025.123156",
+      "title": "Establishing performance criteria for evaluating watershed-scale sediment and nutrient models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.2166/nh.2010.007",
+      "title": "Development and testing of the HYPE (Hydrological Predictions for the Environment) water quality model for different spatial scales",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1080/02626667.2011.637497",
+      "title": "Water and nutrient predictions in ungauged basins: set-up and evaluation of a model at the national scale (Sweden)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ejrh.2023.101544",
+      "title": "To tame a land: Limiting factors in model performance for the multi-objective calibration of a pan-European, semi-distributed hydrological model for discharge and sediments",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1080/02626667.2020.1846740",
+      "title": "Towards a more consistent eco-hydrological modelling through multi-objective calibration",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1002/hyp.11376",
+      "title": "Process refinements improve a hydrological model concept applied to the Niger River basin (HYPE)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.3390/rs12050811",
+      "title": "Impact of Satellite and In Situ Data Assimilation on Hydrological Predictions (HYPE)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "discharge",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.3390/w12040975",
+      "title": "Benefits of Combining Satellite-Derived Snow Cover Data and Discharge Data to Calibrate a Hydrological Model (HYPE)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.2166/nh.2016.242",
+      "title": "Use of auxiliary data of topography, snow and ice to improve model performance in a glacier-dominated region",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1080/02626667.2022.2121165",
+      "title": "Exploring the potential for parameter transfer from daily to hourly time step in the HYPE model for Sweden",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    }
+  ]
+}

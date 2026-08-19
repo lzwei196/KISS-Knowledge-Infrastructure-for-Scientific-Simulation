@@ -1,0 +1,134 @@
+{
+  "model": "FloPy",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 13,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.5194/hess-23-4561-2019",
+      "title": "Spatially distributed sensitivity of simulated global groundwater heads and flows to hydraulic conductivity, groundwater recharge, and surface water body parameterization",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-9-549-2005",
+      "title": "Multi-objective calibration of a surface water-groundwater flow model in an irrigated agricultural region",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "water_table",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-3875-2015",
+      "title": "Performance evaluation of groundwater model hydrostratigraphy from airborne electromagnetic data and lithological borehole logs",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-28-5107-2024",
+      "title": "The impact of future changes in climate variables and groundwater abstraction on basin-scale groundwater availability",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-2019-232",
+      "title": "Comparing SWAT with SWAT-MODFLOW hydrological simulations when assessing the impacts of groundwater abstractions",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "cell-by-cell flow budget"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-12-2401-2019",
+      "title": "Challenges in developing a global gradient-based groundwater model (G3M v1.0) for the integration into a global hydrological model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-3267-2020",
+      "title": "Development of the Community Water Model (CWatM v1.04) - a high-resolution hydrological model for global and regional assessment of integrated water resources management",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge",
+        "cell-by-cell flow budget"
+      ]
+    },
+    {
+      "doi": "10.3133/tm6a55",
+      "title": "Documentation for the MODFLOW 6 Groundwater Flow Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "cell-by-cell flow budget",
+        "volumetric water-balance discrepancy"
+      ]
+    },
+    {
+      "doi": "10.1111/gwat.12413",
+      "title": "Scripting MODFLOW Model Development Using Python and FloPy",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "cell-by-cell flow budget",
+        "specific discharge"
+      ]
+    },
+    {
+      "doi": "10.1111/gwat.13327",
+      "title": "FloPy Workflows for Creating Structured and Unstructured MODFLOW Models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "cell-by-cell flow budget"
+      ]
+    },
+    {
+      "doi": "10.1111/gwat.13351",
+      "title": "MODFLOW as a Configurable Multi-Model Hydrologic Simulator",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "cell-by-cell flow budget"
+      ]
+    },
+    {
+      "doi": "10.3133/ofr00184",
+      "title": "MODFLOW-2000: user guide to the observation, sensitivity, and parameter-estimation processes",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.3133/sir20145166",
+      "title": "Groundwater-flow and land-subsidence model of Antelope Valley, California",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table"
+      ]
+    }
+  ]
+}

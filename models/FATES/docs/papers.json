@@ -1,0 +1,188 @@
+{
+  "model": "FATES",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 15,
+  "open_access": 8,
+  "papers": [
+    {
+      "doi": "10.5194/bg-17-3017-2020",
+      "title": "Benchmarking and parameter sensitivity of physiological and vegetation dynamics using the Functionally Assembled Terrestrial Ecosystem Simulator (FATES) at Barro Colorado Island, Panama",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "npp",
+        "lai",
+        "biomass",
+        "stem_density",
+        "canopy_structure"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-8-3593-2015",
+      "title": "Taking off the training wheels: the properties of a dynamic vegetation model without climate envelopes, CLM4.5(ED)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "biomass",
+        "lai",
+        "gpp",
+        "stem_density",
+        "basal_area"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-12-4133-2019",
+      "title": "Identification of key parameters controlling demographically structured vegetation dynamics in a land surface model (CLM4.5-FATES)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "lai",
+        "biomass",
+        "stem_density",
+        "basal_area",
+        "pft_composition"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-12-4347-2019",
+      "title": "The biophysics, ecology, and biogeochemistry of functionally diverse, vertically and horizontally heterogeneous ecosystems: the Ecosystem Demography model version 2.2 (ED-2.2)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "npp",
+        "lai",
+        "biomass",
+        "canopy_structure"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-17-4999-2020",
+      "title": "Assessing impacts of selective logging on water, energy, and carbon budgets and ecosystem dynamics in Amazon forests using the Functionally Assembled Terrestrial Ecosystem Simulator (ELM-FATES)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "biomass",
+        "lai",
+        "stem_density",
+        "basal_area"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-18-4005-2021",
+      "title": "Assessing climate change impacts on live fuel moisture and wildfire risk using a hydrodynamic vegetation model (FATES-Hydro)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "fire_disturbance",
+        "lai",
+        "biomass"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-16-4017-2023",
+      "title": "A machine learning approach targeting parameter estimation for plant functional type coexistence modeling using ELM-FATES",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "lai",
+        "biomass",
+        "pft_composition"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-17-6185-2020",
+      "title": "Landsat near-infrared (NIR) band and ELM-FATES sensitivity to forest disturbances and regrowth in the central Amazon",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "biomass",
+        "fire_disturbance",
+        "lai",
+        "stem_density"
+      ]
+    },
+    {
+      "doi": "10.1029/2018ms001583",
+      "title": "The Community Land Model Version 5 (CLM5): Description of New Features, Benchmarking, and Impact of Forcing Uncertainty",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "lai",
+        "biomass"
+      ]
+    },
+    {
+      "doi": "10.1029/2018ms001354",
+      "title": "The International Land Model Benchmarking (ILAMB) System: Design, Theory, and Implementation",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "lai",
+        "biomass",
+        "npp"
+      ]
+    },
+    {
+      "doi": "10.1029/2012jg001960",
+      "title": "A model-data comparison of gross primary productivity: Results from the North American Carbon Program site synthesis",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.2172/1330803",
+      "title": "2016 International Land Model Benchmarking (ILAMB) Workshop Report",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "lai",
+        "biomass"
+      ]
+    },
+    {
+      "doi": "10.1111/gcb.13910",
+      "title": "Vegetation demographics in Earth System Models: A review of progress and priorities",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "biomass",
+        "stem_density",
+        "basal_area",
+        "pft_composition",
+        "mortality"
+      ]
+    },
+    {
+      "doi": "10.1029/2022ms003333",
+      "title": "Integration of a Frost Mortality Scheme Into the Demographic Vegetation Model FATES",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "mortality",
+        "stem_density",
+        "pft_composition"
+      ]
+    },
+    {
+      "doi": "10.1029/2020jg005677",
+      "title": "Impacts of Degradation on Water, Energy, and Carbon Cycling of the Amazon Tropical Forests",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "biomass",
+        "lai"
+      ]
+    }
+  ]
+}

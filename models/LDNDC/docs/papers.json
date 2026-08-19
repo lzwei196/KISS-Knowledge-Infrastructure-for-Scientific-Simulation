@@ -1,0 +1,229 @@
+{
+  "model": "LDNDC",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 8,
+  "papers": [
+    {
+      "doi": "10.5194/bg-16-2905-2019",
+      "title": "Using a modified DNDC biogeochemical model to optimize field management of a multi-crop (cotton, wheat, and maize) rotation system",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "dN_n2o_emis",
+        "dN_no3_leach",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-11-91-2014",
+      "title": "Assessing biogeochemical effects and best management practice for a wheat-maize cropping system using the DNDC model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "dN_n2o_emis",
+        "dC_co2_emis_hetero",
+        "dN_no3_leach",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-18-1917-2021",
+      "title": "Impacts of fertilization on grassland productivity and water quality across the European Alps",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "dN_n2o_emis",
+        "dN_no3_leach",
+        "yield",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-10-1751-2013",
+      "title": "Environmental change impacts on the C- and N-cycle of European forests: a model comparison study",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "dC_co2_emis_hetero",
+        "dN_n2o_emis",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-14-3487-2017",
+      "title": "Constraining a complex biogeochemical model for CO2 and N2O emission simulations from various land uses by model-data fusion",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "dN_n2o_emis",
+        "dC_co2_emis_hetero"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-9-3983-2012",
+      "title": "Parameter-induced uncertainty quantification of soil N2O, NO and CO2 emission from Hoglwald spruce forest (Germany) using the LandscapeDNDC model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "dN_n2o_emis",
+        "dN_no_emis",
+        "dC_co2_emis_hetero"
+      ]
+    },
+    {
+      "doi": "10.5027/jnrd.v4i0.01",
+      "title": "A new novel index for evaluating model performance",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "dN_n2o_emis",
+        "dN_no_emis",
+        "dC_co2_emis_hetero",
+        "dC_ch4_emis",
+        "dN_no3_leach",
+        "evapotranspiration",
+        "yield",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.1371/journal.pone.0145180",
+      "title": "SPOTting Model Parameters Using a Ready-Made Python Package (SPOTPY)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "dN_n2o_emis",
+        "dC_co2_emis_hetero"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "dN_n2o_emis",
+        "dN_no_emis",
+        "dC_co2_emis_hetero",
+        "dC_ch4_emis",
+        "dN_no3_leach",
+        "evapotranspiration",
+        "yield",
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.1016/j.geoderma.2023.116450",
+      "title": "Development of DNDC-BC model to estimate greenhouse gas emissions from rice paddy fields under combination of biochar and controlled irrigation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dC_ch4_emis",
+        "dN_n2o_emis"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-19-3021-2022",
+      "title": "Effects of climate change in European croplands and grasslands: productivity, greenhouse gas balance and soil carbon storage",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dN_n2o_emis",
+        "dC_co2_emis_hetero",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.3390/horticulturae10010098",
+      "title": "A Review of the Main Process-Based Approaches for Modeling N2O Emissions from Agricultural Soils",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "dN_n2o_emis"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-14-3789-2021",
+      "title": "Modeling gas exchange and biomass production in West African Sahelian and Sudanian ecological zones",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "lai",
+        "yield",
+        "evapotranspiration",
+        "dC_co2_emis_hetero"
+      ]
+    },
+    {
+      "doi": "10.3390/f12111517",
+      "title": "Evaluation of LandscapeDNDC Model Predictions of CO2 and N2O Fluxes from an Oak Forest",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dC_co2_emis_hetero",
+        "dN_n2o_emis"
+      ]
+    },
+    {
+      "doi": "10.1111/gcbb.12367",
+      "title": "Nitrate leaching and soil nitrous oxide emissions diminish with time in a hybrid poplar short-rotation coppice",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dN_no3_leach",
+        "dN_n2o_emis"
+      ]
+    },
+    {
+      "doi": "10.3390/atmos9100407",
+      "title": "Closing the N-Budget: How Simulated Groundwater-Borne Nitrate Supply Affects Plant Growth and N2O Emissions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dN_no3_leach",
+        "dN_n2o_emis"
+      ]
+    },
+    {
+      "doi": "10.3390/agronomy10010050",
+      "title": "Simulating Long-Term Development of Greenhouse Gas Emissions, Plant Biomass, and Soil Moisture of a Temperate Grassland Ecosystem",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dN_n2o_emis",
+        "yield",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.scitotenv.2015.12.099",
+      "title": "A modeling study on mitigation of N2O emissions and NO3 leaching at different agricultural sites across Europe using LandscapeDNDC",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dN_n2o_emis",
+        "dN_no3_leach"
+      ]
+    },
+    {
+      "doi": "10.24514/00000061",
+      "title": "Process-based Modeling of Methane Emissions from Rice Fields",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dC_ch4_emis"
+      ]
+    },
+    {
+      "doi": "10.1016/j.scitotenv.2019.02.071",
+      "title": "Estimating nitrogen flows of agricultural soils at a landscape level - a modelling study",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dN_no3_leach",
+        "dN_n2o_emis"
+      ]
+    }
+  ]
+}

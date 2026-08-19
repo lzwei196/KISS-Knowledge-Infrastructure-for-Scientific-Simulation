@@ -1,0 +1,113 @@
+{
+  "model": "MOSART",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 12,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.5194/hess-19-63-2015",
+      "title": "On inclusion of water resource management in Earth system models - Part 2: Representation of water supply and allocation and opportunities for improved modeling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-22-4815-2018",
+      "title": "Toward continental hydrologic-hydrodynamic modeling in South America",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1007/s13201-019-1013-x",
+      "title": "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.21105/joss.03221",
+      "title": "mosartwmpy: A Python implementation of the MOSART-WM coupled hydrologic routing and water management model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-10-1233-2017",
+      "title": "Modeling surface water dynamics in the Amazon Basin using MOSART-Inundation v1.0: impacts of geomorphological parameters and river flow representation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-3605-2013",
+      "title": "On an improved sub-regional water resources management representation for integration into earth system models",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology1010020",
+      "title": "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2021ms002772",
+      "title": "Development of Land-River Two-Way Hydrologic Coupling for Floodplain Inundation in E3SM",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm-d-12-015.1",
+      "title": "A Physically Based Runoff Routing Model for Land Surface and Earth System Models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm-d-14-0079.1",
+      "title": "Evaluating Global Streamflow Simulations by a Physically Based Routing Model Coupled to a Land Surface Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-17-1197-2024",
+      "title": "Disentangling the hydrological and hydraulic controls on streamflow variability in MOSART",
+      "access": "open",
+      "role": "sensitivity"
+    }
+  ]
+}

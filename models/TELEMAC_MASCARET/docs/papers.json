@@ -1,0 +1,160 @@
+{
+  "model": "TELEMAC_MASCARET",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 15,
+  "open_access": 8,
+  "papers": [
+    {
+      "doi": "10.5194/os-14-437-2018",
+      "title": "Numerical study of hydrodynamic and salinity transport processes in the Pink Beach wetlands of the Golden Horn Estuary",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "temperature",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-16-1499-2016",
+      "title": "High-resolution wave and hydrodynamics modelling in coastal areas: operational applications for coastal planning, decision support and assessment",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "storage",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-23-3169-2023",
+      "title": "Mangrove ecosystem properties regulate high water levels in a river delta",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-13-367-2009",
+      "title": "Calibration and sequential updating of a coupled hydrologic-hydraulic model using remote sensing derived water stages",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "discharge",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-4983-2016",
+      "title": "Calibration of channel depth and friction parameters in the LISFLOOD-FP hydraulic model using medium-resolution SAR data and identifiability techniques",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-11-739-2007",
+      "title": "Fuzzy set approach to calibrating distributed flood inundation models using remote sensing observations",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.1051/lhb/1999029",
+      "title": "TELEMAC: a hydroinformatic system",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "depth",
+        "velocity",
+        "storage",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "depth",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "depth",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.1155/2019/9816098",
+      "title": "Are Feature Agreement Statistics Alone Sufficient to Validate Modelled Flood Extent Quality?",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.1155/2017/5251902",
+      "title": "Guidance on Setup, Calibration, and Validation of Hydrodynamic, Wave, and Sediment Models for Shelf Seas and Estuaries",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "depth",
+        "velocity",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.2166/wcc.2023.567",
+      "title": "Analysis of different hypotheses for modeling air-water exchange and water temperature",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.3390/w12051225",
+      "title": "Studying the Wake of an Island in a Macro-Tidal Estuary",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.3390/w11051040",
+      "title": "Modelling the Main Hydrodynamic Patterns in Shallow Water Estuaries: The Minho Case Study",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "depth",
+        "velocity",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.48550/arxiv.1910.10623",
+      "title": "A Metamodel of the Telemac Errors",
+      "access": "open",
+      "role": "sensitivity"
+    }
+  ]
+}

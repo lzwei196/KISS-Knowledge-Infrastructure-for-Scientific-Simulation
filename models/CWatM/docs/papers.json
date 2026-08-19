@@ -1,0 +1,188 @@
+{
+  "model": "CWatM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 19,
+  "open_access": 8,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-13-3267-2020",
+      "title": "Development of the Community Water Model (CWatM v1.04) - a high-resolution hydrological model for global and regional assessment of integrated water resources management",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "tws",
+        "evapotranspiration",
+        "swe",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-17-5123-2024",
+      "title": "Coupling a large-scale glacier and hydrological model (OGGM v1.5.3 and CWatM V1.08) - towards an improved representation of mountain water resources in global assessments",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-29-2881-2025",
+      "title": "Benchmarking historical performance and future projections from a large-scale hydrological model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-4323-2019",
+      "title": "Technical note: Inherent benchmark or not? Comparing Nash-Sutcliffe and Kling-Gupta efficiency scores",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.4236/jgis.2011.34024",
+      "title": "Hydrologic Modeling of the Bouregreg Watershed (Morocco) Using GIS and SWAT Model",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-24-1485-2020",
+      "title": "Evaluation of global terrestrial evapotranspiration using state-of-the-art approaches in remote sensing, machine learning and land surface modeling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-25-787-2021",
+      "title": "Uncertainty of simulated groundwater recharge at different global warming levels: a global-scale multi-model ensemble study",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "storage",
+        "tws"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-17-7181-2024",
+      "title": "Deep dive into hydrologic simulations at global scale: harnessing the power of deep learning and physically based hydrological models",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1073/pnas.1704665115",
+      "title": "Global models underestimate large decadal declining and rising water storage trends relative to GRACE satellite data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "tws",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.1016/j.asr.2011.12.021",
+      "title": "A review of global satellite-derived snow products",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1029/2011rg000373",
+      "title": "A review of global terrestrial evapotranspiration: Observation, modeling, climatology, and climatic variability",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "tws",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2020wr029500",
+      "title": "Global Groundwater Modeling and Monitoring: Opportunities and Challenges",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.1002/2014wr016853",
+      "title": "Global analysis of approaches for deriving total water storage changes from GRACE satellite data",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "tws"
+      ]
+    },
+    {
+      "doi": "10.1002/2016wr019494",
+      "title": "Global evaluation of new GRACE mascon products for hydrologic applications",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "tws"
+      ]
+    },
+    {
+      "doi": "10.1007/s10584-020-02892-2",
+      "title": "Performance evaluation of global hydrological models in six large Pan-Arctic watersheds",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/2013wr014382",
+      "title": "The value of satellite-derived snow cover images for calibrating a hydrological model in snow-dominated mountain regions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1029/2019wr026280",
+      "title": "Using the Budyko Framework for Calibrating a Global Hydrological Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    }
+  ]
+}

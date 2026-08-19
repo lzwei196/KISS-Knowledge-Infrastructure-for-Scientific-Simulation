@@ -1,0 +1,137 @@
+{
+  "model": "WSIMOD",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 13,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.21105/joss.04996",
+      "title": "Water Systems Integrated Modelling framework, WSIMOD: A Python package for integrated modelling of water quality and quantity across the water cycle",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "nutrient",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-17-4495-2024",
+      "title": "Modelling water quantity and quality for integrated water cycle management with the Water Systems Integrated Modelling framework (WSIMOD) software",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "nutrient",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.3389/frwa.2021.641462",
+      "title": "Integrated Modelling to Support Analysis of COVID-19 Impacts on London's Water System and In-river Water Quality",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-4127-2015",
+      "title": "Effects of hydrologic conditions on SWAT model performance and parameter sensitivity for a small, mixed land use watershed",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-2611-2016",
+      "title": "Machine learning methods for empirical streamflow simulation: a comparison of model accuracy, interpretability, and uncertainty in forecasting all Australian streamflow",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-15-1675-2011",
+      "title": "The International Soil Moisture Network: a data hosting facility for global in situ soil moisture measurements",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "nutrient",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.1175/2010jhm1223.1",
+      "title": "Performance Metrics for Soil Moisture Retrievals and Application Requirements",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.3390/geosciences10010025",
+      "title": "Review of Watershed-Scale Water Quality and Nonpoint Source Pollution Models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "nutrient"
+      ]
+    },
+    {
+      "doi": "10.3389/frwa.2021.773974",
+      "title": "The Value of Aggregated City Scale Models to Rapidly Assess SuDS in Combined Sewer Systems",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "CSO spill / flood volume",
+        "flows"
+      ]
+    }
+  ]
+}

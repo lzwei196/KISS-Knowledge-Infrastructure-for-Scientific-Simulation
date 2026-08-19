@@ -1,0 +1,201 @@
+{
+  "model": "SHAW",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 19,
+  "open_access": 6,
+  "papers": [
+    {
+      "doi": "10.5194/hess-14-925-2010",
+      "title": "Simulation of snow accumulation and melt in needleleaf forest environments",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "snow_depth",
+        "temperature",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42256",
+      "title": "SWAT: Model Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff",
+        "discharge",
+        "soil_moisture",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42265",
+      "title": "Hydrologic and Water Quality Models: Use, Calibration, and Validation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff",
+        "discharge",
+        "soil_moisture",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-11-5027-2018",
+      "title": "ESM-SnowMIP: assessing snow models and quantifying snow-related climate feedbacks",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "snow_depth",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-25-17-2021",
+      "title": "Evaluation of 18 satellite- and model-based soil moisture products using in situ measurements",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1007/s10546-020-00529-6",
+      "title": "Surface-Energy-Balance Closure over Land: A Review",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff",
+        "discharge",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "temperature",
+        "soil_moisture",
+        "evapotranspiration",
+        "runoff",
+        "discharge",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.1002/2014wr016498",
+      "title": "Evaluating snow models with varying process representations for hydrological applications",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "snow_depth",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-9-2271-2015",
+      "title": "Verification of the multi-layer SNOWPACK model with different water transport schemes",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "snow_depth",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42250",
+      "title": "Simultaneous Heat and Water (SHAW) Model: Model Use, Calibration, and Validation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "soil_moisture",
+        "snow_depth",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1006/jare.1995.0167",
+      "title": "Modelling plant canopy effects on variability of soil temperature and water: model calibration and validation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1175/1520-0450(1998)037<0449:ssefar>2.0.co;2",
+      "title": "Simulating Surface Energy Fluxes and Radiometric Surface Temperatures for Two Arid Vegetation Communities Using the SHAW Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1175/1525-7541(2004)005<0443:sowaef>2.0.co;2",
+      "title": "Simulation of Water and Energy Fluxes in an Old-Growth Seasonal Temperate Rain Forest Using the Simultaneous Heat and Water (SHAW) Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.3390/w8100424",
+      "title": "Modeling of Coupled Water and Heat Transfer in Freezing and Thawing Soils, Inner Mongolia",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.3390/w7052382",
+      "title": "Modeling of Soil Water and Salt Dynamics and Its Effects on Root Water Uptake",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "salinity"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.31041",
+      "title": "Simultaneous Heat and Water Model of a Freezing Snow-Residue-Soil System II. Field Verification",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "soil_moisture",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.4141/cjss08084",
+      "title": "Improving SHAW long-term soil moisture prediction for continuous wheat rotations under drying conditions",
+      "access": "subscription",
+      "role": "sensitivity"
+    },
+    {
+      "doi": "10.1029/2001wr001233",
+      "title": "Intercode comparisons for simulating water balance of surficial sediments in semiarid regions",
+      "access": "subscription",
+      "role": "sensitivity"
+    }
+  ]
+}

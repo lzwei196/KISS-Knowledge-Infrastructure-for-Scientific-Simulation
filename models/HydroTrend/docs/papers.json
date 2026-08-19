@@ -1,0 +1,183 @@
+{
+  "model": "HydroTrend",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 18,
+  "open_access": 6,
+  "papers": [
+    {
+      "doi": "10.5194/hess-24-4743-2020",
+      "title": "Frequency and magnitude variability of Yalu River flooding: numerical analyses for the last 1000 years",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1038/s41467-023-38057-9",
+      "title": "Sediment delivery to sustain the Ganges-Brahmaputra delta under climate change and anthropogenic impacts",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1016/j.scitotenv.2018.06.006",
+      "title": "Projections of historical and 21st century fluvial sediment delivery to the Ganges-Brahmaputra-Meghna, Mahanadi, and Volta deltas",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/esurf-4-831-2016",
+      "title": "Reconstruction of North American drainage basins and river discharge since the Last Glacial Maximum",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-4127-2015",
+      "title": "Effects of hydrologic conditions on SWAT model performance and parameter sensitivity for a small, mixed land use watershed",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-1-2013",
+      "title": "Impact of climate change on sediment yield in the Mekong River basin: a case study of the Lower Mekong Basin",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "sediment",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1016/j.cageo.2008.02.008",
+      "title": "HydroTrend v.3.0: A climate-driven hydrological transport model that simulates discharge and sediment load leaving a river system",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1016/s0098-3004(97)00083-6",
+      "title": "HydroTrend: A climate-driven hydrologic-transport model for predicting discharge and sediment load to lakes or oceans",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1002/9781444303131.ch7",
+      "title": "Predicting Discharge and Sediment Flux of the Po River, Italy since the Last Glacial Maximum",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1086/509246",
+      "title": "Geology, Geography, and Humans Battle for Dominance over the Delivery of Fluvial Sediment to the Coastal Ocean (BQART)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1126/science.1109454",
+      "title": "Impact of Humans on the Flux of Terrestrial Sediment to the Global Coastal Ocean",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1088/1748-9326/ab304e",
+      "title": "Projections of declining fluvial sediment delivery to major deltas worldwide in response to climate change and anthropogenic stress",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "sediment",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/w15010167",
+      "title": "Fluvial Response to Climate Change in the Pacific Northwest: Skeena River Discharge and Sediment Load",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1039/c5em00252d",
+      "title": "A first look at the influence of anthropogenic climate change on the future delivery of fluvial sediment",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "sediment",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1073/pnas.1317606111",
+      "title": "Toward global mapping of river discharge using satellite images and at-many-stations hydraulic geometry",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1029/2003wr002484",
+      "title": "Downstream hydraulic geometry relations: 1. Theoretical development",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "velocity"
+      ]
+    }
+  ]
+}

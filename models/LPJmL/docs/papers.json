@@ -1,0 +1,218 @@
+{
+  "model": "LPJmL",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 13,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-10-1403-2017",
+      "title": "Global gridded crop model evaluation: benchmarking, skills, deficiencies and implications",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-3057-2019",
+      "title": "Assessing the performance of global hydrological models for capturing peak river flows in the Amazon basin",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-3707-2013",
+      "title": "Benchmark products for land evapotranspiration: LandFlux-EVAL multi-data set synthesis",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-9-3151-2012",
+      "title": "How will organic carbon stocks in mineral soils evolve under future climate? Global projections using RothC for a range of climate change scenarios",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.1371/journal.pone.0164960",
+      "title": "Diagnosing the Dynamics of Observed and Simulated Ecosystem Gross Primary Productivity with Time Causal Information Theory Quantifiers",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-6-1341-2009",
+      "title": "Improving land surface models with FLUXNET data",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-18-3511-2014",
+      "title": "Sensitivity of simulated global-scale freshwater fluxes and storages to input data, hydrological model structure, human water use and calibration",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "runoff",
+        "evapotranspiration",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-019-55187-7",
+      "title": "Constraining modelled global vegetation dynamics and carbon turnover using multiple satellite observations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.1111/j.1365-2486.2006.01305.x",
+      "title": "Modelling the role of agriculture for the 20th century global terrestrial carbon balance",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield",
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.5194/esd-10-617-2019",
+      "title": "Modeling forest plantations for carbon uptake with the LPJmL dynamic global vegetation model",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "gpp",
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-11-1343-2018",
+      "title": "LPJmL4 - a dynamic global vegetation model with managed land - Part 1: Model description",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield",
+        "gpp",
+        "discharge",
+        "runoff",
+        "evapotranspiration",
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-11-2789-2018",
+      "title": "Implementing the nitrogen cycle into the dynamic global vegetation, hydrology, and crop growth model LPJmL (version 5.0)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield",
+        "gpp",
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-3073-2015",
+      "title": "Water savings potentials of irrigation systems: global simulation of processes and linkages",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "evapotranspiration",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "gpp",
+        "discharge",
+        "runoff",
+        "evapotranspiration",
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.1088/1748-9326/aac547",
+      "title": "Worldwide evaluation of mean and extreme runoff from six global-scale hydrological models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/2014gb005021",
+      "title": "Global patterns and controls of soil organic carbon dynamics as simulated by multiple terrestrial biosphere models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-11-1377-2018",
+      "title": "LPJmL4 - a dynamic global vegetation model with managed land - Part 2: Model evaluation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "gpp",
+        "discharge",
+        "runoff",
+        "evapotranspiration",
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.1002/2015jd023129",
+      "title": "Multicriteria evaluation of discharge simulation in Dynamic Global Vegetation Models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2010jg001566",
+      "title": "Global patterns of land-atmosphere fluxes of carbon dioxide, latent heat, and sensible heat derived from eddy covariance, satellite, and meteorological observations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/bgd-9-15723-2012",
+      "title": "A comprehensive benchmarking system for evaluating global vegetation models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "soil_carbon",
+        "evapotranspiration",
+        "runoff"
+      ]
+    }
+  ]
+}

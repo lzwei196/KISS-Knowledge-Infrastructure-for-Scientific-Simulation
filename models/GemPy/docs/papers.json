@@ -1,0 +1,213 @@
+{
+  "model": "GemPy",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 19,
+  "open_access": 13,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-12-1-2019",
+      "title": "GemPy 1.0: open-source stochastic geological modeling and inversion",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "lith_block",
+        "scalar_field",
+        "surfaces_and_sections",
+        "uncertainty_distribution",
+        "geophysics_forward",
+        "topology"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-14-3899-2021",
+      "title": "Constraining stochastic 3-D structural geological models with topology information using approximate Bayesian computation in GemPy 2.1",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "topology",
+        "uncertainty_distribution",
+        "scalar_field"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-651-2020",
+      "title": "Automated Monte Carlo-based quantification and updating of geological uncertainty with borehole data (GeoMLA/GemPy workflow)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "uncertainty_distribution",
+        "scalar_field",
+        "surfaces_and_sections"
+      ]
+    },
+    {
+      "doi": "10.5194/se-11-1457-2020",
+      "title": "Uncertainty assessment for 3D geologic modeling of fault zones based on geologic inputs and prior knowledge",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "uncertainty_distribution",
+        "surfaces_and_sections",
+        "scalar_field"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-18-71-2025",
+      "title": "Checking the consistency of 3D geological models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "topology",
+        "surfaces_and_sections",
+        "lith_block"
+      ]
+    },
+    {
+      "doi": "10.5194/se-11-419-2020",
+      "title": "Towards plausible lithological classification from geophysical inversion: honouring geological principles in subsurface imaging",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "lith_block",
+        "geophysics_forward",
+        "scalar_field"
+      ]
+    },
+    {
+      "doi": "10.5194/se-10-1663-2019",
+      "title": "Topological analysis in Monte Carlo simulation for uncertainty propagation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "topology",
+        "uncertainty_distribution"
+      ]
+    },
+    {
+      "doi": "10.5194/se-10-193-2019",
+      "title": "Integration of geoscientific uncertainty into geophysical inversion by means of local gradient regularization",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "geophysics_forward",
+        "uncertainty_distribution",
+        "scalar_field"
+      ]
+    },
+    {
+      "doi": "10.1186/s40517-019-0143-6",
+      "title": "A probabilistic geologic model of the Krafla geothermal system constrained by gravimetric data",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "geophysics_forward",
+        "uncertainty_distribution",
+        "lith_block"
+      ]
+    },
+    {
+      "doi": "10.1007/s11004-021-09945-x",
+      "title": "Three-Dimensional Structural Geological Modeling Using Graph Neural Networks",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "surfaces_and_sections",
+        "scalar_field",
+        "lith_block"
+      ]
+    },
+    {
+      "doi": "10.1016/j.crte.2018.12.001",
+      "title": "Automatic correction and simplification of geological maps and cross-sections for topology-consistent 3D modeling",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "surfaces_and_sections",
+        "topology"
+      ]
+    },
+    {
+      "doi": "10.1007/s00366-023-01852-5",
+      "title": "A hybrid ensemble-based automated deep learning approach to generate 3D geo-models and quantify uncertainty (validated against boreholes)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "surfaces_and_sections",
+        "lith_block",
+        "uncertainty_distribution"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-17-957-2024",
+      "title": "GeoPDNN 1.0: a semi-supervised deep learning neural network using pseudo-labels for 3D geological modeling from boreholes",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "lith_block",
+        "surfaces_and_sections",
+        "scalar_field"
+      ]
+    },
+    {
+      "doi": "10.1016/j.tecto.2011.05.001",
+      "title": "Uncertainties have a meaning: Information entropy as a quality measure for 3-D geological models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "uncertainty_distribution",
+        "lith_block"
+      ]
+    },
+    {
+      "doi": "10.1190/int-2015-0188.1",
+      "title": "Structural geologic modeling as an inference problem: A Bayesian perspective",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "scalar_field",
+        "uncertainty_distribution"
+      ]
+    },
+    {
+      "doi": "10.1109/access.2020.2993050",
+      "title": "A Triangulated Irregular Network Constrained Ordinary Kriging Method for Three-Dimensional Geological Surface Modeling from Boreholes",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "surfaces_and_sections",
+        "scalar_field"
+      ]
+    },
+    {
+      "doi": "10.3390/min11111281",
+      "title": "Informed Local Smoothing in 3D Implicit Geological Modeling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "scalar_field",
+        "surfaces_and_sections"
+      ]
+    },
+    {
+      "doi": "10.1016/bs.agph.2018.09.001",
+      "title": "3-D Structural geological models: Concepts, methods, and uncertainties",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "uncertainty_distribution",
+        "surfaces_and_sections",
+        "topology"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-16-3651-2023",
+      "title": "AdaHRBF v1.0: gradient-adaptive Hermite-Birkhoff radial basis function interpolants for three-dimensional stratigraphic implicit modeling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "scalar_field",
+        "surfaces_and_sections"
+      ]
+    }
+  ]
+}

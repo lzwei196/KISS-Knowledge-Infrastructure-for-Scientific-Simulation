@@ -1,0 +1,266 @@
+{
+  "model": "dfnWorks",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 24,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.1103/physreve.97.033304",
+      "title": "Modeling flow and transport in fracture networks using graphs",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "breakthrough_curve",
+        "particle_travel_time",
+        "flow_channeling_metric",
+        "effective_permeability"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-018-9720-1",
+      "title": "Machine learning for graph-based representations of three-dimensional discrete fracture networks",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "breakthrough_curve",
+        "particle_travel_time",
+        "flow_channeling_metric"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jcp.2018.09.048",
+      "title": "Conforming, non-conforming and non-matching discretization couplings in discrete fracture network simulations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "effective_permeability",
+        "upscaled_continuum_properties"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2017.03.024",
+      "title": "Anomalous transport in disordered fracture networks: Spatial Markov model for dispersion with variable injection modes",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "breakthrough_curve",
+        "particle_travel_time",
+        "travel_time_statistics"
+      ]
+    },
+    {
+      "doi": "10.1007/s12665-016-6061-z",
+      "title": "Real-case benchmark for flow and tracer transport in the fractured rock",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "breakthrough_curve",
+        "particle_travel_time",
+        "effective_permeability"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-020-10002-5",
+      "title": "PorePy: an open-source software for simulation of multiphysics processes in fractured porous media",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "effective_permeability",
+        "upscaled_continuum_properties",
+        "breakthrough_curve"
+      ]
+    },
+    {
+      "doi": "10.48550/arxiv.2302.10994",
+      "title": "Impact of artificial topological changes on flow and transport through fractured media",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "effective_permeability",
+        "breakthrough_curve",
+        "particle_travel_time",
+        "flow_channeling_metric",
+        "fracture_network_geometry"
+      ]
+    },
+    {
+      "doi": "10.1038/s41598-018-30117-1",
+      "title": "Quantifying Topological Uncertainty in Fractured Systems using Graph Theory and Machine Learning",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "fracture_network_geometry",
+        "breakthrough_curve",
+        "flow_channeling_metric"
+      ]
+    },
+    {
+      "doi": "10.1016/j.cageo.2015.08.001",
+      "title": "dfnWorks: A discrete fracture network framework for modeling subsurface flow and transport (uses PFLOTRAN)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "breakthrough_curve",
+        "particle_travel_time",
+        "effective_permeability",
+        "flow_channeling_metric",
+        "fracture_network_geometry"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2017.07.046",
+      "title": "A comparative study of discrete fracture network and equivalent continuum models for simulating flow and transport in the far field of a hypothetical nuclear waste repository",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "breakthrough_curve",
+        "particle_travel_time",
+        "upscaled_continuum_properties",
+        "effective_permeability"
+      ]
+    },
+    {
+      "doi": "10.3390/w16081101",
+      "title": "Verification of Particle Tracking and In Situ Tracer Experiment for the Gravel and Fractured Rock",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "breakthrough_curve",
+        "particle_travel_time",
+        "travel_time_statistics"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2016.06.010",
+      "title": "Evaluating the effect of internal aperture variability on transport in kilometer scale discrete fracture networks",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "breakthrough_curve",
+        "particle_travel_time",
+        "travel_time_statistics"
+      ]
+    },
+    {
+      "doi": "10.1002/2015wr017151",
+      "title": "Influence of injection mode on transport properties in kilometer-scale three-dimensional discrete fracture networks",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "breakthrough_curve",
+        "particle_travel_time"
+      ]
+    },
+    {
+      "doi": "10.1029/2019gl085454",
+      "title": "Matrix Diffusion in Fractured Media: New Insights Into Power Law Scaling of Breakthrough Curves",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "breakthrough_curve",
+        "travel_time_statistics"
+      ]
+    },
+    {
+      "doi": "10.1016/j.advwatres.2021.103994",
+      "title": "Transport Upscaling under Flow Heterogeneity and Matrix-Diffusion in Three-Dimensional Discrete Fracture Networks",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "breakthrough_curve",
+        "travel_time_statistics",
+        "upscaled_continuum_properties"
+      ]
+    },
+    {
+      "doi": "10.1029/2020wr027986",
+      "title": "Flow Channeling in Fracture Networks: Characterizing the Effect of Density on Preferential Flow Path Formation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flow_channeling_metric",
+        "particle_travel_time"
+      ]
+    },
+    {
+      "doi": "10.1029/2021gl094400",
+      "title": "Scale-Bridging in Three-Dimensional Fracture Networks: Characterizing the Effect of Length on Channeling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flow_channeling_metric",
+        "fracture_network_geometry"
+      ]
+    },
+    {
+      "doi": "10.1029/2018jb016553",
+      "title": "Linking Structural and Transport Properties in Three-Dimensional Fracture Networks",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "fracture_network_geometry",
+        "breakthrough_curve",
+        "particle_travel_time"
+      ]
+    },
+    {
+      "doi": "10.1029/2019jb018547",
+      "title": "Characterizing the Influence of Fracture Density on Network Scale Transport",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "breakthrough_curve",
+        "particle_travel_time",
+        "fracture_network_geometry"
+      ]
+    },
+    {
+      "doi": "10.1002/2014jb011027",
+      "title": "Permeability tensor of three-dimensional fractured porous rock and a comparison to trace map predictions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "effective_permeability",
+        "upscaled_continuum_properties"
+      ]
+    },
+    {
+      "doi": "10.1029/2019wr026493",
+      "title": "Multilevel Monte Carlo Predictions of First Passage Times in Three-Dimensional Discrete Fracture Networks",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "travel_time_statistics",
+        "particle_travel_time",
+        "breakthrough_curve"
+      ]
+    },
+    {
+      "doi": "10.3390/w16172435",
+      "title": "REV and Three-Dimensional Permeability Tensor of Fractured Rock Masses with Heterogeneous Fractures",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "effective_permeability",
+        "upscaled_continuum_properties"
+      ]
+    },
+    {
+      "doi": "10.1029/2023jh000113",
+      "title": "Sensitivity Analysis in the Presence of Intrinsic Stochasticity for Discrete Fracture Network Simulations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "breakthrough_curve",
+        "travel_time_statistics",
+        "flow_channeling_metric"
+      ]
+    },
+    {
+      "doi": "10.48550/arxiv.2306.03416",
+      "title": "Bayesian Learning of Gas Transport in Three-Dimensional Fracture Networks (dfnWorks)",
+      "access": "open",
+      "role": "calibration"
+    }
+  ]
+}

@@ -1,0 +1,252 @@
+{
+  "model": "GEOtop",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 24,
+  "open_access": 15,
+  "papers": [
+    {
+      "doi": "10.5194/hess-24-4061-2020",
+      "title": "Sensitivity of snow models to the accuracy of meteorological forcings in mountain environments",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-5-469-2011",
+      "title": "A robust and energy-conserving model of freezing variably-saturated soil",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-9-523-2016",
+      "title": "Simulating the thermal regime and thaw processes of ice-rich permafrost ground with the land-surface model CryoGrid 3",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-2259-2020",
+      "title": "Evaluating integrated surface/subsurface permafrost thermal hydrology models in ATS against observations from a polygonal tundra site",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "discharge",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-10-2693-2016",
+      "title": "Semi-automated calibration method for modelling of mountain permafrost evolution in Switzerland",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-5-945-2011",
+      "title": "Modeling the impact of wintertime rain events on the thermal regime of permafrost",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-7-725-2014",
+      "title": "Snow water equivalent modeling components in NewAge-JGrass",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-39-2013",
+      "title": "Exploiting remote sensing land surface temperature in distributed hydrological modelling: the example of the Continuum model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "evapotranspiration",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.2478/johh-2018-0013",
+      "title": "An EnKF-Based Scheme for Snow Multivariable Data Assimilation at an Alpine Site",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-15-639-2023",
+      "title": "IT-SNOW: a snow reanalysis for Italy blending modeling, in situ data, and satellite observations (2010-2021)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "swe",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-2581-2020",
+      "title": "The ERA5-Land soil temperature bias in permafrost regions",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-9-3857-2012",
+      "title": "A framework for benchmarking land models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "evapotranspiration",
+        "soil_moisture",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-16-3371-2012",
+      "title": "Critical review of SWAT applications in the upper Nile basin countries",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-27-1047-2023",
+      "title": "Machine-learning- and deep-learning-based streamflow prediction in a hilly catchment for future scenarios using CMIP6 GCM data",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.32614/cran.package.hydrogof",
+      "title": "hydroGOF: Goodness-of-Fit Functions for Comparison of Simulated and Observed Hydrological Time Series",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge",
+        "swe",
+        "snow_depth",
+        "temperature",
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-7-2831-2014",
+      "title": "GEOtop 2.0: simulating the combined energy and water balance at and below the land surface accounting for soil freezing, snow cover and terrain effects",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe",
+        "snow_depth",
+        "temperature",
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm497.1",
+      "title": "GEOtop: A Distributed Hydrological Model with Coupled Water and Energy Budgets",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "temperature",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-6-1319-2013",
+      "title": "Sensitivities and uncertainties of modeled ground temperatures in mountain environments",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2019.02.033",
+      "title": "Inverse distributed modelling of streamflow and turbulent fluxes: A sensitivity and uncertainty analysis coupled with automatic optimization",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2018.01.001",
+      "title": "What can we learn from multi-data calibration of a process-based ecohydrological model?",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2020ms002361",
+      "title": "A Framework for Modeling Rock Glaciers and Permafrost at the Basin-Scale in High Mountain Asia",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1002/eco.129",
+      "title": "Topographical and ecohydrological controls on land surface temperature in an alpine catchment",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.2136/vzj2018.03.0060",
+      "title": "The TERENO Pre-Alpine Observatory: Integrating Meteorological, Hydrological, and Biogeochemical Measurements and Modeling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    }
+  ]
+}

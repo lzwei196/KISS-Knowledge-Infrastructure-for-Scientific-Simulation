@@ -1,0 +1,263 @@
+{
+  "model": "DayCent",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 26,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.5194/bg-21-3691-2024",
+      "title": "Modeling integrated soil fertility management for maize production in Kenya using the DayCent model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "soil_carbon",
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-11-91-2014",
+      "title": "Assessing biogeochemical effects and best management practice for a wheat-maize cropping system using the DayCent model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas",
+        "soil_carbon",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-7-2061-2010",
+      "title": "Multi-model analysis of terrestrial carbon cycles in Japan: limitations and implications (includes DAYCENT)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.1016/j.scitotenv.2017.03.208",
+      "title": "Review and analysis of strengths and weaknesses of agro-ecosystem models for simulating N2O emissions",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-10-1403-2017",
+      "title": "Global gridded crop model evaluation: benchmarking, skills, deficiencies and implications",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.1186/s40066-020-00283-5",
+      "title": "Challenges and opportunities in crop simulation modelling under seasonal and projected climate change scenarios",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1111/j.1365-2486.2006.01305.x",
+      "title": "Modelling the role of agriculture for the 20th century global terrestrial carbon balance (DayCent/CENTURY)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "soil_carbon",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-7-1335-2014",
+      "title": "Long residence times of rapidly decomposable soil organic matter: application of a multi-compartment SOM model",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-12-125-2015",
+      "title": "CO2 fluxes and ecosystem dynamics at five European treeless peatlands (uses index-of-agreement/d for flux evaluation)",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "trace_gas",
+        "soil_carbon",
+        "yield",
+        "gpp",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.eja.2011.05.001",
+      "title": "Simulation of winter wheat yield and its variability in different climates of Europe",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2019.04.004",
+      "title": "Modeling soil organic carbon evolution in long-term arable experiments with AMG model",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.1029/2020jg005750",
+      "title": "DayCent Model Predictions of NPP and Grain Yields for Agricultural Lands in the Contiguous US",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1111/gcbb.12427",
+      "title": "Predicting soil C changes over sugarcane expansion in Brazil using the DayCent model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-19-3021-2022",
+      "title": "Effects of climate change in European croplands and grasslands: productivity, greenhouse gas balance and soil carbon storage",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas",
+        "gpp",
+        "yield",
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.1029/2009gb003544",
+      "title": "Estimating uncertainty in N2O emissions from U.S. cropland soils (DayCent, Del Grosso et al.)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.1029/2020gb006685",
+      "title": "Measured and Simulated Carbon Dynamics in Midwestern U.S. Corn-Soybean Rotations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_carbon",
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.1890/10-0036.1",
+      "title": "Impact of historical land-use changes on greenhouse gas exchange in the U.S. Great Plains (DAYCENT)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas",
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.1029/2003jd004261",
+      "title": "Simulation of N2O emissions from a urine-affected pasture in New Zealand with the DAYCENT model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.3390/atmos13010050",
+      "title": "N2O Emissions from Two Austrian Agricultural Catchments Simulated with an N2O Submodel",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.1016/j.fcr.2020.107791",
+      "title": "Ensemble modelling of carbon fluxes in grasslands and croplands (includes DayCent)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.1002/saj2.70003",
+      "title": "Soil carbon sequestration potential in subtropical grasslands estimated by DayCent",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.1111/j.1757-1707.2011.01140.x",
+      "title": "Simulating switchgrass biomass production across ecoregions using the DAYCENT model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1007/s11270-013-1677-z",
+      "title": "Nitrous Oxide Emissions from Cropland: a Procedure for Calibrating the DayCent Biogeochemical Model Using Inverse Modelling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2023.105832",
+      "title": "DayCent-CUTE: A global sensitivity, auto-calibration, and uncertainty analysis tool for DayCent",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas",
+        "soil_carbon",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2014.12.011",
+      "title": "Understanding the DayCent model: Calibration, sensitivity, and identifiability through inverse modeling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "trace_gas",
+        "soil_carbon"
+      ]
+    }
+  ]
+}

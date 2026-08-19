@@ -1,0 +1,231 @@
+{
+  "model": "OpenGeoSys",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 22,
+  "open_access": 14,
+  "papers": [
+    {
+      "doi": "10.5194/se-8-921-2017",
+      "title": "Flexible parallel implicit modelling of coupled thermal-hydraulic-mechanical processes in fractured rocks",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "pressure",
+        "displacement"
+      ]
+    },
+    {
+      "doi": "10.1007/s12665-023-10971-7",
+      "title": "Benchmarking a new TH2M implementation in OGS-6 with regard to processes relevant for nuclear waste disposal",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "pressure",
+        "temperature",
+        "saturation",
+        "displacement"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-021-10050-5",
+      "title": "Modeling cesium migration through Opalinus clay: a benchmark for single- and multi-species sorption-diffusion models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "concentration"
+      ]
+    },
+    {
+      "doi": "10.1007/s40948-022-00394-2",
+      "title": "Non-isothermal two-phase flow in deformable porous media: systematic open-source implementation and verification procedure",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "pressure",
+        "saturation",
+        "displacement"
+      ]
+    },
+    {
+      "doi": "10.1007/s12665-017-6662-1",
+      "title": "Modelling the Mont Terri HE-D experiment for the Thermal-Hydraulic-Mechanical response of a bedded argillaceous formation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "pressure",
+        "displacement"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-8-3333-2015",
+      "title": "A parallelization scheme to simulate reactive transport in the subsurface environment with OGS#IPhreeqc",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "concentration"
+      ]
+    },
+    {
+      "doi": "10.1007/s40948-023-00703-3",
+      "title": "Extended analysis of benchmarks for gas phase appearance in low-permeable rocks with OpenGeoSys TH2M",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "saturation",
+        "pressure"
+      ]
+    },
+    {
+      "doi": "10.1007/s12665-016-6061-z",
+      "title": "A real-case benchmark for flow and tracer transport in the fractured rock",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "pressure",
+        "concentration",
+        "darcy_velocity"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-024-10268-z",
+      "title": "A benchmark study on reactive two-phase flow in porous media: Part I - model description",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "saturation",
+        "concentration"
+      ]
+    },
+    {
+      "doi": "10.1007/s10040-024-02799-7",
+      "title": "The DECOVALEX international collaboration on modeling of coupled subsurface processes and its contribution to radioactive-waste disposal safety",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "temperature",
+        "pressure",
+        "displacement",
+        "concentration"
+      ]
+    },
+    {
+      "doi": "10.1007/s11440-025-02683-y",
+      "title": "Benchmarking thermo-hydro-mechanical models for geological barrier integrity in clay-based repositories",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "pressure",
+        "displacement"
+      ]
+    },
+    {
+      "doi": "10.21105/joss.03673",
+      "title": "ogs6py and VTUinterface: streamlining OpenGeoSys workflows in Python",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "pressure",
+        "temperature",
+        "concentration"
+      ]
+    },
+    {
+      "doi": "10.1007/s10596-018-9793-x",
+      "title": "Benchmarking of reactive transport codes for 2D simulations with mineral dissolution-precipitation reactions and feedback on transport parameters",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "concentration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ijrmms.2023.105530",
+      "title": "Comparative verification of hydro-mechanical fracture behavior: Task G of the international research project DECOVALEX-2023",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "pressure",
+        "displacement"
+      ]
+    },
+    {
+      "doi": "10.1007/s12665-012-1546-x",
+      "title": "OpenGeoSys: an open-source initiative for numerical simulation of thermo-hydro-mechanical/chemical (THM/C) processes in porous media",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "pressure",
+        "temperature",
+        "concentration",
+        "displacement",
+        "saturation"
+      ]
+    },
+    {
+      "doi": "10.1002/nag.2998",
+      "title": "Consolidation around a point heat source (correction and verification)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "pressure",
+        "displacement"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ijrmms.2019.03.015",
+      "title": "25 years of DECOVALEX - Scientific advances and lessons learned from an international research collaboration in coupled subsurface dynamics",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "temperature",
+        "pressure",
+        "displacement"
+      ]
+    },
+    {
+      "doi": "10.1007/s12665-018-7255-3",
+      "title": "Comparative modelling of the coupled thermal-hydraulic-mechanical (THM) processes in a heated bentonite pedestal test",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "pressure",
+        "displacement"
+      ]
+    },
+    {
+      "doi": "10.5194/safend2025-99",
+      "title": "Benchmarking for verification and validation of TH2M simulators: Current results",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "pressure",
+        "temperature",
+        "saturation"
+      ]
+    },
+    {
+      "doi": "10.1186/s40517-024-00287-5",
+      "title": "Global sensitivity analysis and uncertainty quantification for design parameters (OpenGeoSys geothermal)",
+      "access": "open",
+      "role": "sensitivity"
+    },
+    {
+      "doi": "10.1186/s40517-023-00255-5",
+      "title": "Parameter identification and range restriction through sensitivity analysis (OpenGeoSys)",
+      "access": "open",
+      "role": "sensitivity"
+    },
+    {
+      "doi": "10.1111/gwat.13221",
+      "title": "r2ogs5: Calibration of Numerical Groundwater Flow Models with Bayesian Optimization (OpenGeoSys)",
+      "access": "subscription",
+      "role": "calibration"
+    }
+  ]
+}

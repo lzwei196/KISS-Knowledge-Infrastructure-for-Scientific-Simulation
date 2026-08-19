@@ -323,6 +323,14 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--json", action="store_true", help="emit the raw research as json")
     q.set_defaults(fn=cmd_recipe)
 
+    q = sub.add_parser("papers", help="the literature behind a model, and how to get it")
+    q.add_argument("model", nargs="?", help="one model, or a summary of all")
+    q.add_argument("--quantity", help="only papers covering this quantity")
+    q.add_argument("--role", help="only papers with this role")
+    q.add_argument("--check", action="store_true", help="validate the shipped files")
+    q.add_argument("--json", action="store_true")
+    q.set_defaults(fn=cmd_papers)
+
     q = sub.add_parser("verify", help="prove a model actually runs on this machine")
     q.add_argument("model", nargs="?", help="one model, or all of them if omitted")
     q.add_argument("-w", "--workdir", help="where the install lives")
@@ -391,6 +399,59 @@ def cmd_verify(args) -> int:
             if not v.usable and v.missing:
                 print(_c("dim", f"  {v.model}: {', '.join(v.missing[:4])}"))
     return 0 if all(v.usable for v in results) else 1
+
+
+def cmd_papers(args) -> int:
+    """Show the model's literature. Metadata only — the PDFs are not ours to ship."""
+    import json as _json
+
+    from . import papers as _papers
+
+    cat = _catalog(args)
+
+    if args.check or not args.model:
+        reports = [_papers.check(ki) for ki in cat]
+        if args.json:
+            print(_json.dumps([r.__dict__ for r in reports], indent=2))
+            return 0
+        bad = [r for r in reports if not r.ok]
+        for r in bad:
+            print(_c("WARN", "  gap  ") + r.line())
+        have = [r for r in reports if r.ok]
+        tot = sum(r.count for r in have)
+        opn = sum(r.open_access for r in have)
+        print(f"\n{len(have)}/{len(reports)} KIs ship literature — {tot} papers, "
+              f"{opn} downloadable by anyone, {tot - opn} need your own access")
+        return 0 if not bad else 1
+
+    ki = cat.get(args.model)
+    lib = _papers.load(ki)
+    if lib is None:
+        print(f"{ki.name} ships no literature index (docs/{_papers.FILENAME})")
+        return 1
+    sel = lib.papers
+    if args.quantity:
+        sel = lib.for_quantity(args.quantity)
+    if args.role:
+        sel = [p for p in sel if p.role.lower() == args.role.lower()]
+    if args.json:
+        print(_json.dumps({**lib.as_dict(), "papers": [p.as_dict() for p in sel]},
+                          indent=2, ensure_ascii=False))
+        return 0
+
+    print(f"{ki.name} — {len(sel)} papers" +
+          (f" covering {args.quantity}" if args.quantity else ""))
+    for p in sel:
+        tag = _c("ok", "open") if p.open_access else _c("dim", "need access")
+        print(f"  [{tag}] {p.title[:78]}")
+        print(_c("dim", f"          {p.url}  {p.role}"))
+    gated = [p for p in sel if not p.open_access]
+    if gated:
+        print(f"\n{len(gated)} of these are subscription articles. We ship the "
+              f"reference, not the PDF.\nDownload the ones you need through your "
+              f"library and put them beside the KI —\nan agent reading the full "
+              f"text sets a model up far better than one reading a title.")
+    return 0
 
 
 def _rescue_run_options(args) -> None:

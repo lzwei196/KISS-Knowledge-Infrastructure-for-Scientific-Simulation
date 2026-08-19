@@ -1,0 +1,183 @@
+{
+  "model": "MARRMoT",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 18,
+  "open_access": 10,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-12-2463-2019",
+      "title": "Modular Assessment of Rainfall–Runoff Models Toolbox (MARRMoT) v1.2: an open-source, extendable framework providing implementations of 46 conceptual hydrologic models as continuous state-space formulations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "storage",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/piahs-368-180-2015",
+      "title": "Evaluation of the HYMOD model for rainfall–runoff simulation using the GLUE method",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-16-1171-2012",
+      "title": "Multimodel evaluation of twenty lumped hydrological models under contrasted climate conditions",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-28-4837-2024",
+      "title": "On the use of streamflow transformations for hydrological model calibration",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-4323-2019",
+      "title": "Technical note: Inherent benchmark or not? Comparing Nash–Sutcliffe and Kling–Gupta efficiency scores",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-2601-2019",
+      "title": "On the choice of calibration metrics for \"high-flow\" estimation using hydrologic models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-15-2205-2011",
+      "title": "Calibration of hydrological models using flow-duration curves",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-25-1389-2021",
+      "title": "The value of ASCAT soil moisture and MODIS snow cover data for calibrating a conceptual hydrologic model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "storage",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-1635-2013",
+      "title": "Multi-variable evaluation of hydrological model predictions for a headwater basin in the Canadian Rocky Mountains",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "storage",
+        "evapotranspiration",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-3125-2017",
+      "title": "Calibration of a large-scale hydrological model using satellite-based soil moisture and evapotranspiration products",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "storage",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "storage"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2019wr025975",
+      "title": "A Brief Analysis of Conceptual Model Structure Uncertainty Using 36 Models and 559 Catchments",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-25-5517-2021",
+      "title": "Benchmarking data-driven rainfall–runoff models in Great Britain: a comparison of long short-term memory (LSTM)-based models with four lumped conceptual models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-15-6359-2022",
+      "title": "Modular Assessment of Rainfall–Runoff Models Toolbox (MARRMoT) v2.1: an object-oriented implementation of 47 established hydrological models for improved speed and readability",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "storage",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agrformet.2013.11.008",
+      "title": "Multi-site evaluation of terrestrial evaporation models using FLUXNET data",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2022wr034234",
+      "title": "Virtual Hydrological Laboratories: Developing the Next Generation of Conceptual Hydrological Models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "storage"
+      ]
+    }
+  ]
+}

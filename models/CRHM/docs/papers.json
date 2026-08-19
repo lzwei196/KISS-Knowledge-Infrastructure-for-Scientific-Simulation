@@ -1,0 +1,183 @@
+{
+  "model": "CRHM",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 17,
+  "open_access": 11,
+  "papers": [
+    {
+      "doi": "10.5194/hess-14-991-2010",
+      "title": "Prediction of snowmelt derived streamflow in a wetland dominated prairie basin",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-17-1635-2013",
+      "title": "Multi-variable evaluation of hydrological model predictions for a headwater basin in the Canadian Rocky Mountains",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "discharge",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-27-3525-2023",
+      "title": "Modelling the regional sensitivity of snowmelt, soil moisture, and streamflow generation to climate over the Canadian Prairies using a basin classification approach",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "soil_moisture",
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-3483-2017",
+      "title": "Simulating cold-region hydrology in an intensively drained agricultural watershed in Manitoba, Canada, using the Cold Regions Hydrological Model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-26-5917-2022",
+      "title": "Simulating the hydrological impacts of land use conversion from annual crop to perennial forage in the Canadian Prairies using the Cold Regions Hydrological Modelling platform",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-225-2020",
+      "title": "The Canadian Hydrological Model (CHM) v1.0: a multi-scale, multi-extent, variable-complexity hydrological model",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1002/hyp.14731",
+      "title": "Hydrological process controls on streamflow variability in a glacierized headwater basin",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm-d-14-0189.1",
+      "title": "Comparing Evapotranspiration from Eddy Covariance Measurements, Water Budgets, Remote Sensing, and Land Surface Models over Canada",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-19-4127-2015",
+      "title": "Effects of hydrologic conditions on SWAT model performance and parameter sensitivity for a small, mixed land use catchment",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-1113-2019",
+      "title": "Multi-site calibration and validation of SWAT with satellite-based evapotranspiration in a data-sparse catchment",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-11-5027-2018",
+      "title": "ESM-SnowMIP: assessing snow models and quantifying snow-related climate feedbacks",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2017.05.042",
+      "title": "Diagnosis of the hydrology of a small Arctic basin at the tundra-taiga transition using a physically based hydrological model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.42265",
+      "title": "Hydrologic and Water Quality Models: Use, Calibration, and Validation",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "soil_moisture",
+        "swe",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jhydrol.2022.128711",
+      "title": "The cold regions hydrological modelling platform for hydrological diagnosis and prediction",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "swe",
+        "evapotranspiration",
+        "soil_moisture",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1002/hyp.7348",
+      "title": "Modelling blowing snow redistribution to prairie wetlands",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1002/eco.2714",
+      "title": "Evaluating the Use of the Penman-Monteith and Priestley-Taylor Algorithms for Modeling evapotranspiration",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2009wr008070",
+      "title": "Effects of snow cover on soil freezing, water movement, and snowmelt infiltration",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "runoff"
+      ]
+    }
+  ]
+}

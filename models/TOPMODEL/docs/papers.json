@@ -1,0 +1,216 @@
+{
+  "model": "TOPMODEL",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 22,
+  "open_access": 12,
+  "papers": [
+    {
+      "doi": "10.5194/hess-25-527-2021",
+      "title": "A history of TOPMODEL",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "discharge",
+        "soil_moisture",
+        "runoff",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-15-2205-2011",
+      "title": "Calibration of hydrological models using flow-duration curves",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-4011-2019",
+      "title": "Benchmarking the predictive capability of hydrological models for river flow and flood peak predictions across over 1000 catchments in Great Britain",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-6-859-2002",
+      "title": "Towards a comprehensive physically-based rainfall-runoff model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-13-2399-2009",
+      "title": "Reducing scale dependence in TOPMODEL using a dimensionless topographic index",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "soil_moisture",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-787-2019",
+      "title": "A simple topography-driven and calibration-free runoff generation module",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.4236/jwarp.2016.83033",
+      "title": "Application of SWAT Model to the Olifants Basin: Calibration, Validation and Uncertainty Analysis",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1007/s13201-019-1013-x",
+      "title": "Evaluation of multisite performance of SWAT model in the Gomti River Basin, India",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1007/s11600-018-0121-6",
+      "title": "Applicability of TOPMODEL in the mountainous catchments in the upper Nysa Klodzka river basin (SW Poland)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-9-412-2005",
+      "title": "Utility of different data types for calibrating flood inundation models within a GLUE framework",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/adgeo-11-37-2007",
+      "title": "Evaluation of evapotranspiration methods for model validation in a semi-arid watershed in northern China",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-16-2095-2012",
+      "title": "Consistency between hydrological model, large aperture scintillometer and remote sensing based estimates of evapotranspiration",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology1010020",
+      "title": "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/w9060384",
+      "title": "Sensitivity of Calibrated Parameters and Water Resource Estimates on Different Objective Functions and Optimization Algorithms",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.2166/nh.2017.189",
+      "title": "Evaluation of the SWAT model performance for simulating river discharge in the Himalayan and lower plain basins",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-25-5517-2021",
+      "title": "Benchmarking data-driven rainfall–runoff models in Great Britain: a comparison of long short-term memory (LSTM)-based models with four lumped conceptual models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2001wr000912",
+      "title": "Testing the distributed water table predictions of TOPMODEL (allowing for uncertainty in model calibration): The death of TOPMODEL?",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1029/2001wr000636",
+      "title": "Representation of subsurface storm flow and a more responsive water table in a TOPMODEL-based hydrology model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/97wr00232",
+      "title": "Modeling the spatial variability of subsurface runoff using a topographic index",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1002/hyp.3360060305",
+      "title": "The future of distributed models: Model calibration and uncertainty prediction",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/95wr03723",
+      "title": "Bayesian Estimation of Uncertainty in Runoff Prediction and the Value of Data: An Application of the GLUE Approach",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1029/2011wr011721",
+      "title": "Crash testing hydrological models in contrasted climate conditions: An experimental assessment of 20 lumped models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge"
+      ]
+    }
+  ]
+}

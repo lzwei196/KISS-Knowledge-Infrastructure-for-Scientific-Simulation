@@ -1,0 +1,173 @@
+{
+  "model": "Delft3D",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 16,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.5194/nhess-18-2675-2018",
+      "title": "Implementation and validation of a new operational wave forecasting system of the Netherlands",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "wave_height",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.26748/ksoe.2022.013",
+      "title": "Proposal of Parameter Range that Offered Optimal Performance in the Coastal Morphodynamic Model (Delft3D)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "sediment",
+        "velocity",
+        "wave_height"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-14-2993-2014",
+      "title": "Hydro-morphodynamic modelling in Mediterranean storms - errors and uncertainties under sparse data conditions",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "sediment",
+        "water_level",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.3389/fmars.2020.00535",
+      "title": "Efficient Modeling of Complex Sandy Coastal Evolution at Monthly to Century Time Scales",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-1267-2020",
+      "title": "Data assimilation of in situ and satellite remote sensing data to 3D hydrodynamic lake models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "velocity",
+        "temperature",
+        "salinity"
+      ]
+    },
+    {
+      "doi": "10.3389/fmars.2023.1096896",
+      "title": "Simulation of red tide drift-diffusion process in the Pearl River Estuary and its validation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "velocity",
+        "salinity"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-16-2565-2023",
+      "title": "Global seamless tidal simulation using a 3D unstructured-grid model (SCHISM v5.10.0)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "salinity",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1038/s43247-024-01707-x",
+      "title": "Modeling surge dynamics improves coastal flood estimates in a global set of tropical cyclones",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.9753/icce.v32.sediment.65",
+      "title": "Medium-Term Morphodynamic Modeling of Mixed Mud and Sand",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2020.104697",
+      "title": "A system of metrics for the assessment and improvement of aquatic ecosystem models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "salinity",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1029/2021ms002493",
+      "title": "Global Wave Hindcasts Using the Observation-Based Source Terms: Description and Validation",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "wave_height"
+      ]
+    },
+    {
+      "doi": "10.1155/2017/5251902",
+      "title": "Guidance on Setup, Calibration, and Validation of Hydrodynamic, Wave, and Sediment Models for Shelf Seas and Estuaries",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level",
+        "velocity",
+        "wave_height",
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1016/j.coastaleng.2020.103662",
+      "title": "Optimal sediment transport for morphodynamic model validation",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "sediment"
+      ]
+    },
+    {
+      "doi": "10.1016/j.coastaleng.2004.07.014",
+      "title": "Development and validation of a three-dimensional morphological model (Lesser et al.)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "sediment",
+        "water_level",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.3390/w11081713",
+      "title": "Validation of the 3D-MOHID Hydrodynamic Model for the Tagus Coastal Area",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "salinity",
+        "temperature",
+        "water_level",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.3390/jmse12112108",
+      "title": "Model Sensitivity Analysis for Coastal Morphodynamics: Investigating Sediment Parameters and Bed Composition in Delft3D",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "sediment"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,147 @@
+{
+  "model": "SWAN",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 14,
+  "open_access": 5,
+  "papers": [
+    {
+      "doi": "10.3389/fmars.2023.1298727",
+      "title": "A general method to determine the optimal whitecapping dissipation coefficient in the SWAN model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "wave_height",
+        "wave_period"
+      ]
+    },
+    {
+      "doi": "10.3389/fmars.2023.1233679",
+      "title": "A global unstructured, coupled, high-resolution hindcast of waves and storm surge",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "wave_height",
+        "wave_period",
+        "wave_direction"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-10-1605-2016",
+      "title": "Wave climate in the Arctic 1992-2014: seasonality and trends",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "wave_height",
+        "wave_period",
+        "wave_direction"
+      ]
+    },
+    {
+      "doi": "10.1038/s41597-019-0083-9",
+      "title": "33 years of globally calibrated wave height and wind speed data based on altimeter observations",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "wave_height"
+      ]
+    },
+    {
+      "doi": "10.1038/s41597-020-0446-2",
+      "title": "A global ensemble of ocean wave climate projections from CMIP5-driven models",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "wave_height",
+        "wave_period"
+      ]
+    },
+    {
+      "doi": "10.1002/jgrc.20314",
+      "title": "Hindcast and validation of Hurricane Ike (2008) waves, forerunner, and storm surge",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "wave_height"
+      ]
+    },
+    {
+      "doi": "10.1002/jgrc.20376",
+      "title": "U.S. IOOS coastal and ocean modeling testbed: Inter-model evaluation of tides, waves, and hurricane surge in the Gulf of Mexico",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "wave_height"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ocemod.2012.12.001",
+      "title": "A global wave parameter database for geophysical applications. Part 2: Model validation with improved source term parameterization",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "wave_height",
+        "wave_period",
+        "wave_direction"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ocemod.2013.08.003",
+      "title": "Problems in RMSE-based wave model validations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "wave_height",
+        "wave_period"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ocemod.2015.09.003",
+      "title": "Comparison and validation of physical wave parameterizations in spectral wave models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "wave_period",
+        "wave_spectrum"
+      ]
+    },
+    {
+      "doi": "10.1175/jtech-d-15-0219.1",
+      "title": "Calibration and Validation of HY-2 Altimeter Wave Height",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "wave_height"
+      ]
+    },
+    {
+      "doi": "10.1080/00288330.2003.9517190",
+      "title": "Wave hindcast for the New Zealand region: Nearshore validation and coastal wave climate",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "wave_height",
+        "wave_period"
+      ]
+    },
+    {
+      "doi": "10.1016/j.ecss.2019.106489",
+      "title": "Analysis of the spatial and temporal sensitivities of key parameters in the SWAN model: An example using Chan-hom typhoon waves",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "wave_height"
+      ]
+    },
+    {
+      "doi": "10.1029/1998jc900123",
+      "title": "A third-generation wave model for coastal regions: 2. Verification",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "wave_height",
+        "wave_period",
+        "wave_direction"
+      ]
+    }
+  ]
+}

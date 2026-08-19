@@ -1,0 +1,217 @@
+{
+  "model": "TRIGRS",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 22,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-7-495-2014",
+      "title": "Improving predictive power of physically based rainfall-induced shallow landslide models: a probabilistic approach",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "landslide",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-11-1927-2011",
+      "title": "Towards a real-time susceptibility assessment of rainfall-induced shallow landslides on a regional scale",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "landslide"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-5-853-2005",
+      "title": "Spatial prediction models for landslide hazards: review, comparison and evaluation",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "landslide"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-14-95-2014",
+      "title": "Assessing the quality of landslide susceptibility maps - case study Lower Austria",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "landslide"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-18-1735-2018",
+      "title": "Estimation of the susceptibility of a road network to shallow landslides with the physically based model TRIGRS",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "landslide"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-15-1025-2015",
+      "title": "Site-specific to local-scale shallow landslides triggering zones assessment using TRIGRS",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "landslide",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-20-5035-2016",
+      "title": "iCRESTRIGRS: a coupled modeling system for cascading flood-landslide disaster forecasting",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "landslide",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1016/j.enggeo.2023.107237",
+      "title": "Comparison of different hydrological and stability assumptions for physically-based landslide modelling",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_table",
+        "landslide"
+      ]
+    },
+    {
+      "doi": "10.1007/s10706-023-02427-3",
+      "title": "Sensitivity Analysis of a Physically Based Model to Assess Rainfall-Triggered Shallow Landslides",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "landslide",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1016/j.earscirev.2018.03.001",
+      "title": "A review of statistically-based landslide susceptibility models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "landslide"
+      ]
+    },
+    {
+      "doi": "10.3133/ofr20081159",
+      "title": "TRIGRS - A Fortran Program for Transient Rainfall Infiltration and Grid-Based Regional Slope-Stability Analysis, Version 2.0",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "landslide",
+        "water_table",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1029/2011wr011408",
+      "title": "Stability of infinite slopes under transient partially saturated seepage conditions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "landslide"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-15-2091-2015",
+      "title": "Evaluation of shallow landslide-triggering scenarios through a physically based approach",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "landslide"
+      ]
+    },
+    {
+      "doi": "10.1016/j.enggeo.2015.04.006",
+      "title": "Hydrological factors affecting rainfall-induced shallow landslides: From the field monitoring to a simplified slope stability analysis",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "landslide"
+      ]
+    },
+    {
+      "doi": "10.1002/2014jf003135",
+      "title": "A multidimensional stability model for predicting shallow landslide size and shape",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "landslide"
+      ]
+    },
+    {
+      "doi": "10.1007/s12665-017-6635-4",
+      "title": "Comparing the performance of TRIGRS and TiVaSS in spatial and temporal prediction of rainfall-induced shallow landslides",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "landslide"
+      ]
+    },
+    {
+      "doi": "10.1007/s10346-017-0931-7",
+      "title": "Three-dimensional, time-dependent modeling of rainfall-induced landslides over a digital landscape",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "landslide",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.3390/geosciences12010018",
+      "title": "Landslide Susceptibility Analysis by Applying TRIGRS to a Reliable Geotechnical Slope-Stability Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "landslide",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1002/esp.5770",
+      "title": "Spatial transferability of the physically based model TRIGRS using parameter ensembles",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "landslide",
+        "water_table"
+      ]
+    },
+    {
+      "doi": "10.1016/j.geomorph.2019.106976",
+      "title": "Influence of hydraulic properties on physically modelling slope stability and the definition of rainfall thresholds for shallow landslides",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_table",
+        "landslide"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jsames.2020.103011",
+      "title": "Evaluation of shallow landslide susceptibility and Factor of Safety variation using the TRIGRS model, Serra do Mar Mountain Range, Brazil",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "landslide"
+      ]
+    },
+    {
+      "doi": "10.1007/s10346-018-1044-7",
+      "title": "Regional-scale back-analysis using TRIGRS: an approach to advance landslide hazard modeling and prediction",
+      "access": "subscription",
+      "role": "calibration"
+    }
+  ]
+}

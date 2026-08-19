@@ -1,0 +1,177 @@
+{
+  "model": "CLASSIC",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 17,
+  "open_access": 12,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-13-2825-2020",
+      "title": "CLASSIC v1.0: the open-source community successor to the Canadian Land Surface Scheme (CLASS) and the Canadian Terrestrial Ecosystem Model (CTEM) - Part 1: Model framework and site-level performance",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "hfss",
+        "rss",
+        "nep"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-18-6597-2025",
+      "title": "Impact of topography and meteorological forcing on snow simulation in the Canadian Land Surface Scheme Including Biogeochemical Cycles (CLASSIC)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-9-323-2016",
+      "title": "Competition between plant functional types in the Canadian Terrestrial Ecosystem Model (CTEM) v. 2.0",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "lai",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-9-3857-2012",
+      "title": "A framework for benchmarking land models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "lai",
+        "soil_carbon",
+        "runoff",
+        "nep"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-6-1341-2009",
+      "title": "Improving land surface models with FLUXNET data",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "hfss"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-13-4291-2016",
+      "title": "Predicting carbon dioxide and energy fluxes across global FLUXNET sites with regression algorithms",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "evapotranspiration",
+        "hfss"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-17-1343-2020",
+      "title": "Scaling carbon fluxes from eddy covariance sites to globe: synthesis and evaluation of the FLUXCOM approach",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "nep",
+        "nbp"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-2881-2017",
+      "title": "Global evaluation of runoff from 10 state-of-the-art hydrological models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-10-1717-2013",
+      "title": "Causes of variation in soil carbon simulations from CMIP5 Earth system models and comparison with observations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.5194/esd-7-211-2016",
+      "title": "Projections of leaf area index in Earth system models",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-21-869-2024",
+      "title": "Multiscale assessment of North American terrestrial carbon balance",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "nbp",
+        "nep",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-24-1485-2020",
+      "title": "Evaluation of global terrestrial evapotranspiration using state-of-the-art approaches in remote sensing, machine learning and land surface modeling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff",
+        "evapotranspiration",
+        "gpp",
+        "swe",
+        "soil_carbon"
+      ]
+    },
+    {
+      "doi": "10.3137/ao.440302",
+      "title": "Evaluation of snow cover in CLASS for SnowMIP",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe"
+      ]
+    },
+    {
+      "doi": "10.1007/s12205-012-0006-1",
+      "title": "Validation of MODIS 16 Global Terrestrial Evapotranspiration Products in Various Climates and Land Cover Types",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1080/07055900.2024.2396426",
+      "title": "A Global Sensitivity Analysis of Parameter Uncertainty in the CLASSIC Model",
+      "access": "subscription",
+      "role": "sensitivity"
+    },
+    {
+      "doi": "10.1029/2024ms004577",
+      "title": "Parameter Optimization for Global Soil Carbon Simulations: Not a Simple Problem (CLASSIC)",
+      "access": "subscription",
+      "role": "calibration"
+    }
+  ]
+}

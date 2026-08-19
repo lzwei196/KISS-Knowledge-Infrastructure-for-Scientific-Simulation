@@ -1,0 +1,226 @@
+{
+  "model": "CE_QUAL_W2",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.1038/s41597-019-0316-y",
+      "title": "CE-QUAL-W2 model of dam outflow elevation impact on temperature, dissolved oxygen and nutrients in a reservoir",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "dissolved_oxygen",
+        "chlorophyll"
+      ]
+    },
+    {
+      "doi": "10.15760/etd.6114",
+      "title": "Hydrodynamic and Water Quality Modeling of the Tigris River System in Iraq Using CE-QUAL-W2",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "dissolved_oxygen",
+        "water_level",
+        "discharge",
+        "chlorophyll"
+      ]
+    },
+    {
+      "doi": "10.1007/s13201-022-01786-1",
+      "title": "Dissolved oxygen concentration and eutrophication evaluation in Yamchi dam reservoir using CE-QUAL-W2",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "dissolved_oxygen",
+        "temperature",
+        "water_level",
+        "chlorophyll"
+      ]
+    },
+    {
+      "doi": "10.3389/fenvs.2021.684703",
+      "title": "Potential Post-Fire Impacts on a Water Supply Reservoir: An Integrated Watershed-Reservoir Approach",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "dissolved_oxygen",
+        "water_level",
+        "discharge",
+        "chlorophyll"
+      ]
+    },
+    {
+      "doi": "10.3389/fevo.2020.610622",
+      "title": "Modeling the Effects of Hydrodynamics on Thermal Stratification and Algal Blooms in a Reservoir",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "chlorophyll",
+        "water_level",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.4081/jlimnol.2016.1391",
+      "title": "Sensitivity and uncertainty analysis on water quality modelling of Aguamilpa reservoir",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "dissolved_oxygen",
+        "chlorophyll",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1186/s12302-019-0202-4",
+      "title": "Variable withdrawal elevations as a management tool to counter the effects of climate warming",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "discharge",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.48084/etasr.1062",
+      "title": "Simulation of Thermal Stratification and Salinity Using the CE-QUAL-W2 Model (Case Study)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "water_level",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-1533-2019",
+      "title": "Future projections of temperature and mixing regime of European temperate lakes",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "temperature",
+        "dissolved_oxygen",
+        "water_level",
+        "discharge",
+        "chlorophyll"
+      ]
+    },
+    {
+      "doi": "10.3390/w12030814",
+      "title": "Comparison Between Two Hydrodynamic Models in Simulating Physical Processes of a Reservoir",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.3390/w13152088",
+      "title": "Simulating Nutrients and Phytoplankton Dynamics in Lakes: Model Development and Applications",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "chlorophyll"
+      ]
+    },
+    {
+      "doi": "10.3390/w15061013",
+      "title": "Water Quality Analysis of a Tropical Reservoir Based on Temperature and Dissolved Oxygen Modeling by CE-QUAL-W2",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.3390/w7041687",
+      "title": "Assessment of the Impacts of Climate Change on the Water Quality of a Small Deep Reservoir",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "dissolved_oxygen",
+        "chlorophyll"
+      ]
+    },
+    {
+      "doi": "10.3390/w13162308",
+      "title": "Automatic Calibration for CE-QUAL-W2 Model Using Improved Global-Best Harmony Search Algorithm",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature",
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.3390/w16243556",
+      "title": "Global Applications of the CE-QUAL-W2 Model in Reservoir Eutrophication: A Systematic Review",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "chlorophyll",
+        "dissolved_oxygen",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1007/s40996-024-01719-9",
+      "title": "Improving CE-QUAL-W2 Calibration Using a Terrain-Based Wind Sheltering Coefficient Tuning Method",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.3390/jmse6040137",
+      "title": "Water Quality Model Calibration via a Full-Factorial Analysis of Algal Growth Kinetic Parameters",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "chlorophyll",
+        "dissolved_oxygen"
+      ]
+    },
+    {
+      "doi": "10.3390/w10020153",
+      "title": "Global Sensitivity Analysis of a Water Quality Model in the Three Gorges Reservoir",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "dissolved_oxygen",
+        "chlorophyll"
+      ]
+    },
+    {
+      "doi": "10.1002/2017wr021039",
+      "title": "Hydropower Optimization Using Artificial Neural Network Surrogate Models of a High-Fidelity Hydrodynamics and Water Quality Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "water_level",
+        "temperature"
+      ]
+    }
+  ]
+}

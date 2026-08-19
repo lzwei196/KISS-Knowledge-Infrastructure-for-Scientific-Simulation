@@ -1,0 +1,236 @@
+{
+  "model": "ForeFire",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 22,
+  "open_access": 14,
+  "papers": [
+    {
+      "doi": "10.5194/nhess-14-3077-2014",
+      "title": "Evaluation of forest fire models on a large observation database",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "fire_front_perimeter",
+        "burned_area",
+        "arrival_time_of_front",
+        "rate_of_spread"
+      ]
+    },
+    {
+      "doi": "10.21105/joss.08680",
+      "title": "ForeFire: A Modular, Scriptable C++ Simulation Engine and Library for Wildland-Fire Spread",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "fire_front_perimeter",
+        "burned_area",
+        "arrival_time_of_front",
+        "rate_of_spread"
+      ]
+    },
+    {
+      "doi": "10.1139/cjfr-2015-0148",
+      "title": "Global sensitivity analysis for the Rothermel model based on high-dimensional model representation",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "rate_of_spread",
+        "fire_line_intensity"
+      ]
+    },
+    {
+      "doi": "10.48550/arxiv.1809.05430",
+      "title": "Surrogate-based global sensitivity analysis for turbulence and fire-spotting effects in regional-scale wildland fire modeling",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "fire_front_perimeter",
+        "burned_area",
+        "rate_of_spread"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-15-3791-2023",
+      "title": "The Portuguese Large Wildfire Spread database (PT-FireSprd)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "rate_of_spread",
+        "arrival_time_of_front",
+        "burned_area",
+        "fire_line_intensity"
+      ]
+    },
+    {
+      "doi": "10.1038/s41597-024-03436-4",
+      "title": "The Canadian Fire Spread Dataset",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "arrival_time_of_front",
+        "fire_front_perimeter",
+        "burned_area"
+      ]
+    },
+    {
+      "doi": "10.1186/s42408-022-00147-2",
+      "title": "Modeling of fire spread in sagebrush steppe using FARSITE: an approach to improve input data and simulation accuracy",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "fire_front_perimeter",
+        "burned_area",
+        "rate_of_spread",
+        "fire_line_intensity"
+      ]
+    },
+    {
+      "doi": "10.1038/s41597-022-01343-0",
+      "title": "California wildfire spread derived using VIIRS satellite observations and an object-based tracking system",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "arrival_time_of_front",
+        "burned_area",
+        "fire_front_perimeter"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-21-3141-2021",
+      "title": "ABWiSE v1.0: toward an agent-based approach to simulating wildfire spread",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "fire_front_perimeter",
+        "burned_area",
+        "arrival_time_of_front",
+        "rate_of_spread"
+      ]
+    },
+    {
+      "doi": "10.1186/s42408-023-00239-7",
+      "title": "Cellular automata-based simulators for the design of prescribed fire plans: the case study of Liguria, Italy",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "fire_front_perimeter",
+        "burned_area",
+        "rate_of_spread"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jocs.2020.101152",
+      "title": "Computational modeling of extreme wildland fire events: A synthesis of scientific understanding",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "rate_of_spread",
+        "burned_area"
+      ]
+    },
+    {
+      "doi": "10.48550/arxiv.2406.08589",
+      "title": "FireBench: A High-fidelity Ensemble Simulation Framework for Exploring Wildfire Behavior and Data-driven Modeling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "rate_of_spread",
+        "fire_line_intensity",
+        "arrival_time_of_front"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2025.106436",
+      "title": "Evaluating Australian forest fire rate of spread models using VIIRS satellite observations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "rate_of_spread"
+      ]
+    },
+    {
+      "doi": "10.1016/j.jocs.2025.102640",
+      "title": "Realistic wildfire growth simulations applying a differentiable parametric representation of the fire perimeter",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "fire_front_perimeter"
+      ]
+    },
+    {
+      "doi": "10.1071/wf22128",
+      "title": "Performance of operational fire spread models in California",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "fire_front_perimeter",
+        "burned_area",
+        "arrival_time_of_front"
+      ]
+    },
+    {
+      "doi": "10.2737/psw-rp-259",
+      "title": "Using HFire for spatial modeling of fire in shrublands",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "fire_front_perimeter",
+        "burned_area"
+      ]
+    },
+    {
+      "doi": "10.3390/atmos11111264",
+      "title": "Performance Evaluation of an Operational Rapid Response Fire Spread Forecasting System",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "fire_front_perimeter",
+        "burned_area"
+      ]
+    },
+    {
+      "doi": "10.3390/fire3030026",
+      "title": "PROPAGATOR: An Operational Cellular-Automata Based Wildfire Simulator",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "arrival_time_of_front",
+        "fire_front_perimeter",
+        "burned_area"
+      ]
+    },
+    {
+      "doi": "10.3390/fire7040141",
+      "title": "Comparing Accuracy of Wildfire Spread Prediction Models under Different Data Deficiency Conditions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "fire_front_perimeter",
+        "burned_area"
+      ]
+    },
+    {
+      "doi": "10.1071/wf19073",
+      "title": "Generation and evaluation of an ensemble of wildland fire simulations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "fire_front_perimeter",
+        "burned_area",
+        "arrival_time_of_front"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-14-2951-2014",
+      "title": "Towards predictive data-driven simulations of wildfire spread Part I: Reduced-cost Ensemble Kalman Filter",
+      "access": "open",
+      "role": "calibration"
+    },
+    {
+      "doi": "10.5194/nhess-15-1721-2015",
+      "title": "Towards predictive data-driven simulations of wildfire spread Part II: Ensemble Kalman Filter parameter estimation",
+      "access": "open",
+      "role": "calibration"
+    }
+  ]
+}

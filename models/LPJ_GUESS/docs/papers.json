@@ -1,0 +1,212 @@
+{
+  "model": "LPJ_GUESS",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 12,
+  "papers": [
+    {
+      "doi": "10.5194/bg-11-2027-2014",
+      "title": "Implications of incorporating N cycling and N limitations on primary production in an individual-based dynamic vegetation model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "npp",
+        "vegetation_carbon"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-11-6131-2014",
+      "title": "Nitrogen feedbacks increase future terrestrial ecosystem carbon uptake in an individual-based dynamic vegetation model (LPJ-GUESS)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "npp",
+        "vegetation_carbon"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-13-3299-2020",
+      "title": "Quantitative assessment of fire and vegetation properties in simulations with fire-enabled vegetation models",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "vegetation_distribution",
+        "biomass",
+        "npp"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-9-3857-2012",
+      "title": "A framework for benchmarking land models",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "npp",
+        "biomass",
+        "lai",
+        "et",
+        "vegetation_distribution"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-6-1341-2009",
+      "title": "Improving land surface models with FLUXNET data",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "et"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-17-1343-2020",
+      "title": "Scaling carbon fluxes from eddy covariance sites to globe: synthesis and evaluation of the FLUXCOM approach",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "et"
+      ]
+    },
+    {
+      "doi": "10.5194/essd-12-2725-2020",
+      "title": "Improved estimate of global gross primary production for reproducing its long-term variation, 1982-2017",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-24-1485-2020",
+      "title": "Evaluation of global terrestrial evapotranspiration using state-of-the-art approaches in remote sensing, machine learning and land surface modeling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "et"
+      ]
+    },
+    {
+      "doi": "10.1038/s41597-020-0444-4",
+      "title": "Harmonized global maps of above and belowground biomass carbon density in the year 2010",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "biomass",
+        "vegetation_carbon"
+      ]
+    },
+    {
+      "doi": "10.5194/bg-9-439-2012",
+      "title": "Modelling LAI, surface water and carbon fluxes at high-resolution over France: comparison of ORCHIDEE-STICS with land surface products",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "lai",
+        "et",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.1029/2018ms001583",
+      "title": "The Community Land Model Version 5 (CLM5): Description of New Features, Benchmarking, and Impact of Forcing Uncertainty",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "biomass",
+        "lai",
+        "et"
+      ]
+    },
+    {
+      "doi": "10.1029/2018ms001354",
+      "title": "The International Land Model Benchmarking (ILAMB) System: Design, Theory, and Implementation",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "gpp",
+        "npp",
+        "biomass",
+        "lai",
+        "et",
+        "vegetation_carbon"
+      ]
+    },
+    {
+      "doi": "10.3390/rs5104819",
+      "title": "Evaluation of Land Surface Models in Reproducing Satellite-Derived LAI over the High-Latitude Northern Hemisphere",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "lai"
+      ]
+    },
+    {
+      "doi": "10.1111/gcb.12187",
+      "title": "Evaluation of terrestrial carbon cycle models for their response to climate variability and to CO2 trends",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "npp"
+      ]
+    },
+    {
+      "doi": "10.1126/sciadv.aba2724",
+      "title": "Direct and seasonal legacy effects of the 2018 heat wave and drought on European ecosystem productivity",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "npp"
+      ]
+    },
+    {
+      "doi": "10.1002/2016jg003384",
+      "title": "Terrestrial ecosystem model performance in simulating productivity and its vulnerability to climate change",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "npp"
+      ]
+    },
+    {
+      "doi": "10.1002/2013jg002553",
+      "title": "Comprehensive ecosystem model-data synthesis using multiple data sets at two temporal scales",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "gpp",
+        "et"
+      ]
+    },
+    {
+      "doi": "10.1002/2018ms001284",
+      "title": "Evaluating the Interplay Between Biophysical Processes and Leaf Area Changes in Land Surface Models",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "lai",
+        "et",
+        "gpp"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-17-2299-2024",
+      "title": "Optimising CH4 simulations from the LPJ-GUESS model v4.1 using an adaptive MCMC algorithm",
+      "access": "open",
+      "role": "calibration"
+    },
+    {
+      "doi": "10.5194/bg-15-2909-2018",
+      "title": "A Bayesian ensemble data assimilation to constrain model parameters and land-use carbon in LPJ-GUESS",
+      "access": "open",
+      "role": "calibration"
+    }
+  ]
+}

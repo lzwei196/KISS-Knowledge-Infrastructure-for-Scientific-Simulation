@@ -1,0 +1,203 @@
+{
+  "model": "SFINCS",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.5194/egusphere-2025-4387",
+      "title": "Validation of the Open-Source Hydrodynamic Model SFINCS on Historical River Floods",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "flood_extent",
+        "depth",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-17-1789-2024",
+      "title": "Accounting for uncertainties in forecasting tropical-cyclone-induced compound flooding",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-21-559-2021",
+      "title": "Simulating historical flood events at the continental scale: observational validation of a large-scale hydrodynamic model",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "flood_extent",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.3389/fmars.2022.1091844",
+      "title": "Towards a pan-European coastal flood awareness system: Skill of extreme sea-level forecasts",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-28-2531-2024",
+      "title": "Quantifying cascading uncertainty in compound flood modeling with linked process-based and machine learning models",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_level",
+        "flood_extent",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-26-571-2026",
+      "title": "Large discrepancies between event- and response-based compound flood hazard estimates",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "flood_extent",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-25-747-2025",
+      "title": "Review article: A comprehensive review of compound flooding literature with a focus on coastal and estuarine regions",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "water_level",
+        "flood_extent",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-18-843-2025",
+      "title": "Subgrid corrections for the linear inertial equations of a compound flood model – a case study using SFINCS 2.1.1 Dollerup release",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "depth",
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-23-823-2023",
+      "title": "A globally applicable framework for compound flood hazard modeling",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "flood_extent",
+        "water_level",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level",
+        "depth",
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.1088/1748-9326/aae014",
+      "title": "A first collective validation of global fluvial flood models for major floods in Nigeria and Mozambique",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.1088/1748-9326_aae014",
+      "title": "",
+      "access": "subscription",
+      "role": "threshold_convention"
+    },
+    {
+      "doi": "10.1016/j.coastaleng.2020.103796",
+      "title": "Modeling compound flooding in coastal systems using a computationally efficient reduced-physics solver: Including fluvial, pluvial, tidal, wind- and wave-driven processes",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "depth",
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.1029/2022wr033144",
+      "title": "Compound Coastal, Fluvial, and Pluvial Flooding During Historical Hurricane Events",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.1146/annurev-fluid-030121-113138",
+      "title": "Flood Inundation Prediction",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "flood_extent",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.1029/2023wr034545",
+      "title": "Satellite Video Remote Sensing for Flood Model Validation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.3390/w17101478",
+      "title": "Coastal Flooding Hazards in Northern Portugal: A Practical Large-Scale Evaluation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.1029/2024ef005164",
+      "title": "Flooding is Not Like Filling a Bath",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "flood_extent",
+        "depth"
+      ]
+    },
+    {
+      "doi": "10.1155/2019/9816098",
+      "title": "Are Feature Agreement Statistics Alone Sufficient to Validate Modelled Flood Extent Quality?",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "flood_extent"
+      ]
+    },
+    {
+      "doi": "10.1029/2023wr036727",
+      "title": "Determining the Relative Contributions of Runoff, Coastal, and Compound Processes to Flood Hazard",
+      "access": "subscription",
+      "role": "calibration"
+    }
+  ]
+}

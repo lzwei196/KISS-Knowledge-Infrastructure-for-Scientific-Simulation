@@ -1,0 +1,253 @@
+{
+  "model": "Elmer_Ice",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 25,
+  "open_access": 22,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-6-1299-2013",
+      "title": "Capabilities and performance of Elmer/Ice, a new-generation ice sheet model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "glacier_change",
+        "water_level",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-12-2637-2018",
+      "title": "Basal friction of Fleming Glacier, Antarctica – Part 1: Sensitivity of inversion to temperature and bedrock uncertainty",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-13-1349-2019",
+      "title": "Uncertainty quantification of the multi-centennial response of the Antarctic ice sheet to climate change",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-15-715-2021",
+      "title": "Sensitivity of ice sheet surface velocity and elevation to variations in basal friction and topography in the full Stokes and shallow-shelf approximation frameworks using adjoint equations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-2-95-2008",
+      "title": "Benchmark experiments for higher-order and full-Stokes ice sheet models (ISMIP–HOM)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-6-1561-2012",
+      "title": "Greenland ice sheet contribution to sea-level rise from a new-generation ice-sheet model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-6-573-2012",
+      "title": "Results of the Marine Ice Sheet Model Intercomparison Project, MISMIP",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "velocity",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-2283-2020",
+      "title": "Results of the third Marine Ice Sheet Model Intercomparison Project (MISMIP+)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "velocity",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-12-1433-2018",
+      "title": "Design and results of the ice sheet model initialisation experiments initMIP-Greenland",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "glacier_change",
+        "water_level",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-13-1441-2019",
+      "title": "initMIP-Antarctica: an ice sheet model initialization experiment of ISMIP6",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "glacier_change",
+        "water_level",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-9-4521-2016",
+      "title": "Ice Sheet Model Intercomparison Project (ISMIP6) contribution to CMIP6",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-15-5667-2022",
+      "title": "Benchmarking the vertically integrated ice-sheet model IMAU-ICE (version 2.0)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "velocity",
+        "glacier_change"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-7-1161-2013",
+      "title": "Data assimilation and prognostic whole ice sheet modelling with the variationally derived sensitivities approach",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1017/jog.2017.51",
+      "title": "Sensitivity of grounding line dynamics to the choice of the friction law",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-8-1539-2014",
+      "title": "Elevation and elevation change of Greenland and Antarctica derived from CryoSat-2",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "glacier_change",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-13-427-2019",
+      "title": "Four decades of Antarctic surface elevation changes from multi-mission satellite altimetry",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "glacier_change",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1017/jog.2019.82",
+      "title": "A full Stokes ice-flow model to assist the interpretation of millennial-scale ice cores",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-1273-2020",
+      "title": "The influence of water percolation through crevasses on the thermal regime of a polythermal glacier",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1017/jog.2018.78",
+      "title": "SHMIP The subglacial hydrology model intercomparison Project",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "effective_pressure"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-3033-2020",
+      "title": "ISMIP6 Antarctica: a multi-model ensemble of the Antarctic ice sheet evolution over the 21st century",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-14-3071-2020",
+      "title": "The future sea-level contribution of the Greenland ice sheet: a multi-model ensemble study of ISMIP6",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1017/jog.2020.67",
+      "title": "Antarctic ice sheet response to sudden and sustained ice-shelf collapse (ABUMIP)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "glacier_change",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1002/jgrf.20146",
+      "title": "Modeling channelized and distributed subglacial drainage in two dimensions (GlaDS)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "effective_pressure"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-17-4705-2023",
+      "title": "Basal conditions of Denman Glacier from glacier hydrology and ice dynamics modelling",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "effective_pressure",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1002/2016gl069937",
+      "title": "Assimilation of surface velocities acquired between 1996 and 2010 to constrain the form of the basal friction law under Pine Island Glacier",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "velocity"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+{
+  "model": "VELMA",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 12,
+  "open_access": 4,
+  "papers": [
+    {
+      "doi": "10.3389/fenvs.2024.1364673",
+      "title": "Watershed analysis of urban stormwater contaminant 6PPD-Quinone hotspots and stream exposure using the VELMA ecohydrological model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "nitrogen"
+      ]
+    },
+    {
+      "doi": "10.1007/978-3-030-45843-0_13",
+      "title": "An Integrated Multi-Model Decision Support Framework for Evaluating Ecosystem-Based Management Options (VELMA application)",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "carbon",
+        "nitrogen",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-5583-2017",
+      "title": "Assessment of integrated watershed health based on the natural environment, hydrology, water quality, and aquatic ecology",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff",
+        "evapotranspiration",
+        "nitrogen"
+      ]
+    },
+    {
+      "doi": "10.3389/fenvs.2022.1012838",
+      "title": "Runoff simulation and projection in the source area of the Yellow River (Moriasi/Nash-Sutcliffe performance tiers reproduced)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.3390/hydrology1010020",
+      "title": "Evaluating Three Hydrological Distributed Watershed Models: MIKE-SHE, APEX, SWAT",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "discharge",
+        "runoff",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.3390/agronomy10010002",
+      "title": "Predicting Streamflow and Nutrient Loadings in a Semi-Arid Mediterranean Watershed with Ephemeral Streams Using the SWAT Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "nitrogen"
+      ]
+    },
+    {
+      "doi": "10.1002/eap.1718",
+      "title": "Accounting for disturbance history in models: using remote sensing to constrain carbon and nitrogen pool spin-up",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "carbon",
+        "nitrogen"
+      ]
+    },
+    {
+      "doi": "10.1029/2010wr010165",
+      "title": "Catchment hydrological responses to forest harvest amount and spatial pattern (Abdelnour et al. 2011)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "discharge",
+        "evapotranspiration",
+        "soil_moisture",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.3390/w7105345",
+      "title": "Catchment-Scale Modeling of Nitrogen Dynamics in a Temperate Forested Watershed (VELMA)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "nitrogen"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2024.106134",
+      "title": "Model linkage to assess forest disturbance impacts on water quality: A wildfire case study using an integrated hydro-biogeochemical model (VELMA)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "nitrogen",
+        "discharge"
+      ]
+    },
+    {
+      "doi": "10.1007/s13280-013-0439-x",
+      "title": "Nitrogen, Phosphorus, Carbon, and Suspended Solids Loads from Forest Clear-Cutting",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "nitrogen",
+        "carbon"
+      ]
+    },
+    {
+      "doi": "10.2166/nh.2017.139",
+      "title": "Performance of the dynamically dimensioned search algorithm: influence of parameter initialization strategy (VELMA calibration)",
+      "access": "subscription",
+      "role": "calibration"
+    }
+  ]
+}

@@ -1,0 +1,236 @@
+{
+  "model": "DualSPHysics",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 23,
+  "open_access": 6,
+  "papers": [
+    {
+      "doi": "10.3389/fbuil.2024.1372906",
+      "title": "Impact of focused wave groups on pier structures: a case study of severe breaking waves at Pont del Petroli during storm Gloria",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "force_on_structure",
+        "geopotential_height",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.3389/fbuil.2023.1282459",
+      "title": "Statistical assessment of the wave loads at walls through two-phase CFD modeling of the effects of air compressibility",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "geopotential_height",
+        "force_on_structure",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.9753/icce.v36.papers.14",
+      "title": "Application of open boundaries within a two-way coupled SPH model to simulate non-linear wave-structure interactions",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "force_on_structure",
+        "geopotential_height"
+      ]
+    },
+    {
+      "doi": "10.1007/s40094-019-0323-6",
+      "title": "Investigation of physical issues of the initial conditions of free water surface due to underwater disturbances on the basis of SPH numerical simulation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "geopotential_height"
+      ]
+    },
+    {
+      "doi": "10.9753/icce.v34.structures.5",
+      "title": "Comparison of numerical models for wave overtopping and impact on a sea wall",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "force_on_structure"
+      ]
+    },
+    {
+      "doi": "10.1007/s40571-020-00354-1",
+      "title": "Grand challenges for Smoothed Particle Hydrodynamics numerical schemes",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "geopotential_height",
+        "water_level",
+        "force_on_structure",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1080/21664250.2021.1991608",
+      "title": "Validation of the applicability of the particle-based open-source software DualSPHysics to violent flow fields",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "geopotential_height",
+        "force_on_structure",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1016/j.coastaleng.2014.11.001",
+      "title": "Applicability of Smoothed Particle Hydrodynamics for estimation of sea wave impact on coastal structures",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "force_on_structure",
+        "geopotential_height"
+      ]
+    },
+    {
+      "doi": "10.1016/j.compfluid.2018.11.021",
+      "title": "On the accuracy of DualSPHysics to assess violent collisions with coastal structures",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "force_on_structure",
+        "geopotential_height"
+      ]
+    },
+    {
+      "doi": "10.1080/00221686.2014.932853",
+      "title": "Analysis of the artificial viscosity in the smoothed particle hydrodynamics modelling of regular waves",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.3390/jmse7010017",
+      "title": "Experimental Validation of Smoothed Particle Hydrodynamics on Generation and Propagation of Water Waves",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1016/j.cpc.2019.02.003",
+      "title": "Non-linear wave generation and absorption using open boundaries within DualSPHysics",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1016/j.coastaleng.2023.104362",
+      "title": "Large-scale wave breaking over a barred beach: SPH numerical simulation and comparison with experiments",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1016/j.apor.2016.06.012",
+      "title": "A SPH numerical wave basin for modeling wave-structure interactions",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "force_on_structure",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1016/j.compstruc.2013.10.011",
+      "title": "Numerical modelling of armour block sea breakwater with smoothed particle hydrodynamics",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "force_on_structure",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1016/j.apor.2018.09.013",
+      "title": "Improved relaxation zone method in SPH-based model for coastal engineering applications",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "force_on_structure"
+      ]
+    },
+    {
+      "doi": "10.1016/j.oceaneng.2025.122413",
+      "title": "An enhanced numerical wave tank for wave-structure interaction based on DualSPHysics",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "force_on_structure",
+        "geopotential_height"
+      ]
+    },
+    {
+      "doi": "10.1016/j.cpc.2014.10.004",
+      "title": "DualSPHysics: Open-source parallel CFD solver based on Smoothed Particle Hydrodynamics (SPH)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "force_on_structure",
+        "geopotential_height",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1007/s40571-021-00404-2",
+      "title": "DualSPHysics: from fluid dynamics to multiphysics problems",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "force_on_structure",
+        "geopotential_height",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1371/journal.pone.0020685",
+      "title": "GPUs, a New Tool of Acceleration in CFD: Efficiency and Reliability on Smoothed Particle Hydrodynamics Methods",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1029/2022jb024583",
+      "title": "Sensitivity and Calibration of Three-Dimensional SPH Formulations in Large-Scale",
+      "access": "subscription",
+      "role": "sensitivity"
+    },
+    {
+      "doi": "10.1016/j.envsoft.2018.02.003",
+      "title": "Ensuring numerical stability of wave propagation by tuning model parameters using DualSPHysics",
+      "access": "subscription",
+      "role": "calibration"
+    },
+    {
+      "doi": "10.1007/s40571-022-00468-8",
+      "title": "Simulation of 3D overtopping flow-object-structure interaction with a calibration approach",
+      "access": "subscription",
+      "role": "calibration"
+    }
+  ]
+}

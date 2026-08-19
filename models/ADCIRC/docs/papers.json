@@ -1,0 +1,198 @@
+{
+  "model": "ADCIRC",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 20,
+  "open_access": 6,
+  "papers": [
+    {
+      "doi": "10.5194/gmd-14-1125-2021",
+      "title": "Global storm tide modeling with ADCIRC v55: unstructured mesh design and performance",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.3389/fmars.2023.1233679",
+      "title": "A global unstructured, coupled, high-resolution hindcast of waves and storm surge",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "wind_speed"
+      ]
+    },
+    {
+      "doi": "10.5194/os-15-691-2019",
+      "title": "Predicting ocean waves along the US east coast during energetic winter storms: sensitivity to whitecapping parameterizations",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "wind_speed"
+      ]
+    },
+    {
+      "doi": "10.1038/s43247-024-01707-x",
+      "title": "Modeling surge dynamics improves coastal flood estimates in a global set of tropical cyclones",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.5194/nhess-12-3799-2012",
+      "title": "Predicting typhoon-induced storm surge tide with a two-dimensional hydrodynamic model and artificial neural network model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.3389/fmars.2021.630388",
+      "title": "Sensitivity of Skill Score Metric to Validate Lagrangian Simulations in Coastal Areas",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "velocity",
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level",
+        "velocity",
+        "wind_speed"
+      ]
+    },
+    {
+      "doi": "10.1002/jgrc.20314",
+      "title": "Hindcast and validation of Hurricane Ike (2008) waves, forerunner, and storm surge",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "wind_speed"
+      ]
+    },
+    {
+      "doi": "10.1002/jgrc.20376",
+      "title": "U.S. IOOS coastal and ocean modeling testbed: Inter-model evaluation of tides, waves, and hurricane surge in the Gulf of Mexico",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "wind_speed"
+      ]
+    },
+    {
+      "doi": "10.1016/j.coastaleng.2020.103656",
+      "title": "Large-scale hurricane storm surge modeling using domain decomposition parallelization and implicit solvers",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1155/2017/5251902",
+      "title": "Guidance on Setup, Calibration, and Validation of Hydrodynamic, Wave, and Sediment Models for Shelf Seas and Estuaries",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "water_level",
+        "velocity"
+      ]
+    },
+    {
+      "doi": "10.1016/j.oceaneng.2022.112193",
+      "title": "A framework for feasibility-level validation of high-resolution wave hindcast models",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "wind_speed"
+      ]
+    },
+    {
+      "doi": "10.1002/jgrc.20305",
+      "title": "U.S. IOOS coastal and ocean modeling testbed: Evaluation of tide, wave, and hurricane surge response sensitivities to mesh resolution and friction",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1007/s10915-011-9555-6",
+      "title": "Performance of the Unstructured-Mesh, SWAN+ADCIRC Model in Computing Hurricane Waves and Surge",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "wind_speed"
+      ]
+    },
+    {
+      "doi": "10.1175/2011mwr3611.1",
+      "title": "Hurricane Gustav (2008) Waves and Storm Surge: Hindcast, Synoptic Analysis, and Validation in Southern Louisiana",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "wind_speed"
+      ]
+    },
+    {
+      "doi": "10.1175/2010waf2222416.1",
+      "title": "A Retrospective Evaluation of the Storm Surge Produced by Hurricane Gustav (2008): Forecast and Hindcast Results",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1002/2016wr019102",
+      "title": "Coupled modeling of storm surge and coastal inundation: A case study in New York City during Hurricane Sandy",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.1029/2023wr036727",
+      "title": "Determining the Relative Contributions of Runoff, Coastal, and Compound Processes to Flooding",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.3390/jmse2020437",
+      "title": "Predicting the Storm Surge Threat of Hurricane Sandy with the National Weather Service ADCIRC Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level"
+      ]
+    },
+    {
+      "doi": "10.3390/jmse8050308",
+      "title": "Development of an ESMF Based Flexible Coupling Application of ADCIRC and WAVEWATCH III",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "water_level",
+        "wind_speed"
+      ]
+    }
+  ]
+}

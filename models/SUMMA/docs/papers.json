@@ -1,0 +1,200 @@
+{
+  "model": "SUMMA",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 18,
+  "open_access": 7,
+  "papers": [
+    {
+      "doi": "10.5194/hess-23-1113-2019",
+      "title": "Multi-site calibration and validation of SWAT with satellite-based evapotranspiration in a data-sparse catchment in southwestern Africa",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "evapotranspiration",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-28-5331-2024",
+      "title": "A large-sample modelling approach towards integrating streamflow and evaporation data for a distributed hydrological model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-3125-2017",
+      "title": "Calibration of a large-scale hydrological model using satellite-based soil moisture and evapotranspiration products",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.5194/tc-10-2147-2016",
+      "title": "How much cryosphere model complexity is just right? Exploration using the conceptual cryosphere hydrology framework",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.3389/frwa.2023.1115264",
+      "title": "Forest gap effects on snow storage in the transitional climate of the Eastern Cascade Range",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-12-2463-2019",
+      "title": "Modular Assessment of Rainfall-Runoff Models Toolbox (MARRMoT) v1.2: an open-source, extendable framework providing implementations of 46 conceptual hydrological models",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-21-3701-2017",
+      "title": "Scaling, similarity, and the fourth paradigm for hydrology",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "runoff",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.13031/2013.23153",
+      "title": "Model Evaluation Guidelines for Systematic Quantification of Accuracy in Watershed Simulations",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.13031/trans.58.10715",
+      "title": "Hydrologic and Water Quality Models: Performance Measures and Evaluation Criteria",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "runoff",
+        "evapotranspiration",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1002/2015wr017198",
+      "title": "A unified approach for process-based hydrologic modeling: 1. Modeling concept",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "evapotranspiration",
+        "swe",
+        "snow_depth",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1002/2015wr017200",
+      "title": "A unified approach for process-based hydrologic modeling: 2. Model implementation and case studies",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "evapotranspiration",
+        "swe",
+        "snow_depth",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1029/2018wr023989",
+      "title": "Simulating Runoff Under Changing Climatic Conditions: A Framework for Model Improvement",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1029/2018wr023750",
+      "title": "Equifinality and Flux Mapping: A New Approach to Model Evaluation and Process Representation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_moisture",
+        "evapotranspiration",
+        "runoff"
+      ]
+    },
+    {
+      "doi": "10.1029/2021wr030852",
+      "title": "Evaluating Multiple Canopy-Snow Unloading Parameterizations in SUMMA With Time-Lapse Photography",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-14-3843-2021",
+      "title": "Understanding each other's models: an introduction and a standard representation of 16 terrestrial models to support intercomparison",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "evapotranspiration",
+        "swe",
+        "soil_moisture"
+      ]
+    },
+    {
+      "doi": "10.1175/jhm-d-21-0111.1",
+      "title": "SUMMA-family land/snow process evaluation (JHM)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2022wr033767",
+      "title": "The Impact of Meteorological Forcing Uncertainty on Hydrological Modeling: A Global Analysis of Cryosphere Basins",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "runoff",
+        "swe",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1029/2023wr036948",
+      "title": "Snowdrift-Permitting Simulations of Seasonal Snowpack Processes Over Large Mountain Extents",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "swe",
+        "snow_depth"
+      ]
+    }
+  ]
+}

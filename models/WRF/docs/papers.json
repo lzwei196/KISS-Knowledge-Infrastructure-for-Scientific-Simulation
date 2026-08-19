@@ -1,0 +1,192 @@
+{
+  "model": "WRF",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 19,
+  "open_access": 9,
+  "papers": [
+    {
+      "doi": "10.20937/atm.2016.29.01.05",
+      "title": "Sensitivity of PBL schemes of the WRF-ARW model in simulating the boundary layer over the Iberian Peninsula",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "air_temperature",
+        "wind_speed",
+        "humidity"
+      ]
+    },
+    {
+      "doi": "10.1007/s00703-013-0281-5",
+      "title": "Analysis of the surface temperature and wind forecast errors of the NCAR-AirDat operational CONUS 4-km WRF forecasting system",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "air_temperature",
+        "wind_speed"
+      ]
+    },
+    {
+      "doi": "10.5194/hess-23-3387-2019",
+      "title": "An evaluation of daily precipitation from a regional atmospheric reanalysis over Australia",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "precipitation"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-5-619-2012",
+      "title": "Simulations over South Asia using the Weather Research and Forecasting model (WRF): set-up and performance evaluation",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "air_temperature",
+        "precipitation"
+      ]
+    },
+    {
+      "doi": "10.32614/cran.package.verification",
+      "title": "verification: Weather Forecast Verification Utilities (R package)",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "precipitation"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-8-603-2015",
+      "title": "Regional climate hindcast simulations within EURO-CORDEX: evaluation of a WRF multi-physics ensemble",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "air_temperature",
+        "precipitation"
+      ]
+    },
+    {
+      "doi": "10.5194/gmd-7-1297-2014",
+      "title": "Regional climate modeling on European scales: a joint standard evaluation of the EURO-CORDEX RCM ensemble",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "air_temperature",
+        "precipitation"
+      ]
+    },
+    {
+      "doi": "10.1007/s00382-013-1727-7",
+      "title": "Evaluation of a climate simulation in Europe based on the WRF-NOAH model system: precipitation and temperature",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "air_temperature",
+        "precipitation"
+      ]
+    },
+    {
+      "doi": "10.1002/met.1392",
+      "title": "Progress and challenges in forecast verification",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "precipitation"
+      ]
+    },
+    {
+      "doi": "10.1175/waf885.1",
+      "title": "Evaluation of Surface Sensible Weather Forecasts by the WRF and the Eta Models over the Western United States",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "air_temperature",
+        "wind_speed",
+        "precipitation"
+      ]
+    },
+    {
+      "doi": "10.1175/2009jamc2126.1",
+      "title": "Performance Assessment of New Land Surface and Planetary Boundary Layer Physics in the WRF-ARW",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "air_temperature",
+        "wind_speed",
+        "humidity"
+      ]
+    },
+    {
+      "doi": "10.1029/2011jd017080",
+      "title": "Evaluation of nonlocal and local planetary boundary layer schemes in the WRF model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "air_temperature",
+        "wind_speed",
+        "humidity"
+      ]
+    },
+    {
+      "doi": "10.1175/bams-d-19-0093.1",
+      "title": "The Model Evaluation Tools (MET): More than a Decade of Community-Supported Forecast Verification",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "precipitation",
+        "air_temperature",
+        "wind_speed"
+      ]
+    },
+    {
+      "doi": "10.1175/waf-d-20-0195.1",
+      "title": "WRF Precipitation Performance and Predictability for Systematically Varied Parameterizations",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "precipitation"
+      ]
+    },
+    {
+      "doi": "10.3390/atmos10110694",
+      "title": "Evaluating Forecast Skills of Moisture from Convective-Permitting WRF-ARW Model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "humidity",
+        "precipitation"
+      ]
+    },
+    {
+      "doi": "10.1155/2014/319819",
+      "title": "WRF Model Methodology for Offshore Wind Energy Applications",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "wind_speed"
+      ]
+    },
+    {
+      "doi": "10.1002/qj.2885",
+      "title": "An evaluation of parametric sensitivities of different meteorological variables simulated by the WRF model",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "air_temperature",
+        "wind_speed",
+        "precipitation",
+        "humidity"
+      ]
+    },
+    {
+      "doi": "10.5194/acp-12-2409-2012",
+      "title": "Some issues in uncertainty quantification and parameter tuning: a case study of convective parameterization scheme in the WRF regional climate model",
+      "access": "open",
+      "role": "calibration"
+    },
+    {
+      "doi": "10.1007/s00703-021-00779-0",
+      "title": "Calibration of Kain-Fritsch cumulus scheme in Weather Research and Forecasting (WRF) model",
+      "access": "subscription",
+      "role": "calibration"
+    }
+  ]
+}

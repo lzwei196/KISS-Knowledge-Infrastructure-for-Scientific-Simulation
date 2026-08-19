@@ -1,0 +1,165 @@
+{
+  "model": "AquaCrop",
+  "note": "Metadata only — no PDFs are redistributed. Papers marked access=subscription need your own institutional or personal access; access=open can be downloaded by anyone from the DOI link.",
+  "count": 15,
+  "open_access": 6,
+  "papers": [
+    {
+      "doi": "10.1371/journal.pone.0086938",
+      "title": "Assessment of the AquaCrop Model for Use in Simulation of Irrigated Winter Wheat Canopy Cover, Biomass, and Grain Yield in the North China Plain",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "canopy_cover",
+        "evapotranspiration",
+        "soil_water"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agwat.2021.106884",
+      "title": "Assimilation of soil moisture and canopy cover data improves maize simulation using an under-calibrated crop model",
+      "access": "open",
+      "role": "benchmark",
+      "serves": [
+        "canopy_cover",
+        "soil_water",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.3389/fpls.2017.01667",
+      "title": "Evaluation of the CropSyst Model during Wheat-Maize Rotations on the North China Plain for Identifying Soil Evaporation Losses",
+      "access": "open",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "evapotranspiration",
+        "soil_water"
+      ]
+    },
+    {
+      "doi": "10.1038/srep36241",
+      "title": "Future climate impacts on maize farming and food security in Malawi",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1371/journal.pone.0187485",
+      "title": "Sensitivity analysis of the Aquacrop and SAFYE crop models for the assessment of water limited winter wheat yield in regional scale applications",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.3389/fagro.2024.1304611",
+      "title": "How global sensitive is the AquaCrop model to input parameters? A case study of silage maize yield on a regional scale",
+      "access": "open",
+      "role": "supporting",
+      "serves": [
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.envsoft.2012.09.011",
+      "title": "Characterising performance of environmental models (Bennett et al.)",
+      "access": "subscription",
+      "role": "threshold_convention",
+      "serves": [
+        "yield",
+        "evapotranspiration",
+        "soil_water",
+        "canopy_cover"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agwat.2015.06.006",
+      "title": "Modeling malt barley water use and evapotranspiration partitioning in two contrasting rainfall years using AquaCrop",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agwat.2019.105687",
+      "title": "Performance of AquaCrop model in simulating maize growth, yield, and evapotranspiration under rainfed, limited and full irrigation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "evapotranspiration",
+        "canopy_cover"
+      ]
+    },
+    {
+      "doi": "10.2134/agronj2008.0029xs",
+      "title": "Validating the FAO AquaCrop Model for Irrigated and Water Deficient Field Maize",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "canopy_cover",
+        "evapotranspiration"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agwat.2015.09.007",
+      "title": "Performance assessment of AquaCrop model for estimating evapotranspiration, soil water content and grain yield",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "soil_water",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agwat.2018.11.006",
+      "title": "Performance evaluation of AquaCrop in simulating soil water storage, yield and water productivity",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_water",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agwat.2018.10.028",
+      "title": "Modeling rice development and field water balance using AquaCrop model under dry seeding and water-saving irrigation",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "soil_water",
+        "evapotranspiration",
+        "yield"
+      ]
+    },
+    {
+      "doi": "10.1016/j.agsy.2016.11.001",
+      "title": "Performance of AquaCrop and SIMDualKc models in evapotranspiration partitioning",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "evapotranspiration",
+        "temperature"
+      ]
+    },
+    {
+      "doi": "10.1071/cp15226",
+      "title": "Calibration and validation of AquaCrop for pearl millet (Pennisetum glaucum)",
+      "access": "subscription",
+      "role": "benchmark",
+      "serves": [
+        "yield",
+        "canopy_cover"
+      ]
+    }
+  ]
+}

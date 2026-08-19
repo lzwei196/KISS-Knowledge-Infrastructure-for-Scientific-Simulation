@@ -547,10 +547,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._chunk(piece)
 
         try:
+            prior = s["messages"][:-1][-20:]      # structured turns for the API driver
             if names:
-                self._chat_with_models(names, want, history + "\nUSER: " + text, out, llm)
+                self._chat_with_models(names, want, history + "\nUSER: " + text,
+                                       out, llm, prior=prior, bare_task=text)
             else:
-                self._chat_auto(want, history + "\nUSER: " + text, out, llm)
+                self._chat_auto(want, history + "\nUSER: " + text,
+                                out, llm, prior=prior, bare_task=text)
         finally:
             reply = "".join(buf).strip()
             if reply:
@@ -561,7 +564,8 @@ class Handler(BaseHTTPRequestHandler):
                     sessions.save(self.workroot, cur)
             self._end_stream()
 
-    def _chat_auto(self, want: str, task: str, out, llm=None) -> None:
+    def _chat_auto(self, want: str, task: str, out, llm=None,
+                   prior=None, bare_task=None) -> None:
         """No models pinned: hand the agent the catalogue and let it route."""
         system = sessions.catalogue_block(self.catalog) + "\n\n" + sessions.AUTO_RULES
         full = (system
@@ -579,7 +583,8 @@ class Handler(BaseHTTPRequestHandler):
             cfg = paths.KissConfig.default(wd)
             # api tools need a KI root; in auto mode grant the whole library
             ki = type(next(iter(self.catalog)))(name="library", root=self.catalog.models_dir)
-            for piece in api.run(prov, ki, cfg, system, task, model=llm):
+            for piece in api.run(prov, ki, cfg, system, bare_task or task,
+                                 model=llm, history=prior):
                 if not out(piece):
                     break
             return
@@ -602,7 +607,8 @@ class Handler(BaseHTTPRequestHandler):
             if not out(piece):
                 break
 
-    def _chat_with_models(self, names, want, task, out, llm=None) -> None:
+    def _chat_with_models(self, names, want, task, out, llm=None,
+                          prior=None, bare_task=None) -> None:
         """Pinned models: same path the toggle flow used."""
         try:
             kis = [self._ki(n) for n in names]
@@ -624,7 +630,8 @@ class Handler(BaseHTTPRequestHandler):
             live = wd / "ki"
             run_ki = type(ki)(name=ki.name, root=live) if live.exists() else ki
             system = prompt.compose(run_ki, cfg, headless=False)
-            for piece in api.run(prov, run_ki, cfg, system, task, model=llm):
+            for piece in api.run(prov, run_ki, cfg, system, bare_task or task,
+                                 model=llm, history=prior):
                 if not out(piece):
                     break
             return
@@ -644,7 +651,20 @@ class Handler(BaseHTTPRequestHandler):
             resolved.append(type(k)(name=k.name, root=live) if live.exists() else k)
         full = prompt.compose_multi(resolved, cfg, task=task)
         grants = [str(k.root) for k in resolved] + paths.bound_prefixes(cfg)
+        # Every pinned model contributes its grants — deriving from kis[0]
+        # alone silently dropped the second model's binary and data access.
         pol = policy.Policy.derive(ki, self._manifest(ki), cfg)
+        for extra_ki in kis[1:]:
+            extra = policy.Policy.derive(extra_ki, self._manifest(extra_ki), cfg)
+            for grant in extra.all_grants():
+                pol.grants.append(grant)
+        # And the user's persisted decisions for this workdir apply here too —
+        # the old chat path loaded them, the session path forgot to, so users
+        # were re-asked for permissions they had already granted.
+        saved_posture, approved = policy.Policy.load_approved(wd)
+        if saved_posture is not None:
+            pol.posture = saved_posture
+        pol.approved = approved
         for piece in providers.run(prov, full, wd, extra_dirs=grants,
                                    cfg=cfg, ki_root=ki.root, pol=pol, model=llm):
             if not out(piece):

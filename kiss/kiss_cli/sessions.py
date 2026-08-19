@@ -77,7 +77,28 @@ def load(workroot: Path, sid: str) -> dict | None:
         return None
 
 
+#: Per-message and per-session bounds. Replay was already truncated, but the
+#: files themselves grew forever — every tool trace and error string of every
+#: turn, kept verbatim for the life of the session. A session is a working
+#: conversation, not an archive; the archive is the trimmed_to marker.
+MAX_MSG_CHARS = 40_000
+MAX_MESSAGES = 200
+
+
+def _bound(s: dict) -> None:
+    msgs = s.get("messages", [])
+    for m in msgs:
+        if len(m.get("text", "")) > MAX_MSG_CHARS:
+            m["text"] = (m["text"][:MAX_MSG_CHARS]
+                         + f"\n… [truncated at {MAX_MSG_CHARS} chars]")
+    if len(msgs) > MAX_MESSAGES:
+        dropped = len(msgs) - MAX_MESSAGES
+        s["messages"] = msgs[-MAX_MESSAGES:]
+        s["trimmed_to"] = s.get("trimmed_to", 0) + dropped
+
+
 def save(workroot: Path, s: dict) -> None:
+    _bound(s)
     # Atomic: a crash mid-write must not leave a truncated JSON file.
     p = _path(workroot, s["id"])
     tmp = p.with_suffix(".tmp")

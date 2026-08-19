@@ -262,28 +262,42 @@ async function ensureSession(){
 }
 async function send(){
   const text=$("#msg").value.trim(); if(!text||busy) return;
-  busy=true; $("#send").disabled=true; $("#msg").value="";
+  busy=true; setControls(false); $("#msg").value="";
   await ensureSession();
-  await fetch(`/api/session/${CUR.id}/update`,{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({provider:$("#prov").value,llm_model:$("#llm").value})});
-  addTurn("You","user").innerHTML=md(text);
-  const out=addTurn("GeoForge","agent"); out.innerHTML='<span class="spin"></span>working…';
-  let raw="";
+  const target=CUR.id;   // the session this reply belongs to, whatever gets clicked
   try{
-    const r=await fetch(`/api/session/${CUR.id}/chat`,{method:"POST",
+    const up=await fetch(`/api/session/${target}/update`,{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({provider:$("#prov").value,llm_model:$("#llm").value})});
+    if(!up.ok){const d=await up.json().catch(()=>({}));
+      $("#hint").textContent=d.error||("update failed "+up.status);
+      busy=false; setControls(true); return;}
+    addTurn("You","user").innerHTML=md(text);
+    const out=addTurn("GeoForge","agent"); out.innerHTML='<span class="spin"></span>working…';
+    let raw="";
+    const r=await fetch(`/api/session/${target}/chat`,{method:"POST",
       headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text})});
     const rd=r.body.getReader(), dec=new TextDecoder();
     for(;;){const{done,value}=await rd.read(); if(done)break;
-      raw+=dec.decode(value,{stream:true}); out.innerHTML=md(raw);
-      $("#chat").scrollTop=$("#chat").scrollHeight;}
-    if(!raw.trim()) out.innerHTML='<p style="color:var(--fg-3)">(no output)</p>';
-  }catch(e){ out.innerHTML=md("**Request failed:** "+e); }
-  busy=false; $("#send").disabled=!PROV.any_usable;
-  const s=await (await fetch("/api/session/"+CUR.id)).json();
-  CUR=s; $("#title").textContent=s.title;
-  const i=SESSIONS.findIndex(x=>x.id===s.id);
+      raw+=dec.decode(value,{stream:true});
+      if(CUR&&CUR.id===target){out.innerHTML=md(raw);$("#chat").scrollTop=$("#chat").scrollHeight;}}
+    if(!raw.trim()&&CUR&&CUR.id===target)
+      out.innerHTML='<p style="color:var(--fg-3)">(no output)</p>';
+  }catch(e){ $("#hint").textContent="request failed: "+e; }
+  busy=false; setControls(true);
+  const s=await (await fetch("/api/session/"+target)).json();
+  const i=SESSIONS.findIndex(x=>x.id===target);
   if(i>=0){SESSIONS[i].title=s.title;SESSIONS[i].n=s.messages.length;SESSIONS[i].models=s.models;}
+  if(CUR&&CUR.id===target){CUR=s;$("#title").textContent=s.title;}
   drawSessions();
+}
+function setControls(on){
+  // busy must freeze the whole binding, not just Send — changing provider or
+  // model mid-stream produced a next turn with settings the user changed
+  // halfway through the previous one.
+  $("#send").disabled=!on||!PROV.any_usable;
+  $("#prov").disabled=!on; $("#llm").disabled=!on;
+  $("#pickmodels").disabled=!on; $("#newsess").disabled=!on;
 }
 $("#send").onclick=send;
 $("#msg").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}});

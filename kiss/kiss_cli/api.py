@@ -310,6 +310,7 @@ def _openai_turn(prov, model, system, messages, tools, key):
 
 def run(prov: ApiProvider, ki, cfg, system: str, task: str,
         *, model: str | None = None, max_steps: int = 12,
+        history: list[dict] | None = None,
         approve: Callable[[str, dict], bool] | None = None) -> Iterator[str]:
     """Drive one task to completion, yielding text as it is produced.
 
@@ -329,7 +330,17 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
         return
     model_id = prov.models.get(want, want)
     tools = tool_schemas(ki)
-    messages: list[dict] = [{"role": "user", "content": task}]
+    # Prior turns travel as REAL messages, not flattened into one user blob
+    # with USER:/YOU: markers — the vendor's own multi-turn handling is the
+    # thing that makes context work, and counterfeit markers cannot exist in a
+    # role field.
+    messages: list[dict] = []
+    for m in history or []:
+        role = "assistant" if m.get("role") == "assistant" else "user"
+        body = str(m.get("text", ""))[:8000]
+        if body:
+            messages.append({"role": role, "content": body})
+    messages.append({"role": "user", "content": task})
 
     for step in range(max_steps):
         try:

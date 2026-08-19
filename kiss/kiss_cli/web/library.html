@@ -160,6 +160,8 @@ select option:disabled{color:var(--fg-3)}
     <h1 id="title">Select a model</h1>
     <span class="meta" id="sub"></span>
     <span class="spacer"></span>
+    <button id="importki" title="Import a KI package (.zip with SKILL.md)">⤓ Import KI</button>
+    <input type="file" id="importfile" accept=".zip" style="display:none">
     <select id="prov" title="Agent CLI"></select>
     <button id="settings" title="Settings">⚙</button>
     <button id="theme" title="Toggle theme">◐</button>
@@ -323,6 +325,21 @@ $("#msg").addEventListener("keydown",e=>{
 });
 $("#msg").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";});
 $("#q").addEventListener("input",drawList);
+$("#importki").onclick=()=>$("#importfile").click();
+$("#importfile").onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  $("#hint").textContent=`importing ${f.name}…`;
+  const r=await fetch("/api/import_ki?name="+encodeURIComponent(f.name),
+    {method:"POST",headers:{"Content-Type":"application/zip"},body:f});
+  const d=await r.json();
+  if(!r.ok){ $("#hint").textContent="import failed: "+(d.error||r.status); return; }
+  const worst=d.findings.filter(x=>x.severity==="BLOCK").length;
+  $("#hint").textContent=`imported ${d.name} — doctor: ${d.findings.length} findings`+
+    (worst?` (${worst} blocking — open its setup for details)`:"");
+  MODELS=await (await fetch("/api/models")).json();
+  STATUS=await (await fetch("/api/status")).json();
+  drawList(); e.target.value="";
+};
 $("#envcheck").onclick=async()=>{
   const box=$("#envout"); box.style.display="block"; box.textContent="running…\n";
   const r=await fetch("/api/selfcheck?provider="+encodeURIComponent($("#prov").value||""));

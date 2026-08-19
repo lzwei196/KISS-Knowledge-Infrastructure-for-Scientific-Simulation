@@ -157,10 +157,18 @@ class Portability:
 
 
 class Catalog:
-    """The set of KI packages under a ``models/`` directory."""
+    """The set of KI packages under a ``models/`` directory.
 
-    def __init__(self, models_dir: Path):
+    A second, writable root holds user-imported KIs. The bundled root inside a
+    frozen app is read-only, so "import" has to live somewhere else; a name
+    collision resolves to the bundled package and the import is rejected,
+    because silently shadowing a curated KI with an uploaded one would be a
+    substitution the user never sees.
+    """
+
+    def __init__(self, models_dir: Path, user_dir: Path | None = None):
         self.models_dir = Path(models_dir).resolve()
+        self.user_dir = Path(user_dir).resolve() if user_dir else None
         if not self.models_dir.is_dir():
             raise NotADirectoryError(f"no models directory at {self.models_dir}")
 
@@ -213,10 +221,16 @@ class Catalog:
     @cached_property
     def packages(self) -> dict[str, KI]:
         out: dict[str, KI] = {}
-        for d in sorted(self.models_dir.iterdir()):
-            if d.is_dir() and (d / "SKILL.md").exists():
-                out[d.name] = KI(name=d.name, root=d)
+        roots = [self.models_dir] + ([self.user_dir] if self.user_dir and self.user_dir.is_dir() else [])
+        for root in roots:
+            for d in sorted(root.iterdir()):
+                if d.is_dir() and (d / "SKILL.md").exists() and d.name not in out:
+                    out[d.name] = KI(name=d.name, root=d)
         return out
+
+    def refresh(self) -> None:
+        """Drop the cached package map after an import."""
+        self.__dict__.pop("packages", None)
 
     def get(self, name: str) -> KI:
         """Look up a KI, tolerating case and separator differences."""

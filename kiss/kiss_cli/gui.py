@@ -322,6 +322,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         route = urlparse(self.path).path
         n = int(self.headers.get("Content-Length", 0))
+        if route == "/api/import_ki":
+            if n > 300 * 1024 * 1024:
+                return self._json({"error": "zip larger than 300 MB"}, 413)
+            return self._import_ki_bytes(self.rfile.read(n))
         req = json.loads(self.rfile.read(n) or b"{}")
 
         if route == "/api/settings":
@@ -352,6 +356,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if route.startswith("/api/session/") and route.endswith("/chat"):
             return self._stream_session_chat(route.split("/")[3], req)
+
+        if route == "/api/import_ki":
+            return self._import_ki(req)
 
         if route == "/api/init":
             return self._stream_init(req)
@@ -405,6 +412,69 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self._chunk(f"\nkiss: {type(e).__name__}: {e}\n")
         self._end_stream()
+
+    # --- import ------------------------------------------------------------
+    def _import_ki_bytes(self, blob: bytes) -> None:
+        """Install an uploaded .zip as a user KI.
+
+        Validation is layered, and each rejection says what to fix:
+        a zip that extracts safely (tarfile-style traversal is refused), a
+        SKILL.md at the package root (one top-level folder is unwrapped), a
+        name that is legal and not already taken by a bundled package, and a
+        doctor pass whose findings are returned so the importer sees the same
+        judgement the curated 127 get.
+        """
+        import io
+        import re as _re
+        import shutil
+        import tempfile
+        import zipfile
+
+        name = unquote(urlparse(self.path).query.partition("name=")[2]) or "imported-ki"
+        name = _re.sub(r"[^A-Za-z0-9_.-]", "_", name.removesuffix(".zip"))[:64] or "imported-ki"
+
+        try:
+            zf = zipfile.ZipFile(io.BytesIO(blob))
+        except zipfile.BadZipFile:
+            return self._json({"error": "not a zip file"}, 400)
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            for m in zf.infolist():
+                # Reject traversal outright rather than sanitising it.
+                p = Path(m.filename)
+                if p.is_absolute() or ".." in p.parts:
+                    return self._json({"error": f"unsafe path in zip: {m.filename}"}, 400)
+            zf.extractall(tmp)
+
+            root = tmp
+            entries = [e for e in root.iterdir() if not e.name.startswith("__MACOSX")]
+            if len(entries) == 1 and entries[0].is_dir():
+                root = entries[0]                      # unwrap single top folder
+                if name == "imported-ki":
+                    name = _re.sub(r"[^A-Za-z0-9_.-]", "_", entries[0].name)[:64]
+            if not (root / "SKILL.md").is_file():
+                return self._json({"error": "no SKILL.md at the package root — "
+                                            "a KI must carry its protocol"}, 400)
+            if name in self.catalog.packages:
+                return self._json({"error": f"a KI named {name!r} already exists; "
+                                            "rename the zip and re-import"}, 409)
+
+            dest = self.catalog.user_dir / name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(root, dest)
+
+        self.catalog.refresh()
+        try:
+            ki = self.catalog.get(name)
+            findings = [{"severity": f.severity, "check": f.check,
+                         "detail": f.detail[:160]} for f in doctor.check_ki(ki)]
+        except Exception as e:
+            findings = [{"severity": "WARN", "check": "doctor",
+                         "detail": f"check failed: {e}"}]
+        return self._json({"ok": True, "name": name,
+                           "path": str(self.catalog.user_dir / name),
+                           "findings": findings})
 
     # --- session chat ------------------------------------------------------
     def _stream_session_chat(self, sid: str, req) -> None:
@@ -702,7 +772,13 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
 def serve(models_dir: Path | None, port: int = 8765, open_browser: bool = True,
           workroot: Path | None = None, host: str = "127.0.0.1") -> int:
     settings.apply_to_env()      # saved API keys; real env vars win
-    cat = Catalog(models_dir) if models_dir else Catalog.discover()
+    from .firstrun import data_dir
+    user_models = data_dir() / "user_models"
+    if models_dir:
+        cat = Catalog(models_dir, user_dir=user_models)
+    else:
+        cat = Catalog.discover()
+        cat.user_dir = user_models
     Handler.catalog = cat
     Handler.repo_root = cat.models_dir.parent
     Handler.workroot = Path(workroot or Path.home() / "kiss").expanduser()

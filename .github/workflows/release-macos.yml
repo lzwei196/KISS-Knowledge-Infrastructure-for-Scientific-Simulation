@@ -55,9 +55,9 @@ jobs:
           # verified manifests travel INSIDE the app. One download, no sidecar
           # tarball, no first-run network. The bundle is read-only, which is
           # fine — installing a model materialises a copy into the workdir.
-          pyinstaller --windowed --name KISS \
+          pyinstaller --windowed --name "GeoForge Desktop" \
             --icon assets/logo.icns \
-            --osx-bundle-identifier com.geoforge.kiss \
+            --osx-bundle-identifier com.geoforge.desktop \
             --add-data "kiss/kiss_cli/web/app.html:kiss_cli/web" \
             --add-data "kiss/kiss_cli/web/logo.svg:kiss_cli/web" \
             --add-data "models:models" \
@@ -67,7 +67,7 @@ jobs:
             kiss/kiss_entry.py
           # Windowed apps swallow stdout; smoke-test through the inner binary.
           # No --models flag: the point of the bundle is that it finds its own.
-          ./dist/KISS.app/Contents/MacOS/KISS list | tail -2
+          "./dist/GeoForge Desktop.app/Contents/MacOS/GeoForge Desktop" list | tail -2
 
       - name: Smoke test against the real KI tree
         run: |
@@ -78,14 +78,14 @@ jobs:
         run: |
           mv dist/kiss "kiss-macos-${{ matrix.arch }}"
           tar -czf "kiss-macos-${{ matrix.arch }}.tar.gz" "kiss-macos-${{ matrix.arch }}"
-          ditto -c -k --keepParent dist/KISS.app "KISS-macos-${{ matrix.arch }}.app.zip"
+          ditto -c -k --keepParent "dist/GeoForge Desktop.app" "GeoForge-Desktop-macos-${{ matrix.arch }}.app.zip"
 
       - uses: actions/upload-artifact@v4
         with:
           name: kiss-macos-${{ matrix.arch }}
           path: |
             kiss-macos-${{ matrix.arch }}.tar.gz
-            KISS-macos-${{ matrix.arch }}.app.zip
+            GeoForge-Desktop-macos-${{ matrix.arch }}.app.zip
 
   release:
     needs: build
@@ -117,8 +117,8 @@ jobs:
             --notes-file .github/RELEASE_NOTES_MACOS.md \
             --repo "$GITHUB_REPOSITORY" \
             kiss-macos-arm64.tar.gz kiss-macos-x86_64.tar.gz kiss-ki-packages.tar.gz \
-            KISS-macos-arm64.app.zip KISS-macos-x86_64.app.zip \
+            GeoForge-Desktop-macos-arm64.app.zip GeoForge-Desktop-macos-x86_64.app.zip \
           || gh release upload "$TAG" \
             kiss-macos-arm64.tar.gz kiss-macos-x86_64.tar.gz kiss-ki-packages.tar.gz \
-            KISS-macos-arm64.app.zip KISS-macos-x86_64.app.zip \
+            GeoForge-Desktop-macos-arm64.app.zip GeoForge-Desktop-macos-x86_64.app.zip \
             --clobber --repo "$GITHUB_REPOSITORY"

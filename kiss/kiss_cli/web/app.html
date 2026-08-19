@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>KISS</title>
+<title>GeoForge Desktop</title>
 <style>
 /* Sessions-first shell. Palette follows the DeepSeek Harness design platform:
    neutral-bluish ramp, one brand blue, hairline borders, 14/22 body type. */
@@ -105,18 +105,18 @@ textarea:focus{outline:none;border-color:var(--brand)}
 </style></head>
 <body>
 <aside>
-  <div class="brand"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="19" viewBox="0 0 188 180"><circle cx="90.8" cy="87.2" r="83.2" fill="#111215"/><g fill="none" stroke="#EEF0F2" stroke-width="3.6"><circle cx="90.8" cy="87.2" r="17.2"/><circle cx="90.8" cy="87.2" r="29.8"/><circle cx="90.8" cy="87.2" r="42.0"/></g><circle cx="90.8" cy="87.2" r="6.0" fill="#416FD8"/></svg><b>KISS</b><span id="nprov" style="color:var(--fg-3);font-weight:400;font-size:11.5px"></span></div>
+  <div class="brand"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="19" viewBox="0 0 188 180"><circle cx="90.8" cy="87.2" r="83.2" fill="#111215"/><g fill="none" stroke="#EEF0F2" stroke-width="3.6"><circle cx="90.8" cy="87.2" r="17.2"/><circle cx="90.8" cy="87.2" r="29.8"/><circle cx="90.8" cy="87.2" r="42.0"/></g><circle cx="90.8" cy="87.2" r="6.0" fill="#416FD8"/></svg><b>GeoForge</b><span id="nprov" style="color:var(--fg-3);font-weight:400;font-size:11.5px"></span></div>
   <button class="newbtn" id="newsess">+ New session</button>
   <div class="slist" id="slist"></div>
   <div class="sidefoot">
-    <a href="/library">⛁ KI Library</a>
+    <a href="/library">⛁ KISS Library</a>
     <button id="settings">⚙ Settings</button>
     <button id="theme" title="theme" style="flex:0 0 auto">◐</button>
   </div>
 </aside>
 <main>
   <header>
-    <h1 id="title">KISS</h1>
+    <h1 id="title">GeoForge Desktop</h1>
     <span id="mchips"></span>
     <button id="pickmodels">Models: <b id="mlabel">Auto</b></button>
     <select id="prov" title="Provider"></select>
@@ -221,7 +221,7 @@ function drawProviders(){
   drawLLM();
 }
 function drawEmpty(){
-  $("#title").textContent="KISS";
+  $("#title").textContent="GeoForge Desktop";
   $("#mlabel").textContent="Auto"; $("#mchips").innerHTML="";
   $("#chat").innerHTML=`<div class="empty"><h2>Where should we start?</h2>
     <div>Start a session and describe the task. On <b>Auto</b>, the agent reads the

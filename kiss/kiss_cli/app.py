@@ -87,7 +87,7 @@ def run_app(models_dir: Path | None, workroot: Path | None = None) -> int:
         except FileNotFoundError:
             need = firstrun.models_present() is None
         if need:
-            win = webview.create_window("KISS", html=firstrun.SETUP_HTML,
+            win = webview.create_window("GeoForge Desktop", html=firstrun.SETUP_HTML,
                                         width=520, height=340)
 
             def _bootstrap():
@@ -111,7 +111,7 @@ def run_app(models_dir: Path | None, workroot: Path | None = None) -> int:
     resolved, err = _ensure_models(models_dir)
     if err:
         if webview is not None:
-            w = webview.create_window("KISS", html=firstrun.SETUP_HTML.replace(
+            w = webview.create_window("GeoForge Desktop", html=firstrun.SETUP_HTML.replace(
                 "Setting up KISS — downloading the 127 model packages "
                 '<span id="pct"></span>', err).replace('class="ring"', 'style="display:none"'))
             webview.start()
@@ -142,7 +142,7 @@ def run_app(models_dir: Path | None, workroot: Path | None = None) -> int:
         server.join()
         return 0
 
-    webview.create_window("KISS", url, width=1200, height=800, min_size=(800, 560))
+    webview.create_window("GeoForge Desktop", url, width=1200, height=800, min_size=(800, 560))
     webview.start(_install_edit_menu)   # blocks until the window is closed
     return 0
 

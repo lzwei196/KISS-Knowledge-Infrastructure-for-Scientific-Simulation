@@ -83,7 +83,7 @@ def download_ki(progress: Callable[[str, float], None] | None = None) -> Path:
     return m
 
 
-SETUP_HTML = """<!doctype html><html><head><meta charset="utf-8"><title>KISS</title>
+SETUP_HTML = """<!doctype html><html><head><meta charset="utf-8"><title>GeoForge Desktop</title>
 <style>
 body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
      background:#111215;color:#EEF0F2;font:15px/1.6 -apple-system,system-ui,sans-serif}
@@ -95,6 +95,6 @@ body{margin:0;height:100vh;display:flex;align-items:center;justify-content:cente
 .dim{color:#81858C;font-size:13px;margin-top:10px}
 </style></head><body><div class="box">
 <div class="ring"></div>
-<div id="msg">Setting up KISS — downloading the 127 model packages <span id="pct"></span></div>
+<div id="msg">Setting up GeoForge — downloading the 127 KISS model packages <span id="pct"></span></div>
 <div class="dim">~74 MB, one time only. They live in your user library afterwards.</div>
 </div></body></html>"""

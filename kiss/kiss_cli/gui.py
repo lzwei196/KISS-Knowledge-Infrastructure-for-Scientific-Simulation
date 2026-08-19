@@ -699,7 +699,7 @@ def serve(models_dir: Path | None, port: int = 8765, open_browser: bool = True,
               f"anyone who can reach this address controls the agent. "
               f"Prefer an SSH tunnel: ssh -L {port}:127.0.0.1:{port} <this-host>")
     agents = ", ".join(p.label for p in providers.available()) or "none found"
-    print(f"KISS — {len(cat)} KI packages · agents: {agents}")
+    print(f"GeoForge Desktop — {len(cat)} KISS KI packages · agents: {agents}")
     print(f"  {url}\n  workdir root: {Handler.workroot}\nCtrl-C to stop.")
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()

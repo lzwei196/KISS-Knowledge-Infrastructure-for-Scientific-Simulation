@@ -222,6 +222,20 @@ class Handler(BaseHTTPRequestHandler):
                 if target is None:
                     emit("   SKIP  no agent CLI to test")
                 else:
+                    # "Signed in everywhere except inside this app" is almost
+                    # always the environment the app hands the CLI: a Finder
+                    # launch gets launchd's bare PATH and, if HOME differs from
+                    # the one used at sign-in, the CLI looks for credentials in
+                    # a directory that has none. Print what we are actually
+                    # passing, so the report says which of those it is.
+                    import os as _os
+                    emit(f"   HOME={_os.environ.get('HOME','(unset)')}")
+                    emit(f"   binary={target.path() or '(not found)'}")
+                    for cred in (Path.home() / ".claude" / ".credentials.json",
+                                 Path.home() / ".claude.json",
+                                 Path.home() / ".codex" / "auth.json"):
+                        if cred.exists():
+                            emit(f"   found {cred} ({cred.stat().st_size} bytes)")
                     emit(f"   probing {target.label} (a real one-line run; ~15s)…")
                     import subprocess as _sp
                     argv = target.build("Reply with exactly: OK")
@@ -236,8 +250,11 @@ class Handler(BaseHTTPRequestHandler):
                             for ln in tail.splitlines()[-8:]:
                                 emit(f"         {ln[:160]}")
                             emit("   Fix: open Terminal, run the CLI once interactively, sign in,")
-                            emit("        then relaunch KISS. If Terminal works but this fails,")
-                            emit("        copy the raw output above to the developer — that is the bug.")
+                            emit("        then relaunch GeoForge.")
+                            emit("   If Terminal works and this does not, compare the HOME above")
+                            emit("        with `echo $HOME` in Terminal — if they differ, the CLI is")
+                            emit("        reading a different home than the one you signed in to.")
+                            emit("        Meanwhile switch the menu bar to API and use a key.")
                     except _sp.TimeoutExpired:
                         emit(f"   FAIL  {target.label} did not answer in 90s (auth prompt hanging?)")
             emit("")

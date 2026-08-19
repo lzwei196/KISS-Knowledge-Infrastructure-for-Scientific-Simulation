@@ -178,6 +178,8 @@ let SESSIONS=[], CUR=null, MODELS=[], STATUS={}, PROV={providers:[],any_usable:f
 // CLI or API. Remembered, because it is a fact about this machine's setup
 // rather than a per-question choice.
 let KIND=localStorage.getItem("kiss.kind")||"cli";
+// Which session KIND was last synced from; null means "not yet".
+let KIND_SYNCED_FOR;
 
 function stateClass(n){
   // Binary by design: green = installed and its check passed, red = not.
@@ -219,10 +221,16 @@ function drawLLM(){
 function kindOf(n){const p=PROV.providers.find(x=>x.name===n);return p?p.kind:"";}
 function drawProviders(){
   const sel=$("#prov");
-  // The session's own provider decides the switch, so reopening a session
-  // shows the way it actually runs rather than the last thing clicked.
+  // Adopt the session's own kind when the session CHANGES, so reopening one
+  // shows how it actually runs. Doing this on every redraw meant the click
+  // that switched to API was immediately overruled by the session still
+  // holding a CLI provider — the switch snapped back and looked broken.
   const cur=CUR&&CUR.provider;
-  if(cur&&kindOf(cur)) KIND=kindOf(cur);
+  const sid=CUR&&CUR.id;
+  if(sid!==KIND_SYNCED_FOR){
+    KIND_SYNCED_FOR=sid;
+    if(cur&&kindOf(cur)) KIND=kindOf(cur);
+  }
   const mine=PROV.providers.filter(p=>p.kind===KIND);
   const usableHere=mine.filter(p=>p.usable);
   document.querySelectorAll("#kindtog button").forEach(b=>{
@@ -239,6 +247,15 @@ function drawProviders(){
               (PROV.default&&mine.find(p=>p.name===PROV.default&&p.usable))?PROV.default:
               (usableHere[0]||{}).name||"";
   $("#nprov").textContent=`${usable.length}/${PROV.providers.length} ready`;
+  const gap=$("#kindgap");
+  if(gap) gap.remove();
+  if(!usableHere.length){
+    const what = KIND==="api"
+      ? `No API key yet. Open <b>⚙ Settings</b> and add one — Anthropic, OpenAI, DeepSeek or OpenRouter.`
+      : `No agent CLI found on this machine. Install one (claude, codex, gemini, kimi or qwen) and reload, or switch to <b>API</b>.`;
+    $("#chat").insertAdjacentHTML("beforebegin",
+      `<div class="banner" id="kindgap">${what}</div>`);
+  }
   const old=$("#gatebanner"); if(old) old.remove();
   if(!PROV.any_usable){
     $("#chat").insertAdjacentHTML("beforebegin",

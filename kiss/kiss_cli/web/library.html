@@ -268,10 +268,23 @@ function drawSetup(){
     const steps=(st.steps||[]).map(s=>`<div class="stepline ${s.ok?'good':'bad'}">${s.ok?'✓':'✗'} ${esc(s.name)}</div>`).join("");
     return `<div class="setup-model" id="su-${esc(n)}">
       <div class="row"><span class="dot ${stateClass(n)}"></span><span class="nm">${esc(n)}</span>
-        <button data-n="${esc(n)}" class="inst">${stateLabel(n)==="Ready"?"Re-check":"Install"}</button></div>
+        <button data-n="${esc(n)}" class="inst">${stateLabel(n)==="Ready"?"Re-check":"Install"}</button>
+        <button data-n="${esc(n)}" class="rec ghost" title="Find a build recipe with the agent, then verify it">⚙ Work it out</button></div>
       ${steps}<pre style="display:none"></pre></div>`;
   }).join("") || '<div class="empty">Toggle a model to see its setup.</div>';
   document.querySelectorAll("#drawer .inst").forEach(b=>b.onclick=()=>install(b.dataset.n));
+  document.querySelectorAll("#drawer .rec").forEach(b=>b.onclick=()=>workItOut(b.dataset.n));
+}
+async function workItOut(name){
+  const box=$(`#su-${CSS.escape(name)} pre`); box.style.display="block";
+  box.textContent="working out how to build "+name+"…\n";
+  const r=await fetch("/api/recipe",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({model:name,provider:$("#prov").value})});
+  const rd=r.body.getReader(), dec=new TextDecoder();
+  for(;;){const{done,value}=await rd.read(); if(done)break;
+    box.textContent+=dec.decode(value); box.scrollTop=box.scrollHeight;}
+  STATUS=await (await fetch("/api/status")).json();
+  drawList(); drawChips(); drawSetup();
 }
 async function install(name){
   const box=$(`#su-${CSS.escape(name)} pre`); box.style.display="block"; box.textContent="";

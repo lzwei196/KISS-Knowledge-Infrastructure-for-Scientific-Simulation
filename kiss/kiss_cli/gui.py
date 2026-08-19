@@ -25,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from . import api, doctor, handoff, install, paths, policy, port, prompt, providers, sessions, settings
+from . import api, doctor, handoff, install, paths, policy, port, prompt, providers, recipe, sessions, settings
 from .catalog import Catalog
 from .manifest import Manifest
 
@@ -366,6 +366,9 @@ class Handler(BaseHTTPRequestHandler):
         if route.startswith("/api/session/") and route.endswith("/chat"):
             return self._stream_session_chat(route.split("/")[3], req)
 
+        if route == "/api/recipe":
+            return self._stream_recipe(req)
+
         if route == "/api/import_ki":
             return self._import_ki(req)
 
@@ -448,6 +451,77 @@ class Handler(BaseHTTPRequestHandler):
             except KeyError:
                 return f"unknown KI {m!r}"
         return None
+
+    # --- agent-guided setup -------------------------------------------------
+    def _stream_recipe(self, req) -> None:
+        """Work out how to install a model, then prove it — streamed.
+
+        This is the path for the ~84 compiled models that have no hand-written
+        recipe: gather upstream build evidence, have the session's agent turn
+        it into a manifest, and run it. Only a passing preflight records it.
+        """
+        import json as _json
+
+        try:
+            ki = self._ki(req["model"])
+        except KeyError as e:
+            return self._json({"error": str(e)}, 404)
+
+        want = req.get("provider") or settings.load().get("default_provider") or ""
+        llm = req.get("llm_model") or None
+        kind, _, pname = want.partition(":")
+        if not pname:
+            kind, pname = "cli", kind
+
+        self._open_stream()
+        emit = self._chunk
+
+        wd = self._workdir(ki)
+        wd.mkdir(parents=True, exist_ok=True)
+        cfg = self._config(ki)
+
+        def run_agent(prompt_text: str) -> str:
+            buf: list[str] = []
+            if kind == "api":
+                prov = api.PROVIDERS.get(pname)
+                if prov is None or not prov.available():
+                    emit("      no usable API provider for the proposal step\n")
+                    return ""
+                for piece in api.run(prov, ki, cfg, "You write build manifests.",
+                                     prompt_text, model=llm):
+                    buf.append(piece)
+                    emit(piece if piece.startswith("`>") else "")
+                return "".join(buf)
+            avail = providers.available()
+            if not avail:
+                emit("      no agent CLI available for the proposal step\n")
+                return ""
+            try:
+                prov = providers.get(pname) if pname else avail[0]
+            except KeyError:
+                prov = avail[0]
+            for piece in providers.run(prov, prompt_text, wd, cfg=None, model=llm):
+                buf.append(piece)
+            return "".join(buf)
+
+        harvested = {}
+        hp = self.repo_root / "kiss" / "manifests" / "_harvested_produces.json"
+        if hp.exists():
+            try:
+                harvested = _json.loads(hp.read_text(encoding="utf-8"))
+            except Exception:
+                harvested = {}
+
+        try:
+            ok = recipe.propose_and_verify(
+                ki, harvested, self.catalog.models_dir, wd,
+                self.repo_root / "kiss" / "manifests", run_agent, emit,
+                python=cfg.python)
+            emit("\n" + (f"{ki.name} is installed and verified.\n" if ok else
+                          f"{ki.name} still needs work — see above.\n"))
+        except Exception as e:
+            emit(f"\nrecipe failed: {type(e).__name__}: {e}\n")
+        self._end_stream()
 
     # --- import ------------------------------------------------------------
     def _import_ki_bytes(self, blob: bytes) -> None:

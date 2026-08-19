@@ -223,3 +223,110 @@ def verify(model: str, manifest_path: Path, models_dir: Path, workdir: Path,
     out = p.stdout + p.stderr
     ok = bool(re.search(r"preflight\s*\.*\s*ok", out))
     return ok, out[-4000:]
+
+
+# --- the loop: propose -> verify -> record ----------------------------------
+
+MANIFEST_RE = re.compile(r"```(?:ya?ml)?\s*\n(.*?)```", re.S)
+
+
+def extract_manifest(reply: str) -> str | None:
+    """Pull a manifest out of an agent's reply.
+
+    Agents wrap YAML in fences and often add prose either side. Take the first
+    fenced block that looks like a manifest; fall back to the whole reply if it
+    is bare YAML.
+    """
+    for block in MANIFEST_RE.findall(reply):
+        if "kiss_manifest_version" in block:
+            return block.strip()
+    return reply.strip() if "kiss_manifest_version" in reply else None
+
+
+def validate_manifest(text: str, model: str) -> tuple[dict | None, str]:
+    """Parse and sanity-check a proposed manifest before anything runs it."""
+    try:
+        import yaml
+        data = yaml.safe_load(text)
+    except Exception as e:
+        return None, f"not valid YAML: {str(e)[:120]}"
+    if not isinstance(data, dict):
+        return None, "manifest is not a mapping"
+    if data.get("kiss_manifest_version") != 1:
+        return None, "missing or wrong kiss_manifest_version"
+    if data.get("model") != model:
+        return None, f"manifest is for {data.get('model')!r}, not {model!r}"
+    acq = data.get("acquire") or {}
+    if acq.get("strategy") not in ("pip", "download", "build", "wine", "bundled", "manual"):
+        return None, f"unknown acquire strategy {acq.get('strategy')!r}"
+    # The agent proposes; only a passing preflight may claim otherwise.
+    data["verified"] = "unverified"
+    return data, ""
+
+
+def propose_and_verify(ki, harvested, models_dir: Path, workdir: Path,
+                       manifests_dir: Path, run_agent, emit,
+                       python: str | None = None) -> bool:
+    """Discover a build recipe, have an agent write it, then prove it.
+
+    ``run_agent(prompt) -> str`` is injected so this works with whichever
+    driver the session uses. Nothing is recorded on the agent's say-so: the
+    manifest is written to a temp file, `kiss init` runs it for real, and only
+    a passing preflight promotes it to `verified: observed`.
+    """
+    import tempfile
+
+    import yaml
+
+    emit(f"[1/4] gathering build evidence for {ki.name}…\n")
+    res = gather(ki, harvested)
+    emit(f"      repo={res.repo or 'none'}  evidence={res.strength()}"
+         f"  files={[e.path for e in res.evidence]}\n")
+    if res.strength() == "none" and not res.official:
+        emit("      no source and no evidence — this model needs a human "
+             "(licence or registration). Nothing to propose.\n")
+        return False
+
+    emit("[2/4] asking the agent to write a manifest from that evidence…\n")
+    reply = run_agent(brief(res, ki))
+    text = extract_manifest(reply or "")
+    if not text:
+        emit("      the agent did not return a manifest block.\n")
+        return False
+
+    data, why = validate_manifest(text, ki.name)
+    if data is None:
+        emit(f"      proposal rejected: {why}\n")
+        return False
+    emit(f"      proposed: strategy={data['acquire'].get('strategy')}"
+         f" ref={data['acquire'].get('ref')}"
+         f" produces={data['acquire'].get('produces')}\n")
+
+    emit("[3/4] running it for real — a proposal is not a recipe…\n")
+    with tempfile.TemporaryDirectory() as td:
+        cand = Path(td) / f"{ki.name}.yaml"
+        cand.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        staged = manifests_dir / f"{ki.name}.yaml"
+        backup = staged.read_text(encoding="utf-8") if staged.exists() else None
+        manifests_dir.mkdir(parents=True, exist_ok=True)
+        staged.write_text(cand.read_text(encoding="utf-8"), encoding="utf-8")
+        ok, log = verify(ki.name, staged, models_dir, workdir, python)
+        if not ok:
+            # Leave the tree as it was: an unproven recipe must not linger and
+            # look official.
+            if backup is None:
+                staged.unlink(missing_ok=True)
+            else:
+                staged.write_text(backup, encoding="utf-8")
+            emit("      install did NOT reach a passing preflight. Recipe discarded.\n")
+            for line in log.strip().splitlines()[-12:]:
+                emit(f"      {line}\n")
+            return False
+
+    data["verified"] = "observed"
+    data["notes"] = (f"OBSERVED: proposed by agent from {res.strength()} upstream "
+                     f"evidence ({', '.join(e.kind for e in res.evidence) or 'none'}), "
+                     f"then executed by kiss init to a passing preflight.")
+    staged.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    emit(f"[4/4] verified and recorded -> {staged}\n")
+    return True

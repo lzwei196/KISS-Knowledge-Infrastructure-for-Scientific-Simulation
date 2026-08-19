@@ -240,7 +240,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(sessions.list_all(self.workroot))
 
         if route.startswith("/api/session/"):
-            s = sessions.load(self.workroot, route.rsplit("/", 1)[-1])
+            sid = route.split("/")[3] if len(route.split("/")) > 3 else ""
+            if not sessions.valid_id(sid):
+                return self._json({"error": "invalid session id"}, 400)
+            s = sessions.load(self.workroot, sid)
             return self._json(s) if s else self._json({"error": "no such session"}, 404)
 
         if route == "/api/status":
@@ -345,13 +348,19 @@ class Handler(BaseHTTPRequestHandler):
 
         if route.startswith("/api/session/") and route.endswith("/update"):
             sid = route.split("/")[3]
-            s = sessions.load(self.workroot, sid)
-            if not s:
-                return self._json({"error": "no such session"}, 404)
-            for k in ("models", "provider", "title", "llm_model"):
-                if k in req:
-                    s[k] = req[k]
-            sessions.save(self.workroot, s)
+            if not sessions.valid_id(sid):
+                return self._json({"error": "invalid session id"}, 400)
+            err = self._validate_binding(req)
+            if err:
+                return self._json({"error": err}, 400)
+            with sessions.lock(sid):
+                s = sessions.load(self.workroot, sid)
+                if not s:
+                    return self._json({"error": "no such session"}, 404)
+                for k in ("models", "provider", "title", "llm_model"):
+                    if k in req:
+                        s[k] = req[k]
+                sessions.save(self.workroot, s)
             return self._json(s)
 
         if route.startswith("/api/session/") and route.endswith("/chat"):
@@ -412,6 +421,33 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self._chunk(f"\nkiss: {type(e).__name__}: {e}\n")
         self._end_stream()
+
+    def _validate_binding(self, req) -> str | None:
+        """Reject unknown providers, models and LLM names at the door.
+
+        Accepting them silently meant a bogus provider fell back to whatever
+        CLI happened to be first, and a bogus model rode --model into the
+        spawned process to fail there, after the turn.
+        """
+        want = req.get("provider")
+        if want:
+            kind, _, pname = want.partition(":")
+            known = (pname in providers.PROVIDERS) if kind == "cli" else                     (pname in api.PROVIDERS) if kind == "api" else False
+            if not known:
+                return f"unknown provider {want!r}"
+        llm = req.get("llm_model")
+        if llm and want:
+            kind, _, pname = want.partition(":")
+            pool = (providers.PROVIDERS[pname].models if kind == "cli"
+                    else list(api.PROVIDERS[pname].models))
+            if pool and llm not in pool:
+                return f"{want} does not offer model {llm!r}; choose from {pool}"
+        for m in req.get("models") or []:
+            try:
+                self._ki(m)
+            except KeyError:
+                return f"unknown KI {m!r}"
+        return None
 
     # --- import ------------------------------------------------------------
     def _import_ki_bytes(self, blob: bytes) -> None:
@@ -478,19 +514,26 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- session chat ------------------------------------------------------
     def _stream_session_chat(self, sid: str, req) -> None:
-        s = sessions.load(self.workroot, sid)
-        if not s:
-            return self._json({"error": "no such session"}, 404)
+        if not sessions.valid_id(sid):
+            return self._json({"error": "invalid session id"}, 400)
         text = (req.get("message") or "").strip()
         if not text:
             return self._json({"error": "empty message"}, 400)
+        if len(text) > 100_000:
+            return self._json({"error": "message longer than 100k characters"}, 413)
 
-        s["messages"].append({"role": "user", "text": text, "ts": __import__("time").time()})
-        if s.get("title") in ("New session", "", None):
-            s["title"] = text[:48]
-        sessions.save(self.workroot, s)
-
-        history = sessions.transcript(s)
+        with sessions.lock(sid):
+            s = sessions.load(self.workroot, sid)
+            if not s:
+                return self._json({"error": "no such session"}, 404)
+            # History is built BEFORE the new message is appended — appending
+            # first replayed the current message twice in the same prompt.
+            history = sessions.transcript(s)
+            s["messages"].append({"role": "user", "text": text,
+                                  "ts": __import__("time").time()})
+            if s.get("title") in ("New session", "", None):
+                s["title"] = text[:48]
+            sessions.save(self.workroot, s)
         want = s.get("provider") or settings.load().get("default_provider") or ""
         llm = s.get("llm_model") or None
         names = s.get("models") or []
@@ -511,9 +554,11 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             reply = "".join(buf).strip()
             if reply:
-                s["messages"].append({"role": "assistant", "text": reply,
-                                      "ts": __import__("time").time()})
-                sessions.save(self.workroot, s)
+                with sessions.lock(sid):
+                    cur = sessions.load(self.workroot, sid) or s
+                    cur["messages"].append({"role": "assistant", "text": reply,
+                                            "ts": __import__("time").time()})
+                    sessions.save(self.workroot, cur)
             self._end_stream()
 
     def _chat_auto(self, want: str, task: str, out, llm=None) -> None:
@@ -553,7 +598,7 @@ class Handler(BaseHTTPRequestHandler):
             (wd / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
         for piece in providers.run(prov, full, wd,
                                    extra_dirs=[str(self.catalog.models_dir)],
-                                   cfg=None, model=llm):
+                                   cfg=cfg, model=llm):
             if not out(piece):
                 break
 

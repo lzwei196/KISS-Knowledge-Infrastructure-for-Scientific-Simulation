@@ -205,11 +205,16 @@ def run(provider: Provider, prompt: str, cwd: Path,
         # real paths, so there is nothing for a namespace to fix; warning about
         # a missing Linux tool on a Mac was pure noise.
 
+    import tempfile
+
+    # stderr goes to a spool file, never a PIPE: an unread PIPE fills at ~64KB
+    # and a chatty CLI (codex logs its chrome there) then blocks forever.
+    err_spool = tempfile.TemporaryFile(mode="w+", errors="replace")
     try:
         proc = subprocess.Popen(
             argv, cwd=str(cwd), env=env,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE if provider.stdout_only else subprocess.STDOUT,
+            stderr=err_spool if provider.stdout_only else subprocess.STDOUT,
             text=True, errors="replace", bufsize=1,
         )
     except OSError as e:
@@ -229,8 +234,10 @@ def run(provider: Provider, prompt: str, cwd: Path,
         rc = proc.wait(timeout=timeout)
         if rc != 0:
             tail = ""
-            if provider.stdout_only and proc.stderr:
-                tail = "".join(proc.stderr.readlines()[-15:]).strip()
+            if provider.stdout_only:
+                err_spool.seek(0)
+                tail = "".join(err_spool.readlines()[-15:]).strip()
             yield f"\n\n[{provider.label} exited {rc}]"
             if tail:
                 yield f"\n```\n{tail[-1500:]}\n```"
+        err_spool.close()

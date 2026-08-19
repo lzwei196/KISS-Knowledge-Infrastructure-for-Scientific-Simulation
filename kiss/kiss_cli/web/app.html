@@ -184,8 +184,8 @@ async function loadAll(){
 }
 function drawSessions(){
   $("#slist").innerHTML=SESSIONS.map(s=>`
-    <div class="sess ${CUR&&CUR.id===s.id?'sel':''}" data-id="${s.id}">
-      <div class="t">${esc(s.title)}<button class="del" data-id="${s.id}" title="delete">✕</button></div>
+    <div class="sess ${CUR&&CUR.id===s.id?'sel':''}" data-id="${esc(s.id)}">
+      <div class="t">${esc(s.title)}<button class="del" data-id="${esc(s.id)}" title="delete">✕</button></div>
       <div class="m">${s.models.length?esc(s.models.join(", ")):"Auto"} · ${s.n} msg</div>
     </div>`).join("");
   document.querySelectorAll(".sess").forEach(e=>e.onclick=ev=>{
@@ -253,8 +253,10 @@ function addTurn(who,cls){
 }
 async function ensureSession(){
   if(CUR) return CUR;
-  CUR=await (await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({provider:$("#prov").value})})).json();
+  const r0=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({provider:$("#prov").value})});
+  if(!r0.ok){$("#hint").textContent="could not create session ("+r0.status+")";throw new Error("session");}
+  CUR=await r0.json();
   SESSIONS.unshift({id:CUR.id,title:CUR.title,models:[],n:0,created:CUR.created});
   drawSessions(); return CUR;
 }

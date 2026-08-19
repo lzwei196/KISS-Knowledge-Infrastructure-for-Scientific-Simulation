@@ -111,9 +111,16 @@ def run_app(models_dir: Path | None, workroot: Path | None = None) -> int:
     resolved, err = _ensure_models(models_dir)
     if err:
         if webview is not None:
-            w = webview.create_window("GeoForge Desktop", html=firstrun.SETUP_HTML.replace(
-                "Setting up KISS — downloading the 127 model packages "
-                '<span id="pct"></span>', err).replace('class="ring"', 'style="display:none"'))
+            # Built fresh rather than string-replacing SETUP_HTML: the replace
+            # targeted wording that a later rename changed, so the error window
+            # silently kept the spinner text instead of showing the error.
+            import html as _html
+            page = ("<!doctype html><html><body style='margin:0;height:100vh;display:flex;"
+                    "align-items:center;justify-content:center;background:#111215;color:#EEF0F2;"
+                    "font:15px/1.6 -apple-system,system-ui,sans-serif'><div style='max-width:460px;"
+                    "padding:24px;text-align:center;white-space:pre-wrap'>"
+                    + _html.escape(err) + "</div></body></html>")
+            webview.create_window("GeoForge Desktop", html=page, width=560, height=360)
             webview.start()
         else:
             print(err)

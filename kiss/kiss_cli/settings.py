@@ -37,6 +37,10 @@ def load() -> dict:
 def save(data: dict) -> None:
     p = _path()
     p.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        p.parent.chmod(0o700)      # keys live here; the file mode alone is not
+    except OSError:                # enough when the directory is group-writable
+        pass
     p.write_text(json.dumps(data, indent=2), encoding="utf-8")
     try:
         p.chmod(0o600)
@@ -81,5 +85,13 @@ def update(payload: dict) -> None:
             s["api_keys"].pop(k, None)
             os.environ.pop(k, None)
     if "default_provider" in payload:
-        s["default_provider"] = payload["default_provider"]
+        dp = payload["default_provider"]
+        if dp:
+            from . import api as _api
+            from . import providers as _prov
+            kind, _, pname = dp.partition(":")
+            ok = (pname in _prov.PROVIDERS) if kind == "cli" else                  (pname in _api.PROVIDERS) if kind == "api" else False
+            if not ok:
+                raise ValueError(f"unknown provider {dp!r}")
+        s["default_provider"] = dp
     save(s)

@@ -1,6 +1,6 @@
 [project]
 name = "kiss-ki"
-version = "0.1.0"
+version = "0.5.1"
 description = "Installer and agent handoff for KISS Knowledge Infrastructure packages"
 requires-python = ">=3.11"
 dependencies = ["pyyaml>=6.0"]
@@ -17,4 +17,4 @@ build-backend = "setuptools.build_meta"
 packages = ["kiss_cli"]
 
 [tool.setuptools.package-data]
-kiss_cli = ["web/*.html"]
+kiss_cli = ["web/*.html", "web/*.svg"]

@@ -89,7 +89,7 @@ PROVIDERS: dict[str, ApiProvider] = {
         env_key="OPENROUTER_API_KEY",
         models={"claude-sonnet-4-5": "anthropic/claude-sonnet-4.5",
                 "deepseek-chat": "deepseek/deepseek-chat"},
-        default_model="deepseek/deepseek-chat",
+        default_model="deepseek-chat",
         signup="https://openrouter.ai/keys",
     ),
 }
@@ -187,6 +187,8 @@ def execute_tool(name: str, args: dict, ki, cfg) -> str:
     root = Path(ki.root).resolve()
 
     def _inside(rel: str) -> Path:
+        if Path(rel).is_absolute():
+            raise ToolError(f"absolute paths are not accepted: {rel}")
         # Resolve then verify containment: a bare prefix check is defeated by
         # '..' and by symlinks, and this is the only place model-supplied paths
         # reach the filesystem.
@@ -292,8 +294,17 @@ def _openai_turn(prov, model, system, messages, tools, key):
                  {"model": model, "messages": msgs, "tools": oai_tools})
     choice = (data.get("choices") or [{}])[0].get("message", {})
     text = choice.get("content") or ""
-    calls = [(c["id"], c["function"]["name"], json.loads(c["function"].get("arguments") or "{}"))
-             for c in (choice.get("tool_calls") or [])]
+    calls = []
+    for c in (choice.get("tool_calls") or []):
+        # A malformed tool call from the vendor must degrade into a visible
+        # error, not an uncaught exception that drops the whole stream.
+        try:
+            args = json.loads(c["function"].get("arguments") or "{}")
+            if not isinstance(args, dict):
+                args = {}
+            calls.append((c["id"], c["function"]["name"], args))
+        except (KeyError, TypeError, json.JSONDecodeError) as e:
+            raise ToolError(f"vendor returned a malformed tool call: {e}") from None
     return text, calls, choice
 
 
@@ -311,7 +322,12 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
         yield f"[{prov.label}: set {prov.env_key} — get one at {prov.signup}]"
         return
 
-    model_id = prov.models.get(model or prov.default_model, model or prov.default_model)
+    want = model or prov.default_model
+    if prov.models and want not in prov.models and want not in prov.models.values():
+        yield (f"[{prov.label} does not offer {want!r}; choose from "
+               f"{list(prov.models)}]")
+        return
+    model_id = prov.models.get(want, want)
     tools = tool_schemas(ki)
     messages: list[dict] = [{"role": "user", "content": task}]
 

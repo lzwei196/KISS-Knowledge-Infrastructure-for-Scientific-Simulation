@@ -79,6 +79,24 @@ class Provider:
     auth_probe: list[str] = field(default_factory=list)
     #: Old CLIs can be signed in but still reject the argv/model contract.
     min_version: tuple[int, ...] | None = None
+    #: Feed the prompt on STDIN instead of substituting it into argv. The
+    #: catalogue prompt is ~20KB and every OS caps a command line: Windows
+    #: allows 32767 characters, and only 8191 when the CLI is reached through
+    #: a batch shim. STDIN has no such ceiling. Only set this for a CLI that
+    #: is known to read its prompt from STDIN -- the others reject a bare
+    #: ``-p`` with a missing-argument error.
+    stdin_prompt: bool = False
+    #: Argv used instead of ``argv`` when continuing a prior conversation,
+    #: with ``{resume}`` standing in for the id. A template rather than a flag
+    #: because the CLIs disagree on shape: Claude and Kimi take an option
+    #: (``--resume ID`` / ``-r ID``) while Codex takes a subcommand
+    #: (``exec resume ID``). Empty means no verified headless resume, and every
+    #: turn replays the transcript instead.
+    resume_argv: list[str] = field(default_factory=list)
+    #: For text-output CLIs, a regex whose first group is the session id, read
+    #: from the diagnostics stream. Stream-json CLIs need no pattern — their
+    #: id arrives as a JSON field.
+    session_regex: str = ""
 
     def available(self) -> bool:
         return self.health().usable
@@ -92,16 +110,75 @@ class Provider:
     def health(self, *, refresh: bool = False) -> ProviderHealth:
         return _health(self, refresh=refresh)
 
+    def can_resume(self) -> bool:
+        return bool(self.resume_argv)
+
     def build(self, prompt: str, *, extra_dirs: list[str] | None = None,
-              model: str | None = None) -> list[str]:
+              model: str | None = None, resume: str | None = None) -> list[str]:
+        template = self.resume_argv if (resume and self.resume_argv) else self.argv
         out: list[str] = []
-        for tok in self.argv:
-            out.append(prompt if tok == "{prompt}" else tok)
+        for tok in template:
+            if tok == "{resume}":
+                out.append(str(resume))
+            elif tok != "{prompt}":
+                out.append(tok)
+            elif not self.stdin_prompt:
+                out.append(prompt)
         if model and self.model_flag:
             out += [self.model_flag, model]
         for d in extra_dirs or []:
             out += ["--add-dir", d]
-        return [self.path() or self.binary] + out[1:] if out and out[0] == self.binary else out
+        head = _launcher(self.path() or self.binary)
+        return head + out[1:] if out and out[0] == self.binary else out
+
+
+#: A Windows batch shim points at the thing it really runs: either a native
+#: ``.exe`` beside it, or a ``node`` runtime plus a ``.js`` entry point.
+_SHIM_TARGET = re.compile(r'"%(?:_prog|dp0|~dp0)%\\?([^"%]+)"')
+
+
+def _launcher(binary: str) -> list[str]:
+    """Argv head that reaches ``binary`` without going through cmd.exe.
+
+    ``npm install -g`` puts a ``.cmd`` batch shim on PATH, and CreateProcess
+    runs a ``.cmd`` by handing it to the command processor -- whose command
+    line is capped at 8191 characters, not the 32767 CreateProcess itself
+    allows. The catalogue prompt is over twice that cap, so on Windows every
+    turn died before the CLI was even reached: exit 1, stderr "The command
+    line is too long", and an empty reply panel that named no cause.
+
+    Following the shim to its target recovers the full 32767. It is a
+    best-effort read: an unrecognised shim is returned untouched, which is no
+    worse than today.
+    """
+    if os.name != "nt" or not binary.lower().endswith((".cmd", ".bat")):
+        return [binary]
+    try:
+        text = Path(binary).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return [binary]
+
+    here = Path(binary).parent
+    script: Path | None = None
+    node: Path | None = None
+    for raw in _SHIM_TARGET.findall(text):
+        target = here / raw.lstrip("\\/")
+        if not target.exists():
+            continue
+        suffix = target.suffix.lower()
+        if suffix == ".exe":
+            # A bundled node.exe is the runtime, not the program.
+            if target.stem.lower() == "node":
+                node = node or target
+            else:
+                return [str(target)]
+        elif suffix in (".js", ".cjs", ".mjs"):
+            script = script or target
+    if script is not None:
+        runtime = str(node) if node else shutil.which("node")
+        if runtime:
+            return [runtime, str(script)]
+    return [binary]
 
 
 #: Canonical invocations. These mirror the ones the HydroCraft deployment uses
@@ -111,17 +188,28 @@ PROVIDERS: dict[str, Provider] = {
         name="claude", models=["sonnet", "opus", "haiku", "claude-opus-5", "claude-sonnet-5"], policy_map="claude_args", install="npm install -g @anthropic-ai/claude-code", auth="run `claude auth login` in Terminal", binary="claude", label="Claude Code",
         argv=["claude", "-p", "{prompt}", "--output-format", "stream-json", "--verbose"],
         auth_probe=["claude", "auth", "status", "--json"],
-        output="stream-json",
+        output="stream-json", stdin_prompt=True,
+        resume_argv=["claude", "--resume", "{resume}", "-p",
+                     "--output-format", "stream-json", "--verbose"],
         notes="Reads CLAUDE.md from the working directory automatically.",
     ),
     "codex": Provider(
         name="codex", models=["gpt-5.5", "gpt-5.6-sol"], model_flag="-m", policy_map="codex_args", install="npm install -g @openai/codex", auth="run `codex login` in Terminal", binary="codex", label="OpenAI Codex",
-        argv=["codex", "exec", "{prompt}"],
+        argv=["codex", "exec", "--skip-git-repo-check", "-"],
+        resume_argv=["codex", "exec", "resume", "{resume}",
+                     "--skip-git-repo-check", "-"],
+        session_regex=r"session id:\s*([0-9a-fA-F-]{36})",
         auth_probe=["codex", "login", "status"],
         min_version=(0, 144, 0),
-        output="text", stdout_only=True,
+        output="text", stdout_only=True, stdin_prompt=True,
         notes=("Reads AGENTS.md. Since 0.144 the reply is on STDOUT and chrome on "
-               "STDERR — parse stdout only. Never wrap in `timeout`."),
+               "STDERR — parse stdout only. Never wrap in `timeout`. The `-` "
+               "sentinel is codex's documented 'read the prompt from STDIN'; it "
+               "also avoids openai/codex#20919, where a prompt on argv plus an "
+               "inherited pipe with no writer hangs waiting for an EOF that "
+               "never comes. --skip-git-repo-check is not optional here: a "
+               "session project is an ordinary folder, and without it codex "
+               "refuses to start at all."),
     ),
     "gemini": Provider(
         name="gemini", models=["gemini-3-pro", "gemini-3-flash", "gemini-2.5-pro", "gemini-2.5-flash"], default_model="gemini-3-flash",  install="npm install -g @google/gemini-cli", auth="run `gemini` once and sign in", binary="gemini", label="Gemini CLI",
@@ -132,7 +220,10 @@ PROVIDERS: dict[str, Provider] = {
     "kimi": Provider(
         name="kimi", models=["kimi-for-coding", "kimi-for-coding-highspeed", "k3", "k3-256k"], default_model="kimi-for-coding", install="curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash", auth="run `kimi login` in Terminal", binary="kimi", label="Kimi Code",
         argv=["kimi", "-p", "{prompt}", "--output-format", "stream-json"],
+        auth_probe=["kimi", "provider", "list", "--json"],
         output="stream-json",
+        resume_argv=["kimi", "-r", "{resume}", "-p", "{prompt}",
+                     "--output-format", "stream-json"],
         notes=("Non-interactive -p uses Kimi's automatic permission policy; "
                "--yolo must not be combined with it."),
     ),
@@ -205,6 +296,58 @@ def _claude_auth_state(stdout: str) -> bool | None:
     return None
 
 
+def _kimi_credential_dirs(binary: str) -> list[Path]:
+    return [Path.home() / ".kimi-code" / "credentials",
+            Path(binary).resolve().parent.parent / "credentials"]
+
+
+def _kimi_auth_state(stdout: str, binary: str) -> bool | None:
+    """Read sign-in out of ``kimi provider list --json``.
+
+    Kimi has no ``auth status``, so GeoForge declared no probe at all and the
+    Local menu reported "login checked on first use" for an account that was
+    in fact signed in -- correct, but indistinguishable from a broken install.
+
+    ``provider list`` exits 0 whether or not anyone has logged in, so the exit
+    code proves nothing: what counts is whether a configured provider carries
+    a usable credential. An OAuth binding only names a token file, so confirm
+    the file is actually on disk before calling the CLI signed in.
+    """
+    try:
+        doc = json.loads(stdout or "{}")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(doc, dict):
+        return None
+    entries = doc.get("providers")
+    if not isinstance(entries, dict):
+        return None
+    if not entries:
+        return False
+
+    unknown = False
+    for entry in entries.values():
+        if not isinstance(entry, dict):
+            continue
+        if (entry.get("apiKey") or "").strip():
+            return True
+        oauth = entry.get("oauth")
+        if not isinstance(oauth, dict):
+            continue
+        key = str(oauth.get("key") or "").strip()
+        if not key:
+            unknown = True
+            continue
+        name = key.rsplit("/", 1)[-1]
+        if any((d / f"{name}.json").exists() for d in _kimi_credential_dirs(binary)):
+            return True
+        # A binding whose token is kept somewhere we cannot see (a keychain,
+        # say) is not evidence of being signed out.
+        if str(oauth.get("storage") or "file").lower() != "file":
+            unknown = True
+    return None if unknown else False
+
+
 def _health(provider: Provider, *, refresh: bool = False) -> ProviderHealth:
     """Inspect installation and sign-in without contacting a model service."""
     now = time.monotonic()
@@ -222,11 +365,16 @@ def _health(provider: Provider, *, refresh: bool = False) -> ProviderHealth:
         argv = [binary, *provider.auth_probe[1:]]
         try:
             proc = subprocess.run(
-                argv, capture_output=True, text=True, errors="replace", timeout=8,
+                argv, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=8, stdin=subprocess.DEVNULL,
+                **({"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)}
+                   if os.name == "nt" else {}),
             )
             raw = (proc.stdout + proc.stderr).strip()
             if provider.name == "claude":
                 signed_in = _claude_auth_state(proc.stdout)
+            elif provider.name == "kimi":
+                signed_in = _kimi_auth_state(proc.stdout, binary)
             elif provider.name == "codex":
                 signed_in = proc.returncode == 0 and "logged in" in raw.lower()
             else:
@@ -236,7 +384,10 @@ def _health(provider: Provider, *, refresh: bool = False) -> ProviderHealth:
             if provider.min_version:
                 ver = subprocess.run(
                     [binary, "--version"], capture_output=True, text=True,
-                    errors="replace", timeout=8,
+                    encoding="utf-8", errors="replace", timeout=8,
+                    stdin=subprocess.DEVNULL,
+                    **({"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)}
+                       if os.name == "nt" else {}),
                 )
                 match = re.search(r"\d+(?:\.\d+)+", ver.stdout + ver.stderr)
                 if ver.returncode == 0 and match:
@@ -331,11 +482,32 @@ def _text_from_stream_json(line: str) -> str | None:
     return None
 
 
+def _session_id_from_stream_json(line: str) -> str | None:
+    """The id this CLI would need to resume the conversation later.
+
+    Claude announces it in the opening ``system`` event; Kimi emits a
+    ``session.resume_hint`` meta event carrying the same field. Both put it at
+    the top level under ``session_id``, so one lookup covers both and an
+    unknown CLI simply never yields one.
+    """
+    line = line.strip()
+    if not line.startswith("{"):
+        return None
+    try:
+        ev = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    sid = ev.get("session_id") if isinstance(ev, dict) else None
+    return sid if isinstance(sid, str) and sid else None
+
+
 def run(provider: Provider, prompt: str, cwd: Path,
         *, extra_dirs: list[str] | None = None,
         cfg=None, ki_root: Path | None = None, pol=None,
         model: str | None = None,
-        timeout: int | None = None) -> Iterator[str]:
+        timeout: int | None = None,
+        resume: str | None = None,
+        session_out: dict | None = None) -> Iterator[str]:
     """Spawn the CLI and yield displayable text as it arrives.
 
     When ``cfg`` is given the agent is started **inside the relocation
@@ -359,7 +531,8 @@ def run(provider: Provider, prompt: str, cwd: Path,
         yield f"[{provider.label} needs an update — {health.detail}; {provider.install}]"
         return
 
-    argv = provider.build(prompt, extra_dirs=extra_dirs, model=model)
+    argv = provider.build(prompt, extra_dirs=extra_dirs, model=model,
+                          resume=resume)
     env = {**os.environ, **provider.env}
 
     # Least privilege, mapped onto whatever this CLI can actually enforce.
@@ -386,31 +559,99 @@ def run(provider: Provider, prompt: str, cwd: Path,
 
     import tempfile
 
+    # A windowed build owns no console, so Windows hands each console child a
+    # brand new one: a black window flashing over the app for every turn, which
+    # reads as a crash. CREATE_NO_WINDOW suppresses it and keeps the CLI in the
+    # non-interactive mode we asked for. Verified against all three CLIs.
+    spawn: dict = {}
+    if os.name == "nt":
+        spawn["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
     # stderr goes to a spool file, never a PIPE: an unread PIPE fills at ~64KB
     # and a chatty CLI (codex logs its chrome there) then blocks forever.
     err_spool = tempfile.TemporaryFile(mode="w+", errors="replace")
     try:
         proc = subprocess.Popen(
             argv, cwd=str(cwd), env=env,
+            # DEVNULL, never inherited: a windowed parent has no valid stdin,
+            # and a CLI that decides to read it would wait for an EOF that
+            # cannot arrive (openai/codex#20919 is exactly this).
+            stdin=subprocess.PIPE if provider.stdin_prompt else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=err_spool if provider.stdout_only else subprocess.STDOUT,
-            text=True, errors="replace", bufsize=1,
+            # encoding is explicit: text=True alone decodes with the locale
+            # codepage, which on a Chinese Windows install is cp936. Every
+            # agent CLI emits UTF-8, so a non-ASCII reply came back as
+            # replacement characters — invisible on an English machine, and
+            # total corruption of any Chinese answer.
+            text=True, encoding="utf-8", errors="replace", bufsize=1, **spawn,
         )
     except OSError as e:
         yield f"[failed to start {provider.label}: {e}]"
         return
 
+    # Written from a thread, not inline: a prompt larger than the pipe buffer
+    # blocks the writer until the child drains it, and the child cannot be
+    # drained by a reader that has not started yet. Closing the pipe is the
+    # EOF the CLI waits for, so it happens on every path out.
+    if provider.stdin_prompt and proc.stdin is not None:
+        def _feed(pipe, text: str) -> None:
+            try:
+                pipe.write(text)
+            except (OSError, ValueError):
+                pass
+            finally:
+                try:
+                    pipe.close()
+                except (OSError, ValueError):
+                    pass
+
+        threading.Thread(target=_feed, args=(proc.stdin, prompt),
+                         daemon=True, name="kiss-prompt-stdin").start()
+
+    produced = False
     try:
         for line in proc.stdout:  # type: ignore[union-attr]
             if provider.output == "stream-json":
+                if session_out is not None and not session_out.get("session_id"):
+                    sid = _session_id_from_stream_json(line)
+                    if sid:
+                        session_out["session_id"] = sid
                 text = _text_from_stream_json(line)
                 if text:
+                    produced = True
+                    if session_out is not None:
+                        # Flagged the instant real output exists, not at exit:
+                        # a caller deciding whether a failed resume is safe to
+                        # retry must know before it forwards anything onward.
+                        session_out["produced"] = True
                     yield text
             else:
+                produced = True
+                if session_out is not None:
+                    session_out["produced"] = True
                 yield line
     finally:
         proc.stdout and proc.stdout.close()  # type: ignore[func-returns-value]
         rc = proc.wait(timeout=timeout)
+        if (session_out is not None and not session_out.get("session_id")
+                and provider.session_regex and provider.stdout_only):
+            # A text-mode CLI prints its session id with the rest of its chrome
+            # on stderr, which is spooled rather than parsed. Only the header is
+            # searched -- the id is announced before any work starts.
+            try:
+                err_spool.seek(0)
+                found = re.search(provider.session_regex, err_spool.read(8192))
+                if found:
+                    session_out["session_id"] = found.group(1)
+            except (OSError, ValueError):
+                pass
+        if session_out is not None:
+            # The caller needs both to tell "this resume id is stale, replay
+            # instead" from "the model answered and then something failed" —
+            # only the first is safe to retry, because nothing reached the user.
+            session_out["returncode"] = rc
+            session_out["produced"] = produced
         if rc != 0:
             tail = ""
             if provider.stdout_only:

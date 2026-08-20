@@ -251,7 +251,7 @@ def agent_task(ki, cfg, root: Path, *, resumed: dict | None = None) -> str:
             f"Files supplied: {json.dumps(uploads(root), ensure_ascii=False)}\n"
             f"Resume hint: {resumed.get('resume_hint') or '(inspect the workspace)'}\n"
         )
-    return f"""Finish setting up {ki.name} on this Mac now.
+    return f"""Finish setting up {ki.name} on this machine now.
 
 You own the complete KDT loop: inspect, act, run preflight, diagnose, repair,
 and retry. Read SKILL.md first and use the KI's validated tools and diagnostics.

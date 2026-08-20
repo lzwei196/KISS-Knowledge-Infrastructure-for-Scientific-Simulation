@@ -26,6 +26,7 @@ contract, and says so rather than pretending it had it.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 #: Unit and configuration traps that fail *silently* — the model accepts the
@@ -64,18 +65,26 @@ FORCING_TRAPS = [
     "CMFD: prec is kg m-2 s-1 — multiply by 10800 for mm/3hr.",
 ]
 
-HEADLESS_LONG_JOB_RULE = """[LONG JOBS — POLL INSIDE THIS TURN; THIS SESSION HAS NO 'LATER']
+_HEADLESS_LONG_JOB_TEMPLATE = """[LONG JOBS — POLL INSIDE THIS TURN; THIS SESSION HAS NO 'LATER']
 You are running HEADLESS. The moment your turn ends this process EXITS — there
 is no next turn, and a background-task completion notification can NEVER reach
 you. Ending your turn while a job you launched is still running KILLS the run.
 
   1. LAUNCH long work DETACHED so a crash cannot take it with you:
-       setsid nohup <cmd> > <log> 2>&1 < /dev/null & echo $!    # keep the PID
+       {detach} <cmd> > <log> 2>&1 < /dev/null & echo $!    # keep the PID
   2. THEN WAIT IN THE FOREGROUND, in this SAME turn, with a bounded loop:
        until ! kill -0 <PID> 2>/dev/null; do sleep 30; done; tail -20 <log>
      A bare `sleep 60 && tail ...` is BLOCKED by the CLI; an until-loop is not.
   3. If that call times out you GET CONTROL BACK — repeat the loop, do not stop.
 """
+
+#: ``setsid`` is not present on Windows — not in Git Bash either, which is the
+#: shell the agent CLIs use there. Emitting it made step 1 of every long run
+#: die with "setsid: command not found", and this app exists to run long jobs.
+#: ``nohup`` plus ``&`` already survives the parent on Windows.
+HEADLESS_LONG_JOB_RULE = _HEADLESS_LONG_JOB_TEMPLATE.format(
+    detach="nohup" if os.name == "nt" else "setsid nohup")
+
 
 def _harness_contract(ki, *, execute: bool, python: str | None) -> tuple[str, str | None]:
     """The shared KI-usage contract, or ('', reason) if it is unavailable."""

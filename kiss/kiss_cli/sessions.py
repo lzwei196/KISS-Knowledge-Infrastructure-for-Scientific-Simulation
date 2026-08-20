@@ -323,6 +323,8 @@ def for_client(workroot: Path, s: dict) -> dict:
     """Add useful local project metadata without persisting absolute paths."""
     out = dict(s)
     out["project_path"] = str(project_path(workroot, s))
+    # The UI disables the agent pickers on this; the server enforces it too.
+    out["binding_locked"] = bool(s.get("messages"))
     return out
 
 
@@ -465,7 +467,7 @@ No KI was pre-selected for this session. From the catalogue above:
 3. THEN read the chosen KI's SKILL.md and follow it. Do not improvise a
    pipeline the KI already defines; do not substitute simplified formulas for
    the real model.
-4. If its software is not "Verified on this Mac", discussion is allowed but
+4. If its software is not "Verified on this machine", discussion is allowed but
    do not claim to have run it. Tell the user to verify it in the KI Library.
 If the task needs no KI at all (a general question), say so and answer.
 """

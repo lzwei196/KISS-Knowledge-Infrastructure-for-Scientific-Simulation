@@ -242,7 +242,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
   </div></div>
   <div id="mpick"><div class="card2">
     <h2>Knowledge Infrastructures for this chat</h2>
-    <div class="hint" style="margin:0 0 8px">Leave empty for <b>Auto KI</b>. A green badge means the scientific software passed its check on this Mac. You can still discuss KIs that need setup.</div>
+    <div class="hint" style="margin:0 0 8px">Leave empty for <b>Auto KI</b>. A green badge means the scientific software passed its check on this machine. You can still discuss KIs that need setup.</div>
     <input id="mq" placeholder="Search KIs…" autocomplete="off" style="margin-bottom:8px">
     <div id="mrows" style="max-height:46vh;overflow-y:auto"></div>
     <div style="display:flex;gap:8px;margin-top:14px">
@@ -343,7 +343,7 @@ function stateClass(n){
   return s==="verified"?"ok":s==="failed"?"block":"warn";}
 function stateLabel(n){
   const s=STATUS[n]||{};
-  return s.label||(s.state==="verified"?"Verified on this Mac":"Setup needed");}
+  return s.label||(s.state==="verified"?"Verified on this machine":"Setup needed");}
 
 async function loadAll(){
   try{
@@ -537,13 +537,13 @@ function drawModelLabel(){
     const verified=ms.filter(n=>(STATUS[n]||{}).state==="verified").length;
     const failed=ms.some(n=>(STATUS[n]||{}).state==="failed");
     badge.className=`statuspill ${verified===ms.length?"ok":failed?"block":"warn"}`;
-    badge.textContent=ms.length===1?stateLabel(ms[0]):`${verified}/${ms.length} verified on this Mac`;
+    badge.textContent=ms.length===1?stateLabel(ms[0]):`${verified}/${ms.length} verified on this machine`;
   }
   const old=$("#kibanner"); if(old) old.remove();
   const pending=ms.filter(n=>!(STATUS[n]||{}).can_run);
   if(pending.length){
     const href=pending.length===1?`/setup?model=${encodeURIComponent(pending[0])}`:"/library";
-    $("#chat").insertAdjacentHTML("beforebegin",`<div class="banner" id="kibanner"><b>${esc(pending.join(", "))}</b> ${pending.length===1?"is":"are"} not verified on this Mac. You can keep chatting, but the scientific software must pass before it runs. <a href="${href}">${pending.length===1?"Let the agent set it up":"Open KI Library"}</a></div>`);
+    $("#chat").insertAdjacentHTML("beforebegin",`<div class="banner" id="kibanner"><b>${esc(pending.join(", "))}</b> ${pending.length===1?"is":"are"} not verified on this machine. You can keep chatting, but the scientific software must pass before it runs. <a href="${href}">${pending.length===1?"Let the agent set it up":"Open KI Library"}</a></div>`);
   }
 }
 function addTurn(who,cls){
@@ -630,9 +630,18 @@ function setControls(on){
   // model mid-stream produced a next turn with settings the user changed
   // halfway through the previous one.
   $("#send").disabled=!on||!currentProviderReady();
-  $("#prov").disabled=!on; $("#llm").disabled=!on;
-  document.querySelectorAll("#kindtog button").forEach(b=>b.disabled=!on);
-  $("#pickmodels").disabled=!on; $("#newsess").disabled=!on;
+  // The agent binding is also frozen for the life of a chat once it has
+  // started: the CLI keeps that conversation in its own session store and no
+  // other CLI can read it, so switching would silently lose the history. The
+  // server rejects it too — this only stops the user reaching a dead end.
+  const bound=!!(CUR&&CUR.binding_locked);
+  $("#prov").disabled=!on||bound; $("#llm").disabled=!on||bound;
+  $("#prov").title=bound?"Fixed for this chat — start a new chat to switch AI"
+                        :"AI provider";
+  $("#llm").title=bound?"Fixed for this chat — start a new chat to switch model"
+                       :"AI model";
+  document.querySelectorAll("#kindtog button").forEach(b=>b.disabled=!on||bound);
+  $("#pickmodels").disabled=!on||bound; $("#newsess").disabled=!on;
   $("#openproject").disabled=!on||!CUR;
   $("#opendata").disabled=!on||!CUR;
   $("#skills").disabled=!on;

@@ -17,6 +17,7 @@ two ever disagree, that is a bug in the GUI.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -84,12 +85,35 @@ RESPONSE_PRESENTATION_RULES = """[USER-FACING RESPONSE]
 Tool calls, file inspection, and scratch reasoning are internal work.
 - Do not narrate every step with phrases such as "Let me", "I will now", or
   "First I need to". GeoForge presents tool progress separately.
-- Give the user one clean response after the work is complete.
+- After the opening plan required below, give the user one clean response
+  once the work is complete. This rule never justifies working in silence:
+  the plan always comes first.
 - Lead with the result or the one decision needed from the user.
 - Use short paragraphs, descriptive headings, and compact bullets when they
   make a long scientific answer easier to scan.
 - Put command output and debugging detail behind a short explanation; do not
   dump a raw agent transcript into the answer.
+"""
+
+SCOPE_FIRST_RULES = """[FIRST REPLY TO A NEW TASK: PLAN IN TEXT, THEN STOP]
+Before ANY tool call — no file read, no command, no web fetch — answer in TEXT
+and cover, in the user's language:
+  1. WHICH KI you will use and why, in one sentence, with its local software
+     status. If a KI is already pinned for this chat, say what you will do
+     with it instead.
+  2. HOW you will do it — the concrete steps, briefly.
+  3. WHAT YOU NEED from the user: data, files, parameters, or a decision.
+  4. Ask whether to proceed.
+Then END YOUR TURN. Do not start the work in the same turn.
+
+The catalogue above already gives each KI's purpose and local software status,
+which is everything the plan needs. Reading the chosen KI's SKILL.md is part of
+the work, not part of the plan — it happens after the user agrees.
+
+This governs the message that OPENS a task, and only that message:
+- Once the user agrees, carry the plan out and do not ask again.
+- Later messages inside an approved task need no new plan.
+- A conversational question ("what can you do?") needs no plan — just answer.
 """
 
 _CHINESE_TEXT = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
@@ -235,7 +259,7 @@ def build_data_plan(ki, man: Manifest, cfg, software: dict,
     if not software.get("can_run"):
         run_state = {
             "state": "software_needed", "label": "Software setup needed",
-            "detail": "Verify the scientific software on this Mac before running data.",
+            "detail": "Verify the scientific software on this machine before running data.",
         }
     elif unavailable_deps:
         run_state = {
@@ -335,7 +359,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.workroot / ki.name.lower()
 
     def _status_for(self, ki) -> dict:
-        """User-facing software state for one KI on this Mac."""
+        """User-facing software state for one KI on this machine."""
         wd = self._workdir(ki)
         sj = wd / "status.json"
         man = self._manifest(ki)
@@ -351,7 +375,7 @@ class Handler(BaseHTTPRequestHandler):
                 ok = bool(st.get("ok"))
                 return {
                     "state": "verified" if ok else "failed",
-                    "label": "Verified on this Mac" if ok else "Verification failed",
+                    "label": "Verified on this machine" if ok else "Verification failed",
                     "can_run": ok,
                     "checked_at": st.get("checked_at"),
                     "verified_at": st.get("verified_at") if ok else None,
@@ -372,7 +396,7 @@ class Handler(BaseHTTPRequestHandler):
                 "can_run": False, "setup_kind": "guided"}
 
     def _data_plan(self, ki) -> dict:
-        """Combine KI declarations with what is actually present on this Mac."""
+        """Combine KI declarations with what is actually present on this machine."""
         man = self._manifest(ki)
         deps = []
         for name in man.depends_on:
@@ -639,10 +663,15 @@ class Handler(BaseHTTPRequestHandler):
                             emit(f"   found {cred} ({cred.stat().st_size} bytes)")
                     emit(f"   probing {target.label} (a real one-line run; ~15s)…")
                     import subprocess as _sp
-                    argv = target.build("Reply with exactly: OK")
+                    probe = "Reply with exactly: OK"
+                    argv = target.build(probe)
                     try:
+                        # A stdin_prompt CLI has no prompt in its argv and waits
+                        # for EOF; without this the probe reports a 90s timeout
+                        # as a hanging auth prompt.
                         r = _sp.run(argv, capture_output=True, text=True, timeout=90,
-                                    errors="replace")
+                                    errors="replace",
+                                    **({"input": probe} if target.stdin_prompt else {}))
                         tail = (r.stdout + r.stderr).strip()
                         if r.returncode == 0 and ("OK" in r.stdout or '"text"' in r.stdout):
                             emit(f"   OK  {target.label} answered — signed in and working")
@@ -719,7 +748,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/status":
             # "Verified" has one user-facing meaning: the actual simulator's
-            # preflight passed on this Mac. Manifest confidence describes an
+            # preflight passed on this machine. Manifest confidence describes an
             # installation recipe, so it is kept separate as setup_kind.
             return self._json({ki.name: self._status_for(ki) for ki in self.catalog})
 
@@ -913,6 +942,19 @@ class Handler(BaseHTTPRequestHandler):
                 s = sessions.load(self.workroot, sid)
                 if not s:
                     return self._json({"error": "no such session"}, 404)
+                # The agent binding is fixed once the conversation starts. The
+                # CLI holds the real history in its own session store, and no
+                # other CLI can read it — so a mid-chat switch either silently
+                # drops everything said so far or forces a costly replay of it.
+                # Skills and MCPs stay changeable: they are per-turn grants.
+                if s.get("messages"):
+                    for k in ("provider", "models", "llm_model"):
+                        if k in req and req[k] != s.get(k):
+                            return self._json(
+                                {"error": "the agent and model are fixed once a "
+                                          "chat has started — start a new chat "
+                                          "to use a different one",
+                                 "locked": True}, 409)
                 for k in ("models", "skills", "mcps", "provider", "title", "llm_model"):
                     if k in req:
                         s[k] = req[k]
@@ -1544,16 +1586,19 @@ class Handler(BaseHTTPRequestHandler):
             return self._chunk(piece)
 
         failure = None
+        cli_state: dict = {}
         try:
             prior = s["messages"][:-1][-20:]      # structured turns for the API driver
             if names:
                 self._chat_with_models(names, want, history + "\nUSER: " + text,
                                        out, project, llm, prior=prior, bare_task=text,
-                                       skill_names=skill_names, mcp_names=mcp_names)
+                                       skill_names=skill_names, mcp_names=mcp_names,
+                                       session=s, cli_state=cli_state)
             else:
                 self._chat_auto(want, history + "\nUSER: " + text,
                                 out, project, llm, prior=prior, bare_task=text,
-                                skill_names=skill_names, mcp_names=mcp_names)
+                                skill_names=skill_names, mcp_names=mcp_names,
+                                session=s, cli_state=cli_state)
         except Exception as e:
             failure = f"{type(e).__name__}: {e}"
             out(f"\n[GeoForge could not finish this turn: {failure}]")
@@ -1567,11 +1612,16 @@ class Handler(BaseHTTPRequestHandler):
                     f"![Generated plot: {Path(rel).stem.replace('-', ' ')}]({rel})"
                     for rel in missing_links))
             reply = "".join(buf).strip()
-            if reply:
+            if reply or cli_state:
                 with sessions.lock(sid):
                     cur = sessions.load(self.workroot, sid) or s
-                    sessions.append_message(self.workroot, cur,
-                                            {"role": "assistant", "text": reply})
+                    # Resume ids are per provider, so switching CLI mid-chat
+                    # updates one entry and leaves the other's alone.
+                    if cli_state:
+                        cur.setdefault("cli_sessions", {}).update(cli_state)
+                    if reply:
+                        sessions.append_message(self.workroot, cur,
+                                                {"role": "assistant", "text": reply})
                     sessions.save(self.workroot, cur)
             waiting = setup_flow.request(project)
             if not waiting and names:
@@ -1587,8 +1637,73 @@ class Handler(BaseHTTPRequestHandler):
             projectrun.finish_turn(project, request=waiting, failed=failure)
             self._end_stream()
 
+    @staticmethod
+    def _remember_cli_session(cli_state: dict, prov, state: dict,
+                              fingerprint: str) -> None:
+        """Keep an id only from a turn that actually worked.
+
+        A rejected resume echoes the id we sent back at us in its error event;
+        storing that would pin the session to an id the CLI has already
+        forgotten and make every later turn take the slow path.
+        """
+        sid = state.get("session_id")
+        if sid and state.get("returncode") == 0 and prov.can_resume():
+            cli_state[prov.name] = {"id": sid, "fingerprint": fingerprint}
+
+    def _cli_turn(self, prov, *, fingerprint_src: str, replay_prompt: str,
+                  bare_prompt: str | None, wd: Path, out, session: dict | None,
+                  cli_state: dict | None, **run_kw) -> None:
+        """One CLI turn, continuing the CLI's own session where possible.
+
+        The CLI already stores this conversation; replaying our transcript into
+        a fresh process every turn was only ever a way to paper over that. It
+        costs the whole instruction block plus the history on every message,
+        which on Windows is what pushed the command line past the OS limit, and
+        it caps memory at the 20 messages the replay window holds.
+
+        So resume when the same CLI answered last time and the instruction
+        block has not changed, and replay otherwise — first turn, a different
+        CLI, edited model/skill selection, or an id the CLI has dropped. The
+        fallback is silent: a rejected resume produces no output, so nothing
+        has reached the user and the replay simply takes over.
+        """
+        fingerprint = hashlib.sha256(
+            fingerprint_src.encode("utf-8")).hexdigest()[:16]
+        stored = ((session or {}).get("cli_sessions") or {}).get(prov.name) or {}
+        resume = (stored.get("id") if (prov.can_resume() and bare_prompt
+                                       and stored.get("fingerprint") == fingerprint)
+                  else None)
+        state: dict = {}
+
+        if resume:
+            held: list[str] = []
+            for piece in providers.run(prov, bare_prompt, wd, resume=resume,
+                                       session_out=state, **run_kw):
+                if not state.get("produced"):
+                    held.append(piece)          # not real output yet — may be discarded
+                    continue
+                for earlier in held:
+                    if not out(earlier):
+                        return
+                held.clear()
+                if not out(piece):
+                    return
+            if state.get("produced"):
+                if cli_state is not None:
+                    self._remember_cli_session(cli_state, prov, state, fingerprint)
+                return
+            state = {}                          # stale id, nothing shown — replay
+
+        for piece in providers.run(prov, replay_prompt, wd,
+                                   session_out=state, **run_kw):
+            if not out(piece):
+                return
+        if cli_state is not None:
+            self._remember_cli_session(cli_state, prov, state, fingerprint)
+
     def _chat_auto(self, want: str, task: str, out, project: Path, llm=None,
-                   prior=None, bare_task=None, skill_names=None, mcp_names=None) -> None:
+                   prior=None, bare_task=None, skill_names=None, mcp_names=None,
+                   session=None, cli_state=None) -> None:
         """No models pinned: hand the agent the catalogue and let it route."""
         kind, _, pname = want.partition(":")
         if not pname:
@@ -1610,7 +1725,7 @@ class Handler(BaseHTTPRequestHandler):
                   "\n\n" + language_rules +
                   (("\n\n" + skill_rules) if skill_rules else "") +
                   (("\n\n" + mcp_rules) if mcp_rules else ""))
-        full = (system
+        full = (system + "\n\n" + SCOPE_FIRST_RULES
                 + f"\nmodels_root: {self.catalog.models_dir}\n\n[TASK]\n" + task)
         if kind == "api":
             prov = api.PROVIDERS.get(pname)
@@ -1641,16 +1756,16 @@ class Handler(BaseHTTPRequestHandler):
             (wd / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
         skill_dirs = [str(Path(item["path"]).parent)
                       for item in skilllib.selected(skill_names)]
-        for piece in providers.run(prov, full, wd,
-                                   extra_dirs=[str(self.catalog.models_dir), *skill_roots,
-                                               *skill_dirs],
-                                   cfg=cfg, model=llm):
-            if not out(piece):
-                break
+        self._cli_turn(prov, fingerprint_src=system, replay_prompt=full,
+                       bare_prompt=bare_task, wd=wd, out=out,
+                       session=session, cli_state=cli_state,
+                       extra_dirs=[str(self.catalog.models_dir), *skill_roots,
+                                   *skill_dirs],
+                       cfg=cfg, model=llm)
 
     def _chat_with_models(self, names, want, task, out, project: Path, llm=None,
                           prior=None, bare_task=None, skill_names=None,
-                          mcp_names=None) -> None:
+                          mcp_names=None, session=None, cli_state=None) -> None:
         """Pinned models: same path the toggle flow used."""
         try:
             kis = [self._ki(n) for n in names]
@@ -1698,7 +1813,8 @@ class Handler(BaseHTTPRequestHandler):
                          "\n\n" + RESPONSE_PRESENTATION_RULES +
                          "\n\n" + language_rules +
                          (("\n\n" + skill_rules) if skill_rules else "") +
-                         (("\n\n" + mcp_rules) if mcp_rules else ""))
+                         (("\n\n" + mcp_rules) if mcp_rules else "") +
+                         "\n\n" + SCOPE_FIRST_RULES)
         if kind == "api":
             prov = api.PROVIDERS.get(pname)
             if prov is None:
@@ -1780,10 +1896,19 @@ class Handler(BaseHTTPRequestHandler):
         if saved_posture is not None:
             pol.posture = saved_posture
         pol.approved = approved
-        for piece in providers.run(prov, full, wd, extra_dirs=grants,
-                                   cfg=cfg, ki_root=ki.root, pol=pol, model=llm):
-            if not out(piece):
-                break
+        # The fingerprint covers everything that shapes the instruction block
+        # for a pinned-model chat. Change any of it and a resumed session would
+        # still be running under the old rules, so it has to be rebuilt.
+        fingerprint_src = "\x00".join([
+            prov.name, str(llm or ""), *sorted(names or []),
+            *sorted(skill_names or []), *sorted(mcp_names or []),
+            str(getattr(cfg, "relocation", "")), setup_contract or "",
+        ])
+        self._cli_turn(prov, fingerprint_src=fingerprint_src, replay_prompt=full,
+                       bare_prompt=bare_task, wd=wd, out=out,
+                       session=session, cli_state=cli_state,
+                       extra_dirs=grants, cfg=cfg, ki_root=ki.root,
+                       pol=pol, model=llm)
 
     # --- chat --------------------------------------------------------------
     def _stream_chat(self, req) -> None:
@@ -1970,7 +2095,7 @@ def run_install(ki, man: Manifest, root: Path, emit, repo_root: Path) -> None:
     }, indent=2), encoding="utf-8")
 
     if result.ok:
-        emit(f"{ki.name} is verified on this Mac.  {root}\n")
+        emit(f"{ki.name} is verified on this machine.  {root}\n")
     else:
         emit(f"{ki.name} is not finished — {len(result.failures)} step(s) need attention.\n")
         emit("Ask the agent in this window to finish it — it has the KI's own "

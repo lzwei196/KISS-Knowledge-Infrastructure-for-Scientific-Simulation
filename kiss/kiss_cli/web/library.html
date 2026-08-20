@@ -228,7 +228,7 @@ select option:disabled{color:var(--fg-3)}
     <button id="theme" title="Toggle theme">◐</button>
   </header>
   <div id="chat"><div class="empty"><img class="hero-logo" src="/logo.svg" alt="GeoForge"><h2>Browse, import, and verify KIs</h2>
-    <div>A valid KI can be added to the library. A verified KI has also proven that its scientific software runs on this Mac.</div></div></div>
+    <div>A valid KI can be added to the library. A verified KI has also proven that its scientific software runs on this machine.</div></div></div>
   <div id="drawer"><header><h1>Software setup &amp; verification</h1><span class="spacer"></span>
     <button onclick="document.getElementById('drawer').classList.remove('open')">✕</button></header>
     <div style="padding:10px 16px;border-bottom:1px solid var(--line)">
@@ -351,7 +351,7 @@ function renderDataPlan(plan,name){
     "Dataset locations not declared";
   host.innerHTML=`
     <div class="section-head"><span class="mark import">↳</span><div><h3>Run data</h3>
-      <p>Built from this KI's declarations and the files visible on this Mac—not invented by AI.</p></div>
+      <p>Built from this KI's declarations and the files visible on this machine—not invented by AI.</p></div>
       <span class="pill ${planClass(rr.state)}">${esc(rr.label||'Review inputs')}</span></div>
     <div class="data-flow">
       <div class="flow-node"><div class="flow-label">Inputs</div><div class="flow-count">${plan.input_count||0} declared</div><div class="flow-preview">${inputPreview}</div></div>
@@ -381,7 +381,7 @@ function drawDetails(name){
   const m=MODELS.find(x=>x.name===name);
   if(!m){
     $("#title").textContent="Knowledge Infrastructures"; $("#sub").textContent="";
-    $("#chat").innerHTML=`<div class="empty"><img class="hero-logo" src="/logo.svg" alt="GeoForge"><h2>Browse, import, and verify KIs</h2><div>Select a KI to see what it does and whether its software can run on this Mac.</div></div>`;
+    $("#chat").innerHTML=`<div class="empty"><img class="hero-logo" src="/logo.svg" alt="GeoForge"><h2>Browse, import, and verify KIs</h2><div>Select a KI to see what it does and whether its software can run on this machine.</div></div>`;
     return;
   }
   const st=STATUS[name]||{}, repo=safeUrl(m.repo_url);
@@ -393,7 +393,7 @@ function drawDetails(name){
       <span class="pill ${stateClass(name)}">${esc(stateLabel(name))}</span></div></div></div>
     <div class="detail-grid">
       <div class="info-card"><b>Scientific software</b>${esc(m.impl_id||name)} ${esc(m.version||"")}</div>
-      <div class="info-card"><b>Last checked on this Mac</b>${esc(when(st.checked_at))}</div>
+      <div class="info-card"><b>Last checked on this machine</b>${esc(when(st.checked_at))}</div>
       <div class="info-card"><b>Language & licence</b>${esc(m.language||"Not declared")} · ${esc(m.license||"Not declared")}</div>
       <div class="info-card"><b>Source</b>${repo?`<a href="${esc(repo)}" target="_blank" rel="noreferrer">Open project website</a>`:"Not declared"}</div>
     </div>

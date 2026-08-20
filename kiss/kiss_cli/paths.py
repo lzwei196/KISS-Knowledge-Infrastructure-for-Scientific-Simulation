@@ -95,6 +95,47 @@ def scan_text(text: str) -> list[tuple[str, str]]:
     return out
 
 
+_BASIC_STRING_LINE = re.compile(
+    r'^(?P<key>[A-Za-z0-9_-]+\s*=\s*)"(?P<val>[^"\\]*\\[^"]*)"(?P<rest>.*)$', re.M)
+
+
+def _repair_backslash_strings(text: str) -> str:
+    """Re-quote basic strings holding raw backslashes as literal strings."""
+    def fix(m: "re.Match[str]") -> str:
+        val = m.group("val")
+        if "'" in val:
+            val = val.replace('\\', '\\\\')
+            return f'{m.group("key")}"{val}"{m.group("rest")}'
+        return f"{m.group('key')}'{val}'{m.group('rest')}"
+    return _BASIC_STRING_LINE.sub(fix, text)
+
+
+def _toml_str(value) -> str:
+    """Quote one value so a Windows path survives a TOML round-trip.
+
+    A basic string processes escapes, so a bare C:\\Users\\... makes \\U open a
+    unicode escape and the whole file fails to parse with "Invalid hex value".
+    Every config this app wrote on Windows was unreadable that way, which is
+    why setup could never start; macOS paths carry no backslash, so it never
+    surfaced there. A literal string escapes nothing, which is exactly what a
+    path wants -- so use one whenever the value can be held in one, and fall
+    back to a fully escaped basic string when it cannot.
+    """
+    text = str(value)
+    unquotable = ("'", '\\n', '\\r')
+    if not any(c in text for c in unquotable) and not any(ord(c) < 0x20 for c in text):
+        return "'" + text + "'"
+    out = []
+    for ch in text:
+        if ch == '\\':
+            out.append('\\\\')
+        elif ch == '"':
+            out.append('\\"')
+        elif ord(ch) < 0x20:
+            out.append('\\u' + format(ord(ch), "04X"))
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
 @dataclass
 class KissConfig:
     """A user's local answer to "where does everything actually live?"."""
@@ -151,8 +192,21 @@ class KissConfig:
 
     @classmethod
     def _parse(cls, cfg: Path) -> "KissConfig":
-        with cfg.open("rb") as fh:
-            raw = tomllib.load(fh)
+        text = cfg.read_text(encoding="utf-8")
+        try:
+            raw = tomllib.loads(text)
+        except tomllib.TOMLDecodeError:
+            # Configs written by earlier Windows builds put raw backslash paths
+            # into basic strings, so they no longer parse at all. Repair rather
+            # than discard: the user is invited by the file's own comment to
+            # edit these paths, and regenerating would throw that away.
+            repaired = _repair_backslash_strings(text)
+            raw = tomllib.loads(repaired)
+            try:
+                cfg.write_text(repaired, encoding="utf-8")
+            except OSError:
+                pass                      # read-only location: parsed is enough
+
         root = Path(raw.get("kiss", {}).get("root", cfg.parent)).expanduser()
         obj = cls.default(root)
         for role, val in (raw.get("paths") or {}).items():
@@ -168,14 +222,14 @@ class KissConfig:
             "# this machine. Everything else is derived from them.",
             "",
             "[kiss]",
-            f'root = "{self.root}"',
-            f'python = "{self.python}"',
-            f'relocation = "{self.relocation}"  # sandbox | port | symlink',
+            f"root = {_toml_str(self.root)}",
+            f"python = {_toml_str(self.python)}",
+            f"relocation = {_toml_str(self.relocation)}  # sandbox | port | symlink",
             "",
             "[paths]",
         ]
         for role in sorted(self.roles):
-            lines.append(f'{role} = "{self.roles[role]}"')
+            lines.append(f"{role} = {_toml_str(self.roles[role])}")
         return "\n".join(lines) + "\n"
 
     def resolve(self, legacy: str) -> Path:

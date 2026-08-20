@@ -112,7 +112,7 @@
     "Explain my data": "说明我的数据",
     "Connect AI first": "请先连接 AI",
     "Scientific software": "科学软件",
-    "Last checked on this Mac": "本机上次检查时间",
+    "Last checked on this machine": "本机上次检查时间",
     "Language & licence": "语言与许可证",
     "Source": "来源",
     "Open project website": "打开项目网站",
@@ -123,7 +123,7 @@
     "Not declared": "未声明",
     "Setup needed": "需要设置",
     "Verification failed": "验证失败",
-    "Verified on this Mac": "已在本机验证",
+    "Verified on this machine": "已在本机验证",
     "Bundled KI": "内置 KI",
     "Valid imported package": "有效的已导入软件包",
     "Package not checked": "软件包尚未检查",
@@ -180,6 +180,9 @@
     "Settings": "设置",
     "AI provider": "AI 服务商",
     "AI model": "AI 模型",
+    "Fixed for this chat — start a new chat to switch AI": "本对话已锁定 AI，请新建对话后更换",
+    "Fixed for this chat — start a new chat to switch model": "本对话已锁定模型，请新建对话后更换",
+    "the agent and model are fixed once a chat has started — start a new chat to use a different one": "对话开始后 AI 与模型即已锁定，如需更换请新建对话",
     "Choose skills for this chat": "选择本对话使用的技能",
     "Search KIs…": "搜索 KI…",
     "Search skills…": "搜索技能…",
@@ -193,7 +196,7 @@
     ,"Ready to set up": "可以开始设置"
     ,"Manual setup": "需要手动设置"
     ,"Software setup needed": "需要设置软件"
-    ,"Built from this KI's declarations and the files visible on this Mac—not invented by AI.": "根据该 KI 的声明和本机可见文件生成，不由 AI 猜测。"
+    ,"Built from this KI's declarations and the files visible on this machine—not invented by AI.": "根据该 KI 的声明和本机可见文件生成，不由 AI 猜测。"
     ,"Forcing": "驱动数据"
     ,"Parameters": "参数"
     ,"Initial conditions": "初始条件"
@@ -233,7 +236,7 @@
     [/^(\d+) skills?$/, "$1 个技能"],
     [/^(\d+) KIs$/, "$1 个 KI"],
     [/^(\d+) verified$/, "$1 个已验证"],
-    [/^(\d+)\/(\d+) verified on this Mac$/, "$1/$2 已在本机验证"],
+    [/^(\d+)\/(\d+) verified on this machine$/, "$1/$2 已在本机验证"],
     [/^(\d+) of (\d+) KIs · (\d+) verified here$/, "$1 / $2 个 KI · $3 个已在本机验证"],
     [/^Working · (\d+) steps?$/, "正在处理 · $1 步"],
     [/^Work details · (\d+) steps?$/, "工作详情 · $1 步"],

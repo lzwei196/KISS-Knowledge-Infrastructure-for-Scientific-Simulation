@@ -697,11 +697,48 @@ def _post(url: str, headers: dict, payload: dict) -> dict:
         raise ToolError(f"cannot reach {url}: {e.reason}") from None
 
 
+def _cacheable_system(system: str) -> list[dict]:
+    """The instruction block as one cacheable prefix.
+
+    Tools and system render ahead of messages, so a single breakpoint here
+    covers both. It matters more than one call per turn suggests: the agent
+    loop below runs up to ``max_steps`` times for a single user message, and
+    without this the same ~20KB KI catalogue was re-sent, and re-billed at full
+    price, on every one of them.
+    """
+    return [{"type": "text", "text": system,
+             "cache_control": {"type": "ephemeral"}}]
+
+
+def _cached_messages(messages: list[dict]) -> list[dict]:
+    """Messages with a rolling cache breakpoint on the newest turn.
+
+    Each loop step resends the entire conversation. Marking the tail lets the
+    next step read everything up to here from cache rather than paying for it
+    again. Copied rather than mutated — ``messages`` is reused across steps and
+    a breakpoint left behind on an old turn would pin the cache to stale text.
+    """
+    if not messages:
+        return messages
+    content = messages[-1].get("content")
+    if isinstance(content, str):
+        blocks: list = [{"type": "text", "text": content}]
+    elif isinstance(content, list) and content:
+        blocks = [dict(b) if isinstance(b, dict) else b for b in content]
+    else:
+        return messages
+    if not isinstance(blocks[-1], dict):
+        return messages
+    blocks[-1]["cache_control"] = {"type": "ephemeral"}
+    return [*messages[:-1], {**messages[-1], "content": blocks}]
+
+
 def _anthropic_turn(prov, model, system, messages, tools, key):
     data = _post(prov.base_url,
                  {"x-api-key": key, "anthropic-version": "2023-06-01"},
-                 {"model": model, "max_tokens": 4096, "system": system,
-                  "messages": messages, "tools": tools})
+                 {"model": model, "max_tokens": 4096,
+                  "system": _cacheable_system(system),
+                  "messages": _cached_messages(messages), "tools": tools})
     text = "".join(b.get("text", "") for b in data.get("content", [])
                    if b.get("type") == "text")
     calls = [(b["id"], b["name"], b.get("input") or {})

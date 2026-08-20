@@ -34,6 +34,7 @@ corrupted two ``preflight_check.py`` files — the entry point users run first.
 from __future__ import annotations
 
 import ast
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -228,6 +229,23 @@ def render_config_template(roles: list[str] | None = None) -> str:
 
 # --- the other direction: placeholders -> this machine ----------------------
 
+def _portable(target) -> str:
+    """The real path, written so it survives being pasted into source.
+
+    Tokens sit inside string literals -- ``_penv = "KISSPATH_PYTHON_ENV/lib"``
+    is the shape every KI uses -- so a native Windows path puts a lone
+    backslash in there and \\U opens an escape that is not valid in Python,
+    JSON or TOML. Every KI carrying such a line was rejected as "corrupted
+    paths" and setup could not start; on macOS the same path has no backslash
+    and the problem never appears.
+
+    Forward slashes avoid the escape entirely and Windows accepts them in
+    every file API, so the materialised copy is both parseable and runnable.
+    """
+    text = str(target)
+    return text.replace('\\', "/") if os.name == "nt" else text
+
+
 def unsubstitute(text: str, cfg) -> tuple[str, int, set[str]]:
     """Replace ``KISSPATH_*`` tokens with real paths from ``cfg``.
 
@@ -268,7 +286,7 @@ def unsubstitute(text: str, cfg) -> tuple[str, int, set[str]]:
             unresolved.add(tok)
             return tok
         n += 1
-        return str(target)
+        return _portable(target)
 
     text = pattern.sub(repl, text)
     return text, n, unresolved

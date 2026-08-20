@@ -1,0 +1,40 @@
+kiss_manifest_version: 1
+model: WRF_Hydro
+binary_type: Mach-O/ELF
+verified: unverified
+install_dir: wrf_hydro/source
+
+acquire:
+  strategy: build
+  repo: https://github.com/NCAR/wrf_hydro_nwm_public
+  # Upstream publishes this release with a leading "v". The version in
+  # dag.yaml is the scientific version, not a literal Git branch name.
+  ref: v5.2.0
+  commands:
+    - cmake -S trunk/NDHMS -B build -DCMAKE_BUILD_TYPE=Release
+    - cmake --build build --parallel
+    # CMake creates a complete Run directory. Put that directory where this
+    # KI's preflight and execution tools expect it, including all parameter
+    # tables and namelist templates—not just the executable.
+    - cmake -E make_directory trunk/NDHMS/Run
+    - cmake -E copy_directory build/Run trunk/NDHMS/Run
+  produces: trunk/NDHMS/Run/wrf_hydro_NoahMP.exe
+  system_deps: [git, cmake, make, gfortran, mpicc, mpicxx, mpif90, nc-config, nf-config]
+
+system_deps: [git, cmake, make, gfortran, mpicc, mpicxx, mpif90, nc-config, nf-config]
+python_deps: [numpy, pandas, xarray, netCDF4]
+
+notes: >-
+  Recipe derived from the official WRF-Hydro v5.2.0 source tree and its
+  CMake configuration on 2026-08-20. The corrected v5.2.0 checkout has been
+  observed on macOS, but the complete build has not yet been observed on a
+  clean Mac, so this remains honestly marked unverified. Project-specific
+  forcing, routing grids, parameters, and initial conditions are prepared
+  later inside each chat project and are not software installation gates.
+
+agent_hint: >-
+  WRF-Hydro v5.2.0 requires MPI plus netCDF C and Fortran built with compatible
+  compilers. On a Homebrew Mac the normal user-approved prerequisite is:
+  brew install mpich netcdf netcdf-fortran. Do not treat forcing or routing
+  data as an installation failure; obtain and transform those later for the
+  user's particular modelling project.

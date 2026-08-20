@@ -223,7 +223,16 @@ def claude_args(pol: Policy) -> tuple[list[str], Enforcement]:
         elif g.kind == "write":
             tools += [f"Write({d})", f"Edit({d})"]
         elif g.kind == "exec":
-            tools.append(f"Bash({g.path.rstrip('/')}/**)")
+            # Setup also grants specific build commands ("git", "cmake", …).
+            # Claude's Bash permission grammar treats those as command
+            # patterns, while executable trees remain filesystem patterns.
+            path = Path(g.path)
+            if not path.is_absolute() and "/" not in g.path:
+                tools.append(f"Bash({g.path}:*)")
+            elif path.is_file():
+                tools.append(f"Bash({g.path}:*)")
+            else:
+                tools.append(f"Bash({g.path.rstrip('/')}/**)")
     # Deduplicate, keep order stable so the argv is reproducible.
     seen, uniq = set(), []
     for t in tools:

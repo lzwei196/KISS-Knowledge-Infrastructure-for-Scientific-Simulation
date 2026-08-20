@@ -39,7 +39,9 @@ PROBE_FLAGS = ("--version", "-v", "--help", "-h", "")
 #: Python is no less installed than one written in Fortran; it just fails
 #: differently, so it has to be probed differently.
 INTERPRETERS = {
-    ".py": [sys.executable or "python3"],
+    # The frozen app's sys.executable is the GeoForge launcher, not Python.
+    # ``check`` replaces this with the selected model/runtime interpreter.
+    ".py": ["python3"],
     ".R": ["Rscript"], ".r": ["Rscript"],
     ".jl": ["julia"],
     ".sh": ["bash"], ".bash": ["bash"],
@@ -350,7 +352,10 @@ def check(ki, man=None, cfg=None, harvested: dict | None = None,
           timeout: int = 25, python: str | None = None) -> Verdict:
     """Run the four tests and return a verdict the agent can act on."""
     v = Verdict(model=getattr(ki, "name", str(ki)))
-    py = python or (getattr(cfg, "python", None) if cfg else None) or sys.executable or "python3"
+    py = python or (getattr(cfg, "python", None) if cfg else None)
+    if not py or getattr(sys, "frozen", False):
+        from .install import runtime_python
+        py = runtime_python(py)
 
     # Imports first: they are cheap, they are what 56 of the 127 KIs are made
     # of, and a missing module explains a binary failure more often than the

@@ -37,6 +37,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import tls
+
 RAW = "https://raw.githubusercontent.com/{repo}/HEAD/{path}"
 TREE = "https://api.github.com/repos/{repo}/git/trees/HEAD?recursive=1"
 
@@ -96,7 +98,7 @@ def _github_repo(url: str | None) -> str | None:
 def _fetch(url: str, timeout: int = 25) -> str | None:
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "kiss-recipe"})
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urllib.request.urlopen(req, timeout=timeout, context=tls.context()) as r:
             return r.read().decode("utf-8", "replace")
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
         return None
@@ -306,7 +308,7 @@ def validate_manifest(text: str, model: str) -> tuple[dict | None, str]:
 
 def propose_and_verify(ki, harvested, models_dir: Path, workdir: Path,
                        manifests_dir: Path, run_agent, emit,
-                       python: str | None = None) -> bool:
+                       python: str | None = None, verify_candidate=None) -> bool:
     """Discover a build recipe, have an agent write it, then prove it.
 
     ``run_agent(prompt) -> str`` is injected so this works with whichever
@@ -343,21 +345,30 @@ def propose_and_verify(ki, harvested, models_dir: Path, workdir: Path,
          f" produces={data['acquire'].get('produces')}\n")
 
     emit("[3/4] running it for real — a proposal is not a recipe…\n")
+    staged = manifests_dir / f"{ki.name}.yaml"
     with tempfile.TemporaryDirectory() as td:
         cand = Path(td) / f"{ki.name}.yaml"
         cand.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-        staged = manifests_dir / f"{ki.name}.yaml"
         backup = staged.read_text(encoding="utf-8") if staged.exists() else None
         manifests_dir.mkdir(parents=True, exist_ok=True)
-        staged.write_text(cand.read_text(encoding="utf-8"), encoding="utf-8")
-        ok, log = verify(ki.name, staged, models_dir, workdir, python)
+        if verify_candidate is None:
+            # CLI/source mode can stage beside the shipped manifests so the
+            # subprocess finds it through the normal lookup path.
+            staged.write_text(cand.read_text(encoding="utf-8"), encoding="utf-8")
+            ok, log = verify(ki.name, staged, models_dir, workdir, python)
+        else:
+            # A signed macOS app cannot write into Contents/Resources. The GUI
+            # supplies an in-process verifier and the candidate remains in the
+            # temporary file until it has actually passed.
+            ok, log = verify_candidate(cand)
         if not ok:
             # Leave the tree as it was: an unproven recipe must not linger and
             # look official.
-            if backup is None:
-                staged.unlink(missing_ok=True)
-            else:
-                staged.write_text(backup, encoding="utf-8")
+            if verify_candidate is None:
+                if backup is None:
+                    staged.unlink(missing_ok=True)
+                else:
+                    staged.write_text(backup, encoding="utf-8")
             emit("      install did NOT reach a passing preflight. Recipe discarded.\n")
             for line in log.strip().splitlines()[-12:]:
                 emit(f"      {line}\n")

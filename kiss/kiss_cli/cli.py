@@ -144,7 +144,7 @@ def cmd_init(args) -> int:
         print(_c("dim", f"using existing {cfg_file}"))
     else:
         cfg = paths.KissConfig.default(root)
-        cfg.python = args.python or sys.executable
+        cfg.python = args.python or install.runtime_python(sys.executable)
         cfg.relocation = args.relocation
         cfg_file.write_text(cfg.dumps(), encoding="utf-8")
         print(f"  wrote {cfg_file}")
@@ -198,12 +198,20 @@ def cmd_init(args) -> int:
     print(f"  [5/8] python deps ..... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
 
     prefix = cfg.roles["binaries"] / (man.install_dir or ki.name)
-    s, binary = install.acquire(man, prefix, cfg.python)
+    blocker = next((step for step in result.steps if not step.ok), None)
+    if blocker:
+        strategy = man.acquire.strategy if man.acquire else "none"
+        s, binary = install.Step(
+            f"acquire[{strategy}]", False,
+            f"not run because {blocker.name} failed: {blocker.detail}", skipped=True,
+        ), None
+    else:
+        s, binary = install.acquire(man, prefix, cfg.python)
     result.add(s)
     result.binary = binary
-    for note in install.place_where_the_ki_expects(ki, binary, cfg):
+    for note in install.place_where_the_ki_expects(ki, binary, cfg, prefix):
         print(_c("dim", f"        {note}"))
-    print(f"  [6/8] acquire ......... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
+    print(f"  [6/8] acquire ......... {_c('ok' if s.ok else 'WARN' if s.skipped else 'BLOCK', s.mark)}")
     if not s.ok:
         print(_c("dim", "        " + s.detail.strip().splitlines()[0][:100]))
 
@@ -213,8 +221,17 @@ def cmd_init(args) -> int:
     s = result.add(install.check_data(man, cfg))
     print(f"  [7/8] data ............ {_c('ok' if s.ok else 'WARN', s.mark)}")
 
-    s = result.add(install.run_preflight(ki, cfg.python, cfg))
-    print(f"  [8/8] preflight ....... {_c('ok' if s.ok else 'BLOCK', s.mark)}")
+    blocker = next((step for step in result.steps if not step.ok), None)
+    if blocker:
+        s = result.add(install.Step(
+            "preflight", False,
+            f"not run because {blocker.name} did not complete: {blocker.detail}",
+            skipped=True,
+        ))
+    else:
+        s = result.add(install.run_preflight(ki, cfg.python, cfg))
+    print(f"  [8/8] preflight ....... "
+          f"{_c('ok' if s.ok else 'WARN' if s.skipped else 'BLOCK', s.mark)}")
 
     written = handoff.write(ki, result, man, cfg, root)
     print(f"    agent handoff ... {_c('ok', 'ok')} ({len(written)} files)")

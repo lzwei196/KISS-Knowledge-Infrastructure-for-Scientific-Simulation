@@ -22,6 +22,8 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
+from . import tls
+
 KI_URL = ("https://github.com/lzwei196/KISS---Knowledge-Infrastructure-for-"
           "Scientific-Simulation/releases/download/v0.2.0/kiss-ki-packages.tar.gz")
 
@@ -56,7 +58,7 @@ def download_ki(progress: Callable[[str, float], None] | None = None) -> Path:
 
     note("downloading", 0.0)
     req = urllib.request.Request(KI_URL, headers={"User-Agent": "kiss-app"})
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with urllib.request.urlopen(req, timeout=60, context=tls.context()) as r:
         total = int(r.headers.get("Content-Length") or 0)
         with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
             got = 0
@@ -96,5 +98,11 @@ body{margin:0;height:100vh;display:flex;align-items:center;justify-content:cente
 </style></head><body><div class="box">
 <div class="ring"></div>
 <div id="msg">Setting up GeoForge — downloading the 127 KISS model packages <span id="pct"></span></div>
-<div class="dim">~74 MB, one time only. They live in your user library afterwards.</div>
-</div></body></html>"""
+<div class="dim" id="detail">~74 MB, one time only. They live in your user library afterwards.</div>
+</div><script>
+if((navigator.language||"").toLowerCase().startsWith("zh")){
+  document.documentElement.lang="zh-CN";
+  document.getElementById("msg").innerHTML='正在设置 GeoForge — 下载 127 个 KISS 模型包 <span id="pct"></span>';
+  document.getElementById("detail").textContent="约 74 MB，只需下载一次。之后会保存在你的用户资源库中。";
+}
+</script></body></html>"""

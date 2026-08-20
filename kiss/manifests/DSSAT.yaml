@@ -1,0 +1,54 @@
+kiss_manifest_version: 1
+model: DSSAT
+binary_type: Mach-O/ELF
+verified: observed
+install_dir: DSSAT
+
+acquire:
+  strategy: build
+  repo: https://github.com/DSSAT/dssat-csm-os.git
+  ref: v4.8.5.0
+  commands:
+    # gfortran 14+ rejects the upstream generated runtime format `T44X` as an
+    # invalid combination of two positioning descriptors.  It reaches this
+    # path only when soil-nitrogen output is enabled, so `--version` and the KI
+    # preflight both miss it.  Upstream intent is `T44,"..."`; apply the small,
+    # idempotent source correction before every build.
+    - >-
+      python3 -c "from pathlib import Path; p=Path('Soil/Inorganic_N/OPSOILNI.for');
+      s=p.read_text(); old='X,\"Total Inorganic N @dep(ppm):\"';
+      new=',\"Total Inorganic N @dep(ppm):\"';
+      assert old in s or new in s; p.write_text(s.replace(old,new))"
+    # The same upstream release has a continued FORMAT statement in OPSWBL
+    # where `1X` and the following repeated group have no separator.  Older
+    # runtimes accepted it; current gfortran aborts only after a real run tries
+    # to write SoilWat.OUT.  Preserve the requested output and correct the
+    # descriptor instead of silently disabling WAOUT.
+    - >-
+      python3 -c "from pathlib import Path; p=Path('Soil/SoilWater/OPSWBL.for');
+      s=p.read_text(); old='FORMAT(X,I4,1X,I3.3,1X,I5,1X';
+      new='FORMAT(X,I4,1X,I3.3,1X,I5,1X,';
+      assert old in s; p.write_text(s if new in s else s.replace(old,new))"
+    - cmake -S . -B build -DCMAKE_BUILD_TYPE=RELEASE
+    - cmake --build build --parallel
+  produces: build/bin/dscsm048
+  system_deps: [git, cmake, make, gfortran]
+
+system_deps: [git, cmake, make, gfortran]
+python_deps: [numpy, pandas, scipy, xarray, netCDF4]
+
+reference_case: build/bin/dscsm048 --version
+
+notes: >-
+  OBSERVED on macOS arm64 on 2026-08-19: GeoForge cloned the official
+  v4.8.5.0 release, configured an out-of-source RELEASE build with CMake and
+  Homebrew gfortran, produced build/bin/dscsm048, linked the complete checkout
+  into the KI's declared location, and reached a passing preflight. The Chinese
+  cultivar extension used by this KI is optional for core software verification
+  and is not part of the official source release.
+
+agent_hint: >-
+  DSSAT requires an out-of-source CMake build. The executable is
+  build/bin/dscsm048 and must retain access to the checkout's Data directory.
+  Model-specific weather, soil, genotype, and management inputs are prepared
+  later for each simulation; they are not installation prerequisites.

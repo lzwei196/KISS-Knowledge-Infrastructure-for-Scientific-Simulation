@@ -35,6 +35,32 @@ description: >-
 
 ## Data Preparation
 
+### Agent-first reference run (preferred when the user has no prepared data)
+
+Do not turn the 75 DSSAT declarations into a questionnaire.  For a small maize
+point case, run `tools/run_reference_case.py`.  The user supplies only the
+scientific choices that define the scenario (place, year, and planting date).
+The tool then:
+
+1. obtains a complete public daily weather year (NASA POWER first, recorded
+   ERA5 fallback when POWER is unavailable);
+2. states and records the bundled generic-soil assumption when no local soil
+   was supplied;
+3. creates the short DSSAT workdir, FileX, batch, support links, and weather;
+4. executes the real `dscsm048` binary and parses `Summary.OUT`; and
+5. archives the run, `result.json`, and `provenance.json` in the project.
+
+```bash
+python tools/run_reference_case.py \
+  --lat 32.625 --lon 116.375 --year 2010 \
+  --planting-date 2010-06-10 \
+  --output-dir outputs/DSSAT/bengbu-reference-2010
+```
+
+This is a functional, reproducible reference simulation, not a site-calibrated
+yield claim.  Replace the generic soil/cultivar/management with local evidence
+before using the result for inference or decisions.
+
 ### Forcing data
 
 **Data Sources**: Use `from ki_tools_common.load_forcing import load_daily_forcing` for CMFD/MSWX/NASA POWER.

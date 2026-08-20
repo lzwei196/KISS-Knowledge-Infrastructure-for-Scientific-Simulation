@@ -32,6 +32,12 @@ body{margin:0;background:var(--bg);color:var(--fg);
 aside{background:var(--surface);border-right:1px solid var(--line);
   display:flex;flex-direction:column;min-height:0}
 .brand{display:flex;align-items:center;gap:8px;padding:14px 14px 10px;font-weight:600}
+.brandlogo{width:25px;height:25px;border-radius:7px;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.hero-logo{width:62px;height:60px;margin-bottom:13px;filter:drop-shadow(0 7px 16px rgba(20,45,90,.18))}
+.mark{width:24px;height:24px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;
+  flex:0 0 auto;background:var(--brand-50);color:var(--brand);font-size:10px;font-weight:800;letter-spacing:-.3px}
+.mark.verify{background:color-mix(in srgb,var(--ok) 13%,transparent);color:var(--ok)}
+.mark.import{background:color-mix(in srgb,var(--warn) 13%,transparent);color:var(--warn)}
 .newbtn{margin:0 12px 10px;padding:8px 12px;border-radius:10px;border:1px solid var(--brand);
   background:var(--brand);color:#fff;font:inherit;font-weight:600;cursor:pointer}
 .slist{flex:1;overflow-y:auto;padding:0 8px;min-height:0}
@@ -42,7 +48,7 @@ aside{background:var(--surface);border-right:1px solid var(--line);
 .sess .m{color:var(--fg-3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sess .del{display:none;color:var(--fg-3);border:0;background:none;cursor:pointer;float:right}
 .sess:hover .del{display:inline}
-.sidefoot{border-top:1px solid var(--line-1);padding:10px 12px;display:flex;gap:8px}
+.sidefoot{border-top:1px solid var(--line-1);padding:10px 12px;display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .sidefoot button,.sidefoot a{flex:1;text-align:center;padding:7px 8px;border-radius:9px;
   border:1px solid var(--line);background:var(--raised);color:var(--fg);font:inherit;
   font-size:12.5px;cursor:pointer;text-decoration:none}
@@ -50,6 +56,15 @@ main{display:flex;flex-direction:column;min-height:0;min-width:0}
 header{display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 header h1{font-size:14.5px;margin:0;font-weight:600;flex:1;min-width:0;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ki-control{display:inline-flex;align-items:center;gap:7px;font-weight:600}
+.statuspill{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:99px;
+  font-size:11.5px;border:1px solid var(--line);color:var(--fg-2);white-space:nowrap}
+.statuspill.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent);background:color-mix(in srgb,var(--ok) 8%,transparent)}
+.statuspill.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent);background:color-mix(in srgb,var(--warn) 8%,transparent)}
+.statuspill.block{color:var(--block);border-color:color-mix(in srgb,var(--block) 45%,transparent);background:color-mix(in srgb,var(--block) 8%,transparent)}
+.agenttools{display:flex;align-items:center;gap:7px;padding-left:9px;border-left:1px solid var(--line)}
+.projectbtn{white-space:nowrap;color:var(--fg-2);font-size:12.5px}
+.agentlabel{font-size:10px;font-weight:750;color:var(--fg-3);letter-spacing:.07em}
 select,button{font:inherit;border-radius:9px;border:1px solid var(--line);
   background:var(--raised);color:var(--fg);padding:6px 10px;cursor:pointer}
 button.primary{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
@@ -64,8 +79,12 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .mchip.auto{border-style:dashed;color:var(--fg-2)}
 #chat{flex:1;overflow-y:auto;padding:20px 18px;min-height:0}
 .turn{max-width:800px;margin:0 auto 16px}
-.who{font-size:11.5px;color:var(--fg-3);margin-bottom:4px}
+.who{font-size:11.5px;color:var(--fg-3);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.who img{width:18px;height:18px;border-radius:6px}
 .bubble{border-radius:14px;padding:11px 14px;border:1px solid var(--line-1)}
+.bubble{user-select:text;-webkit-user-select:text}
+.turncopy{margin-left:auto;border:0;background:transparent;padding:1px 6px;color:var(--fg-3);font-size:11px;opacity:0;transition:opacity .12s}
+.turn:hover .turncopy,.turncopy:focus{opacity:1}
 .user .bubble{background:var(--brand-50);border-color:transparent}
 .agent .bubble{background:var(--surface)}
 .bubble pre{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;
@@ -76,19 +95,45 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .bubble h3{font-size:14px;margin:10px 0 4px}
 .bubble hr{border:0;border-top:1px solid var(--line);margin:10px 0}
 .bubble p{margin:5px 0}
-.empty{max-width:640px;margin:9vh auto;text-align:center;color:var(--fg-3)}
-.empty h2{font-size:17px;color:var(--fg);margin:0 0 6px}
+.bubble ul,.bubble ol{margin:6px 0;padding-left:22px}.bubble li{margin:2px 0}
+.worklog{margin:2px 0 9px;border:1px solid var(--line);border-radius:9px;background:var(--raised);color:var(--fg-2);font-size:11.5px}
+.worklog summary{cursor:pointer;padding:6px 9px;list-style:none}.worklog summary::-webkit-details-marker{display:none}.worklog summary:before{content:"›";display:inline-block;margin-right:6px;color:var(--fg-3);transition:transform .12s}.worklog[open] summary:before{transform:rotate(90deg)}
+.worksteps{padding:0 10px 7px 26px;color:var(--fg-3)}.worksteps div{padding:1px 0}
+.chat-artifact{margin:10px 0 5px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--raised)}
+.chat-artifact a{display:block;background:#fff}.chat-artifact img{display:block;width:100%;height:auto;max-height:560px;object-fit:contain}
+.chat-artifact figcaption{padding:7px 10px;color:var(--fg-2);font-size:11.5px;border-top:1px solid var(--line)}
+.empty{max-width:680px;margin:7vh auto;text-align:center;color:var(--fg-3)}
+.empty h2{font-size:21px;line-height:28px;color:var(--fg);margin:0 0 7px}
+.starter{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:22px;text-align:left}
+.starter button{padding:13px;border-radius:13px;display:flex;gap:10px;align-items:flex-start;background:var(--raised)}
+.starter button:hover{background:var(--hover)}
+.starter b{display:block;color:var(--fg);font-size:12.5px;margin-bottom:2px}
+.starter small{display:block;color:var(--fg-3);line-height:16px}
+@media(max-width:900px){.starter{grid-template-columns:1fr}.agentlabel{display:none}}
 footer{border-top:1px solid var(--line);padding:11px 18px}
-.composer{max-width:800px;margin:0 auto;display:flex;gap:8px;align-items:flex-end}
+.composer{max-width:800px;margin:0 auto;display:flex;gap:8px;align-items:flex-end;position:relative}
+.composer-tool{height:42px;min-width:42px;padding:0 10px;border-radius:12px;color:var(--fg-2);white-space:nowrap}
+.composer-tool.active{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 45%,var(--line));background:var(--brand-50)}
+#slashmenu{display:none;position:absolute;left:0;right:70px;bottom:50px;max-height:280px;
+  overflow-y:auto;background:var(--raised);border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 8px 30px rgba(0,0,0,.14);padding:6px;z-index:12}
+#slashmenu.open{display:block}
+.slashrow{display:flex;gap:9px;padding:7px 9px;border-radius:8px;cursor:pointer;align-items:flex-start}
+.slashrow:hover{background:var(--hover)}
+.slashrow small{display:block;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 textarea{flex:1;resize:none;min-height:42px;max-height:180px;padding:10px 13px;
   border:1px solid var(--line);border-radius:13px;background:var(--raised);color:var(--fg);font:inherit}
 textarea:focus{outline:none;border-color:var(--brand)}
 .hint{max-width:800px;margin:6px auto 0;color:var(--fg-3);font-size:11px}
 .banner{max-width:800px;margin:10px auto;border:1px solid var(--warn);color:var(--warn);
   border-radius:10px;padding:8px 12px;font-size:13px}
-#modal,#mpick{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;
+.banner a{color:inherit;font-weight:700}
+.banner button{margin-left:8px;padding:3px 8px;color:inherit;border-color:currentColor;background:transparent}
+.localagent{display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-top:1px solid var(--line-1)}
+.localagent:first-child{border-top:0}.localagent b{display:block;font-size:12.5px}.localagent small{display:block;color:var(--fg-3)}
+#modal,#mpick,#skillpick,#connections,#guide{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;
   align-items:center;justify-content:center;z-index:20}
-#modal.open,#mpick.open{display:flex}
+#modal.open,#mpick.open,#skillpick.open,#connections.open,#guide.open{display:flex}
 .card2{background:var(--bg);border:1px solid var(--line);border-radius:16px;
   width:min(500px,92vw);max-height:86vh;overflow-y:auto;padding:18px 20px}
 .card2 h2{font-size:15px;margin:0 0 12px}
@@ -107,39 +152,83 @@ textarea:focus{outline:none;border-color:var(--brand)}
   border-top-color:var(--brand);border-radius:99px;animation:s .7s linear infinite;
   vertical-align:-1px;margin-right:6px}
 @keyframes s{to{transform:rotate(360deg)}}
+.inspector{position:fixed;right:0;top:0;bottom:0;width:min(560px,94vw);background:var(--surface);
+  border-left:1px solid var(--line);box-shadow:-12px 0 36px rgba(0,0,0,.12);z-index:18;
+  transform:translateX(102%);transition:transform .2s ease;display:flex;flex-direction:column}
+.inspector.open{transform:translateX(0)}
+.inspecthead{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.inspecthead h2{font-size:15px;margin:0;flex:1}.inspectbody{padding:14px 16px;overflow-y:auto;min-height:0}
+.datacard{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-bottom:10px}
+.datacard h3{font-size:13.5px;margin:0 0 6px}.dataitem{padding:7px 0;border-top:1px solid var(--line-1)}
+.dataitem:first-child{border-top:0}.dataitem small{display:block;color:var(--fg-3);line-height:16px}
+.filetable{width:100%;border-collapse:collapse;font-size:11.5px}.filetable td{padding:5px 0;border-top:1px solid var(--line-1)}
+.prep-summary{background:linear-gradient(135deg,var(--brand-50),var(--raised) 65%);border-color:color-mix(in srgb,var(--brand) 25%,var(--line))}
+.prep-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:9px}
+.prep-metric{border:1px solid var(--line-1);background:var(--bg);border-radius:9px;padding:8px 9px}
+.prep-metric b{display:block;font-size:15px}.prep-metric small{color:var(--fg-3)}
+.lane{background:var(--raised);border:1px solid var(--line);border-radius:12px;margin-bottom:9px;overflow:hidden}
+.lane>summary{list-style:none;display:flex;align-items:center;gap:8px;padding:11px 12px;cursor:pointer}
+.lane>summary::-webkit-details-marker{display:none}.lane>summary:after{content:"›";color:var(--fg-3);font-size:18px;transition:transform .15s}.lane[open]>summary:after{transform:rotate(90deg)}
+.lane-body{padding:0 12px 9px;border-top:1px solid var(--line-1)}
+.actiontag{display:inline-flex;font-size:10.5px;border-radius:99px;padding:1px 7px;border:1px solid var(--line);color:var(--fg-2);margin-top:3px}
+.actiontag.ok{color:var(--ok)}.actiontag.warn{color:var(--warn)}.actiontag.block{color:var(--block)}
+.paperlink{display:block;color:var(--fg);text-decoration:none;padding:7px 0;border-top:1px solid var(--line-1)}
+.paperlink:hover{color:var(--brand)}.paperlink small{display:block;color:var(--fg-3)}
+.autolist{display:grid;gap:8px;margin-top:9px}.autorow{display:flex;gap:9px;align-items:flex-start}
+.autorow .mark{width:21px;height:21px;border-radius:99px}.autorow b{display:block;font-size:12.5px}.autorow small{display:block;color:var(--fg-3);line-height:16px}
+.advanced{background:transparent}.advanced>summary{cursor:pointer;color:var(--fg-2);font-size:12.5px;list-style:none}.advanced>summary::-webkit-details-marker{display:none}
+.advanced>summary:after{content:"  ›"}.advanced[open]>summary:after{content:"  ⌄"}.advanced-body{margin-top:10px}
+.runsteps{display:grid;gap:6px}.runstep{display:flex;align-items:center;gap:9px;padding:7px 0;border-top:1px solid var(--line-1)}
+.runstep:first-child{border-top:0}.runstep .stepdot{width:21px;height:21px;border-radius:99px;border:1px solid var(--line);display:grid;place-items:center;font-size:11px;color:var(--fg-3);flex:0 0 auto}
+.runstep.done .stepdot{background:var(--ok-bg);border-color:var(--ok);color:var(--ok)}.runstep.active .stepdot{background:var(--brand-50);border-color:var(--brand);color:var(--brand)}
+.runstep b{font-size:12.5px}.runstep small{display:block;color:var(--fg-3)}
+.projectbtn.run-working{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 45%,var(--line))}.projectbtn.run-waiting{color:var(--warn);border-color:var(--warn)}
+.projectbtn.run-complete{color:var(--ok);border-color:var(--ok)}.projectbtn.run-failed{color:var(--block);border-color:var(--block)}
 </style></head>
 <body>
 <aside>
-  <div class="brand"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="19" viewBox="0 0 188 180"><circle cx="90.8" cy="87.2" r="83.2" fill="#111215"/><g fill="none" stroke="#EEF0F2" stroke-width="3.6"><circle cx="90.8" cy="87.2" r="17.2"/><circle cx="90.8" cy="87.2" r="29.8"/><circle cx="90.8" cy="87.2" r="42.0"/></g><circle cx="90.8" cy="87.2" r="6.0" fill="#416FD8"/></svg><b>GeoForge</b><span id="nprov" style="color:var(--fg-3);font-weight:400;font-size:11.5px"></span></div>
-  <button class="newbtn" id="newsess">+ New session</button>
+  <div class="brand"><img class="brandlogo" src="/logo.svg" alt="GeoForge"><b>GeoForge</b><span id="nprov" style="color:var(--fg-3);font-weight:400;font-size:11.5px"></span></div>
+  <button class="newbtn" id="newsess" disabled>＋ New chat</button>
   <div class="slist" id="slist"></div>
   <div class="sidefoot">
-    <a href="/library">⛁ KISS Library</a>
-    <button id="settings">⚙ Settings</button>
+    <a href="/library">KI Library</a>
+    <button id="connect">⌁ Connections</button>
+    <button id="help">Guide</button>
+    <button id="settings">AI Settings</button>
+    <button data-language-toggle>简体中文</button>
     <button id="theme" title="theme" style="flex:0 0 auto">◐</button>
   </div>
 </aside>
 <main>
   <header>
     <h1 id="title">GeoForge Desktop</h1>
-    <span id="mchips"></span>
-    <button id="pickmodels">Models: <b id="mlabel">Auto</b></button>
-    <div class="seg" id="kindtog" title="Run through an installed agent CLI, or an API key">
-      <button data-k="cli">CLI</button><button data-k="api">API</button>
+    <button class="ki-control" id="pickmodels" disabled><span class="mark">KI</span><span id="mlabel">Auto KI</span></button>
+    <span id="kistatus" class="statuspill">Chooses for each task</span>
+    <button class="projectbtn" id="openproject" disabled title="Open this chat's local project folder in Finder">▣ Folder</button>
+    <button class="projectbtn" id="opendata" disabled title="See what GeoForge is doing in this project">◇ <span id="runlabel">Project status</span></button>
+    <div class="agenttools">
+      <span class="agentlabel">AI CONNECTION</span>
+      <div class="seg" id="kindtog" title="Use an installed agent or a direct API key">
+        <button data-k="cli" disabled>Local</button><button data-k="api" disabled>API</button>
+      </div>
+      <select id="prov" title="AI provider" disabled></select>
+      <select id="llm" title="AI model" disabled></select>
     </div>
-    <select id="prov" title="Provider"></select>
-    <select id="llm" title="LLM model"></select>
   </header>
   <div id="chat"></div>
   <footer>
     <div class="composer">
-      <textarea id="msg" rows="1" placeholder="Describe the task — with Models on Auto, the agent picks the right KI"></textarea>
-      <button class="primary" id="send">Send</button>
+      <div id="slashmenu"></div>
+      <button id="skills" class="composer-tool" title="Choose skills for this chat">✦ Skills</button>
+      <textarea id="msg" rows="1" placeholder="Ask a scientific question or describe a modelling task…"></textarea>
+      <button class="primary" id="send" disabled>Send</button>
     </div>
     <div class="hint" id="hint"></div>
   </footer>
   <div id="modal"><div class="card2">
-    <h2>Settings</h2>
+    <h2>AI connections</h2>
+    <label>Local agent CLIs</label><div id="s-local"></div>
+    <div style="display:flex;gap:8px;margin:6px 0 12px"><button id="s-recheck">Recheck local CLIs</button><span class="hint" id="s-local-msg" style="align-self:center;margin:0"></span></div>
     <label>Default provider</label><select id="s-def"></select>
     <label>Anthropic API key</label><input id="s-anthropic" autocomplete="off">
     <label>DeepSeek API key</label><input id="s-deepseek" autocomplete="off">
@@ -152,29 +241,97 @@ textarea:focus{outline:none;border-color:var(--brand)}
     </div>
   </div></div>
   <div id="mpick"><div class="card2">
-    <h2>Models for this session</h2>
-    <div class="hint" style="margin:0 0 8px">Leave empty for <b>Auto</b> — the agent reads the catalogue and picks. Install state: <span class="dot ok" style="display:inline-block"></span> installed &amp; usable · <span class="dot block" style="display:inline-block"></span> not installed — manage in the <a href="/library">KI Library</a>.</div>
-    <input id="mq" placeholder="search…" autocomplete="off" style="margin-bottom:8px">
+    <h2>Knowledge Infrastructures for this chat</h2>
+    <div class="hint" style="margin:0 0 8px">Leave empty for <b>Auto KI</b>. A green badge means the scientific software passed its check on this Mac. You can still discuss KIs that need setup.</div>
+    <input id="mq" placeholder="Search KIs…" autocomplete="off" style="margin-bottom:8px">
     <div id="mrows" style="max-height:46vh;overflow-y:auto"></div>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="primary" id="m-apply">Apply</button>
-      <button id="m-clear">Auto (clear)</button>
+      <button id="m-clear">Use Auto KI</button>
       <button id="m-close">Close</button>
     </div>
   </div></div>
+  <div id="skillpick"><div class="card2">
+    <h2>Skills for this chat</h2>
+    <div class="hint" style="margin:0 0 8px">GeoForge can choose skills automatically. Pin one here when you want that procedure used throughout this chat, or type <b>/skill-name</b>.</div>
+    <input id="skillq" placeholder="Search skills…" autocomplete="off" style="margin-bottom:8px">
+    <div id="skillrows" style="max-height:50vh;overflow-y:auto"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="primary" id="skill-apply">Apply</button>
+      <button id="skill-clear">Clear</button>
+      <button id="skill-close">Close</button>
+    </div>
+  </div></div>
+  <div id="connections"><div class="card2">
+    <h2>MCP connections</h2>
+    <div class="hint" style="margin:0 0 10px">Local agents inherit MCP servers already configured for them. Select which ones this chat should use.</div>
+    <div id="connrows"></div>
+    <div id="githubcard" class="datacard" style="margin-top:12px"></div>
+    <div class="hint" id="connnote" style="margin:8px 0"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="primary" id="conn-apply">Apply</button>
+      <button id="conn-close">Close</button>
+    </div>
+  </div></div>
+  <div id="guide"><div class="card2">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><img class="brandlogo" src="/logo.svg" alt="GeoForge"><div><h2 style="margin:0">How GeoForge works</h2><div class="hint" style="margin:0">Chat first. KIs provide the scientific capability.</div></div></div>
+    <div class="starter" style="grid-template-columns:1fr">
+      <button><span class="mark">1</span><span><b>Describe the task</b><small>Start with the scientific question, not software setup.</small></span></button>
+      <button><span class="mark">KI</span><span><b>Use Auto KI or choose one</b><small>GeoForge announces which KI it uses and whether it is verified here.</small></span></button>
+      <button><span class="mark verify">✓</span><span><b>Let the agent set it up</b><small>The agent uses the KI and KDT diagnostics until preflight passes, pausing only when it genuinely needs you.</small></span></button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px"><a href="/library" style="text-decoration:none"><button class="primary">Open KI Library</button></a><button id="guide-close">Close</button></div>
+  </div></div>
+  <section class="inspector" id="datapanel">
+    <div class="inspecthead"><span class="mark">◇</span><h2>Project status</h2><button id="data-close">✕</button></div>
+    <div class="inspectbody" id="databody"></div>
+    <div style="padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap">
+      <button class="primary" id="data-agent">Continue in chat</button>
+      <button id="data-upload">Add source data</button>
+      <input type="file" id="datafile" multiple style="display:none">
+      <input type="file" id="paperfile" accept="application/pdf,.pdf" multiple style="display:none">
+      <span class="hint" id="data-msg" style="align-self:center;margin:0"></span>
+    </div>
+  </section>
 </main>
+<script src="/clipboard.js"></script>
+<script src="/i18n.js"></script>
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-function md(t){let h=esc(t);
+function artifactImage(alt,raw,sid){
+  const rel=String(raw||"").trim().replace(/^&lt;|&gt;$/g,"");
+  const parts=rel.split("/");
+  if(!sid||parts[0]!=="artifacts"||parts.some(p=>!p||p===".."||p===".")||!/^.*\.(png|jpe?g|gif|webp|svg)$/i.test(rel))return null;
+  const src=`/api/session/${encodeURIComponent(sid)}/artifact?path=${encodeURIComponent(rel)}`;
+  const caption=alt||parts[parts.length-1];
+  return `<figure class="chat-artifact"><a href="${src}" target="_blank" rel="noreferrer"><img src="${src}" alt="${alt}" loading="lazy"></a><figcaption>${caption}</figcaption></figure>`;
+}
+const TOOL_LABELS={list_project_files:"Checked project files",read_project_file:"Read project context",list_ki_files:"Inspected KI files",read_ki_file:"Read KI guidance",run_preflight:"Checked the model installation",list_skills:"Checked available skills",read_skill:"Read skill instructions",run_ki_tool:"Ran a KI preparation tool",write_project_file:"Prepared a project file",create_project_plot:"Created a plot",report_project_progress:"Updated project progress",request_user_action:"Prepared a request for you",run_builtin_setup:"Ran the software setup recipe",run_setup_command:"Ran a setup command"};
+const TOOL_LABELS_ZH={list_project_files:"已检查项目文件",read_project_file:"已读取项目上下文",list_ki_files:"已检查 KI 文件",read_ki_file:"已读取 KI 指南",run_preflight:"已检查模型安装",list_skills:"已检查可用技能",read_skill:"已读取技能说明",run_ki_tool:"已运行 KI 准备工具",write_project_file:"已准备项目文件",create_project_plot:"已生成图表",report_project_progress:"已更新项目进度",request_user_action:"已准备需要你处理的请求",run_builtin_setup:"已运行软件设置流程",run_setup_command:"已运行设置命令"};
+const chineseUI=()=>window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN";
+function workLabel(name){if(chineseUI()&&TOOL_LABELS_ZH[name])return TOOL_LABELS_ZH[name];if(TOOL_LABELS[name])return TOOL_LABELS[name];const words=String(name).replace(/([a-z])([A-Z])/g,"$1 $2").replace(/[_.-]+/g," ");return chineseUI()?"已使用 "+words:"Used "+words.toLowerCase();}
+function extractWork(t,streaming){const tools=[];let body=String(t??"");
+  body=body.replace(/\[\[GEOF_TOOL:([A-Za-z0-9_.-]+)\]\]/g,(m,n)=>{tools.push(n);return "";});
+  // Fold the raw tool syntax used by older saved chats as well.
+  body=body.replace(/^\s*`?>\s*([A-Za-z_][\w.-]*)\([^`\n]*\)`?\s*$/gm,(m,n)=>{tools.push(n);return "";});
+  const compact=tools.filter((n,i)=>i===0||n!==tools[i-1]);
+  if(!compact.length)return {body,html:""};
+  const label=chineseUI()?(streaming?`正在处理 · ${compact.length} 步`:`工作详情 · ${compact.length} 步`):(streaming?`Working · ${compact.length} step${compact.length===1?"":"s"}`:`Work details · ${compact.length} step${compact.length===1?"":"s"}`);
+  return {body,html:`<details class="worklog"><summary>${label}</summary><div class="worksteps">${compact.map(n=>`<div>${esc(workLabel(n))}</div>`).join("")}</div></details>`};}
+function md(t,sid=CUR&&CUR.id,streaming=false){const work=extractWork(t,streaming);let h=esc(work.body);
   h=h.replace(/```(\w*)\n([\s\S]*?)```/g,(m,l,c)=>`<pre><code>${c}</code></pre>`);
+  h=h.replace(/!\[([^\]\n]*)\]\(([^)\n]+)\)/g,(m,a,p)=>artifactImage(a,p,sid)||m);
   h=h.replace(/`([^`\n]+)`/g,"<code>$1</code>");
   h=h.replace(/^\s*---\s*$/gm,"<hr>");
   h=h.replace(/^###?\s+(.+)$/gm,"<h3>$1</h3>");
   h=h.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>");
-  return h.split(/\n{2,}/).map(p=>/^<(pre|h3|hr)/.test(p.trim())?p:`<p>${p.replace(/\n/g,"<br>")}</p>`).join("");}
+  h=h.replace(/(^|\n)((?:\s*[-*]\s+[^\n]+(?:\n|$))+)/g,(m,lead,block)=>lead+`<ul>${block.trim().split("\n").map(line=>`<li>${line.replace(/^\s*[-*]\s+/,"")}</li>`).join("")}</ul>`);
+  h=h.replace(/(^|\n)((?:\s*\d+[.)]\s+[^\n]+(?:\n|$))+)/g,(m,lead,block)=>lead+`<ol>${block.trim().split("\n").map(line=>`<li>${line.replace(/^\s*\d+[.)]\s+/,"")}</li>`).join("")}</ol>`);
+  return work.html+h.split(/\n{2,}/).map(p=>/^<(pre|h3|hr|figure|ul|ol)/.test(p.trim())?p:`<p>${p.replace(/\n/g,"<br>")}</p>`).join("");}
 
-let SESSIONS=[], CUR=null, MODELS=[], STATUS={}, PROV={providers:[],any_usable:false}, PICK=new Set(), busy=false;
+let SESSIONS=[], CUR=null, MODELS=[], SKILLS=[], MCP={connections:[],github:{}}, STATUS={}, LAST_PREP=null, RUN=null,
+    PROV={providers:[],any_usable:false}, PICK=new Set(), SKPICK=new Set(), MCPPICK=new Set(), busy=false;
 // CLI or API. Remembered, because it is a fact about this machine's setup
 // rather than a per-question choice.
 let KIND=localStorage.getItem("kiss.kind")||"cli";
@@ -182,29 +339,78 @@ let KIND=localStorage.getItem("kiss.kind")||"cli";
 let KIND_SYNCED_FOR;
 
 function stateClass(n){
-  // Binary by design: green = installed and its check passed, red = not.
-  return (STATUS[n]||{}).state==="ready"?"ok":"block";}
+  const s=(STATUS[n]||{}).state;
+  return s==="verified"?"ok":s==="failed"?"block":"warn";}
+function stateLabel(n){
+  const s=STATUS[n]||{};
+  return s.label||(s.state==="verified"?"Verified on this Mac":"Setup needed");}
 
 async function loadAll(){
-  [SESSIONS,MODELS,STATUS,PROV]=await Promise.all([
-    fetch("/api/sessions").then(r=>r.json()),
-    fetch("/api/models").then(r=>r.json()),
-    fetch("/api/status").then(r=>r.json()),
-    fetch("/api/providers").then(r=>r.json())]);
-  drawSessions(); drawProviders();
-  if(!CUR && SESSIONS.length) openSession(SESSIONS[0].id);
-  else if(!CUR) drawEmpty();
+  try{
+    [SESSIONS,MODELS,SKILLS,MCP,STATUS,PROV]=await Promise.all([
+      fetch("/api/sessions").then(r=>r.json()),
+      fetch("/api/models").then(r=>r.json()),
+      fetch("/api/skills").then(r=>r.json()),
+      fetch("/api/mcp").then(r=>r.json()),
+      fetch("/api/status").then(r=>r.json()),
+      fetch("/api/providers").then(r=>r.json())]);
+    drawSessions(); drawProviders();
+    const requested=new URLSearchParams(location.search).get("session");
+    if(requested&&SESSIONS.some(s=>s.id===requested)){
+      await openSession(requested);
+      const draft=sessionStorage.getItem(`kiss.draft.${requested}`);
+      if(draft){$("#msg").value=draft;sessionStorage.removeItem(`kiss.draft.${requested}`);$("#msg").focus();}
+      history.replaceState({},"","/");
+    }
+    else if(!CUR && SESSIONS.length) await openSession(SESSIONS[0].id);
+    else if(!CUR) drawEmpty();
+    setControls(true);
+  }catch(e){
+    $("#chat").innerHTML=`<div class="banner"><b>GeoForge could not start.</b> ${esc(e)}<br>Reload the app; if it repeats, open the KI Library and AI Settings.</div>`;
+  }
+}
+const RUN_GROUPS=[
+  {name:"Understand",stages:["understanding","choosing_ki"],detail:"Understand the goal and choose a general KI"},
+  {name:"Prepare",stages:["software","researching","preparing"],detail:"Check software and prepare suitable data"},
+  {name:"Validate",stages:["validating"],detail:"Check the prepared model inputs"},
+  {name:"Run",stages:["running"],detail:"Run the real scientific model"},
+  {name:"Results",stages:["results"],detail:"Save and explain the results"},
+];
+function runGroupIndex(stage){const i=RUN_GROUPS.findIndex(g=>g.stages.includes(stage));return i<0?0:i;}
+function runButtonLabel(run){
+  if(!run||!run.goal)return "Project status";
+  if(run.status==="working")return "Working";
+  if(run.status==="waiting_for_user")return "Needs you";
+  if(run.status==="complete")return "Complete";
+  if(run.status==="failed")return "Needs attention";
+  return "Ready";
+}
+function drawRunStatus(run=RUN){
+  RUN=run||null;const b=$("#opendata"),label=$("#runlabel");if(!b||!label)return;
+  label.textContent=runButtonLabel(RUN);
+  b.classList.remove("run-working","run-waiting","run-complete","run-failed");
+  if(RUN&&RUN.status==="working")b.classList.add("run-working");
+  if(RUN&&RUN.status==="waiting_for_user")b.classList.add("run-waiting");
+  if(RUN&&RUN.status==="complete")b.classList.add("run-complete");
+  if(RUN&&RUN.status==="failed")b.classList.add("run-failed");
+  b.title=RUN&&RUN.summary?RUN.summary:"See what GeoForge is doing in this project";
+}
+async function refreshRun(id=CUR&&CUR.id){
+  if(!id)return null;
+  const r=await fetch(`/api/session/${id}/run`);if(!r.ok)return null;
+  const run=await r.json();if(CUR&&CUR.id===id)drawRunStatus(run);return run;
 }
 function drawSessions(){
   $("#slist").innerHTML=SESSIONS.map(s=>`
     <div class="sess ${CUR&&CUR.id===s.id?'sel':''}" data-id="${esc(s.id)}">
-      <div class="t">${esc(s.title)}<button class="del" data-id="${esc(s.id)}" title="delete">✕</button></div>
-      <div class="m">${s.models.length?esc(s.models.join(", ")):"Auto"} · ${s.n} msg</div>
+      <div class="t">${esc(s.title)}<button class="del" data-id="${esc(s.id)}" title="Archive chat; project files are kept">✕</button></div>
+      <div class="m">${s.models.length?esc(s.models.join(", ")):"Auto KI"} · ${s.n} messages${s.skills&&s.skills.length?` · ${s.skills.length} skill${s.skills.length===1?"":"s"}`:""}${s.mcps&&s.mcps.length?` · ${s.mcps.length} MCP`:""}</div>
     </div>`).join("");
   document.querySelectorAll(".sess").forEach(e=>e.onclick=ev=>{
     if(ev.target.classList.contains("del")) return; openSession(e.dataset.id);});
   document.querySelectorAll(".sess .del").forEach(b=>b.onclick=async ev=>{
     ev.stopPropagation();
+    if(!confirm("Archive this chat? Its local project files will be kept.")) return;
     await fetch(`/api/session/${b.dataset.id}/delete`,{method:"POST",body:"{}"});
     if(CUR&&CUR.id===b.dataset.id) CUR=null;
     await loadAll();});
@@ -213,12 +419,28 @@ function drawLLM(){
   const p=PROV.providers.find(x=>x.name===$("#prov").value)||{};
   const ms=p.models||[];
   const cur=(CUR&&CUR.llm_model)||"";
-  $("#llm").innerHTML=ms.map(m=>
-    `<option value="${esc(m)}" ${m===(cur||p.default_model)?"selected":""}>${esc(m)}</option>`).join("")
-    ||'<option value="">(default)</option>';
-  $("#llm").style.display=ms.length?"":"none";
+  const nativeDefault=p.kind==="cli"?`<option value="" ${cur?"":"selected"}>CLI default</option>`:"";
+  $("#llm").innerHTML=nativeDefault+ms.map(m=>
+    `<option value="${esc(m)}" ${m===(cur||(p.kind==="api"?p.default_model:""))?"selected":""}>${esc(m)}</option>`).join("")
+    ||'<option value="">default</option>';
+  $("#llm").style.display=(ms.length||p.kind==="cli")?"":"none";
 }
 function kindOf(n){const p=PROV.providers.find(x=>x.name===n);return p?p.kind:"";}
+function providerIssue(p){
+  if(!p.installed)return "not installed";
+  if(p.compatible===false)return "update needed";
+  if(p.authenticated===false)return "sign-in needed";
+  return "check needed";
+}
+function providerOptionLabel(p){
+  if(!p.usable)return `${p.label} — ${providerIssue(p)}`;
+  if(p.kind==="cli"&&p.authenticated==null)return `${p.label} — login checked on first use`;
+  return p.label;
+}
+function currentProviderReady(){
+  const name=$("#prov").value;
+  return PROV.providers.some(p=>p.name===name&&p.usable);
+}
 function drawProviders(){
   const sel=$("#prov");
   // Adopt the session's own kind when the session CHANGES, so reopening one
@@ -234,61 +456,104 @@ function drawProviders(){
   const mine=PROV.providers.filter(p=>p.kind===KIND);
   const usableHere=mine.filter(p=>p.usable);
   document.querySelectorAll("#kindtog button").forEach(b=>{
-    const n=PROV.providers.filter(p=>p.kind===b.dataset.k&&p.usable).length;
+    const candidates=PROV.providers.filter(p=>p.kind===b.dataset.k);
+    const n=candidates.filter(p=>p.usable).length;
+    const installed=b.dataset.k==="cli"?candidates.filter(p=>p.installed).length:n;
     b.classList.toggle("on",b.dataset.k===KIND);
-    b.classList.toggle("none",n===0);
-    b.title=n?`${n} ready`:(b.dataset.k==="api"?"No API key yet — add one in Settings"
-                                               :"No agent CLI found on this machine");});
+    b.classList.toggle("none",installed===0);
+    b.title=n?`${n} ready`:installed?`${installed} installed — sign-in or recheck needed`
+      :(b.dataset.k==="api"?"No API key yet — add one in Settings":"No agent CLI installed on this machine");});
   sel.innerHTML=mine.map(p=>
-    `<option value="${esc(p.name)}" ${p.usable?"":"disabled"}>${esc(p.label)}${p.usable?"":" — needs setup"}</option>`).join("")
+    `<option value="${esc(p.name)}" ${p.usable?"":"disabled"}>${esc(providerOptionLabel(p))}</option>`).join("")
     ||'<option value="">(none)</option>';
   const usable=PROV.providers.filter(p=>p.usable);
   sel.value = (cur&&mine.find(p=>p.name===cur&&p.usable))?cur:
               (PROV.default&&mine.find(p=>p.name===PROV.default&&p.usable))?PROV.default:
-              (usableHere[0]||{}).name||"";
-  $("#nprov").textContent=`${usable.length}/${PROV.providers.length} ready`;
+              (usableHere[0]||mine.find(p=>p.installed)||mine[0]||{}).name||"";
+  $("#nprov").textContent=usable.length?`${usable.length} AI ready`:"AI setup needed";
   const gap=$("#kindgap");
   if(gap) gap.remove();
   if(!usableHere.length){
+    const installed=mine.filter(p=>p.installed);
+    const states=installed.map(p=>`${esc(p.label)}: ${providerIssue(p)}`).join("; ");
     const what = KIND==="api"
-      ? `No API key yet. Open <b>⚙ Settings</b> and add one — Anthropic, OpenAI, DeepSeek or OpenRouter.`
-      : `No agent CLI found on this machine. Install one (claude, codex, gemini, kimi or qwen) and reload, or switch to <b>API</b>.`;
+      ? `No API connection yet. Open <b>AI Settings</b> and add a key.`
+      : installed.length
+        ? `Local CLIs are installed but not ready — <b>${states}</b>. ${esc(installed[0].fix||installed[0].auth_command||"Check them in Terminal")}.`
+        : `No local agent CLI is installed. Open <b>AI Settings</b> for setup details.`;
     $("#chat").insertAdjacentHTML("beforebegin",
-      `<div class="banner" id="kindgap">${what}</div>`);
+      `<div class="banner" id="kindgap">${what}${KIND==="cli"?'<button id="quick-recheck">Recheck</button>':""}</div>`);
+    const quick=$("#quick-recheck");if(quick)quick.onclick=()=>refreshProviders(true);
   }
   const old=$("#gatebanner"); if(old) old.remove();
   if(!PROV.any_usable){
     $("#chat").insertAdjacentHTML("beforebegin",
-      `<div class="banner" id="gatebanner"><b>Nothing can run yet.</b> Add an API key in ⚙ Settings or install an agent CLI, then reload.</div>`);}
-  $("#send").disabled=!PROV.any_usable;
+      `<div class="banner" id="gatebanner"><b>Connect an AI to begin.</b> Open AI Settings to add a key or configure a local agent.</div>`);}
+  $("#send").disabled=busy||!currentProviderReady();
   drawLLM();
 }
 function drawEmpty(){
+  RUN=null;drawRunStatus(null);
+  const old=$("#kibanner"); if(old) old.remove();
+  $("#openproject").disabled=true;
+  $("#opendata").disabled=true;
   $("#title").textContent="GeoForge Desktop";
-  $("#mlabel").textContent="Auto"; $("#mchips").innerHTML="";
-  $("#chat").innerHTML=`<div class="empty"><h2>Where should we start?</h2>
-    <div>Start a session and describe the task. On <b>Auto</b>, the agent reads the
-    127-model catalogue and picks the right KI — or pin models yourself.</div></div>`;
+  $("#mlabel").textContent="Auto KI";
+  $("#kistatus").className="statuspill";
+  $("#kistatus").textContent="Chooses for each task";
+  drawSkillButton();
+  $("#chat").innerHTML=`<div class="empty"><img class="hero-logo" src="/logo.svg" alt="GeoForge">
+    <h2>What would you like to model?</h2>
+    <div>Describe the scientific task. GeoForge can choose a KI automatically, or you can pin one for this chat.</div>
+    <div class="starter">
+      <button data-action="focus"><span class="mark">AI</span><span><b>Start chatting</b><small>Ask a question or describe a simulation.</small></span></button>
+      <button data-action="kis"><span class="mark">KI</span><span><b>Choose a KI</b><small>Pin scientific software to this chat.</small></span></button>
+      <button data-action="library"><span class="mark verify">✓</span><span><b>Browse & verify</b><small>Import KIs and check what can run.</small></span></button>
+    </div></div>`;
+  document.querySelector('[data-action="focus"]').onclick=()=>$("#msg").focus();
+  document.querySelector('[data-action="kis"]').onclick=()=>$("#pickmodels").click();
+  document.querySelector('[data-action="library"]').onclick=()=>location.href="/library";
 }
 async function openSession(id){
   CUR=await (await fetch("/api/session/"+id)).json();
+  $("#openproject").disabled=busy;
+  $("#opendata").disabled=busy;
   drawSessions();
   $("#title").textContent=CUR.title;
   drawModelLabel();
+  drawSkillButton();
   const c=$("#chat"); c.innerHTML="";
-  for(const m of CUR.messages) addTurn(m.role==="user"?"You":"GeoForge", m.role==="user"?"user":"agent").innerHTML=md(m.text);
+  for(const m of CUR.messages) addTurn(m.role==="user"?"You":"GeoForge", m.role==="user"?"user":"agent").innerHTML=md(m.text,CUR.id);
   c.scrollTop=c.scrollHeight;
   drawProviders();
+  await refreshRun(id);
 }
 function drawModelLabel(){
   const ms=CUR?CUR.models:[];
-  $("#mlabel").textContent=ms.length?`${ms.length} pinned`:"Auto";
-  $("#mchips").innerHTML=ms.map(n=>`<span class="mchip"><span class="dot ${stateClass(n)}"></span>${esc(n)}</span>`).join("")
-    ||'<span class="mchip auto">Auto — agent decides</span>';
+  $("#mlabel").textContent=ms.length?(ms.length===1?ms[0]:`${ms.length} KIs`):"Auto KI";
+  const badge=$("#kistatus");
+  if(!ms.length){badge.className="statuspill";badge.textContent="Chooses for each task";}
+  else{
+    const verified=ms.filter(n=>(STATUS[n]||{}).state==="verified").length;
+    const failed=ms.some(n=>(STATUS[n]||{}).state==="failed");
+    badge.className=`statuspill ${verified===ms.length?"ok":failed?"block":"warn"}`;
+    badge.textContent=ms.length===1?stateLabel(ms[0]):`${verified}/${ms.length} verified on this Mac`;
+  }
+  const old=$("#kibanner"); if(old) old.remove();
+  const pending=ms.filter(n=>!(STATUS[n]||{}).can_run);
+  if(pending.length){
+    const href=pending.length===1?`/setup?model=${encodeURIComponent(pending[0])}`:"/library";
+    $("#chat").insertAdjacentHTML("beforebegin",`<div class="banner" id="kibanner"><b>${esc(pending.join(", "))}</b> ${pending.length===1?"is":"are"} not verified on this Mac. You can keep chatting, but the scientific software must pass before it runs. <a href="${href}">${pending.length===1?"Let the agent set it up":"Open KI Library"}</a></div>`);
+  }
 }
 function addTurn(who,cls){
   const d=document.createElement("div"); d.className="turn "+cls;
-  d.innerHTML=`<div class="who">${who}</div><div class="bubble"></div>`;
+  d.innerHTML=`<div class="who">${cls==="agent"?'<img src="/logo.svg" alt="">':''}${who}<button class="turncopy" title="Copy this message">Copy</button></div><div class="bubble"></div>`;
+  d.querySelector(".turncopy").onclick=async e=>{
+    const button=e.currentTarget,text=d.querySelector(".bubble").innerText;
+    const ok=window.GeoForgeClipboard?await window.GeoForgeClipboard.write(text):false;
+    button.textContent=ok?"Copied":"Copy failed";setTimeout(()=>button.textContent="Copy",1200);
+  };
   const c=$("#chat"); if(c.querySelector(".empty")) c.innerHTML="";
   c.appendChild(d); c.scrollTop=c.scrollHeight;
   return d.querySelector(".bubble");
@@ -299,22 +564,40 @@ async function ensureSession(){
     body:JSON.stringify({provider:$("#prov").value})});
   if(!r0.ok){$("#hint").textContent="could not create session ("+r0.status+")";throw new Error("session");}
   CUR=await r0.json();
-  SESSIONS.unshift({id:CUR.id,title:CUR.title,models:[],n:0,created:CUR.created});
+  SESSIONS.unshift({id:CUR.id,title:CUR.title,models:[],skills:[],mcps:[],n:0,created:CUR.created,
+                    project_path:CUR.project_path});
   drawSessions(); return CUR;
 }
 async function send(){
-  const text=$("#msg").value.trim(); if(!text||busy) return;
+  let text=$("#msg").value.trim(); if(!text||busy) return;
+  const slash=text.match(/^\/([^\s]+)(?:\s+([\s\S]+))?$/);
+  if(slash){
+    if(slash[1].toLowerCase()==="skills"&&!slash[2]){
+      $("#msg").value=""; drawSlash(); openSkills(); return;
+    }
+    const skill=SKILLS.find(item=>item.name.toLowerCase()===slash[1].toLowerCase());
+    if(skill){
+      await attachSkill(skill.name);
+      if(!slash[2]) return;
+      text=slash[2].trim();
+      if(!text) return;
+    }
+  }
+  if(window.GeoForgeI18n&&GeoForgeI18n.isChineseText(text))
+    GeoForgeI18n.setLanguage("zh-CN");
   busy=true; setControls(false); $("#msg").value="";
+  drawSlash();
   await ensureSession();
   const target=CUR.id;   // the session this reply belongs to, whatever gets clicked
+  let runPoll=setInterval(()=>refreshRun(target).catch(()=>{}),1000);
   try{
     const up=await fetch(`/api/session/${target}/update`,{method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({provider:$("#prov").value,llm_model:$("#llm").value})});
     if(!up.ok){const d=await up.json().catch(()=>({}));
       $("#hint").textContent=d.error||("update failed "+up.status);
-      busy=false; setControls(true); return;}
-    addTurn("You","user").innerHTML=md(text);
+      clearInterval(runPoll);busy=false; setControls(true); return;}
+    addTurn("You","user").innerHTML=md(text,target);
     const out=addTurn("GeoForge","agent"); out.innerHTML='<span class="spin"></span>working…';
     let raw="";
     const r=await fetch(`/api/session/${target}/chat`,{method:"POST",
@@ -322,33 +605,133 @@ async function send(){
     const rd=r.body.getReader(), dec=new TextDecoder();
     for(;;){const{done,value}=await rd.read(); if(done)break;
       raw+=dec.decode(value,{stream:true});
-      if(CUR&&CUR.id===target){out.innerHTML=md(raw);$("#chat").scrollTop=$("#chat").scrollHeight;}}
+      if(CUR&&CUR.id===target){out.innerHTML=md(raw,target,true);$("#chat").scrollTop=$("#chat").scrollHeight;}}
     if(!raw.trim()&&CUR&&CUR.id===target)
       out.innerHTML='<p style="color:var(--fg-3)">(no output)</p>';
-  }catch(e){ $("#hint").textContent="request failed: "+e; }
+    else if(CUR&&CUR.id===target) out.innerHTML=md(raw,target,false);
+  }catch(e){
+    $("#hint").innerHTML=`The request failed. Check <button id="recover-settings" style="padding:1px 6px">AI Settings</button>, then try again.`;
+    $("#recover-settings").onclick=openSettings;
+  }
+  clearInterval(runPoll);
   busy=false; setControls(true);
   const s=await (await fetch("/api/session/"+target)).json();
   const i=SESSIONS.findIndex(x=>x.id===target);
-  if(i>=0){SESSIONS[i].title=s.title;SESSIONS[i].n=s.messages.length;SESSIONS[i].models=s.models;}
+  if(i>=0){SESSIONS[i].title=s.title;SESSIONS[i].n=s.message_count??s.messages.length;
+           SESSIONS[i].models=s.models;SESSIONS[i].skills=s.skills||[];
+           SESSIONS[i].mcps=s.mcps||[];
+           SESSIONS[i].project_path=s.project_path;}
   if(CUR&&CUR.id===target){CUR=s;$("#title").textContent=s.title;}
+  await refreshRun(target);
   drawSessions();
 }
 function setControls(on){
   // busy must freeze the whole binding, not just Send — changing provider or
   // model mid-stream produced a next turn with settings the user changed
   // halfway through the previous one.
-  $("#send").disabled=!on||!PROV.any_usable;
+  $("#send").disabled=!on||!currentProviderReady();
   $("#prov").disabled=!on; $("#llm").disabled=!on;
   document.querySelectorAll("#kindtog button").forEach(b=>b.disabled=!on);
   $("#pickmodels").disabled=!on; $("#newsess").disabled=!on;
+  $("#openproject").disabled=!on||!CUR;
+  $("#opendata").disabled=!on||!CUR;
+  $("#skills").disabled=!on;
+  $("#connect").disabled=!on;
 }
 $("#send").onclick=send;
 $("#msg").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}});
-$("#msg").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";});
+$("#msg").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";drawSlash();});
 $("#prov").addEventListener("change",drawLLM);
 document.querySelectorAll("#kindtog button").forEach(b=>b.onclick=()=>{
   KIND=b.dataset.k; localStorage.setItem("kiss.kind",KIND); drawProviders();});
 $("#newsess").onclick=async()=>{CUR=null; drawEmpty(); await ensureSession(); openSession(CUR.id);};
+$("#openproject").onclick=async()=>{
+  if(!CUR) return;
+  const r=await fetch(`/api/session/${CUR.id}/open`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+  const d=await r.json().catch(()=>({}));
+  $("#hint").textContent=r.ok?`Opened ${d.project_path}`:(d.error||"Could not open the project folder");
+};
+
+/* per-chat data requirements and local input files */
+const sizeLabel=n=>n<1024?`${n} B`:n<1048576?`${(n/1024).toFixed(1)} KB`:`${(n/1048576).toFixed(1)} MB`;
+const prepClass=s=>s==="ready"||s==="validate_sources"?"ok":s==="software_needed"?"block":"warn";
+const actionClass=a=>a==="needs_decision"?"block":a==="provide_or_find"?"warn":"ok";
+function renderData(data){
+  const files=data.files||[];
+  const referenceFiles=data.reference_files||[];
+  const prep=data.preparation||{}, sw=prep.software_summary||{}, run=data.project_run||RUN||{};
+  const models=prep.models||[], lanes=prep.lanes||[], papers=prep.literature||[], missingPapers=prep.literature_missing||[];
+  drawRunStatus(run);
+  const runModels=(run.selected_kis||[]).length?run.selected_kis:models.map(m=>m.name);
+  const modelchips=runModels.length?runModels.map(name=>`<span class="mchip">General KI: ${esc(name)}</span>`).join(" "):"";
+  const softwareLabel=sw.total?`${sw.ready||0} / ${sw.total} software verified`:'Auto KI';
+  const stateLabel=run.status==="working"?"GeoForge is working":run.status==="waiting_for_user"?"One thing needs you":run.status==="complete"?"Project complete":run.status==="failed"?"Project needs attention":run.goal?"Ready to continue":"Ready when you are";
+  const stateClass=run.status==="complete"?"ok":run.status==="waiting_for_user"?"warn":run.status==="failed"?"block":"";
+  const summary=`<div class="datacard prep-summary"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">${esc(stateLabel)}</h3><span class="statuspill ${stateClass}">${esc(softwareLabel)}</span></div>
+    <div class="hint" style="margin:0 0 8px">${esc(run.summary||(run.goal?"GeoForge will continue from the project files and conversation.":"Describe the scientific goal in chat to begin."))}</div>${run.goal?`<div class="dataitem"><b>Goal</b><small>${esc(run.goal)}</small></div>`:""}${modelchips?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px">${modelchips}</div>`:""}</div>`;
+  const current=runGroupIndex(run.stage), allDone=run.status==="complete";
+  const progress=`<div class="datacard"><h3>Project progress</h3><div class="runsteps">${RUN_GROUPS.map((group,i)=>{
+    const done=allDone||i<current,active=Boolean(run.goal)&&!allDone&&i===current;
+    return `<div class="runstep ${done?'done':active?'active':''}"><span class="stepdot">${done?'✓':active?'•':i+1}</span><span><b>${esc(group.name)}</b><small>${esc(group.detail)}</small></span></div>`;
+  }).join("")}</div></div>`;
+  const request=(run.blocker&&run.status==="waiting_for_user")?run.blocker:data.human_request;
+  const waiting=request&&(request.status==="waiting"||run.status==="waiting_for_user");
+  const human=waiting?`<div class="datacard" style="border-color:color-mix(in srgb,var(--warn) 45%,var(--line))"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">One thing needs you</h3><span class="statuspill warn">${esc(request.kind||'action')}</span></div><b>${esc(request.title||'Help needed')}</b><div class="hint" style="margin:4px 0">${esc(request.message||'')}</div>${request.url?`<a href="${esc(request.url)}" target="_blank" rel="noreferrer"><button style="margin-top:7px">Open official page</button></a>`:''}</div>`:
+    `<div class="datacard"><h3>No action needed from you</h3><div class="hint" style="margin:0">Keep working in chat. GeoForge will interrupt only for an important decision, private data, a login, licence, or system permission.</div></div>`;
+  const filecard=`<div class="datacard"><h3>Project files · ${files.length}</h3>
+    ${files.length?`<table class="filetable">${files.map(f=>`<tr><td><b>${esc(f.name)}</b><br><span style="color:var(--fg-3)">${esc(f.relative_path)}</span></td><td style="text-align:right">${sizeLabel(f.size)}</td></tr>`).join("")}</table>`:
+    '<div class="hint" style="margin:0">No local source files yet. This is not an error—the agent can begin by checking documented public sources.</div>'}</div>`;
+  const laneCards=lanes.filter(l=>l.count).map((lane,i)=>{
+    const shown=(lane.items||[]).slice(0,80);
+    const items=shown.map(item=>{
+      const shared=(item.models||[]).length>1?`<span class="mchip">shared by ${(item.models||[]).map(esc).join(' + ')}</span>`:`<span class="mchip">${esc((item.models||[])[0]||'KI')}</span>`;
+      const variants=(item.variants||[]).map(v=>[v.model,v.unit,v.file].filter(Boolean).map(esc).join(' · ')).filter(Boolean);
+      const detail=item.description||item.notes||item.format||item.source_kind||"Declared by the KI";
+      return `<div class="dataitem"><div style="display:flex;gap:6px;align-items:flex-start"><b style="flex:1">${esc(item.name)}</b>${shared}</div><small>${esc(detail)}</small>${variants.length?`<small>${variants.join('<br>')}</small>`:''}<span class="actiontag ${actionClass(item.action)}">${esc(item.action_label)}</span></div>`;
+    }).join("");
+    const more=lane.count>shown.length?`<div class="hint" style="margin:6px 0">${lane.count-shown.length} more requirements remain available to the agent.</div>`:"";
+    return `<details class="lane"><summary><span class="mark">${i+1}</span><span style="flex:1"><b>${esc(lane.label)}</b><small style="display:block;color:var(--fg-3)">${lane.count} internal KI requirement${lane.count===1?'':'s'}</small></span></summary><div class="lane-body"><div class="hint" style="margin:8px 0 2px">These details are for audit and debugging; the agent owns them.</div>${items}${more}</div></details>`;
+  }).join("");
+  const literature=papers.length||missingPapers.length?`<div class="datacard"><div style="display:flex;align-items:center;gap:7px"><h3 style="flex:1">Optional model reading</h3><button id="paper-add" style="padding:4px 8px">Add paper PDF</button></div>
+    <div class="hint" style="margin:0 0 6px">The KI ships paper metadata, not copyrighted PDFs. These are recommendations for this model; they do not block a run.</div>${referenceFiles.length?`<div class="dataitem"><b>Added to this project · ${referenceFiles.length}</b><small>${referenceFiles.map(f=>esc(f.name)).join(', ')}</small></div>`:''}${papers.map(lib=>`<details><summary><b>${esc(lib.model)}</b> · ${lib.count} papers · ${lib.open_access} open access</summary>${(lib.recommended||[]).map(p=>`<a class="paperlink" href="${esc(p.url)}" target="_blank" rel="noreferrer">${esc(p.title||p.doi)}<small>${esc(p.role||'reference')} · ${p.access==='open'?'open access':'use your own access'}</small></a>`).join('')}</details>`).join('')}${missingPapers.length?`<div class="hint" style="margin:7px 0">No paper metadata yet for: ${missingPapers.map(esc).join(', ')}.</div>`:''}
+    <div class="hint" style="margin:8px 0 0">If you legally download a paper, add it here so the agent can use it inside this project. GeoForge never republishes it.</div></div>`:"";
+  const totalInternal=lanes.reduce((n,l)=>n+(l.count||0),0);
+  const advanced=`<details class="datacard advanced"><summary>Advanced details · ${totalInternal} internal KI requirements</summary><div class="advanced-body"><div class="hint" style="margin:0 0 9px">Project: <code>${esc(data.project_path)}</code></div>${laneCards}${filecard}${literature}</div></details>`;
+  return `${summary}${progress}${human}${advanced}`;
+}
+async function refreshData(){
+  if(!CUR)return;
+  $("#databody").innerHTML='<span class="spin"></span>reading project status…';
+  const r=await fetch(`/api/session/${CUR.id}/data`), data=await r.json();
+  LAST_PREP=r.ok?data:null;
+  $("#databody").innerHTML=r.ok?renderData(data):`<div class="banner">${esc(data.error||"Could not read data requirements")}</div>`;
+  const paperButton=$("#paper-add");if(paperButton)paperButton.onclick=()=>$("#paperfile").click();
+}
+$("#opendata").onclick=async()=>{$("#datapanel").classList.add("open");await refreshData();};
+$("#data-close").onclick=()=>$("#datapanel").classList.remove("open");
+$("#data-agent").onclick=async()=>{
+  if(busy)return;
+  $("#datapanel").classList.remove("open");$("#msg").focus();
+};
+$("#data-upload").onclick=()=>$("#datafile").click();
+$("#datafile").onchange=async e=>{
+  if(!CUR||!e.target.files.length)return;
+  let done=0;$("#data-msg").textContent="uploading…";
+  for(const file of e.target.files){
+    const r=await fetch(`/api/session/${CUR.id}/upload?name=${encodeURIComponent(file.name)}`,{method:"POST",body:file});
+    if(r.ok)done++;else{$("#data-msg").textContent=`Could not add ${file.name}`;return;}
+  }
+  $("#data-msg").textContent=`${done} file${done===1?'':'s'} added`;e.target.value="";await refreshData();
+};
+$("#paperfile").onchange=async e=>{
+  if(!CUR||!e.target.files.length)return;
+  let done=0;$("#data-msg").textContent="adding paper…";
+  for(const file of e.target.files){
+    const r=await fetch(`/api/session/${CUR.id}/paper-upload?name=${encodeURIComponent(file.name)}`,{method:"POST",body:file});
+    if(r.ok)done++;else{const d=await r.json().catch(()=>({}));$("#data-msg").textContent=d.error||`Could not add ${file.name}`;return;}
+  }
+  $("#data-msg").textContent=`${done} paper${done===1?'':'s'} added to this project`;e.target.value="";await refreshData();
+};
 
 /* model picker */
 function drawPick(){
@@ -358,7 +741,8 @@ function drawPick(){
     .map(m=>`<div class="pickrow ${PICK.has(m.name)?'on':''}" data-n="${esc(m.name)}">
       <span class="tick"></span><span class="dot ${stateClass(m.name)}"></span>
       <span style="flex:1;min-width:0"><b>${esc(m.name)}</b>
-      <span style="color:var(--fg-3);font-size:12px"> ${esc((m.reference||"").slice(0,60))}</span></span></div>`).join("");
+      <span style="color:var(--fg-3);font-size:12px"> ${esc((m.reference||"").slice(0,48))}</span></span>
+      <span style="color:var(--fg-3);font-size:11px">${esc(stateLabel(m.name))}</span></div>`).join("");
   document.querySelectorAll(".pickrow").forEach(e=>e.onclick=()=>{
     const n=e.dataset.n; PICK.has(n)?PICK.delete(n):PICK.add(n); drawPick();});
 }
@@ -371,9 +755,115 @@ $("#m-apply").onclick=async()=>{
   CUR=await (await fetch(`/api/session/${CUR.id}/update`,{method:"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[...PICK]})})).json();
   drawModelLabel(); drawSessions(); $("#mpick").classList.remove("open");
+  if($("#datapanel").classList.contains("open")) refreshData();
+};
+
+/* skills: chat-composer picker and /skill-name commands */
+function drawSkillButton(){
+  const n=(CUR&&CUR.skills||[]).length;
+  $("#skills").textContent=n?`✦ ${n}`:"✦ Skills";
+  $("#skills").classList.toggle("active",n>0);
+  $("#skills").title=n?`${n} skill${n===1?"":"s"} pinned to this chat · the agent may also choose others automatically`:"Choose skills for this chat · optional, the agent can choose automatically";
+}
+function drawSkills(){
+  const q=($("#skillq").value||"").toLowerCase();
+  $("#skillrows").innerHTML=SKILLS
+    .filter(s=>!q||(s.name+" "+s.description).toLowerCase().includes(q))
+    .map(s=>`<div class="pickrow ${SKPICK.has(s.name)?'on':''}" data-skill="${esc(s.name)}">
+      <span class="tick"></span><span style="min-width:0"><b>/${esc(s.name)}</b>
+      <span style="display:block;color:var(--fg-3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.description||"Reusable agent procedure")}</span></span></div>`).join("")
+    ||'<div class="hint">No matching skills found.</div>';
+  document.querySelectorAll("#skillrows .pickrow").forEach(row=>row.onclick=()=>{
+    const name=row.dataset.skill;SKPICK.has(name)?SKPICK.delete(name):SKPICK.add(name);drawSkills();});
+}
+function openSkills(){
+  SKPICK=new Set(CUR&&CUR.skills||[]);$("#skillq").value="";drawSkills();
+  $("#skillpick").classList.add("open");
+}
+async function setSessionSkills(names){
+  await ensureSession();
+  const r=await fetch(`/api/session/${CUR.id}/update`,{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify({skills:names})});
+  const updated=await r.json();
+  if(!r.ok) throw new Error(updated.error||"Could not update skills");
+  CUR=updated;
+  const listed=SESSIONS.find(s=>s.id===CUR.id);if(listed) listed.skills=CUR.skills||[];
+  drawSkillButton();drawSessions();
+}
+async function attachSkill(name){
+  const names=new Set(CUR&&CUR.skills||[]);names.add(name);
+  await setSessionSkills([...names]);
+  $("#msg").value="";drawSlash();
+  $("#hint").textContent=`/${name} is active for this chat`;
+}
+function drawSlash(){
+  const match=$("#msg").value.match(/^\/([^\s]*)$/), menu=$("#slashmenu");
+  if(!match){menu.classList.remove("open");menu.innerHTML="";return;}
+  const q=match[1].toLowerCase();
+  const hits=SKILLS.filter(s=>!q||s.name.toLowerCase().includes(q)).slice(0,8);
+  menu.innerHTML=`<div class="slashrow" data-all="1"><span class="mark">✦</span><span><b>/skills</b><small>Browse all installed skills</small></span></div>`+
+    hits.map(s=>`<div class="slashrow" data-skill="${esc(s.name)}"><span class="mark">/</span><span style="min-width:0"><b>/${esc(s.name)}</b><small>${esc(s.description||"Reusable agent procedure")}</small></span></div>`).join("");
+  menu.classList.add("open");
+  menu.querySelector('[data-all="1"]').onclick=()=>{$("#msg").value="";drawSlash();openSkills();};
+  menu.querySelectorAll("[data-skill]").forEach(row=>row.onclick=()=>attachSkill(row.dataset.skill));
+}
+$("#skills").onclick=openSkills;
+$("#skillq").addEventListener("input",drawSkills);
+$("#skill-close").onclick=()=>$("#skillpick").classList.remove("open");
+$("#skill-clear").onclick=()=>{SKPICK.clear();drawSkills();};
+$("#skill-apply").onclick=async()=>{await setSessionSkills([...SKPICK]);$("#skillpick").classList.remove("open");};
+
+/* MCP connections; the explicit GitHub setup button is the only mutating action */
+function drawConnections(){
+  $("#connrows").innerHTML=(MCP.connections||[]).map(c=>`<div class="pickrow ${MCPPICK.has(c.name)?'on':''}" data-mcp="${esc(c.name)}">
+    <span class="tick"></span><span style="flex:1"><b>${esc(c.name)}</b><span style="display:block;color:var(--fg-3);font-size:11.5px">Configured for ${esc(c.clients.join(", "))} · ${esc(c.transports.join(", "))}</span></span></div>`).join("")
+    ||'<div class="hint">No MCP servers are configured for the local agents yet.</div>';
+  document.querySelectorAll("#connrows [data-mcp]").forEach(row=>row.onclick=()=>{
+    const name=row.dataset.mcp;MCPPICK.has(name)?MCPPICK.delete(name):MCPPICK.add(name);drawConnections();});
+  const gh=MCP.github||{};
+  $("#githubcard").innerHTML=`<h3>GitHub MCP</h3><div class="hint" style="margin:0 0 8px">${gh.configured?`Configured for ${esc((gh.clients||[]).join(", "))}.`:
+    'Use GitHub’s official MCP server for repositories, issues, and pull requests.'}</div>`+
+    (gh.can_configure_codex&&!((gh.clients||[]).includes("codex"))?'<button id="github-configure" class="primary">Configure for Codex</button>':
+     `<a href="${esc(gh.setup_url||"https://github.com/github/github-mcp-server")}" target="_blank" rel="noreferrer">Official setup guide</a>`);
+  const setup=$("#github-configure");if(setup)setup.onclick=configureGitHub;
+  $("#connnote").textContent=MCP.note||"";
+}
+function openConnections(){MCPPICK=new Set(CUR&&CUR.mcps||[]);drawConnections();$("#connections").classList.add("open");}
+async function configureGitHub(){
+  const button=$("#github-configure");button.disabled=true;button.textContent="Configuring…";
+  const r=await fetch("/api/mcp/github/configure-codex",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+  const result=await r.json();
+  if(!r.ok){button.disabled=false;button.textContent="Try again";$("#connnote").textContent=result.error||"Could not configure GitHub";return;}
+  MCP=await (await fetch("/api/mcp")).json();
+  const github=(MCP.connections||[]).find(c=>c.name.toLowerCase().includes("github"));if(github)MCPPICK.add(github.name);
+  drawConnections();$("#connnote").textContent=result.message||"GitHub MCP configured";
+}
+$("#connect").onclick=openConnections;
+$("#conn-close").onclick=()=>$("#connections").classList.remove("open");
+$("#conn-apply").onclick=async()=>{
+  await ensureSession();
+  const r=await fetch(`/api/session/${CUR.id}/update`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mcps:[...MCPPICK]})});
+  const updated=await r.json();if(!r.ok){$("#connnote").textContent=updated.error||"Could not update connections";return;}
+  CUR=updated;const listed=SESSIONS.find(s=>s.id===CUR.id);if(listed)listed.mcps=CUR.mcps||[];
+  drawSessions();$("#connections").classList.remove("open");
 };
 
 /* settings */
+function drawLocalSettings(){
+  const box=$("#s-local");if(!box)return;
+  const local=PROV.providers.filter(p=>p.kind==="cli"&&p.installed);
+  box.innerHTML=local.length?local.map(p=>{const state=p.usable?(p.authenticated==null?'Available':'Ready'):providerIssue(p).replace(/^./,c=>c.toUpperCase());return `<div class="localagent"><span class="dot ${p.usable&&p.authenticated!=null?'ok':'warn'}" style="margin-top:7px"></span><span><b>${esc(p.label)} · ${state}</b><small>${esc(p.status||'Installed')}${p.usable?'':` · ${esc(p.fix||p.auth_command||'Check this CLI in Terminal')}`}</small></span></div>`}).join("")
+    :'<div class="hint" style="margin:0">No local agent CLI found. Install Claude Code, Codex, Gemini, Kimi, or Qwen, then recheck.</div>';
+}
+let LAST_PROVIDER_CHECK=0;
+async function refreshProviders(showStatus=false){
+  const note=$("#s-local-msg");if(showStatus&&note)note.textContent="checking…";
+  try{
+    PROV=await (await fetch("/api/providers?refresh=1")).json();
+    LAST_PROVIDER_CHECK=Date.now();drawProviders();drawLocalSettings();
+    if(showStatus&&note)note.textContent="checked";
+  }catch(e){if(showStatus&&note)note.textContent="could not recheck";}
+}
 async function openSettings(){
   const s=await (await fetch("/api/settings")).json();
   $("#s-def").innerHTML='<option value="">(first usable)</option>'+PROV.providers.map(p=>
@@ -381,9 +871,13 @@ async function openSettings(){
   for(const [id,k] of [["s-anthropic","ANTHROPIC_API_KEY"],["s-deepseek","DEEPSEEK_API_KEY"],
                        ["s-openai","OPENAI_API_KEY"],["s-openrouter","OPENROUTER_API_KEY"]])
     $("#"+id).value=s.api_keys[k]||"";
+  drawLocalSettings();
   $("#modal").classList.add("open");
 }
 $("#settings").onclick=openSettings;
+$("#s-recheck").onclick=()=>refreshProviders(true);
+$("#help").onclick=()=>$("#guide").classList.add("open");
+$("#guide-close").onclick=()=>$("#guide").classList.remove("open");
 $("#s-close").onclick=()=>$("#modal").classList.remove("open");
 $("#s-save").onclick=async()=>{
   const body={default_provider:$("#s-def").value,api_keys:{
@@ -395,6 +889,10 @@ $("#s-save").onclick=async()=>{
   PROV=await (await fetch("/api/providers")).json(); drawProviders();
   setTimeout(()=>{$("#s-msg").textContent="";},1500);
 };
+window.addEventListener("focus",()=>{
+  const waiting=PROV.providers.some(p=>p.kind==="cli"&&p.installed&&!p.usable);
+  if(waiting&&Date.now()-LAST_PROVIDER_CHECK>3000)refreshProviders(false);
+});
 $("#theme").onclick=()=>{
   const d=document.body.hasAttribute("data-dark");
   d?document.body.removeAttribute("data-dark"):document.body.setAttribute("data-dark","");

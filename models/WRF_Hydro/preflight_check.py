@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Preflight check for WRF-Hydro — verifies environment before simulation.
+Preflight check for WRF-Hydro — verifies the scientific software installation.
 
 Run this BEFORE attempting any model execution. It checks that all required
-binaries, packages, and data paths are available.
+the real model executable is available. Project-specific forcing, routing
+grids, parameters, and initial conditions are checked later for each run.
 
 Usage:
     python preflight_check.py
@@ -120,12 +121,12 @@ def main():
     # Model-specific checks
     # Binary: WRF-Hydro NoahMP
     check_file("KISSPATH_BINARIES/wrf_hydro/source/trunk/NDHMS/Run/wrf_hydro_NoahMP.exe", "WRF-Hydro NoahMP", executable=True)
-    # Directory: Forcing data
-    check_dir("KISSPATH_FORCING", "Forcing data")
-
     print()
 
-    # Common data checks
+    # Data readiness is deliberately informational here. A KI can be verified
+    # as installed before the user has described a basin or simulation. The
+    # project preparation agent validates the concrete forcing and grid files
+    # before a real run.
     check_common_data()
 
     # Diagnostics available?

@@ -63,14 +63,28 @@ class KI:
 
     # --- parsed metadata ---------------------------------------------------
     @cached_property
-    def meta(self) -> dict:
-        """``identity`` block from dag.yaml, plus a few derived fields."""
+    def dag_doc(self) -> dict:
+        """Parsed ``dag.yaml`` shared by every catalogue view.
+
+        Keeping one parsed document matters for the desktop data-readiness
+        view: a large KI such as DSSAT has hundreds of declarations, and the
+        old ``meta`` and ``forcing_vars`` properties each parsed the file
+        independently.
+        """
         if not self.dag or yaml is None:
             return {}
         try:
-            doc = yaml.safe_load(self.dag.read_text(encoding="utf-8", errors="replace")) or {}
+            doc = yaml.safe_load(
+                self.dag.read_text(encoding="utf-8", errors="replace")
+            ) or {}
         except Exception:
             return {}
+        return doc if isinstance(doc, dict) else {}
+
+    @cached_property
+    def meta(self) -> dict:
+        """``identity`` block from dag.yaml, plus a few derived fields."""
+        doc = self.dag_doc
         ident = doc.get("identity") or {}
         impl = ident.get("implementation") or {}
         return {
@@ -89,12 +103,7 @@ class KI:
     @cached_property
     def forcing_vars(self) -> list[str]:
         """Names of the atmospheric/forcing inputs the model requires."""
-        if not self.dag or yaml is None:
-            return []
-        try:
-            doc = yaml.safe_load(self.dag.read_text(encoding="utf-8", errors="replace")) or {}
-        except Exception:
-            return []
+        doc = self.dag_doc
         out = []
         for item in ((doc.get("inputs") or {}).get("forcing") or []):
             if isinstance(item, dict) and item.get("name"):

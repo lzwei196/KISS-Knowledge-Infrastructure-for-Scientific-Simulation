@@ -19,6 +19,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import tls
 from .manifest import Manifest
 
 
@@ -29,10 +30,14 @@ class Step:
     detail: str = ""
     #: commands actually executed, for reproducibility and for the agent handoff
     commands: list[str] = field(default_factory=list)
+    #: A prerequisite failed, so this step was deliberately not attempted.
+    #: This is not success, but presenting it as an independent failure hides
+    #: the real cause (for example: clone failed -> preflight missing binary).
+    skipped: bool = False
 
     @property
     def mark(self) -> str:
-        return "ok" if self.ok else "FAILED"
+        return "ok" if self.ok else "SKIPPED" if self.skipped else "FAILED"
 
 
 @dataclass
@@ -125,7 +130,10 @@ def _acq_download(man, prefix, python):
     dest = prefix / Path(a.url).name
     try:
         if not dest.exists():
-            urllib.request.urlretrieve(a.url, dest)
+            req = urllib.request.Request(a.url, headers={"User-Agent": "geoforge-desktop"})
+            with urllib.request.urlopen(req, timeout=1800, context=tls.context()) as src, \
+                    dest.open("wb") as out:
+                shutil.copyfileobj(src, out)
     except Exception as e:
         return Step("acquire[download]", False, f"{a.url}: {e}"), None
 
@@ -261,7 +269,8 @@ def _acq_manual(man, prefix, python):
                 man.agent_hint or "this model must be obtained by hand — see SKILL.md"), None
 
 
-def place_where_the_ki_expects(ki, binary: Path, cfg) -> list[str]:
+def place_where_the_ki_expects(ki, binary: Path | None, cfg,
+                               install_prefix: Path | None = None) -> list[str]:
     """Make the KI's declared binary path true.
 
     preflight_check.py hardcodes where the binary lives, and that declaration
@@ -288,6 +297,37 @@ def place_where_the_ki_expects(ki, binary: Path, cfg) -> list[str]:
                 return None
         p = Path(decl)
         return p if p.is_absolute() else None
+
+    # Some source-built models expect the whole checkout under KISSPATH_HOME
+    # while manifests correctly install software under the binaries role.
+    # When the declared executable and built executable have the same suffix,
+    # link the expected checkout root to the real install prefix. Linking only
+    # the executable made DSSAT find dscsm048 but miss its adjacent Data tree.
+    if binary and install_prefix:
+        prefix = Path(install_prefix)
+        try:
+            rel_binary = Path(binary).relative_to(prefix)
+        except ValueError:
+            rel_binary = None
+        if rel_binary and rel_binary.parts:
+            for decl in runnable.declared(ki):
+                want = resolve(decl)
+                if want is None or len(want.parts) < len(rel_binary.parts):
+                    continue
+                if tuple(want.parts[-len(rel_binary.parts):]) != rel_binary.parts:
+                    continue
+                declared_root = want
+                for _ in rel_binary.parts:
+                    declared_root = declared_root.parent
+                if declared_root == prefix or declared_root.exists():
+                    continue
+                try:
+                    declared_root.parent.mkdir(parents=True, exist_ok=True)
+                    declared_root.symlink_to(prefix, target_is_directory=True)
+                    notes.append(f"linked install tree {declared_root} -> {prefix}")
+                except OSError as e:
+                    notes.append(f"could not link install tree at {declared_root}: {e}")
+                break
 
     # The KI ships tools/ and declares it at KISSPATH_KI_ROOT/<name>/
     # knowledge_infrastructure/tools, while materialisation puts the package at
@@ -385,6 +425,33 @@ def find_base_python() -> str | None:
             if rc == 0 and "ok" in out:
                 return found
     return None
+
+
+def runtime_python(configured: str | None = None) -> str:
+    """Return a real interpreter for preflight and other child scripts.
+
+    In source mode ``sys.executable`` is correct. In a frozen app it is the
+    GeoForge bootloader, which accepts KISS subcommands rather than Python
+    files. Old ``kiss.toml`` files may already contain that launcher path, so
+    repair both new defaults and persisted values at the point of use.
+    """
+    import shutil
+    import sys
+
+    if configured:
+        resolved = shutil.which(configured) or configured
+        try:
+            candidate = Path(resolved).resolve()
+            current = Path(sys.executable).resolve()
+            app_launcher = (".app/Contents/MacOS/" in candidate.as_posix()
+                            and candidate.name.lower() in {"geoforge desktop", "kiss"})
+            is_launcher = (getattr(sys, "frozen", False)
+                           and (candidate == current or app_launcher))
+        except OSError:
+            is_launcher = False
+        if not is_launcher and (shutil.which(configured) or Path(configured).is_file()):
+            return configured
+    return find_base_python() or "python3"
 
 
 def ensure_python_env(cfg, base_python: str | None = None) -> Step:

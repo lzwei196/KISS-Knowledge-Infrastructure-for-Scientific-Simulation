@@ -48,6 +48,17 @@ def check_dir(path, label):
         FAIL += 1
 
 
+def check_optional_dir(path, label):
+    """Report an optional regional extension without blocking core DSSAT."""
+    global PASS
+    if os.path.isdir(path):
+        n = len(os.listdir(path))
+        print(f"  OK    {label}: {path} ({n} items)")
+        PASS += 1
+    else:
+        print(f"  INFO  {label}: not installed (optional): {path}")
+
+
 def check_import(module, label):
     # Also search HydroCraft python_env for packages
     import sys
@@ -121,7 +132,7 @@ def main():
     # Binary: DSSAT CSM v4.8.5
     check_file("KISSPATH_HOME/DSSAT/build/bin/dscsm048", "DSSAT CSM v4.8.5", executable=True)
     # Directory: Chinese cultivar library
-    check_dir("KISSPATH_HOME/DSSAT/Data/Genotype/China", "Chinese cultivar library")
+    check_optional_dir("KISSPATH_HOME/DSSAT/Data/Genotype/China", "Chinese cultivar library")
     # File: DSSAT support files
     check_file("KISSPATH_HOME/DSSAT/Data/MODEL.ERR", "DSSAT support files")
 

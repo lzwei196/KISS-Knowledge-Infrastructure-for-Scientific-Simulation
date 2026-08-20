@@ -42,6 +42,11 @@ aside{background:var(--surface);border-right:1px solid var(--line);
 .brand{display:flex;align-items:center;gap:8px;padding:16px;font-weight:600}
 .brand b{font-size:15px}
 .brand span{color:var(--fg-3);font-weight:400;font-size:12px}
+.brandlogo{width:26px;height:26px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.mark{width:28px;height:28px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;
+  flex:0 0 auto;background:var(--brand-50);color:var(--brand);font-size:10px;font-weight:800}
+.mark.verify{background:color-mix(in srgb,var(--ok) 13%,transparent);color:var(--ok)}
+.mark.import{background:color-mix(in srgb,var(--warn) 13%,transparent);color:var(--warn)}
 .search{padding:0 12px 10px}
 .search input{width:100%;padding:8px 12px;border:1px solid var(--line);
   border-radius:10px;background:var(--raised);color:var(--fg);font:inherit}
@@ -147,30 +152,87 @@ select option:disabled{color:var(--fg-3)}
 .stepline{display:flex;gap:7px;align-items:center;font-size:12px;padding:1px 0}
 .stepline.bad{color:var(--block)}
 .stepline.good{color:var(--ok)}
+.stepline.skip{color:var(--fg-3)}
+.stepdetail summary{cursor:pointer;list-style:none}.stepdetail summary::-webkit-details-marker{display:none}
+.stepdetail pre{margin:3px 0 7px 19px!important;padding:7px 8px;background:var(--surface);border-radius:7px;white-space:pre-wrap;color:var(--fg-2)}
+.failure-cause{margin:8px 0;padding:8px 9px;border-radius:8px;background:color-mix(in srgb,var(--block) 8%,transparent);color:var(--block);font-size:12px}
+.ki-detail{max-width:820px;margin:4vh auto;padding:0 8px}
+.detail-head{display:flex;align-items:flex-start;gap:13px;margin-bottom:18px}
+.detail-head h2{font-size:22px;line-height:28px;margin:0 0 3px}
+.detail-head p{margin:0;color:var(--fg-3)}
+.badges{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0 0}
+.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.info-card{border:1px solid var(--line);background:var(--raised);border-radius:14px;padding:13px 15px}
+.info-card b{display:block;font-size:11px;color:var(--fg-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.detail-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.data-section{margin-top:28px;padding-top:22px;border-top:1px solid var(--line)}
+.section-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
+.section-head h3{font-size:16px;line-height:22px;margin:0 0 2px}
+.section-head p{color:var(--fg-3);font-size:12px;margin:0}
+.section-head .pill{margin-left:auto;white-space:nowrap}
+.data-flow{display:grid;grid-template-columns:minmax(0,1fr) 30px minmax(150px,.7fr) 30px minmax(0,1fr);align-items:stretch}
+.flow-arrow{display:flex;align-items:center;justify-content:center;color:var(--fg-3);font-size:18px}
+.flow-node{border:1px solid var(--line);background:var(--raised);border-radius:14px;padding:13px 14px;min-width:0}
+.flow-node.model{background:var(--brand-50);border-color:color-mix(in srgb,var(--brand) 25%,var(--line));display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.flow-label{display:flex;align-items:center;gap:7px;color:var(--fg-3);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.flow-count{font-size:18px;font-weight:650;margin:5px 0 7px}
+.flow-preview{color:var(--fg-2);font-size:12px;line-height:18px;overflow:hidden}
+.data-subhead{font-size:12px;font-weight:650;margin:18px 0 8px}
+.group-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.group-card{border:1px solid var(--line);border-radius:12px;padding:10px 11px;min-width:0;background:var(--surface)}
+.group-card summary{cursor:pointer;list-style:none}.group-card summary::-webkit-details-marker{display:none}
+.group-card b{font-size:12px}.group-card .n{float:right;color:var(--fg-3);font-size:11px}
+.mini-list{color:var(--fg-3);font-size:11px;line-height:16px;margin-top:5px;overflow:hidden}
+.group-items{max-height:190px;overflow:auto;margin-top:8px;padding-top:7px;border-top:1px solid var(--line);font-size:11px;line-height:16px}
+.group-item+.group-item{margin-top:5px}.group-item small{display:block;color:var(--fg-3)}
+.dataset-list{border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.dataset{display:grid;grid-template-columns:9px minmax(160px,.8fr) minmax(180px,1.2fr);gap:9px;align-items:start;padding:10px 12px;background:var(--raised)}
+.dataset+.dataset{border-top:1px solid var(--line)}
+.dataset .dot{margin-top:7px}.dataset b{font-size:12px}.dataset small{color:var(--fg-3);display:block;line-height:16px}
+.dataset .path{font:11px/16px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--fg-2);overflow-wrap:anywhere}
+.data-note{border:1px dashed var(--line);border-radius:12px;padding:11px 13px;color:var(--fg-2);font-size:12px;background:var(--surface)}
+.dep-row{display:flex;align-items:center;gap:7px;font-size:12px;margin-top:6px}
+.data-guide{margin-top:14px;border:1px solid color-mix(in srgb,var(--brand) 25%,var(--line));border-radius:14px;padding:12px 13px;background:var(--brand-50)}
+.data-guide .top{display:flex;gap:9px;align-items:center}.data-guide .top div{flex:1}
+.data-guide b{display:block;font-size:12px}.data-guide small{color:var(--fg-2)}
+.guide-answer{display:none;margin-top:11px;padding-top:10px;border-top:1px solid var(--line);font-size:12px}
+.guide-answer p{margin:5px 0}.guide-answer h3{font-size:13px;margin:10px 0 4px}
+.data-loading{height:150px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(90deg,var(--surface),var(--raised),var(--surface));background-size:200% 100%;animation:shimmer 1.2s infinite}
+@keyframes shimmer{to{background-position:-200% 0}}
+.hero-logo{width:58px;height:56px;margin-bottom:12px;filter:drop-shadow(0 7px 16px rgba(20,45,90,.18))}
+#importmodal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:30}
+#importmodal.open{display:flex}
+#importmodal .card2{background:var(--bg);border:1px solid var(--line);border-radius:16px;width:min(620px,92vw);max-height:84vh;overflow:auto;padding:19px}
+.finding{padding:7px 9px;border-radius:8px;background:var(--surface);font-size:12px;margin-top:6px}
+.finding.BLOCK{color:var(--block)} .finding.WARN{color:var(--warn)}
+@media(max-width:900px){.group-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:720px){.detail-grid{grid-template-columns:1fr}.data-flow{grid-template-columns:1fr}.flow-arrow{height:24px;transform:rotate(90deg)}.group-grid{grid-template-columns:1fr}.dataset{grid-template-columns:9px 1fr}.dataset .path{grid-column:2}}
 </style></head>
 <body>
 <aside>
-  <div class="brand"><a href="/" style="text-decoration:none;color:var(--fg-2);margin-right:4px" title="Back to sessions">←</a><svg xmlns="http://www.w3.org/2000/svg" width="20" height="19" viewBox="0 0 188 180"> <title>Concentric target icon</title> <desc>Vector reconstruction of a dark circular target with three light concentric rings and a blue center.</desc> <circle cx="90.8" cy="87.2" r="83.2" fill="#111215"/> <g fill="none" stroke="#EEF0F2" stroke-width="3.6" stroke-linecap="round"> <circle cx="90.8" cy="87.2" r="17.2"/> <circle cx="90.8" cy="87.2" r="29.8"/> <circle cx="90.8" cy="87.2" r="42.0"/> </g> <circle cx="90.8" cy="87.2" r="8.2" fill="#416FD8" opacity="0.16"/> <circle cx="90.8" cy="87.2" r="6.0" fill="#416FD8"/> </svg><b>KISS Library</b><span id="nprov"></span></div>
-  <div class="search"><input id="q" type="search" placeholder="Search models…" autocomplete="off"></div>
+  <div class="brand"><a href="/" style="text-decoration:none;color:var(--fg-2);margin-right:3px" title="Back to chat">←</a><img class="brandlogo" src="/logo.svg" alt="GeoForge"><b>KI Library</b><span id="nprov"></span></div>
+  <div class="search"><input id="q" type="search" placeholder="Search KIs…" autocomplete="off"></div>
   <div class="list" id="list"></div>
   <div class="count" id="count"></div>
 </aside>
 <main>
   <header>
-    <h1 id="title">Select a model</h1>
+    <h1 id="title">Knowledge Infrastructures</h1>
     <span class="meta" id="sub"></span>
     <span class="spacer"></span>
-    <button id="importki" title="Import a KI package (.zip with SKILL.md)">⤓ Import KI</button>
+    <button id="importki" title="Check and import a KI package"><span class="mark import">↓</span> Check &amp; Import</button>
     <input type="file" id="importfile" accept=".zip" style="display:none">
-    <select id="prov" title="Agent CLI"></select>
+    <select id="prov" title="AI used for guided setup"></select>
     <button id="settings" title="Settings">⚙</button>
+    <button data-language-toggle>简体中文</button>
     <button id="theme" title="Toggle theme">◐</button>
   </header>
-  <div id="chat"></div>
-  <div id="drawer"><header><h1>Setup — the code-based check</h1><span class="spacer"></span>
+  <div id="chat"><div class="empty"><img class="hero-logo" src="/logo.svg" alt="GeoForge"><h2>Browse, import, and verify KIs</h2>
+    <div>A valid KI can be added to the library. A verified KI has also proven that its scientific software runs on this Mac.</div></div></div>
+  <div id="drawer"><header><h1>Software setup &amp; verification</h1><span class="spacer"></span>
     <button onclick="document.getElementById('drawer').classList.remove('open')">✕</button></header>
     <div style="padding:10px 16px;border-bottom:1px solid var(--line)">
-      <button id="envcheck" class="ghost" style="width:100%">Check my setup (step by step)</button>
+      <button id="envcheck" class="ghost" style="width:100%">Check AI connection</button>
       <pre id="envout" style="display:none;max-height:260px;overflow-y:auto;font-size:11px;margin:8px 0 0"></pre>
     </div>
     <div class="body"></div></div>
@@ -187,16 +249,19 @@ select option:disabled{color:var(--fg-3)}
       <span class="hint" id="s-msg" style="align-self:center"></span>
     </div>
   </div></div>
-  <footer>
-    <div class="chips" id="chips"></div>
-    <div class="composer">
-      <textarea id="msg" rows="1" placeholder="(chat lives in sessions — this page is for setup)" disabled></textarea>
-      <button class="primary" id="send">Send</button>
+  <div id="importmodal"><div class="card2">
+    <div style="display:flex;align-items:center;gap:10px"><span class="mark verify">✓</span><h2 style="margin:0">KI package check</h2></div>
+    <p id="importsummary" style="color:var(--fg-2)"></p>
+    <div id="importfindings"></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="primary" id="importconfirm" disabled>Import valid KI</button>
+      <button id="importcancel">Cancel</button>
     </div>
-    <div class="hint" id="hint"></div>
-  </footer>
+  </div></div>
 </main>
 
+<script src="/clipboard.js"></script>
+<script src="/i18n.js"></script>
 <script>
 const $=s=>document.querySelector(s);
 let MODELS=[], SEL=new Set(), busy=false;
@@ -214,69 +279,173 @@ function md(t){
   return h.split(/\n{2,}/).map(p=>/^<(pre|h3|hr)/.test(p.trim())?p:`<p>${p.replace(/\n/g,"<br>")}</p>`).join("");
 }
 
-function statusClass(m){
-  if(m.verified==="observed") return "ok";
-  if(m.has_manifest||m.verified==="manual") return "warn";
-  return "block";
+let STATUS={};
+function stateClass(n){
+  const s=(STATUS[n]||{}).state;
+  return s==="verified"?"ok":s==="failed"?"block":"warn";
 }
+function stateTitle(n){
+  return (STATUS[n]||{}).label||"Setup needed";
+}
+function stateLabel(n){
+  return (STATUS[n]||{}).label||"Setup needed";
+}
+function setupLabel(st){
+  return st.state==="verified"?"Open setup & verification":"Set up with agent";
+}
+function packageLabel(m){
+  return m.package_status==="valid"?"Valid imported package":
+         m.package_status==="curated"?"Bundled KI":"Package not checked";
+}
+function packageClass(m){return m.package_valid?"ok":"warn";}
+function safeUrl(s){try{const u=new URL(s);return /^https?:$/.test(u.protocol)?u.href:"";}catch{return "";}}
+function when(ts){return ts?new Date(ts*1000).toLocaleString():"Not yet";}
 
 function drawList(){
   const q=$("#q").value.toLowerCase();
   const rows=MODELS.filter(m=>!q||(m.name+" "+(m.reference||"")+" "+(m.language||"")).toLowerCase().includes(q));
-  $("#count").textContent=`${rows.length} of ${MODELS.length} · ${SEL.size} selected`;
+  const verified=MODELS.filter(m=>(STATUS[m.name]||{}).state==="verified").length;
+  $("#count").textContent=`${rows.length} of ${MODELS.length} KIs · ${verified} verified here`;
+  $("#nprov").textContent=`${verified} verified`;
   $("#list").innerHTML=rows.map(m=>`
     <div class="item ${SEL.has(m.name)?'on':''}" data-n="${esc(m.name)}">
       <span class="tick"></span>
       <div class="tx">
-        <div class="nm"><span class="dot ${stateClass(m.name)}" title="${stateTitle(m.name)}"></span>${esc(m.name)}</div>
-        <div class="sub">${esc(m.reference||m.language||"")}</div>
+        <div class="nm"><span class="dot ${stateClass(m.name)}" title="${esc(stateTitle(m.name))}"></span>${esc(m.name)}</div>
+        <div class="sub">${esc(m.reference||m.language||"Knowledge Infrastructure")}</div>
       </div>
     </div>`).join("");
-  document.querySelectorAll(".item").forEach(e=>e.onclick=()=>toggle(e.dataset.n));
+  document.querySelectorAll(".item").forEach(e=>e.onclick=()=>selectKI(e.dataset.n));
 }
 
-let STATUS={};
-function stateClass(n){
-  // Binary by design: green = installed and its check passed, red = not.
-  return (STATUS[n]||{}).state==="ready"?"ok":"block";
+function selectKI(name){
+  SEL=new Set([name]);
+  drawList(); drawDetails(name); drawSetup();
 }
-function stateTitle(n){
-  return (STATUS[n]||{}).state==="ready"
-    ? "Installed — check passed, usable"
-    : "Not installed — press Install";
+function planClass(state){return state==="ready"?"ok":state==="data_missing"?"block":"warn";}
+function names(items,n=3){
+  const shown=(items||[]).slice(0,n).map(x=>esc(x.name)).join(" · ");
+  const more=(items||[]).length-n;
+  return shown+(more>0?` <span style="color:var(--fg-3)">+${more} more</span>`:"");
 }
-function stateLabel(n){
-  return (STATUS[n]||{}).state==="ready"?"Ready":"Install";
+function renderDataPlan(plan,name){
+  if(!SEL.has(name)) return;
+  const host=$("#data-section"); if(!host) return;
+  const rr=plan.run_readiness||{}, groups=plan.input_groups||[], outputs=plan.outputs||[];
+  const datasets=plan.datasets||[], contract=plan.dataset_contract||{}, deps=plan.dependencies||[];
+  const groupHelp={forcing:"Time-changing drivers such as weather or inflow",parameters:"Properties that describe the site or system",initial_conditions:"The model state at the start of a run",boundary_conditions:"Run window, edges, controls, and management"};
+  const groupCards=groups.map(g=>`<details class="group-card"><summary><b>${esc(g.label)}</b><span class="n">${g.count} ${g.count===1?'item':'items'} · open</span>
+    <div class="mini-list">${esc(groupHelp[g.key]||'Declared model inputs')}</div></summary>
+    <div class="group-items">${g.count?(g.items||[]).map(x=>`<div class="group-item"><b>${esc(x.name)}</b>${x.unit?` <small>${esc(x.unit)}</small>`:''}</div>`).join(''):'None declared'}</div></details>`).join("");
+  const datasetView=datasets.length?`<div class="dataset-list">${datasets.map(d=>`
+    <div class="dataset"><span class="dot ${d.present?'ok':d.optional?'warn':'block'}"></span>
+      <div><b>${esc(d.name)}${d.optional?' <span class="pill warn">Optional</span>':''}</b>
+        <small>${esc(d.why||`Declared ${d.role} data`)}</small></div>
+      <div class="path">${d.present?'Found at ':'Expected at '}${esc(d.expected_path||`No ${d.role} path configured`)}</div></div>`).join("")}</div>`:
+    `<div class="data-note"><b>Local files are not machine-checkable yet.</b> This KI has no dataset paths in its setup manifest. The declared input groups below still show the model interface, but GeoForge will not guess whether your files satisfy it.</div>`;
+  const depView=deps.length?`<div class="data-subhead">Coupled KIs</div>${deps.map(d=>`
+    <div class="dep-row"><span class="dot ${d.can_run?'ok':'warn'}"></span><b>${esc(d.name)}</b><span>${esc(d.label||'Setup needed')}</span></div>`).join("")}`:"";
+  const inputPreview=groups.filter(g=>g.count).map(g=>`${esc(g.label)} ${g.count}`).join(" · ")||"No inputs declared";
+  const outputPreview=outputs.length?names(outputs,3):"No outputs declared";
+  const dataSummary=contract.declared?`${contract.ready}/${contract.required} required dataset paths found`:
+    "Dataset locations not declared";
+  host.innerHTML=`
+    <div class="section-head"><span class="mark import">↳</span><div><h3>Run data</h3>
+      <p>Built from this KI's declarations and the files visible on this Mac—not invented by AI.</p></div>
+      <span class="pill ${planClass(rr.state)}">${esc(rr.label||'Review inputs')}</span></div>
+    <div class="data-flow">
+      <div class="flow-node"><div class="flow-label">Inputs</div><div class="flow-count">${plan.input_count||0} declared</div><div class="flow-preview">${inputPreview}</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node model"><span class="mark">KI</span><b style="margin-top:7px">${esc(name)}</b><small style="color:var(--fg-2)">${esc((plan.software||{}).label||'Not checked')}</small></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node"><div class="flow-label">Outputs</div><div class="flow-count">${plan.output_count||0} declared</div><div class="flow-preview">${outputPreview}</div></div>
+    </div>
+    <div class="data-subhead">Local data check · ${esc(dataSummary)}</div>${datasetView}
+    <div class="data-subhead">Declared input groups</div><div class="group-grid">${groupCards}</div>${depView}
+    <div class="data-guide"><div class="top"><span class="mark">AI</span><div><b>Need this in simple words?</b>
+      <small>The selected AI can explain this exact plan and the next missing step. It cannot change the requirements or verification marks.</small></div>
+      <button id="dataguide" ${PROV.any_usable?'':'disabled'}>${PROV.any_usable?'Explain my data':'Connect AI first'}</button></div>
+      <div class="guide-answer agent bubble" id="guideanswer"></div></div>`;
+  $("#dataguide").onclick=()=>askDataGuide(name);
 }
-function toggle(name){
-  SEL.has(name)?SEL.delete(name):SEL.add(name);
-  drawList(); drawChips(); drawSetup();
+async function loadDataPlan(name){
+  try{
+    const r=await fetch("/api/model/"+encodeURIComponent(name));
+    const d=await r.json(); if(!r.ok) throw new Error(d.error||`HTTP ${r.status}`);
+    renderDataPlan(d.data_plan,name);
+  }catch(e){
+    if(SEL.has(name)&&$("#data-section")) $("#data-section").innerHTML=`<div class="data-note">Could not read this KI's data plan: ${esc(e.message)}</div>`;
+  }
 }
-function drawChips(){
-  $("#chips").innerHTML=[...SEL].map(n=>`
-    <span class="chip"><span class="dot ${stateClass(n)}"></span>${esc(n)}
-      <button data-n="${esc(n)}" title="remove">×</button></span>`).join("")
-    + (SEL.size?`<span class="chip" style="cursor:pointer" id="setupbtn">⚙ setup</span>`:"");
-  document.querySelectorAll(".chip button").forEach(b=>b.onclick=()=>toggle(b.dataset.n));
-  const sb=$("#setupbtn"); if(sb) sb.onclick=()=>$("#drawer").classList.toggle("open");
-  $("#title").textContent = SEL.size? [...SEL].join(" + ") : "Pick models, then describe the task";
-  $("#sub").textContent = SEL.size>1 ? "multi-model run — results will be compared" : "";
+function drawDetails(name){
+  const m=MODELS.find(x=>x.name===name);
+  if(!m){
+    $("#title").textContent="Knowledge Infrastructures"; $("#sub").textContent="";
+    $("#chat").innerHTML=`<div class="empty"><img class="hero-logo" src="/logo.svg" alt="GeoForge"><h2>Browse, import, and verify KIs</h2><div>Select a KI to see what it does and whether its software can run on this Mac.</div></div>`;
+    return;
+  }
+  const st=STATUS[name]||{}, repo=safeUrl(m.repo_url);
+  $("#title").textContent=name; $("#sub").textContent=m.reference||m.language||"Knowledge Infrastructure";
+  $("#chat").innerHTML=`<div class="ki-detail">
+    <div class="detail-head"><span class="mark">KI</span><div><h2>${esc(name)}</h2>
+      <p>${esc(m.reference||"Scientific software knowledge and operating instructions")}</p>
+      <div class="badges"><span class="pill ${packageClass(m)}">${esc(packageLabel(m))}</span>
+      <span class="pill ${stateClass(name)}">${esc(stateLabel(name))}</span></div></div></div>
+    <div class="detail-grid">
+      <div class="info-card"><b>Scientific software</b>${esc(m.impl_id||name)} ${esc(m.version||"")}</div>
+      <div class="info-card"><b>Last checked on this Mac</b>${esc(when(st.checked_at))}</div>
+      <div class="info-card"><b>Language & licence</b>${esc(m.language||"Not declared")} · ${esc(m.license||"Not declared")}</div>
+      <div class="info-card"><b>Source</b>${repo?`<a href="${esc(repo)}" target="_blank" rel="noreferrer">Open project website</a>`:"Not declared"}</div>
+    </div>
+    <div class="detail-actions"><button class="primary" id="usechat">Use in a new chat</button>
+      <button id="verifyki">${setupLabel(st)}</button></div>
+    <section class="data-section" id="data-section"><div class="data-loading" aria-label="Loading KI data plan"></div></section>
+  </div>`;
+  $("#usechat").onclick=()=>useInChat(name);
+  $("#verifyki").onclick=()=>openAgentSetup(name);
+  loadDataPlan(name);
+}
+async function askDataGuide(name){
+  const btn=$("#dataguide"), box=$("#guideanswer");
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>Explaining';
+  box.style.display="block"; box.textContent="Reading the verified data plan…";
+  try{
+    const r=await fetch("/api/data-guide",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:name,provider:$("#prov").value||"",language:window.GeoForgeI18n&&GeoForgeI18n.language||"en"})});
+    if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||`HTTP ${r.status}`);}
+    const rd=r.body.getReader(),dec=new TextDecoder();let full="";
+    for(;;){const{done,value}=await rd.read();if(done)break;full+=dec.decode(value,{stream:true});box.innerHTML=md(full);}
+    if(!full.trim()) box.textContent="The AI returned no explanation.";
+  }catch(e){box.textContent="Could not explain this plan: "+e.message;}
+  finally{btn.disabled=false;btn.textContent="Explain again";}
+}
+async function useInChat(name){
+  const r=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({models:[name],provider:$("#prov").value||""})});
+  const s=await r.json(); location.href="/?session="+encodeURIComponent(s.id);
 }
 function drawSetup(){
   $("#drawer .body").innerHTML=[...SEL].map(n=>{
     const st=STATUS[n]||{};
-    const steps=(st.steps||[]).map(s=>`<div class="stepline ${s.ok?'good':'bad'}">${s.ok?'✓':'✗'} ${esc(s.name)}</div>`).join("");
+    const steps=(st.steps||[]).map(s=>{
+      const cls=s.ok||s.recovered?'good':s.skipped?'skip':'bad', mark=s.ok?'✓':s.recovered?'↺':s.skipped?'–':'✕';
+      const line=`<span class="stepline ${cls}">${mark} ${esc(s.name)}${s.recovered?' · repaired':''}</span>`;
+      return s.detail?`<details class="stepdetail">${line.replace('<span','<summary').replace('</span>','</summary>')}<pre>${esc(s.detail)}</pre></details>`:line;
+    }).join("");
+    const primary=st.primary_error&&st.primary_error.detail?`<div class="failure-cause"><b>${esc(st.primary_error.name)}</b><br>${esc(st.primary_error.detail)}</div>`:"";
+    const actions=`<button data-n="${esc(n)}" class="agentsetup">${st.state==="verified"?"Open setup":"Set up with agent"}</button>`;
     return `<div class="setup-model" id="su-${esc(n)}">
       <div class="row"><span class="dot ${stateClass(n)}"></span><span class="nm">${esc(n)}</span>
-        <button data-n="${esc(n)}" class="inst">${stateLabel(n)==="Ready"?"Re-check":"Install"}</button>
-        <button data-n="${esc(n)}" class="rec ghost" title="Find a build recipe with the agent, then verify it">⚙ Work it out</button></div>
-      ${steps}<pre style="display:none"></pre></div>`;
-  }).join("") || '<div class="empty">Toggle a model to see its setup.</div>';
-  document.querySelectorAll("#drawer .inst").forEach(b=>b.onclick=()=>install(b.dataset.n));
-  document.querySelectorAll("#drawer .rec").forEach(b=>b.onclick=()=>workItOut(b.dataset.n));
+        ${actions}</div>${primary}${steps}<pre class="live-log" style="display:none"></pre></div>`;
+  }).join("") || '<div class="empty">Select a KI to see its verification steps.</div>';
+  document.querySelectorAll("#drawer .agentsetup").forEach(b=>b.onclick=()=>openAgentSetup(b.dataset.n));
+}
+function openAgentSetup(name){
+  const p=$("#prov").value||"";
+  location.href="/setup?model="+encodeURIComponent(name)+(p?"&provider="+encodeURIComponent(p):"");
 }
 async function workItOut(name){
-  const box=$(`#su-${CSS.escape(name)} pre`); box.style.display="block";
+  const box=$(`#su-${CSS.escape(name)} pre.live-log`); box.style.display="block";
   box.textContent="working out how to build "+name+"…\n";
   const r=await fetch("/api/recipe",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({model:name,provider:$("#prov").value})});
@@ -284,75 +453,54 @@ async function workItOut(name){
   for(;;){const{done,value}=await rd.read(); if(done)break;
     box.textContent+=dec.decode(value); box.scrollTop=box.scrollHeight;}
   STATUS=await (await fetch("/api/status")).json();
-  drawList(); drawChips(); drawSetup();
+  drawList(); drawDetails(name); drawSetup();
 }
 async function install(name){
-  const box=$(`#su-${CSS.escape(name)} pre`); box.style.display="block"; box.textContent="";
+  const box=$(`#su-${CSS.escape(name)} pre.live-log`); box.style.display="block"; box.textContent="";
   const r=await fetch("/api/init",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({model:name})});
   const rd=r.body.getReader(), dec=new TextDecoder();
   for(;;){const{done,value}=await rd.read(); if(done)break;
     box.textContent+=dec.decode(value); box.scrollTop=box.scrollHeight;}
   STATUS=await (await fetch("/api/status")).json();
-  drawList(); drawChips(); drawSetup();
+  drawList(); drawDetails(name); drawSetup();
 }
-
-function addTurn(who,cls){
-  const d=document.createElement("div");
-  d.className="turn "+cls;
-  d.innerHTML=`<div class="who">${who}</div><div class="bubble"></div>`;
-  if($("#chat").querySelector(".empty")) $("#chat").innerHTML="";
-  $("#chat").appendChild(d);
-  $("#chat").scrollTop=$("#chat").scrollHeight;
-  return d.querySelector(".bubble");
-}
-
-async function send(){
-  const text=$("#msg").value.trim();
-  if(!text||busy) return;
-  if(!SEL.size){$("#hint").textContent="Toggle at least one model on the left first.";return;}
-  busy=true; $("#send").disabled=true; $("#msg").value="";
-  addTurn("You","user").innerHTML=md(text);
-  const out=addTurn($("#prov").selectedOptions[0].textContent,"agent");
-  out.innerHTML='<span class="spin"></span>working…';
-
-  let raw="";
-  try{
-    const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({models:[...SEL],provider:$("#prov").value,message:text})});
-    const rd=r.body.getReader(), dec=new TextDecoder();
-    for(;;){
-      const{done,value}=await rd.read(); if(done) break;
-      raw+=dec.decode(value,{stream:true});
-      out.innerHTML=md(raw);
-      $("#chat").scrollTop=$("#chat").scrollHeight;
-    }
-    if(!raw.trim()) out.innerHTML='<p style="color:var(--fg-3)">(no output)</p>';
-  }catch(e){ out.innerHTML=md("**Request failed:** "+e); }
-  busy=false; $("#send").disabled=false; $("#msg").focus();
-}
-
-$("#send").onclick=send;
-$("#msg").addEventListener("keydown",e=>{
-  if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}
-});
-$("#msg").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";});
 $("#q").addEventListener("input",drawList);
 $("#importki").onclick=()=>$("#importfile").click();
+let PENDING_IMPORT=null;
+function showImportReport(d){
+  const valid=!!d.valid;
+  $("#importsummary").innerHTML=valid
+    ? `<b>${esc(d.name)}</b> is a valid KI package and can be imported. This checks its structure; software verification happens after setup.`
+    : `<b>${esc(d.name||"This package")}</b> cannot be imported yet. Fix the blocking findings and try again.`;
+  const findings=d.findings||[];
+  $("#importfindings").innerHTML=findings.map(f=>
+    `<div class="finding ${esc(f.severity)}"><b>${esc(f.severity)}</b> · ${esc(f.check)} — ${esc(f.detail)}</div>`).join("")
+    ||(d.error?`<div class="finding BLOCK"><b>BLOCK</b> · ${esc(d.error)}</div>`:'<div class="finding">No package problems found.</div>');
+  $("#importconfirm").disabled=!valid;
+}
 $("#importfile").onchange=async e=>{
   const f=e.target.files[0]; if(!f) return;
-  $("#hint").textContent=`importing ${f.name}…`;
+  PENDING_IMPORT=f; $("#importmodal").classList.add("open");
+  $("#importsummary").textContent=`Checking ${f.name} before importing…`;
+  $("#importfindings").innerHTML='<div class="finding">Inspecting package structure and portability…</div>';
+  $("#importconfirm").disabled=true;
+  const r=await fetch("/api/import_ki?validate=1&name="+encodeURIComponent(f.name),
+    {method:"POST",headers:{"Content-Type":"application/zip"},body:f});
+  showImportReport(await r.json().catch(()=>({valid:false,error:`Check failed (${r.status})`})));
+};
+$("#importconfirm").onclick=async()=>{
+  if(!PENDING_IMPORT) return;
+  const f=PENDING_IMPORT; $("#importconfirm").disabled=true; $("#importsummary").textContent=`Importing ${f.name}…`;
   const r=await fetch("/api/import_ki?name="+encodeURIComponent(f.name),
     {method:"POST",headers:{"Content-Type":"application/zip"},body:f});
   const d=await r.json();
-  if(!r.ok){ $("#hint").textContent="import failed: "+(d.error||r.status); return; }
-  const worst=d.findings.filter(x=>x.severity==="BLOCK").length;
-  $("#hint").textContent=`imported ${d.name} — doctor: ${d.findings.length} findings`+
-    (worst?` (${worst} blocking — open its setup for details)`:"");
-  MODELS=await (await fetch("/api/models")).json();
-  STATUS=await (await fetch("/api/status")).json();
-  drawList(); e.target.value="";
+  if(!r.ok){showImportReport(d);return;}
+  MODELS=await (await fetch("/api/models")).json(); STATUS=await (await fetch("/api/status")).json();
+  $("#importmodal").classList.remove("open"); PENDING_IMPORT=null; $("#importfile").value="";
+  selectKI(d.name);
 };
+$("#importcancel").onclick=()=>{$("#importmodal").classList.remove("open");PENDING_IMPORT=null;$("#importfile").value="";};
 $("#envcheck").onclick=async()=>{
   const box=$("#envout"); box.style.display="block"; box.textContent="running…\n";
   const r=await fetch("/api/selfcheck?provider="+encodeURIComponent($("#prov").value||""));
@@ -379,15 +527,7 @@ async function loadProviders(){
   const usable=PROV.providers.filter(p=>p.usable);
   if(usable.length && !PROV.providers.find(p=>p.name===sel.value && p.usable))
     sel.value=usable[0].name;
-  $("#nprov").textContent=`${usable.length}/${PROV.providers.length} providers ready`;
-  const old=$("#gatebanner"); if(old) old.remove();
-  if(!PROV.any_usable){
-    $("#chat").insertAdjacentHTML("beforebegin",
-      `<div class="banner" id="gatebanner"><b>Nothing can run yet.</b> No signed-in agent CLI and
-       no API key. Open ⚙ Settings to add an API key, or install an agent CLI —
-       then use “Check my setup” in the model drawer to verify. Chat is disabled until one works.</div>`);
-  }
-  $("#send").disabled=!PROV.any_usable;
+  if(!usable.length) sel.innerHTML='<option value="">No AI connection</option>';
 }
 async function openSettings(){
   const s=await (await fetch("/api/settings")).json();
@@ -414,7 +554,7 @@ $("#s-save").onclick=async()=>{
 (async()=>{
   MODELS=await (await fetch("/api/models")).json();
   STATUS=await (await fetch("/api/status")).json();
-  drawList(); drawChips(); drawSetup();
+  drawList(); drawDetails(); drawSetup();
   await loadProviders();
 })();
 </script></body></html>

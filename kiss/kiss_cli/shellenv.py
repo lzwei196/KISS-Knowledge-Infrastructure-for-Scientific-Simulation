@@ -40,22 +40,31 @@ def adopt() -> None:
         return
     _done = True
 
+    if platform.system() == "Windows":
+        # There is no login-shell PATH to recover: Windows processes inherit
+        # the user's PATH from the registry however they are launched, which
+        # is the whole problem this function exists to solve on macOS. Asking
+        # for /bin/bash here would only spawn a doomed subprocess per start.
+        return
+
     shell = os.environ.get("SHELL") or ("/bin/zsh" if platform.system() == "Darwin"
                                         else "/bin/bash")
     try:
-        # -l runs the login startup files (~/.zprofile, ~/.zshrc via zsh's
-        # login+interactive chain differs per shell — -lic would be fuller but
-        # interactive shells can hang on prompts, so login-only is the safe cut).
+        # Interactive *and* login mode is deliberate. zsh does not read
+        # ~/.zshrc for ``-l -c`` alone, and that is where nvm/asdf/Volta users
+        # usually acquire their CLI PATH. ``-c`` still avoids a prompt; closed
+        # stdin and a timeout contain startup scripts that try to interact.
+        # NUL delimiters preserve values containing newlines or '='.
         out = subprocess.run(
-            [shell, "-l", "-c", "env"],
-            capture_output=True, text=True, timeout=10,
-        ).stdout
+            [shell, "-i", "-l", "-c", "/usr/bin/env -0"],
+            stdin=subprocess.DEVNULL, capture_output=True, timeout=10,
+        ).stdout.decode("utf-8", "replace")
     except (OSError, subprocess.TimeoutExpired):
         out = ""
 
     shell_env: dict[str, str] = {}
-    for line in out.splitlines():
-        k, sep, v = line.partition("=")
+    for entry in out.split("\0"):
+        k, sep, v = entry.partition("=")
         if sep and k and not k.startswith("BASH_FUNC"):
             shell_env[k] = v
 

@@ -24,11 +24,15 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterator
+
+from . import skilllib, tls
+from .presentation import activity_marker
 
 TIMEOUT = 300
 
@@ -106,8 +110,9 @@ def available() -> list[ApiProvider]:
 # what lets the permission layer check an argument instead of guessing at a
 # command string.
 
-def tool_schemas(ki) -> list[dict]:
-    return [
+def tool_schemas(ki, *, setup_mode: bool = False,
+                 project_mode: bool = False) -> list[dict]:
+    tools = [
         {
             "name": "read_ki_file",
             "description": (
@@ -176,15 +181,204 @@ def tool_schemas(ki) -> list[dict]:
             },
         },
     ]
+    if project_mode:
+        tools += [
+            {
+                "name": "list_project_files",
+                "description": (
+                    "List files already present in this chat's local project. "
+                    "Inspect these before asking the user to supply data."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "subdir": {"type": "string",
+                               "description": "relative project directory, normally inputs"},
+                }},
+            },
+            {
+                "name": "read_project_file",
+                "description": "Read a text file from this chat's local project.",
+                "input_schema": {"type": "object", "properties": {
+                    "path": {"type": "string"},
+                }, "required": ["path"]},
+            },
+            {
+                "name": "write_project_file",
+                "description": (
+                    "Write a small prepared input, run configuration, provenance "
+                    "record, or report inside the chat project. Use the KI's tools "
+                    "for generated grids and large scientific files."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "path": {"type": "string",
+                             "description": "relative path under inputs, runs, outputs, artifacts, or references"},
+                    "content": {"type": "string"},
+                }, "required": ["path", "content"]},
+            },
+            {
+                "name": "run_ki_tool",
+                "description": (
+                    "Run one Python preparation tool shipped inside the selected KI. "
+                    "Use this for data conversion, grid/soil/weather preparation, "
+                    "configuration generation, validation, and model harness steps. "
+                    "Do not replace a KI tool with improvised calculations."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "tool_path": {"type": "string",
+                                  "description": "Python file relative to the KI root and below a tools/ directory"},
+                    "arguments": {"type": "array", "items": {"type": "string"}},
+                    "cwd": {"type": "string",
+                            "description": "relative project working directory; defaults to project root"},
+                    "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 3600},
+                }, "required": ["tool_path"]},
+            },
+            {
+                "name": "create_project_plot",
+                "description": (
+                    "Create a safe line, scatter, or bar plot in this chat's "
+                    "artifacts folder. Use a relevant plotting/visualization skill "
+                    "to choose an honest chart, then call this tool when the direct "
+                    "API has no plotting runtime. GeoForge displays the SVG inline."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "output_path": {"type": "string",
+                                    "description": "relative .svg path below artifacts/"},
+                    "kind": {"type": "string", "enum": ["line", "scatter", "bar"]},
+                    "title": {"type": "string"},
+                    "x_label": {"type": "string"},
+                    "y_label": {"type": "string"},
+                    "series": {"type": "array", "items": {"type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "x": {"type": "array", "items": {}},
+                            "y": {"type": "array", "items": {"type": "number"}},
+                        }, "required": ["y"]}},
+                }, "required": ["output_path", "series"]},
+            },
+            {
+                "name": "request_user_action",
+                "description": (
+                    "Pause project preparation and show one concrete action to the "
+                    "user. Use only for a protected download, licence/login, private "
+                    "data, system permission, or high-impact scientific choice that "
+                    "the KI cannot resolve. Never use it for ordinary KI defaults."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "kind": {"type": "string", "enum": [
+                        "download", "licence", "login", "permission", "choice", "other"]},
+                    "title": {"type": "string"},
+                    "message": {"type": "string"},
+                    "url": {"type": "string"},
+                    "expected_path": {"type": "string"},
+                    "command": {"type": "string"},
+                    "resume_hint": {"type": "string"},
+                }, "required": ["kind", "title", "message"]},
+            },
+        ]
+    if project_mode or setup_mode:
+        tools.append({
+            "name": "report_project_progress",
+            "description": (
+                "Update GeoForge's small project-status display at a meaningful "
+                "transition. Report only work actually reached. This records use "
+                "of the general KI; it does not create an adaptive KI harness."
+            ),
+            "input_schema": {"type": "object", "properties": {
+                "stage": {"type": "string", "enum": [
+                    "understanding", "choosing_ki", "software", "researching",
+                    "preparing", "validating", "running", "results"]},
+                "status": {"type": "string", "enum": [
+                    "idle", "working", "waiting_for_user", "complete", "failed"]},
+                "summary": {"type": "string"},
+                "selected_kis": {"type": "array", "items": {"type": "string"}},
+            }, "required": ["stage", "status", "summary"]},
+        })
+    if setup_mode:
+        tools += [
+            {
+                "name": "run_builtin_setup",
+                "description": (
+                    "Run GeoForge's bundled setup recipe and return its full step "
+                    "report. Use it as a fast first attempt, then diagnose and repair "
+                    "the first real failure instead of stopping."
+                ),
+                "input_schema": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "list_work_files",
+                "description": "List files in the writable model setup workspace.",
+                "input_schema": {"type": "object", "properties": {
+                    "subdir": {"type": "string", "description": "relative workspace path"},
+                }},
+            },
+            {
+                "name": "read_work_file",
+                "description": "Read a text file from the writable setup workspace.",
+                "input_schema": {"type": "object", "properties": {
+                    "path": {"type": "string"},
+                }, "required": ["path"]},
+            },
+            {
+                "name": "write_work_file",
+                "description": (
+                    "Write a small text file inside the model setup workspace. "
+                    "Use this to repair build files or configuration, not to replace "
+                    "the scientific model with a surrogate."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                }, "required": ["path", "content"]},
+            },
+            {
+                "name": "run_setup_command",
+                "description": (
+                    "Run one non-shell command inside the model workspace and return "
+                    "stdout, stderr, and its exit code. The executable, working "
+                    "directory, and explicit path arguments are checked against a "
+                    "build-tool/workspace allowlist; sudo, inline Python, credentials, "
+                    "and system package installation are intentionally unavailable."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "argv": {"type": "array", "items": {"type": "string"},
+                             "description": "argument vector, e.g. [\"cmake\",\"-S\",\".\",\"-B\",\"build\"]"},
+                    "cwd": {"type": "string", "description": "relative workspace directory"},
+                    "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 3600},
+                    "env": {"type": "object", "additionalProperties": {"type": "string"}},
+                }, "required": ["argv"]},
+            },
+            {
+                "name": "request_user_action",
+                "description": (
+                    "Pause setup and put one concrete human action on GeoForge's "
+                    "Setup page. Use only for a licence, protected download, login, "
+                    "system privilege, or scientific choice you cannot resolve."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "kind": {"type": "string", "enum": [
+                        "download", "licence", "login", "permission", "choice", "other"]},
+                    "title": {"type": "string"},
+                    "message": {"type": "string"},
+                    "url": {"type": "string"},
+                    "expected_path": {"type": "string"},
+                    "command": {"type": "string"},
+                    "resume_hint": {"type": "string"},
+                }, "required": ["kind", "title", "message"]},
+            },
+        ]
+    return tools
 
 
 class ToolError(Exception):
     pass
 
 
-def execute_tool(name: str, args: dict, ki, cfg) -> str:
+def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
+                 setup_context: dict | None = None,
+                 project_mode: bool = False) -> str:
     """Run one tool. Every path argument is confined to the KI package."""
     root = Path(ki.root).resolve()
+    workroot = Path(cfg.root).resolve()
+    progress_root = Path((setup_context or {}).get("project_root") or workroot).resolve()
 
     def _inside(rel: str) -> Path:
         if Path(rel).is_absolute():
@@ -195,6 +389,14 @@ def execute_tool(name: str, args: dict, ki, cfg) -> str:
         p = (root / rel).resolve()
         if p != root and root not in p.parents:
             raise ToolError(f"path escapes the KI package: {rel}")
+        return p
+
+    def _inside_work(rel: str) -> Path:
+        if Path(rel).is_absolute():
+            raise ToolError(f"absolute workspace paths are not accepted: {rel}")
+        p = (workroot / rel).resolve()
+        if p != workroot and workroot not in p.parents:
+            raise ToolError(f"path escapes the setup workspace: {rel}")
         return p
 
     if name == "read_ki_file":
@@ -228,30 +430,252 @@ def execute_tool(name: str, args: dict, ki, cfg) -> str:
         return "\n".join(hits[:40]) or f"no diagnostics mention {kw!r}"
 
     if name in ("list_skills", "read_skill"):
-        # The CLI drivers inherit the unified skill library natively; the API
-        # loop is ours, so the same library is exposed through tools — one
-        # library, every provider. Canonical home: ~/.agents/skills (the
-        # cross-agent convention the CLIs and DeepSeek Harness all read).
-        lib = Path.home() / ".agents" / "skills"
         if name == "list_skills":
             q = (args.get("query") or "").lower()
-            out = []
-            for d in sorted(lib.iterdir()) if lib.is_dir() else []:
-                sk = d / "SKILL.md"
-                if not sk.is_file():
-                    continue
-                desc = ""
-                for line in sk.read_text(encoding="utf-8", errors="replace")[:2000].splitlines():
-                    if line.startswith("description:"):
-                        desc = line.split(":", 1)[1].strip()[:140]
-                        break
-                if not q or q in d.name.lower() or q in desc.lower():
-                    out.append(f"{d.name} — {desc}")
-            return "\n".join(out[:200]) or "no skills installed"
-        sk = lib / re.sub(r"[^A-Za-z0-9_-]", "", args.get("name", "")) / "SKILL.md"
-        if not sk.is_file():
+            found = [item for item in skilllib.discover()
+                     if not q or q in item["name"].lower()
+                     or q in item["description"].lower()]
+            return ("\n".join(f"{item['name']} — {item['description']}"
+                              for item in found[:200]) or "no skills installed")
+        try:
+            return skilllib.read(args.get("name", ""))[:60000]
+        except FileNotFoundError:
             raise ToolError(f"no skill named {args.get('name')!r}")
-        return sk.read_text(encoding="utf-8", errors="replace")[:60000]
+
+    if project_mode and name == "list_project_files":
+        base = _inside_work(args.get("subdir") or ".")
+        if not base.is_dir():
+            raise ToolError(f"no such project directory: {args.get('subdir')}")
+        names = []
+        for f in sorted(base.rglob("*")):
+            if not f.is_file() or "memory" in f.relative_to(workroot).parts:
+                continue
+            try:
+                names.append(f"{f.relative_to(workroot)} ({f.stat().st_size} bytes)")
+            except OSError:
+                continue
+        return "\n".join(names[:1000]) or "(no project files yet)"
+
+    if project_mode and name == "read_project_file":
+        p = _inside_work(args.get("path") or "")
+        if not p.is_file():
+            raise ToolError(f"no such project file: {args.get('path')}")
+        if p.stat().st_size > 5_000_000:
+            raise ToolError("project file is too large for the text reader; use a KI tool")
+        return p.read_text(encoding="utf-8", errors="replace")[:120000]
+
+    if project_mode and name == "write_project_file":
+        p = _inside_work(args.get("path") or "")
+        content = args.get("content")
+        if not isinstance(content, str):
+            raise ToolError("content must be text")
+        if len(content.encode("utf-8")) > 1_000_000:
+            raise ToolError("write_project_file is limited to 1 MB; use a KI tool")
+        rel = p.relative_to(workroot)
+        writable = {"inputs", "runs", "outputs", "artifacts", "references"}
+        if not rel.parts or rel.parts[0] not in writable:
+            raise ToolError("project writes must stay under inputs, runs, outputs, artifacts, or references")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+        return f"wrote {rel} ({len(content.encode('utf-8'))} bytes)"
+
+    if project_mode and name == "run_ki_tool":
+        script = _inside(args.get("tool_path") or "")
+        try:
+            rel_script = script.relative_to(root)
+        except ValueError:
+            raise ToolError("tool escapes the selected KI")
+        if not script.is_file() or script.suffix.casefold() != ".py" or "tools" not in rel_script.parts:
+            raise ToolError("run_ki_tool accepts only shipped Python files below tools/")
+        arguments = args.get("arguments") or []
+        if (not isinstance(arguments, list) or len(arguments) > 100 or
+                not all(isinstance(x, str) and len(x) <= 4000 for x in arguments)):
+            raise ToolError("arguments must be a list of short strings")
+        cwd = _inside_work(args.get("cwd") or ".")
+        if not cwd.is_dir():
+            raise ToolError(f"project directory does not exist: {args.get('cwd')}")
+        for token in arguments:
+            value = token.split("=", 1)[1] if token.startswith("-") and "=" in token else token
+            if not (value.startswith(("/", "./", "../")) or "/" in value):
+                continue
+            candidate = Path(value)
+            resolved = candidate.resolve() if candidate.is_absolute() else (cwd / candidate).resolve()
+            if not any(resolved == base or base in resolved.parents for base in (workroot, root)):
+                raise ToolError(f"tool argument path escapes the project and KI: {value}")
+        timeout = max(1, min(int(args.get("timeout_seconds") or 600), 3600))
+        child_env = {
+            key: value for key, value in os.environ.items()
+            if not any(secret in key.upper() for secret in (
+                "API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))
+        }
+        child_env["KISS_ROOT"] = str(workroot)
+        try:
+            proc = subprocess.run(
+                [str(cfg.python), str(script), *arguments], cwd=str(cwd),
+                env=child_env, capture_output=True, text=True, errors="replace",
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as e:
+            tail = ((e.stdout or "") + (e.stderr or ""))[-12000:]
+            return f"TIMEOUT after {timeout}s\n{tail}"
+        output = (proc.stdout + proc.stderr)[-80000:]
+        return f"exit_code={proc.returncode}\n{output}"
+
+    if project_mode and name == "create_project_plot":
+        from .plotting import PlotError, render_svg
+        p = _inside_work(args.get("output_path") or "")
+        rel = p.relative_to(workroot)
+        if not rel.parts or rel.parts[0] != "artifacts" or p.suffix.lower() != ".svg":
+            raise ToolError("plot output_path must be a .svg file below artifacts/")
+        try:
+            summary = render_svg(args, p)
+        except (OSError, PlotError) as e:
+            raise ToolError(str(e)) from None
+        return (f"{summary}\nInclude it in the reply as: "
+                f"![{args.get('title') or p.stem}]({rel.as_posix()})")
+
+    if project_mode and name == "request_user_action":
+        from . import projectrun as _projectrun, setup as _setup
+        doc = _setup.request_user(workroot, args)
+        _projectrun.report(progress_root, {
+            "status": "waiting_for_user", "summary": doc["title"],
+            "blocker": doc,
+        }, source="api_handoff")
+        return "GeoForge will show this one request to the user:\n" + json.dumps(doc, indent=2)
+
+    if (project_mode or setup_mode) and name == "report_project_progress":
+        from . import projectrun as _projectrun
+        state = _projectrun.report(progress_root, args, source="api")
+        return "Project status updated:\n" + json.dumps(state, indent=2)
+
+    if setup_mode and name == "run_builtin_setup":
+        callback = (setup_context or {}).get("run_builtin")
+        if not callable(callback):
+            raise ToolError("the built-in setup runner is unavailable")
+        return str(callback())[-60000:]
+
+    if setup_mode and name == "list_work_files":
+        base = _inside_work(args.get("subdir") or ".")
+        if not base.is_dir():
+            raise ToolError(f"no such workspace directory: {args.get('subdir')}")
+        names = sorted(str(f.relative_to(workroot)) for f in base.rglob("*") if f.is_file())
+        return "\n".join(names[:800]) or "(empty)"
+
+    if setup_mode and name == "read_work_file":
+        p = _inside_work(args.get("path") or "")
+        if not p.is_file():
+            raise ToolError(f"no such workspace file: {args.get('path')}")
+        return p.read_text(encoding="utf-8", errors="replace")[:60000]
+
+    if setup_mode and name == "write_work_file":
+        p = _inside_work(args.get("path") or "")
+        content = args.get("content")
+        if not isinstance(content, str):
+            raise ToolError("content must be text")
+        if len(content.encode("utf-8")) > 250_000:
+            raise ToolError("write_work_file is limited to 250 KB")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+        return f"wrote {p.relative_to(workroot)} ({len(content.encode('utf-8'))} bytes)"
+
+    if setup_mode and name == "run_setup_command":
+        argv = args.get("argv")
+        if (not isinstance(argv, list) or not argv or len(argv) > 100 or
+                not all(isinstance(x, str) and x and len(x) <= 4000 for x in argv)):
+            raise ToolError("argv must be a non-empty list of short strings")
+        executable = argv[0]
+        allowed = {
+            "git", "cmake", "make", "gmake", "ninja", "meson", "pkg-config",
+            "python", "python3", "pip", "pip3", "uv", "cargo", "rustc", "go",
+            "gcc", "g++", "clang", "clang++", "gfortran", "tar", "unzip",
+            "curl", "wget", "patch", "sed", "awk", "find", "ls", "cp", "mv",
+            "chmod", "file", "otool", "xcode-select", "brew",
+        }
+        exe_path = Path(executable)
+        if exe_path.is_absolute() or "/" in executable:
+            resolved = (workroot / exe_path).resolve() if not exe_path.is_absolute() else exe_path.resolve()
+            cfg_python = Path(cfg.python).resolve()
+            permitted_roots = [workroot, root, Path(cfg.roles.get("binaries", workroot)).resolve()]
+            if resolved != cfg_python and not any(
+                    resolved == base or base in resolved.parents for base in permitted_roots):
+                raise ToolError(f"executable is outside the setup workspace: {executable}")
+            argv[0] = str(resolved)
+        elif executable not in allowed:
+            raise ToolError(f"command is not in the setup allowlist: {executable}")
+        if Path(argv[0]).name == "brew" and len(argv) > 1 and argv[1] not in (
+                "--prefix", "--version", "list", "info", "config"):
+            raise ToolError("Homebrew changes require the user; create a permission request")
+
+        cwd = _inside_work(args.get("cwd") or ".")
+        if not cwd.is_dir():
+            raise ToolError(f"command directory does not exist: {args.get('cwd')}")
+        # Reject path arguments that escape the workspace. This is not a
+        # shell, but programs such as cp, curl and git still accept output
+        # paths of their own. Compiler/system include flags are allowed only
+        # for the conventional read-only roots they genuinely need.
+        readable_system_roots = tuple(Path(p) for p in (
+            "/usr", "/opt/homebrew", "/Library/Frameworks",
+        ))
+
+        def check_path_token(token: str) -> None:
+            value = token.split("=", 1)[1] if token.startswith("-") and "=" in token else token
+            if value.startswith(("http://", "https://", "git@")):
+                return
+            if not (value.startswith(("/", "./", "../")) or "/" in value):
+                return
+            candidate = Path(value)
+            resolved = candidate.resolve() if candidate.is_absolute() else (cwd / candidate).resolve()
+            allowed_workspace = any(
+                resolved == base or base in resolved.parents
+                for base in (workroot, root, Path(cfg.roles.get("binaries", workroot)).resolve())
+            )
+            allowed_system = any(
+                resolved == base or base in resolved.parents for base in readable_system_roots)
+            if not allowed_workspace and not allowed_system:
+                raise ToolError(f"command path escapes the setup workspace: {value}")
+
+        for token in argv[1:]:
+            check_path_token(token)
+        if Path(argv[0]).name in ("python", "python3") or Path(argv[0]).resolve() == Path(cfg.python).resolve():
+            if "-c" in argv:
+                raise ToolError("inline Python is unavailable; write a workspace script and run it")
+        timeout = max(1, min(int(args.get("timeout_seconds") or 300), 3600))
+        extra_env = args.get("env") or {}
+        if not isinstance(extra_env, dict):
+            raise ToolError("env must be an object")
+        safe_env = {}
+        banned = {"HOME", "PATH", "SHELL", "DYLD_INSERT_LIBRARIES", "PYTHONPATH"}
+        for key, value in extra_env.items():
+            if (not re.fullmatch(r"[A-Z_][A-Z0-9_]{0,63}", str(key)) or
+                    key in banned or not isinstance(value, str) or len(value) > 8000):
+                raise ToolError(f"unsafe environment override: {key}")
+            safe_env[key] = value
+        # A tool or build script must never inherit the API key that is driving
+        # the agent. Keep the normal build environment, remove credentials.
+        child_env = {
+            key: value for key, value in os.environ.items()
+            if not any(secret in key.upper() for secret in (
+                "API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))
+        }
+        try:
+            proc = subprocess.run(
+                argv, cwd=str(cwd), env={**child_env, **safe_env},
+                capture_output=True, text=True, errors="replace", timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as e:
+            tail = ((e.stdout or "") + (e.stderr or ""))[-12000:]
+            return f"TIMEOUT after {timeout}s\n{tail}"
+        output = (proc.stdout + proc.stderr)[-50000:]
+        return f"exit_code={proc.returncode}\n{output}"
+
+    if setup_mode and name == "request_user_action":
+        from . import projectrun as _projectrun, setup as _setup
+        doc = _setup.request_user(workroot, args)
+        _projectrun.report(progress_root, {
+            "stage": "software", "status": "waiting_for_user",
+            "summary": doc["title"], "blocker": doc,
+        }, source="api_handoff")
+        return "GeoForge is now waiting for the user:\n" + json.dumps(doc, indent=2)
 
     raise ToolError(f"unknown tool {name}")
 
@@ -264,7 +688,7 @@ def _post(url: str, headers: dict, payload: dict) -> dict:
         headers={"Content-Type": "application/json", **headers},
     )
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        with urllib.request.urlopen(req, timeout=TIMEOUT, context=tls.context()) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", "replace")[:800]
@@ -311,7 +735,11 @@ def _openai_turn(prov, model, system, messages, tools, key):
 def run(prov: ApiProvider, ki, cfg, system: str, task: str,
         *, model: str | None = None, max_steps: int = 12,
         history: list[dict] | None = None,
-        approve: Callable[[str, dict], bool] | None = None) -> Iterator[str]:
+        approve: Callable[[str, dict], bool] | None = None,
+        setup_mode: bool = False,
+        setup_context: dict | None = None,
+        project_mode: bool = False,
+        presentation: str = "chat") -> Iterator[str]:
     """Drive one task to completion, yielding text as it is produced.
 
     ``approve`` is the seam the CLI driver cannot offer: it is called before
@@ -329,7 +757,7 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
                f"{list(prov.models)}]")
         return
     model_id = prov.models.get(want, want)
-    tools = tool_schemas(ki)
+    tools = tool_schemas(ki, setup_mode=setup_mode, project_mode=project_mode)
     # Prior turns travel as REAL messages, not flattened into one user blob
     # with USER:/YOU: markers — the vendor's own multi-turn handling is the
     # thing that makes context work, and counterfeit markers cannot exist in a
@@ -352,19 +780,28 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
             yield f"\n[{prov.label} failed: {e}]"
             return
 
-        if text:
+        # A response which also invokes tools is normally scratch narration
+        # ("Let me inspect...", "Now I will..."). Keep it in the provider's
+        # internal history, but reserve the visible answer for the final
+        # no-tool response. Forensic setup pages can still request log mode.
+        if text and (not calls or presentation == "log"):
             yield text
         if not calls:
             return
 
         results = []
         for call_id, name, args in calls:
-            yield f"\n`> {name}({', '.join(f'{k}={v!r}' for k, v in args.items())[:80]})`\n"
+            if presentation == "log":
+                yield f"\n`> {name}({', '.join(f'{k}={v!r}' for k, v in args.items())[:80]})`\n"
+            else:
+                yield activity_marker(name)
             if approve is not None and not approve(name, args):
                 out = "DENIED by the user. Do not retry; explain what you needed it for."
             else:
                 try:
-                    out = execute_tool(name, args, ki, cfg)
+                    out = execute_tool(name, args, ki, cfg, setup_mode=setup_mode,
+                                       setup_context=setup_context,
+                                       project_mode=project_mode)
                 except ToolError as e:
                     out = f"ERROR: {e}"
             results.append((call_id, out))

@@ -189,3 +189,83 @@ def write(ki, result, man, cfg, dest: Path, *, skill: bool = True) -> list[Path]
         written.append(sk)
 
     return written
+
+
+def write_setup(ki, man, cfg, dest: Path, *, built_in_command: str) -> list[Path]:
+    """Write the server-style autonomous setup contract for every CLI agent."""
+    dest = Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    meta = ki.meta or {}
+    hint = man.agent_hint if man else ""
+    body = f"""# {ki.name} — GeoForge autonomous setup
+
+You are the setup agent for **{ki.name}**. Own the loop until the scientific
+software's real preflight passes or a person must do something you cannot.
+
+## Required loop
+
+1. Read `{ki.root / 'SKILL.md'}` before running anything.
+2. Inspect `dag.yaml`, `diagnostics/`, `docs/`, and the validated KI tools.
+3. Try the bundled recipe when useful, but treat it as evidence, not a limit:
+
+   `{built_in_command}`
+
+4. Read `status.json` and the full command output. Fix the first real cause.
+5. Run `{cfg.python} {ki.root / 'preflight_check.py'}` after every meaningful fix.
+6. Keep repairing and retrying in this same task. Never claim success until
+   preflight passes, and never substitute a fake or simplified model.
+
+The writable workspace is `{dest}`. User-supplied files appear under
+`{dest / 'user-files'}`. Binaries belong under `{cfg.roles.get('binaries')}`.
+
+## When a person is required
+
+Do not fight licence gates, interactive logins, protected downloads, `sudo`, or
+an ambiguous scientific choice. Write `{dest / 'setup-request.json'}` as JSON:
+
+```json
+{{
+  "status": "waiting",
+  "kind": "download | licence | login | permission | choice | other",
+  "title": "one short action",
+  "message": "plain instructions and why this is required",
+  "url": "https://official-page.example or null",
+  "expected_path": "where the resulting file should go or null",
+  "command": "an exact command the user may copy, or null",
+  "resume_hint": "what you will check or run after the user returns"
+}}
+```
+
+Ask for one concrete action at a time. GeoForge renders this file on the Setup
+page and resumes you after the user responds.
+
+## Model identity
+
+- Implementation: {meta.get('impl_id') or ki.name} {meta.get('version') or ''}
+- Source: {meta.get('repo_url') or 'not declared'}
+- Licence: {meta.get('license') or 'not declared'}
+- Manifest guidance: {hint or 'none; derive the setup from the KI and upstream evidence'}
+"""
+
+    canonical = dest / "CLAUDE.md"
+    canonical.write_text(body, encoding="utf-8")
+    written = [canonical]
+    for fname in INSTRUCTION_FILES:
+        if fname == "CLAUDE.md":
+            continue
+        p = dest / fname
+        try:
+            if p.is_symlink() or p.exists():
+                p.unlink()
+            p.symlink_to(canonical.name)
+        except OSError:
+            p.write_text(body, encoding="utf-8")
+        written.append(p)
+
+    slug = skill_slug(ki.name)
+    sk = dest / ".agents" / "skills" / slug / "SKILL.md"
+    sk.parent.mkdir(parents=True, exist_ok=True)
+    sk.write_text(SKILL_FRONTMATTER.format(slug=slug, model=ki.name) + "\n" + body,
+                  encoding="utf-8")
+    written.append(sk)
+    return written

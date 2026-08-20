@@ -21,12 +21,28 @@ permissions:
   contents: write
 
 jobs:
+  # Names that are legal on Linux and fatal elsewhere have broken a release
+  # twice: macOS collapsed case-duplicate APEX inputs, and a Windows checkout
+  # died on filenames containing backslashes. Cheap to check, so check first.
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test
+        run: |
+          python -m pip install --quiet pyyaml pytest
+          python -m pytest kiss/tests -q
+
   # Apple Silicon builds in about a minute and gates the release. Intel is a
   # separate best-effort job: `needs` waits for a job to COMPLETE, and a queued
   # macos-13 never completes, so keeping both architectures in one matrix meant
   # the release waited on a runner that had not appeared in six hours. Splitting
   # them lets arm64 ship on time and lets Intel catch up when capacity exists.
   build:
+    needs: checks
     strategy:
       matrix:
         include:
@@ -118,6 +134,7 @@ jobs:
             GeoForge-Desktop-macos-${{ matrix.arch }}.app.zip
 
   build-intel:
+    needs: checks
     strategy:
       matrix:
         include:
@@ -199,6 +216,7 @@ jobs:
   # already falls back to the default browser when pywebview is absent, so the
   # Linux build serves the same UI without pretending to be a native window.
   build-linux:
+    needs: checks
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -277,6 +295,7 @@ jobs:
   # POSIX way silently bundles nothing, which is exactly how library.html went
   # missing from a macOS build, so the smoke test fetches every page.
   build-windows:
+    needs: checks
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4

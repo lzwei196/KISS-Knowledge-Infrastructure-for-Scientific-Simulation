@@ -409,6 +409,15 @@ jobs:
             echo "::error::no .app was built — refusing to publish a release with no application"
             exit 1
           fi
+          # A release whose tag was deleted and re-pushed survives as a DRAFT,
+          # invisible to everyone but the repository owner and easily mistaken
+          # for "the build never shipped". Clear any draft on this tag first.
+          DRAFTS="$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+            --jq ".[] | select(.tag_name==\"$TAG\" and .draft==true) | .id" || true)"
+          for id in $DRAFTS; do
+            echo "removing stale draft release $id for $TAG"
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id" || true
+          done
           echo "publishing: ${ASSETS[*]}"
           for a in "macos-arm64.app.zip" "macos-x86_64.app.zip" \
                    "linux-x86_64.tar.gz" "windows-x86_64.zip"; do
@@ -416,7 +425,7 @@ jobs:
               || echo "::warning::${a%%.*} did not build — this release ships without it"
           done
           gh release create "$TAG" \
-            --title "GeoForge Desktop $TAG (macOS)" \
+            --title "GeoForge Desktop $TAG — macOS, Windows, Linux" \
             --notes-file .github/RELEASE_NOTES_MACOS.md \
             --repo "$GITHUB_REPOSITORY" \
             "${ASSETS[@]}" \

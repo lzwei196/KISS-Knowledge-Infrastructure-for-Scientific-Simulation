@@ -111,9 +111,23 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .starter small{display:block;color:var(--fg-3);line-height:16px}
 @media(max-width:900px){.starter{grid-template-columns:1fr}.agentlabel{display:none}}
 footer{border-top:1px solid var(--line);padding:11px 18px}
-.composer{max-width:800px;margin:0 auto;display:flex;gap:8px;align-items:flex-end;position:relative}
+.composerbox{max-width:800px;margin:0 auto;position:relative;border-radius:14px}
+.composerbox.dragging{outline:2px dashed var(--brand);outline-offset:5px;background:var(--brand-50)}
+.composer{display:flex;gap:8px;align-items:flex-end;position:relative}
 .composer-tool{height:42px;min-width:42px;padding:0 10px;border-radius:12px;color:var(--fg-2);white-space:nowrap}
 .composer-tool.active{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 45%,var(--line));background:var(--brand-50)}
+.attachlist{display:none;gap:6px;flex-wrap:wrap;margin:0 0 7px 50px}
+.attachlist.has-files{display:flex}
+.attachchip{display:flex;align-items:center;gap:6px;max-width:260px;padding:5px 7px 5px 9px;border:1px solid var(--line);border-radius:9px;background:var(--raised);font-size:11.5px;color:var(--fg-2)}
+.attachchip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attachchip small{color:var(--fg-3);white-space:nowrap}.attachchip button{border:0;padding:0 2px;background:transparent;color:var(--fg-3)}
+.message-files{display:flex;gap:5px;flex-wrap:wrap;margin:7px 0 2px}.message-file{padding:4px 7px;border-radius:7px;background:var(--bg);border:1px solid var(--line);font-size:11px;color:var(--fg-2)}
+.sessionworking{color:var(--brand);font-weight:700}.sessionworking:before{content:"";display:inline-block;width:6px;height:6px;border-radius:99px;background:var(--brand);margin-right:4px;vertical-align:1px}
+.activitynote{display:none;max-width:800px;margin:7px auto 0;padding:7px 9px;border-radius:10px;background:var(--brand-50);color:var(--fg-2);font-size:11.5px;align-items:center;gap:8px}
+.activitynote.show{display:flex}.activitynote span:nth-child(2){flex:1}.activitynote button{padding:3px 7px;font-size:11px;background:var(--raised)}
+.activitypulse{width:8px;height:8px;border-radius:99px;background:var(--brand);box-shadow:0 0 0 0 color-mix(in srgb,var(--brand) 35%,transparent);animation:pulse 1.6s infinite}
+.livewaiting{display:grid;grid-template-columns:18px 1fr;align-items:center;gap:2px 7px;color:var(--fg-2)}.livewaiting .spin{grid-row:1/3}.livewaiting small{color:var(--fg-3)}
+@keyframes pulse{70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
 #slashmenu{display:none;position:absolute;left:0;right:70px;bottom:50px;max-height:280px;
   overflow-y:auto;background:var(--raised);border:1px solid var(--line);border-radius:12px;
   box-shadow:0 8px 30px rgba(0,0,0,.14);padding:6px;z-index:12}
@@ -131,15 +145,17 @@ textarea:focus{outline:none;border-color:var(--brand)}
 .banner button{margin-left:8px;padding:3px 8px;color:inherit;border-color:currentColor;background:transparent}
 .localagent{display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-top:1px solid var(--line-1)}
 .localagent:first-child{border-top:0}.localagent b{display:block;font-size:12.5px}.localagent small{display:block;color:var(--fg-3)}
-#modal,#mpick,#skillpick,#connections,#guide{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;
+#modal,#mpick,#skillpick,#connections,#guide,#actionpick{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;
   align-items:center;justify-content:center;z-index:20}
-#modal.open,#mpick.open,#skillpick.open,#connections.open,#guide.open{display:flex}
+#modal.open,#mpick.open,#skillpick.open,#connections.open,#guide.open,#actionpick.open{display:flex}
 .card2{background:var(--bg);border:1px solid var(--line);border-radius:16px;
   width:min(500px,92vw);max-height:86vh;overflow-y:auto;padding:18px 20px}
 .card2 h2{font-size:15px;margin:0 0 12px}
 .card2 label{display:block;font-size:12px;color:var(--fg-2);margin:10px 0 4px}
-.card2 input,.card2 select{width:100%;padding:7px 10px;border:1px solid var(--line);
+.card2 input,.card2 select,.card2 textarea{width:100%;padding:7px 10px;border:1px solid var(--line);
   border-radius:8px;background:var(--raised);color:var(--fg);font:inherit}
+.actionoption{display:flex;width:100%;text-align:left;gap:9px;align-items:flex-start;padding:10px 11px;margin-top:7px;border-radius:11px}.actionoption:hover{background:var(--hover)}.actionoption.selected{border-color:var(--brand);background:var(--brand-50)}
+.actionradio{width:17px;height:17px;border:1.5px solid var(--fg-3);border-radius:99px;flex:0 0 auto;margin-top:2px}.actionoption.selected .actionradio{border:5px solid var(--brand)}.actionoption b{display:block}.actionoption small{display:block;color:var(--fg-3);line-height:16px;margin-top:2px}
 .pickrow{display:flex;align-items:center;gap:9px;padding:6px 4px;border-radius:8px;cursor:pointer}
 .pickrow:hover{background:var(--hover)}
 .pickrow .tick{width:15px;height:15px;border:1.5px solid var(--fg-3);border-radius:5px;
@@ -217,12 +233,18 @@ textarea:focus{outline:none;border-color:var(--brand)}
   </header>
   <div id="chat"></div>
   <footer>
-    <div class="composer">
-      <div id="slashmenu"></div>
-      <button id="skills" class="composer-tool" title="Choose skills for this chat">✦ Skills</button>
-      <textarea id="msg" rows="1" placeholder="Ask a scientific question or describe a modelling task…"></textarea>
-      <button class="primary" id="send" disabled>Send</button>
+    <div class="composerbox" id="dropzone">
+      <div class="attachlist" id="attachlist"></div>
+      <div class="composer">
+        <div id="slashmenu"></div>
+        <button id="attach" class="composer-tool" title="Add files or drag them here">＋ Files</button>
+        <input type="file" id="chatfiles" multiple style="display:none">
+        <button id="skills" class="composer-tool" title="Choose skills for this chat">✦ Skills</button>
+        <textarea id="msg" rows="1" placeholder="Ask a scientific question or describe a modelling task…"></textarea>
+        <button class="primary" id="send" disabled>Send</button>
+      </div>
     </div>
+    <div class="activitynote" id="activitynote"><span class="activitypulse"></span><span id="activitytext"></span><button id="activity-new">＋ New chat</button></div>
     <div class="hint" id="hint"></div>
   </footer>
   <div id="modal"><div class="card2">
@@ -273,6 +295,19 @@ textarea:focus{outline:none;border-color:var(--brand)}
       <button id="conn-close">Close</button>
     </div>
   </div></div>
+  <div id="actionpick"><div class="card2" style="width:min(560px,92vw)">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="mark">?</span><h2 id="action-title" style="margin:0;flex:1">Choose how to continue</h2><span class="statuspill warn">Needs you</span></div>
+    <div id="action-message" style="color:var(--fg-2);white-space:pre-wrap"></div>
+    <div id="action-options" style="margin-top:10px"></div>
+    <label id="action-note-label" for="action-note">Optional note for the agent</label>
+    <textarea id="action-note" rows="2" placeholder="Add context only if needed…"></textarea>
+    <div class="hint" id="action-error" style="margin:6px 0 0;color:var(--block)"></div>
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+      <button class="primary" id="action-continue">Continue with this choice</button>
+      <button id="action-ask">Ask about these choices</button>
+      <button id="action-later">Not now</button>
+    </div>
+  </div></div>
   <div id="guide"><div class="card2">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><img class="brandlogo" src="/logo.svg" alt="GeoForge"><div><h2 style="margin:0">How GeoForge works</h2><div class="hint" style="margin:0">Chat first. KIs provide the scientific capability.</div></div></div>
     <div class="starter" style="grid-template-columns:1fr">
@@ -312,9 +347,18 @@ const TOOL_LABELS_ZH={list_project_files:"已检查项目文件",read_project_fi
 const chineseUI=()=>window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN";
 function workLabel(name){if(chineseUI()&&TOOL_LABELS_ZH[name])return TOOL_LABELS_ZH[name];if(TOOL_LABELS[name])return TOOL_LABELS[name];const words=String(name).replace(/([a-z])([A-Z])/g,"$1 $2").replace(/[_.-]+/g," ");return chineseUI()?"已使用 "+words:"Used "+words.toLowerCase();}
 function extractWork(t,streaming){const tools=[];let body=String(t??"");
+  let invalidToolText=false;
+  // A few OpenAI-compatible providers print an XML-looking request instead
+  // of making a real structured call. It is not work, and must never be
+  // presented as if the tool ran. New turns are retried server-side; this also
+  // cleans up older saved conversations.
+  body=body.replace(/\[\[GEOF_TOOL:[A-Za-z0-9_.-]+\]\]"?>\s*(?=<invoke)/g,()=>{invalidToolText=true;return "";});
+  body=body.replace(/<invoke\s+name=["'][A-Za-z0-9_.-]+["'][^>]*>[\s\S]*?<\/invoke>/gi,()=>{invalidToolText=true;return "";});
+  if(streaming&&/<invoke\s+name=/i.test(body))body=body.replace(/<invoke\s+name=[\s\S]*$/i,()=>{invalidToolText=true;return "";});
   body=body.replace(/\[\[GEOF_TOOL:([A-Za-z0-9_.-]+)\]\]/g,(m,n)=>{tools.push(n);return "";});
   // Fold the raw tool syntax used by older saved chats as well.
   body=body.replace(/^\s*`?>\s*([A-Za-z_][\w.-]*)\([^`\n]*\)`?\s*$/gm,(m,n)=>{tools.push(n);return "";});
+  if(invalidToolText&&!streaming)body=body.trim()+"\n\n"+(chineseUI()?"[AI 把工具请求作为普通文本返回，因此这些操作并未运行。请重试这条消息。]":"[The AI returned a tool request as plain text, so those actions did not run. Please retry this message.]");
   const compact=tools.filter((n,i)=>i===0||n!==tools[i-1]);
   if(!compact.length)return {body,html:""};
   const label=chineseUI()?(streaming?`正在处理 · ${compact.length} 步`:`工作详情 · ${compact.length} 步`):(streaming?`Working · ${compact.length} step${compact.length===1?"":"s"}`:`Work details · ${compact.length} step${compact.length===1?"":"s"}`);
@@ -331,7 +375,14 @@ function md(t,sid=CUR&&CUR.id,streaming=false){const work=extractWork(t,streamin
   return work.html+h.split(/\n{2,}/).map(p=>/^<(pre|h3|hr|figure|ul|ol)/.test(p.trim())?p:`<p>${p.replace(/\n/g,"<br>")}</p>`).join("");}
 
 let SESSIONS=[], CUR=null, MODELS=[], SKILLS=[], MCP={connections:[],github:{}}, STATUS={}, LAST_PREP=null, RUN=null,
-    PROV={providers:[],any_usable:false}, PICK=new Set(), SKPICK=new Set(), MCPPICK=new Set(), busy=false;
+    PROV={providers:[],any_usable:false}, PICK=new Set(), SKPICK=new Set(), MCPPICK=new Set();
+// Work is isolated by chat. A slow model in one project must never freeze
+// navigation or prevent a second conversation from starting.
+const INFLIGHT=new Map(), PENDING_ATTACHMENTS=new Map(), UPLOADING=new Map(), DRAFTS=new Map();
+const SEEN_ACTIONS=new Set();
+let OPEN_SEQ=0,ACTION_REQUEST=null,ACTION_SESSION=null,ACTION_INDEX=-1;
+const sessionBusy=(id=CUR&&CUR.id)=>!!id&&INFLIGHT.has(id);
+const sessionUploading=(id=CUR&&CUR.id)=>(UPLOADING.get(id)||0)>0;
 // CLI or API. Remembered, because it is a fact about this machine's setup
 // rather than a per-question choice.
 let KIND=localStorage.getItem("kiss.kind")||"cli";
@@ -402,9 +453,9 @@ async function refreshRun(id=CUR&&CUR.id){
 }
 function drawSessions(){
   $("#slist").innerHTML=SESSIONS.map(s=>`
-    <div class="sess ${CUR&&CUR.id===s.id?'sel':''}" data-id="${esc(s.id)}">
-      <div class="t">${esc(s.title)}<button class="del" data-id="${esc(s.id)}" title="Archive chat; project files are kept">✕</button></div>
-      <div class="m">${s.models.length?esc(s.models.join(", ")):"Auto KI"} · ${s.n} messages${s.skills&&s.skills.length?` · ${s.skills.length} skill${s.skills.length===1?"":"s"}`:""}${s.mcps&&s.mcps.length?` · ${s.mcps.length} MCP`:""}</div>
+    <div class="sess ${CUR&&CUR.id===s.id?'sel':''} ${INFLIGHT.has(s.id)?'running':''}" data-id="${esc(s.id)}">
+      <div class="t">${esc(s.title)}<button class="del" data-id="${esc(s.id)}" title="Archive chat; project files are kept" ${INFLIGHT.has(s.id)?"disabled":""}>✕</button></div>
+      <div class="m">${s.models.length?esc(s.models.join(", ")):"Auto KI"} · ${s.n} messages${s.skills&&s.skills.length?` · ${s.skills.length} skill${s.skills.length===1?"":"s"}`:""}${s.mcps&&s.mcps.length?` · ${s.mcps.length} MCP`:""}${INFLIGHT.has(s.id)?' · <span class="sessionworking">Working</span>':''}</div>
     </div>`).join("");
   document.querySelectorAll(".sess").forEach(e=>e.onclick=ev=>{
     if(ev.target.classList.contains("del")) return; openSession(e.dataset.id);});
@@ -489,7 +540,7 @@ function drawProviders(){
   if(!PROV.any_usable){
     $("#chat").insertAdjacentHTML("beforebegin",
       `<div class="banner" id="gatebanner"><b>Connect an AI to begin.</b> Open AI Settings to add a key or configure a local agent.</div>`);}
-  $("#send").disabled=busy||!currentProviderReady();
+  setControls(true);
   drawLLM();
 }
 function drawEmpty(){
@@ -515,18 +566,27 @@ function drawEmpty(){
   document.querySelector('[data-action="library"]').onclick=()=>location.href="/library";
 }
 async function openSession(id){
-  CUR=await (await fetch("/api/session/"+id)).json();
-  $("#openproject").disabled=busy;
-  $("#opendata").disabled=busy;
+  const seq=++OPEN_SEQ, leaving=CUR&&CUR.id;
+  if(ACTION_SESSION&&ACTION_SESSION!==id)closeActionPicker();
+  if(leaving&&leaving!==id)DRAFTS.set(leaving,$("#msg").value);
+  const next=await (await fetch("/api/session/"+id)).json();
+  if(seq!==OPEN_SEQ)return;
+  CUR=next;
   drawSessions();
   $("#title").textContent=CUR.title;
   drawModelLabel();
   drawSkillButton();
   const c=$("#chat"); c.innerHTML="";
-  for(const m of CUR.messages) addTurn(m.role==="user"?"You":"GeoForge", m.role==="user"?"user":"agent").innerHTML=md(m.text,CUR.id);
+  for(const m of CUR.messages) addTurn(m.role==="user"?"You":"GeoForge", m.role==="user"?"user":"agent").innerHTML=messageHtml(m,CUR.id);
+  renderLiveTurn(id);
   c.scrollTop=c.scrollHeight;
+  $("#msg").value=DRAFTS.get(id)||"";
+  $("#msg").style.height="auto";$("#msg").style.height=$("#msg").scrollHeight+"px";
+  renderAttachments();
   drawProviders();
   await refreshRun(id);
+  setControls(true);
+  await maybeShowAction(id);
 }
 function drawModelLabel(){
   const ms=CUR?CUR.models:[];
@@ -558,6 +618,60 @@ function addTurn(who,cls){
   c.appendChild(d); c.scrollTop=c.scrollHeight;
   return d.querySelector(".bubble");
 }
+function messageHtml(message,sid){
+  const paths=(message&&Array.isArray(message.attachments)?message.attachments:[]).filter(x=>typeof x==="string");
+  const files=paths.length?`<div class="message-files">${paths.map(path=>`<span class="message-file">▧ ${esc(path.split("/").pop()||path)}</span>`).join("")}</div>`:"";
+  return md(message&&message.text||"",sid)+files;
+}
+function renderLiveTurn(id){
+  const flight=INFLIGHT.get(id);if(!flight)return;
+  const out=addTurn("GeoForge","agent");
+  out.closest(".turn").dataset.flight=id;
+  out.innerHTML=flight.raw.trim()?md(flight.raw,id,true):liveWaitingHtml(flight);
+}
+function liveBubble(id){return document.querySelector(`.turn[data-flight="${id}"] .bubble`);}
+function providerDisplay(name){const p=PROV.providers.find(item=>item.name===name);return p&&p.label||String(name||"AI").replace(/^(api|cli):/,"");}
+function elapsedTime(started){const seconds=Math.max(0,Math.floor((Date.now()-started)/1000));return seconds<60?`${seconds}s`:`${Math.floor(seconds/60)}m ${seconds%60}s`;}
+function liveWaitingHtml(flight){
+  const label=providerDisplay(flight.provider),elapsed=elapsedTime(flight.started);
+  return chineseUI()?`<div class="livewaiting"><span class="spin"></span><b>${esc(label)} 正在处理 · ${elapsed}</b><small>连接仍然正常；正在等待下一段结果。</small></div>`:`<div class="livewaiting"><span class="spin"></span><b>${esc(label)} is working · ${elapsed}</b><small>The connection is active; waiting for the next result.</small></div>`;
+}
+function updateActivityUI(){
+  const flight=CUR&&INFLIGHT.get(CUR.id),note=$("#activitynote"),sendButton=$("#send");
+  note.classList.toggle("show",!!flight);
+  if(flight){
+    const label=providerDisplay(flight.provider),elapsed=elapsedTime(flight.started);
+    $("#activitytext").textContent=chineseUI()?`${label} 已运行 ${elapsed}。你可以新建对话；本对话会在后台继续。`:`${label} has been working for ${elapsed}. You can start another chat; this one will continue in the background.`;
+    sendButton.textContent=chineseUI()?"处理中…":"Working…";
+    if(!flight.raw.trim()){const out=liveBubble(CUR.id);if(out)out.innerHTML=liveWaitingHtml(flight);}
+  }else sendButton.textContent=chineseUI()?"发送":"Send";
+}
+function closeActionPicker(){
+  $("#actionpick").classList.remove("open");ACTION_REQUEST=null;ACTION_SESSION=null;ACTION_INDEX=-1;
+}
+function showActionPicker(request,sid){
+  const options=Array.isArray(request.options)?request.options:[];if(!options.length)return false;
+  ACTION_REQUEST=request;ACTION_SESSION=sid;ACTION_INDEX=-1;
+  $("#action-title").textContent=request.title||"Choose how to continue";
+  $("#action-message").textContent=request.message||"Select one option so GeoForge can continue.";
+  $("#action-options").innerHTML=options.map((option,index)=>`<button class="actionoption" data-index="${index}"><span class="actionradio"></span><span><b>${esc(option.label||`Option ${index+1}`)}</b>${option.description?`<small>${esc(option.description)}</small>`:""}</span></button>`).join("");
+  $("#action-options").querySelectorAll(".actionoption").forEach(button=>button.onclick=()=>{
+    ACTION_INDEX=Number(button.dataset.index);$("#action-error").textContent="";
+    $("#action-options").querySelectorAll(".actionoption").forEach(item=>item.classList.toggle("selected",item===button));
+  });
+  const allow=request.allow_note!==false;
+  $("#action-note-label").style.display=allow?"block":"none";$("#action-note").style.display=allow?"block":"none";$("#action-note").value="";
+  $("#action-error").textContent="";$("#actionpick").classList.add("open");
+  return true;
+}
+async function maybeShowAction(id){
+  if(!id||!CUR||CUR.id!==id||sessionBusy(id))return;
+  const r=await fetch(`/api/session/${id}/request`);if(!r.ok)return;
+  const data=await r.json(),request=data.request;
+  if(!request||request.status!=="waiting"||!Array.isArray(request.options)||!request.options.length)return;
+  const key=`${id}:${request.id||request.created_at||request.title}`;if(SEEN_ACTIONS.has(key))return;
+  if(showActionPicker(request,id))SEEN_ACTIONS.add(key);
+}
 async function ensureSession(){
   if(CUR) return CUR;
   const r0=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -568,8 +682,45 @@ async function ensureSession(){
                     project_path:CUR.project_path});
   drawSessions(); return CUR;
 }
+function pendingFor(id=CUR&&CUR.id){return id?(PENDING_ATTACHMENTS.get(id)||[]):[];}
+function renderAttachments(){
+  const list=pendingFor(), box=$("#attachlist");
+  box.classList.toggle("has-files",!!list.length);
+  box.innerHTML=list.map((file,i)=>`<div class="attachchip"><span title="${esc(file.path)}">▧ ${esc(file.name)}</span><small>${sizeLabel(file.size)}</small><button data-i="${i}" title="Remove from this message; the file remains in the project">✕</button></div>`).join("");
+  box.querySelectorAll("button").forEach(button=>button.onclick=()=>{
+    const current=pendingFor();current.splice(Number(button.dataset.i),1);
+    if(CUR)PENDING_ATTACHMENTS.set(CUR.id,current);renderAttachments();setControls(true);
+  });
+}
+async function addChatFiles(fileList){
+  const files=[...fileList].filter(file=>file&&file.name);if(!files.length)return;
+  await ensureSession();const target=CUR.id;
+  if(sessionBusy(target)){$("#hint").textContent="This chat is working. Add the files to a new chat, or wait for this turn to finish.";return;}
+  UPLOADING.set(target,(UPLOADING.get(target)||0)+1);setControls(true);
+  if(CUR&&CUR.id===target)$("#hint").textContent=`Uploading ${files.length} file${files.length===1?"":"s"}…`;
+  let added=0;
+  try{
+    for(const file of files){
+      const r=await fetch(`/api/session/${target}/upload?name=${encodeURIComponent(file.name)}`,{method:"POST",body:file});
+      const data=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(data.error||`Could not add ${file.name}`);
+      const list=PENDING_ATTACHMENTS.get(target)||[];
+      list.push({name:file.name,path:data.relative_path,size:file.size});PENDING_ATTACHMENTS.set(target,list);added++;
+      if(CUR&&CUR.id===target)renderAttachments();
+    }
+    if(CUR&&CUR.id===target)$("#hint").textContent=`${added} file${added===1?"":"s"} ready to send`;
+  }catch(error){if(CUR&&CUR.id===target)$("#hint").textContent=error.message||String(error);}
+  finally{
+    const left=(UPLOADING.get(target)||1)-1;if(left>0)UPLOADING.set(target,left);else UPLOADING.delete(target);
+    if(CUR&&CUR.id===target)setControls(true);
+  }
+}
 async function send(){
-  let text=$("#msg").value.trim(); if(!text||busy) return;
+  let text=$("#msg").value.trim();
+  await ensureSession();
+  const target=CUR.id, attachments=[...pendingFor(target)];
+  if(sessionBusy(target)||sessionUploading(target)||(!text&&!attachments.length))return;
+  if(!text&&attachments.length)text=chineseUI()?"请检查我附上的文件。":"Please inspect the attached files.";
   const slash=text.match(/^\/([^\s]+)(?:\s+([\s\S]+))?$/);
   if(slash){
     if(slash[1].toLowerCase()==="skills"&&!slash[2]){
@@ -585,75 +736,105 @@ async function send(){
   }
   if(window.GeoForgeI18n&&GeoForgeI18n.isChineseText(text))
     GeoForgeI18n.setLanguage("zh-CN");
-  busy=true; setControls(false); $("#msg").value="";
+  const provider=$("#prov").value,llm=$("#llm").value;
+  const flight={raw:"",started:Date.now(),provider};INFLIGHT.set(target,flight);drawSessions();setControls(true);
+  $("#msg").value="";DRAFTS.delete(target);
   drawSlash();
-  await ensureSession();
-  const target=CUR.id;   // the session this reply belongs to, whatever gets clicked
   let runPoll=setInterval(()=>refreshRun(target).catch(()=>{}),1000);
   try{
     const up=await fetch(`/api/session/${target}/update`,{method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({provider:$("#prov").value,llm_model:$("#llm").value})});
+      body:JSON.stringify({provider,llm_model:llm})});
     if(!up.ok){const d=await up.json().catch(()=>({}));
       $("#hint").textContent=d.error||("update failed "+up.status);
-      clearInterval(runPoll);busy=false; setControls(true); return;}
-    addTurn("You","user").innerHTML=md(text,target);
-    const out=addTurn("GeoForge","agent"); out.innerHTML='<span class="spin"></span>working…';
-    let raw="";
+      throw new Error(d.error||`update failed ${up.status}`);}
+    if(CUR&&CUR.id===target){
+      addTurn("You","user").innerHTML=messageHtml({text,attachments:attachments.map(file=>file.path)},target);
+      renderLiveTurn(target);
+    }
     const r=await fetch(`/api/session/${target}/chat`,{method:"POST",
-      headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text})});
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,attachments:attachments.map(file=>file.path)})});
+    if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||`request failed ${r.status}`);}
+    PENDING_ATTACHMENTS.delete(target);if(CUR&&CUR.id===target)renderAttachments();
     const rd=r.body.getReader(), dec=new TextDecoder();
     for(;;){const{done,value}=await rd.read(); if(done)break;
-      raw+=dec.decode(value,{stream:true});
-      if(CUR&&CUR.id===target){out.innerHTML=md(raw,target,true);$("#chat").scrollTop=$("#chat").scrollHeight;}}
-    if(!raw.trim()&&CUR&&CUR.id===target)
-      out.innerHTML='<p style="color:var(--fg-3)">(no output)</p>';
-    else if(CUR&&CUR.id===target) out.innerHTML=md(raw,target,false);
+      flight.raw+=dec.decode(value,{stream:true});
+      if(CUR&&CUR.id===target){const out=liveBubble(target);if(out){out.innerHTML=flight.raw.trim()?md(flight.raw,target,true):liveWaitingHtml(flight);$("#chat").scrollTop=$("#chat").scrollHeight;}}}
+    if(CUR&&CUR.id===target){const out=liveBubble(target);if(out)out.innerHTML=flight.raw.trim()?md(flight.raw,target,false):'<p style="color:var(--fg-3)">(no output)</p>';}
   }catch(e){
-    $("#hint").innerHTML=`The request failed. Check <button id="recover-settings" style="padding:1px 6px">AI Settings</button>, then try again.`;
-    $("#recover-settings").onclick=openSettings;
+    flight.raw=flight.raw||`The request failed: ${e.message||e}`;
+    if(CUR&&CUR.id===target){const out=liveBubble(target);if(out)out.innerHTML=md(flight.raw,target,false);$("#hint").textContent="This chat stopped. You can retry the message or check AI Settings.";}
   }
   clearInterval(runPoll);
-  busy=false; setControls(true);
+  INFLIGHT.delete(target);
+  if(CUR&&CUR.id===target)setControls(true);
+  drawSessions();
   const s=await (await fetch("/api/session/"+target)).json();
   const i=SESSIONS.findIndex(x=>x.id===target);
   if(i>=0){SESSIONS[i].title=s.title;SESSIONS[i].n=s.message_count??s.messages.length;
            SESSIONS[i].models=s.models;SESSIONS[i].skills=s.skills||[];
            SESSIONS[i].mcps=s.mcps||[];
            SESSIONS[i].project_path=s.project_path;}
-  if(CUR&&CUR.id===target){CUR=s;$("#title").textContent=s.title;}
+  if(CUR&&CUR.id===target){CUR=s;$("#title").textContent=s.title;const turn=document.querySelector(`.turn[data-flight="${target}"]`);if(turn)delete turn.dataset.flight;setControls(true);}
   await refreshRun(target);
   drawSessions();
+  if(CUR&&CUR.id===target)await maybeShowAction(target);
 }
 function setControls(on){
-  // busy must freeze the whole binding, not just Send — changing provider or
-  // model mid-stream produced a next turn with settings the user changed
-  // halfway through the previous one.
-  $("#send").disabled=!on||!currentProviderReady();
+  const active=sessionBusy(),uploading=sessionUploading(),available=on!==false;
+  $("#send").disabled=!available||active||uploading||!currentProviderReady();
   // The agent binding is also frozen for the life of a chat once it has
   // started: the CLI keeps that conversation in its own session store and no
   // other CLI can read it, so switching would silently lose the history. The
   // server rejects it too — this only stops the user reaching a dead end.
   const bound=!!(CUR&&CUR.binding_locked);
-  $("#prov").disabled=!on||bound; $("#llm").disabled=!on||bound;
+  $("#prov").disabled=!available||active||bound; $("#llm").disabled=!available||active||bound;
   $("#prov").title=bound?"Fixed for this chat — start a new chat to switch AI"
                         :"AI provider";
   $("#llm").title=bound?"Fixed for this chat — start a new chat to switch model"
                        :"AI model";
-  document.querySelectorAll("#kindtog button").forEach(b=>b.disabled=!on||bound);
-  $("#pickmodels").disabled=!on||bound; $("#newsess").disabled=!on;
-  $("#openproject").disabled=!on||!CUR;
-  $("#opendata").disabled=!on||!CUR;
-  $("#skills").disabled=!on;
-  $("#connect").disabled=!on;
+  document.querySelectorAll("#kindtog button").forEach(b=>b.disabled=!available||active||bound);
+  $("#pickmodels").disabled=!available||active||bound;
+  $("#newsess").disabled=false; // a different chat can always start in parallel
+  $("#openproject").disabled=!CUR;
+  $("#opendata").disabled=!CUR;
+  $("#skills").disabled=!available||active;
+  $("#attach").disabled=!available||active||uploading;
+  $("#connect").disabled=!available;
+  updateActivityUI();
 }
 $("#send").onclick=send;
 $("#msg").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}});
-$("#msg").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";drawSlash();});
+$("#msg").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";if(CUR)DRAFTS.set(CUR.id,e.target.value);drawSlash();});
+$("#attach").onclick=()=>$("#chatfiles").click();
+$("#chatfiles").onchange=async e=>{await addChatFiles(e.target.files);e.target.value="";};
+let dragDepth=0;
+$("#dropzone").addEventListener("dragenter",e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes("Files")){e.preventDefault();dragDepth++;e.currentTarget.classList.add("dragging");}});
+$("#dropzone").addEventListener("dragover",e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes("Files")){e.preventDefault();e.dataTransfer.dropEffect="copy";}});
+$("#dropzone").addEventListener("dragleave",e=>{dragDepth=Math.max(0,dragDepth-1);if(!dragDepth)e.currentTarget.classList.remove("dragging");});
+$("#dropzone").addEventListener("drop",async e=>{e.preventDefault();dragDepth=0;e.currentTarget.classList.remove("dragging");await addChatFiles(e.dataTransfer.files);});
+// Never let the embedded browser navigate away when a file misses the small
+// drop target by a few pixels.
+document.addEventListener("dragover",e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes("Files"))e.preventDefault();});
+document.addEventListener("drop",e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes("Files"))e.preventDefault();});
 $("#prov").addEventListener("change",drawLLM);
 document.querySelectorAll("#kindtog button").forEach(b=>b.onclick=()=>{
   KIND=b.dataset.k; localStorage.setItem("kiss.kind",KIND); drawProviders();});
-$("#newsess").onclick=async()=>{CUR=null; drawEmpty(); await ensureSession(); openSession(CUR.id);};
+$("#newsess").onclick=async()=>{if(CUR)DRAFTS.set(CUR.id,$("#msg").value);CUR=null;$("#msg").value="";renderAttachments();drawEmpty();await ensureSession();await openSession(CUR.id);};
+$("#activity-new").onclick=()=>$("#newsess").click();
+$("#action-later").onclick=closeActionPicker;
+$("#action-continue").onclick=async()=>{
+  if(!ACTION_REQUEST||!ACTION_SESSION||ACTION_INDEX<0){$("#action-error").textContent=chineseUI()?"请先选择一项。":"Choose one option first.";return;}
+  if(!CUR||CUR.id!==ACTION_SESSION){$("#action-error").textContent=chineseUI()?"请返回提出此问题的对话。":"Return to the chat that asked this question.";return;}
+  const option=ACTION_REQUEST.options[ACTION_INDEX],note=$("#action-note").value.trim();
+  const text=chineseUI()?`关于“${ACTION_REQUEST.title}”，我的选择是：${option.label}。\n决定：${option.response||option.label}${note?`\n补充说明：${note}`:""}\n请根据这个选择继续。`:`For “${ACTION_REQUEST.title}”, I choose: ${option.label}.\nDecision: ${option.response||option.label}${note?`\nAdditional note: ${note}`:""}\nPlease continue using this choice.`;
+  closeActionPicker();$("#msg").value=text;DRAFTS.set(CUR.id,text);await send();
+};
+$("#action-ask").onclick=async()=>{
+  if(!ACTION_REQUEST||!ACTION_SESSION||!CUR||CUR.id!==ACTION_SESSION)return;
+  const text=chineseUI()?`我还不能决定“${ACTION_REQUEST.title}”。请用简单的话比较这些选项、风险和影响，然后再让我选择。`:`I cannot decide “${ACTION_REQUEST.title}” yet. Compare these options, their risks, and their effects in simple words, then ask me again.`;
+  closeActionPicker();$("#msg").value=text;DRAFTS.set(CUR.id,text);await send();
+};
 $("#openproject").onclick=async()=>{
   if(!CUR) return;
   const r=await fetch(`/api/session/${CUR.id}/open`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
@@ -719,7 +900,6 @@ async function refreshData(){
 $("#opendata").onclick=async()=>{$("#datapanel").classList.add("open");await refreshData();};
 $("#data-close").onclick=()=>$("#datapanel").classList.remove("open");
 $("#data-agent").onclick=async()=>{
-  if(busy)return;
   $("#datapanel").classList.remove("open");$("#msg").focus();
 };
 $("#data-upload").onclick=()=>$("#datafile").click();
@@ -909,5 +1089,6 @@ $("#theme").onclick=()=>{
 if(localStorage.getItem("kiss-dark")==="1"||
    (localStorage.getItem("kiss-dark")===null&&matchMedia("(prefers-color-scheme:dark)").matches))
   document.body.setAttribute("data-dark","");
+setInterval(updateActivityUI,1000);
 loadAll();
 </script></body></html>

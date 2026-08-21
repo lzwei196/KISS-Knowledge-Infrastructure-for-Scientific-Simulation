@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import queue
 import re
 import sys
 import threading
@@ -40,6 +41,44 @@ INPUT_GROUPS = (
     ("initial_conditions", "Initial conditions"),
     ("boundary_conditions", "Boundary & controls"),
 )
+
+
+def _with_heartbeats(stream, interval: float = 12.0):
+    """Yield ``None`` while a blocking provider stream is still alive.
+
+    Agent CLIs legitimately spend minutes inside one build or regression-test
+    tool call. Reading their stdout directly blocks the HTTP handler for that
+    whole interval, and WebKit can then replace the live setup log with the
+    opaque error "Load failed". Pump the provider on a worker thread so the
+    handler can keep its chunked response alive without changing provider or
+    model semantics.
+    """
+    events: queue.Queue[tuple[str, object]] = queue.Queue()
+
+    def pump() -> None:
+        try:
+            for piece in stream:
+                events.put(("piece", piece))
+        except BaseException as error:
+            events.put(("error", error))
+        finally:
+            events.put(("done", None))
+
+    threading.Thread(
+        target=pump, daemon=True, name="geoforge-agent-stream"
+    ).start()
+    while True:
+        try:
+            kind, payload = events.get(timeout=interval)
+        except queue.Empty:
+            yield None
+            continue
+        if kind == "piece":
+            yield payload
+        elif kind == "error":
+            raise payload
+        else:
+            return
 
 SESSION_PROJECT_RULES = """[SESSION PROJECT — KEEP THE SCIENTIFIC JOB HERE]
 This chat has its own local project folder: {project}
@@ -63,8 +102,14 @@ The KI contract is your internal checklist, not a form for the user.
   scientific choice, or access to private/licensed data that you cannot obtain.
 - For direct API chat, use the project tools to write inputs/configuration and
   run shipped KI preparation tools. Do not stop at an explanation or plan.
+- GeoForge-managed software in the current KI's configured binaries directory
+  may be passed directly to a KI tool. Do not ask the user to copy a managed
+  model binary into the project merely to satisfy path isolation.
 - Record prepared files and provenance under runs/ and validate them before a
   model run. If human help is unavoidable, use request_user_action exactly once.
+- When the user must choose between concrete alternatives, include 2-5 short
+  options (id, label, description, and the exact response to return). GeoForge
+  will render those options as a picker; do not bury the same A/B list in prose.
 """
 
 AUTOMATIC_SKILL_RULES = """[AUTOMATIC SKILL USE AND INLINE RESULTS]
@@ -95,7 +140,7 @@ Tool calls, file inspection, and scratch reasoning are internal work.
   dump a raw agent transcript into the answer.
 """
 
-SCOPE_FIRST_RULES = """[FIRST REPLY TO A NEW TASK: PLAN IN TEXT, THEN STOP]
+SCOPE_FIRST_RULES = """[FIRST REPLY TO A NEW TASK: STATE THE SCOPE FIRST]
 Before ANY tool call — no file read, no command, no web fetch — answer in TEXT
 and cover, in the user's language:
   1. WHICH KI you will use and why, in one sentence, with its local software
@@ -103,15 +148,21 @@ and cover, in the user's language:
      with it instead.
   2. HOW you will do it — the concrete steps, briefly.
   3. WHAT YOU NEED from the user: data, files, parameters, or a decision.
-  4. Ask whether to proceed.
-Then END YOUR TURN. Do not start the work in the same turn.
+
+If the user explicitly said to start, proceed, begin now, work autonomously, or
+gave an equally clear instruction to act, continue into the tools in this SAME
+turn after that short scope note. Do not ask them to approve the work again.
+Otherwise ask whether to proceed and end the turn. A real licence, login,
+protected download, or scientifically meaningful missing choice may still use
+the structured "Needs you" handoff later.
 
 The catalogue above already gives each KI's purpose and local software status,
 which is everything the plan needs. Reading the chosen KI's SKILL.md is part of
-the work, not part of the plan — it happens after the user agrees.
+the work, not part of the scope note.
 
 This governs the message that OPENS a task, and only that message:
-- Once the user agrees, carry the plan out and do not ask again.
+- Once the user agrees or already told you to act, carry the plan out and do
+  not ask again.
 - Later messages inside an approved task need no new plan.
 - A conversational question ("what can you do?") needs no plan — just answer.
 """
@@ -738,6 +789,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(projectrun.load(
                 project, selected_kis=s.get("models") or []))
 
+        if route.startswith("/api/session/") and route.endswith("/request"):
+            sid = route.split("/")[3]
+            if not sessions.valid_id(sid):
+                return self._json({"error": "invalid session id"}, 400)
+            s = sessions.load(self.workroot, sid)
+            if not s:
+                return self._json({"error": "no such session"}, 404)
+            project = sessions.project_path(self.workroot, s)
+            return self._json({"request": setup_flow.request(project)})
+
         if route.startswith("/api/session/"):
             sid = route.split("/")[3] if len(route.split("/")) > 3 else ""
             if not sessions.valid_id(sid):
@@ -1038,6 +1099,12 @@ class Handler(BaseHTTPRequestHandler):
         """Join a shared software install to one chat's scenario directories."""
         project = Path(project).resolve()
         shared = self._config(ki)
+        # Migrate workspaces created by older desktop builds where the model
+        # binary could be verified while GeoForge's own shared Python library
+        # was never copied into place.
+        repo_root = getattr(self, "repo_root", None)
+        if repo_root is not None:
+            setup_flow.prepare_common(shared, repo_root)
         cfg = paths.KissConfig.default(project)
         cfg.python = shared.python
         cfg.relocation = "none"
@@ -1148,11 +1215,12 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     # --- agent-guided setup -------------------------------------------------
-    def _record_agent_preflight(self, ki, live_ki, cfg, root: Path, emit) -> bool:
+    def _record_agent_preflight(self, ki, live_ki, cfg, root: Path, emit,
+                                *, check=None) -> bool:
         """Turn the agent's final preflight into the one verification truth."""
         import time as _time
 
-        check = install.run_preflight(live_ki, cfg.python, cfg)
+        check = check or install.run_preflight(live_ki, cfg.python, cfg)
         emit(f"\nGeoForge final check: {'PASS' if check.ok else 'FAIL'}\n")
         if check.detail:
             emit(check.detail.rstrip() + "\n")
@@ -1220,10 +1288,25 @@ class Handler(BaseHTTPRequestHandler):
         log_file.write(f"\n\n===== agent setup {__import__('time').strftime('%Y-%m-%d %H:%M:%S')} =====\n")
         log_file.flush()
 
+        client_connected = True
+
         def emit(piece: str) -> bool:
+            nonlocal client_connected
             log_file.write(piece)
             log_file.flush()
-            return self._chunk(piece)
+            if client_connected:
+                client_connected = self._chunk(piece)
+            # A closed browser display must not cancel an installation. Keep
+            # consuming the agent, preserve its log, and run the final
+            # deterministic preflight in this same handler.
+            return True
+
+        def heartbeat() -> None:
+            nonlocal client_connected
+            if client_connected:
+                # Zero-width text is still a real HTTP chunk, but does not
+                # clutter the setup transcript or the user's visible log.
+                client_connected = self._chunk("\u200b")
         resumed = waiting if waiting and waiting.get("status") == "ready" else None
         try:
             emit(f"Preparing the {ki.name} agent workspace…\n")
@@ -1231,6 +1314,16 @@ class Handler(BaseHTTPRequestHandler):
                 ki, self._manifest(ki), root, self.repo_root, self.catalog.models_dir)
             if resumed:
                 setup_flow.clear_request(root)
+            initial_check = install.run_preflight(live_ki, cfg.python, cfg)
+            if initial_check.ok:
+                # A previous pass may already have completed the install while
+                # the live browser stream was interrupted. Trust the KI's real
+                # deterministic check and do not spend another model turn
+                # rebuilding or second-guessing working scientific software.
+                self._record_agent_preflight(
+                    ki, live_ki, cfg, root, emit, check=initial_check)
+                emit(f"\n{ki.name} is already verified and ready to use.\n")
+                return
             instructions = (root / "CLAUDE.md").read_text(encoding="utf-8")
             system = (prompt.compose(live_ki, cfg, headless=True) +
                       "\n\n[SOFTWARE SETUP CONTRACT]\n" + instructions)
@@ -1251,13 +1344,13 @@ class Handler(BaseHTTPRequestHandler):
 
             if kind == "api":
                 prov = api.PROVIDERS[pname]
-                for piece in api.run(
+                stream = api.run(
                     prov, live_ki, cfg, system, task, model=llm, max_steps=40,
                     setup_mode=True, setup_context={"run_builtin": run_builtin},
                     presentation="log",
-                ):
-                    if not emit(piece):
-                        break
+                )
+                for piece in _with_heartbeats(stream):
+                    heartbeat() if piece is None else emit(piece)
             else:
                 prov = providers.PROVIDERS[pname]
                 pol = policy.Policy.derive(
@@ -1274,12 +1367,12 @@ class Handler(BaseHTTPRequestHandler):
                     pol.add("exec", command, "software setup build tool")
                 full = system + "\n\n[TASK]\n" + task
                 extra = [str(live_ki.root), str(root)]
-                for piece in providers.run(
+                stream = providers.run(
                     prov, full, root, extra_dirs=extra, cfg=cfg,
                     ki_root=live_ki.root, pol=pol, model=llm,
-                ):
-                    if not emit(piece):
-                        break
+                )
+                for piece in _with_heartbeats(stream):
+                    heartbeat() if piece is None else emit(piece)
 
             self._record_agent_preflight(ki, live_ki, cfg, root, emit)
             handoff_req = setup_flow.request(root)
@@ -1298,8 +1391,9 @@ class Handler(BaseHTTPRequestHandler):
                 emit("\nThe check still fails. Continue the agent for another repair pass.\n")
         except Exception as e:
             emit(f"\nsetup agent failed: {type(e).__name__}: {e}\n")
-        log_file.close()
-        self._end_stream()
+        finally:
+            log_file.close()
+            self._end_stream()
 
     def _stream_data_guide(self, req) -> None:
         """Explain a deterministic data plan without letting AI redefine it."""
@@ -1548,6 +1642,11 @@ class Handler(BaseHTTPRequestHandler):
         if not sessions.valid_id(sid):
             return self._json({"error": "invalid session id"}, 400)
         text = (req.get("message") or "").strip()
+        requested_attachments = req.get("attachments") or []
+        if not isinstance(requested_attachments, list):
+            return self._json({"error": "attachments must be a list"}, 400)
+        if len(requested_attachments) > 50:
+            return self._json({"error": "no more than 50 files per message"}, 413)
         if not text:
             return self._json({"error": "empty message"}, 400)
         if len(text) > 100_000:
@@ -1557,11 +1656,25 @@ class Handler(BaseHTTPRequestHandler):
             s = sessions.load(self.workroot, sid)
             if not s:
                 return self._json({"error": "no such session"}, 404)
+            available_files = {
+                item["relative_path"] for item in sessions.input_files(
+                    self.workroot, s, limit=10_000)
+            }
+            attachments: list[str] = []
+            for path in requested_attachments:
+                if not isinstance(path, str) or path not in available_files:
+                    return self._json(
+                        {"error": f"attachment is not in this project: {path!r}"},
+                        400,
+                    )
+                if path not in attachments:
+                    attachments.append(path)
             # History is built BEFORE the new message is appended — appending
             # first replayed the current message twice in the same prompt.
             history = sessions.transcript(s)
             sessions.append_message(self.workroot, s,
-                                    {"role": "user", "text": text})
+                                    {"role": "user", "text": text,
+                                     "attachments": attachments})
             if s.get("title") in ("New session", "", None):
                 s["title"] = text[:48]
             sessions.save(self.workroot, s)
@@ -1571,6 +1684,8 @@ class Handler(BaseHTTPRequestHandler):
             if pending and pending.get("status") == "waiting":
                 setup_flow.resume(project, "The user replied in the project chat.")
             projectrun.begin_turn(project, text, s.get("models") or [])
+            agent_text = sessions.message_text({"text": text,
+                                                "attachments": attachments})
         want = s.get("provider") or settings.load().get("default_provider") or ""
         llm = s.get("llm_model") or None
         names = s.get("models") or []
@@ -1588,15 +1703,16 @@ class Handler(BaseHTTPRequestHandler):
         failure = None
         cli_state: dict = {}
         try:
-            prior = s["messages"][:-1][-20:]      # structured turns for the API driver
+            prior = [dict(message, text=sessions.message_text(message))
+                     for message in s["messages"][:-1][-20:]]
             if names:
-                self._chat_with_models(names, want, history + "\nUSER: " + text,
-                                       out, project, llm, prior=prior, bare_task=text,
+                self._chat_with_models(names, want, history + "\nUSER: " + agent_text,
+                                       out, project, llm, prior=prior, bare_task=agent_text,
                                        skill_names=skill_names, mcp_names=mcp_names,
                                        session=s, cli_state=cli_state)
             else:
-                self._chat_auto(want, history + "\nUSER: " + text,
-                                out, project, llm, prior=prior, bare_task=text,
+                self._chat_auto(want, history + "\nUSER: " + agent_text,
+                                out, project, llm, prior=prior, bare_task=agent_text,
                                 skill_names=skill_names, mcp_names=mcp_names,
                                 session=s, cli_state=cli_state)
         except Exception as e:
@@ -1741,6 +1857,13 @@ class Handler(BaseHTTPRequestHandler):
                                  project_mode=True):
                 if not out(piece):
                     break
+            if needs_setup:
+                # A chat repair is the same installation as one launched from
+                # the dedicated Setup page.  Record GeoForge's own final
+                # preflight so the library/header immediately reflect the
+                # machine truth instead of remaining stuck at "Setup needed".
+                self._record_agent_preflight(
+                    ki, run_ki, cfg, setup_wd, lambda _piece: True)
             return
         avail = providers.available()
         if not avail:
@@ -1848,9 +1971,16 @@ class Handler(BaseHTTPRequestHandler):
                     setup_mode=needs_setup,
                     setup_context={"run_builtin": run_builtin,
                                    "project_root": project} if needs_setup else None,
-                    project_mode=not needs_setup):
+                    # The API agent must retain chat-project tools while it
+                    # repairs software; otherwise a successful installation
+                    # cannot publish the ensuing run, provenance, or plot to
+                    # the session that requested it.
+                    project_mode=True):
                 if not out(piece):
                     break
+            if needs_setup:
+                self._record_agent_preflight(
+                    ki, run_ki, cfg, setup_wd, lambda _piece: True)
             return
         avail = providers.available()
         if not avail:
@@ -1909,6 +2039,9 @@ class Handler(BaseHTTPRequestHandler):
                        session=session, cli_state=cli_state,
                        extra_dirs=grants, cfg=cfg, ki_root=ki.root,
                        pol=pol, model=llm)
+        if needs_setup:
+            self._record_agent_preflight(
+                ki, resolved[0], cfg, setup_wd, lambda _piece: True)
 
     # --- chat --------------------------------------------------------------
     def _stream_chat(self, req) -> None:

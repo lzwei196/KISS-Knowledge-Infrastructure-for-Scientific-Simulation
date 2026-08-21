@@ -48,7 +48,13 @@ from dssat_workdir_setup import (  # noqa: E402
 )
 
 
-DEFAULT_SOIL_FILE = Path("KISSPATH_HOME/DSSAT/run_test/SOIL.SOL")
+# This functional reference profile ships with the KI.  Previously the runner
+# pointed at ``DSSAT/run_test/SOIL.SOL``, which is not part of the official
+# source release.  Each provider then had to invent that file during a chat;
+# a plausible-looking but invalid header reached the real Fortran parser and
+# failed with IPSOIL.  Project-specific work should still replace this explicit
+# generic assumption with measured or derived soil data.
+DEFAULT_SOIL_FILE = Path(__file__).with_name("generic_soil.sol")
 SOIL_LABELS = {
     "IB00000001": "DSSAT generic silty clay",
     "IB00000002": "DSSAT generic loam",
@@ -86,6 +92,27 @@ def _tav_amp(dates, tmax, tmin) -> tuple[float, float]:
     return tav, amp
 
 
+def _wth_field(value: float, width: int = 6) -> str:
+    """Render one daily DSSAT weather value without header-window overflow.
+
+    DSSAT derives each data-column read window from the spaces in the header.
+    A four-character header such as ``WIND`` in a six-column field therefore
+    leaves five usable characters.  A value such as ``1162.9`` would fill all
+    six positions and silently be read back as ``162.9``.  Round only when
+    necessary, and fail clearly if the value still cannot fit.
+    """
+    usable = width - 1
+    text = f"{value:.1f}"
+    if len(text) > usable:
+        text = f"{value:.0f}"
+    if len(text) > usable:
+        raise ValueError(
+            f"weather value {value!r} needs more than {usable} characters "
+            f"and cannot fit safely in a {width}-column DSSAT field"
+        )
+    return f"{text:>{width}s}"
+
+
 def write_daily_weather(data: dict, path: Path, *, station: str, lat: float,
                         lon: float, elevation: float, source_label: str) -> dict:
     """Convert standardized public-weather arrays into one DSSAT WTH file."""
@@ -121,11 +148,12 @@ def write_daily_weather(data: dict, path: Path, *, station: str, lat: float,
             wind_km_day = _finite(wind[i], "wind") * 86.4
             handle.write(
                 f"{day.year % 100:02d}{day.timetuple().tm_yday:03d}"
-                f"{max(0.0, radiation):6.1f}"
-                f"{_finite(tmax[i], 'maximum temperature'):6.1f}"
-                f"{_finite(tmin[i], 'minimum temperature'):6.1f}"
-                f"{max(0.0, _finite(rain[i], 'precipitation')):6.1f}"
-                f"{max(0.0, wind_km_day):6.1f}\n"
+                + _wth_field(max(0.0, radiation))
+                + _wth_field(_finite(tmax[i], "maximum temperature"))
+                + _wth_field(_finite(tmin[i], "minimum temperature"))
+                + _wth_field(max(0.0, _finite(rain[i], "precipitation")))
+                + _wth_field(max(0.0, wind_km_day))
+                + "\n"
             )
     return {
         "days": n,

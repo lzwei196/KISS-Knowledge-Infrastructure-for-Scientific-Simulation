@@ -231,7 +231,6 @@ class KissConfig:
         for role in sorted(self.roles):
             lines.append(f"{role} = {_toml_str(self.roles[role])}")
         return "\n".join(lines) + "\n"
-
     def resolve(self, legacy: str) -> Path:
         """Translate an authoring-machine path into this machine's equivalent."""
         for prefix, role in LEGACY_PREFIXES:
@@ -274,6 +273,28 @@ class KissConfig:
         for prefix, target in pairs:
             args += ["--bind", str(target), prefix]
         return args
+
+
+def with_ki_tools_common(cfg: KissConfig, env: dict[str, str] | None = None) -> dict[str, str]:
+    """Expose GeoForge's bundled shared KI library to child Python tools.
+
+    The scientific agents often invoke ``python3`` themselves instead of the
+    interpreter recorded in ``kiss.toml``. An editable install into one venv
+    therefore cannot guarantee that those child processes can import the
+    bundled library. ``PYTHONPATH`` is the process-tree contract: local CLIs,
+    direct-API tools, preflight scripts, and their descendants all see the same
+    materialised ``ki_tools_common`` copy.
+    """
+    out = dict(os.environ if env is None else env)
+    common = Path(getattr(cfg, "roles", {}).get("ki_tools_common", "")).expanduser()
+    if not common.is_dir():
+        return out
+    existing = [item for item in out.get("PYTHONPATH", "").split(os.pathsep) if item]
+    common_text = str(common.resolve())
+    if common_text not in existing:
+        existing.insert(0, common_text)
+    out["PYTHONPATH"] = os.pathsep.join(existing)
+    return out
 
 
 #: Top-level directories the authoring prefixes live under. Each is overlaid

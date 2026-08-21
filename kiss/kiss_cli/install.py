@@ -379,7 +379,11 @@ def run_preflight(ki, python: str, cfg=None) -> Step:
         from .paths import have_sandbox, sandbox_command
         if have_sandbox():
             argv = sandbox_command(cfg, argv, cwd=ki.root)
-    rc, out = _run(argv, cwd=ki.root, timeout=600)
+    env = None
+    if cfg is not None:
+        from .paths import with_ki_tools_common
+        env = with_ki_tools_common(cfg, {})
+    rc, out = _run(argv, cwd=ki.root, timeout=600, env=env)
     tail = "\n".join(out.strip().splitlines()[-25:])
     return Step("preflight", rc == 0, tail, commands=[" ".join(argv)])
 

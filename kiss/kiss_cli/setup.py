@@ -21,6 +21,7 @@ import shlex
 import shutil
 import sys
 import time
+import uuid
 from pathlib import Path
 
 from . import install, paths, port
@@ -29,6 +30,32 @@ REQUEST_FILE = "setup-request.json"
 USER_FILES_DIR = "user-files"
 LOG_FILE = "setup-agent.log"
 REQUEST_KINDS = {"download", "licence", "login", "permission", "choice", "other"}
+
+
+def _request_options(value) -> list[dict]:
+    """Normalise short choices written by either an API or a CLI agent."""
+    if not isinstance(value, list):
+        return []
+    out = []
+    for index, item in enumerate(value[:8]):
+        if isinstance(item, str):
+            raw = {"label": item}
+        elif isinstance(item, dict):
+            raw = item
+        else:
+            continue
+        label = " ".join(str(raw.get("label") or "").split())[:240]
+        if not label:
+            continue
+        option_id = re.sub(r"[^A-Za-z0-9_.-]", "-", str(
+            raw.get("id") or f"option-{index + 1}"))[:80].strip("-.")
+        out.append({
+            "id": option_id or f"option-{index + 1}",
+            "label": label,
+            "description": str(raw.get("description") or "").strip()[:2000],
+            "response": str(raw.get("response") or label).strip()[:2000],
+        })
+    return out
 
 
 def _read_json(path: Path) -> dict | None:
@@ -51,6 +78,8 @@ def request(root: Path) -> dict | None:
     url = str(raw.get("url") or "").strip()[:2000]
     return {
         **raw,
+        "id": re.sub(r"[^A-Za-z0-9_.-]", "", str(
+            raw.get("id") or raw.get("created_at") or "request"))[:100] or "request",
         "status": raw.get("status") if raw.get("status") in ("waiting", "ready") else "waiting",
         "kind": kind if kind in REQUEST_KINDS else "other",
         "title": " ".join(str(raw.get("title") or "Help needed").split())[:160],
@@ -60,6 +89,8 @@ def request(root: Path) -> dict | None:
         "command": str(raw.get("command") or "").strip()[:2000] or None,
         "resume_hint": str(raw.get("resume_hint") or "").strip()[:4000] or None,
         "user_note": str(raw.get("user_note") or "").strip()[:4000] or None,
+        "options": _request_options(raw.get("options")),
+        "allow_note": bool(raw.get("allow_note", True)),
     }
 
 
@@ -77,6 +108,7 @@ def request_user(root: Path, payload: dict) -> dict:
     command = str(payload.get("command") or "").strip()[:2000]
     resume = str(payload.get("resume_hint") or "").strip()[:4000]
     doc = {
+        "id": uuid.uuid4().hex[:12],
         "status": "waiting",
         "kind": kind,
         "title": title,
@@ -85,6 +117,8 @@ def request_user(root: Path, payload: dict) -> dict:
         "expected_path": expected or None,
         "command": command or None,
         "resume_hint": resume or None,
+        "options": _request_options(payload.get("options")),
+        "allow_note": bool(payload.get("allow_note", True)),
         "created_at": time.time(),
     }
     path = Path(root) / REQUEST_FILE
@@ -207,6 +241,25 @@ def runtime_command(models_dir: Path, model: str, root: Path) -> str:
     return " ".join([*(shlex.quote(x) for x in env), *(shlex.quote(x) for x in argv)])
 
 
+def prepare_common(cfg, repo_root: Path) -> Path:
+    """Materialise the bundled shared tool library into this setup workspace."""
+    source = Path(repo_root) / "ki_tools_common"
+    if not source.is_dir():
+        raise ValueError(
+            f"GeoForge's bundled ki_tools_common is missing (expected {source})")
+    target = Path(cfg.roles.get("ki_tools_common") or (cfg.root / "ki_tools_common"))
+    report = port.materialise(source, target, cfg)
+    if report.unresolved or report.corrupted:
+        detail = "; ".join(filter(None, [
+            f"unresolved placeholders: {', '.join(sorted(report.unresolved))}"
+            if report.unresolved else "",
+            f"corrupted paths: {'; '.join(report.corrupted[:3])}"
+            if report.corrupted else "",
+        ]))
+        raise ValueError(f"cannot prepare bundled ki_tools_common: {detail}")
+    return target
+
+
 def prepare(ki, man, root: Path, repo_root: Path, models_dir: Path):
     """Create the writable workspace and provider instruction files.
 
@@ -232,6 +285,11 @@ def prepare(ki, man, root: Path, repo_root: Path, models_dir: Path):
             if report.corrupted else "",
         ]))
         raise ValueError(f"cannot prepare the KI workspace: {detail}")
+
+    # This is application infrastructure, not a model-specific dependency the
+    # agent or user should have to locate. Keep an offline, materialised copy
+    # beside every shared model workspace before any preflight or chat starts.
+    prepare_common(cfg, repo_root)
 
     live_ki = type(ki)(name=ki.name, root=live)
     handoff.write_setup(

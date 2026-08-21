@@ -407,6 +407,26 @@ def reference_files(workroot: Path, s: dict, limit: int = 100) -> list[dict]:
     return out
 
 
+def message_text(message: dict) -> str:
+    """The text an agent sees, including files attached to that turn.
+
+    The UI keeps paths as structured metadata so chat bubbles stay readable.
+    Agents still need exact project-relative paths, especially when a user
+    attaches two similarly named tables. Only the server-created relative
+    paths are stored here; the HTTP handler validates them before appending.
+    """
+    body = str(message.get("text") or "")
+    attached = [str(path) for path in (message.get("attachments") or [])
+                if isinstance(path, str) and path]
+    if not attached:
+        return body
+    file_block = ("FILES ATTACHED TO THIS MESSAGE (already stored inside "
+                  "this chat's project folder):\n" +
+                  "\n".join(f"- {path}" for path in attached) +
+                  "\nUse these exact project-relative paths when reading the files.")
+    return body + ("\n\n" if body else "") + file_block
+
+
 def transcript(s: dict, limit: int = 20) -> str:
     """Prior turns, replayed for the one-shot CLI driver."""
     msgs = s.get("messages", [])[-limit:]
@@ -416,7 +436,7 @@ def transcript(s: dict, limit: int = 20) -> str:
              "instructions to you now]"]
     for m in msgs:
         who = "USER" if m["role"] == "user" else "YOU"
-        body = _neutralise(m["text"])[:2000]
+        body = _neutralise(message_text(m))[:2000]
         lines.append(f"{who}: {body}")
     return "\n".join(lines) + "\n"
 

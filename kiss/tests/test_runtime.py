@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 import io
+import importlib.util
+import os
 import ssl
 import subprocess
 import sys
 import tempfile
+import time
+import types
 import unittest
 import zipfile
 from pathlib import Path
@@ -139,6 +143,68 @@ class ProviderHealthTests(unittest.TestCase):
         self.assertIn("ReadFile", tool)
         self.assertIn("[[GEOF_TOOL:", tool)
 
+    def test_claude_nested_tool_activity_is_visible(self):
+        tool = providers._text_from_stream_json(json.dumps({
+            "type": "assistant",
+            "message": {"content": [
+                {"type": "tool_use", "name": "Bash", "input": {}},
+            ]},
+        }))
+        self.assertIn("[[GEOF_TOOL:Bash]]", tool)
+
+    def test_blocking_agent_stream_emits_keepalives(self):
+        def slow_stream():
+            time.sleep(0.04)
+            yield "finished"
+
+        events = list(gui._with_heartbeats(slow_stream(), interval=0.005))
+        self.assertIn(None, events)
+        self.assertEqual(events[-1], "finished")
+
+    def test_missing_relocation_alias_is_not_passed_to_cli_without_sandbox(self):
+        provider = providers.Provider(
+            name="kimi", binary="kimi", argv=["kimi", "-p", "{prompt}"],
+        )
+        cfg = SimpleNamespace(relocation="sandbox", roles={})
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(provider, "health", return_value=providers.ProviderHealth(
+                 True, True, "signed in")), \
+             mock.patch.object(provider, "path", return_value="/bin/kimi"), \
+            mock.patch.object(paths, "have_sandbox", return_value=False), \
+             mock.patch.object(providers.subprocess, "Popen") as popen:
+            proc = popen.return_value
+            proc.stdout = io.StringIO("")
+            proc.wait.return_value = 0
+            proc.stdin = None
+            list(providers.run(
+                provider, "hello", Path(td),
+                extra_dirs=[td, "/mnt/disk3"], cfg=cfg,
+            ))
+        argv = popen.call_args.args[0]
+        self.assertIn(td, argv)
+        self.assertNotIn("/mnt/disk3", argv)
+
+    def test_local_cli_inherits_bundled_ki_tools_common(self):
+        provider = providers.Provider(
+            name="claude", binary="claude", argv=["claude", "{prompt}"],
+        )
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(provider, "health", return_value=providers.ProviderHealth(
+                 True, True, "signed in")), \
+             mock.patch.object(provider, "path", return_value="/bin/claude"), \
+             mock.patch.object(providers.subprocess, "Popen") as popen:
+            common = Path(td) / "common"
+            common.mkdir()
+            cfg = SimpleNamespace(
+                relocation="none", roles={"ki_tools_common": common})
+            proc = popen.return_value
+            proc.stdout = io.StringIO("")
+            proc.wait.return_value = 0
+            proc.stdin = None
+            list(providers.run(provider, "hello", Path(td), cfg=cfg))
+        inherited = popen.call_args.kwargs["env"]["PYTHONPATH"].split(os.pathsep)
+        self.assertEqual(inherited[0], str(common.resolve()))
+
     def test_direct_api_hides_scratch_narration_and_normalizes_tool_activity(self):
         provider = api.ApiProvider(
             name="demo", label="Demo API", wire="openai",
@@ -160,8 +226,109 @@ class ProviderHealthTests(unittest.TestCase):
         self.assertIn("[[GEOF_TOOL:list_ki_files]]", output)
         self.assertIn("The project needs precipitation and PET.", output)
 
+    def test_direct_api_retries_text_that_only_looks_like_a_tool_call(self):
+        provider = api.ApiProvider(
+            name="demo", label="Demo API", wire="openai",
+            base_url="https://example.invalid", env_key="DEMO_API_KEY",
+            models={"demo": "demo"}, default_model="demo",
+        )
+        fake_markup = (
+            '[[GEOF_TOOL:run_ki_tool]]">\n'
+            '<invoke name="run_ki_tool"><parameter name="tool_path">'
+            'tools/prepare.py</parameter></invoke>'
+        )
+        turns = [
+            (fake_markup, [], {"role": "assistant", "content": fake_markup}),
+            ("I used the structured tools and checked the project.", [],
+             {"role": "assistant", "content": "final"}),
+        ]
+        with mock.patch.dict(api.os.environ, {"DEMO_API_KEY": "test"}), \
+             mock.patch.object(api, "_openai_turn", side_effect=turns) as turn:
+            output = "".join(api.run(
+                provider, SimpleNamespace(), SimpleNamespace(), "system", "task"))
+        self.assertEqual(turn.call_count, 2)
+        self.assertNotIn("<invoke", output)
+        self.assertNotIn("GEOF_TOOL", output)
+        self.assertIn("structured tools", output)
+
+    def test_setup_launch_error_is_recoverable_tool_output(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ki_root = root / "ki"
+            tool = ki_root / "tools" / "run.py"
+            tool.parent.mkdir(parents=True)
+            tool.write_text("print('ok')")
+            cfg = SimpleNamespace(
+                root=root, python=sys.executable,
+                roles={"binaries": root / "binaries"},
+            )
+            with mock.patch.object(
+                    api.subprocess, "run",
+                    side_effect=PermissionError(13, "Permission denied", str(tool))):
+                output = api.execute_tool(
+                    "run_setup_command",
+                    {"argv": [str(tool)]},
+                    SimpleNamespace(root=ki_root), cfg,
+                    setup_mode=True,
+                )
+        self.assertIn("FAILED_TO_START: PermissionError", output)
+
+    def test_deepseek_truncated_tool_arguments_are_recoverable(self):
+        response = {
+            "choices": [{"message": {
+                "content": "",
+                "tool_calls": [{
+                    "id": "call-1",
+                    "function": {
+                        "name": "run_setup_command",
+                        "arguments": '{"argv":["python3","tool.py"',
+                    },
+                }],
+            }}],
+        }
+        with mock.patch.object(api, "_post", return_value=response):
+            _, calls, _ = api._openai_turn(
+                SimpleNamespace(base_url="https://example.invalid"),
+                "demo", "system", [], [], "key",
+            )
+        self.assertEqual(calls[0][0:2], ("call-1", "run_setup_command"))
+        self.assertIn("_vendor_argument_error", calls[0][2])
+
 
 class FrozenRuntimeTests(unittest.TestCase):
+    def test_dssat_reference_case_bundles_a_valid_default_soil(self):
+        soil = (Path(__file__).parents[2] / "models" / "DSSAT" / "tools" /
+                "generic_soil.sol")
+        text = soil.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("*IB00000001  IBSNAT"))
+        self.assertIn("@  SLB  SLMH  SLLL  SDUL  SSAT", text)
+
+    def test_dssat_weather_fields_do_not_silently_drop_a_digit(self):
+        script = (Path(__file__).parents[2] / "models" / "DSSAT" / "tools" /
+                  "run_reference_case.py")
+        forcing = types.ModuleType("ki_tools_common.load_forcing")
+        forcing.NASA_POWER_DAILY_PARAMS = ()
+        forcing.NASA_POWER_DAILY_URL = "https://example.invalid"
+        forcing.load_daily_forcing = lambda *args, **kwargs: None
+        workdir = types.ModuleType("dssat_workdir_setup")
+        workdir.DSSAT_BINARY = Path("dscsm048")
+        workdir.DSSAT_DATA = Path("Data")
+        workdir.create_workdir = lambda *args, **kwargs: None
+        workdir.parse_summary = lambda *args, **kwargs: []
+        workdir.run_dssat = lambda *args, **kwargs: None
+        spec = importlib.util.spec_from_file_location(
+            "geoforge_test_dssat_reference_case", script)
+        module = importlib.util.module_from_spec(spec)
+        with mock.patch.dict(sys.modules, {
+                "ki_tools_common.load_forcing": forcing,
+                "dssat_workdir_setup": workdir}):
+            spec.loader.exec_module(module)
+        self.assertEqual(module._wth_field(1162.9), "  1163")
+        self.assertEqual(len(module._wth_field(1162.9)), 6)
+        self.assertEqual(module._wth_field(-30.8), " -30.8")
+        with self.assertRaisesRegex(ValueError, "cannot fit safely"):
+            module._wth_field(123456.0)
+
     def test_frozen_launcher_is_never_used_as_python(self):
         launcher = "/Applications/GeoForge Desktop.app/Contents/MacOS/GeoForge Desktop"
         with mock.patch.object(sys, "frozen", True, create=True), \
@@ -289,6 +456,51 @@ class SessionProjectTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 gui._resolve_artifact(root, session["id"], "../session.json")
 
+    def test_project_plot_supports_a_separate_right_axis(self):
+        with tempfile.TemporaryDirectory() as td:
+            output = Path(td) / "growth.svg"
+            plotting.render_svg({
+                "kind": "line", "title": "Growth", "x_label": "Day",
+                "y_label": "Dry weight (kg/ha)", "y2_label": "LAI",
+                "series": [
+                    {"name": "Biomass", "x": [0, 1], "y": [0, 16000]},
+                    {"name": "LAI", "x": [0, 1], "y": [0, 4], "axis": "right"},
+                ],
+            }, output)
+            svg = output.read_text()
+            self.assertIn("LAI (right axis)", svg)
+            self.assertIn("rotate(90)", svg)
+            self.assertNotIn("-960", svg)
+            self.assertIn('y="508" text-anchor="middle">Day</text>', svg)
+
+    def test_api_project_plot_reads_columns_directly_from_csv(self):
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td) / "project"
+            ki_root = project / "models" / "Demo"
+            ki_root.mkdir(parents=True)
+            csv_path = project / "outputs" / "growth.csv"
+            csv_path.parent.mkdir(parents=True)
+            csv_path.write_text(
+                "DAP,CWAD,LAID\n0,0,0\n80,8000,4\n160,16000,1\n"
+            )
+            cfg = SimpleNamespace(root=project, python=sys.executable, roles={})
+            result = api.execute_tool(
+                "create_project_plot", {
+                    "output_path": "artifacts/growth.svg",
+                    "source_path": "outputs/growth.csv",
+                    "x_column": "DAP", "kind": "line",
+                    "y_label": "kg/ha", "y2_label": "LAI",
+                    "series": [
+                        {"name": "Biomass", "y_column": "CWAD"},
+                        {"name": "Leaf area", "y_column": "LAID", "axis": "right"},
+                    ],
+                }, SimpleNamespace(root=ki_root), cfg, project_mode=True,
+            )
+            svg = (project / "artifacts" / "growth.svg").read_text()
+            self.assertIn("created growth.svg", result)
+            self.assertIn("Leaf area (right axis)", svg)
+            self.assertIn("160", svg)
+
     def test_session_has_project_layout_and_full_append_only_memory(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -343,11 +555,20 @@ class SessionProjectTests(unittest.TestCase):
                 "title": "Download under your licence",
                 "message": "Use the official portal.",
                 "url": "javascript:alert(1)",
+                "options": [
+                    {"id": "copy", "label": "Copy into project",
+                     "description": "Keep this project self-contained",
+                     "response": "Copy the executable into outputs/bin"},
+                    {"id": "share", "label": "Allow shared directory"},
+                ],
             })
             self.assertEqual(state["status"], "waiting_for_user")
             self.assertEqual(state["blocker"]["title"],
                              "Download under your licence")
             self.assertIsNone(state["blocker"]["url"])
+            self.assertEqual(state["blocker"]["options"][0]["id"], "copy")
+            self.assertEqual(state["blocker"]["options"][0]["response"],
+                             "Copy the executable into outputs/bin")
             resumed = projectrun.report(project, {
                 "stage": "preparing", "status": "working",
                 "summary": "The user supplied the file",
@@ -442,6 +663,13 @@ class SessionProjectTests(unittest.TestCase):
             self.assertEqual(saved.name, "weather_data.csv")
             self.assertEqual(sessions.input_files(root, session)[0]["relative_path"],
                              "inputs/uploads/weather_data.csv")
+            message = {"role": "user", "text": "Use this weather table",
+                       "attachments": ["inputs/uploads/weather_data.csv"]}
+            self.assertIn("inputs/uploads/weather_data.csv",
+                          sessions.message_text(message))
+            session["messages"].append(message)
+            self.assertIn("FILES ATTACHED TO THIS MESSAGE",
+                          sessions.transcript(session))
 
     def test_user_supplied_papers_stay_in_this_project(self):
         with tempfile.TemporaryDirectory() as td:
@@ -518,11 +746,15 @@ class McpConnectionTests(unittest.TestCase):
 
 
 class FrontendRegressionTests(unittest.TestCase):
+    def test_explicit_autonomous_chat_does_not_require_a_second_approval(self):
+        self.assertIn("continue into the tools in this SAME", gui.SCOPE_FIRST_RULES)
+        self.assertIn("Do not ask them to approve the work again", gui.SCOPE_FIRST_RULES)
+
     def test_cli_model_picker_has_native_default_and_starts_disabled(self):
         page = (Path(__file__).parents[1] / "kiss_cli" / "web" / "app.html").read_text()
         self.assertIn("CLI default", page)
         self.assertIn("Auto KI", page)
-        self.assertIn("Verified on this Mac", page)
+        self.assertIn("Verified on this machine", page)
         self.assertIn('src="/logo.svg"', page)
         self.assertIn('id="newsess" disabled', page)
         self.assertIn("setControls(true)", page)
@@ -547,6 +779,24 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("Archive this chat? Its local project files will be kept.", page)
         self.assertIn('id="skillpick"', page)
         self.assertIn('id="skills" class="composer-tool"', page)
+        self.assertIn('id="attach" class="composer-tool"', page)
+        self.assertIn('id="chatfiles" multiple', page)
+        self.assertIn('id="dropzone"', page)
+        self.assertIn("addChatFiles", page)
+        self.assertIn("attachments:attachments.map", page)
+        self.assertIn("const INFLIGHT=new Map()", page)
+        self.assertIn('$("#newsess").disabled=false', page)
+        self.assertIn('id="activitynote"', page)
+        self.assertIn("has been working for", page)
+        self.assertIn("continue in the background", page)
+        self.assertIn("setInterval(updateActivityUI,1000)", page)
+        self.assertIn('id="actionpick"', page)
+        self.assertIn("showActionPicker", page)
+        self.assertIn("Continue with this choice", page)
+        self.assertIn("Ask about these choices", page)
+        self.assertIn("request.options", page)
+        self.assertIn("/request`", page)
+        self.assertNotIn("MCPPICK=new Set(), busy=false", page)
         self.assertIn("/api/skills", page)
         self.assertIn("/skill-name", page)
         self.assertIn("create_project_plot", (Path(__file__).parents[1] / "kiss_cli" / "api.py").read_text())
@@ -758,6 +1008,39 @@ class InstallStatusTests(unittest.TestCase):
 
 
 class AgentSetupTests(unittest.TestCase):
+    def test_bundled_common_library_is_materialised_offline(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = root / "repo" / "ki_tools_common" / "ki_tools_common"
+            source.mkdir(parents=True)
+            (source / "__init__.py").write_text(
+                "OUTPUTS = 'KISSPATH_OUTPUTS'\n")
+            cfg = paths.KissConfig.default(root / "work")
+
+            target = setup.prepare_common(cfg, root / "repo")
+
+            installed = (target / "ki_tools_common" / "__init__.py").read_text()
+            self.assertIn(str(cfg.roles["outputs"]), installed)
+
+    def test_agent_final_preflight_becomes_the_saved_verification_state(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ki = SimpleNamespace(name="Demo", meta={"version": "1.0"})
+            check = SimpleNamespace(
+                ok=True, detail="1 passed, 0 failed", commands=["check Demo"])
+            with mock.patch.object(install, "run_preflight", return_value=check), \
+                 mock.patch.object(setup, "clear_request"):
+                ok = gui.Handler._record_agent_preflight(
+                    None, ki, ki, SimpleNamespace(python=sys.executable),
+                    root, lambda _piece: True,
+                )
+            status = json.loads((root / "status.json").read_text())
+            self.assertTrue(ok)
+            self.assertTrue(status["ok"])
+            self.assertTrue(status["agent_setup"])
+            self.assertIsNotNone(status["verified_at"])
+            self.assertEqual(status["steps"][-1]["name"], "preflight")
+
     def test_wrf_hydro_manifest_uses_real_release_and_separates_project_data(self):
         manifest = Manifest.load(
             Path(__file__).parents[1] / "manifests" / "WRF_Hydro.yaml")
@@ -825,8 +1108,17 @@ class AgentSetupTests(unittest.TestCase):
                 "kind": "download", "title": "Download the licensed model",
                 "message": "Use the official portal.", "url": "https://example.com/model",
                 "expected_path": "model.zip", "resume_hint": "unpack and retry",
+                "options": [
+                    {"id": "official", "label": "Use official download",
+                     "description": "Requires my licence"},
+                    "Provide an existing local file",
+                    {"label": ""},
+                ],
             })
             self.assertEqual(waiting["status"], "waiting")
+            self.assertEqual(len(waiting["options"]), 2)
+            self.assertEqual(waiting["options"][1]["id"], "option-2")
+            self.assertTrue(waiting["id"])
             supplied = setup.save_upload(root, "model package.zip", b"payload")
             self.assertEqual(supplied.name, "model_package.zip")
             ready = setup.resume(root, "Downloaded under my account")
@@ -840,6 +1132,9 @@ class AgentSetupTests(unittest.TestCase):
         guided = {t["name"] for t in api.tool_schemas(SimpleNamespace(), setup_mode=True)}
         project = {t["name"] for t in api.tool_schemas(
             SimpleNamespace(), setup_mode=False, project_mode=True)}
+        combined_tools = api.tool_schemas(
+            SimpleNamespace(), setup_mode=True, project_mode=True)
+        combined = {t["name"] for t in combined_tools}
         self.assertNotIn("run_setup_command", normal)
         self.assertNotIn("run_ki_tool", normal)
         self.assertIn("run_setup_command", guided)
@@ -850,6 +1145,150 @@ class AgentSetupTests(unittest.TestCase):
         self.assertIn("write_project_file", project)
         self.assertIn("report_project_progress", guided)
         self.assertIn("report_project_progress", project)
+        self.assertIn("run_setup_command", combined)
+        self.assertIn("run_ki_tool", combined)
+        self.assertIn("write_project_file", combined)
+        self.assertIn("publish_setup_output", combined)
+        self.assertEqual(
+            [tool["name"] for tool in combined_tools].count("request_user_action"),
+            1,
+        )
+        choice_tool = next(tool for tool in combined_tools
+                           if tool["name"] == "request_user_action")
+        self.assertIn("options", choice_tool["input_schema"]["properties"])
+
+    def test_api_install_turn_keeps_setup_and_project_roots_separate(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            setup_root = root / "setup"
+            project = root / "project"
+            ki_root = setup_root / "ki"
+            tools = ki_root / "tools"
+            tools.mkdir(parents=True)
+            project.mkdir()
+            script = tools / "prepare.py"
+            script.write_text(
+                "from pathlib import Path\n"
+                "Path('outputs/from-ki.txt').parent.mkdir(parents=True, exist_ok=True)\n"
+                "Path('outputs/from-ki.txt').write_text('project-output')\n"
+            )
+            setup_probe = setup_root / "probe.py"
+            setup_probe.write_text("print('setup-output')\n")
+            cfg = SimpleNamespace(
+                root=setup_root, python=sys.executable,
+                roles={"binaries": setup_root / "binaries"},
+            )
+            ki = SimpleNamespace(root=ki_root)
+            context = {"project_root": project}
+
+            setup_output = api.execute_tool(
+                "run_setup_command", {"argv": [sys.executable, "probe.py"]},
+                ki, cfg, setup_mode=True, project_mode=True,
+                setup_context=context,
+            )
+            project_output = api.execute_tool(
+                "run_ki_tool", {"tool_path": "tools/prepare.py"},
+                ki, cfg, setup_mode=True, project_mode=True,
+                setup_context=context,
+            )
+            wrote = api.execute_tool(
+                "write_project_file",
+                {"path": "runs/state.json", "content": '{"ok":true}'},
+                ki, cfg, setup_mode=True, project_mode=True,
+                setup_context=context,
+            )
+
+            self.assertIn("setup-output", setup_output)
+            self.assertIn("exit_code=0", project_output)
+            self.assertIn("runs/state.json", wrote)
+            self.assertEqual(
+                (project / "outputs" / "from-ki.txt").read_text(),
+                "project-output",
+            )
+            self.assertFalse((setup_root / "outputs" / "from-ki.txt").exists())
+
+    def test_api_install_turn_can_publish_full_setup_outputs(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            setup_root = root / "setup"
+            project = root / "project"
+            source = setup_root / "outputs" / "case"
+            source.mkdir(parents=True)
+            project.mkdir()
+            (source / "Summary.OUT").write_text("real summary")
+            (source / "PlantGro.OUT").write_bytes(b"growth\x00output")
+            ki_root = setup_root / "ki"
+            ki_root.mkdir()
+            cfg = SimpleNamespace(
+                root=setup_root, python=sys.executable,
+                roles={"binaries": setup_root / "binaries"},
+            )
+            result = api.execute_tool(
+                "publish_setup_output",
+                {"source": "outputs/case",
+                 "destination": "outputs/case/verified-run"},
+                SimpleNamespace(root=ki_root), cfg,
+                setup_mode=True, project_mode=True,
+                setup_context={"project_root": project},
+            )
+            self.assertIn("2 files", result)
+            self.assertEqual(
+                (project / "outputs" / "case" / "verified-run" /
+                 "Summary.OUT").read_text(),
+                "real summary",
+            )
+            self.assertEqual(
+                (project / "outputs" / "case" / "verified-run" /
+                 "PlantGro.OUT").read_bytes(),
+                b"growth\x00output",
+            )
+
+    def test_api_publish_dereferences_only_internal_workspace_links(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            setup_root = root / "setup"
+            project = root / "project"
+            source = setup_root / "outputs" / "case"
+            shared = setup_root / "model" / "Data"
+            source.mkdir(parents=True)
+            shared.mkdir(parents=True)
+            project.mkdir()
+            (shared / "MODEL.ERR").write_text("shared model table")
+            try:
+                (source / "MODEL.ERR").symlink_to(shared / "MODEL.ERR")
+            except OSError as e:  # Windows may require Developer Mode.
+                self.skipTest(f"symbolic links unavailable: {e}")
+            ki_root = setup_root / "ki"
+            ki_root.mkdir()
+            cfg = SimpleNamespace(
+                root=setup_root, python=sys.executable,
+                roles={"binaries": setup_root / "binaries"},
+            )
+            context = {"project_root": project}
+            result = api.execute_tool(
+                "publish_setup_output",
+                {"source": "outputs/case", "destination": "outputs/case"},
+                SimpleNamespace(root=ki_root), cfg,
+                setup_mode=True, project_mode=True, setup_context=context,
+            )
+            published = project / "outputs" / "case" / "MODEL.ERR"
+            self.assertIn("1 internal links copied as files", result)
+            self.assertEqual(published.read_text(), "shared model table")
+            self.assertFalse(published.is_symlink())
+
+            outside = root / "outside.txt"
+            outside.write_text("not part of setup")
+            escaping = setup_root / "outputs" / "escape"
+            escaping.mkdir()
+            (escaping / "outside.txt").symlink_to(outside)
+            with self.assertRaisesRegex(api.ToolError, "escapes the setup workspace"):
+                api.execute_tool(
+                    "publish_setup_output",
+                    {"source": "outputs/escape",
+                     "destination": "outputs/escape"},
+                    SimpleNamespace(root=ki_root), cfg,
+                    setup_mode=True, project_mode=True, setup_context=context,
+                )
 
     def test_api_project_agent_can_prepare_files_with_shipped_ki_tools(self):
         with tempfile.TemporaryDirectory() as td:
@@ -860,8 +1299,24 @@ class AgentSetupTests(unittest.TestCase):
             tools.mkdir(parents=True)
             (project / "inputs").mkdir(parents=True)
             script = tools / "prepare.py"
-            script.write_text("print('prepared-by-ki')\n")
-            cfg = SimpleNamespace(root=project, python=sys.executable, roles={})
+            common = root / "common"
+            binaries = root / "shared-binaries"
+            binaries.mkdir()
+            model_binary = binaries / "demo-model"
+            model_binary.write_text("verified-shared-model")
+            package = common / "ki_tools_common"
+            package.mkdir(parents=True)
+            (package / "__init__.py").write_text("SOURCE = 'bundled-common'\n")
+            script.write_text(
+                "import sys\n"
+                "from pathlib import Path\n"
+                "import ki_tools_common\n"
+                "print('prepared-by-' + ki_tools_common.SOURCE)\n"
+                "if len(sys.argv) > 1:\n"
+                "    print('model=' + Path(sys.argv[1]).read_text())\n")
+            cfg = SimpleNamespace(
+                root=project, python=sys.executable,
+                roles={"ki_tools_common": common, "binaries": binaries})
             ki = SimpleNamespace(root=ki_root)
 
             wrote = api.execute_tool(
@@ -870,7 +1325,10 @@ class AgentSetupTests(unittest.TestCase):
                 ki, cfg, project_mode=True,
             )
             output = api.execute_tool(
-                "run_ki_tool", {"tool_path": "tools/prepare.py"},
+                "run_ki_tool", {
+                    "tool_path": "tools/prepare.py",
+                    "arguments": [str(model_binary)],
+                },
                 ki, cfg, project_mode=True,
             )
             plotted = api.execute_tool(
@@ -893,7 +1351,8 @@ class AgentSetupTests(unittest.TestCase):
             )
 
             self.assertIn("runs/preparation.json", wrote)
-            self.assertIn("prepared-by-ki", output)
+            self.assertIn("prepared-by-bundled-common", output)
+            self.assertIn("model=verified-shared-model", output)
             self.assertIn("artifacts/quick.svg", plotted)
             self.assertTrue((project / "artifacts" / "quick.svg").is_file())
             self.assertIn("Preparing inputs", progress)
@@ -908,6 +1367,16 @@ class AgentSetupTests(unittest.TestCase):
             with self.assertRaises(api.ToolError):
                 api.execute_tool(
                     "run_ki_tool", {"tool_path": "SKILL.md"},
+                    ki, cfg, project_mode=True,
+                )
+            outside = root / "not-a-managed-binary.txt"
+            outside.write_text("private")
+            with self.assertRaisesRegex(api.ToolError, "path escapes"):
+                api.execute_tool(
+                    "run_ki_tool", {
+                        "tool_path": "tools/prepare.py",
+                        "arguments": [str(outside)],
+                    },
                     ki, cfg, project_mode=True,
                 )
 

@@ -61,6 +61,26 @@ def _number(value, fallback: float) -> float:
         return fallback
 
 
+def _blocker_options(value) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    out = []
+    for index, item in enumerate(value[:8]):
+        raw = {"label": item} if isinstance(item, str) else item
+        if not isinstance(raw, dict):
+            continue
+        label = _short(raw.get("label"), 240)
+        if not label:
+            continue
+        out.append({
+            "id": _short(raw.get("id"), 80) or f"option-{index + 1}",
+            "label": label,
+            "description": str(raw.get("description") or "").strip()[:2000],
+            "response": str(raw.get("response") or label).strip()[:2000],
+        })
+    return out
+
+
 def _new(goal: str = "", selected_kis: list[str] | None = None) -> dict:
     now = time.time()
     return {
@@ -104,11 +124,17 @@ def _normalise(raw: dict | None, fallback: dict | None = None) -> dict:
     if isinstance(blocker, dict):
         url = str(blocker.get("url") or "")[:2000]
         base["blocker"] = {
+            "id": _short(blocker.get("id"), 100) or "request",
             "status": "waiting",
             "kind": _short(blocker.get("kind"), 40) or "other",
             "title": _short(blocker.get("title"), 160) or "Help needed",
             "message": str(blocker.get("message") or "").strip()[:8000],
             "url": url if url.startswith(("https://", "http://")) else None,
+            "expected_path": str(blocker.get("expected_path") or "").strip()[:1000] or None,
+            "command": str(blocker.get("command") or "").strip()[:2000] or None,
+            "resume_hint": str(blocker.get("resume_hint") or "").strip()[:4000] or None,
+            "options": _blocker_options(blocker.get("options")),
+            "allow_note": bool(blocker.get("allow_note", True)),
         }
     else:
         base.pop("blocker", None)
@@ -235,5 +261,7 @@ available. Otherwise write `{status_path}` as JSON with:
 Do not report a later stage until you actually reached it. If blocked by a
 download, login, licence, permission, or high-impact scientific choice, also
 write `{request_path}` using the request_user_action fields: status=waiting,
-kind, title, message, and optional url. Ask for one grouped action only.
+kind, title, message, optional url, and `options` when there are concrete
+alternatives. Each option has id, label, description, and response. Ask for one
+grouped action only; GeoForge renders the options as a picker.
 """

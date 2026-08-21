@@ -103,7 +103,7 @@ function draw(){if(!STATE)return;const sw=STATE.software||{},ok=!!sw.can_run,fai
   $("#title").textContent=STATE.name;$("#headmodel").textContent=STATE.name;$("#reference").textContent=STATE.reference||STATE.version||"Knowledge Infrastructure";
   $("#statusbadge").className=`badge ${ok?'ok':failed?'bad':'warn'}`;$("#statusbadge").textContent=sw.label||"Setup needed";
   $("#chat").style.display=ok?"":"none";$("#start").textContent=ok?"Re-check with agent":STATE.agent_ready?"Continue agent":"Start agent setup";
-  const log=$(".log");if(!busy&&STATE.log_tail&&log.querySelector(".emptylog"))log.textContent=STATE.log_tail;
+  const log=$(".log");if(!busy&&STATE.log_tail){log.textContent=STATE.log_tail;log.scrollTop=log.scrollHeight;}
   const req=STATE.request,att=STATE.attention;
   if(req&&req.status==="waiting"){
     $("#needbadge").className="badge warn";$("#needbadge").textContent="Needs you now";
@@ -134,7 +134,9 @@ async function startAgent(){if(busy)return;busy=true;draw();const log=$(".log");
   try{const r=await fetch("/api/setup-agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,provider:$("#provider").value,llm_model:$("#llm").value})});
     if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||`HTTP ${r.status}`)}const rd=r.body.getReader(),dec=new TextDecoder();
     for(;;){const{done,value}=await rd.read();if(done)break;log.textContent+=dec.decode(value,{stream:true});log.scrollTop=log.scrollHeight;}}
-  catch(e){log.textContent+="\n"+e.message+"\n"}busy=false;$("#runstate").textContent="";await loadState();}
+  catch(e){const zh=window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN";
+    log.textContent+="\n"+(zh?"实时显示连接已中断。Agent 会在后台继续；此页面将从保存的日志中刷新状态。":"The live display was interrupted. The agent will continue in the background; this page will refresh from its saved log.")+"\n"}
+  busy=false;$("#runstate").textContent="";await loadState();}
 async function resumeAgent(){await fetch("/api/setup-resume",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,note:$("#note").value})});await loadState();startAgent();}
 async function chatForHelp(){
   const block=(STATE.request&&STATE.request.status==="waiting")?STATE.request:(STATE.attention||{}),sw=STATE.software||{},primary=sw.primary_error||{};

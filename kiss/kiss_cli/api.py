@@ -21,9 +21,11 @@ a tool meant to install cleanly anywhere.
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 import re
+import shutil
 import subprocess
 import urllib.error
 import urllib.request
@@ -220,6 +222,8 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "Run one Python preparation tool shipped inside the selected KI. "
                     "Use this for data conversion, grid/soil/weather preparation, "
                     "configuration generation, validation, and model harness steps. "
+                    "Arguments may reference this chat project, this KI package, or "
+                    "the current KI's GeoForge-managed shared binaries directory. "
                     "Do not replace a KI tool with improvised calculations."
                 ),
                 "input_schema": {"type": "object", "properties": {
@@ -237,7 +241,9 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "Create a safe line, scatter, or bar plot in this chat's "
                     "artifacts folder. Use a relevant plotting/visualization skill "
                     "to choose an honest chart, then call this tool when the direct "
-                    "API has no plotting runtime. GeoForge displays the SVG inline."
+                    "API has no plotting runtime. GeoForge displays the SVG inline. "
+                    "For a project CSV, prefer source_path plus x_column/y_column "
+                    "instead of copying every data point through the model."
                 ),
                 "input_schema": {"type": "object", "properties": {
                     "output_path": {"type": "string",
@@ -246,11 +252,21 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "title": {"type": "string"},
                     "x_label": {"type": "string"},
                     "y_label": {"type": "string"},
+                    "y2_label": {"type": "string",
+                                 "description": "optional right-axis label"},
+                    "source_path": {"type": "string",
+                                    "description": "optional relative .csv file in this chat project"},
+                    "x_column": {"type": "string",
+                                 "description": "CSV column used for the x axis"},
                     "series": {"type": "array", "items": {"type": "object",
                         "properties": {
                             "name": {"type": "string"},
                             "x": {"type": "array", "items": {}},
                             "y": {"type": "array", "items": {"type": "number"}},
+                            "y_column": {"type": "string",
+                                         "description": "CSV column used for this series"},
+                            "axis": {"type": "string", "enum": ["left", "right"],
+                                     "description": "use right when units or scale differ from the main series"},
                         }, "required": ["y"]}},
                 }, "required": ["output_path", "series"]},
             },
@@ -267,6 +283,15 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                         "download", "licence", "login", "permission", "choice", "other"]},
                     "title": {"type": "string"},
                     "message": {"type": "string"},
+                    "options": {"type": "array", "maxItems": 8, "items": {
+                        "type": "object", "properties": {
+                            "id": {"type": "string"},
+                            "label": {"type": "string"},
+                            "description": {"type": "string"},
+                            "response": {"type": "string",
+                                         "description": "exact answer sent back to the agent when selected"},
+                        }, "required": ["label"]}},
+                    "allow_note": {"type": "boolean"},
                     "url": {"type": "string"},
                     "expected_path": {"type": "string"},
                     "command": {"type": "string"},
@@ -346,6 +371,22 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "env": {"type": "object", "additionalProperties": {"type": "string"}},
                 }, "required": ["argv"]},
             },
+            *([{
+                "name": "publish_setup_output",
+                "description": (
+                    "Copy a completed generated output or run directory from the "
+                    "model setup workspace into this chat project. Use this after "
+                    "a successful setup-mode simulation so full binary/text results "
+                    "are preserved in the session without rerunning or encoding them "
+                    "through chat."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "source": {"type": "string",
+                               "description": "relative path below outputs/, runs/, or data/ in the setup workspace"},
+                    "destination": {"type": "string",
+                                    "description": "relative path below inputs/, runs/, outputs/, artifacts/, or references/ in the chat project"},
+                }, "required": ["source", "destination"]},
+            }] if project_mode else []),
             {
                 "name": "request_user_action",
                 "description": (
@@ -358,6 +399,15 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                         "download", "licence", "login", "permission", "choice", "other"]},
                     "title": {"type": "string"},
                     "message": {"type": "string"},
+                    "options": {"type": "array", "maxItems": 8, "items": {
+                        "type": "object", "properties": {
+                            "id": {"type": "string"},
+                            "label": {"type": "string"},
+                            "description": {"type": "string"},
+                            "response": {"type": "string",
+                                         "description": "exact answer sent back to the agent when selected"},
+                        }, "required": ["label"]}},
+                    "allow_note": {"type": "boolean"},
                     "url": {"type": "string"},
                     "expected_path": {"type": "string"},
                     "command": {"type": "string"},
@@ -365,7 +415,10 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                 }, "required": ["kind", "title", "message"]},
             },
         ]
-    return tools
+    # Combined installation + project turns intentionally expose both tool
+    # families.  A shared operation such as request_user_action must still be
+    # declared only once; the later (setup-aware) definition wins.
+    return list({tool["name"]: tool for tool in tools}.values())
 
 
 class ToolError(Exception):
@@ -378,7 +431,26 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
     """Run one tool. Every path argument is confined to the KI package."""
     root = Path(ki.root).resolve()
     workroot = Path(cfg.root).resolve()
-    progress_root = Path((setup_context or {}).get("project_root") or workroot).resolve()
+    # During a direct-API installation turn the model setup workspace and the
+    # chat project are deliberately separate.  Keep both roots explicit so an
+    # agent can finish installation and then run/publish into the chat project
+    # without weakening the setup command sandbox.
+    project_root = Path(
+        (setup_context or {}).get("project_root") or workroot
+    ).resolve()
+    progress_root = project_root
+
+    # A chat owns its scenario files, but the scientific software is installed
+    # once in the current KI's managed workspace.  That binary role is a narrow
+    # capability granted by GeoForge's config; it is not an arbitrary external
+    # filesystem permission.  KI tools may read/execute it directly without
+    # making the user copy large model installs into every chat project.
+    project_argument_roots = [project_root, workroot, root]
+    binary_role = (getattr(cfg, "roles", {}) or {}).get("binaries")
+    if binary_role:
+        binary_root = Path(binary_role).expanduser().resolve()
+        if binary_root not in project_argument_roots:
+            project_argument_roots.append(binary_root)
 
     def _inside(rel: str) -> Path:
         if Path(rel).is_absolute():
@@ -397,6 +469,14 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         p = (workroot / rel).resolve()
         if p != workroot and workroot not in p.parents:
             raise ToolError(f"path escapes the setup workspace: {rel}")
+        return p
+
+    def _inside_project(rel: str) -> Path:
+        if Path(rel).is_absolute():
+            raise ToolError(f"absolute project paths are not accepted: {rel}")
+        p = (project_root / rel).resolve()
+        if p != project_root and project_root not in p.parents:
+            raise ToolError(f"path escapes the chat project: {rel}")
         return p
 
     if name == "read_ki_file":
@@ -443,21 +523,21 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             raise ToolError(f"no skill named {args.get('name')!r}")
 
     if project_mode and name == "list_project_files":
-        base = _inside_work(args.get("subdir") or ".")
+        base = _inside_project(args.get("subdir") or ".")
         if not base.is_dir():
             raise ToolError(f"no such project directory: {args.get('subdir')}")
         names = []
         for f in sorted(base.rglob("*")):
-            if not f.is_file() or "memory" in f.relative_to(workroot).parts:
+            if not f.is_file() or "memory" in f.relative_to(project_root).parts:
                 continue
             try:
-                names.append(f"{f.relative_to(workroot)} ({f.stat().st_size} bytes)")
+                names.append(f"{f.relative_to(project_root)} ({f.stat().st_size} bytes)")
             except OSError:
                 continue
         return "\n".join(names[:1000]) or "(no project files yet)"
 
     if project_mode and name == "read_project_file":
-        p = _inside_work(args.get("path") or "")
+        p = _inside_project(args.get("path") or "")
         if not p.is_file():
             raise ToolError(f"no such project file: {args.get('path')}")
         if p.stat().st_size > 5_000_000:
@@ -465,13 +545,13 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         return p.read_text(encoding="utf-8", errors="replace")[:120000]
 
     if project_mode and name == "write_project_file":
-        p = _inside_work(args.get("path") or "")
+        p = _inside_project(args.get("path") or "")
         content = args.get("content")
         if not isinstance(content, str):
             raise ToolError("content must be text")
         if len(content.encode("utf-8")) > 1_000_000:
             raise ToolError("write_project_file is limited to 1 MB; use a KI tool")
-        rel = p.relative_to(workroot)
+        rel = p.relative_to(project_root)
         writable = {"inputs", "runs", "outputs", "artifacts", "references"}
         if not rel.parts or rel.parts[0] not in writable:
             raise ToolError("project writes must stay under inputs, runs, outputs, artifacts, or references")
@@ -491,7 +571,7 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         if (not isinstance(arguments, list) or len(arguments) > 100 or
                 not all(isinstance(x, str) and len(x) <= 4000 for x in arguments)):
             raise ToolError("arguments must be a list of short strings")
-        cwd = _inside_work(args.get("cwd") or ".")
+        cwd = _inside_project(args.get("cwd") or ".")
         if not cwd.is_dir():
             raise ToolError(f"project directory does not exist: {args.get('cwd')}")
         for token in arguments:
@@ -500,7 +580,9 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
                 continue
             candidate = Path(value)
             resolved = candidate.resolve() if candidate.is_absolute() else (cwd / candidate).resolve()
-            if not any(resolved == base or base in resolved.parents for base in (workroot, root)):
+            if not any(
+                    resolved == base or base in resolved.parents
+                    for base in project_argument_roots):
                 raise ToolError(f"tool argument path escapes the project and KI: {value}")
         timeout = max(1, min(int(args.get("timeout_seconds") or 600), 3600))
         child_env = {
@@ -508,7 +590,9 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             if not any(secret in key.upper() for secret in (
                 "API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))
         }
-        child_env["KISS_ROOT"] = str(workroot)
+        child_env["KISS_ROOT"] = str(project_root)
+        from .paths import with_ki_tools_common
+        child_env = with_ki_tools_common(cfg, child_env)
         try:
             proc = subprocess.run(
                 [str(cfg.python), str(script), *arguments], cwd=str(cwd),
@@ -523,20 +607,58 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
 
     if project_mode and name == "create_project_plot":
         from .plotting import PlotError, render_svg
-        p = _inside_work(args.get("output_path") or "")
-        rel = p.relative_to(workroot)
+        p = _inside_project(args.get("output_path") or "")
+        rel = p.relative_to(project_root)
         if not rel.parts or rel.parts[0] != "artifacts" or p.suffix.lower() != ".svg":
             raise ToolError("plot output_path must be a .svg file below artifacts/")
+        plot_args = dict(args)
+        if args.get("source_path"):
+            source = _inside_project(args.get("source_path") or "")
+            if not source.is_file() or source.suffix.lower() != ".csv":
+                raise ToolError("plot source_path must be a project CSV file")
+            if source.stat().st_size > 20_000_000:
+                raise ToolError("plot CSV is larger than 20 MB")
+            x_column = str(args.get("x_column") or "")
+            requested = args.get("series") or []
+            if not x_column or not requested or not all(
+                    isinstance(item, dict) and item.get("y_column")
+                    for item in requested):
+                raise ToolError("CSV plots require x_column and y_column for every series")
+            with source.open(newline="", encoding="utf-8-sig") as handle:
+                rows = list(csv.DictReader(handle))
+            if not rows:
+                raise ToolError("plot CSV has no data rows")
+            columns = set(rows[0])
+            y_columns = [str(item["y_column"]) for item in requested]
+            missing = [column for column in [x_column, *y_columns]
+                       if column not in columns]
+            if missing:
+                raise ToolError(f"plot CSV is missing columns: {', '.join(missing)}")
+            # Keep the request and SVG bounded while preserving both endpoints.
+            max_rows = max(2, 5000 // len(requested))
+            if len(rows) > max_rows:
+                indices = sorted({round(i * (len(rows) - 1) / (max_rows - 1))
+                                  for i in range(max_rows)})
+                rows = [rows[i] for i in indices]
+            built_series = []
+            for item, y_column in zip(requested, y_columns):
+                built_series.append({
+                    "name": item.get("name") or y_column,
+                    "axis": item.get("axis") or "left",
+                    "x": [row[x_column] for row in rows],
+                    "y": [row[y_column] for row in rows],
+                })
+            plot_args["series"] = built_series
         try:
-            summary = render_svg(args, p)
+            summary = render_svg(plot_args, p)
         except (OSError, PlotError) as e:
             raise ToolError(str(e)) from None
         return (f"{summary}\nInclude it in the reply as: "
                 f"![{args.get('title') or p.stem}]({rel.as_posix()})")
 
-    if project_mode and name == "request_user_action":
+    if project_mode and not setup_mode and name == "request_user_action":
         from . import projectrun as _projectrun, setup as _setup
-        doc = _setup.request_user(workroot, args)
+        doc = _setup.request_user(project_root, args)
         _projectrun.report(progress_root, {
             "status": "waiting_for_user", "summary": doc["title"],
             "blocker": doc,
@@ -657,6 +779,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             if not any(secret in key.upper() for secret in (
                 "API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))
         }
+        from .paths import with_ki_tools_common
+        child_env = with_ki_tools_common(cfg, child_env)
         try:
             proc = subprocess.run(
                 argv, cwd=str(cwd), env={**child_env, **safe_env},
@@ -665,8 +789,73 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         except subprocess.TimeoutExpired as e:
             tail = ((e.stdout or "") + (e.stderr or ""))[-12000:]
             return f"TIMEOUT after {timeout}s\n{tail}"
+        except OSError as e:
+            # A non-executable script, missing command, or platform launch
+            # error is normal repair-loop evidence.  Let the model see it and
+            # choose another invocation (usually ``python3 script.py``)
+            # instead of aborting the entire API turn.
+            return f"FAILED_TO_START: {type(e).__name__}: {e}"
         output = (proc.stdout + proc.stderr)[-50000:]
         return f"exit_code={proc.returncode}\n{output}"
+
+    if setup_mode and project_mode and name == "publish_setup_output":
+        source = _inside_work(args.get("source") or "")
+        destination = _inside_project(args.get("destination") or "")
+        if not source.exists():
+            raise ToolError(f"no such generated setup output: {args.get('source')}")
+        source_rel = source.relative_to(workroot)
+        destination_rel = destination.relative_to(project_root)
+        if not source_rel.parts or source_rel.parts[0] not in {"outputs", "runs", "data"}:
+            raise ToolError("published setup files must come from outputs, runs, or data")
+        writable = {"inputs", "runs", "outputs", "artifacts", "references"}
+        if not destination_rel.parts or destination_rel.parts[0] not in writable:
+            raise ToolError("published files must stay in a project data folder")
+
+        candidates = [source] if source.is_file() else list(source.rglob("*"))
+        # A scientific run directory commonly links its executable and shared
+        # model tables back into the same setup workspace.  Those links are
+        # safe to publish as normal files when their targets remain inside the
+        # workspace.  Keeping the links themselves would make the chat project
+        # non-portable, while rejecting them prevented an otherwise successful
+        # run from being archived at all.
+        files: list[tuple[Path, Path]] = []
+        link_count = 0
+        for item in candidates:
+            if item.is_symlink():
+                try:
+                    resolved = item.resolve(strict=True)
+                except OSError as e:
+                    raise ToolError(f"generated output contains a broken symbolic link: {item.name}") from e
+                if resolved != workroot and workroot not in resolved.parents:
+                    raise ToolError(
+                        f"generated output link escapes the setup workspace: {item.name}")
+                if not resolved.is_file():
+                    raise ToolError(
+                        f"generated output contains a symbolic directory: {item.name}")
+                files.append((item, resolved))
+                link_count += 1
+            elif item.is_file():
+                files.append((item, item))
+        if len(files) > 2000:
+            raise ToolError("generated output contains more than 2,000 files")
+        total = sum(copy_source.stat().st_size for _, copy_source in files)
+        if total > 512 * 1024 * 1024:
+            raise ToolError("generated output is larger than the 512 MB publish limit")
+        if source.is_file():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(files[0][1], destination)
+        else:
+            destination.mkdir(parents=True, exist_ok=True)
+            for item, copy_source in files:
+                target = destination / item.relative_to(source)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(copy_source, target)
+        link_note = (f", {link_count} internal links copied as files"
+                     if link_count else "")
+        return (
+            f"published {source_rel} to {destination_rel} "
+            f"({len(files)} files, {total} bytes{link_note})"
+        )
 
     if setup_mode and name == "request_user_action":
         from . import projectrun as _projectrun, setup as _setup
@@ -757,16 +946,45 @@ def _openai_turn(prov, model, system, messages, tools, key):
     text = choice.get("content") or ""
     calls = []
     for c in (choice.get("tool_calls") or []):
-        # A malformed tool call from the vendor must degrade into a visible
-        # error, not an uncaught exception that drops the whole stream.
+        # Preserve a valid call id/name even when the vendor truncates only
+        # the JSON arguments.  Feeding a normal tool error back under that id
+        # lets the model retry on the next step instead of dropping the whole
+        # turn.  Missing structural fields still fail closed below.
         try:
-            args = json.loads(c["function"].get("arguments") or "{}")
+            call_id = c["id"]
+            function = c["function"]
+            name = function["name"]
+            raw_args = function.get("arguments") or "{}"
+        except (KeyError, TypeError) as e:
+            raise ToolError(f"vendor returned a malformed tool call: {e}") from None
+        try:
+            args = json.loads(raw_args)
             if not isinstance(args, dict):
                 args = {}
-            calls.append((c["id"], c["function"]["name"], args))
-        except (KeyError, TypeError, json.JSONDecodeError) as e:
-            raise ToolError(f"vendor returned a malformed tool call: {e}") from None
+        except json.JSONDecodeError as e:
+            args = {
+                "_vendor_argument_error": f"invalid JSON arguments: {e}",
+                "_raw_arguments": str(raw_args)[:2000],
+            }
+        calls.append((call_id, name, args))
     return text, calls, choice
+
+
+_TEXT_TOOL_REQUEST = re.compile(
+    r"\[\[GEOF_TOOL:[A-Za-z0-9_.-]+\]\]|"
+    r"<invoke\s+name=[\"'][A-Za-z0-9_.-]+[\"'][^>]*>[\s\S]*?<parameter\b",
+    re.I,
+)
+
+
+def _looks_like_text_tool_request(text: str) -> bool:
+    """Detect providers printing tool syntax instead of making a tool call.
+
+    Some OpenAI-compatible endpoints occasionally return an XML-like tool
+    request in ``content`` with an empty structured ``tool_calls`` array. It
+    must not be shown as if work happened: no tool was actually run.
+    """
+    return bool(_TEXT_TOOL_REQUEST.search(str(text or "")))
 
 
 def run(prov: ApiProvider, ki, cfg, system: str, task: str,
@@ -806,6 +1024,7 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
         if body:
             messages.append({"role": role, "content": body})
     messages.append({"role": "user", "content": task})
+    text_tool_retries = 0
 
     for step in range(max_steps):
         try:
@@ -816,6 +1035,29 @@ def run(prov: ApiProvider, ki, cfg, system: str, task: str,
         except ToolError as e:
             yield f"\n[{prov.label} failed: {e}]"
             return
+
+        if not calls and _looks_like_text_tool_request(text):
+            # Do not leak provider-specific pseudo XML into chat, and do not
+            # pretend it ran. Give the model one clean chance to use the typed
+            # tools that were already sent with the request.
+            if text_tool_retries:
+                yield (f"\n[{prov.label} returned a tool request as plain text. "
+                       "Nothing in that request was run. Retry this message or "
+                       "switch the AI connection.]\n")
+                return
+            text_tool_retries += 1
+            if prov.wire == "anthropic":
+                messages.append({"role": "assistant", "content": raw})
+            else:
+                messages.append(raw)
+            messages.append({
+                "role": "user",
+                "content": ("Your previous response printed internal tool-call "
+                            "markup as ordinary text, so no action ran. Use the "
+                            "provided structured function tools now. Do not print "
+                            "XML, <invoke>, or GEOF_TOOL markers."),
+            })
+            continue
 
         # A response which also invokes tools is normally scratch narration
         # ("Let me inspect...", "Now I will..."). Keep it in the provider's

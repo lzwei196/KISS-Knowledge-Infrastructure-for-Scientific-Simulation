@@ -443,6 +443,16 @@ def _text_from_stream_json(line: str) -> str | None:
             joined = "".join(chunks)
             if joined:
                 return joined
+            # Claude places tool-use events inside the same nested message
+            # shape as assistant text. Ignoring them makes a long compile look
+            # completely idle to both the user and the embedded browser. The
+            # latter may eventually close the response even though Claude is
+            # still working, which surfaced as the unhelpful "Load failed".
+            names = [str(c.get("name")) for c in content
+                     if isinstance(c, dict) and c.get("type") == "tool_use"
+                     and c.get("name")]
+            if names:
+                return "".join(activity_marker(name) for name in names)
 
     # Kimi stream-json: {"role":"assistant","content":"..."}.  Tool calls
     # use the same top-level role shape rather than Anthropic's message wrapper.
@@ -531,9 +541,28 @@ def run(provider: Provider, prompt: str, cwd: Path,
         yield f"[{provider.label} needs an update — {health.detail}; {provider.install}]"
         return
 
-    argv = provider.build(prompt, extra_dirs=extra_dirs, model=model,
+    # ``paths.bound_prefixes`` contains the old authoring-machine spellings
+    # (for example /mnt/disk3).  They only exist when Linux bubblewrap creates
+    # the relocation namespace.  Passing them straight to a CLI on macOS or
+    # Windows is not harmless: Kimi validates every ``--add-dir`` before it
+    # starts and aborts the whole turn on the first missing directory.
+    #
+    # Keep real host directories everywhere, and keep synthetic aliases only
+    # when this process will actually enter the namespace that creates them.
+    cli_extra_dirs = list(extra_dirs or [])
+    relocation_active = False
+    if cfg is not None and getattr(cfg, "relocation", "sandbox") == "sandbox":
+        from .paths import have_sandbox
+        relocation_active = have_sandbox()
+    if not relocation_active:
+        cli_extra_dirs = [d for d in cli_extra_dirs if Path(d).is_dir()]
+
+    argv = provider.build(prompt, extra_dirs=cli_extra_dirs, model=model,
                           resume=resume)
     env = {**os.environ, **provider.env}
+    if cfg is not None:
+        from .paths import with_ki_tools_common
+        env = with_ki_tools_common(cfg, env)
 
     # Least privilege, mapped onto whatever this CLI can actually enforce.
     # When it cannot enforce anything, say so — silence here would imply a

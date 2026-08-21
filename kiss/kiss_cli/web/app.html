@@ -182,6 +182,19 @@ textarea:focus{outline:none;border-color:var(--brand)}
 .prep-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:9px}
 .prep-metric{border:1px solid var(--line-1);background:var(--bg);border-radius:9px;padding:8px 9px}
 .prep-metric b{display:block;font-size:15px}.prep-metric small{color:var(--fg-3)}
+.data-overview-head{display:flex;align-items:flex-start;gap:8px;margin-bottom:4px}
+.data-overview-head h3{flex:1;margin:0}.data-overview{display:grid;margin-top:8px}
+.data-ready-row{display:grid;grid-template-columns:25px minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px 0;border-top:1px solid var(--line-1)}
+.data-ready-row:first-child{border-top:0}.data-ready-mark{width:23px;height:23px;border-radius:99px;display:grid;place-items:center;background:var(--surface);color:var(--fg-3);font-size:10px;font-weight:750}
+.data-ready-row.ok .data-ready-mark{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok)}
+.data-ready-row.active .data-ready-mark{background:var(--brand-50);color:var(--brand)}
+.data-ready-row.block .data-ready-mark{background:color-mix(in srgb,var(--block) 10%,transparent);color:var(--block)}
+.data-ready-row b{display:block;font-size:12.5px}.data-ready-row small{display:block;color:var(--fg-3);line-height:16px;margin-top:1px}
+.data-state{font-size:10.5px;white-space:nowrap;color:var(--fg-2);border:1px solid var(--line);border-radius:99px;padding:2px 7px}
+.data-ready-row.ok .data-state{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,var(--line))}
+.data-ready-row.active .data-state{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 35%,var(--line))}
+.data-ready-row.block .data-state{color:var(--block);border-color:color-mix(in srgb,var(--block) 35%,var(--line))}
+.data-overview-note{font-size:11px;color:var(--fg-3);padding-top:7px;border-top:1px solid var(--line-1)}
 .lane{background:var(--raised);border:1px solid var(--line);border-radius:12px;margin-bottom:9px;overflow:hidden}
 .lane>summary{list-style:none;display:flex;align-items:center;gap:8px;padding:11px 12px;cursor:pointer}
 .lane>summary::-webkit-details-marker{display:none}.lane>summary:after{content:"›";color:var(--fg-3);font-size:18px;transition:transform .15s}.lane[open]>summary:after{transform:rotate(90deg)}
@@ -849,8 +862,11 @@ const actionClass=a=>a==="needs_decision"?"block":a==="provide_or_find"?"warn":"
 function renderData(data){
   const files=data.files||[];
   const referenceFiles=data.reference_files||[];
+  const plans=data.plans||[];
   const prep=data.preparation||{}, sw=prep.software_summary||{}, run=data.project_run||RUN||{};
   const models=prep.models||[], lanes=prep.lanes||[], papers=prep.literature||[], missingPapers=prep.literature_missing||[];
+  const request=(run.blocker&&run.status==="waiting_for_user")?run.blocker:data.human_request;
+  const waiting=request&&(request.status==="waiting"||run.status==="waiting_for_user");
   drawRunStatus(run);
   const runModels=(run.selected_kis||[]).length?run.selected_kis:models.map(m=>m.name);
   const modelchips=runModels.length?runModels.map(name=>`<span class="mchip">General KI: ${esc(name)}</span>`).join(" "):"";
@@ -864,13 +880,38 @@ function renderData(data){
     const done=allDone||i<current,active=Boolean(run.goal)&&!allDone&&i===current;
     return `<div class="runstep ${done?'done':active?'active':''}"><span class="stepdot">${done?'✓':active?'•':i+1}</span><span><b>${esc(group.name)}</b><small>${esc(group.detail)}</small></span></div>`;
   }).join("")}</div></div>`;
-  const request=(run.blocker&&run.status==="waiting_for_user")?run.blocker:data.human_request;
-  const waiting=request&&(request.status==="waiting"||run.status==="waiting_for_user");
+  const sourceFiles=files.filter(f=>!/(^|\/)README(?:\.[^/]*)?$/i.test(f.relative_path||f.name||""));
+  const datasetChecks=plans.flatMap(plan=>(plan.datasets||[]).map(item=>({...item,model:plan.model||"KI"})));
+  const requiredChecks=datasetChecks.filter(item=>!item.optional);
+  const readyChecks=requiredChecks.filter(item=>item.present);
+  const missingChecks=requiredChecks.filter(item=>!item.present);
+  const dataReached=run.status==="complete"||["running","results"].includes(run.stage);
+  const dataChecking=run.stage==="validating";
+  const dataWorking=run.status==="working"&&["researching","preparing"].includes(run.stage);
+  const dataFailed=run.status==="failed"&&["researching","preparing","validating"].includes(run.stage);
+  const checkedConflict=dataReached&&missingChecks.length>0;
+  const dataOverall=dataFailed||checkedConflict?"Review needed":waiting?"One thing needs you":missingChecks.length?"Agent is preparing":dataReached?"Ready to use":dataChecking?"Being checked":dataWorking?"Agent is preparing":"Agent will prepare";
+  const dataOverallClass=dataFailed||checkedConflict?"block":waiting?"warn":dataReached&&!missingChecks.length?"ok":"";
+  const laneStatus=lane=>{
+    if(lane.id==="source_data"&&requiredChecks.length){
+      const note=`${readyChecks.length} / ${requiredChecks.length} required data paths are ready.`;
+      if(missingChecks.length)return {label:`${missingChecks.length} not ready yet`,cls:checkedConflict?"block":"active",mark:checkedConflict?"!":"•",note};
+      return {label:"Ready to use",cls:"ok",mark:"✓",note};
+    }
+    return dataFailed?{label:"Review needed",cls:"block",mark:"!"}:dataReached?{label:"Ready to use",cls:"ok",mark:"✓"}:dataChecking?{label:"Being checked",cls:"active",mark:"✓"}:dataWorking?{label:"Agent is preparing",cls:"active",mark:"•"}:{label:"Agent will prepare",cls:"",mark:"AI"};
+  };
+  const dataRows=lanes.filter(l=>l.count).map(lane=>{
+    const status=laneStatus(lane);
+    const fileNote=lane.id==="source_data"&&sourceFiles.length?`${sourceFiles.length} local source file${sourceFiles.length===1?' is':'s are'} available.`:"";
+    return `<div class="data-ready-row ${status.cls}"><span class="data-ready-mark">${status.mark}</span><span><b>${esc(lane.label)}</b><small>${esc(lane.description||"")}</small>${status.note?`<small>${esc(status.note)}</small>`:""}${fileNote?`<small>${esc(fileNote)}</small>`:""}</span><span class="data-state">${esc(status.label)}</span></div>`;
+  }).join("");
+  const dataOverview=`<div class="datacard"><div class="data-overview-head"><div><h3>Data for this run</h3><div class="hint" style="margin:1px 0 0">A simple view of what the model needs. GeoForge handles the technical fields and asks only when a real decision or private file is missing.</div></div><span class="statuspill ${dataOverallClass}">${esc(dataOverall)}</span></div><div class="data-overview">${dataRows||'<div class="hint" style="margin:5px 0">The data groups will appear after a KI is selected.</div>'}</div><div class="data-overview-note">Only confirmed gaps appear as “Needs you.” The complete KI data contract is still available below.</div></div>`;
   const human=waiting?`<div class="datacard" style="border-color:color-mix(in srgb,var(--warn) 45%,var(--line))"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">One thing needs you</h3><span class="statuspill warn">${esc(request.kind||'action')}</span></div><b>${esc(request.title||'Help needed')}</b><div class="hint" style="margin:4px 0">${esc(request.message||'')}</div>${request.url?`<a href="${esc(request.url)}" target="_blank" rel="noreferrer"><button style="margin-top:7px">Open official page</button></a>`:''}</div>`:
     `<div class="datacard"><h3>No action needed from you</h3><div class="hint" style="margin:0">Keep working in chat. GeoForge will interrupt only for an important decision, private data, a login, licence, or system permission.</div></div>`;
   const filecard=`<div class="datacard"><h3>Project files · ${files.length}</h3>
     ${files.length?`<table class="filetable">${files.map(f=>`<tr><td><b>${esc(f.name)}</b><br><span style="color:var(--fg-3)">${esc(f.relative_path)}</span></td><td style="text-align:right">${sizeLabel(f.size)}</td></tr>`).join("")}</table>`:
     '<div class="hint" style="margin:0">No local source files yet. This is not an error—the agent can begin by checking documented public sources.</div>'}</div>`;
+  const checkedPaths=datasetChecks.length?`<div class="datacard"><h3>Checked data paths · ${datasetChecks.length}</h3><div class="hint" style="margin:0 0 6px">These marks come from real paths declared by the KI setup manifest, not from an AI guess.</div>${datasetChecks.map(item=>`<div class="dataitem"><div style="display:flex;align-items:flex-start;gap:6px"><b style="flex:1">${esc(item.name)}</b><span class="actiontag ${item.present?'ok':'warn'}">${item.present?'Present':'Not ready'}</span></div><small>${esc(item.model)}${item.optional?' · Optional':''}</small>${item.why?`<small>${esc(item.why)}</small>`:''}<small><code>${esc(item.expected_path||'Path not configured')}</code></small></div>`).join('')}</div>`:"";
   const laneCards=lanes.filter(l=>l.count).map((lane,i)=>{
     const shown=(lane.items||[]).slice(0,80);
     const items=shown.map(item=>{
@@ -886,8 +927,8 @@ function renderData(data){
     <div class="hint" style="margin:0 0 6px">The KI ships paper metadata, not copyrighted PDFs. These are recommendations for this model; they do not block a run.</div>${referenceFiles.length?`<div class="dataitem"><b>Added to this project · ${referenceFiles.length}</b><small>${referenceFiles.map(f=>esc(f.name)).join(', ')}</small></div>`:''}${papers.map(lib=>`<details><summary><b>${esc(lib.model)}</b> · ${lib.count} papers · ${lib.open_access} open access</summary>${(lib.recommended||[]).map(p=>`<a class="paperlink" href="${esc(p.url)}" target="_blank" rel="noreferrer">${esc(p.title||p.doi)}<small>${esc(p.role||'reference')} · ${p.access==='open'?'open access':'use your own access'}</small></a>`).join('')}</details>`).join('')}${missingPapers.length?`<div class="hint" style="margin:7px 0">No paper metadata yet for: ${missingPapers.map(esc).join(', ')}.</div>`:''}
     <div class="hint" style="margin:8px 0 0">If you legally download a paper, add it here so the agent can use it inside this project. GeoForge never republishes it.</div></div>`:"";
   const totalInternal=lanes.reduce((n,l)=>n+(l.count||0),0);
-  const advanced=`<details class="datacard advanced"><summary>Advanced details · ${totalInternal} internal KI requirements</summary><div class="advanced-body"><div class="hint" style="margin:0 0 9px">Project: <code>${esc(data.project_path)}</code></div>${laneCards}${filecard}${literature}</div></details>`;
-  return `${summary}${progress}${human}${advanced}`;
+  const advanced=`<details class="datacard advanced"><summary>See technical data details</summary><div class="advanced-body"><div class="hint" style="margin:0 0 9px">Full KI contract · ${totalInternal} declared fields and files. These details are for audit, reproducibility, and debugging; the agent handles them during normal use.</div><div class="hint" style="margin:0 0 9px">Project: <code>${esc(data.project_path)}</code></div>${checkedPaths}${laneCards}${filecard}${literature}</div></details>`;
+  return `${summary}${progress}${dataOverview}${human}${advanced}`;
 }
 async function refreshData(){
   if(!CUR)return;

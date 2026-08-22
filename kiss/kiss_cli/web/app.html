@@ -96,6 +96,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .bubble hr{border:0;border-top:1px solid var(--line);margin:10px 0}
 .bubble p{margin:5px 0}
 .bubble ul,.bubble ol{margin:6px 0;padding-left:22px}.bubble li{margin:2px 0}
+.md-table{max-width:100%;overflow-x:auto;margin:9px 0;border:1px solid var(--line);border-radius:9px}
+.bubble table{width:100%;border-collapse:collapse;font-size:12px;background:var(--surface)}
+.bubble th,.bubble td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;min-width:110px}
+.bubble th{background:var(--raised);font-weight:600}.bubble tr:last-child td{border-bottom:0}
 .worklog{margin:2px 0 9px;border:1px solid var(--line);border-radius:9px;background:var(--raised);color:var(--fg-2);font-size:11.5px}
 .worklog summary{cursor:pointer;padding:6px 9px;list-style:none}.worklog summary::-webkit-details-marker{display:none}.worklog summary:before{content:"›";display:inline-block;margin-right:6px;color:var(--fg-3);transition:transform .12s}.worklog[open] summary:before{transform:rotate(90deg)}
 .worksteps{padding:0 10px 7px 26px;color:var(--fg-3)}.worksteps div{padding:1px 0}
@@ -145,9 +149,9 @@ textarea:focus{outline:none;border-color:var(--brand)}
 .banner button{margin-left:8px;padding:3px 8px;color:inherit;border-color:currentColor;background:transparent}
 .localagent{display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-top:1px solid var(--line-1)}
 .localagent:first-child{border-top:0}.localagent b{display:block;font-size:12.5px}.localagent small{display:block;color:var(--fg-3)}
-#modal,#mpick,#skillpick,#connections,#guide,#actionpick{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;
+#modal,#mpick,#skillpick,#connections,#guide,#actionpick,#sessionpick{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;
   align-items:center;justify-content:center;z-index:20}
-#modal.open,#mpick.open,#skillpick.open,#connections.open,#guide.open,#actionpick.open{display:flex}
+#modal.open,#mpick.open,#skillpick.open,#connections.open,#guide.open,#actionpick.open,#sessionpick.open{display:flex}
 .card2{background:var(--bg);border:1px solid var(--line);border-radius:16px;
   width:min(500px,92vw);max-height:86vh;overflow-y:auto;padding:18px 20px}
 .card2 h2{font-size:15px;margin:0 0 12px}
@@ -194,6 +198,9 @@ textarea:focus{outline:none;border-color:var(--brand)}
 .data-ready-row.ok .data-state{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,var(--line))}
 .data-ready-row.active .data-state{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 35%,var(--line))}
 .data-ready-row.block .data-state{color:var(--block);border-color:color-mix(in srgb,var(--block) 35%,var(--line))}
+.data-row-actions{display:flex;align-items:flex-end;gap:5px;flex-direction:column}.data-resolve{padding:4px 8px;font-size:10.5px;color:var(--brand);border-color:color-mix(in srgb,var(--brand) 30%,var(--line));white-space:nowrap}
+.data-requirement-preview{color:var(--fg-2)!important;font-weight:620}.data-location-note{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px!important;word-break:break-all}
+.data-folder{padding:4px 8px;font-size:10.5px;color:var(--fg-2);white-space:nowrap}.data-empty{padding:14px 4px 10px}.data-empty b{display:block;font-size:13px;margin-bottom:4px}.data-model-strip{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0 1px}.data-overview-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.data-overview-tools button{padding:4px 8px;font-size:10.5px}
 .data-overview-note{font-size:11px;color:var(--fg-3);padding-top:7px;border-top:1px solid var(--line-1)}
 .lane{background:var(--raised);border:1px solid var(--line);border-radius:12px;margin-bottom:9px;overflow:hidden}
 .lane>summary{list-style:none;display:flex;align-items:center;gap:8px;padding:11px 12px;cursor:pointer}
@@ -201,6 +208,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
 .lane-body{padding:0 12px 9px;border-top:1px solid var(--line-1)}
 .actiontag{display:inline-flex;font-size:10.5px;border-radius:99px;padding:1px 7px;border:1px solid var(--line);color:var(--fg-2);margin-top:3px}
 .actiontag.ok{color:var(--ok)}.actiontag.warn{color:var(--warn)}.actiontag.block{color:var(--block)}
+.requirement-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px}.requirement-resolve{padding:3px 7px;font-size:10.5px;color:var(--brand)}
 .paperlink{display:block;color:var(--fg);text-decoration:none;padding:7px 0;border-top:1px solid var(--line-1)}
 .paperlink:hover{color:var(--brand)}.paperlink small{display:block;color:var(--fg-3)}
 .autolist{display:grid;gap:8px;margin-top:9px}.autorow{display:flex;gap:9px;align-items:flex-start}
@@ -273,6 +281,19 @@ textarea:focus{outline:none;border-color:var(--brand)}
       <button class="primary" id="s-save">Save</button>
       <button id="s-close">Close</button>
       <span class="hint" id="s-msg" style="align-self:center"></span>
+    </div>
+  </div></div>
+  <div id="sessionpick"><div class="card2" style="width:min(560px,92vw)">
+    <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px"><span class="mark">▣</span><h2 style="margin:0">New project chat</h2></div>
+    <div style="color:var(--fg-2)">Each chat has its own project folder for memory, inputs, model runs, outputs, and plots.</div>
+    <label for="project-parent">Create the project inside</label>
+    <div style="display:flex;gap:7px"><input id="project-parent" autocomplete="off" spellcheck="false" style="flex:1"><button id="project-browse">Choose…</button></div>
+    <div class="hint" id="project-location-note" style="margin:6px 0 0">GeoForge creates a new named folder inside this location. Existing files are not changed.</div>
+    <div class="hint" id="project-location-error" style="margin:7px 0 0;color:var(--block)"></div>
+    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+      <button class="primary" id="project-create">Create chat</button>
+      <button id="project-default">Use default location</button>
+      <button id="project-cancel">Cancel</button>
     </div>
   </div></div>
   <div id="mpick"><div class="card2">
@@ -376,19 +397,41 @@ function extractWork(t,streaming){const tools=[];let body=String(t??"");
   if(!compact.length)return {body,html:""};
   const label=chineseUI()?(streaming?`正在处理 · ${compact.length} 步`:`工作详情 · ${compact.length} 步`):(streaming?`Working · ${compact.length} step${compact.length===1?"":"s"}`:`Work details · ${compact.length} step${compact.length===1?"":"s"}`);
   return {body,html:`<details class="worklog"><summary>${label}</summary><div class="worksteps">${compact.map(n=>`<div>${esc(workLabel(n))}</div>`).join("")}</div></details>`};}
+function renderMarkdownTables(source){
+  const lines=source.split("\n"),out=[];
+  const row=line=>line.trim().slice(1,-1).split("|").map(cell=>cell.trim());
+  const tableLine=line=>/^\s*\|.*\|\s*$/.test(line);
+  const separator=line=>tableLine(line)&&row(line).length>0&&row(line).every(cell=>/^:?-{3,}:?$/.test(cell));
+  for(let i=0;i<lines.length;){
+    if(tableLine(lines[i])&&i+1<lines.length&&separator(lines[i+1])){
+      const header=row(lines[i]);i+=2;const rows=[];
+      while(i<lines.length&&tableLine(lines[i])){rows.push(row(lines[i]));i++;}
+      out.push(`<div class="md-table"><table><thead><tr>${header.map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${header.map((_,n)=>`<td>${r[n]||""}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
+      continue;
+    }
+    out.push(lines[i]);i++;
+  }
+  return out.join("\n");
+}
 function md(t,sid=CUR&&CUR.id,streaming=false){const work=extractWork(t,streaming);let h=esc(work.body);
+  // Some providers double-escape Markdown identifiers and table pipes. They
+  // are presentation escapes, not scientific content.
+  h=h.replace(/\\+([_|])/g,"$1");
   h=h.replace(/```(\w*)\n([\s\S]*?)```/g,(m,l,c)=>`<pre><code>${c}</code></pre>`);
   h=h.replace(/!\[([^\]\n]*)\]\(([^)\n]+)\)/g,(m,a,p)=>artifactImage(a,p,sid)||m);
   h=h.replace(/`([^`\n]+)`/g,"<code>$1</code>");
   h=h.replace(/^\s*---\s*$/gm,"<hr>");
   h=h.replace(/^###?\s+(.+)$/gm,"<h3>$1</h3>");
   h=h.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>");
+  h=renderMarkdownTables(h);
   h=h.replace(/(^|\n)((?:\s*[-*]\s+[^\n]+(?:\n|$))+)/g,(m,lead,block)=>lead+`<ul>${block.trim().split("\n").map(line=>`<li>${line.replace(/^\s*[-*]\s+/,"")}</li>`).join("")}</ul>`);
   h=h.replace(/(^|\n)((?:\s*\d+[.)]\s+[^\n]+(?:\n|$))+)/g,(m,lead,block)=>lead+`<ol>${block.trim().split("\n").map(line=>`<li>${line.replace(/^\s*\d+[.)]\s+/,"")}</li>`).join("")}</ol>`);
-  return work.html+h.split(/\n{2,}/).map(p=>/^<(pre|h3|hr|figure|ul|ol)/.test(p.trim())?p:`<p>${p.replace(/\n/g,"<br>")}</p>`).join("");}
+  return work.html+h.split(/\n{2,}/).map(p=>/^<(pre|h3|hr|figure|ul|ol|div\b)/.test(p.trim())?p:`<p>${p.replace(/\n/g,"<br>")}</p>`).join("");}
 
 let SESSIONS=[], CUR=null, MODELS=[], SKILLS=[], MCP={connections:[],github:{}}, STATUS={}, LAST_PREP=null, RUN=null,
+    PROJECT_LOCATION={default_parent:""},
     PROV={providers:[],any_usable:false}, PICK=new Set(), SKPICK=new Set(), MCPPICK=new Set();
+const PENDING_ACTIONS=new Map();
 // Work is isolated by chat. A slow model in one project must never freeze
 // navigation or prevent a second conversation from starting.
 const INFLIGHT=new Map(), PENDING_ATTACHMENTS=new Map(), UPLOADING=new Map(), DRAFTS=new Map();
@@ -411,13 +454,14 @@ function stateLabel(n){
 
 async function loadAll(){
   try{
-    [SESSIONS,MODELS,SKILLS,MCP,STATUS,PROV]=await Promise.all([
+    [SESSIONS,MODELS,SKILLS,MCP,STATUS,PROV,PROJECT_LOCATION]=await Promise.all([
       fetch("/api/sessions").then(r=>r.json()),
       fetch("/api/models").then(r=>r.json()),
       fetch("/api/skills").then(r=>r.json()),
       fetch("/api/mcp").then(r=>r.json()),
       fetch("/api/status").then(r=>r.json()),
-      fetch("/api/providers").then(r=>r.json())]);
+      fetch("/api/providers").then(r=>r.json()),
+      fetch("/api/project-location").then(r=>r.json())]);
     drawSessions(); drawProviders();
     const requested=new URLSearchParams(location.search).get("session");
     if(requested&&SESSIONS.some(s=>s.id===requested)){
@@ -432,6 +476,19 @@ async function loadAll(){
   }catch(e){
     $("#chat").innerHTML=`<div class="banner"><b>GeoForge could not start.</b> ${esc(e)}<br>Reload the app; if it repeats, open the KI Library and AI Settings.</div>`;
   }
+}
+let SESSION_REFRESHING=false;
+async function refreshSessionList(){
+  if(SESSION_REFRESHING||document.hidden)return;
+  SESSION_REFRESHING=true;
+  try{
+    const r=await fetch("/api/sessions");if(!r.ok)return;
+    const fresh=await r.json();if(!Array.isArray(fresh))return;
+    // Conversations may be created by another GeoForge window or by a test
+    // through the local API. Keep the sidebar live without replacing the
+    // conversation currently being read or its unsent draft.
+    SESSIONS=fresh;drawSessions();
+  }catch(_error){}finally{SESSION_REFRESHING=false;}
 }
 const RUN_GROUPS=[
   {name:"Understand",stages:["understanding","choosing_ki"],detail:"Understand the goal and choose a general KI"},
@@ -685,15 +742,40 @@ async function maybeShowAction(id){
   const key=`${id}:${request.id||request.created_at||request.title}`;if(SEEN_ACTIONS.has(key))return;
   if(showActionPicker(request,id))SEEN_ACTIONS.add(key);
 }
+let PROJECT_PICK_RESOLVE=null,LAST_PROJECT_ERROR="";
+function finishProjectPicker(value){
+  $("#sessionpick").classList.remove("open");
+  const resolve=PROJECT_PICK_RESOLVE;PROJECT_PICK_RESOLVE=null;
+  if(resolve)resolve(value);
+}
+function chooseProjectLocation(){
+  if(PROJECT_PICK_RESOLVE)return Promise.resolve(null);
+  $("#project-parent").value=PROJECT_LOCATION.default_parent||"";
+  $("#project-location-error").textContent=LAST_PROJECT_ERROR;LAST_PROJECT_ERROR="";
+  $("#project-location-note").textContent=chineseUI()?"GeoForge 会在这里新建一个项目文件夹，不会更改已有文件。":"GeoForge creates a new named folder inside this location. Existing files are not changed.";
+  $("#sessionpick").classList.add("open");
+  return new Promise(resolve=>{PROJECT_PICK_RESOLVE=resolve;setTimeout(()=>$("#project-parent").focus(),0);});
+}
+async function createSessionAt(projectParent){
+  const r0=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({provider:$("#prov").value,project_parent:projectParent})});
+  const created=await r0.json().catch(()=>({}));
+  if(!r0.ok){
+    LAST_PROJECT_ERROR=created.error||`Could not create the project (${r0.status})`;
+    return null;
+  }
+  SESSIONS.unshift({id:created.id,title:created.title,models:[],skills:[],mcps:[],n:0,created:created.created,
+                    project_path:created.project_path});
+  return created;
+}
 async function ensureSession(){
   if(CUR) return CUR;
-  const r0=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({provider:$("#prov").value})});
-  if(!r0.ok){$("#hint").textContent="could not create session ("+r0.status+")";throw new Error("session");}
-  CUR=await r0.json();
-  SESSIONS.unshift({id:CUR.id,title:CUR.title,models:[],skills:[],mcps:[],n:0,created:CUR.created,
-                    project_path:CUR.project_path});
-  drawSessions(); return CUR;
+  while(!CUR){
+    const parent=await chooseProjectLocation();if(parent===null)return null;
+    const created=await createSessionAt(parent);if(!created)continue;
+    CUR=created;drawSessions();
+  }
+  return CUR;
 }
 function pendingFor(id=CUR&&CUR.id){return id?(PENDING_ATTACHMENTS.get(id)||[]):[];}
 function renderAttachments(){
@@ -707,7 +789,7 @@ function renderAttachments(){
 }
 async function addChatFiles(fileList){
   const files=[...fileList].filter(file=>file&&file.name);if(!files.length)return;
-  await ensureSession();const target=CUR.id;
+  if(!await ensureSession())return;const target=CUR.id;
   if(sessionBusy(target)){$("#hint").textContent="This chat is working. Add the files to a new chat, or wait for this turn to finish.";return;}
   UPLOADING.set(target,(UPLOADING.get(target)||0)+1);setControls(true);
   if(CUR&&CUR.id===target)$("#hint").textContent=`Uploading ${files.length} file${files.length===1?"":"s"}…`;
@@ -730,8 +812,9 @@ async function addChatFiles(fileList){
 }
 async function send(){
   let text=$("#msg").value.trim();
-  await ensureSession();
+  if(!await ensureSession())return;
   const target=CUR.id, attachments=[...pendingFor(target)];
+  const action=PENDING_ACTIONS.get(target)||null;
   if(sessionBusy(target)||sessionUploading(target)||(!text&&!attachments.length))return;
   if(!text&&attachments.length)text=chineseUI()?"请检查我附上的文件。":"Please inspect the attached files.";
   const slash=text.match(/^\/([^\s]+)(?:\s+([\s\S]+))?$/);
@@ -766,8 +849,9 @@ async function send(){
       renderLiveTurn(target);
     }
     const r=await fetch(`/api/session/${target}/chat`,{method:"POST",
-      headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,attachments:attachments.map(file=>file.path)})});
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,attachments:attachments.map(file=>file.path),action})});
     if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||`request failed ${r.status}`);}
+    PENDING_ACTIONS.delete(target);
     PENDING_ATTACHMENTS.delete(target);if(CUR&&CUR.id===target)renderAttachments();
     const rd=r.body.getReader(), dec=new TextDecoder();
     for(;;){const{done,value}=await rd.read(); if(done)break;
@@ -833,13 +917,38 @@ document.addEventListener("drop",e=>{if(e.dataTransfer&&[...e.dataTransfer.types
 $("#prov").addEventListener("change",drawLLM);
 document.querySelectorAll("#kindtog button").forEach(b=>b.onclick=()=>{
   KIND=b.dataset.k; localStorage.setItem("kiss.kind",KIND); drawProviders();});
-$("#newsess").onclick=async()=>{if(CUR)DRAFTS.set(CUR.id,$("#msg").value);CUR=null;$("#msg").value="";renderAttachments();drawEmpty();await ensureSession();await openSession(CUR.id);};
+$("#newsess").onclick=async()=>{
+  let created=null;
+  while(!created){const parent=await chooseProjectLocation();if(parent===null)return;created=await createSessionAt(parent);}
+  if(CUR)DRAFTS.set(CUR.id,$("#msg").value);
+  CUR=created;$("#msg").value="";renderAttachments();await openSession(created.id);
+};
 $("#activity-new").onclick=()=>$("#newsess").click();
+$("#project-create").onclick=()=>{
+  const value=$("#project-parent").value.trim();
+  if(!value){$("#project-location-error").textContent=chineseUI()?"请选择或输入一个文件夹。":"Choose or enter a folder.";return;}
+  finishProjectPicker(value);
+};
+$("#project-default").onclick=()=>{$("#project-parent").value=PROJECT_LOCATION.default_parent||"";$("#project-location-error").textContent="";};
+$("#project-cancel").onclick=()=>finishProjectPicker(null);
+$("#project-browse").onclick=async()=>{
+  $("#project-location-error").textContent="";
+  const nativeApi=window.pywebview&&window.pywebview.api;
+  if(!nativeApi||!nativeApi.choose_project_parent){
+    $("#project-location-note").textContent=chineseUI()?"当前在浏览器模式。请直接输入文件夹路径；桌面版会打开系统文件夹选择器。":"Browser mode: type the folder path here. The desktop build opens the system folder picker.";
+    $("#project-parent").focus();return;
+  }
+  try{
+    const picked=await nativeApi.choose_project_parent($("#project-parent").value||PROJECT_LOCATION.default_parent||"");
+    if(picked)$("#project-parent").value=picked;
+  }catch(error){$("#project-location-error").textContent=chineseUI()?"无法打开文件夹选择器，请直接输入路径。":"Could not open the folder picker; enter the path directly.";}
+};
 $("#action-later").onclick=closeActionPicker;
 $("#action-continue").onclick=async()=>{
   if(!ACTION_REQUEST||!ACTION_SESSION||ACTION_INDEX<0){$("#action-error").textContent=chineseUI()?"请先选择一项。":"Choose one option first.";return;}
   if(!CUR||CUR.id!==ACTION_SESSION){$("#action-error").textContent=chineseUI()?"请返回提出此问题的对话。":"Return to the chat that asked this question.";return;}
   const option=ACTION_REQUEST.options[ACTION_INDEX],note=$("#action-note").value.trim();
+  PENDING_ACTIONS.set(ACTION_SESSION,{request_id:ACTION_REQUEST.id,option_id:option.id,note});
   const text=chineseUI()?`关于“${ACTION_REQUEST.title}”，我的选择是：${option.label}。\n决定：${option.response||option.label}${note?`\n补充说明：${note}`:""}\n请根据这个选择继续。`:`For “${ACTION_REQUEST.title}”, I choose: ${option.label}.\nDecision: ${option.response||option.label}${note?`\nAdditional note: ${note}`:""}\nPlease continue using this choice.`;
   closeActionPicker();$("#msg").value=text;DRAFTS.set(CUR.id,text);await send();
 };
@@ -862,13 +971,15 @@ const actionClass=a=>a==="needs_decision"?"block":a==="provide_or_find"?"warn":"
 function renderData(data){
   const files=data.files||[];
   const referenceFiles=data.reference_files||[];
+  const provenance=data.provenance||[];
   const plans=data.plans||[];
-  const prep=data.preparation||{}, sw=prep.software_summary||{}, run=data.project_run||RUN||{};
+  const prep=data.preparation||{}, sw=prep.software_summary||{}, run=data.project_run||RUN||{}, calibration=data.calibration||{};
   const models=prep.models||[], lanes=prep.lanes||[], papers=prep.literature||[], missingPapers=prep.literature_missing||[];
   const request=(run.blocker&&run.status==="waiting_for_user")?run.blocker:data.human_request;
   const waiting=request&&(request.status==="waiting"||run.status==="waiting_for_user");
   drawRunStatus(run);
   const runModels=(run.selected_kis||[]).length?run.selected_kis:models.map(m=>m.name);
+  const activeData=Boolean(prep.active&&runModels.length);
   const modelchips=runModels.length?runModels.map(name=>`<span class="mchip">General KI: ${esc(name)}</span>`).join(" "):"";
   const softwareLabel=sw.total?`${sw.ready||0} / ${sw.total} software verified`:'Auto KI';
   const stateLabel=run.status==="working"?"GeoForge is working":run.status==="waiting_for_user"?"One thing needs you":run.status==="complete"?"Project complete":run.status==="failed"?"Project needs attention":run.goal?"Ready to continue":"Ready when you are";
@@ -894,18 +1005,55 @@ function renderData(data){
   const dataOverallClass=dataFailed||checkedConflict?"block":waiting?"warn":dataReached&&!missingChecks.length?"ok":"";
   const laneStatus=lane=>{
     if(lane.id==="source_data"&&requiredChecks.length){
-      const note=`${readyChecks.length} / ${requiredChecks.length} required data paths are ready.`;
-      if(missingChecks.length)return {label:`${missingChecks.length} not ready yet`,cls:checkedConflict?"block":"active",mark:checkedConflict?"!":"•",note};
+      const note=chineseUI()?`${readyChecks.length} / ${requiredChecks.length} 个必需数据路径已经就绪。`:`${readyChecks.length} / ${requiredChecks.length} required data paths are ready.`;
+      if(missingChecks.length)return {label:chineseUI()?`${missingChecks.length} 个尚未就绪`:`${missingChecks.length} not ready yet`,cls:checkedConflict?"block":"active",mark:checkedConflict?"!":"•",note};
       return {label:"Ready to use",cls:"ok",mark:"✓",note};
     }
     return dataFailed?{label:"Review needed",cls:"block",mark:"!"}:dataReached?{label:"Ready to use",cls:"ok",mark:"✓"}:dataChecking?{label:"Being checked",cls:"active",mark:"✓"}:dataWorking?{label:"Agent is preparing",cls:"active",mark:"•"}:{label:"Agent will prepare",cls:"",mark:"AI"};
   };
-  const dataRows=lanes.filter(l=>l.count).map(lane=>{
+  const visibleLanes=activeData?lanes.filter(l=>l.count):[];
+  const totalDeclared=visibleLanes.reduce((total,lane)=>total+(lane.count||0),0);
+  const dataRows=visibleLanes.map(lane=>{
     const status=laneStatus(lane);
-    const fileNote=lane.id==="source_data"&&sourceFiles.length?`${sourceFiles.length} local source file${sourceFiles.length===1?' is':'s are'} available.`:"";
-    return `<div class="data-ready-row ${status.cls}"><span class="data-ready-mark">${status.mark}</span><span><b>${esc(lane.label)}</b><small>${esc(lane.description||"")}</small>${status.note?`<small>${esc(status.note)}</small>`:""}${fileNote?`<small>${esc(fileNote)}</small>`:""}</span><span class="data-state">${esc(status.label)}</span></div>`;
+    const examples=(lane.items||[]).slice(0,4).map(item=>item.name).filter(Boolean),more=Math.max(0,(lane.count||0)-examples.length);
+    const preview=examples.length
+      ?`${examples.join(" · ")}${more?` · +${more} ${chineseUI()?"项":"more"}`:""}`
+      :"";
+    const locations=Array.isArray(lane.locations)?lane.locations:[],location=locations[0]||lane.input_root||null;
+    const fileCount=Number(lane.local_file_count||0);
+    const fileNote=fileCount?(chineseUI()?`这个类别有 ${fileCount} 个本地文件。`:`${fileCount} local file${fileCount===1?'':'s'} in this group.`):"No local files in this category yet.";
+    const paths=locations.slice(0,2).map(item=>item.relative_path).filter(Boolean);
+    const locationNote=paths.length?`${paths.join(" · ")}${locations.length>2?` · +${locations.length-2} ${chineseUI()?"处":"more"}`:""}`:"";
+    const folderButton=location?`<button class="data-folder" data-open-path="${esc(location.relative_path)}" title="${esc(location.relative_path)}">Open folder</button>`:"";
+    return `<div class="data-ready-row ${status.cls}"><span class="data-ready-mark">${status.mark}</span><span><b>${esc(lane.label)}</b>${preview?`<small class="data-requirement-preview">${esc(preview)}</small>`:""}<small>${esc(lane.description||"")}</small>${status.note?`<small>${esc(status.note)}</small>`:""}<small>${esc(fileNote)}</small>${locationNote?`<small class="data-location-note">${esc(locationNote)}</small>`:""}</span><span class="data-row-actions"><span class="data-state">${esc(status.label)}</span>${folderButton}<button class="data-resolve" data-data-lane="${esc(lane.id)}">Resolve with agent</button></span></div>`;
   }).join("");
-  const dataOverview=`<div class="datacard"><div class="data-overview-head"><div><h3>Data for this run</h3><div class="hint" style="margin:1px 0 0">A simple view of what the model needs. GeoForge handles the technical fields and asks only when a real decision or private file is missing.</div></div><span class="statuspill ${dataOverallClass}">${esc(dataOverall)}</span></div><div class="data-overview">${dataRows||'<div class="hint" style="margin:5px 0">The data groups will appear after a KI is selected.</div>'}</div><div class="data-overview-note">Only confirmed gaps appear as “Needs you.” The complete KI data contract is still available below.</div></div>`;
+  const inputRoot=visibleLanes.map(lane=>lane.input_root).find(Boolean)||{relative_path:"inputs"};
+  const activeCopy=chineseUI()?`根据 ${runModels.join("、")} KI 动态生成 · ${totalDeclared} 项要求`:`Built dynamically from ${runModels.join(", ")} KI · ${totalDeclared} requirements`;
+  const emptyCopy=chineseUI()?"先在对话中描述你要模拟什么。Agent 选择 KI 后，这里会自动按该模型重建。":"Describe what you want to simulate in chat. After the agent chooses a KI, this view rebuilds itself for that model.";
+  const dataBody=activeData?`<div class="data-model-strip">${runModels.map(name=>`<span class="mchip">${esc(name)}</span>`).join("")}</div><div class="hint" style="margin:4px 0 2px">${esc(activeCopy)}</div>${dataRows}`:`<div class="data-empty"><b>Model data appears after the conversation chooses a KI.</b><div class="hint" style="margin:0">${esc(emptyCopy)}</div></div>`;
+  const overviewTools=activeData?`<div class="data-overview-tools"><span class="statuspill ${dataOverallClass}">${esc(dataOverall)}</span><button class="data-folder" data-open-path="${esc(inputRoot.relative_path)}">Open all inputs</button></div>`:`<span class="statuspill">Auto KI</span>`;
+  const dataOverview=`<div class="datacard"><div class="data-overview-head"><div><h3>Data for this run</h3><div class="hint" style="margin:1px 0 0">Data categories are rebuilt from the active KI as the conversation changes.</div></div>${overviewTools}</div><div class="data-overview">${dataBody}</div>${activeData?'<div class="data-overview-note">Only confirmed gaps appear as “Needs you.” The complete KI data contract is still available below.</div>':''}</div>`;
+  const dataSources=provenance.length?`<div class="datacard"><div class="data-overview-head"><div><h3>Data sources & download record</h3><div class="hint" style="margin:1px 0 0">What the agent downloaded, copied, or reused—and the record that makes it reproducible.</div></div><span class="statuspill ok">${provenance.length} recorded</span></div>${provenance.map(record=>{
+    const listed=(record.files||[]).slice(0,12);
+    const fileDetails=listed.length?`<details style="margin-top:5px"><summary>${listed.length} source file${listed.length===1?'':'s'}${record.checksum_count?` · ${record.checksum_count} checksum${record.checksum_count===1?'':'s'}`:''}</summary><div class="hint" style="margin:4px 0 0">${listed.map(file=>`${esc(file.name)}${Number.isFinite(file.size)?` · ${sizeLabel(file.size)}`:''}${file.sha256?` · SHA-256 ${esc(file.sha256.slice(0,12))}…`:''}`).join('<br>')}</div></details>`:'';
+    return `<div class="dataitem"><div style="display:flex;align-items:flex-start;gap:7px"><b style="flex:1">${esc(record.title||'Recorded data source')}</b><span class="actiontag ok">Recorded</span></div><small>${esc(record.method||'Saved for reproducibility')}</small>${record.version?`<small>Version or commit: <code>${esc(record.version)}</code></small>`:''}${record.note?`<small>${esc(record.note)}</small>`:''}${record.url?`<small><a href="${esc(record.url)}" target="_blank" rel="noreferrer">Open public source ↗</a></small>`:''}${fileDetails}<small>Audit record: <code>${esc(record.relative_path||'')}</code></small></div>`;
+  }).join('')}</div>`:"";
+  const calibrationAdapters=Array.isArray(calibration.adapters)?calibration.adapters:[];
+  const readyCalibration=calibrationAdapters.filter(item=>item.status==="ready");
+  const latestCalibration=calibration.latest_run||null;
+  let calibrationLabel="Choose a KI first",calibrationClass="",calibrationHint="Choose a model in chat. GeoForge will then connect its calibration adapter when one is available.";
+  if(!calibration.ready){calibrationLabel="Engine unavailable";calibrationClass="block";calibrationHint="This build cannot load the shared calibration engine. The agent can inspect the problem, but must not claim that optimization ran.";}
+  else if(calibrationAdapters.length){
+    if(!readyCalibration.length){calibrationLabel="Adapter needed";calibrationClass="warn";calibrationHint="The model is selected, but its project calibration adapter still needs to be prepared.";}
+    else if(latestCalibration&&latestCalibration.promotable){calibrationLabel="Holdout passed";calibrationClass="ok";calibrationHint="The latest real-model calibration passed its held-out validation gate.";}
+    else if(latestCalibration){calibrationLabel=latestCalibration.status==="completed"?"Holdout not passed":"Run needs review";calibrationClass="warn";calibrationHint="The latest attempt is saved, but GeoForge does not treat it as a validated calibration.";}
+    else if(Number(calibration.case_count||0)>0){calibrationLabel="Workflow prepared";calibrationClass="ok";calibrationHint="A project case is saved. The agent must still verify that its observations, target, and holdout match this run before starting the optimizer.";}
+    else{calibrationLabel="Project case needed";calibrationClass="warn";calibrationHint="A reusable model adapter exists, but it may describe a different site or target. Create a project case with observations and a holdout before running calibration.";}
+  }
+  const calibrationLoss=latestCalibration&&latestCalibration.best_loss!=null?(Array.isArray(latestCalibration.best_loss)?latestCalibration.best_loss.join(", "):String(latestCalibration.best_loss)):"";
+  const calibrationLatest=latestCalibration?`<div class="dataitem"><div style="display:flex;align-items:flex-start;gap:7px"><b style="flex:1">Latest calibration · ${esc(latestCalibration.ki||'KI')}</b><span class="actiontag ${latestCalibration.promotable?'ok':'warn'}">${latestCalibration.promotable?'Validated':'Not promoted'}</span></div><small>${esc(latestCalibration.algorithm||'optimizer')} · ${esc(latestCalibration.status||'unknown status')}${calibrationLoss?` · best loss ${esc(calibrationLoss)}`:''}</small>${latestCalibration.reason?`<small>${esc(latestCalibration.reason)}</small>`:''}<small>Report: <code>${esc(latestCalibration.report_path||'')}</code></small></div>`:"";
+  const calibrationModels=calibrationAdapters.length?calibrationAdapters.map(item=>`${esc(item.ki)} · ${item.status==='ready'?'adapter ready':'adapter needed'}`).join('<br>'):(runModels.length?runModels.map(esc).join(', '):'No KI selected yet');
+  const calibrationCard=`<div class="datacard"><div class="data-overview-head"><div><h3>Calibration</h3><div class="hint" style="margin:1px 0 0">GeoForge uses the real KI model, keeps observations and runs in this project, and accepts a result only after held-out validation.</div></div><span class="statuspill ${calibrationClass}">${esc(calibrationLabel)}</span></div><div class="dataitem"><b>${esc(calibration.ready_adapter_count||0)} ready adapter${Number(calibration.ready_adapter_count||0)===1?'':'s'} · ${esc(calibration.case_count||0)} case file${Number(calibration.case_count||0)===1?'':'s'} · ${esc(calibration.run_count||0)} run${Number(calibration.run_count||0)===1?'':'s'}</b><small>${calibrationModels}</small><small>${esc(calibrationHint)}</small></div>${calibrationLatest}<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px"><button id="calibration-agent" class="primary">${latestCalibration?'Continue calibration':'Calibrate with agent'}</button><button id="calibration-files">Add observations</button></div></div>`;
   const human=waiting?`<div class="datacard" style="border-color:color-mix(in srgb,var(--warn) 45%,var(--line))"><div style="display:flex;gap:8px;align-items:center"><h3 style="flex:1">One thing needs you</h3><span class="statuspill warn">${esc(request.kind||'action')}</span></div><b>${esc(request.title||'Help needed')}</b><div class="hint" style="margin:4px 0">${esc(request.message||'')}</div>${request.url?`<a href="${esc(request.url)}" target="_blank" rel="noreferrer"><button style="margin-top:7px">Open official page</button></a>`:''}</div>`:
     `<div class="datacard"><h3>No action needed from you</h3><div class="hint" style="margin:0">Keep working in chat. GeoForge will interrupt only for an important decision, private data, a login, licence, or system permission.</div></div>`;
   const filecard=`<div class="datacard"><h3>Project files · ${files.length}</h3>
@@ -914,11 +1062,12 @@ function renderData(data){
   const checkedPaths=datasetChecks.length?`<div class="datacard"><h3>Checked data paths · ${datasetChecks.length}</h3><div class="hint" style="margin:0 0 6px">These marks come from real paths declared by the KI setup manifest, not from an AI guess.</div>${datasetChecks.map(item=>`<div class="dataitem"><div style="display:flex;align-items:flex-start;gap:6px"><b style="flex:1">${esc(item.name)}</b><span class="actiontag ${item.present?'ok':'warn'}">${item.present?'Present':'Not ready'}</span></div><small>${esc(item.model)}${item.optional?' · Optional':''}</small>${item.why?`<small>${esc(item.why)}</small>`:''}<small><code>${esc(item.expected_path||'Path not configured')}</code></small></div>`).join('')}</div>`:"";
   const laneCards=lanes.filter(l=>l.count).map((lane,i)=>{
     const shown=(lane.items||[]).slice(0,80);
-    const items=shown.map(item=>{
+    const items=shown.map((item,itemIndex)=>{
       const shared=(item.models||[]).length>1?`<span class="mchip">shared by ${(item.models||[]).map(esc).join(' + ')}</span>`:`<span class="mchip">${esc((item.models||[])[0]||'KI')}</span>`;
       const variants=(item.variants||[]).map(v=>[v.model,v.unit,v.file].filter(Boolean).map(esc).join(' · ')).filter(Boolean);
       const detail=item.description||item.notes||item.format||item.source_kind||"Declared by the KI";
-      return `<div class="dataitem"><div style="display:flex;gap:6px;align-items:flex-start"><b style="flex:1">${esc(item.name)}</b>${shared}</div><small>${esc(detail)}</small>${variants.length?`<small>${variants.join('<br>')}</small>`:''}<span class="actiontag ${actionClass(item.action)}">${esc(item.action_label)}</span></div>`;
+      const resolveLabel=item.action==="needs_decision"?"Decide with agent":item.action==="provide_or_find"?"Find with agent":"Prepare with agent";
+      return `<div class="dataitem"><div style="display:flex;gap:6px;align-items:flex-start"><b style="flex:1">${esc(item.name)}</b>${shared}</div><small>${esc(detail)}</small>${variants.length?`<small>${variants.join('<br>')}</small>`:''}<div class="requirement-actions"><span class="actiontag ${actionClass(item.action)}">${esc(item.action_label)}</span><button class="requirement-resolve" data-data-lane="${esc(lane.id)}" data-data-item="${itemIndex}">${resolveLabel}</button></div></div>`;
     }).join("");
     const more=lane.count>shown.length?`<div class="hint" style="margin:6px 0">${lane.count-shown.length} more requirements remain available to the agent.</div>`:"";
     return `<details class="lane"><summary><span class="mark">${i+1}</span><span style="flex:1"><b>${esc(lane.label)}</b><small style="display:block;color:var(--fg-3)">${lane.count} internal KI requirement${lane.count===1?'':'s'}</small></span></summary><div class="lane-body"><div class="hint" style="margin:8px 0 2px">These details are for audit and debugging; the agent owns them.</div>${items}${more}</div></details>`;
@@ -928,7 +1077,49 @@ function renderData(data){
     <div class="hint" style="margin:8px 0 0">If you legally download a paper, add it here so the agent can use it inside this project. GeoForge never republishes it.</div></div>`:"";
   const totalInternal=lanes.reduce((n,l)=>n+(l.count||0),0);
   const advanced=`<details class="datacard advanced"><summary>See technical data details</summary><div class="advanced-body"><div class="hint" style="margin:0 0 9px">Full KI contract · ${totalInternal} declared fields and files. These details are for audit, reproducibility, and debugging; the agent handles them during normal use.</div><div class="hint" style="margin:0 0 9px">Project: <code>${esc(data.project_path)}</code></div>${checkedPaths}${laneCards}${filecard}${literature}</div></details>`;
-  return `${summary}${progress}${dataOverview}${human}${advanced}`;
+  return `${summary}${progress}${dataOverview}${dataSources}${calibrationCard}${human}${advanced}`;
+}
+function calibrationAgentPrompt(data){
+  const calibration=data&&data.calibration||{},adapters=Array.isArray(calibration.adapters)?calibration.adapters:[];
+  const names=adapters.map(item=>item.ki).filter(Boolean),ready=adapters.filter(item=>item.status==="ready");
+  if(chineseUI()){
+    if(!names.length)return "请先根据我的科学目标选择一个支持校准的 KI，并固定用于本项目。然后检查真实模型、观测数据和留出验证要求。先用简单的话告诉我还缺哪一项；只有确实需要我的私有数据或科学决定时再询问我。";
+    return `请为本项目继续真实模型校准（KI：${names.join("、")}）。先检查 KI 的 calibration.yaml、项目已有文件和以前的运行记录。不要因为存在通用适配器就假设它属于当前项目：必须核对 case_id、地点、目标变量、观测数据和时间范围；不一致时，在项目 calibration/kis 和 calibration/cases 中建立本项目的适配器与案例，不要修改共享引擎或原始 KI。${ready.length?"确认项目绑定一致后，使用 GeoForge 内置的校准引擎运行真实科学模型；":"先在项目 calibration/kis 中完成缺失的项目适配器；"}复用项目已有数据，只在缺少观测数据或重要科学决定时询问我。必须设置独立的留出验证，保存来源与运行记录，并生成诚实的结果图。除非真实模型已经运行且留出验证通过，否则不要称为已校准或可推广。`;
+  }
+  if(!names.length)return "First choose and pin a calibration-supported KI for my scientific goal. Then inspect the real model, observations, and holdout requirements. Explain the one next gap in simple words, and ask me only for private data or a scientific decision you cannot safely make.";
+  return `Continue a real-model calibration for this project (KI: ${names.join(", ")}). First inspect the KI calibration contract, existing project files, and earlier calibration runs. Do not assume a reusable adapter belongs to this project merely because it exists: verify its case_id, site, target variable, observations, and time range. If they differ, create this project's adapter and case under calibration/kis and calibration/cases without editing the shared engine or curated KI. ${ready.length?"After the project binding matches, use GeoForge's bundled calibration engine to run the real scientific model;":"First complete the missing project adapter under calibration/kis;"} reuse data already in this project, and ask me only for missing observations or an important scientific decision. Define an independent holdout, save provenance and run records, and create an honest result plot. Do not call the result calibrated or promotable unless the real model ran and the holdout gate passed.`;
+}
+function dataAgentPrompt(data,lane,item=null){
+  const prep=data&&data.preparation||{},run=data&&data.project_run||{},models=(run.selected_kis||[]).length?run.selected_kis:(prep.models||[]).map(model=>model.name).filter(Boolean);
+  const requirements=Array.isArray(lane&&lane.items)?lane.items:[];
+  const names=requirements.slice(0,12).map(requirement=>requirement.name).filter(Boolean);
+  const remaining=Math.max(0,requirements.length-names.length);
+  if(item){
+    const facts=[
+      `name: ${item.name||"unnamed requirement"}`,
+      `KI: ${(item.models||models).join(", ")||"selected KI"}`,
+      item.description&&`description: ${item.description}`,
+      item.file&&`expected file: ${item.file}`,
+      item.format&&`format: ${item.format}`,
+      item.unit&&`unit: ${item.unit}`,
+      item.default!=null&&`KI default: ${item.default}`,
+      item.valid_range&&`valid range: ${item.valid_range}`,
+      item.notes&&`notes: ${item.notes}`
+    ].filter(Boolean).join("\n");
+    if(chineseUI())return `请根据 KI 解决本项目的这一项输入要求。\n${facts}\n先读取 KI 合同和配套工具，再检查项目里已经存在的文件；能复用就复用并验证。按 KI 允许的方式查找公开数据、转换、推导或生成，并把输入、来源记录和验证结果保存在项目文件夹中。${item.action==="needs_decision"?"这是一项科学决定：请用简单的话给我 2–3 个可选项及影响，不要替我静默决定。":item.action==="provide_or_find"?"优先寻找合适的公开来源；只有确实需要私有或受许可数据时才向我要文件。":"如果 KI 有安全默认值或自动准备方法，请直接使用并说明。"}只有真实的 KI 输入检查通过后，才可以把这一项标为就绪。`;
+    return `Resolve this project input from the KI contract.\n${facts}\nFirst read the KI contract and its supplied tools, then inspect files already in this project; reuse and validate them when possible. Find public data, convert, derive, or generate the input only as the KI allows, and save the input, provenance, and validation result in the project folder. ${item.action==="needs_decision"?"This is a scientific decision: explain 2–3 choices and their effects in simple words; do not decide silently for me.":item.action==="provide_or_find"?"Look for a suitable public source first; ask me for a file only when private or licensed data is genuinely required.":"Use a safe KI default or automatic preparation method when the KI provides one, and report it."} Mark this input ready only after its real KI validation passes.`;
+  }
+  const scope=names.length?`${names.join(", ")}${remaining?` (+${remaining} more in the KI contract)`:""}`:"read all requirements directly from the KI contract";
+  if(chineseUI())return `请根据所选 KI（${models.join("、")||"自动 KI"}）解决本项目的“${lane&&lane.label||"输入数据"}”。该组由 KI 声明的要求包括：${scope}。先检查项目中已经存在的数据并验证，避免重复下载；然后严格使用 KI 的工具和规则，查找公开数据、转换、推导或生成仍缺少的内容。把所有文件、来源、版本、校验和及处理步骤保存在项目文件夹中。只有遇到私有/受许可数据或我必须做出的科学决定时才暂停，并给我一个简短的选择弹窗。完成后运行真实的 KI 输入检查，用简单的话报告已解决、仍缺少和下一步。`;
+  return `Resolve the “${lane&&lane.label||"input data"}” group for this project using the selected KI (${models.join(", ")||"Auto KI"}). KI-declared requirements in this group include: ${scope}. First inspect and validate data already in the project so it is not downloaded twice. Then use the KI's own tools and rules to find public data, convert, derive, or generate what is still missing. Save every file plus source, version, checksums, and transformation steps in the project folder. Pause only for private/licensed data or a scientific decision I must make, and present that as one short structured choice. Finally run the real KI input checks and report in simple words what was resolved, what remains, and the next step.`;
+}
+async function startDataAgent(data,lane,item=null){
+  const prompt=dataAgentPrompt(data,lane,item);
+  $("#datapanel").classList.remove("open");$("#msg").value=prompt;
+  if(CUR)DRAFTS.set(CUR.id,prompt);
+  $("#msg").style.height="auto";$("#msg").style.height=$("#msg").scrollHeight+"px";
+  if(sessionBusy()){$("#hint").textContent=chineseUI()?"本对话仍在处理。数据请求已放入输入框，本轮完成后即可发送。":"This chat is still working. The data request is in the composer and can be sent when it finishes.";$("#msg").focus();return;}
+  await send();
 }
 async function refreshData(){
   if(!CUR)return;
@@ -936,7 +1127,28 @@ async function refreshData(){
   const r=await fetch(`/api/session/${CUR.id}/data`), data=await r.json();
   LAST_PREP=r.ok?data:null;
   $("#databody").innerHTML=r.ok?renderData(data):`<div class="banner">${esc(data.error||"Could not read data requirements")}</div>`;
+  document.querySelectorAll("#databody .data-resolve").forEach(button=>button.onclick=async()=>{
+    const lane=(data.preparation&&data.preparation.lanes||[]).find(item=>item.id===button.dataset.dataLane);if(lane)await startDataAgent(data,lane);
+  });
+  document.querySelectorAll("#databody .requirement-resolve").forEach(button=>button.onclick=async()=>{
+    const lane=(data.preparation&&data.preparation.lanes||[]).find(item=>item.id===button.dataset.dataLane),item=lane&&(lane.items||[])[Number(button.dataset.dataItem)];if(lane&&item)await startDataAgent(data,lane,item);
+  });
+  document.querySelectorAll("#databody .data-folder").forEach(button=>button.onclick=async()=>{
+    const path=button.dataset.openPath||"";
+    const response=await fetch(`/api/session/${CUR.id}/open`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path})});
+    const opened=await response.json().catch(()=>({}));
+    $("#hint").textContent=response.ok?`${chineseUI()?"已打开":"Opened"} ${opened.target_path||opened.project_path}`:(opened.error||(chineseUI()?"无法打开数据文件夹":"Could not open data folder"));
+  });
   const paperButton=$("#paper-add");if(paperButton)paperButton.onclick=()=>$("#paperfile").click();
+  const calibrationButton=$("#calibration-agent");if(calibrationButton)calibrationButton.onclick=async()=>{
+    $("#datapanel").classList.remove("open");
+    const prompt=calibrationAgentPrompt(data);$("#msg").value=prompt;
+    if(CUR)DRAFTS.set(CUR.id,prompt);
+    $("#msg").style.height="auto";$("#msg").style.height=$("#msg").scrollHeight+"px";
+    if(sessionBusy()){$("#hint").textContent=chineseUI()?"本对话仍在处理。校准请求已放入输入框，完成后即可发送。":"This chat is still working. The calibration request is in the composer and can be sent when it finishes.";$("#msg").focus();return;}
+    await send();
+  };
+  const calibrationFiles=$("#calibration-files");if(calibrationFiles)calibrationFiles.onclick=()=>{$("#datapanel").classList.remove("open");$("#chatfiles").click();};
 }
 $("#opendata").onclick=async()=>{$("#datapanel").classList.add("open");await refreshData();};
 $("#data-close").onclick=()=>$("#datapanel").classList.remove("open");
@@ -981,7 +1193,7 @@ $("#mq").addEventListener("input",drawPick);
 $("#m-close").onclick=()=>$("#mpick").classList.remove("open");
 $("#m-clear").onclick=()=>{PICK.clear(); drawPick();};
 $("#m-apply").onclick=async()=>{
-  await ensureSession();
+  if(!await ensureSession())return;
   CUR=await (await fetch(`/api/session/${CUR.id}/update`,{method:"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[...PICK]})})).json();
   drawModelLabel(); drawSessions(); $("#mpick").classList.remove("open");
@@ -1011,18 +1223,18 @@ function openSkills(){
   $("#skillpick").classList.add("open");
 }
 async function setSessionSkills(names){
-  await ensureSession();
+  if(!await ensureSession())return null;
   const r=await fetch(`/api/session/${CUR.id}/update`,{method:"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify({skills:names})});
   const updated=await r.json();
   if(!r.ok) throw new Error(updated.error||"Could not update skills");
   CUR=updated;
   const listed=SESSIONS.find(s=>s.id===CUR.id);if(listed) listed.skills=CUR.skills||[];
-  drawSkillButton();drawSessions();
+  drawSkillButton();drawSessions();return CUR;
 }
 async function attachSkill(name){
   const names=new Set(CUR&&CUR.skills||[]);names.add(name);
-  await setSessionSkills([...names]);
+  if(!await setSessionSkills([...names]))return;
   $("#msg").value="";drawSlash();
   $("#hint").textContent=`/${name} is active for this chat`;
 }
@@ -1071,7 +1283,7 @@ async function configureGitHub(){
 $("#connect").onclick=openConnections;
 $("#conn-close").onclick=()=>$("#connections").classList.remove("open");
 $("#conn-apply").onclick=async()=>{
-  await ensureSession();
+  if(!await ensureSession())return;
   const r=await fetch(`/api/session/${CUR.id}/update`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mcps:[...MCPPICK]})});
   const updated=await r.json();if(!r.ok){$("#connnote").textContent=updated.error||"Could not update connections";return;}
   CUR=updated;const listed=SESSIONS.find(s=>s.id===CUR.id);if(listed)listed.mcps=CUR.mcps||[];
@@ -1120,6 +1332,7 @@ $("#s-save").onclick=async()=>{
   setTimeout(()=>{$("#s-msg").textContent="";},1500);
 };
 window.addEventListener("focus",()=>{
+  refreshSessionList();
   const waiting=PROV.providers.some(p=>p.kind==="cli"&&p.installed&&!p.usable);
   if(waiting&&Date.now()-LAST_PROVIDER_CHECK>3000)refreshProviders(false);
 });
@@ -1131,5 +1344,6 @@ if(localStorage.getItem("kiss-dark")==="1"||
    (localStorage.getItem("kiss-dark")===null&&matchMedia("(prefers-color-scheme:dark)").matches))
   document.body.setAttribute("data-dark","");
 setInterval(updateActivityUI,1000);
+setInterval(refreshSessionList,5000);
 loadAll();
 </script></body></html>

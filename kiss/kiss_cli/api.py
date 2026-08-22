@@ -236,6 +236,32 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                 }, "required": ["tool_path"]},
             },
             {
+                "name": "run_calibration",
+                "description": (
+                    "Run this KI's project calibration adapter through GeoForge's "
+                    "bundled calibration engine. numpy, SPOTPY, and pymoo run "
+                    "inside the app, not the user's system Python. Use only after "
+                    "the real model, observations, adapter, and holdout definition "
+                    "are ready. The full report and engine log are saved in the "
+                    "chat project's calibration/runs directory."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "obs_shape_by_var": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                        "description": (
+                            "Map every calibration target variable exactly as named "
+                            "in calibration.yaml to its dag observation shape."
+                        ),
+                    },
+                    "algorithm": {"type": "string", "enum": [
+                        "dds", "sceua", "dream", "nsga2", "nsga3", "moead"]},
+                    "budget": {"type": "integer", "minimum": 1, "maximum": 10000},
+                    "seed": {"type": "integer"},
+                    "determining_metric": {"type": "string"},
+                }, "required": ["obs_shape_by_var"]},
+            },
+            {
                 "name": "create_project_plot",
                 "description": (
                     "Create a safe line, scatter, or bar plot in this chat's "
@@ -313,6 +339,11 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                     "preparing", "validating", "running", "results"]},
                 "status": {"type": "string", "enum": [
                     "idle", "working", "waiting_for_user", "complete", "failed"]},
+                "goal": {"type": "string", "description": (
+                    "The current modelling goal. Include this only when the user "
+                    "has materially replaced or refined the scientific case; do "
+                    "not replace it for a simple continue/retry message."
+                )},
                 "summary": {"type": "string"},
                 "selected_kis": {"type": "array", "items": {"type": "string"}},
             }, "required": ["stage", "status", "summary"]},
@@ -553,8 +584,12 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             raise ToolError("write_project_file is limited to 1 MB; use a KI tool")
         rel = p.relative_to(project_root)
         writable = {"inputs", "runs", "outputs", "artifacts", "references"}
-        if not rel.parts or rel.parts[0] not in writable:
-            raise ToolError("project writes must stay under inputs, runs, outputs, artifacts, or references")
+        calibration_write = (len(rel.parts) >= 2 and rel.parts[0] == "calibration"
+                             and rel.parts[1] in {"cases", "kis"})
+        if not rel.parts or (rel.parts[0] not in writable and not calibration_write):
+            raise ToolError(
+                "project writes must stay under inputs, runs, outputs, artifacts, "
+                "references, calibration/cases, or calibration/kis")
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
         return f"wrote {rel} ({len(content.encode('utf-8'))} bytes)"
@@ -593,6 +628,8 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
         child_env["KISS_ROOT"] = str(project_root)
         from .paths import with_ki_tools_common
         child_env = with_ki_tools_common(cfg, child_env)
+        from .calibration import with_framework_env
+        child_env = with_framework_env(child_env)
         try:
             proc = subprocess.run(
                 [str(cfg.python), str(script), *arguments], cwd=str(cwd),
@@ -604,6 +641,39 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             return f"TIMEOUT after {timeout}s\n{tail}"
         output = (proc.stdout + proc.stderr)[-80000:]
         return f"exit_code={proc.returncode}\n{output}"
+
+    if project_mode and name == "run_calibration":
+        from . import calibration as _calibration
+        # Ensure the adapter copy exists before building the generated runtime
+        # KI. `ki` is already the session-materialised package in pinned chats.
+        _calibration.ensure_project(project_root, [ki])
+        try:
+            result = _calibration.run_project(
+                project=project_root,
+                ki_name=ki.name,
+                ki_path=root,
+                obs_shape_by_var=args.get("obs_shape_by_var") or {},
+                algorithm=args.get("algorithm") or None,
+                budget=args.get("budget"),
+                seed=int(args.get("seed") or 0),
+                determining_metric=args.get("determining_metric") or None,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            raise ToolError(str(exc)) from None
+        report = result.get("report") if isinstance(result.get("report"), dict) else {}
+        summary = {
+            "run_id": result.get("run_id"),
+            "status": report.get("status"),
+            "promotable": report.get("promotable"),
+            "backend": report.get("backend"),
+            "best_loss": report.get("best_loss"),
+            "best_params": report.get("best_params"),
+            "reason": report.get("reason"),
+            "report_path": result.get("report_path"),
+            "log_path": result.get("log_path"),
+            "log_tail": result.get("log_tail"),
+        }
+        return json.dumps(summary, indent=2, ensure_ascii=False, default=str)
 
     if project_mode and name == "create_project_plot":
         from .plotting import PlotError, render_svg

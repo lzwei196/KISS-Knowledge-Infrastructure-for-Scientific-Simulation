@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from kiss_cli import api, clipboard, gui, install, mcp, paths, plotting, policy, preparation, projectrun, providers, sessions, setup, shellenv, skilllib, tls
+from kiss_cli import api, app as desktop_app, calibration, clipboard, gui, install, mcp, paths, plotting, policy, preparation, projectrun, providers, sessions, setup, shellenv, skilllib, tls
 from kiss_cli.catalog import KI
 from kiss_cli.manifest import Acquire, DataNeed, Manifest
 
@@ -116,6 +116,15 @@ class ProviderHealthTests(unittest.TestCase):
                 ["/bin/codex", "exec", "hello", "-m", "explicit-model"],
             )
 
+    def test_codex_network_is_enabled_only_after_project_approval(self):
+        base = policy.Policy("Demo")
+        args, _ = policy.codex_args(base)
+        self.assertNotIn("sandbox_workspace_write.network_access=true", args)
+
+        base.approve("network", "public-https")
+        args, _ = policy.codex_args(base)
+        self.assertIn("sandbox_workspace_write.network_access=true", args)
+
     def test_cli_without_local_auth_probe_is_available_but_unverified(self):
         provider = providers.Provider(
             name="kimi", binary="kimi", argv=["kimi", "-p", "{prompt}"],
@@ -129,6 +138,9 @@ class ProviderHealthTests(unittest.TestCase):
     def test_kimi_invocation_and_stream_shape_match_current_cli(self):
         provider = providers.PROVIDERS["kimi"]
         self.assertNotIn("--yolo", provider.argv)
+        with mock.patch.object(provider, "path", return_value="/bin/kimi"):
+            argv = provider.build("hello", model="kimi-for-coding")
+        self.assertIn("kimi-code/kimi-for-coding", argv)
         self.assertEqual(
             providers._text_from_stream_json(
                 json.dumps({"role": "assistant", "content": "Kimi reply"})
@@ -161,7 +173,7 @@ class ProviderHealthTests(unittest.TestCase):
         self.assertIn(None, events)
         self.assertEqual(events[-1], "finished")
 
-    def test_missing_relocation_alias_is_not_passed_to_cli_without_sandbox(self):
+    def test_missing_alias_and_duplicate_workdir_are_not_passed_to_cli(self):
         provider = providers.Provider(
             name="kimi", binary="kimi", argv=["kimi", "-p", "{prompt}"],
         )
@@ -176,12 +188,15 @@ class ProviderHealthTests(unittest.TestCase):
             proc.stdout = io.StringIO("")
             proc.wait.return_value = 0
             proc.stdin = None
+            extra = Path(td) / "extra"
+            extra.mkdir()
             list(providers.run(
                 provider, "hello", Path(td),
-                extra_dirs=[td, "/mnt/disk3"], cfg=cfg,
+                extra_dirs=[td, str(extra), str(extra), "/mnt/disk3"], cfg=cfg,
             ))
         argv = popen.call_args.args[0]
-        self.assertIn(td, argv)
+        self.assertNotIn(td, argv)
+        self.assertEqual(argv.count(str(extra)), 1)
         self.assertNotIn("/mnt/disk3", argv)
 
     def test_local_cli_inherits_bundled_ki_tools_common(self):
@@ -350,6 +365,11 @@ class FrozenRuntimeTests(unittest.TestCase):
         with mock.patch.object(sys, "frozen", False, create=True):
             self.assertEqual(install.runtime_python(sys.executable), sys.executable)
 
+    def test_configured_python_command_is_resolved_for_gui_and_cli_policy(self):
+        discovered = "/opt/homebrew/bin/python3"
+        with mock.patch.object(install.shutil, "which", return_value=discovered):
+            self.assertEqual(install.runtime_python("python3"), discovered)
+
     def test_skipped_step_is_not_reported_as_an_independent_failure(self):
         step = install.Step(
             "preflight", False, "not run because acquisition failed", skipped=True,
@@ -433,8 +453,58 @@ class ClipboardTests(unittest.TestCase):
         self.assertIn("webview.start()", source)
         self.assertNotIn("webview.start(_install_edit_menu)", source)
 
+    def test_native_project_folder_picker_returns_one_selected_folder(self):
+        native = SimpleNamespace(FOLDER_DIALOG="folder")
+        bridge = desktop_app._DesktopApi(native)
+        bridge.window = SimpleNamespace(
+            create_file_dialog=mock.Mock(return_value=("/tmp/research",)))
+
+        self.assertEqual(
+            bridge.choose_project_parent("/tmp"), "/tmp/research")
+        bridge.window.create_file_dialog.assert_called_once_with(
+            "folder", directory="/tmp", allow_multiple=False)
+
 
 class SessionProjectTests(unittest.TestCase):
+    def test_new_session_can_live_under_a_user_selected_parent(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            root = base / "geoforge-state"
+            selected = root / "research-projects"
+            selected.mkdir(parents=True)
+
+            session = sessions.create(root, project_parent=selected)
+            project = sessions.project_path(root, session)
+
+            self.assertEqual(project.parent, selected.resolve())
+            self.assertTrue(project.name.endswith(f"--{session['id']}"))
+            pointer = json.loads(
+                (root / "sessions" / f"{session['id']}.json").read_text())
+            self.assertEqual(pointer["project_root"], str(project))
+            loaded = sessions.load(root, session["id"])
+            self.assertEqual(sessions.project_path(root, loaded), project)
+            self.assertEqual(sessions.list_all(root)[0]["project_path"], str(project))
+
+    def test_external_project_is_archived_beside_its_selected_parent(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            root = base / "geoforge-state"
+            selected = base / "research-projects"
+            selected.mkdir()
+            session = sessions.create(root, project_parent=selected)
+            project = sessions.project_path(root, session)
+            (project / "outputs" / "result.txt").write_text("kept")
+
+            self.assertTrue(sessions.delete(root, session["id"]))
+            self.assertFalse(project.exists())
+            self.assertEqual(
+                len(list((selected / "_archived").rglob("result.txt"))), 1)
+
+    def test_new_session_rejects_a_relative_project_location(self):
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaisesRegex(ValueError, "absolute"):
+                sessions.create(Path(td), project_parent="relative/folder")
+
     def test_project_plot_is_created_and_only_project_artifacts_are_served(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -546,6 +616,25 @@ class SessionProjectTests(unittest.TestCase):
             self.assertIn("There is no adaptive or\nproject-specific KI harness",
                           projectrun.prompt_block(project))
 
+    def test_agent_can_replace_goal_only_when_it_reports_one(self):
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td)
+            original = projectrun.begin_turn(
+                project, "Run the Xinxiang crop case", ["APEX"])
+            projectrun.report(project, {
+                "stage": "preparing", "status": "working",
+                "summary": "Continuing preparation",
+            })
+            self.assertEqual(projectrun.load(project)["goal"], original["goal"])
+            projectrun.report(project, {
+                "stage": "results", "status": "complete",
+                "goal": "Run the Riesel rainfed corn acceptance case",
+                "summary": "Riesel case completed",
+            })
+            self.assertEqual(
+                projectrun.load(project)["goal"],
+                "Run the Riesel rainfed corn acceptance case")
+
     def test_project_run_turns_one_human_request_into_one_visible_blocker(self):
         with tempfile.TemporaryDirectory() as td:
             project = Path(td) / "project"
@@ -618,6 +707,31 @@ class SessionProjectTests(unittest.TestCase):
             self.assertEqual(opened, project)
             popen.assert_called_once_with(["/usr/bin/open", str(project)])
 
+    def test_finder_can_open_project_data_but_rejects_paths_outside_chat(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            session = sessions.create(root)
+            project = sessions.project_path(root, session)
+            forcing = project / "inputs" / "forcing"
+            weather = forcing / "weather.csv"
+            weather.write_text("date,rain\n2000-01-01,2\n")
+            with mock.patch.object(sessions.platform, "system", return_value="Darwin"), \
+                 mock.patch.object(sessions.subprocess, "Popen") as popen:
+                opened_folder = sessions.open_in_file_manager(
+                    root, session, "inputs/forcing")
+                opened_file = sessions.open_in_file_manager(
+                    root, session, "inputs/forcing/weather.csv")
+            self.assertEqual(opened_folder, forcing.resolve())
+            self.assertEqual(opened_file, weather.resolve())
+            self.assertEqual(popen.call_args_list, [
+                mock.call(["/usr/bin/open", str(forcing.resolve())]),
+                mock.call(["/usr/bin/open", "-R", str(weather.resolve())]),
+            ])
+            with self.assertRaises(ValueError):
+                sessions.open_in_file_manager(root, session, "../outside")
+            with self.assertRaises(ValueError):
+                sessions.open_in_file_manager(root, session, str(root))
+
     def test_model_workspace_uses_shared_software_and_session_data(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -647,11 +761,55 @@ class SessionProjectTests(unittest.TestCase):
             self.assertIn(str(shared.roles["home"] / "Demo" / "bin" / "model"),
                           materialised)
 
+            # A validated legacy deck may need to keep inputs and generated
+            # outputs together. A project-local binding survives refresh, but
+            # it cannot override shared executable/runtime locations.
+            deck = project / "outputs" / "Demo" / "case-one"
+            deck.mkdir(parents=True)
+            (deck / "INPUT.DAT").write_text("ready")
+            saved = paths.KissConfig.load(project)
+            saved.roles["static"] = deck
+            saved.roles["binaries"] = project / "untrusted-binaries"
+            (project / paths.CONFIG_NAME).write_text(saved.dumps())
+            rebound = gui.Handler._session_config(fake_handler, project, ki)
+            self.assertEqual(rebound.roles["static"], deck)
+            self.assertEqual(rebound.roles["binaries"], shared.roles["binaries"])
+
             # Reusing the chat refreshes its generated KI copy, so corrected
             # shared paths and newly shipped tools reach existing projects.
             (run_ki.root / "SKILL.md").write_text("stale generated copy\n")
             refreshed, _ = gui.Handler._session_workspace(fake_handler, project, ki)
             self.assertNotIn("stale", (refreshed.root / "SKILL.md").read_text())
+
+    def test_session_overlay_reuses_missing_local_assets_without_replacing_code(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            shared = root / "shared"
+            session = root / "session"
+            (shared / "reference").mkdir(parents=True)
+            (shared / "reference" / "licensed.exe").write_bytes(b"MZasset")
+            (shared / "tools").mkdir()
+            (shared / "tools" / "run.py").write_text("old shared code")
+            (session / "tools").mkdir(parents=True)
+            (session / "tools" / "run.py").write_text("current bundled code")
+
+            copied = gui._copy_missing_assets(shared, session)
+
+            self.assertIn(Path("reference/licensed.exe"), copied)
+            self.assertEqual((session / "reference" / "licensed.exe").read_bytes(),
+                             b"MZasset")
+            self.assertEqual((session / "tools" / "run.py").read_text(),
+                             "current bundled code")
+
+    def test_old_apex1501_status_is_not_treated_as_v0806_verification(self):
+        self.assertTrue(gui._stale_apex1501_verification({
+            "ok": True,
+            "steps": [{"detail": "[OK] APEX1501 binary found"}],
+        }))
+        self.assertFalse(gui._stale_apex1501_verification({
+            "ok": True,
+            "steps": [{"detail": "[OK] APEX0806 Riesel run completed"}],
+        }))
 
     def test_uploaded_data_is_confined_to_the_session_inputs(self):
         with tempfile.TemporaryDirectory() as td:
@@ -671,6 +829,83 @@ class SessionProjectTests(unittest.TestCase):
             self.assertIn("FILES ATTACHED TO THIS MESSAGE",
                           sessions.transcript(session))
 
+    def test_project_provenance_summarises_downloads_and_deduplicates_copies(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            session = sessions.create(root)
+            project = sessions.project_path(root, session)
+            provenance = {
+                "upstream_source": {
+                    "repo_url": "https://github.com/example/model-data",
+                    "files_fetched_at_commit": "abc123",
+                },
+                "note": "Public reference inputs used by the real run.",
+                "downloaded_files": {"rain.txt": {
+                    "saved_to": "inputs/rain.txt", "bytes": 42,
+                    "sha256": "f" * 64,
+                }},
+            }
+            first = project / "inputs" / "reference" / "PROVENANCE.json"
+            first.parent.mkdir(parents=True)
+            first.write_text(json.dumps(provenance))
+            duplicate = project / "outputs" / "Demo" / "provenance.json"
+            duplicate.parent.mkdir(parents=True)
+            duplicate.write_text(json.dumps(provenance))
+            manifest = project / "runs" / "case" / "run_manifest.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(json.dumps({
+                "source_prj": "/shared/KI/reference.prj",
+                "source_obs": "/shared/KI/reference.obs",
+            }))
+            artifact = project / "artifacts" / "public_data_provenance.json"
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            artifact.write_text(json.dumps({
+                "source_urls": {
+                    "Public_weather": "https://example.test/viewer",
+                    "Public_weather_API": "https://example.test/weather",
+                },
+                "transformations": ["rain kept as mm/day"],
+                "input_checksums": {"inputs/weather.csv": "a" * 64},
+            }))
+            reproducibility = project / "runs" / "case" / "reproducibility_manifest.json"
+            reproducibility.write_text(json.dumps({"official_sources": {
+                "gauge": {
+                    "source": "Official gauge archive",
+                    "urls": {"daily_query_url": "https://example.test/gauge"},
+                    "files": {"inputs/gauge.csv": {
+                        "bytes": 21, "sha256": "b" * 64,
+                    }},
+                },
+                "terrain": {
+                    "source": "Public terrain tiles",
+                    "source_index_url": "https://example.test/dem",
+                    "tiles": [{"path": "inputs/dem.tif", "bytes": 99,
+                               "sha256": "c" * 64}],
+                },
+            }}))
+
+            records = sessions.provenance_records(root, session)
+
+            self.assertEqual(len(records), 5)
+            downloaded = next(r for r in records if r["version"])
+            self.assertEqual(downloaded["version"], "abc123")
+            self.assertEqual(downloaded["checksum_count"], 1)
+            self.assertEqual(downloaded["files"][0]["name"], "rain.txt")
+            weather = next(r for r in records if r["title"] == "Public weather API")
+            self.assertEqual(weather["relative_path"],
+                             "artifacts/public_data_provenance.json")
+            self.assertEqual(weather["url"], "https://example.test/weather")
+            self.assertEqual(weather["checksum_count"], 1)
+            self.assertIn("mm/day", weather["note"])
+            gauge = next(r for r in records if r["title"] == "Official gauge archive")
+            self.assertEqual(gauge["checksum_count"], 1)
+            terrain = next(r for r in records if r["title"] == "Public terrain tiles")
+            self.assertEqual(terrain["files"][0]["name"], "dem.tif")
+            copied = next(r for r in records if not r["url"])
+            self.assertEqual(copied["title"], "Installed KI reference data")
+            self.assertEqual(
+                copied["method"], "Copied from the installed KI reference data")
+
     def test_user_supplied_papers_stay_in_this_project(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -682,6 +917,93 @@ class SessionProjectTests(unittest.TestCase):
                              "model_paper.pdf")
             with self.assertRaisesRegex(ValueError, "PDF"):
                 sessions.save_reference(root, session, "paper.txt", b"not a pdf")
+
+
+class CalibrationIntegrationTests(unittest.TestCase):
+    def test_one_shared_engine_and_one_editable_adapter_per_project(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            framework = root / "framework"
+            for rel in (
+                    "calibration_kit/__init__.py",
+                    "calibration_kit/CALIBRATION_YAML_SCHEMA.md",
+                    "calibration_kit/CALIBRATION_FRAMEWORK_DESIGN.md"):
+                path = framework / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(rel)
+            ki_root = root / "models" / "Demo"
+            (ki_root / "tools").mkdir(parents=True)
+            (ki_root / "calibration.yaml").write_text("model_id: Demo\n")
+            (ki_root / "tools" / "calib_run.py").write_text("print('real model')\n")
+            project = root / "project"
+
+            with mock.patch.dict(
+                    calibration.os.environ,
+                    {"GEOFORGE_CALIBRATION_FRAMEWORK": str(framework)}):
+                status = calibration.ensure_project(project, [KI("Demo", ki_root)])
+                rules = calibration.prompt_block(project, [KI("Demo", ki_root)])
+                env = calibration.with_framework_env({"PYTHONPATH": "/existing"})
+
+            self.assertTrue(status["available"])
+            self.assertEqual(status["adapters"][0]["status"], "ready")
+            self.assertTrue((project / "calibration" / "kis" / "Demo" /
+                             "calibration.yaml").is_file())
+            self.assertTrue((project / "calibration" / "kis" / "Demo" /
+                             "tools" / "calib_run.py").is_file())
+            self.assertIn("Shared fixed engine", rules)
+            self.assertIn("not an adaptive KI", rules)
+            self.assertEqual(env["GEOFORGE_CALIBRATION_FRAMEWORK"],
+                             str(framework.resolve()))
+            self.assertIn(str(framework.resolve()),
+                          env["PYTHONPATH"].split(os.pathsep))
+
+    def test_missing_ki_adapter_is_reported_without_fake_calibration(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ki_root = root / "models" / "Demo"
+            ki_root.mkdir(parents=True)
+            status = calibration.ensure_project(root / "project", [KI("Demo", ki_root)])
+            self.assertEqual(status["adapters"][0]["status"], "authoring-needed")
+            # The engine is app-level now; one KI missing an adapter must not
+            # make the shared framework itself disappear.
+            self.assertTrue(status["available"])
+
+    def test_project_state_keeps_auto_ki_adapter_and_summarises_runs(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ki_root = root / "models" / "Demo"
+            (ki_root / "tools").mkdir(parents=True)
+            (ki_root / "calibration.yaml").write_text("model_id: Demo\n")
+            (ki_root / "tools" / "calib_run.py").write_text("print('model')\n")
+            project = root / "project"
+
+            calibration.ensure_project(project, [KI("Demo", ki_root)])
+            # Auto-KI prompt composition has no pinned KI on its next turn; it
+            # must not erase the adapter learned from project progress.
+            calibration.ensure_project(project)
+            case = project / "calibration" / "cases" / "observed.csv"
+            case.write_text("date,flow\n2000-01-01,1\n")
+            run = project / "calibration" / "runs" / "run-1"
+            run.mkdir(parents=True)
+            (run / "engine.log").write_text("real model ran\n")
+            (run / "report.json").write_text(json.dumps({
+                "run_id": "run-1", "ki": "Demo", "algorithm": "dds",
+                "budget": 20, "seed": 4,
+                "report": {"status": "completed", "promotable": True,
+                           "backend": "spotpy:dds", "best_loss": [0.2],
+                           "best_params": {"x": 1.5},
+                           "holdout": {"passed": True}},
+            }))
+
+            state = calibration.project_state(project)
+
+            self.assertEqual(state["ready_adapter_count"], 1)
+            self.assertEqual(state["case_count"], 1)
+            self.assertEqual(state["run_count"], 1)
+            self.assertEqual(state["latest_run"]["ki"], "Demo")
+            self.assertTrue(state["latest_run"]["promotable"])
+            self.assertEqual(state["latest_run"]["report_path"],
+                             "calibration/runs/run-1/report.json")
 
 
 class SkillLibraryTests(unittest.TestCase):
@@ -794,6 +1116,10 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("showActionPicker", page)
         self.assertIn("Continue with this choice", page)
         self.assertIn("Ask about these choices", page)
+        self.assertIn("Calibrate with agent", page)
+        self.assertIn("Add observations", page)
+        self.assertIn("calibrationAgentPrompt", page)
+        self.assertIn("latest_run", page)
         self.assertIn("request.options", page)
         self.assertIn("/request`", page)
         self.assertNotIn("MCPPICK=new Set(), busy=false", page)
@@ -802,6 +1128,9 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("create_project_plot", (Path(__file__).parents[1] / "kiss_cli" / "api.py").read_text())
         self.assertIn("chat-artifact", page)
         self.assertIn("/artifact?path=", page)
+        self.assertIn("renderMarkdownTables", page)
+        self.assertIn(".md-table", page)
+        self.assertIn("Some providers double-escape Markdown", page)
         self.assertIn("AUTOMATIC SKILL USE AND INLINE RESULTS", gui.AUTOMATIC_SKILL_RULES)
         self.assertIn("SKILLS SELECTED BY THE USER", gui.SESSION_PROJECT_RULES + skilllib.prompt_block([]) + (Path(__file__).parents[1] / "kiss_cli" / "skilllib.py").read_text())
         self.assertIn('id="datapanel"', page)
@@ -811,7 +1140,20 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("Continue in chat", page)
         self.assertIn("Project progress", page)
         self.assertIn("Data for this run", page)
+        self.assertIn("Data sources & download record", page)
+        self.assertIn("refreshSessionList", page)
+        self.assertIn("setInterval(refreshSessionList,5000)", page)
         self.assertIn("Only confirmed gaps", page)
+        self.assertIn("Resolve with agent", page)
+        self.assertIn("Model data appears after the conversation chooses a KI.", page)
+        self.assertIn("Built dynamically from", page)
+        self.assertIn('data-open-path', page)
+        self.assertIn("Open all inputs", page)
+        self.assertIn("Open folder", page)
+        self.assertIn("local_file_count", page)
+        self.assertIn("dataAgentPrompt", page)
+        self.assertIn("requirement-resolve", page)
+        self.assertIn("KI-declared requirements in this group include", page)
         self.assertIn("See technical data details", page)
         self.assertIn("Checked data paths", page)
         self.assertIn("required data paths are ready", page)
@@ -824,6 +1166,7 @@ class FrontendRegressionTests(unittest.TestCase):
         locale = (Path(__file__).parents[1] / "kiss_cli" / "web" / "i18n.js").read_text()
         self.assertIn('"New chat": "新建对话"', locale)
         self.assertIn('"Data for this run": "本次运行的数据"', locale)
+        self.assertIn('"Resolve with agent": "让 Agent 解决"', locale)
         self.assertIn('"See technical data details": "查看技术数据明细"', locale)
         self.assertIn('.bubble,.log', locale)
         self.assertIn('navigator.language', locale)
@@ -903,6 +1246,32 @@ class DataPlanTests(unittest.TestCase):
         self.assertTrue(plan["datasets"][0]["present"])
         self.assertFalse(plan["datasets"][1]["present"])
 
+    def test_empty_required_directory_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            empty = root / "static"
+            empty.mkdir()
+            ki = SimpleNamespace(name="Demo", dag_doc={})
+            man = Manifest(model="Demo", data=[
+                DataNeed(role="static", name="Model input directory"),
+            ])
+            cfg = SimpleNamespace(roles={"static": empty})
+
+            missing = gui.build_data_plan(
+                ki, man, cfg,
+                {"state": "verified", "label": "Verified", "can_run": True},
+            )
+            self.assertEqual(missing["run_readiness"]["state"], "data_missing")
+            self.assertFalse(missing["datasets"][0]["present"])
+
+            (empty / "input.dat").write_text("real input")
+            ready = gui.build_data_plan(
+                ki, man, cfg,
+                {"state": "verified", "label": "Verified", "can_run": True},
+            )
+            self.assertEqual(ready["run_readiness"]["state"], "ready")
+            self.assertTrue(ready["datasets"][0]["present"])
+
     def test_nested_parameter_groups_are_not_hidden(self):
         ki = SimpleNamespace(name="DSSAT-like", dag_doc={
             "inputs": {"parameters": {
@@ -922,6 +1291,84 @@ class DataPlanTests(unittest.TestCase):
 
 
 class ProjectPreparationTests(unittest.TestCase):
+    def test_auto_ki_session_uses_the_model_selected_in_the_conversation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            session = sessions.create(root)
+            project = sessions.project_path(root, session)
+            ki_root = root / "models" / "Demo"
+            (ki_root / "docs").mkdir(parents=True)
+            (ki_root / "docs" / "format_spec.yaml").write_text("inputs: {}\n")
+            ki = SimpleNamespace(
+                name="Demo", root=ki_root,
+                dag_doc={"inputs": {"forcing": [{"name": "rainfall"}]}},
+            )
+            projectrun.select_kis(project, ["Demo"])
+            handler = object.__new__(gui.Handler)
+            handler.workroot = root
+            handler._ki = lambda name: ki if name == "Demo" else None
+            handler._manifest = lambda _ki: SimpleNamespace(depends_on=[])
+            handler._session_config = lambda _project, _ki: SimpleNamespace(roles={
+                "data": project / "inputs",
+                "forcing": project / "inputs" / "forcing",
+                "obs": project / "inputs" / "observations",
+                "static": project / "inputs" / "static",
+                "data_ki": project / "inputs",
+            })
+            handler._status_for = lambda _ki: {"state": "verified", "can_run": True}
+            plan = {"model": "Demo", "software": {"can_run": True},
+                    "datasets": [], "outputs": []}
+            with mock.patch.object(gui, "build_data_plan", return_value=plan), \
+                 mock.patch.object(gui.calibration, "project_state", return_value={}):
+                data = handler._session_data(session)
+
+        self.assertFalse(data["auto_ki"])
+        self.assertEqual([item["model"] for item in data["plans"]], ["Demo"])
+        self.assertTrue(data["preparation"]["active"])
+        self.assertEqual(data["preparation"]["models"][0]["name"], "Demo")
+        source = next(lane for lane in data["preparation"]["lanes"]
+                      if lane["id"] == "source_data")
+        self.assertEqual(source["items"][0]["name"], "rainfall")
+
+    def test_data_locations_are_real_project_folders_grouped_by_model_need(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            forcing = project / "inputs" / "forcing"
+            static = project / "inputs" / "static"
+            forcing.mkdir(parents=True)
+            static.mkdir(parents=True)
+            (forcing / "weather.csv").write_text("rain\n2\n")
+            (static / "dem.tif").write_text("dem")
+            ki_root = root / "Demo"
+            (ki_root / "docs").mkdir(parents=True)
+            (ki_root / "docs" / "format_spec.yaml").write_text("inputs: {}\n")
+            ki = SimpleNamespace(name="Demo", root=ki_root, dag_doc={"inputs": {
+                "forcing": [{"name": "weather"}],
+                "parameters": [{"name": "elevation per grid cell"}],
+            }})
+            files = [
+                {"name": "weather.csv", "relative_path": "inputs/forcing/weather.csv"},
+                {"name": "dem.tif", "relative_path": "inputs/static/dem.tif"},
+            ]
+            result = preparation.build(
+                [ki], [{"model": "Demo", "software": {"can_run": True},
+                        "datasets": [], "outputs": []}], project, files,
+                role_paths={"Demo": {
+                    "data": project / "inputs", "forcing": forcing,
+                    "static": static,
+                }},
+            )
+
+        by_lane = {lane["id"]: lane for lane in result["lanes"]}
+        self.assertEqual(by_lane["source_data"]["local_file_count"], 1)
+        self.assertEqual(by_lane["spatial_parameters"]["local_file_count"], 1)
+        self.assertIn("inputs/forcing", {
+            row["relative_path"] for row in by_lane["source_data"]["locations"]})
+        self.assertIn("inputs/static", {
+            row["relative_path"] for row in by_lane["spatial_parameters"]["locations"]})
+        self.assertEqual(by_lane["source_data"]["input_root"]["relative_path"], "inputs")
+
     def test_multiple_models_share_source_data_but_keep_format_variants(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -1332,6 +1779,12 @@ class AgentSetupTests(unittest.TestCase):
                 {"path": "runs/preparation.json", "content": '{"status":"started"}'},
                 ki, cfg, project_mode=True,
             )
+            calibration_case = api.execute_tool(
+                "write_project_file",
+                {"path": "calibration/cases/observed.csv",
+                 "content": "date,value\n2000-01-01,1\n"},
+                ki, cfg, project_mode=True,
+            )
             output = api.execute_tool(
                 "run_ki_tool", {
                     "tool_path": "tools/prepare.py",
@@ -1359,6 +1812,7 @@ class AgentSetupTests(unittest.TestCase):
             )
 
             self.assertIn("runs/preparation.json", wrote)
+            self.assertIn("calibration/cases/observed.csv", calibration_case)
             self.assertIn("prepared-by-bundled-common", output)
             self.assertIn("model=verified-shared-model", output)
             self.assertIn("artifacts/quick.svg", plotted)
@@ -1438,6 +1892,25 @@ class AgentSetupTests(unittest.TestCase):
         args, enforcement = policy.claude_args(pol)
         self.assertEqual(enforcement, policy.Enforcement.EXACT)
         self.assertIn("Bash(git:*)", args)
+
+    def test_policy_grants_configured_python_and_declared_model_runtime(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ki_root = root / "ki"
+            ki_root.mkdir()
+            cfg = paths.KissConfig.default(root / "work")
+            cfg.python = "python3"
+            pol = policy.Policy.derive(
+                KI("Demo", ki_root),
+                Manifest(model="Demo", system_deps=["wine"]),
+                cfg,
+            )
+            keys = {grant.key() for grant in pol.grants}
+            self.assertIn("exec:python3", keys)
+            self.assertIn("exec:wine", keys)
+            args, _ = policy.claude_args(pol)
+            self.assertIn("Bash(python3:*)", args)
+            self.assertIn("Bash(wine:*)", args)
 
 
 class ImportValidationTests(unittest.TestCase):

@@ -21,6 +21,7 @@ import hashlib
 import json
 import queue
 import re
+import shutil
 import sys
 import threading
 import webbrowser
@@ -28,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import api, clipboard, doctor, handoff, install, mcp, paths, policy, port, preparation, projectrun, prompt, providers, recipe, sessions, settings, setup as setup_flow, skilllib, tls
+from . import api, calibration, clipboard, doctor, handoff, install, mcp, paths, policy, port, preparation, projectrun, prompt, providers, recipe, sessions, settings, setup as setup_flow, skilllib, tls
 from .catalog import Catalog, KI
 from .manifest import Manifest
 
@@ -105,8 +106,21 @@ The KI contract is your internal checklist, not a form for the user.
 - GeoForge-managed software in the current KI's configured binaries directory
   may be passed directly to a KI tool. Do not ask the user to copy a managed
   model binary into the project merely to satisfy path isolation.
+- Run Python KI tools with the interpreter declared by the current `kiss.toml`.
+  Never invent a `venv/bin/python` path that is not in that configuration.
+- A denied diagnostic command such as `touch` is not evidence that the project
+  is read-only. Use the available Write/Edit tools or declared KI tools.
+- GeoForge supplies native CLI permissions. Never tell the user to edit global
+  Claude, Codex, or Kimi permission files to operate this project.
+- Keep the data panel truthful: put prepared inputs at the role paths declared
+  in this project's `kiss.toml`. If a legacy model must mix its input deck and
+  outputs in one runnable directory, update only the project-local `[paths]`
+  role (for example `static`) to that real project-contained directory after
+  validation. An empty placeholder directory must never be reported as ready.
 - Record prepared files and provenance under runs/ and validate them before a
   model run. If human help is unavoidable, use request_user_action exactly once.
+- Native CLI agents must write the structured `setup-request.json` described
+  in PROJECT PROGRESS for any real blocker so GeoForge can show a popup.
 - When the user must choose between concrete alternatives, include 2-5 short
   options (id, label, description, and the exact response to return). GeoForge
   will render those options as a picker; do not bury the same A/B list in prose.
@@ -138,7 +152,45 @@ Tool calls, file inspection, and scratch reasoning are internal work.
   make a long scientific answer easier to scan.
 - Put command output and debugging detail behind a short explanation; do not
   dump a raw agent transcript into the answer.
+- Do not report unrelated provider connectors, OAuth state, or account setup
+  unless the user's scientific task actually requires that service.
 """
+
+
+def _copy_missing_assets(source: Path, destination: Path) -> list[Path]:
+    """Overlay locally installed KI assets without replacing shipped code.
+
+    Some licensed/manual models keep their executable and reference template in
+    the user's verified shared KI.  The public app bundle cannot redistribute
+    those files, but a session working copy still needs them.  Only absent
+    regular files are copied, so current bundled tools and user changes win.
+    """
+    source, destination = Path(source), Path(destination)
+    copied: list[Path] = []
+    if not source.is_dir() or source.resolve() == destination.resolve():
+        return copied
+    for item in source.rglob("*"):
+        if item.is_symlink() or not item.is_file():
+            continue
+        rel = item.relative_to(source)
+        if "__pycache__" in rel.parts:
+            continue
+        target = destination / rel
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(item, target)
+        copied.append(rel)
+    return copied
+
+
+def _stale_apex1501_verification(state: dict) -> bool:
+    """Identify old false-green APEX status written by the v1501 preflight."""
+    if not bool(state.get("ok")):
+        return False
+    detail = "\n".join(str(step.get("detail") or "")
+                       for step in state.get("steps", []) if isinstance(step, dict))
+    return "APEX1501" in detail or "apex1501" in detail
 
 SCOPE_FIRST_RULES = """[FIRST REPLY TO A NEW TASK: STATE THE SCOPE FIRST]
 Before ANY tool call — no file read, no command, no web fetch — answer in TEXT
@@ -288,7 +340,19 @@ def build_data_plan(ki, man: Manifest, cfg, software: dict,
     for need in man.data[:100]:
         base = cfg.roles.get(need.role)
         expected = (base / need.probe) if (base is not None and need.probe) else base
-        present = bool(expected is not None and expected.exists())
+        # Session creation materialises the standard input directories.  An
+        # empty directory is therefore only a destination, not evidence that
+        # the dataset exists.  Treat a directory as ready after it contains at
+        # least one real payload file; explicit file probes keep their exact
+        # existence semantics.
+        present = False
+        if expected is not None:
+            try:
+                present = (expected.is_file() or
+                           (expected.is_dir() and any(
+                               path.is_file() for path in expected.rglob("*"))))
+            except OSError:
+                present = False
         datasets.append({
             "name": _short(need.name),
             "role": _short(need.role),
@@ -424,6 +488,20 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 st = json.loads(sj.read_text())
                 ok = bool(st.get("ok"))
+                if ki.name == "APEX" and _stale_apex1501_verification(st):
+                    return {
+                        "state": "setup",
+                        "label": "Recheck APEX0806",
+                        "can_run": False,
+                        "checked_at": st.get("checked_at"),
+                        "verified_at": None,
+                        "software_version": "v0806",
+                        "steps": st.get("steps", []),
+                        "primary_error": (
+                            "The previous check tested APEX1501, not the "
+                            "APEX0806 binary this KI actually runs."),
+                        "setup_kind": setup_kind,
+                    }
                 return {
                     "state": "verified" if ok else "failed",
                     "label": "Verified on this machine" if ok else "Verification failed",
@@ -462,10 +540,23 @@ class Handler(BaseHTTPRequestHandler):
 
     def _session_data(self, s: dict) -> dict:
         project = sessions.project_path(self.workroot, s)
+        run_state = projectrun.load(
+            project, selected_kis=s.get("models") or [])
+        # A chat created with Auto KI becomes model-specific as soon as the
+        # agent reports its selection.  Previously the data page looked only
+        # at the session's initial picker, so it stayed generic even while a
+        # real model was already being prepared or run.
+        effective_models = list(dict.fromkeys([
+            *(s.get("models") or []), *(run_state.get("selected_kis") or []),
+        ]))
         plans = []
         kis = []
-        for name in s.get("models") or []:
-            ki = self._ki(name)
+        role_paths: dict[str, dict[str, Path]] = {}
+        for name in effective_models:
+            try:
+                ki = self._ki(name)
+            except KeyError:
+                continue
             kis.append(ki)
             man = self._manifest(ki)
             deps = []
@@ -476,20 +567,38 @@ class Handler(BaseHTTPRequestHandler):
                 except KeyError:
                     deps.append({"name": dep_name, "state": "missing",
                                  "label": "KI not found", "can_run": False})
+            cfg = self._session_config(project, ki)
+            role_paths[ki.name] = {
+                role: path for role, path in cfg.roles.items()
+                if role in {"data", "data_ki", "forcing", "obs", "static"}
+            }
             plans.append(build_data_plan(
-                ki, man, self._session_config(project, ki), self._status_for(ki), deps))
+                ki, man, cfg, self._status_for(ki), deps))
         files = sessions.input_files(self.workroot, s)
         project_preparation = preparation.build(
-            kis, plans, project, files, auto_ki=not bool(s.get("models")))
+            kis, plans, project, files, auto_ki=not bool(effective_models),
+            role_paths=role_paths)
+        calibration_kis = list(kis)
+        known = {ki.name for ki in calibration_kis}
+        for name in run_state.get("selected_kis") or []:
+            if name in known:
+                continue
+            try:
+                calibration_kis.append(self._ki(name))
+                known.add(name)
+            except KeyError:
+                continue
+        calibration_state = calibration.project_state(project, calibration_kis)
         return {
             "session": s["id"], "project_path": str(project),
             "upload_path": str(project / "inputs" / "uploads"),
-            "auto_ki": not bool(s.get("models")), "plans": plans,
+            "auto_ki": not bool(effective_models), "plans": plans,
             "files": files, "reference_files": sessions.reference_files(self.workroot, s),
+            "provenance": sessions.provenance_records(self.workroot, s),
             "human_request": setup_flow.request(project),
-            "project_run": projectrun.load(
-                project, selected_kis=s.get("models") or []),
+            "project_run": run_state,
             "preparation": project_preparation,
+            "calibration": calibration_state,
         }
 
     # --- GET ---------------------------------------------------------------
@@ -755,6 +864,12 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/sessions":
             return self._json(sessions.list_all(self.workroot))
 
+        if route == "/api/project-location":
+            return self._json({
+                "default_parent": str(sessions.default_project_parent(self.workroot)),
+                "creates_child_folder": True,
+            })
+
         if route.startswith("/api/session/") and route.endswith("/artifact"):
             sid = route.split("/")[3]
             rel = (parse_qs(urlparse(self.path).query).get("path") or [""])[0]
@@ -788,6 +903,31 @@ class Handler(BaseHTTPRequestHandler):
             project = sessions.project_path(self.workroot, s)
             return self._json(projectrun.load(
                 project, selected_kis=s.get("models") or []))
+
+        if route.startswith("/api/session/") and route.endswith("/calibration"):
+            sid = route.split("/")[3]
+            if not sessions.valid_id(sid):
+                return self._json({"error": "invalid session id"}, 400)
+            s = sessions.load(self.workroot, sid)
+            if not s:
+                return self._json({"error": "no such session"}, 404)
+            try:
+                kis = [self._ki(name) for name in s.get("models") or []]
+            except KeyError as e:
+                return self._json({"error": str(e)}, 400)
+            project = sessions.project_path(self.workroot, s)
+            run_state = projectrun.load(
+                project, selected_kis=s.get("models") or [])
+            known = {ki.name for ki in kis}
+            for name in run_state.get("selected_kis") or []:
+                if name in known:
+                    continue
+                try:
+                    kis.append(self._ki(name))
+                    known.add(name)
+                except KeyError:
+                    continue
+            return self._json(calibration.project_state(project, kis))
 
         if route.startswith("/api/session/") and route.endswith("/request"):
             sid = route.split("/")[3]
@@ -972,7 +1112,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": clipboard.write_text(text)})
 
         if route == "/api/sessions":
-            s = sessions.create(self.workroot, req.get("models"), req.get("provider", ""))
+            try:
+                s = sessions.create(
+                    self.workroot, req.get("models"), req.get("provider", ""),
+                    project_parent=req.get("project_parent"),
+                )
+            except (ValueError, OSError) as e:
+                return self._json({"error": str(e)}, 400)
+            calibration.ensure_project(sessions.project_path(self.workroot, s))
             return self._json(sessions.for_client(self.workroot, s))
 
         if route.startswith("/api/session/") and route.endswith("/open"):
@@ -983,10 +1130,17 @@ class Handler(BaseHTTPRequestHandler):
             if not s:
                 return self._json({"error": "no such session"}, 404)
             try:
-                project = sessions.open_in_file_manager(self.workroot, s)
+                target = sessions.open_in_file_manager(
+                    self.workroot, s, req.get("path"))
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
+            except FileNotFoundError as e:
+                return self._json({"error": str(e)}, 404)
             except OSError as e:
                 return self._json({"error": str(e)}, 500)
-            return self._json({"ok": True, "project_path": str(project)})
+            return self._json({"ok": True,
+                               "project_path": str(sessions.project_path(self.workroot, s)),
+                               "target_path": str(target)})
 
         if route.startswith("/api/session/") and route.endswith("/delete"):
             sid = route.split("/")[3]
@@ -1023,6 +1177,10 @@ class Handler(BaseHTTPRequestHandler):
                 if "models" in req:
                     projectrun.select_kis(
                         sessions.project_path(self.workroot, s), s.get("models") or [])
+                    calibration.ensure_project(
+                        sessions.project_path(self.workroot, s),
+                        [self._ki(name) for name in s.get("models") or []],
+                    )
             return self._json(sessions.for_client(self.workroot, s))
 
         if route.startswith("/api/session/") and route.endswith("/chat"):
@@ -1099,6 +1257,26 @@ class Handler(BaseHTTPRequestHandler):
         """Join a shared software install to one chat's scenario directories."""
         project = Path(project).resolve()
         shared = self._config(ki)
+        # Keep project-owned bindings that an agent deliberately resolved for
+        # this scientific case.  Older code regenerated every role on refresh,
+        # so a legacy model whose runnable deck lived under outputs/ could run
+        # successfully while the data panel kept checking an empty
+        # inputs/static placeholder.  Only scenario/data roles are eligible,
+        # and only when their resolved path remains inside this project.  The
+        # verified shared software roles below can never be overridden here.
+        project_overrides: dict[str, Path] = {}
+        try:
+            saved = paths.KissConfig.load(project)
+            for role in ("data", "forcing", "obs", "static", "outputs",
+                         "outputs_disk1", "data_ki", "forcing_rechunked"):
+                value = saved.roles.get(role)
+                if value is None:
+                    continue
+                resolved = Path(value).expanduser().resolve()
+                if resolved == project or resolved.is_relative_to(project):
+                    project_overrides[role] = resolved
+        except (FileNotFoundError, OSError, ValueError):
+            pass
         # Migrate workspaces created by older desktop builds where the model
         # binary could be verified while GeoForge's own shared Python library
         # was never copied into place.
@@ -1130,6 +1308,7 @@ class Handler(BaseHTTPRequestHandler):
             # project folder and preflight falsely reports it missing.
             "home": shared.roles["home"],
         })
+        cfg.roles.update(project_overrides)
         for role in ("data", "forcing", "obs", "static", "outputs",
                      "forcing_rechunked"):
             cfg.roles[role].mkdir(parents=True, exist_ok=True)
@@ -1154,6 +1333,11 @@ class Handler(BaseHTTPRequestHandler):
         # Scenario files never live below models/, so overwriting generated KI
         # files cannot touch the project's inputs, runs or outputs.
         port.materialise(ki.root, live, cfg)
+        # Manual/licensed assets cannot live in the public bundle.  Reuse the
+        # files already present in this Mac's verified shared KI so each new
+        # session does not falsely ask the user to download them again.
+        shared_live = Path(self._config(ki).root) / "ki"
+        _copy_missing_assets(shared_live, live)
         (model_home / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
         # The project-level file is what a model process or agent launched at
         # the project root discovers by walking upward.
@@ -1681,8 +1865,39 @@ class Handler(BaseHTTPRequestHandler):
             project = sessions.project_path(self.workroot, s)
             artifacts_before = _artifact_state(project)
             pending = setup_flow.request(project)
+            action = req.get("action") if isinstance(req.get("action"), dict) else None
+            resolved_action = None
             if pending and pending.get("status") == "waiting":
-                setup_flow.resume(project, "The user replied in the project chat.")
+                options = {str(item.get("id")): item
+                           for item in pending.get("options") or []
+                           if isinstance(item, dict) and item.get("id")}
+                if (action and str(action.get("request_id")) == str(pending.get("id"))
+                        and str(action.get("option_id")) in options):
+                    resolved_action = options[str(action.get("option_id"))]
+                    option_id = str(resolved_action.get("id"))
+                    if option_id == "enable_https":
+                        saved_posture, approved = policy.Policy.load_approved(project)
+                        network_policy = policy.Policy(
+                            model=(s.get("models") or ["session"])[0],
+                            posture=saved_posture or policy.Posture.LEAST_PRIVILEGE,
+                            approved=approved,
+                        )
+                        network_policy.approve(
+                            "network", "public-https",
+                            "approved by the user for public project data acquisition",
+                        )
+                        network_policy.save(project)
+                    note = str(action.get("note") or "").strip()
+                    label = str(resolved_action.get("label") or option_id)
+                    setup_flow.resume(
+                        project,
+                        f"The user selected {label}." + (f" {note}" if note else ""),
+                    )
+                elif not options:
+                    # A free-form request has no structured choice; the reply
+                    # itself is the handoff. Requests with options stay open
+                    # when the user clicks “Ask me”, instead of being cleared.
+                    setup_flow.resume(project, "The user replied in the project chat.")
             projectrun.begin_turn(project, text, s.get("models") or [])
             agent_text = sessions.message_text({"text": text,
                                                 "attachments": attachments})
@@ -1750,7 +1965,19 @@ class Handler(BaseHTTPRequestHandler):
                         continue
                     if waiting and waiting.get("status") == "waiting":
                         break
-            projectrun.finish_turn(project, request=waiting, failed=failure)
+            run_state = projectrun.finish_turn(
+                project, request=waiting, failed=failure)
+            # Auto-KI chats learn the selected model from the agent's progress
+            # report. Materialise its calibration adapter at that point; an
+            # empty Auto session cannot know which of 127 adapters it needs at
+            # creation time.
+            calibration_kis = []
+            for name in run_state.get("selected_kis") or names:
+                try:
+                    calibration_kis.append(self._ki(name))
+                except KeyError:
+                    continue
+            calibration.ensure_project(project, calibration_kis)
             self._end_stream()
 
     @staticmethod
@@ -1827,6 +2054,26 @@ class Handler(BaseHTTPRequestHandler):
         local_status = {ki.name: self._status_for(ki) for ki in self.catalog}
         project_rules = SESSION_PROJECT_RULES.format(project=project)
         run_rules = projectrun.prompt_block(project)
+        # Auto-KI is allowed to remember the model selected by the agent's
+        # truthful project-progress report. On later turns, materialise one
+        # verified selected KI so the direct API and calibration tool operate
+        # on the real session KI instead of a synthetic catalogue root.
+        active_kis = []
+        active_cfg = None
+        for name in projectrun.load(project).get("selected_kis") or []:
+            try:
+                selected = self._ki(name)
+            except KeyError:
+                continue
+            if self._status_for(selected).get("can_run"):
+                try:
+                    selected, selected_cfg = self._session_workspace(project, selected)
+                    if active_cfg is None:
+                        active_cfg = selected_cfg
+                except Exception:
+                    pass
+            active_kis.append(selected)
+        calibration_rules = calibration.prompt_block(project, active_kis)
         skill_rules = skilllib.prompt_block(skill_names)
         skill_roots = [str(root) for root in skilllib.roots() if root.is_dir()]
         automatic_skill_rules = AUTOMATIC_SKILL_RULES.format(
@@ -1837,7 +2084,8 @@ class Handler(BaseHTTPRequestHandler):
         system = (sessions.catalogue_block(self.catalog, local_status) + "\n\n" +
                   sessions.AUTO_RULES + "\n\n" + project_rules + "\n\n" +
                   PROJECT_PREPARATION_RULES + "\n\n" + automatic_skill_rules +
-                  "\n\n" + run_rules + "\n\n" + RESPONSE_PRESENTATION_RULES +
+                  "\n\n" + run_rules + "\n\n" + calibration_rules +
+                  "\n\n" + RESPONSE_PRESENTATION_RULES +
                   "\n\n" + language_rules +
                   (("\n\n" + skill_rules) if skill_rules else "") +
                   (("\n\n" + mcp_rules) if mcp_rules else ""))
@@ -1849,21 +2097,26 @@ class Handler(BaseHTTPRequestHandler):
                 out(f"[unknown api provider {pname!r}]")
                 return
             wd = project
-            cfg = paths.KissConfig.default(wd)
-            # api tools need a KI root; in auto mode grant the whole library
-            ki = type(next(iter(self.catalog)))(name="library", root=self.catalog.models_dir)
+            # A single previously selected, verified KI is now a real tool
+            # target. Before selection (or with several candidates), retain the
+            # catalogue view so the agent can research and report its choice.
+            if len(active_kis) == 1 and active_cfg is not None:
+                ki, cfg = active_kis[0], active_cfg
+            else:
+                cfg = paths.KissConfig.default(wd)
+                ki = type(next(iter(self.catalog)))(
+                    name="library", root=self.catalog.models_dir)
+            # A real scientific project may need acquisition, conversion,
+            # validation, execution, parsing, plotting, and provenance calls in
+            # one turn. Thirty steps stopped a completed DSSAT binary run before
+            # the agent could inspect warnings or save its case workflow. Keep
+            # this higher limit scoped to project-mode API work; ordinary chat
+            # and connection probes retain their smaller bounds.
             for piece in api.run(prov, ki, cfg, system, bare_task or task,
-                                 model=llm, history=prior, max_steps=30,
+                                 model=llm, history=prior, max_steps=60,
                                  project_mode=True):
                 if not out(piece):
                     break
-            if needs_setup:
-                # A chat repair is the same installation as one launched from
-                # the dedicated Setup page.  Record GeoForge's own final
-                # preflight so the library/header immediately reflect the
-                # machine truth instead of remaining stuck at "Setup needed".
-                self._record_agent_preflight(
-                    ki, run_ki, cfg, setup_wd, lambda _piece: True)
             return
         avail = providers.available()
         if not avail:
@@ -1879,11 +2132,13 @@ class Handler(BaseHTTPRequestHandler):
             (wd / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
         skill_dirs = [str(Path(item["path"]).parent)
                       for item in skilllib.selected(skill_names)]
+        framework = calibration.framework_root()
         self._cli_turn(prov, fingerprint_src=system, replay_prompt=full,
                        bare_prompt=bare_task, wd=wd, out=out,
                        session=session, cli_state=cli_state,
                        extra_dirs=[str(self.catalog.models_dir), *skill_roots,
-                                   *skill_dirs],
+                                   *skill_dirs,
+                                   *([str(framework)] if framework else [])],
                        cfg=cfg, model=llm)
 
     def _chat_with_models(self, names, want, task, out, project: Path, llm=None,
@@ -1931,8 +2186,10 @@ class Handler(BaseHTTPRequestHandler):
         mcp_rules = mcp.prompt_block(
             mcp_names, client=pname, direct_api=(kind == "api"))
         language_rules = response_language_rules(bare_task or task)
+        calibration_rules = calibration.prompt_block(project, resolved)
         session_rules = (project_rules + "\n\n" + PROJECT_PREPARATION_RULES +
                          "\n\n" + automatic_skill_rules + "\n\n" + run_rules +
+                         "\n\n" + calibration_rules +
                          "\n\n" + RESPONSE_PRESENTATION_RULES +
                          "\n\n" + language_rules +
                          (("\n\n" + skill_rules) if skill_rules else "") +
@@ -2003,9 +2260,14 @@ class Handler(BaseHTTPRequestHandler):
         grants = ([str(k.root) for k in resolved] +
                   [str(project), *skill_roots, *skill_dirs] +
                   paths.bound_prefixes(cfg))
+        framework = calibration.framework_root()
+        if framework:
+            grants.append(str(framework))
         # Every pinned model contributes its grants — deriving from kis[0]
         # alone silently dropped the second model's binary and data access.
         pol = policy.Policy.derive(ki, self._manifest(ki), cfg)
+        if framework:
+            pol.add("read", framework, "shared calibration engine")
         if needs_setup:
             pol.posture = policy.Posture.WORKSPACE_WRITE
             pol.add("read", project, "this chat's local project")
@@ -2033,6 +2295,7 @@ class Handler(BaseHTTPRequestHandler):
             prov.name, str(llm or ""), *sorted(names or []),
             *sorted(skill_names or []), *sorted(mcp_names or []),
             str(getattr(cfg, "relocation", "")), setup_contract or "",
+            calibration_rules, session_rules,
         ])
         self._cli_turn(prov, fingerprint_src=fingerprint_src, replay_prompt=full,
                        bare_prompt=bare_task, wd=wd, out=out,

@@ -48,7 +48,7 @@ description: >-
 
 ---
 
-# APEX 1501 (Agricultural Policy / Environmental eXtender) — Knowledge Infrastructure
+# APEX v0806 (Agricultural Policy / Environmental eXtender) — Knowledge Infrastructure
 
 **Model**: APEX v0806 (PE32 Windows binary via Wine)
 **Distributor**: Texas A&M AgriLife / Blackland Research and Extension Center
@@ -104,52 +104,48 @@ encoded by `WSA / CHL / RCHL`). EPIC is single-field; APEX is watershed.
 
 ## Installation
 
-### Binary (already installed)
+### Protected runtime assets
 
-```
-APEX 1501 binary:  KISSPATH_BINARIES/APEX/source/repo/Apex 1501 - Linux/apex1501
-Version:           APEX1501 v20231214
-Platform:          Linux x86-64, statically linked ELF (no shared lib deps)
-File size:         ~7.3 MB
-Source:            https://epicapex.tamu.edu/media/w0ecjadt/apex-1501-linux.zip
-Manual:            https://epicapex.tamu.edu/media/pkff4m34/the-apex1501-user-manual-november-2023.pdf
-Theory:            https://epicapex.tamu.edu/media/2mwdlhte/the-apex1501-theoretical-documentation-january-2023.pdf
-```
+This KI runs `reference/APEX0806.exe` through Wine and starts from the
+`examples/ex1_RiselTX/` reference template. These files may be installed in
+GeoForge's shared APEX workspace because they cannot be redistributed in the
+public app bundle. GeoForge automatically carries already installed assets
+into each session KI working copy. Do not ask the user to copy or download them
+again when the shared APEX installation has already been verified.
 
-The binary is statically linked — no installation, just copy it to your run
-directory (or invoke from anywhere). The binary **always** opens its input files
-from the **current working directory** and **always** writes outputs to the current
-working directory. There is no command-line argument parsing.
+APEX0806 **always** opens inputs from the **current working directory** and
+writes outputs there. `s1_setup_workspace.py` creates a project-local run
+workspace by copying the Riesel template and executable; `s6_run_apex.py` then
+invokes that copy with Wine.
 
 ### Validation that the binary works
 
 ```bash
-# Run preflight (verifies binary, example dataset, control files)
+# Run preflight (verifies v0806, Wine, the Riesel template, and a real run)
 python preflight_check.py
 ```
 
 Expected output:
 ```
-[OK] APEX1501 binary found at .../apex1501
-[OK] APEX1501 binary is executable
-[OK] Example dataset found in examples/
-[OK] All required control files present (APEXFILE.DAT, APEXCONT.DAT, ...)
-[OK] preflight passed — APEX is ready to run
+[OK] APEX0806 binary found at .../reference/APEX0806.exe
+[OK] Wine runtime found at .../wine
+[OK] Riesel reference template found at .../examples/ex1_RiselTX
+[OK] Real APEX0806 Riesel run completed with fresh output
+[OK] preflight passed — APEX0806 is installed and runnable
 ```
 
 ---
 
 ## File ecosystem (FORTRAN FIXED-WIDTH FORMATS — COPY, DON'T GENERATE)
 
-APEX 1501 is a Fortran-90 model. **Every input file is a Fortran fixed-format
+APEX v0806 is a Fortran-90 model. **Every input file is a Fortran fixed-format
 text file with rigid column positions**. The single most important rule:
 
 > **NEVER WRITE APEX INPUT FILES FROM SCRATCH. ALWAYS COPY FROM
 > `examples/` AND MODIFY SPECIFIC VALUES IN PLACE.**
 
-The KI ships with a complete validated example dataset in `examples/` derived from
-the USDA-ARS published pyAPEXSCU dataset (Maskey et al., grazing study at Marena
-ARS station, 35.54°N, 98.05°W, OK). Every tool in `tools/` follows the
+The installed KI uses the validated cropland reference dataset in
+`examples/ex1_RiselTX/`. Every tool in `tools/` follows the
 copy-template-then-modify pattern.
 
 ### Control / list files (fixed names, single watershed)

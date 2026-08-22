@@ -25,6 +25,35 @@ import urllib.request
 from pathlib import Path
 
 
+class _DesktopApi:
+    """Small native-only helpers exposed to the local GeoForge page."""
+
+    def __init__(self, webview_module):
+        self.webview = webview_module
+        self.window = None
+
+    def choose_project_parent(self, initial: str = "") -> str | None:
+        """Show the operating system's folder picker and return one folder."""
+        if self.window is None:
+            return None
+        start = Path(initial).expanduser() if initial else Path.home()
+        if not start.is_dir():
+            start = Path.home()
+        try:
+            picked = self.window.create_file_dialog(
+                self.webview.FOLDER_DIALOG,
+                directory=str(start),
+                allow_multiple=False,
+            )
+        except Exception:
+            return None
+        if not picked:
+            return None
+        if isinstance(picked, (list, tuple)):
+            return str(picked[0]) if picked else None
+        return str(picked)
+
+
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -153,6 +182,11 @@ def run_app(models_dir: Path | None, workroot: Path | None = None) -> int:
     # bridge. The old callback edited AppKit from pywebview's worker thread;
     # depending on timing, Cocoa discarded the menu and Cmd+V still did nothing.
     webview.settings['SHOW_DEFAULT_MENUS'] = True
-    webview.create_window("GeoForge Desktop", url, width=1200, height=800, min_size=(800, 560))
+    desktop_api = _DesktopApi(webview)
+    window = webview.create_window(
+        "GeoForge Desktop", url, width=1200, height=800, min_size=(800, 560),
+        js_api=desktop_api,
+    )
+    desktop_api.window = window
     webview.start()   # blocks until the window is closed
     return 0

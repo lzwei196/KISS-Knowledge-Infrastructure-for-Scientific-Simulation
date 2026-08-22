@@ -27,7 +27,11 @@ notes: >-
 
 agent_hint: >-
   Obtain APEX0806.exe from the Texas A&M AgriLife BREC APEX distribution page,
-  place it in the binaries/APEX directory, and ensure `wine` is installed.
+  and obtain the ex1_RiselTX reference template. GeoForge keeps these protected
+  assets in the shared APEX KI and automatically reuses them in each session;
+  do not ask the user to download or copy them again when they are already
+  present there. If this is a first install, place them at
+  ki/reference/APEX0806.exe and ki/examples/ex1_RiselTX/. Ensure `wine` is installed.
   APEX writes output next to the exe, so the whole project directory must be
   writable. Check diagnostics/ for the fixed-width column traps before parsing
   any output — they are the most common source of silently wrong results.

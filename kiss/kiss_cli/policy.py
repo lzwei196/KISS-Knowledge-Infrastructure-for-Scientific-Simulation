@@ -60,7 +60,7 @@ class Enforcement(str, Enum):
 class Grant:
     """One thing the agent may do, and why it was granted."""
 
-    kind: str          # "read" | "write" | "exec"
+    kind: str          # "read" | "write" | "exec" | "network"
     path: str
     reason: str = ""
 
@@ -98,12 +98,24 @@ class Policy:
         p.add("exec", prefix, f"the {ki.name} executable and its install tree")
         p.add("read", prefix, "model support files alongside the binary")
 
-        # Interpreter, so python-based KIs can run at all.
-        interp = Path(cfg.python)
+        # Interpreter, so Python-based KIs can run at all.  Grant the exact
+        # configured spelling even when it is a command name: native agent
+        # CLIs match ``Bash(python3:*)`` separately from filesystem grants.
+        configured_python = str(cfg.python or "").strip()
+        if configured_python:
+            p.add("exec", configured_python, "the configured KI Python interpreter")
+        interp = Path(configured_python) if configured_python else Path()
         if interp.is_absolute():
             env_root = interp.parent.parent if interp.parent.name == "bin" else interp.parent
             p.add("exec", env_root, "the interpreter this model was installed into")
             p.add("read", env_root, "site-packages for this model's dependencies")
+
+        # A declared runtime such as Wine is part of operating the model, not
+        # an unexpected shell escape.  Setup used to grant build tools while a
+        # normal verified project chat forgot the runtime itself.
+        for command in man.system_deps:
+            if str(command).strip():
+                p.add("exec", command, f"declared {ki.name} runtime dependency")
 
         # Declared data needs — read-only. A model reads forcing; it does not
         # rewrite the archive it came from.
@@ -117,7 +129,8 @@ class Policy:
         return p
 
     def add(self, kind: str, path, reason: str = "") -> None:
-        g = Grant(kind=kind, path=str(Path(path)), reason=reason)
+        value = str(path) if kind == "network" else str(Path(path))
+        g = Grant(kind=kind, path=value, reason=reason)
         if not any(x.key() == g.key() for x in self.grants):
             self.grants.append(g)
 
@@ -174,7 +187,8 @@ class Policy:
 
     def approve(self, kind: str, path, reason: str = "approved by the user") -> Grant:
         """Record a user decision. Only ever widens, never silently."""
-        g = Grant(kind=kind, path=str(Path(path)), reason=reason)
+        value = str(path) if kind == "network" else str(Path(path))
+        g = Grant(kind=kind, path=value, reason=reason)
         if not any(x.key() == g.key() for x in self.approved):
             self.approved.append(g)
         return g
@@ -247,8 +261,14 @@ def codex_args(pol: Policy) -> tuple[list[str], Enforcement]:
     if pol.posture is Posture.DANGER_FULL_ACCESS:
         return ["--sandbox", "danger-full-access"], Enforcement.NONE
     # workspace-write is the closest native fit: writes confined to the work
-    # tree, reads broader than we asked for.
-    return ["--sandbox", "workspace-write"], Enforcement.APPROXIMATE
+    # tree, reads broader than we asked for. Network remains off unless the
+    # user explicitly approved it for this project through a structured
+    # GeoForge handoff. Codex exposes network as a workspace-write setting,
+    # not as part of its --sandbox flag.
+    args = ["--sandbox", "workspace-write"]
+    if any(grant.kind == "network" for grant in pol.all_grants()):
+        args += ["-c", "sandbox_workspace_write.network_access=true"]
+    return args, Enforcement.APPROXIMATE
 
 
 def coarse_args(pol: Policy) -> tuple[list[str], Enforcement]:

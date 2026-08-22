@@ -1,0 +1,350 @@
+<style>
+  :root{
+    --ground:#eef1f5; --surface:#ffffff; --surface-2:#f7f9fb;
+    --ink:#111a22; --body:#33424f; --muted:#5f7180; --line:#dbe2e9; --line-2:#c8d2db;
+    --accent:#0c8f9c; --accent-ink:#065861; --accent-soft:#d3edef;
+    --pass:#2c9c66; --gate:#bd8318; --fail:#cc4552;
+    --struct:#1d5b78;
+    --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --maxw:1080px; --readw:660px;
+    --sh:0 1px 2px rgba(16,30,40,.04), 0 6px 20px -12px rgba(16,30,40,.14);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --ground:#0c1218; --surface:#111c25; --surface-2:#0f1922;
+      --ink:#e8eef3; --body:#bccad6; --muted:#8496a4; --line:#22323f; --line-2:#2c3f4e;
+      --accent:#33c7d0; --accent-ink:#9fe6ea; --accent-soft:#123138;
+      --pass:#4ec48a; --gate:#dda743; --fail:#e5697a; --struct:#4a9dc4;
+      --sh:0 1px 2px rgba(0,0,0,.3), 0 10px 28px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="light"]{
+    --ground:#eef1f5; --surface:#ffffff; --surface-2:#f7f9fb;
+    --ink:#111a22; --body:#33424f; --muted:#5f7180; --line:#dbe2e9; --line-2:#c8d2db;
+    --accent:#0c8f9c; --accent-ink:#065861; --accent-soft:#d3edef;
+    --pass:#2c9c66; --gate:#bd8318; --fail:#cc4552; --struct:#1d5b78;
+    --sh:0 1px 2px rgba(16,30,40,.04), 0 6px 20px -12px rgba(16,30,40,.14);
+  }
+  :root[data-theme="dark"]{
+    --ground:#0c1218; --surface:#111c25; --surface-2:#0f1922;
+    --ink:#e8eef3; --body:#bccad6; --muted:#8496a4; --line:#22323f; --line-2:#2c3f4e;
+    --accent:#33c7d0; --accent-ink:#9fe6ea; --accent-soft:#123138;
+    --pass:#4ec48a; --gate:#dda743; --fail:#e5697a; --struct:#4a9dc4;
+    --sh:0 1px 2px rgba(0,0,0,.3), 0 10px 28px -14px rgba(0,0,0,.6);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--body);
+    font-family:var(--font-body);line-height:1.6;
+    -webkit-font-smoothing:antialiased;font-size:16px}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:clamp(28px,5vw,64px) clamp(18px,4vw,40px) 96px}
+  .read{max-width:var(--readw)}
+  h1,h2,h3{color:var(--ink);font-family:var(--font-display);text-wrap:balance;margin:0}
+  p{margin:0}
+  a{color:var(--accent-ink)}
+  code,.mono{font-family:var(--font-mono)}
+  .eyebrow{font-family:var(--font-mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--accent-ink);font-weight:600}
+
+  /* header */
+  header{margin-bottom:clamp(36px,6vw,64px)}
+  h1{font-size:clamp(30px,5.2vw,50px);font-weight:760;letter-spacing:-.02em;line-height:1.04;margin:14px 0 0}
+  .thesis{max-width:var(--readw);margin-top:18px;font-size:clamp(16px,2vw,18.5px);color:var(--body)}
+  .foundations{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+  .foundation{display:flex;align-items:baseline;gap:9px;background:var(--surface);border:1px solid var(--line);
+    border-radius:10px;padding:9px 14px;box-shadow:var(--sh);font-size:14.5px;color:var(--ink);font-weight:520}
+  .foundation b{font-family:var(--font-mono);color:var(--accent-ink);font-weight:600;font-size:12.5px}
+
+  /* section frame */
+  section{margin-top:clamp(44px,7vw,76px)}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:22px;
+    border-bottom:1px solid var(--line);padding-bottom:12px}
+  .sec-num{font-family:var(--font-mono);font-size:13px;color:var(--muted);font-weight:600}
+  h2{font-size:clamp(19px,2.6vw,24px);font-weight:680;letter-spacing:-.01em}
+  .sec-note{margin-left:auto;font-size:13px;color:var(--muted);text-align:right;max-width:320px}
+
+  /* ---- pipeline flow (centerpiece) ---- */
+  .flow{display:flex;flex-direction:column;align-items:stretch;gap:0}
+  .node{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--sh);
+    padding:16px 18px;position:relative}
+  .node .k{font-family:var(--font-mono);font-size:12px;color:var(--muted);letter-spacing:.03em}
+  .node .t{color:var(--ink);font-weight:640;font-size:16px;margin-top:2px}
+  .node .d{font-size:13.5px;color:var(--body);margin-top:5px}
+  .entry{align-self:center;background:var(--ink);color:var(--surface);border-color:var(--ink);
+    text-align:center;padding:13px 22px;border-radius:10px}
+  .entry .cmd{font-family:var(--font-mono);font-size:14px;color:#fff}
+  :root[data-theme="dark"] .entry .cmd,@media (prefers-color-scheme:dark){}
+  .connector{width:2px;height:26px;background:var(--line-2);align-self:center;position:relative}
+  .connector::after{content:"";position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+    border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid var(--line-2)}
+
+  /* gate node */
+  .gate{border-color:var(--gate);border-left-width:4px;background:
+    linear-gradient(90deg,color-mix(in srgb,var(--gate) 8%,var(--surface)),var(--surface) 40%)}
+  .gate .k{color:var(--gate);font-weight:700}
+  .branch{display:flex;gap:12px;align-items:stretch;margin-top:12px;flex-wrap:wrap}
+  .branch .arm{flex:1;min-width:180px;border:1px dashed var(--line-2);border-radius:9px;padding:9px 12px;
+    font-size:13px;background:var(--surface-2)}
+  .arm .lab{font-family:var(--font-mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;font-weight:700}
+  .arm.no .lab{color:var(--fail)} .arm.yes .lab{color:var(--pass)}
+
+  /* engine region */
+  .engine{border:1.5px solid var(--accent);border-radius:14px;padding:14px;background:var(--accent-soft);
+    box-shadow:var(--sh)}
+  .engine>.elabel{display:flex;align-items:center;gap:10px;margin:2px 4px 12px}
+  .engine>.elabel .n{font-family:var(--font-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--accent-ink);font-weight:700}
+  .engine>.elabel .s{font-size:12.5px;color:var(--muted)}
+  .estage{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .estage+.estage{margin-top:10px}
+  .estage .st{color:var(--ink);font-weight:620;font-size:14.5px}
+  .estage .sd{font-size:13px;color:var(--body);margin-top:3px}
+  .loop{border:1px dashed var(--accent);border-radius:10px;padding:12px;margin-top:10px;background:var(--surface)}
+  .loop .lh{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:12px;
+    color:var(--accent-ink);font-weight:700;letter-spacing:.04em;margin-bottom:10px}
+  .steps{display:flex;gap:8px;flex-wrap:wrap;align-items:stretch}
+  .step{flex:1;min-width:130px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;
+    padding:9px 11px;font-size:12.5px;position:relative}
+  .step .sk{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--muted);font-weight:700}
+  .step .sv{color:var(--ink);font-weight:560;margin-top:2px;line-height:1.35}
+  .step em{color:var(--accent-ink);font-style:normal;font-family:var(--font-mono);font-size:11.5px}
+  .arrow{align-self:center;color:var(--accent);font-weight:700;font-size:15px}
+  @media (max-width:640px){.arrow{display:none}.step{min-width:100%}}
+
+  /* two-col */
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:720px){.cols{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:18px 19px;box-shadow:var(--sh)}
+  .card h3{font-size:16.5px;font-weight:680;display:flex;align-items:center;gap:9px}
+  .tag{font-family:var(--font-mono);font-size:11px;font-weight:700;letter-spacing:.03em;padding:3px 8px;
+    border-radius:6px;text-transform:lowercase}
+  .tag.app{background:var(--accent-soft);color:var(--accent-ink)}
+  .tag.run{background:color-mix(in srgb,var(--struct) 16%,var(--surface));color:var(--struct)}
+  .card p{font-size:14px;margin-top:9px;color:var(--body)}
+  .fmtlist{display:flex;flex-wrap:wrap;gap:6px;margin-top:13px}
+  .chip{font-family:var(--font-mono);font-size:11.5px;padding:3px 8px;border-radius:6px;border:1px solid var(--line-2);
+    color:var(--ink);background:var(--surface-2)}
+  .chip.no{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line-2)}
+
+  /* proof cards */
+  .proof{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:6px}
+  @media (max-width:720px){.proof{grid-template-columns:1fr}}
+  .proof .card{border-top:3px solid var(--accent)}
+  .proof .when{font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--accent-ink);font-weight:700}
+  .fc{display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-family:var(--font-mono);font-size:12px;
+    font-weight:700;color:var(--fail);background:color-mix(in srgb,var(--fail) 12%,var(--surface));
+    border:1px solid color-mix(in srgb,var(--fail) 30%,var(--surface));border-radius:7px;padding:5px 10px}
+
+  /* record strip */
+  .record{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:720px){.record{grid-template-columns:1fr}}
+  .rrow{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px dashed var(--line);
+    font-size:13.5px}
+  .rrow:last-child{border-bottom:0}
+  .rrow .rk{font-family:var(--font-mono);font-size:12.5px;color:var(--muted)}
+  .rrow .rv{color:var(--ink);font-weight:560;text-align:right}
+  .pill{display:inline-block;font-family:var(--font-mono);font-size:11px;font-weight:700;padding:2px 7px;border-radius:20px}
+  .pill.pass{background:color-mix(in srgb,var(--pass) 15%,var(--surface));color:var(--pass)}
+  .pill.gate{background:color-mix(in srgb,var(--gate) 15%,var(--surface));color:var(--gate)}
+  .pill.none{background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+
+  .lede{font-size:15px;color:var(--body);max-width:var(--readw);margin-top:2px}
+  .never{color:var(--fail);font-weight:640}
+  footer{margin-top:76px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);
+    font-family:var(--font-mono);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">HydroCraft KDT · Calibration Framework · v2</span>
+    <h1>Calibration, made honest&nbsp;and general.</h1>
+    <p class="thesis">A standalone parameter-calibration system for 400+ Earth-system model KIs. The KI runs the
+      model, the literature grounds every choice, and no result is trusted until it proves it generalizes — and
+      until it proves the parameters actually reached the run.</p>
+    <div class="foundations">
+      <div class="foundation"><b>foundation 1</b> The KI is the execution backbone</div>
+      <div class="foundation"><b>foundation 2</b> The literature is the grounding</div>
+      <div class="foundation"><b>invariant</b> parameters never promote to the KI</div>
+    </div>
+  </header>
+
+  <!-- PIPELINE -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">01</span>
+      <h2>The pipeline</h2>
+      <span class="sec-note">One run of <code>calibrate.py</code>, gate to gate.</span>
+    </div>
+
+    <div class="flow">
+      <div class="node entry"><span class="cmd">calibrate.py --model X --case Y</span></div>
+      <div class="connector"></div>
+
+      <div class="node gate">
+        <div class="k">gate 1 · readiness</div>
+        <div class="t">Has self-improve validated that this model <em>runs correctly</em>?</div>
+        <div class="d">Reads <code>self_improve_runs</code> for a <code>valid_case</code>. Calibration only tunes
+          <em>values</em>, and assumes the model + setup are already sound.</div>
+        <div class="branch">
+          <div class="arm no"><span class="lab">no valid_case</span><br>skip &amp; record “not ready”</div>
+          <div class="arm yes"><span class="lab">yes</span><br>carry case_id · determining_metric · prior_metric</div>
+        </div>
+      </div>
+      <div class="connector"></div>
+
+      <div class="node">
+        <div class="k">capability-dev · once, if missing</div>
+        <div class="t">Author the KI's calibration capability</div>
+        <div class="d">An agent writes <code>calibration.yaml</code> (literature-grounded params, ranges, priors,
+          holdout, provenance) + <code>tools/calib_run.py</code> — a thin wrapper over the KI's own run tools.</div>
+      </div>
+      <div class="connector"></div>
+
+      <div class="engine">
+        <div class="elabel"><span class="n">the engine · calibration_kit</span>
+          <span class="s">model-agnostic — 7–8 optimizers, one execution path</span></div>
+
+        <div class="estage">
+          <div class="st">1 · Sensitivity screen — Morris, literature-seeded</div>
+          <div class="sd">Papers name the sensitive params; a cheap residual screen confirms on <em>this</em>
+            site's data. Literature is a prior, never a pruning oracle.</div>
+        </div>
+
+        <div class="loop">
+          <div class="lh">2 · optimize loop&nbsp; ↻&nbsp; until budget / convergence</div>
+          <div class="steps">
+            <div class="step"><div class="sk">propose</div><div class="sv">optimizer emits a param vector
+              <em>DDS · NSGA-II · BoTorch</em></div></div>
+            <div class="arrow">→</div>
+            <div class="step"><div class="sk">inject</div><div class="sv">value into the model's inputs
+              <em>applicator · or · runner</em></div></div>
+            <div class="arrow">→</div>
+            <div class="step"><div class="sk">run</div><div class="sv">the <em>KI's own run tools</em> execute
+              in the eval workdir</div></div>
+            <div class="arrow">→</div>
+            <div class="step"><div class="sk">score</div><div class="sv">gate-valid metrics → loss back to the
+              optimizer</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="connector"></div>
+
+      <div class="node gate">
+        <div class="k">gate 2 · holdout</div>
+        <div class="t">Do the best params <em>generalize</em>, or just overfit the calibration set?</div>
+        <div class="d">Re-score on a held-out split whose <code>protocol</code> + <code>generalization_axis</code>
+          follow the field (blocked-temporal · leave-region-out · blocked space-time).</div>
+        <div class="branch">
+          <div class="arm no"><span class="lab">fail</span><br>record <code>holdout_fail</code> · not applied</div>
+          <div class="arm yes"><span class="lab">pass</span><br>proceed to case-apply</div>
+        </div>
+      </div>
+      <div class="connector"></div>
+
+      <div class="node">
+        <div class="k">case-apply</div>
+        <div class="t">Best params → <code>case_params/&lt;case&gt;.json</code></div>
+        <div class="d"><span class="never">Never written into the KI.</span> Calibrated values are per-site; only
+          the <em>capability</em> is KI-promotable, and that's self-improve's job.</div>
+      </div>
+      <div class="connector"></div>
+
+      <div class="node">
+        <div class="k">record</div>
+        <div class="t">One <code>calibration_runs</code> row</div>
+        <div class="d">Lifecycle and science kept separate, as DB CHECK constraints — a run can complete and still
+          be a scientific failure.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INJECTION MODES -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <h2>Injection — how a value reaches the model</h2>
+      <span class="sec-note">Per-KI mode. Generic <em>formats</em> are central; model-specific <em>files</em> are delegated.</span>
+    </div>
+    <div class="cols">
+      <div class="card">
+        <h3><span class="tag app">applicator</span> the default, verified path</h3>
+        <p>The kit writes each value into a stable input file by its declared <code>address</code>, and proves it
+          with a read-after-write round-trip (C7). One handler, reused across many models.</p>
+        <div class="fmtlist">
+          <span class="chip">yaml_path</span><span class="chip">json_path</span><span class="chip">ini_key</span>
+          <span class="chip">text_token</span><span class="chip">namelist</span><span class="chip">fixed_width</span>
+          <span class="chip">table_cell</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3><span class="tag run">runner</span> the general escape hatch</h3>
+        <p>The kit hands <code>calib_run.py</code> the vector via <code>KDT_CALIB_PARAMS</code>; the KI injects it
+          the model's own way. Required when inputs are regenerated each run, or live in a model-specific format.</p>
+        <div class="fmtlist">
+          <span class="chip">flopy → modflow_pkg</span><span class="chip">pyswmm → swmm_inp</span>
+          <span class="chip">api</span><span class="chip no">no central handler</span>
+        </div>
+      </div>
+    </div>
+    <p class="lede" style="margin-top:16px">The distinction is level, not preference: a <em>format</em>
+      (namelist, fixed-width) is one reusable handler; a <em>model</em> (MODFLOW packages, SWMM decks) needs its
+      native library — a central handler would just reimplement <code>flopy</code>.</p>
+  </section>
+
+  <!-- TWO-PROOF SAFETY -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <h2>Runner mode proves itself twice</h2>
+      <span class="sec-note">Delegated injection is only trusted when it can't silently do nothing.</span>
+    </div>
+    <div class="proof">
+      <div class="card">
+        <span class="when">every evaluation</span>
+        <h3>Round-trip · did the write happen?</h3>
+        <p>The runner echoes <code>__kdt__.applied_params</code>; the kit diffs it against the request on every
+          eval — exact keyset, non-finite rejected, no clamp-to-zero. Any mismatch scores the run <code>+inf</code>.</p>
+        <span class="fc">◆ fail-closed — a non-injecting runner is never trusted</span>
+      </div>
+      <div class="card">
+        <span class="when">once · commissioning</span>
+        <h3>Responsiveness · did the run consume it?</h3>
+        <p>Before optimizing, perturb each param to the far bound (so even a bool or small int actually changes).
+          If <em>no</em> perturbation moves <em>any</em> objective, the params aren't reaching the scored run —
+          calibration aborts. Infeasible corners are inconclusive, not a failure.</p>
+        <span class="fc" style="color:var(--gate);background:color-mix(in srgb,var(--gate) 12%,var(--surface));border-color:color-mix(in srgb,var(--gate) 30%,var(--surface))">◆ wrote a file — but not the one the run reads</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- HONEST RECORD -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">04</span>
+      <h2>The record can't lie</h2>
+      <span class="sec-note">“It ran” and “it worked” are different columns.</span>
+    </div>
+    <div class="record">
+      <div class="card">
+        <div class="rrow"><span class="rk">engine_status</span><span class="rv">completed · failed · detached · running · skipped</span></div>
+        <div class="rrow"><span class="rk">scientific_verdict</span><span class="rv"><span class="pill pass">holdout_pass</span> <span class="pill gate">holdout_fail</span> triage · inconclusive …</span></div>
+        <div class="rrow"><span class="rk">CHECK</span><span class="rv">apply only on a pass; never <code>holdout_pass</code> with a failed holdout</span></div>
+      </div>
+      <div class="card">
+        <div class="rrow"><span class="rk">promotion_scope</span><span class="rv"><span class="pill none">none</span> <span class="pill none">case</span></span></div>
+        <div class="rrow"><span class="rk">↳ never</span><span class="rv"><span class="never">'ki'</span> — params stay per-site</span></div>
+        <div class="rrow"><span class="rk">applied_param_set</span><span class="rv"><code>case_params/&lt;case&gt;.json</code></span></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>calibration_kit · v2 · 2026-07-08</span>
+    <span>reviewed: Codex ×4 · applicator + runner · fail-closed</span>
+  </footer>
+</div>

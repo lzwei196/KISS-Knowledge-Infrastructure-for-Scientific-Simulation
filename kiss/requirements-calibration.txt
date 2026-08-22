@@ -1,0 +1,7 @@
+# Required by the fixed, production calibration engine bundled in GeoForge.
+# Optional experimental PEST++/surrogate backends are intentionally not part
+# of the base app: the framework's production paths are SPOTPY and pymoo.
+numpy>=2.0,<3
+scipy>=1.13,<2
+spotpy>=1.6.7,<2
+pymoo>=0.6.2,<0.7

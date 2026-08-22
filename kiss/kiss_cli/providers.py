@@ -125,7 +125,15 @@ class Provider:
             elif not self.stdin_prompt:
                 out.append(prompt)
         if model and self.model_flag:
-            out += [self.model_flag, model]
+            # Kimi 0.38 changed its model registry keys to provider-qualified
+            # ids. Passing the former short id does not produce a useful
+            # validation error; the CLI crashes in agent.activity.updated.
+            # Keep short, readable names in saved GeoForge sessions and map
+            # them at the provider boundary. Already-qualified future ids pass
+            # through unchanged.
+            selected = (f"kimi-code/{model}"
+                        if self.name == "kimi" and "/" not in model else model)
+            out += [self.model_flag, selected]
         for d in extra_dirs or []:
             out += ["--add-dir", d]
         head = _launcher(self.path() or self.binary)
@@ -557,12 +565,33 @@ def run(provider: Provider, prompt: str, cwd: Path,
     if not relocation_active:
         cli_extra_dirs = [d for d in cli_extra_dirs if Path(d).is_dir()]
 
+    # The process already starts in ``cwd``. Passing that same directory again
+    # as ``--add-dir`` is redundant, broadens the CLI's workspace list, and in
+    # Kimi 0.38 can produce an internal lifecycle failure while it registers
+    # duplicate workspace roots. Normalise and deduplicate every remaining
+    # path so the command line describes only genuinely additional roots.
+    cwd_key = str(Path(cwd).resolve())
+    unique_dirs: list[str] = []
+    seen_dirs: set[str] = set()
+    for raw in cli_extra_dirs:
+        try:
+            key = str(Path(raw).resolve())
+        except OSError:
+            key = os.path.abspath(str(raw))
+        if key == cwd_key or key in seen_dirs:
+            continue
+        seen_dirs.add(key)
+        unique_dirs.append(str(raw))
+    cli_extra_dirs = unique_dirs
+
     argv = provider.build(prompt, extra_dirs=cli_extra_dirs, model=model,
                           resume=resume)
     env = {**os.environ, **provider.env}
     if cfg is not None:
         from .paths import with_ki_tools_common
         env = with_ki_tools_common(cfg, env)
+    from .calibration import with_framework_env
+    env = with_framework_env(env)
 
     # Least privilege, mapped onto whatever this CLI can actually enforce.
     # When it cannot enforce anything, say so — silence here would imply a

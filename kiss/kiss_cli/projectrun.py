@@ -256,6 +256,7 @@ At meaningful transitions, call `report_project_progress` when that tool is
 available. Otherwise write `{status_path}` as JSON with:
   {{"stage":"choosing_ki|software|researching|preparing|validating|running|results",
     "status":"working|waiting_for_user|complete|failed",
+    "goal":"include only when the user materially changes the scientific case",
     "summary":"one short, plain-language description",
     "selected_kis":["KI name"]}}
 Do not report a later stage until you actually reached it. If blocked by a
@@ -264,4 +265,10 @@ write `{request_path}` using the request_user_action fields: status=waiting,
 kind, title, message, optional url, and `options` when there are concrete
 alternatives. Each option has id, label, description, and response. Ask for one
 grouped action only; GeoForge renders the options as a picker.
+
+Memory rule: preserve the existing goal for ordinary follow-ups such as
+"continue", "retry", or "plot that". If the user changes the site, model,
+period, scenario, or requested experiment enough to make it a different run,
+report the new goal explicitly so the status panel and project memory do not
+describe the previous case.
 """

@@ -443,7 +443,8 @@ def runtime_python(configured: str | None = None) -> str:
     import sys
 
     if configured:
-        resolved = shutil.which(configured) or configured
+        discovered = shutil.which(configured)
+        resolved = discovered or configured
         try:
             candidate = Path(resolved).resolve()
             current = Path(sys.executable).resolve()
@@ -453,8 +454,15 @@ def runtime_python(configured: str | None = None) -> str:
                            and (candidate == current or app_launcher))
         except OSError:
             is_launcher = False
-        if not is_launcher and (shutil.which(configured) or Path(configured).is_file()):
-            return configured
+        if not is_launcher and (discovered or Path(configured).is_file()):
+            # Persist and grant the executable GeoForge actually found.  A
+            # macOS GUI does not inherit the user's interactive-shell PATH,
+            # and Claude's permission matcher distinguishes ``python3`` from
+            # ``/Library/.../python3``.  Returning the absolute discovery
+            # makes both execution and the generated CLI allowlist stable.
+            # Keep an explicitly configured symlink spelling (for example
+            # python3 rather than python3.13); ``which`` is already absolute.
+            return discovered if discovered else configured
     return find_base_python() or "python3"
 
 

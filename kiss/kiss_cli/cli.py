@@ -14,6 +14,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from . import doctor, gui, handoff, install, paths, port, recipe
 from .catalog import Catalog
@@ -299,6 +300,57 @@ def cmd_run(args) -> int:
     os.execvp(argv[0], argv)
 
 
+def cmd_calibration_status(args) -> int:
+    """Prove that the fixed engine and required optimizers are in this runtime."""
+    from . import calibration
+
+    status = calibration.framework_status()
+    print(json.dumps(status, indent=2, ensure_ascii=False))
+    return 0 if status.get("ready") else 1
+
+
+def cmd_calibrate(args) -> int:
+    """Run the fixed engine through the app/CLI's own Python environment."""
+    from . import calibration
+
+    try:
+        obs_shapes = json.loads(args.obs_shapes_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"--obs-shapes-json is not valid JSON: {exc}") from None
+    # Local coding agents invoke this command directly. Materialise the KI's
+    # small adapter here as well as in the API tool path, so the command is
+    # self-contained and does not depend on an earlier UI refresh.
+    calibration.ensure_project(
+        Path(args.project),
+        [SimpleNamespace(name=args.model, root=Path(args.ki_path))],
+    )
+    result = calibration.run_project(
+        project=args.project,
+        ki_name=args.model,
+        ki_path=args.ki_path,
+        obs_shape_by_var=obs_shapes,
+        budget=args.budget,
+        seed=args.seed,
+        algorithm=args.algorithm,
+        expected_case_id=args.expected_case_id,
+        determining_metric=args.determining_metric,
+    )
+    report = result.get("report") if isinstance(result.get("report"), dict) else {}
+    summary = {
+        "run_id": result.get("run_id"),
+        "status": report.get("status"),
+        "promotable": report.get("promotable"),
+        "backend": report.get("backend"),
+        "best_loss": report.get("best_loss"),
+        "best_params": report.get("best_params"),
+        "reason": report.get("reason"),
+        "report_path": result.get("report_path"),
+        "log_path": result.get("log_path"),
+    }
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=str))
+    return 0 if report.get("status") not in ("engine_error", "backend_unavailable") else 2
+
+
 # --- wiring -----------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
@@ -367,6 +419,29 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("-w", "--workdir")
     q.add_argument("argv", nargs=argparse.REMAINDER)
     q.set_defaults(fn=cmd_run)
+
+    q = sub.add_parser(
+        "calibration-status",
+        help="check the bundled calibration framework and optimizer dependencies")
+    q.set_defaults(fn=cmd_calibration_status)
+
+    q = sub.add_parser(
+        "calibrate",
+        help="run one KI calibration using GeoForge's bundled optimizer runtime")
+    q.add_argument("--model", required=True, help="KI name")
+    q.add_argument("--ki-path", required=True, type=Path,
+                   help="materialised KI root containing dag.yaml and calibration.yaml")
+    q.add_argument("--project", required=True, type=Path,
+                   help="chat project that owns calibration inputs and results")
+    q.add_argument("--obs-shapes-json", required=True,
+                   help='JSON mapping, e.g. {"Q":"point_time_series"}')
+    q.add_argument("--algorithm", choices=sorted((
+        "dds", "sceua", "dream", "nsga2", "nsga3", "moead")))
+    q.add_argument("--budget", type=int)
+    q.add_argument("--seed", type=int, default=0)
+    q.add_argument("--expected-case-id")
+    q.add_argument("--determining-metric")
+    q.set_defaults(fn=cmd_calibrate)
     return p
 
 

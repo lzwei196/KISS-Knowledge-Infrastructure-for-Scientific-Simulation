@@ -102,6 +102,18 @@
     "Run the real scientific model": "运行真实的科学模型",
     "Save and explain the results": "保存并解释结果",
     "Data for this run": "本次运行的数据",
+    "Data sources & download record": "数据来源与下载记录",
+    "What the agent downloaded, copied, or reused—and the record that makes it reproducible.": "Agent 下载、复制或复用的数据，以及用于复现的记录。",
+    "Recorded": "已记录",
+    "Recorded data source": "已记录的数据来源",
+    "Open public source ↗": "打开公开来源 ↗",
+    "Downloaded from a public source repository": "从公开源代码仓库下载",
+    "Downloaded from a public data API": "从公开数据 API 下载",
+    "Reused a checksum-verified reference archive": "复用了经过校验和验证的参考数据档案",
+    "Copied from the installed KI reference data": "从已安装 KI 的参考数据复制",
+    "Saved by the agent for reproducibility": "由 Agent 保存以便复现",
+    "Saved for reproducibility": "已保存用于复现",
+    "Installed KI reference data": "已安装 KI 的参考数据",
     "A simple view of what the model needs. GeoForge handles the technical fields and asks only when a real decision or private file is missing.": "这里只显示模型需要的数据类别。技术字段由 GeoForge 处理；只有确实缺少决定或私有文件时才会询问你。",
     "Ready to use": "已经就绪",
     "Being checked": "正在检查",
@@ -115,7 +127,17 @@
     "Checked data paths": "已检查的数据路径",
     "These marks come from real paths declared by the KI setup manifest, not from an AI guess.": "这些标记来自 KI 设置清单声明的真实路径，并非 AI 猜测。",
     "The data groups will appear after a KI is selected.": "选择 KI 后会显示数据类别。",
+    "Model data appears after the conversation chooses a KI.": "对话选择 KI 后，这里会显示该模型的数据。",
+    "Data categories are rebuilt from the active KI as the conversation changes.": "数据类别会随着对话中的当前 KI 动态重建。",
+    "Open all inputs": "打开全部输入",
+    "Open folder": "打开文件夹",
+    "No local files in this category yet.": "这个类别目前还没有本地文件。",
+    "Could not open data folder": "无法打开数据文件夹",
     "Only confirmed gaps appear as “Needs you.” The complete KI data contract is still available below.": "只有已经确认的缺口才会显示“需要你”。完整的 KI 数据合同仍保留在下方。",
+    "Resolve with agent": "让 Agent 解决",
+    "Prepare with agent": "让 Agent 准备",
+    "Find with agent": "让 Agent 查找",
+    "Decide with agent": "与 Agent 一起决定",
     "Source data": "源数据",
     "Spatial & grid parameters": "空间与网格参数",
     "Model choices & calibration": "模型选择与校准",
@@ -129,6 +151,27 @@
     "Open official page": "打开官方页面",
     "No action needed from you": "现在不需要你操作",
     "Keep working in chat. GeoForge will interrupt only for an important decision, private data, a login, licence, or system permission.": "继续在对话中操作即可。只有遇到重要决定、私有数据、登录、许可证或系统权限时，GeoForge 才会请你处理。",
+    "Calibration": "模型校准",
+    "Choose a KI first": "请先选择 KI",
+    "Engine unavailable": "校准引擎不可用",
+    "Adapter needed": "需要校准适配器",
+    "Holdout passed": "留出验证已通过",
+    "Holdout not passed": "留出验证未通过",
+    "Run needs review": "本次运行需要检查",
+    "Ready when needed": "需要时可以开始",
+    "Calibrate with agent": "让 Agent 校准",
+    "Continue calibration": "继续校准",
+    "Add observations": "添加观测数据",
+    "Validated": "已验证",
+    "Not promoted": "未通过推广门槛",
+    "No KI selected yet": "尚未选择 KI",
+    "GeoForge uses the real KI model, keeps observations and runs in this project, and accepts a result only after held-out validation.": "GeoForge 会运行真实的 KI 模型，把观测数据和校准记录保存在本项目中；只有通过独立留出验证后才接受结果。",
+    "Choose a model in chat. GeoForge will then connect its calibration adapter when one is available.": "请先在对话中选择模型；如果该 KI 有校准适配器，GeoForge 会自动连接。",
+    "This build cannot load the shared calibration engine. The agent can inspect the problem, but must not claim that optimization ran.": "当前版本无法加载共享校准引擎。Agent 可以检查问题，但不能声称优化已经运行。",
+    "The model is selected, but its project calibration adapter still needs to be prepared.": "模型已经选择，但仍需准备本项目的校准适配器。",
+    "The latest real-model calibration passed its held-out validation gate.": "最近一次真实模型校准已经通过独立留出验证。",
+    "The latest attempt is saved, but GeoForge does not treat it as a validated calibration.": "最近一次尝试已经保存，但 GeoForge 不会把它视为已验证的校准结果。",
+    "Calibration is available for this model. Start it only when observations and a scientific goal require it.": "该模型支持校准。只有科学目标和观测数据确实需要时才开始。",
     "Project files": "项目文件",
     "Optional model reading": "可选的模型资料",
     "Add paper PDF": "添加论文 PDF",
@@ -217,6 +260,7 @@
     "uploading…": "正在上传…",
     "adding paper…": "正在添加论文…",
     "working…": "正在处理…",
+    "This chat is still working. The data request is in the composer and can be sent when it finishes.": "本对话仍在处理。数据请求已放入输入框，本轮完成后即可发送。",
     "This chat is working. Add the files to a new chat, or wait for this turn to finish.": "本对话正在处理。请将文件添加到新对话，或等待本轮完成。",
     "This chat stopped. You can retry the message or check AI Settings.": "本对话已停止。你可以重试消息或检查 AI 设置。",
     "(no output)": "（没有输出）",
@@ -237,6 +281,16 @@
     "Search KIs…": "搜索 KI…",
     "Search skills…": "搜索技能…",
     "Optional note for the agent": "给 Agent 的可选说明"
+    ,"New project chat": "新建项目对话"
+    ,"Each chat has its own project folder for memory, inputs, model runs, outputs, and plots.": "每个对话都有独立的项目文件夹，用来保存记忆、输入、模型运行、输出和图表。"
+    ,"Create the project inside": "在此位置创建项目"
+    ,"Choose…": "选择…"
+    ,"GeoForge creates a new named folder inside this location. Existing files are not changed.": "GeoForge 会在这里新建一个项目文件夹，不会更改已有文件。"
+    ,"Create chat": "创建对话"
+    ,"Use default location": "使用默认位置"
+    ,"Choose or enter a folder.": "请选择或输入一个文件夹。"
+    ,"Browser mode: type the folder path here. The desktop build opens the system folder picker.": "当前在浏览器模式。请直接输入文件夹路径；桌面版会打开系统文件夹选择器。"
+    ,"Could not open the folder picker; enter the path directly.": "无法打开文件夹选择器，请直接输入路径。"
     ,"Ask a scientific question or describe a modelling task…": "提出科学问题或描述一个建模任务…"
     ,"Use an installed agent or a direct API key": "使用已安装的 Agent 或直接 API 密钥"
     ,"Open this chat's local project folder in Finder": "在访达中打开本对话的本地项目文件夹"
@@ -293,6 +347,9 @@
     [/^Project files · (\d+)$/, "项目文件 · $1"],
     [/^(\d+) \/ (\d+) software verified$/, "$1 / $2 个软件已验证"],
     [/^(\d+) files? added$/, "已添加 $1 个文件"],
+    [/^(\d+) recorded$/, "已记录 $1 项"],
+    [/^Version or commit: (.+)$/, "版本或提交：$1"],
+    [/^Audit record: (.+)$/, "审计记录：$1"],
     [/^(\d+) files? ready to send$/, "$1 个文件可以发送"],
     [/^Uploading (\d+) files?…$/, "正在上传 $1 个文件…"],
     [/^(\d+) papers? added to this project$/, "已向本项目添加 $1 篇论文"],
@@ -308,6 +365,11 @@
     [/^Needed at: (.+)$/, "需要放在：$1"],
     [/^Configured for (.+)$/, "已为 $1 配置"],
     [/^General KI: (.+)$/, "通用 KI：$1"]
+    ,[/^(\d+) ready adapters? · (\d+) case files? · (\d+) runs?$/, "$1 个可用适配器 · $2 个案例文件 · $3 次运行"]
+    ,[/^Latest calibration · (.+)$/, "最近一次校准 · $1"]
+    ,[/^(.+) · adapter ready$/, "$1 · 适配器就绪"]
+    ,[/^(.+) · adapter needed$/, "$1 · 需要适配器"]
+    ,[/^Report: (.+)$/, "报告：$1"]
     ,[/^(.+) — not installed$/, "$1 — 未安装"]
     ,[/^(.+) — update needed$/, "$1 — 需要更新"]
     ,[/^(.+) — sign-in needed$/, "$1 — 需要登录"]

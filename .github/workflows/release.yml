@@ -58,7 +58,8 @@ jobs:
 
       - name: Build
         run: |
-          python -m pip install --quiet pyinstaller pyyaml pywebview truststore certifi
+          python -m pip install --quiet pyinstaller pyyaml pywebview truststore certifi \
+            -r kiss/requirements-calibration.txt
           # gui.py resolves web/app.html relative to __file__; --add-data keeps
           # that path valid inside the frozen bundle.
           pyinstaller --onefile --name kiss \
@@ -80,9 +81,21 @@ jobs:
             --osx-bundle-identifier com.geoforge.desktop \
             --collect-all truststore \
             --collect-data certifi \
+            --hidden-import spotpy \
+            --hidden-import pymoo.core.problem --hidden-import pymoo.optimize \
+            --hidden-import pymoo.algorithms.moo.nsga2 \
+            --hidden-import pymoo.algorithms.moo.nsga3 \
+            --hidden-import pymoo.algorithms.moo.moead \
+            --hidden-import pymoo.util.ref_dirs \
+            --collect-binaries pymoo \
+            --copy-metadata numpy --copy-metadata PyYAML \
+            --copy-metadata spotpy --copy-metadata pymoo --copy-metadata moocore \
+            --exclude-module torch --exclude-module pandas \
+            --exclude-module matplotlib --exclude-module pyarrow \
             --add-data "kiss/kiss_cli/web:kiss_cli/web" \
             --add-data "models:models" \
             --add-data "ki_tools_common:ki_tools_common" \
+            --add-data "kiss/vendor/agent-calibration-framework:agent-calibration-framework" \
             --add-data "kiss/manifests:kiss/manifests" \
             --paths kiss \
             kiss/kiss_entry.py
@@ -94,6 +107,8 @@ jobs:
           # Windowed apps swallow stdout; smoke-test through the inner binary.
           # No --models flag: the point of the bundle is that it finds its own.
           "./dist/GeoForge Desktop.app/Contents/MacOS/GeoForge Desktop" list | tail -2
+          "./dist/GeoForge Desktop.app/Contents/MacOS/GeoForge Desktop" calibration-status \
+            | grep -q '"ready": true'
           test -f "dist/GeoForge Desktop.app/Contents/Resources/kiss_cli/web/library.html"
           test "$(plutil -extract CFBundleShortVersionString raw "dist/GeoForge Desktop.app/Contents/Info.plist")" = "$APP_VERSION"
 
@@ -152,7 +167,8 @@ jobs:
 
       - name: Build
         run: |
-          python -m pip install --quiet pyinstaller pyyaml pywebview truststore certifi
+          python -m pip install --quiet pyinstaller pyyaml pywebview truststore certifi \
+            -r kiss/requirements-calibration.txt
           # gui.py resolves web/app.html relative to __file__; --add-data keeps
           # that path valid inside the frozen bundle.
           pyinstaller --onefile --name kiss \
@@ -174,9 +190,21 @@ jobs:
             --osx-bundle-identifier com.geoforge.desktop \
             --collect-all truststore \
             --collect-data certifi \
+            --hidden-import spotpy \
+            --hidden-import pymoo.core.problem --hidden-import pymoo.optimize \
+            --hidden-import pymoo.algorithms.moo.nsga2 \
+            --hidden-import pymoo.algorithms.moo.nsga3 \
+            --hidden-import pymoo.algorithms.moo.moead \
+            --hidden-import pymoo.util.ref_dirs \
+            --collect-binaries pymoo \
+            --copy-metadata numpy --copy-metadata PyYAML \
+            --copy-metadata spotpy --copy-metadata pymoo --copy-metadata moocore \
+            --exclude-module torch --exclude-module pandas \
+            --exclude-module matplotlib --exclude-module pyarrow \
             --add-data "kiss/kiss_cli/web:kiss_cli/web" \
             --add-data "models:models" \
             --add-data "ki_tools_common:ki_tools_common" \
+            --add-data "kiss/vendor/agent-calibration-framework:agent-calibration-framework" \
             --add-data "kiss/manifests:kiss/manifests" \
             --paths kiss \
             kiss/kiss_entry.py
@@ -187,6 +215,8 @@ jobs:
           # Windowed apps swallow stdout; smoke-test through the inner binary.
           # No --models flag: the point of the bundle is that it finds its own.
           "./dist/GeoForge Desktop.app/Contents/MacOS/GeoForge Desktop" list | tail -2
+          "./dist/GeoForge Desktop.app/Contents/MacOS/GeoForge Desktop" calibration-status \
+            | grep -q '"ready": true'
           test -f "dist/GeoForge Desktop.app/Contents/Resources/kiss_cli/web/library.html"
           test "$(plutil -extract CFBundleShortVersionString raw "dist/GeoForge Desktop.app/Contents/Info.plist")" = "$APP_VERSION"
 
@@ -227,7 +257,8 @@ jobs:
 
       - name: Build
         run: |
-          python -m pip install --quiet pyinstaller pyyaml truststore certifi
+          python -m pip install --quiet pyinstaller pyyaml truststore certifi \
+            -r kiss/requirements-calibration.txt
           pyinstaller --onefile --name kiss \
             --collect-all truststore \
             --collect-data certifi \
@@ -240,13 +271,26 @@ jobs:
           pyinstaller --onefile --name "GeoForge-Desktop" \
             --collect-all truststore \
             --collect-data certifi \
+            --hidden-import spotpy \
+            --hidden-import pymoo.core.problem --hidden-import pymoo.optimize \
+            --hidden-import pymoo.algorithms.moo.nsga2 \
+            --hidden-import pymoo.algorithms.moo.nsga3 \
+            --hidden-import pymoo.algorithms.moo.moead \
+            --hidden-import pymoo.util.ref_dirs \
+            --collect-binaries pymoo \
+            --copy-metadata numpy --copy-metadata PyYAML \
+            --copy-metadata spotpy --copy-metadata pymoo --copy-metadata moocore \
+            --exclude-module torch --exclude-module pandas \
+            --exclude-module matplotlib --exclude-module pyarrow \
             --add-data "kiss/kiss_cli/web:kiss_cli/web" \
             --add-data "models:models" \
             --add-data "ki_tools_common:ki_tools_common" \
+            --add-data "kiss/vendor/agent-calibration-framework:agent-calibration-framework" \
             --add-data "kiss/manifests:kiss/manifests" \
             --paths kiss \
             kiss/kiss_entry.py
           ./dist/GeoForge-Desktop list | tail -2
+          ./dist/GeoForge-Desktop calibration-status | grep -q '"ready": true'
 
       - name: Smoke test the frozen HTTPS stack
         run: |
@@ -307,7 +351,8 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          python -m pip install --quiet pyinstaller pyyaml pywebview truststore certifi
+          python -m pip install --quiet pyinstaller pyyaml pywebview truststore certifi \
+            -r kiss/requirements-calibration.txt
           pyinstaller --onefile --name kiss \
             --collect-all truststore \
             --collect-data certifi \
@@ -322,9 +367,21 @@ jobs:
             --icon assets/logo.ico \
             --collect-all truststore \
             --collect-data certifi \
+            --hidden-import spotpy \
+            --hidden-import pymoo.core.problem --hidden-import pymoo.optimize \
+            --hidden-import pymoo.algorithms.moo.nsga2 \
+            --hidden-import pymoo.algorithms.moo.nsga3 \
+            --hidden-import pymoo.algorithms.moo.moead \
+            --hidden-import pymoo.util.ref_dirs \
+            --collect-binaries pymoo \
+            --copy-metadata numpy --copy-metadata PyYAML \
+            --copy-metadata spotpy --copy-metadata pymoo --copy-metadata moocore \
+            --exclude-module torch --exclude-module pandas \
+            --exclude-module matplotlib --exclude-module pyarrow \
             --add-data "kiss/kiss_cli/web;kiss_cli/web" \
             --add-data "models;models" \
             --add-data "ki_tools_common;ki_tools_common" \
+            --add-data "kiss/vendor/agent-calibration-framework;agent-calibration-framework" \
             --add-data "kiss/manifests;kiss/manifests" \
             --paths kiss \
             kiss/kiss_entry.py

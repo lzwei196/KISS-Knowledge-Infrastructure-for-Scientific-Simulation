@@ -49,6 +49,18 @@ _SPATIAL_WORDS = re.compile(
     r"grid[ -]?cell|spatial|raster|soil profile|soil parameter|vegetation parameter|"
     r"mesh|domain/|lat(?:itude)?/lon(?:gitude)?)\b", re.I,
 )
+_SPATIAL_PATH_WORDS = re.compile(
+    r"(?:^|[/_.-])(dem|terrain|static|soil|landcover|map|grid|mesh|hru|basin|"
+    r"reach|shapefile|spatial)(?:$|[/_.-])", re.I,
+)
+_CHOICE_PATH_WORDS = re.compile(
+    r"(?:^|[/_.-])(parameter|params|calibration|management|control|config|option)"
+    r"(?:$|[/_.-])", re.I,
+)
+_STATE_PATH_WORDS = re.compile(
+    r"(?:^|[/_.-])(initial|boundary|restart|state|spinup|warmstart|warm-start)"
+    r"(?:$|[/_.-])", re.I,
+)
 
 
 def _short(value, limit: int = 700) -> str:
@@ -252,6 +264,131 @@ def _merge_requirements(model_requirements: dict[str, list[dict]]) -> list[dict]
     return list(merged.values())
 
 
+def _path_lane(value: str) -> str:
+    """Map an actual project input path to the same compact UI lanes."""
+    if _STATE_PATH_WORDS.search(value):
+        return "starting_state"
+    if _CHOICE_PATH_WORDS.search(value):
+        return "choices"
+    if _SPATIAL_PATH_WORDS.search(value):
+        return "spatial_parameters"
+    return "source_data"
+
+
+def _location(path: Path, project: Path, label: str) -> dict | None:
+    try:
+        resolved = path.expanduser().resolve()
+        relative = resolved.relative_to(project.resolve())
+    except (OSError, RuntimeError, ValueError):
+        return None
+    if not resolved.exists():
+        return None
+    if resolved.is_file():
+        count = 1
+    else:
+        count = 0
+        try:
+            for child in resolved.rglob("*"):
+                if child.is_file():
+                    count += 1
+                    if count >= 10_000:
+                        break
+        except OSError:
+            pass
+    return {
+        "label": label,
+        "relative_path": relative.as_posix() or ".",
+        "kind": "file" if resolved.is_file() else "folder",
+        "file_count": count,
+    }
+
+
+def _attach_locations(lanes: list[dict], plans: list[dict], project: Path,
+                      files: list[dict],
+                      role_paths: dict[str, dict[str, Path]]) -> None:
+    """Attach only real, project-owned input locations to each visible lane."""
+    project = project.resolve()
+    by_lane: dict[str, list[dict]] = {lane["id"]: [] for lane in lanes}
+    seen: dict[str, set[str]] = {lane["id"]: set() for lane in lanes}
+    actual_files: dict[str, set[str]] = {lane["id"]: set() for lane in lanes}
+
+    def track_files(lane_id: str, candidate: Path) -> None:
+        try:
+            resolved = candidate.expanduser().resolve()
+            if resolved.is_file():
+                actual_files[lane_id].add(resolved.relative_to(project).as_posix())
+            elif resolved.is_dir():
+                for child in resolved.rglob("*"):
+                    if child.is_file():
+                        actual_files[lane_id].add(
+                            child.resolve().relative_to(project).as_posix())
+                        if len(actual_files[lane_id]) >= 10_000:
+                            break
+        except (OSError, RuntimeError, ValueError):
+            pass
+
+    def add(lane_id: str, candidate: Path, label: str) -> None:
+        row = _location(candidate, project, label)
+        if not row or row["relative_path"] in seen[lane_id]:
+            return
+        seen[lane_id].add(row["relative_path"])
+        by_lane[lane_id].append(row)
+
+    # Files uploaded, downloaded, or produced under inputs are the clearest
+    # representation of what belongs to this run.  Group their containing
+    # folders using path names, without guessing scientific readiness.
+    for item in files:
+        relative = str(item.get("relative_path") or "")
+        if not relative:
+            continue
+        lane_id = _path_lane(relative)
+        target = project / relative
+        track_files(lane_id, target)
+        add(lane_id, target.parent, target.parent.name or "Project inputs")
+
+    # The setup manifest provides exact checked paths.  Some legacy KIs keep a
+    # runnable input deck under outputs/ or a model-specific data directory;
+    # show that real location instead of insisting everything live in inputs/.
+    for plan in plans:
+        model = str(plan.get("model") or "KI")
+        for item in plan.get("datasets") or []:
+            expected = item.get("expected_path")
+            if not expected:
+                continue
+            path = Path(str(expected)).expanduser()
+            if not path.is_absolute():
+                path = project / path
+            lane_id = _path_lane(" ".join(str(item.get(key) or "") for key in (
+                "name", "why", "expected_path")))
+            track_files(lane_id, path)
+            add(lane_id, path, f"{model} input")
+
+    role_lane = {
+        "forcing": "source_data", "obs": "source_data",
+        "data": "source_data", "data_ki": "source_data",
+        "static": "spatial_parameters",
+    }
+    for model, paths_by_role in role_paths.items():
+        for role, path in paths_by_role.items():
+            lane_id = role_lane.get(role)
+            if lane_id:
+                if role not in {"data", "data_ki"}:
+                    track_files(lane_id, Path(path))
+                add(lane_id, Path(path), f"{model} · {role}")
+
+    inputs = project / "inputs"
+    input_root = _location(inputs, project, "All project inputs")
+    for lane in lanes:
+        rows = by_lane[lane["id"]]
+        lane["locations"] = rows[:6]
+        lane["local_file_count"] = len(actual_files[lane["id"]])
+    # A stable top-level escape hatch remains useful even before any files
+    # exist or when a KI stores several categories in one deck.
+    if input_root:
+        for lane in lanes:
+            lane["input_root"] = input_root
+
+
 def _literature(ki, outputs: list[str]) -> dict | None:
     library = papers.load(ki)
     if library is None:
@@ -276,7 +413,8 @@ def _literature(ki, outputs: list[str]) -> dict | None:
 
 
 def build(kis: list, plans: list[dict], project: Path, files: list[dict],
-          *, auto_ki: bool = False) -> dict:
+          *, auto_ki: bool = False,
+          role_paths: dict[str, dict[str, Path]] | None = None) -> dict:
     """Build the compact, multi-model project preparation contract."""
     requirements = {ki.name: _model_inputs(ki) for ki in kis}
     combined = _merge_requirements(requirements)
@@ -295,6 +433,8 @@ def build(kis: list, plans: list[dict], project: Path, files: list[dict],
             "agent_can_prepare": sum(item["action"] == "agent_prepare" for item in items),
             "items": items[:350],
         })
+
+    _attach_locations(lanes, plans, Path(project), files, role_paths or {})
 
     plan_by_model = {p.get("model"): p for p in plans}
     models = []
@@ -343,6 +483,7 @@ def build(kis: list, plans: list[dict], project: Path, files: list[dict],
     )
     return {
         "generated_by_ai": False,
+        "active": bool(kis),
         "sources": ["dag.yaml", "docs/format_spec.yaml", "docs/papers.json"],
         "project_readiness": readiness,
         "software_summary": {

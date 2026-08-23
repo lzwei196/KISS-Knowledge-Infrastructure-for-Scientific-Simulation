@@ -108,7 +108,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .chat-artifact figcaption{padding:7px 10px;color:var(--fg-2);font-size:11.5px;border-top:1px solid var(--line)}
 .empty{max-width:680px;margin:7vh auto;text-align:center;color:var(--fg-3)}
 .empty h2{font-size:21px;line-height:28px;color:var(--fg);margin:0 0 7px}
-.starter{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:22px;text-align:left}
+.starter{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:22px;text-align:left}
 .starter button{padding:13px;border-radius:13px;display:flex;gap:10px;align-items:flex-start;background:var(--raised)}
 .starter button:hover{background:var(--hover)}
 .starter b{display:block;color:var(--fg);font-size:12.5px;margin-bottom:2px}
@@ -241,6 +241,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
   <div class="slist" id="slist"></div>
   <div class="sidefoot">
     <a href="/library">KI Library</a>
+    <a href="/studio">KI Studio</a>
     <button id="connect">⌁ Connections</button>
     <button id="help">Guide</button>
     <button id="settings">AI Settings</button>
@@ -642,10 +643,12 @@ function drawEmpty(){
       <button data-action="focus"><span class="mark">AI</span><span><b>Start chatting</b><small>Ask a question or describe a simulation.</small></span></button>
       <button data-action="kis"><span class="mark">KI</span><span><b>Choose a KI</b><small>Pin scientific software to this chat.</small></span></button>
       <button data-action="library"><span class="mark verify">✓</span><span><b>Browse & verify</b><small>Import KIs and check what can run.</small></span></button>
+      <button data-action="studio"><span class="mark">KI+</span><span><b>Create a KI</b><small>Turn your own model workflow into a checked KI.</small></span></button>
     </div></div>`;
   document.querySelector('[data-action="focus"]').onclick=()=>$("#msg").focus();
   document.querySelector('[data-action="kis"]').onclick=()=>$("#pickmodels").click();
   document.querySelector('[data-action="library"]').onclick=()=>location.href="/library";
+  document.querySelector('[data-action="studio"]').onclick=()=>location.href="/studio";
 }
 async function openSession(id){
   const seq=++OPEN_SEQ, leaving=CUR&&CUR.id;

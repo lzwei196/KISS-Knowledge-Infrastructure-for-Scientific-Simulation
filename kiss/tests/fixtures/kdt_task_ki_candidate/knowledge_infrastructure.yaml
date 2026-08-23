@@ -1,0 +1,23 @@
+package:
+  name: rainfall-summary-workflow
+  version: 1.0.0
+  kind: task_workflow
+pipeline:
+  stages:
+    - id: validate_input
+      tool: tools/summarize_rainfall.py
+    - id: aggregate
+      depends_on: [validate_input]
+    - id: validate_output
+      depends_on: [aggregate]
+inputs:
+  - name: daily_precipitation
+    format: csv
+outputs:
+  observable: []
+  artifacts:
+    - name: monthly_totals
+      format: csv
+summary:
+  total_tools: 1
+  total_diagnostic_triplets: 15

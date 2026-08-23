@@ -220,6 +220,7 @@ select option:disabled{color:var(--fg-3)}
     <h1 id="title">Knowledge Infrastructures</h1>
     <span class="meta" id="sub"></span>
     <span class="spacer"></span>
+    <button id="creatki" title="Create a KI from your own model"><span class="mark">KI+</span> Create KI</button>
     <button id="importki" title="Check and import a KI package"><span class="mark import">↓</span> Check &amp; Import</button>
     <input type="file" id="importfile" accept=".zip" style="display:none">
     <select id="prov" title="AI used for guided setup"></select>
@@ -467,6 +468,7 @@ async function install(name){
 }
 $("#q").addEventListener("input",drawList);
 $("#importki").onclick=()=>$("#importfile").click();
+$("#creatki").onclick=()=>location.href="/studio";
 let PENDING_IMPORT=null;
 function showImportReport(d){
   const valid=!!d.valid;

@@ -27,14 +27,15 @@ import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import api, calibration, clipboard, doctor, handoff, install, mcp, paths, policy, port, preparation, projectrun, prompt, providers, recipe, sessions, settings, setup as setup_flow, skilllib, tls
+from . import api, calibration, clipboard, doctor, handoff, install, kdtstudio, mcp, paths, policy, port, preparation, projectrun, prompt, providers, recipe, sessions, settings, setup as setup_flow, skilllib, tls
 from .catalog import Catalog, KI
 from .manifest import Manifest
 
 PAGE = (Path(__file__).parent / "web" / "app.html")
 SETUP_PAGE = (Path(__file__).parent / "web" / "setup.html")
+STUDIO_PAGE = (Path(__file__).parent / "web" / "studio.html")
 
 INPUT_GROUPS = (
     ("forcing", "Forcing"),
@@ -654,6 +655,12 @@ class Handler(BaseHTTPRequestHandler):
                                   "text/html; charset=utf-8")
             return self._send(200, SETUP_PAGE.read_bytes(), "text/html; charset=utf-8")
 
+        if route == "/studio":
+            if not STUDIO_PAGE.is_file():
+                return self._send(500, b"<h1>KI Studio is missing from this build</h1>",
+                                  "text/html; charset=utf-8")
+            return self._send(200, STUDIO_PAGE.read_bytes(), "text/html; charset=utf-8")
+
         if route == "/logo.svg":
             logo = PAGE.parent / "logo.svg"
             if logo.exists():
@@ -714,6 +721,39 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/mcp":
             return self._json(mcp.status())
+
+        if route == "/api/kdt/status":
+            state = kdtstudio.engine_status()
+            state["default_parent"] = str(kdtstudio.default_parent())
+            return self._json(state)
+
+        if route == "/api/kdt/jobs":
+            return self._json({"jobs": kdtstudio.jobs()})
+
+        if route.startswith("/api/kdt/job/"):
+            parts = route.strip("/").split("/")
+            if len(parts) not in (4, 5):
+                return self._json({"error": "invalid KI Studio route"}, 404)
+            job_id = parts[3]
+            if len(parts) == 5 and parts[4] == "download":
+                try:
+                    path, blob = kdtstudio.export_zip(job_id)
+                except (KeyError, ValueError, OSError) as error:
+                    return self._json({"error": str(error)}, 400)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
+                self.send_header("Content-Length", str(len(blob)))
+                self.end_headers()
+                self.wfile.write(blob)
+                return
+            if len(parts) == 4:
+                try:
+                    return self._json(kdtstudio.job(job_id))
+                except KeyError as error:
+                    return self._json({"error": str(error)}, 404)
+                except (ValueError, OSError) as error:
+                    return self._json({"error": str(error)}, 400)
 
         if route.startswith("/api/selfcheck"):
             # Step-by-step environment check, streaming one verdict at a time.
@@ -1057,6 +1097,17 @@ class Handler(BaseHTTPRequestHandler):
             if n > 300 * 1024 * 1024:
                 return self._json({"error": "zip larger than 300 MB"}, 413)
             return self._import_ki_bytes(self.rfile.read(n))
+        if route == "/api/kdt/install":
+            # This is a long network operation, so stream visible stages and
+            # keep the response alive exactly like model setup.
+            if n:
+                self.rfile.read(n)
+            self._open_stream()
+            try:
+                kdtstudio.install_engine(self._chunk)
+            except Exception as error:
+                self._chunk(f"KDT install failed: {type(error).__name__}: {error}\n")
+            return self._end_stream()
         if route == "/api/setup-upload":
             if n > 300 * 1024 * 1024:
                 return self._json({"error": "file larger than 300 MB"}, 413)
@@ -1120,6 +1171,61 @@ class Handler(BaseHTTPRequestHandler):
                                "relative_path": str(saved.relative_to(
                                    sessions.project_path(self.workroot, s)))})
         req = json.loads(self.rfile.read(n) or b"{}")
+
+        if route == "/api/kdt/create":
+            try:
+                created = kdtstudio.create_job(
+                    model_name=req.get("model_name", ""),
+                    ki_kind=req.get("ki_kind", "process_model"),
+                    domain=req.get("domain", ""),
+                    source_type=req.get("source_type", ""),
+                    source=req.get("source", ""),
+                    provider=req.get("provider", ""),
+                    llm_model=req.get("llm_model", ""),
+                    parent=req.get("parent") or None,
+                )
+            except (ValueError, OSError) as error:
+                return self._json({"error": str(error)}, 400)
+            return self._json(created)
+
+        if route == "/api/kdt/probe":
+            return self._stream_kdt_probe(req)
+
+        if route == "/api/kdt/build":
+            return self._stream_kdt_build(req)
+
+        if route == "/api/kdt/verify":
+            try:
+                return self._json(kdtstudio.verify(str(req.get("job") or "")))
+            except KeyError as error:
+                return self._json({"error": str(error)}, 404)
+            except (ValueError, RuntimeError, OSError) as error:
+                return self._json({"error": str(error)}, 400)
+
+        if route == "/api/kdt/open":
+            try:
+                opened = kdtstudio.open_workspace(str(req.get("job") or ""))
+            except KeyError as error:
+                return self._json({"error": str(error)}, 404)
+            except (ValueError, OSError) as error:
+                return self._json({"error": str(error)}, 400)
+            return self._json({"ok": True, "path": str(opened)})
+
+        if route == "/api/kdt/import":
+            job_id = str(req.get("job") or "")
+            try:
+                state = kdtstudio.job(job_id)
+                _path, blob = kdtstudio.export_zip(job_id)
+            except KeyError as error:
+                return self._json({"error": str(error)}, 404)
+            except (ValueError, OSError) as error:
+                return self._json({"error": str(error)}, 400)
+            old_path = self.path
+            self.path = "/api/import_ki?name=" + quote(str(state.get("model_name") or "created-ki"))
+            try:
+                return self._import_ki_bytes(blob)
+            finally:
+                self.path = old_path
 
         if route == "/api/settings":
             try:
@@ -1672,6 +1778,144 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self._chunk(f"\n[data guide failed: {type(e).__name__}: {e}]")
         self._end_stream()
+
+    # --- user-authored KI Studio -----------------------------------------
+    def _stream_kdt_probe(self, req) -> None:
+        job_id = str(req.get("job") or "")
+        try:
+            kdtstudio.job(job_id)
+        except KeyError as error:
+            return self._json({"error": str(error)}, 404)
+        except (ValueError, OSError) as error:
+            return self._json({"error": str(error)}, 400)
+        if not kdtstudio.engine_status().get("installed"):
+            return self._json({"error": "install the reviewed KDT engine first"}, 409)
+        self._open_stream()
+        try:
+            kdtstudio.run_probe(job_id, self._chunk)
+            self._chunk("\nKDT probe complete. The source map is ready for an agent.\n")
+        except Exception as error:
+            self._chunk(f"\nKDT probe failed: {type(error).__name__}: {error}\n")
+        self._end_stream()
+
+    def _stream_kdt_build(self, req) -> None:
+        job_id = str(req.get("job") or "")
+        try:
+            state = kdtstudio.job(job_id)
+            task = kdtstudio.build_prompt(job_id)
+        except KeyError as error:
+            return self._json({"error": str(error)}, 404)
+        except (ValueError, RuntimeError, OSError) as error:
+            return self._json({"error": str(error)}, 400)
+
+        want = str(req.get("provider") or state.get("provider") or
+                   settings.load().get("default_provider") or "")
+        llm = str(req.get("llm_model") or state.get("llm_model") or "") or None
+        if not want:
+            local = providers.available()
+            direct = api.available()
+            want = (f"cli:{local[0].name}" if local else
+                    f"api:{direct[0].name}" if direct else "")
+        if not want:
+            return self._json({"error": "no usable AI connection"}, 400)
+        err = self._validate_binding({"provider": want, "llm_model": llm})
+        if err:
+            return self._json({"error": err}, 400)
+        selected_kind, _, selected_name = want.partition(":")
+        if selected_kind == "cli" and not providers.PROVIDERS[selected_name].health().usable:
+            return self._json({"error": f"{providers.PROVIDERS[selected_name].label} is not ready; check AI Settings"}, 409)
+        if selected_kind == "api" and not api.PROVIDERS[selected_name].available():
+            return self._json({"error": f"{api.PROVIDERS[selected_name].label} is not ready; add its API key in AI Settings"}, 409)
+
+        # The provider is a run-time choice, not a permanent lock made when
+        # the workspace was created. Persist the latest valid selection so a
+        # reopened workspace shows what will be used for its next repair pass.
+        root, _meta = kdtstudio.mark_building(
+            job_id, provider=want, llm_model=llm or "")
+        log_path = root / "runs" / "agent-build.log"
+        log_file = log_path.open("a", encoding="utf-8")
+        self._open_stream()
+        connected = True
+
+        def emit(piece: str) -> bool:
+            nonlocal connected
+            log_file.write(piece)
+            log_file.flush()
+            if connected:
+                connected = self._chunk(piece)
+            return True
+
+        def heartbeat() -> None:
+            nonlocal connected
+            if connected:
+                connected = self._chunk("\u200b")
+
+        failed = None
+        try:
+            kind, _, pname = want.partition(":")
+            if not pname:
+                kind, pname = "cli", kind
+            system = (
+                "You are GeoForge KI Studio's single KI-authoring agent. "
+                "Follow the desktop KDT contract exactly, ground every claim in "
+                "the supplied source, and keep all writes inside the workspace. "
+                "Do not use or claim access to HydroCraft server paths or datasets."
+            )
+            cfg = paths.KissConfig.default(root)
+            cfg.python = install.runtime_python(cfg.python)
+            cfg.relocation = "none"
+            common_root = kdtstudio.shared_tools_root()
+            if common_root:
+                cfg.roles["ki_tools_common"] = common_root
+            for role, path in cfg.roles.items():
+                if role != "ki_tools_common" or not Path(path).is_dir():
+                    Path(path).mkdir(parents=True, exist_ok=True)
+            (root / paths.CONFIG_NAME).write_text(cfg.dumps(), encoding="utf-8")
+            if kind == "api":
+                prov = api.PROVIDERS[pname]
+                engine_ki = KI(name="KDT-single", root=kdtstudio.engine_root())
+                stream = api.run(
+                    prov, engine_ki, cfg, system, task, model=llm,
+                    max_steps=80, setup_mode=True,
+                    setup_context={"project_root": root}, presentation="log",
+                )
+            else:
+                prov = providers.PROVIDERS[pname]
+                pol = policy.Policy(
+                    model="KI-Studio", posture=policy.Posture.WORKSPACE_WRITE)
+                pol.add("read", root, "this KI authoring workspace")
+                pol.add("write", root, "candidate KI and reproducibility records")
+                pol.add("read", kdtstudio.engine_root(), "reviewed KDT engine and gate")
+                if common_root:
+                    pol.add("read", common_root, "GeoForge shared KI helpers")
+                pol.add("network", "public-https", "public model source and documentation")
+                for command in SETUP_BUILD_COMMANDS:
+                    pol.add("exec", command, "model inspection and KI authoring")
+                stream = providers.run(
+                    prov, system + "\n\n" + task, root,
+                    extra_dirs=[str(kdtstudio.engine_root()),
+                                *([str(common_root)] if common_root else [])],
+                    cfg=cfg, pol=pol, model=llm,
+                )
+            for piece in _with_heartbeats(stream):
+                heartbeat() if piece is None else emit(piece)
+            kdtstudio.mark_build_finished(job_id)
+            emit("\n\nGeoForge is running the pinned KDT structural gate…\n")
+            acceptance = kdtstudio.verify(job_id)
+            if acceptance["ok"]:
+                emit("KDT gate: PASS. This package can now be imported into the KI Library.\n")
+            else:
+                emit(f"KDT gate: FAIL ({len(acceptance['failures'])} issue(s)).\n")
+                for issue in acceptance["failures"][:20]:
+                    emit(f"  - {issue}\n")
+                emit("Ask the same agent to repair the named issues, then run Verify again.\n")
+        except Exception as error:
+            failed = f"{type(error).__name__}: {error}"
+            kdtstudio.mark_build_finished(job_id, failed=failed)
+            emit(f"\nKI authoring failed: {failed}\n")
+        finally:
+            log_file.close()
+            self._end_stream()
 
     def _stream_recipe(self, req) -> None:
         """Work out how to install a model, then prove it — streamed.

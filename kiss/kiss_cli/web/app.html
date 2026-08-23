@@ -188,20 +188,32 @@ textarea:focus{outline:none;border-color:var(--brand)}
 .prep-metric b{display:block;font-size:15px}.prep-metric small{color:var(--fg-3)}
 .data-overview-head{display:flex;align-items:flex-start;gap:8px;margin-bottom:4px}
 .data-overview-head h3{flex:1;margin:0}.data-overview{display:grid;margin-top:8px}
-.data-ready-row{display:grid;grid-template-columns:25px minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px 0;border-top:1px solid var(--line-1)}
-.data-ready-row:first-child{border-top:0}.data-ready-mark{width:23px;height:23px;border-radius:99px;display:grid;place-items:center;background:var(--surface);color:var(--fg-3);font-size:10px;font-weight:750}
+.data-ready-group{border-top:1px solid var(--line-1)}.data-ready-group:first-of-type{border-top:0}
+.data-ready-group>summary{list-style:none;cursor:pointer}.data-ready-group>summary::-webkit-details-marker{display:none}
+.data-ready-row{display:grid;grid-template-columns:25px minmax(0,1fr) auto 16px;align-items:center;gap:9px;padding:11px 0}
+.data-ready-mark{width:23px;height:23px;border-radius:99px;display:grid;place-items:center;background:var(--surface);color:var(--fg-3);font-size:10px;font-weight:750}
 .data-ready-row.ok .data-ready-mark{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok)}
 .data-ready-row.active .data-ready-mark{background:var(--brand-50);color:var(--brand)}
 .data-ready-row.block .data-ready-mark{background:color-mix(in srgb,var(--block) 10%,transparent);color:var(--block)}
 .data-ready-row b{display:block;font-size:12.5px}.data-ready-row small{display:block;color:var(--fg-3);line-height:16px;margin-top:1px}
+.data-ready-chevron{color:var(--fg-3);font-size:18px;line-height:1;transform:rotate(0);transition:transform .15s}.data-ready-group[open] .data-ready-chevron{transform:rotate(90deg)}
 .data-state{font-size:10.5px;white-space:nowrap;color:var(--fg-2);border:1px solid var(--line);border-radius:99px;padding:2px 7px}
 .data-ready-row.ok .data-state{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,var(--line))}
 .data-ready-row.active .data-state{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 35%,var(--line))}
 .data-ready-row.block .data-state{color:var(--block);border-color:color-mix(in srgb,var(--block) 35%,var(--line))}
-.data-row-actions{display:flex;align-items:flex-end;gap:5px;flex-direction:column}.data-resolve{padding:4px 8px;font-size:10.5px;color:var(--brand);border-color:color-mix(in srgb,var(--brand) 30%,var(--line));white-space:nowrap}
+.data-ready-group-body{margin:0 0 10px 34px;border:1px solid var(--line-1);border-radius:10px;background:var(--surface);overflow:hidden}
+.data-group-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 9px;border-bottom:1px solid var(--line-1)}
+.data-group-actions .hint{flex:1;min-width:150px;margin:0}.data-row-actions{display:flex;align-items:flex-end;gap:5px;flex-direction:column}.data-resolve{padding:4px 8px;font-size:10.5px;color:var(--brand);border-color:color-mix(in srgb,var(--brand) 30%,var(--line));white-space:nowrap}
 .data-requirement-preview{color:var(--fg-2)!important;font-weight:620}.data-location-note{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px!important;word-break:break-all}
 .data-folder{padding:4px 8px;font-size:10.5px;color:var(--fg-2);white-space:nowrap}.data-empty{padding:14px 4px 10px}.data-empty b{display:block;font-size:13px;margin-bottom:4px}.data-model-strip{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0 1px}.data-overview-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.data-overview-tools button{padding:4px 8px;font-size:10.5px}
 .data-overview-note{font-size:11px;color:var(--fg-3);padding-top:7px;border-top:1px solid var(--line-1)}
+.data-requirement-card{border-top:1px solid var(--line-1);background:var(--raised)}.data-requirement-card:first-of-type{border-top:0}
+.data-requirement-card>summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto 14px;align-items:center;gap:7px;padding:9px 10px}
+.data-requirement-card>summary::-webkit-details-marker{display:none}.data-requirement-card>summary b{display:block;font-size:11.8px;line-height:16px}.data-requirement-card>summary small{display:block;color:var(--fg-3);font-size:10px;margin-top:1px}
+.requirement-chevron{color:var(--fg-3);font-size:16px;transform:rotate(0);transition:transform .15s}.data-requirement-card[open] .requirement-chevron{transform:rotate(90deg)}
+.requirement-detail{padding:0 10px 10px;border-top:1px solid var(--line-1)}.requirement-fields{display:grid;grid-template-columns:82px minmax(0,1fr);gap:4px 9px;padding:8px 0 5px;font-size:10.8px}.requirement-fields dt{color:var(--fg-3)}.requirement-fields dd{margin:0;color:var(--fg-2);word-break:break-word}.requirement-fields code{font-size:10px;white-space:normal}
+.requirement-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px}.requirement-explain,.requirement-resolve{padding:4px 8px;font-size:10.5px}.requirement-explain{color:var(--fg-2)}.requirement-resolve{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 30%,var(--line))}
+@media(max-width:620px){.data-ready-row{grid-template-columns:25px minmax(0,1fr) 14px}.data-ready-row .data-state{grid-column:2;justify-self:start}.data-ready-chevron{grid-column:3;grid-row:1/3}.data-ready-group-body{margin-left:0}.data-requirement-card>summary{grid-template-columns:minmax(0,1fr) 14px}.data-requirement-card>summary .actiontag{grid-column:1;justify-self:start}.requirement-fields{grid-template-columns:1fr}.requirement-fields dd{margin-bottom:3px}}
 .lane{background:var(--raised);border:1px solid var(--line);border-radius:12px;margin-bottom:9px;overflow:hidden}
 .lane>summary{list-style:none;display:flex;align-items:center;gap:8px;padding:11px 12px;cursor:pointer}
 .lane>summary::-webkit-details-marker{display:none}.lane>summary:after{content:"›";color:var(--fg-3);font-size:18px;transition:transform .15s}.lane[open]>summary:after{transform:rotate(90deg)}
@@ -966,6 +978,11 @@ $("#openproject").onclick=async()=>{
 
 /* per-chat data requirements and local input files */
 const sizeLabel=n=>n<1024?`${n} B`:n<1048576?`${(n/1024).toFixed(1)} KB`:`${(n/1048576).toFixed(1)} MB`;
+const displayValue=value=>{
+  if(value==null||value==="")return "";
+  if(typeof value==="string"||typeof value==="number"||typeof value==="boolean")return String(value);
+  try{return JSON.stringify(value);}catch(_error){return String(value);}
+};
 const prepClass=s=>s==="ready"||s==="validate_sources"?"ok":s==="software_needed"?"block":"warn";
 const actionClass=a=>a==="needs_decision"?"block":a==="provide_or_find"?"warn":"ok";
 function renderData(data){
@@ -1025,7 +1042,31 @@ function renderData(data){
     const paths=locations.slice(0,2).map(item=>item.relative_path).filter(Boolean);
     const locationNote=paths.length?`${paths.join(" · ")}${locations.length>2?` · +${locations.length-2} ${chineseUI()?"处":"more"}`:""}`:"";
     const folderButton=location?`<button class="data-folder" data-open-path="${esc(location.relative_path)}" title="${esc(location.relative_path)}">Open folder</button>`:"";
-    return `<div class="data-ready-row ${status.cls}"><span class="data-ready-mark">${status.mark}</span><span><b>${esc(lane.label)}</b>${preview?`<small class="data-requirement-preview">${esc(preview)}</small>`:""}<small>${esc(lane.description||"")}</small>${status.note?`<small>${esc(status.note)}</small>`:""}<small>${esc(fileNote)}</small>${locationNote?`<small class="data-location-note">${esc(locationNote)}</small>`:""}</span><span class="data-row-actions"><span class="data-state">${esc(status.label)}</span>${folderButton}<button class="data-resolve" data-data-lane="${esc(lane.id)}">Resolve with agent</button></span></div>`;
+    const requirementItems=(lane.items||[]).map((item,itemIndex)=>{
+      const models=(item.models||[]).join(" + ")||runModels.join(" + ")||"KI";
+      const detail=item.description||item.notes||item.format||item.source_kind||(chineseUI()?"由 KI 声明的模型输入要求":"Model input declared by the KI");
+      const fields=[
+        [chineseUI()?"说明":"Purpose",item.description||item.notes],
+        [chineseUI()?"所属 KI":"KI",models],
+        [chineseUI()?"数据组":"Group",item.group_label||lane.label],
+        [chineseUI()?"单位":"Unit",item.unit],
+        [chineseUI()?"目标文件":"Expected file",item.file],
+        [chineseUI()?"格式":"Format",item.format||item.model_input_format],
+        [chineseUI()?"来源类型":"Source type",item.source_kind],
+        [chineseUI()?"准备方式":"Preparation",chineseUI()?(item.action==="needs_decision"?"需要你做科学决定；Agent 会先解释选项":item.action==="provide_or_find"?"添加你的数据，或让 Agent 查找合适来源":"Agent 可以按 KI 获取、转换或生成"):item.action_label],
+        [chineseUI()?"KI 默认值":"KI default",displayValue(item.default)],
+        [chineseUI()?"有效范围":"Valid range",displayValue(item.valid_range)],
+        [chineseUI()?"敏感度":"Sensitivity",item.sensitivity],
+      ].filter(([,value])=>value!=null&&value!=="");
+      const variants=(item.variants||[]).map(variant=>[variant.model,variant.unit,variant.file,variant.format].filter(Boolean).map(displayValue).join(" · ")).filter(Boolean);
+      if(variants.length>1)fields.push([chineseUI()?"不同 KI 定义":"KI variants",variants.join(" | ")]);
+      const fieldHtml=fields.length?`<dl class="requirement-fields">${fields.map(([label,value])=>`<dt>${esc(label)}</dt><dd>${item.file&&value===item.file?`<code>${esc(displayValue(value))}</code>`:esc(displayValue(value))}</dd>`).join("")}</dl>`:`<div class="hint" style="margin:8px 0">${chineseUI()?"KI 暂未提供更多字段说明，可以直接询问 Agent。":"The KI does not provide more field detail yet; ask the agent directly."}</div>`;
+      const resolveLabel=item.action==="needs_decision"?(chineseUI()?"与 Agent 一起决定":"Decide with agent"):item.action==="provide_or_find"?(chineseUI()?"让 Agent 查找":"Find with agent"):(chineseUI()?"让 Agent 准备":"Prepare with agent");
+      const itemStatusLabel=item.action==="needs_decision"?(chineseUI()?"需要你决定":"Needs a decision"):item.action==="provide_or_find"?(chineseUI()?"需要数据来源":"Needs a source"):(chineseUI()?"Agent 可处理":"Agent can handle");
+      return `<details class="data-requirement-card" data-data-lane="${esc(lane.id)}" data-data-item="${itemIndex}"><summary><span><b>${esc(item.name)}</b><small>${esc(detail)}</small></span><span class="actiontag ${actionClass(item.action)}">${esc(itemStatusLabel)}</span><span class="requirement-chevron">›</span></summary><div class="requirement-detail">${fieldHtml}<div class="requirement-actions"><button class="requirement-explain" data-data-lane="${esc(lane.id)}" data-data-item="${itemIndex}">${chineseUI()?"问 Agent：这是什么？":"Ask agent: what is this?"}</button><button class="requirement-resolve" data-data-lane="${esc(lane.id)}" data-data-item="${itemIndex}">${resolveLabel}</button></div></div></details>`;
+    }).join("");
+    const groupHint=chineseUI()?`${lane.count} 项要求 · 点击每一项查看说明，或单独询问 Agent`:`${lane.count} requirements · open any item for details or ask the agent separately`;
+    return `<details class="data-ready-group ${status.cls}"><summary class="data-ready-row ${status.cls}"><span class="data-ready-mark">${status.mark}</span><span><b>${esc(lane.label)}</b>${preview?`<small class="data-requirement-preview">${esc(preview)}</small>`:""}<small>${esc(lane.description||"")}</small>${status.note?`<small>${esc(status.note)}</small>`:""}<small>${esc(groupHint)}</small><small>${esc(fileNote)}</small>${locationNote?`<small class="data-location-note">${esc(locationNote)}</small>`:""}</span><span class="data-state">${esc(status.label)}</span><span class="data-ready-chevron">›</span></summary><div class="data-ready-group-body"><div class="data-group-actions"><span class="hint">${chineseUI()?"整组操作":"Actions for this group"}</span>${folderButton}<button class="data-resolve" data-data-lane="${esc(lane.id)}">${chineseUI()?"让 Agent 解决整组":"Resolve group with agent"}</button></div>${requirementItems}</div></details>`;
   }).join("");
   const inputRoot=visibleLanes.map(lane=>lane.input_root).find(Boolean)||{relative_path:"inputs"};
   const activeCopy=chineseUI()?`根据 ${runModels.join("、")} KI 动态生成 · ${totalDeclared} 项要求`:`Built dynamically from ${runModels.join(", ")} KI · ${totalDeclared} requirements`;
@@ -1060,23 +1101,11 @@ function renderData(data){
     ${files.length?`<table class="filetable">${files.map(f=>`<tr><td><b>${esc(f.name)}</b><br><span style="color:var(--fg-3)">${esc(f.relative_path)}</span></td><td style="text-align:right">${sizeLabel(f.size)}</td></tr>`).join("")}</table>`:
     '<div class="hint" style="margin:0">No local source files yet. This is not an error—the agent can begin by checking documented public sources.</div>'}</div>`;
   const checkedPaths=datasetChecks.length?`<div class="datacard"><h3>Checked data paths · ${datasetChecks.length}</h3><div class="hint" style="margin:0 0 6px">These marks come from real paths declared by the KI setup manifest, not from an AI guess.</div>${datasetChecks.map(item=>`<div class="dataitem"><div style="display:flex;align-items:flex-start;gap:6px"><b style="flex:1">${esc(item.name)}</b><span class="actiontag ${item.present?'ok':'warn'}">${item.present?'Present':'Not ready'}</span></div><small>${esc(item.model)}${item.optional?' · Optional':''}</small>${item.why?`<small>${esc(item.why)}</small>`:''}<small><code>${esc(item.expected_path||'Path not configured')}</code></small></div>`).join('')}</div>`:"";
-  const laneCards=lanes.filter(l=>l.count).map((lane,i)=>{
-    const shown=(lane.items||[]).slice(0,80);
-    const items=shown.map((item,itemIndex)=>{
-      const shared=(item.models||[]).length>1?`<span class="mchip">shared by ${(item.models||[]).map(esc).join(' + ')}</span>`:`<span class="mchip">${esc((item.models||[])[0]||'KI')}</span>`;
-      const variants=(item.variants||[]).map(v=>[v.model,v.unit,v.file].filter(Boolean).map(esc).join(' · ')).filter(Boolean);
-      const detail=item.description||item.notes||item.format||item.source_kind||"Declared by the KI";
-      const resolveLabel=item.action==="needs_decision"?"Decide with agent":item.action==="provide_or_find"?"Find with agent":"Prepare with agent";
-      return `<div class="dataitem"><div style="display:flex;gap:6px;align-items:flex-start"><b style="flex:1">${esc(item.name)}</b>${shared}</div><small>${esc(detail)}</small>${variants.length?`<small>${variants.join('<br>')}</small>`:''}<div class="requirement-actions"><span class="actiontag ${actionClass(item.action)}">${esc(item.action_label)}</span><button class="requirement-resolve" data-data-lane="${esc(lane.id)}" data-data-item="${itemIndex}">${resolveLabel}</button></div></div>`;
-    }).join("");
-    const more=lane.count>shown.length?`<div class="hint" style="margin:6px 0">${lane.count-shown.length} more requirements remain available to the agent.</div>`:"";
-    return `<details class="lane"><summary><span class="mark">${i+1}</span><span style="flex:1"><b>${esc(lane.label)}</b><small style="display:block;color:var(--fg-3)">${lane.count} internal KI requirement${lane.count===1?'':'s'}</small></span></summary><div class="lane-body"><div class="hint" style="margin:8px 0 2px">These details are for audit and debugging; the agent owns them.</div>${items}${more}</div></details>`;
-  }).join("");
   const literature=papers.length||missingPapers.length?`<div class="datacard"><div style="display:flex;align-items:center;gap:7px"><h3 style="flex:1">Optional model reading</h3><button id="paper-add" style="padding:4px 8px">Add paper PDF</button></div>
     <div class="hint" style="margin:0 0 6px">The KI ships paper metadata, not copyrighted PDFs. These are recommendations for this model; they do not block a run.</div>${referenceFiles.length?`<div class="dataitem"><b>Added to this project · ${referenceFiles.length}</b><small>${referenceFiles.map(f=>esc(f.name)).join(', ')}</small></div>`:''}${papers.map(lib=>`<details><summary><b>${esc(lib.model)}</b> · ${lib.count} papers · ${lib.open_access} open access</summary>${(lib.recommended||[]).map(p=>`<a class="paperlink" href="${esc(p.url)}" target="_blank" rel="noreferrer">${esc(p.title||p.doi)}<small>${esc(p.role||'reference')} · ${p.access==='open'?'open access':'use your own access'}</small></a>`).join('')}</details>`).join('')}${missingPapers.length?`<div class="hint" style="margin:7px 0">No paper metadata yet for: ${missingPapers.map(esc).join(', ')}.</div>`:''}
     <div class="hint" style="margin:8px 0 0">If you legally download a paper, add it here so the agent can use it inside this project. GeoForge never republishes it.</div></div>`:"";
   const totalInternal=lanes.reduce((n,l)=>n+(l.count||0),0);
-  const advanced=`<details class="datacard advanced"><summary>See technical data details</summary><div class="advanced-body"><div class="hint" style="margin:0 0 9px">Full KI contract · ${totalInternal} declared fields and files. These details are for audit, reproducibility, and debugging; the agent handles them during normal use.</div><div class="hint" style="margin:0 0 9px">Project: <code>${esc(data.project_path)}</code></div>${checkedPaths}${laneCards}${filecard}${literature}</div></details>`;
+  const advanced=`<details class="datacard advanced"><summary>See technical data details</summary><div class="advanced-body"><div class="hint" style="margin:0 0 9px">Full KI contract · ${totalInternal} declared fields and files. Every declared requirement can now be opened and questioned in the main data card above. This section keeps file-path checks, project files, and optional literature for audit and debugging.</div><div class="hint" style="margin:0 0 9px">Project: <code>${esc(data.project_path)}</code></div>${checkedPaths}${filecard}${literature}</div></details>`;
   return `${summary}${progress}${dataOverview}${dataSources}${calibrationCard}${human}${advanced}`;
 }
 function calibrationAgentPrompt(data){
@@ -1113,13 +1142,41 @@ function dataAgentPrompt(data,lane,item=null){
   if(chineseUI())return `请根据所选 KI（${models.join("、")||"自动 KI"}）解决本项目的“${lane&&lane.label||"输入数据"}”。该组由 KI 声明的要求包括：${scope}。先检查项目中已经存在的数据并验证，避免重复下载；然后严格使用 KI 的工具和规则，查找公开数据、转换、推导或生成仍缺少的内容。把所有文件、来源、版本、校验和及处理步骤保存在项目文件夹中。只有遇到私有/受许可数据或我必须做出的科学决定时才暂停，并给我一个简短的选择弹窗。完成后运行真实的 KI 输入检查，用简单的话报告已解决、仍缺少和下一步。`;
   return `Resolve the “${lane&&lane.label||"input data"}” group for this project using the selected KI (${models.join(", ")||"Auto KI"}). KI-declared requirements in this group include: ${scope}. First inspect and validate data already in the project so it is not downloaded twice. Then use the KI's own tools and rules to find public data, convert, derive, or generate what is still missing. Save every file plus source, version, checksums, and transformation steps in the project folder. Pause only for private/licensed data or a scientific decision I must make, and present that as one short structured choice. Finally run the real KI input checks and report in simple words what was resolved, what remains, and the next step.`;
 }
-async function startDataAgent(data,lane,item=null){
-  const prompt=dataAgentPrompt(data,lane,item);
+function dataExplainPrompt(data,lane,item){
+  const prep=data&&data.preparation||{},run=data&&data.project_run||{};
+  const candidates=item&&Array.isArray(item.models)&&item.models.length?item.models:Array.isArray(run.selected_kis)&&run.selected_kis.length?run.selected_kis:(prep.models||[]).map(model=>model.name);
+  const models=candidates.filter(Boolean);
+  const facts=[
+    `name: ${item&&item.name||"unnamed requirement"}`,
+    `KI: ${models.join(", ")||"selected KI"}`,
+    `category: ${lane&&lane.label||"input data"}`,
+    item&&item.description&&`description: ${item.description}`,
+    item&&item.unit&&`unit: ${item.unit}`,
+    item&&item.file&&`expected file: ${item.file}`,
+    item&&(item.format||item.model_input_format)&&`format: ${item.format||item.model_input_format}`,
+    item&&item.source_kind&&`source type: ${item.source_kind}`,
+    item&&item.default!=null&&`KI default: ${displayValue(item.default)}`,
+    item&&item.valid_range!=null&&`valid range: ${displayValue(item.valid_range)}`,
+    item&&item.notes&&`notes: ${item.notes}`,
+  ].filter(Boolean).join("\n");
+  if(chineseUI())return `请用简单中文解释本项目中的这一项 KI 输入要求：\n${facts}\n先读取所选 KI 中与这项要求直接相关的文档，再检查当前项目文件，但这次只解释，不要下载、生成、移动或修改任何文件。请依次说明：1）它是什么；2）模型为什么需要它；3）常见单位、格式和项目内位置；4）GeoForge 通常如何获得或生成它；5）什么时候必须由我提供数据或做科学决定；6）当前项目里它是否已经有可验证的依据。不要把所属类别“已就绪”误说成这一单项已经单独验证；如果无法单项确认，请明确说只能确认到类别级别。最后用一句话告诉我下一步是否需要操作。`;
+  return `Explain this KI input requirement in plain language for the current project:\n${facts}\nFirst read only the directly relevant selected-KI documentation and inspect current project files, but for this question do not download, generate, move, or modify anything. Explain: 1) what it is; 2) why the model needs it; 3) common units, format, and project location; 4) how GeoForge normally obtains or creates it; 5) when I must provide data or make a scientific decision; and 6) whether this project has verifiable evidence for this item. Do not turn category-level readiness into a claim that this individual item was separately validated; say so if only category-level evidence exists. End with one sentence stating whether I need to act next.`;
+}
+async function sendDataPanelPrompt(prompt,kind="data"){
   $("#datapanel").classList.remove("open");$("#msg").value=prompt;
   if(CUR)DRAFTS.set(CUR.id,prompt);
   $("#msg").style.height="auto";$("#msg").style.height=$("#msg").scrollHeight+"px";
-  if(sessionBusy()){$("#hint").textContent=chineseUI()?"本对话仍在处理。数据请求已放入输入框，本轮完成后即可发送。":"This chat is still working. The data request is in the composer and can be sent when it finishes.";$("#msg").focus();return;}
+  if(sessionBusy()){
+    $("#hint").textContent=chineseUI()?(kind==="explain"?"本对话仍在处理。解释问题已放入输入框，本轮完成后即可发送。":"本对话仍在处理。数据请求已放入输入框，本轮完成后即可发送。"):(kind==="explain"?"This chat is still working. The explanation question is in the composer and can be sent when it finishes.":"This chat is still working. The data request is in the composer and can be sent when it finishes.");
+    $("#msg").focus();return;
+  }
   await send();
+}
+async function startDataAgent(data,lane,item=null){
+  await sendDataPanelPrompt(dataAgentPrompt(data,lane,item),"data");
+}
+async function explainDataItem(data,lane,item){
+  await sendDataPanelPrompt(dataExplainPrompt(data,lane,item),"explain");
 }
 async function refreshData(){
   if(!CUR)return;
@@ -1132,6 +1189,9 @@ async function refreshData(){
   });
   document.querySelectorAll("#databody .requirement-resolve").forEach(button=>button.onclick=async()=>{
     const lane=(data.preparation&&data.preparation.lanes||[]).find(item=>item.id===button.dataset.dataLane),item=lane&&(lane.items||[])[Number(button.dataset.dataItem)];if(lane&&item)await startDataAgent(data,lane,item);
+  });
+  document.querySelectorAll("#databody .requirement-explain").forEach(button=>button.onclick=async()=>{
+    const lane=(data.preparation&&data.preparation.lanes||[]).find(item=>item.id===button.dataset.dataLane),item=lane&&(lane.items||[])[Number(button.dataset.dataItem)];if(lane&&item)await explainDataItem(data,lane,item);
   });
   document.querySelectorAll("#databody .data-folder").forEach(button=>button.onclick=async()=>{
     const path=button.dataset.openPath||"";

@@ -1144,7 +1144,7 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("refreshSessionList", page)
         self.assertIn("setInterval(refreshSessionList,5000)", page)
         self.assertIn("Only confirmed gaps", page)
-        self.assertIn("Resolve with agent", page)
+        self.assertIn("Resolve group with agent", page)
         self.assertIn("Model data appears after the conversation chooses a KI.", page)
         self.assertIn("Built dynamically from", page)
         self.assertIn('data-open-path', page)
@@ -1153,6 +1153,11 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("local_file_count", page)
         self.assertIn("dataAgentPrompt", page)
         self.assertIn("requirement-resolve", page)
+        self.assertIn("data-requirement-card", page)
+        self.assertIn("requirement-explain", page)
+        self.assertIn("dataExplainPrompt", page)
+        self.assertIn("Ask agent: what is this?", page)
+        self.assertIn("category-level readiness", page)
         self.assertIn("KI-declared requirements in this group include", page)
         self.assertIn("See technical data details", page)
         self.assertIn("Checked data paths", page)
@@ -1208,6 +1213,14 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("chatForHelp", page)
         self.assertIn('<script src="/i18n.js"></script>', page)
         self.assertIn('我在设置', page)
+        self.assertIn("presentSetupLog", page)
+        self.assertIn("summarizeToolBlock", page)
+        self.assertIn("Waiting for your permission", page)
+        self.assertIn("setInterval(loadState,1500)", page)
+        self.assertIn("managedWorkspacePermission", page)
+        self.assertIn("View the full technical report", page)
+        self.assertIn("Allow for this model — continue", page)
+        self.assertNotIn('req.expected_path||["download","licence"]', page)
         chat = (Path(__file__).parents[1] / "kiss_cli" / "web" / "app.html").read_text()
         self.assertIn("kiss.draft.", chat)
 
@@ -1892,6 +1905,20 @@ class AgentSetupTests(unittest.TestCase):
         args, enforcement = policy.claude_args(pol)
         self.assertEqual(enforcement, policy.Enforcement.EXACT)
         self.assertIn("Bash(git:*)", args)
+
+    def test_setup_policy_can_execute_a_model_scoped_downloaded_toolchain(self):
+        with tempfile.TemporaryDirectory() as td:
+            binaries = Path(td) / "binaries"
+            cfg = SimpleNamespace(roles={"binaries": binaries})
+            pol = policy.Policy("APSIM")
+            gui._grant_setup_execution(pol, cfg)
+            keys = {grant.key() for grant in pol.grants}
+            self.assertEqual(pol.posture, policy.Posture.WORKSPACE_WRITE)
+            self.assertIn(f"exec:{binaries}", keys)
+            self.assertIn("exec:dotnet", keys)
+            args, _ = policy.claude_args(pol)
+            self.assertIn(f"Bash({binaries}/**)", args)
+            self.assertIn("Bash(dotnet:*)", args)
 
     def test_policy_grants_configured_python_and_declared_model_runtime(self):
         with tempfile.TemporaryDirectory() as td:

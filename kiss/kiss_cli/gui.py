@@ -43,6 +43,31 @@ INPUT_GROUPS = (
     ("boundary_conditions", "Boundary & controls"),
 )
 
+SETUP_BUILD_COMMANDS = (
+    "git", "cmake", "make", "gmake", "ninja", "meson", "dotnet",
+    "python", "python3", "pip", "pip3", "uv", "cargo", "go",
+    "gcc", "g++", "clang", "clang++", "gfortran", "tar", "unzip",
+    "curl", "patch", "file",
+)
+
+
+def _grant_setup_execution(pol: policy.Policy, cfg) -> None:
+    """Grant model-scoped build tools without opening the whole machine.
+
+    A setup agent may download a private toolchain into this model's own
+    ``binaries`` directory (APSIM's local .NET SDK is one example). Granting
+    only the final model install prefix lets the download succeed but then
+    prevents the agent from executing the staged compiler. The binaries role
+    is already inside this KI's private workspace, so allowing executables
+    below it is both sufficient and narrowly scoped.
+    """
+    pol.posture = policy.Posture.WORKSPACE_WRITE
+    binaries = cfg.roles.get("binaries")
+    if binaries is not None:
+        pol.add("exec", binaries, "model-scoped setup toolchain and binaries")
+    for command in SETUP_BUILD_COMMANDS:
+        pol.add("exec", command, "software setup build tool")
+
 
 def _with_heartbeats(stream, interval: float = 12.0):
     """Yield ``None`` while a blocking provider stream is still alive.
@@ -1544,11 +1569,7 @@ class Handler(BaseHTTPRequestHandler):
                 # Build programs are commands, not data paths. Claude can map
                 # these exact command grants; Codex maps the same intent to its
                 # native workspace-write sandbox.
-                for command in ("git", "cmake", "make", "gmake", "ninja", "meson",
-                                "python", "python3", "pip", "pip3", "uv", "cargo",
-                                "go", "gcc", "g++", "clang", "clang++", "gfortran",
-                                "tar", "unzip", "curl", "patch", "file"):
-                    pol.add("exec", command, "software setup build tool")
+                _grant_setup_execution(pol, cfg)
                 full = system + "\n\n[TASK]\n" + task
                 extra = [str(live_ki.root), str(root)]
                 stream = providers.run(
@@ -2269,14 +2290,9 @@ class Handler(BaseHTTPRequestHandler):
         if framework:
             pol.add("read", framework, "shared calibration engine")
         if needs_setup:
-            pol.posture = policy.Posture.WORKSPACE_WRITE
+            _grant_setup_execution(pol, cfg)
             pol.add("read", project, "this chat's local project")
             pol.add("write", project, "scenario inputs, runs, outputs, and artifacts")
-            for command in ("git", "cmake", "make", "gmake", "ninja", "meson",
-                            "python", "python3", "pip", "pip3", "uv", "cargo",
-                            "go", "gcc", "g++", "clang", "clang++", "gfortran",
-                            "tar", "unzip", "curl", "patch", "file"):
-                pol.add("exec", command, "software setup build tool")
         for extra_ki in kis[1:]:
             extra = policy.Policy.derive(extra_ki, self._manifest(extra_ki), cfg)
             for grant in extra.all_grants():

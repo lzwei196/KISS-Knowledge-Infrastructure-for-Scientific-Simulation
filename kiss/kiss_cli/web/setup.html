@@ -35,6 +35,9 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
 .request{border:1px solid color-mix(in srgb,var(--warn) 45%,var(--line));background:color-mix(in srgb,var(--warn) 7%,var(--raised));
   border-radius:13px;padding:13px}.request h4{font-size:14px;margin:5px 0}.request p{color:var(--fg2);margin:5px 0 10px}
 .request a{color:var(--brand);font-weight:650}.label{font-size:10px;letter-spacing:.08em;font-weight:800;color:var(--warn)}
+.managed-permission{margin:10px 0;padding:9px 10px;border-radius:9px;background:var(--brand50);color:var(--fg2);font-size:12px}
+.request-details{margin:10px 0;color:var(--fg2);font-size:12px}.request-details summary{cursor:pointer;color:var(--fg);font-weight:650}
+.request-report{max-height:210px;overflow:auto;white-space:pre-wrap;margin-top:8px;padding:9px;background:var(--surface);border-radius:8px;font:11px/17px ui-monospace,Menlo,monospace}
 .path{font:11px/17px ui-monospace,Menlo,monospace;overflow-wrap:anywhere;padding:7px 9px;background:var(--surface);border-radius:8px;margin:8px 0}
 .command{display:flex;gap:7px;align-items:center;margin:9px 0}.command code{flex:1;font:11px/17px ui-monospace,Menlo,monospace;overflow-wrap:anywhere;padding:8px 9px;background:var(--surface);border-radius:8px}.command button{white-space:nowrap}
 .request input[type=text]{width:100%;margin:6px 0 9px}.upload{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:9px 0}
@@ -91,8 +94,48 @@ button:disabled{opacity:.45;cursor:not-allowed}.shell{max-width:1260px;margin:0 
 <script>
 const $=s=>document.querySelector(s), params=new URLSearchParams(location.search), MODEL=params.get("model")||"";
 const esc=s=>String(s??"").replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'\"':"&quot;"}[c]));
-let STATE=null, PROVIDERS=[], busy=false;
+let STATE=null, PROVIDERS=[], busy=false, rawLog="";
 function fmtSize(n){return n>1048576?(n/1048576).toFixed(1)+" MB":n>1024?(n/1024).toFixed(1)+" KB":n+" B"}
+function isZh(){return !!(window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN")}
+function toolActivity(name){
+  if(["Read","Glob","Grep","ReadFile","list_ki_files","read_ki_file"].includes(name))return isZh()?"正在读取 KI 与诊断":"Reading the KI and diagnostics";
+  if(["Write","Edit","write_file","report_project_progress"].includes(name))return isZh()?"正在保存设置状态":"Saving setup state";
+  if(["Bash","run_setup_command","run_ki_tool"].includes(name))return isZh()?"正在运行安装命令":"Running setup commands";
+  return (isZh()?"正在使用工具：":"Using tool: ")+name;
+}
+function summarizeToolBlock(block){
+  const names=[...block.matchAll(/\[\[GEOF_TOOL:([A-Za-z0-9_.-]+)\]\]/g)].map(x=>x[1]);
+  const counts=new Map();for(const name of names){const label=toolActivity(name);counts.set(label,(counts.get(label)||0)+1)}
+  return "\n"+[...counts].map(([label,count])=>`↳ ${label}${count>1?` · ${count} steps`:"…"}`).join("\n")+"\n";
+}
+function presentSetupLog(value){
+  return String(value||"").replace(/\u200b/g,"")
+    .replace(/(?:\s*\[\[GEOF_TOOL:[A-Za-z0-9_.-]+\]\]\s*)+/g,summarizeToolBlock)
+    .replace(/\n{3,}/g,"\n\n").trimStart();
+}
+function latestActivity(){
+  const names=[...rawLog.matchAll(/\[\[GEOF_TOOL:([A-Za-z0-9_.-]+)\]\]/g)];
+  return names.length?toolActivity(names[names.length-1][1]):(isZh()?"Agent 正在处理":"Agent working");
+}
+function drawRunState(){
+  const waiting=STATE&&STATE.request&&STATE.request.status==="waiting";
+  if(!busy){$("#runstate").textContent="";return}
+  if(waiting){$("#runstate").textContent=isZh()?"正在等待你的授权":"Waiting for your permission";return}
+  $("#runstate").innerHTML=`<span class="spin"></span> ${esc(latestActivity())}`;
+}
+function managedWorkspacePermission(req){
+  if(!req||req.kind!=="permission"||!STATE||!STATE.workdir)return false;
+  const first=String(req.command||"").trim().split(/\s+/)[0].replace(/^["']|["']$/g,"");
+  return first.startsWith(String(STATE.workdir).replace(/\/$/,"")+"/binaries/");
+}
+function requestSummary(req){
+  const message=String(req.message||"").trim();
+  if(message.length<=650)return message;
+  if(req.kind==="permission")return isZh()?`${MODEL} 的源码和本地工具链已经准备好。Agent 只需要在这个模型工作区内运行一条命令，然后即可继续验证。`:
+    `${MODEL} source and its local toolchain are ready. The agent needs to run one command inside this model workspace, then it can continue verification.`;
+  return isZh()?"Agent 已经完成能够自主处理的步骤。下面只显示现在需要你处理的一件事；完整技术报告可以展开查看。":
+    "The agent completed the steps it could handle. The one action needed from you is shown below; expand the technical report for full details.";
+}
 function drawLLM(){const p=PROVIDERS.find(x=>x.name===$("#provider").value)||{},ms=p.models||[];
   $("#llm").innerHTML=(p.kind==="cli"?'<option value="">Agent default</option>':'')+ms.map(m=>`<option>${esc(m)}</option>`).join("");
   $("#llm").style.display=ms.length||p.kind==="cli"?"":"none";}
@@ -103,17 +146,21 @@ function draw(){if(!STATE)return;const sw=STATE.software||{},ok=!!sw.can_run,fai
   $("#title").textContent=STATE.name;$("#headmodel").textContent=STATE.name;$("#reference").textContent=STATE.reference||STATE.version||"Knowledge Infrastructure";
   $("#statusbadge").className=`badge ${ok?'ok':failed?'bad':'warn'}`;$("#statusbadge").textContent=sw.label||"Setup needed";
   $("#chat").style.display=ok?"":"none";$("#start").textContent=ok?"Re-check with agent":STATE.agent_ready?"Continue agent":"Start agent setup";
-  const log=$(".log");if(!busy&&STATE.log_tail){log.textContent=STATE.log_tail;log.scrollTop=log.scrollHeight;}
+  const log=$(".log");if(!busy&&STATE.log_tail){rawLog=STATE.log_tail;log.textContent=presentSetupLog(rawLog);log.scrollTop=log.scrollHeight;}
   const req=STATE.request,att=STATE.attention;
   if(req&&req.status==="waiting"){
     $("#needbadge").className="badge warn";$("#needbadge").textContent="Needs you now";
+    const managed=managedWorkspacePermission(req);
     const link=req.url?`<p><a href="${esc(req.url)}" target="_blank" rel="noreferrer">Open the official page ↗</a></p>`:"";
     const path=req.expected_path?`<div class="path">Needed at: ${esc(req.expected_path)}</div>`:"";
     const command=req.command?`<div class="command"><code>${esc(req.command)}</code><button id="copycommand">Copy</button></div>`:"";
-    const upload=(req.expected_path||["download","licence"].includes(req.kind))?`<div class="upload"><input id="userfile" type="file"><button id="upload">Give file to agent</button></div>`:"";
-    $("#need").innerHTML=`<div class="request"><div class="label">${esc((req.kind||'ACTION').toUpperCase())}</div><h4>${esc(req.title)}</h4><p>${esc(req.message)}</p>${link}${path}
+    const upload=(["download","licence"].includes(req.kind))?`<div class="upload"><input id="userfile" type="file"><button id="upload">Give file to agent</button></div>`:"";
+    const managedNote=managed?`<div class="managed-permission">${isZh()?"GeoForge 可以安全地为这个模型工作区授予权限。无需打开终端或修改 Claude 的全局设置。":"GeoForge can safely grant this inside the model workspace. You do not need Terminal or a global Claude settings change."}</div>`:"";
+    const report=String(req.message||"").length>650?`<details class="request-details"><summary>${isZh()?"查看完整技术报告":"View the full technical report"}</summary><div class="request-report">${esc(req.message)}</div></details>`:"";
+    const resumeLabel=managed?(isZh()?"允许此模型并继续":"Allow for this model — continue"):"I've done this — continue";
+    $("#need").innerHTML=`<div class="request"><div class="label">${esc((req.kind||'ACTION').toUpperCase())}</div><h4>${esc(req.title)}</h4><p>${esc(requestSummary(req))}</p>${managedNote}${link}${path}
       ${command}${upload}
-      <input id="note" type="text" placeholder="Optional note for the agent"><div class="controls"><button class="primary" id="resume">I've done this — continue</button><button id="askhelp">I can't do this — help me</button></div></div>`;
+      ${report}<input id="note" type="text" placeholder="Optional note for the agent"><div class="controls"><button class="primary" id="resume">${esc(resumeLabel)}</button><button id="askhelp">I can't do this — help me</button></div></div>`;
     $("#resume").onclick=resumeAgent;$("#askhelp").onclick=chatForHelp;if($("#upload"))$("#upload").onclick=uploadFile;if($("#copycommand"))$("#copycommand").onclick=async()=>{await GeoForgeClipboard.write(req.command);$("#copycommand").textContent="Copied"};$("#start").disabled=true;
   }else if(att){
     $("#needbadge").className="badge warn";$("#needbadge").textContent="Action needed";
@@ -126,16 +173,17 @@ function draw(){if(!STATE)return;const sw=STATE.software||{},ok=!!sw.can_run,fai
       `<div class="explain">Nothing is waiting on you. The agent can continue working autonomously.${files?`<div class="files"><b>Files supplied</b>${files}</div>`:""}</div>`;
     $("#start").disabled=busy||!$("#provider").value;
   }
+  drawRunState();
   const steps=sw.steps||[];$("#verification").innerHTML=steps.length?`<div class="steps">${steps.map(s=>`<div class="step ${s.ok||s.recovered?'good':s.skipped?'skip':'bad'}"><span class="icon">${s.ok?'✓':s.recovered?'↺':s.skipped?'–':'✕'}</span><div><b>${esc(s.name)}${s.recovered?' · repaired':''}</b>${s.detail?`<details><summary>details</summary>${esc(s.detail)}</details>`:""}</div></div>`).join("")}</div>`:
     '<div class="explain">Not checked yet. The agent will run the KI preflight.</div>';
 }
 async function loadState(){if(!MODEL){$("#title").textContent="No KI selected";return;}const r=await fetch("/api/setup/"+encodeURIComponent(MODEL));STATE=await r.json();draw();}
-async function startAgent(){if(busy)return;busy=true;draw();const log=$(".log");log.textContent="";$("#runstate").innerHTML='<span class="spin"></span> agent working';
+async function startAgent(){if(busy)return;busy=true;rawLog="";draw();const log=$(".log");log.textContent="";drawRunState();
   try{const r=await fetch("/api/setup-agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,provider:$("#provider").value,llm_model:$("#llm").value})});
     if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||`HTTP ${r.status}`)}const rd=r.body.getReader(),dec=new TextDecoder();
-    for(;;){const{done,value}=await rd.read();if(done)break;log.textContent+=dec.decode(value,{stream:true});log.scrollTop=log.scrollHeight;}}
+    for(;;){const{done,value}=await rd.read();if(done)break;rawLog+=dec.decode(value,{stream:true});log.textContent=presentSetupLog(rawLog);drawRunState();log.scrollTop=log.scrollHeight;}rawLog+=dec.decode();}
   catch(e){const zh=window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN";
-    log.textContent+="\n"+(zh?"实时显示连接已中断。Agent 会在后台继续；此页面将从保存的日志中刷新状态。":"The live display was interrupted. The agent will continue in the background; this page will refresh from its saved log.")+"\n"}
+    rawLog+="\n"+(zh?"实时显示连接已中断。Agent 会在后台继续；此页面将从保存的日志中刷新状态。":"The live display was interrupted. The agent will continue in the background; this page will refresh from its saved log.")+"\n";log.textContent=presentSetupLog(rawLog)}
   busy=false;$("#runstate").textContent="";await loadState();}
 async function resumeAgent(){await fetch("/api/setup-resume",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,note:$("#note").value})});await loadState();startAgent();}
 async function chatForHelp(){
@@ -151,5 +199,5 @@ async function uploadFile(){const f=$("#userfile").files[0];if(!f)return;$("#upl
 async function useChat(){const r=await fetch("/api/sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({models:[MODEL],provider:$("#provider").value})});const s=await r.json();location.href="/?session="+encodeURIComponent(s.id)}
 $("#provider").onchange=drawLLM;$("#start").onclick=startAgent;$("#chat").onclick=useChat;$("#theme").onclick=()=>{const d=document.body.hasAttribute("data-dark");d?document.body.removeAttribute("data-dark"):document.body.setAttribute("data-dark","");localStorage.setItem("kiss-dark",d?"0":"1")};
 if(localStorage.getItem("kiss-dark")==="1"||(localStorage.getItem("kiss-dark")===null&&matchMedia("(prefers-color-scheme:dark)").matches))document.body.setAttribute("data-dark","");
-Promise.all([loadProviders(),loadState()]).then(()=>{draw();setInterval(()=>{if(!busy)loadState()},2500)});
+Promise.all([loadProviders(),loadState()]).then(()=>{draw();setInterval(loadState,1500)});
 </script></body></html>

@@ -1,6 +1,24 @@
 GeoForge Desktop — 127 Earth-system models with their KISS Knowledge
 Infrastructures, driven by the GeoForge agent.
 
+## What is new in v0.6.25
+
+- Every KI input requirement can now be opened independently. Each item shows
+  its purpose, unit, format, source, destination, preparation method, defaults,
+  valid range, and evidence on disk.
+- Every input item has a read-only “Ask Agent: what is this?” action and a
+  separate action for asking the agent to prepare, find, or decide that item.
+- Setup requests now appear immediately while an agent is still working.
+  Claude, Codex, Kimi, and API tool events are reduced to readable progress
+  instead of exposing raw `GEOF_TOOL` markers.
+- Downloaded build runtimes inside a model's own workspace—such as APSIM's
+  local .NET SDK—receive model-scoped execution permission. No global Claude
+  permission edit is needed.
+- Permission cards show one clear action with expandable technical details;
+  they no longer show an irrelevant file upload control.
+- Includes the complete project-folder, dynamic-data, calibration, bilingual
+  interface, file attachment, and inline-result work from the 0.6.24 source.
+
 ## Install
 
 **macOS** (Apple Silicon — M1 through M4)

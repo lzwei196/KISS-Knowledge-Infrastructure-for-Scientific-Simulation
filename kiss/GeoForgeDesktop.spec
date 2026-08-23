@@ -6,8 +6,8 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs, copy_metadata
 
 
-VERSION = "0.6.24"
-BUILD_NUMBER = "624"
+VERSION = "0.6.25"
+BUILD_NUMBER = "625"
 # PyInstaller exposes SPECPATH as the directory containing this spec.
 SOURCE = Path(SPECPATH).resolve()
 REPO = SOURCE.parent

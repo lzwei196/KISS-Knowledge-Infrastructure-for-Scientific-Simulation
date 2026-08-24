@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import api, calibration, clipboard, doctor, handoff, install, kdtstudio, mcp, paths, policy, port, preparation, projectrun, prompt, providers, recipe, sessions, settings, setup as setup_flow, skilllib, tls
+from . import api, calibration, clipboard, doctor, handoff, install, kdtstudio, mcp, paths, policy, port, preparation, projectrun, projectview, prompt, providers, recipe, sessions, settings, setup as setup_flow, skilllib, tls
 from .catalog import Catalog, KI
 from .manifest import Manifest
 
@@ -164,6 +164,18 @@ one before asking for a plot, analysis, literature search, or document.
 - Show every generated plot in the reply with exact Markdown such as
   `![Yield through time](artifacts/yield-through-time.png)` (SVG is also valid).
 - Never claim a plot was created unless the artifact file actually exists.
+- Maintain this chat's dynamic Project View when a visual dashboard makes the
+  modelling state or result easier to understand. Direct-API agents call
+  `publish_project_view`; CLI agents write the same version-1 JSON contract to
+  `{project}/artifacts/project-view.json` only after its referenced artifacts
+  exist. Supported panel kinds are metric, image, animation, map, table, file,
+  and model3d. A metric needs `value`; every other kind needs a `path` below
+  `artifacts/`. Optional top-level fields are summary, layout (`grid` or
+  `single`), skills, and kis. Optional panel fields are id, caption, status,
+  unit, and renderer. Do not write HTML or JavaScript: GeoForge owns rendering.
+- For time-varying hydrodynamics, prefer a real GIF, WebP, MP4, or WebM artifact
+  in an animation/map panel. For BIM or 3D, publish a GLB/GLTF file plus a
+  rendered image/video preview until the trusted 3D renderer is available.
 """
 
 RESPONSE_PRESENTATION_RULES = """[USER-FACING RESPONSE]
@@ -314,6 +326,17 @@ def _resolve_artifact(workroot: Path, sid: str, rel: str) -> tuple[Path, str]:
     if path.stat().st_size > 50 * 1024 * 1024:
         raise ValueError("artifact is larger than 50 MB")
     return path, ctype
+
+
+def _resolve_project_view_asset(workroot: Path, sid: str, rel: str) -> tuple[Path, str]:
+    """Resolve a Project View asset in the selected chat's project."""
+    if not sessions.valid_id(sid):
+        raise ValueError("invalid session id")
+    session = sessions.load(workroot, sid)
+    if not session:
+        raise FileNotFoundError("no such session")
+    project = sessions.project_path(workroot, session)
+    return projectview.resolve_asset(project, unquote(rel or ""))
 
 
 def _short(value, limit: int = 500) -> str:
@@ -945,6 +968,27 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": str(e)}, 400)
             except (FileNotFoundError, OSError) as e:
                 return self._json({"error": str(e)}, 404)
+
+        if route.startswith("/api/session/") and route.endswith("/view-asset"):
+            sid = route.split("/")[3]
+            rel = (parse_qs(urlparse(self.path).query).get("path") or [""])[0]
+            try:
+                path, ctype = _resolve_project_view_asset(self.workroot, sid, rel)
+                return self._send_artifact(path, ctype)
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
+            except (FileNotFoundError, OSError) as e:
+                return self._json({"error": str(e)}, 404)
+
+        if route.startswith("/api/session/") and route.endswith("/view"):
+            sid = route.split("/")[3]
+            if not sessions.valid_id(sid):
+                return self._json({"error": "invalid session id"}, 400)
+            session = sessions.load(self.workroot, sid)
+            if not session:
+                return self._json({"error": "no such session"}, 404)
+            project = sessions.project_path(self.workroot, session)
+            return self._json(projectview.load(project))
 
         if route.startswith("/api/session/") and route.endswith("/data"):
             sid = route.split("/")[3]

@@ -297,6 +297,38 @@ def tool_schemas(ki, *, setup_mode: bool = False,
                 }, "required": ["output_path", "series"]},
             },
             {
+                "name": "publish_project_view",
+                "description": (
+                    "Publish or update this chat's safe dynamic Project View after "
+                    "creating real artifacts. GeoForge renders the declared metrics, "
+                    "images, animations, maps, CSV tables, files, and 3D-model "
+                    "previews; it never executes model-written HTML or JavaScript. "
+                    "Every path must name an existing file below artifacts/."
+                ),
+                "input_schema": {"type": "object", "properties": {
+                    "version": {"type": "integer", "enum": [1]},
+                    "title": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "layout": {"type": "string", "enum": ["grid", "single"]},
+                    "skills": {"type": "array", "items": {"type": "string"}},
+                    "kis": {"type": "array", "items": {"type": "string"}},
+                    "panels": {"type": "array", "maxItems": 24, "items": {
+                        "type": "object", "properties": {
+                            "id": {"type": "string"},
+                            "kind": {"type": "string", "enum": [
+                                "metric", "image", "animation", "map", "table",
+                                "file", "model3d"]},
+                            "title": {"type": "string"},
+                            "caption": {"type": "string"},
+                            "status": {"type": "string"},
+                            "value": {},
+                            "unit": {"type": "string"},
+                            "path": {"type": "string"},
+                            "renderer": {"type": "string"},
+                        }, "required": ["kind", "title"]}},
+                }, "required": ["title", "panels"]},
+            },
+            {
                 "name": "request_user_action",
                 "description": (
                     "Pause project preparation and show one concrete action to the "
@@ -725,6 +757,19 @@ def execute_tool(name: str, args: dict, ki, cfg, *, setup_mode: bool = False,
             raise ToolError(str(e)) from None
         return (f"{summary}\nInclude it in the reply as: "
                 f"![{args.get('title') or p.stem}]({rel.as_posix()})")
+
+    if project_mode and name == "publish_project_view":
+        from . import projectview as _projectview
+        try:
+            state = _projectview.publish(project_root, args, source="direct_api")
+        except (OSError, TypeError, ValueError) as exc:
+            raise ToolError(str(exc)) from None
+        return ("Project View published. GeoForge will render it for this chat.\n" +
+                json.dumps({
+                    "title": state["title"],
+                    "panels": len(state["panels"]),
+                    "path": "artifacts/project-view.json",
+                }, indent=2, ensure_ascii=False))
 
     if project_mode and not setup_mode and name == "request_user_action":
         from . import projectrun as _projectrun, setup as _setup

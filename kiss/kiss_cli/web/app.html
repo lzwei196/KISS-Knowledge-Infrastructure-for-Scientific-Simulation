@@ -178,6 +178,16 @@ textarea:focus{outline:none;border-color:var(--brand)}
 .inspector.open{transform:translateX(0)}
 .inspecthead{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line)}
 .inspecthead h2{font-size:15px;margin:0;flex:1}.inspectbody{padding:14px 16px;overflow-y:auto;min-height:0}
+.project-view-intro{padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:linear-gradient(135deg,var(--brand-50),var(--raised) 70%);margin-bottom:10px}
+.project-view-intro h3{font-size:14px;margin:0 0 4px}.project-view-intro p{font-size:11.5px;color:var(--fg-2);line-height:17px;margin:0}
+.view-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}.view-tag{padding:2px 7px;border:1px solid var(--line);border-radius:99px;color:var(--fg-2);font-size:10.5px;background:var(--surface)}
+.view-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.view-grid.single{grid-template-columns:1fr}
+.view-card{min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--raised);overflow:hidden}.view-card-head{display:flex;align-items:flex-start;gap:7px;padding:9px 10px;border-bottom:1px solid var(--line-1)}.view-card-head b{font-size:12.5px;flex:1}.view-card-head small{font-size:9.5px;color:var(--fg-3);text-transform:uppercase;letter-spacing:.04em}
+.view-media{display:block;width:100%;max-height:410px;object-fit:contain;background:#fff}.view-video{width:100%;max-height:410px;display:block;background:#111}.view-caption{padding:7px 10px;color:var(--fg-3);font-size:10.5px;line-height:15px;border-top:1px solid var(--line-1)}
+.view-metric{padding:17px 12px 15px}.view-metric strong{font-size:27px;line-height:30px;letter-spacing:-.02em}.view-metric span{color:var(--fg-2);font-size:12px;margin-left:4px}.view-metric small{display:block;color:var(--fg-3);margin-top:5px}
+.view-table-wrap{overflow:auto;max-height:330px}.view-table{width:100%;border-collapse:collapse;font-size:10px}.view-table th,.view-table td{padding:5px 7px;border-bottom:1px solid var(--line-1);text-align:left;white-space:nowrap}.view-table th{position:sticky;top:0;background:var(--surface);z-index:1}
+.view-file{display:flex;gap:9px;align-items:center;padding:13px 11px;color:var(--fg);text-decoration:none}.view-file .mark{flex:0 0 auto}.view-file span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.view-empty{padding:24px 16px;text-align:center;color:var(--fg-3)}.view-empty b{display:block;color:var(--fg);font-size:14px;margin-bottom:5px}
+@media(max-width:620px){.view-grid{grid-template-columns:1fr}}
 .datacard{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-bottom:10px}
 .datacard h3{font-size:13.5px;margin:0 0 6px}.dataitem{padding:7px 0;border-top:1px solid var(--line-1)}
 .dataitem:first-child{border-top:0}.dataitem small{display:block;color:var(--fg-3);line-height:16px}
@@ -256,6 +266,7 @@ textarea:focus{outline:none;border-color:var(--brand)}
     <span id="kistatus" class="statuspill">Chooses for each task</span>
     <button class="projectbtn" id="openproject" disabled title="Open this chat's local project folder in Finder">▣ Folder</button>
     <button class="projectbtn" id="opendata" disabled title="See what GeoForge is doing in this project">◇ <span id="runlabel">Project status</span></button>
+    <button class="projectbtn" id="openview" disabled title="Open this chat's dynamic Project View">▤ <span id="viewlabel">Project view</span></button>
     <div class="agenttools">
       <span class="agentlabel">AI CONNECTION</span>
       <div class="seg" id="kindtog" title="Use an installed agent or a direct API key">
@@ -375,6 +386,16 @@ textarea:focus{outline:none;border-color:var(--brand)}
       <span class="hint" id="data-msg" style="align-self:center;margin:0"></span>
     </div>
   </section>
+  <section class="inspector" id="viewpanel">
+    <div class="inspecthead"><span class="mark">▤</span><h2>Project view</h2><button id="view-close">✕</button></div>
+    <div class="inspectbody" id="viewbody"></div>
+    <div style="padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap">
+      <button class="primary" id="view-agent">Build or update with Agent</button>
+      <button id="view-folder">Open project folder</button>
+      <button id="view-refresh">Refresh</button>
+      <span class="hint" id="view-msg" style="align-self:center;margin:0"></span>
+    </div>
+  </section>
 </main>
 <script src="/clipboard.js"></script>
 <script src="/i18n.js"></script>
@@ -389,8 +410,8 @@ function artifactImage(alt,raw,sid){
   const caption=alt||parts[parts.length-1];
   return `<figure class="chat-artifact"><a href="${src}" target="_blank" rel="noreferrer"><img src="${src}" alt="${alt}" loading="lazy"></a><figcaption>${caption}</figcaption></figure>`;
 }
-const TOOL_LABELS={list_project_files:"Checked project files",read_project_file:"Read project context",list_ki_files:"Inspected KI files",read_ki_file:"Read KI guidance",run_preflight:"Checked the model installation",list_skills:"Checked available skills",read_skill:"Read skill instructions",run_ki_tool:"Ran a KI preparation tool",write_project_file:"Prepared a project file",create_project_plot:"Created a plot",report_project_progress:"Updated project progress",request_user_action:"Prepared a request for you",run_builtin_setup:"Ran the software setup recipe",run_setup_command:"Ran a setup command"};
-const TOOL_LABELS_ZH={list_project_files:"已检查项目文件",read_project_file:"已读取项目上下文",list_ki_files:"已检查 KI 文件",read_ki_file:"已读取 KI 指南",run_preflight:"已检查模型安装",list_skills:"已检查可用技能",read_skill:"已读取技能说明",run_ki_tool:"已运行 KI 准备工具",write_project_file:"已准备项目文件",create_project_plot:"已生成图表",report_project_progress:"已更新项目进度",request_user_action:"已准备需要你处理的请求",run_builtin_setup:"已运行软件设置流程",run_setup_command:"已运行设置命令"};
+const TOOL_LABELS={list_project_files:"Checked project files",read_project_file:"Read project context",list_ki_files:"Inspected KI files",read_ki_file:"Read KI guidance",run_preflight:"Checked the model installation",list_skills:"Checked available skills",read_skill:"Read skill instructions",run_ki_tool:"Ran a KI preparation tool",write_project_file:"Prepared a project file",create_project_plot:"Created a plot",publish_project_view:"Updated Project View",report_project_progress:"Updated project progress",request_user_action:"Prepared a request for you",run_builtin_setup:"Ran the software setup recipe",run_setup_command:"Ran a setup command"};
+const TOOL_LABELS_ZH={list_project_files:"已检查项目文件",read_project_file:"已读取项目上下文",list_ki_files:"已检查 KI 文件",read_ki_file:"已读取 KI 指南",run_preflight:"已检查模型安装",list_skills:"已检查可用技能",read_skill:"已读取技能说明",run_ki_tool:"已运行 KI 准备工具",write_project_file:"已准备项目文件",create_project_plot:"已生成图表",publish_project_view:"已更新项目视图",report_project_progress:"已更新项目进度",request_user_action:"已准备需要你处理的请求",run_builtin_setup:"已运行软件设置流程",run_setup_command:"已运行设置命令"};
 const chineseUI=()=>window.GeoForgeI18n&&GeoForgeI18n.language==="zh-CN";
 function workLabel(name){if(chineseUI()&&TOOL_LABELS_ZH[name])return TOOL_LABELS_ZH[name];if(TOOL_LABELS[name])return TOOL_LABELS[name];const words=String(name).replace(/([a-z])([A-Z])/g,"$1 $2").replace(/[_.-]+/g," ");return chineseUI()?"已使用 "+words:"Used "+words.toLowerCase();}
 function extractWork(t,streaming){const tools=[];let body=String(t??"");
@@ -441,10 +462,11 @@ function md(t,sid=CUR&&CUR.id,streaming=false){const work=extractWork(t,streamin
   h=h.replace(/(^|\n)((?:\s*\d+[.)]\s+[^\n]+(?:\n|$))+)/g,(m,lead,block)=>lead+`<ol>${block.trim().split("\n").map(line=>`<li>${line.replace(/^\s*\d+[.)]\s+/,"")}</li>`).join("")}</ol>`);
   return work.html+h.split(/\n{2,}/).map(p=>/^<(pre|h3|hr|figure|ul|ol|div\b)/.test(p.trim())?p:`<p>${p.replace(/\n/g,"<br>")}</p>`).join("");}
 
-let SESSIONS=[], CUR=null, MODELS=[], SKILLS=[], MCP={connections:[],github:{}}, STATUS={}, LAST_PREP=null, RUN=null,
+let SESSIONS=[], CUR=null, MODELS=[], SKILLS=[], MCP={connections:[],github:{}}, STATUS={}, LAST_PREP=null, RUN=null, VIEW=null,
     PROJECT_LOCATION={default_parent:""},
     PROV={providers:[],any_usable:false}, PICK=new Set(), SKPICK=new Set(), MCPPICK=new Set();
 const PENDING_ACTIONS=new Map();
+let VIEW_RENDERED_KEY="";
 // Work is isolated by chat. A slow model in one project must never freeze
 // navigation or prevent a second conversation from starting.
 const INFLIGHT=new Map(), PENDING_ATTACHMENTS=new Map(), UPLOADING=new Map(), DRAFTS=new Map();
@@ -533,6 +555,18 @@ async function refreshRun(id=CUR&&CUR.id){
   if(!id)return null;
   const r=await fetch(`/api/session/${id}/run`);if(!r.ok)return null;
   const run=await r.json();if(CUR&&CUR.id===id)drawRunStatus(run);return run;
+}
+function drawViewStatus(view=VIEW){
+  VIEW=view||null;const button=$("#openview"),label=$("#viewlabel");if(!button||!label)return;
+  const count=VIEW&&Array.isArray(VIEW.panels)?VIEW.panels.length:0;
+  label.textContent=count?`${chineseUI()?"项目视图":"Project view"} · ${count}`:(chineseUI()?"项目视图":"Project view");
+  button.classList.toggle("run-complete",count>0);
+  button.title=count?(chineseUI()?`本对话已有 ${count} 个动态展示面板`:`${count} dynamic panels are ready for this chat`):(chineseUI()?"为本对话创建动态项目界面":"Create a dynamic Project View for this chat");
+}
+async function refreshViewStatus(id=CUR&&CUR.id){
+  if(!id)return null;
+  const r=await fetch(`/api/session/${id}/view`);if(!r.ok)return null;
+  const view=await r.json();if(CUR&&CUR.id===id)drawViewStatus(view);return view;
 }
 function drawSessions(){
   $("#slist").innerHTML=SESSIONS.map(s=>`
@@ -628,9 +662,11 @@ function drawProviders(){
 }
 function drawEmpty(){
   RUN=null;drawRunStatus(null);
+  VIEW=null;drawViewStatus(null);
   const old=$("#kibanner"); if(old) old.remove();
   $("#openproject").disabled=true;
   $("#opendata").disabled=true;
+  $("#openview").disabled=true;
   $("#title").textContent="GeoForge Desktop";
   $("#mlabel").textContent="Auto KI";
   $("#kistatus").className="statuspill";
@@ -670,6 +706,8 @@ async function openSession(id){
   renderAttachments();
   drawProviders();
   await refreshRun(id);
+  await refreshViewStatus(id);
+  if($("#viewpanel").classList.contains("open"))await refreshProjectView(false);
   setControls(true);
   await maybeShowAction(id);
 }
@@ -889,6 +927,7 @@ async function send(){
            SESSIONS[i].project_path=s.project_path;}
   if(CUR&&CUR.id===target){CUR=s;$("#title").textContent=s.title;const turn=document.querySelector(`.turn[data-flight="${target}"]`);if(turn)delete turn.dataset.flight;setControls(true);}
   await refreshRun(target);
+  await refreshViewStatus(target);
   drawSessions();
   if(CUR&&CUR.id===target)await maybeShowAction(target);
 }
@@ -910,6 +949,7 @@ function setControls(on){
   $("#newsess").disabled=false; // a different chat can always start in parallel
   $("#openproject").disabled=!CUR;
   $("#opendata").disabled=!CUR;
+  $("#openview").disabled=!CUR;
   $("#skills").disabled=!available||active;
   $("#attach").disabled=!available||active||uploading;
   $("#connect").disabled=!available;
@@ -977,6 +1017,71 @@ $("#openproject").onclick=async()=>{
   const r=await fetch(`/api/session/${CUR.id}/open`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
   const d=await r.json().catch(()=>({}));
   $("#hint").textContent=r.ok?`Opened ${d.project_path}`:(d.error||"Could not open the project folder");
+};
+
+/* per-chat dynamic Project View: agent-authored data, GeoForge-owned renderer */
+function viewAsset(path){return `/api/session/${encodeURIComponent(CUR.id)}/view-asset?path=${encodeURIComponent(path)}`;}
+function viewTable(panel){
+  const table=panel.table||{},columns=Array.isArray(table.columns)?table.columns:[],rows=Array.isArray(table.rows)?table.rows:[];
+  if(table.error)return `<div class="view-caption">${esc(table.error)}</div>`;
+  if(!columns.length)return `<div class="view-caption">${chineseUI()?"这个表格目前没有可显示的行。":"This table has no displayable rows yet."}</div>`;
+  return `<div class="view-table-wrap"><table class="view-table"><thead><tr>${columns.map(item=>`<th>${esc(item)}</th>`).join("")}</tr></thead><tbody>${rows.map(row=>`<tr>${columns.map((_,index)=>`<td>${esc(row[index]??"")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>${table.truncated?`<div class="view-caption">${chineseUI()?"这里只显示预览；完整数据保留在项目文件夹中。":"Preview only; the complete table remains in the project folder."}</div>`:""}`;
+}
+function viewPanel(panel){
+  const kind=panel.kind||"file",url=panel.path?viewAsset(panel.path):"";
+  let body="";
+  if(kind==="metric")body=`<div class="view-metric"><strong>${esc(panel.value)}</strong>${panel.unit?`<span>${esc(panel.unit)}</span>`:""}${panel.status?`<small>${esc(panel.status)}</small>`:""}</div>`;
+  else if(kind==="table")body=viewTable(panel);
+  else if(panel.mime==="video/mp4"||panel.mime==="video/webm")body=`<video class="view-video" src="${esc(url)}" controls autoplay muted loop playsinline preload="metadata"></video>`;
+  else if((panel.mime||"").startsWith("image/"))body=`<a href="${esc(url)}" target="_blank" rel="noreferrer"><img class="view-media" src="${esc(url)}" alt="${esc(panel.title)}" loading="lazy"></a>`;
+  else body=`<a class="view-file" href="${esc(url)}" target="_blank" rel="noreferrer"><span class="mark">${kind==="model3d"?"3D":"↗"}</span><span>${esc(panel.path||panel.title)}</span></a>`;
+  return `<article class="view-card" data-panel-id="${esc(panel.id||"")}" data-panel-revision="${esc(panel.revision||"")}"><div class="view-card-head"><b>${esc(panel.title||kind)}</b><small>${esc(kind)}</small></div>${body}${panel.caption?`<div class="view-caption">${esc(panel.caption)}</div>`:""}</article>`;
+}
+function renderProjectView(view){
+  const panels=Array.isArray(view&&view.panels)?view.panels:[],tags=[...(view.kis||[]).map(item=>`KI · ${item}`),...(view.skills||[]).map(item=>`Skill · ${item}`)];
+  const error=view&&view.error?`<div class="banner" style="margin:0 0 10px">${esc(view.error)}</div>`:"";
+  const intro=`<div class="project-view-intro"><h3>${esc(view&&view.title||(chineseUI()?"项目视图":"Project view"))}</h3><p>${esc(view&&view.summary||(chineseUI()?"这个界面只显示本对话项目中真实存在的结果文件。":"This view only displays real result files in this chat project."))}</p>${tags.length?`<div class="view-tags">${tags.map(item=>`<span class="view-tag">${esc(item)}</span>`).join("")}</div>`:""}</div>`;
+  if(!panels.length)return error+intro+`<div class="view-empty"><b>${chineseUI()?"这个对话还没有项目视图":"This chat has no Project View yet"}</b>${chineseUI()?"继续运行模型或让 Agent 根据当前结果创建一个。已有图、视频和表格会自动出现。":"Run the model or ask the Agent to build one from current results. Existing plots, videos, and tables appear automatically."}</div>`;
+  return error+intro+`<div class="view-grid ${view.layout==="single"?"single":""}">${panels.map(viewPanel).join("")}</div>`;
+}
+function patchProjectView(view){
+  const body=$("#viewbody"),next=document.createElement("div");next.innerHTML=renderProjectView(view);
+  const existing=new Map([...body.querySelectorAll("[data-panel-id]")].map(card=>[card.dataset.panelId,card]));
+  next.querySelectorAll("[data-panel-id]").forEach(card=>{
+    const previous=existing.get(card.dataset.panelId);
+    if(previous&&previous.dataset.panelRevision===card.dataset.panelRevision){card.replaceWith(previous);existing.delete(card.dataset.panelId);}
+  });
+  existing.forEach(card=>card.querySelectorAll("video").forEach(video=>video.pause()));
+  body.replaceChildren(...next.childNodes);
+}
+async function refreshProjectView(open=true){
+  if(!CUR)return;
+  const id=CUR.id;
+  if(open&&!VIEW_RENDERED_KEY.startsWith(`${id}:`))$("#viewbody").innerHTML=`<span class="spin"></span>${chineseUI()?"正在加载项目视图…":"Loading Project View…"}`;
+  const r=await fetch(`/api/session/${id}/view`),view=await r.json().catch(()=>({}));
+  if(!CUR||CUR.id!==id)return;
+  if(r.ok){
+    const key=`${id}:${view.revision||"unversioned"}`;drawViewStatus(view);
+    if(VIEW_RENDERED_KEY!==key){patchProjectView(view);VIEW_RENDERED_KEY=key;}
+  }
+  else $("#viewbody").innerHTML=`<div class="banner">${esc(view.error||(chineseUI()?"无法加载项目视图":"Could not load Project View"))}</div>`;
+}
+function pauseProjectMedia(){$("#viewbody").querySelectorAll("video").forEach(video=>video.pause());}
+function resumeProjectMedia(){$("#viewbody").querySelectorAll("video").forEach(video=>video.play().catch(()=>{}));}
+function projectViewPrompt(){
+  if(chineseUI())return `请根据这个对话的科学目标、当前所选 KI、已经使用或适合使用的 skills，以及项目中真实存在的 outputs 和 artifacts，创建或更新本对话的 Project View。先检查文件，不能虚构指标或结果。选择最能解释本次模型运行的少量面板：关键指标、结果图、CSV 表格，以及存在时的地图或动画。二维水动力过程优先生成真实的 GIF/WebP/MP4/WebM；BIM/三维结果提供 GLB/GLTF 文件并同时生成安全的图片或视频预览。把所有展示文件放在 artifacts/。如果有 publish_project_view 工具就调用它；否则按照 GeoForge 提示中的 version-1 规范写入 artifacts/project-view.json。不要生成或执行任意 HTML/JavaScript。完成后用简单中文说明界面展示了什么。`;
+  return `Create or update this chat's Project View from the scientific goal, selected KIs, relevant skills, and real files already present in outputs and artifacts. Inspect the files first and never invent metrics or results. Choose a small set of panels that best explains this run: key metrics, result figures, CSV tables, and maps or animations when present. For time-varying 2D hydrodynamics, prefer a real GIF, WebP, MP4, or WebM. For BIM/3D, include the GLB/GLTF and also create a safe image or video preview. Put all display files under artifacts/. Call publish_project_view when available; otherwise write artifacts/project-view.json using GeoForge's version-1 contract. Do not generate or execute arbitrary HTML or JavaScript. Briefly explain the finished view.`;
+}
+$("#openview").onclick=async()=>{$("#datapanel").classList.remove("open");$("#viewpanel").classList.add("open");await refreshProjectView(true);resumeProjectMedia();};
+$("#view-close").onclick=()=>{pauseProjectMedia();$("#viewpanel").classList.remove("open");};
+$("#view-refresh").onclick=()=>refreshProjectView(true);
+$("#view-folder").onclick=()=>$("#openproject").click();
+$("#view-agent").onclick=async()=>{
+  pauseProjectMedia();$("#viewpanel").classList.remove("open");$("#msg").value=projectViewPrompt();
+  if(CUR)DRAFTS.set(CUR.id,$("#msg").value);
+  $("#msg").style.height="auto";$("#msg").style.height=$("#msg").scrollHeight+"px";
+  if(sessionBusy()){$("#hint").textContent=chineseUI()?"本对话仍在运行。项目视图请求已放入输入框，本轮结束后即可发送。":"This chat is still working. The Project View request is ready in the composer.";$("#msg").focus();return;}
+  await send();
 };
 
 /* per-chat data requirements and local input files */
@@ -1213,7 +1318,7 @@ async function refreshData(){
   };
   const calibrationFiles=$("#calibration-files");if(calibrationFiles)calibrationFiles.onclick=()=>{$("#datapanel").classList.remove("open");$("#chatfiles").click();};
 }
-$("#opendata").onclick=async()=>{$("#datapanel").classList.add("open");await refreshData();};
+$("#opendata").onclick=async()=>{pauseProjectMedia();$("#viewpanel").classList.remove("open");$("#datapanel").classList.add("open");await refreshData();};
 $("#data-close").onclick=()=>$("#datapanel").classList.remove("open");
 $("#data-agent").onclick=async()=>{
   $("#datapanel").classList.remove("open");$("#msg").focus();
@@ -1399,6 +1504,10 @@ window.addEventListener("focus",()=>{
   const waiting=PROV.providers.some(p=>p.kind==="cli"&&p.installed&&!p.usable);
   if(waiting&&Date.now()-LAST_PROVIDER_CHECK>3000)refreshProviders(false);
 });
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden)pauseProjectMedia();
+  else if($("#viewpanel").classList.contains("open"))resumeProjectMedia();
+});
 $("#theme").onclick=()=>{
   const d=document.body.hasAttribute("data-dark");
   d?document.body.removeAttribute("data-dark"):document.body.setAttribute("data-dark","");
@@ -1408,5 +1517,6 @@ if(localStorage.getItem("kiss-dark")==="1"||
   document.body.setAttribute("data-dark","");
 setInterval(updateActivityUI,1000);
 setInterval(refreshSessionList,5000);
+setInterval(()=>{if(CUR&&$("#viewpanel").classList.contains("open"))refreshProjectView(false).catch(()=>{});},5000);
 loadAll();
 </script></body></html>

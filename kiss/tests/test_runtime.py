@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from kiss_cli import api, app as desktop_app, calibration, clipboard, gui, install, mcp, paths, plotting, policy, preparation, projectrun, providers, sessions, setup, shellenv, skilllib, tls
+from kiss_cli import api, app as desktop_app, calibration, clipboard, gui, install, mcp, paths, plotting, policy, preparation, projectrun, projectview, providers, sessions, setup, shellenv, skilllib, tls
 from kiss_cli.catalog import KI
 from kiss_cli.manifest import Acquire, DataNeed, Manifest
 
@@ -542,6 +542,80 @@ class SessionProjectTests(unittest.TestCase):
             self.assertIn("rotate(90)", svg)
             self.assertNotIn("-960", svg)
             self.assertIn('y="508" text-anchor="middle">Day</text>', svg)
+
+    def test_project_view_publishes_safe_dynamic_panels(self):
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td) / "project"
+            artifacts = project / "artifacts"
+            artifacts.mkdir(parents=True)
+            (artifacts / "depth.svg").write_text("<svg></svg>")
+            (artifacts / "stations.csv").write_text(
+                "station,peak_m\nA,2.4\nB,1.8\n", encoding="utf-8")
+            state = projectview.publish(project, {
+                "title": "Flood progression", "summary": "Real model output",
+                "skills": ["geopandas"], "kis": ["Delft3D"],
+                "panels": [
+                    {"kind": "metric", "title": "Peak depth",
+                     "value": 2.4, "unit": "m"},
+                    {"kind": "map", "title": "Maximum depth",
+                     "path": "artifacts/depth.svg"},
+                    {"kind": "table", "title": "Stations",
+                     "path": "artifacts/stations.csv"},
+                ],
+            })
+            self.assertTrue(state["customized"])
+            loaded = projectview.load(project)
+            self.assertEqual(len(loaded["panels"]), 3)
+            self.assertTrue(loaded["revision"])
+            self.assertTrue(all(panel["revision"] for panel in loaded["panels"]))
+            self.assertEqual(loaded["panels"][2]["table"]["columns"],
+                             ["station", "peak_m"])
+            path, mime = projectview.resolve_asset(
+                project, "artifacts/depth.svg")
+            self.assertEqual(path, (artifacts / "depth.svg").resolve())
+            self.assertEqual(mime, "image/svg+xml")
+            with self.assertRaises(projectview.ProjectViewError):
+                projectview.publish(project, {
+                    "title": "Unsafe", "panels": [{
+                        "kind": "image", "title": "Escape",
+                        "path": "../outside.png",
+                    }],
+                })
+
+    def test_project_view_auto_discovers_old_chat_artifacts(self):
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td) / "project"
+            artifacts = project / "artifacts"
+            artifacts.mkdir(parents=True)
+            (artifacts / "flow.webm").write_bytes(b"video")
+            (artifacts / "result.png").write_bytes(b"image")
+            state = projectview.load(project)
+            self.assertFalse(state["customized"])
+            self.assertEqual({panel["kind"] for panel in state["panels"]},
+                             {"animation", "image"})
+            first_revision = state["revision"]
+            first_ids = {panel["path"]: panel["id"] for panel in state["panels"]}
+            first_panel_revisions = {
+                panel["path"]: panel["revision"] for panel in state["panels"]
+            }
+            (artifacts / "result.png").write_bytes(b"new-image-data")
+            changed = projectview.load(project)
+            self.assertNotEqual(changed["revision"], first_revision)
+            self.assertEqual(
+                {panel["path"]: panel["id"] for panel in changed["panels"]},
+                first_ids,
+            )
+            changed_panel_revisions = {
+                panel["path"]: panel["revision"] for panel in changed["panels"]
+            }
+            self.assertNotEqual(
+                changed_panel_revisions["artifacts/result.png"],
+                first_panel_revisions["artifacts/result.png"],
+            )
+            self.assertEqual(
+                changed_panel_revisions["artifacts/flow.webm"],
+                first_panel_revisions["artifacts/flow.webm"],
+            )
 
     def test_api_project_plot_reads_columns_directly_from_csv(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1134,6 +1208,14 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("AUTOMATIC SKILL USE AND INLINE RESULTS", gui.AUTOMATIC_SKILL_RULES)
         self.assertIn("SKILLS SELECTED BY THE USER", gui.SESSION_PROJECT_RULES + skilllib.prompt_block([]) + (Path(__file__).parents[1] / "kiss_cli" / "skilllib.py").read_text())
         self.assertIn('id="datapanel"', page)
+        self.assertIn('id="viewpanel"', page)
+        self.assertIn('id="openview" disabled', page)
+        self.assertIn("refreshProjectView", page)
+        self.assertIn("VIEW_RENDERED_KEY", page)
+        self.assertIn("pauseProjectMedia", page)
+        self.assertIn("patchProjectView", page)
+        self.assertIn("/view-asset?path=", page)
+        self.assertIn("Build or update with Agent", page)
         self.assertIn("/data`", page)
         self.assertIn("Add source data", page)
         self.assertIn("Project status", page)
@@ -1609,7 +1691,9 @@ class AgentSetupTests(unittest.TestCase):
         self.assertIn("request_user_action", guided)
         self.assertIn("run_ki_tool", project)
         self.assertIn("create_project_plot", project)
+        self.assertIn("publish_project_view", project)
         self.assertNotIn("create_project_plot", normal)
+        self.assertNotIn("publish_project_view", normal)
         self.assertIn("write_project_file", project)
         self.assertIn("report_project_progress", guided)
         self.assertIn("report_project_progress", project)
@@ -1811,6 +1895,13 @@ class AgentSetupTests(unittest.TestCase):
                     "title": "Yield", "series": [{"name": "DSSAT", "y": [8338]}],
                 }, ki, cfg, project_mode=True,
             )
+            published = api.execute_tool(
+                "publish_project_view", {
+                    "title": "Demo results", "kis": ["Demo"],
+                    "panels": [{"kind": "image", "title": "Yield",
+                                "path": "artifacts/quick.svg"}],
+                }, ki, cfg, project_mode=True,
+            )
             progress = api.execute_tool(
                 "report_project_progress",
                 {"stage": "preparing", "status": "working",
@@ -1829,7 +1920,9 @@ class AgentSetupTests(unittest.TestCase):
             self.assertIn("prepared-by-bundled-common", output)
             self.assertIn("model=verified-shared-model", output)
             self.assertIn("artifacts/quick.svg", plotted)
+            self.assertIn("Project View published", published)
             self.assertTrue((project / "artifacts" / "quick.svg").is_file())
+            self.assertTrue((project / "artifacts" / "project-view.json").is_file())
             self.assertIn("Preparing inputs", progress)
             self.assertIn("Choose crop", waiting)
             self.assertTrue((project / setup.REQUEST_FILE).is_file())
